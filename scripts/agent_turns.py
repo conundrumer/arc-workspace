@@ -90,8 +90,8 @@ def turn_after(path: Path, t: float, undecided: list[str]) -> bool:
             continue
         if not e.get("timestamp"):
             undecided.append(mctx("{run}: a `{type}` entry of its transcript has no "
-                                  "timestamp, so it counts as before its parent's "
-                                  "last sign that it reported").format(
+                                  "timestamp, so it counts as before the latest sign, "
+                                  "outside its transcript, that its turn ended").format(
                 run=agent_id(path), type=e.get("type")))
         elif epoch(e["timestamp"]) > t:
             out = True

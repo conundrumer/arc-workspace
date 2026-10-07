@@ -179,6 +179,11 @@ def session_of(path: Path) -> Path:
     return session
 
 
+def run_sessions(path: Path) -> list[Path]:
+    """The sessions of the transcripts of the run at `path`, in their
+    order."""
+    return list(dict.fromkeys(session_of(p) for p in chain(path)))
+
 @cache
 def session_agents(session: Path) -> dict[str, Path]:
     return {agent_id(p): p for p in subagent_transcripts(session)}

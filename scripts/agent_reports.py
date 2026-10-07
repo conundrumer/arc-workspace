@@ -9,7 +9,7 @@ from pathlib import Path
 from controlled_markdown import mctx
 from run_reads import (MAIN, LaunchStatus, Notification, Status, agent_messages, blocks,
                        is_prompt, launch_status, notifications, notified, parent_id,
-                       read_meta, session_agents, session_of, text_of)
+                       read_meta, run_sessions, session_agents, text_of)
 from transcripts import Entry, agent_id, chain, epoch, main_transcript, read_entries
 
 # The opening of the note of a notification that the agent stopped with work
@@ -72,7 +72,7 @@ def parent_transcripts(path: Path) -> list[Path]:
     sessions of that subagent's run: the main transcript of each, or the
     transcripts of the parent's run."""
     parent = parent_id(path)
-    sessions = dict.fromkeys(session_of(p) for p in chain(path))
+    sessions = run_sessions(path)
     if parent == MAIN:
         return [m for s in sessions if (m := main_transcript(s)).is_file()]
     runs = [chain(a) for s in sessions if (a := session_agents(s).get(parent))]

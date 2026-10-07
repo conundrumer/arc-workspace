@@ -2,6 +2,7 @@
 pending to it, and the runs under it, as the HELP of `profile_runs` gives
 them."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -11,8 +12,8 @@ from agent_reports import Report, report_ids, reports_after
 from command_labels import AGENT_TOOLS
 from controlled_markdown import mctx
 from run_reads import (MAIN, blocks, in_background, notified, parent_label,
-                       read_meta, results_by_call, run_entries, session_agents,
-                       session_of, session_transcripts)
+                       read_meta, results_by_call, run_entries,
+                       run_sessions, session_agents, session_transcripts)
 from transcripts import Entry, agent_id, chain, epoch, find, read_entries
 
 # The openings of the message of a SendMessage result where the call resumed
@@ -44,8 +45,8 @@ def run_launches(path: Path) -> tuple[dict[str, Path], dict[str, frozenset[str]]
     at `path`."""
     by_call: dict[str, Path] = {}
     children: dict[str, frozenset[str]] = {}
-    for p in chain(path):
-        calls, kids = session_launches(session_of(p))
+    for session in run_sessions(path):
+        calls, kids = session_launches(session)
         by_call.update(calls)
         for k, v in kids.items():
             children[k] = children.get(k, frozenset()) | v
@@ -142,17 +143,21 @@ def session_resumes(path: Path, agents: set[str], since: float,
     among them, other than that run, whose transcript changed at or after
     `since`."""
     own = chain(path)
-    sessions = dict.fromkeys(session_of(p) for p in own)
     out: dict[str, float] = {}
-    for session in sessions:
-        for p in session_transcripts(session):
-            if p in own or p.stat().st_mtime < since:
-                continue
-            entries = read_entries(p, naming=agents | {"SendMessage"})
-            for aid, t in resumes(entries, parent_label(p), agents,
-                                  undecided).items():
-                note_latest(out, aid, t)
+    for p in changed_since(run_sessions(path), since):
+        if p in own:
+            continue
+        entries = read_entries(p, naming=agents | {"SendMessage"})
+        for aid, t in resumes(entries, parent_label(p), agents,
+                              undecided).items():
+            note_latest(out, aid, t)
     return out
+
+
+def changed_since(sessions: Iterable[Path], since: float) -> list[Path]:
+    """The transcripts of `sessions` that changed at or after `since`."""
+    return [p for session in sessions for p in session_transcripts(session)
+            if p.stat().st_mtime >= since]
 
 
 def timed_entries(path: Path) -> list[Entry]:
@@ -221,8 +226,7 @@ def pending_agents(path: Path, undecided: list[str]) -> list[str]:
     own = [a for a in launched(path, undecided) if a.pending and a.agent]
     if not own:
         return []
-    told = session_notified(session_of(path), {a.agent for a in own if a.agent},
-                            min(a.since for a in own))
+    told = notified_after([(path, a) for a in own], min(a.since for a in own))
     out: list[str] = []
     for a in own:
         last = told.get(a.agent or "")
@@ -231,14 +235,17 @@ def pending_agents(path: Path, undecided: list[str]) -> list[str]:
     return out
 
 
-def session_notified(session: Path, agents: set[str],
-                     since: float) -> dict[str, float]:
-    """The time of the last notification of each of `agents` that a
-    transcript of `session` changed at or after `since` holds."""
+def notified_after(found: list[tuple[Path, Launch]],
+                   since: float) -> dict[str, float]:
+    """The time of the last notification of the agent of each launch of
+    `found`, given with the path of the run that launched it, in any
+    transcript changed at or after `since` of the sessions of that run and
+    of the agent's own run, where its transcript is known."""
+    agents = {a.agent for _, a in found if a.agent}
+    runs = [p for launcher, a in found for p in (launcher, a.path) if p]
+    sessions = dict.fromkeys(s for p in runs for s in run_sessions(p))
     out: dict[str, float] = {}
-    for p in session_transcripts(session):
-        if p.stat().st_mtime < since:
-            continue
+    for p in changed_since(sessions, since):
         for e in read_entries(p, naming=agents):
             if not e.get("timestamp") or e.get("type") == "assistant":
                 continue
