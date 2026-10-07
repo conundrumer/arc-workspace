@@ -2,7 +2,6 @@
 name: ticket-analyst
 description: Finds where the fault behind a reported problem lies, or what a change the user requests needs, and closes its ticket, files a `change` ticket for its resolution, or returns the decision it brings the user. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
 model: opus
-effort: high
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 ---
 
