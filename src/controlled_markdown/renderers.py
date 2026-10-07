@@ -46,6 +46,7 @@ from controlled_markdown import (
     slug,
     target_of,
 )
+from controlled_markdown.directives import directive_target
 
 VARIABLE_RE = re.compile(r"\{\{([A-Za-z0-9_.-]+)\}\}")
 
@@ -354,8 +355,7 @@ def _abridged(node: Node, st: _State) -> set[Path] | str | None:
     if value == "all":
         return "all"
     base = st.reg.file(node.source)
-    return {resolve_reference(part, base) if base is not None
-            else Path(part).resolve() for part in _split_list(value)}
+    return {directive_target(part, base) for part in _split_list(value)}
 
 
 def _referenced_document(node: Node, ref: Reference, st: _State) -> Node:
@@ -380,9 +380,8 @@ def _document_at(node: Node, where: str, st: _State) -> Node:
     if not where:
         raise missing
     base = st.reg.file(node.source)
-    path = resolve_reference(where, base) if base is not None else Path(where)
     try:
-        return st.reg.open(path)
+        return st.reg.open(directive_target(where, base))
     except OSError:
         raise missing from None
 

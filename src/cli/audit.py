@@ -43,12 +43,11 @@ from cli.common import (
 from cli.witness_file import absent, lined_solver, read_file, target, with_file
 from engine import RunFailure, checkout
 from solver import witness
-from solver.annotations import VerdictWord
 from solver.model import DeriveBranch
-from solver.names import verdict_lines
+from solver.form_checks import RecordedForm, recorded_form
 from solver.aggregate import Solver
 from solver.readers import declaration_of
-from solver.problems import WitnessFileRole
+from solver.problems import OutputForm, VerdictsDisagree, WitnessFileRole
 from solver.witness import Entry, Groups, WitnessFile
 from souffle import SouffleEngine
 
@@ -248,11 +247,13 @@ def _built(arg: str, solver: Solver, at: Path,
     line says why. Under `writes_lineless`, as for the `derive` survey,
     the entry built for a branch with no line is written, its names read
     with the line standing, and its line says which line to add. An entry
-    whose verdict a line of the solver records as `other`
-    (`solver.names.verdict_lines`) is not written, since its witness holds
-    the judged output in place of groups: its lines give the `record`
-    command that writes it, on the solver argument `arg` of the command,
-    and the input that command reads."""
+    whose verdict lines give the judged output (`recorded_form`) is not
+    written, since its witness holds that output in place of groups: its
+    lines give the `record` command that writes it, on the solver argument
+    `arg` of the command, and the input that command reads. The verdict
+    lines of a built entry never disagree: its id is a branch's, which
+    holds `=`, so no `@witness` line, whose id is a slug, records it, and a
+    second line on one branch is a fault that adds no branch."""
     if not built:
         return 0
     if corpus:
@@ -272,12 +273,20 @@ def _built(arg: str, solver: Solver, at: Path,
 
     bad = {e.id: unnamed(by.solver, by.cases, e) if lineless(by)
            else unnamed(solver, solver_cases, e) for e, by in built}
-    judged = {e.id: [line.line for line in verdict_lines(solver, e.id)
-                     if line.verdict == VerdictWord.OTHER]
-              for e, _by in built}
+    def recorded_of(e: Entry) -> RecordedForm:
+        got = recorded_form(solver, e.id)
+        if isinstance(got, VerdictsDisagree):
+            raise ValueError(f"{solver.stem}: the verdict lines of the built "
+                             f"entry `{e.id}` disagree")
+        return got
+
+    recorded = {e.id: recorded_of(e) for e, _by in built}
+
+    def writable(e: Entry) -> bool:
+        return not bad[e.id] and recorded[e.id].form is OutputForm.GROUPS
+
     problems = () if corpus else witness.put(
-        at, solver.task_id,
-        [e for e, _by in built if not bad[e.id] and not judged[e.id]])
+        at, solver.task_id, [e for e, _by in built if writable(e)])
     given = None if at == witness.path(solver.task_id) else at
     for e, by in built:
         of = runs.lined_runs(by.solver).case_count if adds_line(by) \
@@ -287,9 +296,9 @@ def _built(arg: str, solver: Solver, at: Path,
             lines.append(recording.not_written(
                 e.id, bad[e.id], kind,
                 adds_line(by)))
-        elif judged[e.id]:
+        elif recorded[e.id].form is OutputForm.JUDGED:
             lines += recording.judged_unwritten(
-                e.id, judged[e.id], recording.record_command(
+                e.id, recorded[e.id].lines, recording.record_command(
                     arg, e, given), e.input)
         elif corpus:
             lines.append(recording.WOULD_RECORD.format(id=e.id))

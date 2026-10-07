@@ -1,9 +1,10 @@
 """The checks of the solver's form that `load` runs: the faults of the
 instance tree the model walks, the names the solver and its witness file
-hold that denote nothing, and the witness entries whose `output` is in
-another form than the verdict that records them takes."""
+hold that denote nothing, the form the verdict lines of a witness entry
+give its `output`, and the entries whose `output` is in another form."""
 
 from collections.abc import Iterator
+from dataclasses import dataclass
 
 from engine import Program, Span
 from engine.program import RigidCall, dotted, first_line, own
@@ -26,7 +27,7 @@ from solver.problems import (
     WitnessFileRole,
 )
 from solver.vocabulary import PARAMS_SCOPE
-from solver.witness import AssignRows, Groups
+from solver.witness import AssignRows, Entry, Groups
 
 
 def instance_faults(program: Program) -> list[Fault]:
@@ -148,16 +149,48 @@ def name_problems(solver: Solver) -> Iterator[Fault]:
                                 Named(s))
 
 
-def split_verdict_lines(solver: Solver, id: str
-                        ) -> tuple[tuple[int, ...], tuple[int, ...]]:
-    """The lines that record the verdict of the witness file's entry `id`
-    (`solver.names.verdict_lines`), in file order: those that record
-    `other`, and those that record another verdict."""
+@dataclass(frozen=True)
+class RecordedForm:
+    """The form the verdict of a witness entry gives its `output`, and the
+    lines that record that verdict, in file order, none where no line
+    records one."""
+
+    form: OutputForm
+    lines: tuple[int, ...]
+
+
+def recorded_form(solver: Solver, id: str) -> RecordedForm | VerdictsDisagree:
+    """The form the lines that record the verdict of the witness file's
+    entry `id` (`solver.names.verdict_lines`) give its `output`: the judged
+    output where some line records `other` and none records another
+    verdict, groups where no line records `other`, and the lines'
+    disagreement where some record `other` and some another verdict."""
     lines = verdict_lines(solver, id)
-    return (tuple(line.line for line in lines
-                  if line.verdict == VerdictWord.OTHER),
-            tuple(line.line for line in lines
-                  if line.verdict != VerdictWord.OTHER))
+    other = tuple(line.line for line in lines
+                  if line.verdict == VerdictWord.OTHER)
+    another = tuple(line.line for line in lines
+                    if line.verdict != VerdictWord.OTHER)
+    if other and another:
+        return VerdictsDisagree(other, another)
+    return (RecordedForm(OutputForm.JUDGED, other) if other
+            else RecordedForm(OutputForm.GROUPS, another))
+
+
+def entry_form_faults(entry: Entry, recorded: RecordedForm | VerdictsDisagree
+                      ) -> Iterator[Fault]:
+    """The faults of `entry` whose verdict lines give `recorded`
+    (`recorded_form`), as `output_form_problems` gives them."""
+    place = InWitnessFile(entry.id, WitnessFileRole.TASK)
+    if isinstance(recorded, VerdictsDisagree):
+        yield Fault(ProblemKind.VERDICTS_DISAGREE, place, recorded)
+        return
+    held = OutputForm.GROUPS if isinstance(entry.output, Groups) \
+        else OutputForm.JUDGED
+    if held is recorded.form:
+        return
+    for line in recorded.lines or (None,):
+        yield Fault(ProblemKind.OUTPUT_OFF_VERDICT, place,
+                    OutputOffVerdict(held, line))
 
 
 @quotes("solver-file.md", "Witness file",
@@ -178,18 +211,4 @@ def output_form_problems(solver: Solver) -> Iterator[Fault]:
     if solver.witness_file is None:
         return
     for e in solver.witness_file.entries:
-        held = OutputForm.GROUPS if isinstance(e.output, Groups) \
-            else OutputForm.JUDGED
-        place = InWitnessFile(e.id, WitnessFileRole.TASK)
-        other, another = split_verdict_lines(solver, e.id)
-        if other and another:
-            yield Fault(ProblemKind.VERDICTS_DISAGREE, place,
-                        VerdictsDisagree(other, another))
-            continue
-        if not other and not another and held is OutputForm.JUDGED:
-            yield Fault(ProblemKind.OUTPUT_OFF_VERDICT, place,
-                        OutputOffVerdict(held, None))
-        off = another if held is OutputForm.JUDGED else other
-        for line in off:
-            yield Fault(ProblemKind.OUTPUT_OFF_VERDICT, place,
-                        OutputOffVerdict(held, line))
+        yield from entry_form_faults(e, recorded_form(solver, e.id))

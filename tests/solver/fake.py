@@ -29,8 +29,8 @@ from engine import (
     Unit,
     UnitId,
 )
-from engine.engine import Classed, GridMisfit, Part
-from souffle import text as syntax
+from engine.engine import Classed, GridMisfit
+from souffle.text import TextMethods
 from souffle.index import index_of
 from engine.program import (
     TypeName,
@@ -112,7 +112,7 @@ def program(*, types: Sequence[TypeDecl] = (),
 
 
 @dataclass
-class FakeEngine:
+class FakeEngine(TextMethods):
     """An engine whose parse gives one program and whose runs a function
     scripts; the rewrites record themselves and change nothing."""
 
@@ -162,27 +162,6 @@ class FakeEngine:
 
     def render(self, program: Program) -> Rendered:
         return Rendered(())
-
-    def text(self, part: Part) -> str:
-        return syntax.text(part)
-
-    def prefixed(self, text: str) -> str | None:
-        return syntax.prefixed(text)
-
-    def line_comment(self, content: str) -> str:
-        return syntax.line_comment(content)
-
-    def split_top(self, text: str) -> list[str]:
-        return syntax.split_top(text)
-
-    def constructor_prefix(self) -> str:
-        return syntax.PREFIX
-
-    def init_text(self, instance: str) -> str:
-        return syntax.init_head(instance)
-
-    def rigid_text(self, block: str) -> str:
-        return syntax.rigid_elided(block)
 
 
 def grid(*rows: str) -> Grid:

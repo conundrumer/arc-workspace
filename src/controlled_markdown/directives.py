@@ -43,3 +43,11 @@ def resolve_reference(path: str, base: Path) -> Path:
     holds the reference: the path resolves from that file's directory, and
     an empty path names that file."""
     return (base.parent / path).resolve() if path else base.resolve()
+
+
+def directive_target(path: str, base: Path | None) -> Path:
+    """The file a directive's path names, where `base` is the file the
+    directive sits in: from that file (`resolve_reference`), or from the
+    working directory where the directive was read from no file."""
+    return resolve_reference(path, base) if base is not None \
+        else Path(path).resolve()

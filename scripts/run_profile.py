@@ -13,8 +13,8 @@ from agent_launches import run_launches
 from agent_turns import idle_after, turns
 from command_labels import AGENT_TOOLS, POLL, call_command, command_label
 from controlled_markdown import mctx
-from run_reads import (blocks, context_size, in_background, is_prompt,
-                       message_text, notified, parent_id, read_meta,
+from run_reads import (agent_type, blocks, context_size, in_background,
+                       is_prompt, message_text, notified, parent_id,
                        results_by_call, run_entries, run_type, session_agents,
                        session_of)
 from senders import Sender, sender
@@ -148,8 +148,7 @@ def launched_type(inp: dict[str, Any], result: dict[str, Any] | None,
         return inp["subagent_type"]
     aid = (result or {}).get("agentId")
     path = session_agents(session).get(aid) if aid else None
-    meta = read_meta(path) if path else None
-    return meta.get("agentType") if meta else None
+    return agent_type(path) if path else None
 
 
 def classify(block: dict[str, Any], result: dict[str, Any] | None,
@@ -300,8 +299,13 @@ def minutes(s: float) -> str:
     return f"{s / 60:.1f}m"
 
 
+CLOCK_FORM = "%Y-%m-%dT%H:%MZ"
+"""The form of a time the tool prints, in UTC: `ticket_log.TIME_FORM` cut to
+the minute."""
+
+
 def clock(t: float | None) -> str:
-    return time.strftime("%Y-%m-%d %H:%M", time.localtime(t)) if t is not None else "?"
+    return time.strftime(CLOCK_FORM, time.gmtime(t)) if t is not None else "?"
 
 
 def one_line(text: str, tail: bool = False) -> str:

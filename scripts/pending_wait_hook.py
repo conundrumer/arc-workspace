@@ -8,18 +8,16 @@ Only the subagent definitions under `.claude/agents/` hold that line, so the
 main session's calls are outside the bound. A Monitor call or a background Bash call holds no turn
 while the prompt cache can lapse, so neither is bound.
 
-Where the hook cannot tell the caller, or its check fails on its own error,
-it allows the call and says why on stderr, so it can fail to deny a wait but
-never denies one wrongly. A hook input inside a subagent gives the
-subagent's agent id, and one that gives none is main's where the main
-transcript holds the call."""
+Where the hook cannot tell the caller, it allows the call and says why on
+stderr, so it can fail to deny a wait but never denies one wrongly. A call
+whose input gives no agent id (`run_reads.caller_id`) is the main session's
+only where the main transcript holds it."""
 
 import json
 import sys
-from pathlib import Path
 from typing import Any
 
-from hook_entry import run_hook
+from hook_entry import CHECK_FAILED, run_hook
 
 HOOK = "pending_wait_hook"
 TIMEOUT_BOUND = 240000
@@ -81,12 +79,11 @@ def check(hook: dict[str, Any]) -> None:
     from agent_launches import pending_agents
     from command_labels import runs_sleep
     from ticket_log import AGENT_ID
-    from run_reads import blocks, session_agents, session_of
-    from transcripts import main_transcript, read_entries
+    from run_reads import blocks, caller_id, caller_transcript
+    from transcripts import is_subagent, read_entries
 
     tool, inp = hook["tool_name"], hook["tool_input"]
-    caller = hook.get("agent_id")
-    if over_bound(tool, inp, bool(caller)):
+    if over_bound(tool, inp, caller_id(hook) is not None):
         return
     if tool == "Bash":
         text = inp["command"]
@@ -100,13 +97,8 @@ def check(hook: dict[str, Any]) -> None:
     named = set(AGENT_ID.findall(text))
     if not named:
         return
-    session = session_of(Path(hook["transcript_path"]))
-    if caller:
-        path = session_agents(session).get(caller)
-        if path is None:
-            raise ValueError(f"no transcript of agent {caller} under {session}")
-    else:
-        path = main_transcript(session)
+    path = caller_transcript(hook)
+    if not is_subagent(path):
         call = hook["tool_use_id"]
         if not any(b.get("id") == call for e in read_entries(path)
                    for b in blocks(e, "tool_use")):
@@ -123,7 +115,7 @@ def check(hook: dict[str, Any]) -> None:
 
 
 def main() -> int:
-    return run_hook(HOOK, "allowed: the check failed", check)
+    return run_hook(HOOK, CHECK_FAILED, check)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 """The witness writes of `record`: no command creates a task's witness
 file, and `record --all` rewrites only the groups and writes nothing where
-a run fails. A file created in the witness directory, or a lost `assign`
-or judged output, would pass unseen in use."""
+a run fails. A file created in the witness directory, or a lost `assign`,
+would pass unseen in use."""
 
 from pathlib import Path
 

@@ -48,6 +48,12 @@ arity (`AssignArity`) or by type (`AssignType`)."""
 NO_ASSIGN_VALUE = mctx("no lib constant and no constructor without "
                        "arguments of an ADT the solver or the lib declares")
 """What an `assign` string value that refers to nothing is not."""
+SEE_WITNESS_FILE = mctx("{text}; see [Witness file]"
+                        "(docs/handbook/solver-file.md#witness-file)")
+"""A fault's text, then the handbook section that gives the witness
+file's form."""
+OTHER_HOLDS_JUDGED = mctx("the verdict `other`, whose witness holds the "
+                          "judged output")
 
 PROBLEM_TEXT: dict[ProblemKind, str] = {
     ProblemKind.PARSE_FAILURE: mctx("the solver does not parse: {text}"),
@@ -73,19 +79,14 @@ PROBLEM_TEXT: dict[ProblemKind, str] = {
         "`{text}` has both a `@derive` line and an `@ignore: derive` line; "
         "remove one"),
     ProblemKind.WITNESS_FILE_SHAPE: mctx(
-        "the witness file is off its shape: {text}; see "
-        "[Witness file](docs/handbook/solver-file.md#witness-file)"),
+        "the witness file is off its shape: ") + SEE_WITNESS_FILE,
     ProblemKind.NAME_DENOTES_NO_CASE: mctx(
         "the name `{text}` denotes no case of the solver"),
     ProblemKind.NAME_FORM: mctx(
         "`{text}` is in no form [Witness file]"
         "(docs/handbook/solver-file.md#witness-file) lists"),
-    ProblemKind.OUTPUT_OFF_VERDICT: mctx(
-        "{text}; see [Witness file]"
-        "(docs/handbook/solver-file.md#witness-file)"),
-    ProblemKind.VERDICTS_DISAGREE: mctx(
-        "{text}; see [Witness file]"
-        "(docs/handbook/solver-file.md#witness-file)"),
+    ProblemKind.OUTPUT_OFF_VERDICT: SEE_WITNESS_FILE,
+    ProblemKind.VERDICTS_DISAGREE: SEE_WITNESS_FILE,
     ProblemKind.ASSIGN_NAMES_NOTHING: mctx(
         "the `assign` key `{text}` is no parameter of the solver and no "
         "`@store` line's relation"),
@@ -285,12 +286,11 @@ def detail_text(engine: Engine, detail: Detail) -> str:
                         "`Choice`").format(column=column, relation=relation,
                                            t=t.text, kind=kind)
         case AssignType(name=name, column=column, type=t, arg=arg):
-            return mctx("`{name}` gives `{arg}` in the column `{column}`, "
-                        "and that column takes a value of type `{t}`; see "
-                        "[Witness file](docs/handbook/solver-file.md"
-                        "#witness-file)").format(
+            return SEE_WITNESS_FILE.format(text=mctx(
+                "`{name}` gives `{arg}` in the column `{column}`, and that "
+                "column takes a value of type `{t}`").format(
                 name=name, arg=arg, column=column,
-                t=t if isinstance(t, str) else f"[{', '.join(t)}]")
+                t=t if isinstance(t, str) else f"[{', '.join(t)}]"))
         case GridOffLayout(name=name, layout=layout, given=(h, w)):
             if layout is None:
                 return mctx("`{name}` a {h}x{w} grid, and the solver stores "
@@ -303,13 +303,13 @@ def detail_text(engine: Engine, detail: Detail) -> str:
         case OutputOffVerdict() as off:
             return _output_off_verdict_text(off)
         case VerdictsDisagree(other=other, another=another):
-            return mctx("{other} {verb} the verdict `other`, whose witness "
-                        "holds the judged output, and {another} {verb2} "
+            return mctx("{other} {verb} {judged}, and {another} {verb2} "
                         "another verdict, whose witness holds groups; make "
                         "these lines agree on whether the witness's output "
                         "is judged").format(
                 other=line_list(other), verb=records(other),
-                another=line_list(another), verb2=records(another))
+                judged=OTHER_HOLDS_JUDGED, another=line_list(another),
+                verb2=records(another))
         case ParseFailure():
             return parse_failure_text(detail)
 
@@ -327,22 +327,21 @@ def records(lines: Sequence[int]) -> str:
 def _output_off_verdict_text(off: OutputOffVerdict) -> str:
     """A witness entry's `output` against the verdict that records it, and
     the form `record` writes in its place."""
-    if off.line is None:
-        if off.held is OutputForm.GROUPS:
+    if off.held is OutputForm.GROUPS:
+        if off.line is None:
             raise ValueError("groups where no line records a verdict are in "
                              "the form the witness file takes")
-        return mctx("the `output` is a bare grid, the judged output of the "
-                    "verdict `other`, and no line records a verdict for the "
-                    "entry; write the groups into the entry with `record`")
-    if off.held is OutputForm.GROUPS:
-        return mctx("the `output` holds groups, and {line} records the "
-                    "verdict `other`, whose witness holds the judged output; "
-                    "write the judged output into the entry with "
-                    "`record`").format(line=line_text(off.line))
+        return mctx("the `output` holds groups, and {line} records "
+                    "{judged}; write the judged output into the entry with "
+                    "`record`").format(line=line_text(off.line),
+                                       judged=OTHER_HOLDS_JUDGED)
+    against = (mctx("no line records a verdict for the entry")
+               if off.line is None else
+               mctx("{line} records another verdict").format(
+                   line=line_text(off.line)))
     return mctx("the `output` is a bare grid, the judged output of the "
-                "verdict `other`, and {line} records another verdict; write "
-                "the groups into the entry with `record`").format(
-                    line=line_text(off.line))
+                "verdict `other`, and {against}; write the groups into the "
+                "entry with `record`").format(against=against)
 
 
 STORAGE_TEXT: dict[Storage, str] = {

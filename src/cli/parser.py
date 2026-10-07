@@ -6,6 +6,7 @@ from collections.abc import Callable, Collection
 from functools import partial
 from typing import Any
 
+from checker.render import Section
 from checker.render.built import GROUP_WIDTH
 from checker.render.commands import SLOWEST
 from checker.store.survey import ROW_CAP
@@ -30,6 +31,15 @@ STEM_HELP = mctx("a task id, or the path to a solver file whose name starts "
                  "lib, as a solver does")
 
 ASSIGN_HELP = mctx("an `assign` object, in the witness file's shape")
+
+def unwritten(kind: Section) -> str:
+    """Which witnesses the command `kind`, `derive` or `store`, does not
+    write, and what it prints for each."""
+    return mctx("Where the branch's `@{word}` line records the verdict "
+                "`other`, the command writes no witness for the branch, and "
+                "prints the input and the `record` command that writes the "
+                "witness with the judged output.").format(word=kind.value)
+
 
 STEM_OR_ALL_HELP = mctx("{stem}; every solver when omitted").format(
     stem=STEM_HELP)
@@ -333,8 +343,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
         "derive", partial(audit.derive_or_store, audit.cmd_derive),
         help=mctx("the built-in derivations of stored parameters that fit, "
                   "each a branch; writes each witness it builds into the "
-                  "task's witness file, other than one for a branch whose line "
-                  "records the verdict `other`"),
+                  "task's witness file. ") + unwritten(Section.DERIVE),
         description=mctx("Each built-in derivation of a stored parameter, "
                          "a proposer of `programs/proposers.dl`, for which "
                          "some case of the solver that takes its branch fits the "
@@ -352,18 +361,14 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                          "command writes each witness it builds into the "
                          "task's witness file, as `record` writes one, with "
                          "the `@derive` line standing, and keeps a witness "
-                         "the file already holds for the branch. Where the "
-                         "`@derive` line records the verdict `other`, it "
-                         "writes no witness for the branch, and prints the "
-                         "input and the `record` command that writes the "
-                         "witness with the judged output."),
+                         "the file already holds for the branch. ")
+        + unwritten(Section.DERIVE),
     )
     store = command(
         "store", partial(audit.derive_or_store, audit.cmd_store),
         help=mctx("the program relations that hold one value on every "
                   "input; writes each witness it builds into the task's "
-                  "witness file, other than one for a branch whose line "
-                  "records the verdict `other`"),
+                  "witness file. ") + unwritten(Section.STORE),
         description=mctx("Each program relation between `in` and `out` whose "
                          "value over a subset of its columns is the same on "
                          "every input of the task, with the witness that "
@@ -373,14 +378,11 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                          "writes each witness it builds into the task's "
                          "witness file, as `record` writes one, with the `@store` "
                          "line standing, and keeps a witness the file "
-                         "already holds for the branch. Where the `@store` "
-                         "line records the verdict `other`, it writes no "
-                         "witness for the branch, and prints the input and "
-                         "the `record` command that writes the witness with "
-                         "the judged output. A relation with "
-                         "more than {cap} rows on some input is not checked: "
-                         "that is too many rows to be a stored value."
-                         ).format(cap=ROW_CAP),
+                         "already holds for the branch. ")
+        + unwritten(Section.STORE) + " " + mctx(
+            "A relation with more than {cap} rows on some input is not "
+            "checked: that is too many rows to be a stored value."
+        ).format(cap=ROW_CAP),
     )
     for p in (derive, store):
         p.add_argument("stem", nargs="?",

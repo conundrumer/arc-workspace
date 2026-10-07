@@ -13,11 +13,13 @@ from pathlib import Path
 from typing import Any
 
 from controlled_markdown import mctx
-from transcripts import (Entry, Refused, agent_id, chain, is_subagent,
-                         main_transcript, read_entries, session_directory,
-                         subagent_transcripts)
+from transcripts import (Entry, Refused, agent_id, chain, first_parent,
+                         is_subagent, main_transcript, read_entries,
+                         session_directory, subagent_transcripts)
 
 MAIN = "main"
+UNKNOWN_TYPE = mctx("the agent type of `{path}` is unknown: its .meta.json is "
+                    "absent or gives none")
 AGENT_MESSAGE = re.compile(r'<agent-message from="([^"]+)"')
 AGENT_MESSAGE_END = "</agent-message>"
 NOTIFICATION = re.compile(r"<task-notification>(.*?)</task-notification>", re.S)
@@ -94,27 +96,40 @@ def read_meta(path: Path) -> dict[str, Any] | None:
 
 
 def transcript_meta(path: Path) -> dict[str, Any] | None:
-    """The `.meta.json` of the subagent transcript at `path` alone, or None
-    where it has none."""
     m = path.with_suffix(".meta.json")
     return json.loads(m.read_text()) if m.is_file() else None
 
 
+def agent_type(path: Path) -> str | None:
+    """The agent type of the run whose transcript is at `path`: `main` for a
+    session's main transcript, and for a subagent's, the type its
+    `.meta.json` gives (`read_meta`), or None where it gives none. A
+    transcript whose first entry answers no entry is the first of its run
+    (`transcripts.chain`), so where its own `.meta.json` gives a type, that
+    is the run's, and the search of every session for the run's other
+    transcripts is spared."""
+    if not is_subagent(path):
+        return MAIN
+    own = (transcript_meta(path) or {}).get("agentType")
+    if own is None or first_parent(path) is not None:
+        own = (read_meta(path) or {}).get("agentType")
+    return own if isinstance(own, str) else None
+
+
 def subagent_meta(path: Path) -> dict[str, Any]:
     """The `.meta.json` of the subagent whose transcript is at `path`, which
-    must give its agent type."""
+    must give its agent type (`agent_type`)."""
     meta = read_meta(path)
-    if meta is None or "agentType" not in meta:
-        raise Refused(mctx("the agent type of `{path}` is unknown: its "
-                           ".meta.json is absent or gives none").format(path=path))
+    if meta is None or agent_type(path) is None:
+        raise Refused(UNKNOWN_TYPE.format(path=path))
     return meta
 
 
 def run_type(path: Path) -> tuple[str, str]:
-    if not is_subagent(path):
-        return MAIN, ""
-    meta = subagent_meta(path)
-    return meta["agentType"], meta.get("description", "")
+    kind = agent_type(path)
+    if kind is None:
+        raise Refused(UNKNOWN_TYPE.format(path=path))
+    return kind, (read_meta(path) or {}).get("description", "")
 
 
 def parent_id(path: Path) -> str:
@@ -167,6 +182,27 @@ def session_of(path: Path) -> Path:
 @cache
 def session_agents(session: Path) -> dict[str, Path]:
     return {agent_id(p): p for p in subagent_transcripts(session)}
+
+
+def caller_id(hook: dict[str, Any]) -> str | None:
+    """The agent id of the caller of the hook input `hook`, or None where
+    the caller is the main session: the input of a call inside a subagent
+    gives the subagent's agent id, and the main session's gives none."""
+    return hook.get("agent_id") or None
+
+
+def caller_transcript(hook: dict[str, Any]) -> Path:
+    """The transcript of the caller of the hook input `hook`, under the
+    session its `transcript_path` gives (`caller_id`). Raises `ValueError`
+    where the session holds no transcript of the caller."""
+    session = session_of(Path(hook["transcript_path"]))
+    caller = caller_id(hook)
+    if caller is None:
+        return main_transcript(session)
+    path = session_agents(session).get(caller)
+    if path is None:
+        raise ValueError(f"no transcript of agent {caller} under {session}")
+    return path
 
 
 def session_transcripts(session: Path) -> list[Path]:

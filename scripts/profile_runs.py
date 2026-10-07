@@ -27,7 +27,10 @@ from run_prints import (RECENT_CALLS, print_messages,  # noqa: E402
 from run_profile import (COMMAND_WIDTH, Run, clock, minutes,  # noqa: E402
                          part_split, print_groups, print_types, profile)
 from run_reads import run_type  # noqa: E402
-from transcripts import Refused, epoch, find, is_subagent, transcripts  # noqa: E402
+from transcripts import Refused, find, is_subagent, transcripts  # noqa: E402
+
+ISO_TIME = mctx("an ISO date or datetime, in UTC where it gives no offset")
+"""The times `utc_time` reads."""
 
 HELP = mctx("""
     - Usage:
@@ -37,8 +40,9 @@ HELP = mctx("""
         uv run python scripts/profile_runs.py --pending ID
         uv run python scripts/profile_runs.py --open ID
         ```
-    - The items below say what an ID names, how a run's wall time is cut into parts, what one run and several runs print, the budget of each agent type, what `--running`, `--pending` and `--open` print, and how a call's command is printed. The options follow them.
+    - The items below say what an ID names, the zone of the times the tool reads and prints, how a run's wall time is cut into parts, what one run and several runs print, the budget of each agent type, what `--running`, `--pending` and `--open` print, and how a call's command is printed. The options follow them.
     - An ID is an agent id, a session id, or the path of a `.jsonl` transcript. A session brings its main transcript, as type `main`, and the run of each of its subagents. A run is the transcript of one agent, or where the top-level session takes a new session id while a subagent runs, that subagent's transcripts under each session's directory: each one under a later session goes on from the one before it, its first entry answering that one's last. A run's agent type, description and launching call are those the earliest of its transcripts' `.meta.json` files that gives each gives.
+    - Each time the tool prints is in UTC, as `YYYY-MM-DDTHH:MMZ` where no item below gives another form. A DATE or TIME it reads is {iso_time}.
     - A run's wall time, from its first entry to its last, is cut at each entry's time, and each interval goes to one part:
         - `tools`: a tool call is pending. A Bash call is labelled by the known commands it runs, joined by ` + `: `gate`, `merge_change.py`, `materialize.py`, `pytest`, `pyright`, and `run_dl.py` with its subcommand. A Bash call that runs none is labelled by the first program it runs past setup, and any other call by its tool.
         - `waits`: a foreground Agent, Monitor or TaskOutput call or a poll is pending, or the turn has ended while an agent or command the run backgrounded is running. These are labelled `agent TYPE`, `poll` and `bg LABEL`.
@@ -56,7 +60,7 @@ HELP = mctx("""
     - Where the latest message from the parent is unknown, or no transcript of the parent is found, it prints `?`. A notification or a launch result whose status is of no known form gives no report, and where no `.meta.json` of the run gives a `toolUseId`, no launch result is matched to it. A launch result whose status is of no known form counts as not in the background, wherever it is read. An `undecided` line on stderr names each, and each distinct line is printed once.
     - More than one run prints, per agent type, the number of runs, the minimum, median, P-th percentile and maximum of wall time, the total, the median and P-th percentile of active time, which is wall time less `idle`, and each part's share of the total, then each type's labels by time, with the number of runs each appears in.
     - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over. That median is taken over budgeted runs alone: a budgeted run is one with a budget in force for some message from its parent, as one run prints it.
-        - The window of a type that has an agent document under `prompts/agents/` is the runs whose first entry is at or after the last commit that changed that document, a document it includes or inlines, a lib file its rendered prompt holds, a script under `scripts/` its rendered prompt names, or a package under `src/` its rendered prompt runs with `-m`, and not a module such a script or package imports. `--since DATE`, an ISO date or datetime read in local time where it gives no offset, sets the window of every type to the runs whose first entry is at or after DATE. Where the window holds at least {median_runs} budgeted runs of the type, the median is taken over them.
+        - The window of a type that has an agent document under `prompts/agents/` is the runs whose first entry is at or after the last commit that changed that document, a document it includes or inlines, a lib file its rendered prompt holds, a script under `scripts/` its rendered prompt names, or a package under `src/` its rendered prompt runs with `-m`, and not a module such a script or package imports. `--since DATE` sets the window of every type to the runs whose first entry is at or after DATE. Where the window holds at least {median_runs} budgeted runs of the type, the median is taken over them.
         - A type with no agent document has a window only with `--since`, and a type whose paths no commit changed has none, and an `undecided` line on stderr names it.
         - Otherwise it is taken over the type's budgeted runs whose `waits` and `idle` together are under {low_wait_pct}% of wall time, where at least {median_runs} runs are such. A type with fewer such runs gets no budget, and an `undecided` line on stderr names it with their count as its reason.
     - `--running ID` lists the agents under the run ID whose work is open, where ID is a session id or an agent id, and a run that goes on under a later session is listed under that session's id. Of the agents the run launched, the agents those launched, and so on, an agent's work is open where its turn is in progress, whether or not its parent's work is open, or where its turn has ended, its parent's work is open, and no report of it reached its parent after the parent's latest message to it, as `report to the parent:` gives a report, read here from each transcript of the parent's run. A parent's work is open where the parent is `main` or listed, and the run ID's work is open where it is `main` or would be listed under `main`. Where no transcript of the parent of the run ID, or of a parent above it, gives its launch, whether its work is open is unknown, it counts as open, and an `undecided` line on stderr names it. An agent's turn counts as ended where it has ended, where its last entry is the harness's note that the user interrupted it, or where its parent has its result or a notification of it and its transcript holds no `user` or `assistant` entry timestamped after the latest of those, so an attachment the harness writes after the turn has ended does not count. A report after the latest message the agent received from anyone closes its work, whether or not the parent's latest message to it is known, and so does a notification of it after that message, of any status but `running`, other than one whose note says the agent stopped with background work of its own still running. Otherwise, an agent whose turn has ended is listed where the parent's latest message to it is unknown. The agents are listed in launch order, each parent's agents after it. In an agent's shell, `$CLAUDE_CODE_SESSION_ID` holds the id of the top-level session, in a subagent as well, so `--running $CLAUDE_CODE_SESSION_ID` lists the agents of the whole session whose work is open. For each agent it prints:
@@ -67,7 +71,7 @@ HELP = mctx("""
         - each call it has in flight, with its label, its command and the time since the call;
         - each command or agent it backgrounded that is still running, with its label, its command and the time since the call;
         - its last {recent} calls in order, each with its label, its command and its duration, or `pending`.
-    - `--calls-since TIME`, an ISO datetime read in UTC where it gives no offset, keeps of each listed agent's last {recent} calls only those that ended at or after TIME, and those that are pending. It prints them after `recent since` and TIME in UTC, as `YYYY-MM-DDTHH:MM:SSZ`, and where it keeps none, prints `none` after TIME.
+    - `--calls-since TIME` keeps of each listed agent's last {recent} calls only those that ended at or after TIME, and those that are pending. It prints them after `recent since` and TIME, as `YYYY-MM-DDTHH:MM:SSZ`, and where it keeps none, prints `none` after TIME.
     - `--pending ID` prints the agent id of each agent pending to the run ID, one per line, in launch order, where ID is a session id or an agent id. An agent is pending to the run that launched it from the Agent call that launched it, or from the last SendMessage call that resumed it, by the run or by any agent of the run's sessions, main among them, until the run holds the result of that Agent call, where the result does not say the agent runs in the background, or until any transcript of the session holds a notification of the agent, a notification that it stopped with work of its own still running among them. A SendMessage call to an agent whose result says neither that it resumed the agent nor that it queued the message resumes none, and an `undecided` line on stderr names it.
     - `--open ID` prints `open` where the work of the run ID is open, by the rule by which `--running` lists an agent, applied to the run ID, and `not open` otherwise, where ID is an agent id. An ID that names a session's main transcript is refused.
     - The messages from a listed agent's parent are its brief, the messages its first turn answers, and each later message its parent sent: one the harness gives as from the parent's agent id, or, for an agent `main` launched, as from the coordinator or queued with no tag. The origin the harness gives a queued message is the one its attachment gives. A notification of the agent's own backgrounded work, a message from an agent it launched, from the user, from another agent, or, for an agent `main` did not launch, from the coordinator or queued with no tag, and a note of the harness are none. A message from another agent is one the harness gives as from an agent id other than the parent's and those of the agents it launched. A later message whose sender is none of these is unknown, and an `undecided` line on stderr names it.
@@ -84,11 +88,8 @@ HELP = mctx("""
     - A run whose agent type is unknown is refused, and so is an ID that names transcripts that differ and are not the transcripts of one run. A call whose agent type is unknown is labelled `agent ?`, a Bash call with no command is labelled `shell`, and a call whose input lacks a field its command reads, of those above but a SendMessage call's message, is printed without that field; an `undecided` line on stderr names each.
     """).format(factor=BUDGET_FACTOR, median_runs=MEDIAN_RUNS,
                 low_wait_pct=LOW_WAIT_PCT, recent=RECENT_CALLS,
-                width=COMMAND_WIDTH, bound=f"{CONTEXT_BOUND:,}")
-
-
-def iso_date(text: str) -> float:
-    return epoch(text)
+                width=COMMAND_WIDTH, bound=f"{CONTEXT_BOUND:,}",
+                iso_time=ISO_TIME)
 
 
 def utc_time(text: str) -> float:
@@ -106,8 +107,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--calls-since", type=utc_time, metavar="TIME",
                     help=mctx("with `--running`, print of each agent's last "
                               "calls only those that ended at or after TIME "
-                              "or are pending: an ISO datetime, in UTC where "
-                              "it gives no offset"))
+                              "or are pending: ") + ISO_TIME)
     ap.add_argument("--pending", metavar="ID",
                     help=mctx("list the agents pending to the run ID"))
     ap.add_argument("--open", metavar="ID",
@@ -121,11 +121,10 @@ def main(argv: list[str]) -> int:
                               "none per type and all for one run"))
     ap.add_argument("--runs", action="store_true",
                     help=mctx("also print one line per run"))
-    ap.add_argument("--since", type=iso_date, metavar="DATE",
+    ap.add_argument("--since", type=utc_time, metavar="DATE",
                     help=mctx("start of the window of runs each type's "
                               "budget is taken over, in place of the type's "
-                              "own: an ISO date or datetime, in local time "
-                              "where it gives no offset"))
+                              "own: ") + ISO_TIME)
     args = ap.parse_args(argv)
     types = set(args.type.split(",")) if args.type else None
     undecided: list[str] = []

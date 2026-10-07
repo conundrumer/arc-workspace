@@ -8,16 +8,15 @@ from dataclasses import dataclass, replace
 from engine import RunFailure
 from engine.quotes import quotes
 from solver.aggregate import Solver
-from solver.form_checks import output_form_problems, split_verdict_lines
+from solver.form_checks import entry_form_faults, recorded_form
 from solver.model import Case
 from solver.names import denoted_cases
-from solver.problems import Fault, NameFault
+from solver.problems import Fault, NameFault, OutputForm, VerdictsDisagree
 from solver.witness import (
     Entry,
     GroupGrid,
     Outcomes,
     RejectedOutput,
-    WitnessFile,
     grouped,
     members,
 )
@@ -96,18 +95,16 @@ def rerecorded(solver: Solver, entry: Entry,
     """The entry with its groups built again (`grouped`) from what `run`
     gives, the solver's cases on the entry's input at its `assign`, and
     what that changes in it; the failure where `run` gives no outcomes.
-    A judged output stays where each line that records the entry's
-    verdict (`solver.names.verdict_lines`) gives `other`, and `run` is not
-    called for it; under any other verdict, or where no line records one,
-    the groups replace it. Where the lines give `other` and another
-    verdict both, the fault is the one `output_form_problems` gives for
-    the entry, and `run` is not called."""
-    other, another = split_verdict_lines(solver, entry.id)
-    if other and another:
-        alone = replace(solver, witness_file=WitnessFile(solver.task_id,
-                                                         (entry,)))
-        return next(output_form_problems(alone))
-    if isinstance(entry.output, RejectedOutput) and other:
+    A judged output stays where the lines that record the entry's verdict
+    give the judged output (`recorded_form`), and `run` is not called for
+    it; where they give groups, the groups replace it. Where they
+    disagree, the fault is the one `output_form_problems` gives for the
+    entry, and `run` is not called."""
+    recorded = recorded_form(solver, entry.id)
+    if isinstance(recorded, VerdictsDisagree):
+        return next(entry_form_faults(entry, recorded))
+    if isinstance(entry.output, RejectedOutput) \
+            and recorded.form is OutputForm.JUDGED:
         return entry, JudgedKept()
     outcomes = run()
     if not isinstance(outcomes, tuple):

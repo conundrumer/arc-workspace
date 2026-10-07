@@ -121,17 +121,21 @@ def agent_id(path: Path) -> str:
     return path.stem.removeprefix("agent-")
 
 
+def first_parent(path: Path) -> str | None:
+    """The `parentUuid` of the first entry of the transcript at `path`, with
+    only the lines up to that entry parsed."""
+    snap = snapshot(path)
+    first = next((e for i in range(len(snap.lines)) for e in snap.entry(i)),
+                 None)
+    return first.get("parentUuid") if first is not None else None
+
+
 @cache
 def ends(path: Path) -> tuple[str | None, str | None]:
     """The `parentUuid` of the first entry of the transcript at `path`, and
     the `uuid` of its last entry that gives one."""
-    first: str | None = None
-    last: str | None = None
-    for i, e in enumerate(read_entries(path)):
-        if i == 0:
-            first = e.get("parentUuid")
-        last = e.get("uuid") or last
-    return first, last
+    last = next((u for e in entries_back(path) if (u := e.get("uuid"))), None)
+    return first_parent(path), last
 
 
 def chain(path: Path) -> list[Path]:

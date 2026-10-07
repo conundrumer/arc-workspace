@@ -5,7 +5,7 @@ the readings of a constructor's prefix and of a list at its top-level
 commas. Each form the message rendering shares with the printer's
 canonical form is written once here (`form`, `declared`, `decl_line`,
 `init_head`, `rigid_head`, `unary_lead`). The packages outside `souffle` reach this module through
-`engine.Engine`."""
+`engine.Engine`, whose text methods `TextMethods` gives."""
 
 from collections.abc import Callable, Iterable
 
@@ -205,3 +205,30 @@ def split_top(text: str) -> list[str]:
             start = i + 1
     parts.append(text[start:].strip())
     return [] if parts == [""] else parts
+
+
+class TextMethods:
+    """The methods of `engine.Engine` that render or read Souffle text,
+    each one function of this module, for each engine over Souffle text to
+    take."""
+
+    def text(self, part: Part) -> str:
+        return text(part)
+
+    def prefixed(self, text: str) -> str | None:
+        return prefixed(text)
+
+    def line_comment(self, content: str) -> str:
+        return line_comment(content)
+
+    def split_top(self, text: str) -> list[str]:
+        return split_top(text)
+
+    def constructor_prefix(self) -> str:
+        return PREFIX
+
+    def init_text(self, instance: str) -> str:
+        return init_head(instance)
+
+    def rigid_text(self, block: str) -> str:
+        return rigid_elided(block)

@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from checker.render import Section, counted, noun
-from checker.render.faults import records
+from checker.render.faults import OTHER_HOLDS_JUDGED, records
 from checker.render.grids import grid_lines, shifted
 from checker.render.hints import derive_line_to_add
 from checker.render.locations import line_list
@@ -58,16 +58,14 @@ def not_written(id: str, names: Sequence[str], kind: Section, lineless: bool
 def judged_unwritten(id: str, lines: Sequence[int], command: str,
                      input: Grid) -> list[str]:
     """The lines of a witness a survey built and did not write, since
-    `lines` record its verdict `other`, whose witness holds the judged
-    output, which the survey does not know: the `record` command
-    `command` that writes the witness, and the input it reads on stdin
-    above the `---` line and the judged output."""
-    return [mctx("wrote no witness `{id}`: {lines} {verb} the verdict "
-                 "`other`, whose witness holds the judged output; run this "
-                 "command with the input below, a `---` line and the judged "
-                 "output on stdin, to write it").format(
-                     id=id, lines=line_list(lines),
-                     verb=records(lines)),
+    `lines` give it the judged output, which the survey does not know: the
+    `record` command `command` that writes the witness, and the input it
+    reads on stdin above the `---` line and the judged output."""
+    return [mctx("wrote no witness `{id}`: {lines} {verb} {judged}; run "
+                 "this command with the input below, a `---` line and the "
+                 "judged output on stdin, to write it").format(
+                     id=id, lines=line_list(lines), verb=records(lines),
+                     judged=OTHER_HOLDS_JUDGED),
             f"  {command}", "", mctx("stdin, above the `---` line:"),
             *(shifted(r, "  ") for r in grid_lines(input))]
 
