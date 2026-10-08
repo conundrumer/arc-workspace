@@ -5,11 +5,14 @@ into the state's calls, made steps and launched agents. The result of a
 recorded Agent call is a JSON object whose `agentId` gives the agent the
 call launched. The coordinator's lines reach the loop through
 `operate.py tell`, as entries of the same record with a `line` in place of
-a `tool`; the messages of the agents the loop launched reach the main
-session, and are read from its transcript."""
+a `tool`, and `operate.py start` and `operate.py stop` mark in the
+operations loop's record each start and stop of that loop, which the
+monitor reads as the loop's runs; the messages of the agents the loop
+launched reach the main session, and are read from its transcript."""
 
 import json
 import time
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +25,7 @@ from transcripts import Refused, epoch, find
 
 from controlled_markdown import mctx
 from operations.constants import COORDINATOR
+from operations.monitor import Run
 from operations.roles import PASSES, Role, described
 from operations.state import Agent, Call, Made, Message, Printed
 from operations.steps import unfenced
@@ -48,15 +52,36 @@ def is_loop(me: str) -> bool:
     return me in (LOOP, MONITOR)
 
 
-def started(scratch: Path, loop: str) -> float:
-    """The time of the first entry of the record of `loop`, which a first
-    call writes as `{"start": true}` where the record has no entry."""
-    path = record_path(scratch, loop)
-    if not path.is_file() or not path.read_text().strip():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a") as f:
-            f.write(json.dumps({"start": True, "time": time.time()}) + "\n")
-    return float(json.loads(path.read_text().splitlines()[0])["time"])
+class Mark(StrEnum):
+    """The key of an entry that marks a start or a stop of a loop, written
+    as `{"<mark>": true}`. A monitor record may hold a `start` entry, which
+    marks no run."""
+    START = "start"
+    STOP = "stop"
+
+
+def mark(scratch: Path, loop: str, m: Mark) -> None:
+    write(scratch, loop, {m: True})
+
+
+def runs(scratch: Path) -> list[Run]:
+    """The runs of the operations loop that its record's marks give, in
+    order. A stop where no run is open is a fault of the record."""
+    out: list[Run] = []
+    for e in raw_entries(scratch, LOOP):
+        t = float(e["time"])
+        if e.get(Mark.START) is True:
+            out.append(Run(t, None, t))
+        elif e.get(Mark.STOP) is True:
+            if not out or out[-1].stop is not None:
+                raise Refused(mctx("{path}: a stop at {time} ends no run").format(
+                    path=record_path(scratch, LOOP), time=t))
+            out[-1] = Run(out[-1].start, t, out[-1].last)
+    calls = [float(e["time"]) for loop in (LOOP, MONITOR) for e in entries(scratch, loop)
+             if "tool" in e]
+    ends = [r.start for r in out[1:]] + [float("inf")]
+    return [Run(r.start, r.stop, max([r.last, *(t for t in calls if r.start <= t < end)]))
+            for r, end in zip(out, ends, strict=True)]
 
 
 TOOLS = frozenset({"Agent", "SendMessage", "Bash"})
@@ -74,22 +99,33 @@ def append(scratch: Path, loop: str, entry: dict[str, Any]) -> None:
             or entry.get("tool") in TOOLS and isinstance(entry.get("input"), dict)):
         raise Refused(mctx("a recorded entry takes a line, or a tool of the mod's and an "
                            "input object"))
+    write(scratch, loop, entry)
+
+
+def write(scratch: Path, loop: str, entry: dict[str, Any]) -> None:
     path = record_path(scratch, loop)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a") as f:
         f.write(json.dumps({**entry, "time": time.time()}) + "\n")
 
 
-def entries(scratch: Path, loop: str) -> list[dict[str, Any]]:
-    """The calls and the coordinator's lines in the record of `loop`, in the
-    order written; an entry that is neither is a fault of the record."""
+def raw_entries(scratch: Path, loop: str) -> list[dict[str, Any]]:
+    """Each entry of the record of `loop`, marks included, in the order
+    written."""
     path = record_path(scratch, loop)
     if not path.is_file():
         return []
+    return [json.loads(line) for line in path.read_text().splitlines()]
+
+
+def entries(scratch: Path, loop: str) -> list[dict[str, Any]]:
+    """The calls and the coordinator's lines in the record of `loop`, in the
+    order written; an entry that is neither and no mark is a fault of the
+    record."""
+    path = record_path(scratch, loop)
     out: list[dict[str, Any]] = []
-    for n, line in enumerate(path.read_text().splitlines(), 1):
-        e = json.loads(line)
-        if e.get("start") is True:
+    for n, e in enumerate(raw_entries(scratch, loop), 1):
+        if any(e.get(m) is True for m in Mark):
             continue
         if not (isinstance(e.get("line"), str)
                 or e.get("tool") in TOOLS and isinstance(e.get("input"), dict)):

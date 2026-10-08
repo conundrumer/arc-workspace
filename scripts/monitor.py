@@ -26,7 +26,7 @@ from agent_launches import session_launches  # noqa: E402
 from budgets import budgets_in_force  # noqa: E402
 from filed_texts import report_file, report_text  # noqa: E402
 from open_agents import Listed, running_agents  # noqa: E402
-from ops_record import MONITOR, read_record, record_agents, started  # noqa: E402
+from ops_record import LOOP, MONITOR, read_record, record_agents, runs  # noqa: E402
 from run_prints import active_of, print_running  # noqa: E402
 from run_reads import Status as TaskStatus  # noqa: E402
 from run_reads import (  # noqa: E402
@@ -82,6 +82,7 @@ HELP = mctx("""
         uv run python scripts/monitor.py unfinished {monitor}
         ```
     - `call` gives the next step of the monitor loop of the `operations` mod, as one line of JSON, in the form `operate.py call` gives a step, and `operate.py made {monitor}` records the call the mod made for it. It writes the brief of a launch to a file under the session's scratchpad, and the call's prompt gives that file's path, with the report file the auditor writes. Where no step is ready, it reads the state again each {poll} seconds, for up to {block} seconds, then gives a step of kind `wait`.
+    - It launches an auditor on a message to the coordinator only where the coordinator's transcript gained that message while the operations loop ran, from a start that `operate.py start {loop}` recorded to the next stop that `operate.py stop {loop}` recorded. A run with no recorded stop counts as running where no later start is recorded, and otherwise up to the latest call of either loop's record before that start. A message after that call and before that start, which may have reached the coordinator after a hot reload of the mod or the session's end had ended the run, gets no audit, and `unfinished` gives a line on it.
     - `unfinished` reads the state once and prints the part for the coordinator that the operations loop's final reply ends with: an `unfinished` item on each line on what that read left unknown, and on each audit whose report is still in no form after the request to write it again; it prints nothing where there is none. The mod runs it once the monitor loop has stopped, so the part comes from a read after the monitor's last call.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives, and the command refuses where the shell gives none.
     {report_form}
@@ -187,7 +188,7 @@ def sendings(calls: list[Call]) -> list[Sending]:
 def to_coordinator(session: Path, since: float, undecided: list[str]) -> list[ToCoordinator]:
     """The messages to the coordinator from an agent of the session other
     than the monitor and its auditors, and the notifications of the end of
-    one, that the coordinator's transcript gained since `since`."""
+    one, that the coordinator's transcript gained after `since`."""
     parents = {kid: launcher for launcher, kids in session_launches(session)[1].items()
                for kid in kids}
     agents: dict[str, tuple[str, str, Path]] = {}
@@ -223,15 +224,15 @@ def read_monitor(me: str) -> MonitorState:
     if not session:
         raise Refused(mctx("the shell gives no `CLAUDE_CODE_SESSION_ID`"))
     undecided: list[str] = []
-    start = started(scratch(session), me)
+    ran = tuple(runs(scratch(session)))
     calls = read_record(scratch(session), me, me, {}, undecided)[0]
     agents = record_agents(calls, main_tree(), {})
     audits = [a for x in agents if (a := audit_of(x, undecided)) is not None]
     directory = session_directory(find(session))
     state = MonitorState(
         watched=tuple(watched(running_agents(find(session), undecided), audits, undecided)),
-        to_coordinator=tuple(to_coordinator(directory, start, undecided)),
-        audits=tuple(audits), sendings=tuple(sendings(calls)),
+        to_coordinator=tuple(to_coordinator(directory, ran[0].start, undecided) if ran else ()),
+        audits=tuple(audits), sendings=tuple(sendings(calls)), runs=ran,
         undecided=tuple(undecided))
     return state
 
@@ -250,6 +251,7 @@ def next_step(me: str) -> Step:
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(
         description=HELP.format(poll=POLL_SECONDS, block=BLOCK_SECONDS, monitor=MONITOR,
+                                loop=LOOP,
                                 report_form=REPORT_FORM.format(no_sign=NO_SIGN, to=TO,
                                                                verdict=VERDICT)),
         formatter_class=argparse.RawDescriptionHelpFormatter)

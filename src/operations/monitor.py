@@ -3,7 +3,11 @@
 or on a message to the coordinator, a budget alert or an escalation as a
 Send step, or a wait. The command keeps no state of its own: it reads back
 each audit from its launch's description, each alert it sent from the
-monitor loop's record, and each auditor's alert from its report file.
+monitor loop's record, each auditor's alert from its report file, and the
+runs of the operations loop from that loop's record.
+
+Which messages to the coordinator get an audit, by the runs of the
+operations loop, is the rule `scripts/monitor.py --help` gives.
 
 The watched agents are the agents of the session other than the monitor
 and the auditors it launched, so no auditor, and no alert of one, is
@@ -152,13 +156,49 @@ class Sent:
 
 
 @dataclass(frozen=True)
+class Run:
+    """A run of the operations loop: the time of its start, the time of its
+    stop where the record gives one, and the time of the latest call that
+    either loop's record gives from its start until the next start."""
+    start: float
+    stop: float | None
+    last: float
+
+
+@dataclass(frozen=True)
 class MonitorState:
     watched: tuple[Watched, ...]
     to_coordinator: tuple[ToCoordinator, ...]
     audits: tuple[Audit, ...]
     sendings: tuple[Sending, ...]
+    runs: tuple[Run, ...]
+    """In the order they started."""
     undecided: tuple[str, ...]
     """The lines on what the read of the state left unknown."""
+
+
+def run_before(runs: tuple[Run, ...], t: float) -> tuple[Run, float | None] | None:
+    """The latest run that started at or before `t`, with the start of the
+    run after it where one did, or None where no run started by `t`."""
+    out: tuple[Run, float | None] | None = None
+    for r in runs:
+        if r.start > t:
+            return None if out is None else (out[0], r.start)
+        out = (r, None)
+    return out
+
+
+def running_at(state: MonitorState, t: float) -> bool | None:
+    """Whether the operations loop ran at `t`, or None where `t` falls
+    after the latest call of a run whose stop the record does not give,
+    and before the next start."""
+    found = run_before(state.runs, t)
+    if found is None:
+        return False
+    r, later = found
+    if r.stop is not None:
+        return t <= r.stop
+    return True if later is None or t <= r.last else None
 
 
 def sent_alerts(state: MonitorState) -> list[Sent]:
@@ -206,10 +246,21 @@ def outcome(state: MonitorState, a: Audit) -> Finding | None:
 
 
 def undecided(state: MonitorState) -> list[str]:
-    """The lines on what the read of the state left unknown, and on the
-    audits whose answer to the request to write their report again is
-    still in no form."""
+    """The lines on what the read of the state left unknown, on the runs
+    of the operations loop whose stop is unknown where a message to the
+    coordinator falls after their latest call, and on the audits whose
+    answer to the request to write their report again is still in no
+    form."""
     out = list(state.undecided)
+    for m in state.to_coordinator:
+        if running_at(state, m.time) is None and (found := run_before(state.runs, m.time)):
+            r, later = found
+            assert later is not None
+            out.append(mctx("the operations loop's run that started at {start} has no recorded "
+                            "stop, so the messages to the coordinator after {last}, its latest "
+                            "call, and before {later}, the next start, are not audited").format(
+                                start=utc_stamp(r.start), last=utc_stamp(r.last),
+                                later=utc_stamp(later)))
     for a in state.audits:
         if a.read is Read.UNREAD and outcome(state, a) is NO_FINDING:
             out.append(mctx("{auditor}: its report is still in no form the command reads, so "
@@ -369,8 +420,9 @@ def step(state: MonitorState) -> Step:
             return Launch(Role.OP_AUDITOR, subject(Facet.AGENT, w.agent_id),
                           brief(state, w, verdict))
     for m in state.to_coordinator:
-        if not any(a.facet is Facet.MESSAGE and a.agent_id == m.agent_id
-                   and a.on_time == int(m.time) for a in state.audits):
+        if running_at(state, m.time) is True and not any(
+                a.facet is Facet.MESSAGE and a.agent_id == m.agent_id
+                and a.on_time == int(m.time) for a in state.audits):
             return Launch(Role.OP_AUDITOR, subject(Facet.MESSAGE, m.agent_id, m.time),
                           message_brief(m))
     return Poll()

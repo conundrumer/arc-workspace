@@ -88,14 +88,22 @@ async function loop($, id, command, whileRunning) {
 const failed = ($, id) => (err) => tell($, `The ${id} loop stopped on a failure: ${err?.stack ?? err}`)
 
 // The operations loop, with the monitor loop beside it. Its final reply ends with the monitor's part for the
-// coordinator, read once the monitor loop has stopped, so that no later read of the monitor's is left out.
+// coordinator, read once the monitor loop has stopped, so that no later read of the monitor's is left out. Its
+// start and its stop are marked in its record, which the monitor reads as the times it ran.
 async function operations($) {
+  try {
+    await operate($, ['start', LOOP])
+  } catch (err) {
+    running = false
+    throw err
+  }
   const monitor = loop($, MONITOR, [...WATCH, 'call', MONITOR], true).catch(failed($, MONITOR))
   let reply
   try {
     reply = await loop($, LOOP, [...OPERATE, 'call', LOOP], false)
   } finally {
     running = false
+    await operate($, ['stop', LOOP]).catch(failed($, LOOP))
     await monitor
   }
   const part = (await run($, [...WATCH, 'unfinished', MONITOR], CALL_TIMEOUT_MS)).trim()

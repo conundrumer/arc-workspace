@@ -28,7 +28,7 @@ console_importable()
 importable(checkout.scripts())
 
 from loop_state import read_state  # noqa: E402
-from ops_record import LOOP, append, is_loop  # noqa: E402
+from ops_record import LOOP, Mark, append, is_loop, mark  # noqa: E402
 from profile_runs import budget_of  # noqa: E402
 from ticket_numbers import session_id  # noqa: E402
 from transcripts import Refused  # noqa: E402
@@ -45,12 +45,14 @@ HELP = mctx("""
         uv run python scripts/operate.py call {loop}
         uv run python scripts/operate.py made {loop} '<call>'
         uv run python scripts/operate.py tell {loop} '<line>'
+        uv run python scripts/operate.py start|stop {loop}
         uv run python scripts/operate.py set-aside <task id> analyze|create
         uv run python scripts/operate.py restore <task id>
         ```
     - `call` gives the next step of the loop of the `operations` mod, as one line of JSON: `kind` names the call, the other fields are its parameters, and `key` is the step's key, the same at each read of the state that gives the same step. A step of kind `wait` gives no call, and a step of kind `reply` ends the loop with its `text`. It writes the brief of a launch, and a message to an agent other than the coordinator, to a file under the session's scratchpad, and the call's prompt or message gives that file's path. A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items. The brief of a launch other than a solver pass's gives the file the agent writes its final reply to, and ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where the budget of its agent type over every run of that type, as `profile_runs.py --help` gives a type's budget, is N minutes rounded up. A brief that gives items, as `profile_runs.py --help` gives them, takes the type's budget per item times the number of items it gives, and any other brief takes the type's budget. Where the type has no such budget, the brief has no such line. It holds back the launch of an agent type whose definition under `.claude/agents/` a commit of `master` changed less than {reload} seconds ago until those seconds have passed. Where no step is ready and no agent the loop launched runs, it blocks for up to {block} seconds until one is.
     - `made` adds the call the mod made for a step to the loop's record, which the state reads as the calls the loop made: `<call>` is a JSON object with the call's `tool`, `input`, `result`, `error`, and the `key` that `call` gave. A step counts as made by the recorded call that gives its key.
     - `tell` gives the loop the coordinator's line, which it reads as a line of the coordinator's message.
+    - `start` and `stop` record that the loop starts or stops, as the mod runs them, for the monitor loop, as `monitor.py --help` gives.
     - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass, and `restore` puts it back and removes the task's claim, as the section `Passes on a task` of `prompts/agents/notes/launching.md` gives.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives, and the command refuses where the shell gives none.
     """)
@@ -127,7 +129,8 @@ def main(argv: list[str]) -> int:
         print(HELP.format(block=BLOCK_SECONDS, reload=RELOAD_SECONDS, loop=LOOP))
         return 0
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
-    parser.add_argument("action", choices=["call", "made", "tell", "set-aside", "restore"])
+    parser.add_argument("action", choices=["call", "made", "tell", *Mark, "set-aside",
+                                           "restore"])
     parser.add_argument("ident")
     parser.add_argument("rest", nargs="*")
     args = parser.parse_args(argv)
@@ -147,6 +150,11 @@ def main(argv: list[str]) -> int:
                 return 0
             case "call":
                 return call_step(args.ident)
+            case Mark.START | Mark.STOP:
+                if args.ident != LOOP or args.rest:
+                    parser.error(f"{args.action} takes the loop's id, `{LOOP}`, alone")
+                mark(scratch(session_id()), args.ident, Mark(args.action))
+                return 0
             case "set-aside":
                 if (len(args.rest) != 1 or args.rest[0] not in (Role.ANALYZE, Role.CREATE)
                         or not TASK_ID.fullmatch(args.ident)):
