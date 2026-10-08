@@ -291,6 +291,10 @@ def stop_work(number: str) -> str:
                 "reply.").format(number=number)
 
 
-BUDGET = "Budget: {minutes} minutes"
-"""The line of a brief that gives the agent its budget, in the form
-`profile_runs.py --help` reads."""
+AT_BUDGET = mctx("Where your documents give what you do at your budget, do that at it, and "
+                 "otherwise do all your work, past your budget where it takes longer.")
+"""What an agent does at its budget."""
+
+BUDGET = "Budget: {minutes} minutes. " + AT_BUDGET
+"""The line of a brief that gives the agent its budget and what it does at
+its budget, in the form `profile_runs.py --help` reads."""

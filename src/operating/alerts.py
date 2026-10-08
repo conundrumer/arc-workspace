@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from controlled_markdown import mctx
+from operating import briefs
 from operating.roles import AGENT_ID
 from operating.state import Agent, Message, State
 from operating.steps import Bash, Send, Step, sent, undecided
@@ -62,10 +63,8 @@ def parsed(m: Message) -> Alert | None:
     return Alert(m, kinds.get(found["kind"]), found["agent"])
 
 
-BUDGET_MESSAGE = mctx(
-    "A supervisor's alert: your active time is past your budget. Act as your documents have "
-    "you act where your budget is passed, where they say it, and otherwise finish the step "
-    "you are on and end your turn with your report, with each item not done and its reason.")
+BUDGET_MESSAGE = (mctx("A supervisor's alert: your active time is past your budget.") + " "
+                  + briefs.AT_BUDGET)
 
 
 def to_agent(alert: Alert) -> str:
