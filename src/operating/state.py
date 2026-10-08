@@ -143,8 +143,9 @@ class State:
     the holders of tickets under `tickets/assigned/` whose work is open, as
     `profile_runs.py --open` gives it. `index` is the session's index.
     `wait_task` is the ID the harness gave the command's wait in the
-    background that the operator `me` started and whose completion has not
-    reached it, or None. `gate_outputs` gives, for the worktree of each
+    background that the operator `me` started, where no notification of
+    its end reached it and no TaskStop call of it on that ID has its
+    result, or None. `gate_outputs` gives, for the worktree of each
     change `me` holds, the accepted gate outputs under
     `tests/gate/accepted/` its change writes. `branches` gives the branch
     of each worktree that stands on one, and `stalled` the final reply in

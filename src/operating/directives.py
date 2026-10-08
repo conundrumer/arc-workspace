@@ -11,7 +11,10 @@ word of its kind and a colon, past a list marker:
 - `Merge: <number>`, a change under `tickets/blocked/` the user ruled on;
 - `Tickets are open.`;
 - `Override:` and `Decision:` lines, which the operator agent applies to the
-  step the command prints, and the command passes over.
+  step the command prints, and the command passes over, other than a
+  `Decision:` line that names a change whose ticket gives no `editors`
+  field, which gives that change's editors by `editors: <editor>, ...`,
+  the form of that field (`decided_editors`).
 
 A line of the coordinator's in no such form is a step the command gives to
 the coordinator as undecided.
@@ -48,6 +51,7 @@ APPLIED = frozenset({Directive.OVERRIDE, Directive.DECISION})
 LINE = re.compile(r"^\s*(?:[-*]\s+)?(?P<kind>[A-Z][a-z ]+?)(?::\s*(?P<rest>.*?)|\.)\s*$")
 NUMBER = re.compile(r"\b(?:\d+-)?\d+\b")
 TASK = re.compile(r"\b(?P<task>[0-9a-f]{8})(?:\s+from\s+(?P<start>create|refine))?\b")
+EDITORS_FIELD = re.compile(r"\beditors:\s*(?P<field>[a-z-]+(?:\s*,\s*[a-z-]+)*)")
 
 
 @dataclass(frozen=True)
@@ -95,6 +99,16 @@ def numbers(state: State, kind: Directive) -> list[tuple[str, float]]:
     return [(n, ln.message.time) for ln in lines(state) if ln.kind is kind
             for n in NUMBER.findall(ln.rest)]
 
+
+def decided_editors(state: State, number: str) -> tuple[Line, str | None] | None:
+    """The last `Decision:` line that names the change `number`, with the
+    `editors` field it holds, or None where it holds none; None where no
+    such line reached the operator."""
+    for ln in reversed(lines(state)):
+        if ln.kind is Directive.DECISION and number in NUMBER.findall(ln.rest):
+            m = EDITORS_FIELD.search(ln.rest)
+            return ln, None if m is None else m["field"]
+    return None
 
 def named(state: State) -> set[str]:
     """The tickets the coordinator names to the operator."""

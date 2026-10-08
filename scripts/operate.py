@@ -33,9 +33,9 @@ from context_bound_hook import OPERATOR, past_bound  # noqa: E402
 from merge_change import conflicted, ran  # noqa: E402
 from open_agents import work_open  # noqa: E402
 from profile_runs import budget_of  # noqa: E402
-from run_reads import (MAIN, agent_messages, agent_type, blocks,  # noqa: E402
-                       context_size, is_prompt, message_text, run_entries, session_agents,
-                       text_of)
+from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks,  # noqa: E402
+                       context_size, is_prompt, message_text, notified, run_entries,
+                       session_agents, text_of)
 from senders import Sender, sender  # noqa: E402
 from ticket_files import TICKET_NAME, ticket_files, ticket_name  # noqa: E402
 from ticket_form import FRONT, title  # noqa: E402
@@ -47,7 +47,7 @@ from transcripts import (Refused, entries_back, epoch, find, read_entries,  # no
 
 from operating import alerts, briefs, plan, steps  # noqa: E402
 from operating.directives import named  # noqa: E402
-from operating.roles import PASSES, Role, described  # noqa: E402
+from operating.roles import PASSES, Role, described, editors_of  # noqa: E402
 from operating.merging import MERGE_SCRIPT  # noqa: E402
 from operating.state import (Agent, Call, Commit, LogLine, Merge, Message,  # noqa: E402
                              Report, State, Ticket)
@@ -88,7 +88,6 @@ COMMITS = 300
 CODE_DIRS = ("src/", "scripts/", "tests/")
 TASK_ID = re.compile(r"[0-9a-f]{8}")
 STEP_KEY = re.compile(rf"[0-9a-f]{{{KEY_LENGTH}}}")
-BACKGROUND_ID = re.compile(r"running in background with ID: (\S+)")
 
 
 def main_tree() -> Path:
@@ -123,7 +122,7 @@ def read_ticket(path: Path) -> Ticket:
         title=title(path, text),
         depends_on=tuple(d.strip() for d in fields.get("depends-on", "").split(",") if d.strip()),
         priority=int(fields.get("priority", "50")),
-        editors=None if editors is None else tuple(Role(e.strip()) for e in editors.split(",")),
+        editors=None if editors is None else editors_of(editors),
         after_merge=fields.get("after-merge"), log=lines, holder=holder(text), path=path)
 
 
@@ -365,24 +364,35 @@ def still_running(launch: Launched, undecided: list[str]) -> bool:
 
 
 def wait_task(me: str, path: Path) -> str | None:
-    """The ID of the operator's wait in the background whose completion
-    has not reached it."""
+    """The ID of the operator's wait in the background that has not ended:
+    no notification of it reached the operator, and no TaskStop call of
+    the operator on it has its result."""
     entries = run_entries(path)
-    calls = {b.get("id"): b for e in entries if e.get("type") == "assistant"
-             for b in blocks(e, "tool_use") if b.get("name") == "Bash"
-             and (b.get("input") or {}).get("command") == wait_command(me)}
+    waits: set[str] = set()
+    stops: dict[str, str] = {}
+    for e in entries:
+        for b in blocks(e, "tool_use") if e.get("type") == "assistant" else []:
+            inp = b.get("input") or {}
+            if not (call := b.get("id")):
+                continue
+            if b.get("name") == "Bash" and inp.get("command") == wait_command(me):
+                waits.add(call)
+            elif b.get("name") == "TaskStop" and inp.get("task_id"):
+                stops[call] = str(inp["task_id"])
     started: list[str] = []
-    seen = ""
+    ended: set[str] = set()
     for e in entries:
         if e.get("type") != "user":
             continue
+        result = e.get("toolUseResult")
         for b in blocks(e, "tool_result"):
-            if b.get("tool_use_id") in calls:
-                m = BACKGROUND_ID.search(text_of(b.get("content")))
-                if m:
-                    started.append(m[1])
-        seen += message_text(e)
-    running = [t for t in started if f"<task-id>{t}</task-id>" not in seen]
+            call = b.get("tool_use_id")
+            if call in waits and isinstance(result, dict) and result.get(BACKGROUND_TASK):
+                started.append(str(result[BACKGROUND_TASK]))
+            if call in stops:
+                ended.add(stops[call])
+        ended.update(notified(e))
+    running = [t for t in started if t not in ended]
     return running[-1] if running else None
 
 

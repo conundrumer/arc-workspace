@@ -5,11 +5,12 @@ analyst on what the editors leave. The steps carry out
 `merging` gives the merge and what follows it.
 
 The editors a change needs are those the `editors` field of its ticket
-gives, which the ticket analyst that files it writes; a change whose ticket
-gives none is undecided. The first editor is launched with a worktree of
-its own, whose path the agent id gives, and the command logs that path on
-the ticket, so a later operator continues the change there, with the
-editors and reviewers each operator launched in it.
+gives, which the ticket analyst that files it writes; where its ticket
+gives none, those the coordinator's `Decision:` line on it gives, and a
+change that neither gives is undecided. The first editor is launched with
+a worktree of its own, whose path the agent id gives, and the command logs
+that path on the ticket, so a later operator continues the change there,
+with the editors and reviewers each operator launched in it.
 
 What the editors' and the doc reviewer's replies give is read by the fixed
 forms of `reports`. A report of an editor that has not finished, a
@@ -28,9 +29,9 @@ from pathlib import Path
 from typing import Literal
 
 from operating import briefs, merging
-from operating.directives import Directive, named, numbers
+from operating.directives import Directive, decided_editors, named, numbers
 from operating.reports import finding_paths, finished, no_finding, standing
-from operating.roles import EDITORS, Purpose, Role, analyst_subject
+from operating.roles import EDITORS, Purpose, Role, analyst_subject, editors_of
 from operating.state import Agent, State, Ticket
 from operating.steps import Bash, Launch, Send, Step, repeated, undecided
 from operating.tracker import COORDINATOR, closed, log, worktree
@@ -159,41 +160,64 @@ def in_worktree(state: State, a: Agent, w: Path) -> bool:
     return own_worktree(state, a) == w or str(w) in a.brief
 
 
+def change_editors(state: State, t: Ticket) -> tuple[Role, ...] | Send:
+    """The editors of the change `t`: those its `editors` field gives, or
+    where it gives none, those the last `Decision:` line on it gives
+    (`directives.decided_editors`). A change that neither gives, or whose
+    line gives no `editors` field or a name in it that is no editor, is
+    undecided."""
+    if t.editors is not None:
+        return t.editors
+    decided = decided_editors(state, t.number)
+    if decided is None:
+        return undecided(f"change {t.number} gives no `editors` field")
+    line, field = decided
+    try:
+        roles = None if field is None else editors_of(field)
+    except ValueError:
+        roles = None
+    if roles is None or any(r not in EDITORS for r in roles):
+        return undecided(f"the line `{line.text}` gives change {t.number} no editors in the "
+                         f"form `editors: <editor>, ...`, with each editor it takes among "
+                         f"{', '.join(EDITORS)}")
+    return roles
+
 def carry(state: State, t: Ticket) -> Step | None:
     """The next step on the change `t` the operator holds, or None where it
     waits on an agent."""
     if merging.merged(state, t):
         return merging.close(state, t, of_change(state, t.number))
-    if t.editors is None:
-        return undecided(f"change {t.number} gives no `editors` field")
+    editors = change_editors(state, t)
+    if not isinstance(editors, tuple):
+        return editors
     agents = of_change(state, t.number)
-    editors = [a for a in agents if a.role in EDITORS]
+    launched = [a for a in agents if a.role in EDITORS]
     w = worktree(t, state)
     if w is None:
-        for a in reversed(editors):
+        for a in reversed(launched):
             if own_worktree(state, a) in state.worktrees:
                 return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED,
                                 f"worktree {own_worktree(state, a)}", state.me))
-        if any(a.pending for a in editors):
+        if any(a.pending for a in launched):
             return None
         taken = max((ln.time for ln in t.log if ln.status is Status.ASSIGNED), default=0.0)
-        if sum(a.launched > taken for a in editors) >= 2:
+        if sum(a.launched > taken for a in launched) >= 2:
             return undecided(f"change {t.number} has no worktree after two first editors")
-        first = next(r for r in EDITORS if r in t.editors)
+        first = next(r for r in EDITORS if r in editors)
         return Launch(first, t.number, briefs.editor(
-            first, t.number, len(t.editors) > 1, None, state.scratch / t.number, state.me),
+            first, t.number, len(editors) > 1, None, state.scratch / t.number, state.me),
             worktree=True)
-    here = [a for a in editors if in_worktree(state, a, w)]
-    for role in (r for r in EDITORS if r in t.editors):
+    here = [a for a in launched if in_worktree(state, a, w)]
+    for role in (r for r in EDITORS if r in editors):
         if not any(a.role is role for a in here):
             return Launch(role, t.number, briefs.editor(
-                role, t.number, len(t.editors) > 1, w, state.scratch / t.number, state.me))
+                role, t.number, len(editors) > 1, w, state.scratch / t.number, state.me))
     if any(a.pending for a in here):
         return None
     latest = {a.role: a for a in here}
     if (step := leftover(state, t, w, list(latest.values()), agents)) is not False:
         return step
-    if Role.DOC_EDITOR in t.editors and (
+    if Role.DOC_EDITOR in editors and (
             step := doc_review(state, t, w, here, agents)) is not False:
         return step
     return merging.merge_steps(state, t, w, list(latest.values()))

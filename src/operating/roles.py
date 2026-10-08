@@ -47,6 +47,13 @@ EDITORS = (Role.CODE_EDITOR, Role.HANDBOOK_EXPANDED, Role.DOC_EDITOR)
 """The editors a change's `editors` field may give, in the order the
 command launches them: the first one launched makes the change's worktree."""
 
+
+def editors_of(field: str) -> tuple[Role, ...]:
+    """The roles an `editors` field, `<editor>, <editor>`, gives. Raises
+    ValueError on a name that is no role."""
+    return tuple(Role(e.strip()) for e in field.split(","))
+
+
 MARK = "op"
 """The first word of each description the command gives."""
 
