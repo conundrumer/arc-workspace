@@ -29,7 +29,11 @@ merge.
 
 A change with a doc editor passes its review once the latest reply of its
 doc reviewer opens with `no finding stands` and follows each editor's last
-report. A reply that gives neither that nor a finding in the form
+report, or precedes the last report only of editors that reviewer sent a
+message, since such an editor sends that reviewer its fixes before each
+reply. A reply that precedes the last report of any other editor is read
+for no finding, and that reviewer is asked once to review the change
+again, and the review is held where it has not replied since. A reply that gives neither that nor a finding in the form
 `reports.FINDING` reads goes back to the doc reviewer once, with a request
 to send it again in that form, and the review is held where its answer is
 still in neither. A reply that gives findings brings a new doc editor for the
@@ -315,8 +319,10 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
     if r.pending:
         return None
     reply = r.last_report
-    last_edit = max((rep.time for a in here if (rep := a.last_report) is not None), default=0.0)
-    if reply is not None and no_finding(r) and reply.time >= last_edit:
+    if reply is not None and (late := [a for a in here if (rep := a.last_report) is not None
+                                       and rep.time > reply.time]):
+        return review_stale(state, t, w, here, r, reply.time, late)
+    if reply is not None and no_finding(r):
         return False
     since = reply.time if reply is not None else r.launched
     paths = finding_paths(r)
@@ -347,8 +353,33 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
         message = briefs.new_editor(f)
         if r.agent_id and not sent(state, r.agent_id, message):
             return Send(r.agent_id, message)
-    return review_ruled(state, t, w, here, f"doc reviewer {r.agent_id} of change {t.number} has "
-                                           f"not replied since its editors ended")
+    return review_ruled(state, t, w, here, unreplied(r, t))
+
+
+def unreplied(r: Agent, t: Ticket) -> str:
+    return f"doc reviewer {r.agent_id} of change {t.number} has not replied since its editors ended"
+
+
+def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, since: float,
+                 late: list[Agent]) -> Step | Literal[False]:
+    """The step on the reply at `since` of the doc reviewer `r`, which
+    precedes the last report of the editors `late`: False where it opens
+    with `no finding stands` and `r` sent each of them a message, and
+    otherwise the message that asks `r` to review the change again."""
+    if no_finding(r):
+        if r.messaged is None:
+            return undecided(mctx("the transcript of doc reviewer {agent} of change {number} "
+                                  "is unknown, so the command cannot read whom it sent a "
+                                  "message").format(agent=r.agent_id, number=t.number))
+        ids = agent_ids(late)
+        if isinstance(ids, Send):
+            return ids
+        if all(i in r.messaged for i in ids):
+            return False
+    message = briefs.review_again(since)
+    if r.agent_id is not None and not sent(state, r.agent_id, message):
+        return Send(r.agent_id, message)
+    return review_ruled(state, t, w, here, unreplied(r, t))
 
 
 def review_ruled(state: State, t: Ticket, w: Path, here: list[Agent],

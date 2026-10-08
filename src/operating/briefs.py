@@ -71,7 +71,17 @@ def doc_review(number: str, worktree: Path, editors: list[tuple[Role, str]],
 def new_editor(aid: str) -> str:
     """The message that gives a doc reviewer the editor launched for its
     findings."""
-    return mctx("Send your findings on the change to its new doc editor, {aid}.").format(aid=aid)
+    return mctx("Send your findings on the change to its new editor, {aid}.").format(aid=aid)
+
+
+REVIEW_AGAIN = mctx("Your reply at {time} came before the last report of an editor of the "
+                    "change. Review the change again.")
+
+
+def review_again(time: float) -> str:
+    """The message that asks a doc reviewer whose reply at `time` came
+    before an editor's last report to review the change again."""
+    return REVIEW_AGAIN.format(time=stamp(time))
 
 
 def review_fix(role: Role, number: str, worktree: Path, reviewer: str, files: list[str],

@@ -1,6 +1,6 @@
 """The agents a run launched, the calls that resumed them, the agents
 pending to it, and the runs under it, as the HELP of `profile_runs` gives
-them."""
+them, and the agents its SendMessage calls went to."""
 
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -152,6 +152,13 @@ def session_resumes(path: Path, agents: set[str], since: float,
                               undecided).items():
             note_latest(out, aid, t)
     return out
+
+
+def sent_to(path: Path) -> frozenset[str]:
+    """The agent ids the SendMessage calls of the run at `path` went to."""
+    return frozenset(str(b["input"]["to"]) for e in run_entries(path, naming={"SendMessage"})
+                     if e.get("type") == "assistant" for b in blocks(e, "tool_use")
+                     if b.get("name") == "SendMessage" and (b.get("input") or {}).get("to"))
 
 
 def changed_since(sessions: Iterable[Path], since: float) -> list[Path]:

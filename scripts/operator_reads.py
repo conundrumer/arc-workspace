@@ -1,6 +1,7 @@
 """The reads of the transcripts of a session's operators: the operators
 that ran `operate.py`, each operator's calls, the messages it received and
-the agents it launched, with their reports, the outcome of its merge
+the agents it launched, with their reports and the agents each doc
+reviewer sent a message, the outcome of its merge
 calls, the tickets its solver passes filed, and its wait in the
 background."""
 
@@ -10,7 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from agent_launches import launched, resumes, run_launches, timed_entries, turn_signs
+from agent_launches import launched, resumes, run_launches, sent_to, timed_entries, turn_signs
 from agent_reports import ENDED, Sign, last_sign
 from agent_turns import first_time, has_ended, turns
 from context_bound_hook import OPERATOR
@@ -28,7 +29,7 @@ from transcripts import epoch, find, read_entries, session_directory
 from operating import alerts
 from operating.merging import MERGE_SCRIPT, merge_messages
 from operating.reports import TICKETS_FILED
-from operating.roles import PASSES, described
+from operating.roles import PASSES, Role, described
 from operating.state import Agent, Call, Merge, Message, Report
 from operating.steps import COMMAND, is_wait
 
@@ -175,7 +176,9 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
         a = Agent(launch.agent, aid, d.role, d.subject, str(use[1].get("prompt", "")),
                   use[0], still or (launch.pending and sign not in ENDED), reports,
                   still_running=still,
-                  notifies=launch.since <= max(use[0], own.get(launch.agent or "", 0.0)))
+                  notifies=launch.since <= max(use[0], own.get(launch.agent or "", 0.0)),
+                  messaged=sent_to(launch.path) if d.role is Role.DOC_REVIEWER and launch.path
+                  else None)
         if launch.pending and not a.pending and launch.agent:
             a = ended_with(a, None if any(r.time > launch.since for r in reports)
                            else reply_to(a, launch.since))
