@@ -7,11 +7,13 @@ from the state, so two operators never act on one ticket. The coordinator's
 lines, and the other agents' messages other than the alerts `alerts` acts
 on for the operator that carries the work on, give steps only to the
 operator they reached, so the work a line to an earlier operator left
-unfinished reaches a later one only where the coordinator gives it again;
+unfinished reaches a later one only where the coordinator gives it again
+(`passes.every`);
 a `Decision:` line that gives a change's editors or rules a held step
 holds for every operator (`directives`). An operator past its context bound ends at once
-too, and the operator the coordinator launches next takes up its changes
-once its work is no longer open, as `changes.release` gives.
+too, and once its work is no longer open, the operator the coordinator
+launches next takes up, through `changes.release`, the changes of the
+session and of the tickets named to it.
 
 The steps come in this order: the coordinator's lines in no form the
 command reads, each given back to the coordinator once; the supervisor's

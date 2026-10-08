@@ -49,7 +49,7 @@ on, which a code editor fixes."""
 
 def scope(state: State) -> set[str]:
     """The tickets the operators release and take changes among: the
-    session's, those the coordinator names, and each `change` one of those
+    session's, those the coordinator names to the operator `me`, and each `change` one of those
     waits on through a chain of `depends-on`."""
     base = {n for n, t in state.tickets.items() if state.mine(t)} | named(state)
     todo = list(base)

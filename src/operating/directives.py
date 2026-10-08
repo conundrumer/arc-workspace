@@ -21,10 +21,7 @@ word of its kind and a colon, past a list marker:
 A line of the coordinator's in no such form is a step the command gives to
 the coordinator as undecided.
 
-A line gives steps only to the operator it reached, in its brief or a later
-message: a line to an earlier operator of the session reaches a later one
-only where a line to the later one gives its pipeline again while that
-pipeline runs (`passes.every`). A `Decision:` line that gives a change's
+Which operator a line gives steps to is as `plan` gives. A `Decision:` line that gives a change's
 editors or rules a held step rules that change or that step for every
 operator of the session, so an operator that takes over a change from an
 earlier one carries it on by the rulings the earlier one received."""
