@@ -31,12 +31,12 @@ import shlex
 from pathlib import Path
 
 from controlled_markdown.nodes import Rule, finding_lines
-from operating import briefs
-from operating.reports import splits
-from operating.roles import Role
-from operating.state import Agent, Call, Merge, State, Ticket
-from operating.steps import Bash, Launch, Send, Step, bash_calls, simple_commands
-from operating.tracker import COORDINATOR, WORKTREE, log
+from operations import briefs
+from operations.reports import splits
+from operations.roles import Role
+from operations.state import Agent, Call, Merge, State, Ticket
+from operations.steps import Bash, Launch, Send, Step, bash_calls, simple_commands
+from operations.tracker import COORDINATOR, WORKTREE, log
 from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Note, Resolution, Status
 
 MERGE_SCRIPT = "scripts/merge_change.py"

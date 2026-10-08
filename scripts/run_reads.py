@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from controlled_markdown import mctx
-from operating.bounds import COORDINATOR as MAIN
+from operations.constants import COORDINATOR as MAIN
 from token_prices import request_input
 from transcripts import (Entry, Refused, agent_id, chain, first_parent,
                          is_subagent, main_transcript, read_entries,

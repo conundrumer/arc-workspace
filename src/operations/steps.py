@@ -25,10 +25,10 @@ from functools import cache
 from pathlib import Path
 
 from controlled_markdown import mctx
-from operating import briefs
-from operating.bounds import COORDINATOR, FOREGROUND_MS, WAIT_SECONDS
-from operating.roles import GENERAL_ROLES, PASSES, Model, Purpose, Role, description
-from operating.state import Agent, Call, Made, Printed, State
+from operations import briefs
+from operations.constants import COORDINATOR, FOREGROUND_MS, WAIT_SECONDS
+from operations.roles import GENERAL_ROLES, PASSES, Model, Purpose, Role, description
+from operations.state import Agent, Call, Made, Printed, State
 
 WAIT_CAP = 11
 """How many waits in a row may end on `WAIT_SECONDS` with no message, no
@@ -65,7 +65,7 @@ class Bash:
 
 
 @dataclass(frozen=True)
-class Stop:
+class StopWait:
     """A TaskStop call on a command of the operator's, by the ID the
     harness gave it."""
     task_id: str
@@ -86,7 +86,7 @@ class EndTurn:
 
 
 @dataclass(frozen=True)
-class Again:
+class Poll:
     """Nothing is ready yet, and nothing an agent of the operator's runs is
     waited on: the agent runs the command again at once."""
 
@@ -99,7 +99,7 @@ class Reply:
 
 @dataclass(frozen=True)
 class Relay:
-    """The ruling lines `lines` of the ticket analyst `agent` on the held
+    """The decision lines `lines` of the ticket analyst `agent` on the held
     step `what`, whose launcher printed its final reply after the analyst's
     launch, printed to the operator whose procedure meets that step, which
     applies them as the lines of an analyst it launched."""
@@ -111,8 +111,8 @@ class Relay:
 @dataclass(frozen=True)
 class Undecided:
     """A step the command cannot place, which goes to a ticket analyst
-    launched on it (`rulings`) and is never printed. The command reads back
-    which analyst it went to by the ruling key of `what`, so `what` is the
+    launched on it (`decisions`) and is never printed. The command reads back
+    which analyst it went to by the decision key of `what`, so `what` is the
     same at each read of the same state. `given` holds the texts that a
     message by which an operator gave the coordinator this step holds each
     of, in a form other than `UNDECIDED` and `what`, where the step has
@@ -140,10 +140,10 @@ def unread_line(line: str) -> Send:
                                   "command reads: {line}").format(opening=UNDECIDED, line=line))
 
 
-def ruled_by(state: State, step: Undecided) -> list[Agent]:
+def decided_by(state: State, step: Undecided) -> list[Agent]:
     """The ticket analysts of any operator of the session launched on
     `step`, in the order of their launch."""
-    k = ruling_key(step.what)
+    k = decision_key(step.what)
     return [a for a, purpose, keys in state.analysts() if purpose is Purpose.STEP and keys == [k]]
 
 
@@ -160,22 +160,22 @@ def agent_ids(agents: Iterable[Agent]) -> list[str] | Undecided:
     return out
 
 
-def ruling_key(what: str) -> str:
+def decision_key(what: str) -> str:
     """The key a `Decision:` line gives to rule the held step `what`."""
     return hashlib.sha1(what.encode()).hexdigest()[:KEY_LENGTH]
 
 
 def held(what: str, choices: Mapping[str, str]) -> Undecided:
     """A step that holds its procedure until a `Decision:` line rules it,
-    which gives its ruling key and one of `choices`, each given with what
+    which gives its decision key and one of `choices`, each given with what
     it does."""
     given = "; ".join(f"`{c}`: {meaning}" for c, meaning in choices.items())
     return Undecided(what + mctx(". Rule it by the line `Decision: {key} <choice>`, with one "
-                                 "of these choices: {given}.").format(key=ruling_key(what),
+                                 "of these choices: {given}.").format(key=decision_key(what),
                                                                       given=given))
 
 
-type Step = Launch | Send | Undecided | Relay | Bash | Stop | Wait | EndTurn | Again | Reply
+type Step = Launch | Send | Undecided | Relay | Bash | StopWait | Wait | EndTurn | Poll | Reply
 
 
 def repeated(step: Step, state: State) -> bool:
@@ -186,12 +186,12 @@ def repeated(step: Step, state: State) -> bool:
     `given`. Its procedure then waits on the answer."""
     match step:
         case Undecided(what, given):
-            return bool(ruled_by(state, step)) or sent(state, COORDINATOR,
+            return bool(decided_by(state, step)) or sent(state, COORDINATOR,
                                                        f"{UNDECIDED} {what}") or (
                 bool(given) and any(all(g in str(c.input.get("message", "")) for g in given)
                                     for c in sends_to(state, COORDINATOR)))
         case Relay(agent, what):
-            head = RELAY_HEAD.format(agent=agent, key=ruling_key(what))
+            head = RELAY_HEAD.format(agent=agent, key=decision_key(what))
             return any(c.tool == "Bash" and head in (c.result or "") for c in state.calls)
         case Send(to, message):
             return sent(state, to, message)
@@ -391,7 +391,7 @@ def failure(c: Call) -> str:
     return reason[0] if reason else mctx("no result text")
 
 
-RELAY_HEAD = mctx("Ticket analyst {agent} ruled the held step {key} below, and the operator "
+RELAY_HEAD = mctx("Ticket analyst {agent} decided the held step {key} below, and the operator "
                   "that launched it has printed its final reply since.")
 RELAY_APPLY = mctx("Apply the lines below as lines of a ticket analyst you launched to rule a "
                    "step, then run `{command}`.")
@@ -560,7 +560,7 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
             return send_text(to, "\n".join(part for part in (head, line) if part))
         case Bash(command):
             return bash_text(command)
-        case Stop(task_id):
+        case StopWait(task_id):
             return f"call TaskStop\ntask_id: {task_id}"
         case Wait():
             return (f"call Bash\nrun_in_background: true\ntimeout: 7200000\ncommand:\n"
@@ -570,12 +570,12 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
         case EndTurn():
             return mctx("End your turn with no call: no wait is started, and a message or "
                         "a report wakes you.")
-        case Again():
+        case Poll():
             return mctx("Run the command again: nothing is ready.")
         case Reply(text):
             return f"{FINAL_REPLY}\n{text}"
         case Relay(analyst, what, lines):
-            return "\n".join([RELAY_HEAD.format(agent=analyst, key=ruling_key(what)),
+            return "\n".join([RELAY_HEAD.format(agent=analyst, key=decision_key(what)),
                               RELAY_APPLY.format(command=next_command(agent)),
                               "", *lines, "", what])
         case Undecided():

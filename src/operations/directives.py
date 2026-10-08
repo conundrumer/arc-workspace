@@ -8,24 +8,24 @@ word of its kind and a colon, past a list marker:
 - `Drafts to review: <number>, ...`;
 - `Tickets named: <number>, ...`;
 - `Merged: <number>, ...`, the changes the coordinator gives as merged;
-- `Merge: <number>`, a change under `tickets/blocked/` the user ruled on;
+- `Merge: <number>`, a change under `tickets/blocked/` the user decided on;
 - `Tickets are open.`;
 - `Override:` and `Decision:` lines, which the operator agent applies to the
   step the command prints, and the command passes over, other than a
-  `Decision:` line that gives the ruling key of a held step, with one of
-  the choices that step gives (`ruled`).
+  `Decision:` line that gives the decision key of a held step, with one of
+  the choices that step gives (`decided`).
 
 A line of the coordinator's in no such form goes back to the coordinator
 as undecided, since only its writer knows what it meant.
 
-The reply of a ticket analyst on a held step (`rulings`) gives its ruling
+The reply of a ticket analyst on a held step (`decisions`) gives its decision
 in an `Override:` or `Decision:` line of the same form.
 
 Which operator a line gives steps to is as `plan` gives. A `Decision:`
 line that rules a held step rules that step for every operator of the
 session, whether the coordinator gave it or a ticket analyst on that step
 replied with it, so an operator that takes over a change from an earlier
-one carries it on by the rulings the earlier one received."""
+one carries it on by the decisions the earlier one received."""
 
 import re
 from collections.abc import Iterable
@@ -34,14 +34,14 @@ from enum import StrEnum
 
 from arc.task import TASK_ID
 from controlled_markdown import mctx
-from operating.reports import LIST_MARKER
-from operating.roles import PASSES, Purpose, Role
-from operating.state import Agent, Message, Report, State
-from operating.steps import Undecided, held, ruling_key
+from operations.reports import LIST_MARKER
+from operations.roles import PASSES, Purpose, Role
+from operations.state import Agent, Message, Report, State
+from operations.steps import Undecided, decision_key, held
 
 
-class Ruling(StrEnum):
-    """The choices a `Decision:` line gives a held step (`ruled`): go on as though the step were passed, the
+class Decision(StrEnum):
+    """The choices a `Decision:` line gives a held step (`decided`): go on as though the step were passed, the
     merge, the move to `tickets/open/`, or another agent on it."""
     PASSES = "passes"
     MERGE = "merge"
@@ -113,16 +113,16 @@ def message_lines(m: Message) -> list[Line]:
     return out
 
 
-def step_rulings(state: State) -> list[Line]:
+def step_decisions(state: State) -> list[Line]:
     """The `Override:` and `Decision:` lines of the replies of the ticket
     analysts on held steps, each read as a message of its analyst to the
     operator that launched it, in the order the replies came."""
     out = [ln for a, purpose, _ in state.analysts() if purpose is Purpose.STEP
-           for r in a.reports for ln in reply_rulings(a, r)]
+           for r in a.reports for ln in reply_decisions(a, r)]
     return sorted(out, key=lambda ln: ln.message.time)
 
 
-def reply_rulings(a: Agent, r: Report) -> list[Line]:
+def reply_decisions(a: Agent, r: Report) -> list[Line]:
     """The `Override:` and `Decision:` lines of the reply `r` of `a`."""
     return [ln for ln in message_lines(Message(a.operator, r.time, a.agent_id, r.text))
             if ln.kind in APPLIED]
@@ -135,21 +135,21 @@ def numbers(state: State, kind: Directive) -> list[tuple[str, float]]:
             for n in NUMBER.findall(ln.rest)]
 
 
-def ruled(state: State, what: str, choices: dict[Ruling, str]) -> Ruling | Undecided:
+def decided(state: State, what: str, choices: dict[Decision, str]) -> Decision | Undecided:
     """The choice among `choices` that the last `Decision:` line giving the
-    ruling key of the held step `what` gives, of the coordinator to an
+    decision key of the held step `what` gives, of the coordinator to an
     operator of the session or of the reply of a ticket analyst on a held
     step: the first of its words after that key that is a choice. Where no
     such line came, the step held on `what` with its choices, and where
     the last such line gives none of them, the undecided step on that
     line."""
-    k = ruling_key(what)
-    given = sorted([*session_lines(state), *step_rulings(state)], key=lambda ln: ln.message.time)
+    k = decision_key(what)
+    given = sorted([*session_lines(state), *step_decisions(state)], key=lambda ln: ln.message.time)
     for ln in reversed(given):
         if ln.kind is not Directive.DECISION or k not in ln.rest:
             continue
         after = re.findall(r"[a-z]+", ln.rest.split(k, 1)[1])
-        found = next((Ruling(w) for w in after if w in choices), None)
+        found = next((Decision(w) for w in after if w in choices), None)
         if found is None:
             listed = ", ".join(choices)
             return Undecided(mctx("the line `{line}` gives step {k} none of the choices "
@@ -158,7 +158,7 @@ def ruled(state: State, what: str, choices: dict[Ruling, str]) -> Ruling | Undec
     return held_on(what, choices)
 
 
-def held_on(what: str, choices: dict[Ruling, str]) -> Undecided:
+def held_on(what: str, choices: dict[Decision, str]) -> Undecided:
     """The step held on `what` until a `Decision:` line gives it one of
     `choices`."""
     return held(what, {c.value: meaning for c, meaning in choices.items()})

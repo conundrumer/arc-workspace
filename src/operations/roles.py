@@ -95,7 +95,7 @@ def described(text: str) -> Described | None:
 class Purpose(StrEnum):
     """What a ticket analyst the operator launches settles, by the word its
     subject opens with."""
-    SETTLE = "settle"
+    TRIAGE = "triage"
     DRAFT = "draft"
     CHANGE = "change"
     PASS = "pass"

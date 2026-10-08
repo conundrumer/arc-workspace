@@ -5,7 +5,7 @@ import re
 import shlex
 from pathlib import Path
 
-from operating.state import LogLine, State, Ticket
+from operations.state import LogLine, State, Ticket
 from ticketing.vocabulary import COORDINATOR, Note, Status
 
 AGENT = "operator"

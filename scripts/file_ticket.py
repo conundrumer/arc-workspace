@@ -14,7 +14,7 @@ from pathlib import Path
 
 from arc.task import task_file
 from controlled_markdown import mctx
-from operating.roles import EDITORS
+from operations.roles import EDITORS
 from engine import checkout
 from handbook.paths import importable
 

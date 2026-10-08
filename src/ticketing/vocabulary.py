@@ -1,5 +1,5 @@
 """The ticket vocabulary that the ticket tools under `scripts/` and the
-operator's command (`operating`) share: the statuses a ticket moves
+operator's command (`operations`) share: the statuses a ticket moves
 between, the resolutions it closes with, the domains of its subject, its
 kinds, the note of the line that files it, and the end of the title of a
 `refactor` ticket on a module that holds more than one subject."""

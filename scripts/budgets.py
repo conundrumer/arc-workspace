@@ -11,7 +11,7 @@ from context_bound_hook import OPERATOR
 from controlled_markdown import mctx
 from engine import checkout
 from handbook.agents import agent_names, agent_sources
-from operating import briefs
+from operations import briefs
 from run_profile import (Message, Part, Run, by_agent_type, clock, minutes,
                          one_line, percentile)
 from run_reads import MAIN, agent_type, parent_id

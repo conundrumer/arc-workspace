@@ -3,47 +3,47 @@ cannot decide (`steps.Undecided`), and the reads of their replies.
 
 Such a step goes to one ticket analyst, launched with the step and the
 agent id of the operator that holds it (`briefs.held_step`), whose subject
-gives the step's ruling key, so no operator of the session launches a
+gives the step's decision key, so no operator of the session launches a
 second analyst on it, and its procedure waits on that analyst while it
 runs and once it returned (`steps.repeated`). A step an operator already
 gave the coordinator goes to no analyst, and its procedure waits on the
-coordinator's ruling (`steps.repeated`). The analyst's reply rules
+coordinator's decision (`steps.repeated`). The analyst's reply rules
 the step by an `Override:` or `Decision:` line, as a line of the
-coordinator's rules it, and a `Decision:` line that gives the ruling key
+coordinator's rules it, and a `Decision:` line that gives the decision key
 of a held step rules it for every operator of the session
-(`directives.ruled`). Where the analyst brings that decision to the user,
-its `decision:` item goes to the coordinator (`settling`), and the
-coordinator gives the user's ruling in a `Decision:` line.
+(`directives.decided`). Where the analyst brings that decision to the user,
+its `decision:` item goes to the coordinator (`triage`), and the
+coordinator gives the user's decision in a `Decision:` line.
 
 The operator that applies an analyst's reply (`applier`) is the one that
 launched it, while that operator has printed no final reply since the
 launch, and otherwise the operator whose procedure meets the step: the
-command prints that operator the analyst's ruling lines with the step,
+command prints that operator the analyst's decision lines with the step,
 once in the session (`relay`), and that operator applies them as lines of
 an analyst it launched. Since one operator carries the session's work at
-a time (`plan`), one operator applies each ruling.
+a time (`plan`), one operator applies each decision.
 
-A reply that gives neither a ruling line nor a `decision:` item goes back
+A reply that gives neither a decision line nor a `decision:` item goes back
 to the analyst once, from its applier, with a request to send it again in
-that form (`briefs.RULING_FORM`). Where the answer is still in neither
+that form (`briefs.DECISION_FORM`). Where the answer is still in neither
 form, the step stays held, and the final reply of its applier gives it
-(`unruled`). A launch of an analyst on a held step that failed is not
+(`undecided`). A launch of an analyst on a held step that failed is not
 itself given to another analyst: its step stays held, and the final reply
 of the operator that made that call gives the step, with the call and the
 text of its failure (`failed`)."""
 
 from controlled_markdown import mctx
-from operating import briefs
-from operating.directives import reply_rulings
-from operating.reports import Label, items_of
-from operating.roles import Purpose, Role, analyst_of, analyst_subject, described
-from operating.state import Agent, State
-from operating.steps import (Launch, Relay, Send, Step, Undecided, ask_again, failure,
-                             final_replies, nested, ruled_by, ruling_key)
+from operations import briefs
+from operations.directives import reply_decisions
+from operations.reports import Label, items_of
+from operations.roles import Purpose, Role, analyst_of, analyst_subject, described
+from operations.state import Agent, State
+from operations.steps import (Launch, Relay, Send, Step, Undecided, ask_again, decided_by,
+                             decision_key, failure, final_replies, nested)
 
 
 def launch(state: State, step: Undecided) -> Launch:
-    return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.STEP, ruling_key(step.what)),
+    return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.STEP, decision_key(step.what)),
                   briefs.held_step(step.what, state.me))
 
 
@@ -59,11 +59,11 @@ def launcher_ended(state: State, a: Agent) -> bool:
     return any(t > a.launched for t in final_replies(state, a.operator))
 
 
-def rules(a: Agent) -> bool:
+def decides(a: Agent) -> bool:
     """Whether the latest reply of `a`, an analyst on a held step, gives a
-    ruling line or a `decision:` item."""
+    decision line or a `decision:` item."""
     r = a.last_report
-    return r is not None and (bool(reply_rulings(a, r))
+    return r is not None and (bool(reply_decisions(a, r))
                               or items_of(a, [Label.DECISION]) is not None)
 
 
@@ -76,40 +76,40 @@ def returned(state: State) -> list[Agent]:
 
 
 def relay(state: State, step: Undecided) -> Relay | None:
-    """The ruling lines of the latest analyst on `step`, where its launcher
+    """The decision lines of the latest analyst on `step`, where its launcher
     printed its final reply since that analyst's launch."""
-    analysts = ruled_by(state, step)
+    analysts = decided_by(state, step)
     if not analysts:
         return None
     a = analysts[-1]
     r = a.last_report
     if a.agent_id is None or r is None or a.pending or not launcher_ended(state, a):
         return None
-    lines = tuple(ln.text for ln in reply_rulings(a, r))
+    lines = tuple(ln.text for ln in reply_decisions(a, r))
     return Relay(a.agent_id, step.what, lines) if lines else None
 
 
 def asks(state: State) -> Step | None:
     """The message that asks a ticket analyst on a held step whose reply
     the operator `me` applies to send its latest reply again in the form
-    the command reads, where that reply gives no ruling."""
+    the command reads, where that reply gives no decision."""
     for a in returned(state):
-        if a.agent_id is None or rules(a):
+        if a.agent_id is None or decides(a):
             continue
-        asked = ask_again(state, a.agent_id, [r.time for r in a.reports], briefs.RULING_FORM)
+        asked = ask_again(state, a.agent_id, [r.time for r in a.reports], briefs.DECISION_FORM)
         if isinstance(asked, Send):
             return asked
     return None
 
 
-def unruled(state: State) -> list[str]:
+def undecided(state: State) -> list[str]:
     """The lines of the final reply of the operator `me` on each held step
-    whose ticket analyst returned with no ruling after it was asked
+    whose ticket analyst returned with no decision after it was asked
     again."""
     out: list[str] = []
     for a in returned(state):
-        if not rules(a):
-            out.append(mctx("- Ticket analyst {agent} returned with no ruling of the held step "
+        if not decides(a):
+            out.append(mctx("- Ticket analyst {agent} returned with no decision of the held step "
                             "its brief gives:").format(agent=a.agent_id))
             out += nested(a.brief)
     return out

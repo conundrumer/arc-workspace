@@ -32,16 +32,16 @@ end. Where a ticket reviewer returned and left a draft in
 `tickets/draft/` with no finding and no suggestion, or a ticket analyst
 returned with no revision written, the review of that draft holds until a
 `Decision:` line rules it with one of the choices the command gives it
-(`directives.ruled`)."""
+(`directives.decided`)."""
 
 from controlled_markdown import mctx
-from operating import briefs
-from operating.directives import Directive, Ruling, named, numbers, ruled
-from operating.roles import Purpose, Role, analyst_subject, joined, subjects
-from operating.state import Agent, State, Ticket
+from operations import briefs
+from operations.directives import Decision, Directive, decided, named, numbers
+from operations.roles import Purpose, Role, analyst_subject, joined, subjects
+from operations.state import Agent, State, Ticket
 from ticketing.vocabulary import Kind, Note, Status
-from operating.steps import Bash, Launch, Send, Step, Undecided, repeated, ruling_key, sent
-from operating.tracker import COORDINATOR, after, last_index, log
+from operations.steps import Bash, Launch, Send, Step, Undecided, decision_key, repeated, sent
+from operations.tracker import COORDINATOR, after, last_index, log
 
 CAP = 3
 """The ticket reviewers whose findings or suggestions close a draft's
@@ -52,7 +52,7 @@ FILED_OR_REVISED = (Note.FILED, Note.REVISED)
 
 def drafts(state: State) -> list[Ticket]:
     names = named(state)
-    analysed = {n for _, p, nums in state.analysts() if p is not Purpose.SETTLE for n in nums}
+    analysed = {n for _, p, nums in state.analysts() if p is not Purpose.TRIAGE for n in nums}
     return sorted((t for t in state.tickets.values()
                    if t.status is Status.DRAFT and t.kind is Kind.CHANGE
                    and (state.mine(t) or t.number in names or t.number in analysed)),
@@ -163,10 +163,10 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
                 return Send(writer.agent_id, message)
             analyst_done = [writer]
         if analyst_done:
-            choice = ruled(state, mctx("the revision of draft {number} by ticket analyst "
+            choice = decided(state, mctx("the revision of draft {number} by ticket analyst "
                                        "{agent} is unfinished").format(
                                number=t.number, agent=analyst_done[-1].agent_id),
-                           {Ruling.AGAIN: mctx("launch another ticket analyst to revise it")})
+                           {Decision.AGAIN: mctx("launch another ticket analyst to revise it")})
             if isinstance(choice, Undecided):
                 return choice
         waiting.append(t)
@@ -182,13 +182,13 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
     if reviewed:
         what = mctx("ticket reviewer {agent} left draft {number} under `tickets/draft/` with "
                     "no finding").format(agent=reviewed[-1].agent_id, number=t.number)
-        choice = ruled(state, what, {Ruling.AGAIN: mctx("launch another ticket reviewer on it"),
-                                     Ruling.OPEN: mctx("move it to `tickets/open/`")})
+        choice = decided(state, what, {Decision.AGAIN: mctx("launch another ticket reviewer on it"),
+                                     Decision.OPEN: mctx("move it to `tickets/open/`")})
         if isinstance(choice, Undecided):
             return choice
-        if choice is Ruling.OPEN:
+        if choice is Decision.OPEN:
             return Bash(log(t.number, Status.OPEN, Status.DRAFT,
-                            f"opened by the ruling {ruling_key(what)}", None))
+                            f"opened by the decision {decision_key(what)}", None))
     ready.append(t)
     return None
 

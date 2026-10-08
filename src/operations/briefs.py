@@ -10,9 +10,9 @@ from pathlib import Path
 from string import Formatter
 
 from controlled_markdown import mctx
-from operating.reports import FOR_COORDINATOR, LIST_MARKER, NO_FINDING, TICKETS_FILED
-from operating.roles import Role
-from operating.tracker import FILE_TICKET
+from operations.reports import FOR_COORDINATOR, LIST_MARKER, NO_FINDING, TICKETS_FILED
+from operations.roles import Role
+from operations.tracker import FILE_TICKET
 from ticketing.times import utc_stamp
 
 TICKET_PATH = shlex.join([*FILE_TICKET, "path"]) + " {number}"
@@ -379,8 +379,8 @@ REVIEW_FORM = mctx("a report, in your report file, that opens with `{no_finding}
                    "falls on, in backticks, and a colon.").format(no_finding=NO_FINDING)
 PASS_FORM = mctx("a reply that is the path of your report file alone, on one line, where that "
                  "report has a `{heading}` section.").format(heading=TICKETS_FILED)
-RULING_FORM = mctx("a reply that gives, on a line of its own, the line that rules the step: the "
-                   "line the step gives for its ruling, where it gives one, and otherwise "
+DECISION_FORM = mctx("a reply that gives, on a line of its own, the line that rules the step: the "
+                   "line the step gives for its decision, where it gives one, and otherwise "
                    "`Decision: <decision>` or `Override: <override>`; or, where the decision "
                    "goes to the user, a `decision:` item under `{heading}`.").format(
                        heading=FOR_COORDINATOR)

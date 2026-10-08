@@ -19,21 +19,21 @@ The modules keep these rules:
   goes to an agent launched for it, or reads the fixed form that agent
   writes; where neither places it, the step is undecided
   (`steps.Undecided`), and goes to a ticket analyst launched on it
-  (`rulings`). Where a reply or a message of an agent is in no form the
+  (`decisions`). Where a reply or a message of an agent is in no form the
   command reads, the step first asks that agent once to send it again in
   that form (`steps.ask_again`), and is undecided only where the answer is
   still in no such form.
 - The coordinator gets from the command only what the coordinator alone
-  can act on: the items for the user (`settling`), and its own lines in no
+  can act on: the items for the user (`triage`), and its own lines in no
   form the command reads, which go back to it (`steps.unread_line`), since
   only their writer knows what they meant.
 
 Modules: `state` (what the command reads), `roles` (the agents launched and
 their descriptions), `directives` (the coordinator's lines), `tracker` (a
-ticket's log and the calls that write it), `steps` (the calls printed), `bounds` (the values the command shares with the scripts an agent runs),
-`briefs` (the briefs the launches give), `settling` (ticket analysts on
+ticket's log and the calls that write it), `steps` (the calls printed), `constants` (the values the command shares with the scripts an agent runs),
+`briefs` (the briefs the launches give), `triage` (ticket analysts on
 open tickets, and the labeled items of their replies for the coordinator),
-`rulings` (ticket analysts on undecided steps), `drafts` (the review of
+`decisions` (ticket analysts on undecided steps), `drafts` (the review of
 draft changes), `changes` (a change from its take to its merge),
 `merging` (the merge and what follows it), `alerts` (the supervisor's
 alerts and the other agents' messages), `reports` (the fixed forms of

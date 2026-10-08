@@ -30,7 +30,7 @@ from pathlib import Path
 from types import FrameType
 
 from controlled_markdown import mctx
-from operating.bounds import WAIT_SECONDS
+from operations.constants import WAIT_SECONDS
 
 STATE_DIR = Path("/tmp")
 AGENT_ID = re.compile(r"[A-Za-z0-9_-]+")

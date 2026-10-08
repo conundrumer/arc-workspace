@@ -27,8 +27,8 @@ unless the part of that analyst's reply for the coordinator gives a
 launch: then the change is held on those items, in place of its merge.
 Where they give a `decision:` item, the step waits on the coordinator,
 which gets those items with the line that rules the step
-(`settling.for_coordinator`), and otherwise it goes to a ticket analyst
-(`rulings`).
+(`triage.for_coordinator`), and otherwise it goes to a ticket analyst
+(`decisions`).
 
 A change with a doc editor passes its review once the latest reply of its
 doc reviewer opens with `no finding stands` and follows each editor's last
@@ -45,21 +45,21 @@ the command sends that reviewer their agent ids.
 
 A step of a change that the command cannot place holds that change alone,
 until a `Decision:` line rules it with one of the choices the step gives
-(`directives.ruled`)."""
+(`directives.decided`)."""
 
 from pathlib import Path
 from typing import Literal
 
 from controlled_markdown import mctx
-from operating import briefs, merging
-from operating.directives import Directive, Ruling, held_on, named, numbers, ruled
-from operating.reports import (OPEN_LABELS, Label, budget_passed, finding_paths, finished, items_of,
-                               no_finding, standing)
-from operating.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
-from operating.state import Agent, State, Ticket
-from operating.steps import (Bash, Launch, Send, Step, Undecided, agent_ids, ask_again, repeated,
+from operations import briefs, merging
+from operations.directives import Decision, Directive, decided, held_on, named, numbers
+from operations.reports import (OPEN_LABELS, Label, budget_passed, finding_paths, finished,
+                                items_of, no_finding, standing)
+from operations.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
+from operations.state import Agent, State, Ticket
+from operations.steps import (Bash, Launch, Send, Step, Undecided, agent_ids, ask_again, repeated,
                              sends_to, sent)
-from operating.tracker import COORDINATOR, closed, log, worktree
+from operations.tracker import COORDINATOR, closed, log, worktree
 from ticketing.vocabulary import Domain, Kind, Status
 
 
@@ -134,7 +134,7 @@ def take(state: State) -> Step | None:
         t = state.tickets.get(n)
         if t is not None and t.status is Status.BLOCKED and t.kind is Kind.CHANGE:
             return Bash(log(n, Status.ASSIGNED, Status.BLOCKED,
-                            "taking: the user ruled, to merge", state.me))
+                            "taking: the user decided, to merge", state.me))
     return None
 
 
@@ -219,9 +219,9 @@ def carry(state: State, t: Ticket) -> Step | None:
         taken = max((ln.time for ln in t.log if ln.status is Status.ASSIGNED), default=0.0)
         tried = sum(a.launched > taken for a in launched)
         if tried >= 2:
-            choice = ruled(state, mctx("change {number} has no worktree after {tried} first "
+            choice = decided(state, mctx("change {number} has no worktree after {tried} first "
                                        "editors").format(number=t.number, tried=tried),
-                           {Ruling.AGAIN: mctx("launch another first editor")})
+                           {Decision.AGAIN: mctx("launch another first editor")})
             if isinstance(choice, Undecided):
                 return choice
         first = next(r for r in EDITORS if r in editors)
@@ -266,9 +266,9 @@ def past_budget(state: State, t: Ticket, latest: list[Agent]) -> Step | None:
 
 
 LEFT_CHOICES = {
-    Ruling.MERGE: mctx("go on to the merge; the close of the change closes its open question "
+    Decision.MERGE: mctx("go on to the merge; the close of the change closes its open question "
                        "tickets"),
-    Ruling.AGAIN: mctx("launch another ticket analyst on what the editors leave")}
+    Decision.AGAIN: mctx("launch another ticket analyst on what the editors leave")}
 """The choices of a step held on what the editors of a change leave."""
 
 
@@ -284,7 +284,7 @@ def left_hold(a: Agent, number: str) -> str | None:
                     "\n" + items + "\n" + mctx("The change is held on them"))
 
 
-def left_ruling(a: Agent, number: str) -> str | None:
+def left_decision(a: Agent, number: str) -> str | None:
     """The step held on the items `a` leaves (`left_hold`), with the line
     that rules it, which goes to the coordinator with the `decision:` items
     of `a`."""
@@ -319,10 +319,10 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
         hold = mctx("ticket analyst {agent} returned on change {number}, and its question "
                     "tickets stand open").format(agent=analysts[-1].agent_id, number=t.number)
     if hold is not None:
-        choice = ruled(state, hold, LEFT_CHOICES)
+        choice = decided(state, hold, LEFT_CHOICES)
         if isinstance(choice, Undecided):
             return None if on_user else choice
-        if choice is Ruling.MERGE:
+        if choice is Decision.MERGE:
             return False
     reporting = [(a, r) for a in needing if (r := a.last_report) is not None]
     reporters = agent_ids(a for a, _ in reporting)
@@ -359,7 +359,7 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
             asked = ask_again(state, r.agent_id, [x.time for x in r.reports], briefs.REVIEW_FORM)
             if isinstance(asked, Send):
                 return asked
-        return review_ruled(state, t, w, here, mctx(
+        return review_decided(state, t, w, here, mctx(
             "the reply of doc reviewer {agent} on change {number} gives no finding in the form "
             "the command reads").format(agent=r.agent_id, number=t.number))
     code = [p for p in paths if p.endswith(PROSE_IN_CODE)]
@@ -381,7 +381,7 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
         message = briefs.new_editor(f)
         if r.agent_id and not sent(state, r.agent_id, message):
             return Send(r.agent_id, message)
-    return review_ruled(state, t, w, here, unreplied(r, t))
+    return review_decided(state, t, w, here, unreplied(r, t))
 
 
 def unreplied(r: Agent, t: Ticket) -> str:
@@ -408,18 +408,18 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
     message = briefs.review_again(since)
     if r.agent_id is not None and not sent(state, r.agent_id, message):
         return Send(r.agent_id, message)
-    return review_ruled(state, t, w, here, unreplied(r, t))
+    return review_decided(state, t, w, here, unreplied(r, t))
 
 
-def review_ruled(state: State, t: Ticket, w: Path, here: list[Agent],
+def review_decided(state: State, t: Ticket, w: Path, here: list[Agent],
                  what: str) -> Step | Literal[False]:
-    """The step on a review held for `what`, by its ruling:
+    """The step on a review held for `what`, by its decision:
     False where the review passes."""
-    choice = ruled(state, what, {Ruling.PASSES: mctx("the review passes"),
-                                 Ruling.AGAIN: mctx("launch another doc reviewer")})
+    choice = decided(state, what, {Decision.PASSES: mctx("the review passes"),
+                                 Decision.AGAIN: mctx("launch another doc reviewer")})
     if isinstance(choice, Undecided):
         return choice
-    if choice is Ruling.PASSES:
+    if choice is Decision.PASSES:
         return False
     return review_launch(t, w, here, state)
 

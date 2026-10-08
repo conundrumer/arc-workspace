@@ -9,17 +9,17 @@ batch, with the changes merged since: those an operator's merge call
 merged, as `state.Merge` reads it, and those the coordinator gives as
 merged. The launch of the
 profile agent opens the next batch. The ticket analyst on the tickets the
-batch filed is the one `settling` launches on any open ticket."""
+batch filed is the one `triage` launches on any open ticket."""
 
 import re
 
 from controlled_markdown import mctx
-from operating import briefs
-from operating.changes import release
-from operating.directives import Directive, numbers
-from operating.roles import AGENT_ID, Role
-from operating.state import Agent, Merge, State
-from operating.steps import Bash, Launch, Step, Undecided, bash_calls
+from operations import briefs
+from operations.changes import release
+from operations.directives import Directive, numbers
+from operations.roles import AGENT_ID, Role
+from operations.state import Agent, Merge, State
+from operations.steps import Bash, Launch, Step, Undecided, bash_calls
 
 OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER})
 """The roles of After a batch, which no batch holds."""

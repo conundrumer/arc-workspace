@@ -17,7 +17,7 @@ import sys
 from typing import Any
 
 from hook_entry import run_pre_tool_use
-from operating.bounds import FOREGROUND_MS
+from operations.constants import FOREGROUND_MS
 
 HOOK = "pending_wait_hook"
 

@@ -19,10 +19,10 @@ from ticket_settle import to_settle
 from transcripts import Refused, entries_back, find, new_state
 from tree_reads import claims, code_review, commits, gate_outputs, main_tree, scratch, worktrees
 
-from operating.directives import named
-from operating.state import Agent, Call, Message, Report, State
-from operating.steps import made, pass_overs, passed_over_line
-from operating.tracker import worktree
+from operations.directives import named
+from operations.state import Agent, Call, Message, Report, State
+from operations.steps import made, pass_overs, passed_over_line
+from operations.tracker import worktree
 from ticketing.vocabulary import Status
 
 

@@ -9,7 +9,7 @@ import shutil
 from pathlib import Path
 
 from engine import checkout
-from operating.roles import Role
+from operations.roles import Role
 from solver.vocabulary import SOLVER_SUFFIX, WITNESS_SUFFIX
 
 BEFORE_CREATE = ("create.md", "progress.md")

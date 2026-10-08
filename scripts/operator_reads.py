@@ -27,12 +27,12 @@ from senders import Sender, sender
 from ticket_numbers import TICKET_NUMBER
 from transcripts import epoch, find, read_entries, session_directory
 
-from operating import alerts
-from operating.merging import MERGE_SCRIPT, merge_messages
-from operating.reports import TICKETS_FILED
-from operating.roles import PASSES, Role, described
-from operating.state import Agent, Call, Merge, Message, Report
-from operating.steps import COMMAND, is_next, is_wait
+from operations import alerts
+from operations.merging import MERGE_SCRIPT, merge_messages
+from operations.reports import TICKETS_FILED
+from operations.roles import PASSES, Role, described
+from operations.state import Agent, Call, Merge, Message, Report
+from operations.steps import COMMAND, is_next, is_wait
 
 
 def merge_outcome(aid: str, command: str, time: float, result: str | None, error: bool,

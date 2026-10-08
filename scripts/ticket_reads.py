@@ -11,8 +11,8 @@ from ticket_form import DEFAULT_PRIORITY, FRONT, front_fields, list_items, title
 from ticket_log import WAIT, holder, log_lines, waited_change
 from transcripts import Refused
 
-from operating.roles import editors_of
-from operating.state import LogLine, Ticket
+from operations.roles import editors_of
+from operations.state import LogLine, Ticket
 from ticketing.times import TIME_FORM
 from ticketing.vocabulary import Domain, Kind, Status
 

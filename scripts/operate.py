@@ -1,7 +1,7 @@
 """The operator's command line and its loops: it reads the state, as
 `operator_state` assembles it from the ticket tracker, git, the worktrees
 and the transcripts of the session's operators, and prints the next step
-of the operator's procedures, which the package `operating` computes.
+of the operator's procedures, which the package `operations` computes.
 `HELP`, which `--help` prints, gives its usage forms.
 
 Each fact the command reads is in the tracker, in git, under `work/`, in
@@ -31,12 +31,12 @@ from profile_runs import budget_of  # noqa: E402
 from transcripts import Refused  # noqa: E402
 from tree_reads import git, main_tree  # noqa: E402
 
-from operating import briefs, plan, steps  # noqa: E402
-from operating.roles import PASSES, Role  # noqa: E402
-from operating.steps import (FOREGROUND_MS, STEP_KEY, WAIT_SECONDS, Again, Bash,  # noqa: E402
-                             EndTurn, Launch, Send, Step, Stop, Wait, filed, next_command,
+from operations import briefs, plan, steps  # noqa: E402
+from operations.roles import PASSES, Role  # noqa: E402
+from operations.steps import (FOREGROUND_MS, STEP_KEY, WAIT_SECONDS, Bash,  # noqa: E402
+                             EndTurn, Launch, Poll, Send, Step, StopWait, Wait, filed, next_command,
                              passed_over_line, key_line, printed, with_report)
-from operating.task_work import restore, set_aside  # noqa: E402
+from operations.task_work import restore, set_aside  # noqa: E402
 
 HELP = mctx("""
     - Usage:
@@ -47,7 +47,7 @@ HELP = mctx("""
         uv run python scripts/operate.py restore <task id>
         uv run python scripts/operate.py pass-over <agent id> <key> '<line>'
         ```
-    - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters, the final reply, or the ruling lines of a ticket analyst on a held step, for the operator to apply, where the operator that launched that analyst printed its final reply since. It writes the brief of a launch, and a message to an agent other than the coordinator, to a file under the session's scratchpad, and the call's prompt or message gives that file's path. A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items. The brief of a launch other than a solver pass's gives the file the agent writes its final reply to, and ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where the budget of its agent type over every run of that type, as `profile_runs.py --help` gives a type's budget, is N minutes rounded up. A brief that gives items, as `profile_runs.py --help` gives them, takes the type's budget per item times the number of items it gives, and any other brief takes the type's budget. Where the type has no such budget, the brief has no such line. It holds back the launch of an agent type whose definition under `.claude/agents/` a commit of `master` changed less than {reload} seconds ago until those seconds have passed. Where no step is ready and no agent runs that this operator launched or last resumed itself, other than one a notification said has not reported yet, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again.
+    - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters, the final reply, or the decision lines of a ticket analyst on a held step, for the operator to apply, where the operator that launched that analyst printed its final reply since. It writes the brief of a launch, and a message to an agent other than the coordinator, to a file under the session's scratchpad, and the call's prompt or message gives that file's path. A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items. The brief of a launch other than a solver pass's gives the file the agent writes its final reply to, and ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where the budget of its agent type over every run of that type, as `profile_runs.py --help` gives a type's budget, is N minutes rounded up. A brief that gives items, as `profile_runs.py --help` gives them, takes the type's budget per item times the number of items it gives, and any other brief takes the type's budget. Where the type has no such budget, the brief has no such line. It holds back the launch of an agent type whose definition under `.claude/agents/` a commit of `master` changed less than {reload} seconds ago until those seconds have passed. Where no step is ready and no agent runs that this operator launched or last resumed itself, other than one a notification said has not reported yet, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again.
     - Before each call it prints, `next` prints that step's key, on a line that gives the command to run after the call, so the text it prints ends with the call's last field. The key is the same at each read of the state that gives the same step. `pass-over` passes over the step whose key it is given, by the `Override:` or `Decision:` line it is given, which rules the step out, from the moment its call is made, in a Bash call of its own or with other commands. From then on, `next` passes that step over for each operator, gives that step, once, as one its procedure waits on, to a ticket analyst it launches to rule it, other than a launch of a ticket analyst to rule a step, and goes on with the other procedures. A pipeline whose next pass is passed over stops instead.
     - A step `next` printed counts as made by the call the operator made: a Bash call whose command runs the printed command among others, or the call the operator made right after the call of `next` that printed the step.
     - `wait` is the operator's wait in the background: it ends once the state gives a step, or after {wait} seconds.
@@ -60,7 +60,7 @@ BLOCK_SECONDS = (FOREGROUND_MS // 1000) - 30
 foreground call, with room for the read of the state."""
 
 POLL_SECONDS = 15
-CALLS = (Launch, Send, Bash, Stop)
+CALLS = (Launch, Send, Bash, StopWait)
 """The steps after whose call the operator runs `next` again."""
 TASK_ID = re.compile(task.TASK_ID)
 
@@ -105,11 +105,11 @@ def next_step(me: str) -> int:
         step = plan.next_step(state)
         if isinstance(step, Launch) and (left := reloading(step)) > 0:
             if time.monotonic() + left > deadline:
-                step = Again()
+                step = Poll()
             else:
                 time.sleep(left)
                 continue
-        if not isinstance(step, Again) or time.monotonic() + POLL_SECONDS > deadline:
+        if not isinstance(step, Poll) or time.monotonic() + POLL_SECONDS > deadline:
             if isinstance(step, CALLS):
                 print(key_line(step, me))
             if isinstance(step, Launch):

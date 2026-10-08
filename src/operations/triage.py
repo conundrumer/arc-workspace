@@ -7,7 +7,7 @@ the command launches a ticket analyst with it, leaving out each ticket on a
 task whose solver pipeline has yet to launch its own ticket analyst, which
 `passes` gives that ticket. A ticket goes to no second analyst while one
 runs on it, nor again once one returned, until the coordinator writes a line
-in its log after that analyst's launch, as where it records a ruling of the
+in its log after that analyst's launch, as where it records a decision of the
 user or the user's later words on it. A ticket analyst that runs on the
 ticket gets that line by message, and then counts as given it. A ticket
 other than a `change` that stands under `tickets/blocked/` or
@@ -27,7 +27,7 @@ form:
   the operator that carries that reply (`steps.carrier`).
 - Its `unfinished:` items, and its items that open with a label with no
   colon after it (`reports.MISLABELED`), are a step the command cannot
-  decide, which goes to a ticket analyst launched on it (`rulings`),
+  decide, which goes to a ticket analyst launched on it (`decisions`),
   other than where an operator already gave the coordinator those items
   with the reply's key, in any message (`steps.repeated`).
 
@@ -49,18 +49,18 @@ line's time in the message. So a decision is sent by a later operator
 where the one before it ended before it sent it."""
 
 from controlled_markdown import mctx
-from operating import briefs, changes
-from operating.reports import Label, items_of, mislabeled
-from operating.passes import awaits_analyst
-from operating.roles import Purpose, Role, analyst_subject, joined
-from operating.state import Agent, LogLine, State, Ticket
+from operations import briefs, changes
+from operations.reports import Label, items_of, mislabeled
+from operations.passes import awaits_analyst
+from operations.roles import Purpose, Role, analyst_subject, joined
+from operations.state import Agent, LogLine, State, Ticket
 from ticketing.vocabulary import Domain, Kind, Status
-from operating.steps import (COORDINATOR, DECISION, Bash, Launch, Send, Step, Undecided, carrier,
+from operations.steps import (COORDINATOR, DECISION, Bash, Launch, Send, Step, Undecided, carrier,
                              nested, repeated, sent)
-from operating.tracker import AGENT, blocked_on_user, coordinator_line, coordinator_lines, log
+from operations.tracker import AGENT, blocked_on_user, coordinator_line, coordinator_lines, log
 
 
-GIVEN = (Purpose.SETTLE, Purpose.PASS)
+GIVEN = (Purpose.TRIAGE, Purpose.PASS)
 """The purposes of the ticket analysts that tickets are given to."""
 
 
@@ -134,7 +134,7 @@ def settle(state: State) -> Step | None:
                if not given(state, n) and not awaits_pipeline(state, n)]
     if not numbers:
         return None
-    return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.SETTLE, joined(numbers)),
+    return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.TRIAGE, joined(numbers)),
                   briefs.settle(numbers, state.me), items=len(numbers))
 
 
@@ -200,13 +200,13 @@ def for_coordinator(state: State) -> Step | None:
     agent id and its reply's time in any message to the coordinator. The
     items of an analyst on what a change's editors leave go with the step
     that holds that change, and the line that rules it
-    (`changes.left_ruling`)."""
+    (`changes.left_decision`)."""
     for a, purpose, nums, key in replied(state):
         part = items_of(a, [Label.DECISION])
         if part is None:
             continue
-        if purpose is Purpose.CHANGE and (ruling := changes.left_ruling(a, nums[0])):
-            part += "\n\n" + ruling
+        if purpose is Purpose.CHANGE and (decision := changes.left_decision(a, nums[0])):
+            part += "\n\n" + decision
         step = Send(COORDINATOR, labeled(key, part))
         if not sent(state, step.to, step.message, key):
             return step

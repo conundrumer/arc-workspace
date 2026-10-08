@@ -7,8 +7,8 @@ import os
 from pathlib import Path
 
 from engine import checkout
-from operating.state import Commit
-from operating.task_work import CLAIM, tasks_work
+from operations.state import Commit
+from operations.task_work import CLAIM, tasks_work
 
 COMMITS = 300
 """The commits of `master` read for After a batch, newest first."""

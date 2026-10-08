@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 from controlled_markdown import mctx
-from operating.roles import EDITORS
+from operations.roles import EDITORS
 from ticket_files import ticket_path
 from ticket_numbers import ticket_number
 from ticket_vocabulary import filer_kinds, ticked
@@ -96,7 +96,7 @@ def list_items(value: str) -> list[str]:
 
 def check_editors(value: str) -> None:
     """Refuses an `editors` value that is not a list of distinct editors
-    (`operating.roles.EDITORS`)."""
+    (`operations.roles.EDITORS`)."""
     names = list_items(value)
     known = {str(r) for r in EDITORS}
     if not names or any(n not in known for n in names) or len(set(names)) < len(names):

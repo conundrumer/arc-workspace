@@ -8,8 +8,8 @@ import re
 from collections.abc import Iterable
 from enum import StrEnum
 
-from operating.roles import Role
-from operating.state import Agent
+from operations.roles import Role
+from operations.state import Agent
 
 DONE = ("done", "blocked")
 """The opening, in any case, of the report of an editor that leaves nothing

@@ -26,16 +26,16 @@ from dataclasses import dataclass
 
 from arc.task import TASK_ID
 from controlled_markdown import mctx
-from operating import briefs
-from operating.directives import Line, Pipeline, lines, pipelines, queue_counts, session_lines
-from operating.reports import TICKETS_FILED
-from operating.roles import PASSES, Purpose, Role, analyst_subject, joined
-from operating.state import Agent, State
+from operations import briefs
+from operations.directives import Line, Pipeline, lines, pipelines, queue_counts, session_lines
+from operations.reports import TICKETS_FILED
+from operations.roles import PASSES, Purpose, Role, analyst_subject, joined
+from operations.state import Agent, State
 from ticketing.vocabulary import Domain, Kind, Status
-from operating.steps import (RUN_COMMAND, Bash, Launch, Send, Step, Undecided, agent_ids,
+from operations.steps import (RUN_COMMAND, Bash, Launch, Send, Step, Undecided, agent_ids,
                              ask_again, bash_calls, passed, repeated)
-from operating.task_work import CLAIM, tasks_work
-from operating.tracker import blocked_on_user
+from operations.task_work import CLAIM, tasks_work
+from operations.tracker import blocked_on_user
 
 TASK = re.compile(rf"\b{TASK_ID}\b")
 SETS_ASIDE = (Role.ANALYZE, Role.CREATE)

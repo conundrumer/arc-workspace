@@ -19,7 +19,7 @@ session and of the tickets named to it.
 
 The steps come in this order: the coordinator's lines in no form the
 command reads, each given back to the coordinator once; the supervisor's
-alerts; the request to a ticket analyst on a held step to give its ruling
+alerts; the request to a ticket analyst on a held step to give its decision
 again; the decisions for the user, and the items of each ticket analyst's
 reply for the coordinator; at launch, the release of tickets;
 the move back to `tickets/open/` of the tickets the coordinator wrote on
@@ -44,8 +44,8 @@ stops its wait where one runs, then gives its final reply."""
 from collections.abc import Callable
 
 from controlled_markdown import mctx
-from operating import alerts, batches, changes, drafts, passes, rulings, settling
-from operating.directives import (
+from operations import alerts, batches, changes, decisions, drafts, passes, triage
+from operations.directives import (
     NUMBER,
     TASK,
     Directive,
@@ -54,19 +54,19 @@ from operating.directives import (
     lines,
     unread,
 )
-from operating.roles import Role, description
-from operating.state import State, Ticket
+from operations.roles import Role, description
+from operations.state import State, Ticket
 from ticketing.vocabulary import Status
-from operating.steps import (
+from operations.steps import (
     WAIT_CAP,
     WAIT_SECONDS,
-    Again,
     Bash,
     EndTurn,
     Launch,
+    Poll,
     Reply,
     Step,
-    Stop,
+    StopWait,
     Undecided,
     Wait,
     bash_calls,
@@ -86,20 +86,20 @@ GIVEN_AGAIN = "a line below that stands unfinished reaches it only where it is g
 
 def first(state: State, *procedures: Callable[[State], Step | None]) -> Step | None:
     """The first step of `procedures` that is ready, where an undecided
-    step is the launch of a ticket analyst on it (`rulings`). A procedure
+    step is the launch of a ticket analyst on it (`decisions`). A procedure
     whose step failed, as `refused` gives, or whose step an operator passed
     over, waits until the state changes, and the procedures after it go
     on. A step passed over or failed is undecided, once, as one its
     procedure waits on, other than the launch of an analyst on an
     undecided step: where the line that passed it over answered that step,
     or that launch failed, the step stays held. An undecided step whose
-    analyst's ruling the operator `me` applies, and did not receive, gives
-    the printing of that ruling (`rulings.relay`)."""
+    analyst's decision the operator `me` applies, and did not receive, gives
+    the printing of that decision (`decisions.relay`)."""
     for procedure in procedures:
         s = procedure(state)
         while s is not None:
             if isinstance(s, Undecided) and repeated(s, state):
-                relayed = rulings.relay(state, s)
+                relayed = decisions.relay(state, s)
                 if relayed is not None and not repeated(relayed, state):
                     return relayed
                 break
@@ -107,7 +107,7 @@ def first(state: State, *procedures: Callable[[State], Step | None]) -> Step | N
                 break
             on_step = isinstance(s, Undecided)
             if isinstance(s, Undecided):
-                s = rulings.launch(state, s)
+                s = decisions.launch(state, s)
             if (line := passed(s, state)) is not None:
                 s = None if on_step else Undecided(mctx(
                     "step {key}, which the line `{line}` passed over, holds up its "
@@ -178,15 +178,15 @@ def next_step(state: State) -> Step:
         return Reply(mctx("Operator {operator} carries the work on, from the state; "
                           "{given}.").format(operator=later[-1], given=GIVEN_AGAIN)
                      + "\n" + "\n".join(reply_lines(state)))
-    s = first(state, unread_lines, alerts.step, rulings.asks, settling.decisions,
-              settling.for_coordinator, settling.unfinished)
+    s = first(state, unread_lines, alerts.step, decisions.asks, triage.decisions,
+              triage.for_coordinator, triage.unfinished)
     if s is not None:
         return s
     if state.past_bound:
         return Reply(mctx("I {ended}; the next operator takes up the work from the state, "
                           "and {given}.").format(ended=ENDED_FOR_CONTEXT, given=GIVEN_AGAIN)
                      + "\n" + "\n".join(reply_lines(state)))
-    s = first(state, launching, settling.reopen, settling.later_lines, settling.settle,
+    s = first(state, launching, triage.reopen, triage.later_lines, triage.settle,
               drafts.step, changes.step, pipelines, batches.step)
     if s is not None:
         return s
@@ -196,9 +196,9 @@ def next_step(state: State) -> Step:
             return EndTurn()
         return EndTurn(capped=True) if idle_waits(state) >= WAIT_CAP else Wait()
     if any(a.pending for a in state.agents) or elsewhere(state):
-        return Again()
+        return Poll()
     if state.wait_task:
-        return Stop(state.wait_task)
+        return StopWait(state.wait_task)
     return Reply(final(state))
 
 
@@ -265,7 +265,7 @@ def line_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Out
             reasons = [f"change {n} {stands_under(t)}" for n in numbers
                        if (t := state.tickets.get(n)) is not None and t.status is not Status.CLOSED]
         case Directive.OPEN:
-            reasons = [settled_open(n) for n in settling.unsettled(state)]
+            reasons = [settled_open(n) for n in triage.unsettled(state)]
         case None:
             reasons = ["it is in no form the command reads, and went to the coordinator"]
         case _:
@@ -297,10 +297,10 @@ def line_states(state: State) -> list[str]:
 def reply_lines(state: State) -> list[str]:
     """The lines each reply of the operator that ends it gives: its lines
     (`line_states`), the items for the coordinator it carries
-    (`settling.told`), and the held steps no ruling reached
-    (`rulings.unruled`, `rulings.failed`)."""
-    return [*line_states(state), *settling.told(state), *rulings.unruled(state),
-            *rulings.failed(state)]
+    (`triage.told`), and the held steps no decision reached
+    (`decisions.undecided`, `decisions.failed`)."""
+    return [*line_states(state), *triage.told(state), *decisions.undecided(state),
+            *decisions.failed(state)]
 
 
 def stands(state: State, head: str, step: Step | None) -> tuple[str, bool]:
@@ -309,7 +309,7 @@ def stands(state: State, head: str, step: Step | None) -> tuple[str, bool]:
     ticket analyst, the line gives that step, which its procedure waits
     on, and the second value holds."""
     if isinstance(step, Undecided) and repeated(step, state):
-        return head + mctx(": it waits on a ruling of the step: {what}").format(
+        return head + mctx(": it waits on a decision of the step: {what}").format(
             what=step.what), True
     return head, False
 
@@ -324,13 +324,13 @@ def final(state: State) -> str:
     standing = [stands(state, f"- {sentence(draft_stands(t.number))}",
                        drafts.draft_step(state, t, [], [])) for t in drafts.unended(state)]
     standing += [(f"- {sentence(settled_open(n))}", False)
-                 for n in settling.unsettled(state)]
+                 for n in triage.unsettled(state)]
     standing += [stands(state, "- " + mctx("Change {n} stays under `tickets/assigned/`").format(
                             n=t.number),
                         changes.carry(state, t)) for t in changes.held(state)]
     out += [line for line, _ in standing]
     head = (mctx("Done: no procedure has a step left other than those that wait on a "
-                 "ruling, as the lines below give.")
+                 "decision, as the lines below give.")
             if any(asked for _, asked in standing)
             else mctx("Done: no procedure has a step left."))
     out.insert(0, head)
