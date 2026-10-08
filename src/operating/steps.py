@@ -10,14 +10,14 @@ import hashlib
 import re
 import shlex
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cache
 
 from controlled_markdown import mctx
 from operating import briefs
 from operating.bounds import COORDINATOR, FOREGROUND_MS, WAIT_SECONDS
 from operating.roles import Model, Role, description
-from operating.state import Agent, Call, Made, State
+from operating.state import Agent, Call, Made, Printed, State
 
 WAIT_CAP = 11
 """How many waits in a row may end on `WAIT_SECONDS` with no message, no
@@ -28,12 +28,16 @@ report and no step between them, as the section `keep-alive-timer` of
 @dataclass(frozen=True)
 class Launch:
     """An Agent call, in the background. `worktree` gives the Agent tool's
-    `isolation: "worktree"`, and `model` the call's `model`."""
+    `isolation: "worktree"`, and `model` the call's `model`. `items` is the
+    number of items a brief that gives several items of the same work
+    gives (`briefs.ITEM_LINES`), and None for any other brief; it stays
+    out of the step's key, which its brief already fixes."""
     role: Role
     subject: str
     brief: str
     worktree: bool = False
     model: Model | None = None
+    items: int | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -160,17 +164,17 @@ def sent_at(state: State, to: str, message: str, mark: str | None = None) -> lis
     `to` the message `message`, as `sent` reads them."""
     held = message if mark is None else mark
     return [c.time for c in sends_to(state, to) if held in str(c.input.get("message", ""))] + [
-        c.time for c in made_calls(state, "SendMessage", Send(to, message),
+        c.time for c in made_calls(state, Printed.SEND_MESSAGE, Send(to, message),
                                    lambda m: m.to == to and message.startswith(m.text))
         if not c.error and c.input.get("to") == to]
 
 
-def made_calls(state: State, tool: str, step: Step, printed: Callable[[Made], bool]) -> list[Call]:
+def made_calls(state: State, tool: Printed, step: Step, printed: Callable[[Made], bool]) -> list[Call]:
     """The calls of `tool` that `state.made` gives as made after the
     printing of `step`, a step of `tool`: by its key, or where the result
     cut the key, where `printed` holds of the printed step."""
     step_key = key(step)
-    return [m.call for m in state.made if m.tool == tool and m.call.tool == tool
+    return [m.call for m in state.made if m.tool == tool and m.call.tool == tool.value
             and (m.key == step_key if m.key is not None else printed(m))]
 
 
@@ -197,7 +201,7 @@ def bash_calls(state: State, command: str) -> list[Call]:
     order they were made."""
     out = [c for c in state.calls
            if c.tool == "Bash" and command in str(c.input.get("command", ""))]
-    out += made_calls(state, "Bash", Bash(command), lambda m: m.text == command)
+    out += made_calls(state, Printed.BASH, Bash(command), lambda m: m.text == command)
     return sorted({id(c): c for c in out}.values(), key=lambda c: c.time)
 
 
@@ -365,7 +369,7 @@ def made(calls: Iterable[Call]) -> tuple[Made, ...]:
             opening = printed_opening().search(c.result)
             if opening is None:
                 continue
-            tool = "SendMessage" if opening["to"] is not None else "Bash"
+            tool = Printed.SEND_MESSAGE if opening["to"] is not None else Printed.BASH
             out.append(Made(opening["key"], tool, opening["to"],
                             c.result[opening.end():].rstrip("\n"), after))
     return tuple(out)

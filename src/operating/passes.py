@@ -147,7 +147,7 @@ def run(state: State, p: Pipeline) -> Outcome:
             if isinstance(reviewer, Send):
                 return Outcome(reviewer)
             return Outcome(Launch(Role.TICKET_ANALYST, subject, briefs.pass_settle(
-                numbers, p.task, reviewer[0], state.me)))
+                numbers, p.task, reviewer[0], state.me), items=len(numbers)))
         if any(x.pending for x in analyst):
             return Outcome(None)
         interference = [t for t in state.tickets.values() if t.kind is Kind.INTERFERENCE

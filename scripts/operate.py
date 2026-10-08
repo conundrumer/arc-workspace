@@ -67,7 +67,7 @@ def with_budget(step: Launch) -> Launch:
     """`step` with the budget line HELP gives."""
     if step.role in PASSES:
         return step
-    seconds = budget_of(step.role.agent_type, briefs.items(step.brief), [])
+    seconds = budget_of(step.role.agent_type, step.items, [])
     if seconds is None:
         return step
     return replace(step, brief=step.brief + "\n" + briefs.BUDGET.format(minutes=math.ceil(seconds / 60)))

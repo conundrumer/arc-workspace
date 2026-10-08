@@ -118,7 +118,7 @@ def settle(state: State) -> Step | None:
     if not numbers:
         return None
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.SETTLE, joined(numbers)),
-                  briefs.settle(numbers, state.me))
+                  briefs.settle(numbers, state.me), items=len(numbers))
 
 
 def unsettled(state: State) -> list[str]:

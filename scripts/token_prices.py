@@ -7,6 +7,8 @@
 from dataclasses import dataclass, fields
 from typing import Any
 
+from controlled_markdown import mctx
+
 
 @dataclass(frozen=True)
 class Usage:
@@ -79,13 +81,13 @@ def unpriced(usage: dict[str, Any]) -> str | None:
     """The field of a `usage` that changes its price and that the table does
     not price, or None."""
     if usage.get("service_tier") not in (None, "standard"):
-        return f"service_tier {usage.get('service_tier')}"
+        return mctx("service_tier {tier}").format(tier=usage.get("service_tier"))
     if usage.get("speed") not in (None, "standard"):
-        return f"speed {usage.get('speed')}"
+        return mctx("speed {speed}").format(speed=usage.get("speed"))
     if any((usage.get("server_tool_use") or {}).values()):
-        return "server_tool_use"
+        return mctx("server_tool_use")
     if (usage.get("cache_creation_input_tokens") or 0) and not usage.get("cache_creation"):
-        return "cache_creation_input_tokens without cache_creation"
+        return mctx("cache_creation_input_tokens without cache_creation")
     return None
 
 
@@ -107,10 +109,12 @@ def run_cost(entries: list[dict[str, Any]], undecided: list[str]) -> float | Non
         ident = message.get("id")
         field = unpriced(usage)
         if model not in PRICES or ident is None or field is not None:
-            reason = (f"no price for model {model}" if model not in PRICES
-                      else "no message id" if ident is None
-                      else f"no price for {field} of model {model}")
-            undecided.append(f"token cost unknown: {reason}")
+            reason = (mctx("no price for model {model}").format(model=model)
+                      if model not in PRICES
+                      else mctx("no message id") if ident is None
+                      else mctx("no price for {field} of model {model}").format(
+                          field=field, model=model))
+            undecided.append(mctx("token cost unknown: {reason}").format(reason=reason))
             known = False
             continue
         before = requests.get(ident)

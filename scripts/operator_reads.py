@@ -204,8 +204,8 @@ def background_output(aid: str, call: str, task: str, output: Path | None,
         undecided.append(mctx("{run}: the outcome of call {call}, which ran in the background "
                               "as task {task}, is unknown: {why}").format(
             run=aid, call=call, task=task,
-            why="its notification's status is of no known form" if status is None
-            else "its output is gone"))
+            why=mctx("its notification's status is of no known form") if status is None
+            else mctx("its output is gone")))
         return None, False
     return output.read_text(errors="replace"), status is not TaskStatus.COMPLETED
 

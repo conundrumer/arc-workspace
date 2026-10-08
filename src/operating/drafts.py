@@ -34,6 +34,7 @@ returned with no revision written, the review of that draft holds until the coor
 rules it with one of the choices the command gives it
 (`directives.ruled`)."""
 
+from controlled_markdown import mctx
 from operating import briefs
 from operating.directives import Directive, Ruling, named, numbers, ruled
 from operating.roles import Purpose, Role, analyst_subject, joined, subjects
@@ -119,13 +120,14 @@ def step(state: State) -> Step | None:
             return s
     if ready:
         nums = [t.number for t in ready]
-        return Launch(Role.TICKET_REVIEWER, joined(nums), briefs.ticket_review(nums, state.me))
+        return Launch(Role.TICKET_REVIEWER, joined(nums), briefs.ticket_review(nums, state.me),
+                      items=len(nums))
     if waiting:
         group = linked(waiting[0], waiting)
         nums = [t.number for t in group]
         last = [t.number for t in group if at_cap(t)]
         return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.DRAFT, joined(nums)),
-                      briefs.revise(nums, last, state.me))
+                      briefs.revise(nums, last, state.me), items=len(nums))
     return None
 
 
@@ -161,9 +163,10 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
                 return Send(writer.agent_id, message)
             analyst_done = [writer]
         if analyst_done:
-            choice = ruled(state, f"the revision of draft {t.number} by ticket analyst "
-                                  f"{analyst_done[-1].agent_id} is unfinished",
-                           {Ruling.AGAIN: "launch another ticket analyst to revise it"})
+            choice = ruled(state, mctx("the revision of draft {number} by ticket analyst "
+                                       "{agent} is unfinished").format(
+                               number=t.number, agent=analyst_done[-1].agent_id),
+                           {Ruling.AGAIN: mctx("launch another ticket analyst to revise it")})
             if isinstance(choice, Send):
                 return choice
         waiting.append(t)
@@ -177,10 +180,10 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
     reviewed = [a for a in agents if a.role is Role.TICKET_REVIEWER and a.launched > since
                 and a.launched >= given]
     if reviewed:
-        what = (f"ticket reviewer {reviewed[-1].agent_id} left draft {t.number} under "
-                f"`tickets/draft/` with no finding")
-        choice = ruled(state, what, {Ruling.AGAIN: "launch another ticket reviewer on it",
-                                     Ruling.OPEN: "move it to `tickets/open/`"})
+        what = mctx("ticket reviewer {agent} left draft {number} under `tickets/draft/` with "
+                    "no finding").format(agent=reviewed[-1].agent_id, number=t.number)
+        choice = ruled(state, what, {Ruling.AGAIN: mctx("launch another ticket reviewer on it"),
+                                     Ruling.OPEN: mctx("move it to `tickets/open/`")})
         if isinstance(choice, Send):
             return choice
         if choice is Ruling.OPEN:

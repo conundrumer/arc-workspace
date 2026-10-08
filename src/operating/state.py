@@ -143,6 +143,13 @@ class Call:
     merge: Merge | None = None
 
 
+class Printed(Enum):
+    """The tool of a step the command prints to an operator for it to call
+    in the foreground, by the name the harness gives that tool."""
+    SEND_MESSAGE = "SendMessage"
+    BASH = "Bash"
+
+
 @dataclass(frozen=True)
 class Made:
     """A step the command printed to an operator, read from the result of
@@ -152,7 +159,7 @@ class Made:
     message, and the message or the command as far as the result gives
     it."""
     key: str | None
-    tool: str
+    tool: Printed
     to: str | None
     text: str
     call: Call

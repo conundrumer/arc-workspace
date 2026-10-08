@@ -216,8 +216,9 @@ def carry(state: State, t: Ticket) -> Step | None:
         taken = max((ln.time for ln in t.log if ln.status is Status.ASSIGNED), default=0.0)
         tried = sum(a.launched > taken for a in launched)
         if tried >= 2:
-            choice = ruled(state, f"change {t.number} has no worktree after {tried} first editors",
-                           {Ruling.AGAIN: "launch another first editor"})
+            choice = ruled(state, mctx("change {number} has no worktree after {tried} first "
+                                       "editors").format(number=t.number, tried=tried),
+                           {Ruling.AGAIN: mctx("launch another first editor")})
             if isinstance(choice, Send):
                 return choice
         first = next(r for r in EDITORS if r in editors)
@@ -279,19 +280,19 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     gate = outputs if reported > judged else []
     hold: str | None = None
     if analysts and reported <= judged and leaves_open(analysts[-1]):
-        hold = (f"ticket analyst {analysts[-1].agent_id} on change {t.number} leaves items "
-                f"for the coordinator")
+        hold = mctx("ticket analyst {agent} on change {number} leaves items for the "
+                    "coordinator").format(agent=analysts[-1].agent_id, number=t.number)
         needing, gate = left, outputs
     elif not needing and not questions and not gate:
         return False
     elif questions and not needing and not gate and judged > max(q.filed for q in questions):
-        hold = (f"ticket analyst {analysts[-1].agent_id} returned on change {t.number}, and "
-                f"its question tickets stand open")
+        hold = mctx("ticket analyst {agent} returned on change {number}, and its question "
+                    "tickets stand open").format(agent=analysts[-1].agent_id, number=t.number)
     if hold is not None:
         choice = ruled(state, hold, {
-            Ruling.MERGE: "go on to the merge; the close of the change closes its open "
-                          "question tickets",
-            Ruling.AGAIN: "launch another ticket analyst on what the editors leave"})
+            Ruling.MERGE: mctx("go on to the merge; the close of the change closes its open "
+                               "question tickets"),
+            Ruling.AGAIN: mctx("launch another ticket analyst on what the editors leave")})
         if isinstance(choice, Send):
             return choice
         if choice is Ruling.MERGE:
@@ -331,9 +332,9 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
             asked = ask_again(state, r.agent_id, [x.time for x in r.reports], briefs.REVIEW_FORM)
             if isinstance(asked, Send):
                 return asked
-        return review_ruled(state, t, w, here, f"the reply of doc reviewer {r.agent_id} on "
-                                               f"change {t.number} gives no finding in the form "
-                                               f"the command reads")
+        return review_ruled(state, t, w, here, mctx(
+            "the reply of doc reviewer {agent} on change {number} gives no finding in the form "
+            "the command reads").format(agent=r.agent_id, number=t.number))
     code = [p for p in paths if p.endswith(PROSE_IN_CODE)]
     needed = ([Role.DOC_EDITOR] if len(code) < len(paths) else []) + (
         [Role.CODE_EDITOR] if code else [])
@@ -357,7 +358,8 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
 
 
 def unreplied(r: Agent, t: Ticket) -> str:
-    return f"doc reviewer {r.agent_id} of change {t.number} has not replied since its editors ended"
+    return mctx("doc reviewer {agent} of change {number} has not replied since its editors "
+                "ended").format(agent=r.agent_id, number=t.number)
 
 
 def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, since: float,
@@ -386,8 +388,8 @@ def review_ruled(state: State, t: Ticket, w: Path, here: list[Agent],
                  what: str) -> Step | Literal[False]:
     """The step on a review held for `what`, by the coordinator's ruling:
     False where the review passes."""
-    choice = ruled(state, what, {Ruling.PASSES: "the review passes",
-                                 Ruling.AGAIN: "launch another doc reviewer"})
+    choice = ruled(state, what, {Ruling.PASSES: mctx("the review passes"),
+                                 Ruling.AGAIN: mctx("launch another doc reviewer")})
     if isinstance(choice, Send):
         return choice
     if choice is Ruling.PASSES:

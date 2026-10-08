@@ -290,7 +290,8 @@ def stands(state: State, head: str, step: Step | None) -> tuple[str, bool]:
     an operator already sent, the line gives that message, which its
     procedure waits on, and the second value holds."""
     if isinstance(step, Send) and step.to == COORDINATOR and repeated(step, state):
-        return f"{head}: it waits on the coordinator's answer to the message: {step.message}", True
+        return head + mctx(": it waits on the coordinator's answer to the message: {message}").format(
+            message=step.message), True
     return head, False
 
 
@@ -316,6 +317,7 @@ def final(state: State) -> str:
     out.insert(0, head)
     for a in state.agents_of(Role.AFTER_MERGE):
         if a.operator == state.me and (r := a.last_report) is not None:
-            out.append(f"- The checks after the merge of change {a.subject}, by {a.agent_id}:")
+            out.append("- " + mctx("The checks after the merge of change {number}, by "
+                                   "{agent}:").format(number=a.subject, agent=a.agent_id))
             out += [f"    {line}" for line in r.text.strip().splitlines()]
     return "\n".join(out)
