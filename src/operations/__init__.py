@@ -35,8 +35,10 @@ ticket's log and the calls that write it), `steps` (the calls printed), `constan
 open tickets, and the labeled items of their replies for the coordinator),
 `decisions` (ticket analysts on undecided steps), `drafts` (the review of
 draft changes), `changes` (a change from its take to its merge),
-`merging` (the merge and what follows it), `alerts` (the supervisor's
+`merging` (the merge and what follows it), `alerts` (the monitor's
 alerts and the other agents' messages), `reports` (the fixed forms of
 the replies the command reads), `passes` (the solver pipelines),
-`task_work` (the work a pipeline sets aside), `batches` (After a batch) and
-`plan` (the order of the procedures, the waits and the final reply)."""
+`task_work` (the work a pipeline sets aside), `batches` (After a batch),
+`plan` (the order of the procedures, the waits and the final reply) and
+`monitor` (the steps of `op-monitor`, which `scripts/monitor.py` prints
+under the same rules)."""

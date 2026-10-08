@@ -371,7 +371,7 @@ def go_on(time: float, minutes: float) -> str:
     return "\n".join([GO_ON.format(time=utc_stamp(time)), BUDGET.format(minutes=f"{minutes:g}")])
 
 
-RESTATE = mctx("What you sent the operator at {time} is in no form its command reads, so the "
+RESTATE = mctx("What you sent {reader} at {time} is in no form its command reads, so the "
                "command cannot place it. Send it again, in full, in this form: {form}")
 
 REVIEW_FORM = mctx("a report, in your report file, that opens with `{no_finding}`, or that "
@@ -389,7 +389,11 @@ ALERT_FORM = mctx("where it is an alert, a message that opens with the line `ale
                   "no alert, a reply that says so.")
 
 
-def restate(time: float, form: str) -> str:
+OPERATOR = mctx("the operator")
+"""The reader `restate` names in the operator's command."""
+
+
+def restate(time: float, form: str, reader: str) -> str:
     """The message that asks an agent to send again, in `form`, what it
-    sent the operator at `time` in no form the command reads."""
-    return RESTATE.format(time=utc_stamp(time), form=form)
+    sent `reader` at `time` in no form the command of `reader` reads."""
+    return RESTATE.format(reader=reader, time=utc_stamp(time), form=form)

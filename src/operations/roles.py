@@ -25,6 +25,7 @@ class Role(StrEnum):
     BATCH_PROFILE = "batch-profile"
     BATCH_GATE = "batch-gate"
     AFTER_MERGE = "after-merge"
+    OP_AUDITOR = "op-auditor"
 
     @property
     def agent_type(self) -> str:

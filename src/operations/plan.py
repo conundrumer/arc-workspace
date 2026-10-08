@@ -18,7 +18,7 @@ launches next takes up, through `changes.release`, the changes of the
 session and of the tickets named to it.
 
 The steps come in this order: the coordinator's lines in no form the
-command reads, each given back to the coordinator once; the supervisor's
+command reads, each given back to the coordinator once; the monitor's
 alerts; the request to a ticket analyst on a held step to give its decision
 again; the decisions for the user, and the items of each ticket analyst's
 reply for the coordinator; at launch, the release of tickets;

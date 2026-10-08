@@ -20,14 +20,21 @@ def print_span(m: Span, time_text: str) -> None:
     print(f"    {time_text:>8}  {m.label}{command}")
 
 
+def active_of(listed: Listed, now: float) -> float | None:
+    """The active time `--running` gives a listed agent, or None where it is
+    unknown."""
+    r = listed.run
+    return (r.active_from(len(r.messages) - 1) if listed.ended and r.messages
+            else r.active_at(now))
+
+
 def print_running(agents: list[Listed], now: float, calls_since: float | None,
                   undecided: list[str]) -> None:
     for listed in agents:
         r = listed.run
         since = minutes(now - r.start) if r.start is not None else "?"
         last = len(r.messages) - 1
-        active_time = (r.active_from(last) if listed.ended and r.messages
-                       else r.active_at(now))
+        active_time = active_of(listed, now)
         period_end = r.period_end(last) if r.messages else None
         to = (" " + mctx("to {time}").format(time=clock(period_end.time))
               if period_end else "")

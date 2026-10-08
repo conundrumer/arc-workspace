@@ -30,6 +30,10 @@ from operations.constants import COORDINATOR, FOREGROUND_MS, WAIT_SECONDS
 from operations.roles import GENERAL_ROLES, PASSES, Model, Purpose, Role, description
 from operations.state import Agent, Call, Made, Printed, State
 
+BLOCK_SECONDS = (FOREGROUND_MS // 1000) - 30
+"""The longest foreground block of a command's `next`, under the bound on
+a foreground call, with room for the read of the state."""
+
 WAIT_CAP = 11
 """How many waits in a row may end on `WAIT_SECONDS` with no message, no
 report and no step between them, as the section `keep-alive-timer` of
@@ -234,21 +238,29 @@ def made_calls(state: State, tool: Printed, step: Step, printed: Callable[[Made]
 
 
 def ask_again(state: State, to: str, replies: list[float], form: str) -> Send | bool:
+    """`asked_again` for the operator, over the operators' SendMessage
+    calls."""
+    return asked_again(lambda who, message: sent_at(state, who, message), to, replies, form,
+                       briefs.OPERATOR)
+
+
+def asked_again(sent_times: Callable[[str, str], list[float]], to: str, replies: list[float],
+                form: str, reader: str) -> Send | bool:
     """The step on the latest of `replies`, the times of the replies of the
-    agent `to`, in order, where that reply is in no form the command reads:
-    the message that asks `to` to give it again in `form`
-    (`briefs.restate`), where no operator sent it. True where the reply
-    before it had that request, sent before it: the reply that answers the
-    request is still in no such form, and the step is undecided.
-    False where the request on it was sent and no reply of `to` followed
-    it."""
+    agent `to` to `reader`, in order, where that reply is in no form the
+    command reads: the message that asks `to` to give it again in `form`
+    (`briefs.restate`), where `sent_times`, the times of the calls that
+    sent a message to an agent, gives none. True where the reply before it
+    had that request, sent before it: the reply that answers the request
+    is still in no such form, and the step is undecided. False where the
+    request on it was sent and no reply of `to` followed it."""
     latest = replies[-1]
     before = [t for t in replies if t < latest]
     if before and any(at < latest
-                      for at in sent_at(state, to, briefs.restate(before[-1], form))):
+                      for at in sent_times(to, briefs.restate(before[-1], form, reader))):
         return True
-    message = briefs.restate(latest, form)
-    return False if sent(state, to, message) else Send(to, message)
+    message = briefs.restate(latest, form, reader)
+    return False if sent_times(to, message) else Send(to, message)
 
 
 def bash_calls(state: State, command: str) -> list[Call]:

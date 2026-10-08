@@ -33,9 +33,9 @@ from tree_reads import git, main_tree  # noqa: E402
 
 from operations import briefs, plan, steps  # noqa: E402
 from operations.roles import PASSES, Role  # noqa: E402
-from operations.steps import (FOREGROUND_MS, STEP_KEY, WAIT_SECONDS, Bash,  # noqa: E402
-                             EndTurn, Launch, Poll, Send, Step, StopWait, Wait, filed, next_command,
-                             passed_over_line, key_line, printed, with_report)
+from operations.steps import (BLOCK_SECONDS, FOREGROUND_MS, STEP_KEY, WAIT_SECONDS,  # noqa: E402
+                             Bash, EndTurn, Launch, Poll, Send, Step, StopWait, Wait, filed,
+                             next_command, passed_over_line, key_line, printed, with_report)
 from operations.task_work import restore, set_aside  # noqa: E402
 
 HELP = mctx("""
@@ -54,10 +54,6 @@ HELP = mctx("""
     - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass, and `restore` puts it back and removes the task's claim, as the section `Passes on a task` of `prompts/agents/notes/launching.md` gives.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives, and the command refuses where the shell gives none.
     """)
-
-BLOCK_SECONDS = (FOREGROUND_MS // 1000) - 30
-"""The longest foreground block of `next`, under the bound on a
-foreground call, with room for the read of the state."""
 
 POLL_SECONDS = 15
 CALLS = (Launch, Send, Bash, StopWait)

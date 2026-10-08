@@ -24,7 +24,7 @@
     - `change` and the number of the change's ticket: an editor's or a doc reviewer's ticket on its change where its brief gives that number, the ticket the agent that merges a change files on that change, and a transcript review's ticket on such an editor's run.
     - `commit` and the commit's hash: a code reviewer's ticket, on the commit its baseline tag names, and a ticket a brief has its agent file on a commit of `master` that the brief gives.
     - `ticket` and the ticket's number: a ticket on another ticket.
-    - `agent` and the agent's id: the ticket of a supervisor's alert verifier, on the agent it checked, and every ticket no entry above fits, on the agent it concerns, your own included.
+    - `agent` and the agent's id: the ticket of an `op-auditor`, on the agent it audits, and every ticket no entry above fits, on the agent it concerns, your own included.
 - A subagent's own agent id is the one the line `Your agent id is <id>.` in its context gives, or, where its context holds no such line, the agent id of its own entry in the listing `uv run python scripts/profile_runs.py --running <session id>` prints, with the id `echo $CLAUDE_CODE_SESSION_ID` prints as `<session id>`: the entry whose call in flight is that listing's command.
 
 ## Tracking

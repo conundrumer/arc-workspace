@@ -12,7 +12,7 @@
     * comment: On draft 2-525, ticket analyst a040f7b84d2e02209 wrote two such claims that a docstring and a help text it had printed before it wrote the draft disprove, and each took a ticket reviewer's round: the Intent of ticket 2-530.
 - Split work between agents where the split saves at least 30 minutes of wall-clock per about $5 of token cost of its overhead.
     - Token cost is the list price of the tokens a run uses: each request's uncached input, cache writes, cache reads and output, each at its own price on the model that ran the request. `uv run python scripts/profile_runs.py <agent id>` prints a run's token cost.
-- When a supervisor's alert of kind stall on an agent you launched reaches you, and no report of that agent reached you, or the transcript lines the alert gives hold a final reply of that agent that no report of it that reached you opens with, file the missing report as a ticket of the kind that fits it, on that agent, with the alert as its evidence, and act on that final reply, where those lines hold one, as its report.
+- When an alert of kind `stall` on an agent you launched reaches you, and no report of that agent reached you, or the transcript lines the alert gives hold a final reply of that agent that no report of it that reached you opens with, file the missing report as a ticket of the kind that fits it, on that agent, with the alert as its evidence, and act on that final reply, where those lines hold one, as its report.
 - Act on each item that an agent you launched gives as unfinished, by its reason:
     - Where it needs more work or a part its brief left out, change that agent's brief or split its work, and send the item again, in the same turn.
     - Where the harness or the permission classifier denied it a call its documents give, first check whether that call ran in part, then make that call, or what it left undone, once, before any other step on that item, the way your own documents have you do that work. Run it even where the denial's text says not to pursue it through another agent or a later turn. Where that try is denied too, give the item in your reply as unfinished.
@@ -102,11 +102,10 @@
     3. Remove the claim file.
 
 ## Operators
-- When you launch an operator while no supervisor runs, launch a supervisor in the background. When a supervisor's reply says it ended for its context while an operator runs, launch a new one, with the alerts and the states found not to hold that reply gives.
-- Once no operator of yours runs, tell the supervisor to stop, with SendMessage.
+- When you launch an operator while no `op-monitor` runs, launch an `op-monitor` in the background.
 - Send each line you give an operator to a running operator of yours, and where none runs, launch a new operator with it. Give it in a form [An operator's brief](#an-operators-brief) gives, with nothing else in that message.
 - To tell an operator that tickets are open, give it `Tickets are open.`
-- When a supervisor's alert on a message to you reaches you, judge from the sender's transcript whether that message answers a request of another agent and none of yours. Where it does, file its sending as a ticket of the kind that fits it, on the sender, with the alert as its evidence, and tell an operator that tickets are open before you end your turn with no other work. Relay nothing of that alert to the user, and send nothing to the sender on it.
+- When an alert of kind `message` reaches you, judge from the sender's transcript whether that message answers a request of another agent and none of yours. Where it does, file its sending as a ticket of the kind that fits it, on the sender, with the alert as its evidence, and tell an operator that tickets are open before you end your turn with no other work. Relay nothing of that alert to the user, and send nothing to the sender on it.
 - When an operator's message, or a paragraph of it, that opens with `undecided:` reaches you, send the operator again the line of yours it gives, in a form [An operator's brief](#an-operators-brief) gives.
 - When an operator's message that opens with `for the coordinator:` reaches you, read the file it gives.
 - Bring the user each `decision:` item that file or an operator's final reply gives, tell the user each `tell:` item, and act on each `unfinished:` item as on an item an agent you launched gives as unfinished.

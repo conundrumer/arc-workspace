@@ -1,5 +1,5 @@
 """Who a message an agent's run receives is from: its parent, an agent it did
-not launch, a supervisor, another sender, or one that is unknown, as the
+not launch, the monitor or one of its auditors, another sender, or one that is unknown, as the
 HELP of `profile_runs` gives them."""
 
 from enum import Enum
@@ -12,7 +12,9 @@ from transcripts import Entry
 # The start of the text of the entry the harness writes where the user
 # interrupts a run.
 INTERRUPTED = "[Request interrupted by user"
-SUPERVISOR = "supervisor"
+MONITOR = "op-monitor"
+AUDITOR = "op-auditor"
+MONITORS = frozenset({MONITOR, AUDITOR})
 
 
 class Origin(Enum):
@@ -29,7 +31,7 @@ class Sender(Enum):
     """Who a message after a run's brief is from, as HELP gives it."""
     PARENT = "parent"
     AGENT = "agent"
-    SUPERVISOR = "supervisor"
+    MONITOR = "monitor"
     OTHER = "other"
     UNKNOWN = "unknown"
 
@@ -76,4 +78,4 @@ def sent_by(agent: str, parent: str, children: frozenset[str],
     kind = type_in(sessions, agent)
     if kind is None:
         return Sender.UNKNOWN
-    return Sender.SUPERVISOR if kind == SUPERVISOR else Sender.AGENT
+    return Sender.MONITOR if kind in MONITORS else Sender.AGENT

@@ -1,4 +1,4 @@
-"""A supervisor's alerts that reach an operator, and the steps they give.
+"""The alerts of `op-monitor` and its auditors that reach an operator, and the steps they give.
 
 An alert opens with a line of the form `alert: <kind> <agent id>`
 (`OPENING`), with the kind of `AlertKind` and the agent it is on. On an agent an
@@ -40,8 +40,7 @@ from ticketing.vocabulary import DEFECT_SECTIONS, Domain, Kind
 
 
 class AlertKind(Enum):
-    """The kinds of alert, as the supervisor's verifier gives them, with
-    `budget` and the alert on a message to the coordinator."""
+    """The kinds of alert, as an auditor gives them, with `budget`."""
     OWN_DOING = "own-doing"
     OBSTACLE = "obstacle"
     OUTGROWN = "outgrown"
@@ -55,6 +54,11 @@ class AlertKind(Enum):
 OPENING = re.compile(rf"\Aalert: (?P<kind>\S+) (?P<agent>{AGENT_ID})[ \t]*$", re.MULTILINE)
 
 
+def opening(kind: AlertKind, agent: str) -> str:
+    """The line `OPENING` reads."""
+    return f"alert: {kind.value} {agent}"
+
+
 @dataclass(frozen=True)
 class Alert:
     message: Message
@@ -65,14 +69,24 @@ class Alert:
 
 def parsed(m: Message) -> Alert | None:
     """The alert `m` gives, or None where it does not open with `OPENING`."""
-    found = OPENING.match(m.text.strip())
+    found = opened(m.text)
+    if found is None:
+        return None
+    return Alert(m, found[0], found[1])
+
+
+def opened(text: str) -> tuple[AlertKind | None, str] | None:
+    """The kind and the agent of the alert `text` opens with, the kind None
+    where `AlertKind` does not hold it, or None where `text` does not open
+    with `OPENING`."""
+    found = OPENING.match(text.strip())
     if found is None:
         return None
     kinds = {k.value: k for k in AlertKind}
-    return Alert(m, kinds.get(found["kind"]), found["agent"])
+    return kinds.get(found["kind"]), found["agent"]
 
 
-BUDGET_MESSAGE = (mctx("A supervisor's alert: your active time is past your budget.") + " "
+BUDGET_MESSAGE = (mctx("A monitor's alert: your active time is past your budget.") + " "
                   + briefs.AT_BUDGET)
 
 
