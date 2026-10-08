@@ -1,5 +1,6 @@
 """The reads of the transcripts of a session's operators: the operators
-that ran `operate.py`, each operator's calls, the messages it received and
+that ran `operate.py`, each operator's calls, the messages it received, each read in place of the filed line that
+gives it, and
 the agents it launched, with their reports and the agents each doc
 reviewer sent a message, the outcome of its merge
 calls, the tickets its solver passes filed, and its wait in the
@@ -168,7 +169,9 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
                 briefed = True
                 messages.append(Message(aid, epoch(stamp), None, unwrapped(message_text(e))))
             else:
-                messages += [Message(aid, epoch(stamp), s, text)
+                where = mctx("{run}: a message from").format(run=aid)
+                messages += [Message(aid, epoch(stamp), s, unfiled(
+                    unfenced(text), f"{where} {s}", undecided))
                              for s, text in agent_messages(e) if s not in children]
     for call, (t, inp, tool) in uses.items():
         text, error = results.get(call, (None, False))
