@@ -8,19 +8,20 @@ operator of the session launched whose work is open:
 - A `stall` alert on an agent whose final reply reached no operator as a
   report makes the final reply in its transcript its report
   (`State.stalled`), and a `bug` ticket on the agent records that it
-  reached none. Where its transcript holds no final reply, the alert goes
-  to the coordinator.
+  reached none. Where its transcript holds no final reply, the alert is
+  undecided.
 
-Any other alert, and an alert on an agent no operator launched, go to the
-coordinator as undecided. A message from an agent no operator launched
-that is no alert goes back to its sender once, with a request to send it
-again as an alert, or to say that it is none, and goes to the coordinator
-as undecided where the sender's next message is still no alert.
+Any other alert, and an alert on an agent no operator launched, are
+undecided. A message from an agent no operator launched that is no alert
+goes back to its sender once, with a request to send it again as an
+alert, or to say that it is none, and is undecided where the sender's next
+message is still no alert. An undecided alert or message goes to a ticket
+analyst launched on it (`rulings`).
 
 A `budget` or `stall` alert on an agent an operator of the session
 launched gives its step to the operator that carries the session's work
-on, whichever operator of the session it reached, other than where it goes
-to the coordinator. Every other alert and message gives a step only to the
+on, whichever operator of the session it reached, other than where it is
+undecided. Every other alert and message gives a step only to the
 operator `me` where it reached `me`."""
 
 import re
@@ -32,7 +33,7 @@ from controlled_markdown import mctx
 from operating import briefs
 from operating.roles import AGENT_ID
 from operating.state import Agent, Message, State
-from operating.steps import COORDINATOR, Bash, Send, Step, ask_again, sent, undecided
+from operating.steps import Bash, Send, Step, Undecided, ask_again, repeated
 from operating.tracker import AGENT, FILE_TICKET
 from ticketing.vocabulary import DEFECT_SECTIONS, Domain, Kind
 
@@ -114,12 +115,12 @@ def on(state: State, alert: Alert, a: Agent) -> Step | None:
             if alert.agent in state.stalled:
                 return None if filed(state, alert) else Bash(stall_ticket(alert))
             if a.pending:
-                return undecided(mctx("a stall alert on {agent}, whose transcript holds no "
+                return Undecided(mctx("a stall alert on {agent}, whose transcript holds no "
                                       "final reply:").format(agent=alert.agent)
                                  + "\n" + alert.message.text)
             return None
         case _:
-            return undecided(mctx("an alert the command does not act on:") + "\n"
+            return Undecided(mctx("an alert the command does not act on:") + "\n"
                              + alert.message.text)
 
 
@@ -138,14 +139,14 @@ def step(state: State) -> Step | None:
             asked = ask_again(state, m.sender, replies, briefs.ALERT_FORM)
             if asked is False:
                 continue
-            s: Step | None = asked if isinstance(asked, Send) else undecided(
+            s: Step | None = asked if isinstance(asked, Send) else Undecided(
                 f"a message from {m.sender} in no form the command reads:\n{m.text}")
         elif (a := latest(state, alert.agent)) is None:
-            s = undecided(mctx("an alert on an agent no operator launched:") + "\n" + m.text)
+            s = Undecided(mctx("an alert on an agent no operator launched:") + "\n" + m.text)
         else:
             s = on(state, alert, a)
-        if m.operator != state.me and isinstance(s, Send) and s.to == COORDINATOR:
+        if m.operator != state.me and isinstance(s, Undecided):
             continue
-        if s is not None and not (isinstance(s, Send) and sent(state, s.to, s.message)):
+        if s is not None and not repeated(s, state):
             return s
     return None

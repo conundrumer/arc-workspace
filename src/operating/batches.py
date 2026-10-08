@@ -19,7 +19,7 @@ from operating.changes import release
 from operating.directives import Directive, numbers
 from operating.roles import AGENT_ID, Role
 from operating.state import Agent, Merge, State
-from operating.steps import Bash, Launch, Step, bash_calls, undecided
+from operating.steps import Bash, Launch, Step, Undecided, bash_calls
 
 OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER})
 """The roles of After a batch, which no batch holds."""
@@ -53,7 +53,7 @@ def step(state: State) -> Step | None:
         reviewers = [a for a in state.agents_of(Role.CODE_REVIEWER) if a.launched > since]
         if not reviewers:
             if state.code_review is None:
-                return undecided("no `code-review/<n>` tag gives the last code review's baseline")
+                return Undecided("no `code-review/<n>` tag gives the last code review's baseline")
             return Launch(Role.CODE_REVIEWER, f"code-review/{state.code_review + 1}",
                           briefs.code_review(state.code_review, state.scratch / "code-review"))
         if reviewers[-1].pending:
@@ -70,10 +70,10 @@ def step(state: State) -> Step | None:
         if not calls:
             return Bash(command)
         if calls[-1].error:
-            return undecided(mctx("`{command}` failed").format(command=command))
+            return Undecided(mctx("`{command}` failed").format(command=command))
         ids = taken(calls[-1].result or "")
         if ids is None:
-            return undecided(mctx("the output of `{command}` gives no run lines in the form "
+            return Undecided(mctx("the output of `{command}` gives no run lines in the form "
                                   "`profile_runs.py --help` gives").format(command=command))
         runs += ids
     return Launch(Role.BATCH_PROFILE, str(n), briefs.batch_profile(runs, head))

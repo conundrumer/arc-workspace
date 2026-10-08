@@ -27,7 +27,7 @@ from pathlib import Path
 from controlled_markdown import mctx
 from operating import briefs
 from operating.bounds import COORDINATOR, FOREGROUND_MS, WAIT_SECONDS
-from operating.roles import GENERAL_ROLES, PASSES, Model, Role, description
+from operating.roles import GENERAL_ROLES, PASSES, Model, Purpose, Role, description
 from operating.state import Agent, Call, Made, Printed, State
 
 WAIT_CAP = 11
@@ -97,30 +97,57 @@ class Reply:
     text: str
 
 
+@dataclass(frozen=True)
+class Relay:
+    """The ruling lines `lines` of the ticket analyst `agent` on the held
+    step `what`, whose launcher printed its final reply after the analyst's
+    launch, printed to the operator whose procedure meets that step, which
+    applies them as the lines of an analyst it launched."""
+    agent: str
+    what: str
+    lines: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Undecided:
+    """A step the command cannot place, which goes to a ticket analyst
+    launched on it (`rulings`) and is never printed. The command reads back
+    which analyst it went to by the ruling key of `what`, so `what` is the
+    same at each read of the same state."""
+    what: str
+
+
 UNDECIDED = "undecided:"
-"""The first word of a message that gives the coordinator a step the
-command cannot place."""
+"""The first word of a message that gives the coordinator back a line of
+its own in no form the command reads."""
 
 DECISION = "for the coordinator:"
 """The opening of a message that gives the coordinator labeled items to act
-on: the part of a ticket analyst's reply for the coordinator, or the note of
-a blocked ticket as a `decision:` item."""
+on: the `decision:` items of a ticket analyst's reply, or the note of a
+blocked ticket as a `decision:` item."""
 
 
-def undecided(what: str) -> Send:
-    """A step the command cannot place, given to the coordinator. The
-    command reads back that it was sent by its text, so `what` is the same
-    at each read of the same state."""
-    return Send(COORDINATOR, f"{UNDECIDED} {what}")
+def unread_line(line: str) -> Send:
+    """The message that gives the coordinator back its line `line`, in no
+    form the command reads."""
+    return Send(COORDINATOR, mctx("{opening} a line of the coordinator's in no form the "
+                                  "command reads: {line}").format(opening=UNDECIDED, line=line))
 
 
-def agent_ids(agents: Iterable[Agent]) -> list[str] | Send:
+def ruled_by(state: State, step: Undecided) -> list[Agent]:
+    """The ticket analysts of any operator of the session launched on
+    `step`, in the order of their launch."""
+    k = ruling_key(step.what)
+    return [a for a, purpose, keys in state.analysts() if purpose is Purpose.STEP and keys == [k]]
+
+
+def agent_ids(agents: Iterable[Agent]) -> list[str] | Undecided:
     """The agent ids of `agents`, which a brief or a message gives, or the
     undecided step on the first of them whose id is unknown."""
     out: list[str] = []
     for a in agents:
         if a.agent_id is None:
-            return undecided(mctx("the {role} on {subject} has no known agent id, which a "
+            return Undecided(mctx("the {role} on {subject} has no known agent id, which a "
                                   "brief or a message names it by").format(
                 role=a.role, subject=a.subject))
         out.append(a.agent_id)
@@ -132,23 +159,33 @@ def ruling_key(what: str) -> str:
     return hashlib.sha1(what.encode()).hexdigest()[:KEY_LENGTH]
 
 
-def held(what: str, choices: Mapping[str, str]) -> Send:
-    """A step that holds its procedure until the coordinator rules it, by
-    a `Decision:` line that gives its ruling key and one of `choices`, each
-    given with what it does."""
+def held(what: str, choices: Mapping[str, str]) -> Undecided:
+    """A step that holds its procedure until a `Decision:` line rules it,
+    which gives its ruling key and one of `choices`, each given with what
+    it does."""
     given = "; ".join(f"`{c}`: {meaning}" for c, meaning in choices.items())
-    return undecided(what + mctx(". Rule it by the line `Decision: {key} <choice>`, with one "
+    return Undecided(what + mctx(". Rule it by the line `Decision: {key} <choice>`, with one "
                                  "of these choices: {given}.").format(key=ruling_key(what),
                                                                       given=given))
 
 
-type Step = Launch | Send | Bash | Stop | Wait | EndTurn | Again | Reply
+type Step = Launch | Send | Undecided | Relay | Bash | Stop | Wait | EndTurn | Again | Reply
 
 
 def repeated(step: Step, state: State) -> bool:
-    """Whether `step` is a message an operator already sent: a step whose
-    procedure then waits on its answer."""
-    return isinstance(step, Send) and sent(state, step.to, step.message)
+    """Whether `step` is a message an operator already sent, or an
+    undecided step a ticket analyst was launched on: a step whose procedure
+    then waits on its answer."""
+    match step:
+        case Undecided():
+            return bool(ruled_by(state, step))
+        case Relay(agent, what):
+            head = RELAY_HEAD.format(agent=agent, key=ruling_key(what))
+            return any(c.tool == "Bash" and head in (c.result or "") for c in state.calls)
+        case Send(to, message):
+            return sent(state, to, message)
+        case _:
+            return False
 
 
 def sent(state: State, to: str, message: str, mark: str | None = None) -> bool:
@@ -191,7 +228,7 @@ def ask_again(state: State, to: str, replies: list[float], form: str) -> Send | 
     the message that asks `to` to give it again in `form`
     (`briefs.restate`), where no operator sent it. True where the reply
     before it had that request, sent before it: the reply that answers the
-    request is still in no such form, and the step goes to the coordinator.
+    request is still in no such form, and the step is undecided.
     False where the request on it was sent and no reply of `to` followed
     it."""
     latest = replies[-1]
@@ -305,6 +342,48 @@ def is_wait(command: str, agent: str) -> bool:
 
 def is_next(command: str, agent: str) -> bool:
     return runs(command, "next", agent)
+
+
+FINAL_REPLY = "final reply"
+"""The first line of the text `next` prints for the operator's final
+reply."""
+
+
+def final_replies(state: State, operator: str) -> list[float]:
+    """The times of the calls of `next` that printed `operator` its final
+    reply."""
+    return [c.time for c in state.calls if c.operator == operator and c.tool == "Bash"
+            and is_next(str(c.input.get("command", "")), operator)
+            and (c.result or "").startswith(FINAL_REPLY + "\n")]
+
+
+def carrier(state: State, operator: str, time: float) -> str | None:
+    """The operator whose final reply carries what reached `operator` at
+    `time`: of `operator` and the operators launched after it, the one
+    whose call that printed a final reply came first after `time`, with
+    `me` counted as printing one now, or None where none did."""
+    after = state.operators[state.operators.index(operator):]
+    printed_at = [(t, o) for o in after for t in final_replies(state, o) if t > time]
+    if state.me in after:
+        printed_at.append((state.now, state.me))
+    return min(printed_at)[1] if printed_at else None
+
+
+def nested(text: str) -> list[str]:
+    """The lines of `text`, nested under an item of the final reply."""
+    return [f"    {ln}".rstrip() for ln in text.strip().splitlines()]
+
+
+def failure(c: Call) -> str:
+    """The first line of the result of the failed call `c`."""
+    reason = (c.result or "").strip().splitlines()
+    return reason[0] if reason else mctx("no result text")
+
+
+RELAY_HEAD = mctx("Ticket analyst {agent} ruled the held step {key} below, and the operator "
+                  "that launched it has printed its final reply since.")
+RELAY_APPLY = mctx("Apply the lines below as lines of a ticket analyst you launched to rule a "
+                   "step, then run `{command}`.")
 
 
 def only_command(command: str, agent: str) -> bool:
@@ -483,4 +562,10 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
         case Again():
             return mctx("Run the command again: nothing is ready.")
         case Reply(text):
-            return f"final reply\n{text}"
+            return f"{FINAL_REPLY}\n{text}"
+        case Relay(analyst, what, lines):
+            return "\n".join([RELAY_HEAD.format(agent=analyst, key=ruling_key(what)),
+                              RELAY_APPLY.format(command=next_command(agent)),
+                              "", *lines, "", what])
+        case Undecided():
+            raise ValueError(f"an undecided step is placed before it is printed: {step}")

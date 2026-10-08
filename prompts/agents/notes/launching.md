@@ -50,7 +50,7 @@
 - A ticket reviewer's brief gives the number of each ticket under `tickets/draft/` to review, and the agent id of the agent that launches it, where that is not the coordinator.
 
 ### A ticket analyst's brief
-- A ticket analyst's brief gives the tickets under `tickets/open/` to settle, a draft `change` ticket whose log holds findings or a suggestion, or the findings an editor left on a review of its change and the items an editor left unfinished for a decision, with the editor's reasons.
+- A ticket analyst's brief gives the tickets under `tickets/open/` to settle, a draft `change` ticket whose log holds findings or a suggestion, or the findings an editor left on a review of its change and the items an editor left unfinished for a decision, with the editor's reasons, or a step that an operator's command cannot decide, which the operator holds.
     - With each of those findings and items, it gives the agent id of the change's editor, the change's worktree, and the number of the change's ticket, or, where the change has none, its intent and what is already settled about it.
     - With a draft whose next revision opens at its operator's cap of ticket reviews, it gives that this revision is the last: the draft then opens with no further ticket review, and the change's own review checks what the change writes.
 - With the tickets a solver pass filed, it gives the review of that pass's transcript.
@@ -66,7 +66,7 @@
     - `Merge: <number>`: a `change` under `tickets/blocked/` that waits on the user, which the user's ruling has the operator merge.
     - `Tickets are open.`
     - `Override: <override>`: an override for a solver pass, with its task and its pass.
-    - `Decision: <decision>`: a decision of the user on a procedure, or your decision on a step the operator gave you as undecided.
+    - `Decision: <decision>`: a decision of the user on a procedure, or the line that rules a step in the reply of a ticket analyst you launched on that step.
 - The operator gives each line of its brief or of a later message from the coordinator in no other form back to the coordinator as undecided.
 
 ### A code reviewer's brief
@@ -107,8 +107,9 @@
 - Send each line you give an operator to a running operator of yours, and where none runs, launch a new operator with it. Give it in a form [An operator's brief](#an-operators-brief) gives, with nothing else in that message.
 - To tell an operator that tickets are open, give it `Tickets are open.`
 - When a supervisor's alert on a message to you reaches you, judge from the sender's transcript whether that message answers a request of another agent and none of yours. Where it does, file its sending as a ticket of the kind that fits it, on the sender, with the alert as its evidence, and tell an operator that tickets are open before you end your turn with no other work. Relay nothing of that alert to the user, and send nothing to the sender on it.
-- When an operator's message, or a paragraph of it, that opens with `undecided:` reaches you, decide the step it gives, then send the operator the outcome in a `Decision:` or `Override:` line. Bring the user each decision that step brings the user.
-- When an operator's message that opens with `for the coordinator:` reaches you, read the file it gives, then bring the user each `decision:` item that file gives, tell the user each `tell:` item, and act on each `unfinished:` item as on an item an agent you launched gives as unfinished.
+- When an operator's message, or a paragraph of it, that opens with `undecided:` reaches you, send the operator again the line of yours it gives, in a form [An operator's brief](#an-operators-brief) gives.
+- When an operator's message that opens with `for the coordinator:` reaches you, read the file it gives.
+- Bring the user each `decision:` item that file or an operator's final reply gives, tell the user each `tell:` item, and act on each `unfinished:` item as on an item an agent you launched gives as unfinished.
 - Ask an operator for no message to you before its final reply, other than the messages that open with `for the coordinator:` or `undecided:`, which it sends as it goes.
 - Send each draft `change` ticket that the reply of an agent you launched gives, and each `change` ticket you revise, to an operator in a `Drafts to review: <number>` line.
 - Each time a `change` of your session comes to stand under `tickets/open/` with every ticket its `depends-on` gives under `tickets/closed/`, while no operator of yours holds it or runs its review, tell an operator that tickets are open.

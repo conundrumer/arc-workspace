@@ -24,8 +24,11 @@ or where the change has a doc editor, and otherwise sends that editor no
 message. A report that analyst was launched after leaves nothing more,
 unless the part of that analyst's reply for the coordinator gives a
 `decision:` or an `unfinished:` item and no editor has reported since its
-launch: then the change is held for the coordinator, in place of its
-merge.
+launch: then the change is held on those items, in place of its merge.
+Where they give a `decision:` item, the step waits on the coordinator,
+which gets those items with the line that rules the step
+(`settling.for_coordinator`), and otherwise it goes to a ticket analyst
+(`rulings`).
 
 A change with a doc editor passes its review once the latest reply of its
 doc reviewer opens with `no finding stands` and follows each editor's last
@@ -41,7 +44,7 @@ findings on documents and a new code editor for those on `.py` files, and
 the command sends that reviewer their agent ids.
 
 A step of a change that the command cannot place holds that change alone,
-until the coordinator rules it with one of the choices the step gives
+until a `Decision:` line rules it with one of the choices the step gives
 (`directives.ruled`)."""
 
 from pathlib import Path
@@ -49,13 +52,13 @@ from typing import Literal
 
 from controlled_markdown import mctx
 from operating import briefs, merging
-from operating.directives import Directive, Ruling, named, numbers, ruled
-from operating.reports import (budget_passed, finding_paths, finished, leaves_open, no_finding,
-                               standing)
+from operating.directives import Directive, Ruling, held_on, named, numbers, ruled
+from operating.reports import (OPEN_LABELS, Label, budget_passed, finding_paths, finished, items_of,
+                               no_finding, standing)
 from operating.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
 from operating.state import Agent, State, Ticket
-from operating.steps import (Bash, Launch, Send, Step, agent_ids, ask_again, repeated, sends_to, sent,
-                             undecided)
+from operating.steps import (Bash, Launch, Send, Step, Undecided, agent_ids, ask_again, repeated,
+                             sends_to, sent)
 from operating.tracker import COORDINATOR, closed, log, worktree
 from ticketing.vocabulary import Domain, Kind, Status
 
@@ -187,11 +190,11 @@ def in_worktree(state: State, a: Agent, w: Path) -> bool:
     return own_worktree(state, a) == w or str(w) in a.brief
 
 
-def change_editors(t: Ticket) -> tuple[Role, ...] | Send:
+def change_editors(t: Ticket) -> tuple[Role, ...] | Undecided:
     """The editors of the change `t`, those its `editors` field gives; a
     change whose ticket gives none is undecided."""
     if t.editors is None:
-        return undecided(mctx("change {number} gives no `editors` field").format(
+        return Undecided(mctx("change {number} gives no `editors` field").format(
             number=t.number))
     return t.editors
 
@@ -219,7 +222,7 @@ def carry(state: State, t: Ticket) -> Step | None:
             choice = ruled(state, mctx("change {number} has no worktree after {tried} first "
                                        "editors").format(number=t.number, tried=tried),
                            {Ruling.AGAIN: mctx("launch another first editor")})
-            if isinstance(choice, Send):
+            if isinstance(choice, Undecided):
                 return choice
         first = next(r for r in EDITORS if r in editors)
         return Launch(first, t.number, briefs.editor(
@@ -254,12 +257,39 @@ def past_budget(state: State, t: Ticket, latest: list[Agent]) -> Step | None:
         given = [a.brief] + [str(c.input.get("message", "")) for c in sends_to(state, a.agent_id)]
         stated = next((s for text in reversed(given) if (s := briefs.budgets(text))), set[float]())
         if len(stated) != 1:
-            return undecided(mctx("editor {agent} of change {number} says its budget is "
+            return Undecided(mctx("editor {agent} of change {number} says its budget is "
                                   "passed, and the latest brief or operator's message to it "
                                   "that states a budget states {count}").format(
                 agent=a.agent_id, number=t.number, count=len(stated)))
         return Send(a.agent_id, briefs.go_on(r.time, stated.pop()))
     return None
+
+
+LEFT_CHOICES = {
+    Ruling.MERGE: mctx("go on to the merge; the close of the change closes its open question "
+                       "tickets"),
+    Ruling.AGAIN: mctx("launch another ticket analyst on what the editors leave")}
+"""The choices of a step held on what the editors of a change leave."""
+
+
+def left_hold(a: Agent, number: str) -> str | None:
+    """The step held on the `decision:` and `unfinished:` items of the
+    latest reply of `a`, the ticket analyst on what the editors of change
+    `number` leave, or None where that reply gives none."""
+    items = items_of(a, OPEN_LABELS)
+    if items is None:
+        return None
+    return mctx("ticket analyst {agent} on change {number} leaves these items for the "
+                "coordinator:").format(agent=a.agent_id, number=number) + (
+                    "\n" + items + "\n" + mctx("The change is held on them"))
+
+
+def left_ruling(a: Agent, number: str) -> str | None:
+    """The step held on the items `a` leaves (`left_hold`), with the line
+    that rules it, which goes to the coordinator with the `decision:` items
+    of `a`."""
+    hold = left_hold(a, number)
+    return None if hold is None else held_on(hold, LEFT_CHOICES).what
 
 
 def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
@@ -279,9 +309,9 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     outputs = list(state.gate_outputs.get(w, ()))
     gate = outputs if reported > judged else []
     hold: str | None = None
-    if analysts and reported <= judged and leaves_open(analysts[-1]):
-        hold = mctx("ticket analyst {agent} on change {number} leaves items for the "
-                    "coordinator").format(agent=analysts[-1].agent_id, number=t.number)
+    on_user = False
+    if analysts and reported <= judged and (hold := left_hold(analysts[-1], t.number)):
+        on_user = items_of(analysts[-1], [Label.DECISION]) is not None
         needing, gate = left, outputs
     elif not needing and not questions and not gate:
         return False
@@ -289,20 +319,17 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
         hold = mctx("ticket analyst {agent} returned on change {number}, and its question "
                     "tickets stand open").format(agent=analysts[-1].agent_id, number=t.number)
     if hold is not None:
-        choice = ruled(state, hold, {
-            Ruling.MERGE: mctx("go on to the merge; the close of the change closes its open "
-                               "question tickets"),
-            Ruling.AGAIN: mctx("launch another ticket analyst on what the editors leave")})
-        if isinstance(choice, Send):
-            return choice
+        choice = ruled(state, hold, LEFT_CHOICES)
+        if isinstance(choice, Undecided):
+            return None if on_user else choice
         if choice is Ruling.MERGE:
             return False
     reporting = [(a, r) for a in needing if (r := a.last_report) is not None]
     reporters = agent_ids(a for a, _ in reporting)
     editors = agent_ids(latest)
-    if isinstance(reporters, Send):
+    if isinstance(reporters, Undecided):
         return reporters
-    if isinstance(editors, Send):
+    if isinstance(editors, Undecided):
         return editors
     reports = [(i, r.text) for i, (_, r) in zip(reporters, reporting, strict=True)]
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
@@ -342,13 +369,13 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
     for role in needed:
         if not any(a.role is role for a in fixers):
             reviewer = agent_ids([r])
-            if isinstance(reviewer, Send):
+            if isinstance(reviewer, Undecided):
                 return reviewer
             return Launch(role, t.number, briefs.review_fix(
                 role, t.number, w, reviewer[0], code if role is Role.CODE_EDITOR else [],
                 state.scratch / t.number, state.me), model=t.model(role))
     fixer_ids = agent_ids(fixers)
-    if isinstance(fixer_ids, Send):
+    if isinstance(fixer_ids, Undecided):
         return fixer_ids
     for f in fixer_ids:
         message = briefs.new_editor(f)
@@ -370,11 +397,11 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
     otherwise the message that asks `r` to review the change again."""
     if no_finding(r):
         if r.messaged is None:
-            return undecided(mctx("the transcript of doc reviewer {agent} of change {number} "
+            return Undecided(mctx("the transcript of doc reviewer {agent} of change {number} "
                                   "is unknown, so the command cannot read whom it sent a "
                                   "message").format(agent=r.agent_id, number=t.number))
         ids = agent_ids(late)
-        if isinstance(ids, Send):
+        if isinstance(ids, Undecided):
             return ids
         if all(i in r.messaged for i in ids):
             return False
@@ -386,11 +413,11 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
 
 def review_ruled(state: State, t: Ticket, w: Path, here: list[Agent],
                  what: str) -> Step | Literal[False]:
-    """The step on a review held for `what`, by the coordinator's ruling:
+    """The step on a review held for `what`, by its ruling:
     False where the review passes."""
     choice = ruled(state, what, {Ruling.PASSES: mctx("the review passes"),
                                  Ruling.AGAIN: mctx("launch another doc reviewer")})
-    if isinstance(choice, Send):
+    if isinstance(choice, Undecided):
         return choice
     if choice is Ruling.PASSES:
         return False
@@ -400,7 +427,7 @@ def review_ruled(state: State, t: Ticket, w: Path, here: list[Agent],
 def review_launch(t: Ticket, w: Path, here: list[Agent], state: State) -> Step:
     """The launch of a doc reviewer on the change, with its editors."""
     ids = agent_ids(here)
-    if isinstance(ids, Send):
+    if isinstance(ids, Undecided):
         return ids
     return Launch(Role.DOC_REVIEWER, t.number, briefs.doc_review(
         t.number, w, [(a.role, i) for a, i in zip(here, ids, strict=True)], state.me))

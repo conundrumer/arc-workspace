@@ -1,5 +1,5 @@
 """The ticket analysts the operator launches on open tickets, and the
-labeled items it sends the coordinator to act on.
+labeled items of their replies for the coordinator.
 
 The operator takes each `request` and `bug` from its first ticket analyst
 on: once a ticket stands in the list `file_ticket.py to-settle` prints,
@@ -14,32 +14,45 @@ other than a `change` that stands under `tickets/blocked/` or
 `tickets/closed/` with such a line after the line that moved it there
 moves back to `tickets/open/` first.
 
-The items for the coordinator to act on reach it once, by one of two
-messages, each opening with `steps.DECISION`. Where a ticket analyst's
-reply ends with the part for the coordinator
-(`reports.FOR_COORDINATOR`), and that part holds an item labeled with
-its kind (`reports.LABELED`), in any case, markup or list form, the
-command sends those items, read back by the analyst's agent id and the
-reply's time in any message to the coordinator. A part that holds no
-such item counts as no part. An item of that part that opens with a
-label with no colon after it (`reports.MISLABELED`) goes to the
-coordinator as undecided, in the message of those items where there are
-any. Otherwise, the item is the note of the line that moved a ticket
+The coordinator gets from a ticket analyst's reply only what goes to the
+user. Where that reply ends with the part for the coordinator
+(`reports.FOR_COORDINATOR`), the command reads the items of that part
+labeled with their kind (`reports.LABELED`), in any case, markup or list
+form:
+
+- Its `decision:` items reach the coordinator once, as they arise, by a
+  message that opens with `steps.DECISION`, read back by the analyst's
+  agent id and the reply's time in any message to the coordinator.
+- Its `tell:` items reach the coordinator together, in the final reply of
+  the operator that carries that reply (`steps.carrier`).
+- Its `unfinished:` items, and its items that open with a label with no
+  colon after it (`reports.MISLABELED`), are a step the command cannot
+  decide, which goes to a ticket analyst launched on it (`rulings`).
+
+The reply of an analyst on such a step gives its `unfinished:` and
+mislabeled items in that final reply instead, so that no step goes from one
+such analyst to the next. The `unfinished:` items of an analyst on what a
+change's editors leave go to the step that holds that change
+(`changes.leftover`), and its `decision:` items go to the coordinator with
+the line that rules that step.
+
+Otherwise, a `decision:` item is the note of the line that moved a ticket
 into `tickets/blocked/` waiting on the user: the command sends it as a
 `decision:` item once that line is written, where an operator wrote it,
 or a ticket analyst an operator launched that has replied with no such
-part, and reads back that it was sent by the ticket's number and that
+item, and reads back that it was sent by the ticket's number and that
 line's time in the message. So a decision is sent by a later operator
 where the one before it ended before it sent it."""
 
 from controlled_markdown import mctx
-from operating import briefs
-from operating.reports import for_coordinator as analyst_part, mislabeled
+from operating import briefs, changes
+from operating.reports import Label, items_of, mislabeled
 from operating.passes import awaits_analyst
 from operating.roles import Purpose, Role, analyst_subject, joined
-from operating.state import LogLine, State, Ticket
+from operating.state import Agent, LogLine, State, Ticket
 from ticketing.vocabulary import Domain, Kind, Status
-from operating.steps import COORDINATOR, DECISION, Bash, Launch, Send, Step, sent, undecided
+from operating.steps import (COORDINATOR, DECISION, Bash, Launch, Send, Step, Undecided, carrier,
+                             nested, repeated, sent)
 from operating.tracker import AGENT, blocked_on_user, coordinator_line, coordinator_lines, log
 
 
@@ -135,10 +148,10 @@ def decision_key(number: str, time: float) -> str:
 def carried(state: State, t: Ticket, line: LogLine) -> bool:
     """Whether the reply of the ticket analyst that wrote `line` on `t`
     carries its decision to the coordinator: the analyst still runs, or
-    its reply after `line` has a part for the coordinator."""
+    its reply after `line` gives a `decision:` item."""
     return any(a.pending or (
         (r := a.last_report) is not None and r.time >= line.time
-        and analyst_part(a) is not None)
+        and items_of(a, [Label.DECISION]) is not None)
         for a, _, nums in state.analysts()
         if a.agent_id == line.agent_id or (line.agent_id is None and t.number in nums))
 
@@ -168,24 +181,69 @@ def for_coordinator_key(agent: str, time: float) -> str:
     return f"ticket analyst {agent}, reply at {time:.0f}"
 
 
+def replied(state: State) -> list[tuple[Agent, Purpose, list[str], str]]:
+    """Each ticket analyst that replied, with its purpose, the ticket
+    numbers or the task its subject gives, and the key of its latest reply
+    (`for_coordinator_key`)."""
+    return [(a, purpose, nums, for_coordinator_key(a.agent_id, r.time))
+            for a, purpose, nums in state.analysts()
+            if a.agent_id is not None and (r := a.last_report) is not None]
+
+
 def for_coordinator(state: State) -> Step | None:
-    """The labeled items of the part of a ticket analyst's reply for the
-    coordinator, with its items that open with a label it does not read,
-    in one message, sent once, read back by the analyst's agent id and its
-    reply's time in any message to the coordinator."""
-    for a in state.agents_of(Role.TICKET_ANALYST):
-        part = analyst_part(a)
-        items = mislabeled(a)
-        r = a.last_report
-        if r is None or a.agent_id is None or (part is None and not items):
+    """The `decision:` items of the part of a ticket analyst's reply for the
+    coordinator, in one message, sent once, read back by the analyst's
+    agent id and its reply's time in any message to the coordinator. The
+    items of an analyst on what a change's editors leave go with the step
+    that holds that change, and the line that rules it
+    (`changes.left_ruling`)."""
+    for a, purpose, nums, key in replied(state):
+        part = items_of(a, [Label.DECISION])
+        if part is None:
             continue
-        key = for_coordinator_key(a.agent_id, r.time)
-        unread = undecided(mctx("the part for the coordinator of {key} holds items that open "
-                                "with a label with no colon after it:").format(key=key)
-                           + "\n" + "\n".join(items))
-        message = unread.message if part is None else labeled(key, part) + (
-            "\n\n" + unread.message if items else "")
-        step = Send(COORDINATOR, message)
+        if purpose is Purpose.CHANGE and (ruling := changes.left_ruling(a, nums[0])):
+            part += "\n\n" + ruling
+        step = Send(COORDINATOR, labeled(key, part))
         if not sent(state, step.to, step.message, key):
             return step
     return None
+
+
+def unfinished(state: State) -> Step | None:
+    """The undecided step on the `unfinished:` items of the part of a
+    ticket analyst's reply for the coordinator, with its items that open
+    with a label with no colon after it, other than those of an analyst on
+    a held step, which go to the final reply (`told`), and the
+    `unfinished:` items of an analyst on what a change's editors leave."""
+    for a, purpose, _, key in replied(state):
+        if purpose is Purpose.STEP:
+            continue
+        open_items = None if purpose is Purpose.CHANGE else items_of(a, [Label.UNFINISHED])
+        items = [*([open_items] if open_items else []), *mislabeled(a)]
+        if not items:
+            continue
+        s = Undecided(mctx("the part for the coordinator of {key} leaves these items:").format(
+            key=key) + "\n" + "\n".join(items))
+        if not repeated(s, state):
+            return s
+    return None
+
+
+def told(state: State) -> list[str]:
+    """The lines of the final reply of the operator `me` that give the
+    coordinator the `tell:` items of each ticket analyst's reply that `me`
+    carries (`steps.carrier`), and of the reply of an analyst on a held
+    step, its `unfinished:` items and its items that open with a label with
+    no colon after it."""
+    out: list[str] = []
+    for a, purpose, _, key in replied(state):
+        r = a.last_report
+        if r is None or carrier(state, a.operator, r.time) != state.me:
+            continue
+        on_step = purpose is Purpose.STEP
+        part = items_of(a, [Label.TELL, Label.UNFINISHED] if on_step else [Label.TELL])
+        items = [*([part] if part else []), *(mislabeled(a) if on_step else [])]
+        if items:
+            out.append(f"- {key}:")
+            out += nested("\n".join(items))
+    return out

@@ -5,6 +5,7 @@ absence: an editor not finished, a review with findings, no place standing
 and no module split."""
 
 import re
+from collections.abc import Iterable
 from enum import StrEnum
 
 from operating.roles import Role
@@ -47,7 +48,6 @@ FOR_COORDINATOR = "## For the coordinator"
 """The heading at the end of a ticket analyst's reply, over the part of it
 for the coordinator: the decisions it brings the user, the changes it
 tells the user, and the items it leaves unfinished."""
-
 class Label(StrEnum):
     """The labels of the kinds of item of the part for the coordinator."""
     DECISION = "decision"
@@ -124,24 +124,27 @@ def finding_paths(a: Agent) -> list[str]:
     return list(dict.fromkeys(m["path"] for m in FINDING.finditer(body)))
 
 
-def coordinator_part(a: Agent) -> tuple[list[str], list[str]]:
-    """The lines of the part of a ticket analyst's latest reply under
-    `FOR_COORDINATOR`, as the lines of its `LABELED` items, each with the
-    lines nested under it, and the other lines, or none where it has no
-    such part."""
+def coordinator_part(a: Agent) -> tuple[list[tuple[Label, list[str]]], list[str]]:
+    """The part of a ticket analyst's latest reply under `FOR_COORDINATOR`:
+    its `LABELED` items, each by its label with its lines and the lines
+    nested under it, and the other lines, or none where it has no such
+    part."""
     r = a.last_report
     if a.role is not Role.TICKET_ANALYST or r is None or FOR_COORDINATOR not in r.text:
         return [], []
-    labeled: list[str] = []
+    labeled: list[tuple[Label, list[str]]] = []
     other: list[str] = []
     top: int | None = None
     for line in r.text.rsplit(FOR_COORDINATOR, 1)[1].splitlines():
         if top is not None and (not line.strip() or indent(line) > top):
-            labeled.append(line)
+            labeled[-1][1].append(line)
             continue
         m = LABELED.match(line)
         top = len(m["indent"]) if m else None
-        (labeled if m else other).append(line)
+        if m:
+            labeled.append((Label(m["label"].lower()), [line]))
+        else:
+            other.append(line)
     return labeled, other
 
 
@@ -149,18 +152,13 @@ def indent(line: str) -> int:
     return len(line) - len(line.lstrip())
 
 
-def for_coordinator(a: Agent) -> str | None:
+def items_of(a: Agent, labels: Iterable[Label]) -> str | None:
     """The `LABELED` items of the part of a ticket analyst's latest reply
-    for the coordinator, each with the lines nested under it, or None where
-    that part holds no such item."""
-    return "\n".join(coordinator_part(a)[0]).strip("\n") or None
-
-
-def leaves_open(a: Agent) -> bool:
-    """Whether the part of a ticket analyst's latest reply for the
-    coordinator gives an item labeled by one of `OPEN_LABELS`."""
-    return any(Label(m["label"].lower()) in OPEN_LABELS
-               for ln in coordinator_part(a)[0] if (m := LABELED.match(ln)) is not None)
+    for the coordinator labeled by one of `labels`, each with the lines
+    nested under it, or None where that part holds no such item."""
+    wanted = set(labels)
+    return "\n".join(ln for label, lines in coordinator_part(a)[0] if label in wanted
+                     for ln in lines).strip("\n") or None
 
 
 def mislabeled(a: Agent) -> list[str]:

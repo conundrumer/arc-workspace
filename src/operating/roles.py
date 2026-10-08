@@ -99,6 +99,7 @@ class Purpose(StrEnum):
     DRAFT = "draft"
     CHANGE = "change"
     PASS = "pass"
+    STEP = "step"
 
 
 def analyst_subject(purpose: Purpose, subject: str) -> str:

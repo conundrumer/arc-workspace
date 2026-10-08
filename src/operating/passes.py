@@ -13,8 +13,8 @@ ticket on the task filed since the pipeline started stands under
 `changes.boosted` gives. A pass's reply that is no report's path, or a
 report with no `## Tickets filed` section, goes back to the pass once,
 with a request to send it again in that form. The pipeline stops where
-the pass's answer is still in no such form, once the coordinator has
-that answer, quoted, as undecided; where an `interference`
+the pass's answer is still in no such form, once a ticket analyst on
+that answer, quoted, as an undecided step was launched; where an `interference`
 ticket waits on the user; where one stands open once the ticket analyst
 returned; or where an operator passed over the launch of its next pass.
 Once it ends or stops, the work set aside goes back, as
@@ -32,8 +32,8 @@ from operating.reports import TICKETS_FILED
 from operating.roles import PASSES, Purpose, Role, analyst_subject, joined
 from operating.state import Agent, State
 from ticketing.vocabulary import Domain, Kind, Status
-from operating.steps import (COORDINATOR, RUN_COMMAND, Bash, Launch, Send, Step, agent_ids,
-                             ask_again, bash_calls, passed, sent, undecided)
+from operating.steps import (RUN_COMMAND, Bash, Launch, Send, Step, Undecided, agent_ids,
+                             ask_again, bash_calls, passed, repeated)
 from operating.task_work import CLAIM, tasks_work
 from operating.tracker import blocked_on_user
 
@@ -127,7 +127,7 @@ def run(state: State, p: Pipeline) -> Outcome:
                 if isinstance(asked, Send):
                     return Outcome(asked)
             told = no_report(role, a)
-            if not sent(state, COORDINATOR, told.message):
+            if not repeated(told, state):
                 return Outcome(told)
             return end(state, p, restore, f"the {role} pass {a.agent_id} replied with no "
                                           f"path of a report with a `{TICKETS_FILED}` "
@@ -144,7 +144,7 @@ def run(state: State, p: Pipeline) -> Outcome:
         if numbers and not analyst:
             subject = analyst_subject(Purpose.PASS, joined([p.task, *numbers]))
             reviewer = agent_ids([review])
-            if isinstance(reviewer, Send):
+            if isinstance(reviewer, Undecided):
                 return Outcome(reviewer)
             return Outcome(Launch(Role.TICKET_ANALYST, subject, briefs.pass_settle(
                 numbers, p.task, reviewer[0], state.me), items=len(numbers)))
@@ -164,12 +164,12 @@ def run(state: State, p: Pipeline) -> Outcome:
     return end(state, p, restore, None)
 
 
-def no_report(role: Role, a: Agent) -> Send:
-    """The step that gives the coordinator, quoted, a pass's reply that
-    names no report file with a `## Tickets filed` section."""
+def no_report(role: Role, a: Agent) -> Undecided:
+    """The undecided step on a pass's reply, quoted, that names no report
+    file with a `## Tickets filed` section."""
     r = a.last_report
     quoted = "\n".join(f"> {line}" for line in (r.text if r else "").strip().splitlines())
-    return undecided(mctx("the {role} pass {agent} replied with no path of a report that has "
+    return Undecided(mctx("the {role} pass {agent} replied with no path of a report that has "
                           "a `{section}` section, so its pipeline on {task} stops. Its "
                           "reply:").format(role=role, agent=a.agent_id, section=TICKETS_FILED,
                                            task=a.subject) + "\n" + quoted)

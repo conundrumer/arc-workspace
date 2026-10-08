@@ -10,22 +10,26 @@ operator they reached, so the work a line to an earlier operator left
 unfinished reaches a later one only where the coordinator gives it again
 (`passes.every`);
 a `Decision:` line that rules a held step holds for every operator
-(`directives`). An operator past its context bound ends at once
+(`directives`), and the items for the coordinator of a ticket analyst's
+reply go to the final reply of the operator that carries that reply
+(`steps.carrier`). An operator past its context bound ends at once
 too, and once its work is no longer open, the operator the coordinator
 launches next takes up, through `changes.release`, the changes of the
 session and of the tickets named to it.
 
 The steps come in this order: the coordinator's lines in no form the
 command reads, each given back to the coordinator once; the supervisor's
-alerts; the decisions for the user, and the part of each ticket analyst's
+alerts; the request to a ticket analyst on a held step to give its ruling
+again; the decisions for the user, and the items of each ticket analyst's
 reply for the coordinator; at launch, the release of tickets;
 the move back to `tickets/open/` of the tickets the coordinator wrote on
 under `tickets/blocked/` or `tickets/closed/`; the coordinator's later
 lines to the ticket analysts that run on their tickets; the ticket
 analysts on open tickets; the review
 of drafts; the changes; the solver pipelines; After a batch. A step that
-is a message an operator already sent is passed over, and so is a step an
-operator passed over by `operate.py pass-over`.
+is a message an operator already sent is passed over, and so are an
+undecided step a ticket analyst was launched on and a step an operator
+passed over by `operate.py pass-over`.
 
 Where no step is ready and an agent the operator launched or last
 resumed itself runs, other than one a notification said has not reported
@@ -40,7 +44,7 @@ stops its wait where one runs, then gives its final reply."""
 from collections.abc import Callable
 
 from controlled_markdown import mctx
-from operating import alerts, batches, changes, drafts, passes, settling
+from operating import alerts, batches, changes, drafts, passes, rulings, settling
 from operating.directives import (
     NUMBER,
     TASK,
@@ -54,8 +58,6 @@ from operating.roles import Role, description
 from operating.state import State, Ticket
 from ticketing.vocabulary import Status
 from operating.steps import (
-    COORDINATOR,
-    UNDECIDED,
     WAIT_CAP,
     WAIT_SECONDS,
     Again,
@@ -63,17 +65,19 @@ from operating.steps import (
     EndTurn,
     Launch,
     Reply,
-    Send,
     Step,
     Stop,
+    Undecided,
     Wait,
     bash_calls,
+    failure,
     is_wait,
     key,
+    nested,
     only_command,
     passed,
     repeated,
-    undecided,
+    unread_line,
 )
 
 ENDED_FOR_CONTEXT = "ended for my context"
@@ -81,34 +85,43 @@ GIVEN_AGAIN = "a line below that stands unfinished reaches it only where it is g
 
 
 def first(state: State, *procedures: Callable[[State], Step | None]) -> Step | None:
-    """The first step of `procedures` that is ready. A procedure whose step
-    failed, as `refused` gives, or whose step an operator passed over,
-    waits until the state changes, and the procedures after it go on. A
-    step passed over goes to the coordinator, once, as one its procedure
-    waits on, other than a step that gives the coordinator a step as
-    undecided, which the line that passed it over answered."""
+    """The first step of `procedures` that is ready, where an undecided
+    step is the launch of a ticket analyst on it (`rulings`). A procedure
+    whose step failed, as `refused` gives, or whose step an operator passed
+    over, waits until the state changes, and the procedures after it go
+    on. A step passed over or failed is undecided, once, as one its
+    procedure waits on, other than the launch of an analyst on an
+    undecided step: where the line that passed it over answered that step,
+    or that launch failed, the step stays held. An undecided step whose
+    analyst's ruling the operator `me` applies, and did not receive, gives
+    the printing of that ruling (`rulings.relay`)."""
     for procedure in procedures:
         s = procedure(state)
-        if s is None or repeated(s, state):
-            continue
-        if (line := passed(s, state)) is not None:
-            if isinstance(s, Send) and s.to == COORDINATOR and s.message.startswith(UNDECIDED):
+        while s is not None:
+            if isinstance(s, Undecided) and repeated(s, state):
+                relayed = rulings.relay(state, s)
+                if relayed is not None and not repeated(relayed, state):
+                    return relayed
+                break
+            if repeated(s, state):
+                break
+            on_step = isinstance(s, Undecided)
+            if isinstance(s, Undecided):
+                s = rulings.launch(state, s)
+            if (line := passed(s, state)) is not None:
+                s = None if on_step else Undecided(mctx(
+                    "step {key}, which the line `{line}` passed over, holds up its "
+                    "procedure").format(key=key(s), line=line))
                 continue
-            held = undecided(mctx("step {key}, which the line `{line}` passed over, holds up "
-                                  "its procedure").format(key=key(s), line=line))
-            if not repeated(held, state):
-                return held
-            continue
-        if (failed := refused(state, s)) is None:
-            return s
-        if not repeated(failed, state):
-            return failed
+            if (failed := refused(state, s)) is None:
+                return s
+            s = None if on_step else failed
     return None
 
 
-def refused(state: State, step: Step) -> Step | None:
-    """The step that gives the coordinator `step` as undecided, where the
-    last call of `step` by `state.me` failed and no report reached an
+def refused(state: State, step: Step) -> Undecided | None:
+    """The undecided step on `step`, where the last call of `step` by
+    `state.me` failed and no report reached an
     operator since, as where the harness or the permission classifier
     denied it, so that a denied call is not printed again and again."""
     match step:
@@ -127,15 +140,13 @@ def refused(state: State, step: Step) -> Step | None:
     last = same[-1]
     if any(r.time > last.time for a in state.agents for r in a.reports):
         return None
-    reason = (last.result or "").strip().splitlines()
-    why = reason[0] if reason else mctx("no result text")
-    return undecided(mctx("the call `{what}` failed: {why}").format(what=what, why=why))
+    return Undecided(mctx("the call `{what}` failed: {why}").format(what=what,
+                                                                     why=failure(last)))
 
 
 def unread_lines(state: State) -> Step | None:
     for ln in unread(state):
-        s = undecided(mctx("a line of the coordinator's in no form the command reads: "
-                           "{line}").format(line=ln.text))
+        s = unread_line(ln.text)
         if not repeated(s, state):
             return s
     return None
@@ -166,14 +177,15 @@ def next_step(state: State) -> Step:
     if later:
         return Reply(mctx("Operator {operator} carries the work on, from the state; "
                           "{given}.").format(operator=later[-1], given=GIVEN_AGAIN)
-                     + "\n" + "\n".join(line_states(state)))
-    s = first(state, unread_lines, alerts.step, settling.decisions, settling.for_coordinator)
+                     + "\n" + "\n".join(reply_lines(state)))
+    s = first(state, unread_lines, alerts.step, rulings.asks, settling.decisions,
+              settling.for_coordinator, settling.unfinished)
     if s is not None:
         return s
     if state.past_bound:
         return Reply(mctx("I {ended}; the next operator takes up the work from the state, "
                           "and {given}.").format(ended=ENDED_FOR_CONTEXT, given=GIVEN_AGAIN)
-                     + "\n" + "\n".join(line_states(state)))
+                     + "\n" + "\n".join(reply_lines(state)))
     s = first(state, launching, settling.reopen, settling.later_lines, settling.settle,
               drafts.step, changes.step, pipelines, batches.step)
     if s is not None:
@@ -282,20 +294,29 @@ def line_states(state: State) -> list[str]:
     return [line_state(state, ln, outcomes) for ln in lines(state)]
 
 
+def reply_lines(state: State) -> list[str]:
+    """The lines each reply of the operator that ends it gives: its lines
+    (`line_states`), the items for the coordinator it carries
+    (`settling.told`), and the held steps no ruling reached
+    (`rulings.unruled`, `rulings.failed`)."""
+    return [*line_states(state), *settling.told(state), *rulings.unruled(state),
+            *rulings.failed(state)]
+
+
 def stands(state: State, head: str, step: Step | None) -> tuple[str, bool]:
     """The line of the final reply on a draft or a change that stands, by
-    `head`, with its step: where that step is a message to the coordinator
-    an operator already sent, the line gives that message, which its
-    procedure waits on, and the second value holds."""
-    if isinstance(step, Send) and step.to == COORDINATOR and repeated(step, state):
-        return head + mctx(": it waits on the coordinator's answer to the message: {message}").format(
-            message=step.message), True
+    `head`, with its step: where that step is undecided and went to a
+    ticket analyst, the line gives that step, which its procedure waits
+    on, and the second value holds."""
+    if isinstance(step, Undecided) and repeated(step, state):
+        return head + mctx(": it waits on a ruling of the step: {what}").format(
+            what=step.what), True
     return head, False
 
 
 def final(state: State) -> str:
     """The operator's final reply: what stands at its end."""
-    out = line_states(state)
+    out = reply_lines(state)
     for n, deps in changes.waiting(state):
         waited = ", ".join(deps)
         out.append("- " + mctx("Change {n} not taken: it waits for {waited}").format(
@@ -308,8 +329,8 @@ def final(state: State) -> str:
                             n=t.number),
                         changes.carry(state, t)) for t in changes.held(state)]
     out += [line for line, _ in standing]
-    head = (mctx("Done: no procedure has a step left other than those that wait on the "
-                 "coordinator's answer, as the lines below give.")
+    head = (mctx("Done: no procedure has a step left other than those that wait on a "
+                 "ruling, as the lines below give.")
             if any(asked for _, asked in standing)
             else mctx("Done: no procedure has a step left."))
     out.insert(0, head)
@@ -317,5 +338,5 @@ def final(state: State) -> str:
         if a.operator == state.me and (r := a.last_report) is not None:
             out.append("- " + mctx("The checks after the merge of change {number}, by "
                                    "{agent}:").format(number=a.subject, agent=a.agent_id))
-            out += [f"    {line}" for line in r.text.strip().splitlines()]
+            out += nested(r.text)
     return "\n".join(out)

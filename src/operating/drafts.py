@@ -30,8 +30,8 @@ operators' was launched on it, as where it moves the draft back to revise
 it, the command tells that agent to write nothing further and to
 end. Where a ticket reviewer returned and left a draft in
 `tickets/draft/` with no finding and no suggestion, or a ticket analyst
-returned with no revision written, the review of that draft holds until the coordinator
-rules it with one of the choices the command gives it
+returned with no revision written, the review of that draft holds until a
+`Decision:` line rules it with one of the choices the command gives it
 (`directives.ruled`)."""
 
 from controlled_markdown import mctx
@@ -40,7 +40,7 @@ from operating.directives import Directive, Ruling, named, numbers, ruled
 from operating.roles import Purpose, Role, analyst_subject, joined, subjects
 from operating.state import Agent, State, Ticket
 from ticketing.vocabulary import Kind, Note, Status
-from operating.steps import Bash, Launch, Send, Step, repeated, ruling_key, sent
+from operating.steps import Bash, Launch, Send, Step, Undecided, repeated, ruling_key, sent
 from operating.tracker import COORDINATOR, after, last_index, log
 
 CAP = 3
@@ -110,8 +110,8 @@ def at_cap(t: Ticket) -> bool:
 
 
 def step(state: State) -> Step | None:
-    """The next step of the review of the drafts. A step held for the
-    coordinator on one draft holds that draft alone."""
+    """The next step of the review of the drafts. A held step on one draft
+    holds that draft alone."""
     ready: list[Ticket] = []
     waiting: list[Ticket] = []
     for t in drafts(state):
@@ -167,7 +167,7 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
                                        "{agent} is unfinished").format(
                                number=t.number, agent=analyst_done[-1].agent_id),
                            {Ruling.AGAIN: mctx("launch another ticket analyst to revise it")})
-            if isinstance(choice, Send):
+            if isinstance(choice, Undecided):
                 return choice
         waiting.append(t)
         return None
@@ -184,11 +184,11 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
                     "no finding").format(agent=reviewed[-1].agent_id, number=t.number)
         choice = ruled(state, what, {Ruling.AGAIN: mctx("launch another ticket reviewer on it"),
                                      Ruling.OPEN: mctx("move it to `tickets/open/`")})
-        if isinstance(choice, Send):
+        if isinstance(choice, Undecided):
             return choice
         if choice is Ruling.OPEN:
             return Bash(log(t.number, Status.OPEN, Status.DRAFT,
-                            f"opened by the coordinator's ruling {ruling_key(what)}", None))
+                            f"opened by the ruling {ruling_key(what)}", None))
     ready.append(t)
     return None
 

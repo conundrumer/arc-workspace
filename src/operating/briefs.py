@@ -10,7 +10,7 @@ from pathlib import Path
 from string import Formatter
 
 from controlled_markdown import mctx
-from operating.reports import LIST_MARKER, NO_FINDING, TICKETS_FILED
+from operating.reports import FOR_COORDINATOR, LIST_MARKER, NO_FINDING, TICKETS_FILED
 from operating.roles import Role
 from operating.tracker import FILE_TICKET
 from ticketing.times import utc_stamp
@@ -261,6 +261,15 @@ def pass_settle(numbers: list[str], task: str, review: str, operator: str) -> st
         LAUNCHER.format(operator=operator))
 
 
+HELD_STEP = mctx("Rule the step below, which the operator that launches you holds and its "
+                 "command cannot decide.")
+
+
+def held_step(what: str, operator: str) -> str:
+    """The brief of a ticket analyst on the undecided step `what`."""
+    return "\n".join([HELD_STEP, "", what, "", LAUNCHER.format(operator=operator)])
+
+
 TRANSCRIPT_REVIEW = mctx("""
     - Review the transcript of run {run}, which `python3 ~/.claude/skills/retrieve/transcripts.py --help` reads.
     - File each ticket by the lines of the section `Ticket files` of `prompts/agents/notes/tickets.md`, with `{domain}` as `<domain>`, `{subject}` as `<subject>`, and `transcript-review` as `<agent>`.
@@ -370,6 +379,11 @@ REVIEW_FORM = mctx("a report, in your report file, that opens with `{no_finding}
                    "falls on, in backticks, and a colon.").format(no_finding=NO_FINDING)
 PASS_FORM = mctx("a reply that is the path of your report file alone, on one line, where that "
                  "report has a `{heading}` section.").format(heading=TICKETS_FILED)
+RULING_FORM = mctx("a reply that gives, on a line of its own, the line that rules the step: the "
+                   "line the step gives for its ruling, where it gives one, and otherwise "
+                   "`Decision: <decision>` or `Override: <override>`; or, where the decision "
+                   "goes to the user, a `decision:` item under `{heading}`.").format(
+                       heading=FOR_COORDINATOR)
 ALERT_FORM = mctx("where it is an alert, a message that opens with the line `alert: <kind> "
                   "<agent id>`, with the kind of the alert and the agent it is on; where it is "
                   "no alert, a reply that says so.")
