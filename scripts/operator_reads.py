@@ -32,7 +32,7 @@ from operations.merging import MERGE_SCRIPT, merge_messages
 from operations.reports import TICKETS_FILED
 from operations.roles import PASSES, Role, described
 from operations.state import Agent, Call, Merge, Message, Report
-from operations.steps import COMMAND, is_next, is_wait
+from operations.steps import COMMAND, is_next, is_wait, unfenced
 
 
 def merge_outcome(aid: str, command: str, time: float, result: str | None, error: bool,
@@ -95,10 +95,11 @@ def unfiled_call(aid: str, tool: str, inp: dict[str, Any], result: str | None,
     """The input and the result of a call of the operator `aid`, with each
     file the command wrote, that the field `FILED_FIELDS` gives or the
     result of a call of `next` gives, read in place of the line that gives
-    it (`filed_texts.unfiled`)."""
+    it (`filed_texts.unfiled`), and that field read without the fence
+    lines an operator passed with it (`steps.unfenced`)."""
     where = mctx("{run}: a call of {tool}").format(run=aid, tool=tool)
     if (name := FILED_FIELDS.get(tool)) is not None:
-        inp = {**inp, name: unfiled(str(inp.get(name, "")), where, undecided)}
+        inp = {**inp, name: unfiled(unfenced(str(inp.get(name, ""))), where, undecided)}
     elif tool == "Bash" and result is not None and is_next(str(inp.get("command", "")), aid):
         result = unfiled(result, where, undecided)
     return inp, result

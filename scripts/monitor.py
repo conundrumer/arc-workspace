@@ -50,7 +50,7 @@ HELP = mctx("""
         ```
         uv run python scripts/monitor.py next <agent id>
         ```
-    - `next` prints the next step of the monitor whose agent id it is given: one call to make, with its parameters, or the monitor's final reply. It writes the brief of a launch to a file under the session's scratchpad, and the call's prompt gives that file's path, with the report file the auditor writes. Where no step is ready, it reads the state again each {poll} seconds, for up to {block} seconds, then prints that the monitor runs it again.
+    - `next` prints the next step of the monitor whose agent id it is given: one call to make, with its parameters, or the monitor's final reply. It writes the brief of a launch to a file under the session's scratchpad, and the call's prompt gives that file's path, with the report file the auditor writes. The value of a prompt or a message parameter it prints stands between two lines of three backticks, and the value to pass is the text between those lines, without them. Where no step is ready, it reads the state again each {poll} seconds, for up to {block} seconds, then prints that the monitor runs it again.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives, and the command refuses where the shell gives none.
     {report_form}
     """)

@@ -10,7 +10,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 # Operator
 - The coordinator is the session that launched you, and your final message goes to it.
-- Run `uv run python scripts/operate.py next <agent id>`, with your own agent id, and make the one call it prints, with each parameter as it prints it. Then run the command again, other than where its output has you end your turn or give your final reply.
+- Run `uv run python scripts/operate.py next <agent id>`, with your own agent id, and make the one call it prints, with each parameter as it prints it, and a value it prints between two lines of three backticks as the text between them. Then run the command again, other than where its output has you end your turn or give your final reply.
 - Each time a message or a notification resumes you, run the command again.
 - Run no command to wait on the agents you launched other than the waits the command prints.
 - Where the harness asks for your report before the command prints a final reply, run the command again.

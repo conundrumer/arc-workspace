@@ -3,7 +3,10 @@ next, with its parameters, and the text that prints it.
 
 A brief, and a message to an agent other than the coordinator, goes to a
 file the command writes before it prints the call (`filed`), and the
-printed prompt or message is the line `FILED` with that file's path. A
+printed prompt or message is the line `FILED` with that file's path. Each
+printed prompt or message is fenced (`fenced`): the value to pass is the
+text inside the fence, and its readers read a value given with or without
+the fence lines (`unfenced`). A
 message to the coordinator that opens with `DECISION` keeps its first
 line, which names what it gives, and files the rest. Each brief gives
 the report file the agent writes its final reply to (`with_report`),
@@ -478,8 +481,9 @@ def made(calls: Iterable[Call]) -> tuple[Made, ...]:
             if opening is None:
                 continue
             tool = Printed.SEND_MESSAGE if opening["to"] is not None else Printed.BASH
+            text = c.result[opening.end():].rstrip("\n")
             out.append(Made(opening["key"], tool, opening["to"],
-                            c.result[opening.end():].rstrip("\n"), after))
+                            unfenced(text) if tool is Printed.SEND_MESSAGE else text, after))
     return tuple(out)
 
 
@@ -548,8 +552,26 @@ def filed_line(step: Step, scratch: Path) -> str:
     return FILED.format(path=file_path(step, scratch))
 
 
+FENCE = "```"
+
+
+def fenced(value: str) -> str:
+    return f"{FENCE}\n{value}\n{FENCE}"
+
+
+def unfenced(value: str) -> str:
+    """`value` without its opening fence line and its closing fence line,
+    each where it has one: a printed value as far as a cut result gives
+    it, or a value an operator passed with the fence lines."""
+    head, sep, rest = value.partition("\n")
+    if head == FENCE and sep:
+        value = rest
+    body, sep, tail = value.rpartition("\n")
+    return body if sep and tail == FENCE else value
+
+
 def send_text(to: str, message: str) -> str:
-    return f"call SendMessage\nto: {to}\nmessage:\n{message}"
+    return f"call SendMessage\nto: {to}\nmessage:\n{fenced(message)}"
 
 
 def bash_text(command: str) -> str:
@@ -565,7 +587,7 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
             iso += f"\nmodel: {model}" if model is not None else ""
             return (f"call Agent\ndescription: {description(role, subject)}\n"
                     f"subagent_type: {role.agent_type}\nrun_in_background: true{iso}\n"
-                    f"prompt:\n{filed_line(step, scratch)}")
+                    f"prompt:\n{fenced(filed_line(step, scratch))}")
         case Send(to):
             head, rest = split_message(step)
             line = filed_line(step, scratch) if rest else ""
