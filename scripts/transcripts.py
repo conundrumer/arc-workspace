@@ -1,12 +1,14 @@
 """Find the Claude Code transcripts of sessions and of agents under the
-project directories, and read their entries."""
+project directories, and read their entries, each read held for one state
+of the process (`state_cache`)."""
 
 import filecmp
 import json
+import os
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Hashable, Iterator
 from datetime import datetime
-from functools import cache
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +20,60 @@ console_importable()
 from solver_console import config  # noqa: E402
 
 type Entry = dict[str, Any]
+
+_state = 0
+"""The count of the states this process has opened (`new_state`)."""
+
+
+def new_state() -> None:
+    """Open a new state: from then on, each `state_cache` read gives what
+    it reads as it stands now where its stamp changed, and as held where it
+    did not."""
+    global _state
+    _state += 1
+
+
+def state_cache[**P, R](stamp: Callable[P, Hashable] | None) -> Callable[
+        [Callable[P, R]], Callable[P, R]]:
+    """Hold the result of a read for each of its arguments. Within one state
+    the held result stands. At the first call of a new state the read runs
+    again, unless `stamp` of its arguments is the stamp of the held result.
+    The stamp of a read of files is their stat, and that of a read derived
+    from other `state_cache` reads is their results, so it agrees with
+    them within a state. A read with nothing to stamp, `stamp` None, runs
+    again at each new state.
+
+    Each process-life read cache that `operator_state.read_state` reaches,
+    in any module, is a `state_cache`, so the readers of one state see one
+    state, and a change between two states reaches the second."""
+    def hold(read: Callable[P, R]) -> Callable[P, R]:
+        held: dict[Hashable, tuple[int, Hashable, R]] = {}
+
+        @wraps(read)
+        def at_state(*args: P.args, **kwargs: P.kwargs) -> R:
+            key = (args, tuple(sorted(kwargs.items())))
+            hit = held.get(key)
+            if hit is not None and hit[0] == _state:
+                return hit[2]
+            mark = stamp(*args, **kwargs) if stamp is not None else None
+            if hit is not None and stamp is not None and hit[1] == mark:
+                value = hit[2]
+            else:
+                value = read(*args, **kwargs)
+            held[key] = (_state, mark, value)
+            return value
+        return at_state
+    return hold
+
+
+def stat_of(path: Path) -> tuple[int, int] | None:
+    """The modification time and size of the file at `path`, or None where
+    there is none."""
+    try:
+        st = path.stat()
+    except FileNotFoundError:
+        return None
+    return st.st_mtime_ns, st.st_size
 
 
 class Refused(Exception):
@@ -60,8 +116,22 @@ def one_of(ident: str, found: list[Path]) -> Path | None:
         ident=ident, paths=", ".join(str(p) for p in found)))
 
 
-SUBAGENTS = "subagents/**/agent-*.jsonl"
-"""The glob of a session's subagent transcripts, under its directory."""
+SUBAGENTS = "subagents"
+"""The directory, under a session's, whose tree holds the session's
+subagent transcripts, each named `agent-*.jsonl`."""
+
+
+def subdirectories(d: Path, depth: int) -> list[Path]:
+    """The directories `depth` levels under `d`, in path order."""
+    if depth == 0:
+        return [d]
+    return [s for p in sorted((e.path for e in os.scandir(d) if e.is_dir()), key=path_order)
+            for s in subdirectories(Path(p), depth - 1)]
+
+
+def path_order(path: str) -> list[str]:
+    """The sort key of `path` that orders it as `Path` orders paths."""
+    return path.split(os.sep)
 
 
 def main_transcript(session: Path) -> Path:
@@ -73,15 +143,20 @@ def session_directory(main: Path) -> Path:
 
 
 def subagent_transcripts(session: Path) -> list[Path]:
-    return sorted(session.glob(SUBAGENTS))
+    # A walk of the tree lists it with no stat of each file, which a glob
+    # of every session at each state cannot afford.
+    return [Path(p) for p in sorted(
+        (os.path.join(root, f) for root, _, files in os.walk(session / SUBAGENTS)
+         for f in files if f.startswith("agent-") and f.endswith(".jsonl")),
+        key=path_order)]
 
 
-@cache
+@state_cache(None)
 def agent_transcripts() -> dict[str, list[Path]]:
     """The subagent transcripts under the project directories, by agent id."""
     out: dict[str, list[Path]] = {}
-    for p in sorted(p for d in project_dirs() for s in d.glob("*/*/")
-                    for p in subagent_transcripts(s)):
+    for p in (p for d in project_dirs() for s in subdirectories(d, 2)
+              for p in subagent_transcripts(s)):
         out.setdefault(agent_id(p), []).append(p)
     return out
 
@@ -134,7 +209,7 @@ def first_parent(path: Path) -> str | None:
     return first.get("parentUuid") if first is not None else None
 
 
-@cache
+@state_cache(lambda path: snapshot(path))
 def ends(path: Path) -> tuple[str | None, str | None]:
     """The `parentUuid` of the first entry of the transcript at `path`, and
     the `uuid` of its last entry that gives one."""
@@ -223,16 +298,16 @@ def parse(line: str | bytes) -> list[Entry]:
         return []
 
 
-@cache
+@state_cache(stat_of)
 def snapshot(path: Path) -> Snapshot:
-    """The transcript at `path` as it stood when this process first read
-    it."""
+    """The transcript at `path` as it stands at the state this process is
+    in (`state_cache`)."""
     return Snapshot(path)
 
 
 def read_entries(path: Path, naming: set[str] | None = None) -> list[Entry]:
-    """The entries of the transcript at `path` as it stood when this process
-    first read it, or with `naming` only those whose line holds one of its
+    """The entries of the transcript at `path` as it stands at the state this
+    process is in, or with `naming` only those whose line holds one of its
     words, which spares parsing the rest."""
     snap = snapshot(path)
     if naming is None:
@@ -242,16 +317,16 @@ def read_entries(path: Path, naming: set[str] | None = None) -> list[Entry]:
 
 
 def entries_forward(path: Path) -> Iterator[Entry]:
-    """The entries of the transcript at `path` as it stood when this process
-    first read it, in their order, each line parsed only when it is reached."""
+    """The entries of the transcript at `path` as it stands at the state this
+    process is in, in their order, each line parsed only when it is reached."""
     snap = snapshot(path)
     for i in range(len(snap.lines)):
         yield from snap.entry(i)
 
 
 def entries_back(path: Path) -> Iterator[Entry]:
-    """The entries of the transcript at `path` as it stood when this process
-    first read it, last first, each line parsed only when it is reached."""
+    """The entries of the transcript at `path` as it stands at the state this
+    process is in, last first, each line parsed only when it is reached."""
     snap = snapshot(path)
     for i in range(len(snap.lines) - 1, -1, -1):
         yield from snap.entry(i)

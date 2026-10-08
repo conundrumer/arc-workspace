@@ -8,7 +8,6 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
-from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +16,7 @@ from operating.bounds import COORDINATOR as MAIN
 from token_prices import request_input
 from transcripts import (Entry, Refused, agent_id, chain, first_parent,
                          is_subagent, main_transcript, read_entries,
-                         session_directory, subagent_transcripts)
+                         session_directory, state_cache, subagent_transcripts)
 
 UNKNOWN_TYPE = mctx("the agent type of `{path}` is unknown: its .meta.json is "
                     "absent or gives none")
@@ -205,7 +204,7 @@ def run_sessions(path: Path) -> list[Path]:
     order."""
     return list(dict.fromkeys(session_of(p) for p in chain(path)))
 
-@cache
+@state_cache(None)
 def session_agents(session: Path) -> dict[str, Path]:
     return {agent_id(p): p for p in subagent_transcripts(session)}
 

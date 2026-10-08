@@ -16,7 +16,7 @@ from run_reads import context_size
 from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
 from ticket_settle import to_settle
-from transcripts import Refused, entries_back, find
+from transcripts import Refused, entries_back, find, new_state
 from tree_reads import claims, code_review, commits, gate_outputs, main_tree, scratch, worktrees
 
 from operating.directives import named
@@ -27,6 +27,7 @@ from ticketing.vocabulary import Status
 
 
 def read_state(me: str) -> State:
+    new_state()
     session = os.environ.get("CLAUDE_CODE_SESSION_ID")
     if not session:
         raise Refused(mctx("the shell gives no `CLAUDE_CODE_SESSION_ID`"))

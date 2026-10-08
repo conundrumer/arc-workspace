@@ -152,14 +152,13 @@ def test_pending(tmp_path: Path) -> None:
             {"agentType": "editor", "toolUseId": tid}))
     assert profile_runs.pending_agents(path, []) == [A1, A3, A4]
     write_jsonl(agents / f"agent-{A2}.jsonl", elsewhere)
-    transcripts.snapshot.cache_clear()
+    transcripts.new_state()
     assert profile_runs.pending_agents(path, []) == [A1, A4]
     resumer = [assistant(90, send("r1", "editor")),
                user(91, answer("r1"), {"success": True, "message": "Resuming agent a000000",
                                        "pin": {"id": A2}})]
     write_jsonl(agents / f"agent-{A5}.jsonl", resumer)
-    sys.modules["run_reads"].session_agents.cache_clear()
-    transcripts.snapshot.cache_clear()
+    transcripts.new_state()
     assert profile_runs.pending_agents(path, []) == [A1, A2, A4]
 
 
@@ -229,14 +228,12 @@ def test_under(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(transcripts, "project_dirs", lambda: [tmp_path])
     monkeypatch.setattr(profile_runs, "work_open",
                         lambda p, undecided: transcripts.agent_id(p) == busy)
-    transcripts.agent_transcripts.cache_clear()
-    sys.modules["agent_launches"].session_launches.cache_clear()
+    transcripts.new_state()
     try:
         taken = profile_runs.runs_since(agents / f"agent-{op}.jsonl", op, [])
         previous = profile_runs.previous_call(agents / f"agent-{op}.jsonl", op, [])
     finally:
-        transcripts.agent_transcripts.cache_clear()
-        sys.modules["agent_launches"].session_launches.cache_clear()
+        transcripts.new_state()
     assert previous == profile_runs.Previous(transcripts.epoch(at(30)), op,
                                              frozenset([late]))
     assert sorted(transcripts.agent_id(p) for p in taken) == sorted([c2, g, late])

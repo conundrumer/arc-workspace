@@ -2,14 +2,13 @@
 `profile_runs` gives them."""
 
 from collections.abc import Callable
-from functools import cache
 from pathlib import Path
 
 from controlled_markdown import mctx
 from run_reads import blocks, is_prompt, text_of
 from senders import INTERRUPTED
 from transcripts import (Entry, agent_id, chain, entries_back, entries_forward,
-                         epoch, read_entries)
+                         epoch, read_entries, snapshot, state_cache)
 
 # The types of a transcript's message entries, the entries of a turn: the
 # message that opens it and its work.
@@ -67,7 +66,7 @@ def turn_ended(entries: list[Entry]) -> bool:
         for e in last)
 
 
-@cache
+@state_cache(lambda path: tuple(snapshot(p) for p in chain(path)))
 def has_ended(path: Path) -> bool:
     """`turn_ended` over the run at `path`, read from its last entry back to
     its last timestamped assistant entry, which settles it."""

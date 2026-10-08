@@ -7,7 +7,6 @@ import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
-from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +23,7 @@ from run_reads import (BACKGROUND_TASK, blocks, context_size,
 from senders import Sender, sender
 from ticketing.times import MINUTE_FORM
 from token_prices import run_cost
-from transcripts import Entry, Refused, agent_id, epoch, is_subagent
+from transcripts import Entry, Refused, agent_id, epoch, is_subagent, state_cache
 
 
 class Part(Enum):
@@ -210,11 +209,11 @@ def background_ends(found: dict[str, Background],
     return ends
 
 
-@cache
+@state_cache(None)
 def held_in(directory: Path) -> frozenset[str]:
     """The paths of the files in `directory` that a process holds open, as
-    `lsof` gives them, read once, so each reader of a run sees one state,
-    and one `lsof` call serves the runs of a session."""
+    `lsof` gives them, read once for each state, so each reader of a run
+    sees one state, and one `lsof` call serves the runs of a session."""
     # lsof exits 1 where it finds no open file as well as on a fault, so
     # only its stderr tells a fault.
     out = subprocess.run(["lsof", "-F", "n", "+d", str(directory)],

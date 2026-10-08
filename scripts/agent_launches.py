@@ -4,7 +4,6 @@ them, and the agents its SendMessage calls went to."""
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +13,8 @@ from controlled_markdown import mctx
 from run_reads import (blocks, in_background, meta_parent, notified,
                        parent_label, read_meta, results_by_call, run_entries,
                        run_sessions, session_agents, session_transcripts)
-from transcripts import Entry, agent_id, chain, epoch, find, read_entries
+from transcripts import (Entry, agent_id, agent_transcripts, chain, epoch, find, read_entries,
+                         stat_of, state_cache)
 
 # The openings of the message of a SendMessage result where the call resumed
 # the agent it was sent to, and where it queued the message to a running one.
@@ -22,7 +22,16 @@ RESUMING = "Resuming agent"
 QUEUED = "Message queued"
 
 
-@cache
+def launch_stamp(session: Path) -> tuple[tuple[Path, tuple[int, int] | None], ...]:
+    """The transcripts of the agents of `session`, wherever they lie, each
+    with the stat of its `.meta.json`. The run a transcript belongs to
+    changes only where a transcript of that run appears, so the entries of
+    the transcripts need no stamp."""
+    return tuple((p, stat_of(p.with_suffix(".meta.json")))
+                 for aid in session_agents(session) for p in agent_transcripts().get(aid, []))
+
+
+@state_cache(launch_stamp)
 def session_launches(session: Path) -> tuple[dict[str, Path], dict[str, frozenset[str]]]:
     """The transcripts of a session's agents by the Agent call that launched
     each, and the agent ids of the agents each run launched, by its agent
