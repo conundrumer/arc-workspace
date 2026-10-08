@@ -15,7 +15,6 @@ const WATCH = ['uv', 'run', 'python', 'scripts/monitor.py']
 const CALL_TIMEOUT_MS = 240_000
 // How long the loop sleeps after a step that gives nothing to call.
 const WAIT_MS = 15_000
-const AGENT_ID = /agentId: (\w+)/
 
 let running = false
 
@@ -44,17 +43,14 @@ async function make($, id, step) {
     case 'launch': {
       const input = {
         description: step.description,
-        subagent_type: step.subagentType,
+        subagentType: step.subagentType,
         prompt: step.prompt,
-        run_in_background: true,
-        ...(step.worktree ? { isolation: 'worktree' } : {}),
         ...(step.model ? { model: step.model } : {}),
       }
-      const r = await $.tool.call({ tool: 'Agent', ...input })
+      const r = await $.agent.spawn(input)
       if (r.deny !== undefined) throw new Error(`the launch ${step.key} was denied: ${r.deny}`)
-      const id = AGENT_ID.exec(r.text ?? '')?.[1]
-      if (id === undefined) throw new Error(`the launch ${step.key} gave no agent id: ${r.text}`)
-      return { tool: 'Agent', input, result: JSON.stringify({ agentId: id }), error: false }
+      if (r.agentId === undefined) throw new Error(`the launch ${step.key} gave no agent id`)
+      return { tool: 'Agent', input, result: JSON.stringify({ agentId: r.agentId }), error: false }
     }
     case 'send': {
       const input = { to: step.to, message: step.message }

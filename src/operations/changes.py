@@ -6,10 +6,10 @@ analyst on what the editors leave. The steps carry out
 
 The editors a change needs are those the `editors` field of its ticket
 gives, which the ticket analyst that files it writes, and a change whose
-ticket gives none is undecided. The first editor is launched with
-a worktree of its own, whose path the agent id gives, and the command logs
-that path on the ticket, so a later loop continues the change there,
-with the editors and reviewers launched in it.
+ticket gives none is undecided. A change with no worktree gets one from
+`scripts/change_worktree.py`, which logs its path on the ticket, so a
+later loop continues the change there. Every editor and reviewer is
+launched with no isolation, and its brief gives that worktree.
 
 What the editors' and the doc reviewer's replies give is read by the fixed
 forms of `reports`. An editor whose latest reply says its budget is passed
@@ -47,6 +47,7 @@ A step of a change that the command cannot place holds that change alone,
 until a `Decision:` line rules it with one of the choices the step gives
 (`directives.decided`)."""
 
+import shlex
 from pathlib import Path
 from typing import Literal
 
@@ -77,7 +78,7 @@ from operations.steps import (
     sends_to,
     sent,
 )
-from operations.tracker import COORDINATOR, closed, log, worktree
+from operations.tracker import AGENT, COORDINATOR, closed, log, worktree
 from ticketing.vocabulary import Domain, Kind, Status
 
 PROSE_IN_CODE = ".py"
@@ -197,14 +198,16 @@ def give_up(state: State) -> Step | None:
     return None
 
 
-def own_worktree(state: State, a: Agent) -> Path:
-    """The worktree the harness makes for an agent launched with
-    `isolation: "worktree"`."""
-    return state.main_tree / ".claude" / "worktrees" / f"agent-{a.agent_id}"
+WORKTREE_SCRIPT = "scripts/change_worktree.py"
 
 
-def in_worktree(state: State, a: Agent, w: Path) -> bool:
-    return own_worktree(state, a) == w or str(w) in a.brief
+def make_worktree(number: str, agent_id: str) -> str:
+    """The Bash command that makes the worktree of the change `number`."""
+    return shlex.join(["uv", "run", "python", WORKTREE_SCRIPT, number, AGENT, "--id", agent_id])
+
+
+def in_worktree(a: Agent, w: Path) -> bool:
+    return briefs.WORK_IN.format(worktree=w) in a.brief
 
 
 def change_editors(t: Ticket) -> tuple[Role, ...] | Undecided:
@@ -227,25 +230,8 @@ def carry(state: State, t: Ticket) -> Step | None:
     launched = [a for a in agents if a.role in EDITORS]
     w = worktree(t, state)
     if w is None:
-        for a in reversed(launched):
-            if own_worktree(state, a) in state.worktrees:
-                return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED,
-                                f"worktree {own_worktree(state, a)}", state.me))
-        if any(a.pending for a in launched):
-            return None
-        taken = max((ln.time for ln in t.log if ln.status is Status.ASSIGNED), default=0.0)
-        tried = sum(a.launched > taken for a in launched)
-        if tried >= 2:
-            choice = decided(state, mctx("change {number} has no worktree after {tried} first "
-                                       "editors").format(number=t.number, tried=tried),
-                           {Decision.AGAIN: mctx("launch another first editor")})
-            if isinstance(choice, Undecided):
-                return choice
-        first = next(r for r in EDITORS if r in editors)
-        return Launch(first, t.number, briefs.editor(
-            first, t.number, len(editors) > 1, None, state.scratch / t.number),
-            worktree=True, model=t.model(first))
-    here = [a for a in launched if in_worktree(state, a, w)]
+        return Bash(make_worktree(t.number, state.me))
+    here = [a for a in launched if in_worktree(a, w)]
     for role in (r for r in EDITORS if r in editors):
         if not any(a.role is role for a in here):
             return Launch(role, t.number, briefs.editor(

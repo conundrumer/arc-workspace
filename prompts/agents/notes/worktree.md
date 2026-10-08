@@ -7,7 +7,7 @@
 - Where a doc reviewer has sent findings on your change, send that reviewer your fixes with SendMessage before each reply to a later message, to the agent id its message came from, with each finding a later message gave as kept, each it gave as dropped with its reason, each finding you left for a decision, each decision you carried out, and each request a later message added. Message no other agent, apart from the agent that launched you, with your final reply alone, and the sender of a message that asks you to send it an answer by SendMessage, with that answer.
 
 ## worktree
-- The worktree of the change you work on is the one the message that launches you gives, or, where it gives none, your working directory at start.
+- The worktree of the change you work on is the one your brief gives, or, where the form of your brief gives none, the main tree.
 - Where your brief gives the number of your change's ticket, `uv run python scripts/file_ticket.py path <number>` prints that ticket's path.
 - A later message may add a request to the change, and that request is part of what the change is to do.
 
@@ -21,7 +21,7 @@
 ## Re-invoked in another agent's worktree
 - Act by the lines below each time one of these happens:
     - An environment update gives as your primary working directory a linked worktree other than the one you run your commands in.
-    - The harness refuses a Bash call with a text that opens "This agent is isolated in the worktree" and gives a worktree other than your working directory at start.
+    - The harness refuses a Bash call with a text that opens "This agent is isolated in the worktree" and gives a worktree that neither your brief nor a message to you gives.
 - After such an event, until an environment update gives your working directory at start as your primary working directory, make no call other than a wait for a command of yours to finish and the calls the line below gives, whatever another line of your documents gives: until then, a command of yours runs in the other worktree, so a relative path resolves against it and a script runs from its copy, and an agent you launch starts in it and can run no command once it is removed.
     * comment
         - The reason for agents stays by the decision on change 2-137 that has the line state it: doc reviewer a555c16716d62355f, launched by operator a017a43d837e9118a at its L1685 while in agent-ae0647acd7a9f64e4, had every Bash call refused once that worktree was removed at the operator's L1691.

@@ -60,7 +60,8 @@ PASSES = (Role.ANALYZE, Role.CREATE, Role.REFINE)
 
 EDITORS = (Role.CODE_EDITOR, Role.HANDBOOK_EXPANDED, Role.DOC_EDITOR)
 """The editors a change's `editors` field may give, in the order the
-command launches them: the first one launched makes the change's worktree."""
+command launches them, each in the change's worktree, which its brief
+gives."""
 
 
 def editors_of(names: Iterable[str]) -> tuple[Role, ...]:

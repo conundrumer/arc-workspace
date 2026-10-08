@@ -18,7 +18,10 @@ wrote, which the loop reads as its own."""
 
 FILE_TICKET = ("uv", "run", "python", "scripts/file_ticket.py")
 
-WORKTREE = re.compile(r"(/\S+/\.claude/worktrees/[^\s,;:)]+)")
+WORKTREES = ".claude/worktrees"
+"""The directory, under the main tree, of the worktrees of changes."""
+
+WORKTREE = re.compile(rf"(/\S+/{re.escape(WORKTREES)}/[^\s,;:)]+)")
 
 
 def log(number: str, status: Status, current: Status, note: str, agent_id: str | None) -> str:
@@ -33,19 +36,23 @@ def log(number: str, status: Status, current: Status, note: str, agent_id: str |
 
 
 
-def worktree(t: Ticket, state: State) -> Path | None:
+def logged_worktree(t: Ticket) -> Path | None:
     """The worktree the latest line of `t`'s log that gives one gives,
-    where it stands, past each line whose note opens with `Note.RERUN`. A line
-    that opens with `Note.RERUN` and stands after the worktree's line leaves
-    none."""
+    past each line whose note opens with `Note.RERUN`. A line that opens
+    with `Note.RERUN` and stands after the worktree's line leaves none."""
     for line in reversed(t.log):
         if line.note.startswith(Note.RERUN):
             return None
         m = WORKTREE.search(line.note)
         if m is not None:
-            path = Path(m[1])
-            return path if path in state.worktrees else None
+            return Path(m[1])
     return None
+
+
+def worktree(t: Ticket, state: State) -> Path | None:
+    """`logged_worktree` of `t`, where it stands."""
+    path = logged_worktree(t)
+    return path if path in state.worktrees else None
 
 
 def last_index(t: Ticket, words: tuple[str, ...]) -> int:

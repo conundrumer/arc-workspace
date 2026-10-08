@@ -30,7 +30,7 @@
 - Where a brief leaves out a part that a statement of its form gives it, the agent it briefs gives in its reply the work that needs that part as unfinished, with the missing part as its reason.
 
 ### An editor's brief
-- An editor's brief gives the agent id of the agent that launches it, where that is not the coordinator.
+- An editor's brief gives the change's worktree, and the agent id of the agent that launches it, where that is not the coordinator.
 - It gives the accepted gate outputs under `tests/gate/accepted/` the editor may write, where its items change or add one, with a scratch directory.
 
 ### A code editor's brief
@@ -61,7 +61,7 @@
 
 ### A doc reviewer's brief
 - A doc reviewer's brief gives a change to the agent-facing documents, as the files or a diff, and the number of its ticket, or, where it has none, what is already settled about it.
-- It gives the agent id of the change's doc editor, and of each of its code editors with the files that editor's brief gives, and the agent id of the agent that launches it, where that is not the coordinator.
+- It gives the change's worktree, the agent id of the change's doc editor, and of each of its code editors with the files that editor's brief gives, and the agent id of the agent that launches it, where that is not the coordinator.
 
 ### Solver work
 - Solver work is a solver pass, or an edit of a solver or of the lib for one task.

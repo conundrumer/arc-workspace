@@ -36,8 +36,8 @@ gives that call, `FOREGROUND_MS`, with room for the read of the state."""
 
 @dataclass(frozen=True)
 class Launch:
-    """An Agent call, in the background. `worktree` gives the Agent tool's
-    `isolation: "worktree"`, and `model` the call's `model`. `items` is the
+    """An Agent call, in the background, with no isolation. `model` gives
+    the call's `model`. `items` is the
     number of items a brief that gives several items of the same work
     gives (`briefs.ITEM_LINES`), and None for any other brief; it stays
     out of the step's key, which its brief already fixes. `pipeline` is,
@@ -46,7 +46,6 @@ class Launch:
     role: Role
     subject: str
     brief: str
-    worktree: bool = False
     model: Model | None = None
     items: int | None = field(default=None, repr=False)
     pipeline: float | None = field(default=None, repr=False)
@@ -394,9 +393,9 @@ def call(step: Step, scratch: Path, step_key: str) -> dict[str, object]:
     and the other fields are its parameters. `step_key` is the key
     `key_line` gives the step, before `with_report` adds to its brief."""
     match step:
-        case Launch(role, subject, _, worktree, model):
+        case Launch(role, subject, _, model):
             return {"kind": "launch", "key": step_key, "description": description(role, subject),
-                    "subagentType": role.agent_type, "worktree": worktree,
+                    "subagentType": role.agent_type,
                     "model": None if model is None else str(model),
                     "prompt": filed_line(step, scratch)}
         case Send(to):
