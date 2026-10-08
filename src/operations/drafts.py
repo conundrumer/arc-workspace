@@ -1,6 +1,8 @@
 """The review of draft `change` tickets: ticket reviewers on the drafts
 ready for one, and a ticket analyst on the drafts whose log holds findings
-or suggestions.
+or suggestions. The findings and suggestions it reads are the log lines a
+ticket reviewer wrote whose note opens with `finding` or `suggestion`; a
+line of an analyst or the coordinator that opens so is none.
 
 The drafts given to the operator are the `change` tickets under
 `tickets/draft/` of the session, those the coordinator names, and those a
@@ -89,9 +91,11 @@ def given_after(state: State, t: Ticket) -> bool:
 
 def review_lines_after(t: Ticket, since: float, opening: str) -> list[str]:
     """The agent ids of the lines of `t`'s log after `since` whose note
-    opens with `opening`, in log order."""
+    opens with `opening` and whose agent is a ticket reviewer, in log
+    order."""
     return [ln.agent_id or ln.agent for ln in t.log
-            if ln.time >= since and ln.note.startswith(opening)]
+            if ln.time >= since and ln.agent == Role.TICKET_REVIEWER
+            and ln.note.startswith(opening)]
 
 
 def reviewers_since_draft(t: Ticket) -> int:
@@ -102,7 +106,8 @@ def reviewers_since_draft(t: Ticket) -> int:
         if t.log[i].status is Status.DRAFT and t.log[i - 1].status is not Status.DRAFT:
             start = i
     return len({ln.agent_id or ln.agent for ln in t.log[start:]
-                if ln.note.startswith((Note.FINDING, Note.SUGGESTION))})
+                if ln.agent == Role.TICKET_REVIEWER
+                and ln.note.startswith((Note.FINDING, Note.SUGGESTION))})
 
 
 def at_cap(t: Ticket) -> bool:
