@@ -271,7 +271,7 @@ BATCH_PROFILE = mctx("""
     - Run `uv run python scripts/profile_runs.py <id>` with the agent id of each of these runs, one run per call: {runs}.
     - File a `performance` ticket, with `commit` and `{commit}` as `<domain>` and `<subject>` and `operator` as `<agent>`, for each label or part of a run or of an agent type that you judge worth fixing, by the test that a change to a tool or a document could shorten it.
     - Launch a transcript review of each of those runs that is no solver work and that `uv run python scripts/profile_runs.py <agent id>` shows past its budget: where a message from its parent has a `Budget: N minutes` line, by a message that command marks `past budget`, and otherwise, where its agent type has a budget, by its active time, its wall time less its `idle` time as that command prints them, past that budget. A transcript review is a `general-purpose` agent, with the brief that {review_brief} gives, with the run's agent id in place of `{run}`.
-    - Reply with the tickets you filed and the reviews you launched.
+    - Reply only once each transcript review you launched has replied, with the tickets you filed and the reviews you launched.
     """)
 
 
