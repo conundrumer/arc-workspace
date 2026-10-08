@@ -9,8 +9,8 @@ on for the operator that carries the work on, give steps only to the
 operator they reached, so the work a line to an earlier operator left
 unfinished reaches a later one only where the coordinator gives it again
 (`passes.every`);
-a `Decision:` line that gives a change's editors or rules a held step
-holds for every operator (`directives`). An operator past its context bound ends at once
+a `Decision:` line that rules a held step holds for every operator
+(`directives`). An operator past its context bound ends at once
 too, and once its work is no longer open, the operator the coordinator
 launches next takes up, through `changes.release`, the changes of the
 session and of the tickets named to it.
