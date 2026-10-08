@@ -3,7 +3,10 @@ and the operator's final reply.
 
 One operator carries the session's work at a time: an operator for which a
 later one of the session runs ends at once, and the later one carries on
-from the state, so two operators never act on one ticket. An operator past
+from the state, so two operators never act on one ticket. The coordinator's
+lines and the other agents' messages give steps only to the operator they
+reached, so the work a line to an earlier operator left unfinished reaches
+a later one only where the coordinator gives it again. An operator past
 its context bound ends at once too, and the operator the coordinator
 launches next takes up its changes once its work is no longer open, as
 `changes.release` gives.
@@ -40,11 +43,10 @@ from operating.directives import (
     Line,
     Pipeline,
     lines,
-    queue_counts,
     unread,
 )
 from operating.roles import Role, description
-from operating.state import State
+from operating.state import State, Ticket
 from ticketing.vocabulary import Status
 from operating.steps import (
     Again,
@@ -66,6 +68,7 @@ from operating.steps import (
 )
 
 ENDED_FOR_CONTEXT = "ended for my context"
+GIVEN_AGAIN = "a line below that stands unfinished reaches it only where it is given to it again"
 
 
 def first(state: State, *procedures: Callable[[State], Step | None]) -> Step | None:
@@ -146,14 +149,14 @@ def next_step(state: State) -> Step:
     mine = state.operators.index(state.me) if state.me in state.operators else -1
     later = [o for o in state.operators[mine + 1:] if o in state.open_operators]
     if later:
-        return Reply(f"Operator {later[-1]} carries the work on, from the state.\n"
-                     + "\n".join(line_states(state)))
+        return Reply(f"Operator {later[-1]} carries the work on, from the state; "
+                     f"{GIVEN_AGAIN}.\n" + "\n".join(line_states(state)))
     s = first(state, unread_lines, alerts.step, settling.decisions, settling.for_coordinator)
     if s is not None:
         return s
     if state.past_bound:
         return Reply(f"I {ENDED_FOR_CONTEXT}; the next operator takes up the work from the "
-                     f"state.\n" + "\n".join(line_states(state)))
+                     f"state, and {GIVEN_AGAIN}.\n" + "\n".join(line_states(state)))
     s = first(state, launching, settling.reopen, settling.later_lines, settling.settle,
               drafts.step, changes.step, pipelines, batches.step)
     if s is not None:
@@ -179,7 +182,7 @@ def idle_waits(state: State) -> int:
     ended together, and count as one."""
     own = [c for c in state.calls if c.operator == state.me]
     wait = wait_command(state.me)
-    events = [m.time for m in state.messages if m.operator == state.me]
+    events = [m.time for m in state.received]
     events += [r.time for a in state.agents if a.operator == state.me for r in a.reports]
     events += [c.time for c in own
                if c.input.get("command") not in (wait, next_command(state.me))]
@@ -200,6 +203,10 @@ def pipeline_state(o: passes.Outcome | None) -> str | None:
     return f"its pipeline stopped: {o.stopped}" if o.stopped else None
 
 
+def stands_under(t: Ticket) -> str:
+    return f"stands under `tickets/{t.status.value}/`"
+
+
 def line_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Outcome]]) -> str:
     """A line of the coordinator's to the operator, as done or as
     unfinished with its reasons."""
@@ -213,18 +220,21 @@ def line_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Out
         case Directive.QUEUE:
             own = [(p, o) for p, o in outcomes if p.since == ln.message.time]
             if not own:
-                own = [(p, o) for p, o in outcomes if p.since < ln.message.time
-                       and any(p.since == t for _, t in queue_counts(state))]
+                own = [(p, o) for p, o in outcomes if p.since < ln.message.time and p.queued]
             reasons = [f"{p.task or 'the queue'}: {r}" for p, o in own
                        if (r := pipeline_state(o)) is not None]
         case Directive.DRAFTS:
             under = {t.number for t in drafts.unended(state)}
             reasons = [f"draft {n} stands under `tickets/draft/`" for n in numbers if n in under]
         case Directive.NAMED:
-            reasons = [f"ticket {n} stands open" for n in numbers
-                       if (t := state.tickets.get(n)) is not None and t.status is Status.OPEN]
+            reasons = [f"ticket {n} {stands_under(t)}" for n in numbers
+                       if (t := state.tickets.get(n)) is not None
+                       and t.status in (Status.OPEN, Status.ASSIGNED)]
+        case Directive.MERGED:
+            if not any(a.launched > ln.message.time for a in state.agents_of(Role.BATCH_PROFILE)):
+                reasons = ["After a batch has not run since it was given"]
         case Directive.MERGE:
-            reasons = [f"change {n} stands under `tickets/{t.status.value}/`" for n in numbers
+            reasons = [f"change {n} {stands_under(t)}" for n in numbers
                        if (t := state.tickets.get(n)) is not None and t.status is not Status.CLOSED]
         case Directive.OPEN:
             reasons = [f"ticket {n} stands open after its ticket analyst returned"
@@ -241,8 +251,7 @@ def line_states(state: State) -> list[str]:
     """Each line of the operator's brief and of the coordinator's later
     messages to it, as done or as unfinished with its reasons."""
     _, outcomes = passes.step(state)
-    return [line_state(state, ln, outcomes) for ln in lines(state)
-            if ln.message.operator == state.me]
+    return [line_state(state, ln, outcomes) for ln in lines(state)]
 
 
 def final(state: State) -> str:

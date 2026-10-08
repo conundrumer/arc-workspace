@@ -151,7 +151,8 @@ class State:
     the transcript of each agent a stall alert names that reached no
     operator as a report. `passed` gives, by its key (`steps.key`), each
     step an operator passed over by a call of `operate.py pass-over`, with
-    the line it gave."""
+    the line it gave. `messages` holds the messages that reached any
+    operator of the session, and `received` those that reached `me`."""
     me: str
     now: float
     session: str
@@ -177,6 +178,17 @@ class State:
     stalled: Mapping[str, Report] = field(default_factory=dict)
     pass_tickets: Mapping[str, tuple[str, ...] | None] = field(default_factory=dict)
     passed: Mapping[str, str] = field(default_factory=dict)
+
+    @property
+    def arrived(self) -> list[Message]:
+        """`messages`, in the order they arrived."""
+        return sorted(self.messages, key=lambda m: m.time)
+
+    @property
+    def received(self) -> list[Message]:
+        """The messages that reached `me`, its brief included, in the order
+        they arrived."""
+        return [m for m in self.arrived if m.operator == self.me]
 
     def agents_of(self, role: Role | None = None, subject: str | None = None) -> list[Agent]:
         return [a for a in self.agents

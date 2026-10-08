@@ -21,7 +21,7 @@ import shlex
 from dataclasses import dataclass
 
 from operating import briefs
-from operating.directives import Pipeline, pipelines, queue_counts
+from operating.directives import Line, Pipeline, lines, pipelines, queue_counts, session_lines
 from operating.roles import PASSES, Purpose, Role, analyst_subject, joined
 from operating.state import Agent, State
 from ticketing.vocabulary import Domain, Kind, Status
@@ -160,43 +160,58 @@ def ended_before(state: State, p: Pipeline, time: float) -> bool:
                for c in state.bash_calls(restore_command(p.task)))
 
 
-def queued(state: State) -> list[Pipeline]:
-    """The pipelines on tasks taken from the queue: for each line that asks
-    for tasks from it, the tasks of the queue's listing whose claim the
-    session took, up to the count the line gives, from Analyze. A line
-    given while the pipelines of an earlier one run, as a line given again,
-    takes no tasks."""
+def queued(state: State, given: list[Line]) -> list[Pipeline]:
+    """The pipelines on tasks taken from the queue: for each line of
+    `given` that asks for tasks from it, the tasks of the queue's listing
+    whose claim the session took, up to the count the line gives, from
+    Analyze. A line given while the pipelines of an earlier one run, as a
+    line given again, takes no tasks."""
     out: list[Pipeline] = []
-    for count, since in queue_counts(state):
+    for count, m in queue_counts(given):
+        since = m.time
         if any(not q.task or not ended_before(state, q, since) for q in out):
             continue
         command = f"bash scripts/queue.sh --order name -n {count * QUEUE_SPARE}"
         calls = [c for c in state.bash_calls(command) if c.time >= since and c.result]
         if not calls:
-            out.append(Pipeline("", Role.ANALYZE, since))
+            out.append(Pipeline("", Role.ANALYZE, since, m.operator, True))
             continue
         tasks = list(dict.fromkeys(TASK.findall(calls[-1].result or "")))
         taken = [t for t in tasks if state.claims.get(t) == state.session
                  or any(a.launched >= since for a in state.agents_of(Role.ANALYZE, t))]
-        out += [Pipeline(t, Role.ANALYZE, since) for t in taken[:count]]
+        out += [Pipeline(t, Role.ANALYZE, since, m.operator, True) for t in taken[:count]]
         if len(taken) < count:
             for t in tasks:
                 if t not in taken and not any(ran(state, claim_command(state, t), since)):
-                    out.append(Pipeline(t, Role.ANALYZE, since))
+                    out.append(Pipeline(t, Role.ANALYZE, since, m.operator, True))
                     break
     return out
 
 
-def every(state: State) -> list[Pipeline]:
-    """The pipelines the coordinator's lines give. A line on a task whose
-    pipeline from an earlier line had not ended when it was given, as a
-    line given again, starts none."""
+def session(state: State) -> list[Pipeline]:
+    """The pipelines the coordinator's lines to the session's operators
+    give. A line on a task whose pipeline from an earlier line had not
+    ended when it was given, as a line given again, starts none."""
+    given = session_lines(state)
     out: list[Pipeline] = []
-    for p in [*pipelines(state), *queued(state)]:
+    for p in [*pipelines(given), *queued(state, given)]:
         if p.task and any(q.task == p.task and not ended_before(state, q, p.since) for q in out):
             continue
         out.append(p)
     return out
+
+
+def every(state: State) -> list[Pipeline]:
+    """The pipelines of `session` that the coordinator's lines to the
+    operator `me` give: those a line to it starts, and those a line to it
+    gives again before they end, a `Solve` line by their task and a
+    `Solve from the queue` line each pipeline a line of that form gives."""
+    given = lines(state)
+    again = [(m.time, None) for _, m in queue_counts(given)]
+    again += [(p.since, p.task) for p in pipelines(given)]
+    return [p for p in session(state) if p.operator == state.me
+            or any(p.since < time and (p.queued if task is None else p.task == task)
+                   and not ended_before(state, p, time) for time, task in again)]
 
 
 def step(state: State) -> tuple[Step | None, list[tuple[Pipeline, Outcome]]]:
@@ -205,7 +220,7 @@ def step(state: State) -> tuple[Step | None, list[tuple[Pipeline, Outcome]]]:
     first: Step | None = None
     for p in every(state):
         if not p.task:
-            count = next(c for c, s in queue_counts(state) if s == p.since)
+            count = next(c for c, m in queue_counts(session_lines(state)) if m.time == p.since)
             o = Outcome(Bash(f"bash scripts/queue.sh --order name -n {count * QUEUE_SPARE}"))
         else:
             o = run(state, p)

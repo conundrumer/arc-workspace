@@ -14,9 +14,15 @@ word of its kind and a colon, past a list marker:
   step the command prints, and the command passes over.
 
 A line of the coordinator's in no such form is a step the command gives to
-the coordinator as undecided."""
+the coordinator as undecided.
+
+A line gives steps only to the operator it reached, in its brief or a later
+message: a line to an earlier operator of the session reaches a later one
+only where a line to the later one gives its pipeline again while that
+pipeline runs (`passes.every`)."""
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -53,10 +59,20 @@ class Line:
 
 
 def lines(state: State) -> list[Line]:
-    """Each non-blank line the coordinator gave the session's operators, in
-    the order the messages arrived."""
+    """Each non-blank line the coordinator gave the operator `me`, in the
+    order the messages arrived."""
+    return parsed(state.received)
+
+
+def session_lines(state: State) -> list[Line]:
+    """Each non-blank line the coordinator gave any operator of the
+    session, in the order the messages arrived."""
+    return parsed(state.arrived)
+
+
+def parsed(messages: Iterable[Message]) -> list[Line]:
     out: list[Line] = []
-    for m in sorted((m for m in state.messages if m.sender is None), key=lambda m: m.time):
+    for m in (m for m in messages if m.sender is None):
         for raw in m.text.splitlines():
             if not raw.strip():
                 continue
@@ -81,7 +97,7 @@ def numbers(state: State, kind: Directive) -> list[tuple[str, float]]:
 
 
 def named(state: State) -> set[str]:
-    """The tickets the coordinator names to the operators."""
+    """The tickets the coordinator names to the operator."""
     return {n for k in (Directive.NAMED, Directive.DRAFTS, Directive.MERGE, Directive.MERGED)
             for n, _ in numbers(state, k)}
 
@@ -89,24 +105,30 @@ def named(state: State) -> set[str]:
 @dataclass(frozen=True)
 class Pipeline:
     """A solver pipeline the coordinator gives: its task, the pass it
-    starts at, and the time of the message that gives it."""
+    starts at, the time of the message that gives it, the operator that
+    message reached, and whether a `Solve from the queue` line gives it."""
     task: str
     start: Role
     since: float
+    operator: str
+    queued: bool = False
 
 
-def pipelines(state: State) -> list[Pipeline]:
+def pipelines(given: list[Line]) -> list[Pipeline]:
+    """The pipelines the `Solve` lines of `given` give."""
     out: list[Pipeline] = []
-    for ln in lines(state):
+    for ln in given:
         if ln.kind is Directive.SOLVE:
             for m in TASK.finditer(ln.rest):
                 start = Role(m["start"]) if m["start"] else PASSES[0]
-                out.append(Pipeline(m["task"], start, ln.message.time))
+                out.append(Pipeline(m["task"], start, ln.message.time, ln.message.operator))
     return out
 
 
-def queue_counts(state: State) -> list[tuple[int, float]]:
-    return [(int(ln.rest), ln.message.time) for ln in lines(state)
+def queue_counts(given: list[Line]) -> list[tuple[int, Message]]:
+    """The count each `Solve from the queue` line of `given` gives, with
+    its message."""
+    return [(int(ln.rest), ln.message) for ln in given
             if ln.kind is Directive.QUEUE and ln.rest.isdigit()]
 
 

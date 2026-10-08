@@ -17,7 +17,9 @@ operator of the session launched whose work is open:
 
 Any other alert, an alert on an agent no operator launched, and a message
 from an agent no operator launched that is no alert, go to the coordinator
-as undecided."""
+as undecided.
+
+The alerts and messages read are those that reached the operator `me`."""
 
 import re
 from dataclasses import dataclass
@@ -142,9 +144,10 @@ def on(state: State, alert: Alert, a: Agent) -> Step | None:
 
 
 def step(state: State) -> Step | None:
-    """The first step the alerts and the other agents' messages give."""
+    """The first step the alerts and the other agents' messages to the
+    operator give."""
     launched = {a.agent_id for a in state.agents if a.agent_id}
-    for m in sorted(state.messages, key=lambda m: m.time):
+    for m in state.received:
         if m.sender is None or m.sender in launched:
             continue
         alert = parsed(m)
