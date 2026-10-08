@@ -120,13 +120,18 @@ def watched(listing: list[Listed], audits: list[Audit], undecided: list[str]) ->
 
 
 def audit_of(a: Agent, undecided: list[str]) -> Audit | None:
-    """The audit the launch `a` gives, or None where it is no auditor's."""
+    """The audit the launch `a` gives, or None where it is no auditor's, or
+    where its subject is in no form `monitor.subject` gives: that launch
+    counts as no audit, so the activity it was to audit stays new, and
+    `undecided` gains a line on it."""
     if a.role is not Role.OP_AUDITOR or a.agent_id is None:
         return None
     given = monitor.subject_of(a.subject)
     if given is None:
-        raise Refused(mctx("the auditor {agent} has the subject `{subject}`, in no form the "
-                           "command gives").format(agent=a.agent_id, subject=a.subject))
+        undecided.append(mctx("{agent}: this auditor's launch has the subject `{subject}`, in "
+                              "no form the command gives, so it counts as no audit")
+                         .format(agent=a.agent_id, subject=a.subject))
+        return None
     replies = tuple(r.time for r in a.reports)
     read, found = Read.PENDING, None
     if a.last_report is not None and not a.pending:
