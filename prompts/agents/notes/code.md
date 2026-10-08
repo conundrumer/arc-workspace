@@ -5,15 +5,6 @@
 - Read nothing under `../arc-synth-bun/`.
 - Launch no agent other than the ones your documents give.
 - Keep `progress.md` in your scratch directory, with what is done and what is next. After your context is compacted, read it before anything else.
-- Your budget is the N of the latest `Budget: N minutes` line in your brief or a later message from your parent.
-- While you have a budget, start your budget timer with your first command, and again at each later message from your parent, after you end the timer that runs: run this command in the background, with a `timeout` of 7200000 ms on the Bash call, your own agent id as `<agent id>`, and N times 60 as `<seconds>`:
-    ```
-    : 'unattended-wait: budget timer'; uv run python scripts/agent_timer.py start budget <agent id> <seconds>
-    ```
-- When the notification that the timer completed reaches you, where you did not end it, finish the step you are on, write what is done and what is left in `progress.md`, and end your turn with a reply that says the budget is passed.
-- When the first message from a subagent other than your parent reaches you, end the timer: run `uv run python scripts/agent_timer.py stop budget <agent id>`.
-- Before your final reply, where the timer runs, end it that way.
-    - Its start has completed once `pgrep -f 'agent_timer[.]py start budget <agent id>'` prints nothing.
 
 ## place-kinds
 - Defects:

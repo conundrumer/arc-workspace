@@ -59,6 +59,15 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 * inline: notes/worktree.md#worktree-isolation
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 * inline: notes/code.md#code-working-rules
+- Your budget is the N of the latest `Budget: N minutes` line in your brief or a later message from your parent.
+- While you have a budget, start your budget timer with your first command, and again at each later message from your parent, after you end the timer that runs: run this command in the background, with a `timeout` of 7200000 ms on the Bash call, your own agent id as `<agent id>`, and N times 60 as `<seconds>`:
+    ```
+    : 'unattended-wait: budget timer'; uv run python scripts/agent_timer.py start budget <agent id> <seconds>
+    ```
+- When the notification that the timer completed reaches you, where you did not end it, finish the step you are on, write what is done and what is left in `progress.md`, and end your turn with a reply that says the budget is passed.
+- When the first message from a subagent other than your parent reaches you, end the timer: run `uv run python scripts/agent_timer.py stop budget <agent id>`.
+- Before your final reply, where the timer runs, end it that way.
+    - Its start has completed once `pgrep -f 'agent_timer[.]py start budget <agent id>'` prints nothing.
 * inline: notes/commands.md#commands
 * inline: notes/commands.md#final-report
 

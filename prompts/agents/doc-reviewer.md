@@ -14,7 +14,6 @@ tools: Read, Grep, Glob, Bash, Agent, SendMessage, TaskStop
 * inline: notes/worktree.md#worktree
 * inline: notes/worktree.md#worktree-commands
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
-* inline: notes/changes.md#budget
 - Review that change by the steps [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) gives.
 - When the editor's fixes arrive, review the change again.
 - File as a `bug` ticket each finding on a fault the change did not make, on a line outside the places the Scope of the change's ticket gives, or, where the change has no ticket, outside the files its diff edits and the files a code editor's brief gives.

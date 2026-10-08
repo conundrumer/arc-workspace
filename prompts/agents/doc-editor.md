@@ -23,7 +23,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 * inline: notes/worktree.md#worktree-commands
 * inline: notes/worktree.md#worktree-isolation
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
-* inline: notes/changes.md#budget
 - Before you write anything, take these steps in order:
     1. Work out each reader of the place you will edit: who it is, how it arrives at that place, what its context already holds there, what it is doing there, and what it does next.
     2. Go through the request, find what each of those readers needs to know at that place, and put in only that.
