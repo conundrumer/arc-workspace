@@ -42,7 +42,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 - Carry out every other resolution: where it changes the tree, file a `change` ticket for it, with the number of each ticket it settles in its Motivation, and move each of those tickets to `tickets/blocked/` with a note that opens with `change` and that change's number, and otherwise close the ticket with its resolution word.
 - In a `change` for speed, give the profile that exists in its Scope, or ask for one as its first deliverable.
 - Give rote work to an agent, and judge the list it returns.
-- At the end of your reply, under a `## For the coordinator` heading, give each decision you bring the user, in the form [The user's part](#the-users-part) gives, each change that section tells the user, and each item you leave unfinished, with its reason.
+- At the end of your reply, under a `## For the coordinator` heading, give a list item for each decision you bring the user, opened with `decision:`, for each change [The user's part](#the-users-part) tells the user, opened with `tell:`, and for each item you leave unfinished, opened with `unfinished:`, with its reason, and nothing else.
+    - Give each decision and each change in the form that section gives, with each line after its item's first line nested under that item.
 - In your reply, give each ticket you judged, and each finding and each unfinished item your brief gives, with its resolution, other than those the `For the coordinator` heading gives, each decision with what it was made from, each `change` ticket you filed or revised, by its path, and each agent you launched, by its agent id.
 
 ## Tracking
