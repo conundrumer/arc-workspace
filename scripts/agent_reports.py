@@ -8,7 +8,9 @@ preamble (`HAND_BACK`), with each line of the report indented by
 `HAND_BACK_INDENT`; the report's text is the report without that preamble
 and that indent. The notification that follows it gives only a pointer to
 that message (`POINTER`): it gives no report text, and still says the
-agent stopped."""
+agent stopped. A report whose whole text is the line an agent gives after it
+sent its final reply by SendMessage (`SENT_BY_MESSAGE`) gives no report text
+either, and the final reply that message delivered is the agent's report."""
 
 import re
 from collections.abc import Iterable
@@ -38,6 +40,17 @@ POINTER = re.compile(r'\AThis agent\'s report was delivered to you as a message 
                      r"\(its SubagentHandback call\)\. Read it there; it is not repeated here\.\Z")
 """The whole result of a notification whose agent's report reached the
 parent as a SubagentHandback message."""
+
+SENT_BY_MESSAGE = re.compile(r"\AMy final reply went to (?:main|a[0-9a-f]+) by SendMessage\.\Z")
+"""The whole text of the line an agent gives as its report after it sent
+its final reply by SendMessage."""
+
+
+def gives_text(text: str) -> bool:
+    """Whether a report whose text is `text` gives report text: it is
+    neither the harness's pointer nor the line an agent gives after it sent
+    its final reply by SendMessage."""
+    return not any(form.match(text) for form in (POINTER, SENT_BY_MESSAGE))
 
 
 class ReportKind(Enum):
@@ -233,8 +246,7 @@ def entry_reports(e: Entry, aid: str | None, call: str | None,
     t = epoch(e["timestamp"])
     out = [Report(ReportKind.NOTIFICATION, t, n.result.strip())
            for n in agent_notifications(e, aid, call, undecided)
-           if n.status is Status.COMPLETED and n.result is not None and is_stop(n)
-           and POINTER.match(n.result.strip()) is None]
+           if n.status is Status.COMPLETED and n.result is not None and is_stop(n)]
     if is_prompt(e):
         out.extend(Report(ReportKind.MESSAGE, t, report if (report := handed_back(text)) is not None
                           else text)
@@ -245,4 +257,4 @@ def entry_reports(e: Entry, aid: str | None, call: str | None,
         if launch_status(result, undecided, call) is LaunchStatus.COMPLETED:
             out.append(Report(ReportKind.RESULT, t,
                               text_of(result.get("content")).strip()))
-    return out
+    return [r for r in out if gives_text(r.text.strip())]
