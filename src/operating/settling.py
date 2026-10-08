@@ -16,8 +16,12 @@ moves back to `tickets/open/` first.
 
 A decision for the user reaches the coordinator once, by one of two
 messages. Where a ticket analyst's reply ends with the part for the
-coordinator (`reports.FOR_COORDINATOR`), the command sends that part,
-read back by the analyst's agent id and the reply's time. Otherwise, the
+coordinator (`reports.FOR_COORDINATOR`), and that part holds an item
+labeled with its kind (`reports.LABELED`), the command sends those items,
+read back by the analyst's agent id and the reply's time. A part that
+holds no such item counts as no part. An item of that part that opens
+with a label the command does not read (`reports.MISLABELED`) goes to the
+coordinator as undecided. Otherwise, the
 decision is the note of the line that moved a ticket into
 `tickets/blocked/` waiting on the user: the command sends it once that
 line is written, where an operator wrote it, or a ticket analyst an
@@ -27,12 +31,12 @@ So a decision is sent by a later operator where the one before it ended
 before it sent it."""
 
 from operating import briefs
-from operating.reports import for_coordinator as analyst_part
+from operating.reports import for_coordinator as analyst_part, mislabeled
 from operating.passes import awaits_analyst
 from operating.roles import Purpose, Role, analyst_subject, joined
 from operating.state import LogLine, State, Ticket
 from ticketing.vocabulary import Domain, Kind, Status
-from operating.steps import COORDINATOR, DECISION, Bash, Launch, Send, Step, sent
+from operating.steps import COORDINATOR, DECISION, Bash, Launch, Send, Step, repeated, sent, undecided
 from operating.tracker import AGENT, blocked_on_user, coordinator_line, coordinator_lines, log
 
 
@@ -157,14 +161,22 @@ def for_coordinator_key(agent: str, time: float) -> str:
 
 
 def for_coordinator(state: State) -> Step | None:
-    """The part of a ticket analyst's reply for the coordinator, sent once,
-    read back by the analyst's agent id and its reply's time."""
+    """The labeled items of the part of a ticket analyst's reply for the
+    coordinator, sent once, read back by the analyst's agent id and its
+    reply's time."""
     for a in state.agents_of(Role.TICKET_ANALYST):
         part = analyst_part(a)
         r = a.last_report
-        if part is None or r is None or a.agent_id is None:
+        if r is None or a.agent_id is None:
             continue
         key = for_coordinator_key(a.agent_id, r.time)
+        if items := mislabeled(a):
+            s = undecided(f"the part for the coordinator of {key} holds items "
+                          "that open with a label the command does not read:\n" + "\n".join(items))
+            if not repeated(s, state):
+                return s
+        if part is None:
+            continue
         step = Send(COORDINATOR, f"{DECISION} {key}:\n{part}")
         if not sent(state, step.to, step.message, key):
             return step

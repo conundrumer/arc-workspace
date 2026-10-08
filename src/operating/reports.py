@@ -39,6 +39,18 @@ FOR_COORDINATOR = "## For the coordinator"
 for the coordinator: the decisions it brings the user, the changes it
 tells the user, and the items it leaves unfinished."""
 
+LABELS = "(?:decision|tell|unfinished)"
+"""The labels of the kinds of item of the part for the coordinator."""
+
+LABELED = re.compile(rf"^(?P<indent>[ \t]*)[-*]\s+{LABELS}:")
+"""A list item of the part for the coordinator, opened by the label of
+its kind."""
+
+MISLABELED = re.compile(rf"^[ \t]*(?:[-*+]|\d+[.)])\s+[*_`]*{LABELS}[*_`\s]*:",
+                        re.IGNORECASE)
+"""A list item of that part that opens with a label in another case, in
+markup or in another list form, which `LABELED` does not read."""
+
 HAND_OVER = "hand-over:"
 """The opening of the reply of an agent that ends with its open work for a
 fresh agent, as the message on an outgrown alert asks."""
@@ -89,11 +101,39 @@ def finding_paths(a: Agent) -> list[str]:
     return list(dict.fromkeys(m["path"] for m in FINDING.finditer(body)))
 
 
-def for_coordinator(a: Agent) -> str | None:
-    """The part of a ticket analyst's latest reply under `FOR_COORDINATOR`,
-    or None where it has none or that part is empty."""
+def coordinator_part(a: Agent) -> tuple[list[str], list[str]]:
+    """The lines of the part of a ticket analyst's latest reply under
+    `FOR_COORDINATOR`, as the lines of its `LABELED` items, each with the
+    lines nested under it, and the other lines, or none where it has no
+    such part."""
     r = a.last_report
     if a.role is not Role.TICKET_ANALYST or r is None or FOR_COORDINATOR not in r.text:
-        return None
-    part = r.text.rsplit(FOR_COORDINATOR, 1)[1].strip()
-    return part or None
+        return [], []
+    labeled: list[str] = []
+    other: list[str] = []
+    top: int | None = None
+    for line in r.text.rsplit(FOR_COORDINATOR, 1)[1].splitlines():
+        if top is not None and (not line.strip() or indent(line) > top):
+            labeled.append(line)
+            continue
+        m = LABELED.match(line)
+        top = len(m["indent"]) if m else None
+        (labeled if m else other).append(line)
+    return labeled, other
+
+
+def indent(line: str) -> int:
+    return len(line) - len(line.lstrip())
+
+
+def for_coordinator(a: Agent) -> str | None:
+    """The `LABELED` items of the part of a ticket analyst's latest reply
+    for the coordinator, each with the lines nested under it, or None where
+    that part holds no such item."""
+    return "\n".join(coordinator_part(a)[0]).strip("\n") or None
+
+
+def mislabeled(a: Agent) -> list[str]:
+    """The `MISLABELED` items of the part of a ticket analyst's latest
+    reply for the coordinator, outside its `LABELED` items."""
+    return [ln.strip() for ln in coordinator_part(a)[1] if MISLABELED.match(ln)]
