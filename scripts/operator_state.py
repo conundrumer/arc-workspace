@@ -79,5 +79,7 @@ def read_state(me: str) -> State:
     given = [ticket_number(n) for n in named(state) if n in tickets]
     held = {w for t in tickets.values() if t.status is Status.ASSIGNED and t.holder == me
             and (w := worktree(t, state)) is not None}
-    return replace(state, to_settle=tuple(str(n) for n in to_settle(tickets_dir, index, given)),
+    return replace(state,
+                   to_settle=tuple(str(n) for n in to_settle(tickets_dir, index, given)
+                                   if str(n) in tickets),
                    gate_outputs={w: gate_outputs(w) for w in held})

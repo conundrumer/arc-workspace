@@ -188,7 +188,8 @@ class State:
     that reported, the numbers of the tickets its report lists under
     `## Tickets filed`, or None where its reply is no report's path.
     `to_settle` is the list `file_ticket.py to-settle` prints for the
-    session, with the numbers the coordinator names. `claims` gives the
+    session, with the numbers the coordinator names, keeping only the
+    tickets that `tickets` holds. `claims` gives the
     session id each claimed task's claim file holds, and `open_holders`
     the holders of tickets under `tickets/assigned/` whose work is open, as
     `profile_runs.py --open` gives it. `index` is the session's index.
