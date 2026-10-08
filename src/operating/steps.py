@@ -299,15 +299,19 @@ def only_command(command: str, agent: str) -> bool:
         words[0] in ("cd", ":") or words in want for words in found)
 
 
-def trailer(step: Step, agent: str) -> str:
-    """The line the command prints after a call it prints, which `made`
-    reads back."""
-    return THEN + mctx("{command}`. Step key: {key}.").format(command=next_command(agent),
-                                                              key=key(step))
+KEY_LINE = mctx("Step key: {key}. After the call below, run `{command}`.")
 
 
-THEN = "\n\nThen run `"
-PRINTED_KEY = re.compile(rf"Step key: ({STEP_KEY.pattern})\.")
+def key_line(step: Step, agent: str) -> str:
+    """The line the command prints before a call it prints, which `made`
+    reads back. Nothing follows the call's last field, so an operator who
+    copies that field copies no other line."""
+    return KEY_LINE.format(key=key(step), command=next_command(agent))
+
+
+PRINTED_KEY = (re.escape(KEY_LINE.format(key="\x00", command="\x01"))
+               .replace("\x00", f"(?P<key>{STEP_KEY.pattern})")
+               .replace("\x01", "[^\n]*") + "\n")
 
 
 def opening(step: Step, *fields: tuple[str, str]) -> str:
@@ -323,11 +327,12 @@ def opening(step: Step, *fields: tuple[str, str]) -> str:
 
 @cache
 def printed_opening() -> re.Pattern[str]:
-    """The opening of the text `printed` gives a message or a Bash call in
-    the foreground, up to the message or the command."""
+    """The opening of the text `next` prints for a message or a Bash call
+    in the foreground, from its key line, where the result holds it, up to
+    the message or the command."""
     send = opening(Send("\x00", "\x01"), ("\x00", r"(?P<to>[^\n]*)"), ("\x01", ""))
     bash = opening(Bash("\x01"), ("\x01", ""))
-    return re.compile(f"^(?:{send}|{bash})", re.MULTILINE)
+    return re.compile(f"^(?:{PRINTED_KEY})?(?:{send}|{bash})", re.MULTILINE)
 
 
 def made(calls: Iterable[Call]) -> tuple[Made, ...]:
@@ -349,16 +354,14 @@ def made(calls: Iterable[Call]) -> tuple[Made, ...]:
                     or (after.tool == "Bash"
                         and only_command(str(after.input.get("command", "")), operator))):
                 continue
-            openings = list(printed_opening().finditer(c.result))
-            if not openings:
+            # The first opening: a message or a command may hold a line
+            # that reads as one, and the key line comes before both.
+            opening = printed_opening().search(c.result)
+            if opening is None:
                 continue
-            opening = openings[-1]
-            rest = c.result[opening.end():]
-            found = PRINTED_KEY.search(rest)
-            end = rest.rfind(THEN)
             tool = "SendMessage" if opening["to"] is not None else "Bash"
-            out.append(Made(found[1] if found else None, tool, opening["to"],
-                            rest[:end] if end >= 0 else rest.rstrip("\n"), after))
+            out.append(Made(opening["key"], tool, opening["to"],
+                            c.result[opening.end():].rstrip("\n"), after))
     return tuple(out)
 
 
