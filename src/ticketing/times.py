@@ -1,5 +1,5 @@
-"""The form of the time a ticket's log line opens with, which the operator's
-messages give as well."""
+"""The form of the time a ticket's log line opens with, which the operations
+loop's messages give as well."""
 
 import time
 

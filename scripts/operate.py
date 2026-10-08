@@ -1,14 +1,15 @@
-"""The operator's command line and its loops: it reads the state, as
-`operator_state` assembles it from the ticket tracker, git, the worktrees
-and the transcripts of the session's operators, and prints the next step
-of the operator's procedures, which the package `operations` computes.
+"""The command line of the `operations` mod's loop: it reads the state, as
+`loop_state` assembles it from the ticket tracker, git, the worktrees,
+the session's transcripts and the loop's record (`ops_record`), and gives
+the next step of the procedures, which the package `operations` computes.
 `HELP`, which `--help` prints, gives its usage forms.
 
 Each fact the command reads is in the tracker, in git, under `work/`, in
-a transcript, or in a file it wrote for a call it printed (`steps.filed`),
-which a transcript points to."""
+a transcript, in the loop's record, or in a file it wrote for a call it
+gave (`steps.filed`), which the record points to."""
 
 import argparse
+import json
 import math
 import re
 import sys
@@ -26,38 +27,35 @@ console_importable()
 # `scripts/` off `sys.path`, and the modules below import from there.
 importable(checkout.scripts())
 
-from operator_state import read_state  # noqa: E402
+from loop_state import read_state  # noqa: E402
+from ops_record import LOOP, append, is_loop  # noqa: E402
 from profile_runs import budget_of  # noqa: E402
+from ticket_numbers import session_id  # noqa: E402
 from transcripts import Refused  # noqa: E402
-from tree_reads import git, main_tree  # noqa: E402
+from tree_reads import git, main_tree, scratch  # noqa: E402
 
 from operations import briefs, plan, steps  # noqa: E402
 from operations.roles import PASSES, Role  # noqa: E402
-from operations.steps import (BLOCK_SECONDS, FOREGROUND_MS, STEP_KEY, WAIT_SECONDS,  # noqa: E402
-                             Bash, EndTurn, Launch, Poll, Send, Step, StopWait, Wait, filed,
-                             next_command, passed_over_line, key_line, printed, with_report)
+from operations.steps import BLOCK_SECONDS, Launch, Poll, Step, filed, with_report  # noqa: E402
 from operations.task_work import restore, set_aside  # noqa: E402
 
 HELP = mctx("""
     - Usage:
         ```
-        uv run python scripts/operate.py next <agent id>
-        uv run python scripts/operate.py wait <agent id>
+        uv run python scripts/operate.py call {loop}
+        uv run python scripts/operate.py made {loop} '<call>'
+        uv run python scripts/operate.py tell {loop} '<line>'
         uv run python scripts/operate.py set-aside <task id> analyze|create
         uv run python scripts/operate.py restore <task id>
-        uv run python scripts/operate.py pass-over <agent id> <key> '<line>'
         ```
-    - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters, the final reply, or the decision lines of a ticket analyst on a held step, for the operator to apply, where the operator that launched that analyst printed its final reply since. It writes the brief of a launch, and a message to an agent other than the coordinator, to a file under the session's scratchpad, and the call's prompt or message gives that file's path. The value of a prompt or a message parameter it prints stands between two lines of three backticks, and the value to pass is the text between those lines, without them. A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items. The brief of a launch other than a solver pass's gives the file the agent writes its final reply to, and ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where the budget of its agent type over every run of that type, as `profile_runs.py --help` gives a type's budget, is N minutes rounded up. A brief that gives items, as `profile_runs.py --help` gives them, takes the type's budget per item times the number of items it gives, and any other brief takes the type's budget. Where the type has no such budget, the brief has no such line. It holds back the launch of an agent type whose definition under `.claude/agents/` a commit of `master` changed less than {reload} seconds ago until those seconds have passed. Where no step is ready and no agent runs that this operator launched or last resumed itself, other than one a notification said has not reported yet, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again.
-    - Before each call it prints, `next` prints that step's key, on a line that gives the command to run after the call, so the text it prints ends with the call's last field. The key is the same at each read of the state that gives the same step. `pass-over` passes over the step whose key it is given, by the `Override:` or `Decision:` line it is given, which rules the step out, from the moment its call is made, in a Bash call of its own or with other commands. From then on, `next` passes that step over for each operator, gives that step, once, as one its procedure waits on, to a ticket analyst it launches to rule it, other than a launch of a ticket analyst to rule a step, and goes on with the other procedures. A pipeline whose next pass is passed over stops instead.
-    - A step `next` printed counts as made by the call the operator made: a Bash call whose command runs the printed command among others, or the call the operator made right after the call of `next` that printed the step.
-    - `wait` is the operator's wait in the background: it ends once the state gives a step, or after {wait} seconds.
+    - `call` gives the next step of the loop of the `operations` mod, as one line of JSON: `kind` names the call, the other fields are its parameters, and `key` is the step's key, the same at each read of the state that gives the same step. A step of kind `wait` gives no call, and a step of kind `reply` ends the loop with its `text`. It writes the brief of a launch, and a message to an agent other than the coordinator, to a file under the session's scratchpad, and the call's prompt or message gives that file's path. A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items. The brief of a launch other than a solver pass's gives the file the agent writes its final reply to, and ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where the budget of its agent type over every run of that type, as `profile_runs.py --help` gives a type's budget, is N minutes rounded up. A brief that gives items, as `profile_runs.py --help` gives them, takes the type's budget per item times the number of items it gives, and any other brief takes the type's budget. Where the type has no such budget, the brief has no such line. It holds back the launch of an agent type whose definition under `.claude/agents/` a commit of `master` changed less than {reload} seconds ago until those seconds have passed. Where no step is ready and no agent the loop launched runs, it blocks for up to {block} seconds until one is.
+    - `made` adds the call the mod made for a step to the loop's record, which the state reads as the calls the loop made: `<call>` is a JSON object with the call's `tool`, `input`, `result`, `error`, and the `key` that `call` gave. A step counts as made by the recorded call that gives its key.
+    - `tell` gives the loop the coordinator's line, which it reads as a line of the coordinator's message.
     - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass, and `restore` puts it back and removes the task's claim, as the section `Passes on a task` of `prompts/agents/notes/launching.md` gives.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives, and the command refuses where the shell gives none.
     """)
 
 POLL_SECONDS = 15
-CALLS = (Launch, Send, Bash, StopWait)
-"""The steps after whose call the operator runs `next` again."""
 TASK_ID = re.compile(task.TASK_ID)
 
 
@@ -71,12 +69,10 @@ def with_budget(step: Launch) -> Launch:
     return replace(step, brief=step.brief + "\n" + briefs.BUDGET.format(minutes=math.ceil(seconds / 60)))
 
 
-def print_step(step: Step, scratch: Path, me: str) -> None:
-    """Write the files `step` gives, then print it."""
+def write_files(step: Step, scratch: Path) -> None:
     for path, text in filed(step, scratch).items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text + "\n")
-    print(printed(step, me, scratch))
 
 
 RELOAD_SECONDS = 30
@@ -94,7 +90,9 @@ def reloading(step: Launch) -> float:
     return max(0.0, float(out) + RELOAD_SECONDS - time.time()) if out else 0.0
 
 
-def next_step(me: str) -> int:
+def ready_step(me: str) -> tuple[Step, Path]:
+    """The next step of `me`, as HELP gives `call`'s blocking, with the
+    scratchpad its files go under."""
     deadline = time.monotonic() + BLOCK_SECONDS
     while True:
         state = read_state(me)
@@ -106,53 +104,54 @@ def next_step(me: str) -> int:
                 time.sleep(left)
                 continue
         if not isinstance(step, Poll) or time.monotonic() + POLL_SECONDS > deadline:
-            if isinstance(step, CALLS):
-                print(key_line(step, me))
-            if isinstance(step, Launch):
-                step = with_budget(with_report(step, state.scratch))
-            print_step(step, state.scratch, me)
-            return 0
+            return step, state.scratch
         time.sleep(POLL_SECONDS)
 
 
-def wait(me: str) -> int:
-    deadline = time.monotonic() + WAIT_SECONDS
-    while time.monotonic() + POLL_SECONDS < deadline:
-        time.sleep(POLL_SECONDS)
-        step = plan.next_step(read_state(me))
-        if not isinstance(step, (Wait, EndTurn)):
-            print(mctx("A step is ready: run `{command}`.").format(command=next_command(me)))
-            return 0
-    print(mctx("The wait ended: run `{command}`.").format(command=next_command(me)))
+def prepared(step: Step, scratch: Path) -> Step:
+    """`step` with its report and budget lines, after its files are written."""
+    if isinstance(step, Launch):
+        step = with_budget(with_report(step, scratch))
+    write_files(step, scratch)
+    return step
+
+
+def call_step(me: str) -> int:
+    step, scratch = ready_step(me)
+    print(json.dumps(steps.call(prepared(step, scratch), scratch, steps.key(step))))
     return 0
 
 
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("--help", "-h"):
-        print(HELP.format(block=BLOCK_SECONDS, wait=WAIT_SECONDS, reload=RELOAD_SECONDS))
+        print(HELP.format(block=BLOCK_SECONDS, reload=RELOAD_SECONDS, loop=LOOP))
         return 0
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
-    parser.add_argument("action", choices=["next", "wait", "set-aside", "restore",
-                                           steps.PASS_OVER])
+    parser.add_argument("action", choices=["call", "made", "tell", "set-aside", "restore"])
     parser.add_argument("ident")
     parser.add_argument("rest", nargs="*")
     args = parser.parse_args(argv)
+    if args.action in ("call", "made", "tell") and not is_loop(args.ident):
+        parser.error(f"{args.action} takes the loop's id, `{LOOP}`")
     try:
         match args.action:
-            case "next":
-                return next_step(args.ident)
-            case "wait":
-                return wait(args.ident)
+            case "made":
+                if len(args.rest) != 1:
+                    parser.error("made takes the loop's id and a call")
+                append(scratch(session_id()), args.ident, json.loads(args.rest[0]))
+                return 0
+            case "tell":
+                if len(args.rest) != 1:
+                    parser.error("tell takes the loop's id and a line")
+                append(scratch(session_id()), args.ident, {"line": args.rest[0]})
+                return 0
+            case "call":
+                return call_step(args.ident)
             case "set-aside":
                 if (len(args.rest) != 1 or args.rest[0] not in (Role.ANALYZE, Role.CREATE)
                         or not TASK_ID.fullmatch(args.ident)):
                     parser.error("set-aside takes a task id and `analyze` or `create`")
                 print(set_aside(main_tree(), args.ident, Role(args.rest[0])))
-                return 0
-            case steps.PASS_OVER:
-                if len(args.rest) != 2 or not STEP_KEY.fullmatch(args.rest[0]):
-                    parser.error("pass-over takes an agent id, a step's key and a line")
-                print(passed_over_line(args.rest[0]))
                 return 0
             case _:
                 if args.rest:

@@ -36,4 +36,4 @@
 
 ### A denied merge
 - Where your merge call of a change is denied, move the change's ticket to `tickets/blocked/`, with a note that opens with `user` and gives the call, the denial's text and the worktree.
-- Where your merge of a change whose merge call an agent you launched gave as denied goes through, send an operator the line `Merged: <number>`, with the change's number, as [Operators](prompts/agents/notes/launching.md#operators) gives.
+- Where your merge of a change whose merge call an agent you or the operations loop launched gave as denied goes through, give the operations loop the line `Merged: <number>`, with the change's number, as [The operations loop](prompts/agents/notes/launching.md#the-operations-loop) gives.

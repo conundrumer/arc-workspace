@@ -8,13 +8,13 @@ The editors a change needs are those the `editors` field of its ticket
 gives, which the ticket analyst that files it writes, and a change whose
 ticket gives none is undecided. The first editor is launched with
 a worktree of its own, whose path the agent id gives, and the command logs
-that path on the ticket, so a later operator continues the change there,
-with the editors and reviewers each operator launched in it.
+that path on the ticket, so a later loop continues the change there,
+with the editors and reviewers launched in it.
 
 What the editors' and the doc reviewer's replies give is read by the fixed
 forms of `reports`. An editor whose latest reply says its budget is passed
 is sent a message to go on with the work that reply leaves, with the
-budget the operators last gave it, and that reply goes to no ticket
+budget the loop last gave it, and that reply goes to no ticket
 analyst. Any other report of an editor that has not finished, a
 `Review` section that gives a place as standing, an open `question` ticket
 filed on the change, and the accepted gate outputs the change writes go to
@@ -53,15 +53,32 @@ from typing import Literal
 from controlled_markdown import mctx
 from operations import briefs, merging
 from operations.directives import Decision, Directive, decided, held_on, named, numbers
-from operations.reports import (OPEN_LABELS, Label, budget_passed, finding_paths, finished,
-                                items_of, no_finding, standing)
+from operations.reports import (
+    OPEN_LABELS,
+    Label,
+    budget_passed,
+    finding_paths,
+    finished,
+    items_of,
+    no_finding,
+    standing,
+)
 from operations.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
 from operations.state import Agent, State, Ticket
-from operations.steps import (Bash, Launch, Send, Step, Undecided, agent_ids, ask_again, repeated,
-                             sends_to, sent)
+from operations.steps import (
+    Bash,
+    Launch,
+    Send,
+    Step,
+    Undecided,
+    agent_ids,
+    ask_again,
+    repeated,
+    sends_to,
+    sent,
+)
 from operations.tracker import COORDINATOR, closed, log, worktree
 from ticketing.vocabulary import Domain, Kind, Status
-
 
 PROSE_IN_CODE = ".py"
 """The suffix of the files a doc reviewer's finding on prose in code falls
@@ -69,8 +86,8 @@ on, which a code editor fixes."""
 
 
 def scope(state: State) -> set[str]:
-    """The tickets the operators release and take changes among: the
-    session's, those the coordinator names to the operator `me`, and each `change` one of those
+    """The tickets the loop releases and takes changes among: the
+    session's, those the coordinator names to the loop, and each `change` one of those
     waits on through a chain of `depends-on`."""
     base = {n for n, t in state.tickets.items() if state.mine(t)} | named(state)
     todo = list(base)
@@ -102,7 +119,7 @@ def release(state: State) -> Step | None:
 
 def boosted(state: State) -> set[str]:
     """The changes that settle an `interference` ticket, which the
-    operator takes ahead of the others."""
+    loop takes ahead of the others."""
     out: set[str] = set()
     for t in state.tickets.values():
         if (t.kind is Kind.INTERFERENCE and t.status is Status.BLOCKED and t.log
@@ -156,8 +173,8 @@ def of_change(state: State, number: str) -> list[Agent]:
 
 
 def give_up(state: State) -> Step | None:
-    """A message that tells an agent at work on a change that no operator
-    carries any more, or that another holder carries, to end."""
+    """A message that tells an agent at work on a change that the loop
+    carries no more, or that another holder carries, to end."""
     for a in state.agents:
         if not a.pending or a.agent_id is None:
             continue
@@ -199,7 +216,7 @@ def change_editors(t: Ticket) -> tuple[Role, ...] | Undecided:
     return t.editors
 
 def carry(state: State, t: Ticket) -> Step | None:
-    """The next step on the change `t` the operator holds, or None where it
+    """The next step on the change `t` the loop holds, or None where it
     waits on an agent."""
     if merging.merged(state, t):
         return merging.close(state, t, of_change(state, t.number))
@@ -226,13 +243,13 @@ def carry(state: State, t: Ticket) -> Step | None:
                 return choice
         first = next(r for r in EDITORS if r in editors)
         return Launch(first, t.number, briefs.editor(
-            first, t.number, len(editors) > 1, None, state.scratch / t.number, state.me),
+            first, t.number, len(editors) > 1, None, state.scratch / t.number),
             worktree=True, model=t.model(first))
     here = [a for a in launched if in_worktree(state, a, w)]
     for role in (r for r in EDITORS if r in editors):
         if not any(a.role is role for a in here):
             return Launch(role, t.number, briefs.editor(
-                role, t.number, len(editors) > 1, w, state.scratch / t.number, state.me),
+                role, t.number, len(editors) > 1, w, state.scratch / t.number),
                 model=t.model(role))
     if any(a.pending for a in here):
         return None
@@ -258,7 +275,7 @@ def past_budget(state: State, t: Ticket, latest: list[Agent]) -> Step | None:
         stated = next((s for text in reversed(given) if (s := briefs.budgets(text))), set[float]())
         if len(stated) != 1:
             return Undecided(mctx("editor {agent} of change {number} says its budget is "
-                                  "passed, and the latest brief or operator's message to it "
+                                  "passed, and the latest brief or message of the loop to it "
                                   "that states a budget states {count}").format(
                 agent=a.agent_id, number=t.number, count=len(stated)))
         return Send(a.agent_id, briefs.go_on(r.time, stated.pop()))
@@ -333,7 +350,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
         return editors
     reports = [(i, r.text) for i, (_, r) in zip(reporters, reporting, strict=True)]
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
-        t.number, w, reports, [q.number for q in questions], gate, editors, state.me))
+        t.number, w, reports, [q.number for q in questions], gate, editors))
 
 
 def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
@@ -373,7 +390,7 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
                 return reviewer
             return Launch(role, t.number, briefs.review_fix(
                 role, t.number, w, reviewer[0], code if role is Role.CODE_EDITOR else [],
-                state.scratch / t.number, state.me), model=t.model(role))
+                state.scratch / t.number), model=t.model(role))
     fixer_ids = agent_ids(fixers)
     if isinstance(fixer_ids, Undecided):
         return fixer_ids
@@ -430,12 +447,12 @@ def review_launch(t: Ticket, w: Path, here: list[Agent], state: State) -> Step:
     if isinstance(ids, Undecided):
         return ids
     return Launch(Role.DOC_REVIEWER, t.number, briefs.doc_review(
-        t.number, w, [(a.role, i) for a, i in zip(here, ids, strict=True)], state.me))
+        t.number, w, [(a.role, i) for a, i in zip(here, ids, strict=True)]))
 
 
 def step(state: State) -> Step | None:
     """The next step of the changes: a message to an agent on a change no
-    longer carried, a take, then a step of each change the operator
+    longer carried, a take, then a step of each change the loop
     holds."""
     if (s := give_up(state)) is not None:
         return s

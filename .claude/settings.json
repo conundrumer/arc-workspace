@@ -35,10 +35,21 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --project \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/scripts/context_bound_hook.py\""
+            "command": "uv run --project \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/scripts/reader_update_hook.py\""
           }
         ]
       }
     ]
+  },
+  "extraKnownMarketplaces": {
+    "arc-workspace": {
+      "source": {
+        "source": "directory",
+        "path": "./scripts/mods"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "operations@arc-workspace": true
   }
 }

@@ -1,9 +1,9 @@
-"""The steps of `op-monitor`, as `scripts/monitor.py` prints them: a launch
-of an `op-auditor` on an agent or on a message to the coordinator, a
-budget alert or an escalation as a Send step, a run of the command again, or the monitor's
-final reply. The command keeps no state of its own: it reads back each
-audit from its launch's description, each alert it sent from the
-monitor's own transcript, and each auditor's alert from its report file.
+"""The steps of the monitor loop of the `operations` mod, as
+`scripts/monitor.py` gives them: a launch of an `op-auditor` on an agent
+or on a message to the coordinator, a budget alert or an escalation as a
+Send step, or a wait. The command keeps no state of its own: it reads back
+each audit from its launch's description, each alert it sent from the
+monitor loop's record, and each auditor's alert from its report file.
 
 The watched agents are the agents of the session other than the monitor
 and the auditors it launched, so no auditor, and no alert of one, is
@@ -19,7 +19,7 @@ from operations.alerts import AlertKind, opened, opening
 from operations.constants import COORDINATOR
 from operations.reports import FOR_COORDINATOR, Label
 from operations.roles import Role
-from operations.steps import Launch, Poll, Reply, Send, Step, asked_again
+from operations.steps import Launch, Poll, Send, Step, asked_again
 from ticketing.times import utc_stamp
 
 
@@ -157,7 +157,6 @@ class MonitorState:
     to_coordinator: tuple[ToCoordinator, ...]
     audits: tuple[Audit, ...]
     sendings: tuple[Sending, ...]
-    operator_runs: bool
     undecided: tuple[str, ...]
     """The lines on what the read of the state left unknown."""
 
@@ -246,7 +245,6 @@ def subject_of(text: str) -> tuple[Facet, str, int | None] | None:
 BUDGET_ALERT = mctx("Its active time is past its budget.")
 ESCALATION = mctx("An alert on this agent got no answer: the agent shows no new activity "
                   "since, or the next audit gave the same alert.")
-FINAL = mctx("No operator of the session runs.")
 
 
 def audits_on(state: MonitorState, facet: Facet, agent: str) -> list[Audit]:
@@ -340,14 +338,14 @@ def message_brief(m: ToCoordinator) -> str:
         REPORT_POINTER])
 
 
-def final_reply(state: MonitorState) -> str:
-    """`FINAL`, with an `unfinished` item for the coordinator on each line
-    `undecided` gives."""
+def unfinished(state: MonitorState) -> str:
+    """The part for the coordinator of the operations loop's final reply,
+    with an `unfinished` item on each line `undecided` gives, or nothing
+    where it gives none."""
     lines = list(dict.fromkeys(undecided(state)))
     if not lines:
-        return FINAL
-    return "\n".join([FINAL, "", FOR_COORDINATOR,
-                      *(f"- {Label.UNFINISHED}: {line}" for line in lines)])
+        return ""
+    return "\n".join([FOR_COORDINATOR, *(f"- {Label.UNFINISHED}: {line}" for line in lines)])
 
 
 def step(state: MonitorState) -> Step:
@@ -375,7 +373,5 @@ def step(state: MonitorState) -> Step:
                    and a.on_time == int(m.time) for a in state.audits):
             return Launch(Role.OP_AUDITOR, subject(Facet.MESSAGE, m.agent_id, m.time),
                           message_brief(m))
-    if not state.operator_runs:
-        return Reply(final_reply(state))
     return Poll()
 

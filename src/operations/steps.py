@@ -1,46 +1,37 @@
-"""The steps the command prints: each the one call the operator agent makes
-next, with its parameters, and the text that prints it.
+"""The steps the command gives: each the one call the `operations` mod
+makes next, with its parameters, and the fields that give it (`call`).
 
 A brief, and a message to an agent other than the coordinator, goes to a
-file the command writes before it prints the call (`filed`), and the
-printed prompt or message is the line `FILED` with that file's path. Each
-printed prompt or message is fenced (`fenced`): the value to pass is the
-text inside the fence, and its readers read a value given with or without
-the fence lines (`unfenced`). A
+file the command writes before it gives the call (`filed`), and the
+prompt or message given is the line `FILED` with that file's path. A
 message to the coordinator that opens with `DECISION` keeps its first
 line, which names what it gives, and files the rest. Each brief gives
 the report file the agent writes its final reply to (`with_report`),
 other than a solver pass's: the documents of a solver pass give its
 report file. The readers of a launched agent's brief, of a message to it
-and of its report read the file in place of the line.
+and of its report read the file in place of the line, and read a message
+an agent sent with or without fence lines (`unfenced`).
 
-Which call makes a step the command printed is as the HELP of `operate.py`
-gives it, and `made` reads the call made right after `next`. A message
-counts as made as well by each SendMessage call that holds the printed
-message."""
+Which call makes a step is as the HELP of `operate.py` gives it. A
+message counts as made as well by each SendMessage call that holds the
+message given."""
 
 import hashlib
 import re
 import shlex
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
-from functools import cache
 from pathlib import Path
 
 from controlled_markdown import mctx
 from operations import briefs
-from operations.constants import COORDINATOR, FOREGROUND_MS, WAIT_SECONDS
+from operations.constants import COORDINATOR, FOREGROUND_MS
 from operations.roles import GENERAL_ROLES, PASSES, Model, Purpose, Role, description
 from operations.state import Agent, Call, Made, Printed, State
 
 BLOCK_SECONDS = (FOREGROUND_MS // 1000) - 30
-"""The longest foreground block of a command's `next`, under the bound on
-a foreground call, with room for the read of the state."""
-
-WAIT_CAP = 11
-"""How many waits in a row may end on `WAIT_SECONDS` with no message, no
-report and no step between them, as the section `keep-alive-timer` of
-`prompts/agents/notes/commands.md` caps the keep-alive timer."""
+"""The longest block of a command's `call`, under the timeout the mod
+gives that call, `FOREGROUND_MS`, with room for the read of the state."""
 
 
 @dataclass(frozen=True)
@@ -49,13 +40,16 @@ class Launch:
     `isolation: "worktree"`, and `model` the call's `model`. `items` is the
     number of items a brief that gives several items of the same work
     gives (`briefs.ITEM_LINES`), and None for any other brief; it stays
-    out of the step's key, which its brief already fixes."""
+    out of the step's key, which its brief already fixes. `pipeline` is,
+    for a solver pass, the time of the line that started its pipeline,
+    and None for any other launch."""
     role: Role
     subject: str
     brief: str
     worktree: bool = False
     model: Model | None = None
     items: int | None = field(default=None, repr=False)
+    pipeline: float | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -72,47 +66,21 @@ class Bash:
 
 
 @dataclass(frozen=True)
-class StopWait:
-    """A TaskStop call on a command of the operator's, by the ID the
-    harness gave it."""
-    task_id: str
-
-
-@dataclass(frozen=True)
 class Wait:
-    """The command's wait, in the background, after which the agent ends
-    its turn: `operate.py wait` with the agent's id."""
-
-
-@dataclass(frozen=True)
-class EndTurn:
-    """The agent ends its turn with no call: the command's wait already
-    runs in the background, or, where `capped`, the waits reached
-    `WAIT_CAP`, and a message or a report wakes the agent."""
-    capped: bool = False
+    """Nothing is ready, and an agent the loop launched runs or another
+    holder holds a ticket of its scope: the loop waits, then reads the
+    state again."""
 
 
 @dataclass(frozen=True)
 class Poll:
-    """Nothing is ready yet, and nothing an agent of the operator's runs is
-    waited on: the agent runs the command again at once."""
+    """Nothing is ready yet: the loop reads the state again at once."""
 
 
 @dataclass(frozen=True)
 class Reply:
-    """The operator's final reply."""
+    """The loop's final reply, which ends it."""
     text: str
-
-
-@dataclass(frozen=True)
-class Relay:
-    """The decision lines `lines` of the ticket analyst `agent` on the held
-    step `what`, whose launcher printed its final reply after the analyst's
-    launch, printed to the operator whose procedure meets that step, which
-    applies them as the lines of an analyst it launched."""
-    agent: str
-    what: str
-    lines: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -121,7 +89,7 @@ class Undecided:
     launched on it (`decisions`) and is never printed. The command reads back
     which analyst it went to by the decision key of `what`, so `what` is the
     same at each read of the same state. `given` holds the texts that a
-    message by which an operator gave the coordinator this step holds each
+    message by which the loop gave the coordinator this step holds each
     of, in a form other than `UNDECIDED` and `what`, where the step has
     such a form."""
     what: str
@@ -130,8 +98,8 @@ class Undecided:
 
 UNDECIDED = "undecided:"
 """The first word of a message that gives the coordinator back a line of
-its own in no form the command reads, and of a message by which an
-operator in an earlier transcript gave the coordinator an undecided step
+its own in no form the command reads, and of a message by which the loop
+gave the coordinator an undecided step
 (`repeated`)."""
 
 DECISION = "for the coordinator:"
@@ -148,7 +116,7 @@ def unread_line(line: str) -> Send:
 
 
 def decided_by(state: State, step: Undecided) -> list[Agent]:
-    """The ticket analysts of any operator of the session launched on
+    """The ticket analysts the loop launched on
     `step`, in the order of their launch."""
     k = decision_key(step.what)
     return [a for a, purpose, keys in state.analysts() if purpose is Purpose.STEP and keys == [k]]
@@ -182,13 +150,13 @@ def held(what: str, choices: Mapping[str, str]) -> Undecided:
                                                                       given=given))
 
 
-type Step = Launch | Send | Undecided | Relay | Bash | StopWait | Wait | EndTurn | Poll | Reply
+type Step = Launch | Send | Undecided | Bash | Wait | Poll | Reply
 
 
 def repeated(step: Step, state: State) -> bool:
-    """Whether `step` is a message an operator already sent, or an
-    undecided step that an operator already handled: a ticket analyst was
-    launched on it, or an operator gave it to the coordinator, as
+    """Whether `step` is a message the loop already sent, or an
+    undecided step that the loop already handled: a ticket analyst was
+    launched on it, or the loop gave it to the coordinator, as
     `UNDECIDED` and its `what`, or in a message that holds each of its
     `given`. Its procedure then waits on the answer."""
     match step:
@@ -197,9 +165,6 @@ def repeated(step: Step, state: State) -> bool:
                                                        f"{UNDECIDED} {what}") or (
                 bool(given) and any(all(g in str(c.input.get("message", "")) for g in given)
                                     for c in sends_to(state, COORDINATOR)))
-        case Relay(agent, what):
-            head = RELAY_HEAD.format(agent=agent, key=decision_key(what))
-            return any(c.tool == "Bash" and head in (c.result or "") for c in state.calls)
         case Send(to, message):
             return sent(state, to, message)
         case _:
@@ -207,7 +172,7 @@ def repeated(step: Step, state: State) -> bool:
 
 
 def sent(state: State, to: str, message: str, mark: str | None = None) -> bool:
-    """Whether an operator made the step that sends `to` the message
+    """Whether the loop made the step that sends `to` the message
     `message`, with no error: a SendMessage call to `to` that holds
     `mark`, the part of the message that names what it gives, or where
     none is given the whole message, or the call `made` reads."""
@@ -215,14 +180,14 @@ def sent(state: State, to: str, message: str, mark: str | None = None) -> bool:
 
 
 def sends_to(state: State, to: str) -> list[Call]:
-    """The operators' SendMessage calls to `to` that the harness gave no
+    """The loop's SendMessage calls to `to` that the harness gave no
     error, in the order they were made."""
     return sorted((c for c in state.calls if c.tool == "SendMessage"
                    and c.input.get("to") == to and not c.error), key=lambda c: c.time)
 
 
 def sent_at(state: State, to: str, message: str, mark: str | None = None) -> list[float]:
-    """The times of the calls by which an operator made the step that sends
+    """The times of the calls by which the loop made the step that sends
     `to` the message `message`, as `sent` reads them."""
     held = message if mark is None else mark
     return [c.time for c in sends_to(state, to) if held in str(c.input.get("message", ""))] + [
@@ -241,10 +206,10 @@ def made_calls(state: State, tool: Printed, step: Step, printed: Callable[[Made]
 
 
 def ask_again(state: State, to: str, replies: list[float], form: str) -> Send | bool:
-    """`asked_again` for the operator, over the operators' SendMessage
+    """`asked_again` for the loop, over the loop's SendMessage
     calls."""
     return asked_again(lambda who, message: sent_at(state, who, message), to, replies, form,
-                       briefs.OPERATOR)
+                       briefs.LAUNCHER)
 
 
 def asked_again(sent_times: Callable[[str, str], list[float]], to: str, replies: list[float],
@@ -267,7 +232,7 @@ def asked_again(sent_times: Callable[[str, str], list[float]], to: str, replies:
 
 
 def bash_calls(state: State, command: str) -> list[Call]:
-    """The operators' Bash calls that made the Bash step `command`, in the
+    """The loop's Bash calls that made the Bash step `command`, in the
     order they were made."""
     out = [c for c in state.calls
            if c.tool == "Bash" and command in str(c.input.get("command", ""))]
@@ -277,18 +242,22 @@ def bash_calls(state: State, command: str) -> list[Call]:
 
 def key(step: Step) -> str:
     """The key of `step`, which is the same at each read of the state that
-    gives the same step: the key the operator gives `operate.py pass-over`
-    for a step that an `Override:` or `Decision:` line rules out."""
-    return hashlib.sha1(repr(step).encode()).hexdigest()[:KEY_LENGTH]
+    gives the same step: the key an `Override: pass over` ruling gives
+    (`directives.passed_over`). A solver pass's key is that of its task,
+    its pass and its pipeline, so a ruling that passes it over holds
+    whatever overrides its brief gains."""
+    if isinstance(step, Launch) and step.role in PASSES:
+        what = repr((step.role, step.subject, step.pipeline))
+    else:
+        what = repr(step)
+    return hashlib.sha1(what.encode()).hexdigest()[:KEY_LENGTH]
 
 
 COMMAND = "scripts/operate.py"
 RUN_COMMAND = f"uv run python {COMMAND}"
-"""How a printed step runs the command."""
+"""How a step runs the command."""
 
 KEY_LENGTH = 12
-PASS_OVER = "pass-over"
-
 
 STEP_KEY = re.compile(rf"[0-9a-f]{{{KEY_LENGTH}}}")
 OPERATORS = "();<>|&\n"
@@ -322,77 +291,11 @@ def simple_commands(command: str) -> list[list[str]]:
     return [words for words in out if words]
 
 
-def pass_overs(command: str) -> list[tuple[str, str]]:
-    """The key and the line of each call of `operate.py pass-over` that the
-    Bash command `command` runs, with a key in the form `key` gives and
-    one line."""
-    head = [*RUN_COMMAND.split(), PASS_OVER]
-    return [(words[-2], words[-1]) for words in simple_commands(command)
-            if words[:len(head)] == head and len(words) == len(head) + 3
-            and STEP_KEY.fullmatch(words[-2])]
-
-
-def passed_over_line(step_key: str) -> str:
-    """The line `operate.py pass-over` prints for the step `step_key`."""
-    return mctx("Step {key} is passed over.").format(key=step_key)
-
-
 def passed(step: Step, state: State) -> str | None:
-    """The line by which an operator passed `step` over, or None."""
+    """The line by which a ruling passed `step` over, or None."""
     return state.passed.get(key(step))
 
 
-def wait_command(agent: str) -> str:
-    return f": 'unattended-wait: operate.py wait'; {' '.join(run_words('wait', agent))}"
-
-
-def next_command(agent: str) -> str:
-    return " ".join(run_words("next", agent))
-
-
-def run_words(action: str, agent: str) -> list[str]:
-    """The words of the call of `operate.py` with `action` for the operator
-    `agent`."""
-    return [*RUN_COMMAND.split(), action, agent]
-
-
-def runs(command: str, action: str, agent: str) -> bool:
-    """Whether the Bash command `command` runs `operate.py` with `action`
-    for the operator `agent`, whatever else it runs."""
-    return any(words == run_words(action, agent) for words in simple_commands(command))
-
-
-def is_wait(command: str, agent: str) -> bool:
-    return runs(command, "wait", agent)
-
-
-def is_next(command: str, agent: str) -> bool:
-    return runs(command, "next", agent)
-
-
-FINAL_REPLY = "final reply"
-"""The first line of the text `next` prints for the operator's final
-reply."""
-
-
-def final_replies(state: State, operator: str) -> list[float]:
-    """The times of the calls of `next` that printed `operator` its final
-    reply."""
-    return [c.time for c in state.calls if c.operator == operator and c.tool == "Bash"
-            and is_next(str(c.input.get("command", "")), operator)
-            and (c.result or "").startswith(FINAL_REPLY + "\n")]
-
-
-def carrier(state: State, operator: str, time: float) -> str | None:
-    """The operator whose final reply carries what reached `operator` at
-    `time`: of `operator` and the operators launched after it, the one
-    whose call that printed a final reply came first after `time`, with
-    `me` counted as printing one now, or None where none did."""
-    after = state.operators[state.operators.index(operator):]
-    printed_at = [(t, o) for o in after for t in final_replies(state, o) if t > time]
-    if state.me in after:
-        printed_at.append((state.now, state.me))
-    return min(printed_at)[1] if printed_at else None
 
 
 def nested(text: str) -> list[str]:
@@ -406,87 +309,6 @@ def failure(c: Call) -> str:
     return reason[0] if reason else mctx("no result text")
 
 
-RELAY_HEAD = mctx("Ticket analyst {agent} decided the held step {key} below, and the operator "
-                  "that launched it has printed its final reply since.")
-RELAY_APPLY = mctx("Apply the lines below as lines of a ticket analyst you launched to rule a "
-                   "step, then run `{command}`.")
-
-
-def only_command(command: str, agent: str) -> bool:
-    """Whether the Bash command `command` runs the command's `wait` or
-    `next` for the operator `agent` and nothing else but `cd` and `:`."""
-    want = [run_words(action, agent) for action in ("wait", "next")]
-    found = simple_commands(command)
-    return any(words in want for words in found) and all(
-        words[0] in ("cd", ":") or words in want for words in found)
-
-
-KEY_LINE = mctx("Step key: {key}. After the call below, run `{command}`.")
-
-
-def key_line(step: Step, agent: str) -> str:
-    """The line the command prints before a call it prints, which `made`
-    reads back. Nothing follows the call's last field, so an operator who
-    copies that field copies no other line."""
-    return KEY_LINE.format(key=key(step), command=next_command(agent))
-
-
-PRINTED_KEY = (re.escape(KEY_LINE.format(key="\x00", command="\x01"))
-               .replace("\x00", f"(?P<key>{STEP_KEY.pattern})")
-               .replace("\x01", "[^\n]*") + "\n")
-
-
-def opening(text: str, *fields: tuple[str, str]) -> str:
-    """The pattern of the printed `text` up to its last field, where `text`
-    holds a stand-in for each field of `fields`, given with the pattern of
-    its value; the last stand-in ends the opening."""
-    out = re.escape(text[:text.index(fields[-1][0])])
-    for stand_in, pattern in fields[:-1]:
-        out = out.replace(re.escape(stand_in), pattern)
-    return out
-
-
-@cache
-def printed_opening() -> re.Pattern[str]:
-    """The opening of the text `next` prints for a message or a Bash call
-    in the foreground, from its key line, where the result holds it, up to
-    the message or the command."""
-    send = opening(send_text("\x00", "\x01"), ("\x00", r"(?P<to>[^\n]*)"), ("\x01", ""))
-    bash = opening(bash_text("\x01"), ("\x01", ""))
-    return re.compile(f"^(?:{PRINTED_KEY})?(?:{send}|{bash})", re.MULTILINE)
-
-
-def made(calls: Iterable[Call]) -> tuple[Made, ...]:
-    """Each message and Bash call in the foreground that the result of an
-    operator's call of `next` printed, with the call that operator made
-    next, other than a call of `wait` or `next` alone (`only_command`).
-    The result may be cut, as by
-    a pipe through `head` or `tail`: a step whose opening it cuts is not
-    read, and one whose key it cuts is read with no key, and as far as the
-    result gives it."""
-    by: dict[str, list[Call]] = {}
-    for c in sorted(calls, key=lambda c: c.time):
-        by.setdefault(c.operator, []).append(c)
-    out: list[Made] = []
-    for operator, own in by.items():
-        for c, after in zip(own, own[1:], strict=False):
-            command = str(c.input.get("command", ""))
-            if (c.tool != "Bash" or c.result is None or not is_next(command, operator)
-                    or (after.tool == "Bash"
-                        and only_command(str(after.input.get("command", "")), operator))):
-                continue
-            # The first opening: a message or a command may hold a line
-            # that reads as one, and the key line comes before both.
-            opening = printed_opening().search(c.result)
-            if opening is None:
-                continue
-            tool = Printed.SEND_MESSAGE if opening["to"] is not None else Printed.BASH
-            text = c.result[opening.end():].rstrip("\n")
-            out.append(Made(opening["key"], tool, opening["to"],
-                            unfenced(text) if tool is Printed.SEND_MESSAGE else text, after))
-    return tuple(out)
-
-
 FILED = mctx("Read the file {path} first: it holds the text of this message.")
 """The line that gives the file a brief or a message is in."""
 
@@ -496,7 +318,7 @@ FILED_LINE = re.compile("^" + re.escape(FILED.format(path="\x00")).replace(
 REPORT_NAME = re.compile(rf"{STEP_KEY.pattern}-report\.md")
 """The name of the report file a brief gives."""
 
-FILES = "operator-files"
+FILES = "operations-files"
 """The directory under the session's scratchpad that holds the files the
 command writes."""
 
@@ -555,14 +377,10 @@ def filed_line(step: Step, scratch: Path) -> str:
 FENCE = "```"
 
 
-def fenced(value: str) -> str:
-    return f"{FENCE}\n{value}\n{FENCE}"
-
-
 def unfenced(value: str) -> str:
     """`value` without its opening fence line and its closing fence line,
     each where it has one: a printed value as far as a cut result gives
-    it, or a value an operator passed with the fence lines."""
+    it, or a value an agent sent with the fence lines."""
     head, sep, rest = value.partition("\n")
     if head == FENCE and sep:
         value = rest
@@ -570,47 +388,27 @@ def unfenced(value: str) -> str:
     return body if sep and tail == FENCE else value
 
 
-def send_text(to: str, message: str) -> str:
-    return f"call SendMessage\nto: {to}\nmessage:\n{fenced(message)}"
-
-
-def bash_text(command: str) -> str:
-    return f"call Bash\ntimeout: {FOREGROUND_MS}\ncommand:\n{command}"
-
-
-def printed(step: Step, agent: str, scratch: Path) -> str:
-    """The text the command prints for `step`, for the operator whose agent
-    id is `agent`, with the files `filed` gives under `scratch`."""
+def call(step: Step, scratch: Path, step_key: str) -> dict[str, object]:
+    """The call `step` gives, as the fields the `operations` mod reads,
+    with the files `filed` gives under `scratch`: `kind` names the call,
+    and the other fields are its parameters. `step_key` is the key
+    `key_line` gives the step, before `with_report` adds to its brief."""
     match step:
         case Launch(role, subject, _, worktree, model):
-            iso = '\nisolation: "worktree"' if worktree else ""
-            iso += f"\nmodel: {model}" if model is not None else ""
-            return (f"call Agent\ndescription: {description(role, subject)}\n"
-                    f"subagent_type: {role.agent_type}\nrun_in_background: true{iso}\n"
-                    f"prompt:\n{fenced(filed_line(step, scratch))}")
+            return {"kind": "launch", "key": step_key, "description": description(role, subject),
+                    "subagentType": role.agent_type, "worktree": worktree,
+                    "model": None if model is None else str(model),
+                    "prompt": filed_line(step, scratch)}
         case Send(to):
             head, rest = split_message(step)
             line = filed_line(step, scratch) if rest else ""
-            return send_text(to, "\n".join(part for part in (head, line) if part))
+            return {"kind": "send", "key": step_key, "to": to,
+                    "message": "\n".join(part for part in (head, line) if part)}
         case Bash(command):
-            return bash_text(command)
-        case StopWait(task_id):
-            return f"call TaskStop\ntask_id: {task_id}"
-        case Wait():
-            return (f"call Bash\nrun_in_background: true\ntimeout: 7200000\ncommand:\n"
-                    f"{wait_command(agent)}\n" + mctx("Then end your turn."))
-        case EndTurn(capped=False):
-            return mctx("End your turn with no call: the command's wait runs.")
-        case EndTurn():
-            return mctx("End your turn with no call: no wait is started, and a message or "
-                        "a report wakes you.")
-        case Poll():
-            return mctx("Run the command again: nothing is ready.")
+            return {"kind": "bash", "key": step_key, "command": command}
+        case Wait() | Poll():
+            return {"kind": "wait"}
         case Reply(text):
-            return f"{FINAL_REPLY}\n{text}"
-        case Relay(analyst, what, lines):
-            return "\n".join([RELAY_HEAD.format(agent=analyst, key=decision_key(what)),
-                              RELAY_APPLY.format(command=next_command(agent)),
-                              "", *lines, "", what])
+            return {"kind": "reply", "text": text}
         case Undecided():
-            raise ValueError(f"an undecided step is placed before it is printed: {step}")
+            raise ValueError(f"an undecided step is placed before it is given: {step}")

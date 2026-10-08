@@ -20,7 +20,7 @@ class Filer(StrEnum):
     HANDBOOK_EXPANDED = "handbook-expanded"
     CODE_EDITOR = "code-editor"
     DOC_EDITOR = "doc-editor"
-    OPERATOR = "operator"
+    OPERATIONS = "operations"
     DOC_REVIEWER = "doc-reviewer"
     TICKET_REVIEWER = "ticket-reviewer"
     CODE_REVIEWER = "code-reviewer"
@@ -38,7 +38,7 @@ FILER_KINDS: dict[Filer, frozenset[Kind]] = {
     Filer.HANDBOOK_EXPANDED: PASS_KINDS,
     Filer.CODE_EDITOR: EDITOR_KINDS,
     Filer.DOC_EDITOR: EDITOR_KINDS,
-    Filer.OPERATOR: REVIEW_KINDS,
+    Filer.OPERATIONS: REVIEW_KINDS,
     Filer.DOC_REVIEWER: REVIEW_KINDS,
     Filer.TICKET_REVIEWER: REVIEW_KINDS,
     Filer.CODE_REVIEWER: REVIEW_KINDS | {Kind.REFACTOR, Kind.QUESTION},

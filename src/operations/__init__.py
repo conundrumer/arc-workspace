@@ -1,19 +1,20 @@
-"""The operator's procedures, as functions from the state to the next step:
-the next call the operator agent makes, which `scripts/operate.py` prints.
+"""The procedures of the `operations` mod's loop, as functions from the
+state to the next step: the next call the mod makes, which
+`scripts/operate.py` gives.
 
 The modules keep these rules:
 
 - No procedure reads a file, a transcript or the clock: `scripts/operate.py`
   reads the state into a `state.State`, and each procedure reads only that.
   `task_work`, the work a pipeline sets aside, is no procedure: it is the
-  one module that touches files, and a step the procedures print runs it.
+  one module that touches files, and a step the procedures give runs it.
 - A step changes the state that the next read of it gives, so a procedure
   finds that a step is done from the state alone, and never from a record
-  of its own. The record of a call the operator made is the call in the
-  transcripts of the session's operators.
+  of its own. The record of a call the mod made is the loop's record
+  (`scripts/ops_record.py`).
 - Each agent a step launches has a description of the form
   `roles.description` gives, so the state reads back which procedure, and
-  which ticket, task or batch, each launch of any operator of the session
+  which ticket, task or batch, each launch of the loop
   serves.
 - A step that needs a judgment, or the meaning of prose an agent wrote,
   goes to an agent launched for it, or reads the fixed form that agent
@@ -40,5 +41,5 @@ alerts and the other agents' messages), `reports` (the fixed forms of
 the replies the command reads), `passes` (the solver pipelines),
 `task_work` (the work a pipeline sets aside), `batches` (After a batch),
 `plan` (the order of the procedures, the waits and the final reply) and
-`monitor` (the steps of `op-monitor`, which `scripts/monitor.py` prints
-under the same rules)."""
+`monitor` (the steps of the mod's monitor loop, which `scripts/monitor.py`
+gives under the same rules)."""

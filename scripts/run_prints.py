@@ -4,11 +4,11 @@ from a run's parent, and of the run's report to that parent, as the HELP of
 
 from agent_reports import Report
 from budgets import budgets_in_force, of_budget
-from context_bound_hook import CONTEXT_BOUND, bounded, past_bound
-from controlled_markdown import mctx
 from open_agents import Listed, parent_reports
 from run_profile import Run, Span, clock, minutes, one_line
 from run_reads import MAIN
+
+from controlled_markdown import mctx
 from ticketing.times import utc_stamp
 
 # The number of a listed agent's last calls that `--running` prints.
@@ -43,12 +43,9 @@ def print_running(agents: list[Listed], now: float, calls_since: float | None,
             if active_time is not None else "?")
         budget = next(reversed(budgets_in_force(r, undecided)), None)
         context = f"{r.context:,}" if r.context is not None else "?"
-        past = "past " if past_bound(r.context) else ""
-        mark = (" " + mctx("{past}bound {bound:,}").format(
-            past=past, bound=CONTEXT_BOUND) if bounded(r.agent_type) else "")
         print(f"{r.label} {r.agent_type}  parent {listed.parent}  {since}  "
               f"active {active}{of_budget(budget)}  "
-              f"context {context} tokens{mark}: {r.description}")
+              f"context {context} tokens: {r.description}")
         print(f"  cwd: {r.cwd or '?'}")
         if listed.ended:
             print_ended(r, listed.end, now, undecided)

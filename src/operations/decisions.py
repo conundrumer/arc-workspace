@@ -1,36 +1,25 @@
-"""The ticket analysts the operator launches on the steps the command
-cannot decide (`steps.Undecided`), and the reads of their replies.
+"""The ticket analysts the loop launches on the steps the command cannot
+decide (`steps.Undecided`), and the reads of their replies.
 
-Such a step goes to one ticket analyst, launched with the step and the
-agent id of the operator that holds it (`briefs.held_step`), whose subject
-gives the step's decision key, so no operator of the session launches a
-second analyst on it, and its procedure waits on that analyst while it
-runs and once it returned (`steps.repeated`). A step an operator already
-gave the coordinator goes to no analyst, and its procedure waits on the
-coordinator's decision (`steps.repeated`). The analyst's reply rules
-the step by an `Override:` or `Decision:` line, as a line of the
-coordinator's rules it, and a `Decision:` line that gives the decision key
-of a held step rules it for every operator of the session
-(`directives.decided`). Where the analyst brings that decision to the user,
-its `decision:` item goes to the coordinator (`triage`), and the
-coordinator gives the user's decision in a `Decision:` line.
-
-The operator that applies an analyst's reply (`applier`) is the one that
-launched it, while that operator has printed no final reply since the
-launch, and otherwise the operator whose procedure meets the step: the
-command prints that operator the analyst's decision lines with the step,
-once in the session (`relay`), and that operator applies them as lines of
-an analyst it launched. Since one operator carries the session's work at
-a time (`plan`), one operator applies each decision.
+Such a step goes to one ticket analyst, launched with the step
+(`briefs.held_step`), whose subject gives the step's decision key, so the
+loop launches no second analyst on it, and its procedure waits on that
+analyst while it runs and once it returned (`steps.repeated`). A step the
+loop already gave the coordinator goes to no analyst, and its procedure
+waits on the coordinator's decision (`steps.repeated`). The analyst's
+reply rules the step by a ruling in a fixed form, as a ruling of the
+coordinator's rules it (`directives`). Where the analyst brings that
+decision to the user, its `decision:` item goes to the coordinator
+(`triage`), and the coordinator gives the user's decision in a
+`Decision:` line.
 
 A reply that gives neither a decision line nor a `decision:` item goes back
-to the analyst once, from its applier, with a request to send it again in
-that form (`briefs.DECISION_FORM`). Where the answer is still in neither
-form, the step stays held, and the final reply of its applier gives it
-(`undecided`). A launch of an analyst on a held step that failed is not
-itself given to another analyst: its step stays held, and the final reply
-of the operator that made that call gives the step, with the call and the
-text of its failure (`failed`)."""
+to the analyst once, with a request to send it again in that form
+(`briefs.DECISION_FORM`). Where the answer is still in neither form, the
+step stays held, and the loop's final reply gives it (`undecided`). A
+launch of an analyst on a held step that failed is not itself given to
+another analyst: its step stays held, and the loop's final reply gives the
+step, with the call and the text of its failure (`failed`)."""
 
 from controlled_markdown import mctx
 from operations import briefs
@@ -38,25 +27,21 @@ from operations.directives import reply_decisions
 from operations.reports import Label, items_of
 from operations.roles import Purpose, Role, analyst_of, analyst_subject, described
 from operations.state import Agent, State
-from operations.steps import (Launch, Relay, Send, Step, Undecided, ask_again, decided_by,
-                             decision_key, failure, final_replies, nested)
+from operations.steps import (
+    Launch,
+    Send,
+    Step,
+    Undecided,
+    ask_again,
+    decision_key,
+    failure,
+    nested,
+)
 
 
 def launch(state: State, step: Undecided) -> Launch:
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.STEP, decision_key(step.what)),
-                  briefs.held_step(step.what, state.me))
-
-
-def applier(state: State, a: Agent) -> str:
-    """The operator that applies the reply of `a`, an analyst on a held
-    step."""
-    return state.me if launcher_ended(state, a) else a.operator
-
-
-def launcher_ended(state: State, a: Agent) -> bool:
-    """Whether the operator that launched `a` printed its final reply since
-    that launch."""
-    return any(t > a.launched for t in final_replies(state, a.operator))
+                  briefs.held_step(step.what))
 
 
 def decides(a: Agent) -> bool:
@@ -68,31 +53,16 @@ def decides(a: Agent) -> bool:
 
 
 def returned(state: State) -> list[Agent]:
-    """The ticket analysts on held steps that returned, whose replies the
-    operator `me` applies."""
+    """The ticket analysts on held steps that returned."""
     return [a for a, purpose, _ in state.analysts()
             if purpose is Purpose.STEP and not a.pending and a.agent_id is not None
-            and a.reports and applier(state, a) == state.me]
-
-
-def relay(state: State, step: Undecided) -> Relay | None:
-    """The decision lines of the latest analyst on `step`, where its launcher
-    printed its final reply since that analyst's launch."""
-    analysts = decided_by(state, step)
-    if not analysts:
-        return None
-    a = analysts[-1]
-    r = a.last_report
-    if a.agent_id is None or r is None or a.pending or not launcher_ended(state, a):
-        return None
-    lines = tuple(ln.text for ln in reply_decisions(a, r))
-    return Relay(a.agent_id, step.what, lines) if lines else None
+            and a.reports]
 
 
 def asks(state: State) -> Step | None:
-    """The message that asks a ticket analyst on a held step whose reply
-    the operator `me` applies to send its latest reply again in the form
-    the command reads, where that reply gives no decision."""
+    """The message that asks a ticket analyst on a held step to send its
+    latest reply again in the form the command reads, where that reply
+    gives no decision."""
     for a in returned(state):
         if a.agent_id is None or decides(a):
             continue
@@ -103,8 +73,8 @@ def asks(state: State) -> Step | None:
 
 
 def undecided(state: State) -> list[str]:
-    """The lines of the final reply of the operator `me` on each held step
-    whose ticket analyst returned with no decision after it was asked
+    """The lines of the loop's final reply on each held step whose ticket
+    analyst returned with no decision after it was asked
     again."""
     out: list[str] = []
     for a in returned(state):
@@ -116,13 +86,13 @@ def undecided(state: State) -> list[str]:
 
 
 def failed(state: State) -> list[str]:
-    """The lines of the final reply of the operator `me` on each held step
-    whose analyst's launch, the last call `me` made of it, failed, with no
+    """The lines of the loop's final reply on each held step whose
+    analyst's launch, the last call the loop made of it, failed, with no
     analyst on that step launched since."""
     last: dict[str, tuple[float, str, str, str]] = {}
     for c in sorted(state.calls, key=lambda c: c.time):
         what = str(c.input.get("description", ""))
-        d = described(what) if c.operator == state.me and c.tool == "Agent" else None
+        d = described(what) if c.tool == "Agent" else None
         if d is None or d.role is not Role.TICKET_ANALYST:
             continue
         parsed = analyst_of(d.subject)

@@ -1,6 +1,6 @@
-"""The agents the operator launches, by the procedure each serves, and the
+"""The agents the loop launches, by the procedure each serves, and the
 description each launch gives, from which the command reads back what each
-launch of any operator of the session serves."""
+launch of the loop serves."""
 
 import re
 from collections.abc import Iterable
@@ -9,7 +9,7 @@ from enum import StrEnum
 
 
 class Role(StrEnum):
-    """What an agent the operator launches does, by the word its
+    """What an agent the loop launches does, by the word its
     description gives."""
     ANALYZE = "analyze"
     CREATE = "create"
@@ -47,6 +47,13 @@ GENERAL_ROLES = frozenset({Role.TRANSCRIPT_REVIEW, Role.BATCH_PROFILE, Role.BATC
 
 AGENT_ID = r"a[0-9a-f]{16}"
 """The form of an agent id."""
+
+LOOP_HOLDER = r"ops-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+"""The form of the id by which the operations loop of a session holds a
+ticket: `ops-` and the session's id, since the loop has no agent id."""
+
+HOLDER = rf"{AGENT_ID}|{LOOP_HOLDER}"
+"""The form of the id a ticket's `assigned` line gives its holder by."""
 
 PASSES = (Role.ANALYZE, Role.CREATE, Role.REFINE)
 """The passes of a solver pipeline, in their order."""
@@ -94,7 +101,7 @@ def described(text: str) -> Described | None:
 
 
 class Purpose(StrEnum):
-    """What a ticket analyst the operator launches settles, by the word its
+    """What a ticket analyst the loop launches settles, by the word its
     subject opens with."""
     TRIAGE = "triage"
     DRAFT = "draft"

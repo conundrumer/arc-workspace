@@ -16,7 +16,7 @@ with a request to send it again in that form. The pipeline stops where
 the pass's answer is still in no such form, once a ticket analyst on
 that answer, quoted, as an undecided step was launched; where an `interference`
 ticket waits on the user; where one stands open once the ticket analyst
-returned; or where an operator passed over the launch of its next pass.
+returned; or where a ruling passed over the launch of its next pass.
 Once it ends or stops, the work set aside goes back, as
 `scripts/operate.py restore` does."""
 
@@ -27,15 +27,34 @@ from dataclasses import dataclass
 from arc.task import TASK_ID
 from controlled_markdown import mctx
 from operations import briefs
-from operations.directives import Line, Pipeline, lines, pipelines, queue_counts, session_lines
+from operations.directives import (
+    Line,
+    Pipeline,
+    lines,
+    overrides,
+    pipelines,
+    queue_counts,
+    session_lines,
+)
 from operations.reports import TICKETS_FILED
 from operations.roles import PASSES, Purpose, Role, analyst_subject, joined
 from operations.state import Agent, State
-from ticketing.vocabulary import Domain, Kind, Status
-from operations.steps import (RUN_COMMAND, Bash, Launch, Send, Step, Undecided, agent_ids,
-                             ask_again, bash_calls, passed, repeated)
+from operations.steps import (
+    RUN_COMMAND,
+    Bash,
+    Launch,
+    Send,
+    Step,
+    Undecided,
+    agent_ids,
+    ask_again,
+    bash_calls,
+    passed,
+    repeated,
+)
 from operations.task_work import CLAIM, tasks_work
 from operations.tracker import blocked_on_user
+from ticketing.vocabulary import Domain, Kind, Status
 
 TASK = re.compile(rf"\b{TASK_ID}\b")
 SETS_ASIDE = (Role.ANALYZE, Role.CREATE)
@@ -110,7 +129,9 @@ def run(state: State, p: Pipeline) -> Outcome:
             aside = aside_command(p.task, role)
             if role in SETS_ASIDE and not ran(state, aside, since):
                 return Outcome(Bash(aside))
-            launch = Launch(role, p.task, briefs.solver_pass(p.task))
+            launch = Launch(role, p.task,
+                            briefs.solver_pass(p.task, overrides(state, p.task, role, since)),
+                            pipeline=p.since)
             if (line := passed(launch, state)) is not None:
                 return end(state, p, restore, f"the line `{line}` passed over its {role} pass")
             return Outcome(launch)
@@ -147,7 +168,7 @@ def run(state: State, p: Pipeline) -> Outcome:
             if isinstance(reviewer, Undecided):
                 return Outcome(reviewer)
             return Outcome(Launch(Role.TICKET_ANALYST, subject, briefs.pass_settle(
-                numbers, p.task, reviewer[0], state.me), items=len(numbers)))
+                numbers, p.task, reviewer[0]), items=len(numbers)))
         if any(x.pending for x in analyst):
             return Outcome(None)
         interference = [t for t in state.tickets.values() if t.kind is Kind.INTERFERENCE
@@ -204,23 +225,22 @@ def queued(state: State, given: list[Line]) -> list[Pipeline]:
         command = queue_command(count)
         calls = [c for c in bash_calls(state, command) if c.time >= since and c.result]
         if not calls:
-            out.append(Pipeline("", Role.ANALYZE, since, m.operator, True))
+            out.append(Pipeline("", Role.ANALYZE, since, m.loop, True))
             continue
         tasks = list(dict.fromkeys(TASK.findall(calls[-1].result or "")))
         taken = [t for t in tasks if state.claims.get(t) == state.session
                  or any(a.launched >= since for a in state.agents_of(Role.ANALYZE, t))]
-        out += [Pipeline(t, Role.ANALYZE, since, m.operator, True) for t in taken[:count]]
+        out += [Pipeline(t, Role.ANALYZE, since, m.loop, True) for t in taken[:count]]
         if len(taken) < count:
             for t in tasks:
                 if t not in taken and t not in state.claims:
-                    out.append(Pipeline(t, Role.ANALYZE, since, m.operator, True))
+                    out.append(Pipeline(t, Role.ANALYZE, since, m.loop, True))
                     break
     return out
 
 
 def session(state: State) -> list[Pipeline]:
-    """The pipelines the coordinator's lines to the session's operators
-    give, in the order their lines arrived. A line on a task whose pipeline
+    """The pipelines the coordinator's lines give, in the order their lines arrived. A line on a task whose pipeline
     from an earlier line, or from the same line, runs when it is given, as
     a line given again, starts none."""
     given = session_lines(state)
@@ -234,13 +254,13 @@ def session(state: State) -> list[Pipeline]:
 
 def every(state: State) -> list[Pipeline]:
     """The pipelines of `session` that the coordinator's lines to the
-    operator `me` give: those a line to it starts, and those a line to it
+    loop `me` give: those a line to it starts, and those a line to it
     gives again before they end, a `Solve` line by their task and a
     `Solve from the queue` line each pipeline a line of that form gives."""
     given = lines(state)
     again = [(m.time, None) for _, m in queue_counts(given)]
     again += [(p.since, p.task) for p in pipelines(given)]
-    return [p for p in session(state) if p.operator == state.me
+    return [p for p in session(state) if p.loop == state.me
             or any((p.queued if task is None else p.task == task) and runs_at(state, p, time)
                    for time, task in again)]
 

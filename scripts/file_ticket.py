@@ -82,7 +82,7 @@ LOG_HELP = mctx("""
     - The command refuses, and neither moves nor writes, where the ticket stands in another status than `<current status>`, or where its file moves before the command moves it.
     - Where `<status>` differs from `<current status>`, the command moves the ticket's file to the directory of `<status>`. Where they are the same, the log line moves nothing.
     - The command appends `<time> <status> [<agent>]: <note>` to the file's `{log}`, with the time in UTC in the form `{time_form}`, and with `<agent> <agent id>` in the bracket where `--id` gives an agent id. A line with no `<note>` ends at the bracket.
-    - An `assigned` line takes, in `--id`, the agent id of the agent that writes it.
+    - An `assigned` line takes, in `--id`, the agent id of the agent that writes it, or, where the operations loop writes it, `ops-` and the session's id.
     - On a ticket that already stands in `assigned`, the command refuses an `assigned` line unless its `--id` holds the ticket. The holder is the agent id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines. Where none of them gives one, the ticket has no holder.
     - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}`, or `{change} <number>`, with `<number>` the number of a `change` ticket the ticket tracker holds.
     - The note of a line that moves a ticket into `closed` opens with its resolution, one of {resolutions}.
@@ -97,7 +97,7 @@ LOG_HELP = mctx("""
 TO_SETTLE_HELP = mctx("""
     - The list holds each ticket under `tickets/open/` that your session filed or whose number the call gives.
     - The list leaves out:
-        - each `{change_kind}`, which an operator runs;
+        - each `{change_kind}`, which the operations loop runs;
         - each `{question}` filed on a change whose ticket stands outside `tickets/closed/`, which the ticket analyst of that change decides before its merge;
         - each `{refactor}` whose title ends in `{many_ideas}`, which the editor that next edits its module carries out first.
     - A `{question}` with the `<domain>` `{change_domain}` is filed on the change its `<subject>` gives.
@@ -266,7 +266,7 @@ SUBCOMMANDS = {
                        lambda ref: ticket_path(main_tickets(), ticket_number(ref)), False),
     "index": Subcommand(mctx("prints the index of your session"), "", "", 0,
                         lambda: session_index(main_tickets(), session_id()), True),
-    "to-settle": Subcommand(mctx("prints the open tickets an operator gives a ticket analyst to settle "
+    "to-settle": Subcommand(mctx("prints the open tickets the operations loop gives a ticket analyst to settle "
                                  "after a batch"),
                             " [<number> ...]", TO_SETTLE_HELP, None, settle_command, False),
 }

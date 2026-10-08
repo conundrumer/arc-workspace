@@ -1,7 +1,7 @@
-"""The ticket analysts the operator launches on open tickets, and the
+"""The ticket analysts the loop launches on open tickets, and the
 labeled items of their replies for the coordinator.
 
-The operator takes each `request` and `bug` from its first ticket analyst
+The loop takes each `request` and `bug` from its first ticket analyst
 on: once a ticket stands in the list `file_ticket.py to-settle` prints,
 the command launches a ticket analyst with it, leaving out each ticket on a
 task whose solver pipeline has yet to launch its own ticket analyst, which
@@ -23,12 +23,12 @@ form:
 - Its `decision:` items reach the coordinator once, as they arise, by a
   message that opens with `steps.DECISION`, read back by the analyst's
   agent id and the reply's time in any message to the coordinator.
-- Its `tell:` items reach the coordinator together, in the final reply of
-  the operator that carries that reply (`steps.carrier`).
+- Its `tell:` items reach the coordinator together, in the loop's final
+  reply.
 - Its `unfinished:` items, and its items that open with a label with no
   colon after it (`reports.MISLABELED`), are a step the command cannot
   decide, which goes to a ticket analyst launched on it (`decisions`),
-  other than where an operator already gave the coordinator those items
+  other than where the loop already gave the coordinator those items
   with the reply's key, in any message (`steps.repeated`).
 
 A part that holds no labeled item gives no step.
@@ -42,23 +42,39 @@ the line that rules that step.
 
 Otherwise, a `decision:` item is the note of the line that moved a ticket
 into `tickets/blocked/` waiting on the user: the command sends it as a
-`decision:` item once that line is written, where an operator wrote it,
-or a ticket analyst an operator launched that has replied with no such
+`decision:` item once that line is written, where the loop wrote it,
+or a ticket analyst the loop launched that has replied with no such
 item, and reads back that it was sent by the ticket's number and that
-line's time in the message. So a decision is sent by a later operator
+line's time in the message. So a decision is sent by a later loop
 where the one before it ended before it sent it."""
 
 from controlled_markdown import mctx
 from operations import briefs, changes
-from operations.reports import Label, items_of, mislabeled
 from operations.passes import awaits_analyst
+from operations.reports import Label, items_of, mislabeled
 from operations.roles import Purpose, Role, analyst_subject, joined
 from operations.state import Agent, LogLine, State, Ticket
+from operations.steps import (
+    COORDINATOR,
+    DECISION,
+    Bash,
+    Launch,
+    Send,
+    Step,
+    Undecided,
+    nested,
+    repeated,
+    sent,
+)
+from operations.tracker import (
+    AGENT,
+    OPERATOR_AGENT,
+    blocked_on_user,
+    coordinator_line,
+    coordinator_lines,
+    log,
+)
 from ticketing.vocabulary import Domain, Kind, Status
-from operations.steps import (COORDINATOR, DECISION, Bash, Launch, Send, Step, Undecided, carrier,
-                             nested, repeated, sent)
-from operations.tracker import AGENT, blocked_on_user, coordinator_line, coordinator_lines, log
-
 
 GIVEN = (Purpose.TRIAGE, Purpose.PASS)
 """The purposes of the ticket analysts that tickets are given to."""
@@ -135,7 +151,7 @@ def settle(state: State) -> Step | None:
     if not numbers:
         return None
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.TRIAGE, joined(numbers)),
-                  briefs.settle(numbers, state.me), items=len(numbers))
+                  briefs.settle(numbers), items=len(numbers))
 
 
 def unsettled(state: State) -> list[str]:
@@ -161,14 +177,15 @@ def carried(state: State, t: Ticket, line: LogLine) -> bool:
 
 
 def decisions(state: State) -> Step | None:
-    known = {a.agent_id for a in state.agents if a.agent_id} | set(state.operators)
+    known = {a.agent_id for a in state.agents if a.agent_id}
     briefed = {n for _, _, nums in state.analysts() for n in nums}
     for t in sorted(state.tickets.values(), key=lambda t: t.order):
         line = blocked_on_user(t)
         if line is None:
             continue
         by_ours = line.agent_id in known or (
-            line.agent in (Role.TICKET_ANALYST.value, AGENT) and t.number in briefed)
+            line.agent in (Role.TICKET_ANALYST.value, AGENT, OPERATOR_AGENT)
+            and t.number in briefed)
         key = decision_key(t.number, line.time)
         step = Send(COORDINATOR, labeled(key, mctx("- decision: {note}").format(note=line.note)))
         if by_ours and not carried(state, t, line) and not sent(state, step.to, step.message, key):
@@ -235,15 +252,14 @@ def unfinished(state: State) -> Step | None:
 
 
 def told(state: State) -> list[str]:
-    """The lines of the final reply of the operator `me` that give the
-    coordinator the `tell:` items of each ticket analyst's reply that `me`
-    carries (`steps.carrier`), and of the reply of an analyst on a held
+    """The lines of the loop's final reply that give the coordinator the
+    `tell:` items of each ticket analyst's reply, and of the reply of an analyst on a held
     step, its `unfinished:` items and its items that open with a label with
     no colon after it."""
     out: list[str] = []
     for a, purpose, _, key in replied(state):
         r = a.last_report
-        if r is None or carrier(state, a.operator, r.time) != state.me:
+        if r is None:
             continue
         on_step = purpose is Purpose.STEP
         part = items_of(a, [Label.TELL, Label.UNFINISHED] if on_step else [Label.TELL])

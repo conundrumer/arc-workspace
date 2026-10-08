@@ -1,4 +1,4 @@
-"""The fixed forms of the replies of the agents the operator launches that
+"""The fixed forms of the replies of the agents the loop launches that
 the command reads, each written in the document of the agent that writes
 it, and the reads of them. A reply in no such form is read as the form's
 absence: an editor not finished, a review with findings, no place standing

@@ -4,15 +4,15 @@ or suggestions. The findings and suggestions it reads are the log lines a
 ticket reviewer wrote whose note opens with `finding` or `suggestion`; a
 line of an analyst or the coordinator that opens so is none.
 
-The drafts given to the operator are the `change` tickets under
+The drafts given to the loop are the `change` tickets under
 `tickets/draft/` of the session, those the coordinator names, and those a
-ticket analyst an operator launched files. A draft is ready for a ticket
+ticket analyst the loop launched files. A draft is ready for a ticket
 reviewer once its log holds a `filed` or a `revised` line and no line
 after the last of them is the coordinator's or moves it out of
 `tickets/draft/`, as where the agent that filed or revised it records its
 decision on a line of its own below it; or once the coordinator gives it to review after
 its last line, as after the coordinator moves it back into `tickets/draft/`
-and revises it. A draft waits while an agent of the operators' that wrote
+and revises it. A draft waits while an agent of the loop's that wrote
 a line of its log runs.
 
 A draft waits for a ticket analyst where its log holds findings after its
@@ -20,7 +20,7 @@ last `filed` or `revised` line, and no ticket reviewer or ticket analyst
 runs on it; one ticket analyst takes each such draft with the others a
 chain of `depends-on` links to it. Where the log holds only suggestions
 there, the command resumes by SendMessage the ticket analyst that wrote
-that last line, where an operator launched it, and otherwise the draft
+that last line, where the loop launched it, and otherwise the draft
 waits for a ticket analyst as for findings. Where the log gives findings or
 suggestions of `CAP` ticket reviewers since the line that filed the draft
 or last moved it into `tickets/draft/`, the analyst's brief gives its
@@ -28,7 +28,7 @@ revision as the last, and once that revision is written, the command moves
 the draft to `tickets/open/`.
 
 Where the coordinator writes a line on a draft after an agent of the
-operators' was launched on it, as where it moves the draft back to revise
+loop's was launched on it, as where it moves the draft back to revise
 it, the command tells that agent to write nothing further and to
 end. Where a ticket reviewer returned and left a draft in
 `tickets/draft/` with no finding and no suggestion, or a ticket analyst
@@ -41,9 +41,9 @@ from operations import briefs
 from operations.directives import Decision, Directive, decided, named, numbers
 from operations.roles import Purpose, Role, analyst_subject, joined, subjects
 from operations.state import Agent, State, Ticket
-from ticketing.vocabulary import Kind, Note, Status
 from operations.steps import Bash, Launch, Send, Step, Undecided, decision_key, repeated, sent
 from operations.tracker import COORDINATOR, after, last_index, log
+from ticketing.vocabulary import Kind, Note, Status
 
 CAP = 3
 """The ticket reviewers whose findings or suggestions close a draft's
@@ -125,14 +125,14 @@ def step(state: State) -> Step | None:
             return s
     if ready:
         nums = [t.number for t in ready]
-        return Launch(Role.TICKET_REVIEWER, joined(nums), briefs.ticket_review(nums, state.me),
+        return Launch(Role.TICKET_REVIEWER, joined(nums), briefs.ticket_review(nums),
                       items=len(nums))
     if waiting:
         group = linked(waiting[0], waiting)
         nums = [t.number for t in group]
         last = [t.number for t in group if at_cap(t)]
         return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.DRAFT, joined(nums)),
-                      briefs.revise(nums, last, state.me), items=len(nums))
+                      briefs.revise(nums, last), items=len(nums))
     return None
 
 
@@ -200,7 +200,7 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
 
 def resumable(state: State, t: Ticket) -> Agent | None:
     """The ticket analyst that wrote `t`'s last `filed` or `revised` line,
-    where an operator launched it."""
+    where the loop launched it."""
     i = last_index(t, FILED_OR_REVISED)
     writer = t.log[i].agent_id if i >= 0 else None
     if writer is None:
@@ -233,6 +233,6 @@ def linked(first: Ticket, waiting: list[Ticket]) -> list[Ticket]:
 
 
 def unended(state: State) -> list[Ticket]:
-    """The drafts given to the operators whose review has not ended."""
+    """The drafts given to the loop whose review has not ended."""
     return drafts(state)
 
