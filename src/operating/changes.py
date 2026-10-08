@@ -15,8 +15,10 @@ What the editors' and the doc reviewer's replies give is read by the fixed
 forms of `reports`. A report of an editor that has not finished, a
 `Review` section that gives a place as standing, an open `question` ticket
 filed on the change, and the accepted gate outputs the change writes go to
-one ticket analyst, which judges them and sends the editors what it keeps.
-A report that analyst was launched after leaves nothing more.
+one ticket analyst, which judges them. That analyst sends an editor its
+judgments and decisions only where one of them gives that editor an edit,
+or where the change has a doc editor, and otherwise sends that editor no
+message. A report that analyst was launched after leaves nothing more.
 
 A change with a doc editor passes its review once the latest reply of its
 doc reviewer opens with `no finding stands` and follows each editor's last
@@ -220,7 +222,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
              agents: list[Agent]) -> Step | None | Literal[False]:
     """The step on what the editors leave, or False where they leave
     nothing. A report a ticket analyst was launched after leaves nothing
-    more: that analyst judged it, and sent the editor what it kept."""
+    more: that analyst judged it."""
     analysts = [a for a in agents if a.role is Role.TICKET_ANALYST]
     if any(a.pending for a in analysts):
         return None
