@@ -13,7 +13,7 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage, TaskStop
 - Review the whole of each draft against the tree and this session's state as they are now, by [Checks](#checks).
     * comment: With "Review each draft" in its context and a brief that named the revised parts, ticket reviewer a031cd2826cb3df6e checked mainly those parts of draft 2-525 and moved it to `tickets/open/` while three findings stood on lines of the draft as first filed: the Intent of ticket 2-530.
 - Change no word of a draft.
-- Where a finding stands on a ticket, write a log line with `draft` as its status for each finding, and leave it under `tickets/draft/`. Where none stands, move it to `tickets/open/`.
+- Where a finding stands on a ticket, write a log line with `draft` as its status and a note that opens with `finding:` for each finding, and leave it under `tickets/draft/`. Where none stands, move it to `tickets/open/`.
 
 ## The user's goals
 * inline: notes/decisions.md#the-users-goals
