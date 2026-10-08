@@ -27,7 +27,7 @@ Modules: `state` (what the command reads), `roles` (the agents launched and
 their descriptions), `directives` (the coordinator's lines), `tracker` (a
 ticket's log and the calls that write it), `steps` (the calls printed),
 `briefs` (the briefs the launches give), `settling` (ticket analysts on
-open tickets, and the decisions for the user), `drafts` (the review of
+open tickets, and the labeled items it sends the coordinator to act on), `drafts` (the review of
 draft changes), `changes` (a change from its take to its merge),
 `merging` (the merge and what follows it), `alerts` (the supervisor's
 alerts and the other agents' messages), `reports` (the fixed forms of
