@@ -4,9 +4,13 @@ ready for one, and a ticket analyst on the drafts whose log holds findings.
 The drafts given to the operator are the `change` tickets under
 `tickets/draft/` of the session, those the coordinator names, and those a
 ticket analyst an operator launched files. A draft is ready for a ticket
-reviewer once the last line of its log is a `filed` or a `revised` line,
-or once the coordinator gives it to review after its last line, as after
-the coordinator moves it back into `tickets/draft/` and revises it.
+reviewer once its log holds a `filed` or a `revised` line and no line
+after the last of them is the coordinator's or moves it out of
+`tickets/draft/`, as where the agent that filed or revised it records its
+decision on a line of its own below it; or once the coordinator gives it to review after
+its last line, as after the coordinator moves it back into `tickets/draft/`
+and revises it. A draft waits while an agent of the operators' that wrote
+a line of its log runs.
 
 A draft waits for a ticket analyst where its log holds findings after its
 last `filed` or `revised` line, and no ticket reviewer or ticket analyst
@@ -32,7 +36,7 @@ from operating.roles import Purpose, Role, analyst_subject, joined, subjects
 from operating.state import Agent, State, Ticket
 from ticketing.vocabulary import FILED, Kind, Status
 from operating.steps import Bash, Launch, Send, Step, repeated, ruling_key, sent
-from operating.tracker import COORDINATOR, last_index, log
+from operating.tracker import COORDINATOR, after, last_index, log
 
 CAP = 3
 """The ticket reviewers whose findings close a draft's review rounds."""
@@ -64,6 +68,15 @@ def base(t: Ticket) -> float:
     """The time of `t`'s last `filed` or `revised` line."""
     i = last_index(t, FILED_OR_REVISED)
     return t.log[i].time if i >= 0 else t.filed
+
+
+def log_ready(t: Ticket) -> bool:
+    """Whether `t`'s log holds a `filed` or a `revised` line and no line
+    after the last of them is the coordinator's or moves `t` out of
+    `tickets/draft/`."""
+    i = last_index(t, FILED_OR_REVISED)
+    return i >= 0 and all(ln.agent != COORDINATOR and ln.status is Status.DRAFT
+                          for ln in after(t, i))
 
 
 def given_after(state: State, t: Ticket) -> bool:
@@ -127,7 +140,9 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
             message = briefs.stop_work(t.number)
             if not sent(state, a.agent_id, message):
                 return Send(a.agent_id, message)
-    if any(a.pending for a in agents):
+    writers = {ln.agent_id for ln in t.log if ln.agent_id}
+    if any(a.pending for a in agents) or any(a.pending and a.agent_id in writers
+                                             for a in state.agents):
         return None
     since = base(t)
     found = findings_after(t, since)
@@ -143,9 +158,9 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
                 return choice
         waiting.append(t)
         return None
-    if last_i == len(t.log) - 1 and t.log[last_i].note.startswith(REVISED) and at_cap(t):
+    if log_ready(t) and t.log[last_i].note.startswith(REVISED) and at_cap(t):
         return open_last(t)
-    if last_i != len(t.log) - 1 and not given_after(state, t):
+    if not log_ready(t) and not given_after(state, t):
         return None
     reviewed = [a for a in agents if a.role is Role.TICKET_REVIEWER and a.launched > since
                 and a.launched >= t.log[-1].time]

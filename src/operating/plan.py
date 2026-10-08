@@ -6,10 +6,11 @@ later one of the session runs ends at once, and the later one carries on
 from the state, so two operators never act on one ticket. The coordinator's
 lines and the other agents' messages give steps only to the operator they
 reached, so the work a line to an earlier operator left unfinished reaches
-a later one only where the coordinator gives it again. An operator past
-its context bound ends at once too, and the operator the coordinator
-launches next takes up its changes once its work is no longer open, as
-`changes.release` gives.
+a later one only where the coordinator gives it again; a `Decision:` line
+that gives a change's editors or rules a held step holds for every
+operator (`directives`). An operator past its context bound ends at once
+too, and the operator the coordinator launches next takes up its changes
+once its work is no longer open, as `changes.release` gives.
 
 The steps come in this order: the coordinator's lines in no form the
 command reads, each given back to the coordinator once; the supervisor's
@@ -262,17 +263,32 @@ def line_states(state: State) -> list[str]:
     return [line_state(state, ln, outcomes) for ln in lines(state)]
 
 
+def stands(state: State, head: str, step: Step | None) -> tuple[str, bool]:
+    """The line of the final reply on a draft or a change that stands, by
+    `head`, with its step: where that step is a message to the coordinator
+    an operator already sent, the line gives that message, which its
+    procedure waits on, and the second value holds."""
+    if isinstance(step, Send) and step.to == COORDINATOR and repeated(step, state):
+        return f"{head}: it waits on the coordinator's answer to the message: {step.message}", True
+    return head, False
+
+
 def final(state: State) -> str:
     """The operator's final reply: what stands at its end."""
-    out = ["Done: no procedure has a step left.", *line_states(state)]
+    out = line_states(state)
     for n, deps in changes.waiting(state):
         out.append(f"- Change {n} not taken: it waits for {', '.join(deps)}")
-    for t in drafts.unended(state):
-        out.append(f"- Draft {t.number} stands under `tickets/draft/`")
-    for n in settling.unsettled(state):
-        out.append(f"- Ticket {n} stands open after its ticket analyst returned")
-    for t in changes.held(state):
-        out.append(f"- Change {t.number} stays under `tickets/assigned/`")
+    standing = [stands(state, f"- Draft {t.number} stands under `tickets/draft/`",
+                       drafts.draft_step(state, t, [], [])) for t in drafts.unended(state)]
+    standing += [(f"- Ticket {n} stands open after its ticket analyst returned", False)
+                 for n in settling.unsettled(state)]
+    standing += [stands(state, f"- Change {t.number} stays under `tickets/assigned/`",
+                        changes.carry(state, t)) for t in changes.held(state)]
+    out += [line for line, _ in standing]
+    head = ("Done: no procedure has a step left other than those that wait on the "
+            "coordinator's answer, as the lines below give."
+            if any(asked for _, asked in standing) else "Done: no procedure has a step left.")
+    out.insert(0, head)
     for a in state.agents_of(Role.AFTER_MERGE):
         if a.operator == state.me and (r := a.last_report) is not None:
             out.append(f"- The checks after the merge of change {a.subject}, by {a.agent_id}:")

@@ -24,7 +24,10 @@ the coordinator as undecided.
 A line gives steps only to the operator it reached, in its brief or a later
 message: a line to an earlier operator of the session reaches a later one
 only where a line to the later one gives its pipeline again while that
-pipeline runs (`passes.every`)."""
+pipeline runs (`passes.every`). A `Decision:` line that gives a change's
+editors or rules a held step rules that change or that step for every
+operator of the session, so an operator that takes over a change from an
+earlier one carries it on by the rulings the earlier one received."""
 
 import re
 from collections.abc import Iterable
@@ -114,25 +117,27 @@ def numbers(state: State, kind: Directive) -> list[tuple[str, float]]:
 
 
 def decided_editors(state: State, number: str) -> tuple[Line, str | None] | None:
-    """The last `Decision:` line that names the change `number`, with the
-    `editors` field it holds, or None where it holds none; None where no
-    such line reached the operator."""
-    for ln in reversed(lines(state)):
-        if ln.kind is Directive.DECISION and number in NUMBER.findall(ln.rest):
-            m = EDITORS_FIELD.search(ln.rest)
-            return ln, None if m is None else m["field"]
-    return None
+    """The last `Decision:` line that names the change `number` and holds
+    an `editors` field, with that field, or where no such line holds one,
+    the last that names it, with None; None where no such line reached an
+    operator of the session."""
+    naming = [ln for ln in session_lines(state)
+              if ln.kind is Directive.DECISION and number in NUMBER.findall(ln.rest)]
+    for ln in reversed(naming):
+        if (m := EDITORS_FIELD.search(ln.rest)) is not None:
+            return ln, m["field"]
+    return (naming[-1], None) if naming else None
 
 
 def ruled(state: State, what: str, choices: dict[Ruling, str]) -> Ruling | Send:
     """The choice among `choices` that the last `Decision:` line giving the
     ruling key of the held step `what` gives: the first of its words after
-    that key that is a choice. Where no such line reached the operator, the
-    step that gives `what` to the coordinator with its choices, and where
-    the last such line gives none of them, the step that gives that line
-    back to the coordinator as undecided."""
+    that key that is a choice. Where no such line reached an operator of
+    the session, the step that gives `what` to the coordinator with its
+    choices, and where the last such line gives none of them, the step that
+    gives that line back to the coordinator as undecided."""
     k = ruling_key(what)
-    for ln in reversed(lines(state)):
+    for ln in reversed(session_lines(state)):
         if ln.kind is not Directive.DECISION or k not in ln.rest:
             continue
         after = re.findall(r"[a-z]+", ln.rest.split(k, 1)[1])
