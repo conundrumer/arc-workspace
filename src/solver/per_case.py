@@ -1,45 +1,21 @@
-"""The parts a run builds a program from: the limits of a variant run, the
-program restricted to some bases, the value a `@store` branch stores, the
-per-case reading of a relation or a parameter, the task a probe runs on,
-and the order on values."""
+"""The per-case reading of a relation or a parameter."""
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from enum import Enum
-from itertools import combinations, product
+from itertools import product
 from typing import overload
 
-from arc.task import Example, Task
 from engine import (
-    AdtValue,
     Engine,
-    Grid,
-    GridInput,
-    Limits,
     Program,
     RecordValue,
     RelationName,
     Row,
-    Rows,
     RunFailure,
-    Tuples,
     Value,
 )
-from engine.engine import (
-    resolved,
-)
-from engine.memo import ByIdentity
-from engine.program import (
-    RelationDecl,
-    as_grid,
-    grid_lists,
-)
 from engine.quotes import quotes
-from solver.aggregate import (
-    TOP,
-    Solver,
-    enumerates,
-)
+from solver.aggregate import Solver
 from solver.case_columns import case_columns, case_values, holds_at
 from solver.case_types import case_types
 from solver.columns import (
@@ -48,230 +24,8 @@ from solver.columns import (
     parameter_case_columns,
     parameter_columns,
 )
-from solver.model import (
-    Base,
-    Choice,
-    StoreBranch,
-    every_base,
-)
-from solver.readers import (
-    based_choice,
-    parameter,
-)
-from solver.vocabulary import (
-    IMPL,
-    INPUT,
-)
-
-
-# The runs' parts
-
-
-def scaled(limits: Limits, grids: int) -> Limits:
-    """The limits of a run over `grids` examples: the limits of a run on
-    one grid, once per example."""
-    n = max(1, grids)
-    return Limits(cpu_seconds=limits.cpu_seconds * n,
-                  wall_seconds=limits.wall_seconds * n)
-
-
-def over_examples(limits: Limits, task: Task) -> Limits:
-    """The limits of a run over every example of `task` (`scaled`)."""
-    return scaled(limits, len(task.train) + len(task.test))
-
-
-VARIANT_CPU_FACTOR = 10
-"""How many times the CPU seconds of the solver's own run a variant's run
-of the same inputs may spend (`variant_limits`)."""
-VARIANT_CPU_FLOOR_SECONDS = 2.0
-"""The least CPU limit of a variant's run (`variant_limits`)."""
-
-
-class VariantBound(Enum):
-    """The rule that sets a variant's CPU limit (`variant_limits`)."""
-
-    MULTIPLE = "multiple"
-    """`VARIANT_CPU_FACTOR` times the CPU seconds of the solver's own run."""
-    FLOOR = "floor"
-    """`VARIANT_CPU_FLOOR_SECONDS`."""
-
-
-def variant_bound(measured: float) -> VariantBound:
-    """The rule that sets the CPU limit of a variant's run, where the
-    solver's own run of the same inputs spent `measured` CPU seconds: the
-    multiple, where it is over the floor."""
-    return VariantBound.MULTIPLE \
-        if VARIANT_CPU_FACTOR * measured > VARIANT_CPU_FLOOR_SECONDS \
-        else VariantBound.FLOOR
-
-
-def variant_limits(limits: Limits, measured: float) -> Limits:
-    """The limits of a variant's run, where the solver's own run of the
-    same inputs spent `measured` CPU seconds: the CPU limit
-    `variant_bound` gives, and the wall limit of `limits`."""
-    match variant_bound(measured):
-        case VariantBound.MULTIPLE:
-            cpu = VARIANT_CPU_FACTOR * measured
-        case VariantBound.FLOOR:
-            cpu = VARIANT_CPU_FLOOR_SECONDS
-    return Limits(cpu_seconds=cpu, wall_seconds=limits.wall_seconds)
-
-
-def restricted(engine: Engine, solver: Solver, bases: tuple[Base, ...]
-               ) -> Program:
-    """The solver's program with `impl_choice` holding `bases`, where the
-    program enumerates its cases; as it stands where `bases` is empty."""
-    program = solver.program
-    if not bases or not enumerates(program):
-        return program
-    return _RESTRICTED.keyed(program, (engine, bases),
-                             lambda: holding(engine, program, bases))
-
-
-def holding(engine: Engine, program: Program, bases: Sequence[Base]
-            ) -> Program:
-    """`program` with `impl_choice` holding exactly `bases`."""
-    return engine.fix_relation(program, IMPL, tuple((b,) for b in bases))
-
-
-_RESTRICTED: ByIdentity[Program, dict[tuple[Engine, tuple[Base, ...]],
-                                      Program]] = ByIdentity()
-"""`restricted`'s programs, for each program they restrict while it
-lives, with the engine that built them: a survey's variant runs on every
-pair and in every group of cases."""
-
-
-@quotes("solver-file.md", "Program",
-        "**`@store` directive.** The relation, or the instance's relation the "
-        "line names, has one value on every input, and the line is a branch "
-        "of a choice point on it")
-@dataclass(frozen=True)
-class StoredValue:
-    """The value a `@store` branch stores: the columns of the relation that
-    hold one value on every input, and the rows of that value, each row over
-    those columns alone, at each value of the columns that carry the case
-    (`case_columns`). The other columns are the value's keys, which the
-    relation's clauses give on each input."""
-
-    arity: int
-    columns: tuple[int, ...]
-    case: tuple[int, ...]
-    rows: tuple[tuple[Row, Rows], ...]
-    """At each value of the case columns, the value's rows."""
-
-    @property
-    def keyed_by_case(self) -> bool:
-        """Whether every column outside the value carries the case, so
-        that the relation's rows are the stored rows at each case,
-        whatever the input."""
-        return all(i in self.columns or i in self.case
-                   for i in range(self.arity))
-
-    def stored_rows(self) -> Rows:
-        """The relation's rows where it is keyed by the case alone
-        (`keyed_by_case`): the value's rows at each value of the case
-        columns."""
-        out: dict[Row, None] = {}
-        for key, rows in self.rows:
-            for row in rows:
-                out[joined(self.arity, (self.case, key),
-                           (self.columns, row))] = None
-        return tuple(out)
-
-    def on(self, derived: Rows) -> Rows:
-        """The relation's rows on an input where its clauses give
-        `derived`: each key its clauses give, with each row of the value
-        at the key's case columns."""
-        keys = [i for i in range(self.arity) if i not in self.columns]
-        at_case = dict(self.rows)
-        out: dict[Row, None] = {}
-        for key in dict.fromkeys(tuple(r[i] for i in keys) for r in derived):
-            held = dict(zip(keys, key, strict=True))
-            for row in at_case.get(tuple(held[i] for i in self.case), ()):
-                out[joined(self.arity, (keys, key),
-                           (self.columns, row))] = None
-        return tuple(out)
-
-
-def stored_value(engine: Engine, solver: Solver, program: Program,
-                 branch: StoreBranch, limits: Limits
-                 ) -> StoredValue | RunFailure:
-    """The value a `@store` branch stores (solver-file.md, under "Program"),
-    from the relation's rows in `program` on each input of the task's pairs. A
-    column that carries the case (`case_columns`) is a key, never a column of
-    the value (solver-file.md, under "Program"). The value's columns are every
-    other column where the rows are one set on every input. Else they are the
-    most such columns, the first in column order among equals, whose rows are
-    one set on every input and whose rows on each input are the same at each
-    key, a key being the rows' part over the other columns: the relation is
-    then its keys, which its clauses give on each input, with the value at
-    each. Else every column that carries no case.
-    The value's rows are the relation's rows over its columns on the first
-    train input. The relation's arity is the one its declaration gives, a
-    relation empty on every input included.
-    `outcomes` passes the program with `impl_choice` holding the bases of
-    the cases that take the branch, at the stored assignment."""
-    from solver.pair_runs import examples
-
-    if solver.task is None or not solver.task.train:
-        raise ValueError(f"{solver.stem}: no train input to store "
-                         f"`{branch.relation.text}` from")
-    per_input: list[Rows] = []
-    for _pair, ex in examples(solver.task):
-        got = engine.run(program, {INPUT: GridInput(as_grid(ex.input))},
-                         [branch.relation], limits)
-        if not isinstance(got, Tuples):
-            return got
-        per_input.append(got.relations[branch.relation])
-    first = per_input[0]
-    reading = case_reading(solver, branch.relation, program)
-    arity = len(reading.types)
-    case = reading.case
-
-    def one_value(cols: tuple[int, ...]) -> bool:
-        sets = [{tuple(r[i] for i in (*case, *cols)) for r in rows}
-                for rows in per_input]
-        return all(x == sets[0] for x in sets)
-
-    def product(cols: tuple[int, ...]) -> bool:
-        keys = [i for i in range(arity) if i not in cols]
-        for rows in per_input:
-            by_key: dict[Row, set[Row]] = {}
-            for r in rows:
-                by_key.setdefault(tuple(r[i] for i in keys), set()).add(
-                    tuple(r[i] for i in cols))
-            by_case: dict[Row, set[frozenset[Row]]] = {}
-            for k, v in by_key.items():
-                held = dict(zip(keys, k, strict=True))
-                by_case.setdefault(tuple(held[i] for i in case),
-                                   set()).add(frozenset(v))
-            if any(len(v) > 1 for v in by_case.values()):
-                return False
-        return True
-
-    every = tuple(i for i in range(arity) if i not in case)
-    cols = every
-    if not one_value(every):
-        constant = [i for i in every if one_value((i,))]
-        subsets = [c for n in range(len(constant), 0, -1)
-                   for c in combinations(constant, n)
-                   if one_value(c) and product(c)]
-        cols = subsets[0] if subsets else every
-    rows: dict[Row, dict[Row, None]] = {}
-    for r in first:
-        rows.setdefault(tuple(r[i] for i in case), {})[
-            tuple(r[i] for i in cols)] = None
-    return StoredValue(arity, cols, case, tuple(
-        (k, tuple(v)) for k, v in rows.items()))
-
-
-def relation_decl(engine: Engine, program: Program,
-                  relation: RelationName) -> RelationDecl:
-    """The declaration of `relation`, named from the top level; its
-    columns' types are `solver.columns.column_types`. Raises `ValueError`
-    where it resolves to no declaration."""
-    return program.declared_relation(
-        resolved(engine.index(program), relation, TOP).declaration)
+from solver.model import Base, Choice, every_base
+from solver.readers import based_choice, parameter
 
 
 @quotes("solver-file.md", "Params",
@@ -545,31 +299,3 @@ def with_rows_at(solver: Solver, pc: PerCase, rows: Sequence[Row],
     here = written_at(solver, based_choice(solver), pc, values, (base,))
     kept = [r for r in rows if not pc.holds(solver, base, r)]
     return tuple(dict.fromkeys((*kept, *here)))
-
-
-def value_key(value: Value) -> tuple[object, ...]:
-    """An order on values built from their parts: numbers, then symbols,
-    then records by their fields, then ADT values by constructor and
-    arguments. An ordering of values that reaches output is by a key built
-    from their parts, never by `repr`."""
-    match value:
-        case bool() | int() | float():
-            return (0, value)
-        case str():
-            return (1, value)
-        case RecordValue(fields=fields):
-            return (2, tuple(value_key(f) for f in fields))
-        case AdtValue(constructor=c, args=args):
-            return (3, c, tuple(value_key(a) for a in args))
-
-
-def row_key(row: Row) -> tuple[object, ...]:
-    """An order on rows built from their values' parts (`value_key`)."""
-    return tuple(value_key(v) for v in row)
-
-
-def input_task(grid: Grid) -> Task:
-    """A task whose one example is `grid`, with no output, for the probe of
-    one input."""
-    return Task(train=[], test=[Example(input=grid_lists(grid),
-                                        output=[])])

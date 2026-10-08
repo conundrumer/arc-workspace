@@ -28,13 +28,13 @@ from checker.store.survey import Found, SearchEnd, case_key, projection
 from engine import Grid, RelationName, RunFailure
 from engine.program import grid_size
 from engine.quotes import quotes
-from solver import pair_runs
+from solver import witnessed_cases
 from solver.aggregate import Solver
 from solver.case_types import case_types
 from solver.model import Case
 from solver.outcome import Assignment, Grids
 from engine.program import as_grid
-from solver.run_parts import case_reading
+from solver.per_case import case_reading
 from solver.witness import Entry
 
 
@@ -112,12 +112,12 @@ def _model_alone(runs: Runs, solver: Solver, lined: Solver,
     is every case of `lined`, and `taking` those of them that take the
     branch (`_taking`). The case is the branch's model among `taking`,
     where the witnessed cases keep it as a branch's model
-    (`solver.pair_runs.branch_models`) and it fits the pairs with its
+    (`solver.witnessed_cases.branch_models`) and it fits the pairs with its
     counterpart (`fitting_both`). The witnessed cases that take the
     branch then hold it, so it is their model too, and `witness_targets`
     gives it alone (`looked_with`). None otherwise."""
     models = branch_models(solver, taking, f.name)
-    if not models or models[0] not in pair_runs.branch_models(lined, every):
+    if not models or models[0] not in witnessed_cases.branch_models(lined, every):
         return None
     model = models[0]
     fit = fitting_both(runs, lined, models, f.name)

@@ -69,10 +69,10 @@ from solver.problems import (
     Undecided,
     UndecidedForm,
 )
-from solver.determine import Proposals, probe, probe_failure
+from solver.probe import Proposals, probe, probe_failure
 from solver.pair_runs import examples
 from solver.group_runs import at_once
-from solver.run_parts import parameter_reading
+from solver.per_case import parameter_reading
 from solver.vocabulary import COLOR, PROPOSE
 from solver.witness import Entry
 

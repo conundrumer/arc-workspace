@@ -62,7 +62,7 @@ from solver.names import (
     constructors_fixed,
     denote,
 )
-from solver.run_parts import PerCase, per_case
+from solver.per_case import PerCase, per_case
 from checker.lint.form.case_type import choice_adts
 from checker.lint.form.declared_types import all_literals
 from checker.lint.form.witnesses import at_choice
@@ -134,7 +134,7 @@ def _misplaced(solver: Solver, marker: CaseMarker | None,
 def _case_column_parameters(solver: Solver
                             ) -> Iterator[tuple[DeclId, PerCase]]:
     """Each parameter with a case column, by its declaration, with its
-    case reading (`solver.run_parts.per_case`)."""
+    case reading (`solver.per_case.per_case`)."""
     for p in solver.params.parameters:
         if (pc := per_case(solver, p.name)) is not None:
             yield p.declaration, pc
@@ -144,7 +144,7 @@ def case_column_facts(solver: Solver, v: View, every: Sequence[Case]
                       ) -> list[Finding]:
     """A fact of a parameter with a case column that stands outside the
     marker of the cases its case values hold at (`_lists`,
-    `solver.run_parts.PerCase.holds`), a `shared-read` finding naming their
+    `solver.per_case.PerCase.holds`), a `shared-read` finding naming their
     bases, as a shared fact under a marker is. A fact whose
     value the load reads as no constant is the load's fault, and a fact
     whose case values hold at no case of the solver belongs to no case's

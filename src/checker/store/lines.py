@@ -41,7 +41,7 @@ from solver.model import Case, StoreBranch
 from solver.names import cover
 from solver.problems import ProblemKind
 from solver.pair_runs import PairId
-from solver.run_parts import row_key
+from solver.value_order import row_key
 
 
 def line_findings(runs: Runs, solver: Solver, rels: Sequence[RelationName],

@@ -53,7 +53,7 @@ from solver.columns import (
     column_names,
 )
 from solver.dependence import dependence
-from solver.determine import Proposals, probe
+from solver.probe import Proposals, probe
 from solver.model import (
     Base,
     Branch,
@@ -82,16 +82,15 @@ from solver.problems import (
 from solver.readers import (
     parameter,
 )
-from solver.run_parts import (
-    StoredValue,
+from solver.input_task import input_task
+from solver.per_case import (
     at_every_case,
     case_reading,
     fixed_at_every_case,
-    input_task,
     parameter_reading,
-    restricted,
-    stored_value,
 )
+from solver.restricted import restricted
+from solver.stored_value import StoredValue, stored_value
 from solver.out_grids import Place, case_grids, out_columns, rows_by_base
 from solver.vocabulary import (
     INPUT,

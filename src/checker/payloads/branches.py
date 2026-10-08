@@ -189,7 +189,7 @@ class HomonymsPayload:
 class DeterminationDiffPayload:
     """A determined parameter whose determination differs from its stored
     value (solver-file.md, under "Determination"), and for a parameter that
-    stores a value per case (`solver.run_parts.per_case`), each base at which
+    stores a value per case (`solver.per_case.per_case`), each base at which
     the two differ, at least one, or the failure of the run that enumerates
     the cases; None for a parameter with no case column
     (`checker.runs.Runs.differing_bases`)."""

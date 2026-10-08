@@ -109,7 +109,7 @@ from solver.problems import (
     ProblemKind,
     WitnessFileRole,
 )
-from solver.pair_runs import branch_model, constructor_denoted
+from solver.witnessed_cases import branch_model, constructor_denoted
 from solver.witness import (
     AssignRows,
     Entry,
@@ -299,7 +299,7 @@ def _model_set(solver: Solver, text: str, solver_cases: Sequence[Case]
     """A given file's group name read as a branch's model
     (procedure.md, under "Analyze after the concept" and "Witness"): the one
     case of the solver's cases that stands for that model
-    (`solver.pair_runs.branch_model`; solver-file.md, under "Cases"), none where
+    (`solver.witnessed_cases.branch_model`; solver-file.md, under "Cases"), none where
     no case takes the branch; the problem where the name denotes nothing."""
     d = denote(solver, text)
     if isinstance(d, NameFault):

@@ -18,7 +18,7 @@ from engine import (
 )
 from solver import names
 from solver.aggregate import Solver
-from solver.run_parts import (
+from solver.variant_limits import (
     VARIANT_CPU_FACTOR,
     VARIANT_CPU_FLOOR_SECONDS,
     VariantBound,

@@ -15,15 +15,8 @@ from solver.model import (
     StoredAtDerive,
 )
 from solver.names import Denoted
-from solver.pair_runs import (
-    CaseOnPair,
-    PairId,
-    PairRuns,
-    branch_model,
-    examples,
-    pair_on,
-    task_inputs,
-)
+from solver.pair_runs import CaseOnPair, PairId, PairRuns, examples, pair_on
+from solver.witnessed_cases import branch_model, task_inputs
 
 
 def pair_runs(runs: Runs, solver: Solver, cases: Sequence[Case]
@@ -115,7 +108,7 @@ def ordered(solver: Solver, cases: Sequence[Case],
 def branch_models(solver: Solver, cases: Sequence[Case],
                   branch: DeriveBranch | StoreBranch) -> list[Case]:
     """The cases of `cases` a branch's witness is judged on: the branch's
-    model (`solver.pair_runs.branch_model`); none where no case of `cases`
+    model (`solver.witnessed_cases.branch_model`); none where no case of `cases`
     takes it."""
     got = branch_model(solver, cases, Denoted((), (branch,)))
     return [] if got is None else [got]

@@ -93,7 +93,7 @@ from solver.model import Case
 from solver.aggregate import Solver, has_determine
 from solver.names import cover
 from solver.names import name as case_name
-from solver.run_parts import row_key
+from solver.value_order import row_key
 from solver.vocabulary import NUMBER
 
 

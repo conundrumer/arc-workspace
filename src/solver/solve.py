@@ -16,7 +16,7 @@ from engine import (
 from solver.aggregate import (
     Solver,
 )
-from solver.determine import probe
+from solver.probe import probe
 from solver.group_runs import StoredValues, assigned, group_program, read_runs, run_input, runs_on
 from solver.model import (
     Case,
@@ -28,9 +28,7 @@ from solver.problems import (
     InWitnessFile,
     WitnessFileRole,
 )
-from solver.run_parts import (
-    input_task,
-)
+from solver.input_task import input_task
 from solver.vocabulary import (
     INPUT,
 )

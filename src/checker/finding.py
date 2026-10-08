@@ -40,7 +40,7 @@ from solver.category import Category
 from solver.model import Case
 from solver.problems import Fault, ProblemKind, WitnessFileRole
 from solver.pair_runs import PairId
-from solver.run_parts import VariantBound
+from solver.variant_limits import VariantBound
 
 
 class Kind(StrEnum):

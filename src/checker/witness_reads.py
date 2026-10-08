@@ -29,7 +29,8 @@ from solver.names import (
     name,
 )
 from solver.outcome import Grids, Outcome, is_result
-from solver.pair_runs import PairRuns, examples, pairs, task_inputs
+from solver.pair_runs import PairRuns, examples, pairs
+from solver.witnessed_cases import task_inputs
 from solver.problems import (
     Fault,
 )

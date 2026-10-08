@@ -48,7 +48,8 @@ from solver.outcome import Grids, is_result
 from engine.program import as_grid
 from solver.determine import stored_facts
 from solver.pair_runs import CaseOnPair, PairId, PairRuns
-from solver.run_parts import VariantBound, by_base, parameter_reading
+from solver.per_case import by_base, parameter_reading
+from solver.variant_limits import VariantBound
 from solver.vocabulary import COLOR
 from solver.witness import Undefined
 
@@ -337,7 +338,7 @@ def stored_colors(engine: Engine, solver: Solver, cases: Iterable[Case]
                   ) -> frozenset[int]:
     """Every color the parameters' stored facts (`solver.determine.stored_facts`)
     hold in a `Color` column at the bases of `cases`
-    (`solver.run_parts.by_base`). A case has no base only in a solver with no
+    (`solver.per_case.by_base`). A case has no base only in a solver with no
     `Choice`, where no parameter has a case column."""
     bases = choice_bases(cases)
     out: set[int] = set()

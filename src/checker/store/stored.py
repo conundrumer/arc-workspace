@@ -43,13 +43,8 @@ from solver.graph import Graph, InstancePath
 from solver.model import Base, choice_values
 from solver.names import marker_lists
 from solver.readers import marker_at
-from solver.run_parts import (
-    case_reading,
-    parameter_reading,
-    per_case,
-    row_key,
-    rows_at,
-)
+from solver.per_case import case_reading, parameter_reading, per_case, rows_at
+from solver.value_order import row_key
 from solver.vocabulary import PARAMS_SCOPE
 
 

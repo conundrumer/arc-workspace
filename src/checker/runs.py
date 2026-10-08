@@ -23,23 +23,12 @@ from solver.names import Denoted, branch_text, name as case_name
 from solver.problems import Fault, WitnessFileRole
 from solver.outcome import Assignment, Outcome
 from solver.solve import assignment, outcomes_on, relations_at
-from solver.determine import (
-    DetermineResult,
-    ParamDiff,
-    Restrict,
-    determine,
-    variation,
-)
-from solver.pair_runs import (
-    PairRuns,
-    TaskSection,
-    branch_model,
-    pairs,
-    recorded_inputs,
-    witnessed,
-)
+from solver.determine import DetermineResult, ParamDiff, determine
+from solver.variations import Restrict, variation
+from solver.pair_runs import PairRuns, TaskSection, pairs
+from solver.witnessed_cases import branch_model, recorded_inputs, witnessed
 from solver.group_runs import case_groups
-from solver.run_parts import per_case, at_bases
+from solver.per_case import per_case, at_bases
 from solver.witness import Entry, Undefined, WitnessFile
 
 if TYPE_CHECKING:
@@ -67,7 +56,7 @@ def base_order(solver: Solver, base: Base) -> BaseOrder:
 class NoCases:
     """The run that enumerates the solver's cases failed, so a survey
     reads no value of a parameter that stores a value per case
-    (`solver.run_parts.per_case`), whose bases that run gives."""
+    (`solver.per_case.per_case`), whose bases that run gives."""
 
     failure: RunFailure
 
@@ -186,7 +175,7 @@ class Runs:
                         ) -> tuple[Base, ...] | RunFailure | None:
         """For a parameter that stores a value per case (`per_case`), each
         base (`bases`) at which its stored and its determined value differ:
-        a row of the diff holds there (`solver.run_parts.at_bases`), whether the
+        a row of the diff holds there (`solver.per_case.at_bases`), whether the
         row is stored or determined; the failure of the run that enumerates
         the solver's cases where it fails; None for a parameter with no
         case column, whose one value differs."""
@@ -235,7 +224,7 @@ class Runs:
     @cached_property
     def witnessed(self) -> tuple[Case, ...] | RunFailure:
         """The witnessed cases of the solver's cases
-        (`solver.pair_runs.witnessed`), from the runs of every case of the
+        (`solver.witnessed_cases.witnessed`), from the runs of every case of the
         solver on every recorded input, the given file's entries in place
         of the task's, held in these runs; the failure of the run that
         enumerates the solver's cases where it fails. On the runs of the
@@ -412,7 +401,7 @@ class Runs:
     @cached_property
     def recorded(self) -> tuple[tuple[Grid, Assignment], ...]:
         """The recorded inputs, each at its assignment
-        (`solver.pair_runs.recorded_inputs`)."""
+        (`solver.witnessed_cases.recorded_inputs`)."""
         return tuple(recorded_inputs(self.engine, self.solver, self.entries,
                                      self.file_role))
 
@@ -546,7 +535,7 @@ class Runs:
         (`lined_runs`): its judged cases. With `derived`, the `@derive`
         branch of a derivation no line holds: the judged cases of these
         runs' solver and the branch's model among the cases of `solver`
-        (`solver.pair_runs.branch_model`), in the order of those cases, and no
+        (`solver.witnessed_cases.branch_model`), in the order of those cases, and no
         witnessed case of `solver` is computed, since a derivation with no
         line is judged on its model alone. The failure of the run that
         enumerates either solver's cases where it fails."""
@@ -573,7 +562,7 @@ class Runs:
     def _restricted(self, bases: Sequence[Base | None],
                     kept: tuple[Case, ...] | None = None) -> "Runs":
         """The runs of the solver with `impl_choice` holding `bases`
-        alone (`solver.determine.Restrict`)."""
+        alone (`solver.variations.Restrict`)."""
         program = variation(self.engine, self.solver,
                             Restrict(tuple(base_case(b) for b in bases)))
         return Runs(self.engine, replace(self.solver, program=program),

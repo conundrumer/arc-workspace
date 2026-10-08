@@ -1,20 +1,13 @@
-"""The variations of a solver's program, the proposer probe and the
-Determine run."""
+"""The Determine run and what it reads."""
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from arc.task import Task
 from engine import (
     Engine,
-    GridValue,
-    IndexedGrids,
     InputValue,
     Limits,
-    ParseFailure,
-    Program,
     RelationName,
-    RemovalTarget,
     Row,
     Rows,
     RunFailure,
@@ -22,196 +15,22 @@ from engine import (
     UnitId,
     Value,
 )
-from engine.engine import (
-    CompileError,
-)
-from engine.memo import ByIdentity
-from engine.program import (
-    POSE_COLUMN,
-    Atom,
-    RigidCall,
-    Unit,
-    as_grid,
-    body_atoms,
-)
+from engine.program import POSE_COLUMN, Atom, RigidCall, Unit, body_atoms
 from engine.quotes import quotes
-from solver.aggregate import (
-    Solver,
-    has_determine,
-)
-from solver.model import (
-    Case,
-    Parameter,
-    StoredGrid,
-    choice_bases,
-)
-from solver.readers import (
-    instance_of,
-    parameter,
-    proposer_names,
-    proposers_program,
-    row_value,
-)
-from solver.run_parts import (
-    fixed_at_every_case,
-    holding,
-    over_examples,
-    row_key,
-    variant_limits,
-)
+from solver.aggregate import Solver, has_determine
+from solver.model import Parameter, StoredGrid
+from solver.probe import example_inputs
+from solver.readers import instance_of, parameter, row_value
+from solver.value_order import row_key
+from solver.variant_limits import over_examples, variant_limits
 from solver.vocabulary import (
     DETERMINE,
     DETERMINE_SCOPE,
-    EX_IN,
-    EX_OUT,
     IDENT,
     INPUT,
     PARAMS,
     PARAMS_SCOPE,
-    PROPOSE,
 )
-
-
-# Variations
-
-
-@dataclass(frozen=True)
-class FixParam:
-    parameter: str
-    rows: Rows
-
-
-@dataclass(frozen=True)
-class FixGrid:
-    parameter: str
-    grid: GridValue
-
-
-@dataclass(frozen=True)
-class TakeStore:
-    """The `@store` branch on `relation`, with `rows` the value stored."""
-
-    relation: RelationName
-    rows: Rows
-
-
-@dataclass(frozen=True)
-class TakeDerive:
-    """The `@derive` branch of `parameter` by `proposer`, with the values
-    the proposer probe gives."""
-
-    parameter: str
-    proposer: str
-    values: Rows
-
-
-@dataclass(frozen=True)
-class Restrict:
-    """`impl_choice` holding exactly `cases`."""
-
-    cases: tuple[Case, ...]
-
-
-@dataclass(frozen=True)
-class Remove:
-    target: RemovalTarget
-
-
-type Variation = FixParam | FixGrid | TakeStore | TakeDerive | Restrict | Remove
-
-
-def variation(engine: Engine, solver: Solver, v: Variation) -> Program:
-    """The solver's program under `v`, built from the engine's operations
-    alone: `fix_relation` for each of the fixing variations and `Restrict`,
-    and `remove` for `Remove`."""
-    program = solver.program
-    match v:
-        case FixParam(parameter=p, rows=rows):
-            return engine.fix_relation(program, parameter(solver, p), rows)
-        case FixGrid(parameter=p, grid=grid):
-            return engine.fix_relation(program, parameter(solver, p), grid)
-        case TakeStore(relation=rel, rows=rows):
-            return engine.fix_relation(program, rel, rows)
-        case TakeDerive(parameter=p, values=values):
-            return fixed_at_every_case(engine, solver, program, p, values)
-        case Restrict(cases=cases):
-            return holding(engine, program, choice_bases(cases))
-        case Remove(target=target):
-            return engine.remove(program, target)
-
-
-# Probe and Determine
-
-
-@dataclass(frozen=True)
-class Proposals:
-    """The values each proposer of `programs/proposers.dl` gives over a
-    task's examples, by proposer."""
-
-    values: Mapping[str, Rows]
-
-
-def example_inputs(task: Task) -> dict[RelationName, InputValue]:
-    """`ex_in` over every example's input, train first, and `ex_out` over
-    the train outputs, each with the example's index (lib.dl's runner
-    contract; solver-file.md, under "Determination")."""
-    return {
-        EX_IN: IndexedGrids(tuple(as_grid(e.input)
-                                  for e in (*task.train, *task.test))),
-        EX_OUT: IndexedGrids(tuple(as_grid(e.output) for e in task.train)),
-    }
-
-
-type _ProbeProgram = tuple[Program, dict[str, RelationName]]
-_PROBE_PROGRAMS: ByIdentity[Program, _ProbeProgram] = ByIdentity()
-"""What `_probe_program` built, for each proposers program while it
-lives."""
-
-
-def _probe_program(engine: Engine) -> _ProbeProgram | CompileError:
-    """The proposers program (`proposers_program`) with an instance of
-    each proposer, and each proposer's `propose` in its instance, built
-    once per proposers program; where the program does not parse, the
-    probe's failure (`probe_failure`)."""
-    parsed = proposers_program(engine)
-    if isinstance(parsed, ParseFailure):
-        return probe_failure(parsed)
-
-    def build() -> _ProbeProgram:
-        program = parsed
-        outputs: dict[str, RelationName] = {}
-        for name in proposer_names(parsed):
-            inst = name.lower()
-            program = engine.instantiate(program, name, inst)
-            outputs[name] = RelationName((inst,), PROPOSE)
-        return program, outputs
-
-    return _PROBE_PROGRAMS.compute(parsed, build)
-
-
-def probe_failure(parsed: ParseFailure) -> CompileError:
-    """A proposers program that does not parse, as the failure of the
-    probe that runs it."""
-    return CompileError(parsed.line, parsed.message)
-
-
-def probe(engine: Engine, task: Task, limits: Limits
-          ) -> Proposals | RunFailure:
-    """The proposers program run over the task's examples: each proposer
-    of `programs/proposers.dl`, a component that declares `propose`, as an
-    instance, with `ex_in` over every example's input and `ex_out` over
-    the train outputs (proposers.dl's header). The run takes `limits`
-    once per example."""
-    built = _probe_program(engine)
-    if isinstance(built, CompileError):
-        return built
-    program, outputs = built
-    got = engine.run(program, example_inputs(task), list(outputs.values()),
-                     over_examples(limits, task))
-    if not isinstance(got, Tuples):
-        return got
-    return Proposals({name: got.relations[rel]
-                      for name, rel in outputs.items()})
 
 
 @dataclass(frozen=True)

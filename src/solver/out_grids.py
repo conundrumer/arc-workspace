@@ -24,7 +24,7 @@ from solver.model import (
     Case,
 )
 from solver.outcome import Grids
-from solver.run_parts import value_key
+from solver.value_order import value_key
 from solver.vocabulary import (
     CHOICE,
     OUTPUT,

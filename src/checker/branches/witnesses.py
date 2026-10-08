@@ -19,7 +19,7 @@ from solver.names import denoted_cases
 from solver.outcome import Assignment, Grids, Outcome, group_grid, is_result
 from solver.problems import Fault, NameFault, WitnessFileRole
 from solver.solve import assignment
-from solver.pair_runs import entry_assignments
+from solver.witnessed_cases import entry_assignments
 from solver.witness import (
     Entry,
     GroupGrid,

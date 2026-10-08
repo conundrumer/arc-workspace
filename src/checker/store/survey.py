@@ -46,7 +46,9 @@ from solver.model import (
     non_concept_at,
 )
 from solver.names import branch_text
-from solver.run_parts import case_reading, relation_decl, row_key, value_key
+from solver.per_case import case_reading
+from solver.stored_value import relation_decl
+from solver.value_order import row_key, value_key
 from solver.out_grids import position
 from solver.vocabulary import (
     BOX,

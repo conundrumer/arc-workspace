@@ -368,7 +368,7 @@ class GridCellOffForm:
 class AssignArity:
     """An `assign` value of the relation `name` whose facts have `given`
     arguments, where the relation takes `expected`: its columns outside
-    its case part (`solver.run_parts.PerCase.given`), `per_case` where it has
+    its case part (`solver.per_case.PerCase.given`), `per_case` where it has
     a case column."""
 
     name: str

@@ -63,7 +63,7 @@ from solver.names import (
     cover,
 )
 from solver.outcome import Grids, is_result
-from solver.pair_runs import taken
+from solver.witnessed_cases import taken
 from solver.problems import (
     Fault,
 )

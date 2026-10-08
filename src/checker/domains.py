@@ -9,7 +9,7 @@ from arc.task import Task
 from engine import RecordValue, Row, Value
 from engine.program import grid_size, offset_place
 from solver.model import Lib
-from solver.run_parts import row_key, value_key
+from solver.value_order import row_key, value_key
 from solver.vocabulary import BOX, COLOR, NUMBER, OFFSET
 
 MAGNITUDE_TYPES = frozenset({BOX, OFFSET})

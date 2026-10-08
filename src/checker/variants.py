@@ -44,7 +44,7 @@ from solver.group_runs import (
     read_case,
     read_run,
 )
-from solver.run_parts import VariantBound, variant_bound, variant_limits
+from solver.variant_limits import VariantBound, variant_bound, variant_limits
 from solver.witness import Undefined
 
 type Entry = frozenset[tuple[Case, tuple[Grid, ...]]]

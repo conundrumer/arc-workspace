@@ -18,7 +18,8 @@ from solver.names import name
 from solver.problems import Fault, WitnessFileRole
 from solver.outcome import Assignment, Grids
 from solver.solve import outcomes
-from solver.pair_runs import examples, witnessed
+from solver.pair_runs import examples
+from solver.witnessed_cases import witnessed
 from solver.witness import Undefined
 from study.card_spec import Card, from_root, options_of, options_phrase
 
@@ -52,7 +53,7 @@ def outside_solvers(path: Path) -> bool:
 
 
 def run_solver(solver: Solver, grid: Grid) -> list[Candidate] | RunFailure:
-    """Each witnessed case of the solver (`solver.pair_runs.witnessed`), run
+    """Each witnessed case of the solver (`solver.witnessed_cases.witnessed`), run
     on `grid` at the stored assignment, in the order of the cases; the
     failure of the run that enumerates the cases where it fails. A case
     whose run gives no result carries the failure's line."""
