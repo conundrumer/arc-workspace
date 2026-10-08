@@ -30,9 +30,7 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage, TaskStop
 - Check each of these:
     - A `change`, other than one under `tickets/blocked/` that waits on a `change`, waits for the tickets its `depends-on` gives alone.
     - Instructions that change the same files are ordered, and so is each instruction against the changes not yet merged to `master` that change its files, as `git branch --no-merged master` and `git diff --name-only master...<branch>` show.
-    - Each ticket a `change` ticket's `depends-on` gives stands outside `tickets/draft/` or was filed before it. A `change` ticket whose Scope overlaps the Scope of a `change` outside `tickets/closed/` that stands outside `tickets/draft/` or was filed before it gives that change's number in `depends-on`, where no chain of links leads from that change to the ticket.
-        - One ticket was filed before another where the first line of its log has the earlier time, or the same time and the number that sorts first as text.
-        - A link leads from one ticket to the next where the first gives the next in its `depends-on`, or stands under `tickets/blocked/` and waits on the next, as `uv run python scripts/file_ticket.py log --help` defines that wait.
+    - A `change` ticket's `depends-on` gives the tickets [Change tickets](prompts/agents/notes/tickets.md#change-tickets) has its filer give there.
     - Each claim the draft makes about the current state that the draft's outcome rests on holds now, by that state: each case, count and place it gives, each thing it says a file, a command or the tree does, and each result it expects a check of the tree to give. Such a claim that you do not settle is a finding.
         * inline: notes/launching.md#draft-outcome
         - The draft's `Grounds` give where the source of each claim lies, as read at the hash of `master` they give.
