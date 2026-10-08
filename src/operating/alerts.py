@@ -15,7 +15,11 @@ Any other alert, an alert on an agent no operator launched, and a message
 from an agent no operator launched that is no alert, go to the coordinator
 as undecided.
 
-The alerts and messages read are those that reached the operator `me`."""
+A `budget` or `stall` alert on an agent an operator of the session
+launched gives its step to the operator that carries the session's work
+on, whichever operator of the session it reached, other than where it goes
+to the coordinator. Every other alert and message gives a step only to the
+operator `me` where it reached `me`."""
 
 import re
 from dataclasses import dataclass
@@ -25,7 +29,7 @@ from controlled_markdown import mctx
 from operating import briefs
 from operating.roles import AGENT_ID
 from operating.state import Agent, Message, State
-from operating.steps import Bash, Send, Step, sent, undecided
+from operating.steps import COORDINATOR, Bash, Send, Step, sent, undecided
 from operating.tracker import AGENT
 from ticketing.vocabulary import Domain, Kind
 
@@ -115,10 +119,10 @@ def on(state: State, alert: Alert, a: Agent) -> Step | None:
 
 
 def step(state: State) -> Step | None:
-    """The first step the alerts and the other agents' messages to the
-    operator give."""
+    """The first step the alerts and the other agents' messages give the
+    operator `me`."""
     launched = {a.agent_id for a in state.agents if a.agent_id}
-    for m in state.received:
+    for m in state.arrived:
         if m.sender is None or m.sender in launched:
             continue
         alert = parsed(m)
@@ -129,6 +133,8 @@ def step(state: State) -> Step | None:
             s = undecided(f"an alert on an agent no operator launched:\n{m.text}")
         else:
             s = on(state, alert, a)
+        if m.operator != state.me and isinstance(s, Send) and s.to == COORDINATOR:
+            continue
         if s is not None and not (isinstance(s, Send) and sent(state, s.to, s.message)):
             return s
     return None

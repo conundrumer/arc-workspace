@@ -4,11 +4,12 @@ and the operator's final reply.
 One operator carries the session's work at a time: an operator for which a
 later one of the session runs ends at once, and the later one carries on
 from the state, so two operators never act on one ticket. The coordinator's
-lines and the other agents' messages give steps only to the operator they
-reached, so the work a line to an earlier operator left unfinished reaches
-a later one only where the coordinator gives it again; a `Decision:` line
-that gives a change's editors or rules a held step holds for every
-operator (`directives`). An operator past its context bound ends at once
+lines, and the other agents' messages other than the alerts `alerts` acts
+on for the operator that carries the work on, give steps only to the
+operator they reached, so the work a line to an earlier operator left
+unfinished reaches a later one only where the coordinator gives it again;
+a `Decision:` line that gives a change's editors or rules a held step
+holds for every operator (`directives`). An operator past its context bound ends at once
 too, and the operator the coordinator launches next takes up its changes
 once its work is no longer open, as `changes.release` gives.
 
