@@ -50,7 +50,7 @@
 - A ticket reviewer's brief gives the number of each ticket under `tickets/draft/` to review, and the agent id of the agent that launches it, where that is not the coordinator.
 
 ### A ticket analyst's brief
-- A ticket analyst's brief gives the tickets under `tickets/open/` to settle, a draft `change` ticket whose log holds findings, or the findings an editor left on a review of its change and the items an editor left unfinished for a decision, with the editor's reasons.
+- A ticket analyst's brief gives the tickets under `tickets/open/` to settle, a draft `change` ticket whose log holds findings or a suggestion, or the findings an editor left on a review of its change and the items an editor left unfinished for a decision, with the editor's reasons.
     - With each of those findings and items, it gives the agent id of the change's editor, the change's worktree, and the number of the change's ticket, or, where the change has none, its intent and what is already settled about it.
     - With a draft whose next revision opens at its operator's cap of ticket reviews, it gives that this revision is the last: the draft then opens with no further ticket review, and the change's own review checks what the change writes.
 - With the tickets a solver pass filed, it gives the review of that pass's transcript.

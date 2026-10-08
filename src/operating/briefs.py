@@ -130,7 +130,8 @@ def later_line(number: str, time: float, note: str) -> str:
 
 REVIEW_DRAFTS = mctx("Review the drafts {numbers}.")
 SETTLE = mctx("Settle the tickets under `tickets/open/` {numbers}.")
-REVISE = mctx("Revise each draft `change` ticket {numbers}, whose log holds findings.")
+REVISE = mctx("Revise each draft `change` ticket {numbers}, whose log holds findings or "
+              "suggestions.")
 PASS_SETTLE = mctx("Settle the tickets under `tickets/open/` {numbers}, which the solver pass on "
                    "task {task} and the review of its transcript filed. That review is agent "
                    "{review}: read its report with `python3 ~/.claude/skills/retrieve/"
@@ -185,14 +186,27 @@ def settle(numbers: list[str], operator: str) -> str:
 
 
 def revise(numbers: list[str], last: list[str], operator: str) -> str:
+    return "\n".join([*revise_lines(numbers, last), LAUNCHER.format(operator=operator)])
+
+
+def weigh_suggestions(number: str, reviewers: list[str], last: bool) -> str:
+    """The message to the ticket analyst that last revised or filed the
+    draft `number`, whose log gives only the suggestions of `reviewers`
+    since."""
+    return "\n".join([*revise_lines([number], [number] if last else []), mctx(
+        "Its suggestions are those of {role} {reviewers}.").format(
+            role="ticket reviewer" if len(reviewers) == 1 else "ticket reviewers",
+            reviewers=", ".join(reviewers))])
+
+
+def revise_lines(numbers: list[str], last: list[str]) -> list[str]:
     lines = [REVISE.format(numbers=item_list(numbers))]
     if last:
         lines.append(mctx(
             "The revision of {last} is the last: the draft then opens with no further ticket "
             "review, and the change's own review checks what the change writes.").format(
                 last=", ".join(last)))
-    lines.append(LAUNCHER.format(operator=operator))
-    return "\n".join(lines)
+    return lines
 
 
 def findings(number: str, worktree: Path, reports: list[tuple[str, str]],
