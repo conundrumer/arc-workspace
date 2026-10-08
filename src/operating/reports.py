@@ -5,6 +5,7 @@ absence: an editor not finished, a review with findings, no place standing
 and no module split."""
 
 import re
+from enum import StrEnum
 
 from operating.roles import Role
 from operating.state import Agent
@@ -12,6 +13,10 @@ from operating.state import Agent
 DONE = ("done", "blocked")
 """The opening, in any case, of the report of an editor that leaves nothing
 for a decision."""
+
+BUDGET_PASSED = "budget passed"
+"""The opening, in any case, of the reply of a code editor that ended its
+turn at its budget with work left."""
 
 NO_FINDING = "no finding stands"
 """The opening, in any case, of a doc reviewer's reply where no finding
@@ -43,8 +48,18 @@ FOR_COORDINATOR = "## For the coordinator"
 for the coordinator: the decisions it brings the user, the changes it
 tells the user, and the items it leaves unfinished."""
 
-LABELS = "(?:decision|tell|unfinished)"
-"""The labels of the kinds of item of the part for the coordinator."""
+class Label(StrEnum):
+    """The labels of the kinds of item of the part for the coordinator."""
+    DECISION = "decision"
+    TELL = "tell"
+    UNFINISHED = "unfinished"
+
+
+OPEN_LABELS = (Label.DECISION, Label.UNFINISHED)
+"""The labels of the items of that part that leave the change's work open
+for the coordinator."""
+
+LABELS = f"(?P<label>{'|'.join(Label)})"
 
 LABEL_OPENING = rf"^(?P<indent>[ \t]*)(?:(?:[-*+]|\d+[.)])[ \t]+)?[*_`]*{LABELS}"
 """The opening of an item of the part for the coordinator by one of
@@ -67,6 +82,10 @@ def opens(a: Agent, opening: str | tuple[str, ...]) -> bool:
 
 def finished(a: Agent) -> bool:
     return opens(a, DONE)
+
+
+def budget_passed(a: Agent) -> bool:
+    return opens(a, BUDGET_PASSED)
 
 
 def no_finding(a: Agent) -> bool:
@@ -131,6 +150,13 @@ def for_coordinator(a: Agent) -> str | None:
     for the coordinator, each with the lines nested under it, or None where
     that part holds no such item."""
     return "\n".join(coordinator_part(a)[0]).strip("\n") or None
+
+
+def leaves_open(a: Agent) -> bool:
+    """Whether the part of a ticket analyst's latest reply for the
+    coordinator gives an item labeled by one of `OPEN_LABELS`."""
+    return any(Label(m["label"].lower()) in OPEN_LABELS
+               for ln in coordinator_part(a)[0] if (m := LABELED.match(ln)) is not None)
 
 
 def mislabeled(a: Agent) -> list[str]:

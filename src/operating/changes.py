@@ -12,13 +12,20 @@ that path on the ticket, so a later operator continues the change there,
 with the editors and reviewers each operator launched in it.
 
 What the editors' and the doc reviewer's replies give is read by the fixed
-forms of `reports`. A report of an editor that has not finished, a
+forms of `reports`. An editor whose latest reply says its budget is passed
+is sent a message to go on with the work that reply leaves, with the
+budget the operators last gave it, and that reply goes to no ticket
+analyst. Any other report of an editor that has not finished, a
 `Review` section that gives a place as standing, an open `question` ticket
 filed on the change, and the accepted gate outputs the change writes go to
 one ticket analyst, which judges them. That analyst sends an editor its
 judgments and decisions only where one of them gives that editor an edit,
 or where the change has a doc editor, and otherwise sends that editor no
-message. A report that analyst was launched after leaves nothing more.
+message. A report that analyst was launched after leaves nothing more,
+unless the part of that analyst's reply for the coordinator gives a
+`decision:` or an `unfinished:` item and no editor has reported since its
+launch: then the change is held for the coordinator, in place of its
+merge.
 
 A change with a doc editor passes its review once the latest reply of its
 doc reviewer opens with `no finding stands` and follows each editor's last
@@ -38,10 +45,12 @@ from typing import Literal
 
 from operating import briefs, merging
 from operating.directives import Directive, Ruling, named, numbers, ruled
-from operating.reports import finding_paths, finished, no_finding, standing
+from operating.reports import (budget_passed, finding_paths, finished, leaves_open, no_finding,
+                               standing)
 from operating.roles import EDITORS, Purpose, Role, analyst_subject
 from operating.state import Agent, State, Ticket
-from operating.steps import Bash, Launch, Send, Step, ask_again, repeated, sent, undecided
+from operating.steps import (Bash, Launch, Send, Step, ask_again, repeated, sends_to, sent,
+                             undecided)
 from operating.tracker import COORDINATOR, closed, log, worktree
 from ticketing.vocabulary import Domain, Kind, Status
 
@@ -213,6 +222,8 @@ def carry(state: State, t: Ticket) -> Step | None:
     if any(a.pending for a in here):
         return None
     latest = {a.role: a for a in here}
+    if (step := past_budget(state, t, list(latest.values()))) is not None:
+        return step
     if (step := leftover(state, t, w, list(latest.values()), agents)) is not False:
         return step
     if Role.DOC_EDITOR in editors and (
@@ -221,29 +232,54 @@ def carry(state: State, t: Ticket) -> Step | None:
     return merging.merge_steps(state, t, w, list(latest.values()))
 
 
+def past_budget(state: State, t: Ticket, latest: list[Agent]) -> Step | None:
+    """The message to the first editor of `latest` whose latest reply says
+    its budget is passed, or None where no such reply is."""
+    for a in latest:
+        r = a.last_report
+        if r is None or a.agent_id is None or not budget_passed(a):
+            continue
+        given = [a.brief] + [str(c.input.get("message", "")) for c in sends_to(state, a.agent_id)]
+        stated = next((s for text in reversed(given) if (s := briefs.budgets(text))), set[float]())
+        if len(stated) != 1:
+            return undecided(f"editor {a.agent_id} of change {t.number} says its budget is "
+                             f"passed, and the latest brief or operator's message to it that "
+                             f"states a budget states {len(stated)}")
+        return Send(a.agent_id, briefs.go_on(r.time, stated.pop()))
+    return None
+
+
 def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
              agents: list[Agent]) -> Step | None | Literal[False]:
     """The step on what the editors leave, or False where they leave
-    nothing. A report a ticket analyst was launched after leaves nothing
-    more: that analyst judged it."""
+    nothing."""
     analysts = [a for a in agents if a.role is Role.TICKET_ANALYST]
     if any(a.pending for a in analysts):
         return None
     judged = max((a.launched for a in analysts), default=0.0)
-    needing = [a for a in latest if (not finished(a) or standing(a))
-               and (r := a.last_report) is not None and r.time > judged]
+    left = [a for a in latest if not finished(a) or standing(a)]
+    needing = [a for a in left if (r := a.last_report) is not None and r.time > judged]
     questions = [q for q in state.tickets.values() if q.kind is Kind.QUESTION
                  and q.domain is Domain.CHANGE and q.subject == t.number
                  and q.status in (Status.OPEN, Status.ASSIGNED)]
     reported = max((r.time for a in latest if (r := a.last_report) is not None), default=0.0)
-    gate = list(state.gate_outputs.get(w, ())) if reported > judged else []
-    if not needing and not questions and not gate:
+    outputs = list(state.gate_outputs.get(w, ()))
+    gate = outputs if reported > judged else []
+    hold: str | None = None
+    if analysts and reported <= judged and leaves_open(analysts[-1]):
+        hold = (f"ticket analyst {analysts[-1].agent_id} on change {t.number} leaves items "
+                f"for the coordinator")
+        needing, gate = left, outputs
+    elif not needing and not questions and not gate:
         return False
-    if questions and not needing and not gate and judged > max(q.filed for q in questions):
-        choice = ruled(state, f"ticket analyst {analysts[-1].agent_id} returned on change "
-                              f"{t.number}, and its question tickets stand open",
-                       {Ruling.MERGE: "go on to the merge; the close of the change closes them",
-                        Ruling.AGAIN: "launch another ticket analyst on them"})
+    elif questions and not needing and not gate and judged > max(q.filed for q in questions):
+        hold = (f"ticket analyst {analysts[-1].agent_id} returned on change {t.number}, and "
+                f"its question tickets stand open")
+    if hold is not None:
+        choice = ruled(state, hold, {
+            Ruling.MERGE: "go on to the merge; the close of the change closes its open "
+                          "question tickets",
+            Ruling.AGAIN: "launch another ticket analyst on what the editors leave"})
         if isinstance(choice, Send):
             return choice
         if choice is Ruling.MERGE:

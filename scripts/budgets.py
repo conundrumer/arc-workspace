@@ -18,10 +18,8 @@ BUDGET_FACTOR = 2
 MEDIAN_RUNS = 5
 LOW_WAIT_PCT = 10
 
-# A brief line that states a budget, and the opening of a line that words one.
-BUDGET_LINE = re.compile(r"Budget: (\d+(?:\.\d+)?) minutes(?:[.,;:].*)?")
+# The opening of a line that words a budget.
 BUDGET_OPENING = re.compile(r"budget\s*:", re.I)
-LIST_MARKER = re.compile(r"^\s*(?:[-*+]|\d+[.)])?\s*")
 
 
 def low_wait(r: Run) -> bool:
@@ -122,7 +120,7 @@ def print_budgets(runs: list[Run], since_date: float | None,
 
 def budget_openings(text: str) -> list[str]:
     """The lines of `text` that open with `Budget:`, past a list marker."""
-    lines = (LIST_MARKER.sub("", line).strip() for line in text.splitlines())
+    lines = (briefs.unmarked(line) for line in text.splitlines())
     return [line for line in lines if BUDGET_OPENING.match(line)]
 
 
@@ -146,7 +144,7 @@ def budgets_in_force(r: Run, undecided: list[str]) -> list[float | None]:
     for m in r.messages:
         stated: set[float] = set()
         for line in budget_openings(m.text):
-            match = BUDGET_LINE.fullmatch(line)
+            match = briefs.BUDGET_LINE.fullmatch(line)
             if match:
                 stated.add(float(match.group(1)))
             else:

@@ -147,14 +147,19 @@ def sent(state: State, to: str, message: str, mark: str | None = None) -> bool:
     return bool(sent_at(state, to, message, mark))
 
 
+def sends_to(state: State, to: str) -> list[Call]:
+    """The operators' SendMessage calls to `to` that the harness gave no
+    error, in the order they were made."""
+    return sorted((c for c in state.calls if c.tool == "SendMessage"
+                   and c.input.get("to") == to and not c.error), key=lambda c: c.time)
+
+
 def sent_at(state: State, to: str, message: str, mark: str | None = None) -> list[float]:
     """The times of the calls by which an operator made the step that sends
     `to` the message `message`, as `sent` reads them."""
     step_key = key(Send(to, message))
     held = message if mark is None else mark
-    return [c.time for c in state.calls
-            if c.tool == "SendMessage" and c.input.get("to") == to and not c.error
-            and held in str(c.input.get("message", ""))] + [
+    return [c.time for c in sends_to(state, to) if held in str(c.input.get("message", ""))] + [
         m.call.time for m in state.made
         if m.tool == "SendMessage" and m.call.tool == "SendMessage" and not m.call.error
         and m.call.input.get("to") == to

@@ -315,6 +315,31 @@ BUDGET = "Budget: {minutes} minutes. " + AT_BUDGET
 """The line of a brief that gives the agent its budget and what it does at
 its budget, in the form `profile_runs.py --help` reads."""
 
+BUDGET_LINE = re.compile(r"Budget: (?P<minutes>\d+(?:\.\d+)?) minutes(?:[.,;:].*)?")
+"""A line that states a budget, past its list marker, in the form
+`profile_runs.py --help` gives, which `BUDGET` renders."""
+
+LIST_MARKER = re.compile(r"^\s*(?:[-*+]|\d+[.)])?\s*")
+
+
+def unmarked(line: str) -> str:
+    return LIST_MARKER.sub("", line).strip()
+
+
+def budgets(text: str) -> set[float]:
+    """The minutes each `BUDGET_LINE` of `text` states."""
+    return {float(m["minutes"]) for line in text.splitlines()
+            if (m := BUDGET_LINE.fullmatch(unmarked(line))) is not None}
+
+
+GO_ON = mctx("Go on with the work your reply at {time} leaves.")
+
+
+def go_on(time: float, minutes: float) -> str:
+    """The message to an editor whose reply at `time` says its budget is
+    passed, which gives it again the budget of `minutes` it had."""
+    return "\n".join([GO_ON.format(time=stamp(time)), BUDGET.format(minutes=f"{minutes:g}")])
+
 
 RESTATE = mctx("What you sent the operator at {time} is in no form its command reads, so the "
                "command cannot place it. Send it again, in full, in this form: {form}")
@@ -332,5 +357,8 @@ ALERT_FORM = mctx("where it is an alert, a message that opens with the line `ale
 def restate(time: float, form: str) -> str:
     """The message that asks an agent to send again, in `form`, what it
     sent the operator at `time` in no form the command reads."""
-    return RESTATE.format(time=datetime.fromtimestamp(time, UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                          form=form)
+    return RESTATE.format(time=stamp(time), form=form)
+
+
+def stamp(time: float) -> str:
+    return datetime.fromtimestamp(time, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
