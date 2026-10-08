@@ -42,14 +42,18 @@ tells the user, and the items it leaves unfinished."""
 LABELS = "(?:decision|tell|unfinished)"
 """The labels of the kinds of item of the part for the coordinator."""
 
-LABELED = re.compile(rf"^(?P<indent>[ \t]*)[-*]\s+{LABELS}:")
-"""A list item of the part for the coordinator, opened by the label of
-its kind."""
+LABEL_OPENING = rf"^(?P<indent>[ \t]*)(?:(?:[-*+]|\d+[.)])[ \t]+)?[*_`]*{LABELS}"
+"""The opening of an item of the part for the coordinator by one of
+`LABELS`, in any case, after any list marker or none, and inside any
+emphasis or code markup."""
 
-MISLABELED = re.compile(rf"^[ \t]*(?:[-*+]|\d+[.)])\s+[*_`]*{LABELS}[*_`\s]*:",
-                        re.IGNORECASE)
-"""A list item of that part that opens with a label in another case, in
-markup or in another list form, which `LABELED` does not read."""
+LABELED = re.compile(LABEL_OPENING + r"[*_`]*[ \t]*:", re.IGNORECASE)
+"""An item of the part for the coordinator, opened by the label of its
+kind and a colon, inside or outside the markup."""
+
+MISLABELED = re.compile(LABEL_OPENING + r"\b", re.IGNORECASE)
+"""An item of that part that opens with a label with no colon after it,
+which `LABELED` does not read."""
 
 HAND_OVER = "hand-over:"
 """The opening of the reply of an agent that ends with its open work for a
