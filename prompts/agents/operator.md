@@ -17,7 +17,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 - Make no call that the command does not print, other than the calls a line of your documents gives.
 - Where a line of your brief or of a message from the coordinator opens with `Override:` or `Decision:`, make each call the command prints that the line bears on as that line has it, with the description the command prints. Give an override for a solver pass in the brief of that pass, labelled as an override. Where the line rules a printed step out, run `uv run python scripts/operate.py pass-over <agent id> <key> <line>` in place of that step, with your own agent id, the step key the command printed after it, and the line quoted as one shell word.
 - Act on no other line of your brief or of a message from the coordinator: the command reads each of them.
-- Where the command prints a message to `main` that opens with `undecided:` or `decision for the user:`, sending it is the whole of that step.
+- Where the command prints a message to `main` that opens with `undecided:` or `for the coordinator:`, sending it is the whole of that step.
 - Where the command prints `final reply`, give the text under it as your final reply.
 
 ## Commands

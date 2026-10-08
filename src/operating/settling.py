@@ -1,5 +1,5 @@
 """The ticket analysts the operator launches on open tickets, and the
-decisions for the user it sends the coordinator.
+labeled items it sends the coordinator to act on.
 
 The operator takes each `request` and `bug` from its first ticket analyst
 on: once a ticket stands in the list `file_ticket.py to-settle` prints,
@@ -14,23 +14,23 @@ other than a `change` that stands under `tickets/blocked/` or
 `tickets/closed/` with such a line after the line that moved it there
 moves back to `tickets/open/` first.
 
-A decision for the user reaches the coordinator once, by one of two
-messages. Where a ticket analyst's reply ends with the part for the
-coordinator (`reports.FOR_COORDINATOR`), and that part holds an item
-labeled with its kind (`reports.LABELED`), in any case, markup or list
-form, the command sends those items, read back by the analyst's agent id
-and the reply's time in any message to the coordinator. A part that
-holds no such item counts as no part. An item of that part that opens
-with a label with no colon after it (`reports.MISLABELED`) goes to the
+The items for the coordinator to act on reach it once, by one of two
+messages, each opening with `steps.DECISION`. Where a ticket analyst's
+reply ends with the part for the coordinator
+(`reports.FOR_COORDINATOR`), and that part holds an item labeled with
+its kind (`reports.LABELED`), in any case, markup or list form, the
+command sends those items, read back by the analyst's agent id and the
+reply's time in any message to the coordinator. A part that holds no
+such item counts as no part. An item of that part that opens with a
+label with no colon after it (`reports.MISLABELED`) goes to the
 coordinator as undecided, in the message of those items where there are
-any. Otherwise, the
-decision is the note of the line that moved a ticket into
-`tickets/blocked/` waiting on the user: the command sends it once that
-line is written, where an operator wrote it, or a ticket analyst an
-operator launched that has replied with no such part, and reads back that
-it was sent by the ticket's number and that line's time in the message.
-So a decision is sent by a later operator where the one before it ended
-before it sent it."""
+any. Otherwise, the item is the note of the line that moved a ticket
+into `tickets/blocked/` waiting on the user: the command sends it as a
+`decision:` item once that line is written, where an operator wrote it,
+or a ticket analyst an operator launched that has replied with no such
+part, and reads back that it was sent by the ticket's number and that
+line's time in the message. So a decision is sent by a later operator
+where the one before it ended before it sent it."""
 
 from operating import briefs
 from operating.reports import for_coordinator as analyst_part, mislabeled
@@ -152,7 +152,7 @@ def decisions(state: State) -> Step | None:
         by_ours = line.agent_id in known or (
             line.agent in (Role.TICKET_ANALYST.value, AGENT) and t.number in briefed)
         key = decision_key(t.number, line.time)
-        step = Send(COORDINATOR, f"{DECISION} {key}: {line.note}")
+        step = Send(COORDINATOR, f"{DECISION} {key}:\n- decision: {line.note}")
         if by_ours and not carried(state, t, line) and not sent(state, step.to, step.message, key):
             return step
     return None

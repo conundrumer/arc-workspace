@@ -102,9 +102,10 @@ UNDECIDED = "undecided:"
 """The first word of a message that gives the coordinator a step the
 command cannot place."""
 
-DECISION = "decision for the user:"
-"""The opening of a message that gives the coordinator a decision a ticket
-analyst brings the user."""
+DECISION = "for the coordinator:"
+"""The opening of a message that gives the coordinator labeled items to act
+on: the part of a ticket analyst's reply for the coordinator, or the note of
+a blocked ticket as a `decision:` item."""
 
 
 def undecided(what: str) -> Send:
