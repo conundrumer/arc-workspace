@@ -108,17 +108,18 @@ def first(state: State, *procedures: Callable[[State], Step | None]) -> Step | N
 
 def refused(state: State, step: Step) -> Step | None:
     """The step that gives the coordinator `step` as undecided, where the
-    operator's last call of `step` failed and no report reached an
+    last call of `step` by `state.me` failed and no report reached an
     operator since, as where the harness or the permission classifier
     denied it, so that a denied call is not printed again and again."""
     match step:
         case Launch(role, subject):
             what = description(role, subject)
-            same = [c for c in state.calls if c.tool == "Agent"
-                    and c.input.get("description") == what]
+            same = [c for c in state.calls if c.operator == state.me
+                    and c.tool == "Agent" and c.input.get("description") == what]
         case Bash(command):
             what = command
-            same = [c for c in bash_calls(state, command) if c.result is not None]
+            same = [c for c in bash_calls(state, command)
+                    if c.operator == state.me and c.result is not None]
         case _:
             return None
     if not same or not same[-1].error:
