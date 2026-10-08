@@ -15,7 +15,7 @@
     - Where the ticket has an `Evidence` section, write under it the line quoted, or the command and its output, or the grid, as you saw it, and leave out what the fix should be.
 
 ## Noticed faults
-- File a `bug` ticket on each fault you notice in a tool, a document or an agent's run, when you notice it, whether or not it lies within your work, where no other line of your documents has you fix, send, report or file it, and no ticket outside `tickets/closed/` records it, as [Tracking](prompts/agents/notes/tickets.md#tracking) gives where to look.
+- File a `bug` ticket on each fault you notice in a tool, a document or an agent's run, when you notice it, whether or not it lies within your work, where no other line of your documents has you fix, send, report or file it, and no ticket of any session outside `tickets/closed/` records it.
 
 ## Ticket fields
 - `<agent>` is your agent's name, or `coordinator` where you are the coordinator.

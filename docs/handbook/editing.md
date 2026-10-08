@@ -2,6 +2,7 @@
 - The handbook, the console's messages to a worker, the documents that say what each agent reads, and what the tools print to a session.
 
 ## What a file holds
++ rules on lines
 - A file holds what the reader of its entry point needs for the work it does there, and nothing more.
 - Add or keep a line only where its reader needs it: where the reader could not infer what it says, assuming it can infer whatever you could infer from its context, or would misread its context without it.
 - A line is a restatement for a reader when another line of that reader's context says or implies what it says. An elaboration is detail, a reason or a consequence beyond what the reader needs, an example, or a list of kinds where a general term exists.
@@ -12,7 +13,7 @@
 - Choose an edit in this order of preference: a deletion; no change, where a tool or another line already covers it; a change to existing words; and new words only where none of those is enough.
 - Fix a finding by changing the line that caused it, and add no exception to a rule for a small inconsistency.
 - When the premise of a line is wrong, change the line that states that premise.
-- A line kept against a rule of this document, or put back after a cut, has a `comment`, as [Directives](src/controlled_markdown/writing.md#directives) gives it, that says why it stays. A comment on a kept restatement or elaboration names the observed failure that required it: the reader that failed, where, and what it did without that text, with the ticket or the transcript that records it. Take that failure from the one who asked for the change, or from a ticket or a transcript you read, and in either case cite the ticket or the transcript that records it.
+- A line kept against a rule of [Editing the agent-facing documents](docs/handbook/editing.md), or put back after a cut, has a `comment`, as [Directives](src/controlled_markdown/writing.md#directives) gives it, that says why it stays. A comment on a kept restatement or elaboration names the observed failure that required it: the reader that failed, where, and what it did without that text, with the ticket or the transcript that records it. Take that failure from the one who asked for the change, or from a ticket or a transcript you read, and in either case cite the ticket or the transcript that records it.
 - Where a restatement or an elaboration you write or keep in your edit has no ticket or transcript that records its failure, search the tickets and the project's session transcripts for one. Where you find one, rewrite the comment to name it, and where you find none, cut the line.
     - The tickets are under `tickets/` in the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints, and in no other worktree.
     - `python3 ~/.claude/skills/retrieve/transcripts.py --help` lists the subcommands that read the transcripts, and each takes a session as its id or its `.jsonl` path.
@@ -61,7 +62,10 @@
 - An entry point's `+ lib:` attribute says how it reads the lib.
     - A reader whose `+ lib:` is `index` reads a declaration's interface when it needs one.
 - A document mentions a file under [src](src) only where its reader runs or reads the file.
-- State a fact or a rule once, in the document and the section whose subject it is, and link it from every other place.
+- State a fact or a rule once, in the document and the section whose subject it is.
+    - A rule on an act that one step of a reader applies stands in that reader's context at that step: inlined there from the section that states it, or stated there where that step is its subject.
+    - A rule on an act that several steps of a reader apply stands once in that reader's context, in the section whose subject is that act or at the first of those steps, and each other step links it there.
+    - Link every other fact or rule from each other place that needs it.
 - An agent's `description`, in the front matter of its prompt, says what the agent reads and what work it is for, as much as a launcher needs to pick the agent, and what its reply gives, where a launcher acts on that. It may name what the work is on, such as the task its brief gives, and gives nothing else of the brief's form, which [Launching notes](prompts/agents/notes/launching.md) states.
 - A line that links a section relies on that section's heading alone.
 - No document restricts, replaces or redirects an operation another document states.

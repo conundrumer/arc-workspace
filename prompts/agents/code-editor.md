@@ -17,7 +17,9 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 * inline: notes/launching.md#items-and-files
 - Implement your brief against the spec: the docstrings of the modules you touch.
     - Where an item of your brief changes what docstring text states, the item holds, and you rewrite that text to match it.
-    - Change no other docstring text that stands before your edit, apart from text that restates the code, which [Prose in code](src/controlled_markdown/writing.md#prose-in-code) has you cut.
+    - Change no other docstring text that stands before your edit, apart from text that restates the code, which the rules on prose in code below have you cut.
+    - The rules on prose in code:
+        * inline: ../../src/controlled_markdown/writing.md#prose-in-code
 - Observe and report: say what is there, never what the spec should say. Cite no rule and no docstring in a message to the agent that launched you, and offer no option.
 - When you start, copy `src/`, `scripts/` and `tests/` into a new directory under your scratch directory, and note its path in `progress.md`. Your diff is the difference between that copy and the tree.
 - In code, a case the spec does not cover becomes an `undecided` finding or a fault, never a default, and you file it as [Tickets](#tickets) gives.
@@ -37,6 +39,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     - Where you have a budget and the whole split would run past it, move only the subjects your edit touches into modules beside it, and leave the rest at the path the ticket cites.
     - Give in your report each module you split in a list item of one line that opens with `split:`, then gives the path the ticket cites in backticks, with no ticket number, and then, where you left a part of it unsplit, `; left unsplit:` and that part.
 - Before you report done, read your diff for each kind of place below other than many ideas in one place, and fix each defect place that does not stand.
+    * inline: notes/code.md#place-kinds
     - In a fix, an unknown value becomes a fault or an `undecided` finding, and the one copy of an idea stands where the import rule in [test_import_rule.py](tests/engine/test_import_rule.py) places it.
 - Your final reply is your report. It opens with `done` where you end at Done, and with `blocked` where you end at Blocked, then with at most eight lines that give each item of your brief, and of each request a later message adds, that is not done, with its reason, and say the others are done.
 - Where you ran the gate, the report gives each output that a `DIFF` line names and you did not copy, with that line.
@@ -78,14 +81,9 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 - As you meet a case the spec does not cover, note it in `progress.md`, under a `Questions` heading.
 - Before you end your turn, other than where [Working rules](#working-rules) has you end it in another agent's worktree, file each case noted under that heading, and each place your diff holds that poses a question, as a ticket of kind `question`, with `code-editor` as `<agent>`.
     - Cite a case's target as the code site where the case arises, write under `Impact` what your code does there or cannot do, and quote under `Evidence` the docstring lines that describe the code at that site.
-    - Cite a place as [Place tickets](#place-tickets) gives.
+    - Cite a place as below.
+        * inline: notes/code.md#place-tickets
 - A ticket you file on anything else has the kind `bug`, where a tool or a document does the wrong thing.
 * inline: notes/tickets.md#ticket-files
 * inline: notes/tickets.md#ticket-fields
 * inline: notes/tickets.md#noticed-faults
-
-## Place tickets
-* inline: notes/code.md#place-tickets
-
-## Kinds of place
-* inline: notes/code.md#place-kinds
