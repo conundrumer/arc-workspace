@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from enum import StrEnum
 
 from controlled_markdown import mctx
-from ticketing.vocabulary import EDITOR_KINDS, PASS_KINDS, REVIEW_KINDS, Kind
+from ticketing.vocabulary import COORDINATOR, EDITOR_KINDS, PASS_KINDS, REVIEW_KINDS, Kind
 from transcripts import Refused
 
 
@@ -24,7 +24,7 @@ class Filer(StrEnum):
     DOC_REVIEWER = "doc-reviewer"
     TICKET_REVIEWER = "ticket-reviewer"
     CODE_REVIEWER = "code-reviewer"
-    COORDINATOR = "coordinator"
+    COORDINATOR = COORDINATOR
     TICKET_ANALYST = "ticket-analyst"
 
 

@@ -9,7 +9,7 @@ from operating.roles import EDITORS
 from ticket_files import ticket_path
 from ticket_numbers import ticket_number
 from ticket_vocabulary import filer_kinds, ticked
-from ticketing.vocabulary import Kind
+from ticketing.vocabulary import DEFECT_SECTIONS, Kind
 from transcripts import Refused
 
 FRONT = r"---\nkind: (?P<kind>\S+)\n(?P<fields>(?:[a-z-]+: .*\n)*)---\n"
@@ -45,9 +45,6 @@ SECTIONS = {Kind.CHANGE: ("Intent", "Motivation", "Scope", "Grounds"),
             Kind.REQUEST: ("Words", "Transcript")}
 """The sections of each kind that has its own; every other kind has
 `DEFECT_SECTIONS`."""
-
-
-DEFECT_SECTIONS = ("Impact", "Evidence")
 
 
 HEADING_MARK = "## "
@@ -86,10 +83,21 @@ REQUIRED = {Kind.CHANGE: frozenset({"editors"})}
 """The front matter fields besides `kind` that each kind must give."""
 
 
+def front_fields(head: re.Match[str]) -> list[tuple[str, str]]:
+    """The key and the value of each line of a match of `FRONT`, in order."""
+    return [(key, value) for key, value in
+            (line.split(": ", 1) for line in head.group("fields").splitlines())]
+
+
+def list_items(value: str) -> list[str]:
+    """The items of a list field, `<item>, <item>`."""
+    return [part.strip() for part in value.split(",")]
+
+
 def check_editors(value: str) -> None:
     """Refuses an `editors` value that is not a list of distinct editors
     (`operating.roles.EDITORS`)."""
-    names = [part.strip() for part in value.split(",")]
+    names = list_items(value)
     known = {str(r) for r in EDITORS}
     if not names or any(n not in known for n in names) or len(set(names)) < len(names):
         raise Refused(mctx("`editors` `{value}` is not a list of distinct editors among "
@@ -105,7 +113,7 @@ HEADING = re.compile(rf"^{re.escape(HEADING_MARK)}.*$", re.MULTILINE)
 def check_depends_on(tickets: Path, value: str) -> None:
     """Refuses a `depends-on` value that is not a list of numbers of
     tickets the ticket tracker holds."""
-    for text in (part.strip() for part in value.split(",")):
+    for text in list_items(value):
         ticket_path(tickets, ticket_number(text))
 
 
@@ -122,8 +130,7 @@ def checked_kind(tickets: Path, agent: str, text: str) -> Kind:
         raise Refused(mctx("`{agent}` files no `{kind}`: it files {kinds}").format(
             agent=agent, kind=kind, kinds=ticked(k for k in Kind if k in kinds)))
     keys: list[str] = []
-    for line in head.group("fields").splitlines():
-        key, value = line.split(": ", 1)
+    for key, value in front_fields(head):
         if key in keys:
             raise Refused(mctx("the front matter gives `{key}` twice").format(key=key))
         keys.append(key)

@@ -32,6 +32,7 @@ part, and reads back that it was sent by the ticket's number and that
 line's time in the message. So a decision is sent by a later operator
 where the one before it ended before it sent it."""
 
+from controlled_markdown import mctx
 from operating import briefs
 from operating.reports import for_coordinator as analyst_part, mislabeled
 from operating.passes import awaits_analyst
@@ -152,10 +153,15 @@ def decisions(state: State) -> Step | None:
         by_ours = line.agent_id in known or (
             line.agent in (Role.TICKET_ANALYST.value, AGENT) and t.number in briefed)
         key = decision_key(t.number, line.time)
-        step = Send(COORDINATOR, f"{DECISION} {key}:\n- decision: {line.note}")
+        step = Send(COORDINATOR, labeled(key, mctx("- decision: {note}").format(note=line.note)))
         if by_ours and not carried(state, t, line) and not sent(state, step.to, step.message, key):
             return step
     return None
+
+
+def labeled(key: str, body: str) -> str:
+    """A message to the coordinator on `key`, with the items of `body`."""
+    return mctx("{label} {key}:").format(label=DECISION, key=key) + "\n" + body
 
 
 def for_coordinator_key(agent: str, time: float) -> str:
@@ -174,10 +180,11 @@ def for_coordinator(state: State) -> Step | None:
         if r is None or a.agent_id is None or (part is None and not items):
             continue
         key = for_coordinator_key(a.agent_id, r.time)
-        unread = undecided(f"the part for the coordinator of {key} holds items "
-                           "that open with a label with no colon after it:\n" + "\n".join(items))
-        message = unread.message if part is None else f"{DECISION} {key}:\n{part}" + (
-            f"\n\n{unread.message}" if items else "")
+        unread = undecided(mctx("the part for the coordinator of {key} holds items that open "
+                                "with a label with no colon after it:").format(key=key)
+                           + "\n" + "\n".join(items))
+        message = unread.message if part is None else labeled(key, part) + (
+            "\n\n" + unread.message if items else "")
         step = Send(COORDINATOR, message)
         if not sent(state, step.to, step.message, key):
             return step

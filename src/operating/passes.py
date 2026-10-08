@@ -24,21 +24,28 @@ import re
 import shlex
 from dataclasses import dataclass
 
+from arc.task import TASK_ID
+from controlled_markdown import mctx
 from operating import briefs
 from operating.directives import Line, Pipeline, lines, pipelines, queue_counts, session_lines
 from operating.reports import TICKETS_FILED
 from operating.roles import PASSES, Purpose, Role, analyst_subject, joined
 from operating.state import Agent, State
 from ticketing.vocabulary import Domain, Kind, Status
-from operating.steps import (COORDINATOR, RUN_COMMAND, Bash, Launch, Send, Step, ask_again,
-                             bash_calls, passed, sent, undecided)
+from operating.steps import (COORDINATOR, RUN_COMMAND, Bash, Launch, Send, Step, agent_ids,
+                             ask_again, bash_calls, passed, sent, undecided)
+from operating.task_work import CLAIM, tasks_work
 from operating.tracker import blocked_on_user
 
-TASK = re.compile(r"\b[0-9a-f]{8}\b")
+TASK = re.compile(rf"\b{TASK_ID}\b")
 SETS_ASIDE = (Role.ANALYZE, Role.CREATE)
 QUEUE_SPARE = 3
 """How many tasks the queue lists per task the coordinator asks for, so
 that a failed claim leaves one to take."""
+
+
+def queue_command(count: int) -> str:
+    return f"bash scripts/queue.sh --order name -n {count * QUEUE_SPARE}"
 
 
 @dataclass(frozen=True)
@@ -52,9 +59,9 @@ class Outcome:
 
 
 def claim_command(state: State, task: str) -> str:
-    d = state.main_tree / "work" / "task" / task
+    d = tasks_work(state.main_tree) / task
     return (f"mkdir -p {shlex.quote(str(d))} && (set -C; echo \"$CLAUDE_CODE_SESSION_ID\" > "
-            f"{shlex.quote(str(d / 'claim'))})")
+            f"{shlex.quote(str(d / CLAIM))})")
 
 
 def aside_command(task: str, role: Role) -> str:
@@ -136,8 +143,11 @@ def run(state: State, p: Pipeline) -> Outcome:
                    if purpose is Purpose.PASS and p.task in nums and x.launched > review.launched]
         if numbers and not analyst:
             subject = analyst_subject(Purpose.PASS, joined([p.task, *numbers]))
+            reviewer = agent_ids([review])
+            if isinstance(reviewer, Send):
+                return Outcome(reviewer)
             return Outcome(Launch(Role.TICKET_ANALYST, subject, briefs.pass_settle(
-                numbers, p.task, review.agent_id or "", state.me)))
+                numbers, p.task, reviewer[0], state.me)))
         if any(x.pending for x in analyst):
             return Outcome(None)
         interference = [t for t in state.tickets.values() if t.kind is Kind.INTERFERENCE
@@ -159,9 +169,10 @@ def no_report(role: Role, a: Agent) -> Send:
     names no report file with a `## Tickets filed` section."""
     r = a.last_report
     quoted = "\n".join(f"> {line}" for line in (r.text if r else "").strip().splitlines())
-    return undecided(f"the {role} pass {a.agent_id} replied with no path of a report that "
-                     f"has a `{TICKETS_FILED}` section, so its pipeline on {a.subject} "
-                     f"stops. Its reply:\n{quoted}")
+    return undecided(mctx("the {role} pass {agent} replied with no path of a report that has "
+                          "a `{section}` section, so its pipeline on {task} stops. Its "
+                          "reply:").format(role=role, agent=a.agent_id, section=TICKETS_FILED,
+                                           task=a.subject) + "\n" + quoted)
 
 
 def end(state: State, p: Pipeline, restore: str, reason: str | None) -> Outcome:
@@ -190,7 +201,7 @@ def queued(state: State, given: list[Line]) -> list[Pipeline]:
         since = m.time
         if any(not q.task or runs_at(state, q, since) for q in out):
             continue
-        command = f"bash scripts/queue.sh --order name -n {count * QUEUE_SPARE}"
+        command = queue_command(count)
         calls = [c for c in bash_calls(state, command) if c.time >= since and c.result]
         if not calls:
             out.append(Pipeline("", Role.ANALYZE, since, m.operator, True))
@@ -241,7 +252,7 @@ def step(state: State) -> tuple[Step | None, list[tuple[Pipeline, Outcome]]]:
     for p in every(state):
         if not p.task:
             count = next(c for c, m in queue_counts(session_lines(state)) if m.time == p.since)
-            o = Outcome(Bash(f"bash scripts/queue.sh --order name -n {count * QUEUE_SPARE}"))
+            o = Outcome(Bash(queue_command(count)))
         else:
             o = run(state, p)
         outcomes.append((p, o))

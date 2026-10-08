@@ -38,7 +38,7 @@ from operating import briefs
 from operating.directives import Directive, Ruling, named, numbers, ruled
 from operating.roles import Purpose, Role, analyst_subject, joined, subjects
 from operating.state import Agent, State, Ticket
-from ticketing.vocabulary import FILED, Kind, Status
+from ticketing.vocabulary import Kind, Note, Status
 from operating.steps import Bash, Launch, Send, Step, repeated, ruling_key, sent
 from operating.tracker import COORDINATOR, after, last_index, log
 
@@ -46,12 +46,7 @@ CAP = 3
 """The ticket reviewers whose findings or suggestions close a draft's
 review rounds."""
 
-REVISED = "revised"
-"""The note a ticket analyst writes on a draft it revised."""
-FILED_OR_REVISED = (FILED, REVISED)
-FINDING = "finding"
-SUGGESTION = "suggestion"
-LAST = "last revision"
+FILED_OR_REVISED = (Note.FILED, Note.REVISED)
 
 
 def drafts(state: State) -> list[Ticket]:
@@ -106,7 +101,7 @@ def reviewers_since_draft(t: Ticket) -> int:
         if t.log[i].status is Status.DRAFT and t.log[i - 1].status is not Status.DRAFT:
             start = i
     return len({ln.agent_id or ln.agent for ln in t.log[start:]
-                if ln.note.startswith((FINDING, SUGGESTION))})
+                if ln.note.startswith((Note.FINDING, Note.SUGGESTION))})
 
 
 def at_cap(t: Ticket) -> bool:
@@ -152,8 +147,8 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
                                              for a in state.agents):
         return None
     since = base(t)
-    found = review_lines_after(t, since, FINDING)
-    suggested = review_lines_after(t, since, SUGGESTION)
+    found = review_lines_after(t, since, Note.FINDING)
+    suggested = review_lines_after(t, since, Note.SUGGESTION)
     last_i = last_index(t, FILED_OR_REVISED)
     if found or suggested:
         analyst_done = [a for a in agents if a.role is Role.TICKET_ANALYST
@@ -173,7 +168,7 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
                 return choice
         waiting.append(t)
         return None
-    if log_ready(t) and t.log[last_i].note.startswith(REVISED) and at_cap(t):
+    if log_ready(t) and t.log[last_i].note.startswith(Note.REVISED) and at_cap(t):
         return open_last(t)
     by_log = log_ready(t)
     if not by_log and not given_after(state, t):
@@ -209,7 +204,7 @@ def open_last(t: Ticket) -> Step:
     """The move of `t`, whose last revision is written, to
     `tickets/open/`."""
     return Bash(log(t.number, Status.OPEN, Status.DRAFT,
-                    f"{LAST}: opens with no further ticket review", None))
+                    f"{Note.LAST_REVISION}: opens with no further ticket review", None))
 
 
 def linked(first: Ticket, waiting: list[Ticket]) -> list[Ticket]:

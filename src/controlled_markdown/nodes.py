@@ -68,6 +68,13 @@ class Rule(StrEnum):
     VARIABLE_UNUSED = "variable-unused"
 
 
+def finding_lines(rules: tuple[Rule, ...]) -> re.Pattern[str]:
+    """The lines that report a finding of one of `rules`, in the form
+    `ControlledMarkdownError` prints, with the file as `path`."""
+    return re.compile(rf"^(?P<path>\S+):(?P<line>\d+): (?:{'|'.join(map(re.escape, rules))}): .*$",
+                      re.MULTILINE)
+
+
 class ControlledMarkdownError(Exception):
     """A line that breaks a rule. `rule` is the rule's short name."""
 

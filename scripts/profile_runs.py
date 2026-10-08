@@ -40,6 +40,8 @@ from transcripts import (Entry, Refused, agent_id, agent_transcripts,  # noqa: E
                          bare_id, chain, epoch, find, is_subagent, read_entries,
                          transcripts)
 
+from operating.batches import RUNS_TAKEN  # noqa: E402
+
 UNDER = "--under"
 """The option of the mode that profiles the runs under a run since an
 operator's previous call of it."""
@@ -234,7 +236,7 @@ def runs_since(path: Path, ident: str, undecided: list[str]) -> list[Path]:
         else:
             taken.append(p)
     print(LEFT_OPEN, " ".join(left) or NO_RUN)
-    print(mctx("runs taken: {n}").format(n=len(taken)))
+    print(RUNS_TAKEN, len(taken))
     return taken
 
 

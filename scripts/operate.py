@@ -14,6 +14,7 @@ import sys
 import time
 from dataclasses import replace
 
+from arc import task
 from controlled_markdown import mctx
 from engine import checkout
 from handbook.paths import console_importable, importable
@@ -59,7 +60,7 @@ foreground call, with room for the read of the state."""
 POLL_SECONDS = 15
 CALLS = (Launch, Send, Bash, Stop)
 """The steps after whose call the operator runs `next` again."""
-TASK_ID = re.compile(r"[0-9a-f]{8}")
+TASK_ID = re.compile(task.TASK_ID)
 
 
 def with_budget(step: Launch) -> Launch:

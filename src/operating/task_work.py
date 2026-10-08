@@ -10,6 +10,7 @@ from pathlib import Path
 
 from engine import checkout
 from operating.roles import Role
+from solver.vocabulary import SOLVER_SUFFIX, WITNESS_SUFFIX
 
 BEFORE_CREATE = ("create.md", "progress.md")
 """The entries of the task's work directory a Create pass sets aside, with
@@ -18,10 +19,16 @@ each `refine-<n>.md`."""
 CLAIM = "claim"
 
 
+def tasks_work(main: Path) -> Path:
+    """The directory of each task's work and claim, in the main worktree
+    `main`."""
+    return main / "work" / "task"
+
+
 def task_paths(task: str) -> tuple[Path, Path]:
     """The task's solver and witness file, from the root of a worktree."""
-    return (Path("programs/solvers") / f"{task}.dl",
-            Path("programs/witnesses") / f"{task}.wit.json")
+    return (checkout.SOLVERS / f"{task}{SOLVER_SUFFIX}",
+            checkout.WITNESSES / f"{task}{WITNESS_SUFFIX}")
 
 
 def numbered(directory: Path) -> list[int]:
@@ -31,7 +38,7 @@ def numbered(directory: Path) -> list[int]:
 def set_aside(main: Path, task: str, role: Role) -> Path:
     """Set aside the task's earlier work before a pass of `role`, and give
     the directory it went to."""
-    work = main / "work" / "task" / task
+    work = tasks_work(main) / task
     taken = numbered(work)
     target = work / str((taken[-1] if taken else 0) + 1)
     target.mkdir()
@@ -57,7 +64,7 @@ def restore(main: Path, task: str) -> None:
     """Move back the solver and the witness file the latest set-aside that
     holds each took, where nothing stands at its path, clear their marks,
     and remove the claim."""
-    work = main / "work" / "task" / task
+    work = tasks_work(main) / task
     for p in task_paths(task):
         if not (main / p).exists():
             for n in reversed(numbered(work)):

@@ -136,6 +136,7 @@ import shutil
 import sys
 import tempfile
 import time
+from typing import TextIO
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -163,6 +164,10 @@ PREFIX = "merge_change: "
 
 REFUSED = PREFIX + "refused: "
 """The opening of the line of a refusal."""
+
+
+def say(text: str, file: TextIO | None = None, flush: bool = False) -> None:
+    print(PREFIX + text, file=file, flush=flush)
 
 CONFLICT = mctx("rebasing {branch} onto {onto} conflicts; the rebase is aborted and the "
                 "worktree is as it was:")
@@ -220,7 +225,7 @@ def branch_of(tree: Path) -> str:
 def set_up_submodules(worktree: Path, main: Path) -> None:
     """Set up the worktree's submodules as `worktree_submodules.update`
     does. A failure is a refusal."""
-    print("merge_change: setting up the submodules from the main tree", flush=True)
+    say("setting up the submodules from the main tree", flush=True)
     try:
         with timed(mctx("the submodule setup of {worktree}").format(worktree=worktree)):
             update(worktree, main)
@@ -356,7 +361,7 @@ def rebase(change: Change, onto: str, onto_name: str, restore: bool) -> None:
     names. On a conflict, abort the rebase, which leaves the branch at
     `committed`; with `restore`, move it back to `before` and put back the
     index at `backup`; and refuse."""
-    print(mctx("merge_change: rebasing {branch} onto {onto}").format(
+    say(mctx("rebasing {branch} onto {onto}").format(
         branch=change.branch, onto=onto_name), flush=True)
     with timed(mctx("the rebase of {branch}").format(branch=change.branch)):
         done = checkout.git(change.worktree, "rebase", onto)
@@ -394,7 +399,7 @@ def commit(worktree: Path, message: str, main: Path, backup: Path) -> Change:
     committing = bool(changed_outside_work(worktree, "HEAD"))
     stage(worktree, main, backup)
     if committing:
-        print(f"merge_change: committing on {branch}", flush=True)
+        say(f"committing on {branch}", flush=True)
         with timed(mctx("the commit on {branch}").format(branch=branch)):
             checkout.git_out(worktree, "commit", "-q", "-m", message)
     return Change(worktree, branch, frozenset(touched), before,
@@ -459,21 +464,6 @@ AGENT_LOCK = "claude agent "
 """The start of the lock reason of a worktree a Claude agent works in."""
 
 
-def lock_reasons(main: Path) -> dict[Path, str | None]:
-    """Each worktree `git worktree list` gives, with the reason for its
-    lock: the empty string for a lock with no reason, and None where it is
-    not locked."""
-    reasons: dict[Path, str | None] = {}
-    at: Path | None = None
-    for field in checkout.git_out(main, "worktree", "list", "--porcelain", "-z").split("\0"):
-        if field.startswith("worktree "):
-            at = Path(field.removeprefix("worktree ")).resolve()
-            reasons[at] = None
-        elif at is not None and (field == "locked" or field.startswith("locked ")):
-            reasons[at] = field.removeprefix("locked").removeprefix(" ")
-    return reasons
-
-
 def files_under(top: Path) -> list[Path]:
     """Each file under the directory `top`, from `top`, sorted: each entry
     that is no directory, a link to a directory among them."""
@@ -524,7 +514,7 @@ def remove(main: Path, change: Change) -> None:
     or untracked files, or where a file under its `work/` stays
     (`move_work`)."""
     worktree, branch = change.worktree, change.branch
-    print(mctx("merge_change: removing {worktree} and {branch}").format(
+    say(mctx("removing {worktree} and {branch}").format(
         worktree=worktree, branch=branch), flush=True)
 
     def stays(why: str) -> Failed:
@@ -537,7 +527,7 @@ def remove(main: Path, change: Change) -> None:
     if left:
         raise stays(mctx("the worktree holds changes made after the commit, in {left}")
                     .format(left=", ".join(left)))
-    reasons = lock_reasons(main)
+    reasons = {w.path.resolve(): w.lock for w in checkout.worktree_list(main)}
     if worktree not in reasons:
         raise stays(mctx("git worktree list does not list the worktree"))
     force = ["--force"]
@@ -565,7 +555,7 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
     `gate_out`, and remove each change's worktree and branch."""
     refuse_main_touched(main, touched_by(changes))
     top = changes[-1].branch
-    print(f"merge_change: fast-forwarding {MASTER} to {top}", flush=True)
+    say(f"fast-forwarding {MASTER} to {top}", flush=True)
     done = checkout.git(main, "merge", "--ff-only", "-q", top)
     if done.returncode != 0:
         raise Failed(f"fast-forwarding {MASTER} failed; {top} is committed and "
@@ -574,7 +564,7 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
     for argv in (("scripts/context.py", "--write"),
                  ("scripts/gate.py", "--adopt-record", str(gate_out))):
         shown = " ".join(argv)
-        print(mctx("merge_change: running {shown} in the main tree").format(shown=shown),
+        say(mctx("running {shown} in the main tree").format(shown=shown),
               flush=True)
         with timed(shown):
             done = run_in(main, ("uv", "run", "python", *argv))
@@ -593,7 +583,7 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
         except (Failed, checkout.GitFailed) as exc:
             failed.append(str(exc))
         else:
-            print(f"merge_change: merged {c.branch} into {MASTER}", flush=True)
+            say(f"merged {c.branch} into {MASTER}", flush=True)
     if failed:
         raise Failed("\n".join(failed))
 
@@ -634,7 +624,7 @@ def merge(pairs: Sequence[tuple[Path, str]]) -> bool:
             branches=", ".join(c.branch for c in changes))
         try:
             with rwlock.merge_lock(checkout.git_common_dir(main), holder):
-                print("merge_change: holding the merge lock", flush=True)
+                say("holding the merge lock", flush=True)
                 return land_all(main, changes) and every
         except rwlock.MergeHeld as exc:
             for c in changes:
@@ -651,7 +641,7 @@ def land_all(main: Path, changes: Sequence[Change]) -> bool:
         try:
             gate_out = stack(main, changes)
         except Refused as exc:
-            print(mctx("merge_change: the stack is refused, so the changes merge one "
+            say(mctx("the stack is refused, so the changes merge one "
                        "at a time:") + "\n" + str(exc), flush=True)
         else:
             land(main, changes, gate_out)
@@ -694,7 +684,7 @@ def merge_main(argv: Sequence[str]) -> int:
         print_refusal(exc)
         return 1
     except (Failed, checkout.GitFailed) as exc:
-        print(f"merge_change: failed: {exc}", file=sys.stderr)
+        say(f"failed: {exc}", file=sys.stderr)
         return 1
     return 0 if merged else 1
 

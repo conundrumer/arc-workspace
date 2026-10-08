@@ -5,6 +5,7 @@ that gives several items of the same work gives. A brief gives the agent
 id of the operator that launches the agent, which the agent replies to."""
 
 import re
+import shlex
 from datetime import UTC, datetime
 from pathlib import Path
 from string import Formatter
@@ -12,8 +13,9 @@ from string import Formatter
 from controlled_markdown import mctx
 from operating.reports import NO_FINDING, TICKETS_FILED
 from operating.roles import Role
+from operating.tracker import FILE_TICKET
 
-TICKET_PATH = "uv run python scripts/file_ticket.py path {number}"
+TICKET_PATH = shlex.join([*FILE_TICKET, "path"]) + " {number}"
 WORK_IN = mctx("Work in the worktree {worktree}.")
 TESTS = mctx("Tests directory: `tests/`.")
 SCRATCH = mctx("Scratch directory: {scratch}.")

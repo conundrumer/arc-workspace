@@ -8,6 +8,7 @@ from pathlib import Path
 
 from engine import checkout
 from operating.state import Commit
+from operating.task_work import CLAIM, tasks_work
 
 COMMITS = 300
 """The commits of `master` read for After a batch, newest first."""
@@ -25,16 +26,7 @@ def git(main: Path, *argv: str) -> str:
 
 
 def worktrees(main: Path) -> dict[Path, str | None]:
-    """Each worktree, with its branch, or None where it stands on none."""
-    out: dict[Path, str | None] = {}
-    tree: Path | None = None
-    for line in git(main, "worktree", "list", "--porcelain").splitlines():
-        if line.startswith("worktree "):
-            tree = Path(line.split(" ", 1)[1])
-            out[tree] = None
-        elif line.startswith("branch refs/heads/") and tree is not None:
-            out[tree] = line.removeprefix("branch refs/heads/")
-    return out
+    return {w.path: w.branch for w in checkout.worktree_list(main)}
 
 
 def commits(main: Path) -> tuple[Commit, ...]:
@@ -56,7 +48,7 @@ def code_review(main: Path) -> int | None:
 
 def claims(main: Path) -> dict[str, str]:
     return {p.parent.name: p.read_text().strip()
-            for p in (main / "work" / "task").glob("*/claim")}
+            for p in tasks_work(main).glob(f"*/{CLAIM}")}
 
 
 def gate_outputs(tree: Path) -> tuple[str, ...]:

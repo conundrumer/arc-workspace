@@ -3,6 +3,7 @@ description each launch gives, from which the command reads back what each
 launch of any operator of the session serves."""
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -54,10 +55,10 @@ EDITORS = (Role.CODE_EDITOR, Role.HANDBOOK_EXPANDED, Role.DOC_EDITOR)
 command launches them: the first one launched makes the change's worktree."""
 
 
-def editors_of(field: str) -> tuple[Role, ...]:
-    """The roles an `editors` field, `<editor>, <editor>`, gives. Raises
-    ValueError on a name that is no role."""
-    return tuple(Role(e.strip()) for e in field.split(","))
+def editors_of(names: Iterable[str]) -> tuple[Role, ...]:
+    """The roles the names of an `editors` field give. Raises ValueError on
+    a name that is no role."""
+    return tuple(Role(e) for e in names)
 
 
 MARK = "op"

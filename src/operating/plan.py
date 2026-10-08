@@ -39,6 +39,7 @@ stops its wait where one runs, then gives its final reply."""
 
 from collections.abc import Callable
 
+from controlled_markdown import mctx
 from operating import alerts, batches, changes, drafts, passes, settling
 from operating.directives import (
     NUMBER,
@@ -93,8 +94,8 @@ def first(state: State, *procedures: Callable[[State], Step | None]) -> Step | N
         if (line := passed(s, state)) is not None:
             if isinstance(s, Send) and s.to == COORDINATOR and s.message.startswith(UNDECIDED):
                 continue
-            held = undecided(f"step {key(s)}, which the line `{line}` passed over, holds up "
-                             f"its procedure")
+            held = undecided(mctx("step {key}, which the line `{line}` passed over, holds up "
+                                  "its procedure").format(key=key(s), line=line))
             if not repeated(held, state):
                 return held
             continue
@@ -126,12 +127,14 @@ def refused(state: State, step: Step) -> Step | None:
     if any(r.time > last.time for a in state.agents for r in a.reports):
         return None
     reason = (last.result or "").strip().splitlines()
-    return undecided(f"the call `{what}` failed: {reason[0] if reason else 'no result text'}")
+    why = reason[0] if reason else mctx("no result text")
+    return undecided(mctx("the call `{what}` failed: {why}").format(what=what, why=why))
 
 
 def unread_lines(state: State) -> Step | None:
     for ln in unread(state):
-        s = undecided(f"a line of the coordinator's in no form the command reads: {ln.text}")
+        s = undecided(mctx("a line of the coordinator's in no form the command reads: "
+                           "{line}").format(line=ln.text))
         if not repeated(s, state):
             return s
     return None
@@ -160,14 +163,16 @@ def next_step(state: State) -> Step:
     mine = state.operators.index(state.me) if state.me in state.operators else -1
     later = [o for o in state.operators[mine + 1:] if o in state.open_operators]
     if later:
-        return Reply(f"Operator {later[-1]} carries the work on, from the state; "
-                     f"{GIVEN_AGAIN}.\n" + "\n".join(line_states(state)))
+        return Reply(mctx("Operator {operator} carries the work on, from the state; "
+                          "{given}.").format(operator=later[-1], given=GIVEN_AGAIN)
+                     + "\n" + "\n".join(line_states(state)))
     s = first(state, unread_lines, alerts.step, settling.decisions, settling.for_coordinator)
     if s is not None:
         return s
     if state.past_bound:
-        return Reply(f"I {ENDED_FOR_CONTEXT}; the next operator takes up the work from the "
-                     f"state, and {GIVEN_AGAIN}.\n" + "\n".join(line_states(state)))
+        return Reply(mctx("I {ended}; the next operator takes up the work from the state, "
+                          "and {given}.").format(ended=ENDED_FOR_CONTEXT, given=GIVEN_AGAIN)
+                     + "\n" + "\n".join(line_states(state)))
     s = first(state, launching, settling.reopen, settling.later_lines, settling.settle,
               drafts.step, changes.step, pipelines, batches.step)
     if s is not None:
@@ -237,7 +242,7 @@ def line_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Out
                        if (r := pipeline_state(o)) is not None]
         case Directive.DRAFTS:
             under = {t.number for t in drafts.unended(state)}
-            reasons = [f"draft {n} stands under `tickets/draft/`" for n in numbers if n in under]
+            reasons = [draft_stands(n) for n in numbers if n in under]
         case Directive.NAMED:
             reasons = [f"ticket {n} {stands_under(t)}" for n in numbers
                        if (t := state.tickets.get(n)) is not None
@@ -249,14 +254,26 @@ def line_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Out
             reasons = [f"change {n} {stands_under(t)}" for n in numbers
                        if (t := state.tickets.get(n)) is not None and t.status is not Status.CLOSED]
         case Directive.OPEN:
-            reasons = [f"ticket {n} stands open after its ticket analyst returned"
-                       for n in settling.unsettled(state)]
+            reasons = [settled_open(n) for n in settling.unsettled(state)]
         case None:
             reasons = ["it is in no form the command reads, and went to the coordinator"]
         case _:
             pass
     head = f"- `{ln.text}`: "
     return head + ("done" if not reasons else "unfinished: " + "; ".join(reasons))
+
+
+def draft_stands(number: str) -> str:
+    return mctx("draft {number} stands under `tickets/draft/`").format(number=number)
+
+
+def settled_open(number: str) -> str:
+    return mctx("ticket {number} stands open after its ticket analyst returned").format(
+        number=number)
+
+
+def sentence(clause: str) -> str:
+    return clause[:1].upper() + clause[1:]
 
 
 def line_states(state: State) -> list[str]:
@@ -280,17 +297,21 @@ def final(state: State) -> str:
     """The operator's final reply: what stands at its end."""
     out = line_states(state)
     for n, deps in changes.waiting(state):
-        out.append(f"- Change {n} not taken: it waits for {', '.join(deps)}")
-    standing = [stands(state, f"- Draft {t.number} stands under `tickets/draft/`",
+        waited = ", ".join(deps)
+        out.append("- " + mctx("Change {n} not taken: it waits for {waited}").format(
+            n=n, waited=waited))
+    standing = [stands(state, f"- {sentence(draft_stands(t.number))}",
                        drafts.draft_step(state, t, [], [])) for t in drafts.unended(state)]
-    standing += [(f"- Ticket {n} stands open after its ticket analyst returned", False)
+    standing += [(f"- {sentence(settled_open(n))}", False)
                  for n in settling.unsettled(state)]
-    standing += [stands(state, f"- Change {t.number} stays under `tickets/assigned/`",
+    standing += [stands(state, "- " + mctx("Change {n} stays under `tickets/assigned/`").format(
+                            n=t.number),
                         changes.carry(state, t)) for t in changes.held(state)]
     out += [line for line, _ in standing]
-    head = ("Done: no procedure has a step left other than those that wait on the "
-            "coordinator's answer, as the lines below give."
-            if any(asked for _, asked in standing) else "Done: no procedure has a step left.")
+    head = (mctx("Done: no procedure has a step left other than those that wait on the "
+                 "coordinator's answer, as the lines below give.")
+            if any(asked for _, asked in standing)
+            else mctx("Done: no procedure has a step left."))
     out.insert(0, head)
     for a in state.agents_of(Role.AFTER_MERGE):
         if a.operator == state.me and (r := a.last_report) is not None:

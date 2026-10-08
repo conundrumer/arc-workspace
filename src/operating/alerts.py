@@ -24,6 +24,7 @@ to the coordinator. Every other alert and message gives a step only to the
 operator `me` where it reached `me`."""
 
 import re
+import shlex
 from dataclasses import dataclass
 from enum import Enum
 
@@ -32,8 +33,8 @@ from operating import briefs
 from operating.roles import AGENT_ID
 from operating.state import Agent, Message, State
 from operating.steps import COORDINATOR, Bash, Send, Step, ask_again, sent, undecided
-from operating.tracker import AGENT
-from ticketing.vocabulary import Domain, Kind
+from operating.tracker import AGENT, FILE_TICKET
+from ticketing.vocabulary import DEFECT_SECTIONS, Domain, Kind
 
 
 class AlertKind(Enum):
@@ -86,16 +87,16 @@ def latest(state: State, agent: str) -> Agent | None:
 
 def stall_ticket(alert: Alert) -> str:
     """The command that files the `bug` ticket on a stalled agent."""
+    impact, evidence = DEFECT_SECTIONS
     return "\n".join([
-        f"uv run python scripts/file_ticket.py {Domain.AGENT.value} {alert.agent} {AGENT} "
-        "<<'TICKET'",
+        shlex.join([*FILE_TICKET, Domain.AGENT.value, alert.agent, AGENT]) + " <<'TICKET'",
         "---", f"kind: {Kind.BUG.value}", "---",
         mctx("# {agent}: its final reply reached the operator that launched it as no "
              "report").format(agent=alert.agent),
-        "", "## Impact",
+        "", f"## {impact}",
         mctx("The operator read no report of it, and took the final reply in its transcript "
              "as its report."),
-        "", "## Evidence", alert.message.text, "TICKET"])
+        "", f"## {evidence}", alert.message.text, "TICKET"])
 
 
 def filed(state: State, alert: Alert) -> bool:
@@ -113,11 +114,13 @@ def on(state: State, alert: Alert, a: Agent) -> Step | None:
             if alert.agent in state.stalled:
                 return None if filed(state, alert) else Bash(stall_ticket(alert))
             if a.pending:
-                return undecided(f"a stall alert on {alert.agent}, whose transcript holds no "
-                                 f"final reply:\n{alert.message.text}")
+                return undecided(mctx("a stall alert on {agent}, whose transcript holds no "
+                                      "final reply:").format(agent=alert.agent)
+                                 + "\n" + alert.message.text)
             return None
         case _:
-            return undecided(f"an alert the command does not act on:\n{alert.message.text}")
+            return undecided(mctx("an alert the command does not act on:") + "\n"
+                             + alert.message.text)
 
 
 def step(state: State) -> Step | None:
@@ -138,7 +141,7 @@ def step(state: State) -> Step | None:
             s: Step | None = asked if isinstance(asked, Send) else undecided(
                 f"a message from {m.sender} in no form the command reads:\n{m.text}")
         elif (a := latest(state, alert.agent)) is None:
-            s = undecided(f"an alert on an agent no operator launched:\n{m.text}")
+            s = undecided(mctx("an alert on an agent no operator launched:") + "\n" + m.text)
         else:
             s = on(state, alert, a)
         if m.operator != state.me and isinstance(s, Send) and s.to == COORDINATOR:

@@ -16,12 +16,16 @@ from ticketing.vocabulary import Domain, Kind, Status
 @dataclass(frozen=True)
 class LogLine:
     """A line of a ticket's log: its time, the status it leaves the ticket
-    in, the agent name and the agent id its bracket gives, and its note."""
+    in, the agent name and the agent id its bracket gives, and its note.
+    `on_user` is whether the note opens with the wait on the user, and
+    `on_change` the number of the change the note opens with a wait on."""
     time: float
     status: Status
     agent: str
     agent_id: str | None
     note: str
+    on_user: bool
+    on_change: str | None
 
 
 @dataclass(frozen=True)

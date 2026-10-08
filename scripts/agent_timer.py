@@ -30,6 +30,7 @@ from pathlib import Path
 from types import FrameType
 
 from controlled_markdown import mctx
+from operating.bounds import WAIT_SECONDS
 
 STATE_DIR = Path("/tmp")
 AGENT_ID = re.compile(r"[A-Za-z0-9_-]+")
@@ -43,7 +44,7 @@ class Kind(StrEnum):
     def fixed_seconds(self) -> int | None:
         """The seconds a timer of this kind sleeps, which its start does
         not give; None where its start gives them."""
-        return KEEP_ALIVE_SECONDS if self is Kind.KEEP_ALIVE else None
+        return WAIT_SECONDS if self is Kind.KEEP_ALIVE else None
 
 
 class Action(StrEnum):
@@ -60,8 +61,6 @@ class StateFile(StrEnum):
     LOCK = "lock"
     PID = "pid"
 
-
-KEEP_ALIVE_SECONDS = 240
 
 HELP = mctx("""
     - An agent has at most one timer of each kind. A `keep-alive` timer sleeps {seconds} seconds, and a `budget` timer sleeps the seconds its start gives. A start or a stop of one kind never reaches a timer of the other.
@@ -187,7 +186,7 @@ ACTIONS: dict[Action, Callable[[Timer, int | None], None]] = {
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description=textwrap.dedent(HELP).format(seconds=KEEP_ALIVE_SECONDS),
+        description=textwrap.dedent(HELP).format(seconds=WAIT_SECONDS),
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("action", choices=[str(a) for a in Action])
     parser.add_argument("kind", choices=[str(k) for k in Kind])

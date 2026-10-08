@@ -28,6 +28,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
+from arc.task import TASK_ID
+from controlled_markdown import mctx
 from operating.roles import PASSES, Role
 from operating.state import Message, State
 from operating.steps import Send, held, ruling_key, undecided
@@ -60,7 +62,7 @@ APPLIED = frozenset({Directive.OVERRIDE, Directive.DECISION})
 
 LINE = re.compile(r"^\s*(?:[-*]\s+)?(?P<kind>[A-Z][a-z ]+?)(?::\s*(?P<rest>.*?)|\.)\s*$")
 NUMBER = re.compile(r"\b(?:\d+-)?\d+\b")
-TASK = re.compile(r"\b(?P<task>[0-9a-f]{8})(?:\s+from\s+(?P<start>create|refine))?\b")
+TASK = re.compile(rf"\b(?P<task>{TASK_ID})(?:\s+from\s+(?P<start>create|refine))?\b")
 
 
 @dataclass(frozen=True)
@@ -123,8 +125,9 @@ def ruled(state: State, what: str, choices: dict[Ruling, str]) -> Ruling | Send:
         after = re.findall(r"[a-z]+", ln.rest.split(k, 1)[1])
         found = next((Ruling(w) for w in after if w in choices), None)
         if found is None:
-            return undecided(f"the line `{ln.text}` gives step {k} none of the choices "
-                             f"{', '.join(choices)}")
+            listed = ", ".join(choices)
+            return undecided(mctx("the line `{line}` gives step {k} none of the choices "
+                                  "{listed}").format(line=ln.text, k=k, listed=listed))
         return found
     return held(what, {c.value: meaning for c, meaning in choices.items()})
 

@@ -13,12 +13,12 @@ from pathlib import Path
 from typing import Any
 
 from controlled_markdown import mctx
+from operating.bounds import COORDINATOR as MAIN
 from token_prices import request_input
 from transcripts import (Entry, Refused, agent_id, chain, first_parent,
                          is_subagent, main_transcript, read_entries,
                          session_directory, subagent_transcripts)
 
-MAIN = "main"
 UNKNOWN_TYPE = mctx("the agent type of `{path}` is unknown: its .meta.json is "
                     "absent or gives none")
 AGENT_MESSAGE = re.compile(r'<agent-message from="([^"]+)"')

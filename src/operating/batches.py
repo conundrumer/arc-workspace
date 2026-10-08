@@ -13,6 +13,7 @@ batch filed is the one `settling` launches on any open ticket."""
 
 import re
 
+from controlled_markdown import mctx
 from operating import briefs
 from operating.changes import release
 from operating.directives import Directive, numbers
@@ -69,11 +70,11 @@ def step(state: State) -> Step | None:
         if not calls:
             return Bash(command)
         if calls[-1].error:
-            return undecided(f"`{command}` failed")
+            return undecided(mctx("`{command}` failed").format(command=command))
         ids = taken(calls[-1].result or "")
         if ids is None:
-            return undecided(f"the output of `{command}` gives no run lines in the form "
-                             f"`profile_runs.py --help` gives")
+            return undecided(mctx("the output of `{command}` gives no run lines in the form "
+                                  "`profile_runs.py --help` gives").format(command=command))
         runs += ids
     return Launch(Role.BATCH_PROFILE, str(n), briefs.batch_profile(runs, head))
 
@@ -87,7 +88,11 @@ def under_command(operator: str) -> str:
 
 
 RUN = re.compile(AGENT_ID)
-TAKEN = re.compile(r"^runs taken: (\d+)$", re.MULTILINE)
+RUNS_TAKEN = "runs taken:"
+"""The opening of the line of `profile_runs.py --under` that counts the
+runs it takes."""
+
+TAKEN = re.compile(rf"^{re.escape(RUNS_TAKEN)} (\d+)$", re.MULTILINE)
 
 
 def taken(output: str) -> list[str] | None:

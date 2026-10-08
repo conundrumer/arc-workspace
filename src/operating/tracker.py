@@ -6,10 +6,12 @@ import shlex
 from pathlib import Path
 
 from operating.state import LogLine, State, Ticket
-from ticketing.vocabulary import Status
+from ticketing.vocabulary import COORDINATOR, Note, Status
 
 AGENT = "operator"
 """The `<agent>` of each log line the operator writes."""
+
+FILE_TICKET = ("uv", "run", "python", "scripts/file_ticket.py")
 
 WORKTREE = re.compile(r"(/\S+/\.claude/worktrees/[^\s,;:)]+)")
 
@@ -17,25 +19,22 @@ WORKTREE = re.compile(r"(/\S+/\.claude/worktrees/[^\s,;:)]+)")
 def log(number: str, status: Status, current: Status, note: str, agent_id: str | None) -> str:
     """The Bash command that moves ticket `number` from `current` to
     `status`, or writes a line in it, with `note`."""
-    args = ["uv", "run", "python", "scripts/file_ticket.py", "log", number, str(status),
+    args = [*FILE_TICKET, "log", number, str(status),
             AGENT, "--from", str(current)]
     if agent_id is not None:
         args += ["--id", agent_id]
     return shlex.join([*args, note])
 
 
-RERUN = "rerun"
-"""The opening of the note of a line that gives the worktree of a run of
-the change that the command left, which `worktree` passes over."""
 
 
 def worktree(t: Ticket, state: State) -> Path | None:
     """The worktree the latest line of `t`'s log that gives one gives,
-    where it stands, past each line whose note opens with `RERUN`. A line
-    that opens with `RERUN` and stands after the worktree's line leaves
+    where it stands, past each line whose note opens with `Note.RERUN`. A line
+    that opens with `Note.RERUN` and stands after the worktree's line leaves
     none."""
     for line in reversed(t.log):
-        if line.note.startswith(RERUN):
+        if line.note.startswith(Note.RERUN):
             return None
         m = WORKTREE.search(line.note)
         if m is not None:
@@ -56,9 +55,6 @@ def last_index(t: Ticket, words: tuple[str, ...]) -> int:
 def after(t: Ticket, i: int) -> tuple[LogLine, ...]:
     return t.log[i + 1:]
 
-
-COORDINATOR = "coordinator"
-"""The `<agent>` of the coordinator's log lines."""
 
 
 def coordinator_lines(lines: tuple[LogLine, ...]) -> list[LogLine]:
@@ -81,7 +77,7 @@ def blocked_on_user(t: Ticket) -> LogLine | None:
     for line in reversed(t.log):
         if line.status is not Status.BLOCKED:
             return None
-        if line.note.startswith("user"):
+        if line.on_user:
             return line
     return None
 

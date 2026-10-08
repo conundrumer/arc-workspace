@@ -15,6 +15,7 @@ from engine import Grid, Value, checkout
 from engine.memo import write_whole
 from engine.program import as_grid, grid_lists
 from engine.quotes import quotes
+from solver.vocabulary import WITNESS_SUFFIX
 from solver.problems import (
     Expected,
     InWitnessFile,
@@ -215,7 +216,7 @@ class WitnessFile:
 def path(task_id: str) -> Path:
     """`programs/witnesses/<task_id>.wit.json` (solver-file.md, under "Witness
     file")."""
-    return checkout.witnesses() / f"{task_id}.wit.json"
+    return checkout.witnesses() / f"{task_id}{WITNESS_SUFFIX}"
 
 
 type Path_ = tuple[str | int, ...]

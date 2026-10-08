@@ -43,13 +43,14 @@ until the coordinator rules it with one of the choices the step gives
 from pathlib import Path
 from typing import Literal
 
+from controlled_markdown import mctx
 from operating import briefs, merging
 from operating.directives import Directive, Ruling, named, numbers, ruled
 from operating.reports import (budget_passed, finding_paths, finished, leaves_open, no_finding,
                                standing)
-from operating.roles import EDITORS, Purpose, Role, analyst_subject
+from operating.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
 from operating.state import Agent, State, Ticket
-from operating.steps import (Bash, Launch, Send, Step, ask_again, repeated, sends_to, sent,
+from operating.steps import (Bash, Launch, Send, Step, agent_ids, ask_again, repeated, sends_to, sent,
                              undecided)
 from operating.tracker import COORDINATOR, closed, log, worktree
 from ticketing.vocabulary import Domain, Kind, Status
@@ -97,10 +98,9 @@ def boosted(state: State) -> set[str]:
     operator takes ahead of the others."""
     out: set[str] = set()
     for t in state.tickets.values():
-        if t.kind is Kind.INTERFERENCE and t.status is Status.BLOCKED and t.log:
-            note = t.log[-1].note
-            if note.startswith("change "):
-                out.add(note.split()[1].rstrip(":,;"))
+        if (t.kind is Kind.INTERFERENCE and t.status is Status.BLOCKED and t.log
+                and (change := t.log[-1].on_change) is not None):
+            out.add(change)
     return out
 
 
@@ -154,7 +154,13 @@ def give_up(state: State) -> Step | None:
     for a in state.agents:
         if not a.pending or a.agent_id is None:
             continue
-        number = a.subject.partition(":")[2] if a.role is Role.TICKET_ANALYST else a.subject
+        if a.role is Role.TICKET_ANALYST:
+            parsed = analyst_of(a.subject)
+            if parsed is None:
+                continue
+            number = parsed[1]
+        else:
+            number = a.subject
         t = state.tickets.get(number)
         if t is None or t.kind is not Kind.CHANGE or a not in of_change(state, number):
             continue
@@ -181,7 +187,8 @@ def change_editors(t: Ticket) -> tuple[Role, ...] | Send:
     """The editors of the change `t`, those its `editors` field gives; a
     change whose ticket gives none is undecided."""
     if t.editors is None:
-        return undecided(f"change {t.number} gives no `editors` field")
+        return undecided(mctx("change {number} gives no `editors` field").format(
+            number=t.number))
     return t.editors
 
 def carry(state: State, t: Ticket) -> Step | None:
@@ -242,9 +249,10 @@ def past_budget(state: State, t: Ticket, latest: list[Agent]) -> Step | None:
         given = [a.brief] + [str(c.input.get("message", "")) for c in sends_to(state, a.agent_id)]
         stated = next((s for text in reversed(given) if (s := briefs.budgets(text))), set[float]())
         if len(stated) != 1:
-            return undecided(f"editor {a.agent_id} of change {t.number} says its budget is "
-                             f"passed, and the latest brief or operator's message to it that "
-                             f"states a budget states {len(stated)}")
+            return undecided(mctx("editor {agent} of change {number} says its budget is "
+                                  "passed, and the latest brief or operator's message to it "
+                                  "that states a budget states {count}").format(
+                agent=a.agent_id, number=t.number, count=len(stated)))
         return Send(a.agent_id, briefs.go_on(r.time, stated.pop()))
     return None
 
@@ -284,10 +292,16 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
             return choice
         if choice is Ruling.MERGE:
             return False
-    reports = [(a.agent_id or "", r.text) for a in needing if (r := a.last_report) is not None]
+    reporting = [(a, r) for a in needing if (r := a.last_report) is not None]
+    reporters = agent_ids(a for a, _ in reporting)
+    editors = agent_ids(latest)
+    if isinstance(reporters, Send):
+        return reporters
+    if isinstance(editors, Send):
+        return editors
+    reports = [(i, r.text) for i, (_, r) in zip(reporters, reporting, strict=True)]
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
-        t.number, w, reports, [q.number for q in questions], gate,
-        [a.agent_id or "" for a in latest], state.me))
+        t.number, w, reports, [q.number for q in questions], gate, editors, state.me))
 
 
 def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
@@ -296,8 +310,7 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
     has passed."""
     reviewers = [a for a in agents if a.role is Role.DOC_REVIEWER]
     if not reviewers:
-        return Launch(Role.DOC_REVIEWER, t.number, briefs.doc_review(
-            t.number, w, [(a.role, a.agent_id or "") for a in here], state.me))
+        return review_launch(t, w, here, state)
     r = reviewers[-1]
     if r.pending:
         return None
@@ -321,11 +334,17 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
     fixers = [a for a in here if a.role in needed and a.launched > since]
     for role in needed:
         if not any(a.role is role for a in fixers):
+            reviewer = agent_ids([r])
+            if isinstance(reviewer, Send):
+                return reviewer
             return Launch(role, t.number, briefs.review_fix(
-                role, t.number, w, r.agent_id or "", code if role is Role.CODE_EDITOR else [],
+                role, t.number, w, reviewer[0], code if role is Role.CODE_EDITOR else [],
                 state.scratch / t.number, state.me), model=t.model(role))
-    for f in fixers:
-        message = briefs.new_editor(f.agent_id or "")
+    fixer_ids = agent_ids(fixers)
+    if isinstance(fixer_ids, Send):
+        return fixer_ids
+    for f in fixer_ids:
+        message = briefs.new_editor(f)
         if r.agent_id and not sent(state, r.agent_id, message):
             return Send(r.agent_id, message)
     return review_ruled(state, t, w, here, f"doc reviewer {r.agent_id} of change {t.number} has "
@@ -342,8 +361,16 @@ def review_ruled(state: State, t: Ticket, w: Path, here: list[Agent],
         return choice
     if choice is Ruling.PASSES:
         return False
+    return review_launch(t, w, here, state)
+
+
+def review_launch(t: Ticket, w: Path, here: list[Agent], state: State) -> Step:
+    """The launch of a doc reviewer on the change, with its editors."""
+    ids = agent_ids(here)
+    if isinstance(ids, Send):
+        return ids
     return Launch(Role.DOC_REVIEWER, t.number, briefs.doc_review(
-        t.number, w, [(a.role, a.agent_id or "") for a in here], state.me))
+        t.number, w, [(a.role, i) for a, i in zip(here, ids, strict=True)], state.me))
 
 
 def step(state: State) -> Step | None:

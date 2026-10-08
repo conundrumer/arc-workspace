@@ -1,5 +1,5 @@
 """PreToolUse hook on Bash and Monitor: denies a subagent's foreground Bash
-call whose `timeout` is over `TIMEOUT_BOUND` ms, and a timed wait whose text
+call whose `timeout` is over `FOREGROUND_MS` ms, and a timed wait whose text
 names, by agent id, an agent pending to the caller, as
 `profile_runs.py --pending` gives the agents pending to a run.
 
@@ -17,9 +17,9 @@ import sys
 from typing import Any
 
 from hook_entry import run_pre_tool_use
+from operating.bounds import FOREGROUND_MS
 
 HOOK = "pending_wait_hook"
-TIMEOUT_BOUND = 240000
 
 
 def pending_reason(agents: list[str]) -> str:
@@ -35,7 +35,7 @@ def pending_reason(agents: list[str]) -> str:
 
 def over_bound(tool: str, inp: dict[str, Any], subagent: bool) -> str | None:
     """The reason to deny the call of `tool` with input `inp` where it is a
-    subagent's foreground Bash call whose `timeout` is over `TIMEOUT_BOUND`,
+    subagent's foreground Bash call whose `timeout` is over `FOREGROUND_MS`,
     and None for any other call."""
     from controlled_markdown import mctx
 
@@ -53,7 +53,7 @@ def over_bound(tool: str, inp: dict[str, Any], subagent: bool) -> str | None:
         print(f"{HOOK}: allowed past the bound: `timeout` is {timeout!r}, "
               "not a number", file=sys.stderr)
         return None
-    if timeout <= TIMEOUT_BOUND:
+    if timeout <= FOREGROUND_MS:
         return None
     return mctx(
         "Blocked: this foreground Bash call has a timeout of {timeout} ms, "
@@ -61,7 +61,7 @@ def over_bound(tool: str, inp: dict[str, Any], subagent: bool) -> str | None:
         "Run the same call again with a timeout of at most {bound} ms. Where "
         "the command outlasts it, the harness moves the command to the "
         "background, and you wait on it as your documents give."
-    ).format(timeout=timeout, bound=TIMEOUT_BOUND)
+    ).format(timeout=timeout, bound=FOREGROUND_MS)
 
 
 def check(hook: dict[str, Any]) -> str | None:

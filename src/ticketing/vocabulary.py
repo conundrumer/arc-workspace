@@ -50,8 +50,26 @@ EDITOR_KINDS = frozenset({Kind.QUESTION, Kind.BUG})
 REVIEW_KINDS = frozenset({Kind.BUG, Kind.PERFORMANCE})
 
 
-FILED = "filed"
-"""The note of the log line that files a ticket."""
+DEFECT_SECTIONS = ("Impact", "Evidence")
+"""The sections of a ticket of each kind that has none of its own."""
+
+COORDINATOR = "coordinator"
+"""The `<agent>` of the coordinator's tickets and log lines."""
+
+class Note(StrEnum):
+    """The words the note of a log line opens with, which the procedures
+    read it by."""
+    FILED = "filed"
+    """The note of the log line that files a ticket."""
+    REVISED = "revised"
+    """A ticket analyst revised the draft."""
+    FINDING = "finding"
+    SUGGESTION = "suggestion"
+    LAST_REVISION = "last revision"
+    """The draft opens with no further ticket review."""
+    RERUN = "rerun"
+    """The line gives the worktree of a run of the change that the command
+    left, which `tracker.worktree` passes over."""
 
 MANY_IDEAS = "many ideas in one place"
 """The end of the title of a `refactor` ticket on a module that holds more

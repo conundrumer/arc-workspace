@@ -49,6 +49,7 @@ from solver.vocabulary import (
     INPUT,
     LIB_FILE,
     PROPOSERS_FILE,
+    SOLVER_SUFFIX,
 )
 from solver.witness import WitnessFile
 from solver.model import (
@@ -117,7 +118,7 @@ class Solver:
 
 def solver_file(stem: str) -> Path:
     """The file of the solver `stem` under `checkout.solvers()`."""
-    return checkout.solvers() / f"{stem}.dl"
+    return checkout.solvers() / f"{stem}{SOLVER_SUFFIX}"
 
 
 def proposers_path() -> Path:

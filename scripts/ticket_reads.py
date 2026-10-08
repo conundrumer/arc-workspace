@@ -7,8 +7,8 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from ticket_files import TICKET_NAME, ticket_files, ticket_name
-from ticket_form import DEFAULT_PRIORITY, FRONT, title
-from ticket_log import TIME_FORM, holder, log_lines
+from ticket_form import DEFAULT_PRIORITY, FRONT, front_fields, list_items, title
+from ticket_log import TIME_FORM, WAIT, holder, log_lines, waited_change
 from transcripts import Refused
 
 from operating.roles import editors_of
@@ -24,24 +24,34 @@ def log_time(text: str) -> float:
         raise Refused(mctx("`{text}` is no log line's time").format(text=text)) from None
 
 
+def log_line(m: re.Match[str]) -> LogLine:
+    note = m["note"] or ""
+    wait = WAIT.match(note)
+    change = None if wait is None else waited_change(wait)
+    return LogLine(log_time(m.group().split(" ", 1)[0]), Status(m["status"]), m["agent"],
+                   m["id"], note, wait is not None and change is None,
+                   None if change is None else str(change))
+
+
 def read_ticket(path: Path) -> Ticket:
     name = ticket_name(path)
     text = path.read_text()
     head = re.match(FRONT, text)
     if head is None:
         raise Refused(mctx("{path} has no front matter").format(path=path))
-    fields = dict(line.split(": ", 1) for line in head.group("fields").splitlines())
-    lines = tuple(LogLine(log_time(m.group().split(" ", 1)[0]), Status(m["status"]),
-                          m["agent"], m["id"], m["note"] or "") for m in log_lines(text))
+    fields = dict(front_fields(head))
+    lines = tuple(log_line(m) for m in log_lines(text))
+    if not lines:
+        raise Refused(mctx("{path} has no log line").format(path=path))
     editors = fields.get("editors")
     return Ticket(
         number=str(name.number), order=name.number.order, session=name.number.session,
         status=Status(path.parent.name), kind=Kind(head["kind"]), domain=Domain(name.domain),
-        subject=name.subject, filer=name.agent, filed=lines[0].time if lines else 0.0,
+        subject=name.subject, filer=name.agent, filed=lines[0].time,
         title=title(path, text),
-        depends_on=tuple(d.strip() for d in fields.get("depends-on", "").split(",") if d.strip()),
+        depends_on=tuple(list_items(fields["depends-on"])) if "depends-on" in fields else (),
         priority=int(fields["priority"]) if "priority" in fields else DEFAULT_PRIORITY,
-        editors=None if editors is None else editors_of(editors),
+        editors=None if editors is None else editors_of(list_items(editors)),
         after_merge=fields.get("after-merge"), mechanical="mechanical" in fields, log=lines, holder=holder(text), path=path)
 
 

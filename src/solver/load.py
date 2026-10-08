@@ -40,7 +40,7 @@ from solver.problems import (
 )
 from engine.program import own
 
-_STEM_RE = re.compile(r"^[0-9a-f]{8}")
+_STEM_RE = re.compile(arc_task.TASK_ID)
 
 
 def _empty_program() -> Program:

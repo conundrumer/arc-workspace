@@ -4,9 +4,11 @@ every package reads. Each directory is computed from `ROOT` when asked, so
 a checkout that sets `ROOT` moves every one of them. The run cache, the
 solver files and the witness files each move to the directory an
 environment variable names, where it is set. Git runs in a tree through
-`git`, `changed_paths` lists what a tree changes against a commit, and a
+`git`, `changed_paths` lists what a tree changes against a commit,
+`worktree_list` gives the worktrees of the repository, and a
 `uv run` in another tree runs in `tree_env`."""
 
+import dataclasses
 import functools
 import os
 import subprocess
@@ -67,6 +69,32 @@ def git(tree: Path, *argv: str, stdin: str | None = None,
     its exit status."""
     return subprocess.run(["git", *argv], cwd=tree, input=stdin, env=env,
                           capture_output=True, text=True)
+
+
+@dataclass(frozen=True)
+class Worktree:
+    """A record of `git worktree list --porcelain`: the worktree's path, its
+    branch, or None where it stands on none, and the reason for its lock,
+    the empty string for a lock with no reason, or None where it is not
+    locked."""
+    path: Path
+    branch: str | None
+    lock: str | None
+
+
+def worktree_list(tree: Path) -> list[Worktree]:
+    """The worktrees of the repository of `tree`, in the order git gives."""
+    out: list[Worktree] = []
+    for field in git_out(tree, "worktree", "list", "--porcelain", "-z").split("\0"):
+        if field.startswith("worktree "):
+            out.append(Worktree(Path(field.removeprefix("worktree ")), None, None))
+        elif not out:
+            continue
+        elif field.startswith("branch refs/heads/"):
+            out[-1] = dataclasses.replace(out[-1], branch=field.removeprefix("branch refs/heads/"))
+        elif field == "locked" or field.startswith("locked "):
+            out[-1] = dataclasses.replace(out[-1], lock=field.removeprefix("locked").removeprefix(" "))
+    return out
 
 
 def git_out(tree: Path, *argv: str, stdin: str | None = None,
@@ -246,16 +274,23 @@ def programs() -> Path:
     return ROOT / "programs"
 
 
+SOLVERS = Path("programs/solvers")
+"""The directory of the solver files, from the root of a worktree."""
+
+WITNESSES = Path("programs/witnesses")
+"""The directory of the witness files, from the root of a worktree."""
+
+
 def solvers() -> Path:
-    """`programs/solvers/`, where each solver's file stands, unless
+    """`SOLVERS`, where each solver's file stands, unless
     `SOLVER_FILES_ENV` names another directory."""
-    return from_env(SOLVER_FILES_ENV, programs() / "solvers")
+    return from_env(SOLVER_FILES_ENV, ROOT / SOLVERS)
 
 
 def witnesses() -> Path:
-    """`programs/witnesses/`, where each task's witness file stands, unless
+    """`WITNESSES`, where each task's witness file stands, unless
     `WITNESSES_ENV` names another directory."""
-    return from_env(WITNESSES_ENV, programs() / "witnesses")
+    return from_env(WITNESSES_ENV, ROOT / WITNESSES)
 
 
 def docs() -> Path:

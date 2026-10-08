@@ -25,7 +25,7 @@ The modules keep these rules:
 
 Modules: `state` (what the command reads), `roles` (the agents launched and
 their descriptions), `directives` (the coordinator's lines), `tracker` (a
-ticket's log and the calls that write it), `steps` (the calls printed),
+ticket's log and the calls that write it), `steps` (the calls printed), `bounds` (the values the command shares with the scripts an agent runs),
 `briefs` (the briefs the launches give), `settling` (ticket analysts on
 open tickets, and the labeled items it sends the coordinator to act on), `drafts` (the review of
 draft changes), `changes` (a change from its take to its merge),

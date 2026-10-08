@@ -10,7 +10,7 @@ script's own forms and by `master` (`state.Merge`):
   change out of the operator's hands;
 - a conflict in the rebase runs the change again with a new first editor:
   the command writes the old worktree and its branch on the ticket in a
-  line that opens with `RERUN`, which no read of the change's worktree
+  line that opens with `Note.RERUN`, which no read of the change's worktree
   takes, and the final reply gives that line;
 - a refusal whose output reports a `quotes` call a change to the documents
   broke goes to a new code editor in the change's worktree, with those
@@ -24,18 +24,17 @@ on a module a code editor of the change reports it split, or logs the part
 the report gives as left unsplit, then each `question` ticket filed on the
 change, then the change's own ticket."""
 
-import re
 import shlex
 from pathlib import Path
 
-from controlled_markdown.nodes import Rule
+from controlled_markdown.nodes import Rule, finding_lines
 from operating import briefs
 from operating.reports import splits
 from operating.roles import Role
 from operating.state import Agent, Call, Merge, State, Ticket
 from operating.steps import Bash, Launch, Send, Step, bash_calls, simple_commands
-from operating.tracker import COORDINATOR, RERUN, WORKTREE, log
-from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Status
+from operating.tracker import COORDINATOR, WORKTREE, log
+from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Note, Resolution, Status
 
 MERGE_SCRIPT = "scripts/merge_change.py"
 FINDING_TAIL = 40
@@ -45,10 +44,8 @@ BROKEN_QUOTES = (Rule.QUOTE_DOCUMENT, Rule.QUOTE_HEADING, Rule.QUOTE_WORDS)
 """The rules a `quotes` call breaks where a change to the documents moved
 what it quotes."""
 
-QUOTE_LINE = re.compile(rf"^(?P<path>\S+):(?P<line>\d+): (?:{'|'.join(BROKEN_QUOTES)}): .*$",
-                        re.MULTILINE)
-"""A line of the `controlled_markdown` check that reports such a call, in
-the form `ControlledMarkdownError` prints."""
+QUOTE_LINE = finding_lines(BROKEN_QUOTES)
+"""A line of the `controlled_markdown` check that reports such a call."""
 
 
 MESSAGE = "-m"
@@ -120,7 +117,7 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
         case Merge.CONFLICT:
             branch = state.branches[w]
             return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED,
-                            f"{RERUN}: the rebase conflicts; the old worktree is {w} on "
+                            f"{Note.RERUN}: the rebase conflicts; the old worktree is {w} on "
                             f"branch {branch}", state.me))
         case Merge.REFUSED:
             return refused(state, t, w, last, latest)
@@ -156,7 +153,7 @@ def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
                 t.number, t.after_merge, head))
         if checks[-1].pending:
             return None
-    note = f"fixed {t.number} {head}"
+    note = f"{Resolution.FIXED.value} {t.number} {head}"
     split: dict[str, str | None] = {}
     for a in agents:
         split.update(splits(a))

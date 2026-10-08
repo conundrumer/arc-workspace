@@ -13,6 +13,9 @@ from typing import Any, Literal, get_args
 from arc.patch import SetT
 from controlled_markdown import mctx
 
+TASK_ID = r"[0-9a-f]{8}"
+"""The form of a task id."""
+
 type Grid = list[list[int]]
 type AltKind = Literal["rule", "tiebreak"]
 

@@ -7,6 +7,12 @@ from engine import RelationName, Scope
 from engine.program import Primitive
 from engine.quotes import quotes
 
+SOLVER_SUFFIX = ".dl"
+"""The suffix of a solver's file after its stem."""
+
+WITNESS_SUFFIX = ".wit.json"
+"""The suffix of a witness file after its task id."""
+
 PARAMS: Annotated[str,
     quotes("solver-file.md", "Params",
            "Params contains the parameterization and what derives from "

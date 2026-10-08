@@ -18,24 +18,14 @@ from functools import cache
 
 from controlled_markdown import mctx
 from operating import briefs
+from operating.bounds import COORDINATOR, FOREGROUND_MS, WAIT_SECONDS
 from operating.roles import Model, Role, description
-from operating.state import Call, Made, State
-
-COORDINATOR = "main"
-"""The address SendMessage reaches the coordinator at."""
-
-WAIT_SECONDS = 240
-"""The longest wait in the background: the interval of the keep-alive
-timer it replaces (`agent_timer.KEEP_ALIVE_SECONDS`)."""
+from operating.state import Agent, Call, Made, State
 
 WAIT_CAP = 11
 """How many waits in a row may end on `WAIT_SECONDS` with no message, no
 report and no step between them, as the section `keep-alive-timer` of
 `prompts/agents/notes/commands.md` caps the keep-alive timer."""
-
-FOREGROUND_MS = 240000
-"""The timeout of a foreground Bash call the command prints: the bound
-`scripts/pending_wait_hook.py` holds a subagent's foreground call to."""
 
 
 @dataclass(frozen=True)
@@ -116,6 +106,19 @@ def undecided(what: str) -> Send:
     return Send(COORDINATOR, f"{UNDECIDED} {what}")
 
 
+def agent_ids(agents: Iterable[Agent]) -> list[str] | Send:
+    """The agent ids of `agents`, which a brief or a message gives, or the
+    undecided step on the first of them whose id is unknown."""
+    out: list[str] = []
+    for a in agents:
+        if a.agent_id is None:
+            return undecided(mctx("the {role} on {subject} has no known agent id, which a "
+                                  "brief or a message names it by").format(
+                role=a.role, subject=a.subject))
+        out.append(a.agent_id)
+    return out
+
+
 def ruling_key(what: str) -> str:
     """The key a `Decision:` line gives to rule the held step `what`."""
     return hashlib.sha1(what.encode()).hexdigest()[:KEY_LENGTH]
@@ -126,8 +129,9 @@ def held(what: str, choices: Mapping[str, str]) -> Send:
     a `Decision:` line that gives its ruling key and one of `choices`, each
     given with what it does."""
     given = "; ".join(f"`{c}`: {meaning}" for c, meaning in choices.items())
-    return undecided(f"{what}. Rule it by the line `Decision: {ruling_key(what)} <choice>`, "
-                     f"with one of these choices: {given}.")
+    return undecided(what + mctx(". Rule it by the line `Decision: {key} <choice>`, with one "
+                                 "of these choices: {given}.").format(key=ruling_key(what),
+                                                                      given=given))
 
 
 type Step = Launch | Send | Bash | Stop | Wait | EndTurn | Again | Reply
@@ -298,7 +302,8 @@ def only_command(command: str, agent: str) -> bool:
 def trailer(step: Step, agent: str) -> str:
     """The line the command prints after a call it prints, which `made`
     reads back."""
-    return f"{THEN}{next_command(agent)}`. Step key: {key(step)}."
+    return THEN + mctx("{command}`. Step key: {key}.").format(command=next_command(agent),
+                                                              key=key(step))
 
 
 THEN = "\n\nThen run `"
