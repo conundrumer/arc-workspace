@@ -3,8 +3,8 @@ wall time goes, the budget of each agent type, the runs under a run since
 an operator's previous call of `--under` on it, the agents under a run
 whose work is open, as `--running` lists them, and whether one run's work
 is open, as `--open` gives it. `--help` prints HELP. `budget_of` gives the
-budget of one agent type, as more than one run prints it, over every run
-of that type under the project directories."""
+budget of one agent type for a brief, as more than one run prints it,
+over every run of that type under the project directories."""
 
 import argparse
 import sys
@@ -79,10 +79,11 @@ HELP = mctx("""
     - A report's text is the entry's text, and of a message that delivers the agent's SubagentHandback, that text without the harness's preamble and indent. An entry whose text is the harness's pointer to such a message, or the line an agent gives after it sent its final reply by SendMessage, gives no report.
     - Where the latest message from the parent is unknown, or no transcript of the parent is found, it prints `?`. A notification or a launch result whose status is of no known form gives no report, and where no `.meta.json` of the run gives a `toolUseId`, no launch result is matched to it. A launch result whose status is of no known form counts as not in the background, wherever it is read. An `undecided` line on stderr names each, and each distinct line is printed once.
     - More than one run prints, per agent type, the number of runs, the minimum, median, P-th percentile and maximum of wall time, the total, the median and P-th percentile of active time, which is wall time less `idle`, and each part's share of the total, then per agent type the total token cost of its runs of known cost, its share of that total over all types, the median cost of such a run, and the number of runs of unknown cost it leaves out, then each type's labels by time, with the number of runs each appears in.
-    - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over. That median is taken over budgeted runs alone: a budgeted run is one with a budget in force for some message from its parent, as one run prints it.
-        - The window of a type that has an agent document under `prompts/agents/` is the runs whose first entry is at or after the last commit that changed that document, a document it includes or inlines, a lib file its rendered prompt holds, a script under `scripts/` its rendered prompt names, or a package under `src/` its rendered prompt runs with `-m`, and not a module such a script or package imports. `--since DATE` sets the window of every type to the runs whose first entry is at or after DATE. Where the window holds at least {median_runs} budgeted runs of the type, the median is taken over them.
+    - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over. That median is taken over budgeted runs alone, and of those, over the runs their budget did not cut. A budgeted run is one with a budget in force for some message from its parent, as one run prints it. Its budget cut it where the active time of such a message is at or past the budget in force for it, so that its wall time is no measure of what its work needed. Where the active time of such a message is unknown and no other message shows it cut, whether its budget cut it is unknown: it is left out, and an `undecided` line on stderr names it.
+        - A brief gives items where its first line is one of the lines `operating.briefs` gives for a brief of several items of the same work, each item a ticket number. Where the brief of some run of a type gives items, it also prints, on a line led by `per item`, the type's budget per item, which is {factor} times the median of the wall time per item, a run's wall time over the number of items its brief gives. That median is taken by the lines below over the budgeted runs that their budget did not cut and whose brief gives items.
+        - The window of a type that has an agent document under `prompts/agents/` is the runs whose first entry is at or after the last commit that changed that document, a document it includes or inlines, a lib file its rendered prompt holds, a script under `scripts/` its rendered prompt names, or a package under `src/` its rendered prompt runs with `-m`, and not a module such a script or package imports. `--since DATE` sets the window of every type to the runs whose first entry is at or after DATE. Where the window holds at least {median_runs} of the runs the median is taken over, it is taken over them.
         - A type with no agent document has a window only with `--since`, and a type whose paths no commit changed has none, and an `undecided` line on stderr names it.
-        - Otherwise it is taken over the type's budgeted runs whose `waits` and `idle` together are under {low_wait_pct}% of wall time, where at least {median_runs} runs are such. A type with fewer such runs gets no budget, and an `undecided` line on stderr names it with their count as its reason.
+        - Otherwise it is taken over those of these runs whose `waits` and `idle` together are under {low_wait_pct}% of wall time, where at least {median_runs} runs are such. A type with fewer such runs gets no budget, and an `undecided` line on stderr names it with their count as its reason.
     - `--under ID` profiles the runs under the run ID, where ID is a session id or an agent id: the agents whose `.meta.json` gives the run ID as `parentAgentId`, or for a session gives none, the agents whose `.meta.json` gives one of those, and so on.
         - Its previous call is the latest call of `--under` on the same ID, as the call writes it, with or without the `agent-` prefix, made by an agent of type `{operator}` in any transcript under the project directories that changed at or after the run ID's first entry, whose result says it completed in the foreground with no error and was not interrupted, and whose result holds one `left open:` line, read from the result's `stdout`, or where the result gives none, from its content. A line counts only where a line break ends it. A call whose result holds more than one such line counts as none, and an `undecided` line on stderr names that call. A call's time is the time of the entry that makes it.
         - Where a previous call stands, it considers the runs whose last timestamped entry is after that call's time and each run that call's `left open:` line gives, and where none stands, every run under the ID. Of those, it takes each run whose work is not open, by the rule by which `--running` lists an agent, as `--open` gives it, and leaves out the others.
@@ -237,13 +238,17 @@ def runs_since(path: Path, ident: str, undecided: list[str]) -> list[Path]:
     return taken
 
 
-def budget_of(kind: str, undecided: list[str]) -> float | None:
+def budget_of(kind: str, items: int | None, undecided: list[str]) -> float | None:
     """The budget in seconds of the agent type `kind`, over every run of
-    that type under the project directories, or None where it gets none."""
+    that type under the project directories, for a brief that gives no
+    items where `items` is None, and otherwise for a brief that gives
+    `items` items, or None where it gets none."""
     runs = [profile(last, undecided) for paths in agent_transcripts().values()
             if agent_type(last := chain(paths[0])[-1]) == kind]
-    b = type_budget(kind, runs, None, undecided)
-    return None if b is None else b.seconds
+    b = type_budget(kind, runs, None, items is not None, undecided)
+    if b is None:
+        return None
+    return b.seconds if items is None else b.seconds * items
 
 
 def main(argv: list[str]) -> int:

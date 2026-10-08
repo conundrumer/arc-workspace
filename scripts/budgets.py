@@ -1,5 +1,7 @@
-"""The budget of each agent type, and the budget in force for each message
-from a run's parent, as the HELP of `profile_runs` gives them."""
+"""The budget of each agent type, for a run and for one item of a brief
+that gives items, the runs its budget cut, and the budget in force for
+each message from a run's parent, as the HELP of `profile_runs` gives
+them."""
 
 import re
 from dataclasses import dataclass
@@ -7,6 +9,7 @@ from dataclasses import dataclass
 from controlled_markdown import mctx
 from engine import checkout
 from handbook.agents import agent_names, agent_sources
+from operating import briefs
 from run_profile import (Message, Part, Run, by_agent_type, clock, minutes,
                          one_line, percentile)
 
@@ -44,56 +47,77 @@ def type_window(kind: str, undecided: list[str]) -> float | None:
 
 @dataclass(frozen=True)
 class Budget:
-    """An agent type's budget in seconds, the runs it is taken over, and
-    its basis."""
+    """An agent type's budget in seconds, for a run or for one item, the
+    runs it is taken over, and its basis."""
     seconds: float
     runs: int
     basis: str
 
 
-def type_budget(kind: str, runs: list[Run], since_date: float | None,
+def measured(r: Run, per_item: bool) -> float | None:
+    """The wall time of `r`, or where `per_item`, its wall time per item of
+    its brief, or None where its brief gives no items."""
+    if not per_item:
+        return r.wall
+    count = briefs.items(r.messages[0].text) if r.messages else None
+    return None if count is None else r.wall / count
+
+
+def type_budget(kind: str, runs: list[Run], since_date: float | None, per_item: bool,
                 undecided: list[str]) -> Budget | None:
     """The budget of the agent type `kind` over `runs`, its runs, as HELP
-    gives it, or None where it gets none. `since_date` is the start of the
-    window `--since` sets, where it is given."""
-    rs = [r for r in runs if budgeted(r, undecided)]
+    gives it, for a run, or where `per_item`, for one item of a brief that
+    gives items, or None where it gets none. `since_date` is the start of
+    the window `--since` sets, where it is given."""
+    rs = [(r, w) for r in runs
+          if budgeted(r, undecided) and censored(r, undecided) is False
+          and (w := measured(r, per_item)) is not None]
+    which = (mctx("budgeted runs not cut whose brief gives items") if per_item
+             else mctx("budgeted runs not cut"))
     since = since_date if since_date is not None else type_window(kind, undecided)
-    window: list[Run] = []
+    window: list[tuple[Run, float]] = []
     if since is not None:
-        for r in rs:
+        for r, w in rs:
             if r.start is None:
                 undecided.append(mctx("{run}: its start is unknown, so it is "
                                       "left out of the window").format(run=r.label))
             elif r.start >= since:
-                window.append(r)
+                window.append((r, w))
     if len(window) >= MEDIAN_RUNS:
-        basis = mctx("budgeted since {date}").format(date=clock(since))
+        basis = mctx("{which} since {date}").format(which=which, date=clock(since))
         chosen = window
     else:
-        basis = mctx("budgeted, waits and idle under {pct}% of "
-                     "wall").format(pct=LOW_WAIT_PCT)
-        chosen = [r for r in rs if low_wait(r)]
+        basis = mctx("{which}, waits and idle under {pct}% of "
+                     "wall").format(which=which, pct=LOW_WAIT_PCT)
+        chosen = [(r, w) for r, w in rs if low_wait(r)]
         if len(chosen) < MEDIAN_RUNS:
-            undecided.append(mctx("{kind}: its budgeted runs with waits and "
+            undecided.append(mctx("{kind}: its {which} with waits and "
                                   "idle under {pct}% of wall number {count}, "
                                   "fewer than {least}, so it has no "
-                                  "budget").format(
-                kind=kind, count=len(chosen), pct=LOW_WAIT_PCT,
-                least=MEDIAN_RUNS))
+                                  "budget{per}").format(
+                kind=kind, which=which, count=len(chosen), pct=LOW_WAIT_PCT,
+                least=MEDIAN_RUNS, per=" " + mctx("per item") if per_item else ""))
             return None
-    return Budget(BUDGET_FACTOR * percentile([r.wall for r in chosen], 50), len(chosen), basis)
+    return Budget(BUDGET_FACTOR * percentile([w for _, w in chosen], 50), len(chosen), basis)
 
 
 def print_budgets(runs: list[Run], since_date: float | None,
                   undecided: list[str]) -> None:
-    """Print each agent type's budget, its basis, and the budgeted runs it
+    """Print each agent type's budget, its budget per item where some of
+    its runs have a brief that gives items, their bases, and the runs each
     is taken over."""
     by_type = by_agent_type(runs)
     print(f"{'type':<18} {'budget':>7} {'runs':>4}  basis")
     for kind in sorted(by_type):
-        b = type_budget(kind, by_type[kind], since_date, undecided)
+        rs = by_type[kind]
+        b = type_budget(kind, rs, since_date, False, undecided)
         if b is not None:
             print(f"{kind:<18} {minutes(b.seconds):>7} {b.runs:>4}  {b.basis}")
+        if any(measured(r, True) is not None for r in rs):
+            b = type_budget(kind, rs, since_date, True, undecided)
+            if b is not None:
+                print(f"{'':<18} {minutes(b.seconds):>7} {b.runs:>4}  "
+                      + mctx("per item, {basis}").format(basis=b.basis))
 
 
 def budget_openings(text: str) -> list[str]:
@@ -144,6 +168,30 @@ def budgets_in_force(r: Run, undecided: list[str]) -> list[float | None]:
 def budgeted(r: Run, undecided: list[str]) -> bool:
     """Whether `r` is a budgeted run, as HELP gives it."""
     return any(b is not None for b in budgets_in_force(r, undecided))
+
+
+def censored(r: Run, undecided: list[str]) -> bool | None:
+    """Whether `r` is censored, cut by its budget as HELP gives it: whether
+    the active time of some message from its parent is at or past the
+    budget in force for it. None where it is not and the active time of a
+    message with a budget in force is unknown, and an `undecided` line
+    names it."""
+    unknown = False
+    for i, budget in enumerate(budgets_in_force(r, undecided)):
+        if budget is None:
+            continue
+        active = r.active_from(i)
+        if active is None:
+            unknown = True
+        elif active >= budget * 60:
+            return True
+    if unknown:
+        undecided.append(mctx("{run}: the active time of a message with a budget "
+                              "in force is unknown, so whether its budget cut it "
+                              "is unknown, and it is left out of its type's "
+                              "budget").format(run=r.label))
+        return None
+    return False
 
 
 def of_budget(budget: float | None) -> str:

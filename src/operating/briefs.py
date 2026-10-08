@@ -1,9 +1,12 @@
 """The briefs of the agents the operator launches, each in the form
 [Briefs](prompts/agents/notes/launching.md#briefs) gives for its work, and
-the messages the operator sends them. A brief gives the agent id of the
-operator that launches the agent, which the agent replies to."""
+the messages the operator sends them, and the number of items a brief
+that gives several items of the same work gives. A brief gives the agent
+id of the operator that launches the agent, which the agent replies to."""
 
+import re
 from pathlib import Path
+from string import Formatter
 
 from controlled_markdown import mctx
 from operating.roles import Role
@@ -123,19 +126,64 @@ def later_line(number: str, time: float, note: str) -> str:
         mctx("Take it into your work on that ticket.")])
 
 
+REVIEW_DRAFTS = mctx("Review the drafts {numbers}.")
+SETTLE = mctx("Settle the tickets under `tickets/open/` {numbers}.")
+REVISE = mctx("Revise each draft `change` ticket {numbers}, whose log holds findings.")
+PASS_SETTLE = mctx("Settle the tickets under `tickets/open/` {numbers}, which the solver pass on "
+                   "task {task} and the review of its transcript filed. That review is agent "
+                   "{review}: read its report with `python3 ~/.claude/skills/retrieve/"
+                   "transcripts.py --help`.")
+ITEM_LINES = (REVIEW_DRAFTS, SETTLE, REVISE, PASS_SETTLE)
+"""The first lines of the briefs that give several items of the same
+work, each item a ticket number in the slot `numbers`."""
+
+
+ITEM_SEPARATOR = ", "
+ITEM = r"[^\s,]+"
+
+
+def item_list(numbers: list[str]) -> str:
+    return ITEM_SEPARATOR.join(numbers)
+
+
+def item_pattern(template: str) -> re.Pattern[str]:
+    """The lines `template` renders, with the item list in the group
+    `numbers`."""
+    parts = []
+    for literal, slot, _, _ in Formatter().parse(template):
+        parts.append(re.escape(literal))
+        if slot == "numbers":
+            parts.append(rf"(?P<numbers>{ITEM}(?:{ITEM_SEPARATOR}{ITEM})*)")
+        elif slot is not None:
+            parts.append(".*?")
+    return re.compile("".join(parts))
+
+
+ITEM_PATTERNS = tuple(item_pattern(t) for t in ITEM_LINES)
+
+
+def items(brief: str) -> int | None:
+    """The number of items a brief gives, where its first line is one of
+    `ITEM_LINES`, or None where it is none of them."""
+    first = brief.split("\n", 1)[0]
+    for pattern in ITEM_PATTERNS:
+        if (m := pattern.fullmatch(first)) is not None:
+            return len(m["numbers"].split(ITEM_SEPARATOR))
+    return None
+
+
 def ticket_review(numbers: list[str], operator: str) -> str:
-    return "\n".join([mctx("Review the drafts {numbers}.").format(numbers=", ".join(numbers)),
+    return "\n".join([REVIEW_DRAFTS.format(numbers=item_list(numbers)),
                       LAUNCHER.format(operator=operator)])
 
 
 def settle(numbers: list[str], operator: str) -> str:
-    return "\n".join([mctx("Settle the tickets under `tickets/open/` {numbers}.").format(
-        numbers=", ".join(numbers)), LAUNCHER.format(operator=operator)])
+    return "\n".join([SETTLE.format(numbers=item_list(numbers)),
+                      LAUNCHER.format(operator=operator)])
 
 
 def revise(numbers: list[str], last: list[str], operator: str) -> str:
-    lines = [mctx("Revise each draft `change` ticket {numbers}, whose log holds findings.").format(
-        numbers=", ".join(numbers))]
+    lines = [REVISE.format(numbers=item_list(numbers))]
     if last:
         lines.append(mctx(
             "The revision of {last} is the last: the draft then opens with no further ticket "
@@ -172,12 +220,8 @@ def findings(number: str, worktree: Path, reports: list[tuple[str, str]],
 
 
 def pass_settle(numbers: list[str], task: str, review: str, operator: str) -> str:
-    return mctx("Settle the tickets under `tickets/open/` {numbers}, which the solver pass on "
-                "task {task} and the review of its transcript filed. That review is agent "
-                "{review}: read its report with `python3 ~/.claude/skills/retrieve/"
-                "transcripts.py --help`.").format(
-        numbers=", ".join(numbers), task=task, review=review) + "\n" + LAUNCHER.format(
-            operator=operator)
+    return PASS_SETTLE.format(numbers=item_list(numbers), task=task, review=review) + "\n" + (
+        LAUNCHER.format(operator=operator))
 
 
 TRANSCRIPT_REVIEW = mctx("""
