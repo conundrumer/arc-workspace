@@ -28,8 +28,8 @@ lines to the ticket analysts that run on their tickets; the ticket
 analysts on open tickets; the review
 of drafts; the changes; the solver pipelines; After a batch. A step that
 is a message an operator already sent is passed over, and so are an
-undecided step a ticket analyst was launched on and a step an operator
-passed over by `operate.py pass-over`.
+undecided step an operator already handled (`steps.repeated`) and a step
+an operator passed over by `operate.py pass-over`.
 
 Where no step is ready and an agent the operator launched or last
 resumed itself runs, other than one a notification said has not reported

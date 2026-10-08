@@ -27,7 +27,11 @@ form:
   the operator that carries that reply (`steps.carrier`).
 - Its `unfinished:` items, and its items that open with a label with no
   colon after it (`reports.MISLABELED`), are a step the command cannot
-  decide, which goes to a ticket analyst launched on it (`rulings`).
+  decide, which goes to a ticket analyst launched on it (`rulings`),
+  other than where an operator already gave the coordinator those items
+  with the reply's key, in any message (`steps.repeated`).
+
+A part that holds no labeled item gives no step.
 
 The reply of an analyst on such a step gives its `unfinished:` and
 mislabeled items in that final reply instead, so that no step goes from one
@@ -216,14 +220,15 @@ def unfinished(state: State) -> Step | None:
     a held step, which go to the final reply (`told`), and the
     `unfinished:` items of an analyst on what a change's editors leave."""
     for a, purpose, _, key in replied(state):
-        if purpose is Purpose.STEP:
+        if purpose is Purpose.STEP or items_of(a, list(Label)) is None:
             continue
         open_items = None if purpose is Purpose.CHANGE else items_of(a, [Label.UNFINISHED])
         items = [*([open_items] if open_items else []), *mislabeled(a)]
         if not items:
             continue
+        text = "\n".join(items)
         s = Undecided(mctx("the part for the coordinator of {key} leaves these items:").format(
-            key=key) + "\n" + "\n".join(items))
+            key=key) + "\n" + text, (key, *(ln.strip() for ln in text.splitlines() if ln.strip())))
         if not repeated(s, state):
             return s
     return None

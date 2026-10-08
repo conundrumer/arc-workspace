@@ -113,13 +113,19 @@ class Undecided:
     """A step the command cannot place, which goes to a ticket analyst
     launched on it (`rulings`) and is never printed. The command reads back
     which analyst it went to by the ruling key of `what`, so `what` is the
-    same at each read of the same state."""
+    same at each read of the same state. `given` holds the texts that a
+    message by which an operator gave the coordinator this step holds each
+    of, in a form other than `UNDECIDED` and `what`, where the step has
+    such a form."""
     what: str
+    given: tuple[str, ...] = field(default=(), repr=False)
 
 
 UNDECIDED = "undecided:"
 """The first word of a message that gives the coordinator back a line of
-its own in no form the command reads."""
+its own in no form the command reads, and of a message by which an
+operator in an earlier transcript gave the coordinator an undecided step
+(`repeated`)."""
 
 DECISION = "for the coordinator:"
 """The opening of a message that gives the coordinator labeled items to act
@@ -174,11 +180,16 @@ type Step = Launch | Send | Undecided | Relay | Bash | Stop | Wait | EndTurn | A
 
 def repeated(step: Step, state: State) -> bool:
     """Whether `step` is a message an operator already sent, or an
-    undecided step a ticket analyst was launched on: a step whose procedure
-    then waits on its answer."""
+    undecided step that an operator already handled: a ticket analyst was
+    launched on it, or an operator gave it to the coordinator, as
+    `UNDECIDED` and its `what`, or in a message that holds each of its
+    `given`. Its procedure then waits on the answer."""
     match step:
-        case Undecided():
-            return bool(ruled_by(state, step))
+        case Undecided(what, given):
+            return bool(ruled_by(state, step)) or sent(state, COORDINATOR,
+                                                       f"{UNDECIDED} {what}") or (
+                bool(given) and any(all(g in str(c.input.get("message", "")) for g in given)
+                                    for c in sends_to(state, COORDINATOR)))
         case Relay(agent, what):
             head = RELAY_HEAD.format(agent=agent, key=ruling_key(what))
             return any(c.tool == "Bash" and head in (c.result or "") for c in state.calls)

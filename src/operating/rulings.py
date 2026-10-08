@@ -5,7 +5,9 @@ Such a step goes to one ticket analyst, launched with the step and the
 agent id of the operator that holds it (`briefs.held_step`), whose subject
 gives the step's ruling key, so no operator of the session launches a
 second analyst on it, and its procedure waits on that analyst while it
-runs and once it returned (`steps.repeated`). The analyst's reply rules
+runs and once it returned (`steps.repeated`). A step an operator already
+gave the coordinator goes to no analyst, and its procedure waits on the
+coordinator's ruling (`steps.repeated`). The analyst's reply rules
 the step by an `Override:` or `Decision:` line, as a line of the
 coordinator's rules it, and a `Decision:` line that gives the ruling key
 of a held step rules it for every operator of the session

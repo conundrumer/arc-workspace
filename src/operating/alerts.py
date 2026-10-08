@@ -16,7 +16,8 @@ undecided. A message from an agent no operator launched that is no alert
 goes back to its sender once, with a request to send it again as an
 alert, or to say that it is none, and is undecided where the sender's next
 message is still no alert. An undecided alert or message goes to a ticket
-analyst launched on it (`rulings`).
+analyst launched on it (`rulings`), other than one an operator already
+handled (`steps.repeated`).
 
 A `budget` or `stall` alert on an agent an operator of the session
 launched gives its step to the operator that carries the session's work
