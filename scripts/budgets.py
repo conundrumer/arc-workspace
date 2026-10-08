@@ -6,12 +6,16 @@ them."""
 import re
 from dataclasses import dataclass
 
+from agent_reports import parent_transcripts
+from context_bound_hook import OPERATOR
 from controlled_markdown import mctx
 from engine import checkout
 from handbook.agents import agent_names, agent_sources
 from operating import briefs
 from run_profile import (Message, Part, Run, by_agent_type, clock, minutes,
                          one_line, percentile)
+from run_reads import MAIN, agent_type, parent_id
+from transcripts import is_subagent
 
 # The terms of a type's budget, which HELP states.
 BUDGET_FACTOR = 2
@@ -68,10 +72,11 @@ def type_budget(kind: str, runs: list[Run], since_date: float | None, per_item: 
     gives items, or None where it gets none. `since_date` is the start of
     the window `--since` sets, where it is given."""
     rs = [(r, w) for r in runs
-          if budgeted(r, undecided) and censored(r, undecided) is False
+          if operator_launched(r, undecided) and censored(r, undecided) is False
           and (w := measured(r, per_item)) is not None]
-    which = (mctx("budgeted runs not cut whose brief gives items") if per_item
-             else mctx("budgeted runs not cut"))
+    which = (mctx("runs an operator launched, not cut, whose brief gives "
+                  "items") if per_item
+             else mctx("runs an operator launched, not cut"))
     since = since_date if since_date is not None else type_window(kind, undecided)
     window: list[tuple[Run, float]] = []
     if since is not None:
@@ -163,9 +168,23 @@ def budgets_in_force(r: Run, undecided: list[str]) -> list[float | None]:
     return budgets
 
 
-def budgeted(r: Run, undecided: list[str]) -> bool:
-    """Whether `r` is a budgeted run, as HELP gives it."""
-    return any(b is not None for b in budgets_in_force(r, undecided))
+def operator_launched(r: Run, undecided: list[str]) -> bool:
+    """Whether an operator launched `r`, as HELP gives it. A run whose
+    parent's type is unknown is left out, and an `undecided` line names
+    it."""
+    if not is_subagent(r.path):
+        return False
+    parent = parent_id(r.path)
+    if parent == MAIN:
+        return False
+    found = parent_transcripts(r.path)
+    kind = agent_type(found[0]) if found else None
+    if kind is None:
+        undecided.append(mctx("{run}: the type of its parent {parent} is "
+                              "unknown, so it is left out of its type's "
+                              "budget").format(run=r.label, parent=parent))
+        return False
+    return kind == OPERATOR
 
 
 def censored(r: Run, undecided: list[str]) -> bool | None:
