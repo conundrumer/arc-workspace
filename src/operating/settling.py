@@ -32,7 +32,7 @@ from operating.passes import awaits_analyst
 from operating.roles import Purpose, Role, analyst_subject, joined
 from operating.state import LogLine, State, Ticket
 from ticketing.vocabulary import Domain, Kind, Status
-from operating.steps import COORDINATOR, DECISION, Bash, Launch, Send, Step
+from operating.steps import COORDINATOR, DECISION, Bash, Launch, Send, Step, sent
 from operating.tracker import AGENT, blocked_on_user, coordinator_line, coordinator_lines, log
 
 
@@ -48,7 +48,7 @@ def given(state: State, number: str) -> bool:
     return any(number in nums and (
         a.pending or a.launched > coordinator_line(t) or (
             a.agent_id is not None and bool(last)
-            and state.sent(a.agent_id, briefs.later_line(number, last[0].time, last[0].note))))
+            and sent(state, a.agent_id, briefs.later_line(number, last[0].time, last[0].note))))
         for a, purpose, nums in state.analysts() if purpose in GIVEN)
 
 
@@ -100,7 +100,7 @@ def later_lines(state: State) -> Step | None:
                 continue
             for ln in coordinator_lines(t.log):
                 message = briefs.later_line(n, ln.time, ln.note)
-                if ln.time > a.launched and not state.sent(a.agent_id, message):
+                if ln.time > a.launched and not sent(state, a.agent_id, message):
                     return Send(a.agent_id, message)
     return None
 
@@ -146,8 +146,9 @@ def decisions(state: State) -> Step | None:
         by_ours = line.agent_id in known or (
             line.agent in (Role.TICKET_ANALYST.value, AGENT) and t.number in briefed)
         key = decision_key(t.number, line.time)
-        if by_ours and not carried(state, t, line) and not state.sent(COORDINATOR, key):
-            return Send(COORDINATOR, f"{DECISION} {key}: {line.note}")
+        step = Send(COORDINATOR, f"{DECISION} {key}: {line.note}")
+        if by_ours and not carried(state, t, line) and not sent(state, step.to, step.message, key):
+            return step
     return None
 
 
@@ -164,6 +165,7 @@ def for_coordinator(state: State) -> Step | None:
         if part is None or r is None or a.agent_id is None:
             continue
         key = for_coordinator_key(a.agent_id, r.time)
-        if not state.sent(COORDINATOR, key):
-            return Send(COORDINATOR, f"{DECISION} {key}:\n{part}")
+        step = Send(COORDINATOR, f"{DECISION} {key}:\n{part}")
+        if not sent(state, step.to, step.message, key):
+            return step
     return None

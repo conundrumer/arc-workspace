@@ -23,17 +23,21 @@ A change with a doc editor passes its review once the latest reply of its
 doc reviewer opens with `no finding stands` and follows each editor's last
 report. A reply that gives findings brings a new doc editor for the
 findings on documents and a new code editor for those on `.py` files, and
-the command sends that reviewer their agent ids."""
+the command sends that reviewer their agent ids.
+
+A step of a change that the command cannot place holds that change alone,
+until the coordinator rules it with one of the choices the step gives
+(`directives.ruled`)."""
 
 from pathlib import Path
 from typing import Literal
 
 from operating import briefs, merging
-from operating.directives import Directive, decided_editors, named, numbers
+from operating.directives import Directive, Ruling, decided_editors, named, numbers, ruled
 from operating.reports import finding_paths, finished, no_finding, standing
 from operating.roles import EDITORS, Purpose, Role, analyst_subject, editors_of
 from operating.state import Agent, State, Ticket
-from operating.steps import Bash, Launch, Send, Step, repeated, undecided
+from operating.steps import Bash, Launch, Send, Step, repeated, sent, undecided
 from operating.tracker import COORDINATOR, closed, log, worktree
 from ticketing.vocabulary import Domain, Kind, Status
 
@@ -145,7 +149,7 @@ def give_up(state: State) -> Step | None:
             t.status is Status.ASSIGNED and t.holder not in (state.me, None)
             and t.holder in state.open_holders)
         message = briefs.stop_work(number)
-        if lost and not state.sent(a.agent_id, message):
+        if lost and not sent(state, a.agent_id, message):
             return Send(a.agent_id, message)
     return None
 
@@ -201,8 +205,12 @@ def carry(state: State, t: Ticket) -> Step | None:
         if any(a.pending for a in launched):
             return None
         taken = max((ln.time for ln in t.log if ln.status is Status.ASSIGNED), default=0.0)
-        if sum(a.launched > taken for a in launched) >= 2:
-            return undecided(f"change {t.number} has no worktree after two first editors")
+        tried = sum(a.launched > taken for a in launched)
+        if tried >= 2:
+            choice = ruled(state, f"change {t.number} has no worktree after {tried} first editors",
+                           {Ruling.AGAIN: "launch another first editor"})
+            if isinstance(choice, Send):
+                return choice
         first = next(r for r in EDITORS if r in editors)
         return Launch(first, t.number, briefs.editor(
             first, t.number, len(editors) > 1, None, state.scratch / t.number, state.me),
@@ -242,8 +250,14 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     if not needing and not questions and not gate:
         return False
     if questions and not needing and not gate and judged > max(q.filed for q in questions):
-        return undecided(f"ticket analyst {analysts[-1].agent_id} returned on change "
-                         f"{t.number}, and its question tickets stand open")
+        choice = ruled(state, f"ticket analyst {analysts[-1].agent_id} returned on change "
+                              f"{t.number}, and its question tickets stand open",
+                       {Ruling.MERGE: "go on to the merge; the close of the change closes them",
+                        Ruling.AGAIN: "launch another ticket analyst on them"})
+        if isinstance(choice, Send):
+            return choice
+        if choice is Ruling.MERGE:
+            return False
     reports = [(a.agent_id or "", r.text) for a in needing if (r := a.last_report) is not None]
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
         t.number, w, reports, [q.number for q in questions], gate,
@@ -268,8 +282,9 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
     since = reply.time if reply is not None else r.launched
     paths = finding_paths(r)
     if not paths:
-        return undecided(f"the reply of doc reviewer {r.agent_id} on change {t.number} gives "
-                         f"no finding in the form the command reads")
+        return review_ruled(state, t, w, here, f"the reply of doc reviewer {r.agent_id} on "
+                                               f"change {t.number} gives no finding in the form "
+                                               f"the command reads")
     code = [p for p in paths if p.endswith(PROSE_IN_CODE)]
     needed = ([Role.DOC_EDITOR] if len(code) < len(paths) else []) + (
         [Role.CODE_EDITOR] if code else [])
@@ -281,10 +296,24 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
                 state.scratch / t.number, state.me))
     for f in fixers:
         message = briefs.new_editor(f.agent_id or "")
-        if r.agent_id and not state.sent(r.agent_id, message):
+        if r.agent_id and not sent(state, r.agent_id, message):
             return Send(r.agent_id, message)
-    return undecided(f"doc reviewer {r.agent_id} of change {t.number} has not replied since "
-                     f"its editors ended")
+    return review_ruled(state, t, w, here, f"doc reviewer {r.agent_id} of change {t.number} has "
+                                           f"not replied since its editors ended")
+
+
+def review_ruled(state: State, t: Ticket, w: Path, here: list[Agent],
+                 what: str) -> Step | Literal[False]:
+    """The step on a review held for `what`, by the coordinator's ruling:
+    False where the review passes."""
+    choice = ruled(state, what, {Ruling.PASSES: "the review passes",
+                                 Ruling.AGAIN: "launch another doc reviewer"})
+    if isinstance(choice, Send):
+        return choice
+    if choice is Ruling.PASSES:
+        return False
+    return Launch(Role.DOC_REVIEWER, t.number, briefs.doc_review(
+        t.number, w, [(a.role, a.agent_id or "") for a in here], state.me))
 
 
 def step(state: State) -> Step | None:

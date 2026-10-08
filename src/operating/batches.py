@@ -6,7 +6,8 @@ one, where the batch merged a change, on the gate's timings and outputs.
 A batch is the agents the session's operators launched since the launch
 of the previous batch's profile agent, other than the agents of After a
 batch, with the changes merged since: those an operator's merge call
-merged, and those the coordinator gives as merged. The launch of the
+merged, as `state.Merge` reads it, and those the coordinator gives as
+merged. The launch of the
 profile agent opens the next batch. The ticket analyst on the tickets the
 batch filed is the one `settling` launches on any open ticket."""
 
@@ -16,8 +17,8 @@ from operating import briefs
 from operating.changes import release
 from operating.directives import Directive, numbers
 from operating.roles import AGENT_ID, Role
-from operating.state import Agent, State
-from operating.steps import Bash, Launch, Step, undecided
+from operating.state import Agent, Merge, State
+from operating.steps import Bash, Launch, Step, bash_calls, undecided
 
 OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER})
 """The roles of After a batch, which no batch holds."""
@@ -33,10 +34,8 @@ def members(state: State, since: float) -> list[Agent]:
 
 
 def merged(state: State, since: float) -> bool:
-    calls = [c for c in state.calls if c.tool == "Bash" and c.time > since
-             and "scripts/merge_change.py" in str(c.input.get("command", ""))
-             and c.result is not None and not c.error]
-    return bool(calls) or any(t > since for _, t in numbers(state, Directive.MERGED))
+    return (any(c.time > since and c.merge is Merge.MERGED for c in state.calls)
+            or any(t > since for _, t in numbers(state, Directive.MERGED)))
 
 
 def step(state: State) -> Step | None:
@@ -65,7 +64,8 @@ def step(state: State) -> Step | None:
     runs: list[str] = []
     for op in sorted({a.operator for a in batch} or {state.me}):
         command = under_command(op)
-        calls = [c for c in state.bash_calls(command) if c.time > since and c.result is not None]
+        calls = [c for c in bash_calls(state, command) if c.time > since and c.result is not None
+                 and TAKEN.search(c.result) is not None]
         if not calls:
             return Bash(command)
         if calls[-1].error:
@@ -81,7 +81,8 @@ def step(state: State) -> Step | None:
 def under_command(operator: str) -> str:
     """Step 1 of After a batch, which an operator runs itself: the
     previous call of `--under` that `profile_runs.py --help` defines is an
-    operator's."""
+    operator's. A call whose output, as a pipe may cut it, holds no
+    `runs taken:` line counts as none, and the step is given again."""
     return f"uv run python scripts/profile_runs.py --under {operator}"
 
 

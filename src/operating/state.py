@@ -51,7 +51,8 @@ class Ticket:
 @dataclass(frozen=True)
 class Report:
     """A report of an agent that reached the operator that launched it: a
-    notification, the result of a foreground launch, or a message."""
+    notification, the result of a foreground launch, or a message, with
+    the text the agent wrote, as `agent_reports` reads it."""
     time: float
     text: str
 
@@ -59,20 +60,23 @@ class Report:
 @dataclass(frozen=True)
 class Agent:
     """An agent an operator of the session launched with a description the
-    command gave. `pending` holds where it is pending to that operator by
-    the rule the `--pending` item of `profile_runs.py --help` gives. Where
-    that rule finds it ended and no report of it reached that operator
-    since its launch or its last resume, the final reply in its
-    transcript, where it gives one after them, ends its `reports`.
+    command gave. `pending` holds where that operator holds neither the
+    result of a launch in the foreground nor a sign since its launch or
+    its last resume, in any transcript of the session, that its turn
+    ended, as `agent_reports.last_sign` gives the latest sign: a
+    notification that it stopped, or its SubagentHandback message. It
+    holds too where the latest sign is a notification that it stopped
+    with work of its own still running, and then `still_running` holds:
+    it has not reported yet, and the operator's turn may not end on it.
+    Where a sign ends it and no report of it reached that operator since
+    its launch or its last resume, the final reply in its transcript, where
+    it gives one after them and went to that operator, ends its `reports`.
     `pending` does not hold either for an agent in `State.stalled`, nor
     for an agent of another operator whose work is no longer open, and
-    the final reply in its transcript, where it gives one, then ends its
-    `reports`.
-    `still_running` holds where it is pending and a notification since its
-    launch or its last resume said it stopped with work of its own still
-    running: it has not reported yet, and the operator's turn may not end
-    on it. `notifies` holds where that operator launched or last resumed
-    it itself, so the notification of its end reaches that operator."""
+    the final reply in its transcript, where it gives one and it went to
+    that operator, then ends its `reports`. `notifies` holds where that
+    operator launched or last resumed it itself, so the notification of
+    its end and its final reply reach that operator."""
     agent_id: str | None
     operator: str
     role: Role
@@ -90,10 +94,12 @@ class Agent:
 
 
 class Merge(Enum):
-    """What a call of `scripts/merge_change.py` did, by the forms of its
-    output that script gives (`merge_change.ran`, `merge_change.conflicted`):
-    merged; never ran, as where the harness denied the call; refused for a
-    conflict in its rebase; or refused otherwise."""
+    """What a call of `scripts/merge_change.py` did: merged, where `master`
+    holds a commit made at or after the call with the message it gives,
+    whatever its exit status; and otherwise, by the forms of its output
+    that script gives (`merge_change.ran`, `merge_change.conflicted`),
+    never ran, as where the harness denied the call, refused for a
+    conflict in its rebase, or refused otherwise."""
     MERGED = "merged"
     NOT_RUN = "not run"
     CONFLICT = "conflict"
@@ -105,7 +111,10 @@ class Call:
     """A tool call of an operator of the session: its tool, its input, and
     its result, None while it is pending, with whether the harness gave the
     result as an error, and for a call of `scripts/merge_change.py` that
-    has its result, what it did."""
+    has its result, what it did. The result of a Bash call the harness ran
+    or moved to the background is the output its command wrote, once a
+    notification of its end reached the operator, and it is an error
+    where that notification gives a status other than `completed`."""
     operator: str
     time: float
     tool: str
@@ -113,6 +122,21 @@ class Call:
     result: str | None
     error: bool
     merge: Merge | None = None
+
+
+@dataclass(frozen=True)
+class Made:
+    """A step the command printed to an operator, read from the result of
+    that operator's call of `operate.py next`, and the call that operator
+    made next, which made it: the step's key, None where the result was
+    cut before it, the tool of the printed call, the recipient of a
+    message, and the message or the command as far as the result gives
+    it."""
+    key: str | None
+    tool: str
+    to: str | None
+    text: str
+    call: Call
 
 
 @dataclass(frozen=True)
@@ -128,11 +152,12 @@ class Message:
 
 @dataclass(frozen=True)
 class Commit:
-    """A commit of `master`: its hash, its time, and whether it changes
-    `src/`, `scripts/` or `tests/`."""
+    """A commit of `master`: its hash, its time, whether it changes
+    `src/`, `scripts/` or `tests/`, and its subject."""
     hash: str
     time: float
     code: bool
+    subject: str
 
 
 @dataclass(frozen=True)
@@ -158,8 +183,11 @@ class State:
     the transcript of each agent a stall alert names that reached no
     operator as a report. `passed` gives, by its key (`steps.key`), each
     step an operator passed over by a call of `operate.py pass-over`, with
-    the line it gave. `messages` holds the messages that reached any
-    operator of the session, and `received` those that reached `me`."""
+    the line it gave, where that call's result says so or the call is
+    pending. `made` holds each step the command printed to an operator
+    with the call that operator made next (`steps.made`). `messages` holds
+    the messages that reached any operator of the session, and `received`
+    those that reached `me`."""
     me: str
     now: float
     session: str
@@ -185,6 +213,7 @@ class State:
     stalled: Mapping[str, Report] = field(default_factory=dict)
     pass_tickets: Mapping[str, tuple[str, ...] | None] = field(default_factory=dict)
     passed: Mapping[str, str] = field(default_factory=dict)
+    made: tuple[Made, ...] = ()
 
     @property
     def arrived(self) -> list[Message]:
@@ -217,14 +246,3 @@ class State:
     def mine(self, t: Ticket) -> bool:
         """Whether `t` is of the session."""
         return t.session == self.index
-
-    def bash_calls(self, command: str) -> list[Call]:
-        """The operators' Bash calls whose command is `command`."""
-        return [c for c in self.calls if c.tool == "Bash" and c.input.get("command") == command]
-
-    def sent(self, to: str, text: str) -> bool:
-        """Whether an operator sent `to`, by SendMessage, a message that
-        holds `text`."""
-        return any(c.tool == "SendMessage" and c.input.get("to") == to
-                   and text in str(c.input.get("message", "")) and not c.error
-                   for c in self.calls)

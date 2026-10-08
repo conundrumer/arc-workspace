@@ -1,13 +1,24 @@
 """The steps the command prints: each the one call the operator agent makes
-next, with its parameters in full, and the text that prints it."""
+next, with its parameters in full, and the text that prints it.
+
+A step the command printed counts as made by the call the operator made:
+a Bash step by each call whose command holds the printed command, whatever
+the operator ran before or after it in that call, and a message by each
+SendMessage call that holds the printed message. A step counts as made
+too by the call the operator made next after the result of its call of
+`next` that printed it, as `made` reads it, where the operator changed the
+text of the call."""
 
 import hashlib
+import re
 import shlex
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from functools import cache
 
 from controlled_markdown import mctx
 from operating.roles import Role, description
-from operating.state import State
+from operating.state import Call, Made, State
 
 COORDINATOR = "main"
 """The address SendMessage reaches the coordinator at."""
@@ -102,13 +113,53 @@ def undecided(what: str) -> Send:
     return Send(COORDINATOR, f"{UNDECIDED} {what}")
 
 
+def ruling_key(what: str) -> str:
+    """The key a `Decision:` line gives to rule the held step `what`."""
+    return hashlib.sha1(what.encode()).hexdigest()[:KEY_LENGTH]
+
+
+def held(what: str, choices: Mapping[str, str]) -> Send:
+    """A step that holds its procedure until the coordinator rules it, by
+    a `Decision:` line that gives its ruling key and one of `choices`, each
+    given with what it does."""
+    given = "; ".join(f"`{c}`: {meaning}" for c, meaning in choices.items())
+    return undecided(f"{what}. Rule it by the line `Decision: {ruling_key(what)} <choice>`, "
+                     f"with one of these choices: {given}.")
+
+
 type Step = Launch | Send | Bash | Stop | Wait | EndTurn | Again | Reply
 
 
 def repeated(step: Step, state: State) -> bool:
     """Whether `step` is a message an operator already sent: a step whose
     procedure then waits on its answer."""
-    return isinstance(step, Send) and state.sent(step.to, step.message)
+    return isinstance(step, Send) and sent(state, step.to, step.message)
+
+
+def sent(state: State, to: str, message: str, mark: str | None = None) -> bool:
+    """Whether an operator made the step that sends `to` the message
+    `message`, with no error: a SendMessage call to `to` that holds
+    `mark`, the part of the message that names what it gives, or where
+    none is given the whole message, or the call `made` reads."""
+    step_key = key(Send(to, message))
+    held = message if mark is None else mark
+    return any(c.tool == "SendMessage" and c.input.get("to") == to and not c.error
+               and held in str(c.input.get("message", "")) for c in state.calls) or any(
+        m.tool == "SendMessage" and m.call.tool == "SendMessage" and not m.call.error
+        and m.call.input.get("to") == to
+        and (m.key == step_key if m.key is not None else m.to == to and message.startswith(m.text))
+        for m in state.made)
+
+
+def bash_calls(state: State, command: str) -> list[Call]:
+    """The operators' Bash calls that made the Bash step `command`, in the
+    order they were made."""
+    step_key = key(Bash(command))
+    out = [c for c in state.calls
+           if c.tool == "Bash" and command in str(c.input.get("command", ""))]
+    out += [m.call for m in state.made if m.tool == "Bash" and m.call.tool == "Bash"
+            and (m.key == step_key if m.key is not None else m.text == command)]
+    return sorted({id(c): c for c in out}.values(), key=lambda c: c.time)
 
 
 def key(step: Step) -> str:
@@ -126,17 +177,51 @@ KEY_LENGTH = 12
 PASS_OVER = "pass-over"
 
 
-def pass_over(command: str) -> tuple[str, str] | None:
-    """The key and the line of a call of `operate.py pass-over`, or None
-    for any other command."""
+STEP_KEY = re.compile(rf"[0-9a-f]{{{KEY_LENGTH}}}")
+OPERATORS = "();<>|&\n"
+"""The characters of the shell's control and redirection operators."""
+
+
+def simple_commands(command: str) -> list[list[str]]:
+    """The words of each simple command of the Bash command `command`,
+    without its redirections, or none where the shell's quoting in it is
+    unbalanced. A redirection is an operator with `<` or `>`, the word
+    after it, and a number before it."""
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=OPERATORS)
+    lexer.whitespace = " \t\r"
+    lexer.whitespace_split = True
+    out: list[list[str]] = [[]]
+    redirect = False
     try:
-        words = shlex.split(command)
+        for word in lexer:
+            if redirect:
+                redirect = False
+            elif set(word) <= set(OPERATORS) and set(word) & set("<>"):
+                if out[-1] and out[-1][-1].isdigit():
+                    out[-1].pop()
+                redirect = True
+            elif set(word) <= set(OPERATORS):
+                out.append([])
+            else:
+                out[-1].append(word)
     except ValueError:
-        return None
+        return []
+    return [words for words in out if words]
+
+
+def pass_overs(command: str) -> list[tuple[str, str]]:
+    """The key and the line of each call of `operate.py pass-over` that the
+    Bash command `command` runs, with a key in the form `key` gives and
+    one line."""
     head = [*RUN_COMMAND.split(), PASS_OVER]
-    if words[:len(head)] != head or len(words) != len(head) + 3:
-        return None
-    return words[-2], words[-1]
+    return [(words[-2], words[-1]) for words in simple_commands(command)
+            if words[:len(head)] == head and len(words) == len(head) + 3
+            and STEP_KEY.fullmatch(words[-2])]
+
+
+def passed_over_line(step_key: str) -> str:
+    """The line `operate.py pass-over` prints for the step `step_key`."""
+    return mctx("Step {key} is passed over.").format(key=step_key)
 
 
 def passed(step: Step, state: State) -> str | None:
@@ -151,6 +236,92 @@ def wait_command(agent: str) -> str:
 
 def next_command(agent: str) -> str:
     return f"{RUN_COMMAND} next {agent}"
+
+
+def runs(command: str, action: str, agent: str) -> bool:
+    """Whether the Bash command `command` runs `operate.py` with `action`
+    for the operator `agent`, whatever else it runs."""
+    want = [*RUN_COMMAND.split(), action, agent]
+    return any(words == want for words in simple_commands(command))
+
+
+def is_wait(command: str, agent: str) -> bool:
+    return runs(command, "wait", agent)
+
+
+def is_next(command: str, agent: str) -> bool:
+    return runs(command, "next", agent)
+
+
+def only_command(command: str, agent: str) -> bool:
+    """Whether the Bash command `command` runs the command's `wait` or
+    `next` for the operator `agent` and nothing else but `cd` and `:`."""
+    want = [[*RUN_COMMAND.split(), action, agent] for action in ("wait", "next")]
+    found = simple_commands(command)
+    return any(words in want for words in found) and all(
+        words[0] in ("cd", ":") or words in want for words in found)
+
+
+def trailer(step: Step, agent: str) -> str:
+    """The line the command prints after a call it prints, which `made`
+    reads back."""
+    return f"{THEN}{next_command(agent)}`. Step key: {key(step)}."
+
+
+THEN = "\n\nThen run `"
+PRINTED_KEY = re.compile(rf"Step key: ({STEP_KEY.pattern})\.")
+
+
+def opening(step: Step, *fields: tuple[str, str]) -> str:
+    """The pattern of the text `printed` gives `step` up to its last
+    field, where `step` holds a stand-in for each field of `fields`, given
+    with the pattern of its value; the last stand-in ends the opening."""
+    text = printed(step, "")
+    out = re.escape(text[:text.index(fields[-1][0])])
+    for stand_in, pattern in fields[:-1]:
+        out = out.replace(re.escape(stand_in), pattern)
+    return out
+
+
+@cache
+def printed_opening() -> re.Pattern[str]:
+    """The opening of the text `printed` gives a message or a Bash call in
+    the foreground, up to the message or the command."""
+    send = opening(Send("\x00", "\x01"), ("\x00", r"(?P<to>[^\n]*)"), ("\x01", ""))
+    bash = opening(Bash("\x01"), ("\x01", ""))
+    return re.compile(f"^(?:{send}|{bash})", re.MULTILINE)
+
+
+def made(calls: Iterable[Call]) -> tuple[Made, ...]:
+    """Each message and Bash call in the foreground that the result of an
+    operator's call of `next` printed, with the call that operator made
+    next, other than a call of `wait` or `next` alone (`only_command`).
+    The result may be cut, as by
+    a pipe through `head` or `tail`: a step whose opening it cuts is not
+    read, and one whose key it cuts is read with no key, and as far as the
+    result gives it."""
+    by: dict[str, list[Call]] = {}
+    for c in sorted(calls, key=lambda c: c.time):
+        by.setdefault(c.operator, []).append(c)
+    out: list[Made] = []
+    for operator, own in by.items():
+        for c, after in zip(own, own[1:], strict=False):
+            command = str(c.input.get("command", ""))
+            if (c.tool != "Bash" or c.result is None or not is_next(command, operator)
+                    or (after.tool == "Bash"
+                        and only_command(str(after.input.get("command", "")), operator))):
+                continue
+            openings = list(printed_opening().finditer(c.result))
+            if not openings:
+                continue
+            opening = openings[-1]
+            rest = c.result[opening.end():]
+            found = PRINTED_KEY.search(rest)
+            end = rest.rfind(THEN)
+            tool = "SendMessage" if opening["to"] is not None else "Bash"
+            out.append(Made(found[1] if found else None, tool, opening["to"],
+                            rest[:end] if end >= 0 else rest.rstrip("\n"), after))
+    return tuple(out)
 
 
 def printed(step: Step, agent: str) -> str:

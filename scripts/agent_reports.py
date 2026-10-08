@@ -1,6 +1,16 @@
 """The reports of an agent that reached its parent, as the HELP of
-`profile_runs` gives them."""
+`profile_runs` gives them, and the signs in its parent's transcripts that
+its turn ended.
 
+A report's text is the text the agent wrote. The harness delivers a
+SubagentHandback report as a message from the agent framed by a one-line
+preamble (`HAND_BACK`), with each line of the report indented by
+`HAND_BACK_INDENT`; the report's text is the report without that preamble
+and that indent. The notification that follows it gives only a pointer to
+that message (`POINTER`): it gives no report text, and still says the
+agent stopped."""
+
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
@@ -15,6 +25,19 @@ from transcripts import Entry, agent_id, chain, epoch, main_transcript, read_ent
 # The opening of the note of a notification that the agent stopped with work
 # of its own still running.
 STILL_RUNNING = "This agent stopped with background work of its own still running"
+
+HAND_BACK = re.compile(r"\A\[Subagent hand-back\] [^\n]*The report follows:\n")
+"""The preamble of a message that delivers an agent's SubagentHandback
+report, on the message's first line."""
+
+HAND_BACK_INDENT = "  "
+"""The indent the harness puts before each line of a SubagentHandback
+report."""
+
+POINTER = re.compile(r'\AThis agent\'s report was delivered to you as a message from "[^"]+" '
+                     r"\(its SubagentHandback call\)\. Read it there; it is not repeated here\.\Z")
+"""The whole result of a notification whose agent's report reached the
+parent as a SubagentHandback message."""
 
 
 class ReportKind(Enum):
@@ -35,6 +58,70 @@ class Report:
     kind: ReportKind
     time: float
     text: str
+
+
+class Sign(Enum):
+    """What an entry of a parent's transcripts says of an agent's turn: a
+    notification that it stopped (`is_stop`), a SubagentHandback message
+    from it, a notification that it stopped with background work of its
+    own still running, which says it has not reported yet, or any other
+    notification of it."""
+    STOPPED = "stopped"
+    HANDED_BACK = "handed back"
+    STILL_RUNNING = "still running"
+    OTHER = "other"
+
+
+ENDED = frozenset({Sign.STOPPED, Sign.HANDED_BACK})
+"""The signs that the agent's turn ended."""
+
+
+def handed_back(text: str) -> str | None:
+    """The report a message from an agent delivers by SubagentHandback,
+    without the harness's preamble and indent, or None where the message
+    is no such delivery. A line of the report that lacks the indent is
+    kept as it stands."""
+    m = HAND_BACK.match(text)
+    if m is None:
+        return None
+    return "\n".join(line.removeprefix(HAND_BACK_INDENT)
+                     for line in text[m.end():].split("\n")).strip()
+
+
+def sign_of(n: Notification) -> Sign:
+    if is_stop(n):
+        return Sign.STOPPED
+    if (n.note or "").startswith(STILL_RUNNING):
+        return Sign.STILL_RUNNING
+    return Sign.OTHER
+
+
+def entry_signs(e: Entry) -> list[tuple[str, Sign]]:
+    """Each id that `e`, an entry of a parent's transcripts, gives a sign
+    of, with that sign: the task id and the tool-use id of a notification,
+    and the agent id of a SubagentHandback message."""
+    if not can_report(e):
+        return []
+    out = [(v, sign_of(n)) for n in notifications(e) for v in n.ids]
+    if is_prompt(e):
+        out += [(who, Sign.HANDED_BACK) for who, text in agent_messages(e)
+                if handed_back(text) is not None]
+    return out
+
+
+def last_sign(entries: Iterable[Entry], since: float, ids: set[str]) -> Sign | None:
+    """The latest sign among `entries` timestamped after `since` of an
+    agent that one of `ids` names, other than `Sign.OTHER`, or None. Of
+    signs at one time, one of `ENDED` counts as the latest."""
+    found: tuple[float, bool, Sign] | None = None
+    for e in entries_after(entries, since):
+        t = epoch(e["timestamp"])
+        for v, sign in entry_signs(e):
+            if v in ids and sign is not Sign.OTHER:
+                k = (t, sign in ENDED, sign)
+                if found is None or k[:2] > found[:2]:
+                    found = k
+    return found[2] if found else None
 
 
 def can_report(entry: Entry) -> bool:
@@ -146,9 +233,11 @@ def entry_reports(e: Entry, aid: str | None, call: str | None,
     t = epoch(e["timestamp"])
     out = [Report(ReportKind.NOTIFICATION, t, n.result.strip())
            for n in agent_notifications(e, aid, call, undecided)
-           if n.status is Status.COMPLETED and n.result is not None and is_stop(n)]
+           if n.status is Status.COMPLETED and n.result is not None and is_stop(n)
+           and POINTER.match(n.result.strip()) is None]
     if is_prompt(e):
-        out.extend(Report(ReportKind.MESSAGE, t, text)
+        out.extend(Report(ReportKind.MESSAGE, t, report if (report := handed_back(text)) is not None
+                          else text)
                    for who, text in agent_messages(e) if aid is not None and who == aid)
     result = e.get("toolUseResult")
     if call and isinstance(result, dict) and any(

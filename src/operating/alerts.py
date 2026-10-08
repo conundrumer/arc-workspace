@@ -31,7 +31,7 @@ from operating.changes import own_worktree
 from operating.reports import HAND_OVER, handed_over
 from operating.roles import AGENT_ID
 from operating.state import Agent, Message, State
-from operating.steps import Bash, Launch, Send, Step, undecided
+from operating.steps import Bash, Launch, Send, Step, sent, undecided
 from operating.tracker import AGENT
 from ticketing.vocabulary import Domain, Kind
 
@@ -121,7 +121,7 @@ def on(state: State, alert: Alert, a: Agent) -> Step | None:
             return Send(alert.agent, to_agent(alert)) if a.pending else None
         case AlertKind.OUTGROWN:
             text = to_agent(alert)
-            if not state.sent(alert.agent, text):
+            if not sent(state, alert.agent, text):
                 return Send(alert.agent, text) if a.pending else None
             r = a.last_report
             if a.pending or r is None or r.time < since or not handed_over(a):
@@ -158,6 +158,6 @@ def step(state: State) -> Step | None:
             s = undecided(f"an alert on an agent no operator launched:\n{m.text}")
         else:
             s = on(state, alert, a)
-        if s is not None and not (isinstance(s, Send) and state.sent(s.to, s.message)):
+        if s is not None and not (isinstance(s, Send) and sent(state, s.to, s.message)):
             return s
     return None

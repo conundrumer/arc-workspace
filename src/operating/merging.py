@@ -3,7 +3,7 @@
 
 The merge is `scripts/merge_change.py`, whose checks cover the
 `controlled_markdown` check. What a merge call did is read by that
-script's own forms (`state.Merge`):
+script's own forms and by `master` (`state.Merge`):
 
 - a call that never ran, as where the harness denied it, is written on the
   ticket in a line whose note opens with `coordinator`, which takes the
@@ -33,7 +33,7 @@ from operating import briefs
 from operating.reports import splits
 from operating.roles import Role
 from operating.state import Agent, Call, Merge, State, Ticket
-from operating.steps import Bash, Launch, Send, Step
+from operating.steps import Bash, Launch, Send, Step, bash_calls, simple_commands
 from operating.tracker import COORDINATOR, RERUN, WORKTREE, log
 from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Status
 
@@ -51,15 +51,37 @@ QUOTE_LINE = re.compile(rf"^(?P<path>\S+):(?P<line>\d+): (?:{'|'.join(BROKEN_QUO
 the form `ControlledMarkdownError` prints."""
 
 
+MESSAGE = "-m"
+"""The option of `merge_change.py` that gives a change's commit message."""
+
+
 def merge_command(t: Ticket, w: Path) -> str:
-    return shlex.join(["uv", "run", "python", MERGE_SCRIPT, str(w), "-m", t.title])
+    return shlex.join(["uv", "run", "python", MERGE_SCRIPT, str(w), MESSAGE, t.title])
+
+
+def merge_messages(command: str) -> list[str] | None:
+    """The commit message after each `MESSAGE` of the call of `merge_change.py`
+    that the Bash command `command` runs, none where it runs none, or None
+    where the shell's quoting in `command` is unbalanced."""
+    found = simple_commands(command)
+    if not found:
+        return None
+    for words in found:
+        at = next((i for i, w in enumerate(words) if w.endswith(MERGE_SCRIPT)), None)
+        if at is not None:
+            rest = words[at + 1:]
+            return [rest[i + 1] for i, w in enumerate(rest[:-1]) if w == MESSAGE]
+    return []
 
 
 def merge_calls(state: State, t: Ticket) -> list[Call]:
-    """The operators' merge calls on any worktree `t`'s log gives."""
+    """The operators' merge calls on any worktree `t`'s log gives: those
+    pending, and those with an outcome (`state.Merge`), which a call that
+    merges no change, as a call of the script's `--help`, has not."""
     paths = {m[1] for line in t.log for m in WORKTREE.finditer(line.note)}
     return [c for c in state.calls if c.tool == "Bash" and MERGE_SCRIPT in str(
-        c.input.get("command", "")) and any(p in str(c.input.get("command", "")) for p in paths)]
+        c.input.get("command", "")) and any(p in str(c.input.get("command", "")) for p in paths)
+        and (c.result is None or c.merge is not None)]
 
 
 def merged(state: State, t: Ticket) -> bool:
@@ -135,7 +157,7 @@ def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
         command = (log(r.number, Status.CLOSED, r.status, note, None) if part is None else
                    log(r.number, r.status, r.status,
                        f"left unsplit by change {t.number}: {part}", None))
-        if not any(not c.error for c in state.bash_calls(command)):
+        if not any(not c.error for c in bash_calls(state, command)):
             return Bash(command)
     for q in sorted(state.tickets.values(), key=lambda q: q.order):
         if (q.kind is Kind.QUESTION and q.domain is Domain.CHANGE and q.subject == t.number

@@ -49,19 +49,23 @@ from operating.roles import Role, description
 from operating.state import State, Ticket
 from ticketing.vocabulary import Status
 from operating.steps import (
+    COORDINATOR,
+    UNDECIDED,
+    WAIT_CAP,
+    WAIT_SECONDS,
     Again,
     Bash,
     EndTurn,
     Launch,
     Reply,
+    Send,
     Step,
     Stop,
     Wait,
-    WAIT_CAP,
-    WAIT_SECONDS,
+    bash_calls,
+    is_wait,
     key,
-    next_command,
-    wait_command,
+    only_command,
     passed,
     repeated,
     undecided,
@@ -76,12 +80,15 @@ def first(state: State, *procedures: Callable[[State], Step | None]) -> Step | N
     failed, as `refused` gives, or whose step an operator passed over,
     waits until the state changes, and the procedures after it go on. A
     step passed over goes to the coordinator, once, as one its procedure
-    waits on."""
+    waits on, other than a step that gives the coordinator a step as
+    undecided, which the line that passed it over answered."""
     for procedure in procedures:
         s = procedure(state)
         if s is None or repeated(s, state):
             continue
         if (line := passed(s, state)) is not None:
+            if isinstance(s, Send) and s.to == COORDINATOR and s.message.startswith(UNDECIDED):
+                continue
             held = undecided(f"step {key(s)}, which the line `{line}` passed over, holds up "
                              f"its procedure")
             if not repeated(held, state):
@@ -106,7 +113,7 @@ def refused(state: State, step: Step) -> Step | None:
                     and c.input.get("description") == what]
         case Bash(command):
             what = command
-            same = state.bash_calls(command)
+            same = [c for c in bash_calls(state, command) if c.result is not None]
         case _:
             return None
     if not same or not same[-1].error:
@@ -181,15 +188,16 @@ def idle_waits(state: State) -> int:
     that start within half of `WAIT_SECONDS` of the one counted before them
     ended together, and count as one."""
     own = [c for c in state.calls if c.operator == state.me]
-    wait = wait_command(state.me)
+    waits = [c for c in own
+             if c.tool == "Bash" and is_wait(str(c.input.get("command", "")), state.me)]
     events = [m.time for m in state.received]
     events += [r.time for a in state.agents if a.operator == state.me for r in a.reports]
-    events += [c.time for c in own
-               if c.input.get("command") not in (wait, next_command(state.me))]
+    events += [c.time for c in own if not (c.tool == "Bash" and only_command(
+        str(c.input.get("command", "")), state.me))]
     since = max(events, default=0.0)
     count, last = 0, -WAIT_SECONDS
-    for c in own:
-        if c.input.get("command") == wait and c.time > since and c.time - last >= WAIT_SECONDS / 2:
+    for c in waits:
+        if c.time > since and c.time - last >= WAIT_SECONDS / 2:
             count, last = count + 1, c.time
     return count
 

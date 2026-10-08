@@ -14,7 +14,9 @@ word of its kind and a colon, past a list marker:
   step the command prints, and the command passes over, other than a
   `Decision:` line that names a change whose ticket gives no `editors`
   field, which gives that change's editors by `editors: <editor>, ...`,
-  the form of that field (`decided_editors`).
+  the form of that field (`decided_editors`), and a `Decision:` line that
+  gives the ruling key of a step held for the coordinator, with one of
+  the choices that step gives (`ruled`).
 
 A line of the coordinator's in no such form is a step the command gives to
 the coordinator as undecided.
@@ -31,6 +33,17 @@ from enum import StrEnum
 
 from operating.roles import PASSES, Role
 from operating.state import Message, State
+from operating.steps import Send, held, ruling_key, undecided
+
+
+class Ruling(StrEnum):
+    """The choices a `Decision:` line gives a step held for the
+    coordinator (`ruled`): go on as though the step were passed, the
+    merge, the move to `tickets/open/`, or another agent on it."""
+    PASSES = "passes"
+    MERGE = "merge"
+    OPEN = "open"
+    AGAIN = "again"
 
 
 class Directive(StrEnum):
@@ -109,6 +122,27 @@ def decided_editors(state: State, number: str) -> tuple[Line, str | None] | None
             m = EDITORS_FIELD.search(ln.rest)
             return ln, None if m is None else m["field"]
     return None
+
+
+def ruled(state: State, what: str, choices: dict[Ruling, str]) -> Ruling | Send:
+    """The choice among `choices` that the last `Decision:` line giving the
+    ruling key of the held step `what` gives: the first of its words after
+    that key that is a choice. Where no such line reached the operator, the
+    step that gives `what` to the coordinator with its choices, and where
+    the last such line gives none of them, the step that gives that line
+    back to the coordinator as undecided."""
+    k = ruling_key(what)
+    for ln in reversed(lines(state)):
+        if ln.kind is not Directive.DECISION or k not in ln.rest:
+            continue
+        after = re.findall(r"[a-z]+", ln.rest.split(k, 1)[1])
+        found = next((Ruling(w) for w in after if w in choices), None)
+        if found is None:
+            return undecided(f"the line `{ln.text}` gives step {k} none of the choices "
+                             f"{', '.join(choices)}")
+        return found
+    return held(what, {c.value: meaning for c, meaning in choices.items()})
+
 
 def named(state: State) -> set[str]:
     """The tickets the coordinator names to the operator."""

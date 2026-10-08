@@ -26,17 +26,17 @@ console_importable()
 # `scripts/` off `sys.path`, and the modules below import from there.
 importable(checkout.scripts())
 
-from agent_launches import (Launch as Launched, launched, pending_agents, resumes,  # noqa: E402
-                            run_launches, timed_entries)
-from agent_reports import STILL_RUNNING, agent_notifications  # noqa: E402
+from agent_launches import launched, resumes, run_launches, timed_entries, turn_signs  # noqa: E402
+from agent_reports import ENDED, Sign, last_sign  # noqa: E402
 from agent_turns import first_time, has_ended, turns  # noqa: E402
 from context_bound_hook import OPERATOR, past_bound  # noqa: E402
 from merge_change import conflicted, ran  # noqa: E402
 from open_agents import work_open  # noqa: E402
 from profile_runs import budget_of  # noqa: E402
 from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks,  # noqa: E402
-                       context_size, is_prompt, message_text, notified, run_entries,
-                       session_agents, text_of)
+                       context_size, is_prompt, message_text, notifications, notified,
+                       output_file, run_entries, session_agents, text_of)
+from run_reads import Status as TaskStatus  # noqa: E402
 from senders import Sender, sender  # noqa: E402
 from ticket_files import TICKET_NAME, ticket_files, ticket_name  # noqa: E402
 from ticket_form import FRONT, title  # noqa: E402
@@ -49,13 +49,12 @@ from transcripts import (Refused, entries_back, epoch, find, read_entries,  # no
 from operating import alerts, briefs, plan, steps  # noqa: E402
 from operating.directives import named  # noqa: E402
 from operating.roles import PASSES, Role, described, editors_of  # noqa: E402
-from operating.merging import MERGE_SCRIPT  # noqa: E402
+from operating.merging import MERGE_SCRIPT, merge_messages  # noqa: E402
 from operating.state import (Agent, Call, Commit, LogLine, Merge, Message,  # noqa: E402
                              Report, State, Ticket)
-from operating.steps import (COMMAND, FOREGROUND_MS, KEY_LENGTH, WAIT_SECONDS,  # noqa: E402
-                             Again,
-                             Bash, EndTurn, Launch, Send, Stop, Wait, key, next_command,
-                             pass_over, printed, wait_command)
+from operating.steps import (COMMAND, FOREGROUND_MS, STEP_KEY, WAIT_SECONDS,  # noqa: E402
+                             Again, Bash, EndTurn, Launch, Send, Stop, Wait, is_wait,
+                             made, next_command, pass_overs, passed_over_line, printed, trailer)
 from operating.task_work import restore, set_aside  # noqa: E402
 from operating.tracker import worktree  # noqa: E402
 from ticketing.vocabulary import Domain, Kind, Status  # noqa: E402
@@ -70,7 +69,8 @@ HELP = mctx("""
         uv run python scripts/operate.py pass-over <agent id> <key> '<line>'
         ```
     - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters in full, or the final reply. The brief of a launch other than a solver pass's ends with the line `Budget: N minutes`, where the budget of its agent type over every run of that type, as `profile_runs.py --help` gives a type's budget, is N minutes rounded up, and where that type has none, it has no such line. It holds back the launch of an agent type whose definition under `.claude/agents/` a commit of `master` changed less than {reload} seconds ago until those seconds have passed. Where no step is ready and no agent runs that this operator launched or last resumed itself, other than one a notification said has not reported yet, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again.
-    - After each call it prints, `next` prints that step's key, which is the same at each read of the state that gives the same step. `pass-over` passes over the step whose key it is given, by the `Override:` or `Decision:` line it is given, which rules the step out. From then on, `next` passes that step over for each operator, gives the coordinator that step, once, as one its procedure waits on, and goes on with the other procedures. A pipeline whose next pass is passed over stops instead.
+    - After each call it prints, `next` prints that step's key, which is the same at each read of the state that gives the same step. `pass-over` passes over the step whose key it is given, by the `Override:` or `Decision:` line it is given, which rules the step out, from the moment its call is made, in a Bash call of its own or with other commands. From then on, `next` passes that step over for each operator, gives the coordinator that step, once, as one its procedure waits on, other than a step that gave the coordinator a step as undecided, and goes on with the other procedures. A pipeline whose next pass is passed over stops instead.
+    - A step `next` printed counts as made by the call the operator made: a Bash call whose command runs the printed command among others, or the call the operator made right after the call of `next` that printed the step.
     - `wait` is the operator's wait in the background: it ends once the state gives a step, or after {wait} seconds.
     - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass, and `restore` puts it back and removes the task's claim, as the section `Passes on a task` of `prompts/agents/notes/launching.md` gives.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives, and the command refuses where the shell gives none.
@@ -88,7 +88,6 @@ COMMITS = 300
 
 CODE_DIRS = ("src/", "scripts/", "tests/")
 TASK_ID = re.compile(r"[0-9a-f]{8}")
-STEP_KEY = re.compile(rf"[0-9a-f]{{{KEY_LENGTH}}}")
 
 
 def main_tree() -> Path:
@@ -164,13 +163,30 @@ def worktrees(main: Path) -> dict[Path, str | None]:
     return out
 
 
-def merge_outcome(command: str, result: str | None, error: bool) -> Merge | None:
-    """What a Bash call of `command` that `merge_change.py` runs did, by
-    that script's forms, or None for any other call and one still
-    pending."""
+def merge_outcome(aid: str, command: str, time: float, result: str | None, error: bool,
+                  subjects: dict[str, float], undecided: list[str]) -> Merge | None:
+    """What a Bash call of the operator `aid` of `command` at `time` that
+    `merge_change.py` runs did, or None for any other call, one that
+    merges no change, as a call of its `--help`, and one still pending. A
+    call the harness refused, an error with no line of the script's own,
+    never ran. Otherwise it merged where `master` holds, by `subjects`, the
+    time of the latest commit of `master` with each subject, a commit made
+    at or after the call with the message of each change it merges,
+    whatever its exit status, as through a pipe; and otherwise the
+    output's own forms give what it did. A call whose quoting cannot be
+    read has no outcome, and an `undecided` line names it."""
     if MERGE_SCRIPT not in command or result is None:
         return None
-    if not error:
+    messages = merge_messages(command)
+    if messages is None:
+        undecided.append(mctx("{run}: the quoting of the merge call `{command}` cannot be "
+                              "read").format(run=aid, command=command))
+        return None
+    if not messages:
+        return None
+    if error and not ran(result):
+        return Merge.NOT_RUN
+    if all(subjects.get(m, -math.inf) >= math.floor(time) for m in messages):
         return Merge.MERGED
     if not ran(result):
         return Merge.NOT_RUN
@@ -179,11 +195,12 @@ def merge_outcome(command: str, result: str | None, error: bool) -> Merge | None
 
 def commits(main: Path) -> tuple[Commit, ...]:
     out: list[Commit] = []
-    for chunk in git(main, "log", "master", f"-n{COMMITS}", "--format=%x00%H %ct",
+    for chunk in git(main, "log", "master", f"-n{COMMITS}", "--format=%x00%H %ct %s",
                      "--name-only").split("\0")[1:]:
         head, _, names = chunk.partition("\n")
-        sha, ct = head.split()
-        out.append(Commit(sha, float(ct), any(n.startswith(CODE_DIRS) for n in names.split())))
+        sha, ct, subject = (head.split(" ", 2) + [""])[:3]
+        out.append(Commit(sha, float(ct), any(n.startswith(CODE_DIRS) for n in names.split()),
+                          subject))
     return tuple(out)
 
 
@@ -247,10 +264,13 @@ def unwrapped(text: str) -> str:
 
 def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
                   agents: list[Agent], calls: list[Call], messages: list[Message],
-                  passes: dict[str, tuple[str, ...] | None]) -> None:
+                  passes: dict[str, tuple[str, ...] | None],
+                  subjects: dict[str, float]) -> None:
     entries = run_entries(path)
     uses: dict[str, tuple[float, dict[str, Any], str]] = {}
-    results: dict[str, tuple[str, bool]] = {}
+    results: dict[str, tuple[str | None, bool]] = {}
+    moved: dict[str, tuple[str, Path | None]] = {}
+    tasks: dict[str, TaskStatus | None] = {}
     briefed = False
     children = run_launches(path)[1].get(aid, frozenset())
     for e in entries:
@@ -259,9 +279,16 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
             for b in blocks(e, "tool_use"):
                 uses[b.get("id", "")] = (epoch(stamp), b.get("input") or {}, b.get("name", ""))
         elif e.get("type") == "user":
+            result = e.get("toolUseResult")
             for b in blocks(e, "tool_result"):
-                results[b.get("tool_use_id", "")] = (text_of(b.get("content")),
-                                                      bool(b.get("is_error")))
+                call = b.get("tool_use_id", "")
+                results[call] = (text_of(b.get("content")), bool(b.get("is_error")))
+                if isinstance(result, dict) and result.get(BACKGROUND_TASK):
+                    moved[call] = (str(result[BACKGROUND_TASK]), output_file(b))
+        if e.get("type") != "assistant":
+            for n in notifications(e):
+                for v in n.ids:
+                    tasks[v] = n.status
         if stamp and is_prompt(e):
             if not briefed or sender(e, MAIN, frozenset()) is Sender.PARENT:
                 briefed = True
@@ -270,16 +297,17 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
                 messages += [Message(aid, epoch(stamp), s, text)
                              for s, text in agent_messages(e) if s not in children]
     for call, (t, inp, tool) in uses.items():
-        result = results.get(call)
-        text, error = (None, False) if result is None else result
+        text, error = results.get(call, (None, False))
+        if call in moved:
+            text, error = background_output(aid, call, *moved[call], tasks, undecided)
         calls.append(Call(aid, t, tool, inp, text, error, merge_outcome(
-            str(inp.get("command", "")) if tool == "Bash" else "", text, error)))
+            aid, str(inp.get("command", "")) if tool == "Bash" else "", t, text, error,
+            subjects, undecided)))
     if not any(tool == "Agent" and described(str(inp.get("description", "")))
                for _, inp, tool in uses.values()):
         return
     found = launched(path, undecided)
-    pending = (set(pending_agents(path, undecided))
-               if any(launch.pending and launch.agent for launch in found) else set())
+    signs = turn_signs(path, [launch for launch in found if launch.pending])
     own = resumes(timed_entries(path), path.stem, None, undecided)
     for launch in found:
         use = uses.get(launch.call)
@@ -289,16 +317,42 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
         if d is None:
             continue
         reports = tuple(Report(r.time, r.text) for r in launch.reports(0.0, undecided))
+        sign = (signs.get(launch.agent or "") if launch.pending else
+                last_sign(launch.entries, launch.since, {launch.agent or "", launch.call}))
+        still = sign is Sign.STILL_RUNNING
         a = Agent(launch.agent, aid, d.role, d.subject, str(use[1].get("prompt", "")),
-                  use[0], launch.pending, reports,
-                  still_running=launch.pending and still_running(launch, undecided),
+                  use[0], still or (launch.pending and sign not in ENDED), reports,
+                  still_running=still,
                   notifies=launch.since <= max(use[0], own.get(launch.agent or "", 0.0)))
-        if launch.pending and launch.agent and launch.agent not in pending:
+        if launch.pending and not a.pending and launch.agent:
             a = ended_with(a, None if any(r.time > launch.since for r in reports)
-                           else reply_since(launch.agent, launch.since))
+                           else reply_to(a, launch.since))
         agents.append(a)
         if d.role in PASSES and launch.agent and reports:
             passes[launch.agent] = pass_tickets(reports[-1].text, main)
+
+
+def background_output(aid: str, call: str, task: str, output: Path | None,
+                      tasks: dict[str, TaskStatus | None],
+                      undecided: list[str]) -> tuple[str | None, bool]:
+    """The result of the Bash call `call`, which the harness ran or moved
+    to the background as task `task`, writing to `output`: None while no
+    notification of the task reached the operator, and otherwise the
+    output, as an error where the notification's status is not
+    `completed`. An output whose file is gone, or named by no result, and
+    a notification whose status is of no known form, are unknown: the call
+    stays pending, and an `undecided` line names it."""
+    if task not in tasks:
+        return None, False
+    status = tasks[task]
+    if status is None or output is None or not output.is_file():
+        undecided.append(mctx("{run}: the outcome of call {call}, which ran in the background "
+                              "as task {task}, is unknown: {why}").format(
+            run=aid, call=call, task=task,
+            why="its notification's status is of no known form" if status is None
+            else "its output is gone"))
+        return None, False
+    return output.read_text(errors="replace"), status is not TaskStatus.COMPLETED
 
 
 def final_reply(path: Path) -> Report | None:
@@ -332,6 +386,13 @@ def reply_since(agent: str, since: float) -> Report | None:
     return r if r is not None and r.time > since else None
 
 
+def reply_to(a: Agent, since: float) -> Report | None:
+    """The final reply in the transcript of `a` after `since`, where its
+    operator launched or last resumed it itself, so that reply went to
+    that operator, or None."""
+    return reply_since(a.agent_id, since) if a.agent_id and a.notifies else None
+
+
 def stalled_reports(agents: list[Agent], messages: list[Message]) -> dict[str, Report]:
     """The final reply in the transcript of each agent a stall alert names
     that is pending, given after its launch."""
@@ -358,8 +419,8 @@ def ended_with(a: Agent, reply: Report | None) -> Agent:
 def ended_elsewhere(agents: list[Agent], me: str) -> dict[str, Report | None]:
     """For each pending agent of another operator whose work is no longer
     open, an agent whose report reaches no running operator, the final
-    reply in its transcript, where it gives one after its launch, or
-    None."""
+    reply in its transcript, where it gives one after its launch and went
+    to that operator (`reply_to`), or None."""
     out: dict[str, Report | None] = {}
     for a in agents:
         if not a.pending or a.operator == me or a.agent_id is None or a.agent_id in out:
@@ -367,22 +428,15 @@ def ended_elsewhere(agents: list[Agent], me: str) -> dict[str, Report | None]:
         path = find(a.agent_id)
         if work_open(path, []):
             continue
-        out[a.agent_id] = reply_since(a.agent_id, a.launched)
+        out[a.agent_id] = reply_to(a, a.launched)
     return out
-
-
-def still_running(launch: Launched, undecided: list[str]) -> bool:
-    """Whether a notification since the launch or the last resume of
-    `launch` says its agent stopped with work of its own still running."""
-    return any((n.note or "").startswith(STILL_RUNNING)
-               for e in launch.entries if e.get("timestamp") and epoch(e["timestamp"]) > launch.since
-               for n in agent_notifications(e, launch.agent, launch.call, undecided))
 
 
 def wait_task(me: str, path: Path) -> str | None:
     """The ID of the operator's wait in the background that has not ended:
-    no notification of it reached the operator, and no TaskStop call of
-    the operator on it has its result."""
+    no notification of it reached the operator, in a user entry or in a
+    message queued while it worked, and no TaskStop call of the operator
+    on it has its result."""
     entries = run_entries(path)
     waits: set[str] = set()
     stops: dict[str, str] = {}
@@ -391,13 +445,16 @@ def wait_task(me: str, path: Path) -> str | None:
             inp = b.get("input") or {}
             if not (call := b.get("id")):
                 continue
-            if b.get("name") == "Bash" and inp.get("command") == wait_command(me):
+            if b.get("name") == "Bash" and is_wait(str(inp.get("command", "")), me):
                 waits.add(call)
             elif b.get("name") == "TaskStop" and inp.get("task_id"):
                 stops[call] = str(inp["task_id"])
     started: list[str] = []
     ended: set[str] = set()
     for e in entries:
+        if e.get("type") == "assistant":
+            continue
+        ended.update(notified(e))
         if e.get("type") != "user":
             continue
         result = e.get("toolUseResult")
@@ -407,7 +464,6 @@ def wait_task(me: str, path: Path) -> str | None:
                 started.append(str(result[BACKGROUND_TASK]))
             if call in stops:
                 ended.add(stops[call])
-        ended.update(notified(e))
     running = [t for t in started if t not in ended]
     return running[-1] if running else None
 
@@ -426,13 +482,17 @@ def read_state(me: str) -> State:
     calls: list[Call] = []
     messages: list[Message] = []
     passes: dict[str, tuple[str, ...] | None] = {}
+    history = commits(main)
+    subjects: dict[str, float] = {}
+    for c in history:
+        subjects[c.subject] = max(subjects.get(c.subject, c.time), c.time)
     for aid, path in runs:
-        read_operator(aid, path, main, undecided, agents, calls, messages, passes)
+        read_operator(aid, path, main, undecided, agents, calls, messages, passes, subjects)
     stalled = stalled_reports(agents, messages)
     ended: dict[str, Report | None] = {**ended_elsewhere(agents, me), **stalled}
     agents = [ended_with(a, ended[a.agent_id]) if a.pending and a.agent_id in ended else a
               for a in agents]
-    known = {a.agent_id for a in agents if a.agent_id}
+    known = {a.agent_id for a in agents if a.agent_id} | {aid for aid, _ in runs}
     for line in dict.fromkeys(undecided):
         if line.split(":", 1)[0] in known:
             print(f"operate: undecided: {line}", file=sys.stderr)
@@ -451,11 +511,12 @@ def read_state(me: str) -> State:
         tickets=tickets, agents=tuple(sorted(agents, key=lambda a: a.launched)),
         calls=tuple(sorted(calls, key=lambda c: c.time)), messages=tuple(messages),
         to_settle=(), worktrees=frozenset(trees), claims=claims(main),
-        commits=commits(main), code_review=code_review(main), wait_task=wait_task(me, my_path),
+        commits=history, code_review=code_review(main), wait_task=wait_task(me, my_path),
         pass_tickets=passes, stalled=stalled,
-        passed={p[0]: p[1] for c in calls if c.tool == "Bash" and not c.error
-                and c.result is not None
-                and (p := pass_over(str(c.input.get("command", "")))) is not None},
+        passed={k: line for c in calls if c.tool == "Bash"
+                for k, line in pass_overs(str(c.input.get("command", "")))
+                if c.result is None or passed_over_line(k) in c.result},
+        made=made(calls),
         branches={w: b for w, b in trees.items() if b is not None})
     given = [ticket_number(n) for n in named(state) if n in tickets]
     held = {w for t in tickets.values() if t.status is Status.ASSIGNED and t.holder == me
@@ -522,7 +583,7 @@ def next_step(me: str) -> int:
         if not isinstance(step, Again) or time.monotonic() + POLL_SECONDS > deadline:
             print(printed(with_budget(step) if isinstance(step, Launch) else step, me))
             if isinstance(step, CALLS):
-                print(f"\nThen run `{next_command(me)}`. Step key: {key(step)}.")
+                print(trailer(step, me).removeprefix("\n"))
             return 0
         time.sleep(POLL_SECONDS)
 
@@ -564,7 +625,7 @@ def main(argv: list[str]) -> int:
             case steps.PASS_OVER:
                 if len(args.rest) != 2 or not STEP_KEY.fullmatch(args.rest[0]):
                     parser.error("pass-over takes an agent id, a step's key and a line")
-                print(mctx("Step {key} is passed over.").format(key=args.rest[0]))
+                print(passed_over_line(args.rest[0]))
                 return 0
             case _:
                 if args.rest:

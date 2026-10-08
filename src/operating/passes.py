@@ -1,7 +1,9 @@
 """The solver pipelines: Analyze, then Create, then Refine on one task, from
 the pass the coordinator gives, as
 [Passes on a task](prompts/agents/notes/launching.md#passes-on-a-task)
-gives the claim and the work set aside around them.
+gives the claim and the work set aside around them. Whether a task is
+claimed is read from its claim file: a pipeline on a task another session
+claims stops, and a pipeline from the queue takes no such task.
 
 After each pass, a transcript review of it, then one ticket analyst with
 the tickets the pass's report lists under `## Tickets filed` and those the
@@ -25,7 +27,8 @@ from operating.directives import Line, Pipeline, lines, pipelines, queue_counts,
 from operating.roles import PASSES, Purpose, Role, analyst_subject, joined
 from operating.state import Agent, State
 from ticketing.vocabulary import Domain, Kind, Status
-from operating.steps import COORDINATOR, RUN_COMMAND, Bash, Launch, Send, Step, passed, undecided
+from operating.steps import (COORDINATOR, RUN_COMMAND, Bash, Launch, Send, Step, bash_calls, passed,
+                             sent, undecided)
 from operating.tracker import blocked_on_user
 
 TASK = re.compile(r"\b[0-9a-f]{8}\b")
@@ -60,8 +63,10 @@ def restore_command(task: str) -> str:
 
 
 def ran(state: State, command: str, since: float) -> list[bool]:
-    """Whether each call of `command` since `since` failed."""
-    return [c.error for c in state.bash_calls(command) if c.time >= since and c.result is not None]
+    """Whether each call that made the step `command` since `since`
+    failed: a pending call has not."""
+    return [c.result is not None and c.error for c in bash_calls(state, command)
+            if c.time >= since]
 
 
 def latest(state: State, role: Role, subject: str, since: float) -> Agent | None:
@@ -82,12 +87,16 @@ def run(state: State, p: Pipeline) -> Outcome:
     for role in order:
         a = latest(state, role, p.task, since)
         if a is None:
-            if state.claims.get(p.task) != state.session:
+            holder = state.claims.get(p.task)
+            if holder is not None and holder != state.session:
+                return Outcome(None, True, f"the claim on task {p.task} fails: session "
+                                           f"{holder} holds it")
+            if holder is None:
                 claim = claim_command(state, p.task)
                 tries = ran(state, claim, since)
                 if any(tries):
                     return Outcome(None, True, f"the claim on task {p.task} fails")
-                return Outcome(Bash(claim))
+                return Outcome(None if tries else Bash(claim))
             aside = aside_command(p.task, role)
             if role in SETS_ASIDE and not ran(state, aside, since):
                 return Outcome(Bash(aside))
@@ -103,7 +112,7 @@ def run(state: State, p: Pipeline) -> Outcome:
         filed = state.pass_tickets.get(a.agent_id)
         if filed is None:
             told = no_report(role, a)
-            if not state.sent(COORDINATOR, told.message):
+            if not sent(state, COORDINATOR, told.message):
                 return Outcome(told)
             return end(state, p, restore, f"the {role} pass {a.agent_id} replied with no "
                                           f"path of a report with a `## Tickets filed` "
@@ -156,8 +165,8 @@ def end(state: State, p: Pipeline, restore: str, reason: str | None) -> Outcome:
 def ended_before(state: State, p: Pipeline, time: float) -> bool:
     """Whether the pipeline `p` ended before `time`: its work set aside went
     back by then."""
-    return any(p.since <= c.time < time and c.result is not None and not c.error
-               for c in state.bash_calls(restore_command(p.task)))
+    return any(p.since <= c.time < time and not c.error
+               for c in bash_calls(state, restore_command(p.task)))
 
 
 def queued(state: State, given: list[Line]) -> list[Pipeline]:
@@ -172,7 +181,7 @@ def queued(state: State, given: list[Line]) -> list[Pipeline]:
         if any(not q.task or not ended_before(state, q, since) for q in out):
             continue
         command = f"bash scripts/queue.sh --order name -n {count * QUEUE_SPARE}"
-        calls = [c for c in state.bash_calls(command) if c.time >= since and c.result]
+        calls = [c for c in bash_calls(state, command) if c.time >= since and c.result]
         if not calls:
             out.append(Pipeline("", Role.ANALYZE, since, m.operator, True))
             continue
@@ -182,7 +191,7 @@ def queued(state: State, given: list[Line]) -> list[Pipeline]:
         out += [Pipeline(t, Role.ANALYZE, since, m.operator, True) for t in taken[:count]]
         if len(taken) < count:
             for t in tasks:
-                if t not in taken and not any(ran(state, claim_command(state, t), since)):
+                if t not in taken and t not in state.claims:
                     out.append(Pipeline(t, Role.ANALYZE, since, m.operator, True))
                     break
     return out

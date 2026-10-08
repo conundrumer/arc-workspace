@@ -8,7 +8,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
-from agent_reports import Report, report_ids, reports_after
+from agent_reports import Report, Sign, last_sign, report_ids, reports_after
 from command_labels import AGENT_TOOLS
 from controlled_markdown import mctx
 from run_reads import (blocks, in_background, meta_parent, notified,
@@ -242,14 +242,35 @@ def notified_after(found: list[tuple[Path, Launch]],
     transcript changed at or after `since` of the sessions of that run and
     of the agent's own run, where its transcript is known."""
     agents = {a.agent for _, a in found if a.agent}
+    out: dict[str, float] = {}
+    for e in session_entries(found, since):
+        if not e.get("timestamp") or e.get("type") == "assistant":
+            continue
+        for v in notified(e):
+            if v in agents:
+                note_latest(out, v, epoch(e["timestamp"]))
+    return out
+
+
+def session_entries(found: list[tuple[Path, Launch]], since: float) -> list[Entry]:
+    """The entries that name the agent of a launch of `found`, given with
+    the path of the run that launched it, in each transcript changed at or
+    after `since` of the sessions of that run and of the agent's own run,
+    where its transcript is known."""
+    agents = {a.agent for _, a in found if a.agent}
     runs = [p for launcher, a in found for p in (launcher, a.path) if p]
     sessions = dict.fromkeys(s for p in runs for s in run_sessions(p))
-    out: dict[str, float] = {}
-    for p in changed_since(sessions, since):
-        for e in read_entries(p, naming=agents):
-            if not e.get("timestamp") or e.get("type") == "assistant":
-                continue
-            for v in notified(e):
-                if v in agents:
-                    note_latest(out, v, epoch(e["timestamp"]))
-    return out
+    return [e for p in changed_since(sessions, since) for e in read_entries(p, naming=agents)]
+
+
+def turn_signs(path: Path, found: list[Launch]) -> dict[str, Sign]:
+    """The latest sign of its turn (`agent_reports.last_sign`) of the agent
+    of each launch of `found`, launched by the run at `path`, after the
+    call that launched or last resumed it, in the transcripts
+    `session_entries` gives, where one stands."""
+    own = [a for a in found if a.agent]
+    if not own:
+        return {}
+    entries = session_entries([(path, a) for a in own], min(a.since for a in own))
+    return {a.agent: sign for a in own if a.agent
+            and (sign := last_sign(entries, a.since, {a.agent})) is not None}
