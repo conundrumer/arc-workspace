@@ -11,7 +11,9 @@ operator of the session launched whose work is open:
   reached none. Where its transcript holds no final reply, the alert is
   undecided.
 
-Any other alert, and an alert on an agent no operator launched, are
+An alert on the operator `me` that reached `me` gives no step: the
+operator's next `next` is its return to the calls the command prints. Any
+other alert, and an alert on any other agent no operator launched, are
 undecided. A message from an agent no operator launched that is no alert
 goes back to its sender once, with a request to send it again as an
 alert, or to say that it is none, and is undecided where the sender's next
@@ -156,6 +158,8 @@ def step(state: State) -> Step | None:
                 continue
             s: Step | None = asked if isinstance(asked, Send) else Undecided(
                 f"a message from {m.sender} in no form the command reads:\n{m.text}")
+        elif alert.agent == state.me and m.operator == state.me:
+            continue
         elif (a := latest(state, alert.agent)) is None:
             s = Undecided(mctx("an alert on an agent no operator launched:") + "\n" + m.text)
         else:
