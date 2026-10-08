@@ -16,10 +16,11 @@ from agent_turns import idle_after, turns
 from command_labels import AGENT_TOOLS, POLL, call_command, command_label
 from controlled_markdown import mctx
 from filed_texts import unfiled
-from run_reads import (BACKGROUND_TASK, agent_type, blocks, context_size,
+from run_reads import (BACKGROUND_TASK, blocks, context_size,
                        in_background, is_prompt, message_text, notified,
                        output_file, parent_id, results_by_call, run_entries,
-                       run_type, session_agents, session_of)
+                       run_sessions, run_type, session_of,
+                       type_in)
 from senders import Sender, sender
 from ticketing.times import MINUTE_FORM
 from token_prices import run_cost
@@ -92,7 +93,7 @@ class Run:
     cost: float | None
     said: str | None
     # The messages from the run's parent, the brief first, the messages
-    # from other agents, and the text of each later message whose sender is
+    # from other agents than supervisors, and the text of each later message whose sender is
     # unknown.
     messages: list[Message]
     others: list[Message]
@@ -234,8 +235,7 @@ def launched_type(inp: dict[str, Any], result: dict[str, Any] | None,
     if inp.get("subagent_type"):
         return inp["subagent_type"]
     aid = (result or {}).get("agentId")
-    path = session_agents(session).get(aid) if aid else None
-    return agent_type(path) if path else None
+    return type_in([session], aid) if aid else None
 
 
 def classify(block: dict[str, Any], result: dict[str, Any] | None, launched: bool,
@@ -281,6 +281,7 @@ def profile(path: Path, undecided: list[str]) -> Run:
     briefed = min(starts, default=len(entries))
     parent = parent_id(path) if is_subagent(path) else None
     children = run_launches(path)[1].get(label, frozenset())
+    sessions = run_sessions(path)
     messages: list[Message] = []
     others: list[Message] = []
     unknown: list[str] = []
@@ -335,7 +336,7 @@ def profile(path: Path, undecided: list[str]) -> Run:
         first = t if first is None else first
         etype = e.get("type")
         if parent is not None and i > briefed and is_prompt(e):
-            who = sender(e, parent, children)
+            who = sender(e, parent, children, sessions)
             if who is Sender.PARENT:
                 messages.append(Message(i, t, unfiled(message_text(e), label, undecided),
                                         parts[Part.IDLE]))

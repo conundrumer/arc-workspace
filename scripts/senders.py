@@ -1,15 +1,18 @@
 """Who a message an agent's run receives is from: its parent, an agent it did
-not launch, another sender, or one that is unknown, as the HELP of
-`profile_runs` gives them."""
+not launch, a supervisor, another sender, or one that is unknown, as the
+HELP of `profile_runs` gives them."""
 
 from enum import Enum
+from pathlib import Path
 
-from run_reads import AGENT_MESSAGE, MAIN, NOTIFICATION, member, message_text
+from run_reads import (AGENT_MESSAGE, MAIN, NOTIFICATION, member, message_text,
+                       type_in)
 from transcripts import Entry
 
 # The start of the text of the entry the harness writes where the user
 # interrupts a run.
 INTERRUPTED = "[Request interrupted by user"
+SUPERVISOR = "supervisor"
 
 
 class Origin(Enum):
@@ -26,14 +29,16 @@ class Sender(Enum):
     """Who a message after a run's brief is from, as HELP gives it."""
     PARENT = "parent"
     AGENT = "agent"
+    SUPERVISOR = "supervisor"
     OTHER = "other"
     UNKNOWN = "unknown"
 
 
-def sender(entry: Entry, parent: str, children: frozenset[str]) -> Sender:
+def sender(entry: Entry, parent: str, children: frozenset[str],
+           sessions: list[Path]) -> Sender:
     """Who a message after a run's brief is from, where `parent` is the
-    agent id of the run's parent or `main`, and `children` the agent ids of
-    the agents the run launched."""
+    agent id of the run's parent or `main`, `children` the agent ids of
+    the agents the run launched, and `sessions` the sessions of the run."""
     text = message_text(entry)
     queued = entry.get("type") == "attachment"
     given = (entry.get("attachment") or {}) if queued else entry
@@ -51,7 +56,7 @@ def sender(entry: Entry, parent: str, children: frozenset[str]) -> Sender:
     if origin is Origin.PEER or queued:
         m = AGENT_MESSAGE.search(text)
         if m:
-            return sent_by(m.group(1), parent, children)
+            return sent_by(m.group(1), parent, children, sessions)
         if queued:
             return from_main
         return Sender.UNKNOWN
@@ -60,9 +65,15 @@ def sender(entry: Entry, parent: str, children: frozenset[str]) -> Sender:
     return Sender.UNKNOWN
 
 
-def sent_by(agent: str, parent: str, children: frozenset[str]) -> Sender:
+def sent_by(agent: str, parent: str, children: frozenset[str],
+            sessions: list[Path]) -> Sender:
     """Who a message the agent `agent` sent is from, for a run whose parent
     is `parent` and which launched the agents `children`."""
     if agent == parent:
         return Sender.PARENT
-    return Sender.OTHER if agent in children else Sender.AGENT
+    if agent in children:
+        return Sender.OTHER
+    kind = type_in(sessions, agent)
+    if kind is None:
+        return Sender.UNKNOWN
+    return Sender.SUPERVISOR if kind == SUPERVISOR else Sender.AGENT

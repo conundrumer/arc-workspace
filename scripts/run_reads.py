@@ -210,6 +210,14 @@ def session_agents(session: Path) -> dict[str, Path]:
     return {agent_id(p): p for p in subagent_transcripts(session)}
 
 
+def type_in(sessions: Iterable[Path], agent: str) -> str | None:
+    """The type of the agent `agent` (`agent_type`), from its transcript
+    under the first of `sessions` that holds one, or None where none does
+    or that transcript gives no type."""
+    path = next((p for s in sessions if (p := session_agents(s).get(agent))), None)
+    return agent_type(path) if path else None
+
+
 def caller_id(hook: dict[str, Any]) -> str | None:
     """The agent id of the caller of the hook input `hook`, or None where
     the caller is the main session: the input of a call inside a subagent

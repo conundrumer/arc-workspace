@@ -21,7 +21,7 @@ from merge_change import conflicted, left_edits, ran
 from open_agents import work_open
 from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks, is_prompt,
                        message_text, notifications, notified, output_file, run_entries,
-                       session_agents, text_of)
+                       run_sessions, session_agents, text_of)
 from run_reads import Status as TaskStatus
 from senders import Sender, sender
 from ticket_numbers import TICKET_NUMBER
@@ -145,6 +145,7 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
     tasks: dict[str, TaskStatus | None] = {}
     briefed = False
     children = run_launches(path)[1].get(aid, frozenset())
+    sessions = run_sessions(path)
     for e in entries:
         stamp = e.get("timestamp")
         if e.get("type") == "assistant" and stamp:
@@ -162,7 +163,7 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
                 for v in n.ids:
                     tasks[v] = n.status
         if stamp and is_prompt(e):
-            if not briefed or sender(e, MAIN, frozenset()) is Sender.PARENT:
+            if not briefed or sender(e, MAIN, frozenset(), sessions) is Sender.PARENT:
                 briefed = True
                 messages.append(Message(aid, epoch(stamp), None, unwrapped(message_text(e))))
             else:
