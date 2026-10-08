@@ -9,7 +9,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from operating.roles import Purpose, Role, analyst_of, subjects
+from operating.roles import Model, Purpose, Role, analyst_of, subjects
 from ticketing.vocabulary import Domain, Kind, Status
 
 
@@ -27,8 +27,9 @@ class LogLine:
 @dataclass(frozen=True)
 class Ticket:
     """A ticket of the tracker. `editors` is None where a `change` gives no
-    `editors` field, and `holder` is the holder `file_ticket.py log --help`
-    defines."""
+    `editors` field, `mechanical` is whether a `change` gives the
+    `mechanical` field, and `holder` is the holder `file_ticket.py log
+    --help` defines."""
     number: str
     order: tuple[int, int]
     session: int | None
@@ -43,9 +44,16 @@ class Ticket:
     priority: int
     editors: tuple[Role, ...] | None
     after_merge: str | None
+    mechanical: bool
     log: tuple[LogLine, ...]
     holder: str | None
     path: Path
+
+    def model(self, role: Role) -> Model | None:
+        """The model a launch of `role` on this ticket gives: Sonnet for a
+        code editor of a `mechanical` change, and otherwise the one the
+        agent's definition gives."""
+        return Model.SONNET if self.mechanical and role is Role.CODE_EDITOR else None
 
 
 @dataclass(frozen=True)

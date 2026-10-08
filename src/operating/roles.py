@@ -31,6 +31,12 @@ class Role(StrEnum):
         return GENERAL if self in GENERAL_ROLES else self.value
 
 
+class Model(StrEnum):
+    """A model a launch gives as the Agent call's `model`, in place of the
+    one the agent's definition gives."""
+    SONNET = "sonnet"
+
+
 GENERAL = "general-purpose"
 
 GENERAL_ROLES = frozenset({Role.TRANSCRIPT_REVIEW, Role.BATCH_PROFILE, Role.BATCH_GATE,

@@ -125,7 +125,8 @@ def refused(state: State, t: Ticket, w: Path, last: Call, latest: list[Agent]) -
             return None
         files = sorted({m["path"] for m in QUOTE_LINE.finditer(text)})
         return Launch(Role.CODE_EDITOR, t.number, briefs.quotes_fix(
-            t.number, w, quotes, files, state.scratch / t.number, state.me))
+            t.number, w, quotes, files, state.scratch / t.number, state.me),
+            model=t.model(Role.CODE_EDITOR))
     first = latest[0] if latest else None
     if first is None or first.agent_id is None:
         return None

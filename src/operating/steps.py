@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from functools import cache
 
 from controlled_markdown import mctx
-from operating.roles import Role, description
+from operating.roles import Model, Role, description
 from operating.state import Call, Made, State
 
 COORDINATOR = "main"
@@ -40,11 +40,12 @@ FOREGROUND_MS = 240000
 @dataclass(frozen=True)
 class Launch:
     """An Agent call, in the background. `worktree` gives the Agent tool's
-    `isolation: "worktree"`."""
+    `isolation: "worktree"`, and `model` the call's `model`."""
     role: Role
     subject: str
     brief: str
     worktree: bool = False
+    model: Model | None = None
 
 
 @dataclass(frozen=True)
@@ -328,8 +329,9 @@ def printed(step: Step, agent: str) -> str:
     """The text the command prints for `step`, for the operator whose agent
     id is `agent`."""
     match step:
-        case Launch(role, subject, brief, worktree):
+        case Launch(role, subject, brief, worktree, model):
             iso = '\nisolation: "worktree"' if worktree else ""
+            iso += f"\nmodel: {model}" if model is not None else ""
             return (f"call Agent\ndescription: {description(role, subject)}\n"
                     f"subagent_type: {role.agent_type}\nrun_in_background: true{iso}\n"
                     f"prompt:\n{brief}")

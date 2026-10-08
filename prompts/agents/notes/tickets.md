@@ -41,4 +41,5 @@
 ## Change tickets
 - A ticket that asks for a change, a `change` or a `request`, takes `change` as `<domain>`, and as `<subject>` the namespace a `change`'s Scope touches most, or the one it creates, or the one a `request`'s target lies in, then two or three words, joined by `-`.
     - A namespace takes its existing name, with `-` in place of `_`: a package under `src/`, a script under `scripts/` without `.py`, `lib`, `solver-<task_id>`, `witnesses`, `handbook`, `agents`, `notes`, `tickets` or `tests`.
+- Give each `change` you file or revise the `mechanical` field where its Intent meets the condition `uv run python scripts/file_ticket.py --help` gives for that field, and leave the field out of it where its Intent does not.
 - When you revise a ticket under `tickets/draft/`, write a log line with `draft` as its status and `revised` as its note.

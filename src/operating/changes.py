@@ -214,12 +214,13 @@ def carry(state: State, t: Ticket) -> Step | None:
         first = next(r for r in EDITORS if r in editors)
         return Launch(first, t.number, briefs.editor(
             first, t.number, len(editors) > 1, None, state.scratch / t.number, state.me),
-            worktree=True)
+            worktree=True, model=t.model(first))
     here = [a for a in launched if in_worktree(state, a, w)]
     for role in (r for r in EDITORS if r in editors):
         if not any(a.role is role for a in here):
             return Launch(role, t.number, briefs.editor(
-                role, t.number, len(editors) > 1, w, state.scratch / t.number, state.me))
+                role, t.number, len(editors) > 1, w, state.scratch / t.number, state.me),
+                model=t.model(role))
     if any(a.pending for a in here):
         return None
     latest = {a.role: a for a in here}
@@ -293,7 +294,7 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
         if not any(a.role is role for a in fixers):
             return Launch(role, t.number, briefs.review_fix(
                 role, t.number, w, r.agent_id or "", code if role is Role.CODE_EDITOR else [],
-                state.scratch / t.number, state.me))
+                state.scratch / t.number, state.me), model=t.model(role))
     for f in fixers:
         message = briefs.new_editor(f.agent_id or "")
         if r.agent_id and not sent(state, r.agent_id, message):

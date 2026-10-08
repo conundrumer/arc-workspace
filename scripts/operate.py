@@ -123,7 +123,7 @@ def read_ticket(path: Path) -> Ticket:
         depends_on=tuple(d.strip() for d in fields.get("depends-on", "").split(",") if d.strip()),
         priority=int(fields.get("priority", "50")),
         editors=None if editors is None else editors_of(editors),
-        after_merge=fields.get("after-merge"), log=lines, holder=holder(text), path=path)
+        after_merge=fields.get("after-merge"), mechanical="mechanical" in fields, log=lines, holder=holder(text), path=path)
 
 
 def read_tickets(tickets: Path) -> dict[str, Ticket]:

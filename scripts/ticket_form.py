@@ -71,8 +71,13 @@ def body_form(kind: Kind) -> re.Pattern[str]:
     return re.compile(title + r"\n" + middle + r"(?:.*\n)*" + heading(sections[-1]) + r"(?:\n|$)")
 
 
-FIELDS = {Kind.CHANGE: frozenset({"depends-on", "priority", "editors", "after-merge"})}
+FIELDS = {Kind.CHANGE: frozenset({"depends-on", "priority", "editors", "after-merge",
+                                       "mechanical"})}
 """The front matter fields besides `kind` that each kind may give."""
+
+MECHANICAL = "yes"
+"""The one value of a `change`'s `mechanical` field, whose condition the
+`HELP` of `file_ticket` gives."""
 
 REQUIRED = {Kind.CHANGE: frozenset({"editors"})}
 """The front matter fields besides `kind` that each kind must give."""
@@ -127,6 +132,9 @@ def checked_kind(tickets: Path, agent: str, text: str) -> Kind:
             check_depends_on(tickets, value)
         if key == "editors":
             check_editors(value)
+        if key == "mechanical" and value != MECHANICAL:
+            raise Refused(mctx("`mechanical` `{value}` is not `{yes}`").format(
+                value=value, yes=MECHANICAL))
     for key in sorted(REQUIRED.get(kind, frozenset()) - set(keys)):
         raise Refused(mctx("a `{kind}` gives `{key}`").format(kind=kind, key=key))
     if not body_form(kind).match(text, head.end()):
