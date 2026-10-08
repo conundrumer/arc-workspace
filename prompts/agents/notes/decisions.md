@@ -103,4 +103,5 @@
 - The user writes no text: an agent makes each edit, and checks it, and the text it touches, for a change of meaning it was not meant to make.
 - Keep instructions few, since a model follows a limited number of them: leave load-bearing text no misreading, add no verbosity in a rewrite, give an intuitive rule few words, restate no other document, and give no agent instructions on how to follow the document that is its body.
 - Structure the documents so that changes to them run in parallel, as changes to code do, and so that they make evident which agent takes a kind of work and lead each agent to what it needs.
+- Give a context bound, at which an agent ends and a fresh agent takes up its work, only to an agent that polls for an indefinite time, whose context grows with time and not with its task. An agent with a finite task keeps its context to the end of that task, since its work depends on that context.
 - Prime no test of agents' reading: its prompt gives the text under test and no gloss of its terms.

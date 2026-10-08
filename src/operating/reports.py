@@ -55,10 +55,6 @@ MISLABELED = re.compile(LABEL_OPENING + r"\b", re.IGNORECASE)
 """An item of that part that opens with a label with no colon after it,
 which `LABELED` does not read."""
 
-HAND_OVER = "hand-over:"
-"""The opening of the reply of an agent that ends with its open work for a
-fresh agent, as the message on an outgrown alert asks."""
-
 
 def opens(a: Agent, opening: str | tuple[str, ...]) -> bool:
     r = a.last_report
@@ -71,10 +67,6 @@ def finished(a: Agent) -> bool:
 
 def no_finding(a: Agent) -> bool:
     return opens(a, NO_FINDING)
-
-
-def handed_over(a: Agent) -> bool:
-    return opens(a, HAND_OVER)
 
 
 def standing(a: Agent) -> bool:

@@ -5,10 +5,6 @@ An alert opens with a line of the form `alert: <kind> <agent id>`
 operator of the session launched whose work is open:
 
 - A `budget` alert goes to the agent itself, under `BUDGET_MESSAGE`.
-- An `outgrown` alert goes to the agent itself, under `OUTGROWN_MESSAGE`.
-  Where the agent's next report opens with `reports.HAND_OVER`, a fresh
-  agent of its role and subject takes over in its worktree, with its brief
-  and that report (`briefs.take_over`).
 - A `stall` alert on an agent whose final reply reached no operator as a
   report makes the final reply in its transcript its report
   (`State.stalled`), and a `bug` ticket on the agent records that it
@@ -26,12 +22,9 @@ from dataclasses import dataclass
 from enum import Enum
 
 from controlled_markdown import mctx
-from operating import briefs
-from operating.changes import own_worktree
-from operating.reports import HAND_OVER, handed_over
 from operating.roles import AGENT_ID
 from operating.state import Agent, Message, State
-from operating.steps import Bash, Launch, Send, Step, sent, undecided
+from operating.steps import Bash, Send, Step, sent, undecided
 from operating.tracker import AGENT
 from ticketing.vocabulary import Domain, Kind
 
@@ -74,18 +67,11 @@ BUDGET_MESSAGE = mctx(
     "you act where your budget is passed, where they say it, and otherwise finish the step "
     "you are on and end your turn with your report, with each item not done and its reason.")
 
-OUTGROWN_MESSAGE = mctx(
-    "A supervisor's alert, below, finds that your run has outgrown its task. End as your "
-    "documents have you end for your context, where they say it, and otherwise end with your "
-    "open work in your reply. Open that reply with `{opening}`.")
-
 
 def to_agent(alert: Alert) -> str:
-    """The message to the agent of a `budget` or an `outgrown` alert, with
-    the alert under it."""
-    head = BUDGET_MESSAGE if alert.kind is AlertKind.BUDGET else OUTGROWN_MESSAGE.format(
-        opening=HAND_OVER)
-    return head + "\n\n" + alert.message.text
+    """The message to the agent of a `budget` alert, with the alert under
+    it."""
+    return BUDGET_MESSAGE + "\n\n" + alert.message.text
 
 
 def latest(state: State, agent: str) -> Agent | None:
@@ -115,23 +101,9 @@ def filed(state: State, alert: Alert) -> bool:
 
 def on(state: State, alert: Alert, a: Agent) -> Step | None:
     """The step `alert` gives on `a`, an agent an operator launched."""
-    since = alert.message.time
     match alert.kind:
         case AlertKind.BUDGET:
             return Send(alert.agent, to_agent(alert)) if a.pending else None
-        case AlertKind.OUTGROWN:
-            text = to_agent(alert)
-            if not sent(state, alert.agent, text):
-                return Send(alert.agent, text) if a.pending else None
-            r = a.last_report
-            if a.pending or r is None or r.time < since or not handed_over(a):
-                return None
-            if any(b.role is a.role and b.subject == a.subject and b.launched > r.time
-                   for b in state.agents):
-                return None
-            tree = own_worktree(state, a)
-            return Launch(a.role, a.subject, briefs.take_over(
-                a.brief, tree if tree in state.worktrees else None, alert.agent, r.text))
         case AlertKind.STALL:
             if alert.agent in state.stalled:
                 return None if filed(state, alert) else Bash(stall_ticket(alert))

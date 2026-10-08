@@ -250,16 +250,3 @@ def stop_work(number: str) -> str:
 BUDGET = "Budget: {minutes} minutes"
 """The line of a brief that gives the agent its budget, in the form
 `profile_runs.py --help` reads."""
-BUDGET_OPENING = BUDGET.split("{", 1)[0]
-
-
-def take_over(brief: str, worktree: Path | None, agent: str, hand_over: str) -> str:
-    """The brief of a fresh agent that takes over from `agent`, which ended
-    with `hand_over` as its reply: the brief of `agent` with its budget line
-    left out, its worktree where the harness made it, and that reply."""
-    lines = [line for line in brief.splitlines() if not line.startswith(BUDGET_OPENING)]
-    if worktree is not None:
-        lines.append(WORK_IN.format(worktree=worktree))
-    lines.append(mctx("Agent {agent}, launched before you with this brief, ended with the "
-                      "reply below. Carry on the open work it gives.").format(agent=agent))
-    return "\n".join(lines) + f"\n\n{hand_over}"
