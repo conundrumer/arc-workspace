@@ -75,6 +75,9 @@ FIELDS = {Kind.CHANGE: frozenset({"depends-on", "priority", "editors", "after-me
                                        "mechanical"})}
 """The front matter fields besides `kind` that each kind may give."""
 
+DEFAULT_PRIORITY = 50
+"""The `priority` of a `change` that gives no `priority` field."""
+
 MECHANICAL = "yes"
 """The one value of a `change`'s `mechanical` field, whose condition the
 `HELP` of `file_ticket` gives."""

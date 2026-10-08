@@ -39,8 +39,8 @@ from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks
 from run_reads import Status as TaskStatus  # noqa: E402
 from senders import Sender, sender  # noqa: E402
 from ticket_files import TICKET_NAME, ticket_files, ticket_name  # noqa: E402
-from ticket_form import FRONT, title  # noqa: E402
-from ticket_log import MINUTE_FORM, TIME_FORM, holder, log_lines  # noqa: E402
+from ticket_form import DEFAULT_PRIORITY, FRONT, title  # noqa: E402
+from ticket_log import TIME_FORM, holder, log_lines  # noqa: E402
 from ticket_numbers import TICKET_NUMBER, session_index, ticket_number  # noqa: E402
 from ticket_settle import to_settle  # noqa: E402
 from transcripts import (Refused, entries_back, epoch, find, read_entries,  # noqa: E402
@@ -95,14 +95,11 @@ def main_tree() -> Path:
 
 
 def log_time(text: str) -> float:
-    """The time of a log line, which the log gives to the second or, in
-    older lines, to the minute."""
-    for form in (TIME_FORM, MINUTE_FORM):
-        try:
-            return datetime.strptime(text, form).replace(tzinfo=UTC).timestamp()
-        except ValueError:
-            continue
-    raise Refused(mctx("`{text}` is no log line's time").format(text=text))
+    """The time of a log line, which the log gives to the second."""
+    try:
+        return datetime.strptime(text, TIME_FORM).replace(tzinfo=UTC).timestamp()
+    except ValueError:
+        raise Refused(mctx("`{text}` is no log line's time").format(text=text)) from None
 
 
 def read_ticket(path: Path) -> Ticket:
@@ -121,7 +118,7 @@ def read_ticket(path: Path) -> Ticket:
         subject=name.subject, filer=name.agent, filed=lines[0].time if lines else 0.0,
         title=title(path, text),
         depends_on=tuple(d.strip() for d in fields.get("depends-on", "").split(",") if d.strip()),
-        priority=int(fields.get("priority", "50")),
+        priority=int(fields["priority"]) if "priority" in fields else DEFAULT_PRIORITY,
         editors=None if editors is None else editors_of(editors),
         after_merge=fields.get("after-merge"), mechanical="mechanical" in fields, log=lines, holder=holder(text), path=path)
 

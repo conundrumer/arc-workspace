@@ -23,8 +23,8 @@ from handbook.paths import importable
 importable(checkout.scripts())
 
 from ticket_files import FIELD, NAME_FORM, TicketName, ticket_path  # noqa: E402
-from ticket_form import (DEFECT_SECTIONS, LOG, MECHANICAL, SECTIONS, checked_kind, heading,  # noqa: E402
-                         sections_example)
+from ticket_form import (DEFAULT_PRIORITY, DEFECT_SECTIONS, LOG, MECHANICAL, SECTIONS,  # noqa: E402
+                         checked_kind, heading, sections_example)
 from ticket_log import (AGENT_ID, CLOSED_BY, TIME_FORM, UNBLOCKED_BY, Wait,  # noqa: E402
                         log_moves, logged, status_of)
 from ticket_numbers import (SESSION_VAR, SESSIONS, reserve, session_id,  # noqa: E402
@@ -46,7 +46,7 @@ HELP = mctx("""
         # <target>: <what is wrong in it>{defect_sections}
         EOF
         ```
-    - A `change` takes `kind: change` and `editors: <editor>, <editor>`, with each editor the change needs among {editors}, may add `depends-on: <number>, <number>`, `priority: <0 to 100>`, `after-merge: <the checks its Scope places after the merge>` and `mechanical: {mechanical}` to the front matter, gives `mechanical` only where its Intent gives each edit under `src/` and `scripts/` outright, so that its code editors make no design choice, has `# <title>` as its title, and has the sections {change_sections} in place of {defect_headings}.
+    - A `change` takes `kind: change` and `editors: <editor>, <editor>`, with each editor the change needs among {editors}, may add `depends-on: <number>, <number>`, `priority: <0 to 100>` (`{default_priority}` where it gives none), `after-merge: <the checks its Scope places after the merge>` and `mechanical: {mechanical}` to the front matter, gives `mechanical` only where its Intent gives each edit under `src/` and `scripts/` outright, so that its code editors make no design choice, has `# <title>` as its title, and has the sections {change_sections} in place of {defect_headings}.
     - A `request` has `# <target>: <what the user asks for>` as its title, and the sections {request_sections} in place of {defect_headings}.
     - The rules of `<domain>`, `<subject>`, `<agent>`, numbers and filing follow.
     - `<domain>` is one of {domains}, and `<subject>` is the id of the thing it names: a task id for `task`, a ticket's number for `change` and `ticket`, a commit hash for `commit`, an agent id for `agent`. A ticket that asks for a change, a `change` or a `request`, takes `change` as `<domain>` and `<namespace>-<short-title>` as `<subject>`, and each `_` in that `<subject>`, as in a namespace name such as `run_dl`, becomes `-`.
@@ -276,7 +276,8 @@ their lines."""
 def help_values() -> dict[str, str]:
     """The values each help text of `file_ticket.py` is formatted with."""
     return dict(domains=ticked(Domain), editors=ticked(map(str, EDITORS)),
-                mechanical=MECHANICAL, defect_sections=sections_example(DEFECT_SECTIONS),
+                mechanical=MECHANICAL, default_priority=str(DEFAULT_PRIORITY),
+                defect_sections=sections_example(DEFECT_SECTIONS),
                 defect_headings=ticked(map(heading, DEFECT_SECTIONS)),
                 change_sections=ticked(map(heading, SECTIONS[Kind.CHANGE])),
                 request_sections=ticked(map(heading, SECTIONS[Kind.REQUEST])),
