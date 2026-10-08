@@ -26,7 +26,8 @@ console_importable()
 # `scripts/` off `sys.path`, and the modules below import from there.
 importable(checkout.scripts())
 
-from agent_launches import Launch as Launched, launched, run_launches  # noqa: E402
+from agent_launches import (Launch as Launched, launched, pending_agents, resumes,  # noqa: E402
+                            run_launches, timed_entries)
 from agent_reports import STILL_RUNNING, agent_notifications  # noqa: E402
 from agent_turns import first_time, has_ended, turns  # noqa: E402
 from context_bound_hook import OPERATOR, past_bound  # noqa: E402
@@ -68,7 +69,7 @@ HELP = mctx("""
         uv run python scripts/operate.py restore <task id>
         uv run python scripts/operate.py pass-over <agent id> <key> '<line>'
         ```
-    - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters in full, or the final reply. The brief of a launch other than a solver pass's ends with the line `Budget: N minutes`, where the budget of its agent type over every run of that type, as `profile_runs.py --help` gives a type's budget, is N minutes rounded up, and where that type has none, it has no such line. It holds back the launch of an agent type whose definition under `.claude/agents/` a commit of `master` changed less than {reload} seconds ago until those seconds have passed. Where no step is ready and no agent this operator launched runs, other than one a notification said has not reported yet, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again.
+    - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters in full, or the final reply. The brief of a launch other than a solver pass's ends with the line `Budget: N minutes`, where the budget of its agent type over every run of that type, as `profile_runs.py --help` gives a type's budget, is N minutes rounded up, and where that type has none, it has no such line. It holds back the launch of an agent type whose definition under `.claude/agents/` a commit of `master` changed less than {reload} seconds ago until those seconds have passed. Where no step is ready and no agent runs that this operator launched or last resumed itself, other than one a notification said has not reported yet, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again.
     - After each call it prints, `next` prints that step's key, which is the same at each read of the state that gives the same step. `pass-over` passes over the step whose key it is given, by the `Override:` or `Decision:` line it is given, which rules the step out. From then on, `next` passes that step over for each operator, gives the coordinator that step, once, as one its procedure waits on, and goes on with the other procedures. A pipeline whose next pass is passed over stops instead.
     - `wait` is the operator's wait in the background: it ends once the state gives a step, or after {wait} seconds.
     - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass, and `restore` puts it back and removes the task's claim, as the section `Passes on a task` of `prompts/agents/notes/launching.md` gives.
@@ -276,7 +277,11 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
     if not any(tool == "Agent" and described(str(inp.get("description", "")))
                for _, inp, tool in uses.values()):
         return
-    for launch in launched(path, undecided):
+    found = launched(path, undecided)
+    pending = (set(pending_agents(path, undecided))
+               if any(launch.pending and launch.agent for launch in found) else set())
+    own = resumes(timed_entries(path), path.stem, None, undecided)
+    for launch in found:
         use = uses.get(launch.call)
         if use is None:
             continue
@@ -284,9 +289,14 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
         if d is None:
             continue
         reports = tuple(Report(r.time, r.text) for r in launch.reports(0.0, undecided))
-        agents.append(Agent(launch.agent, aid, d.role, d.subject, str(use[1].get("prompt", "")),
-                            use[0], launch.pending, reports,
-                            launch.pending and still_running(launch, undecided)))
+        a = Agent(launch.agent, aid, d.role, d.subject, str(use[1].get("prompt", "")),
+                  use[0], launch.pending, reports,
+                  still_running=launch.pending and still_running(launch, undecided),
+                  notifies=launch.since <= max(use[0], own.get(launch.agent or "", 0.0)))
+        if launch.pending and launch.agent and launch.agent not in pending:
+            a = ended_with(a, None if any(r.time > launch.since for r in reports)
+                           else reply_since(launch.agent, launch.since))
+        agents.append(a)
         if d.role in PASSES and launch.agent and reports:
             passes[launch.agent] = pass_tickets(reports[-1].text, main)
 
@@ -315,6 +325,13 @@ def final_reply(path: Path) -> Report | None:
     return Report(epoch(stamp), text) if text.strip() else None
 
 
+def reply_since(agent: str, since: float) -> Report | None:
+    """The final reply in the transcript of `agent`, where it gives one
+    after `since`."""
+    r = final_reply(find(agent))
+    return r if r is not None and r.time > since else None
+
+
 def stalled_reports(agents: list[Agent], messages: list[Message]) -> dict[str, Report]:
     """The final reply in the transcript of each agent a stall alert names
     that is pending, given after its launch."""
@@ -327,8 +344,8 @@ def stalled_reports(agents: list[Agent], messages: list[Message]) -> dict[str, R
         a = pending.get(alert.agent)
         if a is None or alert.agent in out:
             continue
-        r = final_reply(find(alert.agent))
-        if r is not None and r.time > a.launched:
+        r = reply_since(alert.agent, a.launched)
+        if r is not None:
             out[alert.agent] = r
     return out
 
@@ -350,8 +367,7 @@ def ended_elsewhere(agents: list[Agent], me: str) -> dict[str, Report | None]:
         path = find(a.agent_id)
         if work_open(path, []):
             continue
-        r = final_reply(path)
-        out[a.agent_id] = r if r is not None and r.time > a.launched else None
+        out[a.agent_id] = reply_since(a.agent_id, a.launched)
     return out
 
 

@@ -23,10 +23,10 @@ of drafts; the changes; the solver pipelines; After a batch. A step that
 is a message an operator already sent is passed over, and so is a step an
 operator passed over by `operate.py pass-over`.
 
-Where no step is ready and an agent the operator launched runs, other
-than one a notification said has not reported yet, the command has the
-agent start its wait in the background and end its turn, or end its turn
-where that wait already runs, since the agent's report wakes it; once
+Where no step is ready and an agent the operator launched or last
+resumed itself runs, other than one a notification said has not reported
+yet, the command has the agent start its wait in the background and end
+its turn, or end its turn where that wait already runs, since the agent's report wakes it; once
 `steps.WAIT_CAP` waits in a row found nothing, the agent ends its turn
 with no new wait. Where none runs, and an agent of an operator runs or a
 ticket of the operators' waits on another holder whose work is open, the
@@ -161,7 +161,7 @@ def next_step(state: State) -> Step:
               drafts.step, changes.step, pipelines, batches.step)
     if s is not None:
         return s
-    mine = [a for a in state.agents if a.pending and a.operator == state.me]
+    mine = [a for a in state.agents if a.pending and a.operator == state.me and a.notifies]
     if mine and not all(a.still_running for a in mine):
         on = ", ".join(sorted(a.agent_id or a.role.value for a in mine))
         if state.wait_task:

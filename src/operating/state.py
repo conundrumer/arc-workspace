@@ -59,15 +59,20 @@ class Report:
 @dataclass(frozen=True)
 class Agent:
     """An agent an operator of the session launched with a description the
-    command gave. `pending` holds where that operator's transcripts hold
-    no sign that it reported since its launch or its last resume. It does
-    not hold for an agent in `State.stalled`, nor for an agent of another
-    operator whose work is no longer open, and the final reply in its
-    transcript, where it gives one, then ends its `reports`.
+    command gave. `pending` holds where it is pending to that operator by
+    the rule the `--pending` item of `profile_runs.py --help` gives. Where
+    that rule finds it ended and no report of it reached that operator
+    since its launch or its last resume, the final reply in its
+    transcript, where it gives one after them, ends its `reports`.
+    `pending` does not hold either for an agent in `State.stalled`, nor
+    for an agent of another operator whose work is no longer open, and
+    the final reply in its transcript, where it gives one, then ends its
+    `reports`.
     `still_running` holds where it is pending and a notification since its
     launch or its last resume said it stopped with work of its own still
     running: it has not reported yet, and the operator's turn may not end
-    on it."""
+    on it. `notifies` holds where that operator launched or last resumed
+    it itself, so the notification of its end reaches that operator."""
     agent_id: str | None
     operator: str
     role: Role
@@ -76,7 +81,8 @@ class Agent:
     launched: float
     pending: bool
     reports: tuple[Report, ...]
-    still_running: bool = False
+    still_running: bool
+    notifies: bool
 
     @property
     def last_report(self) -> Report | None:
