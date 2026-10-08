@@ -57,7 +57,7 @@ def editor(role: Role, number: str, part: bool, worktree: Path | None, scratch: 
 def doc_review(number: str, worktree: Path, editors: list[tuple[Role, str]],
                operator: str) -> str:
     lines = [mctx("Review the change to the documents of change {number}: the diff that "
-                  "`git -C {worktree} diff master` prints.").format(
+                  "`git -C {worktree} diff --merge-base master` prints.").format(
                       number=number, worktree=worktree)]
     for role, aid in editors:
         lines.append(mctx("Its {role}: {aid}, whose files are {part}.").format(
