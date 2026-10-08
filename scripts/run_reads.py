@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from controlled_markdown import mctx
+from token_prices import request_input
 from transcripts import (Entry, Refused, agent_id, chain, first_parent,
                          is_subagent, main_transcript, read_entries,
                          session_directory, subagent_transcripts)
@@ -241,22 +242,21 @@ def session_transcripts(session: Path) -> list[Path]:
     return [*([main] if main.is_file() else []), *session_agents(session).values()]
 
 
-def request_input(entry: Entry) -> int | None:
+def entry_input(entry: Entry) -> int | None:
     """The input tokens of the request an assistant entry answers, or None
-    where the entry gives no usage."""
+    where the entry gives no usage or no count."""
     usage = (entry.get("message") or {}).get("usage")
     if not isinstance(usage, dict):
         return None
-    return sum(usage.get(k) or 0 for k in (
-        "input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+    return int(request_input(usage)) or None
 
 
 def context_size(entries: Iterable[Entry]) -> int | None:
     """The context of a run whose entries are given last first: the input
-    tokens of its latest request, or None where no assistant entry gives
-    usage."""
+    tokens of its latest request, or None where no assistant entry gives a
+    count."""
     return next((t for e in entries if e.get("type") == "assistant"
-                 and (t := request_input(e)) is not None), None)
+                 and (t := entry_input(e)) is not None), None)
 
 
 def is_prompt(entry: Entry) -> bool:

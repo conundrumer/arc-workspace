@@ -21,6 +21,7 @@ from run_reads import (BACKGROUND_TASK, agent_type, blocks, context_size,
                        run_type, session_agents, session_of)
 from senders import Sender, sender
 from ticket_log import MINUTE_FORM
+from token_prices import run_cost
 from transcripts import Entry, Refused, agent_id, epoch, is_subagent
 
 
@@ -87,6 +88,7 @@ class Run:
     in_flight: list[Span]
     backgrounded: list[Span]
     context: int | None
+    cost: float | None
     said: str | None
     # The messages from the run's parent, the brief first, the messages
     # from other agents, and the text of each later message whose sender is
@@ -369,6 +371,9 @@ def profile(path: Path, undecided: list[str]) -> Run:
         messages.insert(0, Message(briefed, first, "\n".join(brief), 0.0))
     cwd = next((e["cwd"] for e in entries if e.get("cwd")), None)
     context = context_size(reversed(entries))
+    unpriced: list[str] = []
+    cost = run_cost(entries, unpriced)
+    undecided.extend(f"{label}: {line}" for line in dict.fromkeys(unpriced))
     in_flight = [spans[tid] for tid in pending if tid in spans]
     backgrounded = [spans[tid] for tid in running
                     if bg_ends[tid] is None and tid in spans]
@@ -380,7 +385,7 @@ def profile(path: Path, undecided: list[str]) -> Run:
                               "is unknown").format(run=label))
     return Run(label, agent_type, description, first, wall, parts,
                {k: g for k, g in groups.items() if g.time or g.calls},
-               list(spans.values()), in_flight, backgrounded, context, said,
+               list(spans.values()), in_flight, backgrounded, context, cost, said,
                messages, others, unknown, cwd, path)
 
 
@@ -416,6 +421,26 @@ def by_agent_type(runs: list[Run]) -> dict[str, list[Run]]:
     return by_type
 
 
+def dollars(cost: float | None) -> str:
+    return f"${cost:.2f}" if cost is not None else "?"
+
+
+def print_costs(by_type: dict[str, list[Run]], order: list[str]) -> None:
+    """Per agent type, the total token cost of its priced runs, its share of
+    the total over all priced runs, the median cost of a priced run, and the
+    number of runs whose cost is unknown."""
+    priced = {k: [r.cost for r in by_type[k] if r.cost is not None] for k in order}
+    whole = sum(sum(c) for c in priced.values())
+    print(f"\n{'type':<18} {'cost':>9} {'share':>6} {'p50':>8} {'unpriced':>8}")
+    for kind in order:
+        costs = priced[kind]
+        total = sum(costs)
+        share = f"{100 * total / whole:5.0f}%" if whole else "     -"
+        median = dollars(percentile(costs, 50)) if costs else "?"
+        print(f"{kind:<18} {dollars(total):>9} {share} {median:>8} "
+              f"{len(by_type[kind]) - len(costs):>8}")
+
+
 def part_split(parts: dict[Part, float]) -> str:
     return "  ".join(f"{p.value} {minutes(parts[p])}" for p in Part)
 
@@ -448,6 +473,7 @@ def print_types(runs: list[Run], pct: float, top: int) -> None:
               f"{minutes(percentile(walls, 50)):>7} {minutes(percentile(walls, pct)):>7} "
               f"{minutes(max(walls)):>7} {minutes(total):>8} "
               f"{minutes(percentile(active, 50)):>8} {minutes(percentile(active, pct)):>8}  {shares}")
+    print_costs(by_type, order)
     if top == 0:
         return
     for kind in order:

@@ -31,7 +31,7 @@ from context_bound_hook import CONTEXT_BOUND, OPERATOR  # noqa: E402
 from open_agents import Listed, running_agents, work_open  # noqa: E402
 from run_prints import (RECENT_CALLS, print_messages,  # noqa: E402
                         print_report, print_running)
-from run_profile import (COMMAND_WIDTH, Run, clock, minutes,  # noqa: E402
+from run_profile import (COMMAND_WIDTH, Run, clock, dollars, minutes,  # noqa: E402
                          part_split, print_groups, print_types, profile)
 from run_reads import (BACKGROUND_TASK, agent_type, blocks, run_type,  # noqa: E402
                        text_of)
@@ -68,6 +68,8 @@ HELP = mctx("""
     - Calls that are pending at once share an interval in equal parts. While the model works, backgrounded work that runs goes to `model`.
     - A poll is a Bash call that runs `sleep` and none of the known commands, in a loop or not. A command the harness moves to the background on its timeout counts under its own label up to then, and under `bg LABEL` after.
     - A command the run backgrounded runs until a notification of it in the run's transcripts, other than in an assistant entry. Where none follows, it runs while a process holds open the output file its result names, and where no process holds that file, it ended when the file was last written. Where its result names no file, or that file is gone, whether it runs is unknown, and it counts as running. Where `lsof` writes to stderr when it lists the files open in that file's directory, which files a process holds open is unknown, and the ID is refused.
+    - A run's token cost is the list price of the tokens its requests used, from the price table of `token_prices`, each request priced once at the full usage its entries give. A run with a request whose model or usage the table does not price has an unknown cost, printed `?`, and an `undecided` line on stderr names the model or the field.
+    - One run, and each run `--runs` prints, prints its wall time and its token cost.
     - One run prints its parts and its labels by time, with each label's share of the wall time and its calls, and for backgrounded work the time it ran from launch to its notification, or for a command that ended with none, to its end.
     - One run of a subagent, completed or not, also prints each message from its parent, as `--running` defines those messages: the time it arrived, its active time, which is the run's wall time less `idle` over that message's period, and the budget in force for it, which is the budget `--running` gives from the messages up to it. A message whose active time is past its budget is marked `past budget`. A message with no budget in force prints none, and a run with an unknown message prints no active time and no budget.
     - One run of a subagent also prints, after `report to the parent:`, the latest entry of its parent's transcripts after the parent's latest message to it that gives a report of it, with the entry's time, its kind and the start of its text, or where none does, `none after the message at` and that message's time. The parent's transcripts are, under each session of the run, the main transcript where the parent is `main`, and otherwise the transcripts of the parent's run. An entry gives a report where it is:
@@ -75,7 +77,7 @@ HELP = mctx("""
         - `result`: the result of a foreground Agent call that launched the agent;
         - `message`: a message from the agent.
     - Where the latest message from the parent is unknown, or no transcript of the parent is found, it prints `?`. A notification or a launch result whose status is of no known form gives no report, and where no `.meta.json` of the run gives a `toolUseId`, no launch result is matched to it. A launch result whose status is of no known form counts as not in the background, wherever it is read. An `undecided` line on stderr names each, and each distinct line is printed once.
-    - More than one run prints, per agent type, the number of runs, the minimum, median, P-th percentile and maximum of wall time, the total, the median and P-th percentile of active time, which is wall time less `idle`, and each part's share of the total, then each type's labels by time, with the number of runs each appears in.
+    - More than one run prints, per agent type, the number of runs, the minimum, median, P-th percentile and maximum of wall time, the total, the median and P-th percentile of active time, which is wall time less `idle`, and each part's share of the total, then per agent type the total token cost of its runs of known cost, its share of that total over all types, the median cost of such a run, and the number of runs of unknown cost it leaves out, then each type's labels by time, with the number of runs each appears in.
     - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over. That median is taken over budgeted runs alone: a budgeted run is one with a budget in force for some message from its parent, as one run prints it.
         - The window of a type that has an agent document under `prompts/agents/` is the runs whose first entry is at or after the last commit that changed that document, a document it includes or inlines, a lib file its rendered prompt holds, a script under `scripts/` its rendered prompt names, or a package under `src/` its rendered prompt runs with `-m`, and not a module such a script or package imports. `--since DATE` sets the window of every type to the runs whose first entry is at or after DATE. Where the window holds at least {median_runs} budgeted runs of the type, the median is taken over them.
         - A type with no agent document has a window only with `--since`, and a type whose paths no commit changed has none, and an `undecided` line on stderr names it.
@@ -325,7 +327,8 @@ def main(argv: list[str]) -> int:
     elif runs and (len(runs) == 1 or args.runs or args.under):
         for r in runs:
             print(f"{r.label} {r.agent_type} {clock(r.start)}: {r.description}\n"
-                  f"  wall {minutes(r.wall)}  {part_split(r.parts)}")
+                  f"  wall {minutes(r.wall)}  {part_split(r.parts)}  "
+                  f"cost {dollars(r.cost)}")
         if len(runs) == 1:
             print_messages(runs[0], undecided)
             print_report(runs[0], undecided)
