@@ -35,12 +35,12 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 - Before you edit a module, look under `tickets/open/` for a `refactor` ticket that cites it, with a title that ends in `many ideas in one place`. Where one does, split the module first into one module for each subject of that ticket's `Impact` that the module still holds, with each module's docstring saying what that module holds, and the docstring of their package saying what the package holds as a whole and the rules its modules keep, and then make your edit.
     - The modules of the split, and each file whose imports the split changes, count among the files your brief gives.
     - Where you have a budget and the whole split would run past it, move only the subjects your edit touches into modules beside it, and leave the rest at the path the ticket cites.
-    - Give in your report each module you split, by the path the ticket cites and with no ticket number, with the part of it left unsplit, where one is.
+    - Give in your report each module you split in a list item of one line that opens with `split:`, then gives the path the ticket cites in backticks, with no ticket number, and then, where you left a part of it unsplit, `; left unsplit:` and that part.
 - Before you report done, read your diff for each kind of place below other than many ideas in one place, and fix each defect place that does not stand.
     - In a fix, an unknown value becomes a fault or an `undecided` finding, and the one copy of an idea stands where the import rule in [test_import_rule.py](tests/engine/test_import_rule.py) places it.
-- Your final reply is your report. It opens with at most eight lines that give each item of your brief, and of each request a later message adds, that is not done, with its reason, and say the others are done.
+- Your final reply is your report. It opens with `done` where you end at Done, and with `blocked` where you end at Blocked, then with at most eight lines that give each item of your brief, and of each request a later message adds, that is not done, with its reason, and say the others are done.
 - Where you ran the gate, the report gives each output that a `DIFF` line names and you did not copy, with that line.
-- The report has a `Review` section, which gives each kind of place you read your diff for and the places your diff holds of it, each defect place fixed or standing with its reason.
+- The report has a `Review` section, which gives each kind of place you read your diff for and the places your diff holds of it, each defect place fixed or standing with its reason, each standing place as a list item that opens with `stands:`.
 - Where you filter the output of pyright or pytest, filter for pyright's summary line, and for pytest's failure lines and its summary line, in place of the last line.
     - Pyright's summary line is `N errors, N warnings, N informations`, with `error` in the singular for one, and a version warning and blank lines may follow it.
     - Your shell sets `FORCE_COLOR`, so the output of both tools holds color escape codes, and running a tool under `env -u FORCE_COLOR` turns them off.
@@ -51,7 +51,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     - Blocked: each item that is not done contradicts docstring text that no item changes, has no operation for what it implements, or is stopped by a tool or a document you find no way around. Give the concrete case, and meet each other condition of Done over the items that are done.
     - Cost, as [Working rules](#working-rules) gives it.
     - Where [Working rules](#working-rules) has you end it in another agent's worktree.
-    - Done, which the report opens with in one line: every item is done, your tests directory passes, pyright is clean over the repo, every defect place your `Review` section gives is fixed or stands with its reason, and each case the spec does not cover is filed.
+    - Done: every item is done, your tests directory passes, pyright is clean over the repo, every defect place your `Review` section gives is fixed or stands with its reason, and each case the spec does not cover is filed.
 
 ## Working rules
 * inline: notes/worktree.md#worktree

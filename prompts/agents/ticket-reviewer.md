@@ -20,7 +20,7 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage, TaskStop
 
 ## Checks
 - Report nothing on a draft's wording where the operator would carry out the draft the same way under other words.
-- Read the operator's documents with `uv run python scripts/context.py context agent operator`, and the documents of each agent the draft has the operator launch or message with `uv run python scripts/context.py context agent <name>`.
+- Read the operator's procedures in the docstrings of [operate.py](scripts/operate.py) and of the modules under [operating](src/operating), which the docstring of [__init__.py](src/operating/__init__.py) indexes, and its loop and its use of overrides with `uv run python scripts/context.py context agent operator`. Read the documents of each agent the draft has the operator launch or message with `uv run python scripts/context.py context agent <name>`.
 - Take the state from `uv run python scripts/profile_runs.py --running $CLAUDE_CODE_SESSION_ID`, `git log master`, the tickets under `tickets/`, and the operators' transcripts, which `python3 ~/.claude/skills/retrieve/transcripts.py --help` says how to read.
 - Check each of these:
     - A `change`, other than one under `tickets/blocked/` that waits on a `change`, waits for the tickets its `depends-on` gives alone.

@@ -1,56 +1,12 @@
-"""The ticket vocabulary: the statuses a ticket moves between, the
-resolutions it closes with, the domains of its subject, its kinds, and the
-kinds each filing agent may file."""
+"""The kinds each filing agent may file. The rest of the ticket vocabulary
+is `ticketing.vocabulary`."""
 
 from collections.abc import Iterable
 from enum import StrEnum
 
 from controlled_markdown import mctx
+from ticketing.vocabulary import EDITOR_KINDS, PASS_KINDS, REVIEW_KINDS, Kind
 from transcripts import Refused
-
-
-class Status(StrEnum):
-    """The directories under `tickets/` that a ticket's file moves between."""
-    DRAFT = "draft"
-    OPEN = "open"
-    ASSIGNED = "assigned"
-    BLOCKED = "blocked"
-    CLOSED = "closed"
-
-
-class Resolution(StrEnum):
-    """The words the note of a line into `closed` opens with."""
-    FIXED = "fixed"
-    DUPLICATE = "duplicate"
-    CANNOT_REPRODUCE = "cannot-reproduce"
-    WONTFIX = "wontfix"
-    INVALID = "invalid"
-
-
-class Domain(StrEnum):
-    """What a ticket's subject is."""
-    TASK = "task"
-    CHANGE = "change"
-    COMMIT = "commit"
-    TICKET = "ticket"
-    AGENT = "agent"
-
-
-class Kind(StrEnum):
-    """What a ticket is."""
-    INTERFERENCE = "interference"
-    DELAY = "delay"
-    QUESTION = "question"
-    BUG = "bug"
-    PERFORMANCE = "performance"
-    REFACTOR = "refactor"
-    CHANGE = "change"
-    REQUEST = "request"
-
-
-PASS_KINDS = frozenset({Kind.INTERFERENCE, Kind.DELAY})
-EDITOR_KINDS = frozenset({Kind.QUESTION, Kind.BUG})
-REVIEW_KINDS = frozenset({Kind.BUG, Kind.PERFORMANCE})
 
 
 class Filer(StrEnum):

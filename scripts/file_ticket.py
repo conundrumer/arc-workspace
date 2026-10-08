@@ -14,6 +14,7 @@ from pathlib import Path
 
 from arc.task import task_file
 from controlled_markdown import mctx
+from operating.roles import EDITORS
 from engine import checkout
 from handbook.paths import importable
 
@@ -28,8 +29,9 @@ from ticket_log import (AGENT_ID, CLOSED_BY, TIME_FORM, UNBLOCKED_BY, Wait,  # n
                         log_moves, logged, status_of)
 from ticket_numbers import (SESSION_VAR, SESSIONS, reserve, session_id,  # noqa: E402
                             session_index, ticket_number, write_new)
-from ticket_settle import MANY_IDEAS, to_settle  # noqa: E402
-from ticket_vocabulary import Domain, Kind, Resolution, Status, ticked  # noqa: E402
+from ticket_settle import to_settle  # noqa: E402
+from ticket_vocabulary import ticked  # noqa: E402
+from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Resolution, Status  # noqa: E402
 from transcripts import Refused  # noqa: E402
 
 HELP = mctx("""
@@ -44,7 +46,7 @@ HELP = mctx("""
         # <target>: <what is wrong in it>{defect_sections}
         EOF
         ```
-    - A `change` takes `kind: change`, may add `depends-on: <number>, <number>` and `priority: <0 to 100>` to the front matter, has `# <title>` as its title, and has the sections {change_sections} in place of {defect_headings}.
+    - A `change` takes `kind: change` and `editors: <editor>, <editor>`, with each editor the change needs among {editors}, may add `depends-on: <number>, <number>`, `priority: <0 to 100>` and `after-merge: <the checks its Scope places after the merge>` to the front matter, has `# <title>` as its title, and has the sections {change_sections} in place of {defect_headings}.
     - A `request` has `# <target>: <what the user asks for>` as its title, and the sections {request_sections} in place of {defect_headings}.
     - The rules of `<domain>`, `<subject>`, `<agent>`, numbers and filing follow.
     - `<domain>` is one of {domains}, and `<subject>` is the id of the thing it names: a task id for `task`, a ticket's number for `change` and `ticket`, a commit hash for `commit`, an agent id for `agent`. A ticket that asks for a change, a `change` or a `request`, takes `change` as `<domain>` and `<namespace>-<short-title>` as `<subject>`, and each `_` in that `<subject>`, as in a namespace name such as `run_dl`, becomes `-`.
@@ -273,7 +275,7 @@ their lines."""
 
 def help_values() -> dict[str, str]:
     """The values each help text of `file_ticket.py` is formatted with."""
-    return dict(domains=ticked(Domain),
+    return dict(domains=ticked(Domain), editors=ticked(map(str, EDITORS)),
                 defect_sections=sections_example(DEFECT_SECTIONS),
                 defect_headings=ticked(map(heading, DEFECT_SECTIONS)),
                 change_sections=ticked(map(heading, SECTIONS[Kind.CHANGE])),

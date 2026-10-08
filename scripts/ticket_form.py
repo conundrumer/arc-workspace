@@ -5,9 +5,11 @@ import re
 from pathlib import Path
 
 from controlled_markdown import mctx
+from operating.roles import EDITORS
 from ticket_files import ticket_path
 from ticket_numbers import ticket_number
-from ticket_vocabulary import Kind, filer_kinds, ticked
+from ticket_vocabulary import filer_kinds, ticked
+from ticketing.vocabulary import Kind
 from transcripts import Refused
 
 FRONT = r"---\nkind: (?P<kind>\S+)\n(?P<fields>(?:[a-z-]+: .*\n)*)---\n"
@@ -69,8 +71,21 @@ def body_form(kind: Kind) -> re.Pattern[str]:
     return re.compile(title + r"\n" + middle + r"(?:.*\n)*" + heading(sections[-1]) + r"(?:\n|$)")
 
 
-FIELDS = {Kind.CHANGE: frozenset({"depends-on", "priority"})}
+FIELDS = {Kind.CHANGE: frozenset({"depends-on", "priority", "editors", "after-merge"})}
 """The front matter fields besides `kind` that each kind may give."""
+
+REQUIRED = {Kind.CHANGE: frozenset({"editors"})}
+"""The front matter fields besides `kind` that each kind must give."""
+
+
+def check_editors(value: str) -> None:
+    """Refuses an `editors` value that is not a list of distinct editors
+    (`operating.roles.EDITORS`)."""
+    names = [part.strip() for part in value.split(",")]
+    known = {str(r) for r in EDITORS}
+    if not names or any(n not in known for n in names) or len(set(names)) < len(names):
+        raise Refused(mctx("`editors` `{value}` is not a list of distinct editors among "
+                           "{known}").format(value=value, known=ticked(map(str, EDITORS))))
 
 
 LOG = heading("Log")
@@ -110,6 +125,10 @@ def checked_kind(tickets: Path, agent: str, text: str) -> Kind:
             raise Refused(mctx("`priority` `{value}` is not an integer from 0 to 100").format(value=value))
         if key == "depends-on":
             check_depends_on(tickets, value)
+        if key == "editors":
+            check_editors(value)
+    for key in sorted(REQUIRED.get(kind, frozenset()) - set(keys)):
+        raise Refused(mctx("a `{kind}` gives `{key}`").format(kind=kind, key=key))
     if not body_form(kind).match(text, head.end()):
         raise Refused(mctx("the ticket on stdin does not have the form `--help` shows"))
     if re.search(f"^{LOG}$", text, re.MULTILINE):

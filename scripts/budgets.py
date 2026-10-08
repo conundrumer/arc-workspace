@@ -2,6 +2,7 @@
 from a run's parent, as the HELP of `profile_runs` gives them."""
 
 import re
+from dataclasses import dataclass
 
 from controlled_markdown import mctx
 from engine import checkout
@@ -41,41 +42,58 @@ def type_window(kind: str, undecided: list[str]) -> float | None:
     return float(out)
 
 
+@dataclass(frozen=True)
+class Budget:
+    """An agent type's budget in seconds, the runs it is taken over, and
+    its basis."""
+    seconds: float
+    runs: int
+    basis: str
+
+
+def type_budget(kind: str, runs: list[Run], since_date: float | None,
+                undecided: list[str]) -> Budget | None:
+    """The budget of the agent type `kind` over `runs`, its runs, as HELP
+    gives it, or None where it gets none. `since_date` is the start of the
+    window `--since` sets, where it is given."""
+    rs = [r for r in runs if budgeted(r, undecided)]
+    since = since_date if since_date is not None else type_window(kind, undecided)
+    window: list[Run] = []
+    if since is not None:
+        for r in rs:
+            if r.start is None:
+                undecided.append(mctx("{run}: its start is unknown, so it is "
+                                      "left out of the window").format(run=r.label))
+            elif r.start >= since:
+                window.append(r)
+    if len(window) >= MEDIAN_RUNS:
+        basis = mctx("budgeted since {date}").format(date=clock(since))
+        chosen = window
+    else:
+        basis = mctx("budgeted, waits and idle under {pct}% of "
+                     "wall").format(pct=LOW_WAIT_PCT)
+        chosen = [r for r in rs if low_wait(r)]
+        if len(chosen) < MEDIAN_RUNS:
+            undecided.append(mctx("{kind}: its budgeted runs with waits and "
+                                  "idle under {pct}% of wall number {count}, "
+                                  "fewer than {least}, so it has no "
+                                  "budget").format(
+                kind=kind, count=len(chosen), pct=LOW_WAIT_PCT,
+                least=MEDIAN_RUNS))
+            return None
+    return Budget(BUDGET_FACTOR * percentile([r.wall for r in chosen], 50), len(chosen), basis)
+
+
 def print_budgets(runs: list[Run], since_date: float | None,
                   undecided: list[str]) -> None:
     """Print each agent type's budget, its basis, and the budgeted runs it
-    is taken over. `since_date` is the start of the window `--since` sets,
-    where it is given."""
+    is taken over."""
     by_type = by_agent_type(runs)
     print(f"{'type':<18} {'budget':>7} {'runs':>4}  basis")
     for kind in sorted(by_type):
-        rs = [r for r in by_type[kind] if budgeted(r, undecided)]
-        since = since_date if since_date is not None else type_window(kind, undecided)
-        window: list[Run] = []
-        if since is not None:
-            for r in rs:
-                if r.start is None:
-                    undecided.append(mctx("{run}: its start is unknown, so it is "
-                                          "left out of the window").format(run=r.label))
-                elif r.start >= since:
-                    window.append(r)
-        if len(window) >= MEDIAN_RUNS:
-            basis = mctx("budgeted since {date}").format(date=clock(since))
-            chosen = window
-        else:
-            basis = mctx("budgeted, waits and idle under {pct}% of "
-                         "wall").format(pct=LOW_WAIT_PCT)
-            chosen = [r for r in rs if low_wait(r)]
-            if len(chosen) < MEDIAN_RUNS:
-                undecided.append(mctx("{kind}: its budgeted runs with waits and "
-                                      "idle under {pct}% of wall number {count}, "
-                                      "fewer than {least}, so it has no "
-                                      "budget").format(
-                    kind=kind, count=len(chosen), pct=LOW_WAIT_PCT,
-                    least=MEDIAN_RUNS))
-                continue
-        budget = BUDGET_FACTOR * percentile([r.wall for r in chosen], 50)
-        print(f"{kind:<18} {minutes(budget):>7} {len(chosen):>4}  {basis}")
+        b = type_budget(kind, by_type[kind], since_date, undecided)
+        if b is not None:
+            print(f"{kind:<18} {minutes(b.seconds):>7} {b.runs:>4}  {b.basis}")
 
 
 def budget_openings(text: str) -> list[str]:

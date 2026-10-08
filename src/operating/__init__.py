@@ -1,0 +1,33 @@
+"""The operator's procedures, as functions from the state to the next step:
+the next call the operator agent makes, which `scripts/operate.py` prints.
+
+The modules keep these rules:
+
+- No procedure reads a file, a transcript or the clock: `scripts/operate.py`
+  reads the state into a `state.State`, and each procedure reads only that.
+  `task_work`, the work a pipeline sets aside, is no procedure: it is the
+  one module that touches files, and a step the procedures print runs it.
+- A step changes the state that the next read of it gives, so a procedure
+  finds that a step is done from the state alone, and never from a record
+  of its own. The record of a call the operator made is the call in the
+  transcripts of the session's operators.
+- Each agent a step launches has a description of the form
+  `roles.description` gives, so the state reads back which procedure, and
+  which ticket, task or batch, each launch of any operator of the session
+  serves.
+- A step that needs a judgment, or the meaning of prose an agent wrote,
+  goes to an agent launched for it, or reads the fixed form that agent
+  writes; where neither places it, the step gives it to the coordinator
+  (`steps.undecided`).
+
+Modules: `state` (what the command reads), `roles` (the agents launched and
+their descriptions), `directives` (the coordinator's lines), `tracker` (a
+ticket's log and the calls that write it), `steps` (the calls printed),
+`briefs` (the briefs the launches give), `settling` (ticket analysts on
+open tickets, and the decisions for the user), `drafts` (the review of
+draft changes), `changes` (a change from its take to its merge),
+`merging` (the merge and what follows it), `alerts` (the supervisor's
+alerts and the other agents' messages), `reports` (the fixed forms of
+the replies the command reads), `passes` (the solver pipelines),
+`task_work` (the work a pipeline sets aside), `batches` (After a batch) and
+`plan` (the order of the procedures, the waits and the final reply)."""

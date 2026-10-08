@@ -131,6 +131,7 @@ a failed step, 2 when the call itself is malformed.
 
 import argparse
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -156,6 +157,29 @@ from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
 
 MASTER = "master"
 """The branch a change merges into."""
+
+PREFIX = "merge_change: "
+"""The opening of each line the script prints, on stdout and on stderr."""
+
+REFUSED = PREFIX + "refused: "
+"""The opening of the line of a refusal."""
+
+CONFLICT = mctx("rebasing {branch} onto {onto} conflicts; the rebase is aborted and the "
+                "worktree is as it was:")
+"""The refusal of a change whose rebase onto `master` conflicts."""
+
+
+def ran(output: str) -> bool:
+    """Whether `output`, what a call of the script printed, holds a line of
+    the script's own, which a call that never ran does not."""
+    return any(line.startswith(PREFIX) for line in output.splitlines())
+
+
+def conflicted(output: str) -> bool:
+    """Whether `output` refuses a change for a conflict in its rebase."""
+    form = re.escape(REFUSED + CONFLICT).replace(re.escape("{branch}"), r"\S+").replace(
+        re.escape("{onto}"), r"\S+")
+    return re.search(form, output) is not None
 
 
 def outside_work() -> tuple[str, str, str]:
@@ -342,8 +366,7 @@ def rebase(change: Change, onto: str, onto_name: str, restore: bool) -> None:
     if restore and change.backup is not None:
         checkout.git_out(change.worktree, "reset", "-q", "--soft", change.before)
         shutil.copy2(change.backup, index_file(change.worktree))
-    raise Refused(mctx("rebasing {branch} onto {onto} conflicts; the rebase is aborted "
-                       "and the worktree is as it was:").format(
+    raise Refused(CONFLICT.format(
         branch=change.branch, onto=onto_name) + "\n" + said(done))
 
 
@@ -576,7 +599,7 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
 
 
 def print_refusal(exc: Refused) -> None:
-    print(f"merge_change: refused: {exc}", file=sys.stderr, flush=True)
+    print(f"{REFUSED}{exc}", file=sys.stderr, flush=True)
 
 
 def merge(pairs: Sequence[tuple[Path, str]]) -> bool:

@@ -20,7 +20,7 @@
     - Where a tool or a document stopped it otherwise, file that obstacle as a ticket of the kind that fits it, and send the item again once that ticket is closed, or at once by a way around the obstacle where one exists.
     - Where it needs a decision, act on it as that decision rules, once the decision is made.
 - Where an agent whose description says its reply gives each item of its brief as done or as unfinished has replied, and gives an item you sent it as neither, send that item again, file its drop as a ticket, and leave finding the drop's cause to the ticket analyst that takes that ticket.
-- Launch a ticket analyst with each ticket the lines above have you file, before you end your turn with no other work. Where you are a ticket analyst, in place of filing those tickets, settle each fault they would record as your documents give for a fault you notice.
+- Launch a ticket analyst with each ticket the lines above have you file, before you end your turn with no other work. Where you are the coordinator, tell an operator that tickets are open, as [Operators](prompts/agents/notes/launching.md#operators) gives, in place of that launch. Where you are a ticket analyst, in place of filing those tickets, settle each fault they would record as your documents give for a fault you notice.
 - In your reply, give each item an agent you launched left unfinished that you have not finished, as unfinished with its reason.
 - A transcript review is a `general-purpose` agent that reviews a run's transcript. Give it the run's agent id, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), the `<domain>` and `<subject>` [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields) gives a transcript review of that run, and `transcript-review` as `<agent>`. Have it file a ticket of kind `delay` for each place where the run explored to find what a docstring or a document line could have led it to.
 - Pause or serialize agents only where the user agreed to it.
@@ -58,7 +58,17 @@
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 
 ### An operator's brief
-- An operator's brief gives each procedure, its inputs, each decision of the user on a procedure, each override for a solver pass, each part of a brief that the operator's documents act on, such as the drafts to review, the line that tickets are open, the tickets the coordinator names to it and the changes the coordinator gives it as merged, and, where the operator takes over from another, that operator's agent id and each unfinished procedure of that operator's final reply that the coordinator runs itself. It gives nothing else.
+- An operator's brief gives only lines in these forms, each on a line of its own:
+    - `Solve: <task id> ...`: a solver pipeline on each task, from Analyze, or from the pass that `from create` or `from refine` after its task id gives.
+    - `Solve from the queue: <count>`: solver pipelines on that many tasks of the queue.
+    - `Drafts to review: <number>, ...`: the draft `change` tickets to review.
+    - `Tickets named: <number>, ...`: tickets of another session that the operator releases, takes and settles as it does its session's.
+    - `Merged: <number>, ...`: the changes the coordinator merged itself.
+    - `Merge: <number>`: a `change` under `tickets/blocked/` that waits on the user, which the user's ruling has the operator merge.
+    - `Tickets are open.`
+    - `Override: <override>`: an override for a solver pass, with its task and its pass.
+    - `Decision: <decision>`: a decision of the user on a procedure, or your decision on a step the operator gave you as undecided.
+- The operator gives each line of its brief or of a later message from the coordinator in no other form back to the coordinator as undecided.
 
 ### A code reviewer's brief
 - A code reviewer's brief gives the earlier code review's baseline, as a `code-review/<n>` tag, this code review's number, what new code the diff holds, and a scratch directory.
@@ -95,14 +105,15 @@
 ## Operators
 - When you launch an operator while no supervisor runs, launch a supervisor in the background. When a supervisor's reply says it ended for its context while an operator runs, launch a new one, with the alerts and the states found not to hold that reply gives.
 - Once no operator of yours runs, tell the supervisor to stop, with SendMessage.
-- When a supervisor's alert on a message to you reaches you, judge from the sender's transcript whether that message answers a request of another agent and none of yours. Where it does, file its sending as a ticket of the kind that fits it, on the sender, with the alert as its evidence, and launch a ticket analyst with that ticket before you end your turn with no other work. Relay nothing of that alert to the user, and send nothing to the sender on it.
-- Ask an operator for no message to you before its final reply.
-- Send each draft `change` ticket that the reply of an agent you launched gives, and each `change` ticket you revise, to an operator as a draft to review: to the operator of yours that holds its change or runs its review, where one runs, and otherwise to a running operator, or launch one with it.
-- Each time a `change` of your session comes to stand under `tickets/open/` with every ticket its `depends-on` gives under `tickets/closed/`, while no operator of yours holds it or runs its review, tell an operator that tickets are open: send that line to a running operator, or launch one with it.
-- Revise a `change` ticket that stands under `tickets/open/`, `tickets/assigned/` or `tickets/blocked/` only once you have moved it back to `tickets/draft/`, with a log line whose note gives what you revise and on what ground. Before you revise a `change` ticket whose holder, or the operator that runs its review, runs in your session, tell that operator to carry it no further, and a holder to keep the worktree of its change and the agent ids of the agents that work on it until the ticket is open again.
-- Once the user rules on a draft `change` ticket under `tickets/blocked/` that waits on the user, move it back to `tickets/draft/` with the ruling in the note, revise it where the ruling needs that, and send it to an operator as a draft to review.
-- Once an operator has returned, send it further work only while a procedure its brief gives is unfinished and its reply does not give that it ended for its context. Otherwise launch a new operator, with that work and the old operator's agent id, as the operator it takes over from, in its brief, as [An operator's brief](#an-operators-brief) gives them.
-- Give further work that you send an operator in the form [An operator's brief](#an-operators-brief) gives, apart from the parts on an operator it takes over from, and nothing else in that message.
+- Send each line you give an operator to a running operator of yours, and where none runs, launch a new operator with it. Give it in a form [An operator's brief](#an-operators-brief) gives, with nothing else in that message.
+- To tell an operator that tickets are open, give it `Tickets are open.`
+- When a supervisor's alert on a message to you reaches you, judge from the sender's transcript whether that message answers a request of another agent and none of yours. Where it does, file its sending as a ticket of the kind that fits it, on the sender, with the alert as its evidence, and tell an operator that tickets are open before you end your turn with no other work. Relay nothing of that alert to the user, and send nothing to the sender on it.
+- When an operator's message that opens with `undecided:` reaches you, decide the step it gives, then send the operator the outcome in a `Decision:` or `Override:` line. Bring the user each decision that step brings the user, and each one an operator's message that opens with `decision for the user:` gives.
+- Ask an operator for no message to you before its final reply, other than the messages that open with `decision for the user:` or `undecided:`, which it sends as it goes.
+- Send each draft `change` ticket that the reply of an agent you launched gives, and each `change` ticket you revise, to an operator in a `Drafts to review: <number>` line.
+- Each time a `change` of your session comes to stand under `tickets/open/` with every ticket its `depends-on` gives under `tickets/closed/`, while no operator of yours holds it or runs its review, tell an operator that tickets are open.
+- Revise a `change` ticket that stands under `tickets/open/`, `tickets/assigned/` or `tickets/blocked/` only once you have moved it back to `tickets/draft/`, with a log line whose note gives what you revise and on what ground.
+- Once the user rules on a draft `change` ticket under `tickets/blocked/` that waits on the user, move it back to `tickets/draft/` with the ruling in the note, revise it where the ruling needs that, and send it to an operator in a `Drafts to review: <number>` line.
 
 ## While the user gives feedback
 - Gather each request the user approves into a batch, and when the user pauses or asks you to send it, send the whole batch at once: give each request to the agent whose description covers its work, as the split line above allows, with one brief per agent.

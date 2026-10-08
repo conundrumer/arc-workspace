@@ -11,7 +11,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from ticket_numbers import TICKET_NUMBER, TicketNumber, is_reserved, matched_number
-from ticket_vocabulary import Domain, Status
+from ticketing.vocabulary import Domain, Status
 from transcripts import Refused
 
 FIELD = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")

@@ -1,0 +1,106 @@
+"""After a batch: once every agent of a batch has returned, the release of
+tickets, a code review where the batch merged a change to the code, and two
+agents launched for the rest, one on the profile of the batch's runs and
+one, where the batch merged a change, on the gate's timings and outputs.
+
+A batch is the agents the session's operators launched since the launch
+of the previous batch's profile agent, other than the agents of After a
+batch, with the changes merged since: those an operator's merge call
+merged, and those the coordinator gives as merged. The launch of the
+profile agent opens the next batch. The ticket analyst on the tickets the
+batch filed is the one `settling` launches on any open ticket."""
+
+import re
+
+from operating import briefs
+from operating.changes import release
+from operating.directives import Directive, numbers
+from operating.roles import AGENT_ID, Role
+from operating.state import Agent, State
+from operating.steps import Bash, Launch, Step, undecided
+
+OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER})
+"""The roles of After a batch, which no batch holds."""
+
+
+def start(state: State) -> float:
+    profiles = state.agents_of(Role.BATCH_PROFILE)
+    return profiles[-1].launched if profiles else 0.0
+
+
+def members(state: State, since: float) -> list[Agent]:
+    return [a for a in state.agents if a.launched > since and a.role not in OWN]
+
+
+def merged(state: State, since: float) -> bool:
+    calls = [c for c in state.calls if c.tool == "Bash" and c.time > since
+             and "scripts/merge_change.py" in str(c.input.get("command", ""))
+             and c.result is not None and not c.error]
+    return bool(calls) or any(t > since for _, t in numbers(state, Directive.MERGED))
+
+
+def step(state: State) -> Step | None:
+    since = start(state)
+    batch = members(state, since)
+    merges = merged(state, since)
+    if not batch and not merges:
+        return None
+    if any(a.pending for a in batch):
+        return None
+    if (s := release(state)) is not None:
+        return s
+    if merges and any(c.code and c.time > since for c in state.commits):
+        reviewers = [a for a in state.agents_of(Role.CODE_REVIEWER) if a.launched > since]
+        if not reviewers:
+            if state.code_review is None:
+                return undecided("no `code-review/<n>` tag gives the last code review's baseline")
+            return Launch(Role.CODE_REVIEWER, f"code-review/{state.code_review + 1}",
+                          briefs.code_review(state.code_review, state.scratch / "code-review"))
+        if reviewers[-1].pending:
+            return None
+    n = len(state.agents_of(Role.BATCH_PROFILE)) + 1
+    head = state.commits[0].hash
+    if merges and not any(a.launched > since for a in state.agents_of(Role.BATCH_GATE)):
+        return Launch(Role.BATCH_GATE, str(n), briefs.batch_gate(state.scratch / f"batch-{n}"))
+    runs: list[str] = []
+    for op in sorted({a.operator for a in batch} or {state.me}):
+        command = under_command(op)
+        calls = [c for c in state.bash_calls(command) if c.time > since and c.result is not None]
+        if not calls:
+            return Bash(command)
+        if calls[-1].error:
+            return undecided(f"`{command}` failed")
+        ids = taken(calls[-1].result or "")
+        if ids is None:
+            return undecided(f"the output of `{command}` gives no run lines in the form "
+                             f"`profile_runs.py --help` gives")
+        runs += ids
+    return Launch(Role.BATCH_PROFILE, str(n), briefs.batch_profile(runs, head))
+
+
+def under_command(operator: str) -> str:
+    """Step 1 of After a batch, which an operator runs itself: the
+    previous call of `--under` that `profile_runs.py --help` defines is an
+    operator's."""
+    return f"uv run python scripts/profile_runs.py --under {operator}"
+
+
+RUN = re.compile(AGENT_ID)
+TAKEN = re.compile(r"^runs taken: (\d+)$", re.MULTILINE)
+
+
+def taken(output: str) -> list[str] | None:
+    """The agent ids of the runs a call of `--under` took: the first word
+    of each of the N run lines that follow its `runs taken: N` line, each
+    run's line followed by its indented `wall` line. None where the output
+    holds no such line, or fewer run lines than N, or a run line that opens
+    with no agent id."""
+    m = TAKEN.search(output)
+    if m is None:
+        return None
+    heads = [line for line in output[m.end():].splitlines()[1:]
+             if line and not line[0].isspace()][:int(m[1])]
+    ids = [line.split(" ", 1)[0] for line in heads]
+    if len(ids) < int(m[1]) or not all(RUN.fullmatch(i) for i in ids):
+        return None
+    return ids

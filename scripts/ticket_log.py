@@ -12,7 +12,8 @@ from controlled_markdown import mctx
 from ticket_files import FIELD, ticket_files, ticket_name, ticket_path, ticket_status
 from ticket_form import HEADING, LOG, ticket_kind
 from ticket_numbers import TICKET_NUMBER, TicketNumber, matched_number
-from ticket_vocabulary import Kind, Resolution, Status, ticked
+from ticket_vocabulary import ticked
+from ticketing.vocabulary import FILED, Kind, Resolution, Status
 from transcripts import Refused
 
 AGENT_ID = re.compile(r"a[0-9a-f]{16}")
@@ -73,7 +74,7 @@ LOG_LINE = re.compile(rf"^.*? (?P<status>{'|'.join(Status)}) \[(?P<agent>[^\]\s]
 
 def logged(text: str, status: Status, agent: str) -> str:
     """`text` with a `## Log` that gives its filing time."""
-    return f"{text.rstrip(chr(10))}\n\n{LOG}\n{log_line(status, agent, None, 'filed')}"
+    return f"{text.rstrip(chr(10))}\n\n{LOG}\n{log_line(status, agent, None, FILED)}"
 
 
 def log_line(status: Status, agent: str, agent_id: str | None, note: str | None) -> str:

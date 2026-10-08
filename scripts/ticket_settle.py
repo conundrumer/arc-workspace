@@ -9,13 +9,8 @@ from ticket_files import TicketName, ticket_files, ticket_name, ticket_path, tic
 from ticket_form import ticket_kind, title
 from ticket_log import read_ticket
 from ticket_numbers import TicketNumber, ticket_number
-from ticket_vocabulary import Domain, Kind, Status
+from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Status
 from transcripts import Refused
-
-MANY_IDEAS = "many ideas in one place"
-"""The end of the title of a `refactor` ticket on a module that holds more
-than one subject."""
-
 
 def settled_elsewhere(tickets: Path, path: Path, name: TicketName) -> bool:
     """Whether the list of `to-settle` leaves out the open ticket at

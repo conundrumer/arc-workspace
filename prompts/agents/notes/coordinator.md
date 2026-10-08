@@ -13,8 +13,9 @@
 - Where you run no solver pass, the user's message contains `file` as a directive, and a `request` of the change it refers to stands under `tickets/draft/`, set the end of that request's `Transcript` span to the time of that message, and move it to `tickets/open/`.
 - Tell the user what each ticket the lines above have you file does, in your own words, without quoting its text, and the number of each `request` you move to `tickets/draft/`.
 - Write in a `request` only its title, under `Words` the user's words that the change comes from, quoted, and under `Transcript` your session's id, `$CLAUDE_CODE_SESSION_ID`, then the start and the end of the span in which the user discussed the change: the time of the user's first message on it, and the time of the user's message that holds `file` or `draft`, or an earlier time where the user asks for one, each in UTC as `YYYY-MM-DDTHH:MM:SS`, as `python3 ~/.claude/skills/retrieve/transcripts.py grep --kinds user <pattern> $CLAUDE_CODE_SESSION_ID` prints it.
-- Where the user's later words bear on a `request` you filed, add them under its `Words`, quoted, and send them to the ticket analyst that took it, where one did.
-- Launch a ticket analyst with each `bug` ticket you file and each `request` ticket the lines above leave under `tickets/open/`, before you end your turn with no other work.
+- Where the user's later words bear on a `request` you filed, add them under its `Words`, quoted, and write a line in its log, in the status it stands in, whose note says so.
+- Where the user rules on a ticket under `tickets/blocked/` that waits on the user and is no `change`, move it to `tickets/open/`, and record the ruling on it: under its `Words`, quoted, where it is a `request`, and otherwise in the note of the line that moves it.
+- Launch no ticket analyst for a ticket you file. Once a line above writes on a ticket outside `tickets/draft/`, and before you end your turn with no other work, tell an operator that tickets are open, as [Operators](prompts/agents/notes/launching.md#operators) gives.
 
 ## Decisions
 - Where you run no solver pass, read [Decisions](prompts/agents/notes/decisions.md#decisions) before you make a decision on the solver tools or the agents' documents, and before you ask an agent about a choice it made.

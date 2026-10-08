@@ -2,7 +2,9 @@
 wall time goes, the budget of each agent type, the runs under a run since
 an operator's previous call of `--under` on it, the agents under a run
 whose work is open, as `--running` lists them, and whether one run's work
-is open, as `--open` gives it. `--help` prints HELP."""
+is open, as `--open` gives it. `--help` prints HELP. `budget_of` gives the
+budget of one agent type, as more than one run prints it, over every run
+of that type under the project directories."""
 
 import argparse
 import sys
@@ -23,7 +25,7 @@ importable(checkout.scripts())
 from agent_launches import pending_agents, runs_under  # noqa: E402
 from agent_turns import first_time, last_time  # noqa: E402
 from budgets import (BUDGET_FACTOR, LOW_WAIT_PCT, MEDIAN_RUNS,  # noqa: E402
-                     print_budgets)
+                     print_budgets, type_budget)
 from command_labels import programs  # noqa: E402
 from context_bound_hook import CONTEXT_BOUND, OPERATOR  # noqa: E402
 from open_agents import Listed, running_agents, work_open  # noqa: E402
@@ -35,7 +37,8 @@ from run_reads import (BACKGROUND_TASK, agent_type, blocks, run_type,  # noqa: E
                        text_of)
 from ticket_log import utc_stamp  # noqa: E402
 from transcripts import (Entry, Refused, agent_id, agent_transcripts,  # noqa: E402
-                         bare_id, epoch, find, is_subagent, read_entries, transcripts)
+                         bare_id, chain, epoch, find, is_subagent, read_entries,
+                         transcripts)
 
 UNDER = "--under"
 """The option of the mode that profiles the runs under a run since an
@@ -229,6 +232,15 @@ def runs_since(path: Path, ident: str, undecided: list[str]) -> list[Path]:
     print(LEFT_OPEN, " ".join(left) or NO_RUN)
     print(mctx("runs taken: {n}").format(n=len(taken)))
     return taken
+
+
+def budget_of(kind: str, undecided: list[str]) -> float | None:
+    """The budget in seconds of the agent type `kind`, over every run of
+    that type under the project directories, or None where it gets none."""
+    runs = [profile(last, undecided) for paths in agent_transcripts().values()
+            if agent_type(last := chain(paths[0])[-1]) == kind]
+    b = type_budget(kind, runs, None, undecided)
+    return None if b is None else b.seconds
 
 
 def main(argv: list[str]) -> int:
