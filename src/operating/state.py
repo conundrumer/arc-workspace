@@ -106,12 +106,16 @@ class Agent:
 
 
 class Merge(Enum):
-    """What a call of `scripts/merge_change.py` did: merged, where `master`
-    holds a commit made at or after the call with the message it gives,
-    whatever its exit status; and otherwise, by the forms of its output
-    that script gives (`merge_change.ran`, `merge_change.conflicted`),
-    never ran, as where the harness denied the call, refused for a
-    conflict in its rebase, or refused otherwise."""
+    """What a call of `scripts/merge_change.py` did: left edits, where its
+    output gives that `master` is fast-forwarded and the worktree stays
+    for changes made after the commit (`merge_change.left_edits`), which
+    leaves the change unmerged; merged, where `master` otherwise holds a
+    commit made at or after the call with the message it gives, whatever
+    its exit status; and otherwise, by the forms of its output that
+    script gives (`merge_change.ran`, `merge_change.conflicted`), never
+    ran, as where the harness denied the call, refused for a conflict in
+    its rebase, or refused otherwise."""
+    LEFT_EDITS = "left edits"
     MERGED = "merged"
     NOT_RUN = "not run"
     CONFLICT = "conflict"

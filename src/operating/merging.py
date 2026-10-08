@@ -5,6 +5,9 @@ The merge is `scripts/merge_change.py`, whose checks cover the
 `controlled_markdown` check. What a merge call did is read by that
 script's own forms and by `master` (`state.Merge`):
 
+- a call that left edits in the worktree after its commit leaves the
+  change unmerged, and once no editor of the change runs, the merge call
+  on that worktree is given again;
 - a call that never ran, as where the harness denied it, is written on the
   ticket in a line whose note opens with `coordinator`, which takes the
   change out of the operator's hands;
@@ -98,7 +101,8 @@ def merged(state: State, t: Ticket) -> bool:
 
 def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
     """The merge of the change in `w`, once its editors and its review have
-    passed, and the step on a failed merge call."""
+    passed, again after a call that left the worktree with changes made
+    after its commit, and the step on a failed merge call."""
     command = merge_command(t, w)
     calls = [c for c in merge_calls(state, t) if str(w) in str(c.input.get("command", ""))]
     last = calls[-1] if calls else None
@@ -121,6 +125,8 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
                             f"branch {branch}", state.me))
         case Merge.REFUSED:
             return refused(state, t, w, last, latest)
+        case Merge.LEFT_EDITS:
+            return Bash(command)
         case Merge.MERGED:
             return None
 

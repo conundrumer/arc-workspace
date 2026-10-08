@@ -180,11 +180,36 @@ def ran(output: str) -> bool:
     return any(line.startswith(PREFIX) for line in output.splitlines())
 
 
+STAYS = mctx("{master} is fast-forwarded, and {why}, so {worktree} and {branch} stay")
+"""The failure of a step after `master` is fast-forwarded that leaves a
+change's worktree and branch."""
+
+LEFT_AFTER = mctx("the worktree holds changes made after the commit, in {left}")
+"""The reason a worktree stays where it holds changes made after its
+change's commit."""
+
+
+def form(template: str, holes: dict[str, str]) -> re.Pattern[str]:
+    """The pattern of the text `template` gives, with each hole of `holes`
+    matched by its pattern."""
+    pattern = re.escape(template)
+    for hole, matched in holes.items():
+        pattern = pattern.replace(re.escape("{" + hole + "}"), matched)
+    return re.compile(pattern)
+
+
 def conflicted(output: str) -> bool:
     """Whether `output` refuses a change for a conflict in its rebase."""
-    form = re.escape(REFUSED + CONFLICT).replace(re.escape("{branch}"), r"\S+").replace(
-        re.escape("{onto}"), r"\S+")
-    return re.search(form, output) is not None
+    return form(REFUSED + CONFLICT, {"branch": r"\S+", "onto": r"\S+"}).search(
+        output) is not None
+
+
+def left_edits(output: str) -> bool:
+    """Whether `output` gives that `master` is fast-forwarded and a
+    worktree stays for changes made after its change's commit."""
+    text = STAYS.format(master=MASTER, why=LEFT_AFTER, worktree="{worktree}", branch="{branch}")
+    return form(text, {"left": r".+?", "worktree": r"\S+", "branch": r"\S+"}).search(
+        output) is not None
 
 
 def outside_work() -> tuple[str, str, str]:
@@ -518,15 +543,12 @@ def remove(main: Path, change: Change) -> None:
         worktree=worktree, branch=branch), flush=True)
 
     def stays(why: str) -> Failed:
-        return Failed(mctx("{master} is fast-forwarded, and {why}, so {worktree} and "
-                           "{branch} stay").format(
-            master=MASTER, why=why, worktree=worktree, branch=branch))
+        return Failed(STAYS.format(master=MASTER, why=why, worktree=worktree, branch=branch))
 
     left = changed_outside_work(worktree, "HEAD")
     left += submodule_changes(worktree)
     if left:
-        raise stays(mctx("the worktree holds changes made after the commit, in {left}")
-                    .format(left=", ".join(left)))
+        raise stays(LEFT_AFTER.format(left=", ".join(left)))
     reasons = {w.path.resolve(): w.lock for w in checkout.worktree_list(main)}
     if worktree not in reasons:
         raise stays(mctx("git worktree list does not list the worktree"))

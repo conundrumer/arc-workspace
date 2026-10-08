@@ -15,7 +15,7 @@ from agent_reports import ENDED, Sign, last_sign
 from agent_turns import first_time, has_ended, turns
 from context_bound_hook import OPERATOR
 from controlled_markdown import mctx
-from merge_change import conflicted, ran
+from merge_change import conflicted, left_edits, ran
 from open_agents import work_open
 from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks, is_prompt,
                        message_text, notifications, notified, output_file, run_entries,
@@ -39,7 +39,9 @@ def merge_outcome(aid: str, command: str, time: float, result: str | None, error
     `merge_change.py` runs did, or None for any other call, one that
     merges no change, as a call of its `--help`, and one still pending. A
     call the harness refused, an error with no line of the script's own,
-    never ran. Otherwise it merged where `master` holds, by `subjects`, the
+    never ran. A call whose output gives that `master` is fast-forwarded
+    and the worktree stays for changes made after the commit left edits.
+    Otherwise it merged where `master` holds, by `subjects`, the
     time of the latest commit of `master` with each subject, a commit made
     at or after the call with the message of each change it merges,
     whatever its exit status, as through a pipe; and otherwise the
@@ -56,6 +58,8 @@ def merge_outcome(aid: str, command: str, time: float, result: str | None, error
         return None
     if error and not ran(result):
         return Merge.NOT_RUN
+    if left_edits(result):
+        return Merge.LEFT_EDITS
     if all(subjects.get(m, -math.inf) >= math.floor(time) for m in messages):
         return Merge.MERGED
     if not ran(result):
