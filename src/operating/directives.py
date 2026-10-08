@@ -12,18 +12,15 @@ word of its kind and a colon, past a list marker:
 - `Tickets are open.`;
 - `Override:` and `Decision:` lines, which the operator agent applies to the
   step the command prints, and the command passes over, other than a
-  `Decision:` line that names a change whose ticket gives no `editors`
-  field, which gives that change's editors by `editors: <editor>, ...`,
-  the form of that field (`decided_editors`), and a `Decision:` line that
-  gives the ruling key of a step held for the coordinator, with one of
-  the choices that step gives (`ruled`).
+  `Decision:` line that gives the ruling key of a step held for the
+  coordinator, with one of the choices that step gives (`ruled`).
 
 A line of the coordinator's in no such form is a step the command gives to
 the coordinator as undecided.
 
-Which operator a line gives steps to is as `plan` gives. A `Decision:` line that gives a change's
-editors or rules a held step rules that change or that step for every
-operator of the session, so an operator that takes over a change from an
+Which operator a line gives steps to is as `plan` gives. A `Decision:`
+line that rules a held step rules that step for every operator of the
+session, so an operator that takes over a change from an
 earlier one carries it on by the rulings the earlier one received."""
 
 import re
@@ -64,7 +61,6 @@ APPLIED = frozenset({Directive.OVERRIDE, Directive.DECISION})
 LINE = re.compile(r"^\s*(?:[-*]\s+)?(?P<kind>[A-Z][a-z ]+?)(?::\s*(?P<rest>.*?)|\.)\s*$")
 NUMBER = re.compile(r"\b(?:\d+-)?\d+\b")
 TASK = re.compile(r"\b(?P<task>[0-9a-f]{8})(?:\s+from\s+(?P<start>create|refine))?\b")
-EDITORS_FIELD = re.compile(r"\beditors:\s*(?P<field>[a-z-]+(?:\s*,\s*[a-z-]+)*)")
 
 
 @dataclass(frozen=True)
@@ -111,19 +107,6 @@ def numbers(state: State, kind: Directive) -> list[tuple[str, float]]:
     message that gave it."""
     return [(n, ln.message.time) for ln in lines(state) if ln.kind is kind
             for n in NUMBER.findall(ln.rest)]
-
-
-def decided_editors(state: State, number: str) -> tuple[Line, str | None] | None:
-    """The last `Decision:` line that names the change `number` and holds
-    an `editors` field, with that field, or where no such line holds one,
-    the last that names it, with None; None where no such line reached an
-    operator of the session."""
-    naming = [ln for ln in session_lines(state)
-              if ln.kind is Directive.DECISION and number in NUMBER.findall(ln.rest)]
-    for ln in reversed(naming):
-        if (m := EDITORS_FIELD.search(ln.rest)) is not None:
-            return ln, m["field"]
-    return (naming[-1], None) if naming else None
 
 
 def ruled(state: State, what: str, choices: dict[Ruling, str]) -> Ruling | Send:
