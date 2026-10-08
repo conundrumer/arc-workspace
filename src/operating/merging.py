@@ -74,18 +74,29 @@ def merge_messages(command: str) -> list[str] | None:
     return []
 
 
+def log_worktrees(t: Ticket) -> set[str]:
+    """The worktrees `t`'s log gives."""
+    return {m[1] for line in t.log for m in WORKTREE.finditer(line.note)}
+
+
 def merge_calls(state: State, t: Ticket) -> list[Call]:
     """The operators' merge calls on any worktree `t`'s log gives: those
     pending, and those with an outcome (`state.Merge`), which a call that
     merges no change, as a call of the script's `--help`, has not."""
-    paths = {m[1] for line in t.log for m in WORKTREE.finditer(line.note)}
+    paths = log_worktrees(t)
     return [c for c in state.calls if c.tool == "Bash" and MERGE_SCRIPT in str(
         c.input.get("command", "")) and any(p in str(c.input.get("command", "")) for p in paths)
         and (c.result is None or c.merge is not None)]
 
 
 def merged(state: State, t: Ticket) -> bool:
-    return any(c.merge is Merge.MERGED for c in merge_calls(state, t))
+    """Whether a merge call landed the change `t`. A pending call that
+    names a worktree that is gone counts as landed: `merge_change.py`
+    removes a worktree only after it lands the change, and a call that
+    runs `operate.py next` after the merge has no result yet."""
+    gone = {p for p in log_worktrees(t) if Path(p) not in state.worktrees}
+    return any(c.merge is Merge.MERGED or (c.result is None and any(
+        p in str(c.input.get("command", "")) for p in gone)) for c in merge_calls(state, t))
 
 
 def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
