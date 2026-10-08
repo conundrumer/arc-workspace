@@ -15,6 +15,7 @@ from enum import Enum
 from pathlib import Path
 
 from controlled_markdown import mctx
+from filed_texts import report_file, report_text
 from run_reads import (MAIN, LaunchStatus, Notification, Status, agent_messages, blocks,
                        is_prompt, launch_status, notifications, notified, parent_id,
                        read_meta, run_sessions, session_agents, text_of)
@@ -148,10 +149,21 @@ def entries_after(entries: Iterable[Entry], since: float) -> Iterable[Entry]:
 def reports_after(entries: Iterable[Entry], since: float, aid: str | None,
                   call: str | None, undecided: list[str]) -> list[Report]:
     """The reports of the agent `aid`, launched by call `call`, among
-    `entries` of its parent's transcripts."""
-    return sorted((r for e in entries_after(entries, since)
-                   for r in entry_reports(e, aid, call, undecided)),
-                  key=lambda r: r.time)
+    `entries` of its parent's transcripts, each that is the path of a
+    report file alone (`filed_texts.report_file`) read from that file. An
+    agent writes each report to its report file in place of the one before,
+    so only the latest report that gives a file is read from it, and an
+    earlier one keeps the path as its text."""
+    out = sorted((r for e in entries_after(entries, since)
+                  for r in entry_reports(e, aid, call, undecided)),
+                 key=lambda r: r.time)
+    latest = {path: r for r in out if (path := report_file(r.text)) is not None}
+    for path, r in latest.items():
+        where = aid if aid is not None else mctx("the agent of call {call}").format(call=call)
+        text = report_text(path, where, undecided)
+        if text is not None:
+            r.text = text
+    return out
 
 
 def stopped_after(entries: Iterable[Entry], since: float, aid: str | None,

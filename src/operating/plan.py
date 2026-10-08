@@ -180,13 +180,11 @@ def next_step(state: State) -> Step:
         return s
     mine = [a for a in state.agents if a.pending and a.operator == state.me and a.notifies]
     if mine and not all(a.still_running for a in mine):
-        on = ", ".join(sorted(a.agent_id or a.role.value for a in mine))
         if state.wait_task:
-            return EndTurn(on)
-        return EndTurn(on, capped=True) if idle_waits(state) >= WAIT_CAP else Wait(on)
-    held = sorted(a.agent_id or a.role.value for a in state.agents if a.pending) + elsewhere(state)
-    if held:
-        return Again(", ".join(held))
+            return EndTurn()
+        return EndTurn(capped=True) if idle_waits(state) >= WAIT_CAP else Wait()
+    if any(a.pending for a in state.agents) or elsewhere(state):
+        return Again()
     if state.wait_task:
         return Stop(state.wait_task)
     return Reply(final(state))

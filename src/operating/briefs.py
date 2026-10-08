@@ -21,6 +21,13 @@ TESTS = mctx("Tests directory: `tests/`.")
 SCRATCH = mctx("Scratch directory: {scratch}.")
 LAUNCHER = mctx("The agent that launches you: {operator}.")
 MAY_EDIT = mctx("The files you may edit: {files}.")
+REPORT_FILE = mctx("Report file: `{path}`.")
+"""The line of each brief the operator gives that gives the file the agent
+writes its final reply to, for an agent whose documents say what it does
+with that file."""
+REPORT_RULE = mctx("Write your final reply to the file `{path}`, in place of what it holds, "
+                   "and give that file's path alone, on one line, as your final reply itself.")
+"""That line for an agent no document gives (`roles.GENERAL_ROLES`)."""
 
 
 def read_ticket(number: str) -> str:
@@ -358,9 +365,9 @@ def go_on(time: float, minutes: float) -> str:
 RESTATE = mctx("What you sent the operator at {time} is in no form its command reads, so the "
                "command cannot place it. Send it again, in full, in this form: {form}")
 
-REVIEW_FORM = mctx("a reply that opens with `{no_finding}`, or that gives each finding as a "
-                   "list item that opens with the path of the file it falls on, in backticks, "
-                   "and a colon.").format(no_finding=NO_FINDING)
+REVIEW_FORM = mctx("a report, in your report file, that opens with `{no_finding}`, or that "
+                   "gives each finding as a list item that opens with the path of the file it "
+                   "falls on, in backticks, and a colon.").format(no_finding=NO_FINDING)
 PASS_FORM = mctx("a reply that is the path of your report file alone, on one line, where that "
                  "report has a `{heading}` section.").format(heading=TICKETS_FILED)
 ALERT_FORM = mctx("where it is an alert, a message that opens with the line `alert: <kind> "

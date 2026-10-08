@@ -1,5 +1,15 @@
 """The steps the command prints: each the one call the operator agent makes
-next, with its parameters in full, and the text that prints it.
+next, with its parameters, and the text that prints it.
+
+A brief, and a message to an agent other than the coordinator, goes to a
+file the command writes before it prints the call (`filed`), and the
+printed prompt or message is the line `FILED` with that file's path. A
+message to the coordinator that opens with `DECISION` keeps its first
+line, which names what it gives, and files the rest. Each brief gives
+the report file the agent writes its final reply to (`with_report`),
+other than a solver pass's: the documents of a solver pass give its
+report file. The readers of a launched agent's brief, of a message to it
+and of its report read the file in place of the line.
 
 Which call makes a step the command printed is as the HELP of `operate.py`
 gives it, and `made` reads the call made right after `next`. A message
@@ -10,13 +20,14 @@ import hashlib
 import re
 import shlex
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import cache
+from pathlib import Path
 
 from controlled_markdown import mctx
 from operating import briefs
 from operating.bounds import COORDINATOR, FOREGROUND_MS, WAIT_SECONDS
-from operating.roles import Model, Role, description
+from operating.roles import GENERAL_ROLES, PASSES, Model, Role, description
 from operating.state import Agent, Call, Made, Printed, State
 
 WAIT_CAP = 11
@@ -63,9 +74,7 @@ class Stop:
 @dataclass(frozen=True)
 class Wait:
     """The command's wait, in the background, after which the agent ends
-    its turn: `operate.py wait` with the agent's id. `on` names what the
-    wait is for."""
-    on: str
+    its turn: `operate.py wait` with the agent's id."""
 
 
 @dataclass(frozen=True)
@@ -73,7 +82,6 @@ class EndTurn:
     """The agent ends its turn with no call: the command's wait already
     runs in the background, or, where `capped`, the waits reached
     `WAIT_CAP`, and a message or a report wakes the agent."""
-    on: str
     capped: bool = False
 
 
@@ -81,7 +89,6 @@ class EndTurn:
 class Again:
     """Nothing is ready yet, and nothing an agent of the operator's runs is
     waited on: the agent runs the command again at once."""
-    on: str
 
 
 @dataclass(frozen=True)
@@ -324,11 +331,10 @@ PRINTED_KEY = (re.escape(KEY_LINE.format(key="\x00", command="\x01"))
                .replace("\x01", "[^\n]*") + "\n")
 
 
-def opening(step: Step, *fields: tuple[str, str]) -> str:
-    """The pattern of the text `printed` gives `step` up to its last
-    field, where `step` holds a stand-in for each field of `fields`, given
-    with the pattern of its value; the last stand-in ends the opening."""
-    text = printed(step, "")
+def opening(text: str, *fields: tuple[str, str]) -> str:
+    """The pattern of the printed `text` up to its last field, where `text`
+    holds a stand-in for each field of `fields`, given with the pattern of
+    its value; the last stand-in ends the opening."""
     out = re.escape(text[:text.index(fields[-1][0])])
     for stand_in, pattern in fields[:-1]:
         out = out.replace(re.escape(stand_in), pattern)
@@ -340,8 +346,8 @@ def printed_opening() -> re.Pattern[str]:
     """The opening of the text `next` prints for a message or a Bash call
     in the foreground, from its key line, where the result holds it, up to
     the message or the command."""
-    send = opening(Send("\x00", "\x01"), ("\x00", r"(?P<to>[^\n]*)"), ("\x01", ""))
-    bash = opening(Bash("\x01"), ("\x01", ""))
+    send = opening(send_text("\x00", "\x01"), ("\x00", r"(?P<to>[^\n]*)"), ("\x01", ""))
+    bash = opening(bash_text("\x01"), ("\x01", ""))
     return re.compile(f"^(?:{PRINTED_KEY})?(?:{send}|{bash})", re.MULTILINE)
 
 
@@ -375,34 +381,106 @@ def made(calls: Iterable[Call]) -> tuple[Made, ...]:
     return tuple(out)
 
 
-def printed(step: Step, agent: str) -> str:
-    """The text the command prints for `step`, for the operator whose agent
-    id is `agent`."""
+FILED = mctx("Read the file {path} first: it holds the text of this message.")
+"""The line that gives the file a brief or a message is in."""
+
+FILED_LINE = re.compile("^" + re.escape(FILED.format(path="\x00")).replace(
+    "\x00", r"(?P<path>/[^\n]*?)") + "$", re.MULTILINE)
+
+REPORT_NAME = re.compile(rf"{STEP_KEY.pattern}-report\.md")
+"""The name of the report file a brief gives."""
+
+FILES = "operator-files"
+"""The directory under the session's scratchpad that holds the files the
+command writes."""
+
+
+def files_of(scratch: Path) -> Path:
+    return scratch / FILES
+
+
+def file_path(step: Step, scratch: Path) -> Path:
+    """The file the brief of the launch `step`, or the filed part of the
+    message `step`, is written to."""
+    return files_of(scratch) / f"{key(step)}.md"
+
+
+def report_path(step: Launch, scratch: Path) -> Path:
+    return files_of(scratch) / f"{key(step)}-report.md"
+
+
+def with_report(step: Launch, scratch: Path) -> Launch:
+    """`step` with the line of its brief that gives its report file, other
+    than a solver pass's."""
+    if step.role in PASSES:
+        return step
+    form = briefs.REPORT_RULE if step.role in GENERAL_ROLES else briefs.REPORT_FILE
+    line = form.format(path=report_path(step, scratch))
+    return replace(step, brief=f"{step.brief}\n{line}")
+
+
+def split_message(step: Send) -> tuple[str, str]:
+    """The part of the message `step` printed in the call, and the part
+    filed, as the module docstring gives them."""
+    if step.to == COORDINATOR:
+        if not step.message.startswith(DECISION):
+            return step.message, ""
+        head, _, rest = step.message.partition("\n")
+        return head, rest
+    return "", step.message
+
+
+def filed(step: Step, scratch: Path) -> dict[Path, str]:
+    """The files the command writes before it prints `step`, by path."""
     match step:
-        case Launch(role, subject, brief, worktree, model):
+        case Launch(brief=brief):
+            return {file_path(step, scratch): brief}
+        case Send():
+            rest = split_message(step)[1]
+            return {file_path(step, scratch): rest} if rest else {}
+        case _:
+            return {}
+
+
+def filed_line(step: Step, scratch: Path) -> str:
+    return FILED.format(path=file_path(step, scratch))
+
+
+def send_text(to: str, message: str) -> str:
+    return f"call SendMessage\nto: {to}\nmessage:\n{message}"
+
+
+def bash_text(command: str) -> str:
+    return f"call Bash\ntimeout: {FOREGROUND_MS}\ncommand:\n{command}"
+
+
+def printed(step: Step, agent: str, scratch: Path) -> str:
+    """The text the command prints for `step`, for the operator whose agent
+    id is `agent`, with the files `filed` gives under `scratch`."""
+    match step:
+        case Launch(role, subject, _, worktree, model):
             iso = '\nisolation: "worktree"' if worktree else ""
             iso += f"\nmodel: {model}" if model is not None else ""
             return (f"call Agent\ndescription: {description(role, subject)}\n"
                     f"subagent_type: {role.agent_type}\nrun_in_background: true{iso}\n"
-                    f"prompt:\n{brief}")
-        case Send(to, message):
-            return f"call SendMessage\nto: {to}\nmessage:\n{message}"
+                    f"prompt:\n{filed_line(step, scratch)}")
+        case Send(to):
+            head, rest = split_message(step)
+            line = filed_line(step, scratch) if rest else ""
+            return send_text(to, "\n".join(part for part in (head, line) if part))
         case Bash(command):
-            return f"call Bash\ntimeout: {FOREGROUND_MS}\ncommand:\n{command}"
+            return bash_text(command)
         case Stop(task_id):
             return f"call TaskStop\ntask_id: {task_id}"
-        case Wait(on):
+        case Wait():
             return (f"call Bash\nrun_in_background: true\ntimeout: 7200000\ncommand:\n"
-                    f"{wait_command(agent)}\n" + mctx(
-                        "Then end your turn. The wait is for {on}.").format(on=on))
-        case EndTurn(on, capped) if not capped:
-            return mctx("End your turn with no call: the command's wait runs, for "
-                        "{on}.").format(on=on)
-        case EndTurn(on):
+                    f"{wait_command(agent)}\n" + mctx("Then end your turn."))
+        case EndTurn(capped=False):
+            return mctx("End your turn with no call: the command's wait runs.")
+        case EndTurn():
             return mctx("End your turn with no call: no wait is started, and a message or "
-                        "a report of {on} wakes you.").format(on=on)
-        case Again(on):
-            return mctx("Run the command again: nothing is ready, and the wait is "
-                        "for {on}.").format(on=on)
+                        "a report wakes you.")
+        case Again():
+            return mctx("Run the command again: nothing is ready.")
         case Reply(text):
             return f"final reply\n{text}"

@@ -35,6 +35,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
         * inline: notes/code.md#place-tickets
     - Close the ticket of each defect place that stands.
 - Then end your turn with a final reply to the agent that launched you, of at most six lines: the pattern that matches the names of the tickets you left under `tickets/open/`, and the count of tickets under each kind of place.
+    * inline: notes/commands.md#report-file
 
 ## Working rules
 * inline: notes/code.md#code-working-rules

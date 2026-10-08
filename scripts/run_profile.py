@@ -15,6 +15,7 @@ from agent_launches import run_launches
 from agent_turns import idle_after, turns
 from command_labels import AGENT_TOOLS, POLL, call_command, command_label
 from controlled_markdown import mctx
+from filed_texts import unfiled
 from run_reads import (BACKGROUND_TASK, agent_type, blocks, context_size,
                        in_background, is_prompt, message_text, notified,
                        output_file, parent_id, results_by_call, run_entries,
@@ -336,7 +337,8 @@ def profile(path: Path, undecided: list[str]) -> Run:
         if parent is not None and i > briefed and is_prompt(e):
             who = sender(e, parent, children)
             if who is Sender.PARENT:
-                messages.append(Message(i, t, message_text(e), parts[Part.IDLE]))
+                messages.append(Message(i, t, unfiled(message_text(e), label, undecided),
+                                        parts[Part.IDLE]))
             elif who is Sender.AGENT:
                 others.append(Message(i, t, message_text(e), parts[Part.IDLE]))
             elif who is Sender.UNKNOWN:
@@ -366,7 +368,8 @@ def profile(path: Path, undecided: list[str]) -> Run:
         if i in ends:
             pending.clear()
     end = prev or 0.0
-    brief = [message_text(e) for e in entries[:briefed + 1] if is_prompt(e)]
+    brief = [unfiled(message_text(e), label, undecided)
+             for e in entries[:briefed + 1] if is_prompt(e)]
     if brief and first is not None:
         messages.insert(0, Message(briefed, first, "\n".join(brief), 0.0))
     cwd = next((e["cwd"] for e in entries if e.get("cwd")), None)

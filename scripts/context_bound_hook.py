@@ -14,6 +14,12 @@ from hook_entry import run_pre_tool_use
 HOOK = "context_bound_hook"
 OPERATOR = "operator"
 CONTEXT_BOUND = 200_000
+"""A replay of the operator runs at token cost, cache writes and cache
+reads at their prices, with a hand-over that costs a successor's first ten
+turns, the coordinator's turn and a ticket review, gives a cost within 3%
+over bounds from 120k to 220k. This bound takes fewer hand-overs than the
+lower bounds in that range, and each hand-over also stops the operator's
+work for a while."""
 REPLY_ONLY_TYPE = "general-purpose"
 REPLY_ONLY_MODEL = "haiku"
 

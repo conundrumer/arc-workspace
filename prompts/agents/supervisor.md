@@ -52,7 +52,8 @@ tools: Bash, Agent, SendMessage, TaskStop
     - a claim that does not match the state;
     - a stall: the agent's turn has ended, no report of it reached its parent, and nothing will re-invoke it;
     - a departure: an action that the agent's documents forbid, or that departs from its brief, with the rule or the brief line quoted.
-- An agent's documents are the output of `uv run python scripts/context.py context agent <name>`, where the agent has a prompt under [agents](prompts/agents), and an agent with none has no documents. For a departure or a run that has outgrown its task, give the verifier that command with the agent's name where it applies, and have it read the agent's brief, the first message of its run. An action its brief asks for is no departure.
+- An agent's documents are the output of `uv run python scripts/context.py context agent <name>`, where the agent has a prompt under [agents](prompts/agents), and an agent with none has no documents. For a departure or a run that has outgrown its task, give the verifier that command with the agent's name where it applies, and have it read the agent's brief: the first message of its run, or the file that message gives as the brief. An action its brief asks for is no departure.
+- Where a report of an agent is the path of a file alone, that file's text is the report, and have the verifier read it there.
 
 ## Sending an alert
 - Send an alert that holds by SendMessage to the agent itself, where the listing, read again after the verifier answers, still gives the agent, and the alert's kind is a departure, the agent's own doing, a run that has outgrown its task, or a stall. Send to the coordinator an alert on a message to the coordinator, and every other alert to the agent's parent, which the listing gives after `parent` in its entry's header, as an agent id or `main`.

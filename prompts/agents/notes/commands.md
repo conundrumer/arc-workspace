@@ -63,8 +63,12 @@
 ## coordinator
 - The coordinator is the session the user talks with, and SendMessage reaches it at `main`.
 
+## report-file
+- Where your brief gives a report file, write each final reply of yours to that file, in place of what it holds, and give that file's path alone, on one line, as the final reply itself.
+
 ## final-report
 * inline: #denied-calls
 * inline: #coordinator
+* inline: #report-file
 - Where, in your run, a SendMessage of yours resumed an agent, or a message of an agent other than the one that launched you reached you, or the harness refused your SubagentHandback because a report of yours was already delivered and your final reply holds something that report did not, send your final reply by SendMessage to the agent that launched you, at the agent id your brief gives for it, or to the coordinator where your brief gives none, and to no other agent. Then give, as the report the harness asks for, the line `My final reply went to <agent id> by SendMessage.`, with the agent id you sent it to, or `main` where you sent it to the coordinator: your SubagentHandback, or plain text where the harness says SubagentHandback is not available.
 * inline: #resumed-agents

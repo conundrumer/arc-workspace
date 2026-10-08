@@ -16,6 +16,7 @@ from agent_reports import ENDED, Sign, last_sign
 from agent_turns import first_time, has_ended, turns
 from context_bound_hook import OPERATOR
 from controlled_markdown import mctx
+from filed_texts import unfiled
 from merge_change import conflicted, left_edits, ran
 from open_agents import work_open
 from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks, is_prompt,
@@ -31,7 +32,7 @@ from operating.merging import MERGE_SCRIPT, merge_messages
 from operating.reports import TICKETS_FILED
 from operating.roles import PASSES, Role, described
 from operating.state import Agent, Call, Merge, Message, Report
-from operating.steps import COMMAND, is_wait
+from operating.steps import COMMAND, is_next, is_wait
 
 
 def merge_outcome(aid: str, command: str, time: float, result: str | None, error: bool,
@@ -83,6 +84,24 @@ def pass_tickets(report: str, main: Path) -> tuple[str, ...] | None:
     section = body[1].split("\n## ", 1)[0]
     return tuple(m.group(0).rstrip("_") for m in re.finditer(
         rf"{TICKET_NUMBER.pattern}_", section))
+
+
+FILED_FIELDS = {"Agent": "prompt", "SendMessage": "message"}
+"""The field of each tool's input that may give a file the command wrote."""
+
+
+def unfiled_call(aid: str, tool: str, inp: dict[str, Any], result: str | None,
+                 undecided: list[str]) -> tuple[dict[str, Any], str | None]:
+    """The input and the result of a call of the operator `aid`, with each
+    file the command wrote, that the field `FILED_FIELDS` gives or the
+    result of a call of `next` gives, read in place of the line that gives
+    it (`filed_texts.unfiled`)."""
+    where = mctx("{run}: a call of {tool}").format(run=aid, tool=tool)
+    if (name := FILED_FIELDS.get(tool)) is not None:
+        inp = {**inp, name: unfiled(str(inp.get(name, "")), where, undecided)}
+    elif tool == "Bash" and result is not None and is_next(str(inp.get("command", "")), aid):
+        result = unfiled(result, where, undecided)
+    return inp, result
 
 
 def ran_command(path: Path) -> bool:
@@ -153,6 +172,8 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
         text, error = results.get(call, (None, False))
         if call in moved:
             text, error = background_output(aid, call, *moved[call], tasks, undecided)
+        inp, text = unfiled_call(aid, tool, inp, text, undecided)
+        uses[call] = (t, inp, tool)
         calls.append(Call(aid, t, tool, inp, text, error, merge_outcome(
             aid, str(inp.get("command", "")) if tool == "Bash" else "", t, text, error,
             subjects, undecided)))
