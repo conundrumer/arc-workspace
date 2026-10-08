@@ -160,10 +160,12 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
         return None
     if log_ready(t) and t.log[last_i].note.startswith(REVISED) and at_cap(t):
         return open_last(t)
-    if not log_ready(t) and not given_after(state, t):
+    by_log = log_ready(t)
+    if not by_log and not given_after(state, t):
         return None
+    given = since if by_log else t.log[-1].time
     reviewed = [a for a in agents if a.role is Role.TICKET_REVIEWER and a.launched > since
-                and a.launched >= t.log[-1].time]
+                and a.launched >= given]
     if reviewed:
         what = (f"ticket reviewer {reviewed[-1].agent_id} left draft {t.number} under "
                 f"`tickets/draft/` with no finding")
