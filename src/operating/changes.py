@@ -22,7 +22,10 @@ message. A report that analyst was launched after leaves nothing more.
 
 A change with a doc editor passes its review once the latest reply of its
 doc reviewer opens with `no finding stands` and follows each editor's last
-report. A reply that gives findings brings a new doc editor for the
+report. A reply that gives neither that nor a finding in the form
+`reports.FINDING` reads goes back to the doc reviewer once, with a request
+to send it again in that form, and the review is held where its answer is
+still in neither. A reply that gives findings brings a new doc editor for the
 findings on documents and a new code editor for those on `.py` files, and
 the command sends that reviewer their agent ids.
 
@@ -38,7 +41,7 @@ from operating.directives import Directive, Ruling, named, numbers, ruled
 from operating.reports import finding_paths, finished, no_finding, standing
 from operating.roles import EDITORS, Purpose, Role, analyst_subject
 from operating.state import Agent, State, Ticket
-from operating.steps import Bash, Launch, Send, Step, repeated, sent, undecided
+from operating.steps import Bash, Launch, Send, Step, ask_again, repeated, sent, undecided
 from operating.tracker import COORDINATOR, closed, log, worktree
 from ticketing.vocabulary import Domain, Kind, Status
 
@@ -269,6 +272,10 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
     since = reply.time if reply is not None else r.launched
     paths = finding_paths(r)
     if not paths:
+        if r.agent_id is not None and reply is not None:
+            asked = ask_again(state, r.agent_id, [x.time for x in r.reports], briefs.REVIEW_FORM)
+            if isinstance(asked, Send):
+                return asked
         return review_ruled(state, t, w, here, f"the reply of doc reviewer {r.agent_id} on "
                                                f"change {t.number} gives no finding in the form "
                                                f"the command reads")

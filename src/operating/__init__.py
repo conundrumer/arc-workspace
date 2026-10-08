@@ -18,7 +18,10 @@ The modules keep these rules:
 - A step that needs a judgment, or the meaning of prose an agent wrote,
   goes to an agent launched for it, or reads the fixed form that agent
   writes; where neither places it, the step gives it to the coordinator
-  (`steps.undecided`).
+  (`steps.undecided`). Where a reply or a message of an agent is in no
+  form the command reads, the step first asks that agent once to send it
+  again in that form (`steps.ask_again`), and gives it to the coordinator
+  only where the answer is still in no such form.
 
 Modules: `state` (what the command reads), `roles` (the agents launched and
 their descriptions), `directives` (the coordinator's lines), `tracker` (a

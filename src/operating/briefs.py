@@ -5,10 +5,12 @@ that gives several items of the same work gives. A brief gives the agent
 id of the operator that launches the agent, which the agent replies to."""
 
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 from string import Formatter
 
 from controlled_markdown import mctx
+from operating.reports import NO_FINDING, TICKETS_FILED
 from operating.roles import Role
 
 TICKET_PATH = "uv run python scripts/file_ticket.py path {number}"
@@ -298,3 +300,23 @@ AT_BUDGET = mctx("Where your documents give what you do at your budget, do that 
 BUDGET = "Budget: {minutes} minutes. " + AT_BUDGET
 """The line of a brief that gives the agent its budget and what it does at
 its budget, in the form `profile_runs.py --help` reads."""
+
+
+RESTATE = mctx("What you sent the operator at {time} is in no form its command reads, so the "
+               "command cannot place it. Send it again, in full, in this form: {form}")
+
+REVIEW_FORM = mctx("a reply that opens with `{no_finding}`, or that gives each finding as a "
+                   "list item that opens with the path of the file it falls on, in backticks, "
+                   "and a colon.").format(no_finding=NO_FINDING)
+PASS_FORM = mctx("a reply that is the path of your report file alone, on one line, where that "
+                 "report has a `{heading}` section.").format(heading=TICKETS_FILED)
+ALERT_FORM = mctx("where it is an alert, a message that opens with the line `alert: <kind> "
+                  "<agent id>`, with the kind of the alert and the agent it is on; where it is "
+                  "no alert, a reply that says so.")
+
+
+def restate(time: float, form: str) -> str:
+    """The message that asks an agent to send again, in `form`, what it
+    sent the operator at `time` in no form the command reads."""
+    return RESTATE.format(time=datetime.fromtimestamp(time, UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                          form=form)

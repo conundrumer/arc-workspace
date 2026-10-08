@@ -11,9 +11,11 @@ operator of the session launched whose work is open:
   reached none. Where its transcript holds no final reply, the alert goes
   to the coordinator.
 
-Any other alert, an alert on an agent no operator launched, and a message
-from an agent no operator launched that is no alert, go to the coordinator
-as undecided.
+Any other alert, and an alert on an agent no operator launched, go to the
+coordinator as undecided. A message from an agent no operator launched
+that is no alert goes back to its sender once, with a request to send it
+again as an alert, or to say that it is none, and goes to the coordinator
+as undecided where the sender's next message is still no alert.
 
 A `budget` or `stall` alert on an agent an operator of the session
 launched gives its step to the operator that carries the session's work
@@ -29,7 +31,7 @@ from controlled_markdown import mctx
 from operating import briefs
 from operating.roles import AGENT_ID
 from operating.state import Agent, Message, State
-from operating.steps import COORDINATOR, Bash, Send, Step, sent, undecided
+from operating.steps import COORDINATOR, Bash, Send, Step, ask_again, sent, undecided
 from operating.tracker import AGENT
 from ticketing.vocabulary import Domain, Kind
 
@@ -127,8 +129,14 @@ def step(state: State) -> Step | None:
             continue
         alert = parsed(m)
         if alert is None:
-            s: Step | None = undecided(f"a message from {m.sender} in no form the command "
-                                       f"reads:\n{m.text}")
+            if m.operator != state.me:
+                continue
+            replies = [x.time for x in state.received if x.sender == m.sender and x.time <= m.time]
+            asked = ask_again(state, m.sender, replies, briefs.ALERT_FORM)
+            if asked is False:
+                continue
+            s: Step | None = asked if isinstance(asked, Send) else undecided(
+                f"a message from {m.sender} in no form the command reads:\n{m.text}")
         elif (a := latest(state, alert.agent)) is None:
             s = undecided(f"an alert on an agent no operator launched:\n{m.text}")
         else:

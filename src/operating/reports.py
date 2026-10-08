@@ -18,6 +18,10 @@ NO_FINDING = "no finding stands"
 stands and none is held back."""
 
 REVIEW = "## Review"
+
+TICKETS_FILED = "## Tickets filed"
+"""The heading of a solver pass's report over the numbers of the tickets
+the pass filed."""
 STANDS = re.compile(r"^\s*[-*]\s+stands:", re.MULTILINE)
 """An item of a code editor's `Review` section that gives a place as
 standing."""

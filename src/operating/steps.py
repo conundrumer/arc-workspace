@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from functools import cache
 
 from controlled_markdown import mctx
+from operating import briefs
 from operating.roles import Model, Role, description
 from operating.state import Call, Made, State
 
@@ -143,14 +144,39 @@ def sent(state: State, to: str, message: str, mark: str | None = None) -> bool:
     `message`, with no error: a SendMessage call to `to` that holds
     `mark`, the part of the message that names what it gives, or where
     none is given the whole message, or the call `made` reads."""
+    return bool(sent_at(state, to, message, mark))
+
+
+def sent_at(state: State, to: str, message: str, mark: str | None = None) -> list[float]:
+    """The times of the calls by which an operator made the step that sends
+    `to` the message `message`, as `sent` reads them."""
     step_key = key(Send(to, message))
     held = message if mark is None else mark
-    return any(c.tool == "SendMessage" and c.input.get("to") == to and not c.error
-               and held in str(c.input.get("message", "")) for c in state.calls) or any(
-        m.tool == "SendMessage" and m.call.tool == "SendMessage" and not m.call.error
+    return [c.time for c in state.calls
+            if c.tool == "SendMessage" and c.input.get("to") == to and not c.error
+            and held in str(c.input.get("message", ""))] + [
+        m.call.time for m in state.made
+        if m.tool == "SendMessage" and m.call.tool == "SendMessage" and not m.call.error
         and m.call.input.get("to") == to
-        and (m.key == step_key if m.key is not None else m.to == to and message.startswith(m.text))
-        for m in state.made)
+        and (m.key == step_key if m.key is not None else m.to == to and message.startswith(m.text))]
+
+
+def ask_again(state: State, to: str, replies: list[float], form: str) -> Send | bool:
+    """The step on the latest of `replies`, the times of the replies of the
+    agent `to`, in order, where that reply is in no form the command reads:
+    the message that asks `to` to give it again in `form`
+    (`briefs.restate`), where no operator sent it. True where the reply
+    before it had that request, sent before it: the reply that answers the
+    request is still in no such form, and the step goes to the coordinator.
+    False where the request on it was sent and no reply of `to` followed
+    it."""
+    latest = replies[-1]
+    before = [t for t in replies if t < latest]
+    if before and any(at < latest
+                      for at in sent_at(state, to, briefs.restate(before[-1], form))):
+        return True
+    message = briefs.restate(latest, form)
+    return False if sent(state, to, message) else Send(to, message)
 
 
 def bash_calls(state: State, command: str) -> list[Call]:

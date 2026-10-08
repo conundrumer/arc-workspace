@@ -27,6 +27,7 @@ from transcripts import epoch, find, read_entries, session_directory
 
 from operating import alerts
 from operating.merging import MERGE_SCRIPT, merge_messages
+from operating.reports import TICKETS_FILED
 from operating.roles import PASSES, described
 from operating.state import Agent, Call, Merge, Message, Report
 from operating.steps import COMMAND, is_wait
@@ -71,7 +72,7 @@ def pass_tickets(report: str, main: Path) -> tuple[str, ...] | None:
     path = Path(text) if Path(text).is_absolute() else main / text
     if not path.is_file():
         return None
-    body = path.read_text().split("## Tickets filed", 1)
+    body = path.read_text().split(TICKETS_FILED, 1)
     if len(body) < 2:
         return None
     section = body[1].split("\n## ", 1)[0]

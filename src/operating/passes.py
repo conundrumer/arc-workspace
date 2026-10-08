@@ -10,9 +10,11 @@ the tickets the pass's report lists under `## Tickets filed` and those the
 review filed, and the review. The next pass runs once each `interference`
 ticket on the task filed since the pipeline started stands under
 `tickets/closed/`; the changes that settle them are taken first, as
-`changes.boosted` gives. The pipeline stops where the pass's reply is no
-report's path, or a report with no `## Tickets filed` section, once the
-coordinator has that reply, quoted, as undecided; where an `interference`
+`changes.boosted` gives. A pass's reply that is no report's path, or a
+report with no `## Tickets filed` section, goes back to the pass once,
+with a request to send it again in that form. The pipeline stops where
+the pass's answer is still in no such form, once the coordinator has
+that answer, quoted, as undecided; where an `interference`
 ticket waits on the user; where one stands open once the ticket analyst
 returned; or where an operator passed over the launch of its next pass.
 Once it ends or stops, the work set aside goes back, as
@@ -24,11 +26,12 @@ from dataclasses import dataclass
 
 from operating import briefs
 from operating.directives import Line, Pipeline, lines, pipelines, queue_counts, session_lines
+from operating.reports import TICKETS_FILED
 from operating.roles import PASSES, Purpose, Role, analyst_subject, joined
 from operating.state import Agent, State
 from ticketing.vocabulary import Domain, Kind, Status
-from operating.steps import (COORDINATOR, RUN_COMMAND, Bash, Launch, Send, Step, bash_calls, passed,
-                             sent, undecided)
+from operating.steps import (COORDINATOR, RUN_COMMAND, Bash, Launch, Send, Step, ask_again,
+                             bash_calls, passed, sent, undecided)
 from operating.tracker import blocked_on_user
 
 TASK = re.compile(r"\b[0-9a-f]{8}\b")
@@ -111,11 +114,16 @@ def run(state: State, p: Pipeline) -> Outcome:
             return end(state, p, restore, f"the {role} pass on {p.task} has no agent id")
         filed = state.pass_tickets.get(a.agent_id)
         if filed is None:
+            if a.reports:
+                asked = ask_again(state, a.agent_id, [r.time for r in a.reports],
+                                  briefs.PASS_FORM)
+                if isinstance(asked, Send):
+                    return Outcome(asked)
             told = no_report(role, a)
             if not sent(state, COORDINATOR, told.message):
                 return Outcome(told)
             return end(state, p, restore, f"the {role} pass {a.agent_id} replied with no "
-                                          f"path of a report with a `## Tickets filed` "
+                                          f"path of a report with a `{TICKETS_FILED}` "
                                           f"section")
         review = latest(state, Role.TRANSCRIPT_REVIEW, a.agent_id, a.launched)
         if review is None:
@@ -152,7 +160,7 @@ def no_report(role: Role, a: Agent) -> Send:
     r = a.last_report
     quoted = "\n".join(f"> {line}" for line in (r.text if r else "").strip().splitlines())
     return undecided(f"the {role} pass {a.agent_id} replied with no path of a report that "
-                     f"has a `## Tickets filed` section, so its pipeline on {a.subject} "
+                     f"has a `{TICKETS_FILED}` section, so its pipeline on {a.subject} "
                      f"stops. Its reply:\n{quoted}")
 
 
