@@ -338,7 +338,7 @@
     - The output contains a grid exactly when every open value produces that grid.
         - At those values, the model does not fit a task containing a pair whose accepted output some open value does not produce.
     - 28a6681f
-        - Water settles under gravity one cell at a time. Along a line across gravity, either end can pour first, and the program runs both orders.
+        - Water settles under gravity: the basin it reaches fills by level, and what overflows pours to the next basin on one side first. The pairs fix neither side, and the program runs both.
 
 #### Cases
 

@@ -1,7 +1,11 @@
 // 28a6681f
-// @keywords: walk
-// input: Walls of every other color hold a body of water.
-// output: The water settles under gravity, one cell at a time.
+// @keywords: flood count rank
+// @scene vessel: Walls of every other color hold a body of water.
+// @rule settle: The water settles under gravity as the first open cells of
+//  one fill order, as many as there are water cells. The water falls and
+//  slides to the cup it reaches, a cup fills by level from its bottom, and
+//  water that rises over a rim pours into the next cup, in the pour sense
+//  first.
 
 // One grid per open pour sense; a cell the senses settle differently gets both.
 .decl out(p: Position, col: Color)
@@ -13,7 +17,7 @@
 
     .decl gravity(d: Dir) gravity(DIR_B).
 
-    // The sense a line pours in. The pairs fix neither, so both stay open.
+    // The sense the water pours in. The pairs fix neither, so both stay open.
     .decl pour_sense(s: Sense)
     pour_sense(SENSE_CW).
     pour_sense(SENSE_CC).
@@ -21,8 +25,18 @@
 
 .init params = Params
 
+// A cell under one pour sense.
+.type SenseCell = [s: Sense, p: Position]
+
+// A cup, the open cells at or below row y joined to one another, with the
+// cell r its water lands on.
+.type Entry = [y: Position, c: Ident, r: Position]
+
 .decl wall(p: Position)
 wall(P) :- in(P, Col), !params.bg(Col), !params.water(Col).
+
+.decl open(p: Position)
+open(P) :- in(P, _), !wall(P).
 
 .decl parcel(p: Position)
 parcel(P) :- in(P, Col), params.water(Col).
@@ -30,78 +44,139 @@ parcel(P) :- in(P, Col), params.water(Col).
 .decl lateral(d: Dir)
 lateral(L) :- params.gravity(D), perp_dir(D, L).
 
-// The grid's adjacency — materialized, since the settling recursion reads a
-// step per cell per turn.
-.decl adj(p: Position, d: Dir, q: Position)
-adj(P, D, Q) :- in(P, _), dir_elem(D), neighbor(P, D, Q), in(Q, _).
+.decl up(d: Dir)
+up(U) :- params.gravity(D), opposite(D, U).
 
-// Whose turn it is: lexicographic order from gravity's far edge, so a parcel
-// never takes a source still to come — it rests on its own source cell or
-// below it. Along a line either end may pour first, and the two senses can
-// settle differently, so the order is keyed by the pour sense.
+// The direction the water pours in first, per sense.
+.decl pour(s: Sense, d: Dir)
+pour(S, L) :- params.pour_sense(S), params.gravity(D), turn(S, D, L).
+
+// The row of each cell, axis-only.
+.decl row(p: Position, y: Position)
+row(P, Y) :- in(P, _), params.gravity(D), axis_of(D, A), split(P, A, Y, _).
+
+// The cell under p is open, so the water falls.
+.decl hangs(p: Position)
+hangs(P) :- open(P), params.gravity(D), neighbor(P, D, Q), open(Q).
+
+// @claim settle
+.init run = Slide<Unit>
+run.node($U(), P) :- open(P).
+run.dir($U(), L) :- lateral(L).
+
+// Along the open run from p toward d, some cell hangs.
+.decl drains(p: Position, d: Dir)
+drains(P, L) :- lateral(L), run.run(_, P, L, Q), hangs(Q).
+
+// One step of falling water: down where it hangs, else along its line toward
+// a drain, the pour direction first.
+.decl step(s: Sense, p: Position, q: Position)
+step(S, P, Q) :-
+    params.pour_sense(S), open(P),
+    ( hangs(P), params.gravity(D), neighbor(P, D, Q)
+    ; !hangs(P), pour(S, L), drains(P, L), neighbor(P, L, Q)
+    ; !hangs(P), pour(S, L), !drains(P, L), opposite(L, L2), drains(P, L2), neighbor(P, L2, Q)
+    ).
+
+// Footing below and no drain either way.
+.decl rest(p: Position)
+rest(P) :- open(P), !hangs(P), !drains(P, _).
+
+// The cells whose water comes to rest at r, by the steps back from r.
+// @claim settle
+.init sink = GraphDistance<SenseCell, Position>
+sink.seed([S, R], R) :- params.pour_sense(S), rest(R).
+sink.edge([S, R], Q, P) :- rest(R), step(S, P, Q).
+
+.decl lands(s: Sense, p: Position, r: Position)
+lands(S, P, R) :- sink.distance([S, R], P, _).
+
+// The cell the water reaches first: the first place it rests, from gravity's
+// far edge, in the pour direction.
+// @claim settle
 .init lex = LexOrder<Sense>
 lex.axis(S, A) :- params.pour_sense(S), params.gravity(D), axis_of(D, A).
-lex.corner(S, Diag) :-
-    params.gravity(D), turn(S, D, L), diag_dirs(Diag, _, D, L).
-lex.cell(S, P) :- params.pour_sense(S), parcel(P).
+lex.corner(S, Diag) :- pour(S, L), params.gravity(D), diag_dirs(Diag, _, D, L).
+lex.cell(S, R) :- parcel(P), lands(S, P, R).
 
-// The state a turn opens on: the cells its parcel may still enter (untaken)
-// and the cells that stop it (taken).
-.init state = Take<Sense, Position, Position>
-state.start(S, T) :- lex.first(S, T).
-state.step(S, T, T2) :- lex.next(S, T, T2).
-state.take(S, T, P) :- rest(S, T, P).
-state.init_taken(S, P) :- params.pour_sense(S), wall(P).
-state.init_untaken(S, P) :- params.pour_sense(S), in(P, _), !wall(P).
+// The cups of each row: the components of the open cells at or below it.
+// @claim settle
+.init cup = Components<Position>
+cup.node(Y, P) :- row(_, Y), open(P), params.gravity(D), !nearer(D, Y, P).
 
-// What an untaken cell has under it: open space to fall through, or footing.
-.decl hangs(s: Sense, t: Position, p: Position)
-hangs(S, T, P) :-
-    state.untaken(S, T, P), params.gravity(D), adj(P, D, Q), state.untaken(S, T, Q).
+// Cup c at row yc lies in cup cp, one row up.
+.decl inner(yc: Position, c: Ident, yp: Position, cp: Ident)
+inner(Yc, C, Yp, Cp) :-
+    cup.label(Yc, P, C), up(U), neighbor(Yc, U, Yp),
+    cup.label(Yp, P, Cp).
 
-.decl stands(s: Sense, t: Position, p: Position)
-stands(S, T, P) :-
-    state.untaken(S, T, P), params.gravity(D),
-    ( adj(P, D, Q), state.taken(S, T, Q)   // footing on a taken cell
-    ; dist(P, D, 0)                        // footing on the grid's edge
+// A cell of cup c's top row with open space above, where water pours in.
+.decl mouth(y: Position, c: Ident, m: Position)
+mouth(Y, C, M) :-
+    cup.label(Y, M, C), row(M, Y),
+    up(U), neighbor(M, U, M2), open(M2).
+
+// Mouth m has another mouth of its cup nearer d.
+.decl shadowed(y: Position, c: Ident, d: Dir, m: Position)
+shadowed(Y, C, L, M) :- mouth(Y, C, M), mouth(Y, C, M2), lateral(L), nearer(L, M2, M).
+
+// Cup c in cup cp, whose water lands at r outside c, lies toward d from r.
+// @ignore: common-subexpr — shadowed compares two mouths, and this a mouth with the landing
+.decl away(yp: Position, cp: Ident, r: Position, yc: Position, c: Ident, d: Dir)
+away(Yp, Cp, R, Yc, C, L) :-
+    inner(Yc, C, Yp, Cp), rest(R), cup.label(Yp, R, Cp), !cup.label(Yc, R, C),
+    mouth(Yc, C, M), lateral(L), nearer(L, M, R).
+
+// Each cup the water fills, with the cell its water lands on: the inner cup
+// that holds the landing keeps it, and another inner cup takes the water that
+// pours in over its first mouth on the side of the landing.
+// @claim settle
+.init descent = GraphDistance<Sense, Entry>
+descent.seed(S, [Y, C, R]) :-
+    lex.first(S, R), cup.label(Y, R, C), up(U), dist(Y, U, 0).
+descent.edge(S, [Yp, Cp, R], [Yc, C, R]) :-
+    params.pour_sense(S), rest(R), inner(Yc, C, Yp, Cp), cup.label(Yc, R, C).
+descent.edge(S, [Yp, Cp, R], [Yc, C, R2]) :-
+    away(Yp, Cp, R, Yc, C, L), opposite(L, L2),
+    mouth(Yc, C, M), !shadowed(Yc, C, L2, M), lands(S, M, R2).
+
+.decl entry(s: Sense, y: Position, c: Ident, r: Position)
+entry(S, Y, C, R) :- descent.distance(S, [Y, C, R], _).
+
+// Of two inner cups of one cup, c1 fills first: it holds the landing, or it
+// lies in the pour direction from the landing and the other does not, or both
+// lie one way and c1 is nearer the landing.
+.decl first_cup(s: Sense, y: Position, c1: Ident, c2: Ident)
+first_cup(S, Yc, C1, C2) :-
+    entry(S, Yp, Cp, R), inner(Yc, C1, Yp, Cp), cup.label(Yc, R, C1),
+    inner(Yc, C2, Yp, Cp), C1 != C2.
+first_cup(S, Yc, C1, C2) :-
+    entry(S, Yp, Cp, R), away(Yp, Cp, R, Yc, C1, L1), away(Yp, Cp, R, Yc, C2, L2),
+    ( pour(S, L1), !pour(S, L2)
+    ; L1 = L2, C1 != C2, mouth(Yc, C1, M1), mouth(Yc, C2, M2), nearer(L1, M2, M1)
     ).
 
-// Beyond p toward d, along the untaken run: some cell hangs.
-.decl drain(s: Sense, t: Position, p: Position, d: Dir)
-drain(S, T, P, L) :-
-    state.untaken(S, T, P), lateral(L), adj(P, L, Q),
-    ( hangs(S, T, Q)
-    ; drain(S, T, Q, L)
-    ).
+// Cell q fills no later than cell p: q lies in p's cup at p's row, or in a
+// cup that fills before p's.
+.decl upto(s: Sense, p: Position, q: Position)
+upto(S, P, Q) :- entry(S, Y, C, _), row(P, Y), cup.label(Y, P, C), cup.label(Y, Q, C).
+upto(S, P, Q) :- first_cup(S, Y, C1, C2), cup.label(Y, Q, C1), cup.label(Y, P, C2).
 
-// Beyond p toward d: the run ends, or every cell of it stands. The
-// complement of drain, derived forward.
-.decl held(s: Sense, t: Position, p: Position, d: Dir)
-held(S, T, P, L) :-
-    state.untaken(S, T, P), lateral(L),
-    ( adj(P, L, Q), state.taken(S, T, Q)               // the run ends at a taken cell
-    ; dist(P, L, 0)                                    // the run ends at the grid's edge
-    ; adj(P, L, Q), stands(S, T, Q), held(S, T, Q, L)  // the run holds on
-    ).
+// @claim settle
+.init filled = Tally<SenseCell, Position>
+filled.item([S, P], Q) :- upto(S, P, Q).
 
-// The turn's parcel, cell by cell along its path.
-.decl path(s: Sense, t: Position, p: Position)
-path(S, T, T) :- params.pour_sense(S), parcel(T).
-path(S, T, Q) :-
-    path(S, T, P), adj(P, D, Q),
-    ( hangs(S, T, P), params.gravity(D)   // falls into the open cell below
-    ; stands(S, T, P), drain(S, T, P, D)  // or steps along its line toward one
-    ).
-
-// Where it comes to rest: standing, and confined both ways.
-.decl rest(s: Sense, t: Position, p: Position)
-rest(S, T, P) :-
-    path(S, T, P), stands(S, T, P),
-    held(S, T, P, L1), opposite(L1, L2), held(S, T, P, L2).
+// @claim settle
+.init amount = Tally<Unit, Position>
+amount.item($U(), P) :- parcel(P).
+amount.domain($U()).
 
 out(P, Col) :-
     in(P, C), params.pour_sense(S),
-    ( wall(P), Col = C                            // a wall keeps its color
-    ; rest(S, _, P), params.water(Col)            // settled water
-    ; !wall(P), !rest(S, _, P), params.bg(Col)    // everywhere else
+    ( wall(P), Col = C                                          // a wall keeps its color
+    ; filled.tally([S, P], K), amount.tally(_, N), K <= N,      // within the water's amount
+      params.water(Col)
+    ; upto(S, P, Q), !upto(S, Q, P), filled.tally([S, Q], K),   // a cell before it fills the amount
+      amount.tally(_, N), K >= N, params.bg(Col)
+    ; open(P), !upto(S, P, P), params.bg(Col)                   // out of the water's reach
     ).
