@@ -188,11 +188,8 @@ def operator_launched(r: Run, undecided: list[str]) -> bool:
 
 
 def censored(r: Run, undecided: list[str]) -> bool | None:
-    """Whether `r` is censored, cut by its budget as HELP gives it: whether
-    the active time of some message from its parent is at or past the
-    budget in force for it. None where it is not and the active time of a
-    message with a budget in force is unknown, and an `undecided` line
-    names it."""
+    """Whether `r` is censored, cut by its budget as HELP gives it, or None
+    where HELP gives that unknown."""
     unknown = False
     for i, budget in enumerate(budgets_in_force(r, undecided)):
         if budget is None:

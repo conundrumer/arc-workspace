@@ -9,7 +9,7 @@ from controlled_markdown import mctx
 from open_agents import Listed, parent_reports
 from run_profile import Run, Span, clock, minutes, one_line
 from run_reads import MAIN
-from ticket_log import utc_stamp
+from ticketing.times import utc_stamp
 
 # The number of a listed agent's last calls that `--running` prints.
 RECENT_CALLS = 8

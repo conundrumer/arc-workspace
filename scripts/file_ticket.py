@@ -25,11 +25,12 @@ importable(checkout.scripts())
 from ticket_files import FIELD, NAME_FORM, TicketName, ticket_path  # noqa: E402
 from ticket_form import (DEFAULT_PRIORITY, DEFECT_SECTIONS, LOG, MECHANICAL, SECTIONS,  # noqa: E402
                          checked_kind, heading, sections_example)
-from ticket_log import (AGENT_ID, CLOSED_BY, TIME_FORM, UNBLOCKED_BY, Wait,  # noqa: E402
+from ticket_log import (AGENT_ID, CLOSED_BY, UNBLOCKED_BY, Wait,  # noqa: E402
                         log_moves, logged, status_of)
 from ticket_numbers import (SESSION_VAR, SESSIONS, reserve, session_id,  # noqa: E402
                             session_index, ticket_number, write_new)
 from ticket_settle import to_settle  # noqa: E402
+from ticketing.times import TIME_FORM  # noqa: E402
 from ticket_vocabulary import ticked  # noqa: E402
 from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Resolution, Status  # noqa: E402
 from transcripts import Refused  # noqa: E402

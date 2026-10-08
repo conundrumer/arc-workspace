@@ -2,15 +2,11 @@
 `profile_runs` gives them, and the signs in its parent's transcripts that
 its turn ended.
 
-A report's text is the text the agent wrote. The harness delivers a
-SubagentHandback report as a message from the agent framed by a one-line
-preamble (`HAND_BACK`), with each line of the report indented by
-`HAND_BACK_INDENT`; the report's text is the report without that preamble
-and that indent. The notification that follows it gives only a pointer to
-that message (`POINTER`): it gives no report text, and still says the
-agent stopped. A report whose whole text is the line an agent gives after it
-sent its final reply by SendMessage (`SENT_BY_MESSAGE`) gives no report text
-either, and the final reply that message delivered is the agent's report."""
+The forms of the harness that HELP rests on are `HAND_BACK` and
+`HAND_BACK_INDENT`, of a message that delivers a SubagentHandback report,
+`POINTER`, of a notification that points to such a message, and
+`SENT_BY_MESSAGE`, of the line an agent gives after it sent its final reply
+by SendMessage."""
 
 import re
 from collections.abc import Iterable
@@ -104,7 +100,7 @@ def handed_back(text: str) -> str | None:
 def sign_of(n: Notification) -> Sign:
     if is_stop(n):
         return Sign.STOPPED
-    if (n.note or "").startswith(STILL_RUNNING):
+    if still_running(n):
         return Sign.STILL_RUNNING
     return Sign.OTHER
 
@@ -235,7 +231,13 @@ def is_stop(n: Notification) -> bool:
     other than `running`, other than one that says the agent stopped with
     background work of its own still running."""
     return (n.status not in (None, Status.RUNNING)
-            and not (n.note or "").startswith(STILL_RUNNING))
+            and not still_running(n))
+
+
+def still_running(n: Notification) -> bool:
+    """Whether the note of `n` says the agent stopped with background work
+    of its own still running."""
+    return (n.note or "").startswith(STILL_RUNNING)
 
 
 def entry_reports(e: Entry, aid: str | None, call: str | None,

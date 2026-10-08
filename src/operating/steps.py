@@ -1,18 +1,15 @@
 """The steps the command prints: each the one call the operator agent makes
 next, with its parameters in full, and the text that prints it.
 
-A step the command printed counts as made by the call the operator made:
-a Bash step by each call whose command holds the printed command, whatever
-the operator ran before or after it in that call, and a message by each
-SendMessage call that holds the printed message. A step counts as made
-too by the call the operator made next after the result of its call of
-`next` that printed it, as `made` reads it, where the operator changed the
-text of the call."""
+Which call makes a step the command printed is as the HELP of `operate.py`
+gives it, and `made` reads the call made right after `next`. A message
+counts as made as well by each SendMessage call that holds the printed
+message."""
 
 import hashlib
 import re
 import shlex
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from functools import cache
 
@@ -161,13 +158,20 @@ def sends_to(state: State, to: str) -> list[Call]:
 def sent_at(state: State, to: str, message: str, mark: str | None = None) -> list[float]:
     """The times of the calls by which an operator made the step that sends
     `to` the message `message`, as `sent` reads them."""
-    step_key = key(Send(to, message))
     held = message if mark is None else mark
     return [c.time for c in sends_to(state, to) if held in str(c.input.get("message", ""))] + [
-        m.call.time for m in state.made
-        if m.tool == "SendMessage" and m.call.tool == "SendMessage" and not m.call.error
-        and m.call.input.get("to") == to
-        and (m.key == step_key if m.key is not None else m.to == to and message.startswith(m.text))]
+        c.time for c in made_calls(state, "SendMessage", Send(to, message),
+                                   lambda m: m.to == to and message.startswith(m.text))
+        if not c.error and c.input.get("to") == to]
+
+
+def made_calls(state: State, tool: str, step: Step, printed: Callable[[Made], bool]) -> list[Call]:
+    """The calls of `tool` that `state.made` gives as made after the
+    printing of `step`, a step of `tool`: by its key, or where the result
+    cut the key, where `printed` holds of the printed step."""
+    step_key = key(step)
+    return [m.call for m in state.made if m.tool == tool and m.call.tool == tool
+            and (m.key == step_key if m.key is not None else printed(m))]
 
 
 def ask_again(state: State, to: str, replies: list[float], form: str) -> Send | bool:
@@ -191,11 +195,9 @@ def ask_again(state: State, to: str, replies: list[float], form: str) -> Send | 
 def bash_calls(state: State, command: str) -> list[Call]:
     """The operators' Bash calls that made the Bash step `command`, in the
     order they were made."""
-    step_key = key(Bash(command))
     out = [c for c in state.calls
            if c.tool == "Bash" and command in str(c.input.get("command", ""))]
-    out += [m.call for m in state.made if m.tool == "Bash" and m.call.tool == "Bash"
-            and (m.key == step_key if m.key is not None else m.text == command)]
+    out += made_calls(state, "Bash", Bash(command), lambda m: m.text == command)
     return sorted({id(c): c for c in out}.values(), key=lambda c: c.time)
 
 
@@ -267,19 +269,23 @@ def passed(step: Step, state: State) -> str | None:
 
 
 def wait_command(agent: str) -> str:
-    return (f": 'unattended-wait: operate.py wait'; "
-            f"{RUN_COMMAND} wait {agent}")
+    return f": 'unattended-wait: operate.py wait'; {' '.join(run_words('wait', agent))}"
 
 
 def next_command(agent: str) -> str:
-    return f"{RUN_COMMAND} next {agent}"
+    return " ".join(run_words("next", agent))
+
+
+def run_words(action: str, agent: str) -> list[str]:
+    """The words of the call of `operate.py` with `action` for the operator
+    `agent`."""
+    return [*RUN_COMMAND.split(), action, agent]
 
 
 def runs(command: str, action: str, agent: str) -> bool:
     """Whether the Bash command `command` runs `operate.py` with `action`
     for the operator `agent`, whatever else it runs."""
-    want = [*RUN_COMMAND.split(), action, agent]
-    return any(words == want for words in simple_commands(command))
+    return any(words == run_words(action, agent) for words in simple_commands(command))
 
 
 def is_wait(command: str, agent: str) -> bool:
@@ -293,7 +299,7 @@ def is_next(command: str, agent: str) -> bool:
 def only_command(command: str, agent: str) -> bool:
     """Whether the Bash command `command` runs the command's `wait` or
     `next` for the operator `agent` and nothing else but `cd` and `:`."""
-    want = [[*RUN_COMMAND.split(), action, agent] for action in ("wait", "next")]
+    want = [run_words(action, agent) for action in ("wait", "next")]
     found = simple_commands(command)
     return any(words in want for words in found) and all(
         words[0] in ("cd", ":") or words in want for words in found)

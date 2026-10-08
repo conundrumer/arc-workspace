@@ -20,7 +20,7 @@ from run_reads import (BACKGROUND_TASK, agent_type, blocks, context_size,
                        output_file, parent_id, results_by_call, run_entries,
                        run_type, session_agents, session_of)
 from senders import Sender, sender
-from ticket_log import MINUTE_FORM
+from ticketing.times import MINUTE_FORM
 from token_prices import run_cost
 from transcripts import Entry, Refused, agent_id, epoch, is_subagent
 

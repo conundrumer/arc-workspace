@@ -6,14 +6,14 @@ id of the operator that launches the agent, which the agent replies to."""
 
 import re
 import shlex
-from datetime import UTC, datetime
 from pathlib import Path
 from string import Formatter
 
 from controlled_markdown import mctx
-from operating.reports import NO_FINDING, TICKETS_FILED
+from operating.reports import LIST_MARKER, NO_FINDING, TICKETS_FILED
 from operating.roles import Role
 from operating.tracker import FILE_TICKET
+from ticketing.times import utc_stamp
 
 TICKET_PATH = shlex.join([*FILE_TICKET, "path"]) + " {number}"
 WORK_IN = mctx("Work in the worktree {worktree}.")
@@ -81,7 +81,7 @@ REVIEW_AGAIN = mctx("Your reply at {time} came before the last report of an edit
 def review_again(time: float) -> str:
     """The message that asks a doc reviewer whose reply at `time` came
     before an editor's last report to review the change again."""
-    return REVIEW_AGAIN.format(time=stamp(time))
+    return REVIEW_AGAIN.format(time=utc_stamp(time))
 
 
 def review_fix(role: Role, number: str, worktree: Path, reviewer: str, files: list[str],
@@ -333,11 +333,11 @@ BUDGET_LINE = re.compile(r"Budget: (?P<minutes>\d+(?:\.\d+)?) minutes(?:[.,;:].*
 """A line that states a budget, past its list marker, in the form
 `profile_runs.py --help` gives, which `BUDGET` renders."""
 
-LIST_MARKER = re.compile(r"^\s*(?:[-*+]|\d+[.)])?\s*")
+MARKED_OPENING = re.compile(rf"^\s*{LIST_MARKER}?\s*")
 
 
 def unmarked(line: str) -> str:
-    return LIST_MARKER.sub("", line).strip()
+    return MARKED_OPENING.sub("", line).strip()
 
 
 def budgets(text: str) -> set[float]:
@@ -352,7 +352,7 @@ GO_ON = mctx("Go on with the work your reply at {time} leaves.")
 def go_on(time: float, minutes: float) -> str:
     """The message to an editor whose reply at `time` says its budget is
     passed, which gives it again the budget of `minutes` it had."""
-    return "\n".join([GO_ON.format(time=stamp(time)), BUDGET.format(minutes=f"{minutes:g}")])
+    return "\n".join([GO_ON.format(time=utc_stamp(time)), BUDGET.format(minutes=f"{minutes:g}")])
 
 
 RESTATE = mctx("What you sent the operator at {time} is in no form its command reads, so the "
@@ -371,8 +371,4 @@ ALERT_FORM = mctx("where it is an alert, a message that opens with the line `ale
 def restate(time: float, form: str) -> str:
     """The message that asks an agent to send again, in `form`, what it
     sent the operator at `time` in no form the command reads."""
-    return RESTATE.format(time=stamp(time), form=form)
-
-
-def stamp(time: float) -> str:
-    return datetime.fromtimestamp(time, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return RESTATE.format(time=utc_stamp(time), form=form)

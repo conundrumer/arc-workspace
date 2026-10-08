@@ -30,6 +30,7 @@ from enum import StrEnum
 
 from arc.task import TASK_ID
 from controlled_markdown import mctx
+from operating.reports import LIST_MARKER
 from operating.roles import PASSES, Role
 from operating.state import Message, State
 from operating.steps import Send, held, ruling_key, undecided
@@ -60,7 +61,7 @@ class Directive(StrEnum):
 APPLIED = frozenset({Directive.OVERRIDE, Directive.DECISION})
 """The kinds the operator agent applies itself."""
 
-LINE = re.compile(r"^\s*(?:[-*]\s+)?(?P<kind>[A-Z][a-z ]+?)(?::\s*(?P<rest>.*?)|\.)\s*$")
+LINE = re.compile(rf"^\s*(?:{LIST_MARKER}\s+)?(?P<kind>[A-Z][a-z ]+?)(?::\s*(?P<rest>.*?)|\.)\s*$")
 NUMBER = re.compile(r"\b(?:\d+-)?\d+\b")
 TASK = re.compile(rf"\b(?P<task>{TASK_ID})(?:\s+from\s+(?P<start>create|refine))?\b")
 

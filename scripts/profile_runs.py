@@ -35,7 +35,7 @@ from run_profile import (COMMAND_WIDTH, Run, clock, dollars, minutes,  # noqa: E
                          part_split, print_groups, print_types, profile)
 from run_reads import (BACKGROUND_TASK, agent_type, blocks, run_type,  # noqa: E402
                        text_of)
-from ticket_log import utc_stamp  # noqa: E402
+from ticketing.times import utc_stamp  # noqa: E402
 from transcripts import (Entry, Refused, agent_id, agent_transcripts,  # noqa: E402
                          bare_id, chain, epoch, find, is_subagent, read_entries,
                          transcripts)

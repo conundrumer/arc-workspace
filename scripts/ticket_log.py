@@ -14,24 +14,11 @@ from ticket_form import HEADING, LOG, ticket_kind
 from ticket_numbers import TICKET_NUMBER, TicketNumber, matched_number
 from ticket_vocabulary import ticked
 from operating.roles import AGENT_ID as AGENT_ID_FORM
+from ticketing.times import utc_stamp
 from ticketing.vocabulary import Kind, Note, Resolution, Status
 from transcripts import Refused
 
 AGENT_ID = re.compile(AGENT_ID_FORM)
-
-
-_TO_MINUTE = "%Y-%m-%dT%H:%M"
-
-TIME_FORM = _TO_MINUTE + ":%SZ"
-"""The form of a log line's time, in UTC."""
-
-MINUTE_FORM = _TO_MINUTE + "Z"
-"""`TIME_FORM` cut to the minute."""
-
-
-def utc_stamp(t: float) -> str:
-    """The epoch time `t` in `TIME_FORM`."""
-    return time.strftime(TIME_FORM, time.gmtime(t))
 
 
 RESOLUTION_WORD = re.compile(r"[a-z]+(?:-[a-z]+)*")

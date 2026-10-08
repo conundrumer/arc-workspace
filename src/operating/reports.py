@@ -61,7 +61,11 @@ for the coordinator."""
 
 LABELS = f"(?P<label>{'|'.join(Label)})"
 
-LABEL_OPENING = rf"^(?P<indent>[ \t]*)(?:(?:[-*+]|\d+[.)])[ \t]+)?[*_`]*{LABELS}"
+LIST_MARKER = r"(?:[-*+]|\d+[.)])"
+"""The marker of a Markdown list item, which the command reads past at the
+opening of a line."""
+
+LABEL_OPENING = rf"^(?P<indent>[ \t]*)(?:{LIST_MARKER}[ \t]+)?[*_`]*{LABELS}"
 """The opening of an item of the part for the coordinator by one of
 `LABELS`, in any case, after any list marker or none, and inside any
 emphasis or code markup."""
