@@ -12,6 +12,7 @@ profile agent opens the next batch. The ticket analyst on the tickets the
 batch filed is the one `triage` launches on any open ticket."""
 
 import re
+from dataclasses import dataclass
 
 from controlled_markdown import mctx
 from operations import briefs
@@ -66,48 +67,63 @@ def step(state: State) -> Step | None:
     runs: list[str] = []
     for op in sorted({a.operator for a in batch} or {state.me}):
         command = under_command(op)
-        calls = [c for c in bash_calls(state, command) if c.time > since and c.result is not None
-                 and TAKEN.search(c.result) is not None]
+        calls = [(c, u) for c in bash_calls(state, command) if c.time > since
+                 and c.result is not None and (u := read_under(c.result)) is not None]
         if not calls:
             return Bash(command)
-        if calls[-1].error:
+        if calls[-1][0].error:
             return Undecided(mctx("`{command}` failed").format(command=command))
-        ids = taken(calls[-1].result or "")
-        if ids is None:
-            return Undecided(mctx("the output of `{command}` gives no run lines in the form "
-                                  "`profile_runs.py --help` gives").format(command=command))
-        runs += ids
+        runs += calls[-1][1].taken
     return Launch(Role.BATCH_PROFILE, str(n), briefs.batch_profile(runs, head))
 
 
 def under_command(operator: str) -> str:
     """Step 1 of After a batch, which an operator runs itself: the
     previous call of `--under` that `profile_runs.py --help` defines is an
-    operator's. A call whose output, as a pipe may cut it, holds no
-    `runs taken:` line counts as none, and the step is given again."""
+    operator's, and `read_under` gives whether a call of it stands."""
     return f"uv run python scripts/profile_runs.py --under {operator}"
 
 
 RUN = re.compile(AGENT_ID)
-RUNS_TAKEN = "runs taken:"
-"""The opening of the line of `profile_runs.py --under` that counts the
-runs it takes."""
+LEFT_OPEN = mctx("left open:")
+"""What leads the line of `profile_runs.py --under` that gives the runs it
+left out because their work is open."""
 
-TAKEN = re.compile(rf"^{re.escape(RUNS_TAKEN)} (\d+)$", re.MULTILINE)
+NO_RUN = mctx("none")
+"""What the `LEFT_OPEN` line gives where it left out no run."""
+
+RUNS_TAKEN = mctx("runs taken:")
+"""What leads the line of `profile_runs.py --under` that gives the runs it
+takes."""
 
 
-def taken(output: str) -> list[str] | None:
-    """The agent ids of the runs a call of `--under` took: the first word
-    of each of the N run lines that follow its `runs taken: N` line, each
-    run's line followed by its indented `wall` line. None where the output
-    holds no such line, or fewer run lines than N, or a run line that opens
-    with no agent id."""
-    m = TAKEN.search(output)
-    if m is None:
+def lines(output: str, lead: str) -> list[list[str]]:
+    """The words after `lead` of each line of `output` that opens with
+    `lead`, one list per line. The last piece of `output` has no line break
+    after it, so a pipe or the harness may have cut it, and it counts as no
+    line."""
+    return [line.removeprefix(lead).split()
+            for line in output.split("\n")[:-1] if line.startswith(lead)]
+
+
+@dataclass(frozen=True)
+class Under:
+    """What a call of `profile_runs.py --under` gives: the agent ids of the
+    runs it left open, and of the runs it took."""
+    left: frozenset[str]
+    taken: tuple[str, ...]
+
+
+def read_under(output: str) -> Under | None:
+    """What the call of `--under` whose output is `output` gives, where the
+    call stands as `profile_runs.py --help` has it: one `LEFT_OPEN` line and
+    one `RUNS_TAKEN` line, each ended by a line break, the count on the
+    `RUNS_TAKEN` line followed by as many agent ids. None otherwise."""
+    left, took = lines(output, LEFT_OPEN), lines(output, RUNS_TAKEN)
+    if len(left) != 1 or len(took) != 1 or not took[0] or not took[0][0].isdigit():
         return None
-    heads = [line for line in output[m.end():].splitlines()[1:]
-             if line and not line[0].isspace()][:int(m[1])]
-    ids = [line.split(" ", 1)[0] for line in heads]
-    if len(ids) < int(m[1]) or not all(RUN.fullmatch(i) for i in ids):
+    open_ids = [] if left[0] == [NO_RUN] else left[0]
+    ids = took[0][1:]
+    if len(ids) != int(took[0][0]) or not all(RUN.fullmatch(i) for i in open_ids + ids):
         return None
-    return ids
+    return Under(frozenset(open_ids), tuple(ids))

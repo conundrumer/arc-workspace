@@ -194,13 +194,13 @@ def test_under(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     error, or that call's `left open:` line gives; a call by an agent of
     another type, one that failed, one the harness moved to the background
     and one whose output was cut before that line count as none."""
-    op, c1, c2, g, editor, other, busy, late = (f"b{n:016x}" for n in range(1, 9))
+    op, c1, c2, g, editor, other, busy, late = (f"a{n:016x}" for n in range(1, 9))
     agents = tmp_path / "proj" / "s" / "subagents"
     agents.mkdir(parents=True)
-    out = f"previous call: none\nleft open: agent-{late}\nruns taken: 0\n"
+    out = f"left open: {late}\nruns taken: 0\nprevious call: none\n"
 
     def call(tid: str, s: float, result: dict, error: bool = False) -> list[dict]:
-        done = [{"type": "tool_result", "tool_use_id": tid, "content": out,
+        done = [{"type": "tool_result", "tool_use_id": tid, "content": result.get("content", out),
                  "is_error": error}]
         return [assistant(s, bash(tid, f"cd x && uv run python scripts/profile_runs.py "
                                        f"--under agent-{op} 2>&1")),
@@ -209,7 +209,8 @@ def test_under(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     def said(s: float) -> dict:
         return assistant(s, {"type": "text", "text": "a"})
 
-    cut = {"stdout": "previous call: none\nleft open: b", "stderr": ""}
+    cut = {"content": "<persisted-output>\nOutput too large (35.3KB).",
+           "stdout": f"left open: {late}\nruns taken: 1 {late}", "stderr": ""}
     runs = {op: ("operator", None, [user(0, "brief"), *call("u1", 30, {})]),
             c1: ("editor", op, [user(1, "brief"), said(10)]),
             c2: ("editor", op, [user(2, "brief"), said(35)]),

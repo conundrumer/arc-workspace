@@ -21,7 +21,7 @@ from merge_change import conflicted, left_edits, ran
 from open_agents import work_open
 from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks, is_prompt,
                        message_text, notifications, output_file, run_entries,
-                       run_sessions, session_agents, text_of, type_in)
+                       run_sessions, session_agents, result_text, type_in)
 from run_reads import Status as TaskStatus
 from senders import Sender, sender
 from ticket_numbers import TICKET_NUMBER
@@ -156,7 +156,7 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
             result = e.get("toolUseResult")
             for b in blocks(e, "tool_result"):
                 call = b.get("tool_use_id", "")
-                results[call] = (text_of(b.get("content")), bool(b.get("is_error")))
+                results[call] = (result_text(b, result), bool(b.get("is_error")))
                 if isinstance(result, dict) and result.get(BACKGROUND_TASK):
                     moved[call] = (str(result[BACKGROUND_TASK]), output_file(b))
         if e.get("type") != "assistant":

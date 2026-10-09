@@ -185,6 +185,21 @@ def text_of(content: Any) -> str:
     return ""
 
 
+PERSISTED = "<persisted-output>"
+"""What opens the content of a tool result the harness cut to a preview of
+an output too large to give in full."""
+
+
+def result_text(block: dict[str, Any], result: Any) -> str:
+    """The text of the `tool_result` block `block`, whose entry gives
+    `result` as its `toolUseResult`: its content, or the result's `stdout`
+    where that content is a `PERSISTED` preview and the result gives one.
+    The content holds stderr lines that `stdout` leaves out."""
+    text = text_of(block.get("content"))
+    out = result.get("stdout") if isinstance(result, dict) else None
+    return out if text.startswith(PERSISTED) and isinstance(out, str) else text
+
+
 def output_file(block: dict[str, Any]) -> Path | None:
     """The file the `tool_result` block `block` names as the one its
     command writes its output to, or None where it names none."""
