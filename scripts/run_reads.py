@@ -24,6 +24,10 @@ AGENT_MESSAGE = re.compile(r'<agent-message from="([^"]+)"')
 AGENT_MESSAGE_END = "</agent-message>"
 NOTIFICATION = re.compile(r"<task-notification>(.*?)</task-notification>", re.S)
 TAG = re.compile(r"<(task-id|tool-use-id)>([^<]+)</\1>")
+RESUMED_ELSEWHERE = re.compile(r'\AAgent "[^"]*" was resumed by another agent and now reports '
+                               r"to it; its completion will not be delivered here\.\Z")
+"""The whole summary of a notification that gives no status and says its
+agent was resumed by another agent, which its completion reaches instead."""
 BACKGROUND_TASK = "backgroundTaskId"
 """The key of the result of a Bash call that runs in the background, which
 gives that call's task id."""
@@ -75,12 +79,20 @@ def in_background(result: dict[str, Any], undecided: list[str], call: str) -> bo
 @dataclass
 class Notification:
     """A notification the harness gives a run: the task id and tool-use id
-    it names, its status as it words it, its note and its result, each None
-    where it gives none."""
+    it names, its status as it words it, its note, its result and its
+    summary, each None where it gives none."""
     ids: list[str]
     status_text: str | None
     note: str | None
     result: str | None
+    summary: str | None
+
+    @property
+    def resumed_elsewhere(self) -> bool:
+        """Whether it is of the form `RESUMED_ELSEWHERE` gives, which gives
+        no report and no stop."""
+        return (self.status_text is None and self.summary is not None
+                and RESUMED_ELSEWHERE.match(self.summary.strip()) is not None)
 
     @property
     def status(self) -> Status | None:
@@ -294,7 +306,7 @@ def notifications(entry: Entry) -> list[Notification]:
         status = field_text(body, "status")
         out.append(Notification([v for _, v in TAG.findall(body)],
                                 status and status.strip(), field_text(body, "note"),
-                                field_text(body, "result")))
+                                field_text(body, "result"), field_text(body, "summary")))
     return out
 
 
