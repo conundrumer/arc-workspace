@@ -9,7 +9,8 @@ The watched agents are the agents an operator of the session launched,
 other than the auditors, so no auditor, and no alert of one, is itself
 audited. An audit runs on a watched agent once its run ends, at its final
 report or at a stall, and once mid-run where a call of it has hung; on the
-operator's own run before its final reply (`own_audit`); and on a message
+operator's own run before its final reply, once for each final reply, which
+no auditor's message makes anew (`own_audit`); and on a message
 to the coordinator from an agent the coordinator did not launch. A budget
 alert goes to the agent itself (`alerts.to_agent`), with no audit."""
 
@@ -327,10 +328,16 @@ def message_brief(m: ToCoordinator) -> str:
         REPORT_POINTER])
 
 
+def auditors(state: MonitorState) -> frozenset[str]:
+    """The agent ids of the auditors the operators of the session launched."""
+    return frozenset(a.auditor for a in state.audits)
+
+
 def own_audit(state: MonitorState, me: str, since: float) -> Launch | None:
     """The launch of an auditor on the run of the operator `me`, before its
     final reply, where no audit on it was launched after `since`, the time
-    of the latest message that reached `me`."""
+    of the latest message that reached `me` other than one from an
+    auditor (`auditors`)."""
     past = audits_on(state, Facet.OPERATOR, me)
     if past and past[-1].launched > since:
         return None

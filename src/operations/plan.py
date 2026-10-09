@@ -202,8 +202,10 @@ def ending(state: State, watch: monitor.MonitorState, text: str) -> Step:
     """The operator's final reply, whose text is `text`: the launch of an
     auditor on the operator's own run (`monitor.own_audit`), then the
     message that sends the coordinator `text`, where the operator sent none
-    since the last message that reached it, then the reply."""
-    since = max((m.time for m in state.received), default=0.0)
+    since the last message that reached it other than one from an
+    auditor, then the reply."""
+    auditors = monitor.auditors(watch)
+    since = max((m.time for m in state.received if m.sender not in auditors), default=0.0)
     s = first(state, lambda _: monitor.own_audit(watch, state.me, since))
     if s is not None:
         return s
