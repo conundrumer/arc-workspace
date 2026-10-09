@@ -1,4 +1,4 @@
-"""The alerts of the monitor's steps and of the auditors that reach an operator, and the steps they give.
+"""The alerts of the monitor's steps and the alerts that reach an operator, and the steps they give.
 
 An alert opens with a line of the form `alert: <kind> <agent id>`
 (`OPENING`), with the kind of `AlertKind` and the agent it is on. On an agent an
@@ -7,10 +7,9 @@ operator of the session launched whose work is open:
 - A `budget` alert goes to the agent itself, under `BUDGET_MESSAGE`.
 
 Any other alert, and an alert on an agent no operator launched, are
-undecided. A message from an auditor an operator of the session launched
-that opens with no alert line gives no step: such a message is its
-hand-back or its final reply, and the command reads its report from its
-report file alone (`monitor`). A message from an agent no operator
+undecided. A message from an agent an operator of the session launched,
+an auditor included, gives no step: the command reads an auditor's report
+from its launch's reports alone (`monitor`). A message from an agent no operator
 launched that is no alert goes back to its sender once, with a request to
 send it again as an alert, or to say that it is none, and is undecided
 where the sender's next message is still no alert. An undecided alert or message goes to a ticket
@@ -34,7 +33,7 @@ from enum import Enum
 
 from controlled_markdown import mctx
 from operations import briefs
-from operations.roles import AGENT_ID, Role
+from operations.roles import AGENT_ID
 from operations.state import Agent, Message, Report, State
 from operations.handled import ask_again, repeated
 from operations.steps import Bash, Send, Step, Undecided
@@ -151,14 +150,13 @@ def on(state: State, alert: Alert, a: Agent) -> Step | None:
 def step(state: State) -> Step | None:
     """The first step the alerts and the other agents' messages give the
     operator `me`."""
-    auditors = {a.agent_id for a in state.agents_of(Role.OP_AUDITOR) if a.agent_id}
-    launched = {a.agent_id for a in state.agents if a.agent_id} - auditors
+    launched = {a.agent_id for a in state.agents if a.agent_id}
     for m in state.arrived:
         if m.sender is None or m.sender in launched:
             continue
         alert = parsed(m)
         if alert is None:
-            if m.operator != state.me or m.sender in auditors:
+            if m.operator != state.me:
                 continue
             replies = [x.time for x in state.received if x.sender == m.sender and x.time <= m.time]
             asked = ask_again(state, m.sender, replies, briefs.ALERT_FORM)

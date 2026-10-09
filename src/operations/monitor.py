@@ -13,8 +13,7 @@ after the start of the run of the operator that reads the state. An audit runs o
 watched agent once its turn ends, whether or not its work is still open,
 until an auditor is launched on it after that turn, and once mid-run where
 a call of it has hung; on the
-operator's own run before its final reply, once for each final reply, which
-no auditor's message makes anew (`own_audit`); and on a message
+operator's own run before its final reply, once for each final reply (`own_audit`); and on a message
 to the coordinator from an agent the coordinator did not launch. A budget
 alert goes to the agent itself (`alerts.to_agent`), with no audit. A step
 that goes to a watched agent itself, a budget alert or a finding's Send,
@@ -333,16 +332,10 @@ def message_brief(m: ToCoordinator) -> str:
         REPORT_POINTER])
 
 
-def auditors(state: MonitorState) -> frozenset[str]:
-    """The agent ids of the auditors the operators of the session launched."""
-    return frozenset(a.auditor for a in state.audits)
-
-
 def own_audit(state: MonitorState, me: str, since: float) -> Launch | None:
     """The launch of an auditor on the run of the operator `me`, before its
     final reply, where no audit on it was launched after `since`, the time
-    of the latest message that reached `me` other than one from an
-    auditor (`auditors`)."""
+    of the latest message that reached `me`."""
     past = audits_on(state.audits, Facet.OPERATOR, me)
     if past and past[-1].launched > since:
         return None

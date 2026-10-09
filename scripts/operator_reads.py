@@ -21,7 +21,7 @@ from merge_change import conflicted, left_edits, ran
 from open_agents import work_open
 from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks, is_prompt,
                        message_text, notifications, output_file, run_entries,
-                       run_sessions, session_agents, result_text, type_in)
+                       run_sessions, session_agents, result_text)
 from run_reads import Status as TaskStatus
 from senders import Sender, sender
 from ticket_numbers import TICKET_NUMBER
@@ -171,9 +171,7 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
                 where = mctx("{run}: a message from").format(run=aid)
                 messages += [Message(aid, epoch(stamp), s, unfiled(
                     unfenced(text), f"{where} {s}", undecided))
-                             for s, text in agent_messages(e)
-                             if s not in children
-                             or type_in(sessions, s) == Role.OP_AUDITOR.agent_type]
+                             for s, text in agent_messages(e) if s not in children]
     for call, (t, inp, tool) in uses.items():
         text, error = results.get(call, (None, False))
         if call in moved:

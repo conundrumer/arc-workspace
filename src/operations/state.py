@@ -187,9 +187,7 @@ class Made:
 class Message:
     """A message that reached an operator: from the coordinator, as its
     brief or a later message, where `sender` is None, or otherwise from the
-    agent `sender`, which that operator did not launch or launched as an
-    auditor. A message from an auditor that opens with no alert line, as
-    its hand-back does, gives no step (`alerts`)."""
+    agent `sender`, which that operator did not launch."""
     operator: str
     time: float
     sender: str | None
