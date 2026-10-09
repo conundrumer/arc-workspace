@@ -59,7 +59,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 ## Working rules
 * inline: notes/worktree.md#worktree
 - Run each command in the worktree of your change, other than a command of the before side, and take each path in the repo from it, apart from a path under `tickets/`, which you take from the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints.
-* inline: notes/worktree.md#worktree-isolation
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 * inline: notes/code.md#code-working-rules
 - Your budget is the N of the latest `Budget: N minutes` line in your brief or a later message from your parent.

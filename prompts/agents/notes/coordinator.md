@@ -27,7 +27,7 @@
 - While an operator of yours runs, run no change yourself, and file it as a ticket once [Tickets](#tickets) has you file it.
 
 ## Worktrees
-- Where an environment update gives as your primary working directory another agent's worktree or the harness refuses your Bash calls in one, act by [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
+- Where an environment update gives as your primary working directory another agent's worktree, act by [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
 
 ## Reports to the user
 - While an operator of yours runs, and you report to the user an agent's message, a completion notification or an event the harness reports that reached you meanwhile, open that report with a bold label that gives the agent the message is from or the notification concerns, by the full name of its kind and whether it is yours or an operator's, or the harness for an event it reports, and the route by which what you report reached you. Give no agent by its id.

@@ -46,8 +46,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 * inline: notes/worktree.md#worktree
 * inline: notes/worktree.md#worktree-commands
 
-* inline: notes/worktree.md#worktree-isolation
-
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 
 * inline: notes/worktree.md#gate

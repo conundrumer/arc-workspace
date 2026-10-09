@@ -14,14 +14,8 @@
 ## worktree-commands
 - Run each command in the worktree of your change, and take each path in the repo from it, apart from a path under `tickets/`, which you take from the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints.
 
-## worktree-isolation
-- The harness may refuse a compound Bash command that it cannot verify runs git only inside the worktree, such as one that writes a file through a heredoc, runs `printf` with a computed format, or runs git inside a command substitution. Write such a file with the Write or Edit tool, run such a git call as a simple command in a Bash call of its own, and run the rest of the command in a Bash call of its own.
-    * comment: The refusal message reaches an agent only after the refused call. Without this line, code editor `a16cb9e50afdd6691` had five such commands refused and retried each split: ticket `1791218737-a16cb9e50afdd6691-transcript-review-3`. With only the heredoc and `printf` forms named, doc editor `a0c48e5b4d30194d1` had a command with git inside a command substitution refused and split it: ticket `1791220161-a0c48e5b4d30194d1-transcript-review-1`. The forms after "such as" stay because a reader cannot tell from the condition alone which commands the harness cannot verify.
-
 ## Re-invoked in another agent's worktree
-- Act by the lines below each time one of these happens:
-    - An environment update gives as your primary working directory a linked worktree other than the one you run your commands in.
-    - The harness refuses a Bash call with a text that opens "This agent is isolated in the worktree" and gives a worktree that neither your brief nor a message to you gives.
+- Act by the lines below each time an environment update gives as your primary working directory a linked worktree other than the one you run your commands in.
 - After such an event, until an environment update gives your working directory at start as your primary working directory, make no call other than a wait for a command of yours to finish and the calls the line below gives, whatever another line of your documents gives: until then, a command of yours runs in the other worktree, so a relative path resolves against it and a script runs from its copy, and an agent you launch starts in it and can run no command once it is removed.
     * comment
         - The reason for agents stays by the decision on change 2-137 that has the line state it: doc reviewer a555c16716d62355f, launched by operator a017a43d837e9118a at its L1685 while in agent-ae0647acd7a9f64e4, had every Bash call refused once that worktree was removed at the operator's L1691.
