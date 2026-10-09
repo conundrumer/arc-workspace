@@ -185,8 +185,8 @@ def passed_over(state: State) -> dict[str, Line]:
 def passed(step: Step, state: State) -> str | None:
     """The line of the ruling that passed `step` over, or None. A ruling on
     a solver pass is spent once a solver pass on its task launched after
-    it, or once an operator of the session printed its final reply after
-    it, so that a later pipeline on that task is not passed over."""
+    it, or once an operator of the session sent the coordinator the text of
+    its final reply after it, so that a later pipeline on that task is not passed over."""
     ln = passed_over(state).get(key(step))
     if ln is None:
         return None

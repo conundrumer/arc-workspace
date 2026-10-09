@@ -76,8 +76,9 @@ class Poll:
 
 @dataclass(frozen=True)
 class Reply:
-    """The operator's final reply."""
-    text: str
+    """The operator's final reply, printed once the operator sent its text
+    to the coordinator (`final_sends`): an agent's report is not delivered
+    while an agent it resumed by SendMessage runs."""
 
 
 @dataclass(frozen=True)
@@ -317,15 +318,33 @@ def is_next(command: str, agent: str) -> bool:
 
 FINAL_REPLY = "final reply"
 """The first line of the text `next` prints for the operator's final
-reply."""
+reply, and of the message that sends the coordinator its text."""
+
+SENT = mctx("My final reply went to {to} by SendMessage.")
+"""The line an agent gives as its report after it sent its final reply by
+SendMessage to the agent `to`."""
+
+SENT_REPLY = SENT.format(to=COORDINATOR)
+
+SENT_BY_MESSAGE = re.compile(r"\A" + re.escape(SENT.format(to="\x00")).replace(
+    "\x00", rf"(?:{re.escape(COORDINATOR)}|a[0-9a-f]+)") + r"\Z")
+"""The whole text of `SENT`, to the coordinator or to any agent."""
+
+
+def final_sends(state: State, operator: str) -> list[Call]:
+    """The SendMessage calls by which `operator` sent the coordinator the
+    text of its final reply, in the order they were made."""
+    return [c for c in sends_to(state, COORDINATOR) if c.operator == operator
+            and unfenced(str(c.input.get("message", ""))).startswith(FINAL_REPLY + "\n")]
 
 
 def final_replies(state: State, operator: str) -> list[float]:
-    """The times of the calls of `next` that printed `operator` its final
-    reply."""
-    return [c.time for c in state.calls if c.operator == operator and c.tool == "Bash"
-            and is_next(str(c.input.get("command", "")), operator)
-            and (c.result or "").startswith(FINAL_REPLY + "\n")]
+    """The times of the calls of `next` that printed `operator` the
+    messages of `final_sends`: for each, the last call of `next` before it."""
+    nexts = [c.time for c in state.calls if c.operator == operator and c.tool == "Bash"
+             and is_next(str(c.input.get("command", "")), operator)]
+    return [max((t for t in nexts if t < c.time), default=c.time)
+            for c in final_sends(state, operator)]
 
 
 def carrier(state: State, operator: str, time: float) -> str | None:
@@ -548,7 +567,7 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
             return bash_text(command)
         case Poll():
             return mctx("Run the command again: nothing is ready.")
-        case Reply(text):
-            return f"{FINAL_REPLY}\n{text}"
+        case Reply():
+            return f"{FINAL_REPLY}\n{SENT_REPLY}"
         case Undecided():
             raise ValueError(f"an undecided step is placed before it is printed: {step}")

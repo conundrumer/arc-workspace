@@ -38,7 +38,7 @@ Where no step is ready, and an agent of an operator runs or a ticket of
 the operators' waits on another holder whose work is open, the agent runs
 the command again, which blocks in the foreground first. Otherwise the
 agent gives its final reply, after the launch of an auditor on its own
-run (`ending`)."""
+run and the message that sends the coordinator its text (`ending`)."""
 
 from collections.abc import Callable
 
@@ -58,20 +58,23 @@ from operations.roles import Role, description
 from operations.state import State, Ticket
 from ticketing.vocabulary import Status
 from operations.steps import (
+    COORDINATOR,
     FINAL_REPLY,
     Bash,
     Launch,
     Poll,
     Reply,
+    Send,
     Step,
     Undecided,
     bash_calls,
     decision_key,
     failure,
-    is_next,
+    final_sends,
     key,
     nested,
     repeated,
+    unfenced,
     unread_line,
 )
 
@@ -186,34 +189,40 @@ def next_step(state: State, watch: monitor.MonitorState) -> Step:
     mine = state.operators.index(state.me) if state.me in state.operators else -1
     later = [o for o in state.operators[mine + 1:] if o in state.open_operators]
     if later:
-        return ending(state, watch, Reply(
-            mctx("Operator {operator} carries the work on, from the state; {given}.").format(
-                operator=later[-1], given=GIVEN_AGAIN)
-            + "\n" + "\n".join([*reply_lines(state), *unknown])))
+        return ending(state, watch,
+                      mctx("Operator {operator} carries the work on, from the state; {given}.").format(
+                          operator=later[-1], given=GIVEN_AGAIN)
+                      + "\n" + "\n".join([*reply_lines(state), *unknown]))
     s = first(state, *EARLY)
     if s is not None:
         return s
     if state.past_bound:
         return ending(state, watch,
-                      Reply(FOR_CONTEXT + "\n" + "\n".join([*reply_lines(state), *unknown])))
+                      FOR_CONTEXT + "\n" + "\n".join([*reply_lines(state), *unknown]))
     s = first(state, lambda st: monitor_step(st, watch), *LATE)
     if s is not None:
         return s
     if any(a.pending for a in state.agents) or elsewhere(state):
         return Poll()
-    return ending(state, watch, Reply("\n".join([final(state), *unknown])))
+    return ending(state, watch, "\n".join([final(state), *unknown]))
 
 
 def monitor_step(state: State, watch: monitor.MonitorState) -> Step | None:
     return monitor.step(watch, lambda s: repeated(s, state))
 
 
-def ending(state: State, watch: monitor.MonitorState, reply: Reply) -> Step:
-    """`reply`, the operator's final reply, or before it the launch of an
-    auditor on the operator's own run (`monitor.own_audit`)."""
+def ending(state: State, watch: monitor.MonitorState, text: str) -> Step:
+    """The operator's final reply, whose text is `text`: the launch of an
+    auditor on the operator's own run (`monitor.own_audit`), then the
+    message that sends the coordinator `text`, where the operator sent none
+    since the last message that reached it, then the reply."""
     since = max((m.time for m in state.received), default=0.0)
     s = first(state, lambda _: monitor.own_audit(watch, state.me, since))
-    return reply if s is None else s
+    if s is not None:
+        return s
+    if any(c.time > since for c in final_sends(state, state.me)):
+        return Reply()
+    return Send(COORDINATOR, f"{FINAL_REPLY}\n{text}")
 
 
 def taken_up(state: State) -> frozenset[str]:
@@ -223,9 +232,8 @@ def taken_up(state: State) -> frozenset[str]:
     ended = f"{FINAL_REPLY}\n{FOR_CONTEXT}\n"
     out: set[str] = set()
     for o in reversed(state.operators[:mine]):
-        if not any(c.operator == o and c.tool == "Bash"
-                   and is_next(str(c.input.get("command", "")), o)
-                   and (c.result or "").startswith(ended) for c in state.calls):
+        if not any(unfenced(str(c.input.get("message", ""))).startswith(ended)
+                   for c in final_sends(state, o)):
             break
         out.add(o)
     return frozenset(out)

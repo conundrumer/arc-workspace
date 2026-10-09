@@ -16,6 +16,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from filed_texts import report_file, report_text
+from operations.steps import SENT_BY_MESSAGE
 from run_reads import (MAIN, LaunchStatus, Notification, Status, agent_messages, blocks,
                        is_prompt, launch_status, notifications, notified, parent_id,
                        read_meta, run_sessions, session_agents, text_of)
@@ -37,10 +38,6 @@ POINTER = re.compile(r'\AThis agent\'s report was delivered to you as a message 
                      r"\(its SubagentHandback call\)\. Read it there; it is not repeated here\.\Z")
 """The whole result of a notification whose agent's report reached the
 parent as a SubagentHandback message."""
-
-SENT_BY_MESSAGE = re.compile(r"\AMy final reply went to (?:main|a[0-9a-f]+) by SendMessage\.\Z")
-"""The whole text of the line an agent gives as its report after it sent
-its final reply by SendMessage."""
 
 
 def gives_text(text: str) -> bool:

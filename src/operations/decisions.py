@@ -55,8 +55,8 @@ def applier(state: State, a: Agent) -> str:
 
 
 def launcher_ended(state: State, a: Agent) -> bool:
-    """Whether the operator that launched `a` printed its final reply since
-    that launch."""
+    """Whether the operator that launched `a` sent the coordinator the text
+    of its final reply since that launch."""
     return any(t > a.launched for t in final_replies(state, a.operator))
 
 

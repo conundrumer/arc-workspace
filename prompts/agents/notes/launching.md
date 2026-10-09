@@ -104,6 +104,7 @@
 ## Operators
 - Send each line you give an operator to a running operator of yours, and where none runs, launch a new operator with it. Give it in a form [An operator's brief](#an-operators-brief) gives, with nothing else in that message.
 - To tell an operator that tickets are open, give it `Tickets are open.`
+- An operator's final reply is its message to you that opens with `final reply`.
 - When an operator's final reply asks for a fresh operator, launch one with a brief that gives no line.
 - When an operator's message, or a paragraph of it, that opens with `undecided:` reaches you, send the operator again the line of yours it gives, in a form [An operator's brief](#an-operators-brief) gives.
 - When an operator's message that opens with `for the coordinator:` reaches you, read the file it gives.
