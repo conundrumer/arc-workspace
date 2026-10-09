@@ -39,11 +39,28 @@ def repeated(step: Step, state: State) -> bool:
                                                        f"{UNDECIDED} {what}") or (
                 bool(given) and any(all(g in str(c.input.get("message", "")) for g in given)
                                     for c in sends_to(state, COORDINATOR)))
-        case Send(to, message, since):
-            return (sent(state, to, message) if since is None
-                    else any(t > since for t in sent_at(state, to, message)))
+        case Send():
+            return bool(sendings(step, state))
         case _:
             return False
+
+
+def answered(step: Send, state: State) -> bool:
+    """Whether an operator already sent `step`, as `repeated` reads it,
+    and its recipient does not run and reported after its latest
+    sending."""
+    times = sendings(step, state)
+    if not times:
+        return False
+    of = [a for a in state.agents if a.agent_id == step.to]
+    return not any(a.pending for a in of) and any(
+        r.time > max(times) for a in of for r in a.reports)
+
+
+def sendings(step: Send, state: State) -> list[float]:
+    """The times of the calls that made `step`, as `repeated` counts them."""
+    return [t for t in sent_at(state, step.to, step.message)
+            if step.since is None or t > step.since]
 
 
 def sent(state: State, to: str, message: str, mark: str | None = None) -> bool:

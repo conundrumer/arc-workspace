@@ -11,9 +11,10 @@ from enum import StrEnum
 from operations.roles import Role
 from operations.state import Agent
 
-DONE = ("done", "blocked")
+DONE = "done"
 """The opening, in any case, of the report of an editor that leaves nothing
-for a decision."""
+for a decision. A report that opens with `blocked` leaves its unfinished
+items for one."""
 
 BUDGET_PASSED = "budget passed"
 """The opening, in any case, of the reply of a code editor that ended its
@@ -73,7 +74,7 @@ MISLABELED = re.compile(LABEL_OPENING + r"\b", re.IGNORECASE)
 which `LABELED` does not read."""
 
 
-def opens(a: Agent, opening: str | tuple[str, ...]) -> bool:
+def opens(a: Agent, opening: str) -> bool:
     r = a.last_report
     return r is not None and r.text.lstrip().lower().startswith(opening)
 

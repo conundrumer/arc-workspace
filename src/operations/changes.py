@@ -41,6 +41,10 @@ any other form holds the review. The command launches no editor for a
 reviewer's findings: that reviewer sends them to the editors of its
 brief.
 
+A next step of a change that is a message an operator already sent,
+whose recipient answered it, leaves the change where it was, and the
+command cannot place it.
+
 A step of a change that the command cannot place holds that change alone,
 until a `Decision:` line rules it with one of the choices the step gives
 (`directives.decided`)."""
@@ -56,8 +60,8 @@ from operations.reports import (NO_FINDING, OPEN_LABELS, Label, budget_passed, f
                                 no_finding, standing)
 from operations.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
 from operations.state import Agent, State, Ticket
-from operations.handled import repeated, sends_to, sent
-from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids
+from operations.handled import answered, repeated, sends_to, sent
+from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids, key
 from operations.tracker import AGENT, COORDINATOR, closed, log, worktree
 from ticketing.vocabulary import Domain, Kind, Status
 
@@ -396,6 +400,19 @@ def step(state: State) -> Step | None:
     if (s := take(state)) is not None:
         return s
     for t in held(state):
-        if (s := carry(state, t)) is not None and not repeated(s, state):
+        if (s := carry(state, t)) is None:
+            continue
+        if not repeated(s, state):
             return s
+        if isinstance(s, Send) and answered(s, state) and not repeated(u := unmoved(t, s), state):
+            return u
     return None
+
+
+def unmoved(t: Ticket, s: Send) -> Undecided:
+    """The step of the change `t` whose next step `s` is a message its
+    recipient already answered, with the change where it was."""
+    return Undecided(mctx("the next step of change {number} is the message {key} to {agent}, "
+                          "which an operator already sent and {agent} answered, and the "
+                          "change has not moved since").format(
+        number=t.number, key=key(s), agent=s.to))
