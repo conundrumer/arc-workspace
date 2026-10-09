@@ -14,13 +14,13 @@ from dataclasses import replace
 from functools import partial
 from pathlib import Path
 
-from agent_launches import session_launches
-from agent_turns import first_time
+from agent_launches import launches, session_launches
+from agent_turns import first_time, is_turn_entry, last_time
 from budgets import budgets_in_force
 from context_bound_hook import OPERATOR, past_bound
 from controlled_markdown import mctx
 from filed_texts import report_file
-from open_agents import Listed, running_agents, work_open
+from open_agents import Listed, node, running_agents, turn_ended, work_open
 from operator_reads import (ended_elsewhere, ended_with, operator_runs, read_operator,
                             stalled_reports)
 from run_prints import active_of, print_running
@@ -131,11 +131,10 @@ def hung_at(listed: Listed, listing: list[Listed]) -> float | None:
 
 
 def activity(listed: Listed) -> float:
-    """The time of the latest call, end of a call, end of the turn or
-    report of `listed`."""
+    """The time of the latest call, end of a call or end of the turn of
+    `listed`."""
     r = listed.run
     times = [s.start for s in r.spans] + [s.end for s in r.spans if s.end is not None]
-    times += [rep.time for rep in listed.found or []]
     if listed.end is not None:
         times.append(listed.end)
     if r.start is not None:
@@ -152,25 +151,69 @@ def facts(listed: Listed, since: float | None, undecided: list[str]) -> str:
     return out.getvalue().rstrip("\n")
 
 
-def watched(listing: list[Listed], launched: dict[str, Role], audits: list[Audit],
-            undecided: list[str]) -> list[Watched]:
-    """The agents of `listing` that an operator launched, by `launched`,
-    their roles by agent id, other than the auditors."""
+def last_audit(audits: list[Audit], aid: str) -> float | None:
+    """The time of the latest launch of an auditor on the run of `aid`."""
+    past = monitor.audits_on(audits, Facet.AGENT, aid)
+    return past[-1].launched if past else None
+
+
+def closed_unaudited(agents: tuple[Agent, ...], listing: list[Listed], audits: list[Audit],
+                     undecided: list[str]) -> list[Listed]:
+    """The agents of `agents` that `listing` leaves out, so whose work has
+    closed, other than the auditors, whose last ended turn no auditor was
+    launched on after that turn, each as listed where its turn has
+    ended."""
+    shown = {listed.launch.agent for listed in listing}
+    out: list[Listed] = []
+    for a in agents:
+        aid = a.agent_id
+        if aid is None or aid in shown or a.role.agent_type in UNWATCHED:
+            continue
+        shown.add(aid)
+        try:
+            path, launcher = find(aid), find(a.operator)
+        except Refused as e:
+            undecided.append(mctx("{agent}: {reason}, so its last ended turn is not "
+                                  "audited").format(agent=aid, reason=e))
+            continue
+        end = last_time(path, is_turn_entry)
+        if end is None:
+            undecided.append(mctx("{agent}: no entry of its transcript gives a time, so its "
+                                  "last ended turn is not audited").format(agent=aid))
+            continue
+        last = last_audit(audits, aid)
+        if last is not None and last > end:
+            continue
+        launch = next((x for x in launches(launcher, undecided) if x.agent == aid), None)
+        if launch is None:
+            undecided.append(mctx("{agent}: the transcript of {operator} gives no launch of "
+                                  "it, so its last ended turn is not audited").format(
+                                      agent=aid, operator=a.operator))
+            continue
+        out.append(turn_ended(node(launcher, launch, path, [], undecided), undecided))
+    return out
+
+
+def watched(listing: list[Listed], closed: list[Listed], launched: dict[str, Role],
+            audits: list[Audit], undecided: list[str]) -> list[Watched]:
+    """The agents of `listing`, whose work is open, and of `closed`, whose
+    work has closed, that an operator launched, by `launched`, their roles
+    by agent id, other than the auditors."""
     out: list[Watched] = []
     now = time.time()
-    for listed in listing:
+    for listed, is_open in [*((x, True) for x in listing), *((x, False) for x in closed)]:
         r = listed.run
         aid = listed.launch.agent
         if aid is None or r.agent_type in UNWATCHED or (role := launched.get(aid)) is None:
             continue
-        past = [a.launched for a in audits if a.facet is Facet.AGENT and a.agent_id == aid]
         budget = next(reversed(budgets_in_force(r, undecided)), None)
         active = active_of(listed, now)
         out.append(Watched(
             agent_id=aid, agent_type=r.agent_type, role=role, parent=listed.parent,
-            activity=activity(listed), hung=hung_at(listed, listing), ended=listed.ended,
+            activity=activity(listed), hung=hung_at(listed, listing) if is_open else None,
+            ended=listed.ended, open=is_open,
             over_budget=budget is not None and active is not None and active > budget * 60,
-            facts=facts(listed, max(past, default=None), undecided), transcript=r.path))
+            facts=facts(listed, last_audit(audits, aid), undecided), transcript=r.path))
     return out
 
 
@@ -265,8 +308,10 @@ def read_watch(state: State) -> MonitorState:
             agent=state.operators[0]))
     session = find(state.session)
     launched = {a.agent_id: a.role for a in state.agents if a.agent_id}
+    listing = running_agents(session, undecided)
+    closed = closed_unaudited(state.agents, listing, audits, undecided)
     return MonitorState(
-        watched=tuple(watched(running_agents(session, undecided), launched, audits, undecided)),
+        watched=tuple(watched(listing, closed, launched, audits, undecided)),
         to_coordinator=tuple(to_coordinator(session_directory(session), start, undecided)),
         audits=tuple(audits), sent=partial(sent_with, state),
         transcript=find(state.me), stalled=frozenset(state.stalled), undecided=tuple(undecided))

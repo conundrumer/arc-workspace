@@ -7,15 +7,20 @@ session, and each auditor's finding from its report file.
 
 The watched agents are the agents an operator of the session launched,
 other than the auditors, so no auditor, and no alert of one, is itself
-audited. An audit runs on a watched agent once its run ends, at its final
-report or at a stall, and once mid-run where a call of it has hung; on the
+audited: each whose work is open, and each whose work has closed while no
+auditor was launched on it after its last ended turn. An audit runs on a
+watched agent once its turn ends, whether or not its work is still open,
+until an auditor is launched on it after that turn, and once mid-run where
+a call of it has hung; on the
 operator's own run before its final reply, once for each final reply, which
 no auditor's message makes anew (`own_audit`); and on a message
 to the coordinator from an agent the coordinator did not launch. A budget
-alert goes to the agent itself (`alerts.to_agent`), with no audit."""
+alert goes to the agent itself (`alerts.to_agent`), with no audit. A step
+that goes to a watched agent itself, a budget alert or a finding's Send,
+goes only to an agent whose work is open."""
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -41,10 +46,10 @@ class Facet(StrEnum):
 @dataclass(frozen=True)
 class Watched:
     """A watched agent at the time of the read. `activity` is the time of
-    its latest new call, end of a call, end of its turn or report, and
+    its latest new call, end of a call or end of its turn, and
     `hung` the time its oldest call in flight passed `HUNG_FACTOR` times
     that call's usual time, or None where none has. `ended` is whether its
-    turn has ended. `over_budget` is whether its active time is past its
+    turn has ended, and `open` whether its work is open. `over_budget` is whether its active time is past its
     budget, and `facts` the facts the command computed on it since its
     last audit, for an auditor's brief."""
     agent_id: str
@@ -54,6 +59,7 @@ class Watched:
     activity: float
     hung: float | None
     ended: bool
+    open: bool
     over_budget: bool
     facts: str
     transcript: Path
@@ -99,8 +105,8 @@ ROUTES = mctx("- `next` gives each finding of an auditor its step by its kind an
               "{judging} that an operator launched and whose work is open, as `uv run python "
               "scripts/profile_runs.py --open <agent id>` gives it; a Send of "
               "the line `alert: stall <agent id>` to the agent, for a `stall` finding on an "
-              "agent an operator launched whose transcript holds no final reply since its "
-              "launch; and no step for any other finding, on which the auditor's ticket "
+              "agent an operator launched whose work is open and whose transcript holds no "
+              "final reply since its launch; and no step for any other finding, on which the auditor's ticket "
               "stands alone. Where that transcript holds such a reply, the operator takes it "
               "as the agent's report, and files a `bug` ticket on the agent. A Send that a "
               "finding gives counts as made only where an operator sent it after the launch "
@@ -202,9 +208,7 @@ def outcome(state: MonitorState, a: Audit) -> Finding | None:
 
 
 TO_AGENT = frozenset({AlertKind.DEPARTURE, AlertKind.OWN_DOING, AlertKind.OUTGROWN})
-"""The kinds of finding that go to a judging agent whose work is open:
-every watched agent's work is, since `operator_state.read_watch` watches
-only the agents whose work `profile_runs.py --open` gives as open."""
+"""The kinds of finding that go to a judging agent whose work is open."""
 
 
 def route(state: MonitorState, a: Audit) -> Send | str | None:
@@ -215,7 +219,7 @@ def route(state: MonitorState, a: Audit) -> Send | str | None:
     if f is None or f.alert is None or f.agent is None:
         return None
     w = next((w for w in state.watched if w.agent_id == f.agent), None)
-    if w is None:
+    if w is None or not w.open:
         return None
     if f.alert is AlertKind.STALL:
         if w.agent_id in state.stalled:
@@ -272,15 +276,15 @@ def subject_of(text: str) -> tuple[Facet, str, int | None] | None:
 BUDGET_ALERT = mctx("Its active time is past its budget.")
 
 
-def audits_on(state: MonitorState, facet: Facet, agent: str) -> list[Audit]:
-    return sorted((a for a in state.audits if a.facet is facet and a.agent_id == agent),
+def audits_on(audits: Iterable[Audit], facet: Facet, agent: str) -> list[Audit]:
+    return sorted((a for a in audits if a.facet is facet and a.agent_id == agent),
                   key=lambda a: a.launched)
 
 
 def needs_audit(state: MonitorState, w: Watched) -> bool:
-    """Whether `w` has an ended turn, or a call that became hung, since its
-    last audit."""
-    past = audits_on(state, Facet.AGENT, w.agent_id)
+    """Whether `w` has an ended turn, or a call that became hung, since the
+    launch of its last auditor, once that auditor's outcome is in."""
+    past = audits_on(state.audits, Facet.AGENT, w.agent_id)
     last = past[-1].launched if past else None
     if past and outcome(state, past[-1]) is None:
         return False
@@ -312,11 +316,11 @@ def since_last(past: list[Audit]) -> str:
 
 def brief(state: MonitorState, w: Watched, verdict: str | None) -> str:
     """The brief of an auditor on `w`."""
+    since = since_last(audits_on(state.audits, Facet.AGENT, w.agent_id))
     return "\n\n".join([
         BRIEF.format(agent=w.agent_id, agent_type=w.agent_type, parent=w.parent,
-                     transcript=w.transcript, since=since_last(audits_on(state, Facet.AGENT,
-                                                                         w.agent_id)),
-                     facts=w.facts, verdict=verdict or NONE),
+                     transcript=w.transcript, since=since, facts=w.facts,
+                     verdict=verdict or NONE),
         REPORT_POINTER])
 
 
@@ -338,7 +342,7 @@ def own_audit(state: MonitorState, me: str, since: float) -> Launch | None:
     final reply, where no audit on it was launched after `since`, the time
     of the latest message that reached `me` other than one from an
     auditor (`auditors`)."""
-    past = audits_on(state, Facet.OPERATOR, me)
+    past = audits_on(state.audits, Facet.OPERATOR, me)
     if past and past[-1].launched > since:
         return None
     return Launch(Role.OP_AUDITOR, subject(Facet.OPERATOR, me), "\n\n".join([
@@ -359,14 +363,14 @@ def step(state: MonitorState, handled: Callable[[Step], bool]) -> Step | None:
         if a.read is Read.UNREAD and isinstance(asked := ask(state, a), Send):
             return asked
     for w in state.watched:
-        if w.over_budget and not handled(s := budget_alert(w)):
+        if w.open and w.over_budget and not handled(s := budget_alert(w)):
             return s
     for a in state.audits:
         if isinstance(s := route(state, a), Send) and not handled(s):
             return s
     for w in state.watched:
         if needs_audit(state, w):
-            found = [f for a in audits_on(state, Facet.AGENT, w.agent_id)
+            found = [f for a in audits_on(state.audits, Facet.AGENT, w.agent_id)
                      if (f := outcome(state, a)) is not None]
             verdict = found[-1].verdict if found else None
             return Launch(Role.OP_AUDITOR, subject(Facet.AGENT, w.agent_id),
