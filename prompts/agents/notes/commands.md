@@ -10,7 +10,7 @@
 - End your turn only once each command you started has finished. A turn that does not end with your final reply may end while that timer runs.
 - Give your final reply only once the completion notification of each command of yours that ran in the background has reached you, or you have stopped waiting on it.
 - Where the harness moves a command to the background, or your final reply waits on the completion notification of a command, other than a budget timer of yours that you have not ended, wait in a foreground Bash call with a timeout of 240000 ms, whose until-loop gives up just under that timeout, and repeat the call until the command's completion notification has arrived.
-    - Lead its command with `: 'unattended-wait: <the command you wait on>';`. A command so led is exempt from the PreToolUse hook that blocks waits, `~/.claude/scripts/no-poll-wait.sh`.
+    - Lead its command with `: 'unattended-wait: <the command you wait on>';`. A command so led is exempt from the PreToolUse hook that blocks waits, `~/.claude/scripts/no-poll-wait.sh`, unless that command reads the output file the harness gave a command of yours that runs in the background.
         * comment: Without the hook's script given here, a doc reviewer checking this section searched for it from `/`, and macOS prompted the user for access to the user's media: ticket `1791149774-commands-review-doc-reviewer-1`.
     - Loop on the completion where you can observe it, and otherwise on the time alone.
     - Where a wait call that you started after the command completed ends with no notification of it, stop waiting on it.
