@@ -19,7 +19,7 @@ from agent_turns import first_time
 from budgets import budgets_in_force
 from context_bound_hook import OPERATOR, past_bound
 from controlled_markdown import mctx
-from filed_texts import report_file, report_text
+from filed_texts import report_file
 from open_agents import Listed, running_agents, work_open
 from operator_reads import (ended_elsewhere, ended_with, operator_runs, read_operator,
                             stalled_reports)
@@ -178,7 +178,9 @@ def audit_of(a: Agent, undecided: list[str]) -> Audit | None:
     """The audit the launch `a` gives, or None where it is no auditor's, or
     where its subject is in no form `monitor.subject` gives: that launch
     counts as no audit, so the activity it was to audit stays new, and
-    `undecided` gains a line on it."""
+    `undecided` gains a line on it. A latest report that still has a report
+    file's path as its text is one whose file `agent_reports.reports_after`
+    found gone."""
     if a.role is not Role.OP_AUDITOR or a.agent_id is None:
         return None
     given = monitor.subject_of(a.subject)
@@ -190,11 +192,8 @@ def audit_of(a: Agent, undecided: list[str]) -> Audit | None:
     replies = tuple(r.time for r in a.reports)
     read, found, alert = Read.PENDING, None, None
     if a.last_report is not None and not a.pending:
-        text: str | None = a.last_report.text
-        path = report_file(a.last_report.text)
-        if path is not None:
-            text = report_text(path, a.agent_id, undecided)
-        if text is None:
+        text, path = a.last_report.text, a.last_report.file
+        if path is None and report_file(text) is not None:
             read = Read.GONE
         else:
             found = monitor.finding(text)

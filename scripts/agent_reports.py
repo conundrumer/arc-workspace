@@ -62,9 +62,12 @@ TURN_ENDED = frozenset({ReportKind.NOTIFICATION, ReportKind.RESULT})
 
 @dataclass
 class Report:
+    """A report of an agent. `file` is the report file its text was read
+    from, or None where the text is the report as the parent received it."""
     kind: ReportKind
     time: float
     text: str
+    file: Path | None = None
 
 
 class Sign(Enum):
@@ -147,10 +150,11 @@ def reports_after(entries: Iterable[Entry], since: float, aid: str | None,
                   call: str | None, undecided: list[str]) -> list[Report]:
     """The reports of the agent `aid`, launched by call `call`, among
     `entries` of its parent's transcripts, each that is the path of a
-    report file alone (`filed_texts.report_file`) read from that file. An
-    agent writes each report to its report file in place of the one before,
-    so only the latest report that gives a file is read from it, and an
-    earlier one keeps the path as its text."""
+    report file alone (`filed_texts.report_file`) read from that file, which
+    it keeps as its `file`. An agent writes each report to its report file
+    in place of the one before, so only the latest report that gives a file
+    is read from it, and an earlier one, or one whose file is gone, keeps
+    the path as its text."""
     out = sorted((r for e in entries_after(entries, since)
                   for r in entry_reports(e, aid, call, undecided)),
                  key=lambda r: r.time)
@@ -159,7 +163,7 @@ def reports_after(entries: Iterable[Entry], since: float, aid: str | None,
         where = aid if aid is not None else mctx("the agent of call {call}").format(call=call)
         text = report_text(path, where, undecided)
         if text is not None:
-            r.text = text
+            r.text, r.file = text, path
     return out
 
 

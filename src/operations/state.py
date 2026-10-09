@@ -64,9 +64,11 @@ class Ticket:
 class Report:
     """A report of an agent that reached the operator that launched it: a
     notification, the result of a foreground launch, or a message, with
-    the text the agent wrote, as `agent_reports` reads it."""
+    the text the agent wrote, as `agent_reports` reads it, and the report
+    file that text was read from, or None where it was read from none."""
     time: float
     text: str
+    file: Path | None = None
 
 
 @dataclass(frozen=True)

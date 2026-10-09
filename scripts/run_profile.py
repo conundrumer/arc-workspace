@@ -92,7 +92,7 @@ class Run:
     cost: float | None
     said: str | None
     # The messages from the run's parent, the brief first, the messages
-    # from other agents than the monitor, and the text of each later message whose sender is
+    # from other agents, and the text of each later message whose sender is
     # unknown.
     messages: list[Message]
     others: list[Message]

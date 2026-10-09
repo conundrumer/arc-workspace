@@ -196,7 +196,7 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
         d = described(str(use[1].get("description", "")))
         if d is None:
             continue
-        reports = tuple(Report(r.time, r.text) for r in launch.reports(0.0, undecided))
+        reports = tuple(Report(r.time, r.text, r.file) for r in launch.reports(0.0, undecided))
         sign = (signs.get(launch.agent or "") if launch.pending else
                 last_sign(launch.entries, launch.since, {launch.agent or "", launch.call}))
         still = sign is Sign.STILL_RUNNING
