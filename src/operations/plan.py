@@ -29,7 +29,7 @@ analysts on open tickets; the review
 of drafts; the changes; the solver pipelines; After a batch. A step that
 is a message an operator already sent is passed over, and so are an
 undecided step an operator already handled (`steps.repeated`) and a step
-an operator passed over by `operate.py pass-over`.
+an `Override: pass over` ruling passed over (`directives.passed`).
 
 Where no step is ready and an agent the operator launched or last
 resumed itself runs, other than one a notification said has not reported
@@ -52,6 +52,7 @@ from operations.directives import (
     Line,
     Pipeline,
     lines,
+    passed,
     unread,
 )
 from operations.roles import Role, description
@@ -70,12 +71,12 @@ from operations.steps import (
     Undecided,
     Wait,
     bash_calls,
+    decision_key,
     failure,
     is_wait,
     key,
     nested,
     only_command,
-    passed,
     repeated,
     unread_line,
 )
@@ -85,38 +86,40 @@ GIVEN_AGAIN = "a line below that stands unfinished reaches it only where it is g
 
 
 def first(state: State, *procedures: Callable[[State], Step | None]) -> Step | None:
-    """The first step of `procedures` that is ready, where an undecided
-    step is the launch of a ticket analyst on it (`decisions`). A procedure
-    whose step failed, as `refused` gives, or whose step an operator passed
-    over, waits until the state changes, and the procedures after it go
-    on. A step passed over or failed is undecided, once, as one its
-    procedure waits on, other than the launch of an analyst on an
-    undecided step: where the line that passed it over answered that step,
-    or that launch failed, the step stays held. An undecided step whose
-    analyst's decision the operator `me` applies, and did not receive, gives
-    the printing of that decision (`decisions.relay`)."""
+    """The first step of `procedures` that is ready (`placed`)."""
     for procedure in procedures:
-        s = procedure(state)
-        while s is not None:
-            if isinstance(s, Undecided) and repeated(s, state):
-                relayed = decisions.relay(state, s)
-                if relayed is not None and not repeated(relayed, state):
-                    return relayed
-                break
-            if repeated(s, state):
-                break
-            on_step = isinstance(s, Undecided)
-            if isinstance(s, Undecided):
-                s = decisions.launch(state, s)
-            if (line := passed(s, state)) is not None:
-                s = None if on_step else Undecided(mctx(
-                    "step {key}, which the line `{line}` passed over, holds up its "
-                    "procedure").format(key=key(s), line=line))
-                continue
-            if (failed := refused(state, s)) is None:
-                return s
-            s = None if on_step else failed
+        s, _ = placed(state, procedure)
+        if s is not None:
+            return s
     return None
+
+
+def placed(state: State, procedure: Callable[[State], Step | None]
+           ) -> tuple[Step | None, Undecided | None]:
+    """The step of `procedure` that is ready, where an undecided step is the
+    launch of a ticket analyst on it (`decisions`), and the undecided step
+    the procedure waits on, where it waits on one. A procedure whose step
+    failed, as `refused` gives, or whose step a ruling passed over, waits
+    until the state changes. A step passed over or failed is undecided,
+    once, as one its procedure waits on, other than the launch of an
+    analyst on an undecided step: where the line that passed it over
+    answered that step, or that launch failed, the step stays held."""
+    s = procedure(state)
+    while s is not None:
+        if repeated(s, state):
+            return None, s if isinstance(s, Undecided) else None
+        on_step = isinstance(s, Undecided)
+        if isinstance(s, Undecided):
+            s = decisions.launch(state, s)
+        if (line := passed(s, state)) is not None:
+            s = None if on_step else Undecided(mctx(
+                "step {key}, which the line `{line}` passed over, holds up its "
+                "procedure").format(key=key(s), line=line))
+            continue
+        if (failed := refused(state, s)) is None:
+            return s, None
+        s = None if on_step else failed
+    return None, None
 
 
 def refused(state: State, step: Step) -> Undecided | None:
@@ -171,6 +174,15 @@ def elsewhere(state: State) -> list[str]:
             and t.holder not in (None, state.me) and t.holder in state.open_holders]
 
 
+EARLY: tuple[Callable[[State], Step | None], ...] = (
+    unread_lines, alerts.step, decisions.asks, triage.decisions, triage.for_coordinator,
+    triage.unfinished)
+LATE: tuple[Callable[[State], Step | None], ...] = (
+    launching, triage.reopen, triage.later_lines, triage.settle, drafts.step, changes.step,
+    pipelines, batches.step)
+PROCEDURES = EARLY + LATE
+
+
 def next_step(state: State) -> Step:
     mine = state.operators.index(state.me) if state.me in state.operators else -1
     later = [o for o in state.operators[mine + 1:] if o in state.open_operators]
@@ -178,16 +190,14 @@ def next_step(state: State) -> Step:
         return Reply(mctx("Operator {operator} carries the work on, from the state; "
                           "{given}.").format(operator=later[-1], given=GIVEN_AGAIN)
                      + "\n" + "\n".join(reply_lines(state)))
-    s = first(state, unread_lines, alerts.step, decisions.asks, triage.decisions,
-              triage.for_coordinator, triage.unfinished)
+    s = first(state, *EARLY)
     if s is not None:
         return s
     if state.past_bound:
         return Reply(mctx("I {ended}; the next operator takes up the work from the state, "
                           "and {given}.").format(ended=ENDED_FOR_CONTEXT, given=GIVEN_AGAIN)
                      + "\n" + "\n".join(reply_lines(state)))
-    s = first(state, launching, triage.reopen, triage.later_lines, triage.settle,
-              drafts.step, changes.step, pipelines, batches.step)
+    s = first(state, *LATE)
     if s is not None:
         return s
     mine = [a for a in state.agents if a.pending and a.operator == state.me and a.notifies]
@@ -299,8 +309,15 @@ def reply_lines(state: State) -> list[str]:
     (`line_states`), the items for the coordinator it carries
     (`triage.told`), and the held steps no decision reached
     (`decisions.undecided`, `decisions.failed`)."""
-    return [*line_states(state), *triage.told(state), *decisions.undecided(state),
-            *decisions.failed(state)]
+    return [*line_states(state), *triage.told(state),
+            *decisions.undecided(state, holding(state)), *decisions.failed(state)]
+
+
+def holding(state: State) -> set[str]:
+    """The decision keys of the undecided steps the procedures wait on, as
+    `placed` gives them."""
+    return {decision_key(u.what) for procedure in PROCEDURES
+            if (u := placed(state, procedure)[1]) is not None}
 
 
 def stands(state: State, head: str, step: Step | None) -> tuple[str, bool]:

@@ -65,8 +65,9 @@
     - `Merged: <number>, ...`: the changes the coordinator merged itself.
     - `Merge: <number>`: a `change` under `tickets/blocked/` that waits on the user, which the user's ruling has the operator merge.
     - `Tickets are open.`
-    - `Override: <override>`: an override for a solver pass, with its task and its pass.
-    - `Decision: <decision>`: a decision of the user on a procedure, or the line that rules a step in the reply of a ticket analyst you launched on that step.
+    - `Override: <task id> <pass> <override>`: an override that the brief of the next launch of that pass on that task gives.
+    - `Override: pass over <step key>`: passes over the solver pass whose step key it gives: that pass's task id and its pass, in the form `uv run python scripts/operate.py --help` gives.
+    - `Decision: <decision key> <choice>`: rules the held step that gives that decision key with one of the choices that step gives, as the whole rest of the line.
 - The operator gives each line of its brief or of a later message from the coordinator in no other form back to the coordinator as undecided.
 
 ### A code reviewer's brief

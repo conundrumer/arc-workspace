@@ -264,9 +264,16 @@ HELD_STEP = mctx("Rule the step below, which the operator that launches you hold
                  "command cannot decide.")
 
 
-def held_step(what: str, operator: str) -> str:
-    """The brief of a ticket analyst on the undecided step `what`."""
-    return "\n".join([HELD_STEP, "", what, "", LAUNCHER.format(operator=operator)])
+UNPLACED_STEP = mctx("Make the act the step below needs, which the operator that launches you "
+                     "holds and its command cannot place. The step gives no decision key, so "
+                     "give no ruling line.")
+
+
+def held_step(what: str, operator: str, rulable: bool) -> str:
+    """The brief of a ticket analyst on the undecided step `what`, which
+    gives the `Decision:` line that rules it where `rulable`."""
+    head = HELD_STEP if rulable else UNPLACED_STEP
+    return "\n".join([head, "", what, "", LAUNCHER.format(operator=operator)])
 
 
 TRANSCRIPT_REVIEW = mctx("""
@@ -285,8 +292,13 @@ def transcript_review(run: str, domain: str, subject: str, solver_pass: bool) ->
     return f"{text}\n{PASS_REVIEW}" if solver_pass else text
 
 
-def solver_pass(task: str) -> str:
-    return mctx("Task {task}.").format(task=task)
+OVERRIDE = mctx("Override: {text}")
+"""An override a ruling gives a solver pass, labelled as one in its brief."""
+
+
+def solver_pass(task: str, overrides: list[str]) -> str:
+    return "\n".join([mctx("Task {task}.").format(task=task),
+                      *(OVERRIDE.format(text=text) for text in overrides)])
 
 
 def code_review(baseline: int, scratch: Path) -> str:
@@ -378,11 +390,10 @@ REVIEW_FORM = mctx("a report, in your report file, that opens with `{no_finding}
                    "falls on, in backticks, and a colon.").format(no_finding=NO_FINDING)
 PASS_FORM = mctx("a reply that is the path of your report file alone, on one line, where that "
                  "report has a `{heading}` section.").format(heading=TICKETS_FILED)
-DECISION_FORM = mctx("a reply that gives, on a line of its own, the line that rules the step: the "
-                   "line the step gives for its decision, where it gives one, and otherwise "
-                   "`Decision: <decision>` or `Override: <override>`; or, where the decision "
-                   "goes to the user, a `decision:` item under `{heading}`.").format(
-                       heading=FOR_COORDINATOR)
+DECISION_FORM = mctx("a reply that gives, on a line of its own, the ruling on the step, in a "
+                     "form that `uv run python scripts/operate.py --help` gives; or, where the "
+                     "decision goes to the user, a `decision:` item under `{heading}`.").format(
+                         heading=FOR_COORDINATOR)
 ALERT_FORM = mctx("where it is an alert, a message that opens with the line `alert: <kind> "
                   "<agent id>`, with the kind of the alert and the agent it is on; where it is "
                   "no alert, a reply that says so.")

@@ -39,8 +39,9 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 - A ticket of kind `refactor` is a defect place a code reviewer found. Leave each one whose title ends in `many ideas in one place` under `tickets/open/`, untaken, and put the places of all the other `refactor` tickets your brief gives into one `change` ticket.
 
 ## A held step
-- Decide each step an operator holds that your brief gives, as [How a decision is made](#how-a-decision-is-made) gives, and give the line that rules it in your reply, on a line of its own: the line the step gives for its ruling, where it gives one, and otherwise `Decision: <decision>`, or `Override: <override>` with the override's solver pass and its task.
-- Where [The user's part](#the-users-part) brings that decision to the user, give in its item the line that rules the step for each option.
+- Decide each step an operator holds that your brief gives, as [How a decision is made](#how-a-decision-is-made) gives. Where the step gives a decision key, give the line that rules it in your reply, on a line of its own, in the form [An operator's brief](prompts/agents/notes/launching.md#an-operators-brief) gives a `Decision:` line.
+- Where the decision needs an act that no choice of the step gives, make that act yourself, before you give the line that rules the step where it takes one.
+- Where [The user's part](#the-users-part) brings that decision to the user, give in its item, for a step that gives a decision key, the line that rules the step for each option.
 - Where the operator's command could have decided the step from the state it reads, settle that as a fault you notice, as [Tracking](#tracking) gives.
 
 ## Resolving

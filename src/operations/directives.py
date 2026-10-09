@@ -10,22 +10,22 @@ word of its kind and a colon, past a list marker:
 - `Merged: <number>, ...`, the changes the coordinator gives as merged;
 - `Merge: <number>`, a change under `tickets/blocked/` the user decided on;
 - `Tickets are open.`;
-- `Override:` and `Decision:` lines, which the operator agent applies to the
-  step the command prints, and the command passes over, other than a
-  `Decision:` line that gives the decision key of a held step, with one of
-  the choices that step gives (`decided`).
+- the rulings, `Decision:` and `Override:` lines in the forms that
+  `scripts/operate.py --help` gives, which the command applies (`decided`,
+  `passed_over`, `overrides`).
 
-A line of the coordinator's in no such form goes back to the coordinator
-as undecided, since only its writer knows what it meant.
+A line of the coordinator's in no such form, a ruling among them, goes
+back to the coordinator once as undecided, since only its writer knows
+what it meant.
 
-The reply of a ticket analyst on a held step (`decisions`) gives its decision
-in an `Override:` or `Decision:` line of the same form.
+The reply of a ticket analyst on a held step (`decisions`) gives its
+rulings in the same forms.
 
-Which operator a line gives steps to is as `plan` gives. A `Decision:`
-line that rules a held step rules that step for every operator of the
-session, whether the coordinator gave it or a ticket analyst on that step
-replied with it, so an operator that takes over a change from an earlier
-one carries it on by the decisions the earlier one received."""
+Which operator a line gives steps to is as `plan` gives. A ruling holds
+for every operator of the session, whether the coordinator gave it or a
+ticket analyst on a held step replied with it, so an operator that takes
+over a change from an earlier one carries it on by the rulings the earlier
+one received."""
 
 import re
 from collections.abc import Iterable
@@ -37,7 +37,8 @@ from controlled_markdown import mctx
 from operations.reports import LIST_MARKER
 from operations.roles import PASSES, Purpose, Role
 from operations.state import Agent, Message, Report, State
-from operations.steps import Undecided, decision_key, held
+from operations.steps import (STEP_KEY, Launch, Step, Undecided, decision_key, final_replies,
+                              held, key)
 
 
 class Decision(StrEnum):
@@ -61,8 +62,11 @@ class Directive(StrEnum):
     DECISION = "Decision"
 
 
-APPLIED = frozenset({Directive.OVERRIDE, Directive.DECISION})
-"""The kinds the operator agent applies itself."""
+RULINGS = frozenset({Directive.OVERRIDE, Directive.DECISION})
+
+PASS_OVER = re.compile(rf"pass over (?P<key>{STEP_KEY.pattern})")
+OVERRIDE = re.compile(rf"(?P<task>{TASK_ID})\s+(?P<role>{'|'.join(PASSES)})\s+(?P<text>\S.*)")
+DECISION = re.compile(rf"(?P<key>{STEP_KEY.pattern})\s+(?P<choice>[a-z]+)")
 
 LINE = re.compile(rf"^\s*(?:{LIST_MARKER}\s+)?(?P<kind>[A-Z][a-z ]+?)(?::\s*(?P<rest>.*?)|\.)\s*$")
 NUMBER = re.compile(r"\b(?:\d+-)?\d+\b")
@@ -125,7 +129,7 @@ def step_decisions(state: State) -> list[Line]:
 def reply_decisions(a: Agent, r: Report) -> list[Line]:
     """The `Override:` and `Decision:` lines of the reply `r` of `a`."""
     return [ln for ln in message_lines(Message(a.operator, r.time, a.agent_id, r.text))
-            if ln.kind in APPLIED]
+            if ln.kind in RULINGS and ruling_form(ln) is not None]
 
 
 def numbers(state: State, kind: Directive) -> list[tuple[str, float]]:
@@ -136,26 +140,70 @@ def numbers(state: State, kind: Directive) -> list[tuple[str, float]]:
 
 
 def decided(state: State, what: str, choices: dict[Decision, str]) -> Decision | Undecided:
-    """The choice among `choices` that the last `Decision:` line giving the
-    decision key of the held step `what` gives, of the coordinator to an
-    operator of the session or of the reply of a ticket analyst on a held
-    step: the first of its words after that key that is a choice. Where no
-    such line came, the step held on `what` with its choices, and where
-    the last such line gives none of them, the undecided step on that
-    line."""
+    """The choice among `choices` that the last `Decision:` ruling giving
+    the decision key of the held step `what` gives, of the coordinator to
+    an operator of the session or of the reply of a ticket analyst on a
+    held step. Where no such ruling came, the step held on `what` with its
+    choices, and where the last such ruling gives none of them, the
+    undecided step on that line."""
     k = decision_key(what)
-    given = sorted([*session_lines(state), *step_decisions(state)], key=lambda ln: ln.message.time)
-    for ln in reversed(given):
-        if ln.kind is not Directive.DECISION or k not in ln.rest:
+    for ln in reversed(rulings(state)):
+        m = DECISION.fullmatch(ln.rest)
+        if ln.kind is not Directive.DECISION or m is None or m["key"] != k:
             continue
-        after = re.findall(r"[a-z]+", ln.rest.split(k, 1)[1])
-        found = next((Decision(w) for w in after if w in choices), None)
-        if found is None:
+        if m["choice"] not in choices:
             listed = ", ".join(choices)
             return Undecided(mctx("the line `{line}` gives step {k} none of the choices "
                                   "{listed}").format(line=ln.text, k=k, listed=listed))
-        return found
+        return Decision(m["choice"])
     return held_on(what, choices)
+
+
+def rulings(state: State) -> list[Line]:
+    """The rulings in a fixed form of the coordinator to any operator of
+    the session and of the replies of the ticket analysts on held steps, in
+    the order they came."""
+    return sorted([ln for ln in session_lines(state)
+                   if ln.kind in RULINGS and ruling_form(ln) is not None]
+                  + step_decisions(state), key=lambda ln: ln.message.time)
+
+
+def ruling_form(ln: Line) -> re.Match[str] | None:
+    """The fixed form `ln`, a ruling, is in, or None."""
+    if ln.kind is Directive.DECISION:
+        return DECISION.fullmatch(ln.rest)
+    return PASS_OVER.fullmatch(ln.rest) or OVERRIDE.fullmatch(ln.rest)
+
+
+def passed_over(state: State) -> dict[str, Line]:
+    """The step keys the `Override: pass over` rulings give, each with the
+    last ruling that gives it."""
+    return {m["key"]: ln for ln in rulings(state)
+            if ln.kind is Directive.OVERRIDE and (m := PASS_OVER.fullmatch(ln.rest))}
+
+
+def passed(step: Step, state: State) -> str | None:
+    """The line of the ruling that passed `step` over, or None. A ruling on
+    a solver pass is spent once a solver pass on its task launched after
+    it, or once an operator of the session printed its final reply after
+    it, so that a later pipeline on that task is not passed over."""
+    ln = passed_over(state).get(key(step))
+    if ln is None:
+        return None
+    since = ln.message.time
+    if isinstance(step, Launch) and step.role in PASSES and (
+            any(a.launched > since for role in PASSES for a in state.agents_of(role, step.subject))
+            or any(t > since for o in state.operators for t in final_replies(state, o))):
+        return None
+    return ln.text
+
+
+def overrides(state: State, task: str, role: Role, since: float) -> list[str]:
+    """The overrides the rulings since `since` give the pass `role` on
+    `task`, in the order they came."""
+    return [m["text"] for ln in rulings(state) if ln.message.time >= since
+            and ln.kind is Directive.OVERRIDE and (m := OVERRIDE.fullmatch(ln.rest))
+            and m["task"] == task and m["role"] == role]
 
 
 def held_on(what: str, choices: dict[Decision, str]) -> Undecided:
@@ -201,5 +249,7 @@ def queue_counts(given: list[Line]) -> list[tuple[int, Message]]:
 
 
 def unread(state: State) -> list[Line]:
-    """The coordinator's lines in no form the command reads."""
-    return [ln for ln in lines(state) if ln.kind is None]
+    """The coordinator's lines in no form the command reads, rulings in no
+    fixed form among them."""
+    return [ln for ln in lines(state)
+            if ln.kind is None or ln.kind in RULINGS and ruling_form(ln) is None]

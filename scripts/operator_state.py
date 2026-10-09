@@ -21,7 +21,7 @@ from tree_reads import claims, code_review, commits, gate_outputs, main_tree, sc
 
 from operations.directives import named
 from operations.state import Agent, Call, Message, Report, State
-from operations.steps import made, pass_overs, passed_over_line
+from operations.steps import made
 from operations.tracker import worktree
 from ticketing.vocabulary import Status
 
@@ -72,9 +72,6 @@ def read_state(me: str) -> State:
         to_settle=(), worktrees=frozenset(trees), claims=claims(main),
         commits=history, code_review=code_review(main), wait_task=wait_task(me, my_path),
         pass_tickets=passes, stalled=stalled,
-        passed={k: line for c in calls if c.tool == "Bash"
-                for k, line in pass_overs(str(c.input.get("command", "")))
-                if c.result is None or passed_over_line(k) in c.result},
         made=made(calls),
         branches={w: b for w, b in trees.items() if b is not None})
     given = [ticket_number(n) for n in named(state) if n in tickets]

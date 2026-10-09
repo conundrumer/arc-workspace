@@ -210,10 +210,7 @@ class State:
     `tests/gate/accepted/` its change writes. `branches` gives the branch
     of each worktree that stands on one, and `stalled` the final reply in
     the transcript of each agent a stall alert names that reached no
-    operator as a report. `passed` gives, by its key (`steps.key`), each
-    step an operator passed over by a call of `operate.py pass-over`, with
-    the line it gave, where that call's result says so or the call is
-    pending. `made` holds each step the command printed to an operator
+    operator as a report. `made` holds each step the command printed to an operator
     with the call that operator made next (`steps.made`). `messages` holds
     the messages that reached any operator of the session, and `received`
     those that reached `me`."""
@@ -241,7 +238,6 @@ class State:
     branches: Mapping[Path, str] = field(default_factory=dict)
     stalled: Mapping[str, Report] = field(default_factory=dict)
     pass_tickets: Mapping[str, tuple[str, ...] | None] = field(default_factory=dict)
-    passed: Mapping[str, str] = field(default_factory=dict)
     made: tuple[Made, ...] = ()
 
     @property

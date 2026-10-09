@@ -16,7 +16,7 @@ with a request to send it again in that form. The pipeline stops where
 the pass's answer is still in no such form, once a ticket analyst on
 that answer, quoted, as an undecided step was launched; where an `interference`
 ticket waits on the user; where one stands open once the ticket analyst
-returned; or where an operator passed over the launch of its next pass.
+returned; or where a ruling passed over the launch of its next pass.
 Once it ends or stops, the work set aside goes back, as
 `scripts/operate.py restore` does."""
 
@@ -27,13 +27,14 @@ from dataclasses import dataclass
 from arc.task import TASK_ID
 from controlled_markdown import mctx
 from operations import briefs
-from operations.directives import Line, Pipeline, lines, pipelines, queue_counts, session_lines
+from operations.directives import (Line, Pipeline, lines, overrides, passed, pipelines,
+                                   queue_counts, session_lines)
 from operations.reports import TICKETS_FILED
 from operations.roles import PASSES, Purpose, Role, analyst_subject, joined
 from operations.state import Agent, State
 from ticketing.vocabulary import Domain, Kind, Status
 from operations.steps import (RUN_COMMAND, Bash, Launch, Send, Step, Undecided, agent_ids,
-                             ask_again, bash_calls, passed, repeated)
+                             ask_again, bash_calls, repeated)
 from operations.task_work import CLAIM, tasks_work
 from operations.tracker import blocked_on_user
 
@@ -110,7 +111,7 @@ def run(state: State, p: Pipeline) -> Outcome:
             aside = aside_command(p.task, role)
             if role in SETS_ASIDE and not ran(state, aside, since):
                 return Outcome(Bash(aside))
-            launch = Launch(role, p.task, briefs.solver_pass(p.task))
+            launch = Launch(role, p.task, briefs.solver_pass(p.task, overrides(state, p.task, role, since)))
             if (line := passed(launch, state)) is not None:
                 return end(state, p, restore, f"the line `{line}` passed over its {role} pass")
             return Outcome(launch)

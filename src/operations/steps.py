@@ -27,6 +27,7 @@ from dataclasses import dataclass, field, replace
 from functools import cache
 from pathlib import Path
 
+from arc.task import TASK_ID
 from controlled_markdown import mctx
 from operations import briefs
 from operations.constants import COORDINATOR, FOREGROUND_MS, WAIT_SECONDS
@@ -104,17 +105,6 @@ class Reply:
 
 
 @dataclass(frozen=True)
-class Relay:
-    """The decision lines `lines` of the ticket analyst `agent` on the held
-    step `what`, whose launcher printed its final reply after the analyst's
-    launch, printed to the operator whose procedure meets that step, which
-    applies them as the lines of an analyst it launched."""
-    agent: str
-    what: str
-    lines: tuple[str, ...]
-
-
-@dataclass(frozen=True)
 class Undecided:
     """A step the command cannot place, which goes to a ticket analyst
     launched on it (`decisions`) and is never printed. The command reads back
@@ -171,6 +161,12 @@ def decision_key(what: str) -> str:
     return hashlib.sha1(what.encode()).hexdigest()[:KEY_LENGTH]
 
 
+def rulable(text: str) -> bool:
+    """Whether `text`, a step or the brief of a ticket analyst on one, gives
+    the `Decision:` line that rules a step `held` made."""
+    return re.search(rf"`Decision: {STEP_KEY.pattern} <choice>`", text) is not None
+
+
 def held(what: str, choices: Mapping[str, str]) -> Undecided:
     """A step that holds its procedure until a `Decision:` line rules it,
     which gives its decision key and one of `choices`, each given with what
@@ -181,7 +177,7 @@ def held(what: str, choices: Mapping[str, str]) -> Undecided:
                                                                       given=given))
 
 
-type Step = Launch | Send | Undecided | Relay | Bash | StopWait | Wait | EndTurn | Poll | Reply
+type Step = Launch | Send | Undecided | Bash | StopWait | Wait | EndTurn | Poll | Reply
 
 
 def repeated(step: Step, state: State) -> bool:
@@ -196,9 +192,6 @@ def repeated(step: Step, state: State) -> bool:
                                                        f"{UNDECIDED} {what}") or (
                 bool(given) and any(all(g in str(c.input.get("message", "")) for g in given)
                                     for c in sends_to(state, COORDINATOR)))
-        case Relay(agent, what):
-            head = RELAY_HEAD.format(agent=agent, key=decision_key(what))
-            return any(c.tool == "Bash" and head in (c.result or "") for c in state.calls)
         case Send(to, message):
             return sent(state, to, message)
         case _:
@@ -276,8 +269,13 @@ def bash_calls(state: State, command: str) -> list[Call]:
 
 def key(step: Step) -> str:
     """The key of `step`, which is the same at each read of the state that
-    gives the same step: the key the operator gives `operate.py pass-over`
-    for a step that an `Override:` or `Decision:` line rules out."""
+    gives the same step: the key an `Override: pass over` ruling gives
+    (`directives.passed_over`). A solver pass's key is its task id and its
+    pass, `<task id>-<pass>`, so that the writer of a ruling can form it,
+    and a ruling that passes it over holds whatever overrides its brief
+    gains."""
+    if isinstance(step, Launch) and step.role in PASSES:
+        return f"{step.subject}-{step.role}"
     return hashlib.sha1(repr(step).encode()).hexdigest()[:KEY_LENGTH]
 
 
@@ -286,10 +284,9 @@ RUN_COMMAND = f"uv run python {COMMAND}"
 """How a printed step runs the command."""
 
 KEY_LENGTH = 12
-PASS_OVER = "pass-over"
 
 
-STEP_KEY = re.compile(rf"[0-9a-f]{{{KEY_LENGTH}}}")
+STEP_KEY = re.compile(rf"{TASK_ID}-(?:{'|'.join(PASSES)})|[0-9a-f]{{{KEY_LENGTH}}}")
 OPERATORS = "();<>|&\n"
 """The characters of the shell's control and redirection operators."""
 
@@ -319,26 +316,6 @@ def simple_commands(command: str) -> list[list[str]]:
     except ValueError:
         return []
     return [words for words in out if words]
-
-
-def pass_overs(command: str) -> list[tuple[str, str]]:
-    """The key and the line of each call of `operate.py pass-over` that the
-    Bash command `command` runs, with a key in the form `key` gives and
-    one line."""
-    head = [*RUN_COMMAND.split(), PASS_OVER]
-    return [(words[-2], words[-1]) for words in simple_commands(command)
-            if words[:len(head)] == head and len(words) == len(head) + 3
-            and STEP_KEY.fullmatch(words[-2])]
-
-
-def passed_over_line(step_key: str) -> str:
-    """The line `operate.py pass-over` prints for the step `step_key`."""
-    return mctx("Step {key} is passed over.").format(key=step_key)
-
-
-def passed(step: Step, state: State) -> str | None:
-    """The line by which an operator passed `step` over, or None."""
-    return state.passed.get(key(step))
 
 
 def wait_command(agent: str) -> str:
@@ -403,12 +380,6 @@ def failure(c: Call) -> str:
     """The first line of the result of the failed call `c`."""
     reason = (c.result or "").strip().splitlines()
     return reason[0] if reason else mctx("no result text")
-
-
-RELAY_HEAD = mctx("Ticket analyst {agent} decided the held step {key} below, and the operator "
-                  "that launched it has printed its final reply since.")
-RELAY_APPLY = mctx("Apply the lines below as lines of a ticket analyst you launched to rule a "
-                   "step, then run `{command}`.")
 
 
 def only_command(command: str, agent: str) -> bool:
@@ -606,9 +577,5 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
             return mctx("Run the command again: nothing is ready.")
         case Reply(text):
             return f"{FINAL_REPLY}\n{text}"
-        case Relay(analyst, what, lines):
-            return "\n".join([RELAY_HEAD.format(agent=analyst, key=decision_key(what)),
-                              RELAY_APPLY.format(command=next_command(agent)),
-                              "", *lines, "", what])
         case Undecided():
             raise ValueError(f"an undecided step is placed before it is printed: {step}")

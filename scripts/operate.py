@@ -31,11 +31,11 @@ from profile_runs import budget_of  # noqa: E402
 from transcripts import Refused  # noqa: E402
 from tree_reads import git, main_tree  # noqa: E402
 
-from operations import briefs, plan, steps  # noqa: E402
+from operations import briefs, plan  # noqa: E402
 from operations.roles import PASSES, Role  # noqa: E402
-from operations.steps import (BLOCK_SECONDS, FOREGROUND_MS, STEP_KEY, WAIT_SECONDS,  # noqa: E402
+from operations.steps import (BLOCK_SECONDS, FOREGROUND_MS, WAIT_SECONDS,  # noqa: E402
                              Bash, EndTurn, Launch, Poll, Send, Step, StopWait, Wait, filed,
-                             next_command, passed_over_line, key_line, printed, with_report)
+                             next_command, key_line, printed, with_report)
 from operations.task_work import restore, set_aside  # noqa: E402
 
 HELP = mctx("""
@@ -45,10 +45,14 @@ HELP = mctx("""
         uv run python scripts/operate.py wait <agent id>
         uv run python scripts/operate.py set-aside <task id> analyze|create
         uv run python scripts/operate.py restore <task id>
-        uv run python scripts/operate.py pass-over <agent id> <key> '<line>'
         ```
-    - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters, the final reply, or the decision lines of a ticket analyst on a held step, for the operator to apply, where the operator that launched that analyst printed its final reply since. It writes the brief of a launch, and a message to an agent other than the coordinator, to a file under the session's scratchpad, and the call's prompt or message gives that file's path. The value of a prompt or a message parameter it prints stands between two lines of three backticks, and the value to pass is the text between those lines, without them. A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items. The brief of a launch other than a solver pass's gives the file the agent writes its final reply to, and ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where the budget of its agent type over every run of that type, as `profile_runs.py --help` gives a type's budget, is N minutes rounded up. A brief that gives items, as `profile_runs.py --help` gives them, takes the type's budget per item times the number of items it gives, and any other brief takes the type's budget. Where the type has no such budget, the brief has no such line. It holds back the launch of an agent type whose definition under `.claude/agents/` a commit of `master` changed less than {reload} seconds ago until those seconds have passed. Where no step is ready and no agent runs that this operator launched or last resumed itself, other than one a notification said has not reported yet, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again.
-    - Before each call it prints, `next` prints that step's key, on a line that gives the command to run after the call, so the text it prints ends with the call's last field. The key is the same at each read of the state that gives the same step. `pass-over` passes over the step whose key it is given, by the `Override:` or `Decision:` line it is given, which rules the step out, from the moment its call is made, in a Bash call of its own or with other commands. From then on, `next` passes that step over for each operator, gives that step, once, as one its procedure waits on, to a ticket analyst it launches to rule it, other than a launch of a ticket analyst to rule a step, and goes on with the other procedures. A pipeline whose next pass is passed over stops instead.
+    - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters, or the final reply. It writes the brief of a launch, and a message to an agent other than the coordinator, to a file under the session's scratchpad, and the call's prompt or message gives that file's path. The value of a prompt or a message parameter it prints stands between two lines of three backticks, and the value to pass is the text between those lines, without them. A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items. The brief of a launch other than a solver pass's gives the file the agent writes its final reply to, and ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where the budget of its agent type over every run of that type, as `profile_runs.py --help` gives a type's budget, is N minutes rounded up. A brief that gives items, as `profile_runs.py --help` gives them, takes the type's budget per item times the number of items it gives, and any other brief takes the type's budget. Where the type has no such budget, the brief has no such line. It holds back the launch of an agent type whose definition under `.claude/agents/` a commit of `master` changed less than {reload} seconds ago until those seconds have passed. Where no step is ready and no agent runs that this operator launched or last resumed itself, other than one a notification said has not reported yet, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again.
+    - Before each call it prints, `next` prints that step's key, on a line that gives the command to run after the call, so the text it prints ends with the call's last field. The key is the same at each read of the state that gives the same step.
+    - `next` applies the rulings that the coordinator gives an operator of the session, and that the reply of a ticket analyst on a held step gives, each a line in one of these forms, matched whole, past a list marker:
+        - `Decision: <decision key> <choice>` rules a held step, with one of the choices that step gives.
+        - `Override: <task id> <pass> <override>` gives the override, labelled as an override, in the brief of the next launch of that pass on that task.
+        - `Override: pass over <step key>` passes over the step whose key it gives, for each operator: `next` gives that step, once, as one its procedure waits on, to a ticket analyst it launches to rule it, other than a launch of a ticket analyst to rule a step, and goes on with the other procedures. A pipeline whose next pass is passed over stops instead. A solver pass's key is `<task id>-<pass>`, its task id and its pass (`analyze`, `create` or `refine`), so a ruling can name a pass that was never printed, and the ruling holds whatever overrides the pass's brief gains.
+    - A coordinator's line that opens with `Override:` or `Decision:` in none of these forms goes back to the coordinator once, as undecided. A ticket analyst's reply on a step that gives its decision key, with no ruling in these forms, goes back to it once, and where its answer gives none either, the step stays held. A step `next` cannot place gives no decision key: its ticket analyst makes the act it needs and gives no ruling.
     - A step `next` printed counts as made by the call the operator made: a Bash call whose command runs the printed command among others, or the call the operator made right after the call of `next` that printed the step.
     - `wait` is the operator's wait in the background: it ends once the state gives a step, or after {wait} seconds.
     - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass, and `restore` puts it back and removes the task's claim, as the section `Passes on a task` of `prompts/agents/notes/launching.md` gives.
@@ -132,8 +136,7 @@ def main(argv: list[str]) -> int:
         print(HELP.format(block=BLOCK_SECONDS, wait=WAIT_SECONDS, reload=RELOAD_SECONDS))
         return 0
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
-    parser.add_argument("action", choices=["next", "wait", "set-aside", "restore",
-                                           steps.PASS_OVER])
+    parser.add_argument("action", choices=["next", "wait", "set-aside", "restore"])
     parser.add_argument("ident")
     parser.add_argument("rest", nargs="*")
     args = parser.parse_args(argv)
@@ -148,11 +151,6 @@ def main(argv: list[str]) -> int:
                         or not TASK_ID.fullmatch(args.ident)):
                     parser.error("set-aside takes a task id and `analyze` or `create`")
                 print(set_aside(main_tree(), args.ident, Role(args.rest[0])))
-                return 0
-            case steps.PASS_OVER:
-                if len(args.rest) != 2 or not STEP_KEY.fullmatch(args.rest[0]):
-                    parser.error("pass-over takes an agent id, a step's key and a line")
-                print(passed_over_line(args.rest[0]))
                 return 0
             case _:
                 if args.rest:
