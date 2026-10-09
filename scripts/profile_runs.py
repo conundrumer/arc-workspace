@@ -36,12 +36,13 @@ from run_profile import (COMMAND_WIDTH, Run, clock, dollars, minutes,  # noqa: E
 from run_reads import (BACKGROUND_TASK, agent_type, blocks, run_type,  # noqa: E402
                        text_of)
 from ticketing.times import utc_stamp  # noqa: E402
-from senders import AUDITOR, MONITOR  # noqa: E402
+from senders import MONITOR  # noqa: E402
 from transcripts import (Entry, Refused, agent_id, agent_transcripts,  # noqa: E402
                          bare_id, chain, epoch, find, is_subagent, read_entries,
                          transcripts)
 
 from operations.batches import RUNS_TAKEN  # noqa: E402
+from operations.roles import Role  # noqa: E402
 
 UNDER = "--under"
 """The option of the mode that profiles the runs under a run since an
@@ -118,7 +119,7 @@ HELP = mctx("""
                 low_wait_pct=LOW_WAIT_PCT, recent=RECENT_CALLS,
                 width=COMMAND_WIDTH, bound=f"{CONTEXT_BOUND:,}",
                 iso_time=ISO_TIME, operator=OPERATOR,
-                monitor=MONITOR, auditor=AUDITOR)
+                monitor=MONITOR, auditor=Role.OP_AUDITOR.agent_type)
 
 
 def utc_time(text: str) -> float:

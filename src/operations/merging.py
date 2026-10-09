@@ -35,7 +35,9 @@ from operations import briefs
 from operations.reports import splits
 from operations.roles import Role
 from operations.state import Agent, Call, Merge, State, Ticket
-from operations.steps import Bash, Launch, Send, Step, bash_calls, simple_commands
+from operations.command_words import simple_commands
+from operations.handled import bash_calls
+from operations.steps import Bash, Launch, Send, Step
 from operations.tracker import COORDINATOR, WORKTREE, log
 from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Note, Resolution, Status
 

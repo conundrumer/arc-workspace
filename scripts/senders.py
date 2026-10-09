@@ -7,14 +7,14 @@ from pathlib import Path
 
 from run_reads import (AGENT_MESSAGE, MAIN, NOTIFICATION, member, message_text,
                        type_in)
+from operations.roles import Role
 from transcripts import Entry
 
 # The start of the text of the entry the harness writes where the user
 # interrupts a run.
 INTERRUPTED = "[Request interrupted by user"
 MONITOR = "op-monitor"
-AUDITOR = "op-auditor"
-MONITORS = frozenset({MONITOR, AUDITOR})
+MONITORS = frozenset({MONITOR, Role.OP_AUDITOR.agent_type})
 
 
 class Origin(Enum):

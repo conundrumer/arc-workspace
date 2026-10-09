@@ -37,8 +37,8 @@ from controlled_markdown import mctx
 from operations.reports import LIST_MARKER
 from operations.roles import PASSES, Purpose, Role
 from operations.state import Agent, Message, Report, State
-from operations.steps import (STEP_KEY, Launch, Step, Undecided, decision_key, final_replies,
-                              held, key)
+from operations.final_reply import final_replies
+from operations.steps import STEP_KEY, Launch, Step, Undecided, decision_key, held, key
 
 
 class Decision(StrEnum):

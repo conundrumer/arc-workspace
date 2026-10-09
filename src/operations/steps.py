@@ -1,38 +1,17 @@
 """The steps the command prints: each the one call the operator agent makes
-next, with its parameters, and the text that prints it.
-
-A brief, and a message to an agent other than the coordinator, goes to a
-file the command writes before it prints the call (`filed`), and the
-printed prompt or message is the line `FILED` with that file's path. Each
-printed prompt or message is fenced (`fenced`): the value to pass is the
-text inside the fence, and its readers read a value given with or without
-the fence lines (`unfenced`). A
-message to the coordinator that opens with `DECISION` keeps its first
-line, which names what it gives, and files the rest. Each brief gives
-the report file the agent writes its final reply to (`with_report`),
-other than a solver pass's: the documents of a solver pass give its
-report file. The readers of a launched agent's brief, of a message to it
-and of its report read the file in place of the line.
-
-Which call makes a step the command printed is as the HELP of `operate.py`
-gives it, and `made` reads the call made right after `next`. A message
-counts as made as well by each SendMessage call that holds the printed
-message."""
+next, with its parameters, and the key that names a step."""
 
 import hashlib
 import re
-import shlex
-from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field, replace
-from functools import cache
-from pathlib import Path
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
 
 from arc.task import TASK_ID
 from controlled_markdown import mctx
-from operations import briefs
 from operations.constants import COORDINATOR, FOREGROUND_MS
-from operations.roles import GENERAL_ROLES, PASSES, Model, Purpose, Role, description
-from operations.state import Agent, Call, Made, Printed, State
+from operations.roles import PASSES, Model, Role
+from operations.state import Agent
+
 
 BLOCK_SECONDS = (FOREGROUND_MS // 1000) - 30
 """The longest foreground block of the command's `next`, under the bound on
@@ -77,7 +56,7 @@ class Poll:
 @dataclass(frozen=True)
 class Reply:
     """The operator's final reply, printed once the operator sent its text
-    to the coordinator (`final_sends`): an agent's report is not delivered
+    to the coordinator (`final_reply.final_sends`): an agent's report is not delivered
     while an agent it resumed by SendMessage runs."""
 
 
@@ -98,7 +77,8 @@ UNDECIDED = "undecided:"
 """The first word of a message that gives the coordinator back a line of
 its own in no form the command reads, and of a message by which an
 operator in an earlier transcript gave the coordinator an undecided step
-(`repeated`)."""
+(`handled.repeated`)."""
+
 
 DECISION = "for the coordinator:"
 """The opening of a message that gives the coordinator labeled items to act
@@ -111,13 +91,6 @@ def unread_line(line: str) -> Send:
     form the command reads."""
     return Send(COORDINATOR, mctx("{opening} a line of the coordinator's in no form the "
                                   "command reads: {line}").format(opening=UNDECIDED, line=line))
-
-
-def decided_by(state: State, step: Undecided) -> list[Agent]:
-    """The ticket analysts of any operator of the session launched on
-    `step`, in the order of their launch."""
-    k = decision_key(step.what)
-    return [a for a, purpose, keys in state.analysts() if purpose is Purpose.STEP and keys == [k]]
 
 
 def agent_ids(agents: Iterable[Agent]) -> list[str] | Undecided:
@@ -157,94 +130,6 @@ def held(what: str, choices: Mapping[str, str]) -> Undecided:
 type Step = Launch | Send | Undecided | Bash | Poll | Reply
 
 
-def repeated(step: Step, state: State) -> bool:
-    """Whether `step` is a message an operator already sent, or an
-    undecided step that an operator already handled: a ticket analyst was
-    launched on it, or an operator gave it to the coordinator, as
-    `UNDECIDED` and its `what`, or in a message that holds each of its
-    `given`. Its procedure then waits on the answer."""
-    match step:
-        case Undecided(what, given):
-            return bool(decided_by(state, step)) or sent(state, COORDINATOR,
-                                                       f"{UNDECIDED} {what}") or (
-                bool(given) and any(all(g in str(c.input.get("message", "")) for g in given)
-                                    for c in sends_to(state, COORDINATOR)))
-        case Send(to, message, since):
-            return (sent(state, to, message) if since is None
-                    else any(t > since for t in sent_at(state, to, message)))
-        case _:
-            return False
-
-
-def sent(state: State, to: str, message: str, mark: str | None = None) -> bool:
-    """Whether an operator made the step that sends `to` the message
-    `message`, with no error: a SendMessage call to `to` that holds
-    `mark`, the part of the message that names what it gives, or where
-    none is given the whole message, or the call `made` reads."""
-    return bool(sent_at(state, to, message, mark))
-
-
-def sends_to(state: State, to: str) -> list[Call]:
-    """The operators' SendMessage calls to `to` that the harness gave no
-    error, in the order they were made."""
-    return sorted((c for c in state.calls if c.tool == "SendMessage"
-                   and c.input.get("to") == to and not c.error), key=lambda c: c.time)
-
-
-def sent_at(state: State, to: str, message: str, mark: str | None = None) -> list[float]:
-    """The times of the calls by which an operator made the step that sends
-    `to` the message `message`, as `sent` reads them."""
-    held = message if mark is None else mark
-    return [c.time for c in sends_to(state, to) if held in str(c.input.get("message", ""))] + [
-        c.time for c in made_calls(state, Printed.SEND_MESSAGE, Send(to, message),
-                                   lambda m: m.to == to and message.startswith(m.text))
-        if not c.error and c.input.get("to") == to]
-
-
-def made_calls(state: State, tool: Printed, step: Step, printed: Callable[[Made], bool]) -> list[Call]:
-    """The calls of `tool` that `state.made` gives as made after the
-    printing of `step`, a step of `tool`: by its key, or where the result
-    cut the key, where `printed` holds of the printed step."""
-    step_key = key(step)
-    return [m.call for m in state.made if m.tool == tool and m.call.tool == tool.value
-            and (m.key == step_key if m.key is not None else printed(m))]
-
-
-def ask_again(state: State, to: str, replies: list[float], form: str) -> Send | bool:
-    """`asked_again` for the operator, over the operators' SendMessage
-    calls."""
-    return asked_again(lambda who, message: sent_at(state, who, message), to, replies, form,
-                       briefs.OPERATOR)
-
-
-def asked_again(sent_times: Callable[[str, str], list[float]], to: str, replies: list[float],
-                form: str, reader: str) -> Send | bool:
-    """The step on the latest of `replies`, the times of the replies of the
-    agent `to` to `reader`, in order, where that reply is in no form the
-    command reads: the message that asks `to` to give it again in `form`
-    (`briefs.restate`), where `sent_times`, the times of the calls that
-    sent a message to an agent, gives none. True where the reply before it
-    had that request, sent before it: the reply that answers the request
-    is still in no such form, and the step is undecided. False where the
-    request on it was sent and no reply of `to` followed it."""
-    latest = replies[-1]
-    before = [t for t in replies if t < latest]
-    if before and any(at < latest
-                      for at in sent_times(to, briefs.restate(before[-1], form, reader))):
-        return True
-    message = briefs.restate(latest, form, reader)
-    return False if sent_times(to, message) else Send(to, message)
-
-
-def bash_calls(state: State, command: str) -> list[Call]:
-    """The operators' Bash calls that made the Bash step `command`, in the
-    order they were made."""
-    out = [c for c in state.calls
-           if c.tool == "Bash" and command in str(c.input.get("command", ""))]
-    out += made_calls(state, Printed.BASH, Bash(command), lambda m: m.text == command)
-    return sorted({id(c): c for c in out}.values(), key=lambda c: c.time)
-
-
 def key(step: Step) -> str:
     """The key of `step`, which is the same at each read of the state that
     gives the same step: the key an `Override: pass over` ruling gives
@@ -257,317 +142,7 @@ def key(step: Step) -> str:
     return hashlib.sha1(repr(step).encode()).hexdigest()[:KEY_LENGTH]
 
 
-COMMAND = "scripts/operate.py"
-RUN_COMMAND = f"uv run python {COMMAND}"
-"""How a printed step runs the command."""
-
 KEY_LENGTH = 12
 
 
 STEP_KEY = re.compile(rf"{TASK_ID}-(?:{'|'.join(PASSES)})|[0-9a-f]{{{KEY_LENGTH}}}")
-OPERATORS = "();<>|&\n"
-"""The characters of the shell's control and redirection operators."""
-
-
-def simple_commands(command: str) -> list[list[str]]:
-    """The words of each simple command of the Bash command `command`,
-    without its redirections, or none where the shell's quoting in it is
-    unbalanced. A redirection is an operator with `<` or `>`, the word
-    after it, and a number before it."""
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=OPERATORS)
-    lexer.whitespace = " \t\r"
-    lexer.whitespace_split = True
-    out: list[list[str]] = [[]]
-    redirect = False
-    try:
-        for word in lexer:
-            if redirect:
-                redirect = False
-            elif set(word) <= set(OPERATORS) and set(word) & set("<>"):
-                if out[-1] and out[-1][-1].isdigit():
-                    out[-1].pop()
-                redirect = True
-            elif set(word) <= set(OPERATORS):
-                out.append([])
-            else:
-                out[-1].append(word)
-    except ValueError:
-        return []
-    return [words for words in out if words]
-
-
-def next_command(agent: str) -> str:
-    return " ".join(run_words("next", agent))
-
-
-def run_words(action: str, agent: str) -> list[str]:
-    """The words of the call of `operate.py` with `action` for the operator
-    `agent`."""
-    return [*RUN_COMMAND.split(), action, agent]
-
-
-def runs(command: str, action: str, agent: str) -> bool:
-    """Whether the Bash command `command` runs `operate.py` with `action`
-    for the operator `agent`, whatever else it runs."""
-    return any(words == run_words(action, agent) for words in simple_commands(command))
-
-
-def is_next(command: str, agent: str) -> bool:
-    return runs(command, "next", agent)
-
-
-FINAL_REPLY = "final reply"
-"""The first line of the text `next` prints for the operator's final
-reply, and of the message that sends the coordinator its text."""
-
-SENT = mctx("My final reply went to {to} by SendMessage.")
-"""The line an agent gives as its report after it sent its final reply by
-SendMessage to the agent `to`."""
-
-SENT_REPLY = SENT.format(to=COORDINATOR)
-
-SENT_BY_MESSAGE = re.compile(r"\A" + re.escape(SENT.format(to="\x00")).replace(
-    "\x00", rf"(?:{re.escape(COORDINATOR)}|a[0-9a-f]+)") + r"\Z")
-"""The whole text of `SENT`, to the coordinator or to any agent."""
-
-
-def final_sends(state: State, operator: str) -> list[Call]:
-    """The SendMessage calls by which `operator` sent the coordinator the
-    text of its final reply, in the order they were made."""
-    return [c for c in sends_to(state, COORDINATOR) if c.operator == operator
-            and unfenced(str(c.input.get("message", ""))).startswith(FINAL_REPLY + "\n")]
-
-
-def final_replies(state: State, operator: str) -> list[float]:
-    """The times of the calls of `next` that printed `operator` the
-    messages of `final_sends`: for each, the last call of `next` before it."""
-    nexts = [c.time for c in state.calls if c.operator == operator and c.tool == "Bash"
-             and is_next(str(c.input.get("command", "")), operator)]
-    return [max((t for t in nexts if t < c.time), default=c.time)
-            for c in final_sends(state, operator)]
-
-
-def carrier(state: State, operator: str, time: float) -> str | None:
-    """The operator whose final reply carries what reached `operator` at
-    `time`: of `operator` and the operators launched after it, the one
-    whose call that printed a final reply came first after `time`, with
-    `me` counted as printing one now, or None where none did."""
-    after = state.operators[state.operators.index(operator):]
-    printed_at = [(t, o) for o in after for t in final_replies(state, o) if t > time]
-    if state.me in after:
-        printed_at.append((state.now, state.me))
-    return min(printed_at)[1] if printed_at else None
-
-
-def nested(text: str) -> list[str]:
-    """The lines of `text`, nested under an item of the final reply."""
-    return [f"    {ln}".rstrip() for ln in text.strip().splitlines()]
-
-
-def failure(c: Call) -> str:
-    """The first line of the result of the failed call `c`."""
-    reason = (c.result or "").strip().splitlines()
-    return reason[0] if reason else mctx("no result text")
-
-
-def only_command(command: str, agent: str) -> bool:
-    """Whether the Bash command `command` runs the command's `next` for the
-    operator `agent` and nothing else but `cd` and `:`."""
-    want = run_words("next", agent)
-    found = simple_commands(command)
-    return any(words == want for words in found) and all(
-        words[0] in ("cd", ":") or words == want for words in found)
-
-
-KEY_LINE = mctx("Step key: {key}. After the call below, run `{command}`.")
-
-
-def key_line(step: Step, agent: str) -> str:
-    """The line the command prints before a call it prints, which `made`
-    reads back. Nothing follows the call's last field, so an operator who
-    copies that field copies no other line."""
-    return KEY_LINE.format(key=key(step), command=next_command(agent))
-
-
-PRINTED_KEY = (re.escape(KEY_LINE.format(key="\x00", command="\x01"))
-               .replace("\x00", f"(?P<key>{STEP_KEY.pattern})")
-               .replace("\x01", "[^\n]*") + "\n")
-
-
-def opening(text: str, *fields: tuple[str, str]) -> str:
-    """The pattern of the printed `text` up to its last field, where `text`
-    holds a stand-in for each field of `fields`, given with the pattern of
-    its value; the last stand-in ends the opening."""
-    out = re.escape(text[:text.index(fields[-1][0])])
-    for stand_in, pattern in fields[:-1]:
-        out = out.replace(re.escape(stand_in), pattern)
-    return out
-
-
-@cache
-def printed_opening() -> re.Pattern[str]:
-    """The opening of the text `next` prints for a message or a Bash call
-    in the foreground, from its key line, where the result holds it, up to
-    the message or the command."""
-    send = opening(send_text("\x00", "\x01"), ("\x00", r"(?P<to>[^\n]*)"), ("\x01", ""))
-    bash = opening(bash_text("\x01"), ("\x01", ""))
-    return re.compile(f"^(?:{PRINTED_KEY})?(?:{send}|{bash})", re.MULTILINE)
-
-
-def made(calls: Iterable[Call]) -> tuple[Made, ...]:
-    """Each message and Bash call in the foreground that the result of an
-    operator's call of `next` printed, with the call that operator made
-    next, other than a call of `next` alone (`only_command`).
-    The result may be cut, as by
-    a pipe through `head` or `tail`: a step whose opening it cuts is not
-    read, and one whose key it cuts is read with no key, and as far as the
-    result gives it."""
-    by: dict[str, list[Call]] = {}
-    for c in sorted(calls, key=lambda c: c.time):
-        by.setdefault(c.operator, []).append(c)
-    out: list[Made] = []
-    for operator, own in by.items():
-        for c, after in zip(own, own[1:], strict=False):
-            command = str(c.input.get("command", ""))
-            if (c.tool != "Bash" or c.result is None or not is_next(command, operator)
-                    or (after.tool == "Bash"
-                        and only_command(str(after.input.get("command", "")), operator))):
-                continue
-            # The first opening: a message or a command may hold a line
-            # that reads as one, and the key line comes before both.
-            opening = printed_opening().search(c.result)
-            if opening is None:
-                continue
-            tool = Printed.SEND_MESSAGE if opening["to"] is not None else Printed.BASH
-            text = c.result[opening.end():].rstrip("\n")
-            out.append(Made(opening["key"], tool, opening["to"],
-                            unfenced(text) if tool is Printed.SEND_MESSAGE else text, after))
-    return tuple(out)
-
-
-FILED = mctx("Read the file {path} first: it holds the text of this message.")
-"""The line that gives the file a brief or a message is in."""
-
-FILED_LINE = re.compile("^" + re.escape(FILED.format(path="\x00")).replace(
-    "\x00", r"(?P<path>/[^\n]*?)") + "$", re.MULTILINE)
-
-REPORT_SUFFIX = "-report.md"
-ALERT_SUFFIX = "-alert.md"
-"""The suffix of the alert file an auditor's brief gives, beside its
-report file."""
-
-REPORT_NAME = re.compile(rf"{STEP_KEY.pattern}{re.escape(REPORT_SUFFIX)}")
-"""The name of the report file a brief gives."""
-
-FILES = "operator-files"
-"""The directory under the session's scratchpad that holds the files the
-command writes."""
-
-
-def files_of(scratch: Path) -> Path:
-    return scratch / FILES
-
-
-def file_path(step: Step, scratch: Path) -> Path:
-    """The file the brief of the launch `step`, or the filed part of the
-    message `step`, is written to."""
-    return files_of(scratch) / f"{key(step)}.md"
-
-
-def report_path(step: Launch, scratch: Path) -> Path:
-    return files_of(scratch) / f"{key(step)}{REPORT_SUFFIX}"
-
-
-def alert_path(report: Path) -> Path:
-    """The alert file of the auditor whose report file is `report`."""
-    return report.with_name(report.name.removesuffix(REPORT_SUFFIX) + ALERT_SUFFIX)
-
-
-def with_report(step: Launch, scratch: Path) -> Launch:
-    """`step` with the line of its brief that gives its report file, other
-    than a solver pass's, and for an auditor the line that gives its alert
-    file."""
-    if step.role in PASSES:
-        return step
-    form = briefs.REPORT_RULE if step.role in GENERAL_ROLES else briefs.REPORT_FILE
-    report = report_path(step, scratch)
-    lines = [step.brief, form.format(path=report)]
-    if step.role is Role.OP_AUDITOR:
-        lines.append(briefs.ALERT_FILE.format(path=alert_path(report)))
-    return replace(step, brief="\n".join(lines))
-
-
-def split_message(step: Send) -> tuple[str, str]:
-    """The part of the message `step` printed in the call, and the part
-    filed, as the module docstring gives them."""
-    if step.to == COORDINATOR:
-        if not step.message.startswith(DECISION):
-            return step.message, ""
-        head, _, rest = step.message.partition("\n")
-        return head, rest
-    return "", step.message
-
-
-def filed(step: Step, scratch: Path) -> dict[Path, str]:
-    """The files the command writes before it prints `step`, by path."""
-    match step:
-        case Launch(brief=brief):
-            return {file_path(step, scratch): brief}
-        case Send():
-            rest = split_message(step)[1]
-            return {file_path(step, scratch): rest} if rest else {}
-        case _:
-            return {}
-
-
-def filed_line(step: Step, scratch: Path) -> str:
-    return FILED.format(path=file_path(step, scratch))
-
-
-FENCE = "```"
-
-
-def fenced(value: str) -> str:
-    return f"{FENCE}\n{value}\n{FENCE}"
-
-
-def unfenced(value: str) -> str:
-    """`value` without its opening fence line and its closing fence line,
-    each where it has one: a printed value as far as a cut result gives
-    it, or a value an operator passed with the fence lines."""
-    head, sep, rest = value.partition("\n")
-    if head == FENCE and sep:
-        value = rest
-    body, sep, tail = value.rpartition("\n")
-    return body if sep and tail == FENCE else value
-
-
-def send_text(to: str, message: str) -> str:
-    return f"call SendMessage\nto: {to}\nmessage:\n{fenced(message)}"
-
-
-def bash_text(command: str) -> str:
-    return f"call Bash\ntimeout: {FOREGROUND_MS}\ncommand:\n{command}"
-
-
-def printed(step: Step, agent: str, scratch: Path) -> str:
-    """The text the command prints for `step`, for the operator whose agent
-    id is `agent`, with the files `filed` gives under `scratch`."""
-    match step:
-        case Launch(role, subject, _, model):
-            extra = f"\nmodel: {model}" if model is not None else ""
-            return (f"call Agent\ndescription: {description(role, subject)}\n"
-                    f"subagent_type: {role.agent_type}\nrun_in_background: true{extra}\n"
-                    f"prompt:\n{fenced(filed_line(step, scratch))}")
-        case Send(to):
-            head, rest = split_message(step)
-            line = filed_line(step, scratch) if rest else ""
-            return send_text(to, "\n".join(part for part in (head, line) if part))
-        case Bash(command):
-            return bash_text(command)
-        case Poll():
-            return mctx("Run the command again: nothing is ready.")
-        case Reply():
-            return f"{FINAL_REPLY}\n{SENT_REPLY}"
-        case Undecided():
-            raise ValueError(f"an undecided step is placed before it is printed: {step}")

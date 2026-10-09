@@ -33,8 +33,9 @@ from operations.reports import TICKETS_FILED
 from operations.roles import PASSES, Purpose, Role, analyst_subject, joined
 from operations.state import Agent, State
 from ticketing.vocabulary import Domain, Kind, Status
-from operations.steps import (RUN_COMMAND, Bash, Launch, Send, Step, Undecided, agent_ids,
-                             ask_again, bash_calls, repeated)
+from operations.command_words import RUN_COMMAND
+from operations.handled import ask_again, bash_calls, repeated
+from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids
 from operations.task_work import CLAIM, tasks_work
 from operations.tracker import blocked_on_user
 

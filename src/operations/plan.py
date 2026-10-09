@@ -12,7 +12,7 @@ unfinished reaches a later one only where the coordinator gives it again
 a `Decision:` line that rules a held step holds for every operator
 (`directives`), and the items for the coordinator of a ticket analyst's
 reply go to the final reply of the operator that carries that reply
-(`steps.carrier`). An operator past its context bound ends at once
+(`final_reply.carrier`). An operator past its context bound ends at once
 too, and asks the coordinator for a fresh operator with no lines; the
 operator the coordinator launches next takes up from the state each line
 that the operators before it in a row that ended so received
@@ -31,7 +31,7 @@ lines to the ticket analysts that run on their tickets; the ticket
 analysts on open tickets; the review
 of drafts; the changes; the solver pipelines; After a batch. A step that
 is a message an operator already sent is passed over, and so are an
-undecided step an operator already handled (`steps.repeated`) and a step
+undecided step an operator already handled (`handled.repeated`) and a step
 an `Override: pass over` ruling passed over (`directives.passed`).
 
 Where no step is ready, and an agent of an operator runs or a ticket of
@@ -57,30 +57,17 @@ from operations.directives import (
 from operations.roles import Role, description
 from operations.state import State, Ticket
 from ticketing.vocabulary import Status
-from operations.steps import (
-    COORDINATOR,
-    FINAL_REPLY,
-    Bash,
-    Launch,
-    Poll,
-    Reply,
-    Send,
-    Step,
-    Undecided,
-    bash_calls,
-    decision_key,
-    failure,
-    final_sends,
-    key,
-    nested,
-    repeated,
-    unfenced,
-    unread_line,
-)
+from operations.constants import COORDINATOR
+from operations.final_reply import failure, final_sends, nested
+from operations.handled import bash_calls, repeated
+from operations.printing import FINAL_REPLY, unfenced
+from operations.steps import (Bash, Launch, Poll, Reply, Send, Step, Undecided, decision_key, key,
+                              unread_line)
 
 FOR_CONTEXT = mctx("I ended for my context: launch a fresh operator with no lines, which "
                    "takes up from the state each line below that stands unfinished.")
-GIVEN_AGAIN = "a line below that stands unfinished reaches it only where it is given to it again"
+GIVEN_AGAIN = mctx("a line below that stands unfinished reaches it only where it is given to it "
+                   "again")
 
 
 def first(state: State, *procedures: Callable[[State], Step | None]) -> Step | None:
@@ -242,14 +229,18 @@ def taken_up(state: State) -> frozenset[str]:
 def pipeline_state(o: passes.Outcome | None) -> str | None:
     """Why a pipeline is unfinished, or None where it ran to its end."""
     if o is None:
-        return "its pipeline has not started"
+        return mctx("its pipeline has not started")
     if not o.ended:
-        return "its pipeline runs"
-    return f"its pipeline stopped: {o.stopped}" if o.stopped else None
+        return mctx("its pipeline runs")
+    return mctx("its pipeline stopped: {why}").format(why=o.stopped) if o.stopped else None
 
 
 def stands_under(t: Ticket) -> str:
-    return f"stands under `tickets/{t.status.value}/`"
+    return mctx("stands under `tickets/{status}/`").format(status=t.status.value)
+
+
+REASON = mctx("{of}: {reason}")
+THE_QUEUE = mctx("the queue")
 
 
 def line_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Outcome]]) -> str:
@@ -260,35 +251,39 @@ def line_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Out
     match ln.kind:
         case Directive.SOLVE:
             by_task = {p.task: o for p, o in outcomes}
-            reasons = [f"{m['task']}: {r}" for m in TASK.finditer(ln.rest)
+            reasons = [REASON.format(of=m["task"], reason=r) for m in TASK.finditer(ln.rest)
                        if (r := pipeline_state(by_task.get(m["task"]))) is not None]
         case Directive.QUEUE:
             own = [(p, o) for p, o in outcomes if p.since == ln.message.time]
             if not own:
                 own = [(p, o) for p, o in outcomes if p.since < ln.message.time and p.queued]
-            reasons = [f"{p.task or 'the queue'}: {r}" for p, o in own
+            reasons = [REASON.format(of=p.task or THE_QUEUE, reason=r) for p, o in own
                        if (r := pipeline_state(o)) is not None]
         case Directive.DRAFTS:
             under = {t.number for t in drafts.unended(state)}
             reasons = [draft_stands(n) for n in numbers if n in under]
         case Directive.NAMED:
-            reasons = [f"ticket {n} {stands_under(t)}" for n in numbers
+            reasons = [mctx("ticket {n} {stands}").format(n=n, stands=stands_under(t))
+                       for n in numbers
                        if (t := state.tickets.get(n)) is not None
                        and t.status in (Status.OPEN, Status.ASSIGNED)]
         case Directive.MERGED:
             if not any(a.launched > ln.message.time for a in state.agents_of(Role.BATCH_PROFILE)):
-                reasons = ["After a batch has not run since it was given"]
+                reasons = [mctx("After a batch has not run since it was given")]
         case Directive.MERGE:
-            reasons = [f"change {n} {stands_under(t)}" for n in numbers
+            reasons = [mctx("change {n} {stands}").format(n=n, stands=stands_under(t))
+                       for n in numbers
                        if (t := state.tickets.get(n)) is not None and t.status is not Status.CLOSED]
         case Directive.OPEN:
             reasons = [settled_open(n) for n in triage.unsettled(state)]
         case None:
-            reasons = ["it is in no form the command reads, and went to the coordinator"]
+            reasons = [mctx("it is in no form the command reads, and went to the coordinator")]
         case _:
             pass
-    head = f"- `{ln.text}`: "
-    return head + ("done" if not reasons else "unfinished: " + "; ".join(reasons))
+    if not reasons:
+        return mctx("- `{line}`: done").format(line=ln.text)
+    return mctx("- `{line}`: unfinished: {reasons}").format(line=ln.text,
+                                                             reasons="; ".join(reasons))
 
 
 def draft_stands(number: str) -> str:

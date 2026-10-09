@@ -5,9 +5,9 @@ Such a step goes to one ticket analyst, launched with the step and the
 agent id of the operator that holds it (`briefs.held_step`), whose subject
 gives the step's decision key, so no operator of the session launches a
 second analyst on it, and its procedure waits on that analyst while it
-runs and once it returned (`steps.repeated`). A step an operator already
+runs and once it returned (`handled.repeated`). A step an operator already
 gave the coordinator goes to no analyst, and its procedure waits on the
-coordinator's decision (`steps.repeated`). The analyst's reply rules
+coordinator's decision (`handled.repeated`). The analyst's reply rules
 the step by a ruling in a fixed form, which the command applies as it
 applies the coordinator's, for every operator of the session
 (`directives.rulings`). Where the analyst brings that decision to the user,
@@ -39,8 +39,9 @@ from operations.directives import reply_decisions
 from operations.reports import Label, items_of
 from operations.roles import Purpose, Role, analyst_of, analyst_subject, described
 from operations.state import Agent, State
-from operations.steps import (Launch, Send, Step, Undecided, ask_again, decided_by,
-                             decision_key, failure, final_replies, nested, rulable)
+from operations.final_reply import failure, final_replies, nested
+from operations.handled import ask_again, decided_by
+from operations.steps import Launch, Send, Step, Undecided, decision_key, rulable
 
 
 def launch(state: State, step: Undecided) -> Launch:

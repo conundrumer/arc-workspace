@@ -141,7 +141,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from controlled_markdown import mctx
+from controlled_markdown import form, mctx
 from engine import checkout, rwlock
 from engine.duration import footer
 from handbook.paths import importable
@@ -189,27 +189,18 @@ LEFT_AFTER = mctx("the worktree holds changes made after the commit, in {left}")
 change's commit."""
 
 
-def form(template: str, holes: dict[str, str]) -> re.Pattern[str]:
-    """The pattern of the text `template` gives, with each hole of `holes`
-    matched by its pattern."""
-    pattern = re.escape(template)
-    for hole, matched in holes.items():
-        pattern = pattern.replace(re.escape("{" + hole + "}"), matched)
-    return re.compile(pattern)
-
-
 def conflicted(output: str) -> bool:
     """Whether `output` refuses a change for a conflict in its rebase."""
-    return form(REFUSED + CONFLICT, {"branch": r"\S+", "onto": r"\S+"}).search(
-        output) is not None
+    return re.search(form(REFUSED + CONFLICT, {"branch": r"\S+", "onto": r"\S+"}),
+                     output) is not None
 
 
 def left_edits(output: str) -> bool:
     """Whether `output` gives that `master` is fast-forwarded and a
     worktree stays for changes made after its change's commit."""
     text = STAYS.format(master=MASTER, why=LEFT_AFTER, worktree="{worktree}", branch="{branch}")
-    return form(text, {"left": r".+?", "worktree": r"\S+", "branch": r"\S+"}).search(
-        output) is not None
+    return re.search(form(text, {"left": r".+?", "worktree": r"\S+", "branch": r"\S+"}),
+                     output) is not None
 
 
 def outside_work() -> tuple[str, str, str]:

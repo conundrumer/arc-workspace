@@ -20,9 +20,11 @@ from enum import StrEnum
 from pathlib import Path
 
 from controlled_markdown import mctx
+from operations import briefs
 from operations.alerts import AlertKind, opened, opening, to_agent
 from operations.roles import JUDGING, Role
-from operations.steps import Launch, Send, Step, asked_again
+from operations.handled import asked_again
+from operations.steps import Launch, Send, Step
 from ticketing.times import utc_stamp
 
 
@@ -156,35 +158,19 @@ class Audit:
 
 
 @dataclass(frozen=True)
-class Sending:
-    """A SendMessage call of the monitor that the harness gave no error:
-    its recipient, its message and its time."""
-    to: str
-    text: str
-    time: float
-
-
-@dataclass(frozen=True)
 class MonitorState:
-    """`sendings` holds the SendMessage calls of the session's operators,
-    `transcript` the transcript of the operator `me`, and `stalled` the
+    """`sent` gives `handled.sent_with` over the calls of the session's
+    operators, `transcript` the transcript of the operator `me`, and `stalled` the
     agents of `State.stalled`."""
     watched: tuple[Watched, ...]
     to_coordinator: tuple[ToCoordinator, ...]
     audits: tuple[Audit, ...]
-    sendings: tuple[Sending, ...]
+    sent: Callable[[str, str], list[float]]
     transcript: Path
     stalled: frozenset[str]
     undecided: tuple[str, ...]
     """The lines on what the read of the state left unknown."""
 
-
-def sent_times(state: MonitorState, to: str, message: str) -> list[float]:
-    return [s.time for s in state.sendings if s.to == to and message in s.text]
-
-
-MONITOR = mctx("the operator")
-"""The reader `briefs.restate` names in the monitor's steps."""
 
 NONE = mctx("none")
 
@@ -193,10 +179,10 @@ NO_FINDING = Finding(None, None, NONE)
 
 
 def ask(state: MonitorState, a: Audit) -> Send | bool:
-    """`steps.asked_again` on the latest report of `a`, which the command
+    """`handled.asked_again` on the latest report of `a`, which the command
     read in no form."""
-    return asked_again(lambda to, message: sent_times(state, to, message), a.auditor,
-                       list(a.replies), REPORT_POINTER, MONITOR)
+    return asked_again(state.sent, a.auditor,
+                       list(a.replies), REPORT_POINTER, briefs.OPERATOR)
 
 
 def outcome(state: MonitorState, a: Audit) -> Finding | None:

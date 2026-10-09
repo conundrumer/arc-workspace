@@ -42,7 +42,8 @@ from operations.directives import Decision, Directive, decided, named, numbers
 from operations.roles import Purpose, Role, analyst_subject, joined, subjects
 from operations.state import Agent, State, Ticket
 from ticketing.vocabulary import Kind, Note, Status
-from operations.steps import Bash, Launch, Send, Step, Undecided, decision_key, repeated, sent
+from operations.handled import repeated, sent
+from operations.steps import Bash, Launch, Send, Step, Undecided, decision_key
 from operations.tracker import COORDINATOR, after, last_index, log
 
 CAP = 3

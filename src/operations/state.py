@@ -130,7 +130,7 @@ class Call:
     """A tool call of an operator of the session: its tool, its input, and
     its result, None while it is pending, each with the text of each file
     the command wrote for a call it printed in place of the line that gives
-    that file (`steps.FILED`), with whether the harness gave the
+    that file (`filing.FILED`), with whether the harness gave the
     result as an error, and for a call of `scripts/merge_change.py` that
     has its result, what it did. The result of a Bash call the harness ran
     or moved to the background is the output its command wrote, once a
@@ -210,7 +210,7 @@ class State:
     of each worktree that stands on one, and `stalled` the final reply in
     the transcript of each agent a stall alert names that reached no
     operator as a report. `made` holds each step the command printed to an operator
-    with the call that operator made next (`steps.made`). `messages` holds
+    with the call that operator made next (`handled.made`). `messages` holds
     the messages that reached any operator of the session, and `received`
     those that reached `me` or an operator it takes up the lines of
     (`taken_up`, as `plan.taken_up` gives it)."""

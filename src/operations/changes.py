@@ -56,8 +56,8 @@ from operations.reports import (NO_FINDING, OPEN_LABELS, Label, budget_passed, f
                                 no_finding, standing)
 from operations.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
 from operations.state import Agent, State, Ticket
-from operations.steps import (Bash, Launch, Send, Step, Undecided, agent_ids, repeated,
-                              sends_to, sent)
+from operations.handled import repeated, sends_to, sent
+from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids
 from operations.tracker import AGENT, COORDINATOR, closed, log, worktree
 from ticketing.vocabulary import Domain, Kind, Status
 

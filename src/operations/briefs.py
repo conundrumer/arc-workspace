@@ -380,7 +380,8 @@ ALERT_FORM = mctx("where it is an alert, a message that opens with the line `ale
 
 
 OPERATOR = mctx("the operator")
-"""The reader `restate` names in the operator's command."""
+"""The reader `restate` names, in the operator's command and in the
+monitor's steps."""
 
 
 def restate(time: float, form: str, reader: str) -> str:

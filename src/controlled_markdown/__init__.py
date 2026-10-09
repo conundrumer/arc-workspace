@@ -110,6 +110,7 @@ from controlled_markdown.document_set import (
     check_links as check_links,
 )
 from controlled_markdown.prose import (
+    form as form,
     mctx as mctx,
     dedent as dedent,
     PY_HOLE_RE as PY_HOLE_RE,

@@ -19,7 +19,8 @@ from operations.changes import release
 from operations.directives import Directive, numbers
 from operations.roles import AGENT_ID, Role
 from operations.state import Agent, Merge, State
-from operations.steps import Bash, Launch, Step, Undecided, bash_calls
+from operations.handled import bash_calls
+from operations.steps import Bash, Launch, Step, Undecided
 
 OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER})
 """The roles of After a batch, which no batch holds."""

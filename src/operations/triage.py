@@ -24,12 +24,12 @@ form:
   message that opens with `steps.DECISION`, read back by the analyst's
   agent id and the reply's time in any message to the coordinator.
 - Its `tell:` items reach the coordinator together, in the final reply of
-  the operator that carries that reply (`steps.carrier`).
+  the operator that carries that reply (`final_reply.carrier`).
 - Its `unfinished:` items, and its items that open with a label with no
   colon after it (`reports.MISLABELED`), are a step the command cannot
   decide, which goes to a ticket analyst launched on it (`decisions`),
   other than where an operator already gave the coordinator those items
-  with the reply's key, in any message (`steps.repeated`).
+  with the reply's key, in any message (`handled.repeated`).
 
 A part that holds no labeled item gives no step.
 
@@ -55,8 +55,10 @@ from operations.passes import awaits_analyst
 from operations.roles import Purpose, Role, analyst_subject, joined
 from operations.state import Agent, LogLine, State, Ticket
 from ticketing.vocabulary import Domain, Kind, Status
-from operations.steps import (COORDINATOR, DECISION, Bash, Launch, Send, Step, Undecided, carrier,
-                             nested, repeated, sent)
+from operations.constants import COORDINATOR
+from operations.final_reply import carrier, nested
+from operations.handled import repeated, sent
+from operations.steps import DECISION, Bash, Launch, Send, Step, Undecided
 from operations.tracker import AGENT, blocked_on_user, coordinator_line, coordinator_lines, log
 
 
@@ -237,7 +239,7 @@ def unfinished(state: State) -> Step | None:
 def told(state: State) -> list[str]:
     """The lines of the final reply of the operator `me` that give the
     coordinator the `tell:` items of each ticket analyst's reply that `me`
-    carries (`steps.carrier`), and of the reply of an analyst on a held
+    carries (`final_reply.carrier`), and of the reply of an analyst on a held
     step, its `unfinished:` items and its items that open with a label with
     no colon after it."""
     out: list[str] = []

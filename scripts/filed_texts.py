@@ -1,6 +1,6 @@
 """The reads of the files the operator's command writes for the calls it
-prints (`operations.steps.filed`): a brief or a message whose text gives a
-file by the line `operations.steps.FILED`, and a report that is the path of
+prints (`operations.filing.filed`): a brief or a message whose text gives a
+file by the line `operations.filing.FILED`, and a report that is the path of
 a report file alone. A file that is gone leaves its text unknown, and an
 `undecided` line names it."""
 
@@ -9,7 +9,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 
-from operations.steps import FILED_LINE, REPORT_NAME
+from operations.filing import FILED_LINE, REPORT_NAME
 
 
 def unfiled(text: str, where: str, undecided: list[str]) -> str:

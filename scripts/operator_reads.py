@@ -23,7 +23,7 @@ from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks
                        message_text, notifications, output_file, run_entries,
                        run_sessions, session_agents, text_of, type_in)
 from run_reads import Status as TaskStatus
-from senders import AUDITOR, Sender, sender
+from senders import Sender, sender
 from ticket_numbers import TICKET_NUMBER
 from transcripts import epoch, find, read_entries, session_directory
 
@@ -31,7 +31,8 @@ from operations.merging import MERGE_SCRIPT, merge_messages
 from operations.reports import TICKETS_FILED
 from operations.roles import PASSES, Role, described
 from operations.state import Agent, Call, Merge, Message, Report
-from operations.steps import COMMAND, is_next, unfenced
+from operations.command_words import COMMAND, is_next
+from operations.printing import unfenced
 
 
 def merge_outcome(aid: str, command: str, time: float, result: str | None, error: bool,
@@ -95,7 +96,7 @@ def unfiled_call(aid: str, tool: str, inp: dict[str, Any], result: str | None,
     file the command wrote, that the field `FILED_FIELDS` gives or the
     result of a call of `next` gives, read in place of the line that gives
     it (`filed_texts.unfiled`), and that field read without the fence
-    lines an operator passed with it (`steps.unfenced`)."""
+    lines an operator passed with it (`operations.printing.unfenced`)."""
     where = mctx("{run}: a call of {tool}").format(run=aid, tool=tool)
     if (name := FILED_FIELDS.get(tool)) is not None:
         inp = {**inp, name: unfiled(unfenced(str(inp.get(name, ""))), where, undecided)}
@@ -171,7 +172,8 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
                 messages += [Message(aid, epoch(stamp), s, unfiled(
                     unfenced(text), f"{where} {s}", undecided))
                              for s, text in agent_messages(e)
-                             if s not in children or type_in(sessions, s) == AUDITOR]
+                             if s not in children
+                             or type_in(sessions, s) == Role.OP_AUDITOR.agent_type]
     for call, (t, inp, tool) in uses.items():
         text, error = results.get(call, (None, False))
         if call in moved:

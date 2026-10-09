@@ -5,7 +5,7 @@ of the operator's procedures, which the package `operations` computes.
 `HELP`, which `--help` prints, gives its usage forms.
 
 Each fact the command reads is in the tracker, in git, under `work/`, in
-a transcript, or in a file it wrote for a call it printed (`steps.filed`),
+a transcript, or in a file it wrote for a call it printed (`operations.filing.filed`),
 which a transcript points to."""
 
 import argparse
@@ -34,8 +34,9 @@ from tree_reads import git, main_tree  # noqa: E402
 from operations import briefs, plan  # noqa: E402
 from operations.monitor import NO_SIGN, REPORT_FORM, ROUTES, VERDICT  # noqa: E402
 from operations.roles import PASSES, Role  # noqa: E402
-from operations.steps import (BLOCK_SECONDS, Bash, Launch, Poll, Send, Step,  # noqa: E402
-                             filed, key_line, printed, with_report)
+from operations.filing import filed, with_report  # noqa: E402
+from operations.printing import key_line, printed  # noqa: E402
+from operations.steps import BLOCK_SECONDS, Bash, Launch, Poll, Send, Step  # noqa: E402
 from operations.task_work import restore, set_aside  # noqa: E402
 
 HELP = mctx("""

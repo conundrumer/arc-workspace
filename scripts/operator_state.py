@@ -11,6 +11,7 @@ import statistics
 import sys
 import time
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 
 from agent_launches import session_launches
@@ -26,7 +27,6 @@ from run_prints import active_of, print_running
 from run_reads import (MAIN, agent_messages, agent_type, context_size, notifications, run_entries,
                        session_agents)
 from run_reads import Status as TaskStatus
-from senders import AUDITOR
 from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
 from ticket_settle import to_settle
@@ -36,12 +36,14 @@ from tree_reads import claims, code_review, commits, gate_outputs, main_tree, sc
 from operations.directives import named
 from operations.plan import taken_up
 from operations import monitor
-from operations.monitor import (HUNG_FACTOR, Audit, Facet, MonitorState, Read, Sending,
+from operations.monitor import (HUNG_FACTOR, Audit, Facet, MonitorState, Read,
                                 ToCoordinator, Watched)
 from operations.alerts import AlertKind
 from operations.roles import Role
 from operations.state import Agent, Call, Message, Report, State
-from operations.steps import BLOCK_SECONDS, alert_path, made
+from operations.filing import alert_path
+from operations.handled import made, sent_with
+from operations.steps import BLOCK_SECONDS
 from operations.tracker import worktree
 from ticketing.vocabulary import Status
 
@@ -104,7 +106,7 @@ def read_state(me: str) -> State:
                    gate_outputs={w: gate_outputs(w) for w in held})
 
 
-UNWATCHED = frozenset({OPERATOR, AUDITOR})
+UNWATCHED = frozenset({OPERATOR, Role.OP_AUDITOR.agent_type})
 """The agent types the monitor's steps do not watch."""
 
 
@@ -212,11 +214,6 @@ def stall_findings(agents: list[Agent]) -> list[str]:
             and f.agent is not None]
 
 
-def sendings(calls: list[Call]) -> list[Sending]:
-    return [Sending(str(c.input.get("to", "")), str(c.input.get("message", "")), c.time)
-            for c in calls if c.tool == "SendMessage" and not c.error]
-
-
 def to_coordinator(session: Path, since: float, undecided: list[str]) -> list[ToCoordinator]:
     """The messages to the coordinator from a watched agent of the session
     that the coordinator did not launch, and the notifications of the end
@@ -245,9 +242,16 @@ def to_coordinator(session: Path, since: float, undecided: list[str]) -> list[To
         for n in notifications(e):
             if n.status is TaskStatus.RUNNING:
                 continue
+            text = n.result or n.note
             for aid in n.ids:
-                if aid in agents:
-                    out.append(ToCoordinator(aid, *agents[aid], t, n.result or n.note or ""))
+                if aid not in agents:
+                    continue
+                if not text:
+                    undecided.append(mctx("{agent}: a notification of its end gives neither "
+                                          "a result nor a note, so it is not audited").format(
+                                              agent=aid))
+                else:
+                    out.append(ToCoordinator(aid, *agents[aid], t, text))
     return out
 
 
@@ -265,5 +269,5 @@ def read_watch(state: State) -> MonitorState:
     return MonitorState(
         watched=tuple(watched(running_agents(session, undecided), launched, audits, undecided)),
         to_coordinator=tuple(to_coordinator(session_directory(session), start, undecided)),
-        audits=tuple(audits), sendings=tuple(sendings(list(state.calls))),
+        audits=tuple(audits), sent=partial(sent_with, state),
         transcript=find(state.me), stalled=frozenset(state.stalled), undecided=tuple(undecided))

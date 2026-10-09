@@ -1,6 +1,7 @@
 """The checks of prose in code: each string a program marks with `mctx`,
 each doc comment of the lib, each `quotes` call and each path a code file
-names."""
+names; with `mctx` itself, and `form`, the pattern that reads back a text
+built from an `mctx` template."""
 
 from __future__ import annotations
 
@@ -40,6 +41,15 @@ def mctx(prose):
     if isinstance(prose, str):
         return dedent(prose)
     return prose
+
+
+def form(template: str, holes: dict[str, str]) -> str:
+    """The pattern of the text `template` gives, with each hole of `holes`
+    matched by its pattern."""
+    pattern = re.escape(template)
+    for hole, matched in holes.items():
+        pattern = pattern.replace(re.escape("{" + hole + "}"), matched)
+    return pattern
 
 
 def dedent(text: str) -> str:
