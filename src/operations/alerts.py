@@ -14,10 +14,13 @@ operator of the session launched whose work is open:
 An alert on the operator `me` that reached `me` gives no step: the
 operator's next `next` is its return to the calls the command prints. Any
 other alert, and an alert on any other agent no operator launched, are
-undecided. A message from an auditor, or from an agent no operator
-launched, that is no alert goes back to its sender once, with a request to send it again as an
-alert, or to say that it is none, and is undecided where the sender's next
-message is still no alert. An undecided alert or message goes to a ticket
+undecided. A message from an auditor an operator of the session launched
+that opens with no alert line gives no step: such a message is its
+hand-back or its final reply, and the command reads its report from its
+report file alone (`monitor`). A message from an agent no operator
+launched that is no alert goes back to its sender once, with a request to
+send it again as an alert, or to say that it is none, and is undecided
+where the sender's next message is still no alert. An undecided alert or message goes to a ticket
 analyst launched on it (`decisions`), other than one an operator already
 handled (`steps.repeated`).
 
@@ -155,13 +158,14 @@ def on_escalation(state: State, kind: AlertKind, agent: str, text: str, time: fl
 def step(state: State) -> Step | None:
     """The first step the alerts and the other agents' messages give the
     operator `me`."""
-    launched = {a.agent_id for a in state.agents if a.agent_id and a.role is not Role.OP_AUDITOR}
+    auditors = {a.agent_id for a in state.agents_of(Role.OP_AUDITOR) if a.agent_id}
+    launched = {a.agent_id for a in state.agents if a.agent_id} - auditors
     for m in state.arrived:
         if m.sender is None or m.sender in launched:
             continue
         alert = parsed(m)
         if alert is None:
-            if m.operator != state.me:
+            if m.operator != state.me or m.sender in auditors:
                 continue
             replies = [x.time for x in state.received if x.sender == m.sender and x.time <= m.time]
             asked = ask_again(state, m.sender, replies, briefs.ALERT_FORM)
