@@ -1,9 +1,8 @@
-"""The briefs of the agents the `operations` mod's loop launches, each in
-the form [Briefs](prompts/agents/notes/launching.md#briefs) gives for its
-work, and the messages the loop sends them, and the number of items a
-brief that gives several items of the same work gives. The loop launches
-each agent from the coordinator's session, so a brief gives no agent id
-of its launcher."""
+"""The briefs of the agents the operator launches, each in the form
+[Briefs](prompts/agents/notes/launching.md#briefs) gives for its work, and
+the messages the operator sends them, and the number of items a brief
+that gives several items of the same work gives. A brief gives the agent
+id of the operator that launches the agent, which the agent replies to."""
 
 import re
 import shlex
@@ -20,9 +19,10 @@ TICKET_PATH = shlex.join([*FILE_TICKET, "path"]) + " {number}"
 WORK_IN = mctx("Work in the worktree {worktree}.")
 TESTS = mctx("Tests directory: `tests/`.")
 SCRATCH = mctx("Scratch directory: {scratch}.")
+LAUNCHER = mctx("The agent that launches you: {operator}.")
 MAY_EDIT = mctx("The files you may edit: {files}.")
 REPORT_FILE = mctx("Report file: `{path}`.")
-"""The line of each brief the loop gives that gives the file the agent
+"""The line of each brief the operator gives that gives the file the agent
 writes its final reply to, for an agent whose documents say what it does
 with that file."""
 REPORT_RULE = mctx("Write your final reply to the file `{path}`, in place of what it holds, "
@@ -45,29 +45,32 @@ one, as [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change)
 splits it."""
 
 
-def editor(role: Role, number: str, part: bool, worktree: Path | None, scratch: Path) -> str:
+def editor(role: Role, number: str, part: bool, worktree: Path, scratch: Path,
+           operator: str) -> str:
     """The brief of an editor of the change `number`, with its part where
-    `part`, in `worktree` where the change has one."""
+    `part`, in the change's worktree `worktree`."""
     lines = [read_ticket(number)]
     if part:
         lines.append(mctx("Your part: {part}.").format(part=PARTS[role]))
-    if worktree is not None:
-        lines.append(WORK_IN.format(worktree=worktree))
+    lines.append(WORK_IN.format(worktree=worktree))
     lines.append(mctx("Accepted gate outputs under `tests/gate/accepted/` you may write: each "
                       "that a `DIFF` of the gate your items cause names."))
     if role is Role.CODE_EDITOR:
         lines.append(TESTS)
     lines.append(SCRATCH.format(scratch=scratch))
+    lines.append(LAUNCHER.format(operator=operator))
     return "\n".join(lines)
 
 
-def doc_review(number: str, worktree: Path, editors: list[tuple[Role, str]]) -> str:
+def doc_review(number: str, worktree: Path, editors: list[tuple[Role, str]],
+               operator: str) -> str:
     lines = [mctx("Review the change to the documents of change {number}: the diff that "
                   "`git -C {worktree} diff --merge-base master` prints.").format(
                       number=number, worktree=worktree)]
     for role, aid in editors:
         lines.append(mctx("Its {role}: {aid}, whose files are {part}.").format(
             role=role, aid=aid, part=PARTS[role]))
+    lines.append(LAUNCHER.format(operator=operator))
     return "\n".join(lines)
 
 
@@ -88,7 +91,7 @@ def review_again(time: float) -> str:
 
 
 def review_fix(role: Role, number: str, worktree: Path, reviewer: str, files: list[str],
-               scratch: Path) -> str:
+               scratch: Path, operator: str) -> str:
     """The brief of an editor launched for a doc reviewer's findings: a doc
     editor for those on the documents, a code editor, with `files` as the
     files it may edit, for those on prose in code."""
@@ -97,11 +100,12 @@ def review_fix(role: Role, number: str, worktree: Path, reviewer: str, files: li
                   "in its line.").format(reviewer=reviewer)]
     if role is Role.CODE_EDITOR:
         lines += [MAY_EDIT.format(files=", ".join(files)), TESTS]
-    lines.append(SCRATCH.format(scratch=scratch))
+    lines += [SCRATCH.format(scratch=scratch), LAUNCHER.format(operator=operator)]
     return "\n".join(lines)
 
 
-def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], scratch: Path) -> str:
+def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], scratch: Path,
+               operator: str) -> str:
     """The brief of a code editor on the `quotes` calls a change to the
     documents broke, as [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change)
     gives it."""
@@ -110,7 +114,8 @@ def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], 
         mctx("Your items: repair each `quotes` call the `controlled_markdown` check reports "
              "below."),
         *calls,
-        MAY_EDIT.format(files=", ".join(files)), TESTS, SCRATCH.format(scratch=scratch)])
+        MAY_EDIT.format(files=", ".join(files)), TESTS, SCRATCH.format(scratch=scratch),
+        LAUNCHER.format(operator=operator)])
 
 
 def merge_finding(number: str, output: str) -> str:
@@ -120,7 +125,7 @@ def merge_finding(number: str, output: str) -> str:
 
 AFTER_MERGE = mctx("""
     - Change {number} is merged into `master` at {head}. Run each check its ticket places after the merge, which `{command}` prints: {checks}.
-    - File each check that fails as a `bug` ticket, by the lines of the section `Ticket files` of `prompts/agents/notes/tickets.md`, with `change` and {number} as `<domain>` and `<subject>`, and `operations` as `<agent>`.
+    - File each check that fails as a `bug` ticket, by the lines of the section `Ticket files` of `prompts/agents/notes/tickets.md`, with `change` and {number} as `<domain>` and `<subject>`, and `operator` as `<agent>`.
     - Give each check whose subject is an event that has not happened yet in your reply as unfinished, with that reason.
     - Run a check of what a running Claude Code session reads only at its start, such as its hooks, in a `claude -p` session you start in the main worktree.
     - Reply with each check as passed, failed with its ticket, or unfinished with its reason.
@@ -188,16 +193,18 @@ def items(brief: str) -> int | None:
     return None
 
 
-def ticket_review(numbers: list[str]) -> str:
-    return REVIEW_DRAFTS.format(numbers=item_list(numbers))
+def ticket_review(numbers: list[str], operator: str) -> str:
+    return "\n".join([REVIEW_DRAFTS.format(numbers=item_list(numbers)),
+                      LAUNCHER.format(operator=operator)])
 
 
-def settle(numbers: list[str]) -> str:
-    return SETTLE.format(numbers=item_list(numbers))
+def settle(numbers: list[str], operator: str) -> str:
+    return "\n".join([SETTLE.format(numbers=item_list(numbers)),
+                      LAUNCHER.format(operator=operator)])
 
 
-def revise(numbers: list[str], last: list[str]) -> str:
-    return "\n".join(revise_lines(numbers, last))
+def revise(numbers: list[str], last: list[str], operator: str) -> str:
+    return "\n".join([*revise_lines(numbers, last), LAUNCHER.format(operator=operator)])
 
 
 def weigh_suggestions(number: str, reviewers: list[str], last: bool) -> str:
@@ -221,7 +228,7 @@ def revise_lines(numbers: list[str], last: list[str]) -> list[str]:
 
 
 def findings(number: str, worktree: Path, reports: list[tuple[str, str]],
-             questions: list[str], gate: list[str], editors: list[str]) -> str:
+             questions: list[str], gate: list[str], editors: list[str], operator: str) -> str:
     """The brief of a ticket analyst on what a change's editors leave, by
     each editor's agent id and latest report, and on the `question`
     tickets filed on the change, with the agent ids of its editors."""
@@ -244,20 +251,22 @@ def findings(number: str, worktree: Path, reports: list[tuple[str, str]],
             "each difference there that the change's items do not ask for to its editors, "
             "{editors}, as a finding of its checks.").format(
                 gate=", ".join(gate), editors=", ".join(editors)))
+    lines.append(LAUNCHER.format(operator=operator))
     return "\n".join(lines)
 
 
-def pass_settle(numbers: list[str], task: str, review: str) -> str:
-    return PASS_SETTLE.format(numbers=item_list(numbers), task=task, review=review)
+def pass_settle(numbers: list[str], task: str, review: str, operator: str) -> str:
+    return PASS_SETTLE.format(numbers=item_list(numbers), task=task, review=review) + "\n" + (
+        LAUNCHER.format(operator=operator))
 
 
-HELD_STEP = mctx("Rule the step below, which the operations loop holds and its command "
-                 "cannot decide.")
+HELD_STEP = mctx("Rule the step below, which the operator that launches you holds and its "
+                 "command cannot decide.")
 
 
-def held_step(what: str) -> str:
+def held_step(what: str, operator: str) -> str:
     """The brief of a ticket analyst on the undecided step `what`."""
-    return "\n".join([HELD_STEP, "", what])
+    return "\n".join([HELD_STEP, "", what, "", LAUNCHER.format(operator=operator)])
 
 
 TRANSCRIPT_REVIEW = mctx("""
@@ -276,13 +285,8 @@ def transcript_review(run: str, domain: str, subject: str, solver_pass: bool) ->
     return f"{text}\n{PASS_REVIEW}" if solver_pass else text
 
 
-OVERRIDE = mctx("Override: {text}")
-"""An override a ruling gives a solver pass, labelled as one in its brief."""
-
-
-def solver_pass(task: str, overrides: list[str]) -> str:
-    return "\n".join([mctx("Task {task}.").format(task=task),
-                      *(OVERRIDE.format(text=text) for text in overrides)])
+def solver_pass(task: str) -> str:
+    return mctx("Task {task}.").format(task=task)
 
 
 def code_review(baseline: int, scratch: Path) -> str:
@@ -294,8 +298,8 @@ def code_review(baseline: int, scratch: Path) -> str:
 
 BATCH_PROFILE = mctx("""
     - Run `uv run python scripts/profile_runs.py <id>` with the agent id of each of these runs, one run per call: {runs}.
-    - File a `performance` ticket, with `commit` and `{commit}` as `<domain>` and `<subject>` and `operations` as `<agent>`, for each label or part of a run or of an agent type that you judge worth fixing, by the test that a change to a tool or a document could shorten it.
-    - Launch a transcript review of each of those runs that is no solver work and that `uv run python scripts/profile_runs.py <agent id>` shows past its budget: where a message from its parent has a `Budget: N minutes` line, by a message that command marks `past budget`, and otherwise by its active time, its wall time less its `idle` time as that command prints them, past the budget `uv run python scripts/operate.py call` would give its brief: its agent type's budget per item times the items its brief gives, where its brief gives items as `uv run python scripts/profile_runs.py --help` gives them, and otherwise its agent type's budget, where the type has the budget that applies. A transcript review is a `general-purpose` agent, with the brief that {review_brief} gives, with the run's agent id in place of `{run}`.
+    - File a `performance` ticket, with `commit` and `{commit}` as `<domain>` and `<subject>` and `operator` as `<agent>`, for each label or part of a run or of an agent type that you judge worth fixing, by the test that a change to a tool or a document could shorten it.
+    - Launch a transcript review of each of those runs that is no solver work and that `uv run python scripts/profile_runs.py <agent id>` shows past its budget: where a message from its parent has a `Budget: N minutes` line, by a message that command marks `past budget`, and otherwise by its active time, its wall time less its `idle` time as that command prints them, past the budget `uv run python scripts/operate.py next` would give its brief: its agent type's budget per item times the items its brief gives, where its brief gives items as `uv run python scripts/profile_runs.py --help` gives them, and otherwise its agent type's budget, where the type has the budget that applies. A transcript review is a `general-purpose` agent, with the brief that {review_brief} gives, with the run's agent id in place of `{run}`.
     - Reply only once each transcript review you launched has replied, with the tickets you filed and the reviews you launched.
     """)
 
@@ -316,7 +320,7 @@ BATCH_GATE = mctx("""
     - For each `DIFF` line these runs print that the `Evidence` of no ticket outside `tickets/draft/` and `tickets/closed/` holds, bisect the commits of `master` from the commit that the `affected:` line of the first run gives after `the change from` to `master`, each step in a worktree you add at the commit with `git worktree add --detach` and remove after, and file a ticket of kind `bug` that names the commit the bisection stops at.
         - A step for a `DIFF` line ending in `warm` is `uv run python scripts/gate.py <out> <cmd ...>`, with the commands of that commit's gate in the order its `--help` lists them, up to and including that line's command, and you pass over each line it prints on a command's time. Each other step is `uv run python scripts/gate.py --outputs-only <out> <cmd>`, with that line's command. A step at a commit whose gate has no such command counts as before the change.
         - File a `DIFF` line unbisected where it stands at that commit, where no `affected:` line of that run gives one, or where it ends in `warm` and its step at `master` does not print it, and say which in the ticket.
-    - File each ticket with `commit` and the hash `master` stands at as `<domain>` and `<subject>`, and `operations` as `<agent>`.
+    - File each ticket with `commit` and the hash `master` stands at as `<domain>` and `<subject>`, and `operator` as `<agent>`.
     - Reply with the tickets you filed.
     """)
 
@@ -327,7 +331,7 @@ def batch_gate(scratch: Path) -> str:
 
 def stop_work(number: str) -> str:
     """The message that tells an agent at work on a change or a draft whose
-    ticket the loop no longer carries to end."""
+    ticket the operator no longer carries to end."""
     return mctx("Write nothing further on {number}, and end with your open work in your "
                 "reply.").format(number=number)
 
@@ -376,8 +380,7 @@ PASS_FORM = mctx("a reply that is the path of your report file alone, on one lin
                  "report has a `{heading}` section.").format(heading=TICKETS_FILED)
 DECISION_FORM = mctx("a reply that gives, on a line of its own, the line that rules the step: the "
                    "line the step gives for its decision, where it gives one, and otherwise "
-                   "`Override: pass over <step key>` or `Override: <task id> <pass> "
-                   "<override>`; or, where the decision "
+                   "`Decision: <decision>` or `Override: <override>`; or, where the decision "
                    "goes to the user, a `decision:` item under `{heading}`.").format(
                        heading=FOR_COORDINATOR)
 ALERT_FORM = mctx("where it is an alert, a message that opens with the line `alert: <kind> "
@@ -385,9 +388,8 @@ ALERT_FORM = mctx("where it is an alert, a message that opens with the line `ale
                   "no alert, a reply that says so.")
 
 
-LAUNCHER = mctx("the coordinator")
-"""The reader `restate` names for an agent the loop launched, whose
-replies and messages reach the coordinator's session."""
+OPERATOR = mctx("the operator")
+"""The reader `restate` names in the operator's command."""
 
 
 def restate(time: float, form: str, reader: str) -> str:

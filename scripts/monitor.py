@@ -1,13 +1,12 @@
-"""The command line of the `operations` mod's monitor loop: it reads the
-session's agents, as `profile_runs.py --running` lists them, the
-coordinator's transcript and the monitor loop's record (`ops_record`),
-and gives the monitor's next step, which `operations.monitor` computes.
-`HELP`, which `--help` prints, gives its usage."""
+"""The command line of `op-monitor`: it reads the session's agents, as
+`profile_runs.py --running` lists them, the coordinator's transcript and
+the monitor's own transcript, and prints the monitor's next step, which
+`operations.monitor` computes. `HELP`, which `--help` prints, gives its
+usage."""
 
 import argparse
 import contextlib
 import io
-import json
 import os
 import statistics
 import sys
@@ -23,67 +22,35 @@ console_importable()
 importable(checkout.scripts())
 
 from agent_launches import session_launches  # noqa: E402
+from agent_turns import first_time  # noqa: E402
 from budgets import budgets_in_force  # noqa: E402
 from filed_texts import report_file, report_text  # noqa: E402
-from open_agents import Listed, running_agents  # noqa: E402
-from ops_record import LOOP, MONITOR, read_record, record_agents, runs  # noqa: E402
+from open_agents import Listed, running_agents, work_open  # noqa: E402
+from operator_reads import operator_runs, read_operator  # noqa: E402
 from run_prints import active_of, print_running  # noqa: E402
+from run_reads import (agent_messages, agent_type, notifications, run_entries,  # noqa: E402
+                       session_agents)
 from run_reads import Status as TaskStatus  # noqa: E402
-from run_reads import (  # noqa: E402
-    agent_messages,
-    agent_type,
-    notifications,
-    run_entries,
-    session_agents,
-)
 from senders import MONITORS  # noqa: E402
-from transcripts import (  # noqa: E402
-    Refused,
-    epoch,
-    find,
-    main_transcript,
-    new_state,
-    session_directory,
-)
+from transcripts import (Refused, epoch, find, main_transcript, new_state,  # noqa: E402
+                         session_directory)
 from tree_reads import main_tree, scratch  # noqa: E402
 
 from operations import monitor  # noqa: E402
-from operations.monitor import (  # noqa: E402
-    HUNG_FACTOR,
-    NO_SIGN,
-    REPORT_FORM,
-    TO,
-    VERDICT,
-    Audit,
-    Facet,
-    MonitorState,
-    Read,
-    Sending,
-    ToCoordinator,
-    Watched,
-)
+from operations.monitor import (HUNG_FACTOR, NO_SIGN, REPORT_FORM, TO, VERDICT,  # noqa: E402
+                                Audit, Facet, MonitorState, Read, Sending, ToCoordinator,
+                                Watched)
 from operations.roles import Role  # noqa: E402
-from operations.state import Agent, Call  # noqa: E402
-from operations.steps import (  # noqa: E402
-    BLOCK_SECONDS,
-    Launch,
-    Poll,
-    Step,
-    call,
-    filed,
-    key,
-    with_report,
-)
+from operations.state import Agent, Call, Message  # noqa: E402
+from operations.steps import (BLOCK_SECONDS, Launch, Poll, Step, filed, printed,  # noqa: E402
+                              with_report)
 
 HELP = mctx("""
     - Usage:
         ```
-        uv run python scripts/monitor.py call {monitor}
-        uv run python scripts/monitor.py unfinished {monitor}
+        uv run python scripts/monitor.py next <agent id>
         ```
-    - `call` gives the next step of the monitor loop of the `operations` mod, as one line of JSON, in the form `operate.py call` gives a step, and `operate.py made {monitor}` records the call the mod made for it. It writes the brief of a launch to a file under the session's scratchpad, and the call's prompt gives that file's path, with the report file the auditor writes. Where no step is ready, it reads the state again each {poll} seconds, for up to {block} seconds, then gives a step of kind `wait`.
-    - It launches an auditor on a message to the coordinator only where the coordinator's transcript gained that message while the operations loop ran, from a start that `operate.py start {loop}` recorded to the next stop that `operate.py stop {loop}` recorded. A run with no recorded stop counts as running where no later start is recorded, and otherwise up to the latest call of either loop's record before that start. A message after that call and before that start, which may have reached the coordinator after a hot reload of the mod or the session's end had ended the run, gets no audit, and `unfinished` gives a line on it.
-    - `unfinished` reads the state once and prints the part for the coordinator that the operations loop's final reply ends with: an `unfinished` item on each line on what that read left unknown, and on each audit whose report is still in no form after the request to write it again; it prints nothing where there is none. The mod runs it once the monitor loop has stopped, so the part comes from a read after the monitor's last call.
+    - `next` prints the next step of the monitor whose agent id it is given: one call to make, with its parameters, or the monitor's final reply. It writes the brief of a launch to a file under the session's scratchpad, and the call's prompt gives that file's path, with the report file the auditor writes. The value of a prompt or a message parameter it prints stands between two lines of three backticks, and the value to pass is the text between those lines, without them. Where no step is ready, it reads the state again each {poll} seconds, for up to {block} seconds, then prints that the monitor runs it again.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives, and the command refuses where the shell gives none.
     {report_form}
     """)
@@ -188,7 +155,7 @@ def sendings(calls: list[Call]) -> list[Sending]:
 def to_coordinator(session: Path, since: float, undecided: list[str]) -> list[ToCoordinator]:
     """The messages to the coordinator from an agent of the session other
     than the monitor and its auditors, and the notifications of the end of
-    one, that the coordinator's transcript gained after `since`."""
+    one, that the coordinator's transcript gained since `since`."""
     parents = {kid: launcher for launcher, kids in session_launches(session)[1].items()
                for kid in kids}
     agents: dict[str, tuple[str, str, Path]] = {}
@@ -224,15 +191,20 @@ def read_monitor(me: str) -> MonitorState:
     if not session:
         raise Refused(mctx("the shell gives no `CLAUDE_CODE_SESSION_ID`"))
     undecided: list[str] = []
-    ran = tuple(runs(scratch(session)))
-    calls = read_record(scratch(session), me, me, {}, undecided)[0]
-    agents = record_agents(calls, main_tree(), {})
+    path = find(me)
+    agents: list[Agent] = []
+    calls: list[Call] = []
+    read_operator(me, path, main_tree(), undecided, agents, calls, list[Message](), {}, {})
     audits = [a for x in agents if (a := audit_of(x, undecided)) is not None]
+    start = first_time(path)
+    if start is None:
+        raise Refused(mctx("the transcript of {agent} gives no time").format(agent=me))
     directory = session_directory(find(session))
     state = MonitorState(
         watched=tuple(watched(running_agents(find(session), undecided), audits, undecided)),
-        to_coordinator=tuple(to_coordinator(directory, ran[0].start, undecided) if ran else ()),
-        audits=tuple(audits), sendings=tuple(sendings(calls)), runs=ran,
+        to_coordinator=tuple(to_coordinator(directory, start, undecided)),
+        audits=tuple(audits), sendings=tuple(sendings(calls)),
+        operator_runs=any(work_open(p, []) for _, p in operator_runs(session, me)),
         undecided=tuple(undecided))
     return state
 
@@ -250,18 +222,14 @@ def next_step(me: str) -> Step:
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(
-        description=HELP.format(poll=POLL_SECONDS, block=BLOCK_SECONDS, monitor=MONITOR,
-                                loop=LOOP,
+        description=HELP.format(poll=POLL_SECONDS, block=BLOCK_SECONDS,
                                 report_form=REPORT_FORM.format(no_sign=NO_SIGN, to=TO,
                                                                verdict=VERDICT)),
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("action", choices=["call", "unfinished"])
-    ap.add_argument("agent", choices=[MONITOR])
+    ap.add_argument("action", choices=["next"])
+    ap.add_argument("agent")
     args = ap.parse_args(argv)
     try:
-        if args.action == "unfinished":
-            print(monitor.unfinished(read_monitor(args.agent)))
-            return 0
         s = next_step(args.agent)
         session = os.environ["CLAUDE_CODE_SESSION_ID"]
         pad = scratch(session)
@@ -270,7 +238,7 @@ def main(argv: list[str]) -> int:
         for p, text in filed(s, pad).items():
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(text)
-        print(json.dumps(call(s, pad, key(s))))
+        print(printed(s, args.agent, pad))
     except Refused as e:
         print(mctx("refused: {reason}").format(reason=e), file=sys.stderr)
         return 2

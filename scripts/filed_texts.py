@@ -1,5 +1,5 @@
-"""The reads of the files the operations loop's command writes for the
-calls it gives (`operations.steps.filed`): a brief or a message whose text gives a
+"""The reads of the files the operator's command writes for the calls it
+prints (`operations.steps.filed`): a brief or a message whose text gives a
 file by the line `operations.steps.FILED`, and a report that is the path of
 a report file alone. A file that is gone leaves its text unknown, and an
 `undecided` line names it."""

@@ -8,18 +8,17 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
+from controlled_markdown import mctx
 from ticket_files import FIELD, ticket_files, ticket_name, ticket_path, ticket_status
 from ticket_form import HEADING, LOG, ticket_kind
 from ticket_numbers import TICKET_NUMBER, TicketNumber, matched_number
 from ticket_vocabulary import ticked
-from transcripts import Refused
-
-from controlled_markdown import mctx
-from operations.roles import HOLDER
+from operations.roles import AGENT_ID as AGENT_ID_FORM
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Kind, Note, Resolution, Status
+from transcripts import Refused
 
-AGENT_ID = re.compile(HOLDER)
+AGENT_ID = re.compile(AGENT_ID_FORM)
 
 
 RESOLUTION_WORD = re.compile(r"[a-z]+(?:-[a-z]+)*")
@@ -57,7 +56,7 @@ def waited_change(wait: re.Match[str]) -> TicketNumber | None:
 
 
 LOG_LINE = re.compile(rf"^.*? (?P<status>{'|'.join(Status)}) \[(?P<agent>[^\]\s]+)"
-                      rf"(?: (?P<id>(?:{AGENT_ID.pattern})))?\](?:: (?P<note>.*))?$", re.MULTILINE)
+                      rf"(?: (?P<id>{AGENT_ID.pattern}))?\](?:: (?P<note>.*))?$", re.MULTILINE)
 """A log line, of whatever time form, as the command or a hand wrote it."""
 
 

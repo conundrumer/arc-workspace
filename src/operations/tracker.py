@@ -8,13 +8,8 @@ from pathlib import Path
 from operations.state import LogLine, State, Ticket
 from ticketing.vocabulary import COORDINATOR, Note, Status
 
-AGENT = "operations"
-"""The `<agent>` of each log line the loop writes, and of each ticket the
-agents of its briefs file for it."""
-
-OPERATOR_AGENT = "operator"
-"""The `<agent>` of the log lines the operator agents of earlier sessions
-wrote, which the loop reads as its own."""
+AGENT = "operator"
+"""The `<agent>` of each log line the operator writes."""
 
 FILE_TICKET = ("uv", "run", "python", "scripts/file_ticket.py")
 

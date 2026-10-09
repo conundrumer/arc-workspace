@@ -1,6 +1,6 @@
-"""The state the loop's procedures read, as `scripts/operate.py` reads it
-from the ticket tracker, git, the worktrees, the loop's record and the
-transcripts of the session and of the agents the loop launched.
+"""The state the operator's procedures read, as `scripts/operate.py` reads
+it from the ticket tracker, git, the worktrees and the transcripts of the
+session's operators.
 """
 
 from collections.abc import Mapping
@@ -62,31 +62,44 @@ class Ticket:
 
 @dataclass(frozen=True)
 class Report:
-    """A report of an agent the loop launched: the final reply in its
-    transcript, with its time and the text the agent wrote."""
+    """A report of an agent that reached the operator that launched it: a
+    notification, the result of a foreground launch, or a message, with
+    the text the agent wrote, as `agent_reports` reads it."""
     time: float
     text: str
 
 
 @dataclass(frozen=True)
 class Agent:
-    """An agent the loop `loop` launched with a description the command
-    gave. `pending` holds until its transcript gives its turn ended, and
-    while no transcript of it is found yet. Its `reports` hold the final
-    reply in its transcript. `pending` does not hold for an agent in
-    `State.stalled`, and the final reply in its transcript ends its
-    `reports`. `notifies` holds where the notification of its end reaches
-    the coordinator's session, which the loop reads. `messaged` holds, for
+    """An agent an operator of the session launched with a description the
+    command gave. `pending` holds where that operator holds neither the
+    result of a launch in the foreground nor a sign since its launch or
+    its last resume, in any transcript of the session, that its turn
+    ended, as `agent_reports.last_sign` gives the latest sign: a
+    notification that it stopped, or its SubagentHandback message. It
+    holds too where the latest sign is a notification that it stopped
+    with work of its own still running, and then `still_running` holds:
+    it has not reported yet, and the operator's turn may not end on it.
+    Where a sign ends it and no report of it reached that operator since
+    its launch or its last resume, the final reply in its transcript, where
+    it gives one after them and went to that operator, ends its `reports`.
+    `pending` does not hold either for an agent in `State.stalled`, nor
+    for an agent of another operator whose work is no longer open, and
+    the final reply in its transcript, where it gives one and it went to
+    that operator, then ends its `reports`. `notifies` holds where that
+    operator launched or last resumed it itself, so the notification of
+    its end and its final reply reach that operator. `messaged` holds, for
     a doc reviewer whose transcript is known, the agent ids its SendMessage
     calls went to, and is None for any other agent."""
     agent_id: str | None
-    loop: str
+    operator: str
     role: Role
     subject: str
     brief: str
     launched: float
     pending: bool
     reports: tuple[Report, ...]
+    still_running: bool
     notifies: bool
     messaged: frozenset[str] | None = None
 
@@ -114,13 +127,16 @@ class Merge(Enum):
 
 @dataclass(frozen=True)
 class Call:
-    """A call the loop `loop` made, as its record gives it: its tool,
-    its input, and its result, None while it is pending, each with the
-    text of each file the command wrote for it in place of the line that
-    gives that file (`steps.FILED`), with whether its result is an error,
-    and for a call of `scripts/merge_change.py` that has its result, what
-    it did."""
-    loop: str
+    """A tool call of an operator of the session: its tool, its input, and
+    its result, None while it is pending, each with the text of each file
+    the command wrote for a call it printed in place of the line that gives
+    that file (`steps.FILED`), with whether the harness gave the
+    result as an error, and for a call of `scripts/merge_change.py` that
+    has its result, what it did. The result of a Bash call the harness ran
+    or moved to the background is the output its command wrote, once a
+    notification of its end reached the operator, and it is an error
+    where that notification gives a status other than `completed`."""
+    operator: str
     time: float
     tool: str
     input: Mapping[str, Any]
@@ -130,17 +146,20 @@ class Call:
 
 
 class Printed(Enum):
-    """The tool of a step the loop's record gives as made, other than a
-    launch, by the name the harness gives that tool."""
+    """The tool of a step the command prints to an operator for it to call
+    in the foreground, by the name the harness gives that tool."""
     SEND_MESSAGE = "SendMessage"
     BASH = "Bash"
 
 
 @dataclass(frozen=True)
 class Made:
-    """A step the loop's record gives as made, and the call that made it:
-    the step's key, None where the record gives none, the tool of the call,
-    the recipient of a message, and the message or the command."""
+    """A step the command printed to an operator, read from the result of
+    that operator's call of `operate.py next`, and the call that operator
+    made next, which made it: the step's key, None where the result was
+    cut before it, the tool of the printed call, the recipient of a
+    message, and the message or the command as far as the result gives
+    it."""
     key: str | None
     tool: Printed
     to: str | None
@@ -150,11 +169,10 @@ class Made:
 
 @dataclass(frozen=True)
 class Message:
-    """A message that reached the loop `loop`: a line of the
-    coordinator's (`operate.py tell`), where `sender` is None, or otherwise
-    a message to the coordinator's session from the agent `sender`, which
-    the loop launched."""
-    loop: str
+    """A message that reached an operator: from the coordinator, as its
+    brief or a later message, where `sender` is None, or otherwise from the
+    agent `sender`, which that operator did not launch."""
+    operator: str
     time: float
     sender: str | None
     text: str
@@ -172,8 +190,10 @@ class Commit:
 
 @dataclass(frozen=True)
 class State:
-    """What the procedures read. `me` is the loop's id. `pass_tickets`
-    gives, for each solver pass
+    """What the procedures read. `operators` holds the agent ids of the
+    session's operators in the order of their launch, and `open_operators`
+    those after `me` whose work is open, the only ones a procedure asks
+    after. `pass_tickets` gives, for each solver pass
     that reported, the numbers of the tickets its report lists under
     `## Tickets filed`, or None where its reply is no report's path.
     `to_settle` is the list `file_ticket.py to-settle` prints for the
@@ -182,23 +202,30 @@ class State:
     session id each claimed task's claim file holds, and `open_holders`
     the holders of tickets under `tickets/assigned/` whose work is open, as
     `profile_runs.py --open` gives it. `index` is the session's index.
-    `gate_outputs` gives, for the worktree of each
+    `wait_task` is the ID the harness gave the command's wait in the
+    background that the operator `me` started, where no notification of
+    its end reached it and no TaskStop call of it on that ID has its
+    result, or None. `gate_outputs` gives, for the worktree of each
     change `me` holds, the accepted gate outputs under
     `tests/gate/accepted/` its change writes. `branches` gives the branch
     of each worktree that stands on one, and `stalled` the final reply in
     the transcript of each agent a stall alert names that reached no
-    loop as a report. `passed` gives, by its key (`steps.key`), each
-    step an `Override: pass over` ruling passed over, with the line that
-    gives it (`directives.passed_over`). `made` holds each step the loop's
-    record gives as made, with the call that made it. `messages` holds
-    the messages that reached the loop, and `received` those that reached
-    `me`."""
+    operator as a report. `passed` gives, by its key (`steps.key`), each
+    step an operator passed over by a call of `operate.py pass-over`, with
+    the line it gave, where that call's result says so or the call is
+    pending. `made` holds each step the command printed to an operator
+    with the call that operator made next (`steps.made`). `messages` holds
+    the messages that reached any operator of the session, and `received`
+    those that reached `me`."""
     me: str
     now: float
     session: str
     index: int
     main_tree: Path
     scratch: Path
+    operators: tuple[str, ...]
+    open_operators: frozenset[str]
+    past_bound: bool
     open_holders: frozenset[str]
     tickets: Mapping[str, Ticket]
     agents: tuple[Agent, ...]
@@ -209,6 +236,7 @@ class State:
     claims: Mapping[str, str]
     commits: tuple[Commit, ...]
     code_review: int | None
+    wait_task: str | None
     gate_outputs: Mapping[Path, tuple[str, ...]] = field(default_factory=dict)
     branches: Mapping[Path, str] = field(default_factory=dict)
     stalled: Mapping[str, Report] = field(default_factory=dict)
@@ -225,14 +253,14 @@ class State:
     def received(self) -> list[Message]:
         """The messages that reached `me`, its brief included, in the order
         they arrived."""
-        return [m for m in self.arrived if m.loop == self.me]
+        return [m for m in self.arrived if m.operator == self.me]
 
     def agents_of(self, role: Role | None = None, subject: str | None = None) -> list[Agent]:
         return [a for a in self.agents
                 if (role is None or a.role is role) and (subject is None or a.subject == subject)]
 
     def analysts(self) -> list[tuple[Agent, Purpose, list[str]]]:
-        """Each ticket analyst the loop launched, with its purpose
+        """Each ticket analyst of the session's operators, with its purpose
         and the ticket numbers or the task its subject gives."""
         out: list[tuple[Agent, Purpose, list[str]]] = []
         for a in self.agents_of(Role.TICKET_ANALYST):

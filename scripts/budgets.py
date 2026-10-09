@@ -7,20 +7,15 @@ import re
 from dataclasses import dataclass
 
 from agent_reports import parent_transcripts
-from ops_record import LOOP, launched
-from run_profile import Message, Part, Run, by_agent_type, clock, minutes, one_line, percentile
-from run_reads import MAIN, agent_type, parent_id, session_of
-from transcripts import agent_id, is_subagent
-from tree_reads import scratch
-
+from context_bound_hook import OPERATOR
 from controlled_markdown import mctx
 from engine import checkout
 from handbook.agents import agent_names, agent_sources
 from operations import briefs
-
-OPERATOR = "operator"
-"""The agent type of the operator agents that launched the runs of earlier
-sessions."""
+from run_profile import (Message, Part, Run, by_agent_type, clock, minutes,
+                         one_line, percentile)
+from run_reads import MAIN, agent_type, parent_id
+from transcripts import is_subagent
 
 # The terms of a type's budget, which HELP states.
 BUDGET_FACTOR = 2
@@ -79,9 +74,9 @@ def type_budget(kind: str, runs: list[Run], since_date: float | None, per_item: 
     rs = [(r, w) for r in runs
           if operator_launched(r, undecided) and censored(r, undecided) is False
           and (w := measured(r, per_item)) is not None]
-    which = (mctx("runs an operator or the operations loop launched, not cut, whose brief gives "
+    which = (mctx("runs an operator launched, not cut, whose brief gives "
                   "items") if per_item
-             else mctx("runs an operator or the operations loop launched, not cut"))
+             else mctx("runs an operator launched, not cut"))
     since = since_date if since_date is not None else type_window(kind, undecided)
     window: list[tuple[Run, float]] = []
     if since is not None:
@@ -174,15 +169,14 @@ def budgets_in_force(r: Run, undecided: list[str]) -> list[float | None]:
 
 
 def operator_launched(r: Run, undecided: list[str]) -> bool:
-    """Whether an operator agent or the `operations` mod's loop launched
-    `r`, as HELP gives it. A run whose parent's type is unknown is left
-    out, and an `undecided` line names it."""
+    """Whether an operator launched `r`, as HELP gives it. A run whose
+    parent's type is unknown is left out, and an `undecided` line names
+    it."""
     if not is_subagent(r.path):
         return False
     parent = parent_id(r.path)
     if parent == MAIN:
-        session = session_of(r.path).name
-        return agent_id(r.path) in launched(scratch(session), LOOP)
+        return False
     found = parent_transcripts(r.path)
     kind = agent_type(found[0]) if found else None
     if kind is None:

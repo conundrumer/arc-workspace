@@ -10,7 +10,7 @@ script's own forms and by `master` (`state.Merge`):
   on that worktree is given again;
 - a call that never ran, as where the harness denied it, is written on the
   ticket in a line whose note opens with `coordinator`, which takes the
-  change out of the loop's hands;
+  change out of the operator's hands;
 - a conflict in the rebase runs the change again with a new first editor:
   the command writes the old worktree and its branch on the ticket in a
   line that opens with `Note.RERUN`, which no read of the change's worktree
@@ -80,7 +80,7 @@ def log_worktrees(t: Ticket) -> set[str]:
 
 
 def merge_calls(state: State, t: Ticket) -> list[Call]:
-    """The loop's merge calls on any worktree `t`'s log gives: those
+    """The operators' merge calls on any worktree `t`'s log gives: those
     pending, and those with an outcome (`state.Merge`), which a call that
     merges no change, as a call of the script's `--help`, has not."""
     paths = log_worktrees(t)
@@ -92,7 +92,8 @@ def merge_calls(state: State, t: Ticket) -> list[Call]:
 def merged(state: State, t: Ticket) -> bool:
     """Whether a merge call landed the change `t`. A pending call that
     names a worktree that is gone counts as landed: `merge_change.py`
-    removes a worktree only after it lands the change."""
+    removes a worktree only after it lands the change, and a call that
+    runs `operate.py next` after the merge has no result yet."""
     gone = {p for p in log_worktrees(t) if Path(p) not in state.worktrees}
     return any(c.merge is Merge.MERGED or (c.result is None and any(
         p in str(c.input.get("command", "")) for p in gone)) for c in merge_calls(state, t))
@@ -138,7 +139,7 @@ def refused(state: State, t: Ticket, w: Path, last: Call, latest: list[Agent]) -
             return None
         files = sorted({m["path"] for m in QUOTE_LINE.finditer(text)})
         return Launch(Role.CODE_EDITOR, t.number, briefs.quotes_fix(
-            t.number, w, quotes, files, state.scratch / t.number),
+            t.number, w, quotes, files, state.scratch / t.number, state.me),
             model=t.model(Role.CODE_EDITOR))
     first = latest[0] if latest else None
     if first is None or first.agent_id is None:

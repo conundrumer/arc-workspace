@@ -1,4 +1,4 @@
-"""The reads of git and of the main worktree that the operations loop's procedures
+"""The reads of git and of the main worktree that the operator's procedures
 take their state from: the worktrees, the commits of `master`, the code
 review tags, the task claims, the accepted gate outputs a change writes,
 and the session's scratchpad directory."""

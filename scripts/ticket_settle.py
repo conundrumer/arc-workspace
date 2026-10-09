@@ -1,4 +1,4 @@
-"""The tickets the operations loop gives a ticket analyst to settle after a batch,
+"""The tickets an operator gives a ticket analyst to settle after a batch,
 which the help of `file_ticket.py to-settle` defines."""
 
 from collections.abc import Iterable

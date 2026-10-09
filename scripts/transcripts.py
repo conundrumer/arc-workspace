@@ -43,7 +43,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None) -> Callable[
     them within a state. A read with nothing to stamp, `stamp` None, runs
     again at each new state.
 
-    Each process-life read cache that `loop_state.read_state` reaches,
+    Each process-life read cache that `operator_state.read_state` reaches,
     in any module, is a `state_cache`, so the readers of one state see one
     state, and a change between two states reaches the second."""
     def hold(read: Callable[P, R]) -> Callable[P, R]:

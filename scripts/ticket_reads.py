@@ -1,5 +1,5 @@
-"""The read of the ticket tracker into the `Ticket` values the operations
-loop's procedures read."""
+"""The read of the ticket tracker into the `Ticket` values the operator's
+procedures read."""
 
 import re
 from datetime import UTC, datetime

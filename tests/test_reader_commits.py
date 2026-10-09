@@ -11,7 +11,7 @@ from typing import Any
 from engine import checkout
 
 BEFORE = "9902f864930978d057225b591ef940510bfa6543"
-EDITOR_ID = "a0123456789abcdef"
+OPERATOR_ID = "a0123456789abcdef"
 GENERAL_ID = "afedcba9876543210"
 
 
@@ -42,7 +42,7 @@ def session(tmp: Path) -> Path:
     main.write_text(line(parentUuid=None, type="user", uuid="u0"))
     subs = tmp / "S" / "subagents"
     subs.mkdir(parents=True)
-    for aid, kind in [(EDITOR_ID, "code-editor"), (GENERAL_ID, "general-purpose")]:
+    for aid, kind in [(OPERATOR_ID, "operator"), (GENERAL_ID, "general-purpose")]:
         (subs / f"agent-{aid}.jsonl").write_text(
             line(parentUuid=None, type="user", uuid=f"u{aid}", agentId=aid))
         (subs / f"agent-{aid}.meta.json").write_text(json.dumps({"agentType": kind}))
@@ -92,20 +92,20 @@ def test_subagents(tmp_path: Path) -> None:
     main = session(tmp_path)
     session_start(main)
     start = command("SubagentStart")
-    for aid in (EDITOR_ID, GENERAL_ID):
+    for aid in (OPERATOR_ID, GENERAL_ID):
         run(start, {"hook_event_name": "SubagentStart", "agent_id": aid,
                     "transcript_path": str(main), "cwd": str(checkout.ROOT)})
         assert record(main, aid).read_text().split()[1] == head()
         record(main, aid).write_text(both(BEFORE))
-    run(start, {"hook_event_name": "SubagentStart", "agent_id": EDITOR_ID,
+    run(start, {"hook_event_name": "SubagentStart", "agent_id": OPERATOR_ID,
                 "transcript_path": str(main), "cwd": str(checkout.ROOT)})
-    assert record(main, EDITOR_ID).read_text() == both(BEFORE)
-    denied = call(main, "Bash", {"command": "ls", "timeout": 600000}, EDITOR_ID)
+    assert record(main, OPERATOR_ID).read_text() == both(BEFORE)
+    denied = call(main, "Bash", {"command": "ls", "timeout": 600000}, OPERATOR_ID)
     out = json.loads(run(command("PreToolUse", "Bash|Monitor"), denied))["hookSpecificOutput"]
     assert out["permissionDecision"] == "deny"
-    assert "context agent code-editor" in out["additionalContext"]
-    assert record(main, EDITOR_ID).read_text() == both(head())
+    assert "context agent operator" in out["additionalContext"]
+    assert record(main, OPERATOR_ID).read_text() == both(head())
     agent = command("PreToolUse", "Agent")
-    assert run(agent, call(main, "Agent", {"subagent_type": "code-editor"}, EDITOR_ID)) == ""
-    assert run(agent, call(main, "Agent", {"subagent_type": "code-editor"}, GENERAL_ID)) == ""
+    assert run(agent, call(main, "Agent", {"subagent_type": "operator"}, OPERATOR_ID)) == ""
+    assert run(agent, call(main, "Agent", {"subagent_type": "operator"}, GENERAL_ID)) == ""
     assert record(main, GENERAL_ID).read_text() == both(head())

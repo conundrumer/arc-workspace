@@ -15,7 +15,7 @@
 - Write in a `request` only its title, under `Words` the user's words that the change comes from, quoted, and under `Transcript` your session's id, `$CLAUDE_CODE_SESSION_ID`, then the start and the end of the span in which the user discussed the change: the time of the user's first message on it, and the time of the user's message that holds `file` or `draft`, or an earlier time where the user asks for one, each in UTC as `YYYY-MM-DDTHH:MM:SS`, as `python3 ~/.claude/skills/retrieve/transcripts.py grep --kinds user <pattern> $CLAUDE_CODE_SESSION_ID` prints it.
 - Where the user's later words bear on a `request` you filed, add them under its `Words`, quoted, and write a line in its log, in the status it stands in, whose note says so.
 - Where the user rules on a ticket under `tickets/blocked/` that waits on the user and is no `change`, move it to `tickets/open/`, and record the ruling on it: under its `Words`, quoted, where it is a `request`, and otherwise in the note of the line that moves it.
-- Launch no ticket analyst for a ticket you file. Once a line above writes on a ticket outside `tickets/draft/`, and before you end your turn with no other work, tell the operations loop that tickets are open, as [The operations loop](prompts/agents/notes/launching.md#the-operations-loop) gives.
+- Launch no ticket analyst for a ticket you file. Once a line above writes on a ticket outside `tickets/draft/`, and before you end your turn with no other work, tell an operator that tickets are open, as [Operators](prompts/agents/notes/launching.md#operators) gives.
 
 ## Decisions
 - Where you run no solver pass, read [Decisions](prompts/agents/notes/decisions.md#decisions) before you make a decision on the solver tools or the agents' documents, and before you ask an agent about a choice it made.
@@ -24,13 +24,13 @@
 - To edit a document an agent reads, send a request to the `doc-editor` agent.
 - Before you launch an agent, read [Launching notes](prompts/agents/notes/launching.md), where your context does not hold it.
 - Where you run no solver pass, read [Changes](prompts/agents/notes/changes.md#changes) before you change the code or the documents.
-- While the operations loop runs, run no change yourself, and file it as a ticket once [Tickets](#tickets) has you file it.
+- While an operator of yours runs, run no change yourself, and file it as a ticket once [Tickets](#tickets) has you file it.
 
 ## Worktrees
 - Where an environment update gives as your primary working directory another agent's worktree or the harness refuses your Bash calls in one, act by [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
 
 ## Reports to the user
-- While the operations loop runs, and you report to the user an agent's message, a completion notification or an event the harness reports that reached you meanwhile, open that report with a bold label that gives the agent the message is from or the notification concerns, by the full name of its kind and whether it is yours or the operations loop's, or the harness for an event it reports, and the route by which what you report reached you. Give no agent by its id.
+- While an operator of yours runs, and you report to the user an agent's message, a completion notification or an event the harness reports that reached you meanwhile, open that report with a bold label that gives the agent the message is from or the notification concerns, by the full name of its kind and whether it is yours or an operator's, or the harness for an event it reports, and the route by which what you report reached you. Give no agent by its id.
 
 ## Cards
 - When the user requests cards to help make a decision regarding a solver, launch one handbook agent for all the cards of that request, and tell it to make each based on [card_spec.py](src/study/card_spec.py), to bundle them with `uv run python scripts/cards.py bundle <name> <page> ...` where they are several, to publish the card or the bundle as a private artifact, and to report the artifact's link.

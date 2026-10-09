@@ -1,1 +1,0 @@
-{ "name": "arc-workspace", "owner": { "name": "arc-workspace" }, "plugins": [ { "name": "operations", "source": "./operations", "description": "Runs the session's operations loop, started by /ops." } ] }

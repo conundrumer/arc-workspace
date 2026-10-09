@@ -1,1 +1,0 @@
-{ "name": "operations", "version": "0.1.0", "description": "Runs the session's operations loop, started by /ops: the calls scripts/operate.py gives." }

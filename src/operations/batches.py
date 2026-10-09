@@ -3,9 +3,10 @@ tickets, a code review where the batch merged a change to the code, and two
 agents launched for the rest, one on the profile of the batch's runs and
 one, where the batch merged a change, on the gate's timings and outputs.
 
-A batch is the agents the loop launched since the launch of the previous
-batch's profile agent, other than the agents of After a batch, with the
-changes merged since: those the loop's merge call merged, as `state.Merge` reads it, and those the coordinator gives as
+A batch is the agents the session's operators launched since the launch
+of the previous batch's profile agent, other than the agents of After a
+batch, with the changes merged since: those an operator's merge call
+merged, as `state.Merge` reads it, and those the coordinator gives as
 merged. The launch of the
 profile agent opens the next batch. The ticket analyst on the tickets the
 batch filed is the one `triage` launches on any open ticket."""
@@ -61,26 +62,29 @@ def step(state: State) -> Step | None:
     head = state.commits[0].hash
     if merges and not any(a.launched > since for a in state.agents_of(Role.BATCH_GATE)):
         return Launch(Role.BATCH_GATE, str(n), briefs.batch_gate(state.scratch / f"batch-{n}"))
-    command = under_command(state.session)
-    calls = [c for c in bash_calls(state, command) if c.time > since and c.result is not None
-             and TAKEN.search(c.result) is not None]
-    if not calls:
-        return Bash(command)
-    if calls[-1].error:
-        return Undecided(mctx("`{command}` failed").format(command=command))
-    runs = taken(calls[-1].result or "")
-    if runs is None:
-        return Undecided(mctx("the output of `{command}` gives no run lines in the form "
-                              "`profile_runs.py --help` gives").format(command=command))
+    runs: list[str] = []
+    for op in sorted({a.operator for a in batch} or {state.me}):
+        command = under_command(op)
+        calls = [c for c in bash_calls(state, command) if c.time > since and c.result is not None
+                 and TAKEN.search(c.result) is not None]
+        if not calls:
+            return Bash(command)
+        if calls[-1].error:
+            return Undecided(mctx("`{command}` failed").format(command=command))
+        ids = taken(calls[-1].result or "")
+        if ids is None:
+            return Undecided(mctx("the output of `{command}` gives no run lines in the form "
+                                  "`profile_runs.py --help` gives").format(command=command))
+        runs += ids
     return Launch(Role.BATCH_PROFILE, str(n), briefs.batch_profile(runs, head))
 
 
-def under_command(session: str) -> str:
-    """Step 1 of After a batch, on the runs under the session: the previous
-    call of `--under` that `profile_runs.py --help` defines is the loop's,
-    from its record. A call whose output holds no `runs taken:` line counts
-    as none, and the step is given again."""
-    return f"uv run python scripts/profile_runs.py --under {session}"
+def under_command(operator: str) -> str:
+    """Step 1 of After a batch, which an operator runs itself: the
+    previous call of `--under` that `profile_runs.py --help` defines is an
+    operator's. A call whose output, as a pipe may cut it, holds no
+    `runs taken:` line counts as none, and the step is given again."""
+    return f"uv run python scripts/profile_runs.py --under {operator}"
 
 
 RUN = re.compile(AGENT_ID)
