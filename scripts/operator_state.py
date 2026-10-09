@@ -158,11 +158,11 @@ def last_audit(audits: list[Audit], aid: str) -> float | None:
 
 
 def closed_unaudited(agents: tuple[Agent, ...], listing: list[Listed], audits: list[Audit],
-                     undecided: list[str]) -> list[Listed]:
+                     since: float, undecided: list[str]) -> list[Listed]:
     """The agents of `agents` that `listing` leaves out, so whose work has
-    closed, other than the auditors, whose last ended turn no auditor was
-    launched on after that turn, each as listed where its turn has
-    ended."""
+    closed, other than the auditors, whose last ended turn falls after
+    `since` and no auditor was launched on after that turn, each as listed
+    where its turn has ended."""
     shown = {listed.launch.agent for listed in listing}
     out: list[Listed] = []
     for a in agents:
@@ -182,7 +182,7 @@ def closed_unaudited(agents: tuple[Agent, ...], listing: list[Listed], audits: l
                                   "last ended turn is not audited").format(agent=aid))
             continue
         last = last_audit(audits, aid)
-        if last is not None and last > end:
+        if end <= since or (last is not None and last > end):
             continue
         launch = next((x for x in launches(launcher, undecided) if x.agent == aid), None)
         if launch is None:
@@ -297,19 +297,23 @@ def to_coordinator(session: Path, since: float, undecided: list[str]) -> list[To
     return out
 
 
+def started(aid: str) -> float:
+    t = first_time(find(aid))
+    if t is None:
+        raise Refused(mctx("the transcript of {agent} gives no time").format(agent=aid))
+    return t
+
+
 def read_watch(state: State) -> MonitorState:
     """The state the monitor's steps read, for the session's operators of
     `state`."""
     undecided: list[str] = []
     audits = [a for x in state.agents if (a := audit_of(x, undecided)) is not None]
-    start = first_time(find(state.operators[0]))
-    if start is None:
-        raise Refused(mctx("the transcript of {agent} gives no time").format(
-            agent=state.operators[0]))
+    start = started(state.operators[0])
     session = find(state.session)
     launched = {a.agent_id: a.role for a in state.agents if a.agent_id}
     listing = running_agents(session, undecided)
-    closed = closed_unaudited(state.agents, listing, audits, undecided)
+    closed = closed_unaudited(state.agents, listing, audits, started(state.me), undecided)
     return MonitorState(
         watched=tuple(watched(listing, closed, launched, audits, undecided)),
         to_coordinator=tuple(to_coordinator(session_directory(session), start, undecided)),
