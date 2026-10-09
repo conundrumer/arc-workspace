@@ -31,17 +31,46 @@ form, the step stays held, and the final reply of its applier gives it
 (`undecided`). A launch of an analyst on a held step that failed is not
 itself given to another analyst: its step stays held, and the final reply
 of the operator that made that call gives the step, with the call and the
-text of its failure (`failed`)."""
+text of its failure (`failed`).
+
+A ticket file the read of the tracker left out (`State.unread`) is a step
+the command cannot place, one for each content the file has
+(`unread_steps`), once its last write is `WRITE_SECONDS` old, so that a
+file read while an agent writes it goes to no analyst."""
 
 from controlled_markdown import mctx
 from operations import briefs
 from operations.directives import reply_decisions
 from operations.reports import Label, items_of
 from operations.roles import Purpose, Role, analyst_of, analyst_subject, described
-from operations.state import Agent, State
+from operations.state import Agent, State, Unread
 from operations.final_reply import failure, final_replies, nested
-from operations.handled import ask_again, decided_by
+from operations.handled import ask_again, decided_by, repeated
 from operations.steps import Launch, Send, Step, Undecided, decision_key, rulable
+
+
+WRITE_SECONDS = 30.0
+
+
+def writing(state: State, u: Unread) -> bool:
+    """Whether `u` was written less than `WRITE_SECONDS` ago."""
+    return state.now - u.modified < WRITE_SECONDS
+
+
+def unread_steps(state: State) -> list[Undecided]:
+    """The step on each ticket file the read of the tracker left out, other
+    than one an agent may still write."""
+    return [Undecided(mctx("the ticket file {path} does not read as the operator reads a ticket, "
+                           "so every procedure passes over its ticket: {why} (its content's "
+                           "digest: {digest})").format(path=u.path, why=u.why, digest=u.digest))
+            for u in sorted(state.unread, key=lambda u: u.path) if not writing(state, u)]
+
+
+def unread_files(state: State) -> Step | None:
+    """The first step of `unread_steps` no operator handled, or where each
+    was handled, the first, which its procedure then waits on."""
+    steps = unread_steps(state)
+    return next((s for s in steps if not repeated(s, state)), steps[0] if steps else None)
 
 
 def launch(state: State, step: Undecided) -> Launch:

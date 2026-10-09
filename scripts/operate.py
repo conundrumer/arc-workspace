@@ -33,6 +33,7 @@ from transcripts import Refused, find  # noqa: E402
 from tree_reads import git, main_tree  # noqa: E402
 
 from operations import briefs, plan  # noqa: E402
+from operations.decisions import WRITE_SECONDS  # noqa: E402
 from operations.monitor import NO_SIGN, REPORT_FORM, ROUTES, VERDICT  # noqa: E402
 from operations.roles import PASSES, Role  # noqa: E402
 from operations.filing import filed, with_report  # noqa: E402
@@ -54,6 +55,7 @@ HELP = mctx("""
         - `Override: <task id> <pass> <override>` gives the override, labelled as an override, in the brief of the next launch of that pass on that task.
         - `Override: pass over <step key>` passes over the step whose key it gives, for each operator: `next` gives that step, once, as one its procedure waits on, to a ticket analyst it launches to rule it, other than a launch of a ticket analyst to rule a step, and goes on with the other procedures. A pipeline whose next pass is passed over stops instead. A solver pass's key is `<task id>-<pass>`, its task id and its pass (`analyze`, `create` or `refine`), so a ruling can name a pass that was never printed, and the ruling holds whatever overrides the pass's brief gains.
     - A coordinator's line that opens with `Override:` or `Decision:` in none of these forms goes back to the coordinator once, as undecided. A ticket analyst's reply on a step that gives its decision key, with no ruling in these forms, goes back to it once, and where its answer gives none either, the step stays held. A step `next` cannot place gives no decision key: its ticket analyst makes the act it needs and gives no ruling.
+    - A ticket file whose read refuses or fails, other than a file that moved during the read, leaves its ticket out of every procedure, and a ticket that depends on it waits. `next` gives that file, once for each content it has and once its last write is {write} seconds old, to a ticket analyst it launches, as a step it cannot place, with the read's failure, and goes on with every other procedure. Where the file still does not read once that analyst returned, the final reply gives it.
     - A step `next` printed counts as made by the call the operator made: a Bash call whose command runs the printed command among others, or the call the operator made right after the call of `next` that printed the step.
     - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass, and `restore` puts it back and removes the task's claim, as the section `Passes on a task` of `prompts/agents/notes/launching.md` gives.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives, and the command refuses where the shell gives none.
@@ -126,7 +128,7 @@ def next_step(me: str) -> int:
 
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("--help", "-h"):
-        print(HELP.format(block=BLOCK_SECONDS, reload=RELOAD_SECONDS, report_form=REPORT_FORM.format(
+        print(HELP.format(block=BLOCK_SECONDS, reload=RELOAD_SECONDS, write=round(WRITE_SECONDS), report_form=REPORT_FORM.format(
             no_sign=NO_SIGN, verdict=VERDICT), routes=ROUTES))
         return 0
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)

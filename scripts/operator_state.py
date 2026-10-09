@@ -77,7 +77,7 @@ def read_state(me: str) -> State:
     for line in dict.fromkeys(undecided):
         if line.split(":", 1)[0] in known:
             print(f"operate: undecided: {line}", file=sys.stderr)
-    tickets = read_tickets(tickets_dir)
+    tickets, unread = read_tickets(tickets_dir)
     index = session_index(tickets_dir, session)
     holders = {t.holder for t in tickets.values() if t.status is Status.ASSIGNED and t.holder}
     my_path = dict(runs)[me]
@@ -94,7 +94,7 @@ def read_state(me: str) -> State:
         to_settle=(), worktrees=frozenset(trees), claims=claims(main),
         commits=history, code_review=code_review(main),
         pass_tickets=passes, stalled=stalled,
-        made=made(calls),
+        made=made(calls), unread=unread,
         branches={w: b for w, b in trees.items() if b is not None})
     state = replace(state, taken_up=taken_up(state))
     given = [ticket_number(n) for n in named(state) if n in tickets]

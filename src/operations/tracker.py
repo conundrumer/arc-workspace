@@ -90,6 +90,8 @@ def blocked_on_user(t: Ticket) -> LogLine | None:
 
 
 def closed(state: State, number: str) -> bool:
-    """Whether ticket `number`, which the tracker holds, stands under
-    `tickets/closed/`."""
-    return state.tickets[number].status is Status.CLOSED
+    """Whether ticket `number` stands under `tickets/closed/`. A ticket the
+    read of the tracker left out (`State.unread`) is not known to be
+    closed, so what waits on it waits."""
+    t = state.tickets.get(number)
+    return t is not None and t.status is Status.CLOSED

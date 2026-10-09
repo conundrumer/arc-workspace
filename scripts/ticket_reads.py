@@ -1,6 +1,7 @@
 """The read of the ticket tracker into the `Ticket` values the operator's
 procedures read."""
 
+import hashlib
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,7 +13,7 @@ from ticket_log import WAIT, holder, log_lines, waited_change
 from transcripts import Refused
 
 from operations.roles import editors_of
-from operations.state import LogLine, Ticket
+from operations.state import LogLine, Ticket, Unread
 from ticketing.times import TIME_FORM
 from ticketing.vocabulary import Domain, Kind, Status
 
@@ -56,21 +57,52 @@ def read_ticket(path: Path) -> Ticket:
         after_merge=fields.get("after-merge"), mechanical="mechanical" in fields, log=lines, holder=holder(text), path=path)
 
 
-def read_tickets(tickets: Path) -> dict[str, Ticket]:
-    """Each ticket of the tracker. A ticket that moves between the listing
-    and its read is read again from a new listing. A closed ticket whose
-    name has no number in the form `ticket_files.TICKET_NAME` gives is one
-    no number finds, so no procedure reads it."""
+def read_tickets(tickets: Path) -> tuple[dict[str, Ticket], tuple[Unread, ...]]:
+    """Each ticket of the tracker, and each ticket file whose read refused
+    or failed other than for a move, which it leaves out of the tickets. A
+    ticket that moves between the listing and its read is read again from
+    a new listing. A closed ticket whose name has no number in the form
+    `ticket_files.TICKET_NAME` gives is one no number finds, so no
+    procedure reads it."""
     for _ in range(3):
         try:
-            out = {}
+            out: dict[str, Ticket] = {}
+            unread: list[Unread] = []
             for s in Status:
                 for path in ticket_files(tickets, s):
                     if s is Status.CLOSED and not TICKET_NAME.fullmatch(path.name):
                         continue
-                    t = read_ticket(path)
+                    try:
+                        t = read_ticket(path)
+                    except FileNotFoundError:
+                        raise
+                    except (Refused, ValueError, OSError) as exc:
+                        unread.append(unread_file(path, exc))
+                        continue
                     out[t.number] = t
-            return out
+            return out, tuple(unread)
         except FileNotFoundError:
             continue
     raise Refused(mctx("the tickets moved during three reads of the tracker"))
+
+
+def unread_file(path: Path, exc: Exception) -> Unread:
+    """The file `path`, whose read failed with `exc`. A `FileNotFoundError`
+    here is a move during the read. Where the file's bytes do not read,
+    the digest is that of the failure's text, and where its time of last
+    write does not read, that time is 0, so that its step waits on no
+    write."""
+    why = str(exc) or type(exc).__name__
+    try:
+        data = path.read_bytes()
+    except FileNotFoundError:
+        raise
+    except OSError as failure:
+        data = (str(failure) or type(failure).__name__).encode()
+    try:
+        modified = path.stat().st_mtime
+    except FileNotFoundError:
+        raise
+    except OSError:
+        modified = 0.0
+    return Unread(path, why, hashlib.sha1(data).hexdigest(), modified)

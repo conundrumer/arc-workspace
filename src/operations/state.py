@@ -29,6 +29,20 @@ class LogLine:
 
 
 @dataclass(frozen=True)
+class Unread:
+    """A ticket file the operator's read refused or failed on, which no
+    procedure reads as a ticket: `why` is the read's failure, `digest` a
+    digest of the file's bytes, so that each content it has gives its own
+    step, or where those bytes do not read, of that failure's text, and
+    `modified` the time of its last write, or 0 where that time does not
+    read."""
+    path: Path
+    why: str
+    digest: str
+    modified: float
+
+
+@dataclass(frozen=True)
 class Ticket:
     """A ticket of the tracker. `editors` is None where a `change` gives no
     `editors` field, `mechanical` is whether a `change` gives the
@@ -215,7 +229,8 @@ class State:
     with the call that operator made next (`handled.made`). `messages` holds
     the messages that reached any operator of the session, and `received`
     those that reached `me` or an operator it takes up the lines of
-    (`taken_up`, as `plan.taken_up` gives it)."""
+    (`taken_up`, as `plan.taken_up` gives it). `unread` holds the ticket
+    files the read of the tracker left out of `tickets`."""
     me: str
     now: float
     session: str
@@ -241,6 +256,7 @@ class State:
     pass_tickets: Mapping[str, tuple[str, ...] | None] = field(default_factory=dict)
     made: tuple[Made, ...] = ()
     taken_up: frozenset[str] = frozenset()
+    unread: tuple[Unread, ...] = ()
 
     @property
     def arrived(self) -> list[Message]:

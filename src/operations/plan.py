@@ -21,7 +21,8 @@ that the operators before it in a row that ended so received
 to it.
 
 The steps come in this order: the coordinator's lines in no form the
-command reads, each given back to the coordinator once; the
+command reads, each given back to the coordinator once; the ticket
+files the read of the tracker left out (`decisions.unread_files`); the
 alerts; the tickets on stalled agents; the request to a ticket analyst on a held step to give its decision
 again; the decisions for the user, and the items of each ticket analyst's
 reply for the coordinator; the monitor's steps (`monitor`); at launch,
@@ -34,8 +35,10 @@ is a message an operator already sent is passed over, and so are an
 undecided step an operator already handled (`handled.repeated`) and a step
 an `Override: pass over` ruling passed over (`directives.passed`).
 
-Where no step is ready, and an agent of an operator runs or a ticket of
-the operators' waits on another holder whose work is open, the agent runs
+Where no step is ready, and an agent of an operator runs, a ticket of
+the operators' waits on another holder whose work is open, or a ticket
+file the read of the tracker left out may still be written
+(`decisions.writing`), the agent runs
 the command again, which blocks in the foreground first. Otherwise the
 agent gives its final reply, after the launch of an auditor on its own
 run and the message that sends the coordinator its text (`ending`)."""
@@ -160,7 +163,7 @@ def elsewhere(state: State) -> list[str]:
 
 
 EARLY: tuple[Callable[[State], Step | None], ...] = (
-    unread_lines, alerts.step, alerts.stalls, decisions.asks, triage.decisions, triage.for_coordinator,
+    unread_lines, decisions.unread_files, alerts.step, alerts.stalls, decisions.asks, triage.decisions, triage.for_coordinator,
     triage.unfinished)
 LATE: tuple[Callable[[State], Step | None], ...] = (
     launching, triage.reopen, triage.later_lines, triage.settle, drafts.step, changes.step,
@@ -189,7 +192,8 @@ def next_step(state: State, watch: monitor.MonitorState) -> Step:
     s = first(state, lambda st: monitor_step(st, watch), *LATE)
     if s is not None:
         return s
-    if any(a.pending for a in state.agents) or elsewhere(state):
+    if (any(a.pending for a in state.agents) or elsewhere(state)
+            or any(decisions.writing(state, u) for u in state.unread)):
         return Poll()
     return ending(state, watch, "\n".join([final(state), *unknown]))
 
@@ -321,7 +325,8 @@ def holding(state: State) -> set[str]:
     """The decision keys of the undecided steps the procedures wait on, as
     `placed` gives them."""
     return {decision_key(u.what) for procedure in PROCEDURES
-            if (u := placed(state, procedure)[1]) is not None}
+            if (u := placed(state, procedure)[1]) is not None} | {
+        decision_key(u.what) for u in decisions.unread_steps(state)}
 
 
 def stands(state: State, head: str, step: Step | None) -> tuple[str, bool]:
