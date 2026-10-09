@@ -10,7 +10,7 @@ from pathlib import Path
 from string import Formatter
 
 from controlled_markdown import mctx
-from operations.reports import FOR_COORDINATOR, LIST_MARKER, NO_FINDING, TICKETS_FILED
+from operations.reports import FOR_COORDINATOR, LIST_MARKER, TICKETS_FILED
 from operations.roles import Role
 from operations.tracker import FILE_TICKET
 from ticketing.times import utc_stamp
@@ -77,12 +77,6 @@ def doc_review(number: str, worktree: Path, editors: list[tuple[Role, str]],
     return "\n".join(lines)
 
 
-def new_editor(aid: str) -> str:
-    """The message that gives a doc reviewer the editor launched for its
-    findings."""
-    return mctx("Send your findings on the change to its new editor, {aid}.").format(aid=aid)
-
-
 REVIEW_AGAIN = mctx("Your reply at {time} came before the last report of an editor of the "
                     "change. Review the change again.")
 
@@ -91,20 +85,6 @@ def review_again(time: float) -> str:
     """The message that asks a doc reviewer whose reply at `time` came
     before an editor's last report to review the change again."""
     return REVIEW_AGAIN.format(time=utc_stamp(time))
-
-
-def review_fix(role: Role, number: str, worktree: Path, reviewer: str, files: list[str],
-               scratch: Path, operator: str) -> str:
-    """The brief of an editor launched for a doc reviewer's findings: a doc
-    editor for those on the documents, a code editor, with `files` as the
-    files it may edit, for those on prose in code."""
-    lines = [read_ticket(number), WORK_IN.format(worktree=worktree),
-             mctx("Your items: the findings doc reviewer {reviewer} sends you, each corrected "
-                  "in its line.").format(reviewer=reviewer)]
-    if role is Role.CODE_EDITOR:
-        lines += [MAY_EDIT.format(files=", ".join(files)), TESTS]
-    lines += [SCRATCH.format(scratch=scratch), LAUNCHER.format(operator=operator)]
-    return "\n".join(lines)
 
 
 def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], scratch: Path,
@@ -388,9 +368,6 @@ def go_on(time: float, minutes: float) -> str:
 RESTATE = mctx("What you sent {reader} at {time} is in no form its command reads, so the "
                "command cannot place it. Send it again, in full, in this form: {form}")
 
-REVIEW_FORM = mctx("a report, in your report file, that opens with `{no_finding}`, or that "
-                   "gives each finding as a list item that opens with the path of the file it "
-                   "falls on, in backticks, and a colon.").format(no_finding=NO_FINDING)
 PASS_FORM = mctx("a reply that is the path of your report file alone, on one line, where that "
                  "report has a `{heading}` section.").format(heading=TICKETS_FILED)
 DECISION_FORM = mctx("a reply that gives, on a line of its own, the ruling on the step, in a "

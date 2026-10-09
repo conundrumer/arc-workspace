@@ -36,12 +36,10 @@ report, or precedes the last report only of editors that reviewer sent a
 message, since such an editor sends that reviewer its fixes before each
 reply. A reply that precedes the last report of any other editor is read
 for no finding, and that reviewer is asked once to review the change
-again, and the review is held where it has not replied since. A reply that gives neither that nor a finding in the form
-`reports.FINDING` reads goes back to the doc reviewer once, with a request
-to send it again in that form, and the review is held where its answer is
-still in neither. A reply that gives findings brings a new doc editor for the
-findings on documents and a new code editor for those on `.py` files, and
-the command sends that reviewer their agent ids.
+again, and the review is held where it has not replied since. A reply in
+any other form holds the review. The command launches no editor for a
+reviewer's findings: that reviewer sends them to the editors of its
+brief.
 
 A step of a change that the command cannot place holds that change alone,
 until a `Decision:` line rules it with one of the choices the step gives
@@ -54,19 +52,14 @@ from typing import Literal
 from controlled_markdown import mctx
 from operations import briefs, merging
 from operations.directives import Decision, Directive, decided, held_on, named, numbers
-from operations.reports import (OPEN_LABELS, Label, budget_passed, finding_paths, finished,
-                                items_of, no_finding, standing)
+from operations.reports import (NO_FINDING, OPEN_LABELS, Label, budget_passed, finished, items_of,
+                                no_finding, standing)
 from operations.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
 from operations.state import Agent, State, Ticket
-from operations.steps import (Bash, Launch, Send, Step, Undecided, agent_ids, ask_again, repeated,
+from operations.steps import (Bash, Launch, Send, Step, Undecided, agent_ids, repeated,
                               sends_to, sent)
 from operations.tracker import AGENT, COORDINATOR, closed, log, worktree
 from ticketing.vocabulary import Domain, Kind, Status
-
-
-PROSE_IN_CODE = ".py"
-"""The suffix of the files a doc reviewer's finding on prose in code falls
-on, which a code editor fixes."""
 
 
 def scope(state: State) -> set[str]:
@@ -338,36 +331,11 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
         return review_stale(state, t, w, here, r, reply.time, late)
     if reply is not None and no_finding(r):
         return False
-    since = reply.time if reply is not None else r.launched
-    paths = finding_paths(r)
-    if not paths:
-        if r.agent_id is not None and reply is not None:
-            asked = ask_again(state, r.agent_id, [x.time for x in r.reports], briefs.REVIEW_FORM)
-            if isinstance(asked, Send):
-                return asked
-        return review_decided(state, t, w, here, mctx(
-            "the reply of doc reviewer {agent} on change {number} gives no finding in the form "
-            "the command reads").format(agent=r.agent_id, number=t.number))
-    code = [p for p in paths if p.endswith(PROSE_IN_CODE)]
-    needed = ([Role.DOC_EDITOR] if len(code) < len(paths) else []) + (
-        [Role.CODE_EDITOR] if code else [])
-    fixers = [a for a in here if a.role in needed and a.launched > since]
-    for role in needed:
-        if not any(a.role is role for a in fixers):
-            reviewer = agent_ids([r])
-            if isinstance(reviewer, Undecided):
-                return reviewer
-            return Launch(role, t.number, briefs.review_fix(
-                role, t.number, w, reviewer[0], code if role is Role.CODE_EDITOR else [],
-                state.scratch / t.number, state.me), model=t.model(role))
-    fixer_ids = agent_ids(fixers)
-    if isinstance(fixer_ids, Undecided):
-        return fixer_ids
-    for f in fixer_ids:
-        message = briefs.new_editor(f)
-        if r.agent_id and not sent(state, r.agent_id, message):
-            return Send(r.agent_id, message)
-    return review_decided(state, t, w, here, unreplied(r, t))
+    if reply is None:
+        return review_decided(state, t, w, here, unreplied(r, t))
+    return review_decided(state, t, w, here, mctx(
+        "the reply of doc reviewer {agent} on change {number} does not open with "
+        "`{no_finding}`").format(agent=r.agent_id, number=t.number, no_finding=NO_FINDING))
 
 
 def unreplied(r: Agent, t: Ticket) -> str:

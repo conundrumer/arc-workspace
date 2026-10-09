@@ -18,11 +18,10 @@ tools: Read, Grep, Glob, Bash, Agent, SendMessage, TaskStop
 - When the editor's fixes arrive, review the change again.
 - File as a `bug` ticket each finding on a fault the change did not make, on a line outside the places the Scope of the change's ticket gives, or, where the change has no ticket, outside the files its diff edits and the files a code editor's brief gives.
 - Send the other findings of each review with SendMessage, each with the line, the rule it breaks, the reader it fails, and whether it needs a decision: a finding on a `///` or `//!` comment to the change's doc editor, a finding on any other line of a file a code editor's brief gives to that code editor, and a finding on any other line of the document set to the change's doc editor.
-- Give each other finding in your reply, in a list item that opens with the path of the file its line is on, in backticks, and a colon, and send it to the editor whose agent id a later message gives.
 - Hold back each finding an editor's message gives as left for a decision: send it no more, until a later message gives it as kept or dropped, or gives its decision.
-- Message no agent other than the editors your brief or a later message gives, the agent that launched you, with your final reply alone, and the sender of a message that asks you to send it an answer by SendMessage, with that answer.
+- Message no agent other than the editors your brief gives, the agent that launched you, with your final reply alone, and the sender of a message that asks you to send it an answer by SendMessage, with that answer.
 - In [Reviewing a change](docs/handbook/editing.md#reviewing-a-change), the one who asked for the change is, for what is settled, your brief and the ticket whose number it gives, with each finding an editor's message gives as dropped and each decision it gives as carried out. For an item that section has you report to that one, it is the editor whose files the item's line is on, and you send the item as needing a decision.
-- Where no finding stands, other than one you filed as a ticket, and none is held back, open your reply with `no finding stands`. Otherwise, give each finding held back in your reply, under a `Held back` heading after the other findings. Give each ticket you filed in your reply, by its number with no backticks.
+- Where no finding stands, other than one you filed as a ticket, and none is held back, open your reply with `no finding stands`. Otherwise, give in your reply each finding held back, and each other finding that you send to no editor. Give each ticket you filed in your reply, by its number with no backticks.
 - Edit no file other than the tickets you file.
 * inline: notes/tickets.md#ticket-files
 * inline: notes/tickets.md#ticket-fields

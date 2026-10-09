@@ -1,7 +1,7 @@
 """The fixed forms of the replies of the agents the operator launches that
 the command reads, each written in the document of the agent that writes
 it, and the reads of them. A reply in no such form is read as the form's
-absence: an editor not finished, a review with findings, no place standing
+absence: an editor not finished, a review that does not pass, no place standing
 and no module split."""
 
 import re
@@ -37,12 +37,6 @@ SPLIT = re.compile(r"^\s*[-*]\s+split: `(?P<path>[^`]+)`(?:; left unsplit: (?P<p
 """An item of a code editor's report that gives a module it split, by the
 path a `refactor` ticket cites, with the part it left unsplit, where one
 is."""
-
-FINDING = re.compile(r"^\s*[-*]\s+`(?P<path>[^`]+)`:", re.MULTILINE)
-"""A finding of a doc reviewer's reply, opened by the path of the file it
-falls on."""
-
-HELD_BACK = re.compile(r"^#+\s*Held back\s*$", re.MULTILINE)
 
 FOR_COORDINATOR = "## For the coordinator"
 """The heading at the end of a ticket analyst's reply, over the part of it
@@ -112,16 +106,6 @@ def splits(a: Agent) -> dict[str, str | None]:
     if a.role is not Role.CODE_EDITOR or r is None:
         return {}
     return {m["path"]: m["part"] for m in SPLIT.finditer(r.text)}
-
-
-def finding_paths(a: Agent) -> list[str]:
-    """The paths of the files the findings of a doc reviewer's latest reply
-    fall on, other than those under its `Held back` heading."""
-    r = a.last_report
-    if r is None:
-        return []
-    body = HELD_BACK.split(r.text, 1)[0]
-    return list(dict.fromkeys(m["path"] for m in FINDING.finditer(body)))
 
 
 def coordinator_part(a: Agent) -> tuple[list[tuple[Label, list[str]]], list[str]]:
