@@ -34,6 +34,9 @@
     - Wait on a command you ran in the background yourself as on one the harness moved there.
 * inline: #ending-commands
 - While an agent you launched is running, other than one that a notification has said has not reported yet, run each command that can outlast the Bash call's default timeout in the background, and when no other work is ready, end your turn with a line that names each agent you launched and each command of yours that is still running, and run no other command to wait on them. The harness resumes you when an agent sends you a message, when one of them that no agent has resumed by SendMessage completes, or when a command of yours that runs in the background completes.
+* inline: #handback
+
+## handback
 - Call SubagentHandback only with your final reply, or with the line that says where it went.
     * comment: With the harness's reminder that the call ends the run in its context, an operator waited with `echo waiting` and `true`, and once the hook denied `true`, it called SubagentHandback with `PLACEHOLDER` while its agents ran: agent `a37be74e20c8008ae` of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a`. With that reminder and its line on giving decisions in its final reply in its context, a ticket analyst of that session, then named `triage`, called SubagentHandback while its code editor ran, then sent its final report by SendMessage: agent `ac26fe1a2bcf9beb5`, lines 47 and 80 to 84.
 

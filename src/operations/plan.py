@@ -13,16 +13,19 @@ a `Decision:` line that rules a held step holds for every operator
 (`directives`), and the items for the coordinator of a ticket analyst's
 reply go to the final reply of the operator that carries that reply
 (`steps.carrier`). An operator past its context bound ends at once
-too, and once its work is no longer open, the operator the coordinator
-launches next takes up, through `changes.release`, the changes of the
-session and of the tickets named to it.
+too, and asks the coordinator for a fresh operator with no lines; the
+operator the coordinator launches next takes up from the state each line
+that the operators before it in a row that ended so received
+(`taken_up`), and, once their work is no longer open, through
+`changes.release`, the changes of the session and of the tickets named
+to it.
 
 The steps come in this order: the coordinator's lines in no form the
-command reads, each given back to the coordinator once; the monitor's
+command reads, each given back to the coordinator once; the auditors'
 alerts; the request to a ticket analyst on a held step to give its decision
 again; the decisions for the user, and the items of each ticket analyst's
-reply for the coordinator; at launch, the release of tickets;
-the move back to `tickets/open/` of the tickets the coordinator wrote on
+reply for the coordinator; the monitor's steps (`monitor`); at launch,
+the release of tickets; the move back to `tickets/open/` of the tickets the coordinator wrote on
 under `tickets/blocked/` or `tickets/closed/`; the coordinator's later
 lines to the ticket analysts that run on their tickets; the ticket
 analysts on open tickets; the review
@@ -31,20 +34,15 @@ is a message an operator already sent is passed over, and so are an
 undecided step an operator already handled (`steps.repeated`) and a step
 an `Override: pass over` ruling passed over (`directives.passed`).
 
-Where no step is ready and an agent the operator launched or last
-resumed itself runs, other than one a notification said has not reported
-yet, the command has the agent start its wait in the background and end
-its turn, or end its turn where that wait already runs, since the agent's report wakes it; once
-`steps.WAIT_CAP` waits in a row found nothing, the agent ends its turn
-with no new wait. Where none runs, and an agent of an operator runs or a
-ticket of the operators' waits on another holder whose work is open, the
-agent runs the command again, which blocks in the foreground first. Otherwise the agent
-stops its wait where one runs, then gives its final reply."""
+Where no step is ready, and an agent of an operator runs or a ticket of
+the operators' waits on another holder whose work is open, the agent runs
+the command again, which blocks in the foreground first. Otherwise the
+agent gives its final reply."""
 
 from collections.abc import Callable
 
 from controlled_markdown import mctx
-from operations import alerts, batches, changes, decisions, drafts, passes, triage
+from operations import alerts, batches, changes, decisions, drafts, monitor, passes, triage
 from operations.directives import (
     NUMBER,
     TASK,
@@ -59,29 +57,25 @@ from operations.roles import Role, description
 from operations.state import State, Ticket
 from ticketing.vocabulary import Status
 from operations.steps import (
-    WAIT_CAP,
-    WAIT_SECONDS,
+    FINAL_REPLY,
     Bash,
-    EndTurn,
     Launch,
     Poll,
     Reply,
     Step,
-    StopWait,
     Undecided,
-    Wait,
     bash_calls,
     decision_key,
     failure,
-    is_wait,
+    is_next,
     key,
     nested,
-    only_command,
     repeated,
     unread_line,
 )
 
-ENDED_FOR_CONTEXT = "ended for my context"
+FOR_CONTEXT = mctx("I ended for my context: launch a fresh operator with no lines, which "
+                   "takes up from the state each line below that stands unfinished.")
 GIVEN_AGAIN = "a line below that stands unfinished reaches it only where it is given to it again"
 
 
@@ -183,53 +177,57 @@ LATE: tuple[Callable[[State], Step | None], ...] = (
 PROCEDURES = EARLY + LATE
 
 
-def next_step(state: State) -> Step:
+def next_step(state: State, watch: monitor.MonitorState) -> Step:
+    """The operator's next step, where `watch` is the state the monitor's
+    steps read. Each reply gives, after its lines, each line
+    `monitor.undecided` gives."""
+    unknown = [f"- {line}" for line in dict.fromkeys(monitor.undecided(watch))]
     mine = state.operators.index(state.me) if state.me in state.operators else -1
     later = [o for o in state.operators[mine + 1:] if o in state.open_operators]
     if later:
         return Reply(mctx("Operator {operator} carries the work on, from the state; "
                           "{given}.").format(operator=later[-1], given=GIVEN_AGAIN)
-                     + "\n" + "\n".join(reply_lines(state)))
+                     + "\n" + "\n".join([*reply_lines(state), *unknown]))
     s = first(state, *EARLY)
     if s is not None:
         return s
     if state.past_bound:
-        return Reply(mctx("I {ended}; the next operator takes up the work from the state, "
-                          "and {given}.").format(ended=ENDED_FOR_CONTEXT, given=GIVEN_AGAIN)
-                     + "\n" + "\n".join(reply_lines(state)))
-    s = first(state, *LATE)
+        return Reply(FOR_CONTEXT + "\n" + "\n".join([*reply_lines(state), *unknown]))
+    s = first(state, lambda st: monitor_step(st, watch), *LATE)
     if s is not None:
         return s
-    mine = [a for a in state.agents if a.pending and a.operator == state.me and a.notifies]
-    if mine and not all(a.still_running for a in mine):
-        if state.wait_task:
-            return EndTurn()
-        return EndTurn(capped=True) if idle_waits(state) >= WAIT_CAP else Wait()
     if any(a.pending for a in state.agents) or elsewhere(state):
         return Poll()
-    if state.wait_task:
-        return StopWait(state.wait_task)
-    return Reply(final(state))
+    return Reply("\n".join([final(state), *unknown]))
 
 
-def idle_waits(state: State) -> int:
-    """How many of the operator's waits in a row started with no message,
-    no report of its agents and no other call of its between them. Waits
-    that start within half of `WAIT_SECONDS` of the one counted before them
-    ended together, and count as one."""
-    own = [c for c in state.calls if c.operator == state.me]
-    waits = [c for c in own
-             if c.tool == "Bash" and is_wait(str(c.input.get("command", "")), state.me)]
-    events = [m.time for m in state.received]
-    events += [r.time for a in state.agents if a.operator == state.me for r in a.reports]
-    events += [c.time for c in own if not (c.tool == "Bash" and only_command(
-        str(c.input.get("command", "")), state.me))]
-    since = max(events, default=0.0)
-    count, last = 0, -WAIT_SECONDS
-    for c in waits:
-        if c.time > since and c.time - last >= WAIT_SECONDS / 2:
-            count, last = count + 1, c.time
-    return count
+def monitor_step(state: State, watch: monitor.MonitorState) -> Step | None:
+    """The monitor's next step, where an escalation to an operator gives
+    the step `alerts.on_escalation` gives, and counts as handled once that
+    step is none or repeated."""
+    def given(e: monitor.ToOperator) -> Step | None:
+        return alerts.on_escalation(state, e.kind, e.agent_id, e.text, e.time)
+
+    def handled(e: monitor.ToOperator) -> bool:
+        return (s := given(e)) is None or repeated(s, state)
+
+    s = monitor.step(watch, handled)
+    return given(s) if isinstance(s, monitor.ToOperator) else s
+
+
+def taken_up(state: State) -> frozenset[str]:
+    """The operators launched right before `me`, in a row, each of which
+    `next` printed the final reply `FOR_CONTEXT`."""
+    mine = state.operators.index(state.me) if state.me in state.operators else 0
+    ended = f"{FINAL_REPLY}\n{FOR_CONTEXT}\n"
+    out: set[str] = set()
+    for o in reversed(state.operators[:mine]):
+        if not any(c.operator == o and c.tool == "Bash"
+                   and is_next(str(c.input.get("command", "")), o)
+                   and (c.result or "").startswith(ended) for c in state.calls):
+            break
+        out.add(o)
+    return frozenset(out)
 
 
 def pipeline_state(o: passes.Outcome | None) -> str | None:

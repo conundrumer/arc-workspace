@@ -1,27 +1,45 @@
 """The assembly of the state the operator's procedures read, from the reads
 of the ticket tracker, of git and the main worktree, and of the
-transcripts of the session's operators."""
+transcripts of the session's operators, and of the state the monitor's
+steps read (`read_watch`), from those and from the session's running
+agents and the coordinator's transcript."""
 
+import contextlib
+import io
 import os
+import statistics
 import sys
 import time
 from dataclasses import replace
+from pathlib import Path
 
-from context_bound_hook import past_bound
+from agent_launches import session_launches
+from agent_turns import first_time
+from budgets import budgets_in_force
+from context_bound_hook import OPERATOR, past_bound
 from controlled_markdown import mctx
-from open_agents import work_open
+from filed_texts import report_file, report_text
+from open_agents import Listed, running_agents, work_open
 from operator_reads import (ended_elsewhere, ended_with, operator_runs, read_operator,
-                            stalled_reports, wait_task)
-from run_reads import context_size
+                            stalled_reports)
+from run_prints import active_of, print_running
+from run_reads import agent_messages, agent_type, context_size, notifications, run_entries, session_agents
+from run_reads import Status as TaskStatus
+from senders import AUDITOR
 from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
 from ticket_settle import to_settle
-from transcripts import Refused, entries_back, find, new_state
+from transcripts import Refused, entries_back, epoch, find, main_transcript, new_state, session_directory
 from tree_reads import claims, code_review, commits, gate_outputs, main_tree, scratch, worktrees
 
 from operations.directives import named
+from operations.plan import taken_up
+from operations import monitor
+from operations.monitor import (HUNG_FACTOR, Audit, Facet, MonitorState, Read, Sending,
+                                ToCoordinator, Watched)
+from operations.roles import Role
 from operations.state import Agent, Call, Message, Report, State
-from operations.steps import made
+from operations.steps import BLOCK_SECONDS, made
 from operations.tracker import worktree
 from ticketing.vocabulary import Status
 
@@ -70,10 +88,11 @@ def read_state(me: str) -> State:
         tickets=tickets, agents=tuple(sorted(agents, key=lambda a: a.launched)),
         calls=tuple(sorted(calls, key=lambda c: c.time)), messages=tuple(messages),
         to_settle=(), worktrees=frozenset(trees), claims=claims(main),
-        commits=history, code_review=code_review(main), wait_task=wait_task(me, my_path),
+        commits=history, code_review=code_review(main),
         pass_tickets=passes, stalled=stalled,
         made=made(calls),
         branches={w: b for w, b in trees.items() if b is not None})
+    state = replace(state, taken_up=taken_up(state))
     given = [ticket_number(n) for n in named(state) if n in tickets]
     held = {w for t in tickets.values() if t.status is Status.ASSIGNED and t.holder == me
             and (w := worktree(t, state)) is not None}
@@ -81,3 +100,150 @@ def read_state(me: str) -> State:
                    to_settle=tuple(str(n) for n in to_settle(tickets_dir, index, given)
                                    if str(n) in tickets),
                    gate_outputs={w: gate_outputs(w) for w in held})
+
+
+UNWATCHED = frozenset({OPERATOR, AUDITOR})
+"""The agent types the monitor's steps do not watch."""
+
+
+def usual(listed: Listed, listing: list[Listed], label: str) -> float:
+    """The median duration of the ended calls of `listed` with `label`, or
+    where it has none, of those of every run of `listing`, or where none
+    has one, `BLOCK_SECONDS`."""
+    def ended(runs: list[Listed]) -> list[float]:
+        return [s.end - s.start for r in runs for s in r.run.spans
+                if s.label == label and s.end is not None]
+    durations = ended([listed]) or ended(listing)
+    return statistics.median(durations) if durations else BLOCK_SECONDS
+
+
+def hung_at(listed: Listed, listing: list[Listed]) -> float | None:
+    """The earliest time a call of `listed` in flight passed `HUNG_FACTOR`
+    times its label's usual time, or None where none has."""
+    now = time.time()
+    times = [at for s in listed.run.in_flight
+             if (at := s.start + HUNG_FACTOR * usual(listed, listing, s.label)) <= now]
+    return min(times, default=None)
+
+
+def activity(listed: Listed) -> float:
+    """The time of the latest call, end of a call, end of the turn or
+    report of `listed`."""
+    r = listed.run
+    times = [s.start for s in r.spans] + [s.end for s in r.spans if s.end is not None]
+    times += [rep.time for rep in listed.found or []]
+    if listed.end is not None:
+        times.append(listed.end)
+    if r.start is not None:
+        times.append(r.start)
+    return max(times, default=0.0)
+
+
+def facts(listed: Listed, since: float | None, undecided: list[str]) -> str:
+    """The listing `profile_runs.py --running` prints of `listed`, with its
+    calls since `since`."""
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        print_running([listed], time.time(), since, undecided)
+    return out.getvalue().rstrip("\n")
+
+
+def watched(listing: list[Listed], audits: list[Audit], undecided: list[str]) -> list[Watched]:
+    out: list[Watched] = []
+    now = time.time()
+    for listed in listing:
+        r = listed.run
+        aid = listed.launch.agent
+        if aid is None or r.agent_type in UNWATCHED:
+            continue
+        past = [a.launched for a in audits if a.facet is Facet.AGENT and a.agent_id == aid]
+        budget = next(reversed(budgets_in_force(r, undecided)), None)
+        active = active_of(listed, now)
+        out.append(Watched(
+            agent_id=aid, agent_type=r.agent_type, parent=listed.parent,
+            activity=activity(listed), hung=hung_at(listed, listing),
+            over_budget=budget is not None and active is not None and active > budget * 60,
+            facts=facts(listed, max(past, default=None), undecided), transcript=r.path))
+    return out
+
+
+def audit_of(a: Agent, undecided: list[str]) -> Audit | None:
+    """The audit the launch `a` gives, or None where it is no auditor's, or
+    where its subject is in no form `monitor.subject` gives: that launch
+    counts as no audit, so the activity it was to audit stays new, and
+    `undecided` gains a line on it."""
+    if a.role is not Role.OP_AUDITOR or a.agent_id is None:
+        return None
+    given = monitor.subject_of(a.subject)
+    if given is None:
+        undecided.append(mctx("{agent}: this auditor's launch has the subject `{subject}`, in "
+                              "no form the command gives, so it counts as no audit")
+                         .format(agent=a.agent_id, subject=a.subject))
+        return None
+    replies = tuple(r.time for r in a.reports)
+    read, found = Read.PENDING, None
+    if a.last_report is not None and not a.pending:
+        text: str | None = a.last_report.text
+        path = report_file(a.last_report.text)
+        if path is not None:
+            text = report_text(path, a.agent_id, undecided)
+        if text is None:
+            read = Read.GONE
+        else:
+            found = monitor.finding(text)
+            read = Read.UNREAD if found is None else Read.READ
+    return Audit(a.agent_id, *given, a.launched, replies, read, found)
+
+
+def sendings(calls: list[Call]) -> list[Sending]:
+    return [Sending(str(c.input.get("to", "")), str(c.input.get("message", "")), c.time)
+            for c in calls if c.tool == "SendMessage" and not c.error]
+
+
+def to_coordinator(session: Path, since: float, undecided: list[str]) -> list[ToCoordinator]:
+    """The messages to the coordinator from a watched agent of the session, and the notifications of the end of
+    one, that the coordinator's transcript gained since `since`."""
+    parents = {kid: launcher for launcher, kids in session_launches(session)[1].items()
+               for kid in kids}
+    agents: dict[str, tuple[str, str, Path]] = {}
+    for aid, p in session_agents(session).items():
+        kind = agent_type(p)
+        if kind is None or kind in UNWATCHED:
+            continue
+        if aid not in parents:
+            undecided.append(mctx("{agent}: no `.meta.json` gives its parent, so its messages "
+                                  "to the coordinator are not audited").format(agent=aid))
+            continue
+        agents[aid] = (kind, parents[aid], p)
+    out: list[ToCoordinator] = []
+    for e in run_entries(main_transcript(session)):
+        stamp = e.get("timestamp")
+        if e.get("type") != "user" or not stamp or (t := epoch(stamp)) <= since:
+            continue
+        for sender, text in agent_messages(e):
+            if sender in agents:
+                out.append(ToCoordinator(sender, *agents[sender], t, text))
+        for n in notifications(e):
+            if n.status is TaskStatus.RUNNING:
+                continue
+            for aid in n.ids:
+                if aid in agents:
+                    out.append(ToCoordinator(aid, *agents[aid], t, n.result or n.note or ""))
+    return out
+
+
+def read_watch(state: State) -> MonitorState:
+    """The state the monitor's steps read, for the session's operators of
+    `state`."""
+    undecided: list[str] = []
+    audits = [a for x in state.agents if (a := audit_of(x, undecided)) is not None]
+    start = first_time(find(state.operators[0]))
+    if start is None:
+        raise Refused(mctx("the transcript of {agent} gives no time").format(
+            agent=state.operators[0]))
+    session = find(state.session)
+    return MonitorState(
+        watched=tuple(watched(running_agents(session, undecided), audits, undecided)),
+        to_coordinator=tuple(to_coordinator(session_directory(session), start, undecided)),
+        audits=tuple(audits), sendings=tuple(sendings(list(state.calls))),
+        operators=frozenset(state.operators), undecided=tuple(undecided))

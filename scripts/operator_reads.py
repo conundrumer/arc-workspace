@@ -3,8 +3,7 @@ that ran `operate.py`, each operator's calls, the messages it received, each rea
 gives it, and
 the agents it launched, with their reports and the agents each doc
 reviewer sent a message, the outcome of its merge
-calls, the tickets its solver passes filed, and its wait in the
-background."""
+calls, and the tickets its solver passes filed."""
 
 import math
 import re
@@ -21,10 +20,10 @@ from filed_texts import unfiled
 from merge_change import conflicted, left_edits, ran
 from open_agents import work_open
 from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks, is_prompt,
-                       message_text, notifications, notified, output_file, run_entries,
-                       run_sessions, session_agents, text_of)
+                       message_text, notifications, output_file, run_entries,
+                       run_sessions, session_agents, text_of, type_in)
 from run_reads import Status as TaskStatus
-from senders import Sender, sender
+from senders import AUDITOR, Sender, sender
 from ticket_numbers import TICKET_NUMBER
 from transcripts import epoch, find, read_entries, session_directory
 
@@ -33,7 +32,7 @@ from operations.merging import MERGE_SCRIPT, merge_messages
 from operations.reports import TICKETS_FILED
 from operations.roles import PASSES, Role, described
 from operations.state import Agent, Call, Merge, Message, Report
-from operations.steps import COMMAND, is_next, is_wait, unfenced
+from operations.steps import COMMAND, is_next, unfenced
 
 
 def merge_outcome(aid: str, command: str, time: float, result: str | None, error: bool,
@@ -172,7 +171,8 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
                 where = mctx("{run}: a message from").format(run=aid)
                 messages += [Message(aid, epoch(stamp), s, unfiled(
                     unfenced(text), f"{where} {s}", undecided))
-                             for s, text in agent_messages(e) if s not in children]
+                             for s, text in agent_messages(e)
+                             if s not in children or type_in(sessions, s) == AUDITOR]
     for call, (t, inp, tool) in uses.items():
         text, error = results.get(call, (None, False))
         if call in moved:
@@ -311,39 +311,3 @@ def ended_elsewhere(agents: list[Agent], me: str) -> dict[str, Report | None]:
             continue
         out[a.agent_id] = reply_to(a, a.launched)
     return out
-
-
-def wait_task(me: str, path: Path) -> str | None:
-    """The ID of the operator's wait in the background that has not ended:
-    no notification of it reached the operator, in a user entry or in a
-    message queued while it worked, and no TaskStop call of the operator
-    on it has its result."""
-    entries = run_entries(path)
-    waits: set[str] = set()
-    stops: dict[str, str] = {}
-    for e in entries:
-        for b in blocks(e, "tool_use") if e.get("type") == "assistant" else []:
-            inp = b.get("input") or {}
-            if not (call := b.get("id")):
-                continue
-            if b.get("name") == "Bash" and is_wait(str(inp.get("command", "")), me):
-                waits.add(call)
-            elif b.get("name") == "TaskStop" and inp.get("task_id"):
-                stops[call] = str(inp["task_id"])
-    started: list[str] = []
-    ended: set[str] = set()
-    for e in entries:
-        if e.get("type") == "assistant":
-            continue
-        ended.update(notified(e))
-        if e.get("type") != "user":
-            continue
-        result = e.get("toolUseResult")
-        for b in blocks(e, "tool_result"):
-            call = b.get("tool_use_id")
-            if call in waits and isinstance(result, dict) and result.get(BACKGROUND_TASK):
-                started.append(str(result[BACKGROUND_TASK]))
-            if call in stops:
-                ended.add(stops[call])
-    running = [t for t in started if t not in ended]
-    return running[-1] if running else None

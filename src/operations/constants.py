@@ -8,8 +8,7 @@ COORDINATOR = "main"
 the main session's messages."""
 
 WAIT_SECONDS = 240
-"""The interval of the keep-alive timer, and the longest wait of
-`scripts/operate.py wait` in the background, which replaces it."""
+"""The interval of the keep-alive timer."""
 
 FOREGROUND_MS = 240000
 """The bound `scripts/pending_wait_hook.py` holds a subagent's foreground

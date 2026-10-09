@@ -1,25 +1,29 @@
-"""The steps of `op-monitor`, as `scripts/monitor.py` prints them: a launch
-of an `op-auditor` on an agent or on a message to the coordinator, a
-budget alert or an escalation as a Send step, a run of the command again, or the monitor's
-final reply. The command keeps no state of its own: it reads back each
-audit from its launch's description, each alert it sent from the
-monitor's own transcript, and each auditor's alert from its report file.
+"""The monitor's steps, which the operator's command gives among its own
+(`plan`): a launch of an `op-auditor` on an agent or on a message to the
+coordinator, the request to an auditor to write its report again, and a
+budget alert or an escalation as a Send step. The command keeps no state
+of its own: it reads back each audit from its launch's description by an
+operator of the session, each alert sent from the operators' transcripts,
+and each auditor's alert from its report file.
 
-The watched agents are the agents of the session other than the monitor
-and the auditors it launched, so no auditor, and no alert of one, is
-itself audited."""
+The watched agents are the agents of the session other than the operators
+and the auditors, so no auditor, and no alert of one, is itself audited.
+A budget alert on an agent an operator of the session launched goes to
+the agent itself (`alerts.to_agent`). An escalation that would reach an
+operator of the session is no message: it gives the operator the step an
+alert of its kind on that agent gives (`ToOperator`, `alerts.on`), once."""
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
 from controlled_markdown import mctx
-from operations.alerts import AlertKind, opened, opening
+from operations.alerts import AlertKind, opened, opening, to_agent
 from operations.constants import COORDINATOR
-from operations.reports import FOR_COORDINATOR, Label
 from operations.roles import Role
-from operations.steps import Launch, Poll, Reply, Send, Step, asked_again
+from operations.steps import Launch, Send, Step, asked_again
 from ticketing.times import utc_stamp
 
 
@@ -80,10 +84,10 @@ REPORT_FORM = mctx("- An auditor's report file holds a first line `{no_sign}`, o
                    "alert, a second line `{to}<recipient>` gives the agent id or `main` it sent "
                    "it to. The last line is `{verdict}<verdict>`, with its verdict on the agent "
                    "on one line.")
-"""The form of an auditor's report, which the `--help` of `scripts/monitor.py`
+"""The form of an auditor's report, which the `--help` of `scripts/operate.py`
 gives."""
 
-REPORT_POINTER = mctx("Write your report file in the form `uv run python scripts/monitor.py "
+REPORT_POINTER = mctx("Write your report file in the form `uv run python scripts/operate.py "
                       "--help` gives for an auditor's report.")
 
 
@@ -153,11 +157,13 @@ class Sent:
 
 @dataclass(frozen=True)
 class MonitorState:
+    """`sendings` holds the SendMessage calls of the session's operators,
+    and `operators` the agent ids of those operators."""
     watched: tuple[Watched, ...]
     to_coordinator: tuple[ToCoordinator, ...]
     audits: tuple[Audit, ...]
     sendings: tuple[Sending, ...]
-    operator_runs: bool
+    operators: frozenset[str]
     undecided: tuple[str, ...]
     """The lines on what the read of the state left unknown."""
 
@@ -175,8 +181,8 @@ def sent_times(state: MonitorState, to: str, message: str) -> list[float]:
     return [s.time for s in state.sendings if s.to == to and message in s.text]
 
 
-MONITOR = mctx("the monitor")
-"""The reader `briefs.restate` names in the monitor's command."""
+MONITOR = mctx("the operator")
+"""The reader `briefs.restate` names in the monitor's steps."""
 
 NONE = mctx("none")
 
@@ -246,12 +252,22 @@ def subject_of(text: str) -> tuple[Facet, str, int | None] | None:
 BUDGET_ALERT = mctx("Its active time is past its budget.")
 ESCALATION = mctx("An alert on this agent got no answer: the agent shows no new activity "
                   "since, or the next audit gave the same alert.")
-FINAL = mctx("No operator of the session runs.")
 
 
 def audits_on(state: MonitorState, facet: Facet, agent: str) -> list[Audit]:
     return sorted((a for a in state.audits if a.facet is facet and a.agent_id == agent),
                   key=lambda a: a.launched)
+
+
+@dataclass(frozen=True)
+class ToOperator:
+    """An escalation that would reach an operator of the session: the kind
+    of its alert, the agent it is on, its text, and the time of the audit
+    that gave it."""
+    kind: AlertKind
+    agent_id: str
+    text: str
+    time: float
 
 
 def escalated_to(recipient: str, agent: Watched) -> str | None:
@@ -264,12 +280,15 @@ def escalated_to(recipient: str, agent: Watched) -> str | None:
     return None
 
 
-def escalation(state: MonitorState, w: Watched) -> Send | None:
+def escalation(state: MonitorState, w: Watched,
+               handled: Callable[[ToOperator], bool]) -> Send | ToOperator | None:
     """The escalation one level of the alert an auditor sent on `w`, where
     `w` shows no new activity since the latest audit gave its kind, or the
     next audit on `w` gives the same kind again. Of the audits that give
     that kind in a row, the alert escalated is the latest one sent before
-    the latest audit, or where none was, the latest audit's own."""
+    the latest audit, or where none was, the latest audit's own. One that
+    would reach an operator is a `ToOperator`, or None where `handled`
+    holds for it."""
     done = [(a, f) for a in audits_on(state, Facet.AGENT, w.agent_id)
             if (f := outcome(state, a)) is not None]
     if not done or done[-1][1].alert is None:
@@ -290,10 +309,14 @@ def escalation(state: MonitorState, w: Watched) -> Send | None:
     recipient = sent[-1].recipient
     assert recipient is not None
     to = escalated_to(recipient, w)
+    text = opening(kind, w.agent_id) + "\n\n" + ESCALATION
+    if to in state.operators:
+        given = ToOperator(kind, w.agent_id, text, last.launched)
+        return None if handled(given) else given
     if to is None or any(s.agent_id == w.agent_id and s.kind is kind and s.to == to
                          for s in sent_alerts(state)):
         return None
-    return Send(to, opening(kind, w.agent_id) + "\n\n" + ESCALATION)
+    return Send(to, text)
 
 
 def needs_audit(state: MonitorState, w: Watched) -> bool:
@@ -340,28 +363,31 @@ def message_brief(m: ToCoordinator) -> str:
         REPORT_POINTER])
 
 
-def final_reply(state: MonitorState) -> str:
-    """`FINAL`, with an `unfinished` item for the coordinator on each line
-    `undecided` gives."""
-    lines = list(dict.fromkeys(undecided(state)))
-    if not lines:
-        return FINAL
-    return "\n".join([FINAL, "", FOR_COORDINATOR,
-                      *(f"- {Label.UNFINISHED}: {line}" for line in lines)])
+def budget_alert(state: MonitorState, w: Watched) -> Send:
+    """The budget alert on `w`: to `w` itself where an operator of the
+    session launched it, and otherwise to its parent."""
+    alert = opening(AlertKind.BUDGET, w.agent_id) + "\n\n" + BUDGET_ALERT
+    if w.parent in state.operators:
+        return Send(w.agent_id, to_agent(alert))
+    return Send(w.parent, alert)
 
 
-def step(state: MonitorState) -> Step:
-    """The monitor's next step."""
+def step(state: MonitorState, handled: Callable[[ToOperator], bool]
+         ) -> Step | ToOperator | None:
+    """The monitor's next step, or None where none is ready, where
+    `handled` holds for an escalation to an operator that the operator
+    already acted on."""
     for a in state.audits:
         if a.read is Read.UNREAD and isinstance(asked := ask(state, a), Send):
             return asked
     alerts = sent_alerts(state)
     for w in state.watched:
         if w.over_budget and not any(s.kind is AlertKind.BUDGET and s.agent_id == w.agent_id
-                                     for s in alerts):
-            return Send(w.parent, opening(AlertKind.BUDGET, w.agent_id) + "\n\n" + BUDGET_ALERT)
+                                     for s in alerts) and not sent_times(
+                state, w.agent_id, opening(AlertKind.BUDGET, w.agent_id)):
+            return budget_alert(state, w)
     for w in state.watched:
-        if (s := escalation(state, w)) is not None:
+        if (s := escalation(state, w, handled)) is not None:
             return s
     for w in state.watched:
         if needs_audit(state, w):
@@ -375,7 +401,5 @@ def step(state: MonitorState) -> Step:
                    and a.on_time == int(m.time) for a in state.audits):
             return Launch(Role.OP_AUDITOR, subject(Facet.MESSAGE, m.agent_id, m.time),
                           message_brief(m))
-    if not state.operator_runs:
-        return Reply(final_reply(state))
-    return Poll()
+    return None
 

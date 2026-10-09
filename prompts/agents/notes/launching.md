@@ -103,9 +103,9 @@
     3. Remove the claim file.
 
 ## Operators
-- When you launch an operator while no `op-monitor` runs, launch an `op-monitor` in the background.
 - Send each line you give an operator to a running operator of yours, and where none runs, launch a new operator with it. Give it in a form [An operator's brief](#an-operators-brief) gives, with nothing else in that message.
 - To tell an operator that tickets are open, give it `Tickets are open.`
+- When an operator's final reply asks for a fresh operator, launch one with a brief that gives no line.
 - When an alert of kind `message` reaches you, judge from the sender's transcript whether that message answers a request of another agent and none of yours. Where it does, file its sending as a ticket of the kind that fits it, on the sender, with the alert as its evidence, and tell an operator that tickets are open before you end your turn with no other work. Relay nothing of that alert to the user, and send nothing to the sender on it.
 - When an operator's message, or a paragraph of it, that opens with `undecided:` reaches you, send the operator again the line of yours it gives, in a form [An operator's brief](#an-operators-brief) gives.
 - When an operator's message that opens with `for the coordinator:` reaches you, read the file it gives.

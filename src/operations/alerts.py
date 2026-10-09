@@ -1,4 +1,4 @@
-"""The alerts of `op-monitor` and its auditors that reach an operator, and the steps they give.
+"""The alerts of the monitor's steps and of the auditors that reach an operator, and the steps they give.
 
 An alert opens with a line of the form `alert: <kind> <agent id>`
 (`OPENING`), with the kind of `AlertKind` and the agent it is on. On an agent an
@@ -14,8 +14,8 @@ operator of the session launched whose work is open:
 An alert on the operator `me` that reached `me` gives no step: the
 operator's next `next` is its return to the calls the command prints. Any
 other alert, and an alert on any other agent no operator launched, are
-undecided. A message from an agent no operator launched that is no alert
-goes back to its sender once, with a request to send it again as an
+undecided. A message from an auditor, or from an agent no operator
+launched, that is no alert goes back to its sender once, with a request to send it again as an
 alert, or to say that it is none, and is undecided where the sender's next
 message is still no alert. An undecided alert or message goes to a ticket
 analyst launched on it (`decisions`), other than one an operator already
@@ -34,7 +34,7 @@ from enum import Enum
 
 from controlled_markdown import mctx
 from operations import briefs
-from operations.roles import AGENT_ID
+from operations.roles import AGENT_ID, Role
 from operations.state import Agent, Message, State
 from operations.steps import Bash, Send, Step, Undecided, ask_again, repeated
 from operations.tracker import AGENT, FILE_TICKET
@@ -92,10 +92,10 @@ BUDGET_MESSAGE = (mctx("A monitor's alert: your active time is past your budget.
                   + briefs.AT_BUDGET)
 
 
-def to_agent(alert: Alert) -> str:
-    """The message to the agent of a `budget` alert, with the alert under
-    it."""
-    return BUDGET_MESSAGE + "\n\n" + alert.message.text
+def to_agent(alert: str) -> str:
+    """The message to the agent of the `budget` alert `alert`, with the
+    alert under it."""
+    return BUDGET_MESSAGE + "\n\n" + alert
 
 
 def latest(state: State, agent: str) -> Agent | None:
@@ -127,7 +127,7 @@ def on(state: State, alert: Alert, a: Agent) -> Step | None:
     """The step `alert` gives on `a`, an agent an operator launched."""
     match alert.kind:
         case AlertKind.BUDGET:
-            return Send(alert.agent, to_agent(alert)) if a.pending else None
+            return Send(alert.agent, to_agent(alert.message.text)) if a.pending else None
         case AlertKind.STALL:
             if alert.agent in state.stalled:
                 return None if filed(state, alert) else Bash(stall_ticket(alert))
@@ -141,10 +141,21 @@ def on(state: State, alert: Alert, a: Agent) -> Step | None:
                              + alert.message.text)
 
 
+def on_escalation(state: State, kind: AlertKind, agent: str, text: str, time: float
+                  ) -> Step | None:
+    """The step an escalation of the alert `text`, of `kind` on `agent`,
+    gives the operator `me`, as `on` gives it for an alert that reached
+    `me` at `time`."""
+    alert = Alert(Message(state.me, time, None, text), kind, agent)
+    if (a := latest(state, agent)) is None:
+        return Undecided(mctx("an alert on an agent no operator launched:") + "\n" + text)
+    return on(state, alert, a)
+
+
 def step(state: State) -> Step | None:
     """The first step the alerts and the other agents' messages give the
     operator `me`."""
-    launched = {a.agent_id for a in state.agents if a.agent_id}
+    launched = {a.agent_id for a in state.agents if a.agent_id and a.role is not Role.OP_AUDITOR}
     for m in state.arrived:
         if m.sender is None or m.sender in launched:
             continue

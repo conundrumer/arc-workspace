@@ -30,18 +30,13 @@ from pathlib import Path
 from arc.task import TASK_ID
 from controlled_markdown import mctx
 from operations import briefs
-from operations.constants import COORDINATOR, FOREGROUND_MS, WAIT_SECONDS
+from operations.constants import COORDINATOR, FOREGROUND_MS
 from operations.roles import GENERAL_ROLES, PASSES, Model, Purpose, Role, description
 from operations.state import Agent, Call, Made, Printed, State
 
 BLOCK_SECONDS = (FOREGROUND_MS // 1000) - 30
-"""The longest foreground block of a command's `next`, under the bound on
+"""The longest foreground block of the command's `next`, under the bound on
 a foreground call, with room for the read of the state."""
-
-WAIT_CAP = 11
-"""How many waits in a row may end on `WAIT_SECONDS` with no message, no
-report and no step between them, as the section `keep-alive-timer` of
-`prompts/agents/notes/commands.md` caps the keep-alive timer."""
 
 
 @dataclass(frozen=True)
@@ -72,30 +67,9 @@ class Bash:
 
 
 @dataclass(frozen=True)
-class StopWait:
-    """A TaskStop call on a command of the operator's, by the ID the
-    harness gave it."""
-    task_id: str
-
-
-@dataclass(frozen=True)
-class Wait:
-    """The command's wait, in the background, after which the agent ends
-    its turn: `operate.py wait` with the agent's id."""
-
-
-@dataclass(frozen=True)
-class EndTurn:
-    """The agent ends its turn with no call: the command's wait already
-    runs in the background, or, where `capped`, the waits reached
-    `WAIT_CAP`, and a message or a report wakes the agent."""
-    capped: bool = False
-
-
-@dataclass(frozen=True)
 class Poll:
-    """Nothing is ready yet, and nothing an agent of the operator's runs is
-    waited on: the agent runs the command again at once."""
+    """Nothing is ready by the end of the command's block: the agent runs
+    the command again at once."""
 
 
 @dataclass(frozen=True)
@@ -177,7 +151,7 @@ def held(what: str, choices: Mapping[str, str]) -> Undecided:
                                                                       given=given))
 
 
-type Step = Launch | Send | Undecided | Bash | StopWait | Wait | EndTurn | Poll | Reply
+type Step = Launch | Send | Undecided | Bash | Poll | Reply
 
 
 def repeated(step: Step, state: State) -> bool:
@@ -318,10 +292,6 @@ def simple_commands(command: str) -> list[list[str]]:
     return [words for words in out if words]
 
 
-def wait_command(agent: str) -> str:
-    return f": 'unattended-wait: operate.py wait'; {' '.join(run_words('wait', agent))}"
-
-
 def next_command(agent: str) -> str:
     return " ".join(run_words("next", agent))
 
@@ -336,10 +306,6 @@ def runs(command: str, action: str, agent: str) -> bool:
     """Whether the Bash command `command` runs `operate.py` with `action`
     for the operator `agent`, whatever else it runs."""
     return any(words == run_words(action, agent) for words in simple_commands(command))
-
-
-def is_wait(command: str, agent: str) -> bool:
-    return runs(command, "wait", agent)
 
 
 def is_next(command: str, agent: str) -> bool:
@@ -383,12 +349,12 @@ def failure(c: Call) -> str:
 
 
 def only_command(command: str, agent: str) -> bool:
-    """Whether the Bash command `command` runs the command's `wait` or
-    `next` for the operator `agent` and nothing else but `cd` and `:`."""
-    want = [run_words(action, agent) for action in ("wait", "next")]
+    """Whether the Bash command `command` runs the command's `next` for the
+    operator `agent` and nothing else but `cd` and `:`."""
+    want = run_words("next", agent)
     found = simple_commands(command)
-    return any(words in want for words in found) and all(
-        words[0] in ("cd", ":") or words in want for words in found)
+    return any(words == want for words in found) and all(
+        words[0] in ("cd", ":") or words == want for words in found)
 
 
 KEY_LINE = mctx("Step key: {key}. After the call below, run `{command}`.")
@@ -429,7 +395,7 @@ def printed_opening() -> re.Pattern[str]:
 def made(calls: Iterable[Call]) -> tuple[Made, ...]:
     """Each message and Bash call in the foreground that the result of an
     operator's call of `next` printed, with the call that operator made
-    next, other than a call of `wait` or `next` alone (`only_command`).
+    next, other than a call of `next` alone (`only_command`).
     The result may be cut, as by
     a pipe through `head` or `tail`: a step whose opening it cuts is not
     read, and one whose key it cuts is read with no key, and as far as the
@@ -563,16 +529,6 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
             return send_text(to, "\n".join(part for part in (head, line) if part))
         case Bash(command):
             return bash_text(command)
-        case StopWait(task_id):
-            return f"call TaskStop\ntask_id: {task_id}"
-        case Wait():
-            return (f"call Bash\nrun_in_background: true\ntimeout: 7200000\ncommand:\n"
-                    f"{wait_command(agent)}\n" + mctx("Then end your turn."))
-        case EndTurn(capped=False):
-            return mctx("End your turn with no call: the command's wait runs.")
-        case EndTurn():
-            return mctx("End your turn with no call: no wait is started, and a message or "
-                        "a report wakes you.")
         case Poll():
             return mctx("Run the command again: nothing is ready.")
         case Reply(text):

@@ -1,6 +1,6 @@
 ---
 name: op-auditor
-description: Audits the new activity of one agent of the session, for `op-monitor`, and sends the alert it finds on that agent's work.
+description: Audits the new activity of one agent of the session, and sends the alert it finds on that agent's work.
 model: opus
 tools: Read, Bash, Write, SendMessage, TaskStop
 ---
@@ -17,7 +17,7 @@ tools: Read, Bash, Write, SendMessage, TaskStop
 - Read the window, and find each sign in it that the agent's work may not advance, may advance at a cost out of proportion to it, or may depart from the agent's documents or its brief, where no line of the transcript, read against the agent's documents, accounts for the sign. A guess of yours at what the agent is doing accounts for no sign. Look for these signs, among others:
     - a call whose time is out of proportion to the work its command does;
         - An `agent_timer.py start budget` command led by `: 'unattended-wait: budget timer';` is the agent's budget timer, which runs for the agent's budget.
-        - An `agent_timer.py start keep-alive` command led by `: 'unattended-wait: keep-alive timer';`, or an `operate.py wait` command led by `: 'unattended-wait: operate.py wait';`, is the agent's keep-alive timer, which the agent starts again while an agent it launched runs.
+        - An `agent_timer.py start keep-alive` command led by `: 'unattended-wait: keep-alive timer';` is the agent's keep-alive timer, which the agent starts again while an agent it launched runs.
         - An `operate.py next` command blocks for up to 210 seconds until the operator has a step, and the operator runs it again while it has none.
     - a command repeated with nothing changed between the repeats;
     - a claim the agent makes that the state contradicts;

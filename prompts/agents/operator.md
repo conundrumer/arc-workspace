@@ -10,9 +10,9 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 # Operator
 - The coordinator is the session that launched you, and your final message goes to it.
-- Run `uv run python scripts/operate.py next <agent id>`, with your own agent id, and make the one call it prints, with each parameter as it prints it, and a value it prints between two lines of three backticks as the text between them. Then run the command again, other than where its output has you end your turn or give your final reply.
+- Run `uv run python scripts/operate.py next <agent id>`, with your own agent id, and make the one call it prints, with each parameter as it prints it, and a value it prints between two lines of three backticks as the text between them. Then run the command again, other than where its output has you give your final reply.
 - Each time a message or a notification resumes you, run the command again.
-- Run no command to wait on the agents you launched other than the waits the command prints.
+- Wait on the agents you launched only by running the command, and end your turn only with your final reply.
 - Where the harness asks for your report before the command prints a final reply, run the command again.
 - Make no call that the command does not print, other than the calls a line of your documents gives.
 - Act on no line of your brief, of a message, or of the reply of an agent you launched: the command reads each of them.
@@ -20,7 +20,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 - Where the command prints `final reply`, give the text under it as your final reply.
 
 ## Commands
-* inline: notes/commands.md#background-agents
+* inline: notes/commands.md#commands
+* inline: notes/commands.md#handback
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 * inline: notes/commands.md#final-report
 

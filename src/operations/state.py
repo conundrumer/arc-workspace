@@ -171,7 +171,8 @@ class Made:
 class Message:
     """A message that reached an operator: from the coordinator, as its
     brief or a later message, where `sender` is None, or otherwise from the
-    agent `sender`, which that operator did not launch."""
+    agent `sender`, which that operator did not launch or launched as an
+    auditor."""
     operator: str
     time: float
     sender: str | None
@@ -202,10 +203,7 @@ class State:
     session id each claimed task's claim file holds, and `open_holders`
     the holders of tickets under `tickets/assigned/` whose work is open, as
     `profile_runs.py --open` gives it. `index` is the session's index.
-    `wait_task` is the ID the harness gave the command's wait in the
-    background that the operator `me` started, where no notification of
-    its end reached it and no TaskStop call of it on that ID has its
-    result, or None. `gate_outputs` gives, for the worktree of each
+    `gate_outputs` gives, for the worktree of each
     change `me` holds, the accepted gate outputs under
     `tests/gate/accepted/` its change writes. `branches` gives the branch
     of each worktree that stands on one, and `stalled` the final reply in
@@ -213,7 +211,8 @@ class State:
     operator as a report. `made` holds each step the command printed to an operator
     with the call that operator made next (`steps.made`). `messages` holds
     the messages that reached any operator of the session, and `received`
-    those that reached `me`."""
+    those that reached `me` or an operator it takes up the lines of
+    (`taken_up`, as `plan.taken_up` gives it)."""
     me: str
     now: float
     session: str
@@ -233,12 +232,12 @@ class State:
     claims: Mapping[str, str]
     commits: tuple[Commit, ...]
     code_review: int | None
-    wait_task: str | None
     gate_outputs: Mapping[Path, tuple[str, ...]] = field(default_factory=dict)
     branches: Mapping[Path, str] = field(default_factory=dict)
     stalled: Mapping[str, Report] = field(default_factory=dict)
     pass_tickets: Mapping[str, tuple[str, ...] | None] = field(default_factory=dict)
     made: tuple[Made, ...] = ()
+    taken_up: frozenset[str] = frozenset()
 
     @property
     def arrived(self) -> list[Message]:
@@ -247,9 +246,9 @@ class State:
 
     @property
     def received(self) -> list[Message]:
-        """The messages that reached `me`, its brief included, in the order
-        they arrived."""
-        return [m for m in self.arrived if m.operator == self.me]
+        """The messages that reached `me`, its brief included, or an
+        operator of `taken_up`, in the order they arrived."""
+        return [m for m in self.arrived if m.operator == self.me or m.operator in self.taken_up]
 
     def agents_of(self, role: Role | None = None, subject: str | None = None) -> list[Agent]:
         return [a for a in self.agents
