@@ -21,8 +21,8 @@ that the operators before it in a row that ended so received
 to it.
 
 The steps come in this order: the coordinator's lines in no form the
-command reads, each given back to the coordinator once; the auditors'
-alerts; the request to a ticket analyst on a held step to give its decision
+command reads, each given back to the coordinator once; the
+alerts; the tickets on stalled agents; the request to a ticket analyst on a held step to give its decision
 again; the decisions for the user, and the items of each ticket analyst's
 reply for the coordinator; the monitor's steps (`monitor`); at launch,
 the release of tickets; the move back to `tickets/open/` of the tickets the coordinator wrote on
@@ -37,7 +37,8 @@ an `Override: pass over` ruling passed over (`directives.passed`).
 Where no step is ready, and an agent of an operator runs or a ticket of
 the operators' waits on another holder whose work is open, the agent runs
 the command again, which blocks in the foreground first. Otherwise the
-agent gives its final reply."""
+agent gives its final reply, after the launch of an auditor on its own
+run (`ending`)."""
 
 from collections.abc import Callable
 
@@ -169,7 +170,7 @@ def elsewhere(state: State) -> list[str]:
 
 
 EARLY: tuple[Callable[[State], Step | None], ...] = (
-    unread_lines, alerts.step, decisions.asks, triage.decisions, triage.for_coordinator,
+    unread_lines, alerts.step, alerts.stalls, decisions.asks, triage.decisions, triage.for_coordinator,
     triage.unfinished)
 LATE: tuple[Callable[[State], Step | None], ...] = (
     launching, triage.reopen, triage.later_lines, triage.settle, drafts.step, changes.step,
@@ -185,34 +186,34 @@ def next_step(state: State, watch: monitor.MonitorState) -> Step:
     mine = state.operators.index(state.me) if state.me in state.operators else -1
     later = [o for o in state.operators[mine + 1:] if o in state.open_operators]
     if later:
-        return Reply(mctx("Operator {operator} carries the work on, from the state; "
-                          "{given}.").format(operator=later[-1], given=GIVEN_AGAIN)
-                     + "\n" + "\n".join([*reply_lines(state), *unknown]))
+        return ending(state, watch, Reply(
+            mctx("Operator {operator} carries the work on, from the state; {given}.").format(
+                operator=later[-1], given=GIVEN_AGAIN)
+            + "\n" + "\n".join([*reply_lines(state), *unknown])))
     s = first(state, *EARLY)
     if s is not None:
         return s
     if state.past_bound:
-        return Reply(FOR_CONTEXT + "\n" + "\n".join([*reply_lines(state), *unknown]))
+        return ending(state, watch,
+                      Reply(FOR_CONTEXT + "\n" + "\n".join([*reply_lines(state), *unknown])))
     s = first(state, lambda st: monitor_step(st, watch), *LATE)
     if s is not None:
         return s
     if any(a.pending for a in state.agents) or elsewhere(state):
         return Poll()
-    return Reply("\n".join([final(state), *unknown]))
+    return ending(state, watch, Reply("\n".join([final(state), *unknown])))
 
 
 def monitor_step(state: State, watch: monitor.MonitorState) -> Step | None:
-    """The monitor's next step, where an escalation to an operator gives
-    the step `alerts.on_escalation` gives, and counts as handled once that
-    step is none or repeated."""
-    def given(e: monitor.ToOperator) -> Step | None:
-        return alerts.on_escalation(state, e.kind, e.agent_id, e.text, e.time)
+    return monitor.step(watch, lambda s: repeated(s, state))
 
-    def handled(e: monitor.ToOperator) -> bool:
-        return (s := given(e)) is None or repeated(s, state)
 
-    s = monitor.step(watch, handled)
-    return given(s) if isinstance(s, monitor.ToOperator) else s
+def ending(state: State, watch: monitor.MonitorState, reply: Reply) -> Step:
+    """`reply`, the operator's final reply, or before it the launch of an
+    auditor on the operator's own run (`monitor.own_audit`)."""
+    since = max((m.time for m in state.received), default=0.0)
+    s = first(state, lambda _: monitor.own_audit(watch, state.me, since))
+    return reply if s is None else s
 
 
 def taken_up(state: State) -> frozenset[str]:

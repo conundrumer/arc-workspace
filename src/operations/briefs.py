@@ -28,6 +28,9 @@ with that file."""
 REPORT_RULE = mctx("Write your final reply to the file `{path}`, in place of what it holds, "
                    "and give that file's path alone, on one line, as your final reply itself.")
 """That line for an agent no document gives (`roles.GENERAL_ROLES`)."""
+ALERT_FILE = mctx("Alert file: `{path}`.")
+"""The line of an auditor's brief that gives the file it writes an alert
+to."""
 
 
 def read_ticket(number: str) -> str:

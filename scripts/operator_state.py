@@ -23,7 +23,8 @@ from open_agents import Listed, running_agents, work_open
 from operator_reads import (ended_elsewhere, ended_with, operator_runs, read_operator,
                             stalled_reports)
 from run_prints import active_of, print_running
-from run_reads import agent_messages, agent_type, context_size, notifications, run_entries, session_agents
+from run_reads import (MAIN, agent_messages, agent_type, context_size, notifications, run_entries,
+                       session_agents)
 from run_reads import Status as TaskStatus
 from senders import AUDITOR
 from ticket_numbers import session_index, ticket_number
@@ -37,9 +38,10 @@ from operations.plan import taken_up
 from operations import monitor
 from operations.monitor import (HUNG_FACTOR, Audit, Facet, MonitorState, Read, Sending,
                                 ToCoordinator, Watched)
+from operations.alerts import AlertKind
 from operations.roles import Role
 from operations.state import Agent, Call, Message, Report, State
-from operations.steps import BLOCK_SECONDS, made
+from operations.steps import BLOCK_SECONDS, alert_path, made
 from operations.tracker import worktree
 from ticketing.vocabulary import Status
 
@@ -65,7 +67,7 @@ def read_state(me: str) -> State:
         subjects[c.subject] = max(subjects.get(c.subject, c.time), c.time)
     for aid, path in runs:
         read_operator(aid, path, main, undecided, agents, calls, messages, passes, subjects)
-    stalled = stalled_reports(agents, messages)
+    stalled = stalled_reports(agents, stall_findings(agents))
     ended: dict[str, Report | None] = {**ended_elsewhere(agents, me), **stalled}
     agents = [ended_with(a, ended[a.agent_id]) if a.pending and a.agent_id in ended else a
               for a in agents]
@@ -148,20 +150,23 @@ def facts(listed: Listed, since: float | None, undecided: list[str]) -> str:
     return out.getvalue().rstrip("\n")
 
 
-def watched(listing: list[Listed], audits: list[Audit], undecided: list[str]) -> list[Watched]:
+def watched(listing: list[Listed], launched: dict[str, Role], audits: list[Audit],
+            undecided: list[str]) -> list[Watched]:
+    """The agents of `listing` that an operator launched, by `launched`,
+    their roles by agent id, other than the auditors."""
     out: list[Watched] = []
     now = time.time()
     for listed in listing:
         r = listed.run
         aid = listed.launch.agent
-        if aid is None or r.agent_type in UNWATCHED:
+        if aid is None or r.agent_type in UNWATCHED or (role := launched.get(aid)) is None:
             continue
         past = [a.launched for a in audits if a.facet is Facet.AGENT and a.agent_id == aid]
         budget = next(reversed(budgets_in_force(r, undecided)), None)
         active = active_of(listed, now)
         out.append(Watched(
-            agent_id=aid, agent_type=r.agent_type, parent=listed.parent,
-            activity=activity(listed), hung=hung_at(listed, listing),
+            agent_id=aid, agent_type=r.agent_type, role=role, parent=listed.parent,
+            activity=activity(listed), hung=hung_at(listed, listing), ended=listed.ended,
             over_budget=budget is not None and active is not None and active > budget * 60,
             facts=facts(listed, max(past, default=None), undecided), transcript=r.path))
     return out
@@ -181,7 +186,7 @@ def audit_of(a: Agent, undecided: list[str]) -> Audit | None:
                          .format(agent=a.agent_id, subject=a.subject))
         return None
     replies = tuple(r.time for r in a.reports)
-    read, found = Read.PENDING, None
+    read, found, alert = Read.PENDING, None, None
     if a.last_report is not None and not a.pending:
         text: str | None = a.last_report.text
         path = report_file(a.last_report.text)
@@ -192,7 +197,19 @@ def audit_of(a: Agent, undecided: list[str]) -> Audit | None:
         else:
             found = monitor.finding(text)
             read = Read.UNREAD if found is None else Read.READ
-    return Audit(a.agent_id, *given, a.launched, replies, read, found)
+            if found is not None and found.alert in monitor.TO_AGENT and path is not None:
+                given_file = alert_path(path)
+                alert = given_file.read_text().strip() if given_file.is_file() else None
+    return Audit(a.agent_id, *given, a.launched, replies, read, found, alert)
+
+
+def stall_findings(agents: list[Agent]) -> list[str]:
+    """The agents the `stall` findings of the auditors of `agents` are on.
+    The lines `audit_of` gives on what it left unknown go to `read_watch`
+    alone."""
+    return [f.agent for x in agents if (a := audit_of(x, [])) is not None
+            and (f := a.finding) is not None and f.alert is AlertKind.STALL
+            and f.agent is not None]
 
 
 def sendings(calls: list[Call]) -> list[Sending]:
@@ -201,8 +218,9 @@ def sendings(calls: list[Call]) -> list[Sending]:
 
 
 def to_coordinator(session: Path, since: float, undecided: list[str]) -> list[ToCoordinator]:
-    """The messages to the coordinator from a watched agent of the session, and the notifications of the end of
-    one, that the coordinator's transcript gained since `since`."""
+    """The messages to the coordinator from a watched agent of the session
+    that the coordinator did not launch, and the notifications of the end
+    of one, that the coordinator's transcript gained since `since`."""
     parents = {kid: launcher for launcher, kids in session_launches(session)[1].items()
                for kid in kids}
     agents: dict[str, tuple[str, str, Path]] = {}
@@ -214,7 +232,8 @@ def to_coordinator(session: Path, since: float, undecided: list[str]) -> list[To
             undecided.append(mctx("{agent}: no `.meta.json` gives its parent, so its messages "
                                   "to the coordinator are not audited").format(agent=aid))
             continue
-        agents[aid] = (kind, parents[aid], p)
+        if parents[aid] != MAIN:
+            agents[aid] = (kind, parents[aid], p)
     out: list[ToCoordinator] = []
     for e in run_entries(main_transcript(session)):
         stamp = e.get("timestamp")
@@ -242,8 +261,9 @@ def read_watch(state: State) -> MonitorState:
         raise Refused(mctx("the transcript of {agent} gives no time").format(
             agent=state.operators[0]))
     session = find(state.session)
+    launched = {a.agent_id: a.role for a in state.agents if a.agent_id}
     return MonitorState(
-        watched=tuple(watched(running_agents(session, undecided), audits, undecided)),
+        watched=tuple(watched(running_agents(session, undecided), launched, audits, undecided)),
         to_coordinator=tuple(to_coordinator(session_directory(session), start, undecided)),
         audits=tuple(audits), sendings=tuple(sendings(list(state.calls))),
-        operators=frozenset(state.operators), undecided=tuple(undecided))
+        transcript=find(state.me), stalled=frozenset(state.stalled), undecided=tuple(undecided))

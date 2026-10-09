@@ -57,6 +57,12 @@ command launches them, each in the change's worktree, which its brief
 gives."""
 
 
+JUDGING = frozenset({Role.CODE_EDITOR, Role.HANDBOOK_EXPANDED, Role.DOC_EDITOR, Role.TICKET_ANALYST,
+                     Role.TICKET_REVIEWER, Role.DOC_REVIEWER, Role.CODE_REVIEWER})
+"""The roles of the judging agents, which an auditor's alert on their run
+reaches."""
+
+
 def editors_of(names: Iterable[str]) -> tuple[Role, ...]:
     """The roles the names of an `editors` field give. Raises ValueError on
     a name that is no role."""

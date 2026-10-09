@@ -32,7 +32,7 @@ from transcripts import Refused  # noqa: E402
 from tree_reads import git, main_tree  # noqa: E402
 
 from operations import briefs, plan  # noqa: E402
-from operations.monitor import NO_SIGN, REPORT_FORM, TO, VERDICT  # noqa: E402
+from operations.monitor import NO_SIGN, REPORT_FORM, ROUTES, VERDICT  # noqa: E402
 from operations.roles import PASSES, Role  # noqa: E402
 from operations.steps import (BLOCK_SECONDS, Bash, Launch, Poll, Send, Step,  # noqa: E402
                              filed, key_line, printed, with_report)
@@ -56,6 +56,7 @@ HELP = mctx("""
     - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass, and `restore` puts it back and removes the task's claim, as the section `Passes on a task` of `prompts/agents/notes/launching.md` gives.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives, and the command refuses where the shell gives none.
     {report_form}
+    {routes}
     """)
 
 POLL_SECONDS = 15
@@ -121,7 +122,7 @@ def next_step(me: str) -> int:
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("--help", "-h"):
         print(HELP.format(block=BLOCK_SECONDS, reload=RELOAD_SECONDS, report_form=REPORT_FORM.format(
-            no_sign=NO_SIGN, to=TO, verdict=VERDICT)))
+            no_sign=NO_SIGN, verdict=VERDICT), routes=ROUTES))
         return 0
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
     parser.add_argument("action", choices=["next", "set-aside", "restore"])

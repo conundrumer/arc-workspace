@@ -27,7 +27,6 @@ from senders import AUDITOR, Sender, sender
 from ticket_numbers import TICKET_NUMBER
 from transcripts import epoch, find, read_entries, session_directory
 
-from operations import alerts
 from operations.merging import MERGE_SCRIPT, merge_messages
 from operations.reports import TICKETS_FILED
 from operations.roles import PASSES, Role, described
@@ -274,21 +273,19 @@ def reply_to(a: Agent, since: float) -> Report | None:
     return reply_since(a.agent_id, since) if a.agent_id and a.notifies else None
 
 
-def stalled_reports(agents: list[Agent], messages: list[Message]) -> dict[str, Report]:
-    """The final reply in the transcript of each agent a stall alert names
-    that is pending, given after its launch."""
+def stalled_reports(agents: list[Agent], stalls: list[str]) -> dict[str, Report]:
+    """The final reply in the transcript of each agent of `stalls`, the
+    agents an auditor's `stall` finding is on, that is pending, given
+    after its launch."""
     out: dict[str, Report] = {}
     pending = {a.agent_id: a for a in agents if a.pending and a.agent_id}
-    for m in messages:
-        alert = alerts.parsed(m) if m.sender is not None else None
-        if alert is None or alert.kind is not alerts.AlertKind.STALL:
+    for agent in stalls:
+        a = pending.get(agent)
+        if a is None or agent in out:
             continue
-        a = pending.get(alert.agent)
-        if a is None or alert.agent in out:
-            continue
-        r = reply_since(alert.agent, a.launched)
+        r = reply_since(agent, a.launched)
         if r is not None:
-            out[alert.agent] = r
+            out[agent] = r
     return out
 
 

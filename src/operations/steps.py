@@ -55,9 +55,11 @@ class Launch:
 
 @dataclass(frozen=True)
 class Send:
-    """A SendMessage call."""
+    """A SendMessage call. Where `since` is given, only a call an operator
+    made after that time counts as made of it."""
     to: str
     message: str
+    since: float | None = None
 
 
 @dataclass(frozen=True)
@@ -166,8 +168,9 @@ def repeated(step: Step, state: State) -> bool:
                                                        f"{UNDECIDED} {what}") or (
                 bool(given) and any(all(g in str(c.input.get("message", "")) for g in given)
                                     for c in sends_to(state, COORDINATOR)))
-        case Send(to, message):
-            return sent(state, to, message)
+        case Send(to, message, since):
+            return (sent(state, to, message) if since is None
+                    else any(t > since for t in sent_at(state, to, message)))
         case _:
             return False
 
@@ -429,7 +432,12 @@ FILED = mctx("Read the file {path} first: it holds the text of this message.")
 FILED_LINE = re.compile("^" + re.escape(FILED.format(path="\x00")).replace(
     "\x00", r"(?P<path>/[^\n]*?)") + "$", re.MULTILINE)
 
-REPORT_NAME = re.compile(rf"{STEP_KEY.pattern}-report\.md")
+REPORT_SUFFIX = "-report.md"
+ALERT_SUFFIX = "-alert.md"
+"""The suffix of the alert file an auditor's brief gives, beside its
+report file."""
+
+REPORT_NAME = re.compile(rf"{STEP_KEY.pattern}{re.escape(REPORT_SUFFIX)}")
 """The name of the report file a brief gives."""
 
 FILES = "operator-files"
@@ -448,17 +456,26 @@ def file_path(step: Step, scratch: Path) -> Path:
 
 
 def report_path(step: Launch, scratch: Path) -> Path:
-    return files_of(scratch) / f"{key(step)}-report.md"
+    return files_of(scratch) / f"{key(step)}{REPORT_SUFFIX}"
+
+
+def alert_path(report: Path) -> Path:
+    """The alert file of the auditor whose report file is `report`."""
+    return report.with_name(report.name.removesuffix(REPORT_SUFFIX) + ALERT_SUFFIX)
 
 
 def with_report(step: Launch, scratch: Path) -> Launch:
     """`step` with the line of its brief that gives its report file, other
-    than a solver pass's."""
+    than a solver pass's, and for an auditor the line that gives its alert
+    file."""
     if step.role in PASSES:
         return step
     form = briefs.REPORT_RULE if step.role in GENERAL_ROLES else briefs.REPORT_FILE
-    line = form.format(path=report_path(step, scratch))
-    return replace(step, brief=f"{step.brief}\n{line}")
+    report = report_path(step, scratch)
+    lines = [step.brief, form.format(path=report)]
+    if step.role is Role.OP_AUDITOR:
+        lines.append(briefs.ALERT_FILE.format(path=alert_path(report)))
+    return replace(step, brief="\n".join(lines))
 
 
 def split_message(step: Send) -> tuple[str, str]:

@@ -1,17 +1,17 @@
 """The monitor's steps, which the operator's command gives among its own
-(`plan`): a launch of an `op-auditor` on an agent or on a message to the
-coordinator, the request to an auditor to write its report again, and a
-budget alert or an escalation as a Send step. The command keeps no state
-of its own: it reads back each audit from its launch's description by an
-operator of the session, each alert sent from the operators' transcripts,
-and each auditor's alert from its report file.
+(`plan`): a launch of an `op-auditor`, the request to an auditor to write
+its report again, a budget alert, and the step an auditor's finding gives
+by its route (`route`). The command keeps no state of its own: it reads
+back each audit from its launch's description by an operator of the
+session, and each auditor's finding from its report file.
 
-The watched agents are the agents of the session other than the operators
-and the auditors, so no auditor, and no alert of one, is itself audited.
-A budget alert on an agent an operator of the session launched goes to
-the agent itself (`alerts.to_agent`). An escalation that would reach an
-operator of the session is no message: it gives the operator the step an
-alert of its kind on that agent gives (`ToOperator`, `alerts.on`), once."""
+The watched agents are the agents an operator of the session launched,
+other than the auditors, so no auditor, and no alert of one, is itself
+audited. An audit runs on a watched agent once its run ends, at its final
+report or at a stall, and once mid-run where a call of it has hung; on the
+operator's own run before its final reply (`own_audit`); and on a message
+to the coordinator from an agent the coordinator did not launch. A budget
+alert goes to the agent itself (`alerts.to_agent`), with no audit."""
 
 import re
 from collections.abc import Callable
@@ -21,17 +21,18 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from operations.alerts import AlertKind, opened, opening, to_agent
-from operations.constants import COORDINATOR
-from operations.roles import Role
+from operations.roles import JUDGING, Role
 from operations.steps import Launch, Send, Step, asked_again
 from ticketing.times import utc_stamp
 
 
 class Facet(StrEnum):
-    """What an audit's subject is on: an agent's new activity, or an entry
-    of the coordinator's transcript from a watched agent."""
+    """What an audit's subject is on: a watched agent's run, an entry of
+    the coordinator's transcript from a watched agent, or the operator's
+    own run."""
     AGENT = "agent"
     MESSAGE = "message"
+    OPERATOR = "operator"
 
 
 @dataclass(frozen=True)
@@ -39,14 +40,17 @@ class Watched:
     """A watched agent at the time of the read. `activity` is the time of
     its latest new call, end of a call, end of its turn or report, and
     `hung` the time its oldest call in flight passed `HUNG_FACTOR` times
-    that call's usual time, or None where none has. `over_budget` is
-    whether its active time is past its budget, and `facts` the facts the
-    command computed on it since its last audit, for an auditor's brief."""
+    that call's usual time, or None where none has. `ended` is whether its
+    turn has ended. `over_budget` is whether its active time is past its
+    budget, and `facts` the facts the command computed on it since its
+    last audit, for an auditor's brief."""
     agent_id: str
     agent_type: str
+    role: Role
     parent: str
     activity: float
     hung: float | None
+    ended: bool
     over_budget: bool
     facts: str
     transcript: Path
@@ -67,25 +71,39 @@ class ToCoordinator:
 @dataclass(frozen=True)
 class Finding:
     """What an auditor's report file gives: the kind of the alert it
-    raised or found again, None where it found no sign, the recipient of
-    that alert where it sent it, and its one-line verdict."""
+    raised or found again and the agent it is on, both None where it found
+    no sign, and its one-line verdict."""
     alert: AlertKind | None
-    recipient: str | None
+    agent: str | None
     verdict: str
 
 
 NO_SIGN = "no sign"
-TO = "to: "
 VERDICT = "verdict: "
 
 REPORT_FORM = mctx("- An auditor's report file holds a first line `{no_sign}`, or a first line "
                    "`alert: <kind> <agent id>`, with the kind of the alert it raised or the kind "
-                   "the previous verdict alerted on, and the agent it is on. Where it sent that "
-                   "alert, a second line `{to}<recipient>` gives the agent id or `main` it sent "
-                   "it to. The last line is `{verdict}<verdict>`, with its verdict on the agent "
-                   "on one line.")
+                   "the previous verdict alerted on, and the agent it is on. "
+                   "The last line is `{verdict}<verdict>`, with its verdict on the agent on one "
+                   "line. The file holds no other line.")
 """The form of an auditor's report, which the `--help` of `scripts/operate.py`
 gives."""
+
+ROUTES = mctx("- `next` gives each finding of an auditor its step by its kind and the agent "
+              "it is on: a Send of the text of the alert file its brief gives to the agent, "
+              "for a "
+              "`departure`, `own-doing` or `outgrown` finding on an agent of type "
+              "{judging} that an operator launched and whose work is open, as `uv run python "
+              "scripts/profile_runs.py --open <agent id>` gives it; a Send of "
+              "the line `alert: stall <agent id>` to the agent, for a `stall` finding on an "
+              "agent an operator launched whose transcript holds no final reply since its "
+              "launch; and no step for any other finding, on which the auditor's ticket "
+              "stands alone. Where that transcript holds such a reply, the operator takes it "
+              "as the agent's report, and files a `bug` ticket on the agent. A Send that a "
+              "finding gives counts as made only where an operator sent it after the launch "
+              "of that finding's auditor.").format(
+                  judging=", ".join(f"`{r.agent_type}`" for r in sorted(JUDGING)))
+"""The routes of `route`, which the `--help` of `scripts/operate.py` gives."""
 
 REPORT_POINTER = mctx("Write your report file in the form `uv run python scripts/operate.py "
                       "--help` gives for an auditor's report.")
@@ -98,16 +116,14 @@ def finding(text: str) -> Finding | None:
     if len(lines) < 2 or not lines[-1].startswith(VERDICT):
         return None
     verdict = lines[-1].removeprefix(VERDICT)
-    if lines[0] == NO_SIGN and len(lines) == 2:
+    if len(lines) != 2:
+        return None
+    if lines[0] == NO_SIGN:
         return Finding(None, None, verdict)
     found = opened(lines[0])
     if found is None or found[0] is None:
         return None
-    if len(lines) == 2:
-        return Finding(found[0], None, verdict)
-    if len(lines) != 3 or not lines[1].startswith(TO):
-        return None
-    return Finding(found[0], lines[1].removeprefix(TO), verdict)
+    return Finding(found[0], found[1], verdict)
 
 
 class Read(StrEnum):
@@ -125,7 +141,9 @@ class Audit:
     """An auditor the monitor launched: its agent id, its facet, the agent
     it is on, the time of the message an audit on a message is on, the
     time of its launch, the times of its reports, in order, what the
-    command read of the latest, and its finding where it read one."""
+    command read of the latest, its finding where it read one, and the
+    text of the alert file its brief gives, where that finding goes to an
+    agent and the command read that file."""
     auditor: str
     facet: Facet
     agent_id: str
@@ -134,6 +152,7 @@ class Audit:
     replies: tuple[float, ...]
     read: Read
     finding: Finding | None
+    alert_text: str | None = None
 
 
 @dataclass(frozen=True)
@@ -146,35 +165,18 @@ class Sending:
 
 
 @dataclass(frozen=True)
-class Sent:
-    """An alert the monitor sent: its kind, the agent it is on, its
-    recipient and its time."""
-    kind: AlertKind
-    agent_id: str
-    to: str
-    time: float
-
-
-@dataclass(frozen=True)
 class MonitorState:
     """`sendings` holds the SendMessage calls of the session's operators,
-    and `operators` the agent ids of those operators."""
+    `transcript` the transcript of the operator `me`, and `stalled` the
+    agents of `State.stalled`."""
     watched: tuple[Watched, ...]
     to_coordinator: tuple[ToCoordinator, ...]
     audits: tuple[Audit, ...]
     sendings: tuple[Sending, ...]
-    operators: frozenset[str]
+    transcript: Path
+    stalled: frozenset[str]
     undecided: tuple[str, ...]
     """The lines on what the read of the state left unknown."""
-
-
-def sent_alerts(state: MonitorState) -> list[Sent]:
-    out: list[Sent] = []
-    for s in state.sendings:
-        found = opened(s.text)
-        if found is not None and found[0] is not None:
-            out.append(Sent(found[0], found[1], s.to, s.time))
-    return out
 
 
 def sent_times(state: MonitorState, to: str, message: str) -> list[float]:
@@ -212,21 +214,52 @@ def outcome(state: MonitorState, a: Audit) -> Finding | None:
             return None
 
 
+TO_AGENT = frozenset({AlertKind.DEPARTURE, AlertKind.OWN_DOING, AlertKind.OUTGROWN})
+"""The kinds of finding that go to a judging agent whose work is open:
+every watched agent's work is, since `operator_state.read_watch` watches
+only the agents whose work `profile_runs.py --open` gives as open."""
+
+
+def route(state: MonitorState, a: Audit) -> Send | str | None:
+    """The step the finding of `a` gives, as `ROUTES` gives it, or the line
+    on it that `undecided` gives where that finding goes to an agent and
+    the command read no alert file of it."""
+    f = outcome(state, a)
+    if f is None or f.alert is None or f.agent is None:
+        return None
+    w = next((w for w in state.watched if w.agent_id == f.agent), None)
+    if w is None:
+        return None
+    if f.alert is AlertKind.STALL:
+        if w.agent_id in state.stalled:
+            return None
+        return Send(w.agent_id, opening(AlertKind.STALL, w.agent_id), a.launched)
+    if f.alert not in TO_AGENT or w.role not in JUDGING:
+        return None
+    if a.alert_text is None:
+        return mctx("{auditor}: its finding goes to {agent}, and the command read no alert "
+                    "file of it, so the finding goes nowhere").format(
+                        auditor=a.auditor, agent=w.agent_id)
+    return Send(w.agent_id, a.alert_text, a.launched)
+
+
 def undecided(state: MonitorState) -> list[str]:
-    """The lines on what the read of the state left unknown, and on the
-    audits whose answer to the request to write their report again is
-    still in no form."""
+    """The lines on what the read of the state left unknown, on the audits
+    whose answer to the request to write their report again is still in
+    no form, and on the findings `route` gives a line."""
     out = list(state.undecided)
     for a in state.audits:
         if a.read is Read.UNREAD and outcome(state, a) is NO_FINDING:
             out.append(mctx("{auditor}: its report is still in no form the command reads, so "
                             "its audit counts as done with no finding").format(auditor=a.auditor))
+        if isinstance(line := route(state, a), str):
+            out.append(line)
     return out
 
 
 HUNG_FACTOR = 10
 """How many times a call's usual time a call in flight runs before it
-counts as new activity, once. A call whose usual time no run gives takes
+counts as hung, once. A call whose usual time no run gives takes
 `steps.BLOCK_SECONDS` as its usual time."""
 
 SUBJECT = re.compile(r"\A(?P<facet>[a-z]+):(?P<agent>\S+?)(?:@(?P<time>\d+))?\Z")
@@ -250,8 +283,6 @@ def subject_of(text: str) -> tuple[Facet, str, int | None] | None:
 
 
 BUDGET_ALERT = mctx("Its active time is past its budget.")
-ESCALATION = mctx("An alert on this agent got no answer: the agent shows no new activity "
-                  "since, or the next audit gave the same alert.")
 
 
 def audits_on(state: MonitorState, facet: Facet, agent: str) -> list[Audit]:
@@ -259,76 +290,16 @@ def audits_on(state: MonitorState, facet: Facet, agent: str) -> list[Audit]:
                   key=lambda a: a.launched)
 
 
-@dataclass(frozen=True)
-class ToOperator:
-    """An escalation that would reach an operator of the session: the kind
-    of its alert, the agent it is on, its text, and the time of the audit
-    that gave it."""
-    kind: AlertKind
-    agent_id: str
-    text: str
-    time: float
-
-
-def escalated_to(recipient: str, agent: Watched) -> str | None:
-    """The recipient one level above `recipient`, for an alert on `agent`,
-    or None where it is the coordinator."""
-    if recipient == agent.agent_id:
-        return agent.parent
-    if recipient != COORDINATOR:
-        return COORDINATOR
-    return None
-
-
-def escalation(state: MonitorState, w: Watched,
-               handled: Callable[[ToOperator], bool]) -> Send | ToOperator | None:
-    """The escalation one level of the alert an auditor sent on `w`, where
-    `w` shows no new activity since the latest audit gave its kind, or the
-    next audit on `w` gives the same kind again. Of the audits that give
-    that kind in a row, the alert escalated is the latest one sent before
-    the latest audit, or where none was, the latest audit's own. One that
-    would reach an operator is a `ToOperator`, or None where `handled`
-    holds for it."""
-    done = [(a, f) for a in audits_on(state, Facet.AGENT, w.agent_id)
-            if (f := outcome(state, a)) is not None]
-    if not done or done[-1][1].alert is None:
-        return None
-    last, f = done[-1]
-    kind = f.alert
-    run: list[Finding] = []
-    for _, g in reversed(done):
-        if g.alert is not kind:
-            break
-        run.insert(0, g)
-    if len(run) < 2 and w.activity > last.launched:
-        return None
-    sent = [g for g in run[:-1] if g.recipient is not None] or [
-        g for g in run[-1:] if g.recipient is not None]
-    if not sent or kind is None:
-        return None
-    recipient = sent[-1].recipient
-    assert recipient is not None
-    to = escalated_to(recipient, w)
-    text = opening(kind, w.agent_id) + "\n\n" + ESCALATION
-    if to in state.operators:
-        given = ToOperator(kind, w.agent_id, text, last.launched)
-        return None if handled(given) else given
-    if to is None or any(s.agent_id == w.agent_id and s.kind is kind and s.to == to
-                         for s in sent_alerts(state)):
-        return None
-    return Send(to, text)
-
-
 def needs_audit(state: MonitorState, w: Watched) -> bool:
-    """Whether `w` has new activity since its last audit: new calls, an
-    ended turn, a report, or a call that became hung since."""
+    """Whether `w` has an ended turn, or a call that became hung, since its
+    last audit."""
     past = audits_on(state, Facet.AGENT, w.agent_id)
-    if not past:
-        return True
-    last = past[-1]
-    if outcome(state, last) is None:
+    last = past[-1].launched if past else None
+    if past and outcome(state, past[-1]) is None:
         return False
-    return w.activity > last.launched or (w.hung is not None and w.hung > last.launched)
+    if w.ended:
+        return last is None or w.activity > last
+    return w.hung is not None and (last is None or w.hung > last)
 
 
 BRIEF = "\n".join([
@@ -341,17 +312,24 @@ ON_MESSAGE = "\n".join([
          "message from `{agent}`, an agent of type `{agent_type}` whose parent is "
          "`{parent}`, or a notification of it."),
     mctx("Its transcript is `{transcript}`."), "", "{text}"])
+ON_OPERATOR = "\n".join([
+    mctx("Audit `{agent}`, an operator, whose run is at its final reply: its run goes on "
+         "only to wait for your report, and then gives that reply."),
+    mctx("Its transcript is `{transcript}`, and you read it from {since} on.")])
 FIRST = mctx("its first entry")
+
+
+def since_last(past: list[Audit]) -> str:
+    return utc_stamp(past[-1].launched) if past else FIRST
 
 
 def brief(state: MonitorState, w: Watched, verdict: str | None) -> str:
     """The brief of an auditor on `w`."""
-    past = audits_on(state, Facet.AGENT, w.agent_id)
-    since = utc_stamp(past[-1].launched) if past else FIRST
     return "\n\n".join([
         BRIEF.format(agent=w.agent_id, agent_type=w.agent_type, parent=w.parent,
-                     transcript=w.transcript, since=since, facts=w.facts,
-                     verdict=verdict or NONE),
+                     transcript=w.transcript, since=since_last(audits_on(state, Facet.AGENT,
+                                                                         w.agent_id)),
+                     facts=w.facts, verdict=verdict or NONE),
         REPORT_POINTER])
 
 
@@ -363,31 +341,35 @@ def message_brief(m: ToCoordinator) -> str:
         REPORT_POINTER])
 
 
-def budget_alert(state: MonitorState, w: Watched) -> Send:
-    """The budget alert on `w`: to `w` itself where an operator of the
-    session launched it, and otherwise to its parent."""
-    alert = opening(AlertKind.BUDGET, w.agent_id) + "\n\n" + BUDGET_ALERT
-    if w.parent in state.operators:
-        return Send(w.agent_id, to_agent(alert))
-    return Send(w.parent, alert)
+def own_audit(state: MonitorState, me: str, since: float) -> Launch | None:
+    """The launch of an auditor on the run of the operator `me`, before its
+    final reply, where no audit on it was launched after `since`, the time
+    of the latest message that reached `me`."""
+    past = audits_on(state, Facet.OPERATOR, me)
+    if past and past[-1].launched > since:
+        return None
+    return Launch(Role.OP_AUDITOR, subject(Facet.OPERATOR, me), "\n\n".join([
+        ON_OPERATOR.format(agent=me, transcript=state.transcript, since=since_last(past)),
+        REPORT_POINTER]))
 
 
-def step(state: MonitorState, handled: Callable[[ToOperator], bool]
-         ) -> Step | ToOperator | None:
+def budget_alert(w: Watched) -> Send:
+    """The budget alert on `w`, to `w` itself."""
+    return Send(w.agent_id, to_agent(opening(AlertKind.BUDGET, w.agent_id) + "\n\n"
+                                     + BUDGET_ALERT))
+
+
+def step(state: MonitorState, handled: Callable[[Step], bool]) -> Step | None:
     """The monitor's next step, or None where none is ready, where
-    `handled` holds for an escalation to an operator that the operator
-    already acted on."""
+    `handled` holds for a step an operator already made."""
     for a in state.audits:
         if a.read is Read.UNREAD and isinstance(asked := ask(state, a), Send):
             return asked
-    alerts = sent_alerts(state)
     for w in state.watched:
-        if w.over_budget and not any(s.kind is AlertKind.BUDGET and s.agent_id == w.agent_id
-                                     for s in alerts) and not sent_times(
-                state, w.agent_id, opening(AlertKind.BUDGET, w.agent_id)):
-            return budget_alert(state, w)
-    for w in state.watched:
-        if (s := escalation(state, w, handled)) is not None:
+        if w.over_budget and not handled(s := budget_alert(w)):
+            return s
+    for a in state.audits:
+        if isinstance(s := route(state, a), Send) and not handled(s):
             return s
     for w in state.watched:
         if needs_audit(state, w):
@@ -402,4 +384,3 @@ def step(state: MonitorState, handled: Callable[[ToOperator], bool]
             return Launch(Role.OP_AUDITOR, subject(Facet.MESSAGE, m.agent_id, m.time),
                           message_brief(m))
     return None
-
