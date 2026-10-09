@@ -1,6 +1,7 @@
 """The agents a run launched, the calls that resumed them, the agents
 pending to it, and the runs under it, as the HELP of `profile_runs` gives
-them, and the agents its SendMessage calls went to."""
+them, the agents its SendMessage calls went to, and whether a message to
+it that the harness accepted waits for delivery."""
 
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -20,6 +21,10 @@ from transcripts import (Entry, agent_id, agent_transcripts, chain, epoch, find,
 # the agent it was sent to, and where it queued the message to a running one.
 RESUMING = "Resuming agent"
 QUEUED = "Message queued"
+
+DELIVERED = "Report delivered"
+"""The opening of the message of a SubagentHandback result where the
+harness accepted the report."""
 
 
 def launch_stamp(session: Path) -> tuple[tuple[Path, tuple[int, int] | None], ...]:
@@ -222,18 +227,80 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
     return out
 
 
+def resume_times(path: Path, found: list[Launch],
+                 undecided: list[str]) -> tuple[dict[str, float], dict[str, float]]:
+    """The time of the last SendMessage call that resumed each agent: the
+    calls of the run at `path`, and the calls of the other runs of its
+    sessions that resumed an agent of `found`, the run's launches, or an
+    agent the run resumed."""
+    own = resumes(timed_entries(path), path.stem, None, undecided)
+    agents = {a.agent for a in found if a.agent} | set(own)
+    if not agents:
+        return own, {}
+    since = min([a.since for a in found] + list(own.values()))
+    return own, session_resumes(path, agents, since, undecided)
+
+
 def launched(path: Path, undecided: list[str]) -> list[Launch]:
     """`launches` of the run at `path`, each from the last call that resumed
     it where one did."""
     out = launches(path, undecided)
-    own = resumes(timed_entries(path), path.stem, None, undecided)
-    agents = {a.agent for a in out if a.agent}
-    others = (session_resumes(path, agents, min(a.since for a in out), undecided)
-              if agents else {})
+    own, others = resume_times(path, out, undecided)
     for a in out:
         a.since = max(a.since, own.get(a.agent or "", 0.0),
                       others.get(a.agent or "", 0.0))
     return out
+
+
+def callees(path: Path, undecided: list[str]) -> set[str]:
+    """The agent ids of the agents whose last launch or resume was a call
+    of the run at `path`, so that their reports go to that run."""
+    found = launches(path, undecided)
+    own, others = resume_times(path, found, undecided)
+    mine = {a.agent: a.since for a in found if a.agent}
+    for aid, t in own.items():
+        note_latest(mine, aid, t)
+    return {aid for aid, t in mine.items() if t >= others.get(aid, 0.0)}
+
+
+def last_delivered(path: Path) -> float:
+    """The time of the latest entry the harness delivered into the run at
+    `path`, its latest timestamped `user` entry, or 0 where it has none."""
+    return max((epoch(e["timestamp"]) for e in timed_entries(path) if e.get("type") == "user"),
+               default=0.0)
+
+
+def accepted_after(path: Path, since: float, undecided: list[str]) -> bool:
+    """Whether a transcript of the sessions of the run at `path` holds a
+    message to that run that the harness accepted after `since`, as the
+    HELP of `operate.py` gives one."""
+    names = {agent_id(path)}
+    if (name := (read_meta(path) or {}).get("name")):
+        names.add(str(name))
+    mine = callees(path, undecided)
+    for p in changed_since(run_sessions(path), since):
+        hands_back = agent_id(p) in mine
+        words = names | {QUEUED, RESUMING}
+        if hands_back:
+            words |= {"SubagentHandback", DELIVERED}
+        entries = [e for e in read_entries(p, naming=words) if e.get("timestamp")]
+        results = {b.get("tool_use_id", ""): (r, epoch(e["timestamp"])) for e in entries
+                   if e.get("type") == "user" and isinstance(r := e.get("toolUseResult"), dict)
+                   for b in blocks(e, "tool_result")}
+        for e in entries:
+            if e.get("type") != "assistant":
+                continue
+            for b in blocks(e, "tool_use"):
+                r, t = results.get(b.get("id", ""), ({}, 0.0))
+                if t <= since or r.get("success") is not True:
+                    continue
+                if b.get("name") == "SubagentHandback" and hands_back:
+                    return True
+                if (b.get("name") == "SendMessage"
+                        and str((b.get("input") or {}).get("to", "")) in names
+                        and str(r.get("message", "")).startswith((QUEUED, RESUMING))):
+                    return True
+    return False
 
 
 def pending_agents(path: Path, undecided: list[str]) -> list[str]:

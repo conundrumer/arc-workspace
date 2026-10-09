@@ -26,9 +26,10 @@ console_importable()
 # `scripts/` off `sys.path`, and the modules below import from there.
 importable(checkout.scripts())
 
+from agent_launches import accepted_after, last_delivered  # noqa: E402
 from operator_state import read_state, read_watch  # noqa: E402
 from profile_runs import budget_of  # noqa: E402
-from transcripts import Refused  # noqa: E402
+from transcripts import Refused, find  # noqa: E402
 from tree_reads import git, main_tree  # noqa: E402
 
 from operations import briefs, plan  # noqa: E402
@@ -46,7 +47,7 @@ HELP = mctx("""
         uv run python scripts/operate.py set-aside <task id> analyze|create
         uv run python scripts/operate.py restore <task id>
         ```
-    - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters, or the final reply. Before the final reply, it prints a SendMessage call that sends the coordinator the reply's text, and the final reply it then prints is the line that says so. It writes the brief of a launch, and a message to an agent other than the coordinator, to a file under the session's scratchpad, and the call's prompt or message gives that file's path. The value of a prompt or a message parameter it prints stands between two lines of three backticks, and the value to pass is the text between those lines, without them. A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items. The brief of a launch other than a solver pass's gives the file the agent writes its final reply to, and ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where the budget of its agent type over every run of that type, as `profile_runs.py --help` gives a type's budget, is N minutes rounded up. A brief that gives items, as `profile_runs.py --help` gives them, takes the type's budget per item times the number of items it gives, and any other brief takes the type's budget. Where the type has no such budget, the brief has no such line. It holds back the launch of an agent type whose definition under `.claude/agents/` a commit of `master` changed less than {reload} seconds ago until those seconds have passed. Where no step is ready, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again.
+    - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters, or the final reply. Before the final reply, it prints a SendMessage call that sends the coordinator the reply's text, and the final reply it then prints is the line that says so. It writes the brief of a launch, and a message to an agent other than the coordinator, to a file under the session's scratchpad, and the call's prompt or message gives that file's path. The value of a prompt or a message parameter it prints stands between two lines of three backticks, and the value to pass is the text between those lines, without them. A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items. The brief of a launch other than a solver pass's gives the file the agent writes its final reply to, and ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where the budget of its agent type over every run of that type, as `profile_runs.py --help` gives a type's budget, is N minutes rounded up. A brief that gives items, as `profile_runs.py --help` gives them, takes the type's budget per item times the number of items it gives, and any other brief takes the type's budget. Where the type has no such budget, the brief has no such line. It holds back the launch of an agent type whose definition under `.claude/agents/` a commit of `master` changed less than {reload} seconds ago until those seconds have passed. Where no step is ready, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again. The block ends too, and it prints that the operator runs it again, once a message to the operator waits that the harness accepted after the latest `user` entry of the operator's transcript before the call: a SubagentHandback of an agent the operator launched or last resumed, or a SendMessage call, in any transcript of the session, to the operator's agent id or name, each with a result that gives success, and for SendMessage that it queued the message or resumed the operator. Each such message thus ends at most one call early, since the result of that call is a later `user` entry.
     - Before each call it prints, `next` prints that step's key, on a line that gives the command to run after the call, so the text it prints ends with the call's last field. The key is the same at each read of the state that gives the same step.
     - `next` applies the rulings that the coordinator gives an operator of the session, and that the reply of a ticket analyst on a held step gives, each a line in one of these forms, matched whole, past a list marker:
         - `Decision: <decision key> <choice>` rules a held step, with one of the choices that step gives.
@@ -101,6 +102,8 @@ def reloading(step: Launch) -> float:
 
 def next_step(me: str) -> int:
     deadline = time.monotonic() + BLOCK_SECONDS
+    path = find(me)
+    since = last_delivered(path)
     while True:
         state = read_state(me)
         step = plan.next_step(state, read_watch(state))
@@ -110,7 +113,8 @@ def next_step(me: str) -> int:
             else:
                 time.sleep(left)
                 continue
-        if not isinstance(step, Poll) or time.monotonic() + POLL_SECONDS > deadline:
+        if (not isinstance(step, Poll) or time.monotonic() + POLL_SECONDS > deadline
+                or accepted_after(path, since, [])):
             if isinstance(step, CALLS):
                 print(key_line(step, me))
             if isinstance(step, Launch):
