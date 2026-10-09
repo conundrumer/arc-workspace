@@ -1,7 +1,7 @@
 ---
 name: op-auditor
 description: Audits the new activity of one agent of the session, and writes the alert it finds on that agent's work in the alert file its brief gives, or files it as a ticket.
-model: opus
+model: sonnet
 tools: Read, Bash, Write, TaskStop
 ---
 
