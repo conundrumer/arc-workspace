@@ -24,7 +24,7 @@
 - The operations: [Procedure](docs/handbook/procedure.md).
 - The theory of tasks, models and encodings: [Principles](docs/handbook/principles.md) and [Encoding](docs/handbook/encoding.md).
 - The lib's sections: the `//!` and `///` comments of [lib.dl](programs/lib.dl) and of the modules under [lib](programs/lib).
-- What every session in the repo reads: [arc-workspace](CLAUDE.md).
+- What each Claude Code session on the repo and each agent launched in such a session reads, and no codex session reads: [arc-workspace](CLAUDE.md).
 - What the coordinator, the session the user talks with, reads: [Coordinator](prompts/agents/notes/coordinator.md), rendered to `.claude/coordinator.md`.
     - Its context: `context coordinator`, then the user's messages.
     - The coordinator also reads each document or section a link of that document leads to, where the link's condition holds, and no `context` command prints those.
@@ -106,7 +106,7 @@
 - The reader of a comment is the editor of its file, whose context is the `context agent doc-editor` output, then that file with its comments.
 - Review a change by reading each context that contains the changed lines, or whose reader reaches by links a section that contains them, from its entry point to the end, as the reader of that context.
     - `uv run python scripts/context.py contexts --diff <commit>`, with `git merge-base HEAD master` as the commit, lists each reader whose context the change alters or leads by a chain of links to a changed section, and under each reader, each such section outside its context, with each chain that leads to it.
-    - Read the `context` output for each reader that listing gives, other than one it marks `(removed)`, with [arc-workspace](CLAUDE.md), and judge each line as a reader that has only that context.
+    - Read the `context` output for each reader that listing gives, other than one it marks `(removed)`, with each other text [Where each text is](#where-each-text-is) gives that reader as reading, and judge each line as a reader that has only that context.
     - In a chain the listing gives as `<section> via A via B`, a line of the reader's context links to B, a line of B links to A, and a line of A links to the section.
     - A link leads the reader to its target where its line has the reader read that target, under the condition that line gives, and not where its line gives that target as a document to edit, describe or name. Judge each link once, for every chain that has it.
     - A reader reaches a section only where each link of at least one chain listed for it leads the reader to its target. Read each section a reader reaches as part of that reader's context, at the line of that context that has the first link of such a chain.
