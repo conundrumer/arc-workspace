@@ -29,7 +29,7 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage, TaskStop
 - Take the state from `uv run python scripts/profile_runs.py --running $CLAUDE_CODE_SESSION_ID`, `git log master`, the tickets under `tickets/`, and the operators' transcripts, which `python3 ~/.claude/skills/retrieve/transcripts.py --help` says how to read.
 - Check each of these:
     - A `change`, other than one under `tickets/blocked/` that waits on a `change`, waits for the tickets its `depends-on` gives alone.
-    - Instructions that change the same files are ordered, and so is each instruction against the changes not yet merged to `master` that change its files, as `git branch --no-merged master` and `git diff --name-only master...<branch>` show.
+    - Instructions that change the same files are ordered.
     - A `change` ticket's `depends-on` gives the tickets [Change tickets](prompts/agents/notes/tickets.md#change-tickets) has its filer give there.
     - Each claim the draft makes about the current state that the draft's outcome rests on holds now, by that state: each case, count and place it gives, each thing it says a file, a command or the tree does, and each result it expects a check of the tree to give. Such a claim that you do not settle is a finding.
         * inline: notes/launching.md#draft-outcome
