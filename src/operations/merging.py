@@ -16,7 +16,7 @@ script's own forms and by `master` (`state.Merge`):
   change out of the operator's hands;
 - a conflict in the rebase runs the change again with a new first editor:
   the command writes the old worktree and its branch on the ticket in a
-  line that opens with `Note.RERUN`, which no read of the change's worktree
+  line whose note opens with `rerun`, which no read of the change's worktree
   takes, and the final reply gives that line;
 - a refusal whose output reports a `quotes` call a change to the documents
   broke goes to a new code editor in the change's worktree, with those

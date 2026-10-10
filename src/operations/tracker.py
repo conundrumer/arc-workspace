@@ -33,8 +33,8 @@ def log(number: str, status: Status, current: Status, note: str, agent_id: str |
 
 def logged_worktree(t: Ticket) -> Path | None:
     """The worktree the latest line of `t`'s log that gives one gives,
-    past each line whose note opens with `Note.RERUN`. A line that opens
-    with `Note.RERUN` and stands after the worktree's line leaves none."""
+    past each line whose note opens with `rerun`. A line whose note opens
+    with `rerun` and stands after the worktree's line leaves none."""
     for line in reversed(t.log):
         if line.note.startswith(Note.RERUN):
             return None
