@@ -2,7 +2,9 @@
 - The statements on launching an agent, that more than one entry point inlines or links.
 
 ## Launching
-- After an agent's definition changes, wait 30 seconds before you launch that agent, so the harness reloads its file.
+- After an agent's definition changes, wait until 30 seconds after the write of its rendered file, `.claude/agents/<agent type>.md`, before you launch that agent, so the harness reloads that file.
+    - A newly added agent type can stay unknown to the harness for minutes after that write: where a launch fails with that type not found, make it again a minute after that failure, until 15 minutes have passed since that write. After that, give the launch as unfinished, with the failure's text as its reason.
+    - Wait each of these waits out in a foreground Bash call that sleeps for the rest of it, with its command led by `: 'unattended-wait: <agent type> reload';`.
 - Give an agent a brief in the form [Briefs](prompts/agents/notes/launching.md#briefs) gives for its work, where it gives one, and restate neither a docstring of the code nor the agent's definition.
 - Where a brief gives a scratch directory, give a new directory under the session's scratchpad directory, `/private/tmp/claude-<uid>/<working directory>/<session id>/scratchpad`, where `<uid>` is what `id -u` prints, `<working directory>` is the directory the session started in with each `/` as `-`, and `<session id>` is `$CLAUDE_CODE_SESSION_ID`.
 - In a brief or a `change` ticket that gives the items or the Intent of an edit, give the meaning to state, the case that shows the need, and the span the edit may change, and no wording.

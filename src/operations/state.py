@@ -256,7 +256,9 @@ class State:
     time of the session's start. `readers` holds the readers a standing doc
     review rotates over, in the order `context.py contexts` lists them, and
     `doc_reviews` the time of the commit each `Reader.tag` points at, by
-    that tag, or is None where the tags do not read."""
+    that tag, or is None where the tags do not read. `definitions` gives
+    the `st_mtime` of each rendered definition
+    `.claude/agents/<agent type>.md` of the main tree, by agent type."""
     me: str
     now: float
     session: str
@@ -286,6 +288,7 @@ class State:
     made: tuple[Made, ...] = ()
     taken_up: frozenset[str] = frozenset()
     unread: tuple[Unread, ...] = ()
+    definitions: Mapping[str, float] = field(default_factory=dict)
 
     @property
     def arrived(self) -> list[Message]:

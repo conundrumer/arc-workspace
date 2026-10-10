@@ -101,6 +101,8 @@ def read_state(me: str) -> tuple[State, MonitorState]:
         doc_reviews=doc_reviews(main),
         pass_tickets=passes, stalled=stalled,
         made=made(calls), unread=unread,
+        definitions={d.stem: d.stat().st_mtime
+                     for d in sorted((main / ".claude" / "agents").glob("*.md"))},
         branches={w: b for w, b in trees.items() if b is not None})
     state = replace(state, taken_up=taken_up(state))
     given = [ticket_number(n) for n in named(state) if n in tickets]

@@ -30,7 +30,7 @@ from agent_launches import accepted_after, last_delivered  # noqa: E402
 from operator_state import read_state  # noqa: E402
 from profile_runs import budget_of  # noqa: E402
 from transcripts import Refused, find  # noqa: E402
-from tree_reads import git, main_tree  # noqa: E402
+from tree_reads import main_tree  # noqa: E402
 
 from operations import briefs, plan  # noqa: E402
 from operations.decisions import WRITE_SECONDS  # noqa: E402
@@ -38,6 +38,7 @@ from operations.monitor import ALERTS  # noqa: E402
 from operations.roles import PASSES, Role  # noqa: E402
 from operations.filing import filed, with_report  # noqa: E402
 from operations.printing import key_line, printed  # noqa: E402
+from operations.state import State  # noqa: E402
 from operations.steps import BLOCK_SECONDS, Bash, Launch, Poll, Send, Step  # noqa: E402
 from operations.task_work import restore, set_aside  # noqa: E402
 
@@ -48,7 +49,7 @@ HELP = mctx("""
         uv run python scripts/operate.py set-aside <task id> analyze|create
         uv run python scripts/operate.py restore <task id>
         ```
-    - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters, or the final reply. Before the final reply, it prints a SendMessage call that sends the coordinator the reply's text, and the final reply it then prints is the line that says so. It writes the brief of a launch, and a message to an agent other than the coordinator, to a file under the session's scratchpad, and the call's prompt or message gives that file's path. The value of a prompt or a message parameter it prints stands between two lines of three backticks, and the value to pass is the text between those lines, without them. A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items. The brief of a launch other than a solver pass's gives the file the agent writes its final reply to, and ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where the budget `profile_runs.py --help` gives the brief, over every run under the project directories, is N minutes rounded up. A brief that gives items, as `profile_runs.py --help` gives them, takes that budget per item times the number of items it gives, and any other brief takes that budget for a run. Where there is no such budget, the brief has no such line. It holds back the launch of an agent type whose definition under `.claude/agents/` a commit of `master` changed less than {reload} seconds ago until those seconds have passed. Where no step is ready, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again. The block ends too, and it prints that the operator runs it again, once a message to the operator waits that the harness accepted after the latest `user` entry of the operator's transcript before the call: a SubagentHandback of an agent the operator launched or last resumed, or a SendMessage call, in any transcript of the session, to the operator's agent id or name, each with a result that gives success, and for SendMessage that it queued the message or resumed the operator. Each such message thus ends at most one call early, since the result of that call is a later `user` entry.
+    - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters, or the final reply. Before the final reply, it prints a SendMessage call that sends the coordinator the reply's text, and the final reply it then prints is the line that says so. It writes the brief of a launch, and a message to an agent other than the coordinator, to a file under the session's scratchpad, and the call's prompt or message gives that file's path. The value of a prompt or a message parameter it prints stands between two lines of three backticks, and the value to pass is the text between those lines, without them. A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items. The brief of a launch other than a solver pass's gives the file the agent writes its final reply to, and ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where the budget `profile_runs.py --help` gives the brief, over every run under the project directories, is N minutes rounded up. A brief that gives items, as `profile_runs.py --help` gives them, takes that budget per item times the number of items it gives, and any other brief takes that budget for a run. Where there is no such budget, the brief has no such line. It holds back the launch of an agent type until {reload} seconds after the last write of its rendered definition `.claude/agents/<agent type>.md`, and not at all where that file is absent. Where its last call of a launch failed with a result whose first line is `Agent type '<agent type>' not found`, or starts with that text followed by `.`, less than {load} seconds after that write, it gives the launch again once {retry} seconds have passed since that call, in place of a step on that failure; where that call came {load} seconds or more after that write, that failure is undecided, as that of any other failed call is. Where no step is ready, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again. The block ends too, and it prints that the operator runs it again, once a message to the operator waits that the harness accepted after the latest `user` entry of the operator's transcript before the call: a SubagentHandback of an agent the operator launched or last resumed, or a SendMessage call, in any transcript of the session, to the operator's agent id or name, each with a result that gives success, and for SendMessage that it queued the message or resumed the operator. Each such message thus ends at most one call early, since the result of that call is a later `user` entry.
     - Before each call it prints, `next` prints that step's key, on a line that gives the command to run after the call, so the text it prints ends with the call's last field. The key is the same at each read of the state that gives the same step.
     - `next` applies the rulings that the coordinator gives an operator of the session, and that the reply of a ticket analyst on a held step gives, each a line in one of these forms, matched whole, past a list marker:
         - `Decision: <decision key> <choice>` rules a held step, with one of the choices that step gives.
@@ -87,18 +88,21 @@ def print_step(step: Step, scratch: Path, me: str) -> None:
 
 
 RELOAD_SECONDS = 30
-"""How long after a change to an agent's definition the harness takes to
-load it, as the section `Launching` of `prompts/agents/notes/launching.md`
-gives."""
+"""How long after the last write of an agent type's rendered definition
+`.claude/agents/<agent type>.md` the harness takes to load it, as the
+section `Launching` of `prompts/agents/notes/launching.md` gives."""
 
 
-def reloading(step: Launch) -> float:
-    """The seconds left until the harness has loaded the definition of the
-    agent type `step` launches, after the last commit of `master` that
-    changed it, or 0."""
-    path = f".claude/agents/{step.role.agent_type}.md"
-    out = git(main_tree(), "log", "-1", "--format=%ct", "master", "--", path).strip()
-    return max(0.0, float(out) + RELOAD_SECONDS - time.time()) if out else 0.0
+def reloading(step: Launch, state: State) -> float:
+    """The seconds left until the launch `step` is made: until
+    `RELOAD_SECONDS` after the last write of its agent type's rendered
+    definition, and, where `plan.unloaded` gives its last call, until
+    `plan.RETRY_SECONDS` after that call."""
+    written = state.definitions.get(step.role.agent_type)
+    until = [] if written is None else [written + RELOAD_SECONDS]
+    if (failed := plan.unloaded(state, step)) is not None:
+        until.append(failed.time + plan.RETRY_SECONDS)
+    return max([0.0, *(t - time.time() for t in until)])
 
 
 def next_step(me: str) -> int:
@@ -108,7 +112,7 @@ def next_step(me: str) -> int:
     while True:
         state, watch = read_state(me)
         step = plan.next_step(state, watch)
-        if isinstance(step, Launch) and (left := reloading(step)) > 0:
+        if isinstance(step, Launch) and (left := reloading(step, state)) > 0:
             if time.monotonic() + left > deadline:
                 step = Poll()
             else:
@@ -127,7 +131,7 @@ def next_step(me: str) -> int:
 
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("--help", "-h"):
-        print(HELP.format(block=BLOCK_SECONDS, reload=RELOAD_SECONDS, write=round(WRITE_SECONDS), alerts=ALERTS))
+        print(HELP.format(block=BLOCK_SECONDS, reload=RELOAD_SECONDS, load=plan.LOAD_SECONDS, retry=plan.RETRY_SECONDS, write=round(WRITE_SECONDS), alerts=ALERTS))
         return 0
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
     parser.add_argument("action", choices=["next", "set-aside", "restore"])

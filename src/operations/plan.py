@@ -62,7 +62,7 @@ from operations.directives import (
     unread,
 )
 from operations.roles import Role, description
-from operations.state import State, Ticket
+from operations.state import Call, State, Ticket
 from ticketing.vocabulary import Status
 from operations.constants import COORDINATOR
 from operations.final_reply import failure, final_sends, nested
@@ -117,25 +117,66 @@ def placed(state: State, procedure: Callable[[State], Step | None]
     return None, None
 
 
+LOAD_SECONDS = 900
+"""How long after the last write of an agent type's rendered definition a
+launch of that type that fails with the type not found is taken as made
+before the harness loaded the type, and is made again (`unloaded`)."""
+
+RETRY_SECONDS = 60
+"""How long after a launch that `unloaded` gives the launch is made again."""
+
+
+def launch_calls(state: State, step: Launch) -> list[Call]:
+    """The Agent calls of `step` by `state.me`."""
+    what = description(step.role, step.subject)
+    return [c for c in state.calls if c.operator == state.me
+            and c.tool == "Agent" and c.input.get("description") == what]
+
+
+def failed_last(calls: list[Call]) -> Call | None:
+    """The last of `calls`, where it failed."""
+    return calls[-1] if calls and calls[-1].error else None
+
+
+def unloaded(state: State, step: Launch) -> Call | None:
+    """The last Agent call of `step` by `state.me`, where it failed, the
+    first line of its result is `Agent type '<agent type>' not found` or
+    starts with that text followed by `.`, and it came less than
+    `LOAD_SECONDS` after the last write of that type's rendered definition
+    (`State.definitions`)."""
+    if (last := failed_last(launch_calls(state, step))) is None:
+        return None
+    agent_type = step.role.agent_type
+    written = state.definitions.get(agent_type)
+    if written is None or last.time - written >= LOAD_SECONDS:
+        return None
+    why = failure(last)
+    bare = mctx("Agent type '{agent_type}' not found").format(agent_type=agent_type)
+    if why != bare and not why.startswith(bare + "."):
+        return None
+    return last
+
+
 def refused(state: State, step: Step) -> Undecided | None:
     """The undecided step on `step`, where the last call of `step` by
     `state.me` failed and no report reached an
     operator since, as where the harness or the permission classifier
-    denied it, so that a denied call is not printed again and again."""
+    denied it, so that a denied call is not printed again and again. A
+    launch that `unloaded` gives has none: it is made again."""
     match step:
-        case Launch(role, subject):
-            what = description(role, subject)
-            same = [c for c in state.calls if c.operator == state.me
-                    and c.tool == "Agent" and c.input.get("description") == what]
+        case Launch():
+            if unloaded(state, step) is not None:
+                return None
+            what = description(step.role, step.subject)
+            same = launch_calls(state, step)
         case Bash(command):
             what = command
             same = [c for c in bash_calls(state, command)
                     if c.operator == state.me and c.result is not None]
         case _:
             return None
-    if not same or not same[-1].error:
+    if (last := failed_last(same)) is None:
         return None
-    last = same[-1]
     if any(r.time > last.time for a in state.agents for r in a.reports):
         return None
     return Undecided(mctx("the call `{what}` failed: {why}").format(what=what,
