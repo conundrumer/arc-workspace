@@ -62,7 +62,7 @@
     - A slug is lowercase letters and digits, in words joined by single `-`.
     - Write it from your reading of the pairs alone, before you write any script.
     - Then check that it fits every pair.
-        - Where a script of this pass needs what a lib component computes, call the component in place of rebuilding it: `lib_components.components` has a function of the same name for each component with no column of a type its caller declares, which runs the component on the rows it is given.
+        - Where a script of this pass needs what a lib component computes, read the component's interface, then call the component in place of rebuilding it: `lib_components.components` has a function of the same name for each component with no column of a type its caller declares, which runs the component on the rows it is given.
             - The function takes the component's type arguments, each a `Primitive` from `engine.program` or a `LibType` from `lib_components.components`, the grid size of each key as `sizes`, and the rows of each input relation by that relation's name, with a cell as `(row, column)`. It returns each output relation, whose `.rows` is its set of rows as tuples, and whose `.map()` and `.map_per_key()` give a relation that is a function of its leading columns as a dict.
             - `Components(Primitive.NUMBER, sizes={i: (h, w)}, node=[(i, (r, c)), ...]).label.map_per_key()` gives `{i: {(r, c): id}}` for each key `i`.
     - A scene claim fixes no task data.
