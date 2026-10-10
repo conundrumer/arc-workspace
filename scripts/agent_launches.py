@@ -201,11 +201,16 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
     """The agents the run at `path` launched, in the order of their launch.
     A sign that an agent reported is the run's notification of it, or a
     result of its launch that does not say the agent runs in the
-    background."""
+    background. An Agent call whose result is an error launched no agent,
+    unless a transcript gives it as its launch or its result gives an
+    `agentId`."""
     entries = timed_entries(path)
     results = results_by_call(entries)
-    answered = {b.get("tool_use_id"): epoch(e["timestamp"]) for e in entries
-                if e.get("type") == "user" for b in blocks(e, "tool_result")}
+    replies = [(e, b) for e in entries if e.get("type") == "user"
+               for b in blocks(e, "tool_result")]
+    answered = {b.get("tool_use_id"): epoch(e["timestamp"]) for e, b in replies}
+    failed: set[str] = {b.get("tool_use_id", "") for _, b in replies
+                        if b.get("is_error")}
     told = {v: epoch(e["timestamp"]) for e in entries
             if e.get("type") != "assistant" for v in notified(e)}
     naming: dict[str, list[Entry]] = {}
@@ -224,10 +229,12 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
             given = results.get(tid)
             background = given is not None and in_background(given, undecided, tid)
             result = given or {}
+            child = by_call.get(tid)
+            if tid in failed and child is None and "agentId" not in result:
+                continue
             signs = [told.get(tid), told.get(result.get("agentId", "")),
                      None if background else answered.get(tid)]
             done = max((t for t in signs if t is not None), default=None)
-            child = by_call.get(tid)
             aid = agent_id(child) if child else result.get("agentId")
             if child is None and done is None:
                 undecided.append(mctx("{run}: no transcript gives call {call} as "
