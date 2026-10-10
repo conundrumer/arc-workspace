@@ -35,7 +35,7 @@ from tree_reads import claims, code_review, commits, gate_outputs, main_tree, sc
 
 from operations.directives import named
 from operations.plan import taken_up
-from operations import monitor
+from operations import monitor, passes
 from operations.monitor import (HUNG_FACTOR, Audit, Facet, MonitorState, Read,
                                 ToCoordinator, Watched)
 from operations.alerts import AlertKind
@@ -158,10 +158,12 @@ def last_audit(audits: list[Audit], aid: str) -> float | None:
 
 
 def closed_unaudited(agents: tuple[Agent, ...], listing: list[Listed], audits: list[Audit],
-                     since: float, undecided: list[str]) -> list[Listed]:
+                     reviewed: frozenset[str], since: float,
+                     undecided: list[str]) -> list[Listed]:
     """The agents of `agents` that `listing` leaves out, so whose work has
-    closed, other than the auditors, whose last ended turn falls after
-    `since` and no auditor was launched on after that turn, each as listed
+    closed, other than the auditors and the agents of `reviewed`, whose
+    last ended turn falls after `since` and no auditor was launched on
+    after that turn, each as listed
     where its turn has ended.
 
     `read_watch` gives as `since` the start of the operator launched right
@@ -173,7 +175,7 @@ def closed_unaudited(agents: tuple[Agent, ...], listing: list[Listed], audits: l
     out: list[Listed] = []
     for a in agents:
         aid = a.agent_id
-        if aid is None or aid in shown or a.role.agent_type in UNWATCHED:
+        if aid is None or aid in shown or a.role.agent_type in UNWATCHED or aid in reviewed:
             continue
         shown.add(aid)
         try:
@@ -323,10 +325,11 @@ def read_watch(state: State) -> MonitorState:
     launched = {a.agent_id: a.role for a in state.agents if a.agent_id}
     listing = running_agents(session, undecided)
     at = state.operators.index(state.me)
-    closed = closed_unaudited(state.agents, listing, audits,
+    reviewed = passes.reviewed(state)
+    closed = closed_unaudited(state.agents, listing, audits, reviewed,
                               started(state.operators[max(at - 1, 0)]), undecided)
     return MonitorState(
         watched=tuple(watched(listing, closed, launched, audits, undecided)),
         to_coordinator=tuple(to_coordinator(session_directory(session), start, undecided)),
         audits=tuple(audits), sent=partial(sent_with, state),
-        transcript=find(state.me), stalled=frozenset(state.stalled), undecided=tuple(undecided))
+        transcript=find(state.me), stalled=frozenset(state.stalled), reviewed=reviewed, undecided=tuple(undecided))

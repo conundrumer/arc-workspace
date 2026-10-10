@@ -280,3 +280,16 @@ def awaits_analyst(state: State, task: str) -> bool:
                    if purpose is Purpose.PASS and task in nums):
             return True
     return False
+
+
+def reviewed(state: State) -> frozenset[str]:
+    """The agents that get a transcript review: each that one was launched
+    on after its own launch, and each whose review launch a pipeline's next
+    step gives on this read. The monitor reads this before the pipelines
+    take their step, so a review about to launch counts too."""
+    out = {a.agent_id for a in state.agents if a.agent_id is not None
+           and latest(state, Role.TRANSCRIPT_REVIEW, a.agent_id, a.launched) is not None}
+    _, outcomes = step(state)
+    out |= {o.step.subject for _, o in outcomes
+            if isinstance(o.step, Launch) and o.step.role is Role.TRANSCRIPT_REVIEW}
+    return frozenset(out)

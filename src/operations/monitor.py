@@ -10,10 +10,12 @@ other than the auditors, so no auditor, and no alert of one, is itself
 audited: each whose work is open, and each whose work has closed while no
 auditor was launched on it after its last ended turn, where that turn ended
 after the start of the run of the operator launched right before the one
-that reads the state, or of the reading one where it is the first. An audit runs on a
+that reads the state, or of the reading one where it is the first, and
+it gets no transcript review (`passes.reviewed`). An audit runs on a
 watched agent once its turn ends, whether or not its work is still open,
-until an auditor is launched on it after that turn, and once mid-run where
-a call of it has hung; on the
+until an auditor is launched on it after that turn, other than on an
+agent that gets a transcript review, which reads the same transcript in
+full; and once mid-run where a call of it has hung; on the
 operator's own run before its final reply, once for each final reply (`own_audit`); and on a message
 to the coordinator from an agent the coordinator did not launch. A budget
 alert goes to the agent itself (`alerts.to_agent`), with no audit. A step
@@ -169,14 +171,15 @@ class Audit:
 @dataclass(frozen=True)
 class MonitorState:
     """`sent` gives `handled.sent_with` over the calls of the session's
-    operators, `transcript` the transcript of the operator `me`, and `stalled` the
-    agents of `State.stalled`."""
+    operators, `transcript` the transcript of the operator `me`, `stalled` the
+    agents of `State.stalled`, and `reviewed` the agents of `passes.reviewed`."""
     watched: tuple[Watched, ...]
     to_coordinator: tuple[ToCoordinator, ...]
     audits: tuple[Audit, ...]
     sent: Callable[[str, str], list[float]]
     transcript: Path
     stalled: frozenset[str]
+    reviewed: frozenset[str]
     undecided: tuple[str, ...]
     """The lines on what the read of the state left unknown."""
 
@@ -284,13 +287,16 @@ def audits_on(audits: Iterable[Audit], facet: Facet, agent: str) -> list[Audit]:
 
 
 def needs_audit(state: MonitorState, w: Watched) -> bool:
-    """Whether `w` has an ended turn, or a call that became hung, since the
-    launch of its last auditor, once that auditor's outcome is in."""
+    """Whether `w` has an ended turn, where it gets no transcript review,
+    or a call that became hung, since the launch of its last auditor, once
+    that auditor's outcome is in."""
     past = audits_on(state.audits, Facet.AGENT, w.agent_id)
     last = past[-1].launched if past else None
     if past and outcome(state, past[-1]) is None:
         return False
     if w.ended:
+        if w.agent_id in state.reviewed:
+            return False
         return last is None or w.activity > last
     return w.hung is not None and (last is None or w.hung > last)
 
