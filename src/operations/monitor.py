@@ -287,9 +287,18 @@ def subject_of(text: str) -> tuple[Facet, str, int | None] | None:
 BUDGET_ALERT = mctx("Its active time is past its budget.")
 
 
-def audits_on(audits: Iterable[Audit], facet: Facet, agent: str) -> list[Audit]:
-    return sorted((a for a in audits if a.facet is facet and a.agent_id == agent),
+def audits_on(audits: Iterable[Audit], facet: Facet, agent: str | None) -> list[Audit]:
+    """The audits of `facet` on `agent`, or on every agent where `agent` is
+    None, in the order of their launch."""
+    return sorted((a for a in audits
+                   if a.facet is facet and (agent is None or a.agent_id == agent)),
                   key=lambda a: a.launched)
+
+
+def agent_audits(audits: Iterable[Audit], agent: str | None = None) -> list[Audit]:
+    """The audits on the run of `agent`, or on every run where `agent` is
+    None, in the order of their launch."""
+    return audits_on(audits, Facet.AGENT, agent)
 
 
 def latest_launch(past: list[Audit]) -> float | None:
@@ -300,12 +309,12 @@ def latest_launch(past: list[Audit]) -> float | None:
 
 def last_audit(audits: Iterable[Audit], agent: str) -> float | None:
     """The time of the latest launch of an auditor on the run of `agent`."""
-    return latest_launch(audits_on(audits, Facet.AGENT, agent))
+    return latest_launch(agent_audits(audits, agent))
 
 
 def run_audits(state: MonitorState, w: Watched) -> list[Audit]:
     """The audits on the run of `w`, in the order of their launch."""
-    return audits_on(state.audits, Facet.AGENT, w.agent_id)
+    return agent_audits(state.audits, w.agent_id)
 
 
 def needs_audit(state: MonitorState, w: Watched) -> bool:

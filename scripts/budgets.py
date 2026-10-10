@@ -21,7 +21,7 @@ from run_profile import (Message, Part, Run, clock, minutes,
 from run_reads import MAIN, agent_type, parent_id
 from transcripts import is_subagent
 
-# The terms of a type's budget, which HELP states.
+# The terms of the budget of a type or a role, which HELP states.
 BUDGET_FACTOR = 2
 MEDIAN_RUNS = 5
 LOW_WAIT_PCT = 10
@@ -43,12 +43,19 @@ def budget_group(r: Run) -> str | None:
     if r.agent_type != GENERAL:
         return r.agent_type
     d = described(r.description)
-    return d.role.value if d is not None and d.role in GENERAL_ROLES else None
+    return None if d is None else general_group(d.role)
+
+
+def general_group(role: Role) -> str | None:
+    """The budget of its own that `role` has where it is a role of
+    `roles.GENERAL_ROLES`, and None where it has none."""
+    return role.value if role in GENERAL_ROLES else None
 
 
 def role_group(role: Role) -> str:
     """The budget a brief of `role` gets, as `budget_group` names it."""
-    return role.value if role in GENERAL_ROLES else role.agent_type
+    group = general_group(role)
+    return role.agent_type if group is None else group
 
 
 def type_window(kind: str, undecided: list[str]) -> float | None:

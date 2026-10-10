@@ -198,7 +198,7 @@ class Message:
 class Commit:
     """A commit of `master`: its hash, its time, whether it changes
     `src/`, `scripts/` or `tests/`, its subject, and whether it changes
-    `prompts/agents/` or `src/operations/`, a change to the agents'
+    a directory of `tree_reads.PROCESS_DIRS`, a change to the agents'
     processes."""
     hash: str
     time: float

@@ -24,7 +24,7 @@ from ticket_reads import read_tickets
 from transcripts import Refused, epoch, find
 from tree_reads import commits, main_tree
 
-from operations.monitor import NO_SIGN, Audit, Facet, hung_from
+from operations.monitor import NO_SIGN, Audit, agent_audits, hung_from
 from operations.roles import EDITORS
 from operations.signals import Known, Reading, RunAt, Unknown, signals
 from operations.state import Agent, Call, Message
@@ -229,8 +229,7 @@ def main() -> None:
                       subjects)
     tickets, _ = read_tickets(main_path / "tickets")
     by_id = {a.agent_id: a for a in agents if a.agent_id}
-    audits = sorted((x for a in agents if (x := audit_of(a, undecided)) is not None
-                     and x.facet is Facet.AGENT), key=lambda x: x.launched)
+    audits = agent_audits(x for a in agents if (x := audit_of(a, undecided)) is not None)
     tally: Counter[tuple[str, str]] = Counter()
     for audit in audits:
         audited = by_id.get(audit.agent_id)
