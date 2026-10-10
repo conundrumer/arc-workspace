@@ -1,5 +1,8 @@
 """The profile of where an agent run's wall time goes, from its Claude
-Code transcripts, and its print, as the HELP of `profile_runs` gives them."""
+Code transcripts, and its print, as the HELP of `profile_runs` gives them.
+
+A profile also reads files past those transcripts, and the state of running
+processes: `noted_reads` states those reads."""
 
 import math
 import subprocess
