@@ -13,15 +13,9 @@ from hook_entry import run_pre_tool_use
 
 HOOK = "context_bound_hook"
 OPERATOR = "operator"
-CONTEXT_BOUND = 47_855
-"""Keeps each request of an operator run, its hand-over included, within
-the cheap tier of `claude-haiku-5-5`, up to 100,000 input tokens. The
-margin under 100,000 is the sum of two measures over the operator runs of
-this project's transcripts: the largest rise in input tokens between two
-consecutive requests of a run, 18,994, since the context tested is that of
-the last request made, and the largest rise from the request after which
-`next` first prints the context-bound ending to the run's last request,
-33,151."""
+CONTEXT_BOUND = 100_000
+"""Has no margin under it: the requests of a run's hand-over may go past
+it."""
 REPLY_ONLY_TYPE = "general-purpose"
 REPLY_ONLY_MODEL = "haiku"
 
