@@ -78,6 +78,7 @@
 - A doc reviewer's brief gives a change to the agent-facing documents, as the files or a diff, and the number of its ticket, or, where it has none, what is already settled about it.
 - It gives the change's worktree, the agent id of the change's doc editor, and of each of its code editors with the files that editor's brief gives, and the agent id of the agent that launches it, where that is not the coordinator.
 - A doc reviewer's brief on a commit of `master` that the coordinator merged with no `change` ticket gives that commit's hash in place of a worktree and editors.
+- A doc reviewer's brief on a standing doc review gives the reader with its arguments, the commit of `master` it reviews, and the tag `doc-review/<reader>` that records that review in git, in place of a change, a worktree and editors.
 
 ### Solver work
 - Solver work is a solver pass, or an edit of a solver or of the lib for one task.

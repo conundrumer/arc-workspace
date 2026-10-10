@@ -285,6 +285,18 @@ def code_review(baseline: int, scratch: Path) -> str:
         baseline=baseline, number=baseline + 1) + "\n" + SCRATCH.format(scratch=scratch)
 
 
+STANDING_DOC_REVIEW = mctx("""
+    - A standing doc review of the reader `{reader}`.
+    - The commit of `master` it reviews: {commit}.
+    - Its record in git: the tag `{tag}`.
+    """)
+
+
+def standing_doc_review(reader: str, tag: str, commit: str, operator: str) -> str:
+    return (STANDING_DOC_REVIEW.format(reader=reader, commit=commit, tag=tag) + "\n"
+            + LAUNCHER.format(operator=operator))
+
+
 BATCH_PROFILE = mctx("""
     - Run `uv run python scripts/profile_runs.py <id>` once for each of these runs, with that run's agent id alone as `<id>`; you may run those commands in one Bash call: {runs}.
     - Then run `uv run python scripts/profile_runs.py --runs <id> ...` once, with the agent ids of all these runs.

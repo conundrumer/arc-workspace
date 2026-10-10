@@ -1,13 +1,13 @@
 """The reads of git and of the main worktree that the operator's procedures
 take their state from: the worktrees, the commits of `master`, the code
-review tags, the task claims, the accepted gate outputs a change writes,
-and the session's scratchpad directory."""
+review tags, the standing doc review tags, the task claims, the accepted
+gate outputs a change writes, and the session's scratchpad directory."""
 
 import os
 from pathlib import Path
 
 from engine import checkout
-from operations.state import Commit
+from operations.state import DOC_REVIEW, Commit
 from operations.task_work import CLAIM, tasks_work
 
 COMMITS = 300
@@ -46,6 +46,16 @@ def code_review(main: Path) -> int | None:
     tags = [int(t.rsplit("/", 1)[1]) for t in git(main, "tag", "-l", "code-review/*").split()
             if t.rsplit("/", 1)[1].isdigit()]
     return max(tags) if tags else None
+
+
+def doc_reviews(main: Path) -> dict[str, float] | None:
+    """The time of the commit each standing doc review tag points at, by
+    tag, or None where a tag does not read as a commit."""
+    try:
+        return {t: float(git(main, "log", "-1", "--format=%ct", f"{t}^{{commit}}"))
+                for t in git(main, "tag", "-l", f"{DOC_REVIEW}*").split()}
+    except (checkout.GitFailed, ValueError):
+        return None
 
 
 def claims(main: Path) -> dict[str, str]:

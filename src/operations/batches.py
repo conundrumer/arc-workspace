@@ -1,20 +1,26 @@
 """After a batch: once every agent of a batch has returned, the release of
-tickets, a code review where the batch merged a change to the code, and two
-agents launched for the rest, one on the profile of the batch's runs and
-one, where the batch merged a change, on the gate's timings and outputs.
+tickets, a code review where the batch merged a change to the code, a
+standing doc review where the batch merged a change, and two agents
+launched for the rest, one on the profile of the batch's runs and one,
+where the batch merged a change, on the gate's timings and outputs.
 
 A batch is the agents the session's operators launched since the launch
 of the previous batch's profile agent, other than the agents of After a
-batch and the process assessments, with the changes merged since: those an
-operator's merge call merged, as `state.Merge` reads it, and those the
-coordinator gives as merged. The launch of the
-profile agent opens the next batch.
+batch, the standing doc reviews and the process assessments, with the
+changes merged since: those an operator's merge call merged, as
+`state.Merge` reads it, and those the coordinator gives as merged. The
+launch of the profile agent opens the next batch.
 
 A process assessment, a ticket analyst, launches at the end of a batch
 once `ASSESS_AFTER` commits of `master` that change the agents' processes
 stand since the launch of the last one an operator of the session
 launched, or since the session's start where none was, and none runs. No
 batch holds it, so no profile launch waits on its run.
+
+A standing doc review is a doc reviewer on one reader's whole context at
+the head of `master`: the first reader of `State.readers` that no tag
+records, or, where each has one, the reader whose tag points at the
+oldest commit.
 
 The profile agent profiles each run `profile_runs.py --under` takes, and
 may launch a transcript review only of those that are members of the
@@ -30,7 +36,7 @@ from operations import briefs
 from operations.changes import release
 from operations.directives import Directive, numbers
 from operations.roles import AGENT_ID, Purpose, Role, analyst_of, analyst_subject
-from operations.state import Agent, Merge, State
+from operations.state import DOC_REVIEW, Agent, Merge, State
 from operations.handled import bash_calls
 from operations.steps import Bash, Launch, Step, Undecided
 
@@ -46,7 +52,13 @@ def start(state: State) -> float:
 
 def members(state: State, since: float) -> list[Agent]:
     return [a for a in state.agents
-            if a.launched > since and a.role not in OWN and not assesses(a)]
+            if a.launched > since and a.role not in OWN and not assesses(a)
+            and not standing(a)]
+
+
+def standing(agent: Agent) -> bool:
+    """Whether `agent` is a standing doc review."""
+    return agent.role is Role.DOC_REVIEWER and agent.subject.startswith(DOC_REVIEW)
 
 
 def assesses(agent: Agent) -> bool:
@@ -79,6 +91,12 @@ def step(state: State) -> Step | None:
                           briefs.code_review(state.code_review, state.scratch / "code-review"))
         if reviewers[-1].pending:
             return None
+    if merges:
+        reviews = [a for a in state.agents if standing(a) and a.launched > since]
+        if not reviews:
+            return doc_review(state)
+        if reviews[-1].pending:
+            return None
     n = len(state.agents_of(Role.BATCH_PROFILE)) + 1
     head = state.commits[0].hash
     if merges and not any(a.launched > since for a in state.agents_of(Role.BATCH_GATE)):
@@ -98,6 +116,20 @@ def step(state: State) -> Step | None:
     ids = {a.agent_id for a in batch}
     return Launch(Role.BATCH_PROFILE, str(n),
                   briefs.batch_profile(runs, [r for r in runs if r in ids], head))
+
+
+def doc_review(state: State) -> Step:
+    """The launch of a standing doc review, on the reader it is due on."""
+    if not state.readers:
+        return Undecided("no reader is listed for a standing doc review")
+    if state.doc_reviews is None:
+        return Undecided("a `doc-review/<reader>` tag does not read as a commit")
+    times = state.doc_reviews
+    unreviewed = [r for r in state.readers if r.tag not in times]
+    reader = unreviewed[0] if unreviewed else min(state.readers, key=lambda r: times[r.tag])
+    return Launch(Role.DOC_REVIEWER, reader.tag,
+                  briefs.standing_doc_review(" ".join((reader.name, *reader.args)), reader.tag,
+                                             state.commits[0].hash, state.me))
 
 
 ASSESS_AFTER = 20

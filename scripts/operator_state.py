@@ -21,16 +21,26 @@ from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
 from ticket_settle import to_settle
 from transcripts import Refused, entries_back, find, new_state
-from tree_reads import claims, code_review, commits, gate_outputs, main_tree, scratch, worktrees
+from tree_reads import (claims, code_review, commits, doc_reviews, gate_outputs, main_tree,
+                        scratch, worktrees)
+
+from handbook.reader_names import ReaderName
+from handbook.readers import reader_calls
 
 from operations.directives import named
 from operations.plan import taken_up
 from operations import monitor
 from operations.monitor import MonitorState, Watched
-from operations.state import Agent, Call, Message, Report, State
+from operations.state import Agent, Call, Message, Reader, Report, State
 from operations.handled import made
 from operations.tracker import worktree
 from ticketing.vocabulary import Status
+
+
+DEPRECATED = frozenset({ReaderName.ROLE, ReaderName.CONSOLE, ReaderName.SURVEY,
+                        ReaderName.WORKFLOW})
+"""The readers of the deprecated mechanisms, which no standing doc review
+reads."""
 
 
 def read_state(me: str) -> tuple[State, MonitorState]:
@@ -83,6 +93,9 @@ def read_state(me: str) -> tuple[State, MonitorState]:
         calls=tuple(sorted(calls, key=lambda c: c.time)), messages=tuple(messages),
         to_settle=(), worktrees=frozenset(trees), claims=claims(main),
         commits=history, code_review=code_review(main),
+        readers=tuple(Reader(name, tuple(args)) for name, args in reader_calls()
+                      if name not in DEPRECATED),
+        doc_reviews=doc_reviews(main),
         pass_tickets=passes, stalled=stalled,
         made=made(calls), unread=unread,
         branches={w: b for w, b in trees.items() if b is not None})

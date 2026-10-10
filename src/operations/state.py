@@ -9,6 +9,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from handbook.reader_names import ReaderName
 from operations.roles import Model, Purpose, Role, analyst_of, subjects
 from ticketing.vocabulary import Domain, Kind, Status
 
@@ -210,6 +211,23 @@ class Commit:
     process: bool
 
 
+DOC_REVIEW = "doc-review/"
+"""What leads the tag of a reader's last standing doc review, and the
+subject of a standing doc review's launch."""
+
+
+@dataclass(frozen=True)
+class Reader:
+    """A reader the `context` command knows, with one argument list it
+    takes. `tag` is the tag of its last standing doc review."""
+    name: ReaderName
+    args: tuple[str, ...]
+
+    @property
+    def tag(self) -> str:
+        return DOC_REVIEW + "-".join((self.name, *self.args))
+
+
 @dataclass(frozen=True)
 class State:
     """What the procedures read. `operators` holds the agent ids of the
@@ -235,7 +253,10 @@ class State:
     those that reached `me` or an operator it takes up the lines of
     (`taken_up`, as `plan.taken_up` gives it). `unread` holds the ticket
     files the read of the tracker left out of `tickets`. `started` is the
-    time of the session's start."""
+    time of the session's start. `readers` holds the readers a standing doc
+    review rotates over, in the order `context.py contexts` lists them, and
+    `doc_reviews` the time of the commit each `Reader.tag` points at, by
+    that tag, or is None where the tags do not read."""
     me: str
     now: float
     session: str
@@ -256,6 +277,8 @@ class State:
     claims: Mapping[str, str]
     commits: tuple[Commit, ...]
     code_review: int | None
+    readers: tuple[Reader, ...] = ()
+    doc_reviews: Mapping[str, float] | None = field(default_factory=dict)
     gate_outputs: Mapping[Path, tuple[str, ...]] = field(default_factory=dict)
     branches: Mapping[Path, str] = field(default_factory=dict)
     stalled: Mapping[str, Report] = field(default_factory=dict)

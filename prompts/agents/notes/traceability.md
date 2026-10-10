@@ -109,7 +109,7 @@
     - "`Decision: <decision key> <choice>`": Decisions: a departing decision reaches the user.
     - "`Solve: <task id> ...`", "`Solve from the queue`", "`Override: <task id> <pass> <override>`", "`Override: pass over <step key>`": Solver passes: a pass runs its operations on its task.
 - [A code reviewer's brief](prompts/agents/notes/launching.md#a-code-reviewers-brief): Verification: a standing review of the lines in force.
-- [A doc reviewer's brief](prompts/agents/notes/launching.md#a-doc-reviewers-brief): Verification: another agent checks the built change.
+- [A doc reviewer's brief](prompts/agents/notes/launching.md#a-doc-reviewers-brief): Verification: another agent checks the built change; a standing review of the lines in force.
 - [Solver work](prompts/agents/notes/launching.md#solver-work): Solver passes: a pass runs its operations on its task; a pass writes only where its notes give.
 - [A solver work brief](prompts/agents/notes/launching.md#a-solver-work-brief): Solver passes: a pass runs its operations on its task.
 - [Writing a solver work brief](prompts/agents/notes/launching.md#writing-a-solver-work-brief): Solver passes: a pass runs its operations on its task.
@@ -273,6 +273,7 @@
     - "Hold back each finding an editor's message gives as left for a decision": Implementation: each item not done reaches the agent that decides it.
     - "Message no agent other than the editors", "Edit no file other than the tickets you file": none. Kept: they leave each finding's fix to the editor and each decision to the agent that decides it.
     - "File a `performance` ticket": Process assessment: the faults of the processes reach the user.
+    - "Where your brief gives a standing doc review": Verification: a standing review of the lines in force.
 - [Trials](prompts/agents/doc-reviewer.md#trials): Verification: evidence of a reader's behavior.
 
 ## Operator
