@@ -57,7 +57,13 @@ def run_words(action: str, agent: str) -> list[str]:
 def runs(command: str, action: str, agent: str) -> bool:
     """Whether the Bash command `command` runs `operate.py` with `action`
     for the operator `agent`, whatever else it runs."""
-    return any(words == run_words(action, agent) for words in simple_commands(command))
+    return any(is_call(words, action, agent) for words in simple_commands(command))
+
+
+def is_call(words: list[str], action: str, agent: str) -> bool:
+    """Whether the simple command `words` is the call of `operate.py` with
+    `action` for the operator `agent`."""
+    return words == run_words(action, agent)
 
 
 def is_next(command: str, agent: str) -> bool:

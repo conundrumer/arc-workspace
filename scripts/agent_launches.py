@@ -5,6 +5,7 @@ it that the harness accepted waits for delivery."""
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -17,10 +18,21 @@ from run_reads import (blocks, in_background, meta_parent, notified,
 from transcripts import (Entry, agent_id, agent_transcripts, chain, epoch, find, read_entries,
                          stat_of, state_cache)
 
-# The openings of the message of a SendMessage result where the call resumed
-# the agent it was sent to, and where it queued the message to a running one.
-RESUMING = "Resuming agent"
-QUEUED = "Message queued"
+
+class Delivery(Enum):
+    """What the harness did with a SendMessage call's message, by the
+    opening of the message of its result: it resumed the agent it was sent
+    to, or queued the message to a running one."""
+    RESUMED = "Resuming agent"
+    QUEUED = "Message queued"
+
+
+def delivery(result: dict[str, Any]) -> Delivery | None:
+    """What the harness did with the message of the SendMessage call whose
+    result is `result`, or None where its message opens with neither."""
+    message = str(result.get("message", ""))
+    return next((d for d in Delivery if message.startswith(d.value)), None)
+
 
 DELIVERED = "Report delivered"
 """The opening of the message of a SubagentHandback result where the
@@ -115,10 +127,10 @@ def resumed(result: dict[str, Any], run: str, call: str,
     unknown form."""
     if result.get("resumedAgentId"):
         return str(result["resumedAgentId"])
-    message = str(result.get("message", ""))
-    if message.startswith(RESUMING):
+    done = delivery(result)
+    if done is Delivery.RESUMED:
         return (result.get("pin") or {}).get("id")
-    if result.get("pin") and not message.startswith(QUEUED):
+    if result.get("pin") and done is None:
         undecided.append(mctx("{run}: the result of SendMessage call {call} "
                               "says neither that it resumed an agent nor "
                               "that it queued the message").format(
@@ -280,7 +292,7 @@ def accepted_after(path: Path, since: float, undecided: list[str]) -> bool:
     mine = callees(path, undecided)
     for p in changed_since(run_sessions(path), since):
         hands_back = agent_id(p) in mine
-        words = names | {QUEUED, RESUMING}
+        words = names | {d.value for d in Delivery}
         if hands_back:
             words |= {"SubagentHandback", DELIVERED}
         entries = [e for e in read_entries(p, naming=words) if e.get("timestamp")]
@@ -298,7 +310,7 @@ def accepted_after(path: Path, since: float, undecided: list[str]) -> bool:
                     return True
                 if (b.get("name") == "SendMessage"
                         and str((b.get("input") or {}).get("to", "")) in names
-                        and str(r.get("message", "")).startswith((QUEUED, RESUMING))):
+                        and delivery(r) is not None):
                     return True
     return False
 

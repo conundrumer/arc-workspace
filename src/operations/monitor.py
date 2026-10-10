@@ -286,12 +286,18 @@ def audits_on(audits: Iterable[Audit], facet: Facet, agent: str) -> list[Audit]:
                   key=lambda a: a.launched)
 
 
+def last_audit(audits: Iterable[Audit], agent: str) -> float | None:
+    """The time of the latest launch of an auditor on the run of `agent`."""
+    past = audits_on(audits, Facet.AGENT, agent)
+    return past[-1].launched if past else None
+
+
 def needs_audit(state: MonitorState, w: Watched) -> bool:
     """Whether `w` has an ended turn, where it gets no transcript review,
     or a call that became hung, since the launch of its last auditor, once
     that auditor's outcome is in."""
     past = audits_on(state.audits, Facet.AGENT, w.agent_id)
-    last = past[-1].launched if past else None
+    last = last_audit(state.audits, w.agent_id)
     if past and outcome(state, past[-1]) is None:
         return False
     if w.ended:

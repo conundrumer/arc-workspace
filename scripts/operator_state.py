@@ -151,12 +151,6 @@ def facts(listed: Listed, since: float | None, undecided: list[str]) -> str:
     return out.getvalue().rstrip("\n")
 
 
-def last_audit(audits: list[Audit], aid: str) -> float | None:
-    """The time of the latest launch of an auditor on the run of `aid`."""
-    past = monitor.audits_on(audits, Facet.AGENT, aid)
-    return past[-1].launched if past else None
-
-
 def closed_unaudited(agents: tuple[Agent, ...], listing: list[Listed], audits: list[Audit],
                      reviewed: frozenset[str], since: float,
                      undecided: list[str]) -> list[Listed]:
@@ -189,7 +183,7 @@ def closed_unaudited(agents: tuple[Agent, ...], listing: list[Listed], audits: l
             undecided.append(mctx("{agent}: no entry of its transcript gives a time, so its "
                                   "last ended turn is not audited").format(agent=aid))
             continue
-        last = last_audit(audits, aid)
+        last = monitor.last_audit(audits, aid)
         if end <= since or (last is not None and last > end):
             continue
         launch = next((x for x in launches(launcher, undecided) if x.agent == aid), None)
@@ -221,7 +215,7 @@ def watched(listing: list[Listed], closed: list[Listed], launched: dict[str, Rol
             activity=activity(listed), hung=hung_at(listed, listing) if is_open else None,
             ended=listed.ended, open=is_open,
             over_budget=budget is not None and active is not None and active > budget * 60,
-            facts=facts(listed, last_audit(audits, aid), undecided), transcript=r.path))
+            facts=facts(listed, monitor.last_audit(audits, aid), undecided), transcript=r.path))
     return out
 
 

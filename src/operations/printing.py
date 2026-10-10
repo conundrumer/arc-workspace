@@ -15,7 +15,7 @@ from operations.roles import description
 from operations.steps import Bash, Launch, Poll, Reply, Send, Step, Undecided, key
 
 
-FINAL_REPLY = "final reply"
+FINAL_REPLY = mctx("final reply")
 """The first line of the text `next` prints for the operator's final
 reply, and of the message that sends the coordinator its text."""
 
@@ -56,16 +56,21 @@ def unfenced(value: str) -> str:
     return body if sep and tail == FENCE else value
 
 
+SEND = "\n".join([mctx("call SendMessage"), mctx("to: {to}"), mctx("message:"), "{message}"])
+BASH = "\n".join([mctx("call Bash"), mctx("timeout: {timeout}"), mctx("command:"), "{command}"])
+
+
 def send_text(to: str, message: str) -> str:
-    return f"call SendMessage\nto: {to}\nmessage:\n{fenced(message)}"
+    return SEND.format(to=to, message=fenced(message))
 
 
 def bash_text(command: str) -> str:
-    return f"call Bash\ntimeout: {FOREGROUND_MS}\ncommand:\n{command}"
+    return BASH.format(timeout=FOREGROUND_MS, command=command)
 
 
-LAUNCH = "call Agent"
-PROMPT = "prompt"
+LAUNCH = mctx("call Agent")
+PROMPT = mctx("prompt")
+FIELD = mctx("{name}: {value}")
 
 
 def parameter(value: object) -> str:
@@ -76,7 +81,7 @@ def parameter(value: object) -> str:
 def launch_text(fields: dict[str, str], prompt: str) -> str:
     """The text of a launch whose parameters other than its prompt are
     `fields`, in their order, which `printed_launch` reads back."""
-    return "\n".join([LAUNCH, *(f"{k}: {v}" for k, v in fields.items()),
+    return "\n".join([LAUNCH, *(FIELD.format(name=k, value=v) for k, v in fields.items()),
                       f"{PROMPT}:", fenced(prompt)])
 
 

@@ -12,7 +12,7 @@ from functools import cache
 
 from controlled_markdown import form
 from operations import briefs
-from operations.command_words import is_next, run_words, simple_commands
+from operations.command_words import is_call, is_next, simple_commands
 from operations.constants import COORDINATOR
 from operations.printing import KEY_LINE, bash_text, send_text, unfenced
 from operations.roles import Purpose
@@ -138,11 +138,11 @@ def bash_calls(state: State, command: str) -> list[Call]:
 
 def only_command(command: str, agent: str) -> bool:
     """Whether the Bash command `command` runs the command's `next` for the
-    operator `agent` and nothing else but `cd` and `:`."""
-    want = run_words("next", agent)
-    found = simple_commands(command)
-    return any(words == want for words in found) and all(
-        words[0] in ("cd", ":") or words == want for words in found)
+    operator `agent` and nothing else but `cd` and `:`, which run no step
+    the command prints."""
+    return is_next(command, agent) and all(
+        words[0] in ("cd", ":") or is_call(words, "next", agent)
+        for words in simple_commands(command))
 
 
 PRINTED_KEY = form(KEY_LINE, {"key": f"(?P<key>{STEP_KEY.pattern})", "command": "[^\n]*"}) + "\n"
