@@ -20,6 +20,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 - Run no git command that changes state.
 - Each Justification entry names a restatement or elaboration the requester wants kept, and the observed failure that required it.
 - The request is written from what the sending session knows. Decide where each thing goes and which lines change, and put what the document's readers need above what the request asks.
+- Build the `Design` of your change's ticket, where it gives one for the documents. Where the documents show a better place or a better existing line to extend, build that, and give in your report the departure with its reason.
 - State the Intent at the minimum the documents' readers need, in its general form where one exists, and trace each line you write to the Intent or to a Justification entry.
 * inline: notes/worktree.md#worktree
 * inline: notes/worktree.md#worktree-commands

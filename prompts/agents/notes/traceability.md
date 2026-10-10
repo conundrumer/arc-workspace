@@ -205,7 +205,7 @@
 - [Tracking](prompts/agents/ticket-analyst.md#tracking): Decisions: each decision recorded with what it was made from.
     - "The kind of a ticket you file is `change`": none. Kept: it gives the form of the tickets the analyst files.
     - "A `change` to the agents' processes": Process assessment: each rule maps to an outcome.
-    - "Write the `Design` section": Design: a design from the code; the Scope covers the design.
+    - "Write the `Design` section": Design: a design from the code or the documents; the Scope covers the design.
     - "Settle by [Settling]": Process assessment: the faults of the processes reach the user.
 - [Commands](prompts/agents/ticket-analyst.md#commands): Process assessment: each run loads only the lines each of its runs needs.
 - [Settling tickets](prompts/agents/ticket-analyst/tickets.md): Requirements: requirements traced to the spans; Decisions: each decision recorded with what it was made from.
@@ -238,7 +238,7 @@
     - "A `change`, other than one under `tickets/blocked/`", "Instructions that change the same files are ordered", "A `change` ticket's `depends-on` gives": Configuration management: overlapping changes ordered.
     - "A `change` to the agents' processes": Process assessment: each rule maps to an outcome.
     - "In a `change` that serves a `request`, each item of the Intent": Requirements: requirements traced to the spans.
-    - "A `change` that adds a mechanism to code has a `Design`": Design: the design checked before the build.
+    - "A `change` that adds a mechanism to code has a `Design`", "A `change` that adds or changes a rule or a fact": Design: the design checked before the build.
     - "Each item of the Intent is a requirement": Requirements: requirements traced to the spans.
     - "No case that the readers of a line": Risk management: each way a design can fail is a requirement.
     - "A finding quotes the draft's line": none. Kept: it gives the form of a finding, which the ticket analyst acts on.
@@ -270,6 +270,7 @@
     - "Run no git command that changes state": Configuration management: one live change per worktree.
     - "Each Justification entry names", "In your reply, list as unused each Justification entry": none. Kept: the principle of Verification, check new agent-facing text against each agent it reaches.
     - "State the Intent at the minimum": Requirements: requirements traced to the spans.
+    - "Build the `Design` of your change's ticket": Design: a design from the documents.
     - "Before you write anything, take these steps", "Judge each line you write or keep", "After each edit you make", "Fix each finding that needs no decision", "Then judge each line of the place you edited again": none. Kept: the principle of Verification, check new agent-facing text against each agent it reaches.
     - "Where you ran the gate": Merge: each merge passes the gate and the checks.
     - "Read [Prose in code]": none. Kept: the principle of Process assessment, spend no run the work does not need.

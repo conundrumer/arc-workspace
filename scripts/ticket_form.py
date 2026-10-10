@@ -47,7 +47,8 @@ RETIRED = {Kind.REQUEST: "Words"}
 refuses."""
 
 DESIGN = "Design"
-"""The section a `change` that adds a mechanism to code adds after its
+"""The section a `change` that adds a mechanism to code, or adds or
+changes a rule or a fact in the agent-facing documents, adds after its
 Intent, which `body_form` lets stand between its sections."""
 
 
