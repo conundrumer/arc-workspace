@@ -36,12 +36,13 @@ from run_profile import (COMMAND_WIDTH, Run, clock, dollars, minutes,  # noqa: E
                          part_split, print_groups, print_types, profile)
 from run_reads import (BACKGROUND_TASK, agent_type, blocks, run_type,  # noqa: E402
                        result_text)
+from run_store import RunStore  # noqa: E402
 from operations.reports import BUDGET_PASSED  # noqa: E402
 from operations.roles import GENERAL, Role  # noqa: E402
 from ticketing.times import utc_stamp  # noqa: E402
 from token_prices import PRICES  # noqa: E402
 from transcripts import (Entry, Refused, agent_id, agent_transcripts,  # noqa: E402
-                         bare_id, chain, epoch, find, is_subagent, read_entries,
+                         bare_id, epoch, find, is_subagent, read_entries,
                          transcripts)
 
 from operations.batches import LEFT_OPEN, NO_RUN, RUNS_TAKEN, lines, read_under  # noqa: E402
@@ -247,11 +248,14 @@ def budget_of(role: Role, items: int | None, undecided: list[str]) -> float | No
     """The budget in seconds of a brief of `role`, over every run under
     the project directories that joins its budget, for a brief that gives
     no items where `items` is None, and otherwise for a brief that gives
-    `items` items, or None where it gets none."""
+    `items` items, or None where it gets none. The agent type and the
+    profile of each run are read through `run_store`."""
     group = role_group(role)
-    runs = [r for paths in agent_transcripts().values()
-            if agent_type(last := chain(paths[0])[-1]) == role.agent_type
-            and budget_group(r := profile(last, undecided)) == group]
+    store = RunStore()
+    runs = [r for agent in agent_transcripts()
+            if (typed := store.last_and_type(agent))[1] == role.agent_type
+            and budget_group(r := store.profile(typed[0], undecided)) == group]
+    store.flush()
     b = type_budget(group, runs, None, items is not None, undecided)
     if b is None:
         return None

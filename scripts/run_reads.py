@@ -113,8 +113,13 @@ def read_meta(path: Path) -> dict[str, Any] | None:
     return out
 
 
+def meta_path(path: Path) -> Path:
+    """The `.meta.json` file of the transcript at `path`."""
+    return path.with_suffix(".meta.json")
+
+
 def transcript_meta(path: Path) -> dict[str, Any] | None:
-    m = path.with_suffix(".meta.json")
+    m = meta_path(path)
     return json.loads(m.read_text()) if m.is_file() else None
 
 

@@ -12,7 +12,7 @@ from typing import Any
 from agent_reports import Report, Sign, last_sign, report_ids, reports_after
 from command_labels import AGENT_TOOLS
 from controlled_markdown import mctx
-from run_reads import (blocks, in_background, meta_parent, notified,
+from run_reads import (blocks, in_background, meta_parent, meta_path, notified,
                        parent_label, read_meta, results_by_call, run_entries,
                        run_sessions, session_agents, session_transcripts)
 from transcripts import (Entry, agent_id, agent_transcripts, chain, epoch, find, read_entries,
@@ -44,7 +44,7 @@ def launch_stamp(session: Path) -> tuple[tuple[Path, tuple[int, int] | None], ..
     with the stat of its `.meta.json`. The run a transcript belongs to
     changes only where a transcript of that run appears, so the entries of
     the transcripts need no stamp."""
-    return tuple((p, stat_of(p.with_suffix(".meta.json")))
+    return tuple((p, stat_of(meta_path(p)))
                  for aid in session_agents(session) for p in agent_transcripts().get(aid, []))
 
 

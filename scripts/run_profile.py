@@ -15,6 +15,7 @@ from agent_turns import idle_after, turns
 from command_labels import AGENT_TOOLS, POLL, call_command, command_label
 from controlled_markdown import mctx
 from filed_texts import unfiled
+from noted_reads import note_live, note_read
 from run_reads import (BACKGROUND_TASK, blocks, context_size,
                        in_background, is_prompt, message_text, notified,
                        output_file, parent_id, results_by_call, run_entries,
@@ -198,14 +199,19 @@ def background_ends(found: dict[str, Background],
     ends: dict[str, float | None] = {
         call: min((told[i] for i in b.ids if i in told), default=None)
         for call, b in found.items()}
-    files = {call: b.output for call, b in found.items()
-             if ends[call] is None and b.output is not None and b.output.is_file()}
+    outputs = {call: b.output for call, b in found.items()
+               if ends[call] is None and b.output is not None}
+    for f in outputs.values():
+        note_read(f)
+    files = {call: f for call, f in outputs.items() if f.is_file()}
     for call, f in files.items():
-        if str(f.resolve()) not in held_in(f.resolve().parent):
-            try:
-                ends[call] = f.stat().st_mtime
-            except FileNotFoundError:
-                pass
+        if str(f.resolve()) in held_in(f.resolve().parent):
+            note_live()
+            continue
+        try:
+            ends[call] = f.stat().st_mtime
+        except FileNotFoundError:
+            pass
     return ends
 
 

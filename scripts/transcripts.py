@@ -202,10 +202,12 @@ def agent_id(path: Path) -> str:
     return bare_id(path.stem)
 
 
+@state_cache(stat_of)
 def first_parent(path: Path) -> str | None:
     """The `parentUuid` of the first entry of the transcript at `path`, with
-    only the lines up to that entry parsed."""
-    first = next(entries_forward(path), None)
+    only the lines up to that entry read."""
+    with path.open("rb") as fh:
+        first = next((e for line in fh for e in parse(line)), None)
     return first.get("parentUuid") if first is not None else None
 
 

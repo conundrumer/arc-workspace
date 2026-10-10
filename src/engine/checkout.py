@@ -5,11 +5,13 @@ a checkout that sets `ROOT` moves every one of them. The run cache, the
 solver files and the witness files each move to the directory an
 environment variable names, where it is set. Git runs in a tree through
 `git`, `changed_paths` lists what a tree changes against a commit,
-`worktree_list` gives the worktrees of the repository, and a
-`uv run` in another tree runs in `tree_env`."""
+`worktree_list` gives the worktrees of the repository, a
+`uv run` in another tree runs in `tree_env`, and `sources_digest` gives
+a hash of files of the checkout."""
 
 import dataclasses
 import functools
+import hashlib
 import os
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
@@ -318,6 +320,18 @@ def prompts() -> Path:
 def _shared(root: Path) -> Path:
     """`main_worktree` of `root`, kept for the process."""
     return main_worktree(root)
+
+
+def sources_digest(patterns: Sequence[str]) -> str:
+    """The sha256 of each file under `ROOT` that one of the glob `patterns`
+    gives, with its path, in hex: the same for two checkouts with the same
+    such files."""
+    digest = hashlib.sha256()
+    for pattern in patterns:
+        for path in sorted(ROOT.glob(pattern)):
+            digest.update(str(path.relative_to(ROOT)).encode() + b"\0")
+            digest.update(path.read_bytes() + b"\0")
+    return digest.hexdigest()
 
 
 def caches() -> Path:

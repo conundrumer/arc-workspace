@@ -2,7 +2,6 @@
 limits of a run on one grid, the grid a caller writes, and the stamp of
 the code a run loads."""
 
-import hashlib
 import json
 import os
 import sys
@@ -286,10 +285,4 @@ packages' code and the Souffle sources every solver includes."""
 def stamp() -> str:
     """A short hash of the sources, the same for two runs with the same
     code."""
-    digest = hashlib.sha256()
-    for pattern in SOURCES:
-        for path in sorted(checkout.ROOT.glob(pattern)):
-            digest.update(str(path.relative_to(checkout.ROOT)).encode()
-                          + b"\0")
-            digest.update(path.read_bytes() + b"\0")
-    return digest.hexdigest()[:10]
+    return checkout.sources_digest(SOURCES)[:10]

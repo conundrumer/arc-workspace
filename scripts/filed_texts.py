@@ -9,6 +9,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 
+from noted_reads import note_read
 from operations.filing import FILED_LINE, REPORT_NAME
 
 
@@ -17,6 +18,7 @@ def unfiled(text: str, where: str, undecided: list[str]) -> str:
     it gives. `where` names the text in an `undecided` line."""
     def read(m: re.Match[str]) -> str:
         path = Path(m["path"])
+        note_read(path)
         if not path.is_file():
             undecided.append(mctx("{where}: the file {path} its text gives is gone, so that "
                                   "text is unknown").format(where=where, path=path))
@@ -38,6 +40,7 @@ def report_file(text: str) -> Path | None:
 def report_text(path: Path, where: str, undecided: list[str]) -> str | None:
     """The text of the report file `path`, or None where it is gone, which
     an `undecided` line names."""
+    note_read(path)
     if not path.is_file():
         undecided.append(mctx("{where}: its report file {path} is gone, so its report is "
                               "unknown").format(where=where, path=path))
