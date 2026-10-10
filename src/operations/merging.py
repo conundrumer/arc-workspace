@@ -8,6 +8,9 @@ script's own forms and by `master` (`state.Merge`):
 - a call that left edits in the worktree after its commit leaves the
   change unmerged, and once no editor of the change runs, the merge call
   on that worktree is given again;
+- a call that `scripts/pending_wait_hook.py` denied for its timeout has
+  no outcome, so the merge call is given again, once: where the call
+  given again is denied so too, it never ran;
 - a call that never ran, as where the harness denied it, is written on the
   ticket in a line whose note opens with `coordinator`, which takes the
   change out of the operator's hands;

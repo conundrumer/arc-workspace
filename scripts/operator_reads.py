@@ -19,6 +19,7 @@ from controlled_markdown import mctx
 from filed_texts import unfiled
 from merge_change import conflicted, left_edits, ran
 from open_agents import work_open
+from pending_wait_hook import bound_denied
 from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks, is_prompt,
                        message_text, notifications, output_file, run_entries,
                        run_sessions, session_agents, result_text)
@@ -36,12 +37,17 @@ from operations.printing import unfenced
 
 
 def merge_outcome(aid: str, command: str, time: float, result: str | None, error: bool,
-                  subjects: dict[str, float], undecided: list[str]) -> Merge | None:
+                  subjects: dict[str, float], denied: set[str],
+                  undecided: list[str]) -> Merge | None:
     """What a Bash call of the operator `aid` of `command` at `time` that
     `merge_change.py` runs did, or None for any other call, one that
     merges no change, as a call of its `--help`, and one still pending. A
     call the harness refused, an error with no line of the script's own,
-    never ran. A call whose output gives that `master` is fast-forwarded
+    never ran. A call that `pending_wait_hook` denied for its timeout has
+    no outcome either, so the merge call is given again, unless the
+    operator's last merge call of `command` was denied so too: `denied`
+    holds each command whose last merge call was, read in the order of
+    the calls, and that second denial never ran. A call whose output gives that `master` is fast-forwarded
     and the worktree stays for changes made after the commit left edits.
     Otherwise it merged where `master` holds, by `subjects`, the
     time of the latest commit of `master` with each subject, a commit made
@@ -59,7 +65,12 @@ def merge_outcome(aid: str, command: str, time: float, result: str | None, error
     if not messages:
         return None
     if error and not ran(result):
+        if bound_denied(result) and command not in denied:
+            denied.add(command)
+            return None
+        denied.discard(command)
         return Merge.NOT_RUN
+    denied.discard(command)
     if left_edits(result):
         return Merge.LEFT_EDITS
     if all(subjects.get(m, -math.inf) >= math.floor(time) for m in messages):
@@ -172,6 +183,7 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
                 messages += [Message(aid, epoch(stamp), s, unfiled(
                     unfenced(text), f"{where} {s}", undecided))
                              for s, text in agent_messages(e) if s not in children]
+    denied: set[str] = set()
     for call, (t, inp, tool) in uses.items():
         text, error = results.get(call, (None, False))
         if call in moved:
@@ -180,7 +192,7 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
         uses[call] = (t, inp, tool)
         calls.append(Call(aid, t, tool, inp, text, error, merge_outcome(
             aid, str(inp.get("command", "")) if tool == "Bash" else "", t, text, error,
-            subjects, undecided)))
+            subjects, denied, undecided)))
     if not any(tool == "Agent" and described(str(inp.get("description", "")))
                for _, inp, tool in uses.values()):
         return

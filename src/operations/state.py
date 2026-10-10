@@ -133,7 +133,9 @@ class Merge(Enum):
     its exit status; and otherwise, by the forms of its output that
     script gives (`merge_change.ran`, `merge_change.conflicted`), never
     ran, as where the harness denied the call, refused for a conflict in
-    its rebase, or refused otherwise."""
+    its rebase, or refused otherwise. A call `pending_wait_hook` denied
+    for its timeout has no outcome, unless the operator's merge call
+    before it was denied so too, and then it never ran."""
     LEFT_EDITS = "left edits"
     MERGED = "merged"
     NOT_RUN = "not run"
