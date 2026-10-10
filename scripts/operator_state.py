@@ -36,8 +36,8 @@ from tree_reads import claims, code_review, commits, gate_outputs, main_tree, sc
 from operations.directives import named
 from operations.plan import taken_up
 from operations import monitor, passes
-from operations.monitor import (HUNG_FACTOR, Audit, Facet, MonitorState, Read,
-                                ToCoordinator, Watched)
+from operations.monitor import (Audit, Facet, MonitorState, Read, ToCoordinator, Watched,
+                                hung_from)
 from operations.alerts import AlertKind
 from operations.roles import Role
 from operations.state import Agent, Call, Message, Report, State
@@ -122,11 +122,11 @@ def usual(listed: Listed, listing: list[Listed], label: str) -> float:
 
 
 def hung_at(listed: Listed, listing: list[Listed]) -> float | None:
-    """The earliest time a call of `listed` in flight passed `HUNG_FACTOR`
-    times its label's usual time, or None where none has."""
+    """The earliest time a call of `listed` in flight counted as hung, or
+    None where none has."""
     now = time.time()
     times = [at for s in listed.run.in_flight
-             if (at := s.start + HUNG_FACTOR * usual(listed, listing, s.label)) <= now]
+             if (at := hung_from(s.start, usual(listed, listing, s.label))) <= now]
     return min(times, default=None)
 
 

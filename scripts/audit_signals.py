@@ -24,10 +24,11 @@ from ticket_reads import read_tickets
 from transcripts import Refused, epoch, find
 from tree_reads import commits, main_tree
 
-from operations.monitor import HUNG_FACTOR, NO_SIGN, Audit, Facet
+from operations.monitor import NO_SIGN, Audit, Facet, hung_from
 from operations.roles import EDITORS
 from operations.signals import Known, Reading, RunAt, Unknown, signals
 from operations.state import Agent, Call, Message
+from operations.tracker import WORKTREES
 from ticketing.vocabulary import Domain, Status
 
 HELP = """\
@@ -55,8 +56,8 @@ usage: uv run python scripts/audit_signals.py <session id>
     its label's usual time by then.
   - Its changed files are the paths its Edit, Write and NotebookEdit calls gave by then, inside
     the repo; a file a Bash command changed is not among them.
-  - The paths its change's Scope gives are the backticked paths of that section that hold a
-    `/`.
+  - The paths its change's Scope gives are the backticked words of that section, each with any
+    trailing `/` cut.
 - `undecided` lines on stderr give what the reads left unknown."""
 
 REFUSALS = ("Permission for this action was denied", "The user doesn't want to proceed",
@@ -65,17 +66,23 @@ REFUSALS = ("Permission for this action was denied", "The user doesn't want to p
 classifier, the user or a hook refused."""
 
 EDITS = frozenset({"Edit", "Write", "NotebookEdit"})
-WORKTREE = re.compile(r"/\.claude/worktrees/[^/]+/(?P<rest>.+)\Z")
+WORKTREE = re.compile(rf"/{re.escape(WORKTREES)}/[^/]+/(?P<rest>.+)\Z")
 BACKTICKED = re.compile(r"`([^`\s]+)`")
+INDENT = "  "
 SCOPE = re.compile(r"^## Scope\n(?P<body>.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
+
+
+SYNTHETIC = "<synthetic>"
+"""The model field the harness writes on the assistant entries no model
+made."""
 
 
 def models(path: Path) -> list[str]:
     """The models the assistant entries of the run at `path` give, in
-    their first order."""
+    their first order, other than `SYNTHETIC`."""
     found = [m for e in run_entries(path) if e.get("type") == "assistant"
              and isinstance(m := (e.get("message") or {}).get("model"), str)
-             and not m.startswith("<")]
+             and m != SYNTHETIC]
     return list(dict.fromkeys(found))
 
 
@@ -94,7 +101,9 @@ def turn_at(entries: list[dict[str, Any]], run: Run, at: float
 
 
 def open_at(run: Run, turn: Known[tuple[float, float | None]]) -> Known[bool]:
-    if isinstance(turn, Unknown) or turn[1] is None:
+    if isinstance(turn, Unknown):
+        return turn
+    if turn[1] is None:
         return False
     end = turn[1]
     return any(s.start <= end and (s.end is None or s.end > end) for s in run.backgrounded)
@@ -127,7 +136,7 @@ def refused_at(entries: list[dict[str, Any]], at: float) -> int:
 
 def hung_count(listed_usual: dict[str, float], run: Run, at: float) -> int:
     return sum(1 for s in run.spans
-               if s.start + HUNG_FACTOR * listed_usual[s.label] <= min(
+               if hung_from(s.start, listed_usual[s.label]) <= min(
                    at, s.end if s.end is not None else float("inf")))
 
 
@@ -152,7 +161,7 @@ def scope_of(path: Path) -> Known[frozenset[str]]:
     m = SCOPE.search(path.read_text())
     if m is None:
         return Unknown(mctx("its change's ticket has no Scope section"))
-    return frozenset(x.rstrip("/") for x in BACKTICKED.findall(m["body"]) if "/" in x)
+    return frozenset(x.rstrip("/") for x in BACKTICKED.findall(m["body"]))
 
 
 def run_at(a: Agent, audit: Audit, main: Path, tickets: dict[str, Any],
@@ -195,8 +204,8 @@ def run_at(a: Agent, audit: Audit, main: Path, tickets: dict[str, Any],
 
 def reading_text(x: Reading) -> str:
     if x.fired is None:
-        return f"undecided: {x.reason}"
-    return "fired" if x.fired else "quiet"
+        return mctx("undecided: {reason}").format(reason=x.reason)
+    return mctx("fired") if x.fired else mctx("quiet")
 
 
 def main() -> None:
@@ -225,44 +234,50 @@ def main() -> None:
     tally: Counter[tuple[str, str]] = Counter()
     for audit in audits:
         audited = by_id.get(audit.agent_id)
-        model = ", ".join(models(find(audit.auditor))) or "unknown"
+        model = ", ".join(models(find(audit.auditor))) or mctx("unknown")
         if audited is None:
             print(mctx("{agent}: no operator of the session launched it").format(
                 agent=audit.agent_id))
             continue
-        print(f"{audit.agent_id} ({audited.role}), auditor {audit.auditor} ({model})")
+        print(mctx("{agent} ({role}), auditor {auditor} ({models})").format(
+            agent=audit.agent_id, role=audited.role, auditor=audit.auditor, models=model))
         r = run_at(audited, audit, main_path, tickets, undecided)
         if isinstance(r, str):
-            print(f"  signals: undecided: {r}")
+            print(INDENT + mctx("signals: undecided: {reason}").format(reason=r))
             fired = None
         else:
             found = signals(r)
             for x in found:
-                print(f"  {x.signal}: {reading_text(x)}")
+                print(INDENT + mctx("{signal}: {reading}").format(signal=x.signal,
+                                                                  reading=reading_text(x)))
             fired = (True if any(x.fired for x in found)
                      else None if any(x.fired is None for x in found) else False)
         f = audit.finding
         verdict = (str(audit.read) if f is None else NO_SIGN if f.alert is None
                    else str(f.alert))
-        print(f"  finding: {verdict}")
+        print(INDENT + mctx("finding: {verdict}").format(verdict=verdict))
         for t in sorted(tickets.values(), key=lambda t: t.order):
             if t.domain is not Domain.AGENT or t.subject != audit.agent_id or not t.log \
                     or t.log[0].agent_id != audit.auditor:
                 continue
-            closed = f"; {t.log[-1].note}" if t.status is Status.CLOSED else ""
-            print(f"  ticket {t.number} {t.kind}: {t.status}{closed}")
+            line = mctx("ticket {number} {kind}: {status}").format(
+                number=t.number, kind=t.kind, status=t.status)
+            if t.status is Status.CLOSED:
+                line += mctx("; {note}").format(note=t.log[-1].note)
+            print(INDENT + line)
         if f is not None:
-            side = {True: "a signal", False: "no signal", None: "no signal fired and one "
-                    "undecided"}[fired]
-            tally[(model, f"findings on runs with {side}")] += f.alert is not None
-            tally[(model, f"runs with {side}")] += 1
+            side = {True: mctx("a signal"), False: mctx("no signal"),
+                    None: mctx("no signal fired and one undecided")}[fired]
+            tally[(model, mctx("findings on runs with {side}").format(side=side))] += \
+                f.alert is not None
+            tally[(model, mctx("runs with {side}").format(side=side))] += 1
             if fired and f.alert is None:
-                tally[(model, "runs with a signal and no sign")] += 1
+                tally[(model, mctx("runs with a signal and no sign"))] += 1
     print()
     for (model, what), n in sorted(tally.items()):
-        print(f"{model}: {what}: {n}")
+        print(mctx("{model}: {what}: {n}").format(model=model, what=what, n=n))
     for line in dict.fromkeys(undecided):
-        print(f"undecided: {line}", file=sys.stderr)
+        print(mctx("undecided: {line}").format(line=line), file=sys.stderr)
     print(mctx("seconds: {s}").format(s=round(time.time() - started)), file=sys.stderr)
 
 

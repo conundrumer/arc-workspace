@@ -21,11 +21,11 @@ class Signal(StrEnum):
     its parent since that turn began. `over-budget`: its active time is
     past its budget. `unfinished`: its latest reply gives work as left
     open, by a fixed form of the replies of its role. `refused-or-hung`: a
-    call of it was refused, or ran past `monitor.HUNG_FACTOR` times its
-    usual time. `repeated`: it ran the same Bash command more than once.
-    `out-of-scope`: it is an editor
-    of a change, and its worktree changed a file its change's Scope does
-    not give."""
+    call of it was refused or hung. `repeated`: it ran the same Bash
+    command more than once. `out-of-scope`: it is an editor of a change,
+    and it changed a file its change's Scope does not give. What a refused
+    call, a hung call, a changed file and the Scope's paths are,
+    `scripts/audit_signals.py --help` gives."""
     STALL = "stall"
     OVER_BUDGET = "over-budget"
     UNFINISHED = "unfinished"
@@ -49,13 +49,12 @@ class RunAt:
     and the end of its latest turn by `at`, with None as the end where that
     turn had not ended by `at`, and `open_at_end` whether its own work
     still ran at that end. `active` and `budget` are in seconds, with None
-    as the budget where none is in force. `refused` counts its calls the
-    harness or the permission classifier refused by `at`, and `hung`
-    counts its calls that ran past `monitor.HUNG_FACTOR` times their usual
-    time by `at`. `commands` are the Bash commands it ran by `at`, in
-    order. `changed` are the files its worktree changed by `at`, and
-    `scope` the paths its change's Scope gives, each None where it is no
-    editor of a change."""
+    as the budget where none is in force. `refused` counts its refused calls
+    by `at`, and `hung` its hung calls by `at`. `commands` are the Bash
+    commands it ran by `at`, in order. `changed` are the files it changed
+    by `at`, and `scope` the paths its change's Scope gives, each None
+    where it is no editor of a change. `Signal` gives where each of these
+    is stated."""
     agent: Agent
     at: float
     turn: Known[tuple[float, float | None]]

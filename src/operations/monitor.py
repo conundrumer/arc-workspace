@@ -50,8 +50,8 @@ class Facet(StrEnum):
 class Watched:
     """A watched agent at the time of the read. `activity` is the time of
     its latest new call, end of a call or end of its turn, and
-    `hung` the time its oldest call in flight passed `HUNG_FACTOR` times
-    that call's usual time, or None where none has. `ended` is whether its
+    `hung` the time its oldest call in flight counted as hung
+    (`hung_from`), or None where none has. `ended` is whether its
     turn has ended, and `open` whether its work is open. `over_budget` is whether its active time is past its
     budget, and `facts` the facts the command computed on it since its
     last audit, for an auditor's brief."""
@@ -257,6 +257,12 @@ HUNG_FACTOR = 10
 """How many times a call's usual time a call in flight runs before it
 counts as hung, once. A call whose usual time no run gives takes
 `steps.BLOCK_SECONDS` as its usual time."""
+
+
+def hung_from(start: float, usual: float) -> float:
+    """The time at which a call that began at `start`, with `usual` as its
+    label's usual time, counts as hung."""
+    return start + HUNG_FACTOR * usual
 
 SUBJECT = re.compile(r"\A(?P<facet>[a-z]+):(?P<agent>\S+?)(?:@(?P<time>\d+))?\Z")
 
