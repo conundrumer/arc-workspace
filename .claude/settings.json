@@ -36,6 +36,10 @@
           {
             "type": "command",
             "command": "uv run --project \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/scripts/context_bound_hook.py\""
+          },
+          {
+            "type": "command",
+            "command": "uv run --project \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/scripts/printed_launch_hook.py\""
           }
         ]
       }

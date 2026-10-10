@@ -64,15 +64,53 @@ def bash_text(command: str) -> str:
     return f"call Bash\ntimeout: {FOREGROUND_MS}\ncommand:\n{command}"
 
 
+LAUNCH = "call Agent"
+PROMPT = "prompt"
+
+
+def parameter(value: object) -> str:
+    """A parameter of a call as the command prints it."""
+    return str(value).lower() if isinstance(value, bool) else str(value)
+
+
+def launch_text(fields: dict[str, str], prompt: str) -> str:
+    """The text of a launch whose parameters other than its prompt are
+    `fields`, in their order, which `printed_launch` reads back."""
+    return "\n".join([LAUNCH, *(f"{k}: {v}" for k, v in fields.items()),
+                      f"{PROMPT}:", fenced(prompt)])
+
+
+def printed_launch(text: str) -> dict[str, str] | None:
+    """The parameters of the last launch that `text`, a result of `next`,
+    prints, or None where it prints no launch, or one that the result cut
+    before the closing fence of its prompt."""
+    lines = text.rstrip("\n").split("\n")
+    if LAUNCH not in lines:
+        return None
+    at = len(lines) - 1 - lines[::-1].index(LAUNCH)
+    fields: dict[str, str] = {}
+    for i in range(at + 1, len(lines)):
+        if lines[i] == f"{PROMPT}:":
+            body = lines[i + 1:]
+            if len(body) < 2 or body[0] != FENCE or body[-1] != FENCE:
+                return None
+            return fields | {PROMPT: "\n".join(body[1:-1])}
+        name, sep, value = lines[i].partition(": ")
+        if not sep:
+            return None
+        fields[name] = value
+    return None
+
+
 def printed(step: Step, agent: str, scratch: Path) -> str:
     """The text the command prints for `step`, for the operator whose agent
     id is `agent`, with the files `filing.filed` gives under `scratch`."""
     match step:
         case Launch(role, subject, _, model):
-            extra = f"\nmodel: {model}" if model is not None else ""
-            return (f"call Agent\ndescription: {description(role, subject)}\n"
-                    f"subagent_type: {role.agent_type}\nrun_in_background: true{extra}\n"
-                    f"prompt:\n{fenced(filed_line(step, scratch))}")
+            fields = {"description": description(role, subject),
+                      "subagent_type": role.agent_type, "run_in_background": parameter(True)}
+            return launch_text(fields | ({"model": model} if model is not None else {}),
+                               filed_line(step, scratch))
         case Send(to):
             head, rest = split_message(step)
             line = filed_line(step, scratch) if rest else ""

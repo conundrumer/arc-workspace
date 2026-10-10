@@ -19,10 +19,10 @@ def head() -> str:
     return checkout.git_out(checkout.ROOT, "rev-parse", "HEAD").strip()
 
 
-def command(event: str, matcher: str | None = None) -> str:
+def command(event: str, matcher: str | None = None, script: str = "") -> str:
     settings = json.loads((checkout.claude() / "settings.json").read_text())
     [cmd] = [h["command"] for m in settings["hooks"][event]
-             if m.get("matcher") == matcher for h in m["hooks"]]
+             if m.get("matcher") == matcher for h in m["hooks"] if script in h["command"]]
     return cmd
 
 
@@ -105,7 +105,7 @@ def test_subagents(tmp_path: Path) -> None:
     assert out["permissionDecision"] == "deny"
     assert "context agent operator" in out["additionalContext"]
     assert record(main, OPERATOR_ID).read_text() == both(head())
-    agent = command("PreToolUse", "Agent")
+    agent = command("PreToolUse", "Agent", "context_bound_hook")
     assert run(agent, call(main, "Agent", {"subagent_type": "operator"}, OPERATOR_ID)) == ""
     assert run(agent, call(main, "Agent", {"subagent_type": "operator"}, GENERAL_ID)) == ""
     assert record(main, GENERAL_ID).read_text() == both(head())
