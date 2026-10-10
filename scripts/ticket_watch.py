@@ -1,7 +1,7 @@
 """The routing of a `delay` ticket that gives a case: the priced loss of a
 case, the cost of a `change`, the threshold of an editor, and the moves of
-a ticket into and out of `tickets/watching/`. The `--help` of
-`file_ticket.py` states the rules."""
+a ticket into and out of `tickets/watching/`. `file_ticket.py
+case --help-all` states the rules."""
 
 import re
 import statistics

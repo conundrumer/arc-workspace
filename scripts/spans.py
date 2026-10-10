@@ -18,7 +18,7 @@ from file_ticket import file_ticket, main_tickets, run  # noqa: E402
 from run_reads import blocks, message_text  # noqa: E402
 from senders import Origin, origin  # noqa: E402
 from ticket_files import ticket_name, ticket_path, ticket_status  # noqa: E402
-from ticket_form import HEADING, section_head  # noqa: E402
+from ticket_form import bounds, section  # noqa: E402
 from ticket_log import log_moves  # noqa: E402
 from ticket_numbers import TicketNumber, session_id, ticket_number  # noqa: E402
 from ticketing.text import SECTIONS, heading, ticket_text  # noqa: E402
@@ -234,21 +234,6 @@ def file_request(route: Route, inferred: bool, subject: str, title: str, start_w
 
 def no_form() -> Refused:
     return Refused(mctx("the arguments do not have a form `--help` gives"))
-
-
-def bounds(text: str, name: str) -> tuple[int, int]:
-    """Where the lines of the section `name` of a ticket's text start and
-    end."""
-    head = section_head(text, name)
-    if head is None:
-        raise Refused(mctx("the ticket has no `{section}` section").format(section=heading(name)))
-    nxt = HEADING.search(text, head.end())
-    return head.end(), nxt.start() if nxt else len(text)
-
-
-def section(text: str, name: str) -> str:
-    start, end = bounds(text, name)
-    return text[start:end].strip("\n")
 
 
 def spans_of(text: str) -> list[Span]:

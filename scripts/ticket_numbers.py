@@ -48,8 +48,8 @@ class TicketNumber:
 
     @property
     def order(self) -> tuple[int, int]:
-        """The key that orders ticket numbers as the `HELP` of `file_ticket`
-        gives."""
+        """The key that orders ticket numbers as the `RULES` of `file_ticket`
+        give."""
         return (0 if self.session is None else self.session, self.n)
 
 

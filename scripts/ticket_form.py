@@ -16,7 +16,9 @@ from transcripts import Refused
 FRONT = r"---\nkind: (?P<kind>\S+)\n(?P<fields>(?:[a-z-]+: .*\n)*)---\n"
 
 
-TICKET_HEAD = re.compile(FRONT + "# ")
+TITLE_MARK = "# "
+
+TICKET_HEAD = re.compile(FRONT + TITLE_MARK)
 """The front matter and title mark of a ticket: at the start of a ticket's
 file, for `title`, and in a Bash command, for `call_command` in
 `command_labels`, where each match is the head of a ticket the command
@@ -40,6 +42,11 @@ def title(path: Path, text: str) -> str:
     if head is None:
         raise Refused(mctx("{path} has no front matter and title").format(path=path))
     return text[head.end():].split("\n", 1)[0]
+
+
+def title_line(path: Path, text: str) -> str:
+    """The line of `text` that holds its title, with its mark."""
+    return TITLE_MARK + title(path, text)
 
 
 RETIRED = {Kind.REQUEST: "Words"}
@@ -118,6 +125,22 @@ HEADING = re.compile(rf"^{re.escape(HEADING_MARK)}.*$", re.MULTILINE)
 def section_head(text: str, section: str) -> re.Match[str] | None:
     """The heading line of the section `section` in a ticket's `text`."""
     return re.search(f"^{re.escape(heading(section))}$", text, re.MULTILINE)
+
+
+def bounds(text: str, name: str) -> tuple[int, int]:
+    """Where the lines of the section `name` of a ticket's text start and
+    end."""
+    head = section_head(text, name)
+    if head is None:
+        raise Refused(mctx("the ticket has no `{section}` section: its sections are {sections}").format(
+            section=heading(name), sections=ticked(m[0] for m in HEADING.finditer(text))))
+    nxt = HEADING.search(text, head.end())
+    return head.end(), nxt.start() if nxt else len(text)
+
+
+def section(text: str, name: str) -> str:
+    start, end = bounds(text, name)
+    return text[start:end].strip("\n")
 
 
 def check_depends_on(tickets: Path, value: str) -> None:

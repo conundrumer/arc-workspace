@@ -1,5 +1,5 @@
 """The tickets an operator gives a ticket analyst to settle after a batch,
-which the help of `file_ticket.py to-settle` defines."""
+which `file_ticket.py to-settle --help-all` defines."""
 
 from collections.abc import Iterable
 from pathlib import Path

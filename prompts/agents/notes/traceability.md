@@ -157,6 +157,7 @@
 - [Tracking](prompts/agents/notes/tickets.md#tracking): Work control: one live holder per ticket.
     - "`tickets/` is in the main tree", "Every session on the repository shares", "Where you look for a ticket that already exists", "Make each transition": none. Kept: they give where the tickets are and how a ticket's state changes, which every holder's step uses.
     - "Close the ticket of a place that is judged and kept": Decisions: each decision recorded with what it was made from.
+    - "Read a ticket you do not edit": Process assessment: the context each run of an agent loads holds only the lines each of its runs needs.
 - [Change tickets](prompts/agents/notes/tickets.md#change-tickets): Configuration management: overlapping changes ordered.
     - "A ticket that asks for a change", "Give each `change` you file or revise the `mechanical` field": none. Kept: they give the fields a `change` ticket's handling reads.
 

@@ -51,7 +51,7 @@ class Ticket:
     """A ticket of the tracker. `editors` is None where a `change` gives no
     `editors` field, `mechanical` is whether a `change` gives the
     `mechanical` field, and `holder` is the holder `file_ticket.py log
-    --help` defines."""
+    --help-all` defines."""
     number: str
     order: tuple[int, int]
     session: int | None
