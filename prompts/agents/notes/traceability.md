@@ -52,10 +52,8 @@
 ## Command notes
 - [waiting-on-commands](prompts/agents/notes/commands.md#waiting-on-commands): Work control: stopped work reaches an agent.
 - [ending-commands](prompts/agents/notes/commands.md#ending-commands): none. Kept: an agent ends its own processes, and signals no process of another agent.
-- [background-agents](prompts/agents/notes/commands.md#background-agents): Work control: stopped work reaches an agent.
-- [handback](prompts/agents/notes/commands.md#handback): Implementation: each item not done reaches the agent that decides it.
-- [not-reported](prompts/agents/notes/commands.md#not-reported): Work control: stopped work reaches an agent.
-- [keep-alive-timer](prompts/agents/notes/commands.md#keep-alive-timer): Work control: stopped work reaches an agent.
+- [Background agents](prompts/agents/notes/commands.md#background-agents): Work control: stopped work reaches an agent.
+    - "Call SubagentHandback only": Implementation: each item not done reaches the agent that decides it.
 - [denied-calls](prompts/agents/notes/commands.md#denied-calls): Implementation: each item not done reaches the agent that decides it.
 - [resumed-agents](prompts/agents/notes/commands.md#resumed-agents): Implementation: each item not done reaches the agent that decides it.
 - [coordinator](prompts/agents/notes/commands.md#coordinator): none. Kept: it gives the coordinator's address, which the lines on a final reply use.
@@ -209,6 +207,7 @@
     - "A `change` to the agents' processes": Process assessment: each rule maps to an outcome.
     - "Write the `Design` section": Design: a design from the code; the Scope covers the design.
     - "Settle by [Settling]": Process assessment: the faults of the processes reach the user.
+- [Commands](prompts/agents/ticket-analyst.md#commands): Process assessment: each run loads only the lines each of its runs needs.
 - [Settling tickets](prompts/agents/ticket-analyst/tickets.md): Requirements: requirements traced to the spans; Decisions: each decision recorded with what it was made from.
     - "Where the log of a `request` you take shows a `change` filed": Requirements: requirements checked against added words.
     - "Where the log of a `request` you take gives a commit": Merge: a hotfix reviewed after it merges.

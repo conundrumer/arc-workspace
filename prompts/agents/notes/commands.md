@@ -22,30 +22,17 @@
 - Before you call `TaskStop`, take the process tree of each process ID that `lsof -t <the command's output file>` prints. Once `TaskStop` returns, end each process of those trees that still runs with `kill <process ID>`.
 - Where you start a process with `&` or `nohup`, print its process ID with `echo $!` in that Bash call. To end it, take the process tree of that process ID, and end each process of that tree with `kill <process ID>`.
 
-## background-work
-* inline: #background-agents
-* inline: #not-reported
-* inline: #keep-alive-timer
-
-## background-agents
+## Background agents
 - When you end your turn while a command of yours runs on in the background and no agent you launched is running, the harness reports you to the session that launched you as stopped. It does not while an agent you launched is running.
-- While no agent you launched is running, other than one that a notification has said has not reported yet:
-    * inline: #waiting-on-commands
-    - Wait on a command you ran in the background yourself as on one the harness moved there.
-* inline: #ending-commands
-- While an agent you launched is running, other than one that a notification has said has not reported yet, run each command that can outlast the Bash call's default timeout in the background, and when no other work is ready, end your turn with a line that names each agent you launched and each command of yours that is still running, and run no other command to wait on them. The harness resumes you when an agent sends you a message, when one of them that no agent has resumed by SendMessage completes, or when a command of yours that runs in the background completes.
-* inline: #handback
-
-## handback
+- While an agent you launched is running, other than one that a notification has said has not reported yet, no line of [waiting-on-commands](#waiting-on-commands) holds: run each command that can outlast the Bash call's default timeout in the background, and when no other work is ready, end your turn with a line that names each agent you launched and each command of yours that is still running, and run no other command to wait on them. The harness resumes you when an agent sends you a message, when one of them that no agent has resumed by SendMessage completes, or when a command of yours that runs in the background completes.
+- Once no such agent is running, wait on each command you ran in the background as on one the harness moved there.
 - Call SubagentHandback only with your final reply, or with the line that says where it went.
     * comment: With the harness's reminder that the call ends the run in its context, an operator waited with `echo waiting` and `true`, and once the hook denied `true`, it called SubagentHandback with `PLACEHOLDER` while its agents ran: agent `a37be74e20c8008ae` of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a`. With that reminder and its line on giving decisions in its final reply in its context, a ticket analyst of that session, then named `triage`, called SubagentHandback while its code editor ran, then sent its final report by SendMessage: agent `ac26fe1a2bcf9beb5`, lines 47 and 80 to 84.
 
-## not-reported
 - A notification that says an agent you launched has not reported yet means that agent has stopped without its report while background work of its own runs. From then until that agent reports, while no other agent you launched is running, wait in place of ending your turn: run a Bash call with a timeout of 240000 ms whose loop, on time alone, gives up just under that timeout, led by `: 'unattended-wait: <the agent id>, which has not reported yet';`, and repeat it.
     - Where the harness asks for your report while that agent has not reported, go on waiting that way, and call no SubagentHandback.
     * comment: Two agents of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a` ended their turn after this notification, the harness demanded their report, and each handed back mid-batch: agent `aa217e04abc30c823`, lines 266 to 270, and agent `ad4b827e59837a39f`, lines 228 to 232.
 
-## keep-alive-timer
 - Before you end your turn while an agent you launched is running, other than one that a notification has said has not reported yet, start your keep-alive timer, where you launched no agent in this turn whose brief asks only for a reply, by running this command in the background, with your own agent id as `<agent id>`:
     ```
     : 'unattended-wait: keep-alive timer'; uv run python scripts/agent_timer.py start keep-alive <agent id>

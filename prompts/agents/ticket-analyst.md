@@ -57,9 +57,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
     - In your reply, give each one with its root cause and its resolution, and a decision it brings the user in the form [The user's part](#the-users-part) gives.
 
 ## Commands
-* inline: notes/commands.md#background-work
+* inline: notes/commands.md#commands
+- Before you launch an agent, read [Background agents](prompts/agents/notes/commands.md#background-agents).
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 * inline: notes/commands.md#final-report
-
-## Launching
-* inline: notes/launching.md#launching

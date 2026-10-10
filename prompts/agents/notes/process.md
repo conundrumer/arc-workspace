@@ -13,6 +13,7 @@
     - Work that two processes duplicate, an outcome that no owner meets, rules that conflict, a step whose cost is out of proportion to what it finds, and a step or a rule that serves no outcome reach the user before the user asks.
     - Each rule of the notes and of the agent definitions maps to an outcome of these notes.
         - [Traceability matrix](prompts/agents/notes/traceability.md) holds that map.
+    - The context each run of an agent loads holds only the lines each of its runs needs, and each other line loads by a stated condition before the work that needs it.
 - Owner: a ticket analyst with a process assessment brief, which an operator launches after a set count of merged changes to the agents' processes.
 - Takes from: quality assurance, the fault families, and measurement, the cost of each step. Gives to: every process, as `change` tickets, and the user, as decisions.
 - How it can fail:
