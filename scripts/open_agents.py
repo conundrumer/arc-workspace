@@ -40,9 +40,8 @@ class Listed:
 
 
 def usual(run: Run, runs: list[Run], call: Span) -> float:
-    """The usual time of `call` of `run`: the median duration of the other
-    ended calls of `run` with its label, or where it has none, of those of
-    every run of `runs`, or where none has one, `BLOCK_SECONDS`."""
+    """The usual time of `call` of `run`, among the runs `runs`, as the
+    HELP of `profile_runs` gives it."""
     def ended(among: list[Run]) -> list[float]:
         return [s.end - s.start for r in among for s in r.spans
                 if s.label == call.label and s.end is not None and s.call != call.call]
