@@ -36,6 +36,7 @@
     - A codex session also reads, as its developer instructions, the main tree's `docs/codex-style.md` with its HTML comments left out, which the `.codex/config.toml` of the worktree it runs in gives it.
 - What each agent reads: the prompt of its name under [agents](prompts/agents).
     - Its context: `context agent <name>`.
+    - An agent also reads each document or section a link of its prompt leads to, where the link's condition holds, and `context agent <name>` prints none of those.
     - The `analyze` agent reads [Analyze after the concept](prompts/agents/analyze-next.md) after it writes the concept.
 - The statements more than one entry point inlines or links: the documents under [notes](prompts/agents/notes), one per subject.
 - What each of the agents' processes must achieve: [Process notes](prompts/agents/notes/process.md).
