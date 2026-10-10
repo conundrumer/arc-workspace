@@ -297,8 +297,7 @@ def solver_pass(task: str, overrides: list[str]) -> str:
 
 def code_review(baseline: int, scratch: Path) -> str:
     return mctx("The earlier code review's baseline: the tag `code-review/{baseline}`. This "
-                "code review's number: {number}. The new code the diff holds: the commits of "
-                "`master` since that tag.").format(
+                "code review's number: {number}.").format(
         baseline=baseline, number=baseline + 1) + "\n" + SCRATCH.format(scratch=scratch)
 
 
