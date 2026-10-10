@@ -78,14 +78,16 @@ def coordinator_line(t: Ticket) -> float:
 
 def blocked_on_user(t: Ticket) -> LogLine | None:
     """The line that moved `t` into `tickets/blocked/` waiting on the user,
-    where `t` stands there for it."""
+    where `t` stands there for it: the last line of the log's final run of
+    `blocked` lines whose note opens with a wait, where that wait is on
+    the user."""
     if t.status is not Status.BLOCKED:
         return None
     for line in reversed(t.log):
         if line.status is not Status.BLOCKED:
             return None
-        if line.on_user:
-            return line
+        if line.waits:
+            return line if line.on_user else None
     return None
 
 

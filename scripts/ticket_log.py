@@ -33,6 +33,11 @@ UNBLOCKED_BY = "{change} {number} closed {resolution}"
 change closed with another resolution, with that change's number and
 resolution."""
 
+VALIDATING = "{validation} {note}"
+"""The note of the line that leaves under `blocked`, waiting on
+validation, a `request` that a line with the note `note` would close with
+`fixed`."""
+
 
 class Moved(Refused):
     """A refusal of a call whose ticket another call moved first."""
@@ -43,16 +48,23 @@ class Wait(StrEnum):
     into `blocked` opens with."""
     USER = "user"
     CHANGE = "change"
+    VALIDATION = "validation"
 
 
-WAIT = re.compile(rf"(?:{Wait.USER}|{Wait.CHANGE} (?P<change>{TICKET_NUMBER.pattern}))(?![\w-])")
+WAIT = re.compile(rf"(?:{Wait.USER}|{Wait.VALIDATION}|{Wait.CHANGE} (?P<change>{TICKET_NUMBER.pattern}))"
+                  rf"(?![\w-])")
 """The opening of the note of a line into `blocked`."""
 
 
 def waited_change(wait: re.Match[str]) -> TicketNumber | None:
     """The number of the change a match of `WAIT` gives, None where it
-    gives `user`."""
+    gives another wait."""
     return None if wait["change"] is None else matched_number(wait)
+
+
+def waited(wait: re.Match[str]) -> Wait:
+    """What a match of `WAIT` gives the ticket as waiting on."""
+    return Wait.CHANGE if wait["change"] is not None else Wait(wait.group())
 
 
 LOG_LINE = re.compile(rf"^.*? (?P<status>{'|'.join(Status)}) \[(?P<agent>[^\]\s]+)"
@@ -114,8 +126,9 @@ def check_wait(tickets: Path, note: str | None) -> None:
     ticket that is no `change`."""
     wait = WAIT.match(note or "")
     if wait is None:
-        raise Refused(mctx("the note of a move into `{blocked}` opens with `{user}` or `{change} <number>`").format(
-            blocked=Status.BLOCKED, user=Wait.USER, change=Wait.CHANGE))
+        raise Refused(mctx("the note of a move into `{blocked}` opens with `{user}`, `{validation}` or "
+                           "`{change} <number>`").format(
+            blocked=Status.BLOCKED, user=Wait.USER, validation=Wait.VALIDATION, change=Wait.CHANGE))
     change = waited_change(wait)
     if change is None:
         return
@@ -129,14 +142,33 @@ def log_lines(text: str) -> list[re.Match[str]]:
     return list(LOG_LINE.finditer(text, log[-1].end())) if log else []
 
 
-def waits_on(text: str) -> TicketNumber | None:
-    """The number of the change the ticket `text` waits on, which the last
-    line of its log whose note opens with a wait gives. None where that
-    line gives `user`, or where no line's note opens with a wait."""
+def current_wait(text: str) -> re.Match[str] | None:
+    """The wait the last line of the ticket `text`'s log whose note opens
+    with a wait gives, None where no line's note opens with one."""
     for line in reversed(log_lines(text)):
         if wait := WAIT.match(line["note"] or ""):
-            return waited_change(wait)
+            return wait
     return None
+
+
+def waits_on(text: str) -> TicketNumber | None:
+    """The number of the change the ticket `text` waits on, None where it
+    waits on no change."""
+    wait = current_wait(text)
+    return None if wait is None else waited_change(wait)
+
+
+def awaits_validation(path: Path, status: Status, source: Status, note: str | None) -> bool:
+    """Whether a line from `source` to `status` with `note` would close
+    with `fixed` the ticket at `path` where it is a `request` that does
+    not stand under `blocked` waiting on validation."""
+    if status is not Status.CLOSED or source is Status.CLOSED or resolution_of(note) is not Resolution.FIXED:
+        return False
+    text = read_ticket(path)
+    if ticket_kind(text) is not Kind.REQUEST:
+        return False
+    wait = current_wait(text)
+    return not (source is Status.BLOCKED and wait is not None and waited(wait) is Wait.VALIDATION)
 
 
 def holder(text: str) -> str | None:
@@ -232,8 +264,12 @@ def log_moves(tickets: Path, number: TicketNumber, status: Status, agent: str, s
               agent_id: str | None, note: str | None) -> Moves:
     """Writes the log line as `write_log` does, refused as it refuses, and
     returns the ticket's path, followed, where the line moves a `change`
-    into `closed`, by what `unblock` returns for it."""
+    into `closed`, by what `unblock` returns for it. A line that
+    `awaits_validation` holds for is written into `blocked` instead, with
+    the note `VALIDATING` gives."""
     path = ticket_path(tickets, number)
+    if awaits_validation(path, status, source, note):
+        status, note = Status.BLOCKED, VALIDATING.format(validation=Wait.VALIDATION, note=note)
     closes = status is Status.CLOSED and source is not Status.CLOSED and is_change(path)
     moves = Moves([write_log(tickets, path, number, status, agent, source, agent_id, note)])
     if not closes:
@@ -251,7 +287,8 @@ def unblock(tickets: Path, change: TicketNumber, agent: str, agent_id: str | Non
     `change`, closed with `resolution` and `note`, in the order of their
     file names, and returns what it did: into `closed`, with the note
     `CLOSED_BY` gives, where `resolution` is `fixed`, and else into `open`,
-    with the note `UNBLOCKED_BY` gives. A ticket that another call moves
+    with the note `UNBLOCKED_BY` gives, each line as `log_moves` writes
+    it. A ticket that another call moves
     first is skipped. A ticket whose move is refused for another reason is
     given among the refused, and the moves of the others go on. A ticket
     closed this way that is a `change` moves the tickets that wait on it in

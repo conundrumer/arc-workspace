@@ -9,7 +9,7 @@ from pathlib import Path
 from controlled_markdown import mctx
 from ticket_files import TICKET_NAME, ticket_files, ticket_name
 from ticket_form import DEFAULT_PRIORITY, FRONT, front_fields, list_items, title
-from ticket_log import WAIT, holder, log_lines, waited_change
+from ticket_log import WAIT, Wait, holder, log_lines, waited, waited_change
 from transcripts import Refused
 
 from operations.roles import editors_of
@@ -31,8 +31,8 @@ def log_line(m: re.Match[str]) -> LogLine:
     wait = WAIT.match(note)
     change = None if wait is None else waited_change(wait)
     return LogLine(log_time(m.group().split(" ", 1)[0]), Status(m["status"]), m["agent"],
-                   m["id"], note, wait is not None and change is None,
-                   None if change is None else str(change))
+                   m["id"], note, wait is not None and waited(wait) is Wait.USER,
+                   None if change is None else str(change), wait is not None)
 
 
 def read_ticket(path: Path) -> Ticket:

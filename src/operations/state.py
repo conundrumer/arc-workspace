@@ -18,7 +18,9 @@ class LogLine:
     """A line of a ticket's log: its time, the status it leaves the ticket
     in, the agent name and the agent id its bracket gives, and its note.
     `on_user` is whether the note opens with the wait on the user, and
-    `on_change` the number of the change the note opens with a wait on."""
+    `on_change` the number of the change the note opens with a wait on. A
+    note that opens with the wait on validation gives neither. `waits` is
+    whether the note opens with a wait of any kind."""
     time: float
     status: Status
     agent: str
@@ -26,6 +28,7 @@ class LogLine:
     note: str
     on_user: bool
     on_change: str | None
+    waits: bool
 
 
 @dataclass(frozen=True)

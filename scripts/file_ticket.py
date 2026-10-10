@@ -25,7 +25,7 @@ importable(checkout.scripts())
 from ticket_files import FIELD, NAME_FORM, TicketName, ticket_path  # noqa: E402
 from ticket_form import (DEFAULT_PRIORITY, DEFECT_SECTIONS, DESIGN, LOG, MECHANICAL, SECTIONS,  # noqa: E402
                          checked_kind, heading, sections_example)
-from ticket_log import (AGENT_ID, CLOSED_BY, UNBLOCKED_BY, Wait,  # noqa: E402
+from ticket_log import (AGENT_ID, CLOSED_BY, UNBLOCKED_BY, VALIDATING, Wait,  # noqa: E402
                         log_moves, logged, status_of)
 from ticket_numbers import (SESSION_VAR, SESSIONS, reserve, session_id,  # noqa: E402
                             session_index, ticket_number, write_new)
@@ -84,8 +84,9 @@ LOG_HELP = mctx("""
     - The command appends `<time> <status> [<agent>]: <note>` to the file's `{log}`, with the time in UTC in the form `{time_form}`, and with `<agent> <agent id>` in the bracket where `--id` gives an agent id. A line with no `<note>` ends at the bracket.
     - An `assigned` line that moves a ticket into `assigned` takes, in `--id`, the agent id of the agent that writes it.
     - On a ticket that already stands in `assigned`, the command refuses an `assigned` line whose `--id` does not hold the ticket, and accepts one with no `--id`. The holder is the agent id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines. Where none of them gives one, the ticket has no holder.
-    - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}`, or `{change} <number>`, with `<number>` the number of a `change` ticket the ticket tracker holds.
+    - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}`, `{validation}`, or `{change} <number>`, with `<number>` the number of a `change` ticket the ticket tracker holds. `{validation}` is the wait of a `{request}` whose need a change met, until the coordinator reads a run that exercises that change.
     - The note of a line that moves a ticket into `closed` opens with its resolution, one of {resolutions}.
+    - Where a line would move a `{request}` into `closed` with `{fixed}`, other than from `{blocked}` where the request waits on `{validation}`, the command leaves the request under `{blocked}`, or moves it there, with the note `{validating}`, and prints the path it went to. This holds whichever agent writes the line, and for the lines below that close tickets that wait on a change.
     - Where the line moves a `{change}` ticket into `closed`, the command also moves each ticket under `{blocked}` that waits on that change, and prints the path of each one it moved, one per line, after the change's own path.
     - A ticket waits on the change that the last line of its log whose note opens with what a ticket waits on gives as `{change} <number>`.
     - Where the change's resolution is `{fixed}`, each ticket that waits on it moves into `closed`, with the note `{closed_by}`. Where the resolution is another, each moves into `open`, with the note `{unblocked_by}`. Each such line takes the `<agent>` and the `--id` of the call.
@@ -284,7 +285,10 @@ def help_values() -> dict[str, str]:
                 request_sections=ticked(map(heading, SECTIONS[Kind.REQUEST])),
                 statuses=ticked(Status), log=LOG, time_form=TIME_FORM,
                 resolutions=ticked(Resolution), fixed=Resolution.FIXED, blocked=Status.BLOCKED,
-                user=Wait.USER, change=Wait.CHANGE, session_var=SESSION_VAR,
+                user=Wait.USER, change=Wait.CHANGE, validation=Wait.VALIDATION,
+                request=Kind.REQUEST,
+                validating=VALIDATING.format(validation=Wait.VALIDATION, note="<note>"),
+                session_var=SESSION_VAR,
                 closed_by=CLOSED_BY.format(fixed=Resolution.FIXED, change=Wait.CHANGE,
                                            number="<number>", note="<note>"),
                 unblocked_by=UNBLOCKED_BY.format(change=Wait.CHANGE, number="<number>",

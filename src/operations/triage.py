@@ -95,7 +95,8 @@ the coordinator's."""
 def reopen(state: State) -> Step | None:
     """The move to `tickets/open/` of a ticket other than a `change` that
     stands under `tickets/blocked/` or `tickets/closed/` with a line of the
-    coordinator's after the line that moved it there, citing that line. A
+    coordinator's after the line that moved it there, and after the last
+    line since then whose note opens with a wait, citing that line. A
     `change` the user rules on comes back by a `Merge:` or a `Drafts to
     review:` line instead, and one under `tickets/open/` is taken as a
     fresh change."""
@@ -105,7 +106,8 @@ def reopen(state: State) -> Step | None:
         run = len(t.log)
         while run > 0 and t.log[run - 1].status is t.status:
             run -= 1
-        lines = coordinator_lines(t.log[run + 1:])
+        start = max((i for i in range(run, len(t.log)) if t.log[i].waits), default=run)
+        lines = coordinator_lines(t.log[start + 1:])
         if run < len(t.log) and lines:
             return Bash(log(t.number, Status.OPEN, t.status,
                             f"the coordinator's line of {lines[-1].time:.0f}: {lines[-1].note}",
