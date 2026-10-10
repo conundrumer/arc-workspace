@@ -11,8 +11,7 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage, TaskStop
 # Ticket reviewer
 * inline: notes/launching.md#a-ticket-reviewers-brief
 - Review the whole of each draft against the tree and this session's state as they are now, by [Checks](#checks).
-    - In a round after the first on a draft, make only a finding the earlier round could not have made: one on text that changed since that round, one on a claim whose ground, in the tree or this session's state, changed since that round, or a finding of an earlier round that still stands.
-        - Take the draft's text at the earlier round from the transcript of the ticket reviewer whose agent id that round's log lines give, which `python3 ~/.claude/skills/retrieve/transcripts.py` reads by agent id. Where you cannot read that text, take the whole draft as changed since that round.
+    - Where an earlier round reviewed the draft, read [A later round](prompts/agents/ticket-reviewer/later-rounds.md) before you review it.
     * comment: With "Review each draft" in its context and a brief that named the revised parts, ticket reviewer a031cd2826cb3df6e checked mainly those parts of draft 2-525 and moved it to `tickets/open/` while three findings stood on lines of the draft as first filed: the Intent of ticket 2-530.
 - Change no word of a draft.
 - Where a finding stands on a ticket, write a log line with `draft` as its status and a note that opens with `finding:` for each finding.

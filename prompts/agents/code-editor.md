@@ -25,19 +25,10 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 - In code, a case the spec does not cover becomes an `undecided` finding or a fault, never a default, and you file it as [Tickets](#tickets) gives.
 - Before you write code, search every package for what already computes, names, checks or prints what you need, and use it, or extend the one that nearly fits. Then decide the shape: each idea in one operation, called from every site that needs it, as the `Design` of your change's ticket gives it, where it gives one. Where the code shows a better shape than that `Design`, build that shape, and give in your report the departure with its reason.
 - Edit only the files your brief gives, the accepted gate outputs a finding of your checks gives you to update, your tests directory, and the tickets you file.
-- Where your brief asks for a comparison with what the tree before the change gives, the before side, and your brief or a file records the before side, compare against that record, and run nothing to make the before side.
-    * comment: Six briefs from 2026-09-27 to 2026-10-01 had agents run "before" measurements a file already held.
-- Where nothing records the before side, make it in a detached worktree of `HEAD`:
-    - Add it with `git worktree add --detach <dir> HEAD`, with a new directory under your scratch directory as `<dir>`.
-    - Run each command of the before side with `--directory <dir>` after its `uv run`, and give each path it writes as an absolute path outside `<dir>`.
-    - Remove it with `git worktree remove --force <dir>` once the before side is made, and before you end your turn.
-- Run no other git command that changes state.
-- A timing your brief asks for is one timed run per job, against the seconds a record gives. Where no record gives the seconds of the before side, run each job once untimed on each side, then time it on the two sides one after the other.
+- Where your brief asks for a comparison with what the tree before the change gives, the before side, read [The before side](prompts/agents/code-editor/before-side.md) before you make the comparison or a timing.
+- Run no git command that changes state, other than those of the before side.
 - Where your brief gives the places of `refactor` tickets, fix the defect at each.
-- Before you edit a module, look under `tickets/open/` for a `refactor` ticket that cites it, with a title that ends in `many ideas in one place`. Where one does, split the module first into one module for each subject of that ticket's `Impact` that the module still holds, with each module's docstring saying what that module holds, and the docstring of their package saying what the package holds as a whole and the rules its modules keep, and then make your edit.
-    - The modules of the split, and each file whose imports the split changes, count among the files your brief gives.
-    - Where you have a budget and the whole split would run past it, move only the subjects your edit touches into modules beside it, and leave the rest at the path the ticket cites.
-    - Give in your report each module you split in a list item of one line that opens with `split:`, then gives the path the ticket cites in backticks, with no ticket number, and then, where you left a part of it unsplit, `; left unsplit:` and that part.
+- Before you edit a module, look under `tickets/open/` for a `refactor` ticket that cites it, with a title that ends in `many ideas in one place`. Where one does, split the module first by [A split](prompts/agents/code-editor/split.md), and then make your edit.
 - Before you report done, read your diff for each kind of place below other than many ideas in one place, and fix each defect place that does not stand.
     * inline: notes/code.md#place-kinds
     - In a fix, an unknown value becomes a fault or an `undecided` finding, and the one copy of an idea stands where the import rule in [test_import_rule.py](tests/engine/test_import_rule.py) places it.

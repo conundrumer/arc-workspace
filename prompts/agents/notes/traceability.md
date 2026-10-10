@@ -233,7 +233,8 @@
 - [Ticket reviewer](prompts/agents/ticket-reviewer.md#ticket-reviewer): Verification: each `change` ticket checked before the build.
     - "Change no word of a draft": none. Kept: it leaves each revision of a draft to the ticket analyst, which Decisions gives as the owner of what a draft decides.
     - "Where you see a resolution one level above": none. Kept: the principle of Decisions.
-    - "In a round after the first on a draft": Verification: a later round on changed text only.
+    - "Where an earlier round reviewed the draft": none. Kept: the principle of Process assessment, spend no run the work does not need.
+- [A later round](prompts/agents/ticket-reviewer/later-rounds.md): Verification: a later round on changed text only.
 - [Checks](prompts/agents/ticket-reviewer.md#checks): Verification: each `change` ticket checked before the build.
     - "Report nothing on a draft's wording": none. Kept: it keeps the review on what a requirement states, a way Verification can fail.
     - "A `change`, other than one under `tickets/blocked/`", "Instructions that change the same files are ordered", "A `change` ticket's `depends-on` gives": Configuration management: overlapping changes ordered.
@@ -252,13 +253,15 @@
     - "Observe and report": none. Kept: it keeps the editor's report to what it saw.
     - "When you start, copy `src/`": none. Kept: it lets the editor read its own diff.
     - "Before you write code, search every package": Design: a design from the code.
-    - "Edit only the files your brief gives", "Run no other git command": Configuration management: one live change per worktree.
-    - "Where your brief asks for a comparison", "Where nothing records the before side", "A timing your brief asks for": Measurement: each figure cites its command.
+    - "Edit only the files your brief gives", "Run no git command that changes state": Configuration management: one live change per worktree.
+    - "Where your brief asks for a comparison": none. Kept: the principle of Process assessment, spend no run the work does not need.
     - "Where your brief gives the places of `refactor`", "Before you edit a module, look under `tickets/open/`": none. Kept: the principle of Design, one idea in one place.
     - "Before you report done, read your diff": none. Kept: the principle of Design, one idea in one place.
     - "Where you ran the gate": Merge: each merge passes the gate and the checks.
 - [Working rules](prompts/agents/code-editor.md#working-rules): Work control: stopped work reaches an agent.
 - [Tickets](prompts/agents/code-editor.md#tickets): Implementation: each item not done reaches the agent that decides it.
+- [The before side](prompts/agents/code-editor/before-side.md): Measurement: each figure cites its command.
+- [A split](prompts/agents/code-editor/split.md): none. Kept: the principle of Design, one idea in one place.
 
 ## Code reviewer
 - [Code reviewer](prompts/agents/code-reviewer.md#code-reviewer): Verification: a standing review of the lines in force; a later round on changed text only.
