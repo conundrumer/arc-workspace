@@ -307,7 +307,8 @@ ON_MESSAGE = "\n".join([
 ON_OPERATOR = "\n".join([
     mctx("Audit `{agent}`, an operator, whose run is at its final reply: its run goes on "
          "only to wait for your report, and then gives that reply."),
-    mctx("Its transcript is `{transcript}`, and you read it from {since} on.")])
+    mctx("Its transcript is `{transcript}`, and you read it from {since} on."),
+    mctx("The previous auditor's verdict on it: {verdict}")])
 FIRST = mctx("its first entry")
 
 
@@ -315,13 +316,20 @@ def since_last(past: list[Audit]) -> str:
     return utc_stamp(past[-1].launched) if past else FIRST
 
 
-def brief(state: MonitorState, w: Watched, verdict: str | None) -> str:
+def previous_verdict(state: MonitorState, past: list[Audit]) -> str:
+    """The verdict of the latest audit in `past` whose outcome is in, or NONE."""
+    found = [f for a in past if (f := outcome(state, a)) is not None]
+    return found[-1].verdict if found else NONE
+
+
+def brief(state: MonitorState, w: Watched) -> str:
     """The brief of an auditor on `w`."""
     since = since_last(audits_on(state.audits, Facet.AGENT, w.agent_id))
     return "\n\n".join([
         BRIEF.format(agent=w.agent_id, agent_type=w.agent_type, parent=w.parent,
                      transcript=w.transcript, since=since, facts=w.facts,
-                     verdict=verdict or NONE),
+                     verdict=previous_verdict(
+                         state, audits_on(state.audits, Facet.AGENT, w.agent_id))),
         REPORT_POINTER])
 
 
@@ -341,7 +349,8 @@ def own_audit(state: MonitorState, me: str, since: float) -> Launch | None:
     if past and past[-1].launched > since:
         return None
     return Launch(Role.OP_AUDITOR, subject(Facet.OPERATOR, me), "\n\n".join([
-        ON_OPERATOR.format(agent=me, transcript=state.transcript, since=since_last(past)),
+        ON_OPERATOR.format(agent=me, transcript=state.transcript, since=since_last(past),
+                           verdict=previous_verdict(state, past)),
         REPORT_POINTER]))
 
 
@@ -365,11 +374,8 @@ def step(state: MonitorState, handled: Callable[[Step], bool]) -> Step | None:
             return s
     for w in state.watched:
         if needs_audit(state, w):
-            found = [f for a in audits_on(state.audits, Facet.AGENT, w.agent_id)
-                     if (f := outcome(state, a)) is not None]
-            verdict = found[-1].verdict if found else None
             return Launch(Role.OP_AUDITOR, subject(Facet.AGENT, w.agent_id),
-                          brief(state, w, verdict))
+                          brief(state, w))
     for m in state.to_coordinator:
         if not any(a.facet is Facet.MESSAGE and a.agent_id == m.agent_id
                    and a.on_time == int(m.time) for a in state.audits):
