@@ -47,6 +47,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 ## Resolving
 - Where [The user's part](#the-users-part) brings a decision to the user, act on none of its options, move the ticket to `tickets/blocked/` with a note that opens with `user` and gives the decision, and return it in your reply in the form that section gives.
 - Carry out every other resolution: where it changes the tree, file a `change` ticket for it, with the number of each ticket it settles in its Motivation, and move each of those tickets to `tickets/blocked/` with a note that opens with `change` and that change's number, and otherwise close the ticket with its resolution word.
+- Where your resolution is a decline, close no ticket for it. Move the ticket it leaves with the decline, the `change` you file or revise or the ticket you would close, to `tickets/blocked/` with a note that opens with `user decline` and gives the declined part and its defense, and give the decline as a `decision:` item whose text opens with `decline`.
 - In a `change` for speed, give the profile that exists in its Scope, or ask for one as its first deliverable.
 - Give rote work to an agent, and judge the list it returns.
 - At the end of your reply, under a `## For the coordinator` heading, give a list item for each decision you bring the user, opened with `decision:`, for each change [The user's part](#the-users-part) tells the user, opened with `tell:`, and for each item that your brief or a later request asks of you and that you leave undone, opened with `unfinished:`, with its reason, and nothing else.
@@ -76,4 +77,5 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 
 ## Findings an editor leaves
 * inline: notes/changes.md#findings-an-editor-leaves
+- Give a decline on what a change's editors leave as a `decision:` item whose text opens with `decline`, and send the editor nothing on its declined part. Send the editor, as kept, each declined part that a log line of the coordinator on the change's ticket vetoes and that the worktree does not hold.
 - Judge each `refactor` place that the `Review` section of a code editor's report gives as standing, by the reason it gives. Close the `refactor` ticket of each place you keep as standing at once, `wontfix` with the judgment, wherever under `tickets/` it stands, and send each other to the editor as a kept finding.

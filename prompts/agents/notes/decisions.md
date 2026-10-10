@@ -50,9 +50,12 @@
 
 ### The user's part
 - Bring the user a decision only where every option, after you reframe the problem, still has a defensible reason against it.
-    - An option that departs from the user's words, a ruling of the user or a line of [Principles](docs/handbook/principles.md) has such a reason, which no reframe removes. Where every option left departs from one of them, bring the decision to the user at once.
+    - An option that departs from the user's words, a ruling of the user or a line of [Principles](docs/handbook/principles.md) has such a reason, which no reframe removes. Where every option left departs from one of them, bring the decision to the user at once, other than a ticket analyst's decline.
     - Give one line per option, the default first, with the option's consequence for the goals, and where the option changes a solver, that solver's code before and after.
     - Where the user does not rule on the decision, carry out its default.
+- A ticket analyst's resolution of a ticket that leaves unmet part of a need the user stated, and departs from no ruling of the user and no line of [Principles](docs/handbook/principles.md), is a decline. The user stated a need in a ticket the coordinator filed from the user's words, a `request` under its `Words` or another ticket under its `Evidence`, or in a ticket whose Motivation gives such a ticket.
+    - Carry a decline as a decision, with its defense: the concrete cost or risk of meeting the declined part, with its ground. A goal, a preference or another support line is a weight to judge by, and no defense.
+    - A part whose decline a log line of the coordinator on the ticket lets stand is no decline again. Meet each part whose decline such a line vetoes.
 - Tell the user, without waiting on them, each change that affects the user directly, in one line, with the solver's code before and after where the user judges it by that code. A change affects the user directly where it does one of these:
     - It changes what the user reads, judges or uses. The user judges solver code, a concept an Analyze pass wrote and [Principles](docs/handbook/principles.md).
         - The user judges a solver's code by whether it is principled and pure. It is principled when [Principles](docs/handbook/principles.md) justifies each of its parts. It is pure when it reads as the concept, with nothing verbose and nothing shaped to one task.

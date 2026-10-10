@@ -108,7 +108,7 @@
 - When an operator's final reply asks for a fresh operator, launch one with a brief that gives no line.
 - When an operator's message, or a paragraph of it, that opens with `undecided:` reaches you, send the operator again the line of yours it gives, in a form [An operator's brief](#an-operators-brief) gives.
 - When an operator's message that opens with `for the coordinator:` reaches you, read the file it gives.
-- Bring the user each `decision:` item that file or an operator's final reply gives, tell the user each `tell:` item, and act on each `unfinished:` item as on an item an agent you launched gives as unfinished.
+- Bring the user each `decision:` item that file or an operator's final reply gives, other than a decline, tell the user each `tell:` item, and act on each `unfinished:` item as on an item an agent you launched gives as unfinished.
 - Ask an operator for no message to you before its final reply, other than the messages that open with `for the coordinator:` or `undecided:`, which it sends as it goes.
 - Send each draft `change` ticket that the reply of an agent you launched gives, and each `change` ticket you revise, to an operator in a `Drafts to review: <number>` line.
 - Each time a `change` of your session comes to stand under `tickets/open/` with every ticket its `depends-on` gives under `tickets/closed/`, while no operator of yours holds it or runs its review, tell an operator that tickets are open.
