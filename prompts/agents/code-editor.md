@@ -46,7 +46,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 - Where you ran the gate, the report gives each output that a `DIFF` line names and you did not copy, with that line.
 - The report has a `Review` section, which gives each kind of place you read your diff for and the places your diff holds of it, each defect place fixed or standing with its reason, each standing place as a list item that opens with `stands:`.
 - Where you filter the output of pyright or pytest, filter for pyright's summary line, and for pytest's failure lines and its summary line, in place of the last line.
-    - Pyright's summary line is `N errors, N warnings, N informations`, with `error` in the singular for one, and a version warning and blank lines may follow it.
+    - Pyright's summary line is `N errors, N warnings, N informations`, with `error` in the singular for one.
     - Your shell sets `FORCE_COLOR`, so the output of both tools holds color escape codes, and running a tool under `env -u FORCE_COLOR` turns them off.
     * comment: Without these lines, code editor `a5601fd48719bea3b` read `uv run pyright 2>&1 | tail -1` as a blank line and reported pyright unconfirmed, and its `grep -E "^E"` over a failed pytest run matched nothing: tickets `1791214744-a5601fd48719bea3b-transcript-review-1` and `-2`.
 - `-n 0` runs pytest in one process. `-p no:xdist` fails on the `-n` that `addopts` in [pyproject.toml](pyproject.toml) gives.

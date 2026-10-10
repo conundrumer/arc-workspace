@@ -1,4 +1,7 @@
 {
+  "env": {
+    "PYRIGHT_PYTHON_IGNORE_WARNINGS": "1"
+  },
   "hooks": {
     "SessionStart": [
       {
