@@ -2,6 +2,7 @@
 matter, its title and its sections."""
 
 import re
+from collections.abc import Mapping
 from pathlib import Path
 
 from controlled_markdown import mctx
@@ -62,6 +63,16 @@ def heading(section: str) -> str:
     return f"{HEADING_MARK}{section}"
 
 
+def ticket_text(kind: Kind, title: str, lines: Mapping[str, str]) -> str:
+    """The text of a `kind` ticket with no front matter field besides
+    `kind`, whose sections, each with its `lines`, are the kind's own."""
+    sections = SECTIONS.get(kind, DEFECT_SECTIONS)
+    if set(lines) != set(sections):
+        raise ValueError(f"the sections {sorted(lines)} are not those of a `{kind}`")
+    body = "\n\n".join(f"{heading(s)}\n{lines[s]}" for s in sections)
+    return f"---\nkind: {kind.value}\n---\n# {title}\n\n{body}\n"
+
+
 def sections_example(sections: tuple[str, ...]) -> str:
     """`sections` as the form in the `HELP` of `file_ticket` shows them
     after its title, at the indent of that form."""
@@ -112,10 +123,17 @@ def check_editors(value: str) -> None:
                            "{known}").format(value=value, known=ticked(map(str, EDITORS))))
 
 
-LOG = heading("Log")
+LOG_SECTION = "Log"
+
+LOG = heading(LOG_SECTION)
 
 
 HEADING = re.compile(rf"^{re.escape(HEADING_MARK)}.*$", re.MULTILINE)
+
+
+def section_head(text: str, section: str) -> re.Match[str] | None:
+    """The heading line of the section `section` in a ticket's `text`."""
+    return re.search(f"^{re.escape(heading(section))}$", text, re.MULTILINE)
 
 
 def check_depends_on(tickets: Path, value: str) -> None:
@@ -158,9 +176,9 @@ def checked_kind(tickets: Path, agent: str, text: str) -> Kind:
     if not body_form(kind).match(text, head.end()):
         raise Refused(mctx("the ticket on stdin does not have the form `--help` shows"))
     retired = RETIRED.get(kind)
-    if retired is not None and re.search(f"^{heading(retired)}$", text, re.MULTILINE):
+    if retired is not None and section_head(text, retired):
         raise Refused(mctx("a `{kind}` has no `{section}` section").format(
             kind=kind, section=heading(retired)))
-    if re.search(f"^{LOG}$", text, re.MULTILINE):
+    if section_head(text, LOG_SECTION):
         raise Refused(mctx("the ticket on stdin has a `{log}` section, which the command writes").format(log=LOG))
     return kind

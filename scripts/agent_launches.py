@@ -39,10 +39,20 @@ DELIVERED = "Report delivered"
 harness accepted the report."""
 
 
+def succeeded(result: dict[str, Any]) -> bool:
+    return result.get("success") is True
+
+
+def report_delivered(result: dict[str, Any]) -> bool:
+    """Whether the message of `result`, the result of a SubagentHandback
+    call that succeeded, says the harness accepted its report."""
+    return str(result.get("message", "")).startswith(DELIVERED)
+
+
 def handback_accepted(result: dict[str, Any]) -> bool:
     """Whether `result`, a tool result, is that of a SubagentHandback call
     whose report the harness accepted."""
-    return result.get("success") is True and str(result.get("message", "")).startswith(DELIVERED)
+    return succeeded(result) and report_delivered(result)
 
 
 def handed_back(path: Path) -> bool:
@@ -330,9 +340,9 @@ def accepted_after(path: Path, since: float, undecided: list[str]) -> bool:
                 continue
             for b in blocks(e, "tool_use"):
                 r, t = results.get(b.get("id", ""), ({}, 0.0))
-                if t <= since or r.get("success") is not True:
+                if t <= since or not succeeded(r):
                     continue
-                if b.get("name") == "SubagentHandback" and hands_back and handback_accepted(r):
+                if b.get("name") == "SubagentHandback" and hands_back and report_delivered(r):
                     return True
                 if (b.get("name") == "SendMessage"
                         and str((b.get("input") or {}).get("to", "")) in names
