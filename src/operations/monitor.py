@@ -9,7 +9,8 @@ The watched agents are the agents an operator of the session launched,
 other than the auditors, so no auditor, and no alert of one, is itself
 audited: each whose work is open, and each whose work has closed while no
 auditor was launched on it after its last ended turn, where that turn ended
-after the start of the run of the operator that reads the state. An audit runs on a
+after the start of the run of the operator launched right before the one
+that reads the state, or of the reading one where it is the first. An audit runs on a
 watched agent once its turn ends, whether or not its work is still open,
 until an auditor is launched on it after that turn, and once mid-run where
 a call of it has hung; on the
