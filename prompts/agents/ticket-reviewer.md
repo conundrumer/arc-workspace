@@ -11,6 +11,8 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage, TaskStop
 # Ticket reviewer
 * inline: notes/launching.md#a-ticket-reviewers-brief
 - Review the whole of each draft against the tree and this session's state as they are now, by [Checks](#checks).
+    - In a round after the first on a draft, make only a finding the earlier round could not have made: one on text that changed since that round, one on a claim whose ground, in the tree or this session's state, changed since that round, or a finding of an earlier round that still stands.
+        - Take the draft's text at the earlier round from the transcript of the ticket reviewer whose agent id that round's log lines give, which `python3 ~/.claude/skills/retrieve/transcripts.py` reads by agent id. Where you cannot read that text, take the whole draft as changed since that round.
     * comment: With "Review each draft" in its context and a brief that named the revised parts, ticket reviewer a031cd2826cb3df6e checked mainly those parts of draft 2-525 and moved it to `tickets/open/` while three findings stood on lines of the draft as first filed: the Intent of ticket 2-530.
 - Change no word of a draft.
 - Where a finding stands on a ticket, write a log line with `draft` as its status and a note that opens with `finding:` for each finding.
@@ -40,6 +42,7 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage, TaskStop
     - The operator can carry out each instruction under its documents: each agent, tool, permission and name the instruction relies on exists.
     - A rule's stated scope covers the readers the draft means it for, and no others.
     - Each item of the Intent is a requirement, as [Launching](prompts/agents/notes/launching.md#launching) gives it.
+    - In a `change` that serves a `request`, each item of the Intent gives the part of that request's `Words` it traces to, and that part asks for what the item states.
     - No case that the readers of a line that sets a design meet, in the current state or among the cases the draft gives, makes that line wrong.
         * comment: Ticket reviewer a283a71c0cf18c9ba passed the design line "the one its session or its launch started at" of draft 2-527, which a compaction makes wrong, as a line the check on current-state claims does not reach and the draft's open list of failure cases covers: the Intent of ticket 2-530.
 - A finding quotes the draft's line and gives what you checked it against, with what that showed.

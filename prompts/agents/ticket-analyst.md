@@ -62,6 +62,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 * inline: notes/tickets.md#change-tickets
 - The kind of a ticket you file is `change`, and you set its `priority`, from 0 to 100, a higher one taken first.
 - A `change` to the agents' processes, as [Process notes](prompts/agents/notes/process.md) gives it, which you read before you file or revise one, gives in its Motivation the outcome of those notes that it serves.
+- Give with each Intent item of a `change` that serves a `request` the part of that request's `Words` it traces to, quoted.
 - Write the `Design` section of a `change` that adds a mechanism to code from reading the code, and cover in its Scope each file that design names.
 - Give under `Grounds` of each `change` you file or revise each ground its design rests on: each line quoted with its file's path, each command with its output, each transcript span with its session and times, and the hash of `master` at which they hold.
 - Settle by steps 4 to 6 of [Tickets](#tickets) each step of your work that takes time far out of proportion to the work it does, and each fault you notice in a tool, a document or an agent's run, whether or not it lies within your brief, that no ticket your brief gives or other line of your documents covers, and that no ticket outside `tickets/closed/` records, as [Tracking](#tracking) gives where to look.

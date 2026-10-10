@@ -15,7 +15,7 @@ tools: Read, Grep, Glob, Bash, Agent, SendMessage, TaskStop
 * inline: notes/worktree.md#worktree-commands
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 - Review that change by the steps [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) gives.
-- When the editor's fixes arrive, review the change again.
+- When the editor's fixes arrive, review the change again, and make only a finding the earlier review could not have made: one on text that changed since that review, one on a claim whose ground, in the tree or the session's state, changed since that review, or a finding of an earlier review that still stands.
 - File as a `bug` ticket each finding on a fault the change did not make, on a line outside the places the Scope of the change's ticket gives, or, where the change has no ticket, outside the files its diff edits and the files a code editor's brief gives.
 - Send the other findings of each review with SendMessage, each with the line, the rule it breaks, the reader it fails, and whether it needs a decision: a finding on a `///` or `//!` comment to the change's doc editor, a finding on any other line of a file a code editor's brief gives to that code editor, and a finding on any other line of the document set to the change's doc editor.
 - Hold back each finding an editor's message gives as left for a decision: send it no more, until a later message gives it as kept or dropped, or gives its decision.
