@@ -274,18 +274,6 @@
     - "Message no agent other than the editors", "Edit no file other than the tickets you file": none. Kept: they leave each finding's fix to the editor and each decision to the agent that decides it.
     - "File a `performance` ticket": Process assessment: the faults of the processes reach the user.
 
-## Op auditor
-- [Op auditor](prompts/agents/op-auditor.md#op-auditor): Quality assurance: the review at each run's end.
-    - "Edit no file other than your report file": none. Kept: it keeps the audit to reading and reporting.
-- [Signs](prompts/agents/op-auditor.md#signs): Quality assurance: the review at each run's end.
-    - "a turn that has ended while nothing it backgrounded runs": Work control: stopped work reaches an agent.
-    - "The previous verdict your brief gives": none. Kept: the principle of Process assessment, spend no run the work does not need.
-    - "For a message to the coordinator": none. Kept: it keeps each agent on the items the coordinator gave it.
-- [Kinds](prompts/agents/op-auditor.md#kinds): Quality assurance: the review at each run's end.
-    - "`stall`": Work control: stopped work reaches an agent.
-    - "`message`": none. Kept: it keeps each agent on the items the coordinator gave it.
-- [Writing an alert](prompts/agents/op-auditor.md#writing-an-alert): Quality assurance: the review at each run's end; Work control: stopped work reaches an agent.
-
 ## Operator
 - [Operator](prompts/agents/operator.md#operator): Work control: stopped work reaches an agent; Merge: a failed or denied merge reaches an agent.
     - "The coordinator is the session that launched you": none. Kept: it gives the operator the coordinator's address.

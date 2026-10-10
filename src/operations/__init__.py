@@ -7,8 +7,6 @@ The modules keep these rules:
   reads the state into a `state.State`, and each procedure reads only that.
   `task_work`, the work a pipeline sets aside, is no procedure: it is the
   one module that touches files, and a step the procedures print runs it.
-  `signals`, the audit signals a script reads, is no procedure either, and
-  no procedure reads it.
 - A step changes the state that the next read of it gives, so a procedure
   finds that a step is done from the state alone, and never from a record
   of its own. The record of a call the operator made is the call in the
@@ -47,6 +45,4 @@ its take to its merge), `merging` (the merge and what follows it),
 forms of the replies the command reads), `passes` (the solver pipelines),
 `task_work` (the work a pipeline sets aside), `batches` (After a batch),
 `plan` (the order of the procedures, the block and the final reply),
-`monitor` (the monitor's steps: the auditors, their reports and the budget
-alerts) and `signals` (the audit signals on a watched agent's run, which
-no procedure reads)."""
+and `monitor` (the monitor's steps: the alerts on the watched agents' runs)."""

@@ -25,7 +25,6 @@ class Role(StrEnum):
     BATCH_PROFILE = "batch-profile"
     BATCH_GATE = "batch-gate"
     AFTER_MERGE = "after-merge"
-    OP_AUDITOR = "op-auditor"
 
     @property
     def agent_type(self) -> str:
@@ -55,12 +54,6 @@ EDITORS = (Role.CODE_EDITOR, Role.HANDBOOK_EXPANDED, Role.DOC_EDITOR)
 """The editors a change's `editors` field may give, in the order the
 command launches them, each in the change's worktree, which its brief
 gives."""
-
-
-JUDGING = frozenset({Role.CODE_EDITOR, Role.HANDBOOK_EXPANDED, Role.DOC_EDITOR, Role.TICKET_ANALYST,
-                     Role.TICKET_REVIEWER, Role.DOC_REVIEWER, Role.CODE_REVIEWER})
-"""The roles of the judging agents, which an auditor's alert on their run
-reaches."""
 
 
 def editors_of(names: Iterable[str]) -> tuple[Role, ...]:

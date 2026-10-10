@@ -114,11 +114,11 @@
 - Purpose: check that the processes are followed and work, and find the cause of each fault and of each fault family.
 - Principles: the fault options and "Prefer simple mechanisms: watch an agent by reading what it does", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
 - Outcomes:
-    - These notes give which review covers each run at its end, so that no run gets two reviews at its end. The checks during a run, such as a hung call or a budget, are apart from those reviews.
-        - The module docstring of [monitor.py](src/operations/monitor.py) gives the runs that get a transcript review at their end and those that get an `op-auditor` audit.
-        - A transcript review looks for what the brief that `transcript_review` in [briefs.py](src/operations/briefs.py) writes asks of it, and an `op-auditor` audit for the signs [Signs](prompts/agents/op-auditor.md#signs) gives.
+    - These notes give which review covers each run, so that no run gets two transcript reviews.
+        - The checks during a run are those the module docstring of [monitor.py](src/operations/monitor.py) gives, and the batch profile at a batch's end is the one the brief that `batch_profile` in [briefs.py](src/operations/briefs.py) writes gives.
+        - A solver pass gets a transcript review at its end, as the module docstring of [passes.py](src/operations/passes.py) gives, and the batch profile launches one on each other run its brief gives. A transcript review looks for what the brief that `transcript_review` in [briefs.py](src/operations/briefs.py) writes asks of it.
     - A fault that recurs after a fix is taken as one family: its common cause is removed, and the fixes that removal makes redundant are named.
-- Owner: transcript reviews and `op-auditor` audits for the runs, and the ticket analyst for the causes.
+- Owner: the operator's checks, the batch profile and transcript reviews for the runs, and the ticket analyst for the causes.
 - Takes from: the runs of every process. Gives to: process assessment, the fault families, and every process, as `change` tickets.
 - How it can fail: one review at a run's end misses what another would have found: these notes give what each review looks for, and the process assessment checks the split.
 

@@ -286,8 +286,8 @@ def reply_to(a: Agent, since: float) -> Report | None:
 
 def stalled_reports(agents: list[Agent], stalls: list[str]) -> dict[str, Report]:
     """The final reply in the transcript of each agent of `stalls`, the
-    agents an auditor's `stall` finding is on, that is pending, given
-    after its launch."""
+    agents whose `stall` reading fired (`operations.monitor`), that is
+    pending, given after its launch."""
     out: dict[str, Report] = {}
     pending = {a.agent_id: a for a in agents if a.pending and a.agent_id}
     for agent in stalls:

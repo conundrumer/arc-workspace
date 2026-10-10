@@ -27,14 +27,14 @@ console_importable()
 importable(checkout.scripts())
 
 from agent_launches import accepted_after, last_delivered  # noqa: E402
-from operator_state import read_state, read_watch  # noqa: E402
+from operator_state import read_state  # noqa: E402
 from profile_runs import budget_of  # noqa: E402
 from transcripts import Refused, find  # noqa: E402
 from tree_reads import git, main_tree  # noqa: E402
 
 from operations import briefs, plan  # noqa: E402
 from operations.decisions import WRITE_SECONDS  # noqa: E402
-from operations.monitor import REPORT_TEXT, ROUTES  # noqa: E402
+from operations.monitor import ALERTS  # noqa: E402
 from operations.roles import PASSES, Role  # noqa: E402
 from operations.filing import filed, with_report  # noqa: E402
 from operations.printing import key_line, printed  # noqa: E402
@@ -59,8 +59,7 @@ HELP = mctx("""
     - A step `next` printed counts as made by the call the operator made: a Bash call whose command runs the printed command among others, or the call the operator made right after the call of `next` that printed the step, other than a call of `next` alone.
     - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass, and `restore` puts it back and removes the task's claim, as the section `Passes on a task` of `prompts/agents/notes/launching.md` gives.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives, and the command refuses where the shell gives none.
-    {report_form}
-    {routes}
+    {alerts}
     """)
 
 POLL_SECONDS = 15
@@ -107,8 +106,8 @@ def next_step(me: str) -> int:
     path = find(me)
     since = last_delivered(path)
     while True:
-        state = read_state(me)
-        step = plan.next_step(state, read_watch(state))
+        state, watch = read_state(me)
+        step = plan.next_step(state, watch)
         if isinstance(step, Launch) and (left := reloading(step)) > 0:
             if time.monotonic() + left > deadline:
                 step = Poll()
@@ -128,7 +127,7 @@ def next_step(me: str) -> int:
 
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("--help", "-h"):
-        print(HELP.format(block=BLOCK_SECONDS, reload=RELOAD_SECONDS, write=round(WRITE_SECONDS), report_form=REPORT_TEXT, routes=ROUTES))
+        print(HELP.format(block=BLOCK_SECONDS, reload=RELOAD_SECONDS, write=round(WRITE_SECONDS), alerts=ALERTS))
         return 0
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
     parser.add_argument("action", choices=["next", "set-aside", "restore"])

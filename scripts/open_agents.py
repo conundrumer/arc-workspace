@@ -1,6 +1,7 @@
 """The agents under a run whose work is open, as `--running` of
 `profile_runs` lists them."""
 
+import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -14,6 +15,9 @@ from run_profile import (Run, Span, agent_calls, background_ends, backgrounds,
 from run_reads import (BACKGROUND_TASK, LaunchStatus, blocks, is_prompt, parent_label,
                        run_entries)
 from transcripts import agent_id, is_subagent
+
+from operations.monitor import hung_from
+from operations.steps import BLOCK_SECONDS
 
 
 @dataclass
@@ -31,6 +35,22 @@ class Listed:
     end: float | None
     found: list[Report] | None
     running: list[Span] = field(default_factory=list)
+
+
+def usual(run: Run, runs: list[Run], label: str) -> float:
+    """The median duration of the ended calls of `run` with `label`, or
+    where it has none, of those of every run of `runs`, or where none has
+    one, `BLOCK_SECONDS`."""
+    def ended(among: list[Run]) -> list[float]:
+        return [s.end - s.start for r in among for s in r.spans
+                if s.label == label and s.end is not None]
+    durations = ended([run]) or ended(runs)
+    return statistics.median(durations) if durations else BLOCK_SECONDS
+
+
+def hung_time(run: Run, runs: list[Run], s: Span) -> float:
+    """The time the call `s` of `run` counts as hung (`monitor.hung_from`)."""
+    return hung_from(s.start, usual(run, runs, s.label))
 
 
 def reported_since(a: Launch, since: float | None,

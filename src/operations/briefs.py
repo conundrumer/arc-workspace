@@ -28,9 +28,6 @@ with that file."""
 REPORT_RULE = mctx("Write your final reply to the file `{path}`, in place of what it holds, "
                    "and give that file's path alone, on one line, as your final reply itself.")
 """That line for an agent no document gives (`roles.GENERAL_ROLES`)."""
-ALERT_FILE = mctx("Alert file: `{path}`.")
-"""The line of an auditor's brief that gives the file it writes an alert
-to."""
 
 
 def read_ticket(number: str) -> str:
@@ -290,7 +287,8 @@ def code_review(baseline: int, scratch: Path) -> str:
 
 BATCH_PROFILE = mctx("""
     - Run `uv run python scripts/profile_runs.py <id>` once for each of these runs, with that run's agent id alone as `<id>`; you may run those commands in one Bash call: {runs}.
-    - File a `performance` ticket, with `commit` and `{commit}` as `<domain>` and `<subject>` and `operator` as `<agent>`, for each label or part of a run or of an agent type that you judge worth fixing, by the test that a change to a tool or a document could shorten it.
+    - Then run `uv run python scripts/profile_runs.py --runs <id> ...` once, with the agent ids of all these runs.
+    - File one `performance` ticket, with `commit` and `{commit}` as `<domain>` and `<subject>` and `operator` as `<agent>`, for each cause across these runs that you judge worth fixing, by the test that a change to a tool or a document could cut the time or the token cost it made, and give in it the time and the token cost that cause made in these runs. File none on a cause that a ticket outside `tickets/closed/` already records.
     {review}
     - Reply only once each transcript review you launched has replied, with the tickets you filed and the reviews you launched.
     """)

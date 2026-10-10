@@ -4,12 +4,13 @@ An alert opens with a line of the form `alert: <kind> <agent id>`
 (`OPENING`), with the kind of `AlertKind` and the agent it is on. On an agent an
 operator of the session launched whose work is open:
 
-- A `budget` alert goes to the agent itself, under `BUDGET_MESSAGE`.
+- A `budget` alert goes to the agent itself, under `BUDGET_MESSAGE`; each
+  other alert of the monitor goes to it under the message of its kind
+  (`to_agent`), which gives the agent its step.
 
 Any other alert, and an alert on an agent no operator launched, are
-undecided. A message from an agent an operator of the session launched,
-an auditor included, gives no step: the command reads an auditor's report
-from its launch's reports alone (`monitor`). A message from an agent no operator
+undecided. A message from an agent an operator of the session launched
+gives no step. A message from an agent no operator
 launched that is no alert goes back to its sender once, with a request to
 send it again as an alert, or to say that it is none, and is undecided
 where the sender's next message is still no alert. An undecided alert or message goes to a ticket
@@ -23,7 +24,7 @@ undecided. Every other alert and message gives a step only to the
 operator `me` where it reached `me`.
 
 An agent of `State.stalled`, whose final reply the operator took as its
-report on an auditor's `stall` finding, gets a `bug` ticket that records
+report on its `stall` reading (`monitor`), gets a `bug` ticket that records
 that its report reached no operator (`stalls`)."""
 
 import re
@@ -43,15 +44,11 @@ from ticketing.vocabulary import DEFECT_SECTIONS, Domain, Kind
 
 
 class AlertKind(Enum):
-    """The kinds of alert, as an auditor gives them, with `budget`."""
-    OWN_DOING = "own-doing"
-    OBSTACLE = "obstacle"
-    OUTGROWN = "outgrown"
-    CLAIM = "claim"
-    STALL = "stall"
-    DEPARTURE = "departure"
+    """The kinds of alert, one per reading of the monitor (`monitor`)."""
     BUDGET = "budget"
-    MESSAGE = "message"
+    HUNG = "hung"
+    REPEATED = "repeated"
+    STALL = "stall"
 
 
 OPENING = re.compile(rf"\Aalert: (?P<kind>\S+) (?P<agent>{AGENT_ID})[ \t]*$", re.MULTILINE)
@@ -93,10 +90,31 @@ BUDGET_MESSAGE = (mctx("A monitor's alert: your active time is past your budget.
                   + briefs.AT_BUDGET)
 
 
-def to_agent(alert: str) -> str:
-    """The message to the agent of the `budget` alert `alert`, with the
-    alert under it."""
-    return BUDGET_MESSAGE + "\n\n" + alert
+HUNG_MESSAGE = mctx("A monitor's alert: a call of yours in flight has run far past its usual "
+                    "time. That call may have ended by the time you read this. Where it still "
+                    "runs, check whether it makes progress, and end it where it does not. Do "
+                    "not run it again unchanged.")
+REPEATED_MESSAGE = mctx("A monitor's alert: you ran the same Bash command with the same result "
+                        "several times in a row. Run that command again only once something "
+                        "has changed that can change its result.")
+STALL_MESSAGE = mctx("A monitor's alert: your turn ended while your work is open, and no "
+                     "report of yours reached your parent. Where your work is done, give your "
+                     "final reply again. Otherwise, carry on your work.")
+
+
+def to_agent(kind: AlertKind, alert: str) -> str:
+    """The message to the agent of the alert `alert` of `kind`: the step the
+    kind gives the agent, with the alert under it."""
+    match kind:
+        case AlertKind.BUDGET:
+            lead = BUDGET_MESSAGE
+        case AlertKind.HUNG:
+            lead = HUNG_MESSAGE
+        case AlertKind.REPEATED:
+            lead = REPEATED_MESSAGE
+        case AlertKind.STALL:
+            lead = STALL_MESSAGE
+    return lead + "\n\n" + alert
 
 
 def latest(state: State, agent: str) -> Agent | None:
@@ -141,7 +159,7 @@ def on(state: State, alert: Alert, a: Agent) -> Step | None:
     """The step `alert` gives on `a`, an agent an operator launched."""
     match alert.kind:
         case AlertKind.BUDGET:
-            return Send(alert.agent, to_agent(alert.message.text)) if a.pending else None
+            return Send(alert.agent, to_agent(AlertKind.BUDGET, alert.message.text)) if a.pending else None
         case _:
             return Undecided(mctx("an alert the command does not act on:") + "\n"
                              + alert.message.text)

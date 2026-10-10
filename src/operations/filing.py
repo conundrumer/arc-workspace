@@ -31,11 +31,6 @@ FILED_LINE = re.compile("^" + form(FILED, {"path": r"(?P<path>/[^\n]*?)"}) + "$"
 REPORT_SUFFIX = "-report.md"
 
 
-ALERT_SUFFIX = "-alert.md"
-"""The suffix of the alert file an auditor's brief gives, beside its
-report file."""
-
-
 REPORT_NAME = re.compile(rf"{STEP_KEY.pattern}{re.escape(REPORT_SUFFIX)}")
 """The name of the report file a brief gives."""
 
@@ -59,23 +54,14 @@ def report_path(step: Launch, scratch: Path) -> Path:
     return files_of(scratch) / f"{key(step)}{REPORT_SUFFIX}"
 
 
-def alert_path(report: Path) -> Path:
-    """The alert file of the auditor whose report file is `report`."""
-    return report.with_name(report.name.removesuffix(REPORT_SUFFIX) + ALERT_SUFFIX)
-
-
 def with_report(step: Launch, scratch: Path) -> Launch:
     """`step` with the line of its brief that gives its report file, other
-    than a solver pass's, and for an auditor the line that gives its alert
-    file."""
+    than a solver pass's."""
     if step.role in PASSES:
         return step
     form = briefs.REPORT_RULE if step.role in GENERAL_ROLES else briefs.REPORT_FILE
     report = report_path(step, scratch)
-    lines = [step.brief, form.format(path=report)]
-    if step.role is Role.OP_AUDITOR:
-        lines.append(briefs.ALERT_FILE.format(path=alert_path(report)))
-    return replace(step, brief="\n".join(lines))
+    return replace(step, brief="\n".join([step.brief, form.format(path=report)]))
 
 
 def split_message(step: Send) -> tuple[str, str]:

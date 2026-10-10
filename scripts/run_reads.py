@@ -14,7 +14,7 @@ from typing import Any
 from controlled_markdown import mctx
 from operations.constants import COORDINATOR as MAIN
 from token_prices import request_input
-from transcripts import (Entry, Refused, agent_id, chain, first_parent,
+from transcripts import (Entry, Refused, agent_id, chain, epoch, first_parent,
                          is_subagent, main_transcript, read_entries,
                          session_directory, state_cache, subagent_transcripts)
 
@@ -358,3 +358,52 @@ def notified(entry: Entry) -> list[str]:
 
 def parent_label(path: Path) -> str:
     return agent_id(path) if is_subagent(path) else MAIN
+
+
+
+REFUSALS = ("Permission for this action was denied", "The user doesn't want to proceed",
+            "PreToolUse:", "Blocked:", "<tool_use_error>Blocked:")
+"""The openings of the result of a call the harness, the permission
+classifier, the user or a hook refused."""
+
+
+def refused_at(entries: list[Entry]) -> list[float]:
+    """The times of the results of `entries` that give a refused call."""
+    return [epoch(e["timestamp"]) for e in entries if e.get("timestamp")
+            for b in blocks(e, "tool_result") if b.get("is_error")
+            and result_text(b, e.get("toolUseResult")).lstrip().startswith(REFUSALS)]
+
+
+def bash_calls(entries: list[Entry]) -> set[str]:
+    """The ids of the Bash calls of `entries`."""
+    return {str(b.get("id")) for e in entries if e.get("type") == "assistant"
+            for b in blocks(e, "tool_use") if b.get("name") == "Bash"}
+
+
+WAIT_LEAD = ": 'unattended-wait:"
+"""The lead of a command that waits, whose repeats count as no repeated
+command."""
+
+
+def repeated_runs(calls: Iterable[tuple[str, str, float]], entries: list[Entry],
+                  least: int) -> list[float]:
+    """The time of the last call of each run of `least` or more consecutive
+    calls of `calls`, each a Bash call's id, command and start, with the same
+    command and the same result text in `entries`, other than a command led
+    by `WAIT_LEAD` and a call with no result."""
+    results = {cid: text for e in entries for cid, _, text in tool_results(e)}
+    out: list[float] = []
+    key: tuple[str, str] | None = None
+    count, last = 0, 0.0
+    for cid, command, start in calls:
+        given = None if command.lstrip().startswith(WAIT_LEAD) or cid not in results \
+            else (command, results[cid])
+        if given is not None and given == key:
+            count, last = count + 1, start
+            continue
+        if count >= least:
+            out.append(last)
+        key, count, last = given, 1, start
+    if count >= least:
+        out.append(last)
+    return out

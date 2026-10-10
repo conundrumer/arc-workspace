@@ -40,8 +40,8 @@ the operators' waits on another holder whose work is open, or a ticket
 file the read of the tracker left out may still be written
 (`decisions.writing`), the agent runs
 the command again, which blocks in the foreground first. Otherwise the
-agent gives its final reply, after the launch of an auditor on its own
-run and the message that sends the coordinator its text (`ending`)."""
+agent gives its final reply, after the message that sends the
+coordinator its text (`ending`)."""
 
 from collections.abc import Callable
 
@@ -179,7 +179,7 @@ def next_step(state: State, watch: monitor.MonitorState) -> Step:
     mine = state.operators.index(state.me) if state.me in state.operators else -1
     later = [o for o in state.operators[mine + 1:] if o in state.open_operators]
     if later:
-        return ending(state, watch,
+        return ending(state,
                       mctx("Operator {operator} carries the work on, from the state; {given}.").format(
                           operator=later[-1], given=GIVEN_AGAIN)
                       + "\n" + "\n".join([*reply_lines(state), *unknown]))
@@ -187,7 +187,7 @@ def next_step(state: State, watch: monitor.MonitorState) -> Step:
     if s is not None:
         return s
     if state.past_bound:
-        return ending(state, watch,
+        return ending(state,
                       FOR_CONTEXT + "\n" + "\n".join([*reply_lines(state), *unknown]))
     s = first(state, lambda st: monitor_step(st, watch), *LATE)
     if s is not None:
@@ -195,22 +195,18 @@ def next_step(state: State, watch: monitor.MonitorState) -> Step:
     if (any(a.pending for a in state.agents) or elsewhere(state)
             or any(decisions.writing(state, u) for u in state.unread)):
         return Poll()
-    return ending(state, watch, "\n".join([final(state), *unknown]))
+    return ending(state, "\n".join([final(state), *unknown]))
 
 
 def monitor_step(state: State, watch: monitor.MonitorState) -> Step | None:
     return monitor.step(watch, lambda s: repeated(s, state))
 
 
-def ending(state: State, watch: monitor.MonitorState, text: str) -> Step:
-    """The operator's final reply, whose text is `text`: the launch of an
-    auditor on the operator's own run (`monitor.own_audit`), then the
-    message that sends the coordinator `text`, where the operator sent none
-    since the last message that reached it, then the reply."""
+def ending(state: State, text: str) -> Step:
+    """The operator's final reply, whose text is `text`: the message that
+    sends the coordinator `text`, where the operator sent none since the
+    last message that reached it, then the reply."""
     since = max((m.time for m in state.received), default=0.0)
-    s = first(state, lambda _: monitor.own_audit(watch, state.me, since))
-    if s is not None:
-        return s
     if any(c.time > since for c in final_sends(state, state.me)):
         return Reply()
     return Send(COORDINATOR, f"{FINAL_REPLY}\n{text}")

@@ -1,54 +1,41 @@
 """The assembly of the state the operator's procedures read, from the reads
 of the ticket tracker, of git and the main worktree, and of the
 transcripts of the session's operators, and of the state the monitor's
-steps read (`read_watch`), from those and from the session's running
-agents and the coordinator's transcript."""
+steps read, from the session's running agents and their transcripts."""
 
-import contextlib
-import io
 import os
-import statistics
 import sys
 import time
 from dataclasses import replace
-from functools import partial
-from pathlib import Path
 
-from agent_launches import launches, session_launches
-from agent_turns import first_time, is_turn_entry, last_time
+from agent_turns import first_time
 from budgets import budgets_in_force
 from context_bound_hook import OPERATOR, past_bound
 from controlled_markdown import mctx
-from filed_texts import report_file
-from open_agents import Listed, node, running_agents, turn_ended, work_open
+from open_agents import Listed, hung_time, running_agents, work_open
 from operator_reads import (ended_elsewhere, ended_with, operator_runs, read_operator,
                             stalled_reports)
-from run_prints import active_of, print_running
-from run_reads import (MAIN, agent_messages, agent_type, context_size, notifications, run_entries,
-                       session_agents)
-from run_reads import Status as TaskStatus
+from run_prints import active_of
+from run_reads import bash_calls, context_size, repeated_runs, run_entries
 from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
 from ticket_settle import to_settle
-from transcripts import Refused, entries_back, epoch, find, main_transcript, new_state, session_directory
+from transcripts import Refused, entries_back, find, new_state
 from tree_reads import claims, code_review, commits, gate_outputs, main_tree, scratch, worktrees
 
 from operations.directives import named
 from operations.plan import taken_up
-from operations import monitor, passes
-from operations.monitor import (Audit, Facet, MonitorState, Read, ToCoordinator, Watched,
-                                hung_from)
-from operations.alerts import AlertKind
-from operations.roles import Role
+from operations import monitor
+from operations.monitor import MonitorState, Watched
 from operations.state import Agent, Call, Message, Report, State
-from operations.filing import alert_path
-from operations.handled import made, sent_with
-from operations.steps import BLOCK_SECONDS
+from operations.handled import made
 from operations.tracker import worktree
 from ticketing.vocabulary import Status
 
 
-def read_state(me: str) -> State:
+def read_state(me: str) -> tuple[State, MonitorState]:
+    """The state the operator's procedures read, and the state the
+    monitor's steps read."""
     new_state()
     session = os.environ.get("CLAUDE_CODE_SESSION_ID")
     if not session:
@@ -69,7 +56,10 @@ def read_state(me: str) -> State:
         subjects[c.subject] = max(subjects.get(c.subject, c.time), c.time)
     for aid, path in runs:
         read_operator(aid, path, main, undecided, agents, calls, messages, passes, subjects)
-    stalled = stalled_reports(agents, stall_findings(agents))
+    launched = {a.agent_id for a in agents if a.agent_id}
+    watching: list[str] = []
+    now_watched = watched(running_agents(find(session), watching), launched, watching)
+    stalled = stalled_reports(agents, [w.agent_id for w in now_watched if w.stalled is not None])
     ended: dict[str, Report | None] = {**ended_elsewhere(agents, me), **stalled}
     agents = [ended_with(a, ended[a.agent_id]) if a.pending and a.agent_id in ended else a
               for a in agents]
@@ -100,25 +90,16 @@ def read_state(me: str) -> State:
     given = [ticket_number(n) for n in named(state) if n in tickets]
     held = {w for t in tickets.values() if t.status is Status.ASSIGNED and t.holder == me
             and (w := worktree(t, state)) is not None}
-    return replace(state,
-                   to_settle=tuple(str(n) for n in to_settle(tickets_dir, index, given)
-                                   if str(n) in tickets),
-                   gate_outputs={w: gate_outputs(w) for w in held})
+    state = replace(state,
+                    to_settle=tuple(str(n) for n in to_settle(tickets_dir, index, given)
+                                    if str(n) in tickets),
+                    gate_outputs={w: gate_outputs(w) for w in held})
+    return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(state.stalled),
+                               undecided=tuple(watching))
 
 
-UNWATCHED = frozenset({OPERATOR, Role.OP_AUDITOR.agent_type})
+UNWATCHED = frozenset({OPERATOR})
 """The agent types the monitor's steps do not watch."""
-
-
-def usual(listed: Listed, listing: list[Listed], label: str) -> float:
-    """The median duration of the ended calls of `listed` with `label`, or
-    where it has none, of those of every run of `listing`, or where none
-    has one, `BLOCK_SECONDS`."""
-    def ended(runs: list[Listed]) -> list[float]:
-        return [s.end - s.start for r in runs for s in r.run.spans
-                if s.label == label and s.end is not None]
-    durations = ended([listed]) or ended(listing)
-    return statistics.median(durations) if durations else BLOCK_SECONDS
 
 
 def hung_at(listed: Listed, listing: list[Listed]) -> float | None:
@@ -126,8 +107,18 @@ def hung_at(listed: Listed, listing: list[Listed]) -> float | None:
     None where none has."""
     now = time.time()
     times = [at for s in listed.run.in_flight
-             if (at := hung_from(s.start, usual(listed, listing, s.label))) <= now]
+             if (at := hung_time(listed.run, [x.run for x in listing], s)) <= now]
     return min(times, default=None)
+
+
+def stalled_at(listed: Listed, listing: list[Listed]) -> float | None:
+    """The end of the turn of `listed` where it stalled, as
+    `monitor.ALERTS` gives a stall, or None."""
+    aid = listed.launch.agent
+    if (not listed.ended or listed.found != [] or listed.running
+            or any(x.parent == aid for x in listing)):
+        return None
+    return listed.end if listed.end is not None else activity(listed)
 
 
 def activity(listed: Listed) -> float:
@@ -142,161 +133,31 @@ def activity(listed: Listed) -> float:
     return max(times, default=0.0)
 
 
-def facts(listed: Listed, since: float | None, undecided: list[str]) -> str:
-    """The listing `profile_runs.py --running` prints of `listed`, with its
-    calls since `since`."""
-    out = io.StringIO()
-    with contextlib.redirect_stdout(out):
-        print_running([listed], time.time(), since, undecided)
-    return out.getvalue().rstrip("\n")
+def repeated(listed: Listed) -> tuple[float, ...]:
+    """The `repeated` readings of `listed` (`run_reads.repeated_runs`)."""
+    entries = run_entries(listed.path)
+    bash = bash_calls(entries)
+    calls = [(s.call, s.command, s.start) for s in listed.run.spans if s.call in bash]
+    return tuple(repeated_runs(calls, entries, monitor.REPEATS))
 
 
-def closed_unaudited(agents: tuple[Agent, ...], listing: list[Listed], audits: list[Audit],
-                     reviewed: frozenset[str], since: float,
-                     undecided: list[str]) -> list[Listed]:
-    """The agents of `agents` that `listing` leaves out, so whose work has
-    closed, other than the auditors and the agents of `reviewed`, whose
-    last ended turn falls after `since` and no auditor was launched on
-    after that turn, each as listed
-    where its turn has ended.
-
-    `read_watch` gives as `since` the start that the module docstring of
-    `operations.monitor` gives, so a turn that ended between the last read
-    of the operator launched right before the reading one and the reading
-    operator's start is still due. A turn that
-    ended before that operator started is due to it alone: where it ended
-    before it made that audit, no later operator makes it."""
-    shown = {listed.launch.agent for listed in listing}
-    out: list[Listed] = []
-    for a in agents:
-        aid = a.agent_id
-        if aid is None or aid in shown or a.role.agent_type in UNWATCHED or aid in reviewed:
-            continue
-        shown.add(aid)
-        try:
-            path, launcher = find(aid), find(a.operator)
-        except Refused as e:
-            undecided.append(mctx("{agent}: {reason}, so its last ended turn is not "
-                                  "audited").format(agent=aid, reason=e))
-            continue
-        end = last_time(path, is_turn_entry)
-        if end is None:
-            undecided.append(mctx("{agent}: no entry of its transcript gives a time, so its "
-                                  "last ended turn is not audited").format(agent=aid))
-            continue
-        last = monitor.last_audit(audits, aid)
-        if end <= since or (last is not None and last > end):
-            continue
-        launch = next((x for x in launches(launcher, undecided) if x.agent == aid), None)
-        if launch is None:
-            undecided.append(mctx("{agent}: the transcript of {operator} gives no launch of "
-                                  "it, so its last ended turn is not audited").format(
-                                      agent=aid, operator=a.operator))
-            continue
-        out.append(turn_ended(node(launcher, launch, path, [], undecided), undecided))
-    return out
-
-
-def watched(listing: list[Listed], closed: list[Listed], launched: dict[str, Role],
-            audits: list[Audit], undecided: list[str]) -> list[Watched]:
-    """The agents of `listing`, whose work is open, and of `closed`, whose
-    work has closed, that an operator launched, by `launched`, their roles
-    by agent id, other than the auditors."""
+def watched(listing: list[Listed], launched: set[str],
+            undecided: list[str]) -> list[Watched]:
+    """The agents of `listing`, whose work is open, that an operator
+    launched, by `launched`, their agent ids."""
     out: list[Watched] = []
     now = time.time()
-    for listed, is_open in [*((x, True) for x in listing), *((x, False) for x in closed)]:
+    for listed in listing:
         r = listed.run
         aid = listed.launch.agent
-        if aid is None or r.agent_type in UNWATCHED or (role := launched.get(aid)) is None:
+        if aid is None or r.agent_type in UNWATCHED or aid not in launched:
             continue
         budget = next(reversed(budgets_in_force(r, undecided)), None)
         active = active_of(listed, now)
         out.append(Watched(
-            agent_id=aid, agent_type=r.agent_type, role=role, parent=listed.parent,
-            activity=activity(listed), hung=hung_at(listed, listing) if is_open else None,
-            ended=listed.ended, open=is_open,
+            agent_id=aid, hung=hung_at(listed, listing),
             over_budget=budget is not None and active is not None and active > budget * 60,
-            facts=facts(listed, monitor.last_audit(audits, aid), undecided), transcript=r.path))
-    return out
-
-
-def audit_of(a: Agent, undecided: list[str]) -> Audit | None:
-    """The audit the launch `a` gives, or None where it is no auditor's, or
-    where its subject is in no form `monitor.subject` gives: that launch
-    counts as no audit, so the activity it was to audit stays new, and
-    `undecided` gains a line on it. A latest report that still has a report
-    file's path as its text is one whose file `agent_reports.reports_after`
-    found gone."""
-    if a.role is not Role.OP_AUDITOR or a.agent_id is None:
-        return None
-    given = monitor.subject_of(a.subject)
-    if given is None:
-        undecided.append(mctx("{agent}: this auditor's launch has the subject `{subject}`, in "
-                              "no form the command gives, so it counts as no audit")
-                         .format(agent=a.agent_id, subject=a.subject))
-        return None
-    replies = tuple(r.time for r in a.reports)
-    read, found, alert = Read.PENDING, None, None
-    if a.last_report is not None and not a.pending:
-        text, path = a.last_report.text, a.last_report.file
-        if path is None and report_file(text) is not None:
-            read = Read.GONE
-        else:
-            found = monitor.finding(text)
-            read = Read.UNREAD if found is None else Read.READ
-            if found is not None and found.alert in monitor.TO_AGENT and path is not None:
-                given_file = alert_path(path)
-                alert = given_file.read_text().strip() if given_file.is_file() else None
-    return Audit(a.agent_id, *given, a.launched, replies, read, found, alert)
-
-
-def stall_findings(agents: list[Agent]) -> list[str]:
-    """The agents the `stall` findings of the auditors of `agents` are on.
-    The lines `audit_of` gives on what it left unknown go to `read_watch`
-    alone."""
-    return [f.agent for x in agents if (a := audit_of(x, [])) is not None
-            and (f := a.finding) is not None and f.alert is AlertKind.STALL
-            and f.agent is not None]
-
-
-def to_coordinator(session: Path, since: float, undecided: list[str]) -> list[ToCoordinator]:
-    """The messages to the coordinator from a watched agent of the session
-    that the coordinator did not launch, and the notifications of the end
-    of one, that the coordinator's transcript gained since `since`."""
-    parents = {kid: launcher for launcher, kids in session_launches(session)[1].items()
-               for kid in kids}
-    agents: dict[str, tuple[str, str, Path]] = {}
-    for aid, p in session_agents(session).items():
-        kind = agent_type(p)
-        if kind is None or kind in UNWATCHED:
-            continue
-        if aid not in parents:
-            undecided.append(mctx("{agent}: no `.meta.json` gives its parent, so its messages "
-                                  "to the coordinator are not audited").format(agent=aid))
-            continue
-        if parents[aid] != MAIN:
-            agents[aid] = (kind, parents[aid], p)
-    out: list[ToCoordinator] = []
-    for e in run_entries(main_transcript(session)):
-        stamp = e.get("timestamp")
-        if e.get("type") != "user" or not stamp or (t := epoch(stamp)) <= since:
-            continue
-        for sender, text in agent_messages(e):
-            if sender in agents:
-                out.append(ToCoordinator(sender, *agents[sender], t, text))
-        for n in notifications(e):
-            if n.status is TaskStatus.RUNNING:
-                continue
-            text = n.result or n.note
-            for aid in n.ids:
-                if aid not in agents:
-                    continue
-                if not text:
-                    undecided.append(mctx("{agent}: a notification of its end gives neither "
-                                          "a result nor a note, so it is not audited").format(
-                                              agent=aid))
-                else:
-                    out.append(ToCoordinator(aid, *agents[aid], t, text))
+            stalled=stalled_at(listed, listing), repeated=repeated(listed)))
     return out
 
 
@@ -305,25 +166,3 @@ def started(aid: str) -> float:
     if t is None:
         raise Refused(mctx("the transcript of {agent} gives no time").format(agent=aid))
     return t
-
-
-def read_watch(state: State) -> MonitorState:
-    """The state the monitor's steps read, for the session's operators of
-    `state`. The messages to the coordinator are read since the start of the
-    session's first operator, and the closed agents due an audit since the
-    start that the module docstring of `operations.monitor` gives."""
-    undecided: list[str] = []
-    audits = [a for x in state.agents if (a := audit_of(x, undecided)) is not None]
-    start = started(state.operators[0])
-    session = find(state.session)
-    launched = {a.agent_id: a.role for a in state.agents if a.agent_id}
-    listing = running_agents(session, undecided)
-    at = state.operators.index(state.me)
-    reviewed = passes.reviewed(state)
-    closed = closed_unaudited(state.agents, listing, audits, reviewed,
-                              started(state.operators[max(at - 1, 0)]), undecided)
-    return MonitorState(
-        watched=tuple(watched(listing, closed, launched, audits, undecided)),
-        to_coordinator=tuple(to_coordinator(session_directory(session), start, undecided)),
-        audits=tuple(audits), sent=partial(sent_with, state),
-        transcript=find(state.me), stalled=frozenset(state.stalled), reviewed=reviewed, undecided=tuple(undecided))
