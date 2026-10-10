@@ -115,8 +115,9 @@ ROUTES = mctx("- `next` gives each finding of an auditor its step by its kind an
                   judging=", ".join(f"`{r.agent_type}`" for r in sorted(JUDGING)))
 """The routes of `route`, which the `--help` of `scripts/operate.py` gives."""
 
-REPORT_POINTER = mctx("Write your report file in the form `uv run python scripts/operate.py "
-                      "--help` gives for an auditor's report.")
+REPORT_TEXT = REPORT_FORM.format(no_sign=NO_SIGN, verdict=VERDICT)
+"""`REPORT_FORM` as `--help` of `scripts/operate.py` prints it, which an
+auditor's brief and the request to write its report again give."""
 
 
 def finding(text: str) -> Finding | None:
@@ -190,7 +191,7 @@ def ask(state: MonitorState, a: Audit) -> Send | bool:
     """`handled.asked_again` on the latest report of `a`, which the command
     read in no form."""
     return asked_again(state.sent, a.auditor,
-                       list(a.replies), REPORT_POINTER, briefs.OPERATOR)
+                       list(a.replies), REPORT_TEXT, briefs.OPERATOR)
 
 
 def outcome(state: MonitorState, a: Audit) -> Finding | None:
@@ -330,7 +331,7 @@ def brief(state: MonitorState, w: Watched) -> str:
                      transcript=w.transcript, since=since, facts=w.facts,
                      verdict=previous_verdict(
                          state, audits_on(state.audits, Facet.AGENT, w.agent_id))),
-        REPORT_POINTER])
+        REPORT_TEXT])
 
 
 def message_brief(m: ToCoordinator) -> str:
@@ -338,7 +339,7 @@ def message_brief(m: ToCoordinator) -> str:
     return "\n\n".join([
         ON_MESSAGE.format(time=utc_stamp(m.time), agent=m.agent_id, agent_type=m.agent_type,
                           parent=m.parent, transcript=m.transcript, text=m.text),
-        REPORT_POINTER])
+        REPORT_TEXT])
 
 
 def own_audit(state: MonitorState, me: str, since: float) -> Launch | None:
@@ -351,7 +352,7 @@ def own_audit(state: MonitorState, me: str, since: float) -> Launch | None:
     return Launch(Role.OP_AUDITOR, subject(Facet.OPERATOR, me), "\n\n".join([
         ON_OPERATOR.format(agent=me, transcript=state.transcript, since=since_last(past),
                            verdict=previous_verdict(state, past)),
-        REPORT_POINTER]))
+        REPORT_TEXT]))
 
 
 def budget_alert(w: Watched) -> Send:

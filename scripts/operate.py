@@ -34,7 +34,7 @@ from tree_reads import git, main_tree  # noqa: E402
 
 from operations import briefs, plan  # noqa: E402
 from operations.decisions import WRITE_SECONDS  # noqa: E402
-from operations.monitor import NO_SIGN, REPORT_FORM, ROUTES, VERDICT  # noqa: E402
+from operations.monitor import REPORT_TEXT, ROUTES  # noqa: E402
 from operations.roles import PASSES, Role  # noqa: E402
 from operations.filing import filed, with_report  # noqa: E402
 from operations.printing import key_line, printed  # noqa: E402
@@ -128,8 +128,7 @@ def next_step(me: str) -> int:
 
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("--help", "-h"):
-        print(HELP.format(block=BLOCK_SECONDS, reload=RELOAD_SECONDS, write=round(WRITE_SECONDS), report_form=REPORT_FORM.format(
-            no_sign=NO_SIGN, verdict=VERDICT), routes=ROUTES))
+        print(HELP.format(block=BLOCK_SECONDS, reload=RELOAD_SECONDS, write=round(WRITE_SECONDS), report_form=REPORT_TEXT, routes=ROUTES))
         return 0
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
     parser.add_argument("action", choices=["next", "set-aside", "restore"])
