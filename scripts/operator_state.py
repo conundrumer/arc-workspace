@@ -47,7 +47,7 @@ reads."""
 def read_state(me: str) -> tuple[State, MonitorState]:
     """The state the operator's procedures read, and the state the
     monitor's steps read."""
-    new_state()
+    opened = new_state()
     session = os.environ.get("CLAUDE_CODE_SESSION_ID")
     if not session:
         raise Refused(mctx("the shell gives no `CLAUDE_CODE_SESSION_ID`"))
@@ -69,7 +69,8 @@ def read_state(me: str) -> tuple[State, MonitorState]:
         read_operator(aid, path, main, undecided, agents, calls, messages, passes, subjects)
     launched = {a.agent_id for a in agents if a.agent_id}
     watching: list[str] = []
-    now_watched = watched(running_agents(find(session), watching), launched, watching)
+    now_watched = watched(running_agents(find(session), watching), launched, watching,
+                          opened)
     stalled = stalled_reports(agents, [w.agent_id for w in now_watched if w.stalled is not None])
     ended: dict[str, Report | None] = {**ended_elsewhere(agents, me), **stalled}
     agents = [ended_with(a, ended[a.agent_id]) if a.pending and a.agent_id in ended else a
@@ -116,12 +117,11 @@ UNWATCHED = frozenset({OPERATOR})
 """The agent types the monitor's steps do not watch."""
 
 
-def hung_at(listed: Listed, listing: list[Listed]) -> float | None:
+def hung_at(listed: Listed, listing: list[Listed], opened: float) -> float | None:
     """The earliest time a call of `listed` in flight counted as hung, or
-    None where none has."""
-    now = time.time()
+    None where none had by `opened`, the time the state opened."""
     times = [at for s in listed.run.in_flight
-             if (at := hung_time(listed.run, [x.run for x in listing], s)) <= now]
+             if (at := hung_time(listed.run, [x.run for x in listing], s)) <= opened]
     return min(times, default=None)
 
 
@@ -160,9 +160,10 @@ def repeated(listed: Listed) -> tuple[float, ...]:
 
 
 def watched(listing: list[Listed], launched: set[str],
-            undecided: list[str]) -> list[Watched]:
+            undecided: list[str], opened: float) -> list[Watched]:
     """The agents of `listing`, whose work is open, that an operator
-    launched, by `launched`, their agent ids."""
+    launched, by `launched`, their agent ids, as read in the state that
+    opened at `opened`."""
     out: list[Watched] = []
     now = time.time()
     for listed in listing:
@@ -173,7 +174,7 @@ def watched(listing: list[Listed], launched: set[str],
         budget = next(reversed(budgets_in_force(r, undecided)), None)
         active = active_of(listed, now)
         out.append(Watched(
-            agent_id=aid, hung=hung_at(listed, listing),
+            agent_id=aid, hung=hung_at(listed, listing, opened),
             over_budget=budget is not None and active is not None and active > budget * 60,
             stalled=stalled_at(listed, listing), repeated=repeated(listed)))
     return out

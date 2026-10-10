@@ -6,6 +6,7 @@ import filecmp
 import json
 import os
 import re
+import time
 from collections.abc import Callable, Hashable, Iterator
 from datetime import datetime
 from functools import wraps
@@ -25,12 +26,13 @@ _state = 0
 """The count of the states this process has opened (`new_state`)."""
 
 
-def new_state() -> None:
-    """Open a new state: from then on, each `state_cache` read gives what
-    it reads as it stands now where its stamp changed, and as held where it
-    did not."""
+def new_state() -> float:
+    """Open a new state, and give the time it opened: from then on, each
+    `state_cache` read gives what it reads as it stands now where its stamp
+    changed, and as held where it did not."""
     global _state
     _state += 1
+    return time.time()
 
 
 def state_cache[**P, R](stamp: Callable[P, Hashable] | None) -> Callable[
