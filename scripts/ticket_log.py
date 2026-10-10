@@ -99,7 +99,7 @@ def check_line(status: Status, moves: bool, agent: str, agent_id: str | None,
         raise Refused(mctx("`{agent}` is not kebab words").format(agent=agent))
     if agent_id is not None and not AGENT_ID.fullmatch(agent_id):
         raise Refused(mctx("`{id}` is no agent id").format(id=agent_id))
-    if agent_id is None and status is Status.ASSIGNED:
+    if agent_id is None and moves and status is Status.ASSIGNED:
         raise Refused(mctx("an `assigned` line takes your agent id in `--id`"))
     if note is not None and (not note.strip() or "\n" in note or "\r" in note):
         raise Refused(mctx("the note is not one line of text"))

@@ -82,8 +82,8 @@ LOG_HELP = mctx("""
     - The command refuses, and neither moves nor writes, where the ticket stands in another status than `<current status>`, or where its file moves before the command moves it.
     - Where `<status>` differs from `<current status>`, the command moves the ticket's file to the directory of `<status>`. Where they are the same, the log line moves nothing.
     - The command appends `<time> <status> [<agent>]: <note>` to the file's `{log}`, with the time in UTC in the form `{time_form}`, and with `<agent> <agent id>` in the bracket where `--id` gives an agent id. A line with no `<note>` ends at the bracket.
-    - An `assigned` line takes, in `--id`, the agent id of the agent that writes it.
-    - On a ticket that already stands in `assigned`, the command refuses an `assigned` line unless its `--id` holds the ticket. The holder is the agent id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines. Where none of them gives one, the ticket has no holder.
+    - An `assigned` line that moves a ticket into `assigned` takes, in `--id`, the agent id of the agent that writes it.
+    - On a ticket that already stands in `assigned`, the command refuses an `assigned` line whose `--id` does not hold the ticket, and accepts one with no `--id`. The holder is the agent id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines. Where none of them gives one, the ticket has no holder.
     - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}`, or `{change} <number>`, with `<number>` the number of a `change` ticket the ticket tracker holds.
     - The note of a line that moves a ticket into `closed` opens with its resolution, one of {resolutions}.
     - Where the line moves a `{change}` ticket into `closed`, the command also moves each ticket under `{blocked}` that waits on that change, and prints the path of each one it moved, one per line, after the change's own path.
