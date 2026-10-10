@@ -1,6 +1,6 @@
 """A change from its take to its merge: the release of tickets, the take of
-open changes, the editors, the review of the documents and the ticket
-analyst on what the editors leave. The steps carry out
+open changes, the editors, the review of the documents, the item checker
+and the ticket analyst on what the editors leave. The steps carry out
 [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change);
 `merging` gives the merge and what follows it.
 
@@ -16,17 +16,21 @@ forms of `reports`. An editor whose latest reply says its budget is passed
 is sent a message to go on with the work that reply leaves, with the
 budget the operators last gave it, and that reply goes to no ticket
 analyst. Once each editor of a change has reported, the latest report of
-each editor that has reported since the last such analyst was launched, an
-open `question` ticket filed on the change, and the accepted gate outputs
-the change writes go to one ticket analyst, for a change with a doc editor
-and a change without one. That analyst checks the items of each such
-editor's part and judges what that editor leaves, and an editor it sends
-a message reports again. So the change merges only once such an analyst
-was launched after each editor's last report.
-A report that analyst was launched after leaves nothing more,
-unless the part of that analyst's reply for the coordinator gives a
-`decision:` or an `unfinished:` item and no editor has reported since its
-launch: then the change is held on those items, in place of its merge.
+each editor that has reported since the last item checker was launched on
+the change, and the accepted gate outputs the change writes, go to one
+item checker. That checker checks the items of each such editor's part,
+and an editor it sends a message reports again. So the change merges only
+once an item checker was launched after each editor's last report. The
+checker gives under `reports.LEFT_FOR_DECISION` what those reports leave
+for a decision.
+Where no item checker is due, that part of the latest checker's reply,
+where it follows the last ticket analyst's launch on the change, and the
+open `question` tickets filed on the change go to one ticket analyst.
+That analyst's reply leaves nothing more, unless its part for the
+coordinator gives a `decision:` or an `unfinished:` item and no item
+checker was launched since its launch: then the change is held on those
+items, in place of its merge, and a ruling of another analyst gives that
+analyst the latest checker's part, whatever its time.
 Where they give a `decision:` item, the step waits on the coordinator,
 which gets those items with the line that rules the step
 (`triage.for_coordinator`), and otherwise it goes to a ticket analyst
@@ -58,7 +62,8 @@ from typing import Literal
 from controlled_markdown import mctx
 from operations import briefs, merging
 from operations.directives import Decision, Directive, decided, held_on, named, numbers
-from operations.reports import NO_FINDING, OPEN_LABELS, Label, budget_passed, items_of, no_finding
+from operations.reports import (NO_FINDING, OPEN_LABELS, Label, budget_passed, items_of,
+                                left_for_decision, no_finding)
 from operations.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
 from operations.state import Agent, State, Ticket
 from operations.handled import answered, repeated, sends_to, sent
@@ -146,9 +151,9 @@ def held(state: State) -> list[Ticket]:
 
 
 def of_change(state: State, number: str) -> list[Agent]:
-    """The editors, doc reviewers and ticket analysts launched on the
-    change `number`."""
-    roles = (*EDITORS, Role.DOC_REVIEWER)
+    """The editors, doc reviewers, item checkers and ticket analysts
+    launched on the change `number`."""
+    roles = (*EDITORS, Role.DOC_REVIEWER, Role.ITEM_CHECKER)
     out = [a for a in state.agents if a.role in roles and a.subject == number]
     out += [a for a, p, nums in state.analysts() if p is Purpose.CHANGE and number in nums]
     return sorted(out, key=lambda a: a.launched)
@@ -252,7 +257,8 @@ def past_budget(state: State, t: Ticket, latest: list[Agent]) -> Step | None:
 LEFT_CHOICES = {
     Decision.MERGE: mctx("go on to the merge; the close of the change closes its open question "
                        "tickets"),
-    Decision.AGAIN: mctx("launch another ticket analyst on what the editors leave")}
+    Decision.AGAIN: mctx("launch another ticket analyst on what the item checker leaves for a "
+                       "decision")}
 """The choices of a step held on what the editors of a change leave."""
 
 
@@ -280,25 +286,33 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
              agents: list[Agent]) -> Step | None | Literal[False]:
     """The step on what the editors leave, or False where they leave
     nothing."""
+    checkers = [a for a in agents if a.role is Role.ITEM_CHECKER]
     analysts = [a for a in agents if a.role is Role.TICKET_ANALYST]
-    if any(a.pending for a in analysts):
+    if any(a.pending for a in checkers + analysts):
         return None
-    judged = max((a.launched for a in analysts), default=0.0)
-    needing = [a for a in latest if (r := a.last_report) is not None and r.time > judged]
+    editors = agent_ids(latest)
+    if isinstance(editors, Undecided):
+        return editors
+    checked = max((a.launched for a in checkers), default=0.0)
+    needing = [a for a in latest if (r := a.last_report) is not None and r.time > checked]
+    if needing:
+        return check_items(state, t, w, needing, editors)
     questions = [q for q in state.tickets.values() if q.kind is Kind.QUESTION
                  and q.domain is Domain.CHANGE and q.subject == t.number
                  and q.status in (Status.OPEN, Status.ASSIGNED)]
-    reported = max((r.time for a in latest if (r := a.last_report) is not None), default=0.0)
-    outputs = list(state.gate_outputs.get(w, ()))
-    gate = outputs if reported > judged else []
+    judged = max((a.launched for a in analysts), default=0.0)
+    left = left_for_decision(checkers[-1]) if checkers else None
+    fresh = left if left is not None and (r := checkers[-1].last_report) is not None \
+        and r.time > judged else None
+    parts = fresh
     hold: str | None = None
     on_user = False
-    if analysts and reported <= judged and (hold := left_hold(analysts[-1], t.number)):
+    if analysts and judged > checked and (hold := left_hold(analysts[-1], t.number)):
         on_user = items_of(analysts[-1], [Label.DECISION]) is not None
-        needing, gate = latest, outputs
-    elif not needing and not questions and not gate:
+        parts = left
+    elif fresh is None and not questions:
         return False
-    elif questions and not needing and not gate and judged > max(q.filed for q in questions):
+    elif fresh is None and judged > max(q.filed for q in questions):
         hold = mctx("ticket analyst {agent} returned on change {number}, and its question "
                     "tickets stand open").format(agent=analysts[-1].agent_id, number=t.number)
     if hold is not None:
@@ -307,16 +321,22 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
             return None if on_user else choice
         if choice is Decision.MERGE:
             return False
+    return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
+        t.number, w, parts, [q.number for q in questions], editors, state.me))
+
+
+def check_items(state: State, t: Ticket, w: Path, needing: list[Agent],
+                editors: list[str]) -> Step:
+    """The launch of an item checker on the latest reports of the editors
+    `needing`, which have reported since the last item checker was launched
+    on the change `t`, and on the accepted gate outputs the change writes."""
     reporting = [(a, r) for a in needing if (r := a.last_report) is not None]
     reporters = agent_ids(a for a, _ in reporting)
-    editors = agent_ids(latest)
     if isinstance(reporters, Undecided):
         return reporters
-    if isinstance(editors, Undecided):
-        return editors
     reports = [(i, r.text) for i, (_, r) in zip(reporters, reporting, strict=True)]
-    return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
-        t.number, w, reports, [q.number for q in questions], gate, editors, state.me))
+    return Launch(Role.ITEM_CHECKER, t.number, briefs.item_check(
+        t.number, w, reports, list(state.gate_outputs.get(w, ())), editors, state.me))
 
 
 def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],

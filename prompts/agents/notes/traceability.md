@@ -35,7 +35,6 @@
     - "Where you take up a change that another agent held", "Then, where your brief", "Send no message to an editor or reviewer that other agent launched": Work control: one live holder per ticket.
     - "Run the changes you launch at the same time": none. Kept: the principle of Configuration management, run parallel parts at once.
 - [Findings an editor leaves](prompts/agents/notes/changes.md#findings-an-editor-leaves): Implementation: each item not done reaches the agent that decides it.
-    - "Check each item of a change against": Verification: another agent checks the built change.
     - "Judge each finding a change's editor leaves": Decisions: each decision recorded with what it was made from.
 - [Merging a change](prompts/agents/notes/changes.md#merging-a-change): Merge: each merge passes the gate and the checks; a failed or denied merge reaches an agent.
     - "Where a kept finding of a change raises a decision": Decisions: a departing decision reaches the user.
@@ -108,6 +107,7 @@
 - [A ticket analyst's brief](prompts/agents/notes/launching.md#a-ticket-analysts-brief): Work control: stopped work reaches an agent.
     - "With a draft whose next revision opens": none. Kept: it bounds the cost of the reviews a draft gets, a way Verification can fail.
     - "With the tickets a solver pass filed": Quality assurance: the review at each run's end.
+- [An item checker's brief](prompts/agents/notes/launching.md#an-item-checkers-brief): Verification: another agent checks the built change.
 - [An operator's brief](prompts/agents/notes/launching.md#an-operators-brief): Work control: stopped work reaches an agent.
     - "`Merge: <number>`": Merge: a failed or denied merge reaches an agent.
     - "`Decision: <decision key> <choice>`": Decisions: a departing decision reaches the user.
@@ -223,6 +223,9 @@
 - [Process assessment](prompts/agents/ticket-analyst.md#process-assessment): Process assessment: the faults of the processes reach the user; each rule maps to an outcome.
 - [Findings an editor leaves](prompts/agents/ticket-analyst.md#findings-an-editor-leaves): Decisions: a decline carries its defense.
     - "Judge each `refactor` place": Implementation: each item not done reaches the agent that decides it.
+
+## Item checker
+- [Item checker](prompts/agents/item-checker.md#item-checker): Verification: another agent checks the built change; Implementation: each item not done reaches the agent that decides it.
 
 ## Ticket reviewer
 - [Ticket reviewer](prompts/agents/ticket-reviewer.md#ticket-reviewer): Verification: each `change` ticket checked before the build.

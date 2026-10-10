@@ -17,6 +17,7 @@ class Role(StrEnum):
     TRANSCRIPT_REVIEW = "transcript-review"
     TICKET_ANALYST = "ticket-analyst"
     TICKET_REVIEWER = "ticket-reviewer"
+    ITEM_CHECKER = "item-checker"
     CODE_EDITOR = "code-editor"
     DOC_EDITOR = "doc-editor"
     HANDBOOK_EXPANDED = "handbook-expanded"

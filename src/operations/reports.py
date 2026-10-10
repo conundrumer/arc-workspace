@@ -32,6 +32,22 @@ FOR_COORDINATOR = "## For the coordinator"
 """The heading at the end of a ticket analyst's reply, over the part of it
 for the coordinator: the decisions it brings the user, the changes it
 tells the user, and the items it leaves unfinished."""
+LEFT_FOR_DECISION = "## Left for a decision"
+"""The heading at the end of an item checker's reply, over the findings
+and the items the editors' reports leave for a decision and the `refactor`
+places they give as standing."""
+
+
+def left_for_decision(a: Agent) -> str | None:
+    """The part of an item checker's latest reply under
+    `LEFT_FOR_DECISION`, or None where it has no such part or that part is
+    empty."""
+    r = a.last_report
+    if a.role is not Role.ITEM_CHECKER or r is None or LEFT_FOR_DECISION not in r.text:
+        return None
+    return r.text.rsplit(LEFT_FOR_DECISION, 1)[1].strip("\n") or None
+
+
 class Label(StrEnum):
     """The labels of the kinds of item of the part for the coordinator."""
     DECISION = "decision"

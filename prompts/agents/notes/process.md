@@ -79,7 +79,7 @@
     - For a document change that alters what an agent does, there is evidence before the merge that its reader acts as the requirement states.
     - The lines in force in the agents' documents get a standing review, as the code in the tree gets the code review.
     - A finding in a later round of a review falls only on text that changed since the earlier round.
-- Owner: the ticket reviewer for the `change` ticket, a ticket analyst for the built change, the doc reviewer for the form of the documents and, by its trials, for the evidence of a reader's behavior, a standing doc review for the lines in force in the agents' documents, and the code reviewer and the gate for the code.
+- Owner: the ticket reviewer for the `change` ticket, the item checker for the built change, the doc reviewer for the form of the documents and, by its trials, for the evidence of a reader's behavior, a standing doc review for the lines in force in the agents' documents, and the code reviewer and the gate for the code.
 - Takes from: implementation and requirements. Gives to: merge.
 - How it can fail:
     - Each review adds cost to every change: the reviews a work product gets are set by its reader.
@@ -173,8 +173,8 @@
 ## Work products
 - A `request`: a ticket analyst writes the `change` tickets that serve it. Its reviews: the ticket reviewer's check of each requirement's trace to its spans or Grounds, and validation.
 - A `change` ticket with its design: a ticket analyst writes it. Its review: a ticket reviewer's, before the build.
-- A built code change: a code editor builds it, and the `handbook-expanded` agent the part in the lib and the solvers. Its reviews: a ticket analyst's check of its items, the gate at its merge, and the code review that follows its merge.
-- A built document change: the doc editor builds it. Its reviews: the doc reviewer's, a ticket analyst's check of its items, and the `controlled_markdown` check.
+- A built code change: a code editor builds it, and the `handbook-expanded` agent the part in the lib and the solvers. Its reviews: the item checker's check of its items, the gate at its merge, and the code review that follows its merge.
+- A built document change: the doc editor builds it. Its reviews: the doc reviewer's, the item checker's check of its items, and the `controlled_markdown` check.
 - A solver: the Create pass writes it, and each Refine pass reconciles it with the latest report. Its review: the transcript review of each pass that writes it.
 - A pass's report: the pass writes it, and a ticket analyst takes the tickets it lists. Its review: the transcript review of that pass.
 - A ticket of a fault: a ticket analyst settles it. Its review: the ticket analyst's check of it against the state that produced it.

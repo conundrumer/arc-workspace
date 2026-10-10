@@ -207,27 +207,44 @@ def revise_lines(numbers: list[str], last: list[str]) -> list[str]:
     return lines
 
 
-def findings(number: str, worktree: Path, reports: list[tuple[str, str]],
-             questions: list[str], gate: list[str], editors: list[str], operator: str) -> str:
-    """The brief of a ticket analyst that checks the items of a change's
-    editors and judges what they leave, by each editor's agent id and
-    latest report, and on the `question` tickets filed on the change, with
-    the agent ids of its editors."""
-    lines = [read_ticket(number), mctx("Its worktree: {worktree}.").format(worktree=worktree)]
+def change_lines(number: str, worktree: Path) -> list[str]:
+    """The opening lines of a brief on the built change `number`."""
+    return [read_ticket(number), mctx("Its worktree: {worktree}.").format(worktree=worktree)]
+
+
+def item_check(number: str, worktree: Path, reports: list[tuple[str, str]], gate: list[str],
+               editors: list[str], operator: str) -> str:
+    """The brief of an item checker that checks the items of a change's
+    editors, by each editor's agent id and latest report, and the accepted
+    gate outputs the change writes, with the agent ids of its editors."""
+    lines = change_lines(number, worktree)
     for editor_id, report in reports:
         lines.append(mctx("The latest report of editor {editor}:").format(editor=editor_id))
         lines.append(f"\n{report}\n")
-    if questions:
-        lines.append(mctx("Decide, as items left for a decision, the `question` tickets filed "
-                          "on the change, {questions}, and send each decision to its "
-                          "editors, {editors}.").format(
-                              questions=", ".join(questions), editors=", ".join(editors)))
     if gate:
         lines.append(mctx(
             "Read the diff of each accepted gate output the change writes, {gate}, and send "
             "each difference there that the change's items do not ask for to its editors, "
             "{editors}, as a finding of its checks.").format(
                 gate=", ".join(gate), editors=", ".join(editors)))
+    lines.append(LAUNCHER.format(operator=operator))
+    return "\n".join(lines)
+
+
+def findings(number: str, worktree: Path, left: str | None, questions: list[str],
+             editors: list[str], operator: str) -> str:
+    """The brief of a ticket analyst that judges what a change's editors
+    leave for a decision, by the part of the latest item checker's reply
+    that gives it, and the `question` tickets filed on the change, with
+    the agent ids of its editors."""
+    lines = [*change_lines(number, worktree), mctx("Its editors: {editors}.").format(editors=", ".join(editors))]
+    if left is not None:
+        lines.append(mctx("What the item checker on the change leaves for a decision:"))
+        lines.append(f"\n{left}\n")
+    if questions:
+        lines.append(mctx("Decide, as items left for a decision, the `question` tickets filed "
+                          "on the change, {questions}, and send each decision to its "
+                          "editors.").format(questions=", ".join(questions)))
     lines.append(LAUNCHER.format(operator=operator))
     return "\n".join(lines)
 
