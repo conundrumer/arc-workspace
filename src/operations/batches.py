@@ -45,9 +45,11 @@ OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER})
 
 
 
-def start(state: State) -> float:
-    profiles = state.agents_of(Role.BATCH_PROFILE)
-    return profiles[-1].launched if profiles else 0.0
+def start(state: State, before: float | None = None) -> float:
+    """The launch time of the last profile launch, of those before
+    `before` where it is given, or 0.0 where there is none."""
+    return max((p.launched for p in state.agents_of(Role.BATCH_PROFILE)
+                if before is None or p.launched < before), default=0.0)
 
 
 def members(state: State, since: float) -> list[Agent]:
@@ -57,9 +59,7 @@ def members(state: State, since: float) -> list[Agent]:
 def followed(state: State, at: float) -> list[Agent]:
     """The members of the batch that a launch of After a batch made at
     `at` follows: the batch opened by the last profile launch before it."""
-    since = max((p.launched for p in state.agents_of(Role.BATCH_PROFILE) if p.launched < at),
-                default=0.0)
-    return [a for a in members(state, since) if a.launched < at]
+    return [a for a in members(state, start(state, at)) if a.launched < at]
 
 
 def follows(role: Role, subject: str) -> bool:
@@ -75,8 +75,15 @@ def standing(role: Role, subject: str) -> bool:
 
 def assesses(role: Role, subject: str) -> bool:
     """Whether a launch of `role` on `subject` is a process assessment."""
-    parsed = analyst_of(subject) if role is Role.TICKET_ANALYST else None
+    parsed = analysis(role, subject)
     return parsed is not None and parsed[0] is Purpose.ASSESS
+
+
+def analysis(role: Role, subject: str) -> tuple[Purpose, str] | None:
+    """The purpose and the rest of the subject of a launch of `role` on
+    `subject`, or None where it is no ticket analyst's or its subject opens
+    with no purpose."""
+    return analyst_of(subject) if role is Role.TICKET_ANALYST else None
 
 
 def merged(state: State, since: float) -> bool:
@@ -133,9 +140,9 @@ def step(state: State) -> Step | None:
 def doc_review(state: State) -> Step:
     """The launch of a standing doc review, on the reader it is due on."""
     if not state.readers:
-        return Undecided("no reader is listed for a standing doc review")
+        return Undecided(mctx("no reader is listed for a standing doc review"))
     if state.doc_reviews is None:
-        return Undecided("a `doc-review/<reader>` tag does not read as a commit")
+        return Undecided(mctx("a `doc-review/<reader>` tag does not read as a commit"))
     times = state.doc_reviews
     unreviewed = [r for r in state.readers if r.tag not in times]
     reader = unreviewed[0] if unreviewed else min(state.readers, key=lambda r: times[r.tag])

@@ -273,14 +273,15 @@ def print_readings(r: Run, runs: list[Run]) -> None:
     hung = sum(1 for s in r.spans
                if hung_time(r, runs, s) <= (s.end if s.end is not None else time.time()))
     me = agent_id(r.path)
-    given = {opening(k, me) for k in AlertKind}
-    alerted = Counter(line.strip() for m in (*r.messages, *r.others)
+    given = {opening(k, me): k for k in AlertKind}
+    alerted = Counter(given[line.strip()] for m in (*r.messages, *r.others)
                       for line in m.text.splitlines() if line.strip() in given)
     print("  " + mctx("repeated: {repeated}").format(repeated="; ".join(
         f"{n}x {c[:COMMAND_WIDTH]}" for c, n in sorted(counts.items()) if n > 1) or NONE))
     print("  " + mctx("refused: {refused}  hung: {hung}  alerts: {alerts}").format(
         refused=len(refused_at(entries)), hung=hung,
-        alerts=", ".join(f"{line.split()[1]} {n}" for line, n in sorted(alerted.items()))
+        alerts=", ".join(f"{k.value} {n}" for k, n in sorted(alerted.items(),
+                                                             key=lambda e: e[0].value))
         or NONE))
 
 

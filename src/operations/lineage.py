@@ -13,7 +13,7 @@ ticket analysts, the same purpose."""
 from controlled_markdown import mctx
 from operations import batches
 from operations.directives import Decision, decided
-from operations.roles import Purpose, Role, analyst_of, description, subjects
+from operations.roles import Purpose, Role, description, subjects
 from operations.state import Agent, State
 from operations.steps import Launch, Step, Undecided
 from ticketing.vocabulary import Domain
@@ -28,15 +28,13 @@ type Kind = tuple[Role, Purpose | None]
 
 
 def kind(role: Role, subject: str) -> Kind:
-    if role is not Role.TICKET_ANALYST:
-        return role, None
-    parsed = analyst_of(subject)
+    parsed = batches.analysis(role, subject)
     return role, None if parsed is None else parsed[0]
 
 
 def tickets(role: Role, subject: str) -> list[str]:
     """The words of `subject` that may be ticket numbers."""
-    parsed = analyst_of(subject) if role is Role.TICKET_ANALYST else None
+    parsed = batches.analysis(role, subject)
     return subjects(subject if parsed is None else parsed[1])
 
 
