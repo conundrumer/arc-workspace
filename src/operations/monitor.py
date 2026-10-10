@@ -80,8 +80,11 @@ ALERTS = mctx("- `next` sends an agent an operator of the session launched, whos
               "other than a command led by `: 'unattended-wait:` (`repeated`), or its turn "
               "ended while its work is open, with no agent it launched and no command it "
               "backgrounded still running, and no report of it reached its parent since its "
-              "parent's latest message to it (`stall`). The operator takes the final reply "
-              "of a stalled agent as its report, and files a `bug` ticket on it.").format(
+              "parent's latest message to it, though the parent's transcripts hold an "
+              "`assistant` entry timestamped after that turn ended, before which the "
+              "harness delivers each report that waits for the parent (`stall`). The "
+              "operator takes the final reply of a stalled agent as its report, and files "
+              "a `bug` ticket on it.").format(
                   factor=HUNG_FACTOR, repeats=REPEATS)
 """The alerts of `step`, which the `--help` of `scripts/operate.py` gives."""
 

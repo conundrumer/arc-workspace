@@ -8,7 +8,8 @@ import sys
 import time
 from dataclasses import replace
 
-from agent_turns import first_time
+from agent_reports import parent_transcripts
+from agent_turns import first_time, last_time
 from budgets import budgets_in_force
 from context_bound_hook import OPERATOR, past_bound
 from controlled_markdown import mctx
@@ -131,7 +132,10 @@ def stalled_at(listed: Listed, listing: list[Listed]) -> float | None:
     if (not listed.ended or listed.found != [] or listed.running
             or any(x.parent == aid for x in listing)):
         return None
-    return listed.end if listed.end is not None else activity(listed)
+    end = listed.end if listed.end is not None else activity(listed)
+    answered = [t for p in parent_transcripts(listed.path)
+                if (t := last_time(p, lambda e: e.get("type") == "assistant")) is not None]
+    return end if any(t > end for t in answered) else None
 
 
 def activity(listed: Listed) -> float:
