@@ -5,8 +5,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from controlled_markdown import mctx
-from run_reads import blocks, is_prompt, text_of
-from senders import INTERRUPTED
+from run_reads import blocks, is_prompt
+from senders import is_interrupt_note
 from transcripts import (Entry, agent_id, chain, entries_back, entries_forward,
                          epoch, read_entries, snapshot, state_cache)
 
@@ -65,13 +65,6 @@ def turn_ended(entries: list[Entry]) -> bool:
         if e.get("timestamp"):
             idle = idle_after(idle, i, e, starts, ends)
     return idle
-
-
-def is_interrupt_note(entry: Entry) -> bool:
-    """Whether `entry` is the harness's note that the user interrupted the
-    run."""
-    return entry.get("type") == "user" and text_of(
-        (entry.get("message") or {}).get("content")).startswith(INTERRUPTED)
 
 
 def turn_end(entries: list[Entry]) -> float | None:

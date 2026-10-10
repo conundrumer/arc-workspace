@@ -6,12 +6,19 @@ from enum import Enum
 from pathlib import Path
 
 from run_reads import (AGENT_MESSAGE, MAIN, NOTIFICATION, member, message_text,
-                       type_in)
+                       text_of, type_in)
 from transcripts import Entry
 
 # The start of the text of the entry the harness writes where the user
 # interrupts a run.
 INTERRUPTED = "[Request interrupted by user"
+
+
+def is_interrupt_note(entry: Entry) -> bool:
+    """Whether `entry` is the harness's note that the user interrupted the
+    run."""
+    return entry.get("type") == "user" and text_of(
+        (entry.get("message") or {}).get("content")).startswith(INTERRUPTED)
 
 
 class Origin(Enum):
@@ -65,7 +72,7 @@ def sender(entry: Entry, parent: str, children: frozenset[str],
         if queued:
             return from_main
         return Sender.UNKNOWN
-    if entry.get("isMeta") or entry.get("isCompactSummary") or text.startswith(INTERRUPTED):
+    if entry.get("isMeta") or entry.get("isCompactSummary") or is_interrupt_note(entry):
         return Sender.OTHER
     return Sender.UNKNOWN
 
