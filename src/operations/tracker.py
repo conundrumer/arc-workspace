@@ -76,6 +76,17 @@ def coordinator_line(t: Ticket) -> float:
     return max((ln.time for ln in coordinator_lines(t.log)), default=t.filed)
 
 
+def final_run(t: Ticket) -> tuple[int, int | None]:
+    """The index in `t`'s log where its final run of lines of `t`'s status
+    starts, and the index of the last line of that run whose note opens
+    with a wait, where one does."""
+    run = len(t.log)
+    while run > 0 and t.log[run - 1].status is t.status:
+        run -= 1
+    waits = [i for i in range(run, len(t.log)) if t.log[i].waits]
+    return run, waits[-1] if waits else None
+
+
 def blocked_on_user(t: Ticket) -> LogLine | None:
     """The line that moved `t` into `tickets/blocked/` waiting on the user,
     where `t` stands there for it: the last line of the log's final run of
@@ -83,12 +94,8 @@ def blocked_on_user(t: Ticket) -> LogLine | None:
     the user."""
     if t.status is not Status.BLOCKED:
         return None
-    for line in reversed(t.log):
-        if line.status is not Status.BLOCKED:
-            return None
-        if line.waits:
-            return line if line.on_user else None
-    return None
+    _, wait = final_run(t)
+    return t.log[wait] if wait is not None and t.log[wait].on_user else None
 
 
 def closed(state: State, number: str) -> bool:

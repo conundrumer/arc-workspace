@@ -287,7 +287,7 @@ def help_values() -> dict[str, str]:
                 resolutions=ticked(Resolution), fixed=Resolution.FIXED, blocked=Status.BLOCKED,
                 user=Wait.USER, change=Wait.CHANGE, validation=Wait.VALIDATION,
                 request=Kind.REQUEST,
-                validating=VALIDATING.format(validation=Wait.VALIDATION, note="<note>"),
+                validating=VALIDATING.format(note="<note>"),
                 session_var=SESSION_VAR,
                 closed_by=CLOSED_BY.format(fixed=Resolution.FIXED, change=Wait.CHANGE,
                                            number="<number>", note="<note>"),

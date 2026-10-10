@@ -33,12 +33,6 @@ UNBLOCKED_BY = "{change} {number} closed {resolution}"
 change closed with another resolution, with that change's number and
 resolution."""
 
-VALIDATING = "{validation} {note}"
-"""The note of the line that leaves under `blocked`, waiting on
-validation, a `request` that a line with the note `note` would close with
-`fixed`."""
-
-
 class Moved(Refused):
     """A refusal of a call whose ticket another call moved first."""
 
@@ -49,6 +43,12 @@ class Wait(StrEnum):
     USER = "user"
     CHANGE = "change"
     VALIDATION = "validation"
+
+
+VALIDATING = f"{Wait.VALIDATION} {{note}}"
+"""The note of the line that leaves under `blocked`, waiting on
+validation, a `request` that a line with the note `note` would close with
+`fixed`."""
 
 
 WAIT = re.compile(rf"(?:{Wait.USER}|{Wait.VALIDATION}|{Wait.CHANGE} (?P<change>{TICKET_NUMBER.pattern}))"
@@ -269,7 +269,7 @@ def log_moves(tickets: Path, number: TicketNumber, status: Status, agent: str, s
     the note `VALIDATING` gives."""
     path = ticket_path(tickets, number)
     if awaits_validation(path, status, source, note):
-        status, note = Status.BLOCKED, VALIDATING.format(validation=Wait.VALIDATION, note=note)
+        status, note = Status.BLOCKED, VALIDATING.format(note=note)
     closes = status is Status.CLOSED and source is not Status.CLOSED and is_change(path)
     moves = Moves([write_log(tickets, path, number, status, agent, source, agent_id, note)])
     if not closes:

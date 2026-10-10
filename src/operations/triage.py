@@ -59,7 +59,7 @@ from operations.constants import COORDINATOR
 from operations.final_reply import carrier, nested
 from operations.handled import repeated, sent
 from operations.steps import DECISION, Bash, Launch, Send, Step, Undecided
-from operations.tracker import AGENT, blocked_on_user, coordinator_line, coordinator_lines, log
+from operations.tracker import AGENT, blocked_on_user, coordinator_line, coordinator_lines, final_run, log
 
 
 GIVEN = (Purpose.TRIAGE, Purpose.PASS)
@@ -103,10 +103,8 @@ def reopen(state: State) -> Step | None:
     for t in sorted(state.tickets.values(), key=lambda t: t.order):
         if t.status not in REOPENED or t.kind is Kind.CHANGE:
             continue
-        run = len(t.log)
-        while run > 0 and t.log[run - 1].status is t.status:
-            run -= 1
-        start = max((i for i in range(run, len(t.log)) if t.log[i].waits), default=run)
+        run, wait = final_run(t)
+        start = run if wait is None else wait
         lines = coordinator_lines(t.log[start + 1:])
         if run < len(t.log) and lines:
             return Bash(log(t.number, Status.OPEN, t.status,
