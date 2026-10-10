@@ -81,9 +81,9 @@ LOG_HELP = mctx("""
     - `<status>` and `<current status>` are each one of {statuses}. `<current status>` is the status you saw the ticket in.
     - The command refuses, and neither moves nor writes, where the ticket stands in another status than `<current status>`, or where its file moves before the command moves it.
     - Where `<status>` differs from `<current status>`, the command moves the ticket's file to the directory of `<status>`. Where they are the same, the log line moves nothing.
-    - The command appends `<time> <status> [<agent>]: <note>` to the file's `{log}`, with the time in UTC in the form `{time_form}`, and with `<agent> <agent id>` in the bracket where `--id` gives an agent id. A line with no `<note>` ends at the bracket.
-    - An `assigned` line that moves a ticket into `assigned` takes, in `--id`, the agent id of the agent that writes it.
-    - On a ticket that already stands in `assigned`, the command refuses an `assigned` line whose `--id` does not hold the ticket, and accepts one with no `--id`. The holder is the agent id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines. Where none of them gives one, the ticket has no holder.
+    - The command appends `<time> <status> [<agent>]: <note>` to the file's `{log}`, with the time in UTC in the form `{time_form}`, and with `<agent> <id>` in the bracket where `--id` gives an id. `--id` takes an agent id, or a session id, the form `$CLAUDE_CODE_SESSION_ID` holds, for a session that holds a ticket itself. A line with no `<note>` ends at the bracket.
+    - An `assigned` line that moves a ticket into `assigned` takes, in `--id`, the agent id of the agent that writes it, or the session id of a session that writes it for itself.
+    - On a ticket that already stands in `assigned`, the command refuses an `assigned` line whose `--id` does not hold the ticket, and accepts one with no `--id`. The holder is the agent id or the session id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines. Where none of them gives one, the ticket has no holder.
     - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}`, `{validation}`, or `{change} <number>`, with `<number>` the number of a `change` ticket the ticket tracker holds. `{validation}` is the wait of a `{request}` whose need a change met, until the coordinator reads a run that exercises that change.
     - The note of a line that moves a ticket into `closed` opens with its resolution, one of {resolutions}.
     - Where a line would move a `{request}` into `closed` with `{fixed}`, other than from `{blocked}` where the request waits on `{validation}`, the command leaves the request under `{blocked}`, or moves it there, with the note `{validating}`, and prints the path it went to. This holds whichever agent writes the line, and for the lines below that close tickets that wait on a change.
@@ -261,7 +261,7 @@ class Subcommand:
 
 SUBCOMMANDS = {
     "log": Subcommand(mctx("makes a transition of a ticket and writes its log line"),
-                      " <number> <status> <agent> --from <current status> [--id <agent id>] [<note>]",
+                      " <number> <status> <agent> --from <current status> [--id <agent id or session id>] [<note>]",
                       LOG_HELP, 6, log_command, True, log_args),
     "path": Subcommand(mctx("prints the path of a ticket"), " <number>", PATH_HELP, 1,
                        lambda ref: ticket_path(main_tickets(), ticket_number(ref)), False),

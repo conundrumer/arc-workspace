@@ -30,7 +30,7 @@
 ## Change notes
 - [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change): Verification: another agent checks the built change; Implementation: each item not done reaches the agent that decides it; Merge: a hotfix reviewed after it merges.
     - "Have an editor write each change": Process assessment: the agent and the reviews of each work product.
-    - "A change is one editor's edit": none. Kept: it gives what a change is, which the rest of the section acts on.
+    - "A change is one editor's edit", "A change's ticket is the `change` ticket": none. Kept: they give what a change and its ticket are, which the rest of the section acts on.
     - "Make the worktree of a change": Configuration management: one live change per worktree.
     - "Where you take up a change that another agent held", "Then, where your brief", "Send no message to an editor or reviewer that other agent launched": Work control: one live holder per ticket.
     - "Run the changes you launch at the same time": none. Kept: the principle of Configuration management, run parallel parts at once.
@@ -76,8 +76,8 @@
 - [Declines](prompts/agents/notes/coordinator.md#declines): Decisions: a decline carries its defense.
 - [Changes](prompts/agents/notes/coordinator.md#changes): Process assessment: the agent and the reviews of each work product.
     - "Before you launch an agent, read", "Where you run no solver pass, read": none. Kept: they lead the coordinator to the notes its work there needs.
-    - "While an operator of yours runs, run no change yourself on a route other than": Work control: one live holder per ticket.
-    - "Once a change you merge with no `change` ticket": Merge: a hotfix reviewed after it merges.
+    - "Run a change yourself only on `direct` and `hotfix`", "Where a ticket it would settle waits on a `change`": Work control: one live holder per ticket.
+    - "Once a change you run is on `master`": Merge: a hotfix reviewed after it merges.
 - [Worktrees](prompts/agents/notes/coordinator.md#worktrees): Configuration management: one live change per worktree.
 - [Reports to the user](prompts/agents/notes/coordinator.md#reports-to-the-user): Decisions: a departing decision reaches the user.
 - [Cards](prompts/agents/notes/coordinator.md#cards): Decisions: a departing decision reaches the user.

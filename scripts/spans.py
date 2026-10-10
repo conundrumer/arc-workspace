@@ -43,6 +43,10 @@ class Route(Enum):
 
 ROUTES = ticked(r.value for r in Route)
 
+HELD = (Route.DIRECT, Route.HOTFIX)
+"""The routes whose request the coordinator holds while it carries the
+change itself."""
+
 
 INFERRED = "--inferred"
 
@@ -79,7 +83,7 @@ HELP = mctx("""
     - A words argument that is a time in the form `{time_form}` names the one message of the session at that time, in place of a match of words.
     - The command refuses, and prints each match, where a words argument matches no message or more than one, and ends the refusal on a words argument that matches more than one message with a line that says the argument may give one of the printed times in its place, and refuses where the end comes before the start.
     - A span is the line `<session id> <start> <end>` under the request's `{transcript}`, with each time in UTC to the second, and holds each message from its start to its end, inclusive.
-    - `file` writes the request with `{transcript}` and `{grounds}`, and files it as `uv run python scripts/file_ticket.py` files. On `draft`, and on a route given with `{inferred}`, it then moves the request to `tickets/draft/`.
+    - `file` writes the request with `{transcript}` and `{grounds}`, and files it as `uv run python scripts/file_ticket.py` files. On `draft`, and on a route given with `{inferred}`, it then moves the request to `tickets/draft/`. On `direct` and `hotfix` with no `{inferred}`, it then moves the request to `tickets/assigned/`, with an `assigned` line whose holder is the session id the shell holds in `CLAUDE_CODE_SESSION_ID`.
     - A brief gives each message of each span of the request, in full and in time order, each with its time and its sender, and then its Grounds.
     - `append` adds the span line under the request's `{transcript}`, and writes a log line in the status the request stands in.
     - `file`, `append`, and `brief` with `--route` end with a readback prompt, which gives the route and the first and the last message of the span. `brief` prints that prompt on stderr, so that its stdout is the brief alone.
@@ -218,9 +222,13 @@ def file_request(route: Route, inferred: bool, subject: str, title: str, start_w
     text = ticket_text(Kind.REQUEST, title, {TRANSCRIPT: span.line(), GROUNDS: grounds_lines()})
     tickets = main_tickets()
     path = file_ticket(tickets, Domain.CHANGE.value, subject, COORDINATOR, text)
+    number = ticket_name(path).number
     if route is Route.DRAFT or inferred:
-        path = log_moves(tickets, ticket_name(path).number, Status.DRAFT, COORDINATOR, Status.OPEN,
+        path = log_moves(tickets, number, Status.DRAFT, COORDINATOR, Status.OPEN,
                          None, DRAFT_NOTE.format(route=route.value)).moved[0]
+    elif route in HELD:
+        path = log_moves(tickets, number, Status.ASSIGNED, COORDINATOR, Status.OPEN,
+                         session_id(), None).moved[0]
     return f"{path}\n\n{span_readback(route, [span], inferred)}"
 
 

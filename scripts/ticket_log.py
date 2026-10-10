@@ -20,6 +20,13 @@ from transcripts import Refused
 
 AGENT_ID = re.compile(AGENT_ID_FORM)
 
+SESSION_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+"""The form of the session id `CLAUDE_CODE_SESSION_ID` holds."""
+
+HOLDER_ID = re.compile(rf"{AGENT_ID.pattern}|{SESSION_ID.pattern}")
+"""The form of a holder id: an agent id, or the session id of a session
+that holds a ticket itself."""
+
 
 RESOLUTION_WORD = re.compile(r"[a-z]+(?:-[a-z]+)*")
 
@@ -68,7 +75,7 @@ def waited(wait: re.Match[str]) -> Wait:
 
 
 LOG_LINE = re.compile(rf"^.*? (?P<status>{'|'.join(Status)}) \[(?P<agent>[^\]\s]+)"
-                      rf"(?: (?P<id>{AGENT_ID.pattern}))?\](?:: (?P<note>.*))?$", re.MULTILINE)
+                      rf"(?: (?P<id>{HOLDER_ID.pattern}))?\](?:: (?P<note>.*))?$", re.MULTILINE)
 """A log line, of whatever time form, as the command or a hand wrote it."""
 
 
@@ -109,10 +116,11 @@ def check_line(status: Status, moves: bool, agent: str, agent_id: str | None,
     """Refuses a log line the ticket notes do not give."""
     if not FIELD.fullmatch(agent):
         raise Refused(mctx("`{agent}` is not kebab words").format(agent=agent))
-    if agent_id is not None and not AGENT_ID.fullmatch(agent_id):
-        raise Refused(mctx("`{id}` is no agent id").format(id=agent_id))
+    if agent_id is not None and not HOLDER_ID.fullmatch(agent_id):
+        raise Refused(mctx("`{id}` is no agent id and no session id").format(id=agent_id))
     if agent_id is None and moves and status is Status.ASSIGNED:
-        raise Refused(mctx("an `assigned` line takes your agent id in `--id`"))
+        raise Refused(mctx("an `assigned` line takes your agent id, or the session id of a session "
+                           "that takes the ticket itself, in `--id`"))
     if note is not None and (not note.strip() or "\n" in note or "\r" in note):
         raise Refused(mctx("the note is not one line of text"))
     if moves and status is Status.CLOSED and resolution_of(note) is None:
@@ -172,7 +180,7 @@ def awaits_validation(path: Path, status: Status, source: Status, note: str | No
 
 
 def holder(text: str) -> str | None:
-    """The agent id of the holder of the ticket `text`: the id of the last
+    """The holder id of the holder of the ticket `text`: the id of the last
     `assigned` line that gives one, in its bracket or, in a line written
     before the bracket held it, as its note's first word, among the lines
     of the log's final run of `assigned` lines. None where none of them
@@ -183,7 +191,7 @@ def holder(text: str) -> str | None:
         if line["id"]:
             return line["id"]
         first = (line["note"] or "").split(" ", 1)[0].rstrip(";,.:")
-        if AGENT_ID.fullmatch(first):
+        if HOLDER_ID.fullmatch(first):
             return first
     return None
 
