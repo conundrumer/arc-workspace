@@ -1,10 +1,10 @@
 """Profile agent runs from their Claude Code transcripts: where each run's
-wall time goes, the budget of each agent type, the runs under a run since
+wall time goes, the budget of each agent type and role, the runs under a run since
 an operator's previous call of `--under` on it, the agents under a run
 whose work is open, as `--running` lists them, and whether one run's work
 is open, as `--open` gives it. `--help` prints HELP. `budget_of` gives the
-budget of one agent type for a brief, as more than one run prints it,
-over every run of that type under the project directories."""
+budget of a brief of one role, as more than one run prints it,
+over every run under the project directories."""
 
 import argparse
 import sys
@@ -25,7 +25,8 @@ importable(checkout.scripts())
 from agent_launches import pending_agents, runs_under  # noqa: E402
 from agent_turns import first_time, last_time  # noqa: E402
 from budgets import (BUDGET_FACTOR, LOW_WAIT_PCT, MEDIAN_RUNS,  # noqa: E402
-                     print_budgets, type_budget)
+                     budget_group, print_budgets, role_group,
+                     type_budget)
 from command_labels import programs  # noqa: E402
 from context_bound_hook import CONTEXT_BOUND, OPERATOR  # noqa: E402
 from open_agents import Listed, running_agents, work_open  # noqa: E402
@@ -35,6 +36,8 @@ from run_profile import (COMMAND_WIDTH, Run, clock, dollars, minutes,  # noqa: E
                          part_split, print_groups, print_types, profile)
 from run_reads import (BACKGROUND_TASK, agent_type, blocks, run_type,  # noqa: E402
                        result_text)
+from operations.reports import BUDGET_PASSED  # noqa: E402
+from operations.roles import GENERAL, Role  # noqa: E402
 from ticketing.times import utc_stamp  # noqa: E402
 from token_prices import PRICES  # noqa: E402
 from transcripts import (Entry, Refused, agent_id, agent_transcripts,  # noqa: E402
@@ -90,11 +93,12 @@ HELP = mctx("""
     - A report's text is the entry's text, and of a message that delivers the agent's SubagentHandback, that text without the harness's preamble and indent. An entry whose text is the harness's pointer to such a message, or the line an agent gives after it sent its final reply by SendMessage, gives no report. A report whose text is the path alone of a report file that `operate.py next` gives in a brief is that file's text, for the latest report that gives that path; an earlier one keeps the path as its text, and where the file is gone, an `undecided` line on stderr names it.
     - Where the latest message from the parent is unknown, or no transcript of the parent is found, it prints `?`. A notification or a launch result whose status is of no known form gives no report, and where no `.meta.json` of the run gives a `toolUseId`, no launch result is matched to it. A launch result whose status is of no known form counts as not in the background, wherever it is read. An `undecided` line on stderr names each, and each distinct line is printed once.
     - More than one run prints, per agent type, the number of runs, the minimum, median, P-th percentile and maximum of wall time, the total, the median and P-th percentile of active time, which is wall time less `idle`, and each part's share of the total, then per agent type the total token cost of its runs of known cost, its share of that total over all types, the median cost of such a run, and the number of runs of unknown cost it leaves out, then each type's labels by time, with the number of runs each appears in.
-    - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over. That median is taken over the runs an operator launched alone, with or without a budget in force, and of those, over the runs their budget did not cut. An operator launched a run where its parent, as `--running` gives it, is an agent of type `{operator}`, and a run whose parent's type no transcript of the sessions of the run gives is left out, and an `undecided` line on stderr names it. A run's budget cut it where the active time of a message from its parent with a budget in force, as one run prints that budget, is at or past that budget, so that its wall time is no measure of what its work needed. Where the active time of such a message is unknown and no other message shows it cut, whether its budget cut it is unknown: it is left out, and an `undecided` line on stderr names it.
+    - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over. In place of a budget of type `{general}`, it prints one for each role of `operations.roles.GENERAL_ROLES`, taken over the runs of type `{general}` whose description `operations.roles.described` gives that role, and a run of that type whose description gives no such role joins no budget. The budget `operate.py next` gives a brief is the budget of its role where that role is one of these, and otherwise the budget of its agent type. That median is taken over the runs an operator launched alone, with or without a budget in force, and of those, over the runs their budget did not cut. An operator launched a run where its parent, as `--running` gives it, is an agent of type `{operator}`, and a run whose parent's type no transcript of the sessions of the run gives is left out, and an `undecided` line on stderr names it. A run's budget cut it where its agent type's rendered prompt gives the reply that opens with `{budget_passed}`, which is what it does at its budget, and the active time of a message from its parent with a budget in force, as one run prints that budget, is at or past that budget, so that its wall time is no measure of what its work needed. A run of any other type does all its work past its budget, and its budget cut none. Where the active time of such a message is unknown and no other message shows it cut, whether its budget cut it is unknown: it is left out, and an `undecided` line on stderr names it.
         - A brief gives items where its first line is one of the lines `operations.briefs` gives for a brief of several items of the same work, each item a ticket number. Where the brief of some run of a type gives items, it also prints, on a line led by `per item`, the type's budget per item, which is {factor} times the median of the wall time per item, a run's wall time over the number of items its brief gives. That median is taken by the lines below over the runs an operator launched that their budget did not cut and whose brief gives items.
+        - The window of a role of `operations.roles.GENERAL_ROLES` is the runs whose first entry is at or after the last commit that changed `src/operations/briefs.py`.
         - The window of a type that has an agent document under `prompts/agents/` is the runs whose first entry is at or after the last commit that changed that document, a document it includes or inlines, a lib file its rendered prompt holds, a script under `scripts/` its rendered prompt names, or a package under `src/` its rendered prompt runs with `-m`, and not a module such a script or package imports. `--since DATE` sets the window of every type to the runs whose first entry is at or after DATE. Where the window holds at least {median_runs} of the runs the median is taken over, it is taken over them.
-        - A type with no agent document has a window only with `--since`, and a type whose paths no commit changed has none, and an `undecided` line on stderr names it.
-        - Otherwise it is taken over those of these runs whose `waits` and `idle` together are under {low_wait_pct}% of wall time, where at least {median_runs} runs are such. A type with fewer such runs gets no budget, and an `undecided` line on stderr names it with their count as its reason.
+        - A type with no agent document has a window only with `--since`, and a type or role whose paths no commit changed has none, and an `undecided` line on stderr names it.
+        - Otherwise it is taken over those of these runs whose `waits` and `idle` together are under {low_wait_pct}% of wall time, where at least {median_runs} runs are such. A type or role with fewer such runs gets no budget, and a brief of it gets no `Budget:` line, and an `undecided` line on stderr names it with their count as its reason.
     - `--under ID` profiles the runs under the run ID, where ID is a session id or an agent id: the agents whose `.meta.json` gives the run ID as `parentAgentId`, or for a session gives none, the agents whose `.meta.json` gives one of those, and so on.
         - Its previous call is the latest call of `--under` on the same ID, as the call writes it, with or without the `agent-` prefix, made by an agent of type `{operator}` in any transcript under the project directories that changed at or after the run ID's first entry, whose result says it completed in the foreground with no error and was not interrupted, and whose result holds one `left open:` line and one `runs taken:` line, the count on the `runs taken:` line followed by as many agent ids, read from the result's content, or where that content is the harness's `<persisted-output>` preview of a large output and the result gives a `stdout`, from that `stdout`. A line counts only where a line break ends it. A call whose result holds more than one `left open:` line counts as none, and an `undecided` line on stderr names that call. A call's time is the time of the entry that makes it.
         - Where a previous call stands, it considers the runs whose last timestamped entry is after that call's time and each run that call's `left open:` line gives, and where none stands, every run under the ID. Of those, it takes each run whose work is not open, by the rule by which `--running` lists an agent, as `--open` gives it, and leaves out the others.
@@ -126,6 +130,7 @@ HELP = mctx("""
                 low_wait_pct=LOW_WAIT_PCT, recent=RECENT_CALLS,
                 width=COMMAND_WIDTH, bound=f"{CONTEXT_BOUND:,}",
                 iso_time=ISO_TIME, operator=OPERATOR,
+                general=GENERAL, budget_passed=BUDGET_PASSED,
                 repriced=REPRICED.format(model="MODEL"))
 
 
@@ -238,14 +243,16 @@ def runs_since(path: Path, ident: str, undecided: list[str]) -> list[Path]:
     return taken
 
 
-def budget_of(kind: str, items: int | None, undecided: list[str]) -> float | None:
-    """The budget in seconds of the agent type `kind`, over every run of
-    that type under the project directories, for a brief that gives no
-    items where `items` is None, and otherwise for a brief that gives
+def budget_of(role: Role, items: int | None, undecided: list[str]) -> float | None:
+    """The budget in seconds of a brief of `role`, over every run under
+    the project directories that joins its budget, for a brief that gives
+    no items where `items` is None, and otherwise for a brief that gives
     `items` items, or None where it gets none."""
-    runs = [profile(last, undecided) for paths in agent_transcripts().values()
-            if agent_type(last := chain(paths[0])[-1]) == kind]
-    b = type_budget(kind, runs, None, items is not None, undecided)
+    group = role_group(role)
+    runs = [r for paths in agent_transcripts().values()
+            if agent_type(last := chain(paths[0])[-1]) == role.agent_type
+            and budget_group(r := profile(last, undecided)) == group]
+    b = type_budget(group, runs, None, items is not None, undecided)
     if b is None:
         return None
     return b.seconds if items is None else b.seconds * items

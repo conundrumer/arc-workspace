@@ -1,18 +1,22 @@
-"""The budget of each agent type, for a run and for one item of a brief
-that gives items, the runs its budget cut, and the budget in force for
-each message from a run's parent, as the HELP of `profile_runs` gives
-them."""
+"""The budget of each agent type, and of each role of
+`roles.GENERAL_ROLES`, for a run and for one item of a brief that gives
+items, the runs its budget cut, and the budget in force for each message
+from a run's parent, as the HELP of `profile_runs` gives them."""
 
 import re
 from dataclasses import dataclass
+from functools import cache
+from pathlib import Path
 
 from agent_reports import parent_transcripts
 from context_bound_hook import OPERATOR
 from controlled_markdown import mctx
 from engine import checkout
-from handbook.agents import agent_names, agent_sources
+from handbook.agents import agent_names, agent_prompt_text, agent_sources
 from operations import briefs
-from run_profile import (Message, Part, Run, by_agent_type, clock, minutes,
+from operations.reports import BUDGET_PASSED
+from operations.roles import GENERAL, GENERAL_ROLES, Role, described
+from run_profile import (Message, Part, Run, clock, minutes,
                          one_line, percentile)
 from run_reads import MAIN, agent_type, parent_id
 from transcripts import is_subagent
@@ -31,13 +35,33 @@ def low_wait(r: Run) -> bool:
     return waited * 100 < r.wall * LOW_WAIT_PCT
 
 
+def budget_group(r: Run) -> str | None:
+    """The budget `r` joins, as HELP gives it: the role its description
+    gives where its agent type is `general-purpose`, None where that
+    description gives no role of `roles.GENERAL_ROLES`, and otherwise its
+    agent type."""
+    if r.agent_type != GENERAL:
+        return r.agent_type
+    d = described(r.description)
+    return d.role.value if d is not None and d.role in GENERAL_ROLES else None
+
+
+def role_group(role: Role) -> str:
+    """The budget a brief of `role` gets, as `budget_group` names it."""
+    return role.value if role in GENERAL_ROLES else role.agent_type
+
+
 def type_window(kind: str, undecided: list[str]) -> float | None:
-    """The start of the window of the agent type `kind`, as HELP gives it:
-    the time of the last commit that changed its paths, or None where it
-    has no agent document or no commit changed them."""
-    if kind not in agent_names():
+    """The start of the window of the budget `kind`, as HELP gives it: the
+    time of the last commit that changed its paths, or None where it has
+    no paths or no commit changed them."""
+    if kind in GENERAL_ROLES:
+        sources = [Path(briefs.__file__)]
+    elif kind in agent_names():
+        sources = agent_sources(kind)
+    else:
         return None
-    paths = [str(checkout.shown(p)) for p in agent_sources(kind)]
+    paths = [str(checkout.shown(p)) for p in sources]
     out = checkout.git_out(checkout.ROOT, "log", "-1", "--format=%ct", "--",
                            *paths).strip()
     if not out:
@@ -49,7 +73,7 @@ def type_window(kind: str, undecided: list[str]) -> float | None:
 
 @dataclass(frozen=True)
 class Budget:
-    """An agent type's budget in seconds, for a run or for one item, the
+    """The budget of an agent type or a role in seconds, for a run or for one item, the
     runs it is taken over, and its basis."""
     seconds: float
     runs: int
@@ -67,7 +91,7 @@ def measured(r: Run, per_item: bool) -> float | None:
 
 def type_budget(kind: str, runs: list[Run], since_date: float | None, per_item: bool,
                 undecided: list[str]) -> Budget | None:
-    """The budget of the agent type `kind` over `runs`, its runs, as HELP
+    """The budget `kind`, an agent type or a role, over `runs`, its runs, as HELP
     gives it, for a run, or where `per_item`, for one item of a brief that
     gives items, or None where it gets none. `since_date` is the start of
     the window `--since` sets, where it is given."""
@@ -106,13 +130,17 @@ def type_budget(kind: str, runs: list[Run], since_date: float | None, per_item: 
 
 def print_budgets(runs: list[Run], since_date: float | None,
                   undecided: list[str]) -> None:
-    """Print each agent type's budget, its budget per item where some of
-    its runs have a brief that gives items, their bases, and the runs each
-    is taken over."""
-    by_type = by_agent_type(runs)
-    print(f"{'type':<18} {'budget':>7} {'runs':>4}  basis")
-    for kind in sorted(by_type):
-        rs = by_type[kind]
+    """Print the budget of each agent type and of each role of
+    `roles.GENERAL_ROLES`, its budget per item where some of its runs have
+    a brief that gives items, their bases, and the runs each is taken
+    over."""
+    groups: dict[str, list[Run]] = {}
+    for r in runs:
+        if (group := budget_group(r)) is not None:
+            groups.setdefault(group, []).append(r)
+    print(f"{'type or role':<18} {'budget':>7} {'runs':>4}  basis")
+    for kind in sorted(groups):
+        rs = groups[kind]
         b = type_budget(kind, rs, since_date, False, undecided)
         if b is not None:
             print(f"{kind:<18} {minutes(b.seconds):>7} {b.runs:>4}  {b.basis}")
@@ -187,9 +215,18 @@ def operator_launched(r: Run, undecided: list[str]) -> bool:
     return kind == OPERATOR
 
 
+@cache
+def acts_at_budget(kind: str) -> bool:
+    """Whether the documents of the agent type `kind` give what it does at
+    its budget, as HELP gives it."""
+    return kind in agent_names() and f"`{BUDGET_PASSED}`" in agent_prompt_text(kind)
+
+
 def censored(r: Run, undecided: list[str]) -> bool | None:
     """Whether `r` is censored, cut by its budget as HELP gives it, or None
     where HELP gives that unknown."""
+    if not acts_at_budget(r.agent_type):
+        return False
     unknown = False
     for i, budget in enumerate(budgets_in_force(r, undecided)):
         if budget is None:
