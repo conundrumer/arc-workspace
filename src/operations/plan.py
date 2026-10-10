@@ -33,7 +33,10 @@ analysts on open tickets; the review
 of drafts; the changes; the solver pipelines; After a batch. A step that
 is a message an operator already sent is passed over, and so are an
 undecided step an operator already handled (`handled.repeated`) and a step
-an `Override: pass over` ruling passed over (`directives.passed`).
+an `Override: pass over` ruling passed over (`directives.passed`). A
+launch a procedure gives, other than that of a ticket analyst on a held
+step, is held where its chain of causes runs `lineage.DEPTH` launches of
+its kind deep (`lineage`).
 
 Where no step is ready, and an agent of an operator runs, a ticket of
 the operators' waits on another holder whose work is open, or a ticket
@@ -46,7 +49,8 @@ coordinator its text (`ending`)."""
 from collections.abc import Callable
 
 from controlled_markdown import mctx
-from operations import alerts, batches, changes, decisions, drafts, monitor, passes, triage
+from operations import (alerts, batches, changes, decisions, drafts, lineage, monitor, passes,
+                        triage)
 from operations.directives import (
     NUMBER,
     TASK,
@@ -85,7 +89,8 @@ def first(state: State, *procedures: Callable[[State], Step | None]) -> Step | N
 def placed(state: State, procedure: Callable[[State], Step | None]
            ) -> tuple[Step | None, Undecided | None]:
     """The step of `procedure` that is ready, where an undecided step is the
-    launch of a ticket analyst on it (`decisions`), and the undecided step
+    launch of a ticket analyst on it (`decisions`) and a launch whose chain
+    of causes holds it is the step held on it (`lineage.held`), and the undecided step
     the procedure waits on, where it waits on one. A procedure whose step
     failed, as `refused` gives, or whose step a ruling passed over, waits
     until the state changes. A step passed over or failed is undecided,
@@ -94,6 +99,8 @@ def placed(state: State, procedure: Callable[[State], Step | None]
     answered that step, or that launch failed, the step stays held."""
     s = procedure(state)
     while s is not None:
+        if isinstance(s, Launch):
+            s = lineage.held(state, s)
         if repeated(s, state):
             return None, s if isinstance(s, Undecided) else None
         on_step = isinstance(s, Undecided)

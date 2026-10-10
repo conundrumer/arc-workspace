@@ -51,19 +51,31 @@ def start(state: State) -> float:
 
 
 def members(state: State, since: float) -> list[Agent]:
-    return [a for a in state.agents
-            if a.launched > since and a.role not in OWN and not assesses(a)
-            and not standing(a)]
+    return [a for a in state.agents if a.launched > since and not follows(a.role, a.subject)]
 
 
-def standing(agent: Agent) -> bool:
-    """Whether `agent` is a standing doc review."""
-    return agent.role is Role.DOC_REVIEWER and agent.subject.startswith(DOC_REVIEW)
+def followed(state: State, at: float) -> list[Agent]:
+    """The members of the batch that a launch of After a batch made at
+    `at` follows: the batch opened by the last profile launch before it."""
+    since = max((p.launched for p in state.agents_of(Role.BATCH_PROFILE) if p.launched < at),
+                default=0.0)
+    return [a for a in members(state, since) if a.launched < at]
 
 
-def assesses(agent: Agent) -> bool:
-    """Whether `agent` is a process assessment."""
-    parsed = analyst_of(agent.subject) if agent.role is Role.TICKET_ANALYST else None
+def follows(role: Role, subject: str) -> bool:
+    """Whether a launch of `role` on `subject` is one no batch holds: one
+    of After a batch, a standing doc review or a process assessment."""
+    return role in OWN or standing(role, subject) or assesses(role, subject)
+
+
+def standing(role: Role, subject: str) -> bool:
+    """Whether a launch of `role` on `subject` is a standing doc review."""
+    return role is Role.DOC_REVIEWER and subject.startswith(DOC_REVIEW)
+
+
+def assesses(role: Role, subject: str) -> bool:
+    """Whether a launch of `role` on `subject` is a process assessment."""
+    parsed = analyst_of(subject) if role is Role.TICKET_ANALYST else None
     return parsed is not None and parsed[0] is Purpose.ASSESS
 
 
@@ -92,7 +104,7 @@ def step(state: State) -> Step | None:
         if reviewers[-1].pending:
             return None
     if merges:
-        reviews = [a for a in state.agents if standing(a) and a.launched > since]
+        reviews = [a for a in state.agents if standing(a.role, a.subject) and a.launched > since]
         if not reviews:
             return doc_review(state)
         if reviews[-1].pending:
@@ -137,7 +149,7 @@ ASSESS_AFTER = 20
 
 def assessment(state: State) -> Step | None:
     """The launch of a process assessment, where one is due."""
-    past = [a for a in state.agents if assesses(a)]
+    past = [a for a in state.agents if assesses(a.role, a.subject)]
     if past and past[-1].pending:
         return None
     since = past[-1].launched if past else state.started
