@@ -19,13 +19,10 @@ analyst. Once each editor of a change has reported, the latest report of
 each editor that has reported since the last such analyst was launched, an
 open `question` ticket filed on the change, and the accepted gate outputs
 the change writes go to one ticket analyst, for a change with a doc editor
-and a change without one. That analyst checks each item of each such
-editor's part against that editor's report and the worktree, and sends
-each item not shown to hold to that editor as a kept finding, and it
-judges the rest. It sends an editor its judgments and decisions only where
-one of them gives that editor an edit, or where the change has a doc
-editor, and otherwise sends that editor no message. So the change merges
-only once such an analyst was launched after each editor's last report.
+and a change without one. That analyst checks the items of each such
+editor's part and judges what that editor leaves, and an editor it sends
+a message reports again. So the change merges only once such an analyst
+was launched after each editor's last report.
 A report that analyst was launched after leaves nothing more,
 unless the part of that analyst's reply for the coordinator gives a
 `decision:` or an `unfinished:` item and no editor has reported since its

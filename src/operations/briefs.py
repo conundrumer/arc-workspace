@@ -218,15 +218,7 @@ def findings(number: str, worktree: Path, reports: list[tuple[str, str]],
     the agent ids of its editors."""
     lines = [read_ticket(number), mctx("Its worktree: {worktree}.").format(worktree=worktree)]
     for editor_id, report in reports:
-        lines.append(mctx(
-            "Check each item of the part of editor {editor} against its report below and the "
-            "worktree, and send each item that they do not show to hold to that editor as a "
-            "kept finding.").format(editor=editor_id))
-        lines.append(mctx(
-            "Judge each finding, and decide each finding and each item left for a decision, "
-            "that the report of its editor {editor} below leaves, with that editor's reasons, "
-            "and judge each place the `Review` section of that report gives as standing.").format(
-                editor=editor_id))
+        lines.append(mctx("The latest report of editor {editor}:").format(editor=editor_id))
         lines.append(f"\n{report}\n")
     if questions:
         lines.append(mctx("Decide, as items left for a decision, the `question` tickets filed "

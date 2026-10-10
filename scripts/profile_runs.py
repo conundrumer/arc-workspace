@@ -279,10 +279,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--runs", action="store_true",
                     help=mctx("also print one line per run"))
     ap.add_argument("--price-at", choices=sorted(PRICES), metavar="MODEL",
-                    help=mctx("price each request at MODEL, one of {models}: "
-                              "{repriced}").format(
-                                  models=", ".join(sorted(PRICES)),
-                                  repriced=REPRICED.format(model="MODEL")))
+                    help=mctx("one of {models}; the text above gives what it "
+                              "does").format(models=", ".join(sorted(PRICES))))
     ap.add_argument("--since", type=utc_time, metavar="DATE",
                     help=mctx("start of the window of runs each type's "
                               "budget is taken over, in place of the type's "
