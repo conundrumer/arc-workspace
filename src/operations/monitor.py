@@ -58,7 +58,7 @@ ALERTS = mctx("""
         - `budget`: {budget}.
         - `hung`: {hung}.
         - `repeated`: {repeated}, other than a command led by `: 'unattended-wait:`.
-        - `stall`: {stall} since its parent's latest message to it, with no agent it launched and no command it backgrounded still running or ended after that turn ended, though the parent's transcripts hold an `assistant` entry timestamped after that turn ended, before which the harness delivers each report that waits for the parent.
+        - `stall`: {stall} since its parent's latest message to it, with no agent it launched and no command it backgrounded still running or ended after that turn ended, though the parent's transcripts hold an `assistant` entry timestamped after that turn ended, before which the harness delivers each report that waits for the parent. An agent whose transcript holds, after the latest message to it, a `SubagentHandback` result that says the harness delivered its report to its caller is not stalled.
     - The operator takes the final reply of a stalled agent as its report, and files a `bug` ticket on it.
     """).format(**{k.value: READING[k] for k in AlertKind})
 """The alerts of `step`, which the `--help` of `scripts/operate.py` gives."""

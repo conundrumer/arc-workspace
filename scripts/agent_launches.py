@@ -12,11 +12,11 @@ from typing import Any
 from agent_reports import Report, Sign, last_sign, report_ids, reports_after
 from command_labels import AGENT_TOOLS
 from controlled_markdown import mctx
-from run_reads import (blocks, in_background, meta_parent, meta_path, notified,
+from run_reads import (blocks, in_background, is_prompt, meta_parent, meta_path, notified,
                        parent_label, read_meta, results_by_call, run_entries,
                        run_sessions, session_agents, session_transcripts)
-from transcripts import (Entry, agent_id, agent_transcripts, chain, epoch, find, read_entries,
-                         stat_of, state_cache)
+from transcripts import (Entry, agent_id, agent_transcripts, chain, entries_back, epoch, find,
+                         read_entries, stat_of, state_cache)
 
 
 class Delivery(Enum):
@@ -37,6 +37,20 @@ def delivery(result: dict[str, Any]) -> Delivery | None:
 DELIVERED = "Report delivered"
 """The opening of the message of a SubagentHandback result where the
 harness accepted the report."""
+
+
+def handed_back(path: Path) -> bool:
+    """Whether the run at `path` holds, after the latest message to it, a
+    SubagentHandback result that opens with `DELIVERED`."""
+    for p in reversed(chain(path)):
+        for e in entries_back(p):
+            if is_prompt(e):
+                return False
+            r = e.get("toolUseResult")
+            if (e.get("type") == "user" and isinstance(r, dict)
+                    and str(r.get("message", "")).startswith(DELIVERED)):
+                return True
+    return False
 
 
 def launch_stamp(session: Path) -> tuple[tuple[Path, tuple[int, int] | None], ...]:
