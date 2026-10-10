@@ -289,7 +289,7 @@ def code_review(baseline: int, scratch: Path) -> str:
 
 
 BATCH_PROFILE = mctx("""
-    - Run `uv run python scripts/profile_runs.py <id>` with the agent id of each of these runs, one run per call: {runs}.
+    - Run `uv run python scripts/profile_runs.py <id>` once for each of these runs, with that run's agent id alone as `<id>`; you may run those commands in one Bash call: {runs}.
     - File a `performance` ticket, with `commit` and `{commit}` as `<domain>` and `<subject>` and `operator` as `<agent>`, for each label or part of a run or of an agent type that you judge worth fixing, by the test that a change to a tool or a document could shorten it.
     {review}
     - Reply only once each transcript review you launched has replied, with the tickets you filed and the reviews you launched.
@@ -297,7 +297,7 @@ BATCH_PROFILE = mctx("""
 
 
 REVIEW = mctx("""
-    - Launch a transcript review of each of these runs that is no solver work and that `uv run python scripts/profile_runs.py <agent id>` shows past its budget, and of no other run: {reviewable}. That command shows a run past its budget, where a message from its parent has a `Budget: N minutes` line, by a message it marks `past budget`, and otherwise by its active time, its wall time less its `idle` time as that command prints them, past the budget `uv run python scripts/operate.py next` would give its brief: its agent type's budget per item times the items its brief gives, where its brief gives items as `uv run python scripts/profile_runs.py --help` gives them, and otherwise its agent type's budget, where the type has the budget that applies. A transcript review is a `general-purpose` agent, with the brief that {review_brief} gives, with the run's agent id in place of `{run}`.
+    - Launch a transcript review of each of these runs that is no solver work and of which `uv run python scripts/profile_runs.py <agent id>` marks a message `past budget`, and of no other run: {reviewable}. That mark is the only test of a run's budget. A transcript review is a `general-purpose` agent, with the brief that {review_brief} gives, with the run's agent id in place of `{run}`.
     """)
 
 NO_REVIEW = mctx("- Launch no transcript review.")
@@ -306,12 +306,11 @@ RUN = "<run>"
 
 
 def batch_profile(runs: list[str], reviewable: list[str], commit: str) -> str:
+    if not reviewable:
+        return BATCH_PROFILE.format(runs=", ".join(runs), commit=commit, review=NO_REVIEW)
     review = REVIEW.format(reviewable=", ".join(reviewable),
                            review_brief=mctx("the block below"), run=RUN)
-    text = BATCH_PROFILE.format(runs=", ".join(runs), commit=commit,
-                                review=review if reviewable else NO_REVIEW)
-    if not reviewable:
-        return text
+    text = BATCH_PROFILE.format(runs=", ".join(runs), commit=commit, review=review)
     brief = transcript_review(RUN, "agent", RUN, False)
     return f"{text}\n\n```\n{brief}\n```"
 
