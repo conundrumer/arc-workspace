@@ -25,8 +25,10 @@ undecided. Every other alert and message gives a step only to the
 operator `me` where it reached `me`.
 
 An agent of `State.stalled`, whose final reply the operator took as its
-report on its `stall` reading (`monitor`), gets a `bug` ticket that records
-that its report reached no operator (`stalls`)."""
+report on its `stall` reading (`monitor`), is recorded in one `bug` ticket
+of that kind, which records that its report reached no operator (`stalls`):
+the first such agent's step files it, and each further one's writes a line
+in it while it stands outside `tickets/closed/`."""
 
 import re
 import shlex
@@ -36,12 +38,12 @@ from enum import Enum
 from controlled_markdown import mctx
 from operations import briefs
 from operations.roles import AGENT_ID
-from operations.state import Agent, Message, Report, State
+from operations.state import Agent, Message, Report, State, Ticket
 from operations.handled import ask_again, repeated
 from operations.steps import Bash, Send, Step, Undecided
-from operations.tracker import AGENT, FILE_TICKET
+from operations.tracker import AGENT, FILE_TICKET, log
 from ticketing.times import utc_stamp
-from ticketing.vocabulary import DEFECT_SECTIONS, Domain, Kind
+from ticketing.vocabulary import DEFECT_SECTIONS, Domain, Kind, Status
 
 
 class AlertKind(Enum):
@@ -141,36 +143,80 @@ def latest(state: State, agent: str) -> Agent | None:
     return found[-1] if found else None
 
 
-def stall_ticket(agent: str, reply: Report) -> str:
-    """The command that files the `bug` ticket on the stalled agent `agent`,
-    whose final reply in its transcript is `reply`."""
+TICKETS = {
+    AlertKind.STALL: (
+        mctx("an agent's final reply reached the operator that launched it as no report"),
+        mctx("The operator read no report of it, and took the final reply in its transcript "
+             "as its report.")),
+}
+"""The title and the `Impact` of the `bug` ticket of each kind that files one,
+by which the operator also finds that kind's ticket in the tracker."""
+
+INSTANCE = "instance"
+"""The word the note of the log line of a further agent of an alert kind
+opens with, in that kind's ticket. A note that opened with the agent's id
+would make that agent the holder of an `assigned` ticket."""
+
+
+def instance(agent: str) -> str:
+    """The opening of the note of `agent`'s log line in a kind's ticket."""
+    return f"{INSTANCE} {agent}:"
+
+
+def kind_tickets(state: State, kind: AlertKind) -> list[Ticket]:
+    """The tickets of `kind` an operator filed, in the tracker's order."""
+    title = TICKETS[kind][0]
+    return sorted((t for t in state.tickets.values()
+                   if t.filer == AGENT and t.kind is Kind.BUG and t.title == title),
+                  key=lambda t: t.order)
+
+
+def handled(tickets: list[Ticket], agent: str, a: Agent) -> bool:
+    """Whether an operator filed one of `tickets` on `agent`, or wrote its
+    line in one, after `a`, its launch."""
+    return any((t.domain is Domain.AGENT and t.subject == agent and t.filed >= a.launched)
+               or any(ln.agent == AGENT and ln.time >= a.launched
+                      and ln.note.startswith(instance(agent)) for ln in t.log)
+               for t in tickets)
+
+
+def ticket_step(state: State, kind: AlertKind, agent: str, a: Agent,
+                reply: Report) -> Step | None:
+    """The step on `agent`, an agent of `kind` of launch `a` whose final
+    reply in its transcript is `reply`: none where `handled`, the line of `a` in the
+    first of that kind's tickets outside `tickets/closed/`, and otherwise
+    the command that files that kind's ticket."""
+    tickets = kind_tickets(state, kind)
+    if handled(tickets, agent, a):
+        return None
+    time = utc_stamp(reply.time)
+    standing = [t for t in tickets if t.status is not Status.CLOSED]
+    if standing:
+        t = standing[0]
+        return Bash(log(t.number, t.status, t.status,
+                        instance(agent) + " "
+                        + mctx("its final reply in its transcript stands at {time}").format(
+                            time=time),
+                        None))
+    title, impact_text = TICKETS[kind]
     impact, evidence = DEFECT_SECTIONS
-    return "\n".join([
+    return Bash("\n".join([
         shlex.join([*FILE_TICKET, Domain.AGENT.value, agent, AGENT]) + " <<'TICKET'",
         "---", f"kind: {Kind.BUG.value}", "---",
-        mctx("# {agent}: its final reply reached the operator that launched it as no "
-             "report").format(agent=agent),
-        "", f"## {impact}",
-        mctx("The operator read no report of it, and took the final reply in its transcript "
-             "as its report."),
+        f"# {title}",
+        "", f"## {impact}", impact_text,
         "", f"## {evidence}",
-        mctx("Its final reply, in its transcript at {time}:").format(time=utc_stamp(reply.time)),
-        reply.text, "TICKET"])
-
-
-def filed(state: State, a: Agent) -> bool:
-    """Whether an operator filed a `bug` ticket on `a` after its launch."""
-    return any(t.domain is Domain.AGENT and t.subject == a.agent_id and t.filer == AGENT
-               and t.kind is Kind.BUG and t.filed >= a.launched
-               for t in state.tickets.values())
+        mctx("The final reply of {agent}, in its transcript at {time}:").format(
+            agent=agent, time=time),
+        reply.text, "TICKET"]))
 
 
 def stalls(state: State) -> Step | None:
-    """The first `bug` ticket on an agent of `State.stalled` that no
-    operator filed yet."""
+    """The first step `ticket_step` gives on an agent of `State.stalled`."""
     for agent, reply in sorted(state.stalled.items()):
-        if (a := latest(state, agent)) is not None and not filed(state, a):
-            return Bash(stall_ticket(agent, reply))
+        if (a := latest(state, agent)) is not None and (
+                s := ticket_step(state, AlertKind.STALL, agent, a, reply)) is not None:
+            return s
     return None
 
 
