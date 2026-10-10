@@ -5,9 +5,11 @@ launch of a reply-only agent (`context_bound_hook.reply_only`).
 The printed launch is read from the result of the last call of `next` in
 the caller's own transcript (`printing.printed_launch`). Where that result
 gives no whole launch, or a parameter of the call differs from the printed
-one, the denial gives what the operator calls instead. Where the hook
-cannot tell the caller's agent type, it allows the call and says why on
-stderr."""
+one, the denial gives what the operator calls instead. A printed
+`run_in_background` is compared only where the call input gives it: the
+harness gives the hook a `tool_input` with no `run_in_background`, though
+the call gives it. Where the hook cannot tell the caller's agent type, it
+allows the call and says why on stderr."""
 
 import sys
 from collections.abc import Iterable
@@ -18,18 +20,21 @@ from context_bound_hook import OPERATOR, reply_only
 from hook_entry import run_pre_tool_use
 
 HOOK = "printed_launch_hook"
+UNSEEN = "run_in_background"
 
 
 def differing(printed: dict[str, str], inp: dict[str, Any]) -> list[tuple[str, str | None, str | None]]:
     """Each parameter that differs between the printed launch `printed` and
     the call input `inp`, with its printed and its given value, None where
     one gives none, in the printed order, then each other parameter of the
-    call by name."""
+    call by name, other than an `UNSEEN` the call input does not give."""
     from operations.printing import parameter
 
     names = [*printed, *sorted(k for k in inp if k not in printed)]
     out: list[tuple[str, str | None, str | None]] = []
     for name in names:
+        if name == UNSEEN and name not in inp:
+            continue
         want = printed.get(name)
         got = parameter(inp[name]) if name in inp else None
         if want != got:
