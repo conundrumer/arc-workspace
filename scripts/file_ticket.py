@@ -22,14 +22,16 @@ from handbook.paths import importable
 # `scripts/` off `sys.path`, and the modules below import from there.
 importable(checkout.scripts())
 
-from ticket_files import FIELD, NAME_FORM, TicketName, ticket_path  # noqa: E402
+from ticket_files import FIELD, NAME_FORM, TicketName, ticket_path, ticket_status  # noqa: E402
 from ticket_form import (DEFAULT_PRIORITY, DESIGN, LOG, MECHANICAL, RETIRED,  # noqa: E402
                          checked_kind, sections_example)
 from ticket_log import (AGENT_ID, CLOSED_BY, UNBLOCKED_BY, VALIDATING, Wait,  # noqa: E402
-                        log_moves, logged, status_of)
+                        log_moves, logged, read_ticket, status_of)
 from ticket_numbers import (SESSION_VAR, SESSIONS, reserve, session_id,  # noqa: E402
                             session_index, ticket_number, write_new)
 from ticket_settle import to_settle  # noqa: E402
+from ticket_watch import (CAP, CHANGES, Case, add_evidence, case_loss, evict,  # noqa: E402
+                          front, route, threshold)  # noqa: E402
 from ticketing.text import SECTIONS, heading  # noqa: E402
 from ticketing.times import TIME_FORM  # noqa: E402
 from ticket_vocabulary import ticked  # noqa: E402
@@ -58,7 +60,8 @@ HELP = mctx("""
     - Numbers order with every bare number before every `<session>-<n>` number. Bare numbers compare as integers, and `<session>-<n>` numbers compare by `<session>`, then by `<n>`, each as an integer.
     - The session that files is the one whose id the filing agent's shell holds in `{session_var}`, in a subagent as in the main session. The command refuses a filing where the shell holds none.
     - A session's index has a file under `tickets/{sessions}/`, named by the index, that holds the session's id. A session forked from another takes the index of the session it was forked from, and the file then holds both ids, one per line.
-    - The command reserves the ticket's number, names the ticket `{name_form}`, writes it under `tickets/draft/` for a `change` and `tickets/open/` for any other kind in the main tree, with the filing time in the first line of its `## Log`, and prints the path it wrote.
+    - A `{delay}` may give one case, `--case <agent id> <start> <end>` after `<agent>`, and then gives `fix: <editor>` in its front matter: `{invocation} case --help` gives the case's form, how the command prices it, and where the ticket files.
+    - The command reserves the ticket's number, names the ticket `{name_form}`, writes it under `tickets/draft/` for a `change`, where `case --help` gives for a `{delay}` that gives a case, and under `tickets/open/` for any other in the main tree, with the filing time in the first line of its `## Log`, and prints the path it wrote.
     - Run from a worktree, the command files with the main tree's copy of `scripts/file_ticket.py`, and refuses where the main tree has none.
     - Each `<number>` in `depends-on` is the number of a ticket the ticket tracker holds.
     - The command refuses, and writes nothing, where the text on stdin does not have the form above.
@@ -108,6 +111,20 @@ TO_SETTLE_HELP = mctx("""
     - The command refuses where a number the call gives names no ticket, where the front matter of a ticket the list would hold gives no kind, where a `{refactor}` it would hold has no title, or where a `{question}` filed on a change names no ticket the ticket tracker holds.
     """)
 
+CASE_HELP = mctx("""
+    - In both forms below, `<agent id>` is the run the case was lost in, and `<start>` and `<end>` are the span of its extra calls, each in the form `{time_form}`.
+    - The command prices a case: its dollars are the token cost of the run's requests in the span, plus the growth of the run's context across the span at the cache-read price of the run's model once for each later request of the run, and its seconds are the span's wall time. It records them in a log line of the ticket.
+    - The threshold of an editor is the median cost of the most recent {changes} `{change_kind}` tickets closed `{fixed}` with a known cost whose `editors` give that editor. A change's cost is the token cost of the runs the line that closes it gives and of the runs under them.
+    - Filing a `{delay}` with a case: `{invocation} <domain> <subject> <agent> --case <agent id> <start> <end>`.
+        - The text on stdin gives `fix: <editor>` in its front matter, with the editor its fix would need among {editors}. The command refuses a case with no `fix`, and a `fix` with no case.
+        - The ticket files under `tickets/{watching}/` where the case's dollars are below the threshold of its `fix`, and under `tickets/{open}/` otherwise. Where the case's cost or the threshold is unknown, it files under `tickets/{open}/`, with an `undecided` line on stderr.
+        - `tickets/{watching}/` holds at most {cap} tickets. A filing that would put one more there first closes `{wontfix}` the watching ticket with the lowest loss rate, its summed dollars over the days since its first case, with its summed dollars and seconds in the note.
+    - Appending a case: the usage line above. `<number>` is the number of a ticket that stands under `tickets/{watching}/`.
+        - The command adds the text on stdin to the end of the ticket's `## Evidence`, and appends the case's log line, whatever the case's own loss.
+        - Where the summed dollars of the ticket's cases reach the threshold of its `fix` or pass it, the command moves the ticket to `tickets/{open}/` with a log line that gives the sum and the threshold, and prints the path it went to.
+        - Where a request of the run has no price, or the threshold of the ticket's `fix` is unknown, the command moves the ticket to `tickets/{open}/`, and prints an `undecided` line on stderr.
+    """)
+
 EMPTY = mctx("the list is empty")
 
 
@@ -139,9 +156,11 @@ def check_subject(tickets: Path, domain: Domain, subject: str) -> None:
         raise Refused(mctx("`{subject}` is no `{domain}` id").format(subject=subject, domain=domain))
 
 
-def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str) -> Path:
+def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str,
+                case: list[str] | None = None) -> Path:
     """Writes `text` as a ticket of the agent's session under its first
-    status and returns its path."""
+    status, with the case `case` gives as run, start and end where it
+    gives one, and returns its path."""
     try:
         dom = Domain(domain)
     except ValueError:
@@ -159,10 +178,55 @@ def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str)
             raise Refused(mctx("a `{kind}` takes `change` and `<namespace>-<short-title>`").format(kind=kind))
     else:
         check_subject(tickets, dom, subject)
+    fix = front(text).get("fix")
+    if (case is None) != (fix is None) or (case is not None and kind is not Kind.DELAY):
+        raise Refused(mctx("a `{delay}` that gives a case gives `fix`, and only then").format(
+            delay=Kind.DELAY))
     status = Status.DRAFT if kind is Kind.CHANGE else Status.OPEN
+    found: Case | None = None
+    if case is not None and fix is not None:
+        undecided: list[str] = []
+        run_id, start, end = case
+        found = case_loss(run_id, start, end, undecided)
+        limit = None if found.dollars is None else threshold(tickets, fix, undecided)
+        print_undecided(undecided)
+        if found.dollars is not None and limit is not None and found.dollars < limit:
+            status = Status.WATCHING
+            evict(tickets, agent)
     number = reserve(tickets, session_index(tickets, session_id()))
     name = TicketName(number, dom, subject, agent).file_name
-    return write_new(tickets / status, logged(text, status, agent), [name])
+    path = write_new(tickets / status, logged(text, status, agent), [name])
+    if found is not None and found.dollars is not None:
+        path = log_moves(tickets, number, status, agent, status, None, found.note).moved[0]
+    return path
+
+
+def print_undecided(lines: list[str]) -> None:
+    for line in lines:
+        print(mctx("undecided: {line}").format(line=line), file=sys.stderr)
+
+
+def case_command(ref: str, agent: str, run: str, start: str, end: str) -> Path:
+    """Appends the case and the evidence on stdin to the watching ticket
+    `ref`, and moves it to `open` where its loss reaches the threshold."""
+    tickets = main_tickets()
+    number = ticket_number(ref)
+    path = ticket_path(tickets, number)
+    if ticket_status(path) is not Status.WATCHING:
+        raise Refused(mctx("{path} does not stand under `{watching}`").format(
+            path=path, watching=Status.WATCHING))
+    undecided: list[str] = []
+    found = case_loss(run, start, end, undecided)
+    path.write_text(add_evidence(read_ticket(path), sys.stdin.read()))
+    if found.dollars is None:
+        print_undecided(undecided)
+        note = mctx("case {run} {start} {end}: cost unknown").format(run=run, start=start, end=end)
+        return log_moves(tickets, number, Status.OPEN, agent, Status.WATCHING, None, note).moved[0]
+    path = log_moves(tickets, number, Status.WATCHING, agent, Status.WATCHING, None,
+                     found.note).moved[0]
+    path = route(tickets, number, path, agent, undecided)
+    print_undecided(undecided)
+    return path
 
 
 def main_tickets() -> Path:
@@ -269,6 +333,8 @@ SUBCOMMANDS = {
                        lambda ref: ticket_path(main_tickets(), ticket_number(ref)), False),
     "index": Subcommand(mctx("prints the index of your session"), "", "", 0,
                         lambda: session_index(main_tickets(), session_id()), True),
+    "case": Subcommand(mctx("appends a case, with its evidence on stdin, to a watching `delay` ticket"),
+                       " <number> <agent> <agent id> <start> <end>", CASE_HELP, 5, case_command, True),
     "to-settle": Subcommand(mctx("prints the open tickets an operator gives a ticket analyst to settle "
                                  "after a batch"),
                             " [<number> ...]", TO_SETTLE_HELP, None, settle_command, False),
@@ -299,7 +365,8 @@ def help_values() -> dict[str, str]:
                 sessions=SESSIONS, invocation=INVOCATION, name_form=NAME_FORM,
                 question=Kind.QUESTION, refactor=Kind.REFACTOR, change_kind=Kind.CHANGE,
                 change_domain=Domain.CHANGE,
-                many_ideas=MANY_IDEAS, empty=EMPTY,
+                many_ideas=MANY_IDEAS, empty=EMPTY, delay=Kind.DELAY, watching=Status.WATCHING,
+                open=Status.OPEN, wontfix=Resolution.WONTFIX, changes=str(CHANGES), cap=str(CAP),
                 subcommands="\n".join(SUBCOMMAND_LINE.format(
                     invocation=INVOCATION, name=name, purpose=sub.purpose)
                     for name, sub in SUBCOMMANDS.items()))
@@ -317,8 +384,13 @@ def main(args: list[str]) -> int:
     if args[:1] and (sub := SUBCOMMANDS.get(args[0])):
         return run(sub.parse(args[1:]), subcommand_help(args[0], sub, values), sub.count,
                    sub.act, sub.in_main, args)
-    return run(args, HELP.format(**values), 3, lambda domain, subject, agent: file_ticket(
-        main_tickets(), domain, subject, agent, sys.stdin.read()), True, args)
+    given: list[str | None] = list(args)
+    if args[3:4] == ["--case"]:
+        given = [*args[:3], " ".join(args[4:])] if len(args) == 7 else list(args)
+    return run(given, HELP.format(**values), 4 if len(given) == 4 else 3,
+               lambda domain, subject, agent, case=None: file_ticket(
+                   main_tickets(), domain, subject, agent, sys.stdin.read(),
+                   None if case is None else case.split()), True, args)
 
 
 if __name__ == "__main__":

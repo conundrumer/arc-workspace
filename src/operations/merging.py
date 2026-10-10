@@ -181,4 +181,8 @@ def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
         if (q.kind is Kind.QUESTION and q.domain is Domain.CHANGE and q.subject == t.number
                 and q.status is not Status.CLOSED):
             return Bash(log(q.number, Status.CLOSED, q.status, note, None))
-    return Bash(log(t.number, Status.CLOSED, Status.ASSIGNED, note, None))
+    ids = [a.agent_id for a in agents]
+    # An agent with no known id leaves the line with no run, and the
+    # change with no known cost (`scripts/ticket_watch.py`).
+    runs = "" if None in ids else "".join(f" {i}" for i in ids)
+    return Bash(log(t.number, Status.CLOSED, Status.ASSIGNED, note + runs, None))

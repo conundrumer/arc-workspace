@@ -8,6 +8,7 @@ from dataclasses import dataclass, fields
 from typing import Any
 
 from controlled_markdown import mctx
+from transcripts import epoch
 
 
 @dataclass(frozen=True)
@@ -125,3 +126,40 @@ def run_cost(entries: list[dict[str, Any]], undecided: list[str],
     if not known:
         return None
     return sum(u.cost(PRICES[m]) for m, u in requests.values())
+
+
+def span_cost(entries: list[dict[str, Any]], start: float, end: float,
+              undecided: list[str]) -> float | None:
+    """The token cost in dollars of the span from `start` to `end`, in epoch
+    seconds, of a run: its requests in the span, priced as `run_cost`
+    prices them, plus the growth of its context across the span, from the
+    last request before the span to the first after it, at the cache-read
+    price of the run's model once for each request after the span. None
+    where a request has no price, with an `undecided` line for it."""
+    entries = [e for e in entries if e.get("timestamp")]
+    inside = [e for e in entries if start <= epoch(e["timestamp"]) <= end]
+    cost = run_cost(inside, undecided)
+    if cost is None:
+        return None
+    before = [e for e in requests(entries) if epoch(e["timestamp"]) < start]
+    after = [e for e in requests(entries) if epoch(e["timestamp"]) > end]
+    if not before or not after:
+        return cost
+    message = after[0]["message"]
+    model = message.get("model")
+    if model not in PRICES:
+        undecided.append(mctx("token cost unknown: no price for model {model}").format(model=model))
+        return None
+    growth = max(0.0, request_input(message["usage"]) - request_input(before[-1]["message"]["usage"]))
+    later = len({e["message"].get("id") for e in after})
+    return cost + growth * PRICES[model].cache_read / 1e6 * later
+
+
+def requests(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The assistant entries that give a usage, one for each message id."""
+    seen: dict[str, dict[str, Any]] = {}
+    for e in entries:
+        message = e.get("message") or {}
+        if e.get("type") == "assistant" and isinstance(message.get("usage"), dict):
+            seen.setdefault(message.get("id") or "", e)
+    return list(seen.values())

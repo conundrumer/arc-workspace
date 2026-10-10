@@ -89,7 +89,7 @@ def latest(state: State, role: Role, subject: str, since: float) -> Agent | None
 def review_tickets(state: State, task: str, review: Agent) -> list[str]:
     return [t.number for t in state.tickets.values() if t.domain is Domain.TASK
             and t.subject == task and t.filer == Role.TRANSCRIPT_REVIEW.value
-            and t.filed >= review.launched]
+            and t.filed >= review.launched and t.status is not Status.WATCHING]
 
 
 def run(state: State, p: Pipeline) -> Outcome:

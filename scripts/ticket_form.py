@@ -66,7 +66,8 @@ def body_form(kind: Kind) -> re.Pattern[str]:
 
 
 FIELDS = {Kind.CHANGE: frozenset({"depends-on", "priority", "editors", "after-merge",
-                                       "mechanical"})}
+                                       "mechanical"}),
+          Kind.DELAY: frozenset({"fix"})}
 """The front matter fields besides `kind` that each kind may give."""
 
 DEFAULT_PRIORITY = 50
@@ -91,11 +92,15 @@ def list_items(value: str) -> list[str]:
     return [part.strip() for part in value.split(",")]
 
 
+def editor_names() -> set[str]:
+    return {str(r) for r in EDITORS}
+
+
 def check_editors(value: str) -> None:
     """Refuses an `editors` value that is not a list of distinct editors
     (`operations.roles.EDITORS`)."""
     names = list_items(value)
-    known = {str(r) for r in EDITORS}
+    known = editor_names()
     if not names or any(n not in known for n in names) or len(set(names)) < len(names):
         raise Refused(mctx("`editors` `{value}` is not a list of distinct editors among "
                            "{known}").format(value=value, known=ticked(map(str, EDITORS))))
@@ -146,6 +151,9 @@ def checked_kind(tickets: Path, agent: str, text: str) -> Kind:
             check_depends_on(tickets, value)
         if key == "editors":
             check_editors(value)
+        if key == "fix" and value not in editor_names():
+            raise Refused(mctx("`fix` `{value}` is no editor among {known}").format(
+                value=value, known=ticked(map(str, EDITORS))))
         if key == "mechanical" and value != MECHANICAL:
             raise Refused(mctx("`mechanical` `{value}` is not `{yes}`").format(
                 value=value, yes=MECHANICAL))

@@ -273,7 +273,9 @@ def held_step(what: str, operator: str, rulable: bool) -> str:
 TRANSCRIPT_REVIEW = mctx("""
     - Review the transcript of run {run}, which `python3 ~/.claude/skills/retrieve/transcripts.py --help` reads.
     - File each ticket by the lines of the section `Ticket files` of `prompts/agents/notes/tickets.md`, with `{domain}` as `<domain>`, `{subject}` as `<subject>`, and `transcript-review` as `<agent>`.
-    - File a ticket of kind `delay` for each place where the run explored to find what a docstring or a document line could have led it to.
+    - Find each place where the run explored to find what a docstring or a document line could have led it to. For each such place, list the titles under `tickets/watching/` in one `grep -m1 -H '^# '` call, and read no ticket's body to match.
+        - Where a title states the same place, append the place as a case to that ticket, by `uv run python scripts/file_ticket.py case --help`.
+        - Otherwise file a ticket of kind `delay` on the place, with its case and its `fix`, by `uv run python scripts/file_ticket.py case --help`.
     """)
 
 PASS_REVIEW = mctx("""

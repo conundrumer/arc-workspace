@@ -13,6 +13,8 @@ class Status(StrEnum):
     ASSIGNED = "assigned"
     BLOCKED = "blocked"
     CLOSED = "closed"
+    WATCHING = "watching"
+    """A `delay` ticket whose summed loss is below the threshold of its fix."""
 
 
 class Resolution(StrEnum):
