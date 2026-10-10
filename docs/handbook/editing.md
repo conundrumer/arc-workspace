@@ -37,7 +37,7 @@
     - Its context: `context agent <name>`.
     - The `analyze` agent reads [Analyze after the concept](prompts/agents/analyze-next.md) after it writes the concept.
 - The statements more than one entry point inlines or links: the documents under [notes](prompts/agents/notes), one per subject.
-- What each of the agents' change processes must achieve: [Process notes](prompts/agents/notes/process.md).
+- What each of the agents' processes must achieve: [Process notes](prompts/agents/notes/process.md).
 - The console messages, deprecated with the console: [Console messages](prompts/console.md).
     - A worker's context: the appendix, the message the stage opens with, then each message a condition sends, under that condition: `context console <stage>`.
     - A survey session's context: the appendix, its role, then the `survey` message: `context survey`.

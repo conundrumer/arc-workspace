@@ -1,5 +1,5 @@
 # Process notes
-- The agents' change processes, each in the project's terms with the name of its process in ISO/IEC/IEEE 12207 beside it, and what each must achieve, in its outcomes and in what holds in each way it can fail. The rules that achieve it stand in the documents of the agents that follow them, and where the tree does not achieve it, that gap is a finding for the process assessment.
+- The agents' processes, for changes and for solver passes, each in the project's terms with the name of its process in ISO/IEC/IEEE 12207 beside it, and what each must achieve, in its outcomes and in what holds in each way it can fail. The rules that achieve it stand in the documents of the agents that follow them, and where the tree does not achieve it, that gap is a finding for the process assessment.
 - These notes are support under [Decision notes](prompts/agents/notes/decisions.md), and a line of these notes that conflicts with a line of that document is a finding for the process assessment.
 - A change to the agents' processes is a change whose Scope touches `prompts/agents/` or `src/operations/`.
 
@@ -9,8 +9,10 @@
 - Outcomes:
     - These notes give one owner for each process.
     - These notes give, for each kind of work product, the agent that acts on it and the reviews it gets.
+        - [Work products](#work-products) gives them.
     - Work that two processes duplicate, an outcome that no owner meets, rules that conflict, a step whose cost is out of proportion to what it finds, and a step or a rule that serves no outcome reach the user before the user asks.
     - Each rule of the notes and of the agent definitions maps to an outcome of these notes.
+        - [Traceability matrix](prompts/agents/notes/traceability.md) holds that map.
 - Owner: a ticket analyst with a process assessment brief, which an operator launches after a set count of merged changes to the agents' processes.
 - Takes from: quality assurance, the fault families, and measurement, the cost of each step. Gives to: every process, as `change` tickets, and the user, as decisions.
 - How it can fail:
@@ -37,7 +39,7 @@
 - Purpose: make each decision at the level that holds its context, and record it with its grounds.
 - Principles: [How a decision is made](prompts/agents/notes/decisions.md#how-a-decision-is-made) and [The user's part](prompts/agents/notes/decisions.md#the-users-part).
 - Outcomes:
-    - A decision that departs from the user's words, a ruling of the user or a line of [Principles](docs/handbook/principles.md) reaches the user.
+    - A decision that departs from the user's words, a ruling of the user or a line of [Principles](docs/handbook/principles.md) reaches the user, other than a ticket analyst's decline.
     - A decline carries its defense, and the coordinator judges it before the change merges.
     - Each decision is recorded with what it was made from.
 - Owner: the ticket analyst decides, the coordinator judges each decline, and the user rules on each decision that reaches the user.
@@ -113,6 +115,8 @@
 - Principles: the fault options and "Prefer simple mechanisms: watch an agent by reading what it does", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
 - Outcomes:
     - These notes give which review covers each run at its end, so that no run gets two reviews at its end. The checks during a run, such as a hung call or a budget, are apart from those reviews.
+        - The module docstring of [monitor.py](src/operations/monitor.py) gives the runs that get a transcript review at their end and those that get an `op-auditor` audit.
+        - A transcript review looks for what the brief that `transcript_review` in [briefs.py](src/operations/briefs.py) writes asks of it, and an `op-auditor` audit for the signs [Signs](prompts/agents/op-auditor.md#signs) gives.
     - A fault that recurs after a fix is taken as one family: its common cause is removed, and the fixes that removal makes redundant are named.
 - Owner: transcript reviews and `op-auditor` audits for the runs, and the ticket analyst for the causes.
 - Takes from: the runs of every process. Gives to: process assessment, the fault families, and every process, as `change` tickets.
@@ -153,3 +157,24 @@
 - Owner: the ticket analyst for `depends-on`, and [merge_change.py](scripts/merge_change.py) for the worktrees.
 - Takes from: the Scopes. Gives to: merge.
 - How it can fail: an order slows changes that do not conflict: the ticket analyst may override an order with its reason.
+
+## Solver passes (implementation)
+- Purpose: solve a task by the Analyze, Create and Refine passes on it.
+- Principles: [Decisions on solver work](prompts/agents/notes/decisions.md#decisions-on-solver-work).
+- Outcomes:
+    - A pass runs its operations on the task its brief gives, and reads what its notes give it to read.
+    - A pass writes only under the paths its notes give, and changes no git state.
+    - A pass's report gives its judgments, its open items with their reasons, and the tickets it filed.
+    - A fault of a document or of a tool that a pass meets reaches a ticket.
+- Owner: the passes, with the operator for their launch and the transcript review for the review at a run's end.
+- Takes from: the operator's launch on a task. Gives to: quality assurance, by its tickets and its transcript.
+- How it can fail: a pass meets a fault and files no ticket on it: the transcript review of the pass reads what the tool and the documents did to its work.
+
+## Work products
+- A `request`: a ticket analyst writes the `change` tickets that serve it. Its reviews: the ticket reviewer's check of each requirement's trace to its `Words`, and validation.
+- A `change` ticket with its design: a ticket analyst writes it. Its review: a ticket reviewer's, before the build.
+- A built code change: a code editor builds it, and the `handbook-expanded` agent the part in the lib and the solvers. Its reviews: a ticket analyst's check of its items, the gate at its merge, and the code review that follows its merge.
+- A built document change: the doc editor builds it. Its reviews: the doc reviewer's, a ticket analyst's check of its items, and the `controlled_markdown` check.
+- A solver: the Create pass writes it, and each Refine pass reconciles it with the latest report. Its review: the transcript review of each pass that writes it.
+- A pass's report: the pass writes it, and a ticket analyst takes the tickets it lists. Its review: the transcript review of that pass.
+- A ticket of a fault: a ticket analyst settles it. Its review: the ticket analyst's check of it against the state that produced it.
