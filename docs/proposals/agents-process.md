@@ -47,7 +47,7 @@ The figures below come from a web search by a Sonnet agent on 2026-10-10. Its fe
 | Ticket review, doc review, code review, gate | Verification | 6.4.9 |
 | Need met after the merge (6-36, 6-63) | Validation | 6.4.11 |
 | Merge, hotfix review (6-77, 6-82) | Integration; Transition | 6.4.8; 6.4.10 |
-| Transcript reviews, op-auditor audits, root-cause work | Quality assurance (it includes the handling of incidents and problems) | 6.3.8 |
+| Transcript reviews, the monitor's alerts, root-cause work | Quality assurance (it includes the handling of incidents and problems) | 6.3.8 |
 | Cost and time profiles | Measurement | 6.3.7 |
 | "Think through how it fails" | Risk management | 6.3.4 |
 | Stuck work, holders, budgets (6-68) | Project assessment and control | 6.3.2 |
@@ -202,9 +202,9 @@ The figures below come from a web search by a Sonnet agent on 2026-10-10. Its fe
 - Owner: the ticket reviewer for the plan. A change reviewer for the built change (6-86 gives this to a ticket analyst). The doc reviewer for the form of documents. The code reviewer and the gate for code.
 - Today:
     - Ticket review: 537 `finding:` lines by ticket reviewers, on 187 of the 326 `change` tickets. 72 had three or more findings, and the most was 23 (2-645). The lines are in scratchpad `proposal-6-85/rev-findings.txt`.
-    - A change to code alone gets no review of whether it does what its Intent states. `carry` runs `doc_review` only where a doc editor took part (6-86 Grounds).
-    - A change to documents gets a doc review by the steps of `docs/handbook/editing.md`, Reviewing a change. It reads each reader's rendered context, and checks form, conflicts with lines outside the change, and new powers. No step checks the change against its Intent: the reviewer reports "nothing on a decision the one who asked for the change gives as already settled". No step runs a reader on the edited text.
-    - Code has the gate, pyright, pytest and a standing code review of the tree. Documents have none of the gate's kind, and no standing review of lines in force. One audit of lines in force was run once (2-360).
+    - A change to code alone gets no doc review: `carry` runs `doc_review` only where a doc editor took part (6-86 Grounds). For every change, a ticket analyst checks each item of each editor's latest report against the worktree (`prompts/agents/notes/changes.md`).
+    - A change to documents gets a doc review by the steps of `docs/handbook/editing.md`, Reviewing a change. It reads each reader's rendered context, and checks form, conflicts with lines outside the change, and new powers. Those steps check no Intent: the reviewer reports "nothing on a decision the one who asked for the change gives as already settled". A trial runs a reader on the edited text, on the case of each Intent item that alters what an agent does (`prompts/agents/doc-reviewer.md`, Trials).
+    - Code has the gate, pyright, pytest and a standing code review of the tree. Documents have none of the gate's kind. A standing doc review reads a reader's whole context in force (`prompts/agents/doc-reviewer.md`). One audit of lines in force was run once (2-360).
 - Evidence:
     - Review rounds as a recurring fault: "draft 2-569 took seven rounds, draft 2-575 five, and draft 2-579 ten" (2-596). The fixes 2-495 and 2-530 did not end it. One cause: "a review stops at one finding, or checks only the parts its brief says were revised" (2-529 log). For documents, `prompts/agents/doc-editor.md` cites change 17, where "each fix brought the next finding" across four messages.
     - Change 2-729 closed `fixed` while its editors left most places undone, "27 of which no edit addressed" (2-787).
@@ -271,8 +271,8 @@ The figures below come from a web search by a Sonnet agent on 2026-10-10. Its fe
     - The root states which reviewing process covers which run at its end, so that no run gets two end-of-run reviews. Checks during a run (a hung call, the budget) are separate from them.
     - A fault that recurs after a fix is treated as one family. Its common cause is removed, and the fixes it makes redundant are named.
 - Takes from: every process's runs. Gives to: life cycle model management (fault families), and fixes as `change` tickets.
-- Owner: transcript reviews and op-auditor audits for runs. The ticket analyst for causes.
-- Today: transcript reviews (`prompts/agents/notes/launching.md`, Launching), op-auditor audits (`prompts/agents/op-auditor.md`), and the analyst's step on earlier instances (`prompts/agents/ticket-analyst.md`, Tickets, step 5).
+- Owner: transcript reviews and the monitor's alerts for runs. The ticket analyst for causes.
+- Today: transcript reviews (`prompts/agents/notes/launching.md`, Launching), the monitor's alerts during a run (`src/operations/monitor.py`, change 6-313), and the analyst's step on earlier instances (`prompts/agents/ticket-analyst.md`, Tickets, step 5).
 - Evidence:
     - The overlap: see life cycle model management (6-161, 6-170).
     - Low yield: of 66 closed transcript-review tickets, 44 closed `wontfix` (67%), against 15% for the whole tracker. 38 of the 44 give a loss in seconds, from 2 s to 95 s. Before 6-17, 81% of 105 audits found no sign (6-17 Motivation).
