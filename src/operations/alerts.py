@@ -42,6 +42,7 @@ from operations.state import Agent, Message, Report, State, Ticket
 from operations.handled import ask_again, repeated
 from operations.steps import Bash, Send, Step, Undecided
 from operations.tracker import AGENT, FILE_TICKET, log
+from ticketing.text import ticket_text
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import DEFECT_SECTIONS, Domain, Kind, Status
 
@@ -145,7 +146,8 @@ def latest(state: State, agent: str) -> Agent | None:
 
 TICKETS = {
     AlertKind.STALL: (
-        mctx("an agent's final reply reached the operator that launched it as no report"),
+        mctx("the delivery of an agent's report to the operator that launched it: its final "
+             "reply reached that operator as no report"),
         mctx("The operator read no report of it, and took the final reply in its transcript "
              "as its report.")),
 }
@@ -200,15 +202,12 @@ def ticket_step(state: State, kind: AlertKind, agent: str, a: Agent,
                         None))
     title, impact_text = TICKETS[kind]
     impact, evidence = DEFECT_SECTIONS
-    return Bash("\n".join([
-        shlex.join([*FILE_TICKET, Domain.AGENT.value, agent, AGENT]) + " <<'TICKET'",
-        "---", f"kind: {Kind.BUG.value}", "---",
-        f"# {title}",
-        "", f"## {impact}", impact_text,
-        "", f"## {evidence}",
-        mctx("The final reply of {agent}, in its transcript at {time}:").format(
-            agent=agent, time=time),
-        reply.text, "TICKET"]))
+    text = ticket_text(Kind.BUG, title, {
+        impact: impact_text,
+        evidence: mctx("The final reply of {agent}, in its transcript at {time}:").format(
+            agent=agent, time=time) + "\n" + reply.text})
+    return Bash(shlex.join([*FILE_TICKET, Domain.AGENT.value, agent, AGENT])
+                + " <<'TICKET'\n" + text + "TICKET")
 
 
 def stalls(state: State) -> Step | None:

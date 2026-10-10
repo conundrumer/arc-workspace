@@ -21,7 +21,9 @@ def turns(entries: list[Entry]) -> tuple[set[int], set[int]]:
     a local command, such as /compact, gives the model none. An assistant
     entry with no tool call ends a turn when it says so, or when the next
     message entry is a prompt, and the result of a call that ends the turn,
-    such as SubagentHandback, ends one."""
+    such as SubagentHandback, ends one. The harness's note that the user
+    interrupted the run ends one unless the next message entry is the
+    model's."""
     starts: set[int] = set()
     ends: set[int] = set()
     nxt: Entry | None = None
@@ -35,6 +37,8 @@ def turns(entries: list[Entry]) -> tuple[set[int], set[int]]:
                     nxt is not None and is_prompt(nxt)):
                 ends.add(i)
         if e.get("toolEndsTurn"):
+            ends.add(i)
+        if is_interrupt_note(e) and (nxt is None or nxt.get("type") != "assistant"):
             ends.add(i)
         if is_turn_entry(e) or is_prompt(e):
             nxt = e
@@ -52,32 +56,27 @@ def idle_after(idle: bool, i: int, entry: Entry, starts: set[int],
 
 def turn_ended(entries: list[Entry]) -> bool:
     """Whether the run whose entries are `entries`, or those from one of its
-    timestamped assistant entries on, has ended its turn, or its last
-    message entry is the harness's note that the user interrupted it. An
-    entry with no timestamp moves no turn."""
+    timestamped assistant entries on, has ended its turn, as the HELP of
+    `profile_runs` gives when a turn ended. An entry with no timestamp moves
+    no turn."""
     starts, ends = turns(entries)
     idle = False
     for i, e in enumerate(entries):
         if e.get("timestamp"):
             idle = idle_after(idle, i, e, starts, ends)
-    return idle or interrupt_note(entries) is not None
+    return idle
 
 
-def interrupt_note(entries: list[Entry]) -> Entry | None:
-    """The last message entry of `entries` where it is the harness's note
-    that the user interrupted the run, or None."""
-    last = [e for e in entries if is_turn_entry(e)][-1:]
-    return next((e for e in last if e.get("type") == "user" and text_of(
-        (e.get("message") or {}).get("content")).startswith(INTERRUPTED)), None)
+def is_interrupt_note(entry: Entry) -> bool:
+    """Whether `entry` is the harness's note that the user interrupted the
+    run."""
+    return entry.get("type") == "user" and text_of(
+        (entry.get("message") or {}).get("content")).startswith(INTERRUPTED)
 
 
 def turn_end(entries: list[Entry]) -> float | None:
     """The time of the last timestamped entry of `entries` that ends a turn
-    (`turns`), or, where `interrupt_note` gives a note, the time of that
-    note."""
-    note = interrupt_note(entries)
-    if note is not None:
-        return epoch(note["timestamp"]) if note.get("timestamp") else None
+    (`turns`), as the HELP of `profile_runs` gives when a turn ended."""
     _, ends = turns(entries)
     times = [epoch(entries[i]["timestamp"]) for i in sorted(ends)
              if entries[i].get("timestamp")]

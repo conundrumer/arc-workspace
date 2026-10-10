@@ -3,7 +3,6 @@ procedures read."""
 
 import hashlib
 import re
-from datetime import UTC, datetime
 from pathlib import Path
 
 from controlled_markdown import mctx
@@ -14,14 +13,14 @@ from transcripts import Refused
 
 from operations.roles import editors_of
 from operations.state import LogLine, Ticket, Unread
-from ticketing.times import TIME_FORM
+from ticketing.times import stamp_time
 from ticketing.vocabulary import Domain, Kind, Status
 
 
 def log_time(text: str) -> float:
     """The time of a log line, which the log gives to the second."""
     try:
-        return datetime.strptime(text, TIME_FORM).replace(tzinfo=UTC).timestamp()
+        return stamp_time(text)
     except ValueError:
         raise Refused(mctx("`{text}` is no log line's time").format(text=text)) from None
 

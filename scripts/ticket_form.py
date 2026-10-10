@@ -2,7 +2,6 @@
 matter, its title and its sections."""
 
 import re
-from collections.abc import Mapping
 from pathlib import Path
 
 from controlled_markdown import mctx
@@ -10,7 +9,8 @@ from operations.roles import EDITORS
 from ticket_files import ticket_path
 from ticket_numbers import ticket_number
 from ticket_vocabulary import filer_kinds, ticked
-from ticketing.vocabulary import DEFECT_SECTIONS, Kind
+from ticketing.text import HEADING_MARK, heading, kind_sections
+from ticketing.vocabulary import Kind
 from transcripts import Refused
 
 FRONT = r"---\nkind: (?P<kind>\S+)\n(?P<fields>(?:[a-z-]+: .*\n)*)---\n"
@@ -42,11 +42,6 @@ def title(path: Path, text: str) -> str:
     return text[head.end():].split("\n", 1)[0]
 
 
-SECTIONS = {Kind.CHANGE: ("Intent", "Motivation", "Scope", "Grounds"),
-            Kind.REQUEST: ("Transcript", "Grounds")}
-"""The sections of each kind that has its own; every other kind has
-`DEFECT_SECTIONS`."""
-
 RETIRED = {Kind.REQUEST: "Words"}
 """The section each kind may no longer hold, which `checked_kind`
 refuses."""
@@ -54,23 +49,6 @@ refuses."""
 DESIGN = "Design"
 """The section a `change` that adds a mechanism to code adds after its
 Intent, which `body_form` lets stand between its sections."""
-
-
-HEADING_MARK = "## "
-
-
-def heading(section: str) -> str:
-    return f"{HEADING_MARK}{section}"
-
-
-def ticket_text(kind: Kind, title: str, lines: Mapping[str, str]) -> str:
-    """The text of a `kind` ticket with no front matter field besides
-    `kind`, whose sections, each with its `lines`, are the kind's own."""
-    sections = SECTIONS.get(kind, DEFECT_SECTIONS)
-    if set(lines) != set(sections):
-        raise ValueError(f"the sections {sorted(lines)} are not those of a `{kind}`")
-    body = "\n\n".join(f"{heading(s)}\n{lines[s]}" for s in sections)
-    return f"---\nkind: {kind.value}\n---\n# {title}\n\n{body}\n"
 
 
 def sections_example(sections: tuple[str, ...]) -> str:
@@ -82,7 +60,7 @@ def sections_example(sections: tuple[str, ...]) -> str:
 def body_form(kind: Kind) -> re.Pattern[str]:
     """The title and sections that follow a `kind` ticket's front matter."""
     title = r"# .+\n" if kind is Kind.CHANGE else r"# .+: .+\n"
-    sections = SECTIONS.get(kind, DEFECT_SECTIONS)
+    sections = kind_sections(kind)
     middle = r"(?:.*\n)*".join(f"{heading(s)}\n" for s in sections[:-1])
     return re.compile(title + r"\n" + middle + r"(?:.*\n)*" + heading(sections[-1]) + r"(?:\n|$)")
 

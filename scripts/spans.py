@@ -4,7 +4,6 @@ coordinator and a ticket analyst call it."""
 
 import re
 import sys
-import time as clock
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -19,10 +18,11 @@ from file_ticket import file_ticket, main_tickets, run  # noqa: E402
 from run_reads import blocks, message_text  # noqa: E402
 from senders import Origin, origin  # noqa: E402
 from ticket_files import ticket_name, ticket_path, ticket_status  # noqa: E402
-from ticket_form import HEADING, SECTIONS, heading, section_head, ticket_text  # noqa: E402
+from ticket_form import HEADING, section_head  # noqa: E402
 from ticket_log import log_moves  # noqa: E402
 from ticket_numbers import TicketNumber, session_id, ticket_number  # noqa: E402
-from ticketing.times import TIME_FORM, utc_stamp  # noqa: E402
+from ticketing.text import SECTIONS, heading, ticket_text  # noqa: E402
+from ticketing.times import TIME_FORM, stamp_time, utc_stamp  # noqa: E402
 from ticketing.vocabulary import COORDINATOR, Domain, Kind, Status  # noqa: E402
 from ticket_vocabulary import ticked  # noqa: E402
 from transcripts import Entry, Refused, epoch, find, read_entries  # noqa: E402
@@ -83,7 +83,7 @@ HELP = mctx("""
     - A words argument that is a time in the form `{time_form}` names the one message of the session at that time, in place of a match of words.
     - The command refuses, and prints each match, where a words argument matches no message or more than one, and ends the refusal on a words argument that matches more than one message with a line that says the argument may give one of the printed times in its place, and refuses where the end comes before the start.
     - A span is the line `<session id> <start> <end>` under the request's `{transcript}`, with each time in UTC to the second, and holds each message from its start to its end, inclusive.
-    - `file` writes the request with `{transcript}` and `{grounds}`, and files it as `uv run python scripts/file_ticket.py` files. On `draft`, and on a route given with `{inferred}`, it then moves the request to `tickets/draft/`. On `direct` and `hotfix` with no `{inferred}`, it then moves the request to `tickets/assigned/`, with an `assigned` line whose holder is the session id the shell holds in `CLAUDE_CODE_SESSION_ID`.
+    - `file` writes the request with `{transcript}` and `{grounds}`, and files it as `uv run python scripts/file_ticket.py` files. On `draft`, and on a route given with `{inferred}`, it then moves the request to `tickets/draft/`. On each of {held} with no `{inferred}`, it then moves the request to `tickets/assigned/`, with an `assigned` line whose holder is the session id the shell holds in `CLAUDE_CODE_SESSION_ID`.
     - A brief gives each message of each span of the request, in full and in time order, each with its time and its sender, and then its Grounds.
     - `append` adds the span line under the request's `{transcript}`, and writes a log line in the status the request stands in.
     - `file`, `append`, and `brief` with `--route` end with a readback prompt, which gives the route and the first and the last message of the span. `brief` prints that prompt on stderr, so that its stdout is the brief alone.
@@ -153,7 +153,7 @@ def messages(session: str) -> list[Message]:
 def is_time(words: str) -> bool:
     """Whether `words` is a time in `TIME_FORM`."""
     try:
-        clock.strptime(words, TIME_FORM)
+        stamp_time(words)
     except ValueError:
         return False
     return True
@@ -332,7 +332,8 @@ def unknown(word: str) -> str:
 
 
 def main(args: list[str]) -> int:
-    text = HELP.format(invocation=INVOCATION, inferred=INFERRED, routes=ROUTES, time_form=TIME_FORM,
+    text = HELP.format(invocation=INVOCATION, inferred=INFERRED, routes=ROUTES,
+                       held=ticked(r.value for r in HELD), time_form=TIME_FORM,
                        transcript=heading(TRANSCRIPT), follow_up=FOLLOW_UP.format(number="<number>"), grounds=heading(GROUNDS))
     act = SUBCOMMANDS.get(args[0]) if args else None
     if act is None:
