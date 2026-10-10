@@ -8,7 +8,12 @@ of the previous batch's profile agent, other than the agents of After a
 batch and the op-auditors, with the changes merged since: those an
 operator's merge call merged, as `state.Merge` reads it, and those the
 coordinator gives as merged. The launch of the
-profile agent opens the next batch. The ticket analyst on the tickets the
+profile agent opens the next batch.
+
+The profile agent profiles each run `profile_runs.py --under` takes, and
+may launch a transcript review only of those that are members of the
+batch: a review of After a batch's own runs files tickets whose triage
+opens the next batch. The ticket analyst on the tickets the
 batch filed is the one `triage` launches on any open ticket."""
 
 import re
@@ -78,7 +83,9 @@ def step(state: State) -> Step | None:
         if calls[-1][0].error:
             return Undecided(mctx("`{command}` failed").format(command=command))
         runs += calls[-1][1].taken
-    return Launch(Role.BATCH_PROFILE, str(n), briefs.batch_profile(runs, head))
+    ids = {a.agent_id for a in batch}
+    return Launch(Role.BATCH_PROFILE, str(n),
+                  briefs.batch_profile(runs, [r for r in runs if r in ids], head))
 
 
 def under_command(operator: str) -> str:
