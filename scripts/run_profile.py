@@ -266,7 +266,8 @@ def classify(block: dict[str, Any], result: dict[str, Any] | None, launched: boo
     return Call(pending, background if launched else None)
 
 
-def profile(path: Path, undecided: list[str]) -> Run:
+def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Run:
+    """Its token cost is priced at the model `price_at` where one is given."""
     agent_type, description = run_type(path)
     label = agent_id(path) if is_subagent(path) else path.stem
     session = session_of(path)
@@ -375,7 +376,7 @@ def profile(path: Path, undecided: list[str]) -> Run:
     cwd = next((e["cwd"] for e in entries if e.get("cwd")), None)
     context = context_size(reversed(entries))
     unpriced: list[str] = []
-    cost = run_cost(entries, unpriced)
+    cost = run_cost(entries, unpriced, price_at)
     undecided.extend(f"{label}: {line}" for line in dict.fromkeys(unpriced))
     in_flight = [spans[tid] for tid in pending if tid in spans]
     backgrounded = [spans[tid] for tid in running

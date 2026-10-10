@@ -1,6 +1,6 @@
 """The list prices of the tokens a request uses, in dollars per million tokens, keyed by the model ids the transcripts give, and the token cost of a run's requests at those prices.
 
-- Source: the bundled claude-api skill. `shared/models.md` gives input, output and cache-read prices; `shared/prompt-caching.md` gives 5-minute cache writes at 1.25x input, 1-hour cache writes at 2x input, and cache reads at 0.1x input where a model's line gives no read price; `python/claude-api/README.md` gives Claude Haiku 4.5.
+- Source: Anthropic's pricing page and release notes, https://platform.claude.com/docs/en/release-notes/overview, which carry price changes the bundled claude-api skill lags. 5-minute cache writes are 1.25x input and 1-hour cache writes 2x input.
 - A request is the entries of one message id. Its usage is, for each count, the most any of its entries gives, where an entry gives its top-level counts, or the sum over its `iterations` where that sum is larger.
 """
 
@@ -39,7 +39,7 @@ PRICES: dict[str, Usage] = {
     "claude-fable-5-1": price(10, 50, 0.25),
     "claude-opus-5-5": price(4, 20, 0.20),
     "claude-opus-5": price(5, 25, 0.50),
-    "claude-sonnet-5-5": price(2, 10, 0.20),
+    "claude-sonnet-5-5": price(2, 10, 0.10),
     "claude-haiku-4-5-20251001": price(1, 5, 0.10),
 }
 
@@ -91,10 +91,12 @@ def unpriced(usage: dict[str, Any]) -> str | None:
     return None
 
 
-def run_cost(entries: list[dict[str, Any]], undecided: list[str]) -> float | None:
+def run_cost(entries: list[dict[str, Any]], undecided: list[str],
+             at: str | None = None) -> float | None:
     """The token cost in dollars of the requests the assistant entries give,
-    or None where a request that used tokens has no price, with an
-    `undecided` line for it."""
+    each at the prices of the model that made it, or of the model `at` where
+    one is given, or None where a request that used tokens has no price,
+    with an `undecided` line for it."""
     requests: dict[str, tuple[str, Usage]] = {}
     known = True
     for entry in entries:
@@ -106,11 +108,12 @@ def run_cost(entries: list[dict[str, Any]], undecided: list[str]) -> float | Non
         if not got.total():
             continue
         model = message.get("model")
+        priced = model if at is None else at
         ident = message.get("id")
         field = unpriced(usage)
-        if model not in PRICES or ident is None or field is not None:
-            reason = (mctx("no price for model {model}").format(model=model)
-                      if model not in PRICES
+        if priced not in PRICES or ident is None or field is not None:
+            reason = (mctx("no price for model {model}").format(model=priced)
+                      if priced not in PRICES
                       else mctx("no message id") if ident is None
                       else mctx("no price for {field} of model {model}").format(
                           field=field, model=model))
@@ -118,7 +121,7 @@ def run_cost(entries: list[dict[str, Any]], undecided: list[str]) -> float | Non
             known = False
             continue
         before = requests.get(ident)
-        requests[ident] = (model, got if before is None else before[1].most(got))
+        requests[ident] = (priced, got if before is None else before[1].most(got))
     if not known:
         return None
     return sum(u.cost(PRICES[m]) for m, u in requests.values())

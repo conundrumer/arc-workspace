@@ -36,6 +36,7 @@ from run_profile import (COMMAND_WIDTH, Run, clock, dollars, minutes,  # noqa: E
 from run_reads import (BACKGROUND_TASK, agent_type, blocks, run_type,  # noqa: E402
                        result_text)
 from ticketing.times import utc_stamp  # noqa: E402
+from token_prices import PRICES  # noqa: E402
 from transcripts import (Entry, Refused, agent_id, agent_transcripts,  # noqa: E402
                          bare_id, chain, epoch, find, is_subagent, read_entries,
                          transcripts)
@@ -49,11 +50,18 @@ operator's previous call of it."""
 ISO_TIME = mctx("an ISO date or datetime, in UTC where it gives no offset")
 """The times `utc_time` reads."""
 
+REPRICED = mctx("each token cost is of the same requests at the same token "
+                "counts, priced at {model}; it is not what these runs would "
+                "cost had they run on {model}, since runs on another model "
+                "make their own requests, with their own output lengths and "
+                "their own tokenizer's counts")
+"""What a token cost repriced at `--price-at MODEL` is."""
+
 HELP = mctx("""
     - Usage:
         ```
-        uv run python scripts/profile_runs.py ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--runs] [--since DATE]
-        uv run python scripts/profile_runs.py --under ID [--pct P] [--top N] [--since DATE]
+        uv run python scripts/profile_runs.py ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--runs] [--since DATE] [--price-at MODEL]
+        uv run python scripts/profile_runs.py --under ID [--pct P] [--top N] [--since DATE] [--price-at MODEL]
         uv run python scripts/profile_runs.py --running ID [--calls-since TIME]
         uv run python scripts/profile_runs.py --pending ID
         uv run python scripts/profile_runs.py --open ID
@@ -71,6 +79,7 @@ HELP = mctx("""
     - A poll is a Bash call that runs `sleep` and none of the known commands, in a loop or not. A command the harness moves to the background on its timeout counts under its own label up to then, and under `bg LABEL` after.
     - A command the run backgrounded runs until a notification of it in the run's transcripts, other than in an assistant entry. Where none follows, it runs while a process holds open the output file its result names, and where no process holds that file, it ended when the file was last written. Where its result names no file, or that file is gone, whether it runs is unknown, and it counts as running. Where `lsof` writes to stderr when it lists the files open in that file's directory, which files a process holds open is unknown, and the ID is refused.
     - A run's token cost is the list price of the tokens its requests used, from the price table of `token_prices`, each request priced once at the full usage its entries give. A run with a request whose model or usage the table does not price has an unknown cost, printed `?`, and an `undecided` line on stderr names the model or the field.
+    - `--price-at MODEL` prices each request at the prices the table gives MODEL, in place of those of the model that made it, and a MODEL the table does not price is refused. Where it is given, the tool first prints `price at MODEL:` and that {repriced}.
     - One run, and each run `--runs` prints, prints its wall time and its token cost.
     - One run prints its parts and its labels by time, with each label's share of the wall time and its calls, and for backgrounded work the time it ran from launch to its notification, or for a command that ended with none, to its end.
     - One run of a subagent, completed or not, also prints each message from its parent, as `--running` defines those messages: the time it arrived, its active time, which is the run's wall time less `idle` over that message's period, and the budget in force for it, which is the budget `--running` gives from the messages up to it. A message whose active time is past its budget is marked `past budget`. A message with no budget in force prints none, and a run with an unknown message prints no active time and no budget.
@@ -116,7 +125,8 @@ HELP = mctx("""
     """).format(factor=BUDGET_FACTOR, median_runs=MEDIAN_RUNS,
                 low_wait_pct=LOW_WAIT_PCT, recent=RECENT_CALLS,
                 width=COMMAND_WIDTH, bound=f"{CONTEXT_BOUND:,}",
-                iso_time=ISO_TIME, operator=OPERATOR)
+                iso_time=ISO_TIME, operator=OPERATOR,
+                repriced=REPRICED.format(model="MODEL"))
 
 
 def utc_time(text: str) -> float:
@@ -268,6 +278,11 @@ def main(argv: list[str]) -> int:
                               "none per type and all for one run"))
     ap.add_argument("--runs", action="store_true",
                     help=mctx("also print one line per run"))
+    ap.add_argument("--price-at", choices=sorted(PRICES), metavar="MODEL",
+                    help=mctx("price each request at MODEL, one of {models}: "
+                              "{repriced}").format(
+                                  models=", ".join(sorted(PRICES)),
+                                  repriced=REPRICED.format(model="MODEL")))
     ap.add_argument("--since", type=utc_time, metavar="DATE",
                     help=mctx("start of the window of runs each type's "
                               "budget is taken over, in place of the type's "
@@ -286,10 +301,17 @@ def main(argv: list[str]) -> int:
     if args.under and args.type is not None:
         print(mctx("refused: `--under` takes no `--type`"), file=sys.stderr)
         return 2
+    if args.price_at is not None and not (args.ids or args.under):
+        print(mctx("refused: `--price-at` goes with IDs or `--under ID`"),
+              file=sys.stderr)
+        return 2
     if args.calls_since is not None and not args.running:
         print(mctx("refused: `--calls-since` goes with `--running ID` alone"),
               file=sys.stderr)
         return 2
+    if args.price_at is not None:
+        print(mctx("price at {model}: {repriced}").format(
+            model=args.price_at, repriced=REPRICED.format(model=args.price_at)))
     try:
         if args.pending:
             for agent in pending_agents(find(args.pending), undecided):
@@ -308,7 +330,7 @@ def main(argv: list[str]) -> int:
                      if args.under else
                      list(dict.fromkeys(p for ident in args.ids
                                         for p in transcripts(ident))))
-            runs = [profile(p, undecided) for p in paths
+            runs = [profile(p, undecided, args.price_at) for p in paths
                     if not types or run_type(p)[0] in types]
             if args.under:
                 runs.sort(key=lambda r: (r.start is None, r.start or 0.0))
