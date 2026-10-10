@@ -294,7 +294,9 @@ def write_lib_output(renderings: Sequence[Rendering] = (),
 # CLI: `prompts/codex.md` rendered as the project's AGENTS.md, and the user's
 # own style, `docs/codex-style.md`, as the developer instructions in the
 # project config. Neither is tracked, and the style file is the user's to
-# keep. CLAUDE.md is the Claude session's router and does not render here.
+# keep, so it stands in the main tree alone, and the config of each linked
+# worktree takes it from there. CLAUDE.md is the Claude session's router and
+# does not render here.
 CODEX_STYLE = Path("docs") / "codex-style.md"
 CODEX_CONFIG = Path(".codex") / "config.toml"
 # The project-doc budget; the default truncates the handbook silently.
@@ -338,8 +340,8 @@ extends = ":workspace"
 
 def codex_renderings(root: Path = REPO_ROOT, lib: Path = LIB_SRC,
                      doc: Path = CODEX_DOC) -> list[Rendering]:
-    """The codex files under `root`."""
-    style_path = root / CODEX_STYLE
+    """The codex files under `root`, a worktree of the repository."""
+    style_path = checkout.main_worktree(root) / CODEX_STYLE
     style = style_path.read_text() if style_path.exists() else None
     return [Rendering(root / "AGENTS.md", entry_text(doc, lib)),
             Rendering(root / CODEX_CONFIG, codex_config(style))]
