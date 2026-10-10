@@ -354,14 +354,26 @@ def work() -> Path:
     return _shared(ROOT) / "work"
 
 
+def claude_of(tree: Path) -> Path:
+    """`.claude/` under `tree`: the agents, skills and workflows Claude
+    Code reads."""
+    return tree / ".claude"
+
+
 def claude() -> Path:
-    """`.claude/`: the agents, skills and workflows Claude Code reads."""
-    return ROOT / ".claude"
+    """`claude_of` the checkout's root."""
+    return claude_of(ROOT)
+
+
+def agents_of(tree: Path) -> Path:
+    """`.claude/agents/` under `tree`, where the agent definitions are
+    written."""
+    return claude_of(tree) / "agents"
 
 
 def agents() -> Path:
-    """`.claude/agents/`, where the agent definitions are written."""
-    return claude() / "agents"
+    """`agents_of` the checkout's root."""
+    return agents_of(ROOT)
 
 
 def workflows() -> Path:

@@ -13,7 +13,6 @@ SECTIONS = {Kind.CHANGE: ("Intent", "Motivation", "Scope", "Grounds"),
 
 
 def kind_sections(kind: Kind) -> tuple[str, ...]:
-    """The sections of a `kind` ticket, in order."""
     return SECTIONS.get(kind, DEFECT_SECTIONS)
 
 

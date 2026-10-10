@@ -120,10 +120,12 @@ def placed(state: State, procedure: Callable[[State], Step | None]
 LOAD_SECONDS = 900
 """How long after the last write of an agent type's rendered definition a
 launch of that type that fails with the type not found is taken as made
-before the harness loaded the type, and is made again (`unloaded`)."""
+before the harness loaded the type, and is made again (`unloaded`), as the
+section `Launching` of `prompts/agents/notes/launching.md` gives."""
 
 RETRY_SECONDS = 60
-"""How long after a launch that `unloaded` gives the launch is made again."""
+"""How long after a launch that `unloaded` gives the launch is made again,
+as the section `Launching` of `prompts/agents/notes/launching.md` gives."""
 
 
 def launch_calls(state: State, step: Launch) -> list[Call]:
@@ -134,7 +136,6 @@ def launch_calls(state: State, step: Launch) -> list[Call]:
 
 
 def failed_last(calls: list[Call]) -> Call | None:
-    """The last of `calls`, where it failed."""
     return calls[-1] if calls and calls[-1].error else None
 
 

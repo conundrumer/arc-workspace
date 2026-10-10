@@ -26,6 +26,7 @@ from transcripts import Refused, entries_back, epoch, find, new_state
 from tree_reads import (claims, code_review, commits, doc_reviews, gate_outputs, main_tree,
                         scratch, worktrees)
 
+from engine.checkout import agents_of
 from handbook.reader_names import ReaderName
 from handbook.readers import reader_calls
 
@@ -102,7 +103,7 @@ def read_state(me: str) -> tuple[State, MonitorState]:
         pass_tickets=passes, stalled=stalled,
         made=made(calls), unread=unread,
         definitions={d.stem: d.stat().st_mtime
-                     for d in sorted((main / ".claude" / "agents").glob("*.md"))},
+                     for d in sorted(agents_of(main).glob("*.md"))},
         branches={w: b for w, b in trees.items() if b is not None})
     state = replace(state, taken_up=taken_up(state))
     given = [ticket_number(n) for n in named(state) if n in tickets]
