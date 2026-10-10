@@ -33,6 +33,8 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 - File each defect as a ticket of kind `refactor`, and each place that poses a question as a ticket of kind `question`, with `commit` as `<domain>`, the hash `git rev-parse --short code-review/<n>` prints as `<subject>`, and `code-reviewer` as `<agent>`.
     - Cite each place as below.
         * inline: notes/code.md#place-tickets
+        - For one idea in two places, the locations include those outside the diff.
+        - For many ideas in one place, write `many ideas in one place` as what is wrong in the module, write under `Impact` each subject it splits into, with the section banners or the classes that hold it, and quote under `Evidence` the module's line count as `wc -l` prints it.
     - Close the ticket of each defect place that stands.
 - Then end your turn with a final reply to the agent that launched you, of at most six lines: the pattern that matches the names of the tickets you left under `tickets/open/`, and the count of tickets under each kind of place.
     * inline: notes/commands.md#report-file

@@ -25,7 +25,6 @@
     - A change in the diff that makes false the premise of any line but its own lines, in a document or in prose in code.
 
 ## place-tickets
-- Cite a place's target as every location of the place. For one idea in two places, the locations include those outside the diff.
+- Cite a place's target as every location of the place.
 - Write under `Impact` what the code does there, and quote each location under `Evidence`.
-    - For many ideas in one place, write `many ideas in one place` as what is wrong in the module, write under `Impact` each subject it splits into, with the section banners or the classes that hold it, and quote under `Evidence` the module's line count as `wc -l` prints it.
 - In the title of a `question` ticket, write the question it poses after the target, in place of what is wrong in it.

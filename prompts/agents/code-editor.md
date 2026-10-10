@@ -20,7 +20,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     - Change no other docstring text that stands before your edit, apart from text that restates the code, which the rules on prose in code below have you cut.
     - The rules on prose in code:
         * inline: ../../src/controlled_markdown/writing.md#prose-in-code
-- Observe and report: say what is there, never what the spec should say. Cite no rule and no docstring in a message to the agent that launched you, and offer no option.
+- Observe and report: say what is there, never what the spec should say, and offer no option.
 - When you start, copy `src/`, `scripts/` and `tests/` into a new directory under your scratch directory, and note its path in `progress.md`. Your diff is the difference between that copy and the tree.
 - In code, a case the spec does not cover becomes an `undecided` finding or a fault, never a default, and you file it as [Tickets](#tickets) gives.
 - Before you write code, search every package for what already computes, names, checks or prints what you need, and use it, or extend the one that nearly fits. Then decide the shape: each idea in one operation, called from every site that needs it, as the `Design` of your change's ticket gives it, where it gives one. Where the code shows a better shape than that `Design`, build that shape, and give in your report the departure with its reason.
