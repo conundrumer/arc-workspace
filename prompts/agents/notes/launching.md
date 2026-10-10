@@ -6,6 +6,7 @@
 - Give an agent a brief in the form [Briefs](prompts/agents/notes/launching.md#briefs) gives for its work, where it gives one, and restate neither a docstring of the code nor the agent's definition.
 - Where a brief gives a scratch directory, give a new directory under the session's scratchpad directory, `/private/tmp/claude-<uid>/<working directory>/<session id>/scratchpad`, where `<uid>` is what `id -u` prints, `<working directory>` is the directory the session started in with each `/` as `-`, and `<session id>` is `$CLAUDE_CODE_SESSION_ID`.
 - In a brief or a `change` ticket that gives the items or the Intent of an edit, give the meaning to state, the case that shows the need, and the span the edit may change, and no wording.
+    - Give each item as a requirement: a statement of what holds once the edit is made, that a check or a reading of the result can confirm. Give each way the edit can fail that you foresee as an item that gives what holds in that case, and ask no agent to think a case through.
     - In those items or that Intent, give no account of how each way the edit can fail is met, and no claim on what other lines of the documents or other branches of the code then do, unless the meaning to state, or the decision a `change` ticket gives, depends on it.
 - Before you give another agent a draft `change` ticket that you filed or revised, in your reply or otherwise, cut from each of its sections each claim the draft's outcome does not rest on, and give each claim left no more precision than that outcome rests on. Then check each claim left about the current state against that state.
     * inline: #draft-outcome
@@ -49,7 +50,7 @@
 - A ticket reviewer's brief gives the number of each ticket under `tickets/draft/` to review, and the agent id of the agent that launches it, where that is not the coordinator.
 
 ### A ticket analyst's brief
-- A ticket analyst's brief gives the tickets under `tickets/open/` to settle, a draft `change` ticket whose log holds findings or a suggestion, or the findings an editor left on a review of its change and the items an editor left unfinished for a decision, with the editor's reasons, or a step that an operator's command cannot decide, which the operator holds.
+- A ticket analyst's brief gives the tickets under `tickets/open/` to settle, a draft `change` ticket whose log holds findings or a suggestion, or the findings an editor left on a review of its change and the items an editor left unfinished for a decision, with the editor's reasons, or the latest report of each editor of a change, whose items it checks, or a step that an operator's command cannot decide, which the operator holds.
     - With each of those findings and items, it gives the agent id of the change's editor, the change's worktree, and the number of the change's ticket, or, where the change has none, its intent and what is already settled about it.
     - With a draft whose next revision opens at its operator's cap of ticket reviews, it gives that this revision is the last: the draft then opens with no further ticket review, and the change's own review checks what the change writes.
 - With the tickets a solver pass filed, it gives the review of that pass's transcript.
@@ -88,6 +89,9 @@
 ### Writing a solver work brief
 - Read no solver to write a brief for solver work.
 - Solver work other than a pass is a change, which an editor carries as it carries any other, whether or not a `change` ticket gives it. Where one does, its brief has the form [A change's brief](#a-changes-brief) gives.
+
+## An editor's report on a change
+- An editor's report on a change gives, for each item of its brief, and of each request a later message adds, that it gives as done, what shows it holds: a command it ran with the output that shows it, the line of a rendered context that states it, the check its ticket's Scope places after the merge where only that check can show it, or, where none of these can, the reason it holds.
 
 ## Passes on a task
 - Before you launch a pass on a task whose claim you do not hold, claim the task: run `mkdir -p work/task/<task_id> && (set -C; echo "$CLAUDE_CODE_SESSION_ID" > work/task/<task_id>/claim)` in the main worktree. Where it fails, launch no pass on that task.

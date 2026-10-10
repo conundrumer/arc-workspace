@@ -15,13 +15,18 @@ What the editors' and the doc reviewer's replies give is read by the fixed
 forms of `reports`. An editor whose latest reply says its budget is passed
 is sent a message to go on with the work that reply leaves, with the
 budget the operators last gave it, and that reply goes to no ticket
-analyst. Any other report of an editor that has not finished, a
-`Review` section that gives a place as standing, an open `question` ticket
-filed on the change, and the accepted gate outputs the change writes go to
-one ticket analyst, which judges them. That analyst sends an editor its
-judgments and decisions only where one of them gives that editor an edit,
-or where the change has a doc editor, and otherwise sends that editor no
-message. A report that analyst was launched after leaves nothing more,
+analyst. Once each editor of a change has reported, the latest report of
+each editor that has reported since the last such analyst was launched, an
+open `question` ticket filed on the change, and the accepted gate outputs
+the change writes go to one ticket analyst, for a change with a doc editor
+and a change without one. That analyst checks each item of each such
+editor's part against that editor's report and the worktree, and sends
+each item not shown to hold to that editor as a kept finding, and it
+judges the rest. It sends an editor its judgments and decisions only where
+one of them gives that editor an edit, or where the change has a doc
+editor, and otherwise sends that editor no message. So the change merges
+only once such an analyst was launched after each editor's last report.
+A report that analyst was launched after leaves nothing more,
 unless the part of that analyst's reply for the coordinator gives a
 `decision:` or an `unfinished:` item and no editor has reported since its
 launch: then the change is held on those items, in place of its merge.
@@ -56,8 +61,7 @@ from typing import Literal
 from controlled_markdown import mctx
 from operations import briefs, merging
 from operations.directives import Decision, Directive, decided, held_on, named, numbers
-from operations.reports import (NO_FINDING, OPEN_LABELS, Label, budget_passed, finished, items_of,
-                                no_finding, standing)
+from operations.reports import NO_FINDING, OPEN_LABELS, Label, budget_passed, items_of, no_finding
 from operations.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
 from operations.state import Agent, State, Ticket
 from operations.handled import answered, repeated, sends_to, sent
@@ -283,8 +287,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     if any(a.pending for a in analysts):
         return None
     judged = max((a.launched for a in analysts), default=0.0)
-    left = [a for a in latest if not finished(a) or standing(a)]
-    needing = [a for a in left if (r := a.last_report) is not None and r.time > judged]
+    needing = [a for a in latest if (r := a.last_report) is not None and r.time > judged]
     questions = [q for q in state.tickets.values() if q.kind is Kind.QUESTION
                  and q.domain is Domain.CHANGE and q.subject == t.number
                  and q.status in (Status.OPEN, Status.ASSIGNED)]
@@ -295,7 +298,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     on_user = False
     if analysts and reported <= judged and (hold := left_hold(analysts[-1], t.number)):
         on_user = items_of(analysts[-1], [Label.DECISION]) is not None
-        needing, gate = left, outputs
+        needing, gate = latest, outputs
     elif not needing and not questions and not gate:
         return False
     elif questions and not needing and not gate and judged > max(q.filed for q in questions):

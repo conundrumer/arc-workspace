@@ -212,11 +212,16 @@ def revise_lines(numbers: list[str], last: list[str]) -> list[str]:
 
 def findings(number: str, worktree: Path, reports: list[tuple[str, str]],
              questions: list[str], gate: list[str], editors: list[str], operator: str) -> str:
-    """The brief of a ticket analyst on what a change's editors leave, by
-    each editor's agent id and latest report, and on the `question`
-    tickets filed on the change, with the agent ids of its editors."""
+    """The brief of a ticket analyst that checks the items of a change's
+    editors and judges what they leave, by each editor's agent id and
+    latest report, and on the `question` tickets filed on the change, with
+    the agent ids of its editors."""
     lines = [read_ticket(number), mctx("Its worktree: {worktree}.").format(worktree=worktree)]
     for editor_id, report in reports:
+        lines.append(mctx(
+            "Check each item of the part of editor {editor} against its report below and the "
+            "worktree, and send each item that they do not show to hold to that editor as a "
+            "kept finding.").format(editor=editor_id))
         lines.append(mctx(
             "Judge each finding, and decide each finding and each item left for a decision, "
             "that the report of its editor {editor} below leaves, with that editor's reasons, "

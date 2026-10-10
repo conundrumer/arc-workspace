@@ -1,8 +1,7 @@
 """The fixed forms of the replies of the agents the operator launches that
 the command reads, each written in the document of the agent that writes
 it, and the reads of them. A reply in no such form is read as the form's
-absence: an editor not finished, a review that does not pass, no place standing
-and no module split."""
+absence: a review that does not pass and no module split."""
 
 import re
 from collections.abc import Iterable
@@ -10,11 +9,6 @@ from enum import StrEnum
 
 from operations.roles import Role
 from operations.state import Agent
-
-DONE = "done"
-"""The opening, in any case, of the report of an editor that leaves nothing
-for a decision. A report that opens with `blocked` leaves its unfinished
-items for one."""
 
 BUDGET_PASSED = "budget passed"
 """The opening, in any case, of the reply of a code editor that ended its
@@ -24,14 +18,9 @@ NO_FINDING = "no finding stands"
 """The opening, in any case, of a doc reviewer's reply where no finding
 stands and none is held back."""
 
-REVIEW = "## Review"
-
 TICKETS_FILED = "## Tickets filed"
 """The heading of a solver pass's report over the numbers of the tickets
 the pass filed."""
-STANDS = re.compile(r"^\s*[-*]\s+stands:", re.MULTILINE)
-"""An item of a code editor's `Review` section that gives a place as
-standing."""
 
 SPLIT = re.compile(r"^\s*[-*]\s+split: `(?P<path>[^`]+)`(?:; left unsplit: (?P<part>.+))?$",
                    re.MULTILINE)
@@ -79,10 +68,6 @@ def opens(a: Agent, opening: str) -> bool:
     return r is not None and r.text.lstrip().lower().startswith(opening)
 
 
-def finished(a: Agent) -> bool:
-    return opens(a, DONE)
-
-
 def budget_passed(a: Agent) -> bool:
     return opens(a, BUDGET_PASSED)
 
@@ -90,14 +75,6 @@ def budget_passed(a: Agent) -> bool:
 def no_finding(a: Agent) -> bool:
     return opens(a, NO_FINDING)
 
-
-def standing(a: Agent) -> bool:
-    """Whether the `Review` section of a code editor's latest report gives
-    a place as standing."""
-    r = a.last_report
-    if a.role is not Role.CODE_EDITOR or r is None or REVIEW not in r.text:
-        return False
-    return STANDS.search(r.text.split(REVIEW, 1)[1]) is not None
 
 
 def splits(a: Agent) -> dict[str, str | None]:

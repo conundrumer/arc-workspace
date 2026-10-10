@@ -37,7 +37,7 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage, TaskStop
         * comment: With the line without its list in its context, ticket reviewer a283a71c0cf18c9ba passed two such claims of draft 2-527, on the lines of `CLAUDE.md` and `prompts/agents/notes/coordinator.md` that mention launching and on the hooks of `.claude/settings.json`, whose disproof its own calls had printed: the Intent of ticket 2-530.
     - The operator can carry out each instruction under its documents: each agent, tool, permission and name the instruction relies on exists.
     - A rule's stated scope covers the readers the draft means it for, and no others.
-    - An instruction that adds a design says how the design can fail, or tells its editor to think that through.
+    - Each item of the Intent is a requirement, as [Launching](prompts/agents/notes/launching.md#launching) gives it.
     - No case that the readers of a line that sets a design meet, in the current state or among the cases the draft gives, makes that line wrong.
         * comment: Ticket reviewer a283a71c0cf18c9ba passed the design line "the one its session or its launch started at" of draft 2-527, which a compaction makes wrong, as a line the check on current-state claims does not reach and the draft's open list of failure cases covers: the Intent of ticket 2-530.
 - A finding quotes the draft's line and gives what you checked it against, with what that showed.
