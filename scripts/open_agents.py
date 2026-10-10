@@ -12,7 +12,8 @@ from agent_turns import has_ended, is_turn_entry, last_time, turn_after
 from controlled_markdown import mctx
 from command_labels import AGENT_TOOLS
 from run_backgrounds import background_ends, backgrounds
-from run_profile import Run, Span, profile
+from run_profiler import profile
+from run_records import Run, Span
 from run_reads import (BACKGROUND_TASK, LaunchStatus, blocks, is_prompt, parent_label,
                        run_entries, tool_calls)
 from transcripts import agent_id, is_subagent

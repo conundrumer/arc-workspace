@@ -19,7 +19,7 @@ from tests.conftest import script
 
 profile_runs = script("profile_runs")
 transcripts = sys.modules["transcripts"]
-Part = sys.modules["run_profile"].Part
+Part = sys.modules["run_records"].Part
 
 
 def write_jsonl(path: Path, entries: list[dict]) -> None:

@@ -133,6 +133,8 @@ def stalled_at(listed: Listed, listing: list[Listed]) -> float | None:
             or any(x.parent == aid for x in listing)):
         return None
     end = listed.end if listed.end is not None else activity(listed)
+    if any(t > end for t in listed.run.ended):
+        return None
     answered = [t for p in parent_transcripts(listed.path)
                 if (t := last_time(p, lambda e: e.get("type") == "assistant")) is not None]
     return end if any(t > end for t in answered) else None

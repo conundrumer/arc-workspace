@@ -30,7 +30,8 @@ from pathlib import Path
 
 from engine import checkout
 from noted_reads import recording
-from run_profile import Run, profile
+from run_profiler import profile
+from run_records import Run
 from run_reads import agent_type, meta_path, run_sessions, session_agents
 from transcripts import agent_id, agent_transcripts, chain, stat_of, state_cache
 
@@ -146,7 +147,7 @@ class RunStore:
 
     def profile(self, path: Path, undecided: list[str]) -> Run:
         """The profile of the run whose last transcript is at `path`, with
-        the `undecided` lines it appends (`run_profile.profile`)."""
+        the `undecided` lines it appends (`run_profiler.profile`)."""
         agent = agent_id(path)
         held = self.held(Kind.PROFILE, agent)
         if held is not None:

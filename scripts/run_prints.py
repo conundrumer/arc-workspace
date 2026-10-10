@@ -7,7 +7,8 @@ from budgets import budgets_in_force, of_budget
 from context_bound_hook import CONTEXT_BOUND, bounded, past_bound
 from controlled_markdown import mctx
 from open_agents import Listed, parent_reports
-from run_profile import Run, Span, clock, minutes, one_line
+from run_profile import clock, minutes, one_line
+from run_records import Run, Span
 from run_reads import MAIN
 from ticketing.times import utc_stamp
 

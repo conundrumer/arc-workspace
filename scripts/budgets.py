@@ -16,8 +16,8 @@ from handbook.agents import agent_names, agent_prompt_text, agent_sources
 from operations import briefs
 from operations.reports import BUDGET_PASSED
 from operations.roles import GENERAL, GENERAL_ROLES, Role, described
-from run_profile import (Message, Part, Run, clock, minutes,
-                         one_line, percentile)
+from run_profile import clock, minutes, one_line, percentile
+from run_records import Message, Part, Run
 from run_reads import MAIN, agent_type, parent_id
 from transcripts import is_subagent
 

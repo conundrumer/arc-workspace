@@ -33,8 +33,10 @@ from context_bound_hook import CONTEXT_BOUND, OPERATOR  # noqa: E402
 from open_agents import Listed, hung_time, running_agents, work_open  # noqa: E402
 from run_prints import (RECENT_CALLS, print_messages,  # noqa: E402
                         print_report, print_running)
-from run_profile import (COMMAND_WIDTH, Run, clock, dollars, minutes,  # noqa: E402
-                         part_split, print_groups, print_types, profile)
+from run_profile import (COMMAND_WIDTH, clock, dollars, minutes,  # noqa: E402
+                         part_split, print_groups, print_types)
+from run_profiler import profile  # noqa: E402
+from run_records import Run  # noqa: E402
 from run_reads import (BACKGROUND_TASK, agent_type, bash_spans, blocks, refused_at,  # noqa: E402
                        result_text, run_entries, run_type)
 from run_store import RunStore  # noqa: E402
