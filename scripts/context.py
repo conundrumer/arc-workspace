@@ -40,7 +40,7 @@ HELP = mctx("""
     - The items below say what each form does.
     - With no argument, the command prints the handbook, the passes a session runs, and the lib. That form and `--write` also write the lib's interface files: the `.md` beside each lib source, which the handbook's lib index points to.
     - `--write` first checks the lib's sources, prints what the checks find and exits 1 when they find anything. Otherwise it writes the files below, which git ignores. A session reads them only when they were written before it started.
-        - One agent under `.claude/agents/` per document under `prompts/agents/`, with the context its document composes as its system prompt, and `.claude/agents/.manifest`, which lists each generated file written in the checkout.
+        - One agent under `.claude/agents/` per document that stands directly in `prompts/agents/`, in no subdirectory, and whose text opens with front matter, with the context its document composes as its system prompt, and `.claude/agents/.manifest`, which lists each generated file written in the checkout.
         - `.claude/analyze-next.md`, the steps the `analyze` agent reads after it writes the concept.
         - `.claude/coordinator.md`, the document of the coordinator, the session the user talks with, rendered from `prompts/agents/notes/coordinator.md`.
         - The files a codex session on the repo reads: `AGENTS.md`, [Codex on arc-workspace](prompts/codex.md) rendered, and `.codex/config.toml`, with the main tree's `docs/codex-style.md` as its developer instructions.
