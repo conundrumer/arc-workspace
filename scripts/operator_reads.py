@@ -284,17 +284,19 @@ def reply_to(a: Agent, since: float) -> Report | None:
     return reply_since(a.agent_id, since) if a.agent_id and a.notifies else None
 
 
-def stalled_reports(agents: list[Agent], stalls: list[str]) -> dict[str, Report]:
+def stalled_reports(agents: list[Agent], coordinators: dict[str, float],
+                    stalls: list[str]) -> dict[str, Report]:
     """The final reply in the transcript of each agent of `stalls`, the
     agents whose `stall` reading fired (`operations.monitor`), that is
-    pending, given after its launch."""
+    pending, or that the coordinator launched, by `coordinators`, their
+    launch times, given after its launch."""
     out: dict[str, Report] = {}
-    pending = {a.agent_id: a for a in agents if a.pending and a.agent_id}
+    launched = {a.agent_id: a.launched for a in agents if a.pending and a.agent_id}
     for agent in stalls:
-        a = pending.get(agent)
-        if a is None or agent in out:
+        since = launched[agent] if agent in launched else coordinators.get(agent)
+        if since is None or agent in out:
             continue
-        r = reply_since(agent, a.launched)
+        r = reply_since(agent, since)
         if r is not None:
             out[agent] = r
     return out

@@ -25,7 +25,8 @@ undecided. Every other alert and message gives a step only to the
 operator `me` where it reached `me`.
 
 An agent of `State.stalled`, whose final reply the operator took as its
-report on its `stall` reading (`monitor`), is recorded in one `bug` ticket
+report on its `stall` reading (`monitor`), or sends the coordinator once
+where the coordinator launched it, is recorded in one `bug` ticket
 of that kind, which records that its report reached no operator (`stalls`):
 the first such agent's step files it, and each further one's writes a line
 in it while it stands outside `tickets/closed/`."""
@@ -37,6 +38,7 @@ from enum import Enum
 
 from controlled_markdown import mctx
 from operations import briefs
+from operations.constants import COORDINATOR
 from operations.roles import AGENT_ID
 from operations.state import Agent, Message, Report, State, Ticket
 from operations.handled import ask_again, repeated
@@ -173,23 +175,23 @@ def kind_tickets(state: State, kind: AlertKind) -> list[Ticket]:
                   key=lambda t: t.order)
 
 
-def handled(tickets: list[Ticket], agent: str, a: Agent) -> bool:
+def handled(tickets: list[Ticket], agent: str, launched: float) -> bool:
     """Whether an operator filed one of `tickets` on `agent`, or wrote its
-    line in one, after `a`, its launch."""
-    return any((t.domain is Domain.AGENT and t.subject == agent and t.filed >= a.launched)
-               or any(ln.agent == AGENT and ln.time >= a.launched
+    line in one, after `launched`, the time of its launch."""
+    return any((t.domain is Domain.AGENT and t.subject == agent and t.filed >= launched)
+               or any(ln.agent == AGENT and ln.time >= launched
                       and ln.note.startswith(instance(agent)) for ln in t.log)
                for t in tickets)
 
 
-def ticket_step(state: State, kind: AlertKind, agent: str, a: Agent,
+def ticket_step(state: State, kind: AlertKind, agent: str, launched: float,
                 reply: Report) -> Step | None:
-    """The step on `agent`, an agent of `kind` of launch `a` whose final
-    reply in its transcript is `reply`: none where `handled`, the line of `a` in the
+    """The step on `agent`, an agent of `kind` launched at `launched` whose final
+    reply in its transcript is `reply`: none where `handled`, the line of `agent` in the
     first of that kind's tickets outside `tickets/closed/`, and otherwise
     the command that files that kind's ticket."""
     tickets = kind_tickets(state, kind)
-    if handled(tickets, agent, a):
+    if handled(tickets, agent, launched):
         return None
     time = utc_stamp(reply.time)
     standing = [t for t in tickets if t.status is not Status.CLOSED]
@@ -211,10 +213,21 @@ def ticket_step(state: State, kind: AlertKind, agent: str, a: Agent,
 
 
 def stalls(state: State) -> Step | None:
-    """The first step `ticket_step` gives on an agent of `State.stalled`."""
+    """The first step on an agent of `State.stalled`: for an agent no
+    operator launched, which the coordinator launched, the message that
+    gives the coordinator its final reply, once after that reply, and then
+    for each, the step `ticket_step` gives, from its launch, or for an
+    agent the coordinator launched, from that reply."""
     for agent, reply in sorted(state.stalled.items()):
-        if (a := latest(state, agent)) is not None and (
-                s := ticket_step(state, AlertKind.STALL, agent, a, reply)) is not None:
+        a = latest(state, agent)
+        if a is not None:
+            since = a.launched
+        else:
+            since = reply.time
+            sent = Send(COORDINATOR, reply.text, since)
+            if not repeated(sent, state):
+                return sent
+        if (s := ticket_step(state, AlertKind.STALL, agent, since, reply)) is not None:
             return s
     return None
 

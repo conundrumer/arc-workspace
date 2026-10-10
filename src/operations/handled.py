@@ -14,7 +14,7 @@ from controlled_markdown import form
 from operations import briefs
 from operations.command_words import is_call, is_next, simple_commands
 from operations.constants import COORDINATOR
-from operations.printing import KEY_LINE, bash_text, send_text, unfenced
+from operations.printing import KEY_LINE, bash_text, opening, send_opening, unfenced
 from operations.roles import Purpose
 from operations.state import Agent, Call, Made, Printed, State
 from operations.steps import STEP_KEY, UNDECIDED, Bash, Send, Step, Undecided, decision_key, key
@@ -148,20 +148,13 @@ def only_command(command: str, agent: str) -> bool:
 PRINTED_KEY = form(KEY_LINE, {"key": f"(?P<key>{STEP_KEY.pattern})", "command": "[^\n]*"}) + "\n"
 
 
-def opening(text: str, last: str, holes: dict[str, str]) -> str:
-    """The pattern of the printed `text` up to its hole `last`, with each
-    hole of `holes` before it matched by its pattern."""
-    return form(text[:text.index("{" + last + "}")], holes)
-
-
 @cache
 def printed_opening() -> re.Pattern[str]:
     """The opening of the text `next` prints for a message or a Bash call
     in the foreground, from its key line, where the result holds it, up to
     the message or the command."""
-    send = opening(send_text("{to}", "{message}"), "message", {"to": r"(?P<to>[^\n]*)"})
     bash = opening(bash_text("{command}"), "command", {})
-    return re.compile(f"^(?:{PRINTED_KEY})?(?:{send}|{bash})", re.MULTILINE)
+    return re.compile(f"^(?:{PRINTED_KEY})?(?:{send_opening()}|{bash})", re.MULTILINE)
 
 
 def made(calls: Iterable[Call]) -> tuple[Made, ...]:

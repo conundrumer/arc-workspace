@@ -42,9 +42,10 @@ def differing(printed: dict[str, str], inp: dict[str, Any]) -> list[tuple[str, s
     return out
 
 
-def last_next(entries: Iterable[dict[str, Any]], agent: str) -> str | None:
-    """The result of the last call of `next` for the operator `agent` among
-    `entries`, read last first, or None where none has a result."""
+def last_next_call(entries: Iterable[dict[str, Any]], agent: str) -> tuple[str, str] | None:
+    """The id and the result of the last call of `next` for the operator
+    `agent` among `entries`, read last first, or None where none has a
+    result."""
     from operations.command_words import is_next
     from run_reads import blocks, tool_results
 
@@ -57,8 +58,27 @@ def last_next(entries: Iterable[dict[str, Any]], agent: str) -> str | None:
                 command = str((b.get("input") or {}).get("command", ""))
                 if (b.get("name") == "Bash" and is_next(command, agent)
                         and b.get("id", "") in results):
-                    return results[b["id"]]
+                    return b["id"], results[b["id"]]
     return None
+
+
+def operator_next(hook: dict[str, Any], name: str) -> tuple[str, tuple[str, str] | None] | None:
+    """The agent id of the caller of `hook` where it is an operator, with
+    the id and the result of its last call of `next` (`last_next_call`),
+    or None where it is no operator, or where its agent type is unknown,
+    which the hook `name` says on stderr."""
+    from run_reads import UNKNOWN_TYPE, agent_type, caller_id, caller_transcript
+    from transcripts import entries_back
+
+    path = caller_transcript(hook)
+    kind = agent_type(path)
+    if kind is None:
+        print(f"{name}: allowed: {UNKNOWN_TYPE.format(path=path)}", file=sys.stderr)
+        return None
+    agent = caller_id(hook)
+    if kind != OPERATOR or agent is None:
+        return None
+    return agent, last_next_call(entries_back(path), agent)
 
 
 def no_launch_reason(command: str) -> str:
@@ -90,8 +110,6 @@ def check(hook: dict[str, Any]) -> str | None:
     None otherwise."""
     from operations.command_words import next_command
     from operations.printing import printed_launch
-    from run_reads import UNKNOWN_TYPE, agent_type, caller_id, caller_transcript
-    from transcripts import entries_back
 
     tool, inp = hook["tool_name"], hook["tool_input"]
     if tool != "Agent":
@@ -99,18 +117,12 @@ def check(hook: dict[str, Any]) -> str | None:
                          f"gives tool `{tool}`")
     if reply_only(inp):
         return None
-    path = caller_transcript(hook)
-    kind = agent_type(path)
-    if kind is None:
-        print(f"{HOOK}: allowed: {UNKNOWN_TYPE.format(path=path)}",
-              file=sys.stderr)
+    caller = operator_next(hook, HOOK)
+    if caller is None:
         return None
-    agent = caller_id(hook)
-    if kind != OPERATOR or agent is None:
-        return None
+    agent, found = caller
     command = next_command(agent)
-    result = last_next(entries_back(path), agent)
-    printed = None if result is None else printed_launch(result)
+    printed = None if found is None else printed_launch(found[1])
     if printed is None:
         return no_launch_reason(command)
     diffs = differing(printed, inp)

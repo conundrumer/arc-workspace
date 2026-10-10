@@ -5,9 +5,10 @@ Each printed prompt or message is fenced (`fenced`): the value to pass is
 the text inside the fence, and its readers read a value given with or
 without the fence lines (`unfenced`)."""
 
+import re
 from pathlib import Path
 
-from controlled_markdown import mctx
+from controlled_markdown import form, mctx
 from operations.command_words import next_command
 from operations.constants import COORDINATOR, FOREGROUND_MS
 from operations.filing import filed_line, split_message
@@ -26,6 +27,10 @@ SendMessage to the agent `to`."""
 
 
 SENT_REPLY = SENT.format(to=COORDINATOR)
+
+
+REPLY_TEXT = f"{FINAL_REPLY}\n{SENT_REPLY}"
+"""The text the command prints for the operator's final reply."""
 
 
 KEY_LINE = mctx("Step key: {key}. After the call below, run `{command}`.")
@@ -75,6 +80,30 @@ def send_text(to: str, message: str) -> str:
 
 def bash_text(command: str) -> str:
     return BASH.format(timeout=FOREGROUND_MS, command=command)
+
+
+def opening(text: str, last: str, holes: dict[str, str]) -> str:
+    """The pattern of the printed `text` up to its hole `last`, with each
+    hole of `holes` before it matched by its pattern."""
+    return form(text[:text.index("{" + last + "}")], holes)
+
+
+def send_opening() -> str:
+    """The pattern of the printed message up to the message, its opening
+    fence line included, with its recipient as the group `to`."""
+    return opening(send_text("{to}", "{message}"), "message", {"to": r"(?P<to>[^\n]*)"})
+
+
+def printed_send(text: str) -> tuple[str, str] | None:
+    """The recipient and the unfenced message of the message that `text`, a
+    result of `next`, prints, or None where it prints none, or one that the
+    result cut before the closing fence of its message. The first opening
+    is read: a message may hold a line that reads as one."""
+    found = re.search(f"^{send_opening()}", text, re.MULTILINE)
+    if found is None:
+        return None
+    message, sep, tail = text[found.end():].rstrip("\n").rpartition("\n")
+    return (found["to"], message) if sep and tail == FENCE else None
 
 
 LAUNCH = mctx("call Agent")
@@ -134,6 +163,6 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
         case Poll():
             return mctx("Run the command again: nothing is ready.")
         case Reply():
-            return f"{FINAL_REPLY}\n{SENT_REPLY}"
+            return REPLY_TEXT
         case Undecided():
             raise ValueError(f"an undecided step is placed before it is printed: {step}")

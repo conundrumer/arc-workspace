@@ -30,6 +30,7 @@ from engine.checkout import agents_of
 from handbook.reader_names import ReaderName
 from handbook.readers import reader_calls
 
+from operations.constants import COORDINATOR
 from operations.directives import named
 from operations.plan import taken_up
 from operations import monitor
@@ -71,9 +72,13 @@ def read_state(me: str) -> tuple[State, MonitorState]:
         read_operator(aid, path, main, undecided, agents, calls, messages, passes, subjects)
     launched = {a.agent_id for a in agents if a.agent_id}
     watching: list[str] = []
-    now_watched = watched(running_agents(find(session), watching), launched, watching,
-                          opened)
-    stalled = stalled_reports(agents, [w.agent_id for w in now_watched if w.stalled is not None])
+    listing = running_agents(find(session), watching)
+    now_watched = watched(listing, launched, watching, opened)
+    watched_ids = {w.agent_id for w in now_watched}
+    coordinators = {aid: x.launch.since for x in listing
+                    if (aid := x.launch.agent) in watched_ids and aid not in launched}
+    stalled = stalled_reports(agents, coordinators,
+                              [w.agent_id for w in now_watched if w.stalled is not None])
     ended: dict[str, Report | None] = {**ended_elsewhere(agents, me), **stalled}
     agents = [ended_with(a, ended[a.agent_id]) if a.pending and a.agent_id in ended else a
               for a in agents]
@@ -166,14 +171,16 @@ def repeated(listed: Listed) -> tuple[float, ...]:
 def watched(listing: list[Listed], launched: set[str],
             undecided: list[str], opened: float) -> list[Watched]:
     """The agents of `listing`, whose work is open, that an operator
-    launched, by `launched`, their agent ids, as read in the state that
-    opened at `opened`."""
+    launched, by `launched`, their agent ids, or that the coordinator, the
+    session's main transcript, launched, as read in the state that opened
+    at `opened`."""
     out: list[Watched] = []
     now = time.time()
     for listed in listing:
         r = listed.run
         aid = listed.launch.agent
-        if aid is None or r.agent_type in UNWATCHED or aid not in launched:
+        if (aid is None or r.agent_type in UNWATCHED
+                or (aid not in launched and listed.parent != COORDINATOR)):
             continue
         budget = next(reversed(budgets_in_force(r, undecided)), None)
         active = active_of(listed, now)

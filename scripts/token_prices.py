@@ -36,12 +36,27 @@ def price(input: float, output: float, cache_read: float) -> Usage:
     return Usage(input, input * 1.25, input * 2, cache_read, output)
 
 
-PRICES: dict[str, Usage] = {
-    "claude-fable-5-1": price(10, 50, 0.25),
-    "claude-opus-5-5": price(4, 20, 0.20),
-    "claude-opus-5": price(5, 25, 0.50),
-    "claude-sonnet-5-5": price(2, 10, 0.10),
-    "claude-haiku-4-5-20251001": price(1, 5, 0.10),
+@dataclass(frozen=True)
+class Price:
+    """A model's prices: `base`, and `over` for a request whose input tokens
+    (`request_input`) are past `above`, where the model gives a second tier."""
+    base: Usage
+    above: float | None = None
+    over: Usage | None = None
+
+    def at(self, request_input: float) -> Usage:
+        if self.above is not None and self.over is not None and request_input > self.above:
+            return self.over
+        return self.base
+
+
+PRICES: dict[str, Price] = {
+    "claude-fable-5-1": Price(price(10, 50, 0.25)),
+    "claude-opus-5-5": Price(price(4, 20, 0.20)),
+    "claude-opus-5": Price(price(5, 25, 0.50)),
+    "claude-sonnet-5-5": Price(price(2, 10, 0.10)),
+    "claude-haiku-5-5": Price(price(0.10, 0.50, 0.01), 100_000, price(0.50, 2.50, 0.05)),
+    "claude-haiku-4-5-20251001": Price(price(1, 5, 0.10)),
 }
 
 
@@ -95,10 +110,11 @@ def unpriced(usage: dict[str, Any]) -> str | None:
 def run_cost(entries: list[dict[str, Any]], undecided: list[str],
              at: str | None = None) -> float | None:
     """The token cost in dollars of the requests the assistant entries give,
-    each at the prices of the model that made it, or of the model `at` where
+    each at the prices of the model that made it, at the tier of its largest
+    `request_input`, or of the model `at` where
     one is given, or None where a request that used tokens has no price,
     with an `undecided` line for it."""
-    requests: dict[str, tuple[str, Usage]] = {}
+    requests: dict[str, tuple[str, Usage, float]] = {}
     known = True
     for entry in entries:
         message = entry.get("message") or {}
@@ -122,10 +138,12 @@ def run_cost(entries: list[dict[str, Any]], undecided: list[str],
             known = False
             continue
         before = requests.get(ident)
-        requests[ident] = (priced, got if before is None else before[1].most(got))
+        size = request_input(usage)
+        requests[ident] = ((priced, got, size) if before is None
+                           else (priced, before[1].most(got), max(before[2], size)))
     if not known:
         return None
-    return sum(u.cost(PRICES[m]) for m, u in requests.values())
+    return sum(u.cost(PRICES[m].at(size)) for m, u, size in requests.values())
 
 
 def span_cost(entries: list[dict[str, Any]], start: float, end: float,
@@ -150,9 +168,10 @@ def span_cost(entries: list[dict[str, Any]], start: float, end: float,
     if model not in PRICES:
         undecided.append(mctx("token cost unknown: no price for model {model}").format(model=model))
         return None
-    growth = max(0.0, request_input(message["usage"]) - request_input(before[-1]["message"]["usage"]))
+    size = request_input(message["usage"])
+    growth = max(0.0, size - request_input(before[-1]["message"]["usage"]))
     later = len({e["message"].get("id") for e in after})
-    return cost + growth * PRICES[model].cache_read / 1e6 * later
+    return cost + growth * PRICES[model].at(size).cache_read / 1e6 * later
 
 
 def requests(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:

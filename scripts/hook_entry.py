@@ -27,8 +27,8 @@ from typing import Any
 type Hook = dict[str, Any]
 
 CHECK_FAILED = "allowed: the check failed"
-"""The failure text of a PreToolUse hook, whose call goes ahead where its
-check fails."""
+"""The failure text of a PreToolUse or a SubagentStop hook, whose call or
+stop goes ahead where its check fails."""
 
 UPDATE_FAILED = "gave no update of the caller's documents"
 """The failure text of a PreToolUse hook whose update fails."""
@@ -50,6 +50,15 @@ def run_part[T](hook: str, failure: str, part: Callable[[], T]) -> T | None:
 
 def run_hook(hook: str, failure: str, act: Callable[[Hook], None]) -> int:
     run_part(hook, failure, lambda: act(json.loads(sys.stdin.read())))
+    return 0
+
+
+def run_subagent_stop(hook: str, check: Callable[[Hook], str | None]) -> int:
+    """Run the SubagentStop hook `hook` on the input on stdin: `check` gives
+    the reason to block the stop, or None to let it pass."""
+    reason = run_part(hook, CHECK_FAILED, lambda: check(json.loads(sys.stdin.read())))
+    if reason is not None:
+        print(json.dumps({"decision": "block", "reason": reason}), flush=True)
     return 0
 
 
