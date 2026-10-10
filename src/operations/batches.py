@@ -5,9 +5,9 @@ one, where the batch merged a change, on the gate's timings and outputs.
 
 A batch is the agents the session's operators launched since the launch
 of the previous batch's profile agent, other than the agents of After a
-batch, with the changes merged since: those an operator's merge call
-merged, as `state.Merge` reads it, and those the coordinator gives as
-merged. The launch of the
+batch and the op-auditors, with the changes merged since: those an
+operator's merge call merged, as `state.Merge` reads it, and those the
+coordinator gives as merged. The launch of the
 profile agent opens the next batch. The ticket analyst on the tickets the
 batch filed is the one `triage` launches on any open ticket."""
 
@@ -26,6 +26,10 @@ from operations.steps import Bash, Launch, Step, Undecided
 OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER})
 """The roles of After a batch, which no batch holds."""
 
+OUTSIDE = OWN | {Role.OP_AUDITOR}
+"""The roles no batch holds. The op-auditors' runs reach the next profile
+through `profile_runs.py --under` alone."""
+
 
 def start(state: State) -> float:
     profiles = state.agents_of(Role.BATCH_PROFILE)
@@ -33,7 +37,7 @@ def start(state: State) -> float:
 
 
 def members(state: State, since: float) -> list[Agent]:
-    return [a for a in state.agents if a.launched > since and a.role not in OWN]
+    return [a for a in state.agents if a.launched > since and a.role not in OUTSIDE]
 
 
 def merged(state: State, since: float) -> bool:
