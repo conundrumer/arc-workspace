@@ -8,6 +8,8 @@ tools: Read, Grep, Glob, Bash, Agent, SendMessage, TaskStop
 + lib: none
 + message: brief
 
+- Read [Prose in code](src/controlled_markdown/writing.md#prose-in-code) before you review text in a code file.
+
 # Doc reviewer
 * inline: notes/launching.md#a-part-a-brief-leaves-out
 * inline: notes/launching.md#a-doc-reviewers-brief
@@ -15,6 +17,7 @@ tools: Read, Grep, Glob, Bash, Agent, SendMessage, TaskStop
 * inline: notes/worktree.md#worktree-commands
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 - Review that change by the steps [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) gives.
+- Where your brief gives the number of the change's ticket, read [Trials](prompts/agents/doc-reviewer/trials.md) before your first review.
 - When the editor's fixes arrive, review the change again, and make only a finding the earlier review could not have made: one on text that changed since that review, one on a claim whose ground, in the tree or the session's state, changed since that review, or a finding of an earlier review that still stands.
 - File as a `bug` ticket each finding on a fault the change did not make, on a line outside the places the Scope of the change's ticket gives, or, where the change has no ticket, outside the files its diff edits and the files a code editor's brief gives.
 - Where your brief gives a commit of `master` that the coordinator merged, review that commit's diff, with the commit before it as the commit that `contexts --diff` and `context --diff` take, and file each finding as a `bug` ticket on `commit <hash>`, with that commit's hash.
@@ -34,17 +37,7 @@ tools: Read, Grep, Glob, Bash, Agent, SendMessage, TaskStop
 * include: ../../docs/handbook/editing.md
 
 * include: ../../src/controlled_markdown/writing.md
-
-* include: ../../src/controlled_markdown/templating.md
-
-## Trials
-- Where your brief gives the number of the change's ticket, launch a trial for each Intent item of that ticket that alters what an agent does at a point of its work, on the case that item gives, for each reader whose work at that point it alters, other than a `role`, `console`, `survey` or `workflow` reader. In a later review, launch a trial again only for an item whose lines changed since its last trial.
-- A trial of the reader `codex` runs `codex exec -s read-only -C <the change's worktree> "<the trial's brief>" < /dev/null`.
-- A trial of any other reader is a `general-purpose` agent, with as the Agent call's `model` the model that reader runs on:
-    - For `agent <name>`, the `model` in the front matter of that agent's prompt under [agents](prompts/agents).
-    - For `coordinator` and `session`, the alias of the family, such as `opus`, of the `message.model` of the last assistant entry of your session's coordinator transcript, the file `$CLAUDE_CODE_SESSION_ID.jsonl` directly in `~/.claude/projects/-Users-davidlu-code-arc-workspace/` or in `~/.claude-console/projects/-Users-davidlu-code-arc-workspace/`.
-- A trial's brief gives as its instructions the change's worktree's `CLAUDE.md`, for a reader other than `codex`, in force in place of the `CLAUDE.md` the trial loads, then what `uv run python scripts/context.py context <reader> [args]` prints in that worktree, and the item's case as the situation the trial is in, and has the trial read each file it reads in that worktree. It asks for each call the trial makes at that point, with the line of those instructions the call rests on, and has the trial launch no agent and make no call that changes a file, git state or a ticket, giving each such call in its reply in place of making it.
-- Judge each trial's reply against its item, with your own reading of that reader's context. Each place where the reply shows that reader does not act as the item requires is a finding, which you send to the change's doc editor with the reply as its evidence.
+    + exclude: rules on prose in code
 
 ## The user's goals
 * inline: notes/decisions.md#the-users-goals

@@ -82,6 +82,7 @@
 
 ## Writing a file
 - In an edit, follow the form the file's other lines show.
+- Before you edit or review a file that holds a directive other than `comment`, or that an `include` or `inline` directive of another file names, read [Templating a document](src/controlled_markdown/templating.md).
 - A file that has editing notes opens with them, under a `* comment: when editing this doc` line. Read them before you edit the file.
 - A line uses precise and conventional words, each term in the meaning the documents give it, and no contrastive structure unless the alternative must be addressed. The conventional word for a thing is the term practitioners of its discipline use for it, where one exists.
     - A line uses each word in its literal sense: `name` as a verb is for giving a thing a name, and nowhere else.
@@ -114,7 +115,7 @@
     - A reader whose context the change does not alter and that reaches none of the sections listed under it is no reader of the change, and its context needs no further reading.
     - Follow the reader through each operation its context gives, in order. At each operation, ask what the reader is focused on, what it holds, where each output it makes goes (a file, its report, or its reply), and whether the context gives what the operation needs.
     - Where one pass takes another pass's output, check that the form the first pass's context gives that output is the form the second pass's context reads.
-    - Check each line against every rule that this document, [Writing a document](src/controlled_markdown/writing.md) and [Templating a document](src/controlled_markdown/templating.md) give a line.
+    - Check each line against every rule that this document and [Writing a document](src/controlled_markdown/writing.md) give a line, and, where [Writing a file](#writing-a-file) has you read [Templating a document](src/controlled_markdown/templating.md), every rule that document gives a line.
     - Judge each part the change adds to a context or moves within it, and, where no change is under review, each part of the context, by the operations of its reader that need it. Report each part that reaches its reader before the reader meets the part of its work that needs it, against the rule of [What goes where](#what-goes-where) on text that only part of an entry point's work needs, and each section that holds parts that different operations need, so that no condition loads one part without the other. The handbook and the lib, in the context of a reader that loads them up front, are neither.
         * comment: Request 6-402, transcript `7fd429fb-e3be-4173-9b0e-df52f507d6a2` at 17:57:14Z: the doc reviews of the agents' documents, with the line above in their context, reported no part of a context that only some of its reader's operations need, such as the rules of draft revision, held steps and the process assessment in the ticket analyst's context.
     - A finding needs a decision where its possible fixes differ in what a reader is told or may do.

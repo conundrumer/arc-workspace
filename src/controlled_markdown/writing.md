@@ -39,6 +39,7 @@
 - A link written inside a backtick span is text.
 
 ## Prose in code
++ rules on prose in code
 
 - A string a program puts in an agent's context is wrapped in `mctx`, and the check reads it there.
     - In Python, `mctx` takes a string, or a dict whose every value is one. A call whose string the check cannot read without running the program is an error.

@@ -8,6 +8,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 + lib: none
 + message: brief
 
+- Read [Prose in code](src/controlled_markdown/writing.md#prose-in-code) before you edit or review text in a code file.
+
 # Doc editor
 * inline: notes/launching.md#a-part-a-brief-leaves-out
 * inline: notes/launching.md#an-editors-brief
@@ -46,8 +48,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     + exclude: rules on lines
 
 * include: ../../src/controlled_markdown/writing.md
-
-* include: ../../src/controlled_markdown/templating.md
+    + exclude: rules on prose in code
 
 ## Gate
 * inline: notes/worktree.md#gate

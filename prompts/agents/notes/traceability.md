@@ -273,6 +273,7 @@
     - "State the Intent at the minimum": Requirements: requirements traced to the spans.
     - "Before you write anything, take these steps", "Judge each line you write or keep", "After each edit you make", "Fix each finding that needs no decision", "Then judge each line of the place you edited again": none. Kept: the principle of Verification, check new agent-facing text against each agent it reaches.
     - "Where you ran the gate": Merge: each merge passes the gate and the checks.
+    - "Read [Prose in code]": none. Kept: the principle of Process assessment, spend no run the work does not need.
     - "The kind of a ticket you file is `question`": none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
 
 ## Doc reviewer
@@ -283,7 +284,8 @@
     - "Message no agent other than the editors", "Edit no file other than the tickets you file": none. Kept: they leave each finding's fix to the editor and each decision to the agent that decides it.
     - "File a `performance` ticket": Process assessment: the faults of the processes reach the user.
     - "Where your brief gives a standing doc review": Verification: a standing review of the lines in force.
-- [Trials](prompts/agents/doc-reviewer.md#trials): Verification: evidence of a reader's behavior.
+    - "Read [Prose in code]", "Where your brief gives the number of the change's ticket, read [Trials]": none. Kept: the principle of Process assessment, spend no run the work does not need.
+- [Trials](prompts/agents/doc-reviewer/trials.md): Verification: evidence of a reader's behavior.
 
 ## Operator
 - [Operator](prompts/agents/operator.md#operator): Work control: stopped work reaches an agent; Merge: a failed or denied merge reaches an agent.
