@@ -79,7 +79,7 @@
     - For a document change that alters what an agent does, there is evidence before the merge that its reader acts as the requirement states.
     - The lines in force in the agents' documents get a standing review, as the code in the tree gets the code review.
     - A finding in a later round of a review falls only on text that changed since the earlier round.
-- Owner: the ticket reviewer for the `change` ticket, a ticket analyst for the built change, the doc reviewer for the form of the documents, and the code reviewer and the gate for the code.
+- Owner: the ticket reviewer for the `change` ticket, a ticket analyst for the built change, the doc reviewer for the form of the documents and, by its trials, for the evidence of a reader's behavior, and the code reviewer and the gate for the code.
 - Takes from: implementation and requirements. Gives to: merge.
 - How it can fail:
     - Each review adds cost to every change: the reviews a work product gets are set by its reader.

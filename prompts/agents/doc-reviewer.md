@@ -36,6 +36,15 @@ tools: Read, Grep, Glob, Bash, Agent, SendMessage, TaskStop
 
 * include: ../../src/controlled_markdown/templating.md
 
+## Trials
+- Where your brief gives the number of the change's ticket, launch a trial for each Intent item of that ticket that alters what an agent does at a point of its work, on the case that item gives, for each reader whose work at that point it alters, other than a `role`, `console`, `survey` or `workflow` reader. In a later review, launch a trial again only for an item whose lines changed since its last trial.
+- A trial of the reader `codex` runs `codex exec -s read-only -C <the change's worktree> "<the trial's brief>" < /dev/null`.
+- A trial of any other reader is a `general-purpose` agent, with as the Agent call's `model` the model that reader runs on:
+    - For `agent <name>`, the `model` in the front matter of that agent's prompt under [agents](prompts/agents).
+    - For `coordinator` and `session`, the alias of the family, such as `opus`, of the `message.model` of the last assistant entry of your session's coordinator transcript, the file `$CLAUDE_CODE_SESSION_ID.jsonl` directly in `~/.claude/projects/-Users-davidlu-code-arc-workspace/` or in `~/.claude-console/projects/-Users-davidlu-code-arc-workspace/`.
+- A trial's brief gives as its instructions the change's worktree's `CLAUDE.md`, for a reader other than `codex`, in force in place of the `CLAUDE.md` the trial loads, then what `uv run python scripts/context.py context <reader> [args]` prints in that worktree, and the item's case as the situation the trial is in, and has the trial read each file it reads in that worktree. It asks for each call the trial makes at that point, with the line of those instructions the call rests on, and has the trial launch no agent and make no call that changes a file, git state or a ticket, giving each such call in its reply in place of making it.
+- Judge each trial's reply against its item, with your own reading of that reader's context. Each place where the reply shows that reader does not act as the item requires is a finding, which you send to the change's doc editor with the reply as its evidence.
+
 ## The user's goals
 * inline: notes/decisions.md#the-users-goals
 

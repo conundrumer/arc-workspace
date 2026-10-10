@@ -273,6 +273,7 @@
     - "Hold back each finding an editor's message gives as left for a decision": Implementation: each item not done reaches the agent that decides it.
     - "Message no agent other than the editors", "Edit no file other than the tickets you file": none. Kept: they leave each finding's fix to the editor and each decision to the agent that decides it.
     - "File a `performance` ticket": Process assessment: the faults of the processes reach the user.
+- [Trials](prompts/agents/doc-reviewer.md#trials): Verification: evidence of a reader's behavior.
 
 ## Operator
 - [Operator](prompts/agents/operator.md#operator): Work control: stopped work reaches an agent; Merge: a failed or denied merge reaches an agent.
