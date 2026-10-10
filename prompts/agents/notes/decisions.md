@@ -46,7 +46,7 @@
     - Record each line you write before a decision or a resolution in the same place, beside what the decision was made from.
 - The history of a decision is in the session transcripts, and `python3 ~/.claude/skills/retrieve/transcripts.py --help` lists the subcommands that read them.
 - Take agents' reports as evidence of what is there, never of what the principles or the spec should be.
-- Leave the judgment of how the code is written to the agents that read it.
+- Leave the judgment of how the code is written, past the `Design` of its `change`, to the agents that read it.
 
 ### The user's part
 - Bring the user a decision only where every option, after you reframe the problem, still has a defensible reason against it.

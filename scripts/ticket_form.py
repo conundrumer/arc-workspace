@@ -46,6 +46,10 @@ SECTIONS = {Kind.CHANGE: ("Intent", "Motivation", "Scope", "Grounds"),
 """The sections of each kind that has its own; every other kind has
 `DEFECT_SECTIONS`."""
 
+DESIGN = "Design"
+"""The section a `change` that adds a mechanism to code adds after its
+Intent, which `body_form` lets stand between its sections."""
+
 
 HEADING_MARK = "## "
 

@@ -14,6 +14,7 @@ COMMITS = 300
 """The commits of `master` read for After a batch, newest first."""
 
 CODE_DIRS = ("src/", "scripts/", "tests/")
+PROCESS_DIRS = ("prompts/agents/", "src/operations/")
 ACCEPTED = "tests/gate/accepted"
 
 
@@ -35,8 +36,9 @@ def commits(main: Path) -> tuple[Commit, ...]:
                      "--name-only").split("\0")[1:]:
         head, _, names = chunk.partition("\n")
         sha, ct, subject = (head.split(" ", 2) + [""])[:3]
-        out.append(Commit(sha, float(ct), any(n.startswith(CODE_DIRS) for n in names.split()),
-                          subject))
+        files = names.split()
+        out.append(Commit(sha, float(ct), any(n.startswith(CODE_DIRS) for n in files), subject,
+                          any(n.startswith(PROCESS_DIRS) for n in files)))
     return tuple(out)
 
 

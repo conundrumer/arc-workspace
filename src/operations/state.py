@@ -197,11 +197,14 @@ class Message:
 @dataclass(frozen=True)
 class Commit:
     """A commit of `master`: its hash, its time, whether it changes
-    `src/`, `scripts/` or `tests/`, and its subject."""
+    `src/`, `scripts/` or `tests/`, its subject, and whether it changes
+    `prompts/agents/` or `src/operations/`, a change to the agents'
+    processes."""
     hash: str
     time: float
     code: bool
     subject: str
+    process: bool
 
 
 @dataclass(frozen=True)
@@ -228,10 +231,12 @@ class State:
     the messages that reached any operator of the session, and `received`
     those that reached `me` or an operator it takes up the lines of
     (`taken_up`, as `plan.taken_up` gives it). `unread` holds the ticket
-    files the read of the tracker left out of `tickets`."""
+    files the read of the tracker left out of `tickets`. `started` is the
+    time of the session's start."""
     me: str
     now: float
     session: str
+    started: float
     index: int
     main_tree: Path
     scratch: Path

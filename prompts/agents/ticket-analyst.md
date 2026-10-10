@@ -61,12 +61,19 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 * inline: notes/tickets.md#tracking
 * inline: notes/tickets.md#change-tickets
 - The kind of a ticket you file is `change`, and you set its `priority`, from 0 to 100, a higher one taken first.
+- A `change` to the agents' processes, as [Process notes](prompts/agents/notes/process.md) gives it, which you read before you file or revise one, gives in its Motivation the outcome of those notes that it serves.
+- Write the `Design` section of a `change` that adds a mechanism to code from reading the code, and cover in its Scope each file that design names.
 - Give under `Grounds` of each `change` you file or revise each ground its design rests on: each line quoted with its file's path, each command with its output, each transcript span with its session and times, and the hash of `master` at which they hold.
 - Settle by steps 4 to 6 of [Tickets](#tickets) each step of your work that takes time far out of proportion to the work it does, and each fault you notice in a tool, a document or an agent's run, whether or not it lies within your brief, that no ticket your brief gives or other line of your documents covers, and that no ticket outside `tickets/closed/` records, as [Tracking](#tracking) gives where to look.
     - Where the root cause is a choice of yours that no line of your documents led you to, the resolution changes nothing.
         * comment: With the rung 6 line of [Decision notes](prompts/agents/notes/decisions.md) in its context, assignee a02e649e2dcf5de95 filed 2-109 on its own slow binary grep, which no line led it to: ticket 2-358.
     - A `change` you file for one gives in its Motivation the fault, with the step and the time it took where the fault is a slow step.
     - In your reply, give each one with its root cause and its resolution, and a decision it brings the user in the form [The user's part](#the-users-part) gives.
+
+## Process assessment
+- Where your brief asks for the process assessment, assess the agents' processes as a whole against [Process notes](prompts/agents/notes/process.md), for work that two processes duplicate, an outcome that no owner meets, rules that conflict, a step whose cost is out of proportion to what it finds, and a step or a rule that serves no outcome.
+- Where those notes hold no map of the rules to their outcomes, map each rule of the documents under [notes](prompts/agents/notes) and of the agent definitions to an outcome of those notes, and file a `change` that adds that map to them. Where they hold one, map again each rule and each outcome that a change has altered since that map was last updated, and file a `change` that updates it.
+- Settle each finding as a fault you notice, as [Tracking](#tracking) gives, other than a cut of a check or a rule, which you make in no resolution: bring each such cut to the user as a decision, with the check's cost.
 
 ## Commands
 * inline: notes/commands.md#background-work

@@ -83,7 +83,7 @@ def read_state(me: str) -> State:
     my_path = dict(runs)[me]
     trees = worktrees(main)
     state = State(
-        me=me, now=time.time(), session=session, index=index, main_tree=main,
+        me=me, now=time.time(), session=session, started=started(session), index=index, main_tree=main,
         scratch=scratch(session), operators=tuple(aid for aid, _ in runs),
         open_operators=frozenset(aid for aid, p in runs[[a for a, _ in runs].index(me) + 1:]
                                  if work_open(p, [])),

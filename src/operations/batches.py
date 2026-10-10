@@ -5,10 +5,16 @@ one, where the batch merged a change, on the gate's timings and outputs.
 
 A batch is the agents the session's operators launched since the launch
 of the previous batch's profile agent, other than the agents of After a
-batch and the op-auditors, with the changes merged since: those an
+batch, the op-auditors and the process assessments, with the changes merged since: those an
 operator's merge call merged, as `state.Merge` reads it, and those the
 coordinator gives as merged. The launch of the
 profile agent opens the next batch.
+
+A process assessment, a ticket analyst, launches at the end of a batch
+once `ASSESS_AFTER` commits of `master` that change the agents' processes
+stand since the launch of the last one an operator of the session
+launched, or since the session's start where none was, and none runs. No
+batch holds it, so no profile launch waits on its run.
 
 The profile agent profiles each run `profile_runs.py --under` takes, and
 may launch a transcript review only of those that are members of the
@@ -23,7 +29,7 @@ from controlled_markdown import mctx
 from operations import briefs
 from operations.changes import release
 from operations.directives import Directive, numbers
-from operations.roles import AGENT_ID, Role
+from operations.roles import AGENT_ID, Purpose, Role, analyst_of, analyst_subject
 from operations.state import Agent, Merge, State
 from operations.handled import bash_calls
 from operations.steps import Bash, Launch, Step, Undecided
@@ -42,7 +48,14 @@ def start(state: State) -> float:
 
 
 def members(state: State, since: float) -> list[Agent]:
-    return [a for a in state.agents if a.launched > since and a.role not in OUTSIDE]
+    return [a for a in state.agents
+            if a.launched > since and a.role not in OUTSIDE and not assesses(a)]
+
+
+def assesses(agent: Agent) -> bool:
+    """Whether `agent` is a process assessment."""
+    parsed = analyst_of(agent.subject) if agent.role is Role.TICKET_ANALYST else None
+    return parsed is not None and parsed[0] is Purpose.ASSESS
 
 
 def merged(state: State, since: float) -> bool:
@@ -83,9 +96,26 @@ def step(state: State) -> Step | None:
         if calls[-1][0].error:
             return Undecided(mctx("`{command}` failed").format(command=command))
         runs += calls[-1][1].taken
+    if (s := assessment(state)) is not None:
+        return s
     ids = {a.agent_id for a in batch}
     return Launch(Role.BATCH_PROFILE, str(n),
                   briefs.batch_profile(runs, [r for r in runs if r in ids], head))
+
+
+ASSESS_AFTER = 20
+
+
+def assessment(state: State) -> Step | None:
+    """The launch of a process assessment, where one is due."""
+    past = [a for a in state.agents if assesses(a)]
+    if past and past[-1].pending:
+        return None
+    since = past[-1].launched if past else state.started
+    if len({c.hash for c in state.commits if c.process and c.time > since}) < ASSESS_AFTER:
+        return None
+    return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.ASSESS, str(len(past) + 1)),
+                  briefs.process_assessment(state.me))
 
 
 def under_command(operator: str) -> str:

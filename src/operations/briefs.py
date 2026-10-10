@@ -331,6 +331,13 @@ def batch_gate(scratch: Path) -> str:
     return BATCH_GATE.format(scratch=scratch)
 
 
+PROCESS_ASSESSMENT = mctx("Make the process assessment of the agents' processes.")
+
+
+def process_assessment(operator: str) -> str:
+    return PROCESS_ASSESSMENT + "\n" + LAUNCHER.format(operator=operator)
+
+
 def stop_work(number: str) -> str:
     """The message that tells an agent at work on a change or a draft whose
     ticket the operator no longer carries to end."""

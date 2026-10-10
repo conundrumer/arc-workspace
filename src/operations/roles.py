@@ -108,6 +108,7 @@ class Purpose(StrEnum):
     CHANGE = "change"
     PASS = "pass"
     STEP = "step"
+    ASSESS = "assess"
 
 
 def analyst_subject(purpose: Purpose, subject: str) -> str:

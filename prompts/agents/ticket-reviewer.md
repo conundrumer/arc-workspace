@@ -35,6 +35,8 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage, TaskStop
         * inline: notes/launching.md#draft-outcome
         - The draft's `Grounds` give where the source of each claim lies, as read at the hash of `master` they give.
         * comment: With the line without its list in its context, ticket reviewer a283a71c0cf18c9ba passed two such claims of draft 2-527, on the lines of `CLAUDE.md` and `prompts/agents/notes/coordinator.md` that mention launching and on the hooks of `.claude/settings.json`, whose disproof its own calls had printed: the Intent of ticket 2-530.
+    - A `change` to the agents' processes, as [Process notes](prompts/agents/notes/process.md) gives it, gives in its Motivation an outcome of those notes, and serves it.
+    - A `change` that adds a mechanism to code has a `Design`, each existing operation that design gives does in the code what the design uses it for, no operation in the code computes what a new one it gives computes, and the Scope covers each file that design names.
     - The operator can carry out each instruction under its documents: each agent, tool, permission and name the instruction relies on exists.
     - A rule's stated scope covers the readers the draft means it for, and no others.
     - Each item of the Intent is a requirement, as [Launching](prompts/agents/notes/launching.md#launching) gives it.
