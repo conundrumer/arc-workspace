@@ -22,7 +22,7 @@ from run_reads import bash_spans, context_size, repeated_runs, run_entries
 from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
 from ticket_settle import to_settle
-from transcripts import Refused, entries_back, find, new_state
+from transcripts import Refused, entries_back, epoch, find, new_state
 from tree_reads import (claims, code_review, commits, doc_reviews, gate_outputs, main_tree,
                         scratch, worktrees)
 
@@ -126,33 +126,31 @@ def hung_at(listed: Listed, listing: list[Listed], opened: float) -> float | Non
     return min(times, default=None)
 
 
-def stalled_at(listed: Listed, listing: list[Listed]) -> float | None:
+def stalled_at(listed: Listed, listing: list[Listed], undecided: list[str]) -> float | None:
     """The end of the turn of `listed` where it stalled, as
-    `monitor.ALERTS` gives a stall, or None."""
+    `monitor.ALERTS` gives a stall, or None. A run whose turn end
+    `agent_turns.turn_end` cannot find has no stall, and an `undecided`
+    line names it."""
     aid = listed.launch.agent
     if (not listed.ended or listed.found != [] or listed.running
             or any(x.parent == aid for x in listing)):
         return None
-    end = listed.end if listed.end is not None else activity(listed)
+    end = listed.end
+    if end is None:
+        undecided.append(mctx("{run}: its turn reads as ended, yet no timestamped entry "
+                              "of its transcripts ends it, so it counts as not "
+                              "stalled").format(run=aid))
+        return None
     if any(t > end for t in listed.run.ended):
+        return None
+    if any(e.get("type") == "user" and e.get("timestamp") and epoch(e["timestamp"]) > end
+           for e in run_entries(listed.path)):
         return None
     if handed_back(listed.path):
         return None
     answered = [t for p in parent_transcripts(listed.path)
                 if (t := last_time(p, lambda e: e.get("type") == "assistant")) is not None]
     return end if any(t > end for t in answered) else None
-
-
-def activity(listed: Listed) -> float:
-    """The time of the latest call, end of a call or end of the turn of
-    `listed`."""
-    r = listed.run
-    times = [s.start for s in r.spans] + [s.end for s in r.spans if s.end is not None]
-    if listed.end is not None:
-        times.append(listed.end)
-    if r.start is not None:
-        times.append(r.start)
-    return max(times, default=0.0)
 
 
 def repeated(listed: Listed) -> tuple[float, ...]:
@@ -179,7 +177,7 @@ def watched(listing: list[Listed], launched: set[str],
         out.append(Watched(
             agent_id=aid, hung=hung_at(listed, listing, opened),
             over_budget=budget is not None and active is not None and active > budget * 60,
-            stalled=stalled_at(listed, listing), repeated=repeated(listed)))
+            stalled=stalled_at(listed, listing, undecided), repeated=repeated(listed)))
     return out
 
 

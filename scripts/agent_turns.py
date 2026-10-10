@@ -60,10 +60,28 @@ def turn_ended(entries: list[Entry]) -> bool:
     for i, e in enumerate(entries):
         if e.get("timestamp"):
             idle = idle_after(idle, i, e, starts, ends)
+    return idle or interrupt_note(entries) is not None
+
+
+def interrupt_note(entries: list[Entry]) -> Entry | None:
+    """The last message entry of `entries` where it is the harness's note
+    that the user interrupted the run, or None."""
     last = [e for e in entries if is_turn_entry(e)][-1:]
-    return idle or any(e.get("type") == "user" and text_of(
-        (e.get("message") or {}).get("content")).startswith(INTERRUPTED)
-        for e in last)
+    return next((e for e in last if e.get("type") == "user" and text_of(
+        (e.get("message") or {}).get("content")).startswith(INTERRUPTED)), None)
+
+
+def turn_end(entries: list[Entry]) -> float | None:
+    """The time of the last timestamped entry of `entries` that ends a turn
+    (`turns`), or, where `interrupt_note` gives a note, the time of that
+    note."""
+    note = interrupt_note(entries)
+    if note is not None:
+        return epoch(note["timestamp"]) if note.get("timestamp") else None
+    _, ends = turns(entries)
+    times = [epoch(entries[i]["timestamp"]) for i in sorted(ends)
+             if entries[i].get("timestamp")]
+    return times[-1] if times else None
 
 
 @state_cache(lambda path: tuple(snapshot(p) for p in chain(path)))

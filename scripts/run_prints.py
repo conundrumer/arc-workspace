@@ -76,8 +76,10 @@ def print_running(agents: list[Listed], now: float, calls_since: float | None,
 def print_ended(r: Run, end: float | None, now: float,
                 undecided: list[str]) -> None:
     if end is None:
-        undecided.append(mctx("{run}: no `user` or `assistant` entry gives a "
-                              "time, so when its turn ended is unknown").format(
+        undecided.append(mctx("{run}: no timestamped entry of its transcripts "
+                              "ends a turn, and its last `user` or `assistant` entry "
+                              "is no timestamped interrupt note, so when its turn "
+                              "ended is unknown").format(
             run=r.label))
         print("  " + mctx("turn ended: ?"))
         return

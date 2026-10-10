@@ -8,7 +8,7 @@ from pathlib import Path
 from agent_launches import Launch, launches, notified_after, run_launches
 from agent_reports import (TURN_ENDED, Report, ReportKind, parent_transcripts, reports,
                            stopped_after)
-from agent_turns import has_ended, is_turn_entry, last_time, turn_after
+from agent_turns import has_ended, is_turn_entry, last_time, turn_after, turn_end
 from controlled_markdown import mctx
 from command_labels import AGENT_TOOLS
 from run_backgrounds import background_ends, backgrounds
@@ -25,7 +25,7 @@ from operations.steps import BLOCK_SECONDS
 @dataclass
 class Listed:
     """An agent `running_agents` gives. `end` is None where its turn has
-    not ended or no `user` or `assistant` entry gives a time, and `found`
+    not ended or `agent_turns.turn_end` gives None, and `found`
     is None where its turn has not ended or `parent_reports` gives None.
     `running` is what its run backgrounded that is still running, as
     `listed_under` gives it."""
@@ -191,7 +191,7 @@ def turn_ended(n: Node, undecided: list[str]) -> Listed:
     """The agent of `n` as listed where its turn has ended."""
     run = profile(n.path, undecided)
     return Listed(n.parent, n.path, n.launch, run, True,
-                  last_time(n.path, is_turn_entry), parent_reports(run, undecided, n.launch))
+                  turn_end(run_entries(n.path)), parent_reports(run, undecided, n.launch))
 
 
 def is_busy(n: Node, undecided: list[str]) -> bool:
