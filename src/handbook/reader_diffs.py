@@ -93,13 +93,14 @@ def _unified(before: str, after: str, head: str, commit: str) -> str:
 class _TextDiff:
     """A text a reader holds whole, at `commit` and in the checkout, under
     `head`, with each change to a target it reaches by links, as
-    `linked_changes` finds them."""
+    `linked_changes` finds them, from `linked_commit`."""
 
     head: str
     commit: str
     before: str
     after: str
     linked: list[LinkedChange]
+    linked_commit: str
 
 
 def _text_diff(head: str, before: str, after: str, tree: Path,
@@ -107,7 +108,7 @@ def _text_diff(head: str, before: str, after: str, tree: Path,
     """The diff of a text from `before`, at `commit`, whose tree is `tree`,
     to `after`, in the checkout."""
     return _TextDiff(head, commit, before, after,
-                     linked_changes(before, after, *sides(tree, commit)))
+                     linked_changes(before, after, *sides(tree, commit)), commit)
 
 
 def _diff_text(diffs: list[_TextDiff]) -> str:
@@ -125,7 +126,7 @@ def _diff_text(diffs: list[_TextDiff]) -> str:
             if str(c.target) in held:
                 continue
             commit, lines = linked.setdefault((c.target, c.before, c.after),
-                                              (d.commit, []))
+                                              (d.linked_commit, []))
             lines += [line for line in c.chain_lines() if line not in lines]
     return ("".join(_unified(d.before, d.after, d.head, d.commit) for d in diffs)
             + "".join("".join(f"{line}\n" for line in lines)
@@ -156,14 +157,33 @@ def context_diff(commit: str, reader: str, args: list[str]) -> str:
                                       before, after, tree, commit)])
 
 
+def descends(tree: Path, commit: str, ancestor: str) -> bool:
+    """Whether `commit` descends from `ancestor`, or is it, in the
+    repository of `tree`."""
+    return checkout.git_answer(tree, "merge-base", "--is-ancestor",
+                               ancestor, commit).returncode == 0
+
+
+def linked_commit(tree: Path, context_commit: str, instructions_commit: str) -> str:
+    """The commit the diff of each section a chain of links from the project
+    instructions reaches runs from: `context_commit`, where it descends
+    from `instructions_commit` in the repository of `tree`, since a reader
+    reads such a section from its own tree at or after its launch; and
+    `instructions_commit` otherwise."""
+    return (context_commit if descends(tree, context_commit, instructions_commit)
+            else instructions_commit)
+
+
 def update_diff(context_commit: str, instructions_commit: str, reader: str,
                 args: list[str]) -> str:
     """The diff of what a running reader holds: its context since
     `context_commit` (`_context_sides`), and the project instructions since
     `instructions_commit`, a side that has no such file as an empty text,
     with the sections each reaches by links, as `_diff_text` gives them. A
-    chain from the project instructions starts at them. One tree serves
-    two commits that are the same."""
+    chain from the project instructions starts at them, and its sections
+    run from `linked_commit`. One tree serves two commits that are the
+    same."""
+    linked = linked_commit(REPO_ROOT, context_commit, instructions_commit)
     with ExitStack() as stack:
         context_tree = stack.enter_context(_tree_at(context_commit))
         instructions_tree = (context_tree if instructions_commit == context_commit
@@ -171,10 +191,14 @@ def update_diff(context_commit: str, instructions_commit: str, reader: str,
         before, after = _context_sides(context_tree, context_commit, reader, args)
         context = _text_diff(context_command(reader, args), before, after,
                              context_tree, context_commit)
-        before, after = (_text_or_empty(root / PROJECT_INSTRUCTIONS)
-                         for root in (instructions_tree, DOCUMENTS_ROOT))
-        instructions = _text_diff(str(PROJECT_INSTRUCTIONS), before, after,
-                                  instructions_tree, instructions_commit)
+        linked_tree = context_tree if linked == context_commit else instructions_tree
+        before, linked_before, after = (
+            _text_or_empty(root / PROJECT_INSTRUCTIONS)
+            for root in (instructions_tree, linked_tree, DOCUMENTS_ROOT))
+        instructions = replace(
+            _text_diff(str(PROJECT_INSTRUCTIONS), linked_before, after,
+                       linked_tree, linked),
+            commit=instructions_commit, before=before)
     start = LinkTarget(PROJECT_INSTRUCTIONS, "")
     instructions = replace(instructions, linked=[
         replace(c, chains=tuple((start, *chain) for chain in c.chains))

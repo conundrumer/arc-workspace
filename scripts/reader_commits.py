@@ -41,10 +41,15 @@ gives nothing. Otherwise it gives the reader, under a head that says it may
 already hold some of the changes and how to read them, the diff of its
 documents since its commits, as `scripts/context.py context --update`
 prints it in the reader's tree, or the failure of that run, and records
-`HEAD` as both commits once the hook's output is printed. That run is
-skipped where only the instructions' commit differs from `HEAD` and no file
-of the document set `[tool.controlled_markdown]` names differs between the
-two. A reader whose diff holds nothing, and a caller that is no reader, get
+`HEAD` as both commits once the hook's output is printed. That diff runs
+for the context from the context's commit, for `CLAUDE.md` from the
+instructions' commit, and for the sections a chain of links from
+`CLAUDE.md` reaches from the context's commit where it descends from the
+instructions' commit, and from the instructions' commit otherwise. That run
+is skipped where the context's commit is `HEAD`, `CLAUDE.md` does not
+differ between the instructions' commit and `HEAD`, and no file of the
+document set `[tool.controlled_markdown]` names differs between the linked
+sections' commit and `HEAD`. A reader whose diff holds nothing, and a caller that is no reader, get
 nothing, and the record moves all the same. A caller with no record, such
 as a `claude -p` session, gets nothing, and so does a session started
 before its session-start hook wrote one. A caller of unknown type is a
@@ -181,12 +186,12 @@ def _launch_commit(tree: Path, head: str) -> str:
     """The commit `master` stood at one reload wait ago, where `head`
     descends from it, and `head` otherwise."""
     from engine import checkout
+    from handbook.reader_diffs import descends
     from merge_change import MASTER
 
     then = checkout.git_out(tree, "rev-parse", "--verify",
                             f"{MASTER}@{{{RELOAD_WAIT}.seconds.ago}}").strip()
-    ancestor = checkout.git_answer(tree, "merge-base", "--is-ancestor", then, head)
-    return then if ancestor.returncode == 0 else head
+    return then if descends(tree, head, then) else head
 
 
 def start_agent(hook: dict[str, Any]) -> None:
@@ -224,30 +229,37 @@ def reader_call(hook: dict[str, Any]) -> tuple[str, list[str]] | None:
     return (ReaderName.AGENT, [kind]) if kind in agent_names() else None
 
 
-def _documents_differ(tree: Path, before: str, after: str) -> bool:
-    """Whether a file of the document set `[tool.controlled_markdown]` in
-    `tree` names differs between `before` and `after`."""
+def _documents_differ(tree: Path, before: str, after: str,
+                      *paths: str) -> bool:
+    """Whether a file of `paths`, or of the document set
+    `[tool.controlled_markdown]` in `tree` names where none is given,
+    differs between `before` and `after`."""
     from controlled_markdown.__main__ import configured
     from engine import checkout
 
     return checkout.git_answer(tree, "diff", "--quiet", before, after, "--",
-                               *configured(tree)).returncode == 1
+                               *(paths or configured(tree))).returncode == 1
 
 
 def update_text(tree: Path, after: str, context: str, instructions: str,
                 call: tuple[str, list[str]]) -> str | None:
     """The text that gives the reader `call` the diff of its context from
-    `context`, and of its project instructions from `instructions`, to
-    `after`, the `HEAD` of `tree`, as `context --update` prints it in
-    `tree`; the failure of that run; or None where the diff holds nothing,
-    or where only the instructions' commit differs from `after` and no
-    file of the document set differs from it."""
+    `context`, of its project instructions from `instructions`, and of the
+    sections they reach by links from the commits `context --update` gives
+    them, to `after`, the `HEAD` of `tree`, as `context --update` prints it
+    in `tree`; the failure of that run; or None where the diff holds
+    nothing, or where the context's commit is `after` and neither the
+    project instructions since `instructions` nor a file of the document
+    set since the linked sections' commit (`linked_commit`) differs from
+    it."""
     from controlled_markdown import mctx
     from engine import checkout
     from handbook.coordinator_document import HOOK_TEXT_CAP
-    from handbook.reader_diffs import CONTEXT_SCRIPT
+    from handbook.reader_diffs import CONTEXT_SCRIPT, PROJECT_INSTRUCTIONS, linked_commit
 
-    if context == after and not _documents_differ(tree, instructions, after):
+    if context == after and not (
+            _documents_differ(tree, instructions, after, str(PROJECT_INSTRUCTIONS))
+            or _documents_differ(tree, linked_commit(tree, context, instructions), after)):
         return None
     reader, args = call
     argv = ["uv", "run", "python", str(CONTEXT_SCRIPT), "context", "--update",
