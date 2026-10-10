@@ -22,7 +22,7 @@ from open_agents import work_open
 from pending_wait_hook import bound_denied
 from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks, is_prompt,
                        message_text, notifications, output_file, run_entries,
-                       run_sessions, session_agents, result_text)
+                       run_sessions, session_agents, tool_results)
 from run_reads import Status as TaskStatus
 from senders import Sender, sender
 from ticket_numbers import TICKET_NUMBER
@@ -165,9 +165,8 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
                 uses[b.get("id", "")] = (epoch(stamp), b.get("input") or {}, b.get("name", ""))
         elif e.get("type") == "user":
             result = e.get("toolUseResult")
-            for b in blocks(e, "tool_result"):
-                call = b.get("tool_use_id", "")
-                results[call] = (result_text(b, result), bool(b.get("is_error")))
+            for call, b, text in tool_results(e):
+                results[call] = (text, bool(b.get("is_error")))
                 if isinstance(result, dict) and result.get(BACKGROUND_TASK):
                     moved[call] = (str(result[BACKGROUND_TASK]), output_file(b))
         if e.get("type") != "assistant":

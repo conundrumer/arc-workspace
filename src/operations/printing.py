@@ -45,15 +45,24 @@ def fenced(value: str) -> str:
     return f"{FENCE}\n{value}\n{FENCE}"
 
 
-def unfenced(value: str) -> str:
+def fence_split(value: str) -> tuple[bool, str, bool]:
     """`value` without its opening fence line and its closing fence line,
-    each where it has one: a printed value as far as a cut result gives
-    it, or a value an operator passed with the fence lines."""
+    each where it has one, between whether it has the opening one and
+    whether it has the closing one."""
     head, sep, rest = value.partition("\n")
-    if head == FENCE and sep:
+    opened = head == FENCE and bool(sep)
+    if opened:
         value = rest
     body, sep, tail = value.rpartition("\n")
-    return body if sep and tail == FENCE else value
+    closed = bool(sep) and tail == FENCE
+    return opened, body if closed else value, closed
+
+
+def unfenced(value: str) -> str:
+    """`value` without its fence lines (`fence_split`): a printed value as
+    far as a cut result gives it, or a value an operator passed with the
+    fence lines."""
+    return fence_split(value)[1]
 
 
 SEND = "\n".join([mctx("call SendMessage"), mctx("to: {to}"), mctx("message:"), "{message}"])
@@ -96,10 +105,10 @@ def printed_launch(text: str) -> dict[str, str] | None:
     fields: dict[str, str] = {}
     for i in range(at + 1, len(lines)):
         if lines[i] == f"{PROMPT}:":
-            body = lines[i + 1:]
-            if len(body) < 2 or body[0] != FENCE or body[-1] != FENCE:
+            opened, prompt, closed = fence_split("\n".join(lines[i + 1:]))
+            if not (opened and closed):
                 return None
-            return fields | {PROMPT: "\n".join(body[1:-1])}
+            return fields | {PROMPT: prompt}
         name, sep, value = lines[i].partition(": ")
         if not sep:
             return None

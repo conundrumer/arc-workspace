@@ -160,9 +160,10 @@ def closed_unaudited(agents: tuple[Agent, ...], listing: list[Listed], audits: l
     after that turn, each as listed
     where its turn has ended.
 
-    `read_watch` gives as `since` the start of the operator launched right
-    before the reading one, so a turn that ended between that operator's
-    last read and the reading operator's start is still due. A turn that
+    `read_watch` gives as `since` the start that the module docstring of
+    `operations.monitor` gives, so a turn that ended between the last read
+    of the operator launched right before the reading one and the reading
+    operator's start is still due. A turn that
     ended before that operator started is due to it alone: where it ended
     before it made that audit, no later operator makes it."""
     shown = {listed.launch.agent for listed in listing}
@@ -310,8 +311,7 @@ def read_watch(state: State) -> MonitorState:
     """The state the monitor's steps read, for the session's operators of
     `state`. The messages to the coordinator are read since the start of the
     session's first operator, and the closed agents due an audit since the
-    start of the operator launched right before `state.me`, or of
-    `state.me` where it is the first."""
+    start that the module docstring of `operations.monitor` gives."""
     undecided: list[str] = []
     audits = [a for x in state.agents if (a := audit_of(x, undecided)) is not None]
     start = started(state.operators[0])

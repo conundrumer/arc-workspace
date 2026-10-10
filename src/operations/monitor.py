@@ -292,18 +292,28 @@ def audits_on(audits: Iterable[Audit], facet: Facet, agent: str) -> list[Audit]:
                   key=lambda a: a.launched)
 
 
+def latest_launch(past: list[Audit]) -> float | None:
+    """The time of the latest launch among `past`, in the order of their
+    launch."""
+    return past[-1].launched if past else None
+
+
 def last_audit(audits: Iterable[Audit], agent: str) -> float | None:
     """The time of the latest launch of an auditor on the run of `agent`."""
-    past = audits_on(audits, Facet.AGENT, agent)
-    return past[-1].launched if past else None
+    return latest_launch(audits_on(audits, Facet.AGENT, agent))
+
+
+def run_audits(state: MonitorState, w: Watched) -> list[Audit]:
+    """The audits on the run of `w`, in the order of their launch."""
+    return audits_on(state.audits, Facet.AGENT, w.agent_id)
 
 
 def needs_audit(state: MonitorState, w: Watched) -> bool:
     """Whether `w` has an ended turn, where it gets no transcript review,
     or a call that became hung, since the launch of its last auditor, once
     that auditor's outcome is in."""
-    past = audits_on(state.audits, Facet.AGENT, w.agent_id)
-    last = last_audit(state.audits, w.agent_id)
+    past = run_audits(state, w)
+    last = latest_launch(past)
     if past and outcome(state, past[-1]) is None:
         return False
     if w.ended:
@@ -343,12 +353,11 @@ def previous_verdict(state: MonitorState, past: list[Audit]) -> str:
 
 def brief(state: MonitorState, w: Watched) -> str:
     """The brief of an auditor on `w`."""
-    since = since_last(audits_on(state.audits, Facet.AGENT, w.agent_id))
+    past = run_audits(state, w)
     return "\n\n".join([
         BRIEF.format(agent=w.agent_id, agent_type=w.agent_type, parent=w.parent,
-                     transcript=w.transcript, since=since, facts=w.facts,
-                     verdict=previous_verdict(
-                         state, audits_on(state.audits, Facet.AGENT, w.agent_id))),
+                     transcript=w.transcript, since=since_last(past), facts=w.facts,
+                     verdict=previous_verdict(state, past)),
         REPORT_TEXT])
 
 

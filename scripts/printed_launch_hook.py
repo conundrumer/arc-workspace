@@ -46,15 +46,13 @@ def last_next(entries: Iterable[dict[str, Any]], agent: str) -> str | None:
     """The result of the last call of `next` for the operator `agent` among
     `entries`, read last first, or None where none has a result."""
     from operations.command_words import is_next
-    from run_reads import blocks, result_text
+    from run_reads import blocks, tool_results
 
     results: dict[str, str] = {}
     for e in entries:
-        if e.get("type") == "user":
-            for b in blocks(e, "tool_result"):
-                results.setdefault(b.get("tool_use_id", ""),
-                                   result_text(b, e.get("toolUseResult")))
-        elif e.get("type") == "assistant":
+        for call, _, text in tool_results(e):
+            results.setdefault(call, text)
+        if e.get("type") == "assistant":
             for b in reversed(blocks(e, "tool_use")):
                 command = str((b.get("input") or {}).get("command", ""))
                 if (b.get("name") == "Bash" and is_next(command, agent)

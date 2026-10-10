@@ -200,6 +200,16 @@ def result_text(block: dict[str, Any], result: Any) -> str:
     return out if text.startswith(PERSISTED) and isinstance(out, str) else text
 
 
+def tool_results(entry: Entry) -> list[tuple[str, dict[str, Any], str]]:
+    """Each `tool_result` block of `entry`, with the id of the call it
+    answers and its text (`result_text`)."""
+    if entry.get("type") != "user":
+        return []
+    result = entry.get("toolUseResult")
+    return [(b.get("tool_use_id", ""), b, result_text(b, result))
+            for b in blocks(entry, "tool_result")]
+
+
 def output_file(block: dict[str, Any]) -> Path | None:
     """The file the `tool_result` block `block` names as the one its
     command writes its output to, or None where it names none."""
