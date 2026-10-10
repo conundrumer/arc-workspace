@@ -26,13 +26,13 @@
 - Purpose: turn the user's words into requirements that a check can confirm, each traced to those words.
 - Principles: [The user's part](prompts/agents/notes/decisions.md#the-users-part).
 - Outcomes:
-    - Each `change` that serves a `request` gives its requirements in its Intent: statements of what holds once the change is made, each one checkable, each traced to the request's `Words`.
-    - A part of the `Words` that the change leaves unmet is a decline.
+    - Each `change` that serves a `request` gives its requirements in its Intent: statements of what holds once the change is made, each one checkable, each traced to the part of a span of the request it rests on, quoted, or to a line of the request's Grounds.
+    - A part of what the request's spans ask for that the change leaves unmet is a decline.
     - When the user adds words, each requirement is checked against them.
 - Owner: the ticket analyst writes the requirements, and the ticket reviewer checks each trace.
 - Takes from: the coordinator's `request`. Gives to: design, verification and validation.
 - How it can fail:
-    - A requirement is written to be easy to check, and misses the need: each traces to the quoted `Words`, and validation checks the need in use.
+    - A requirement is written to be easy to check, and misses the need: each traces to a quoted part of a span, and validation checks the need in use.
     - A requirement fixes the design too early: it states what holds, and not how.
 
 ## Decisions (decision management)
@@ -74,7 +74,7 @@
 - Purpose: confirm that each work product meets its requirements before it merges.
 - Principles: "check new agent-facing text against each agent it reaches before a pass runs on it", in [Decisions on the agents' documents](prompts/agents/notes/decisions.md#decisions-on-the-agents-documents).
 - Outcomes:
-    - Each `change` ticket is checked before the build: each requirement traces to the `Words` and can be checked, each claim about the current state holds, and the Scope covers the design.
+    - Each `change` ticket is checked before the build: each requirement traces to the request's spans or Grounds and can be checked, each claim about the current state holds, and the Scope covers the design.
     - An agent other than its editor checks the built change against each requirement, for documents as for code.
     - For a document change that alters what an agent does, there is evidence before the merge that its reader acts as the requirement states.
     - The lines in force in the agents' documents get a standing review, as the code in the tree gets the code review.
@@ -171,7 +171,7 @@
 - How it can fail: a pass meets a fault and files no ticket on it: the transcript review of the pass reads what the tool and the documents did to its work.
 
 ## Work products
-- A `request`: a ticket analyst writes the `change` tickets that serve it. Its reviews: the ticket reviewer's check of each requirement's trace to its `Words`, and validation.
+- A `request`: a ticket analyst writes the `change` tickets that serve it. Its reviews: the ticket reviewer's check of each requirement's trace to its spans or Grounds, and validation.
 - A `change` ticket with its design: a ticket analyst writes it. Its review: a ticket reviewer's, before the build.
 - A built code change: a code editor builds it, and the `handbook-expanded` agent the part in the lib and the solvers. Its reviews: a ticket analyst's check of its items, the gate at its merge, and the code review that follows its merge.
 - A built document change: the doc editor builds it. Its reviews: the doc reviewer's, a ticket analyst's check of its items, and the `controlled_markdown` check.

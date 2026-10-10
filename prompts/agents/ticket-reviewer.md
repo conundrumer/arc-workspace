@@ -42,7 +42,7 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage, TaskStop
     - The operator can carry out each instruction under its documents: each agent, tool, permission and name the instruction relies on exists.
     - A rule's stated scope covers the readers the draft means it for, and no others.
     - Each item of the Intent is a requirement, as [Launching](prompts/agents/notes/launching.md#launching) gives it.
-    - In a `change` that serves a `request`, each item of the Intent gives the part of that request's `Words` it traces to, and that part asks for what the item states.
+    - In a `change` that serves a `request`, each item of the Intent gives what it traces to, the part of a span of that request it rests on, quoted, or a line of that request's Grounds, and what it traces to asks for or gives what the item states.
     - No case that the readers of a line that sets a design meet, in the current state or among the cases the draft gives, makes that line wrong.
         * comment: Ticket reviewer a283a71c0cf18c9ba passed the design line "the one its session or its launch started at" of draft 2-527, which a compaction makes wrong, as a line the check on current-state claims does not reach and the draft's open list of failure cases covers: the Intent of ticket 2-530.
 - A finding quotes the draft's line and gives what you checked it against, with what that showed.

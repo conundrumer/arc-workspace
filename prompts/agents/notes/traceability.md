@@ -28,7 +28,7 @@
     - "Structure the documents so": none. Kept: the principle of Configuration management.
 
 ## Change notes
-- [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change): Verification: another agent checks the built change; Implementation: each item not done reaches the agent that decides it.
+- [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change): Verification: another agent checks the built change; Implementation: each item not done reaches the agent that decides it; Merge: a hotfix reviewed after it merges.
     - "Have an editor write each change": Process assessment: the agent and the reviews of each work product.
     - "A change is one editor's edit": none. Kept: it gives what a change is, which the rest of the section acts on.
     - "Make the worktree of a change": Configuration management: one live change per worktree.
@@ -65,24 +65,27 @@
 
 ## Coordinator
 - [Coordinator](prompts/agents/notes/coordinator.md#coordinator): none. Kept: it gives the coordinator its part and how it reads the documents.
-- [Tickets](prompts/agents/notes/coordinator.md#tickets): Requirements: requirements traced to the Words; Work control: stopped work reaches an agent.
+- [Routes](prompts/agents/notes/coordinator.md#routes): Requirements: requirements traced to the spans; Merge: a hotfix reviewed after it merges.
+    - "`scratch` is work after which": none. Kept: the principle of Process assessment, spend no run the work does not need.
+- [Tickets](prompts/agents/notes/coordinator.md#tickets): Requirements: requirements traced to the spans; Work control: stopped work reaches an agent.
     - "Where you run no solver pass, file each fault": none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
-    - "While the user discusses a change", "Tell the user what each ticket": none. Kept: the principle of Requirements, the user's part.
+    - "Tell the user what each ticket": none. Kept: the principle of Requirements, the user's part.
+    - "Where the user's later words bear on a `request`": Requirements: requirements checked against added words.
     - "Where the user rules on a ticket under `tickets/blocked/`": Decisions: a departing decision reaches the user.
 - [Decisions](prompts/agents/notes/coordinator.md#decisions): Decisions: each decision recorded with what it was made from.
 - [Declines](prompts/agents/notes/coordinator.md#declines): Decisions: a decline carries its defense.
 - [Changes](prompts/agents/notes/coordinator.md#changes): Process assessment: the agent and the reviews of each work product.
     - "Before you launch an agent, read", "Where you run no solver pass, read": none. Kept: they lead the coordinator to the notes its work there needs.
-    - "While an operator of yours runs, run no change yourself": Work control: one live holder per ticket.
+    - "While an operator of yours runs, run no change yourself on a route other than": Work control: one live holder per ticket.
     - "Once a change you merge with no `change` ticket": Merge: a hotfix reviewed after it merges.
 - [Worktrees](prompts/agents/notes/coordinator.md#worktrees): Configuration management: one live change per worktree.
 - [Reports to the user](prompts/agents/notes/coordinator.md#reports-to-the-user): Decisions: a departing decision reaches the user.
 - [Cards](prompts/agents/notes/coordinator.md#cards): Decisions: a departing decision reaches the user.
 - [Codex](prompts/agents/notes/coordinator.md#codex): Decisions: a departing decision reaches the user.
-    - "When specifying an issue in prose to fix": Requirements: requirements traced to the Words.
+    - "When specifying an issue in prose to fix": Requirements: requirements traced to the spans.
 
 ## Launching notes
-- [Launching](prompts/agents/notes/launching.md#launching): Implementation: each item not done reaches the agent that decides it; Requirements: requirements traced to the Words.
+- [Launching](prompts/agents/notes/launching.md#launching): Implementation: each item not done reaches the agent that decides it; Requirements: requirements traced to the spans.
     - "After an agent's definition changes": none. Kept: the harness reloads an agent's file only after that wait.
     - "Give an agent a brief in the form": none. Kept: it leads a launcher to the form of each brief.
     - "Where a brief gives a scratch directory": none. Kept: it keeps the session's files in the session's scratchpad.
@@ -94,10 +97,11 @@
     - "A transcript review is a `general-purpose` agent": Quality assurance: the review at each run's end.
     - "Pause or serialize agents only": none. Kept: the principle of Work control.
 - [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out): Implementation: each item not done reaches the agent that decides it.
+- [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief): Requirements: requirements traced to the spans.
 - [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief): Configuration management: one live change per worktree.
     - "It gives the accepted gate outputs": Merge: each merge passes the gate and the checks.
 - [A code editor's brief](prompts/agents/notes/launching.md#a-code-editors-brief): none. Kept: it gives a code editor the directories its work writes to.
-- [A change's brief](prompts/agents/notes/launching.md#a-changes-brief): Requirements: requirements traced to the Words; Configuration management: overlapping changes ordered.
+- [A change's brief](prompts/agents/notes/launching.md#a-changes-brief): Requirements: requirements traced to the spans; Configuration management: overlapping changes ordered.
 - [Items and files](prompts/agents/notes/launching.md#items-and-files): Configuration management: overlapping changes ordered.
 - [A doc editor's brief](prompts/agents/notes/launching.md#a-doc-editors-brief): none. Kept: the principle of Design, one idea in one place.
 - [A ticket reviewer's brief](prompts/agents/notes/launching.md#a-ticket-reviewers-brief): Verification: each `change` ticket checked before the build.
@@ -193,7 +197,7 @@
 
 ## Ticket analyst
 - [Ticket analyst](prompts/agents/ticket-analyst.md#ticket-analyst): none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
-- [Tickets](prompts/agents/ticket-analyst.md#tickets): Requirements: requirements traced to the Words; Quality assurance: a recurring fault taken as one family; Decisions: each decision recorded with what it was made from.
+- [Tickets](prompts/agents/ticket-analyst.md#tickets): Requirements: requirements traced to the spans; Quality assurance: a recurring fault taken as one family; Decisions: each decision recorded with what it was made from.
     - "Where the log of a `request` you take shows a `change` filed": Requirements: requirements checked against added words.
     - "Where the log of a `request` you take gives a commit": Merge: a hotfix reviewed after it merges.
     - "Where your brief or a later message gives a draft": none. Kept: the principle of Process assessment, spend no run the work does not need.
@@ -229,9 +233,9 @@
     - "Report nothing on a draft's wording": none. Kept: it keeps the review on what a requirement states, a way Verification can fail.
     - "A `change`, other than one under `tickets/blocked/`", "Instructions that change the same files are ordered", "A `change` ticket's `depends-on` gives": Configuration management: overlapping changes ordered.
     - "A `change` to the agents' processes": Process assessment: each rule maps to an outcome.
-    - "In a `change` that serves a `request`, each item of the Intent": Requirements: requirements traced to the Words.
+    - "In a `change` that serves a `request`, each item of the Intent": Requirements: requirements traced to the spans.
     - "A `change` that adds a mechanism to code has a `Design`": Design: the design checked before the build.
-    - "Each item of the Intent is a requirement": Requirements: requirements traced to the Words.
+    - "Each item of the Intent is a requirement": Requirements: requirements traced to the spans.
     - "No case that the readers of a line": Risk management: each way a design can fail is a requirement.
     - "A finding quotes the draft's line": none. Kept: it gives the form of a finding, which the ticket analyst acts on.
 - [Tickets](prompts/agents/ticket-reviewer.md#tickets): none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
@@ -261,7 +265,7 @@
 - [Doc editor](prompts/agents/doc-editor.md#doc-editor): Implementation: each requirement shown to hold; each item not done reaches the agent that decides it.
     - "Run no git command that changes state": Configuration management: one live change per worktree.
     - "Each Justification entry names", "In your reply, list as unused each Justification entry": none. Kept: the principle of Verification, check new agent-facing text against each agent it reaches.
-    - "State the Intent at the minimum": Requirements: requirements traced to the Words.
+    - "State the Intent at the minimum": Requirements: requirements traced to the spans.
     - "Before you write anything, take these steps", "Judge each line you write or keep", "After each edit you make", "Fix each finding that needs no decision", "Then judge each line of the place you edited again": none. Kept: the principle of Verification, check new agent-facing text against each agent it reaches.
     - "Where you ran the gate": Merge: each merge passes the gate and the checks.
     - "The kind of a ticket you file is `question`": none. Kept: it serves the purpose of Quality assurance, the cause of each fault.

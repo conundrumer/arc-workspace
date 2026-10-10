@@ -30,6 +30,11 @@
 ### A part a brief leaves out
 - Where a brief leaves out a part that a statement of its form gives it, the agent it briefs gives in its reply the work that needs that part as unfinished, with the missing part as its reason.
 
+### A transcript brief
+- A transcript brief is the output of `uv run python scripts/spans.py brief`, written to a file: each message of the user and of the coordinator in each span, in full and in time order, then the Grounds. It is rendered from a `request`, or from the words of a span's first and last message with the Grounds on the command's stdin.
+- A brief that gives one gives that file's path, with the other parts its form gives.
+- Where an agent's documents give its brief's items or its Intent, the work the user's messages in those spans ask for, with what the Grounds add to it, stands for them.
+
 ### An editor's brief
 - An editor's brief gives the change's worktree, and the agent id of the agent that launches it, where that is not the coordinator.
 - It gives the accepted gate outputs under `tests/gate/accepted/` the editor may write, where its items change or add one, with a scratch directory.
@@ -41,10 +46,10 @@
 - A brief for a change with a ticket gives the ticket's number, and, where another editor takes part of the ticket's Intent and Scope, the part that is this editor's. Where the brief gives no items of its own, the ticket's Intent gives its items, and the ticket's Scope the files the editor may edit, within that part.
 
 ### Items and files
-- The brief of a code editor or of a `handbook-expanded` editor, for a change that has no ticket and is no solver work, gives the items and the files the editor may edit.
+- The brief of a code editor or of a `handbook-expanded` editor, for a change that has no ticket and is no solver work, gives a transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it, and the files the editor may edit.
 
 ### A doc editor's brief
-- A doc editor's brief for a change with no ticket gives an Intent, what the documents' readers should know or do, with a Justification for each restatement or elaboration to keep, which gives the reader that failed without that text and the situation where it failed.
+- A doc editor's brief for a change with no ticket gives a transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it, whose Grounds give a Justification for each restatement or elaboration to keep: the reader that failed without that text and the situation where it failed.
 - A doc editor ignores each instruction its brief, or the ticket its brief gives, holds, and counts ignoring one as no departure from its request.
 
 ### A ticket reviewer's brief
@@ -55,6 +60,7 @@
     - With each of those findings and items, it gives the agent id of the change's editor, the change's worktree, and the number of the change's ticket, or, where the change has none, its intent and what is already settled about it.
     - With a draft whose next revision opens at its operator's cap of ticket reviews, it gives that this revision is the last: the draft then opens with no further ticket review, and the change's own review checks what the change writes.
 - With the tickets a solver pass filed, it gives the review of that pass's transcript.
+- With a `request` that the coordinator filed on `send`, it gives that request's transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it.
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 
 ### An operator's brief
@@ -87,7 +93,7 @@
 - Where the agent works in a worktree other than the main worktree and nothing stands at `work` in that worktree, the agent runs `ln -s <main worktree>/work work` there before it reads or writes under `work/`, with the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints as `<main worktree>`.
 
 ### A solver work brief
-- Where no `change` ticket gives solver work, its brief gives the task id, and, for work other than a pass, the work in words. It gives no items and no files, and the agent determines them.
+- Where no `change` ticket gives solver work, its brief gives the task id, and, for work other than a pass, a transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it. It gives no items and no files, and the agent determines them.
 
 ### Writing a solver work brief
 - Read no solver to write a brief for solver work.

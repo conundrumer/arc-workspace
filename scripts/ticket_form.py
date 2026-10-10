@@ -42,9 +42,13 @@ def title(path: Path, text: str) -> str:
 
 
 SECTIONS = {Kind.CHANGE: ("Intent", "Motivation", "Scope", "Grounds"),
-            Kind.REQUEST: ("Words", "Transcript")}
+            Kind.REQUEST: ("Transcript", "Grounds")}
 """The sections of each kind that has its own; every other kind has
 `DEFECT_SECTIONS`."""
+
+RETIRED = {Kind.REQUEST: "Words"}
+"""The section each kind may no longer hold, which `checked_kind`
+refuses."""
 
 DESIGN = "Design"
 """The section a `change` that adds a mechanism to code adds after its
@@ -153,6 +157,10 @@ def checked_kind(tickets: Path, agent: str, text: str) -> Kind:
         raise Refused(mctx("a `{kind}` gives `{key}`").format(kind=kind, key=key))
     if not body_form(kind).match(text, head.end()):
         raise Refused(mctx("the ticket on stdin does not have the form `--help` shows"))
+    retired = RETIRED.get(kind)
+    if retired is not None and re.search(f"^{heading(retired)}$", text, re.MULTILINE):
+        raise Refused(mctx("a `{kind}` has no `{section}` section").format(
+            kind=kind, section=heading(retired)))
     if re.search(f"^{LOG}$", text, re.MULTILINE):
         raise Refused(mctx("the ticket on stdin has a `{log}` section, which the command writes").format(log=LOG))
     return kind

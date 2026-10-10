@@ -1,0 +1,311 @@
+"""Turn spans of a session's transcript into a `request`, a brief and a
+follow-up's span line. `HELP`, which `--help` prints, says how the
+coordinator and a ticket analyst call it."""
+
+import re
+import sys
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
+
+from controlled_markdown import mctx
+from engine import checkout
+from handbook.paths import importable
+
+importable(checkout.scripts())
+
+from file_ticket import file_ticket, main_tickets, run  # noqa: E402
+from run_reads import blocks, message_text  # noqa: E402
+from senders import Origin, origin  # noqa: E402
+from ticket_files import ticket_name, ticket_path, ticket_status  # noqa: E402
+from ticket_form import HEADING, heading  # noqa: E402
+from ticket_log import log_moves  # noqa: E402
+from ticket_numbers import session_id, ticket_number  # noqa: E402
+from ticketing.times import utc_stamp  # noqa: E402
+from ticketing.vocabulary import Domain, Kind, Status  # noqa: E402
+from ticket_vocabulary import ticked  # noqa: E402
+from transcripts import Entry, Refused, epoch, find, read_entries  # noqa: E402
+
+INVOCATION = "uv run python scripts/spans.py"
+
+COORDINATOR = "coordinator"
+"""The agent that files the requests this script writes."""
+
+TRANSCRIPT = "Transcript"
+GROUNDS = "Grounds"
+
+
+class Route(Enum):
+    """The routes of work that write a request, a brief or a span."""
+    DIRECT = "direct"
+    SEND = "send"
+    HOTFIX = "hotfix"
+    FILE = "file"
+    DRAFT = "draft"
+
+
+INFERRED = "--inferred"
+
+FOLLOW_UP = "re {number}"
+"""The route of a follow-up on the request `number`, and of a ruling the
+user gives on it."""
+
+HELP = mctx("""
+    - `{invocation} file <route> [{inferred}] <subject> <title> <start words> <end words>` files a `request` whose span runs from the message `<start words>` gives to the one `<end words>` gives, with the Grounds lines on its stdin, and prints its path.
+    - `{invocation} brief [--route <route>] <number>` prints the brief of the request `<number>`.
+    - `{invocation} brief --route <route> <start words> <end words>` prints the brief of that span, with the Grounds lines on its stdin.
+    - `{invocation} append [{inferred}] <number> <start words> <end words>` appends that span to the request `<number>`, with a log line, and prints its path. Its route is `{follow_up}`, for a follow-up on that request and for a ruling the user gives on it.
+    - Usage:
+        ```
+        {invocation} file send <namespace>-<short-title> '<target>: <what the user asks for>' '<start words>' '<end words>' <<'EOF'
+        - <one addition to what the span gives, with its source>
+        EOF
+        ```
+    - `<route>` is one of {routes}. `{inferred}` marks a route the coordinator inferred, which waits on the user's reply.
+    - `<subject>` and `<title>` are a `request`'s, as `uv run python scripts/file_ticket.py --help` gives them.
+    - A message is a message of the user, or the text of one of the coordinator's replies, in the session whose id the shell holds in `CLAUDE_CODE_SESSION_ID`.
+    - A words argument matches a message whose words hold its words in a row, where a word is a run of letters and digits, compared in lower case, and each other character only separates words.
+    - The command refuses, and prints each match, where a words argument matches no message or more than one, and refuses where the end comes before the start.
+    - A span is the line `<session id> <start> <end>` under the request's `{transcript}`, with each time in UTC to the second, and holds each message from its start to its end, inclusive.
+    - `file` writes the request with `{transcript}` and `{grounds}`, and files it as `uv run python scripts/file_ticket.py` files. On `draft`, and on a route given with `{inferred}`, it then moves the request to `tickets/draft/`.
+    - A brief gives each message of each span of the request, in full and in time order, each with its time and its sender, and then its Grounds.
+    - `append` adds the span line under the request's `{transcript}`, and writes a log line in the status the request stands in.
+    - `file`, `append`, and `brief` with `--route` end with a readback prompt, which gives the route and the first and the last message of the span. `brief` prints that prompt on stderr, so that its stdout is the brief alone.
+    """)
+
+READBACK = mctx("""
+    - Read the route back to the user now: `{route}`{inferred}, your restatement of the work in your own words, and the span's first and last message.
+    - First: {first}
+    - Last: {last}
+    """)
+
+INFERRED_NOTE = mctx(", inferred, so wait for the user's reply before you act")
+
+DRAFT_NOTE = mctx("route `{route}`")
+
+SPAN_NOTE = mctx("span added: {span}")
+
+
+class Sender(Enum):
+    USER = "user"
+    COORDINATOR = "coordinator"
+
+
+@dataclass(frozen=True)
+class Message:
+    time: str
+    sender: Sender
+    text: str
+
+    def render(self) -> str:
+        return f"{self.time} {self.sender.value}:\n{self.text}"
+
+
+@dataclass(frozen=True)
+class Span:
+    session: str
+    start: str
+    end: str
+
+    def line(self) -> str:
+        return f"{self.session} {self.start} {self.end}"
+
+
+def fold(text: str) -> str:
+    return " ".join(re.findall(r"[^\W_]+", text.lower()))
+
+
+def message(entry: Entry) -> Message | None:
+    """The message `entry` gives, or None where it gives none of the user
+    or the coordinator."""
+    if "timestamp" not in entry:
+        return None
+    time = utc_stamp(epoch(entry["timestamp"]))
+    if entry.get("type") == "assistant":
+        text = "\n".join(b.get("text", "") for b in blocks(entry, "text")).strip()
+        return Message(time, Sender.COORDINATOR, text) if text else None
+    if origin(entry)[1] is Origin.HUMAN:
+        return Message(time, Sender.USER, message_text(entry))
+    return None
+
+
+def messages(session: str) -> list[Message]:
+    found = (message(e) for e in read_entries(find(session)))
+    return sorted((m for m in found if m is not None), key=lambda m: m.time)
+
+
+def resolve(words: str, session: str) -> Message:
+    """The one message of `session` whose folded text holds the folded
+    `words` at word boundaries."""
+    folded = fold(words)
+    if not folded:
+        raise Refused(mctx("`{words}` holds no word").format(words=words))
+    matches = [m for m in messages(session) if f" {folded} " in f" {fold(m.text)} "]
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise Refused(mctx("`{words}` matches no message of session `{session}`").format(
+            words=words, session=session))
+    raise Refused("\n\n".join([mctx("`{words}` matches more than one message:").format(words=words),
+                                 *(m.render() for m in matches)]))
+
+
+def span_messages(span: Span) -> list[Message]:
+    return [m for m in messages(span.session) if span.start <= m.time <= span.end]
+
+
+def resolve_span(start_words: str, end_words: str) -> Span:
+    session = session_id()
+    start, end = resolve(start_words, session), resolve(end_words, session)
+    if end.time < start.time:
+        raise Refused(mctx("the end, at {end}, comes before the start, at {start}").format(
+            end=end.time, start=start.time))
+    return Span(session, start.time, end.time)
+
+
+def readback_prompt(route: str, first: Message, last: Message, inferred: bool) -> str:
+    """`route` is a route as the user's directive gives it: a `Route`'s
+    value, or `FOLLOW_UP` with the request's number."""
+    return READBACK.format(route=route, inferred=INFERRED_NOTE if inferred else "",
+                           first=first.render(), last=last.render())
+
+
+def span_readback(route: str, spans: list[Span], inferred: bool) -> str:
+    """The readback prompt of `spans`, from the first message of the first
+    to the last message of the last."""
+    return readback_prompt(route, span_messages(spans[0])[0], span_messages(spans[-1])[-1], inferred)
+
+
+def route_of(word: str) -> Route:
+    try:
+        return Route(word)
+    except ValueError:
+        raise Refused(mctx("`{word}` is no route: the routes are {routes}").format(
+            word=word, routes=ticked(r.value for r in Route)))
+
+
+def grounds_lines() -> str:
+    return sys.stdin.read().strip("\n")
+
+
+def file_request(route: Route, inferred: bool, subject: str, title: str, start_words: str,
+                 end_words: str) -> str:
+    span = resolve_span(start_words, end_words)
+    text = (f"---\nkind: {Kind.REQUEST.value}\n---\n# {title}\n\n{heading(TRANSCRIPT)}\n{span.line()}\n\n"
+            f"{heading(GROUNDS)}\n{grounds_lines()}\n")
+    tickets = main_tickets()
+    path = file_ticket(tickets, Domain.CHANGE.value, subject, COORDINATOR, text)
+    if route is Route.DRAFT or inferred:
+        path = log_moves(tickets, ticket_name(path).number, Status.DRAFT, COORDINATOR, Status.OPEN,
+                         None, DRAFT_NOTE.format(route=route.value)).moved[0]
+    return f"{path}\n\n{span_readback(route.value, [span], inferred)}"
+
+
+def bounds(text: str, name: str) -> tuple[int, int]:
+    """Where the lines of the section `name` of a ticket's text start and
+    end."""
+    head = re.search(f"^{re.escape(heading(name))}$", text, re.MULTILINE)
+    if head is None:
+        raise Refused(mctx("the ticket has no `{section}` section").format(section=heading(name)))
+    nxt = HEADING.search(text, head.end())
+    return head.end(), nxt.start() if nxt else len(text)
+
+
+def section(text: str, name: str) -> str:
+    start, end = bounds(text, name)
+    return text[start:end].strip("\n")
+
+
+def spans_of(text: str) -> list[Span]:
+    spans = []
+    for line in section(text, TRANSCRIPT).splitlines():
+        parts = line.split()
+        if len(parts) != 3:
+            raise Refused(mctx("`{line}` is no span line").format(line=line))
+        spans.append(Span(*parts))
+    return spans
+
+
+def render_brief(spans: list[Span], grounds: str) -> str:
+    held = [m for s in spans for m in span_messages(s)]
+    return "\n\n".join([*(m.render() for m in held), heading(GROUNDS), grounds]).rstrip("\n")
+
+
+def brief(*args: str) -> str:
+    route = None
+    rest = list(args)
+    if rest[:1] == ["--route"] and len(rest) >= 2:
+        route = route_of(rest[1])
+        rest = rest[2:]
+    if len(rest) == 1:
+        text = ticket_path(main_tickets(), ticket_number(rest[0])).read_text()
+        spans, grounds = spans_of(text), section(text, GROUNDS)
+    elif len(rest) == 2 and route is not None:
+        spans, grounds = [resolve_span(*rest)], grounds_lines()
+    else:
+        raise Refused(mctx("the arguments do not have a form `--help` gives"))
+    if route is not None:
+        print(span_readback(route.value, spans, False), file=sys.stderr)
+    return render_brief(spans, grounds)
+
+
+def append(inferred: bool, number: str, start_words: str, end_words: str) -> str:
+    span = resolve_span(start_words, end_words)
+    tickets = main_tickets()
+    ref = ticket_number(number)
+    path = ticket_path(tickets, ref)
+    text = path.read_text()
+    _, cut = bounds(text, TRANSCRIPT)
+    rest = text[cut:]
+    path.write_text(f"{text[:cut].rstrip(chr(10))}\n{span.line()}\n" + (f"\n{rest}" if rest else ""))
+    status = ticket_status(path)
+    moved = log_moves(tickets, ref, status, COORDINATOR, status, None,
+                      SPAN_NOTE.format(span=span.line())).moved[0]
+    return f"{moved}\n\n{span_readback(FOLLOW_UP.format(number=ref), [span], inferred)}"
+
+
+def marked(args: tuple[str, ...], count: int) -> tuple[bool, list[str]]:
+    """Whether `--inferred` leads a call's arguments, and the rest, refused
+    where the rest are not `count`."""
+    inferred = args[:1] == (INFERRED,)
+    rest = list(args[1 if inferred else 0:])
+    if len(rest) != count:
+        raise Refused(mctx("the arguments do not have a form `--help` gives"))
+    return inferred, rest
+
+
+def file_command(*args: str) -> str:
+    if not args:
+        raise Refused(mctx("the arguments do not have a form `--help` gives"))
+    inferred, rest = marked(args[1:], 4)
+    return file_request(route_of(args[0]), inferred, *rest)
+
+
+def append_command(*args: str) -> str:
+    inferred, rest = marked(args, 3)
+    return append(inferred, *rest)
+
+
+SUBCOMMANDS = {
+    "file": file_command,
+    "append": append_command,
+    "brief": brief,
+}
+
+
+def unknown(word: str) -> str:
+    raise Refused(mctx("`{word}` is no subcommand of `{invocation}`").format(
+        word=word, invocation=INVOCATION))
+
+
+def main(args: list[str]) -> int:
+    text = HELP.format(invocation=INVOCATION, inferred=INFERRED, routes=ticked(r.value for r in Route),
+                       transcript=heading(TRANSCRIPT), follow_up=FOLLOW_UP.format(number="<number>"), grounds=heading(GROUNDS))
+    act = SUBCOMMANDS.get(args[0]) if args else None
+    if act is None:
+        return run(args, text, 1, unknown, False, args)
+    return run(args[1:], text, None, act, False, args)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

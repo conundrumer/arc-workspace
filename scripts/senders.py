@@ -24,6 +24,15 @@ class Origin(Enum):
     PEER = "peer"
 
 
+def origin(entry: Entry) -> tuple[str | None, Origin | None]:
+    """The origin kind the harness gives `entry`, on the entry or, for a
+    message queued while the model worked, on its attachment, with its
+    member of `Origin`, None where it is no member."""
+    given = (entry.get("attachment") or {}) if entry.get("type") == "attachment" else entry
+    kind = (given.get("origin") or {}).get("kind")
+    return kind, member(Origin, kind)
+
+
 class Sender(Enum):
     """Who a message after a run's brief is from, as HELP gives it."""
     PARENT = "parent"
@@ -39,19 +48,17 @@ def sender(entry: Entry, parent: str, children: frozenset[str],
     the agents the run launched, and `sessions` the sessions of the run."""
     text = message_text(entry)
     queued = entry.get("type") == "attachment"
-    given = (entry.get("attachment") or {}) if queued else entry
-    kind = (given.get("origin") or {}).get("kind")
-    origin = member(Origin, kind)
-    if kind is not None and origin is None:
+    kind, given = origin(entry)
+    if kind is not None and given is None:
         return Sender.UNKNOWN
     from_main = Sender.PARENT if parent == MAIN else Sender.OTHER
-    if origin is Origin.TASK_NOTIFICATION or NOTIFICATION.search(text):
+    if given is Origin.TASK_NOTIFICATION or NOTIFICATION.search(text):
         return Sender.OTHER
-    if origin is Origin.COORDINATOR:
+    if given is Origin.COORDINATOR:
         return from_main
-    if origin is Origin.HUMAN:
+    if given is Origin.HUMAN:
         return Sender.OTHER
-    if origin is Origin.PEER or queued:
+    if given is Origin.PEER or queued:
         m = AGENT_MESSAGE.search(text)
         if m:
             return sent_by(m.group(1), parent, children, sessions)
