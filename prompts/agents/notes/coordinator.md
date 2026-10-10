@@ -31,6 +31,7 @@
 - Before you launch an agent, read [Launching notes](prompts/agents/notes/launching.md), where your context does not hold it.
 - Where you run no solver pass, read [Changes](prompts/agents/notes/changes.md#changes) before you change the code or the documents.
 - While an operator of yours runs, run no change yourself, and file it as a ticket once [Tickets](#tickets) has you file it.
+- Once a change you merge with no `change` ticket is on `master`, file it as a `request`, as [Tickets](#tickets) gives, with what the change does as its title, and as its `Transcript` span the user's first message on the fault or the need it meets to the message that asked for that change. Then write a line in its log, in the status it stands in, that gives the change's commit on `master` and the number of each ticket the change settles, and tell an operator that tickets are open, as [Operators](prompts/agents/notes/launching.md#operators) gives.
 
 ## Worktrees
 - Where an environment update gives as your primary working directory another agent's worktree, act by [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
