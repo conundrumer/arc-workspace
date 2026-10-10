@@ -197,19 +197,8 @@
 
 ## Ticket analyst
 - [Ticket analyst](prompts/agents/ticket-analyst.md#ticket-analyst): none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
-- [Tickets](prompts/agents/ticket-analyst.md#tickets): Requirements: requirements traced to the spans; Quality assurance: a recurring fault taken as one family; Decisions: each decision recorded with what it was made from.
-    - "Where the log of a `request` you take shows a `change` filed": Requirements: requirements checked against added words.
-    - "Where the log of a `request` you take gives a commit": Merge: a hotfix reviewed after it merges.
-    - "Where your brief or a later message gives a draft": none. Kept: the principle of Process assessment, spend no run the work does not need.
-    - "Where you leave every suggestion": Verification: a later round on changed text only.
-    - "Cut each line of the draft that a finding falls on": none. Kept: it keeps a requirement to what holds, a way Requirements can fail.
-    - "Where a finding is a defensible reason", "Findings of two ticket reviewers": none. Kept: the principle of Decisions.
-    - "Then think the whole revised design through": Risk management: each way a design can fail is a requirement.
-    - "A ticket of kind `refactor` is a defect place": none. Kept: the principle of Design, one idea in one place.
-    - "Judge a ticket a solver pass filed": none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
-- [A held step](prompts/agents/ticket-analyst.md#a-held-step): Work control: stopped work reaches an agent.
-    - "Where [The user's part]": Decisions: a departing decision reaches the user.
-    - "Where the operator's command could have decided": none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
+- [Jobs](prompts/agents/ticket-analyst.md#jobs): none. Kept: the principle of Process assessment, spend no run the work does not need.
+- [Settling](prompts/agents/ticket-analyst.md#settling): Quality assurance: a recurring fault taken as one family; Decisions: each decision recorded with what it was made from.
 - [Resolving](prompts/agents/ticket-analyst.md#resolving): Decisions: a departing decision reaches the user; a decline carries its defense; each decision recorded with what it was made from.
     - "Carry out every other resolution": Work control: one live holder per ticket.
     - "In a `change` for speed": Measurement: each figure cites its command.
@@ -219,9 +208,22 @@
     - "The kind of a ticket you file is `change`": none. Kept: it gives the form of the tickets the analyst files.
     - "A `change` to the agents' processes": Process assessment: each rule maps to an outcome.
     - "Write the `Design` section": Design: a design from the code; the Scope covers the design.
-    - "Settle by steps 4 to 6": Process assessment: the faults of the processes reach the user.
-- [Process assessment](prompts/agents/ticket-analyst.md#process-assessment): Process assessment: the faults of the processes reach the user; each rule maps to an outcome.
-- [Findings an editor leaves](prompts/agents/ticket-analyst.md#findings-an-editor-leaves): Decisions: a decline carries its defense.
+    - "Settle by [Settling]": Process assessment: the faults of the processes reach the user.
+- [Settling tickets](prompts/agents/ticket-analyst/tickets.md): Requirements: requirements traced to the spans; Decisions: each decision recorded with what it was made from.
+    - "Where the log of a `request` you take shows a `change` filed": Requirements: requirements checked against added words.
+    - "Where the log of a `request` you take gives a commit": Merge: a hotfix reviewed after it merges.
+    - "A ticket of kind `refactor` is a defect place": none. Kept: the principle of Design, one idea in one place.
+    - "Judge a ticket a solver pass filed": none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
+- [Revising a draft](prompts/agents/ticket-analyst/drafts.md): none. Kept: the principle of Process assessment, spend no run the work does not need.
+    - "Where you leave every suggestion": Verification: a later round on changed text only.
+    - "Cut each line of the draft that a finding falls on": none. Kept: it keeps a requirement to what holds, a way Requirements can fail.
+    - "Where a finding is a defensible reason", "Findings of two ticket reviewers": none. Kept: the principle of Decisions.
+    - "Then think the whole revised design through": Risk management: each way a design can fail is a requirement.
+- [A held step](prompts/agents/ticket-analyst/held-step.md): Work control: stopped work reaches an agent.
+    - "Where [The user's part]": Decisions: a departing decision reaches the user.
+    - "Where the operator's command could have decided": none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
+- [Process assessment](prompts/agents/ticket-analyst/process-assessment.md): Process assessment: the faults of the processes reach the user; each rule maps to an outcome.
+- [An editor's findings](prompts/agents/ticket-analyst/findings.md): Decisions: a decline carries its defense.
     - "Judge each `refactor` place": Implementation: each item not done reaches the agent that decides it.
 
 ## Item checker
