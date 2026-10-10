@@ -5,11 +5,11 @@ belong to."""
 
 import json
 import re
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from controlled_markdown import mctx
 from operations.constants import COORDINATOR as MAIN
@@ -374,10 +374,20 @@ def refused_at(entries: list[Entry]) -> list[float]:
             and result_text(b, e.get("toolUseResult")).lstrip().startswith(REFUSALS)]
 
 
-def bash_calls(entries: list[Entry]) -> set[str]:
-    """The ids of the Bash calls of `entries`."""
+def tool_calls(entries: Iterable[Entry], names: Collection[str]) -> set[str]:
+    """The ids of the calls of `entries` whose tool is one of `names`."""
     return {str(b.get("id")) for e in entries if e.get("type") == "assistant"
-            for b in blocks(e, "tool_use") if b.get("name") == "Bash"}
+            for b in blocks(e, "tool_use") if b.get("name") in names}
+
+
+class Called(Protocol):
+    call: str
+
+
+def bash_spans[S: Called](spans: Iterable[S], entries: Iterable[Entry]) -> list[S]:
+    """The spans of `spans` that are Bash calls of `entries`."""
+    bash = tool_calls(entries, ("Bash",))
+    return [s for s in spans if s.call in bash]
 
 
 WAIT_LEAD = ": 'unattended-wait:"

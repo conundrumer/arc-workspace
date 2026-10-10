@@ -35,7 +35,7 @@ from run_prints import (RECENT_CALLS, print_messages,  # noqa: E402
                         print_report, print_running)
 from run_profile import (COMMAND_WIDTH, Run, clock, dollars, minutes,  # noqa: E402
                          part_split, print_groups, print_types, profile)
-from run_reads import (BACKGROUND_TASK, agent_type, bash_calls, blocks, refused_at,  # noqa: E402
+from run_reads import (BACKGROUND_TASK, agent_type, bash_spans, blocks, refused_at,  # noqa: E402
                        result_text, run_entries, run_type)
 from run_store import RunStore  # noqa: E402
 from operations.alerts import AlertKind, opening  # noqa: E402
@@ -269,8 +269,7 @@ def budget_of(role: Role, items: int | None, undecided: list[str]) -> float | No
 def print_readings(r: Run, runs: list[Run]) -> None:
     """The burn readings of `r`, as HELP gives them."""
     entries = run_entries(r.path)
-    bash = bash_calls(entries)
-    counts = Counter(s.command for s in r.spans if s.call in bash)
+    counts = Counter(s.command for s in bash_spans(r.spans, entries))
     hung = sum(1 for s in r.spans
                if hung_time(r, runs, s) <= (s.end if s.end is not None else time.time()))
     me = agent_id(r.path)

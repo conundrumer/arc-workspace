@@ -5,7 +5,6 @@ A profile also reads files past those transcripts, and the state of running
 processes: `noted_reads` states those reads."""
 
 import math
-import subprocess
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -18,16 +17,14 @@ from agent_turns import idle_after, turns
 from command_labels import AGENT_TOOLS, POLL, call_command, command_label
 from controlled_markdown import mctx
 from filed_texts import unfiled
-from noted_reads import note_live, note_read
-from run_reads import (BACKGROUND_TASK, blocks, context_size,
-                       in_background, is_prompt, message_text, notified,
-                       output_file, parent_id, results_by_call, run_entries,
-                       run_sessions, run_type, session_of,
-                       type_in)
+from run_backgrounds import background_ends, backgrounds
+from run_reads import (blocks, context_size, is_prompt, message_text, parent_id,
+                       results_by_call, run_entries, run_sessions, run_type, session_of,
+                       tool_calls, type_in)
 from senders import Sender, sender
 from ticketing.times import MINUTE_FORM
 from token_prices import run_cost
-from transcripts import Entry, Refused, agent_id, epoch, is_subagent, state_cache
+from transcripts import Entry, agent_id, epoch, is_subagent
 
 
 class Part(Enum):
@@ -47,9 +44,6 @@ MOVED = ("timedOutAfterMs", "assistantAutoBackgrounded", "backgroundedByUser")
 # The characters of a call's command or of an agent's text output that
 # `--running` prints.
 COMMAND_WIDTH = 160
-# The keys of a call's result that give an id a notification of the call
-# gives.
-TASK_KEYS = (BACKGROUND_TASK, "taskId", "agentId")
 
 
 @dataclass
@@ -151,89 +145,6 @@ class Call:
     background: Key | None
 
 
-@dataclass(frozen=True)
-class Background:
-    """A call whose result says it runs in the background: the ids a
-    notification of it gives, its tool-use id among them, and for a Bash
-    call, the output file its result names, or None where it names none."""
-    ids: frozenset[str]
-    output: Path | None
-
-
-# Backgrounded calls.
-
-def agent_calls(entries: Iterable[Entry]) -> set[str]:
-    return {str(b.get("id")) for e in entries if e.get("type") == "assistant"
-            for b in blocks(e, "tool_use") if b.get("name") in AGENT_TOOLS}
-
-
-def backgrounds(entries: Iterable[Entry], agent_calls: set[str],
-                undecided: list[str]) -> dict[str, Background]:
-    """Each call among `entries` that runs in the background, by its
-    tool-use id, where `agent_calls` are the tool-use ids of Agent calls."""
-    out: dict[str, Background] = {}
-    for e in entries:
-        r = e.get("toolUseResult")
-        if e.get("type") != "user" or not isinstance(r, dict):
-            continue
-        bash = bool(r.get(BACKGROUND_TASK))
-        for b in blocks(e, "tool_result"):
-            if not b.get("tool_use_id"):
-                continue
-            call = str(b["tool_use_id"])
-            if bash or (call in agent_calls and in_background(r, undecided, call)):
-                out[call] = Background(
-                    frozenset({call, *(str(r[k]) for k in TASK_KEYS if r.get(k))}),
-                    output_file(b) if bash else None)
-    return out
-
-
-def background_ends(found: dict[str, Background],
-                    entries: Iterable[Entry]) -> dict[str, float | None]:
-    """When each call of `found` ended, as the HELP of `profile_runs` gives
-    it, from the notifications among `entries`, or None where it still runs
-    or whether it runs is unknown."""
-    told: dict[str, float] = {}
-    for e in entries:
-        if e.get("type") != "assistant" and e.get("timestamp"):
-            t = epoch(e["timestamp"])
-            for ident in notified(e):
-                told[ident] = min(t, told.get(ident, t))
-    ends: dict[str, float | None] = {
-        call: min((told[i] for i in b.ids if i in told), default=None)
-        for call, b in found.items()}
-    outputs = {call: b.output for call, b in found.items()
-               if ends[call] is None and b.output is not None}
-    for f in outputs.values():
-        note_read(f)
-    files = {call: f for call, f in outputs.items() if f.is_file()}
-    for call, f in files.items():
-        if str(f.resolve()) in held_in(f.resolve().parent):
-            note_live()
-            continue
-        try:
-            ends[call] = f.stat().st_mtime
-        except FileNotFoundError:
-            pass
-    return ends
-
-
-@state_cache(None)
-def held_in(directory: Path) -> frozenset[str]:
-    """The paths of the files in `directory` that a process holds open, as
-    `lsof` gives them, read once for each state, so each reader of a run
-    sees one state, and one `lsof` call serves the runs of a session."""
-    # lsof exits 1 where it finds no open file as well as on a fault, so
-    # only its stderr tells a fault.
-    out = subprocess.run(["lsof", "-F", "n", "+d", str(directory)],
-                         capture_output=True, text=True)
-    if out.stderr.strip():
-        raise Refused(mctx("which files in {dir} a process holds open is unknown: "
-                           "lsof says {err}").format(dir=directory,
-                                                     err=out.stderr.strip()))
-    return frozenset(line[1:] for line in out.stdout.splitlines() if line.startswith("n"))
-
-
 # Profiles.
 
 def launched_type(inp: dict[str, Any], result: dict[str, Any] | None,
@@ -282,7 +193,7 @@ def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Ru
     session = session_of(path)
     entries = run_entries(path)
     results = results_by_call(entries)
-    found = backgrounds(entries, agent_calls(entries), undecided)
+    found = backgrounds(entries, tool_calls(entries, AGENT_TOOLS), undecided)
     bg_ends = background_ends(found, entries)
     starts, ends = turns(entries)
     # The index of the prompt the model first answers: the brief is the

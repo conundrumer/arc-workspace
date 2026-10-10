@@ -4,8 +4,9 @@ An alert opens with a line of the form `alert: <kind> <agent id>`
 (`OPENING`), with the kind of `AlertKind` and the agent it is on. On an agent an
 operator of the session launched whose work is open:
 
-- A `budget` alert goes to the agent itself, under `BUDGET_MESSAGE`; each
-  other alert of the monitor goes to it under the message of its kind
+- A `budget` alert goes to the agent itself, as the monitor's own budget
+  alert, from its kind and its agent alone; each alert of the monitor goes
+  to it with its reading (`READING`) and the message of its kind under it
   (`to_agent`), which gives the agent its step.
 
 Any other alert, and an alert on an agent no operator launched, are
@@ -86,35 +87,53 @@ def opened(text: str) -> tuple[AlertKind | None, str] | None:
     return kinds.get(found["kind"]), found["agent"]
 
 
-BUDGET_MESSAGE = (mctx("A monitor's alert: your active time is past your budget.") + " "
-                  + briefs.AT_BUDGET)
+REPEATS = 3
+"""How many times in a row an agent runs the same Bash command with the same
+result before it gets a `repeated` alert."""
 
 
-HUNG_MESSAGE = mctx("A monitor's alert: a call of yours in flight has run far past its usual "
-                    "time. That call may have ended by the time you read this. Where it still "
-                    "runs, check whether it makes progress, and end it where it does not. Do "
-                    "not run it again unchanged.")
-REPEATED_MESSAGE = mctx("A monitor's alert: you ran the same Bash command with the same result "
-                        "several times in a row. Run that command again only once something "
-                        "has changed that can change its result.")
-STALL_MESSAGE = mctx("A monitor's alert: your turn ended while your work is open, and no "
-                     "report of yours reached your parent. Where your work is done, give your "
-                     "final reply again. Otherwise, carry on your work.")
+HUNG_FACTOR = 10
+"""How many times a call's usual time a call in flight runs before it
+counts as hung, once. A call whose usual time no run gives takes
+`steps.BLOCK_SECONDS` as its usual time."""
 
 
-def to_agent(kind: AlertKind, alert: str) -> str:
-    """The message to the agent of the alert `alert` of `kind`: the step the
-    kind gives the agent, with the alert under it."""
+READING = {k: v.format(factor=HUNG_FACTOR, repeats=REPEATS) for k, v in {
+    AlertKind.BUDGET: mctx("Its active time is past its budget"),
+    AlertKind.HUNG: mctx("A call of it in flight has run {factor} times its usual time"),
+    AlertKind.REPEATED: mctx("It ran the same Bash command with the same result at least "
+                             "{repeats} times in a row"),
+    AlertKind.STALL: mctx("Its turn ended while its work is open, and no report of it reached "
+                          "its parent"),
+}.items()}
+"""Each reading of the monitor, as the alert to the agent and `monitor.ALERTS` give it."""
+
+
+LEAD = mctx("A monitor's alert:")
+BUDGET_MESSAGE = briefs.AT_BUDGET
+HUNG_MESSAGE = mctx("That call may have ended by the time you read this. Where it still runs, "
+                    "check whether it makes progress, and end it where it does not. Do not run "
+                    "it again unchanged.")
+REPEATED_MESSAGE = mctx("Run that command again only once something has changed that can "
+                        "change its result.")
+STALL_MESSAGE = mctx("Where your work is done, give your final reply again. Otherwise, carry on "
+                     "your work.")
+
+
+def to_agent(kind: AlertKind, agent: str) -> str:
+    """The message to `agent` of the alert of `kind` on it: the alert, with
+    its reading and, under them, the step the kind gives the agent."""
     match kind:
         case AlertKind.BUDGET:
-            lead = BUDGET_MESSAGE
+            step = BUDGET_MESSAGE
         case AlertKind.HUNG:
-            lead = HUNG_MESSAGE
+            step = HUNG_MESSAGE
         case AlertKind.REPEATED:
-            lead = REPEATED_MESSAGE
+            step = REPEATED_MESSAGE
         case AlertKind.STALL:
-            lead = STALL_MESSAGE
-    return lead + "\n\n" + alert
+            step = STALL_MESSAGE
+    return (LEAD + "\n\n" + opening(kind, agent) + "\n\n" + READING[kind] + ".\n\n"
+            + step)
 
 
 def latest(state: State, agent: str) -> Agent | None:
@@ -159,7 +178,7 @@ def on(state: State, alert: Alert, a: Agent) -> Step | None:
     """The step `alert` gives on `a`, an agent an operator launched."""
     match alert.kind:
         case AlertKind.BUDGET:
-            return Send(alert.agent, to_agent(AlertKind.BUDGET, alert.message.text)) if a.pending else None
+            return Send(alert.agent, to_agent(AlertKind.BUDGET, alert.agent)) if a.pending else None
         case _:
             return Undecided(mctx("an alert the command does not act on:") + "\n"
                              + alert.message.text)

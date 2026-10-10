@@ -17,7 +17,7 @@ from open_agents import Listed, hung_time, running_agents, work_open
 from operator_reads import (ended_elsewhere, ended_with, operator_runs, read_operator,
                             stalled_reports)
 from run_prints import active_of
-from run_reads import bash_calls, context_size, repeated_runs, run_entries
+from run_reads import bash_spans, context_size, repeated_runs, run_entries
 from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
 from ticket_settle import to_settle
@@ -153,8 +153,7 @@ def activity(listed: Listed) -> float:
 def repeated(listed: Listed) -> tuple[float, ...]:
     """The `repeated` readings of `listed` (`run_reads.repeated_runs`)."""
     entries = run_entries(listed.path)
-    bash = bash_calls(entries)
-    calls = [(s.call, s.command, s.start) for s in listed.run.spans if s.call in bash]
+    calls = [(s.call, s.command, s.start) for s in bash_spans(listed.run.spans, entries)]
     return tuple(repeated_runs(calls, entries, monitor.REPEATS))
 
 

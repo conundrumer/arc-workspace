@@ -10,10 +10,11 @@ from agent_reports import (TURN_ENDED, Report, ReportKind, parent_transcripts, r
                            stopped_after)
 from agent_turns import has_ended, is_turn_entry, last_time, turn_after
 from controlled_markdown import mctx
-from run_profile import (Run, Span, agent_calls, background_ends, backgrounds,
-                         profile)
+from command_labels import AGENT_TOOLS
+from run_backgrounds import background_ends, backgrounds
+from run_profile import Run, Span, profile
 from run_reads import (BACKGROUND_TASK, LaunchStatus, blocks, is_prompt, parent_label,
-                       run_entries)
+                       run_entries, tool_calls)
 from transcripts import agent_id, is_subagent
 
 from operations.monitor import hung_from
@@ -227,7 +228,7 @@ def may_still_run(path: Path, reached: set[str], undecided: list[str]) -> bool:
              if b.get("tool_use_id")} - reached
     if not calls:
         return False
-    found = {c: b for c, b in backgrounds(results, agent_calls(run_entries(path, calls)),
+    found = {c: b for c, b in backgrounds(results, tool_calls(run_entries(path, calls), AGENT_TOOLS),
                                           undecided).items() if c in calls}
     if not found:
         return False
