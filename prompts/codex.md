@@ -21,7 +21,7 @@
 
 ## Conventions
 - `uv run python -m controlled_markdown check` checks the agent-facing documents.
-- [Editing the agent-facing documents](docs/handbook/editing.md) states how the handbook above is edited.
+- Before you edit an agent-facing document, read [Editing the agent-facing documents](docs/handbook/editing.md).
 
 ## Grids
 * inline: console.md#grids

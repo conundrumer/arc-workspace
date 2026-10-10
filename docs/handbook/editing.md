@@ -33,6 +33,7 @@
     - Its context: `context session`, then the output of each command the text gives.
 - What a codex session on the repo reads: [Codex on arc-workspace](prompts/codex.md).
     - Its context: `context codex`, then the user's message.
+    - A codex session that the user or the coordinator runs runs in the main tree, and also reads, as its developer instructions, the main tree's `docs/codex-style.md` with its HTML comments left out, which the main tree's `.codex/config.toml` gives it. A codex session in a linked worktree reads no developer instructions.
 - What each agent reads: the prompt of its name under [agents](prompts/agents).
     - Its context: `context agent <name>`.
     - The `analyze` agent reads [Analyze after the concept](prompts/agents/analyze-next.md) after it writes the concept.
