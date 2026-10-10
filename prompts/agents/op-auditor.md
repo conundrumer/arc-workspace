@@ -33,7 +33,7 @@ tools: Read, Bash, Write, TaskStop
 ## Kinds
 - Give each sign that holds one of these kinds, with a quote from the transcript:
     - `own-doing`: the agent's own doing, a loop, a repeat, or work past its item;
-    - `obstacle`: an obstacle in a tool or a document, whose ticket is of kind `interference` where it made the agent's output wrong, and `delay` where it added only to the agent's time or token cost;
+    - `obstacle`: an obstacle in a tool or a document;
     - `outgrown`: a run that has outgrown its task, where a single piece of work past its item is the agent's own doing, and a single action that departs from its brief is a departure;
     - `claim`: a claim that does not match the state;
     - `stall`: the agent's turn has ended, no report of it reached its parent, and nothing will re-invoke it;
@@ -42,7 +42,7 @@ tools: Read, Bash, Write, TaskStop
 
 ## Writing an alert
 - Write an alert you raise of kind `departure`, `own-doing` or `outgrown` on an agent whose type is `handbook-expanded` or ends in `-editor`, `-analyst` or `-reviewer`, where `uv run python scripts/profile_runs.py --open <agent id>` prints `open`, in the alert file your brief gives.
-- File each other alert you raise, other than a `stall`, as a ticket, on the agent it is on, with the alert as its evidence, and an obstacle as [Kinds](#kinds) gives.
+- File each other alert you raise, other than a `stall`, as a ticket on the agent it is on, with the alert as its evidence, of kind `interference` where the sign made any output wrong, and of kind `delay` in every other case.
 - Open each alert with a line `alert: <kind> <agent id>`, with the id of the agent it is on.
 - Give in the alert the agent, the lines the sign rests on, and your finding with its quote. Give in an alert on a message to the coordinator the sender, the agent whose message it answers, and the start of its text.
 
