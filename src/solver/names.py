@@ -70,8 +70,8 @@ class Denoted:
     branch."""
     derived: Annotated[tuple[StoreBranch, ...],
         quotes("solver-file.md", "Witness file",
-               "the branch of `<rel>`'s point in which the solver's clauses "
-               "derive its value")] = ()
+               "the branch of the point of the `@store` line on `<rel>` in "
+               "which the solver's clauses derive its value")] = ()
     """The `@store` points the name fixes at `<rel>=derived`, the branch in
     which the solver's clauses derive the value."""
 

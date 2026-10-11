@@ -157,9 +157,9 @@ type Branch = Annotated[
     quotes("solver-file.md", "Witness file",
            "the branch that the `@derive` line on `<param>` with that "
            "`<Proposer>` is; the branch that the `@store` line on `<rel>` is; "
-           "the branch of `<rel>`'s point in which the solver's clauses "
-           "derive its value; and the branch of `<param>`'s choice point in "
-           "which its value is stored per case")]
+           "the branch of the point of the `@store` line on `<rel>` in which "
+           "the solver's clauses derive its value; and the branch of "
+           "`<param>`'s choice point in which its value is stored per case")]
 
 
 def derived_parameters(branches: Iterable[Branch]) -> frozenset[str]:
@@ -171,8 +171,8 @@ def derived_parameters(branches: Iterable[Branch]) -> frozenset[str]:
 
 
 @quotes("solver-file.md", "Witness file",
-        "the branch of `<rel>`'s point in which the solver's clauses derive "
-        "its value")
+        "the branch of the point of the `@store` line on `<rel>` in which "
+        "the solver's clauses derive its value")
 @dataclass(frozen=True)
 class DerivedAtStore:
     """`<rel>=derived`: the derived branch of a `@store` point, the branch a

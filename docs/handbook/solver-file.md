@@ -241,5 +241,5 @@
     - `concept`: the concept branch at every point the `Choice` encodes, the concept base; alone, its model and its one case are the concept case
     - a constructor's name with its prefix, such as `$Alt`: that branch at each point where the constructor stands, for a nested constructor too, whether or not `impl_choice` contains its model
     - `<name> & <name>`: what each fixes
-    - `<param>=<Proposer>`, `<rel>=stored`, `<rel>=derived` and `<param>=stored`, each read as a constructor's name: the branch that the `@derive` line on `<param>` with that `<Proposer>` is; the branch that the `@store` line on `<rel>` is; the branch of `<rel>`'s point in which the solver's clauses derive its value; and the branch of `<param>`'s choice point in which its value is stored per case
+    - `<param>=<Proposer>`, `<rel>=stored`, `<rel>=derived` and `<param>=stored`, each read as a constructor's name: the branch that the `@derive` line on `<param>` with that `<Proposer>` is; the branch that the `@store` line on `<rel>` is; the branch of the point of the `@store` line on `<rel>` in which the solver's clauses derive its value; and the branch of `<param>`'s choice point in which its value is stored per case
         - A `<Proposer>` is a component of [proposers.dl](programs/proposers.dl).

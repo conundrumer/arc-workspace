@@ -91,7 +91,7 @@
     - The concept case: each witness with verdict `other` that no branch below lists, with the items below, and the rule restated as the generator applies it, which the concept file's rule approximates.
     - A branch that fails Fit: the pair it fails.
     - A branch that fits every pair: one of its witnesses, on which the branch's model is defined when such a witness exists, with:
-        - its id in the witness file: the branch's name, for a branch that derives a parameter's value or stores a value the program derives, and a slug otherwise
+        - its id in the witness file: the branch's name, for a branch that derives a parameter's value by a built-in derivation or stores a value the program derives, and a slug otherwise
         - the scene claim the witness breaks, when it breaks one
         - the assignment it stands at, when that is not the stored one
         - its plausibility and verdict
