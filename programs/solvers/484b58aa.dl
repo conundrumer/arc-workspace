@@ -38,20 +38,17 @@ impl_choice($Lattice()). impl_choice($Lines()).
 // The period a damaged cell's pattern repeats under, per case.
 .decl period_at(ch: Choice, p: Position, a: Axis, k: number)
 
-// Cell q agrees with damaged cell p on axis a: within the period there, or
-// on the same line where the axis has no period.
-.decl axis_agree(ch: Choice, p: Position, a: Axis, q: Position)
-axis_agree(Ch, P, A, Q) :-
-    impl_choice(Ch), damaged(P), in(Q, _), axis_of(D, A),
-    ( period_at(Ch, P, A, K),                                       // within the period
-      dist(P, D, T), stride(T, K, 0, _, R),
-      dist(Q, D, T2), stride(T2, K, 0, _, R)
-    ; !period_at(Ch, P, A, _), same_dist(D, P, Q)                   // or on the same line
-    ).
+// That period as a shift, either way along its axis.
+.decl step(ch: Choice, p: Position, delta: Offset)
+step(Ch, P, Delta) :- period_at(Ch, P, A, K), axis_of(D, A), jump_offset(D, K, Delta).
 
-// The cells in a damaged cell's orbit under the periods.
+// The cells a run of those shifts reaches from a damaged cell.
 .decl orbit(ch: Choice, p: Position, q: Position)
-orbit(Ch, P, Q) :- axis_agree(Ch, P, A, Q), perp(A, A2), axis_agree(Ch, P, A2, Q).
+orbit(Ch, P, P) :- impl_choice(Ch), damaged(P).
+orbit(Ch, P, Q2) :-
+    orbit(Ch, P, Q),                                 // reached so far
+    step(Ch, P, Delta), compose(Q, Delta, Q2),       // one period on
+    in(Q2, _).                                       // inside the frame
 
 // Intact cells pass through under every case.
 out(P, Col, Ch) :- impl_choice(Ch), intact(P, Col).

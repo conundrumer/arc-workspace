@@ -39,16 +39,10 @@ border_step(P, Q) :-
     in(P, _), params.sense(S), turn(S, D, D_step), dist(P, D, 0),   // a cell on edge D
     neighbor(P, D_step, Q), in(Q, _).                               // the step along that edge
 
-// The border cells a walk from region cell p reaches, passing over band cells.
-.init onward = GraphDistance<Position, Position>
-onward.edge(P, P2, Q) :-
-    region(P, _), border_step(P, _),                 // the walk from p
-    border_step(P2, Q), in(P2, C), params.fixed(C).  // a step on from a band cell
-onward.seed(P, Q) :- region(P, _), border_step(P, Q).
-
 // The first region cell after p along the border.
 .decl next_cell(p: Position, q: Position)
-next_cell(P, Q) :- onward.distance(P, Q, _), region(Q, _).
+next_cell(P, Q) :- border_step(P, Q), region(Q, _).
+next_cell(P, Q) :- border_step(P, P2), in(P2, C), params.fixed(C), next_cell(P2, Q).
 
 .decl impl_choice(ch: Choice)
 impl_choice($ByColor()).

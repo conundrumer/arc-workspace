@@ -45,18 +45,14 @@ above(L, P1, P2) :-
 .decl cand(l: Position, a: Position)
 cand(L, A) :- pixel(_, L, _), line_of(A, L).
 
-// A grid cell on the far side of one of the two diagonals that run from an
-// apex down to the floor: nearer that diagonal's upper corner than the apex.
-.decl beyond(a: Position, p: Position)
-beyond(A, Q) :-
-    cand(_, A), in(Q, _),
-    params.gravity(D), opposite(D, D_up), dir_of(Diag, _, D_up),  // an upper corner
-    corner_dist(Q, Diag, K_q), corner_dist(A, Diag, K_a), K_q < K_a.
-
 // The triangle an apex casts down to the floor, one cell wider to each
-// side per step: the grid cells between its two diagonals.
+// side per step.
 .decl cone(a: Position, p: Position)
-cone(A, Q) :- cand(_, A), in(Q, _), !beyond(A, Q).
+cone(A, A) :- cand(_, A).
+cone(A, Q) :-
+    cone(A, P),                                             // the cone so far
+    params.gravity(D), ( D8 = D ; dir_of(D8, _, D) ),       // toward the floor, straight or diagonal
+    neighbor(P, D8, Q), in(Q, _).                           // one step on, inside the grid
 
 .init cone_size = Tally<Position, Position>
 cone_size.item(A, P) :- cone(A, P).

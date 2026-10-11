@@ -20,9 +20,6 @@
 
 .type Choice = [dir: DirCase, ink: InkCase]
 
-// A state of the bouncing walk: a cell with a heading across the advance axis.
-.type Beam = [p: Position, h: Dir]
-
 .decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
@@ -59,18 +56,18 @@ launch($Seat(), U, H) :-
     diag_opposite(Diag, Opp),                   // ray leaves toward the opposite corner
     params.axis(A), diag_dirs(Opp, A, U, H).    // advance along the axis, heading across it
 
-.init trace = GraphDistance<DirCase, Beam>
-trace.seed(DC, [P, H]) :- launch(DC, _, H), seed(P, _).
-trace.edge(DC, [P, H], [P2, H2]) :-
-    launch(DC, U, _), perp_dir(U, H), in(P, _),
-    ( dist(P, H, 0), opposite(H, H2), P2 = P      // reflect off the side wall
-    ; !dist(P, H, 0), !dist(P, U, 0),             // room toward the heading and the advance edge
-      diag_dirs(Diag, _, U, H),                   // the diagonal U and H span
-      neighbor(P, Diag, P2), H2 = H
-    ).
+// The bouncing walk: the state is a cell with a heading across the advance axis.
+.decl trace(dc: DirCase, p: Position, h: Dir)
+trace(DC, P, H) :- launch(DC, _, H), seed(P, _).
+trace(DC, P, H2) :- trace(DC, P, H), dist(P, H, 0), opposite(H, H2).   // reflect
+trace(DC, P2, H) :-
+    trace(DC, P, H), launch(DC, U, _),
+    !dist(P, H, 0), !dist(P, U, 0),            // room toward the heading and the advance edge
+    diag_dirs(Diag, _, U, H),                  // the diagonal U and H span
+    neighbor(P, Diag, P2).
 
 .decl traced(dc: DirCase, p: Position)
-traced(DC, P) :- trace.distance(DC, [P, _], _).
+traced(DC, P) :- trace(DC, P, _).
 
 out(P, Col, [DC, $Prop()])  :- traced(DC, P), seed(_, Col).
 out(P, Col, [DC, $Fixed()]) :- traced(DC, P), params.ink(Col).

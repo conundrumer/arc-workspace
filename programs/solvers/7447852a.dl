@@ -74,12 +74,13 @@ mark_cell($Rank(), P) :- marked_pocket(Id), pockets.label(_, P, Id).
 
 // --- $Stamp ---
 
-// The stamp seats on the anchor edge and repeats along the strip: a cell
-// takes the stamp cell on its across line at its place within the period.
 mark_cell($Stamp(), Q) :-
     in(Q, _), params.stamp(Pm),
-    params.anchor(D), axis_of(D, A), same_line(A, Q, Pm),                    // one across line
-    dist(Pm, D, R), params.period(K), dist(Q, D, T), stride(T, K, 0, _, R).   // one place in the period
+    params.anchor(D), slab_anchor(D, Pm, Q).             // seated on the anchor edge
+mark_cell($Stamp(), Q2) :-
+    mark_cell($Stamp(), Q),
+    params.anchor(D), axis_of(D, A), axis_of(O, A),      // either way along the strip
+    params.period(K), jump(Q, O, K, Q2), in(Q2, _).      // one period on
 
 out(P, Col, Ch) :- mark_cell(Ch, P), params.mark(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mark_cell(Ch, P).

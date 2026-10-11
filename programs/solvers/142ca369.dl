@@ -41,8 +41,8 @@ impl_choice($Gap()). impl_choice($Glyph()).
 // A marker's footprint cells.
 .decl mark(p: Position, ch: Choice)
 
-// A marker launches a ray that reaches p heading d with color col.
-.decl launch(p: Position, d: DiagDir, col: Color, ch: Choice)
+// The ray reaches p heading d with color col, before reflecting there.
+.decl enter(p: Position, d: DiagDir, col: Color, ch: Choice)
 
 // --- $Gap ---
 
@@ -66,7 +66,7 @@ mark(P_cell, $Gap()) :-
     ; dir_of(G, _, D), neighbor(P, D, P_cell)     // its arms
     ).
 
-launch(P, D, Col, $Gap()) :- elbow(P, Col, G), diag_opposite(G, D).
+enter(P, D, Col, $Gap()) :- elbow(P, Col, G), diag_opposite(G, D).
 
 // --- $Glyph ---
 
@@ -83,7 +83,7 @@ mark(P_grid, $Glyph()) :-
     occ.occurrence([D, Col], A),                  // a placed glyph
     occ.shape([D, Col], P_m2, $U()), compose(A, P_m2, P_grid).
 
-launch(P, D_aim, Col, $Glyph()) :-
+enter(P, D_aim, Col, $Glyph()) :-
     occ.occurrence([D, Col], A),                          // a placed glyph
     params.marker_launch(D, P_l), compose(A, P_l, P),     // its launch cell
     params.marker_aim(D, D_aim).                          // its aim, placed with it
@@ -117,36 +117,20 @@ bounce(P, D, D_out, Ch) :-
     leave_dir(P, D, D1, Ch), leave_dir(P, D, D2, Ch),          // the two components
     diag_dirs(D_out, _, D1, D2).                               // one on each axis
 
-// The colors a ray can carry: those of the markers and the walls.
-// @ignore: single-consumer — one row per color, where the input holds one per cell
-.decl hue(col: Color)
-hue(Col) :- in(_, Col), !params.bg(Col).
-
-// A ray that reaches p heading d with color col leaves it heading d_out with
-// color col_out.
-.decl leave(p: Position, d: DiagDir, col: Color, d_out: DiagDir, col_out: Color, ch: Choice)
-leave(P, D, Col, D_out, Col_out, Ch) :-
-    bounce(P, D, D_out, Ch), hue(Col),
+// The ray leaves p, with the direction and color that cell gives it.
+.decl ray(p: Position, d: DiagDir, col: Color, ch: Choice)
+ray(P, D_out, Col_out, Ch) :-
+    enter(P, D, Col, Ch), bounce(P, D, D_out, Ch),
     ( hit(P, D, Col_out, Ch)                      // reflected: its color
     ; !hit(P, D, _, Ch), Col_out = Col            // free: carried on
     ).
 
-// A ray at a cell, with its heading and its color.
-.type Beam = [p: Position, d: DiagDir, col: Color]
-
-// The rays' walk: a ray reaches the next cell along the direction it leaves
-// with, when that cell is empty.
-.init walk = GraphDistance<Choice, Beam>
-walk.seed(Ch, [P, D, Col]) :- launch(P, D, Col, Ch).
-walk.edge(Ch, [P, D, Col], [P_next, D_out, Col_out]) :-
-    leave(P, D, Col, D_out, Col_out, Ch), neighbor(P, D_out, P_next),
-    in(P_next, Bg), params.bg(Bg).                // stops on occupied cells
+enter(P_next, D, Col, Ch) :-
+    ray(P, D, Col, Ch), neighbor(P, D, P_next),
+    in(P_next, Bg), params.bg(Bg).                     // stops on occupied cells
 
 .decl paint(p: Position, col: Color, ch: Choice)
-// A ray paints an empty cell with the color it leaves that cell with.
-paint(P, Col, Ch) :-
-    walk.distance(Ch, [P, D, C], _), leave(P, D, C, _, Col, Ch),
-    in(P, Bg), params.bg(Bg).
+paint(P, Col, Ch) :- ray(P, _, Col, Ch), in(P, Bg), params.bg(Bg).
 
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).

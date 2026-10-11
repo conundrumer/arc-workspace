@@ -94,19 +94,14 @@ step(Id, Delta, $Abut()) :-
 
 // --- output ---
 
-// The template's cells, cast along each step's direction.
-.init march = Ray<Choice>
-march.dir(Ch, D) :- step(_, Delta, Ch), toward(D, _, Delta).
-march.cell(Ch, P) :- impl_choice(Ch), in(P, _).
-march.mark(Ch, P) :- impl_choice(Ch), shape(P).
-
-// Copies march from the template until they leave the grid: a cell a whole
-// number of steps on from a template cell.
+// Copies march from the template until they leave the grid.
 .decl copy(id: Ident, p: Position, ch: Choice)
 copy(Id, P2, Ch) :-
-    step(Id, Delta, Ch), toward(D, K, Delta),          // the step: K cells toward D
-    march.ray(Ch, P2, D, J, _), J > 0,                 // J cells on from a template cell
-    stride(J, K, 0, _, 0).                             // a whole number of steps
+    step(Id, Delta, Ch),
+    ( shape(P)         // the first copy steps from the template
+    ; copy(Id, P, Ch)  // each next copy from the last
+    ),
+    compose(P, Delta, P2), in(P2, _).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Reach()). impl_choice($Stride()). impl_choice($Abut()).

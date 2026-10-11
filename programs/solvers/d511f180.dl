@@ -5,12 +5,9 @@
 .decl out(p: Position, col: Color)
 
 .comp Params {
-    // the color pairs that trade places
-    .decl swap(c1: Color, c2: Color)
-    swap(5, 8).
-
     .decl mapping(c_from: Color, c_to: Color)
-    mapping(A, B) :- ( swap(A, B) ; swap(B, A) ).
+    mapping(B, A) :- mapping(A, B).   // symmetric closure
+    mapping(5, 8).
 }
 
 .init params = Params

@@ -50,13 +50,13 @@ marker(P, M) :- ink(P, M), !multi_cell(M).
 // circuit stands in for a wire's continuation under a wire that crosses it:
 // the crossing wire touches both parts. It also reaches a wire that another
 // wire of the circuit merely touches.
-.init circuit = GraphDistance<Color, Ident>
-circuit.edge(M, W, W2) :- marker(_, M), contact(W, W2).
-circuit.seed(M, W) :- marker(P, M), object.label(M, P, W).
+.decl circuit(m: Color, w: Ident)
+circuit(M, W) :- marker(P, M), object.label(M, P, W).
+circuit(M, W2) :- circuit(M, W), contact(W, W2).
 
 // A live wire: an object of the marker's guide color in its circuit.
 .decl live(w: Ident, m: Color)
-live(W, M) :- marker(P, M), beside(P, _, G), object.label(G, _, W), circuit.distance(M, W, _).
+live(W, M) :- marker(P, M), beside(P, _, G), object.label(G, _, W), circuit(M, W).
 
 // Background regions, and the ink beside each.
 .init region = Components<Unit>

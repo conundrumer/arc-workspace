@@ -94,13 +94,14 @@ echo_choice($Stripe()).
 // $Emit — emitters march along the mirror arm's line, every params.spacing-th
 // cell from the seed, continuing past the grid edge while rows remain;
 // each casts an echo ray.
+.decl march_jump(delta: Position)
+march_jump(J) :- mirror_corner(MD), params.spacing(S), jump_offset(MD, S, J).
+
 .decl emitter(p: Position)
-emitter(P) :-
-    seed(S, _), params.grow(D), axis_of(D, A), opposite(D, O),
-    frame.cell($U(), Q), same_line(A, S, Q),                  // a row that remains
-    relative(S, Q, V), dist(V, O, K),                         // k rows on from the seed
-    params.spacing(Sp), stride(K, Sp, 0, _, 0),               // a whole number of spacings
-    mirror_corner(MD), jump(S, MD, K, P).                     // k cells along the mirror arm's line
+emitter(P) :- seed(P, _).
+emitter(P2) :-
+    emitter(P1), march_jump(J), compose(P1, J, P2),
+    params.grow(D), dist(P2, D, K), K >= 0.           // rows remain
 
 .init rays = Ray<Unit>
 rays.dir($U(), Diag) :- cast_corner(Diag).
@@ -118,9 +119,9 @@ echo(P, $Stripe()) :-
 
 // --- V color cases ---
 
-.decl v_src_choice(v: VSrc)
-v_src_choice($VSeed()).
-v_src_choice($VFixed()).
+.decl v_choice(v: VSrc)
+v_choice($VSeed()).
+v_choice($VFixed()).
 
 .decl v_color(col: Color, v: VSrc)
 v_color(Col, $VSeed())  :- seed(_, Col).
@@ -129,10 +130,10 @@ v_color(Col, $VFixed()) :- params.v_color(Col).
 // --- Output ---
 
 out(P, Col, [V, E]) :- arm(P), v_color(Col, V), echo_choice(E).
-out(P, Col, [V, E]) :- echo(P, E), params.echo(Col), v_src_choice(V).
+out(P, Col, [V, E]) :- echo(P, E), params.echo(Col), v_choice(V).
 out(P, Col, [V, E]) :-
     frame.cell($U(), P), !arm(P), !echo(P, E),   // cell outside V and echoes
-    echo_choice(E), v_src_choice(V), params.bg(Col).
+    echo_choice(E), v_choice(V), params.bg(Col).
 
 .comp Determine {
     // The ink cell, seated in the output frame.

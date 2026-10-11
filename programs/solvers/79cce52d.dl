@@ -68,26 +68,22 @@ band_count.item([A, Col], P) :- band_cell(A, P, Col).
 marker(A, P, $Singleton()) :-
     band_cell(A, P, Col), params.marker_count(N), band_count.tally([A, Col], N).
 
-// --- shared ---
-// The payload's lines per axis.
-.init line_count = Tally<Axis, number>
-line_count.item(A, K) :- line_set(A, K).
-
-// The steps around each axis's cycle of lines, up to one full turn.
-.init turns = CycleWalk<Axis, number>
-turns.succ(A, K, K2) :- line_cycle.succ(A, K, K2).
-turns.step(A, N) :- line_count.tally(A, N).
-
-// The steps that carry the line beside the corner to the marker's line.
-.decl shift(a: Axis, n: number, ch: Choice)
-shift(A, N, Ch) :-
+// Line rotation per axis: the map carrying the line beside the corner to the
+// marker's line — that pair, closed under lockstep succ.
+.decl line_rotation(a: Axis, k: number, k2: number, ch: Choice)
+line_rotation(A, K_ca, K_mk, Ch) :-
     in(P_cn, _), params.corner(Diag), corner_dist(P_cn, Diag, 0),      // the corner cell
     dir_of(Diag, A, D), opposite(D, O),                                // inward along a
     neighbor(P_cn, O, P_a), line_idx(A, P_a, K_ca),                    // the line beside it
-    marker(A, P_mk, Ch), line_idx(A, P_mk, K_mk),                      // the marker's line
-    turns.walk(A, K_ca, N, K_mk).
+    marker(A, P_mk, Ch), line_idx(A, P_mk, K_mk).                      // the marker's line
+line_rotation(A, K1_next, K2_next, Ch) :-
+    line_rotation(A, K1, K2, Ch),
+    line_cycle.succ(A, K1, K1_next), line_cycle.succ(A, K2, K2_next).
 
 // The output frame — the payload's per-axis extents.
+.init line_count = Tally<Axis, number>
+line_count.item(A, K) :- line_set(A, K).
+
 .init frame = AxisFrame<Unit>
 frame.extent($U(), A, N) :- line_count.tally(A, N).
 
@@ -95,7 +91,7 @@ frame.extent($U(), A, N) :- line_count.tally(A, N).
 .decl out_along(a: Axis, p: Position, q: Position, ch: Choice)
 out_along(A, P, Q, Ch) :-
     kept(P, _), line_idx(A, P, K_in),
-    shift(A, N, Ch), turns.walk(A, K_in, N, K_out),     // its line, rotated by the shift
+    line_rotation(A, K_in, K_out, Ch),
     frame.cell($U(), A, Q), line_idx(A, Q, K_out).   // the output line at that index
 
 out(P_out, Col, Ch) :-

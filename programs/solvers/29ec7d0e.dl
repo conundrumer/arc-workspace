@@ -2,16 +2,16 @@
 // @keywords: wallpaper repair count noise
 // input: A wallpaper — one square tile repeating on both axes — corrupted
 //  by noise patches.
-// output: The output restores the wallpaper: each cell takes the value of
-//  the clean cells at its place in the tile, whether or not they share one
-//  of its lines.
+// output: The output restores the wallpaper: propagation composes across
+//  axes, reaching holes with no clean mate on either of their own lines.
 
 // how the repair finds the period-preserving shift
 .type Choice =
-    // translation repair, detected: the period on each axis is the shortest
-    // shift unbroken on clean cells
+    // translation repair, detected: values propagate along shifts unbroken on
+    // clean cells
     Shift {}
-    // the clean color count is the period on both axes
+    // the clean color count is the period: values propagate along jumps of that
+    // length
   | Count {}
 
 .decl out(p: Position, col: Color, c: Choice)
@@ -31,30 +31,28 @@ si.cell($U(), P, Col) :- clean(P, Col).
 .decl impl_choice(ch: Choice)
 impl_choice($Shift()). impl_choice($Count()).
 
-// Each case's tile period on each axis. The period varies per pair, so no
+// Each case's period-preserving shifts. The period varies per pair, so no
 // case stores one as a parameter.
-.decl period(ch: Choice, a: Axis, k: number)
+.decl shift(ch: Choice, delta: Offset)
 
-// A cell's place in the tile: its distances to the edges of a corner, each
-// within its axis's period.
-.decl phase(ch: Choice, dg: DiagDir, a: Axis, p: Position, r: number, r2: number)
-phase(Ch, Dg, A, P, R, R2) :-
-    in(P, _), diag_dist(P, Dg, A, T, T2), perp(A, A2),
-    period(Ch, A, K), stride(T, K, 0, _, R),
-    period(Ch, A2, K2), stride(T2, K2, 0, _, R2).
+// Values propagate from clean cells along each case's shifts.
+.decl restored(ch: Choice, p: Position, col: Color)
+restored(Ch, P, Col) :- impl_choice(Ch), clean(P, Col).
+restored(Ch, P2, Col) :-
+    restored(Ch, P, Col), shift(Ch, Delta),
+    compose(P, Delta, P2), in(P2, _).
 
-// A cell takes the value of the clean cells at its place in the tile.
-out(P, Col, Ch) :-
-    phase(Ch, Dg, A, Q, R, R2), clean(Q, Col),
-    phase(Ch, Dg, A, P, R, R2).
+out(P, Col, Ch) :- restored(Ch, P, Col).
 
 // --- $Shift ---
 
-period($Shift(), A, K) :- si.min_period($U(), A, K).
+shift($Shift(), Delta) :-
+    si.cand($U(), A, K, Delta), !si.mismatch($U(), A, K).
 
 // --- $Count ---
 
-.init palette = Tally<Unit, Color>
-palette.item($U(), Col) :- clean(_, Col).
+.init period = Tally<Unit, Color>
+period.item($U(), Col) :- clean(_, Col).
 
-period($Count(), A, N) :- palette.tally($U(), N), axis_elem(A).
+shift($Count(), Delta) :-
+    period.tally($U(), N), dir_elem(D), jump_offset(D, N, Delta).

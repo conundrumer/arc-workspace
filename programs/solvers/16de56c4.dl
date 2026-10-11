@@ -56,15 +56,18 @@ crowded(Ln) :-
 .decl rhythm(ln: Line, col: Color, p1: Position, p2: Position)
 rhythm(Ln, Col, P1, P2) :- seed(Ln, Col, P1, P2), !crowded(Ln).
 
-// The rhythm across the whole line: the line's cells in phase with the seed
-// pair, the pair's spacing the period.
+// One step of the rhythm, from a cell it covers to the next. The seed pair
+// holds both orders, so the rhythm steps both ways.
+.decl advance(ln: Line, p: Position, q: Position)
+advance(Ln, P, Q) :-
+    lattice(Ln, P), rhythm(Ln, _, P1, P2),         // a covered cell, and the seed pair
+    relative(P1, P2, Delta),                   // the seed's spacing
+    compose(P, Delta, Q), in(Q, _).                // the next cell, still on the grid
+
+// The rhythm across the whole line: the seed's cells, stepped both ways.
 .decl lattice(ln: Line, p: Position)
-lattice([A, Across], Q) :-
-    rhythm([A, Across], _, P1, P2), relative(P1, P2, V),
-    axis_of(D, A), dist(V, D, K), K > 0,                     // the seed's spacing
-    in(Q, _), split(Q, A, _, Across),                        // a cell of the line
-    dist(P1, D, T1), stride(T1, K, 0, _, Phase),             // the seed's phase
-    dist(Q, D, Tq), stride(Tq, K, 0, _, Phase).              // shared by the cell
+lattice(Ln, P) :- rhythm(Ln, _, P, _).
+lattice(Ln, Q) :- advance(Ln, _, Q).
 
 // The other color, when its cell falls on the rhythm.
 .decl intruder(ln: Line, col: Color)
@@ -85,15 +88,17 @@ paint(P, Col, Ch) :-
 
 // --- $Cast ---
 
-// The rhythm advancing from the seed both ways, through the intruder's cell
-// and no further.
-.init cast = Ray<Line>
-cast.dir([A, Across], D) :- rhythm([A, Across], _, _, _), axis_of(D, A).
-cast.cell(Ln, P) :- lattice(Ln, P).
-cast.mark(Ln, P) :- rhythm(Ln, _, P, _).
-cast.blocked(Ln, P) :- intruder(Ln, Col2), mark(Ln, P, Col2).   // the intruder's own cells
+// The intruder's own cells on the line.
+.decl stopper(ln: Line, p: Position)
+stopper(Ln, P) :- intruder(Ln, Col2), mark(Ln, P, Col2).
 
-fill(Ln, P, $Cast()) :- ( cast.clear(Ln, P, _, _, _) ; cast.stop(Ln, P, _, _, _) ).
+// The rhythm advancing from the seed, through the intruder's cell and no
+// further.
+.decl cast(ln: Line, p: Position)
+cast(Ln, P) :- rhythm(Ln, _, P, _).
+cast(Ln, Q) :- cast(Ln, P), !stopper(Ln, P), advance(Ln, P, Q).
+
+fill(Ln, P, $Cast()) :- cast(Ln, P).
 
 // --- $Span ---
 

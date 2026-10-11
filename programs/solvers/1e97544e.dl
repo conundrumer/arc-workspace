@@ -48,21 +48,36 @@ out(P, Col, Ch) :- intact(P, Col), impl_choice(Ch).
 
 // --- $Stripe ---
 
-// The stripe a cell lies on, keyed by the line it starts on at the corner's
-// edge on params.axis: a cell past the fault — farther from that edge than
-// from the corner's other edge — has jogged one cell toward the other edge,
-// so its stripe starts one line back.
-.decl stripe(p: Position, s: Position)
-stripe(P, S) :-
-    in(P, _), params.corner(C), params.axis(A), split(P, A, _, Across),
-    diag_dirs(C, A, _, D_jog), diag_dist(P, C, A, K_start, K_jog),
-    ( K_start <= K_jog, S = Across                            // before the fault
-    ; K_start > K_jog, opposite(D_jog, D_back), neighbor(Across, D_back, S)   // past it
-    ).
+// The fault: the corner diagonal the stripes jog across.
+.init diag = Diagonal<Unit>
+diag.cell($U(), P) :- in(P, _).
+diag.corner($U(), C) :- params.corner(C).
+
+.decl fault(p: Position)
+fault(P) :- diag.diagonal($U(), P, _).
+
+// A stripe runs away from the corner's edge on params.axis...
+.decl along(d: Dir)
+along(D2) :- params.corner(C), params.axis(A), dir_of(C, A, D), opposite(D, D2).
+
+// ...and jogs one cell toward the corner's other edge as it leaves the fault.
+.decl jog(d: Dir)
+jog(D) :- params.corner(C), params.axis(A), diag_dirs(C, A, _, D).
+
+// Adjacent cells of one stripe. The line has no direction.
+.decl stripe_step(p: Position, q: Position)
+stripe_step(P, Q) :-
+    in(P, _),
+    ( !fault(P), along(D)  // running on
+    ; fault(P), jog(D)     // leaving the fault
+    ),
+    neighbor(P, D, Q), in(Q, _).
+stripe_step(Q, P) :- stripe_step(P, Q).
 
 // One color per stripe, from wherever the stripe survives.
 .decl stripe_color(p: Position, col: Color)
-stripe_color(P, Col) :- stripe(P, S), stripe(Q, S), intact(Q, Col).
+stripe_color(P, Col) :- intact(P, Col).
+stripe_color(Q, Col) :- stripe_step(P, Q), stripe_color(P, Col).
 
 out(P, Col, $Stripe()) :- damaged(P), stripe_color(P, Col).
 
@@ -75,22 +90,13 @@ cycle_succ(D, Col, Col2) :-
     params.diag_axis(DA), diag_axis_of(D, DA),  // either way along the diagonal
     intact(P, Col), neighbor(P, D, Q), intact(Q, Col2).
 
-// The diagonal lines through the intact cells, each cell with its step count
-// from the intact cell.
-.init line = Ray<Unit>
-line.dir($U(), D) :- params.diag_axis(DA), diag_axis_of(D, DA).   // either way along the diagonal
-line.cell($U(), P) :- in(P, _).
-line.mark($U(), P) :- intact(P, _).
-
-// The color a count of steps along the cycle reaches.
-.init advance = CycleWalk<DiagDir, Color>
-advance.succ(D, Col, Col2) :- cycle_succ(D, Col, Col2).
-advance.step(D, K) :- line.ray($U(), _, D, K, _), diag_dir_elem(D).
-
-// The pattern's law: a cell K diagonal steps from an intact cell lies K
-// places along the cycle from it.
+// The pattern's law, walked out from the intact cells.
 .decl flow(p: Position, col: Color)
+flow(P, Col) :- intact(P, Col).
 flow(Q, Col2) :-
-    intact(P, Col), line.ray($U(), Q, D, K, P), diag_dir_elem(D), advance.walk(D, Col, K, Col2).
+    flow(P, Col),                               // reached so far
+    params.diag_axis(DA), diag_axis_of(D, DA),  // either way along the diagonal
+    neighbor(P, D, Q), in(Q, _),                // one step on
+    cycle_succ(D, Col, Col2).                   // one place along the cycle
 
 out(P, Col, $Cycle()) :- damaged(P), flow(P, Col).

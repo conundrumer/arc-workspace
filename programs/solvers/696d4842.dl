@@ -55,20 +55,16 @@ faces(P_end, P_dot) :- sight.stop(D, P_dot, D, _, P_end), dot(P_dot).
 .decl growth(p_end: Position, p: Position)
 growth(P_end, P) :- faces(P_end, _), sight.clear(D, P, D, _, P_end).
 
-// The cells of the shape an end belongs to, when that end faces a dot.
-.decl shape_cell(p_end: Position, q: Position)
-shape_cell(P_end, Q) :-
-    faces(P_end, _), shapes.label(Col, P_end, Id), shapes.label(Col, Q, Id).
-
 // The near end advances one growth cell per step, and at each step the far
 // end gives up the next cell of the shape.
 .init crawl = Take<Position, Position, Position>
 crawl.start(P_end, P) :- growth(P_end, P), end(P_end, D), neighbor(P_end, D, P).
 crawl.step(P_end, P, P2) :-
     growth(P_end, P), end(P_end, D), neighbor(P, D, P2), growth(P_end, P2).
-crawl.init_untaken(P_end, Q) :- shape_cell(P_end, Q).
+crawl.init_untaken(P_end, Q) :-
+    faces(P_end, _), shapes.label(Col, P_end, Id), shapes.label(Col, Q, Id).  // the shape's cells
 crawl.take(P_end, P, Q) :-
-    growth(P_end, P), shape_cell(P_end, Q), crawl.untaken(P_end, P, Q),
+    crawl.untaken(P_end, P, Q),
     ( end(Q, _), Q != P_end                      // the far end is given up first
     ; link(Q, D), neighbor(Q, D, Q2), crawl.taken(P_end, P, Q2)  // then the next cell along the shape
     ).

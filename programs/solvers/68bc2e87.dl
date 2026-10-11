@@ -29,16 +29,11 @@ rect.cell(Col, P) :- in(P, Col), !params.bg(Col).
 under(Col, Col2) :-
     rect.cell(Col2, P), Col != Col2,       // a cell of another color
     rect.box(Col, B), box_edge(P, B, _).   // on this color's outline
-
-// The colors drawn after each color through any run of overwrites, keyed by
-// the earlier color.
-.init later = GraphDistance<Color, Color>
-later.seed(Col, Col) :- rect.cell(Col, _).
-later.edge(Col, Col1, Col2) :- rect.cell(Col, _), under(Col1, Col2).
+under(Col, Col2) :- under(Col, Mid), under(Mid, Col2).
 
 .init order = Order<Unit, Color>
 order.elem($U(), Col) :- rect.cell(Col, _).
-order.before($U(), Col, Col2) :- later.distance(Col, Col2, _), Col != Col2.
+order.before($U(), Col, Col2) :- under(Col, Col2).
 
 // The listing: one cell per rank, from the edge the order runs from.
 .init listing = DirFrame<Unit>

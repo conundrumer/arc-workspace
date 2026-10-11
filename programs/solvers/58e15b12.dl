@@ -24,21 +24,22 @@ bbox.cell(Col, P) :- in(P, Col), !params.bg(Col).
 
 // --- the repeats ---
 
-// The bar cells and their repeats in frame: the K-th repeat of a bar cell
-// sits K bar lengths on along the axis, either way, and K cells further out
-// on the side of the pair the cell sits on.
-.decl trace(col: Color, p: Position)
-trace(Col, Q) :-
+// The bar cells and their repeats, each tagged with the way it runs along the
+// axis and the side it widens toward.
+.decl trace(col: Color, p: Position, d_step: Dir, d_out: Dir)
+trace(Col, P, D_step, D_out) :-
     params.bar_axis(A), perp(A, A2),
-    bbox.cell(Col, P), bbox.box(Col, B), box_extent(B, P, A, N),
-    box_edge(P, B, D_out), axis_of(D_out, A2), opposite(D_out, O_out),  // the side it sits on
-    axis_of(D_step, A), opposite(D_step, O_step),                       // either way along the axis
-    in(Q, _), relative(P, Q, V),                                        // a frame cell, as an offset
-    dist(V, O_out, K),                                                  // K cells further out
-    dist(V, O_step, T), stride(T, N, 0, K, 0).                          // K bar lengths on
+    bbox.cell(Col, P), bbox.box(Col, B),
+    box_edge(P, B, D_out), axis_of(D_out, A2),               // the side of the pair it sits on
+    axis_of(D_step, A).                                      // either way along the axis
+trace(Col, Q, D_step, D_out) :-
+    trace(Col, P, D_step, D_out),
+    params.bar_axis(A), bbox.box(Col, B), box_extent(B, P, A, N),
+    jump(P, D_step, N, P_on), neighbor(P_on, D_out, Q),      // a bar length on, a cell wider
+    in(Q, _).                                                // while it stays in frame
 
 .init drawn = Unanimous<Position, Color>
-drawn.item(P, Col) :- trace(Col, P).
+drawn.item(P, Col) :- trace(Col, P, _, _).
 
 out(P, Col) :-
     in(P, _),

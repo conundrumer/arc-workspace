@@ -63,17 +63,23 @@ nest.before(Ch, Id, Id2) :-
     patch_size(Ch, Id, N), patch_size(Ch, Id2, N2),  // two patches of one case
     N > N2.                                          // the larger one lies further out
 
+// What a patch takes up in the output, as offsets from the center: its ring,
+// and everything that ring encloses. The smallest patch encloses nothing and
+// takes the center cell alone.
+.decl covers(ch: Choice, id: Ident, v: Offset)
+.decl within(ch: Choice, id: Ident, v: Offset)
+covers(Ch, Id, ZERO) :- nest.last(Ch, Id).
+covers(Ch, Id, V) :-
+    within(Ch, Id, V2),
+    ( V = V2                                // what the ring encloses
+    ; dir8_elem(D), neighbor(V2, D, V) ).   // and one step around it
+within(Ch, Id, V) :- nest.next(Ch, Id, Id2), covers(Ch, Id2, V).
+
 // The center lies as deep as the innermost ring.
 .decl center(ch: Choice, p: Position)
 center(Ch, P) :- nest.last(Ch, Id), nest.rank(Ch, Id, R), uniform_inset(R, P).
 
-// The output square, the frame the center sits in.
-.init square = Frame2D<Choice>
-square.extent(Ch, A, N) :- center(Ch, C), axis_elem(A), axis_dim(C, A, N).
-
-// The square's rings, from its edge inward.
-.init ring = Rim<Choice>
-ring.cell(Ch, P) :- square.cell(Ch, P).
-
-// Each patch draws the ring as deep as the count of larger patches.
-out(P, Col, Ch) :- ring.depth(Ch, P, K), nest.rank(Ch, Id, K), patch_color(Ch, Id, Col).
+out(P, Col, Ch) :-
+    covers(Ch, Id, V), !within(Ch, Id, V),  // an offset the patch's own ring takes
+    center(Ch, C), compose(C, V, P),        // seated at the center
+    patch_color(Ch, Id, Col).

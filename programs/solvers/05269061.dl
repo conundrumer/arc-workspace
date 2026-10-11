@@ -2,8 +2,9 @@
 // @keywords: wallpaper count
 // output: Wallpaper of diagonal stripes: color is constant along
 //  params.stripe_axis and repeats every `period` stripes. The input shows a
-//  patch; the output is the full grid. Each cell takes the color of the
-//  input cells whose stripe index agrees with its own within the period.
+//  patch; the output is the full grid. Colors propagate from input cells
+//  through the wallpaper's symmetries: unit steps along the stripe,
+//  period-length jumps on the four cardinals.
 //  Coincide while the visible period equals the color count.
 
 // Two models of the period, tagged on out's Choice
@@ -28,6 +29,12 @@
 .decl impl_choice(ch: Choice)
 impl_choice($Fixed()). impl_choice($Palette()).
 
+// Unit step along the stripe: toward each corner of the stripe axis.
+.decl stripe_step(delta: Position)
+stripe_step(Delta) :-
+    params.stripe_axis(Da), diag_axis_of(Diag, Da),          // the axis's two corners
+    step_offset(Diag, Delta).
+
 // --- period per choice ---
 
 .init palette = Tally<Unit, Color>
@@ -37,16 +44,18 @@ palette.item($U(), Col) :- in(_, Col), !params.bg(Col).
 period(K, $Fixed())   :- params.period(K).
 period(K, $Palette()) :- palette.tally($U(), K).
 
-// --- stripe classes ---
+.decl period_jump(delta: Position, ch: Choice)
+period_jump(Delta, Ch) :- period(K, Ch), dir_elem(D), jump_offset(D, K, Delta).
 
-// A cell's stripe class: its stripe's index, counted from a corner of the
-// perpendicular diagonal, within the period.
-.decl phase(diag: DiagDir, p: Position, r: number, ch: Choice)
-phase(Diag, P, R, Ch) :-
-    in(P, _), period(K, Ch),
-    params.stripe_axis(Da), diag_perp(Da, Da2), diag_axis_of(Diag, Da2),   // a corner across the stripes
-    corner_dist(P, Diag, T), stride(T, K, 0, _, R).                        // stripe index within the period
+// --- closure under the wallpaper symmetries ---
 
-out(Q, Col, Ch) :-
-    phase(Diag, P, R, Ch), in(P, Col), !params.bg(Col),   // a colored cell of the class
-    phase(Diag, Q, R, Ch).
+.decl known(p: Position, col: Color, ch: Choice)
+known(P, Col, Ch) :- in(P, Col), !params.bg(Col), impl_choice(Ch).
+known(Q, Col, Ch) :-
+    known(P, Col, Ch),
+    ( stripe_step(D)        // one step along the stripe
+    ; period_jump(D, Ch)    // one period on
+    ),
+    compose(P, D, Q), in(Q, _).
+
+out(P, Col, Ch) :- known(P, Col, Ch).

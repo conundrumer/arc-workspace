@@ -94,22 +94,17 @@ src(P_tile, P_intile, Col, C) :-
 out(P, Col, C) :- in(P, Col), impl_choice(C), !tile_cell(P, _, _, C).
 
 // --- $StepCount, $StepSize ---
-// The tiles counted off from the pattern's toward flow_dir.
-.init flow = Ray<Choice>
-flow.dir(C, D) :- by_step(C), params.flow_dir(D).
-flow.cell(C, T) :- by_step(C), tile_cell(_, T, _, C).
-flow.mark(C, T) :- by_step(C), src(T, _, _, C).
+// The pattern seeds its own tile; each neighbor toward flow_dir carries
+// the rotated image.
+.decl content(p_tile: Position, p_intile: Position, col: Color, c: Choice)
+content(T, P, Col, C) :- by_step(C), src(T, P, Col, C).
+content(T2, P2, Col, C) :-
+    content(T1, P1, Col, C),                          // known tile
+    params.flow_dir(D), neighbor(T1, D, T2),
+    tile_cell(_, T2, _, C),                           // stays in the arrangement
+    params.rot(R), apply(R, P1, P2).                  // rotated image
 
-// A cell of the pattern under k turns by params.rot.
-.init turns = CycleWalk<Choice, Position>
-turns.succ(C, P1, P2) :- by_step(C), tile_cell(_, _, P1, C), params.rot(R), apply(R, P1, P2).
-turns.step(C, K) :- flow.ray(C, _, _, K, _).
-
-// The k-th tile on carries the pattern turned k times.
-out(P_grid, Col, C) :-
-    src(T0, P0, Col, C), flow.ray(C, T, _, K, T0),    // a pattern cell, and a tile k on
-    turns.walk(C, P0, K, P_intile),                   // its image under k turns
-    tile_cell(P_grid, T, P_intile, C).
+out(P_grid, Col, C) :- content(T, P_intile, Col, C), tile_cell(P_grid, T, P_intile, C).
 
 // --- $Lookup ---
 out(P_grid, Col, $Lookup()) :-

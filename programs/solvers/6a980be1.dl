@@ -50,14 +50,14 @@ strip_in(P, C) :-
 .init strip_shift = OffsetInvariance<Unit, Color>
 strip_shift.cell($U(), P, C) :- strip_in(P, C).
 
-// The strip continued over the whole grid: each cell takes the color of the
-// strip cells on its line at its place within the period.
+// The strip continued over the whole grid: each cell repeats the one a period
+// back.
 .decl strip_out(p: Position, c: Color)
-strip_out(P, C) :-
-    strip_in(Q, C), in(P, _), line_axis(A), same_line(A, Q, P),   // a strip cell, and a cell on its line
-    strip_shift.min_period($U(), A, K), axis_of(D, A),            // the period
-    dist(Q, D, T), stride(T, K, 0, _, R),
-    dist(P, D, T2), stride(T2, K, 0, _, R).                       // one place within it
+strip_out(P, C) :- strip_in(P, C).
+strip_out(P2, C) :-
+    strip_out(P, C),
+    line_axis(A), strip_shift.min_period($U(), A, K),   // the period
+    axis_of(D, A), jump(P, D, K, P2), in(P2, _).
 
 // On a pattern cell's line across the strip.
 .decl on_pattern_line(p: Position)

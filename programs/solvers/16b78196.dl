@@ -109,29 +109,18 @@ seat(H, O, R) :- seat_flush(H, O, D, R), !loose(H, O, D, R).
 
 // --- the placements a piece can reach ---
 
-// Where an object can lie on the grid: some cell of it on a grid cell, and
-// its box wholly on the grid.
-.type Placed = [o: Ident, delta: Offset]
-
-.decl on_grid(o: Ident, delta: Offset)
-on_grid(O, Delta) :-
-    obj_cell(O, P), in(Q, _), relative(P, Q, Delta),
-    bbox.box(O, B_obj), compose(B_obj, Delta, B_placed), inside(B_placed, ZERO).
+// The bar stays where it is; a piece reaches wherever it can seat on
+// something already placed, so long as it lands on the grid.
+.decl placement(o: Ident, delta: Offset)
+placement(B, ZERO) :- bar(B, _).
+placement(O, Delta) :- seat_step(_, _, O, Delta).
 
 // A seated step between placements: o lands at delta by seating on the host
 // placed at d_host.
 .decl seat_step(h: Ident, d_host: Offset, o: Ident, delta: Offset)
 seat_step(H, D_host, O, Delta) :-
-    on_grid(H, D_host), seat(H, O, R), compose(D_host, R, Delta), on_grid(O, Delta).
-
-// The bar stays where it is; a piece reaches wherever it can seat on
-// something already placed, so long as it lands on the grid.
-.init reach = GraphDistance<Unit, Placed>
-reach.seed($U(), [B, ZERO]) :- bar(B, _).
-reach.edge($U(), [H, D_host], [O, Delta]) :- seat_step(H, D_host, O, Delta).
-
-.decl placement(o: Ident, delta: Offset)
-placement(O, Delta) :- reach.distance($U(), [O, Delta], _).
+    placement(H, D_host), seat(H, O, R), compose(D_host, R, Delta),
+    bbox.box(O, B_obj), compose(B_obj, Delta, B_placed), inside(B_placed, ZERO).  // on the grid
 
 .decl place_cell(o: Ident, delta: Offset, p: Position)
 place_cell(O, Delta, Q) :- placement(O, Delta), obj_cell(O, P), compose(P, Delta, Q).
@@ -147,21 +136,16 @@ place_cell(O, Delta, Q) :- placement(O, Delta), obj_cell(O, P), compose(P, Delta
 .decl clash(o1: Ident, d1: Offset, o2: Ident, d2: Offset)
 clash(O1, D1, O2, D2) :- place_cell(O1, D1, Q), place_cell(O2, D2, Q), O1 != O2.
 
-// The reach regrown with each placement held.
-.init beside = GraphDistance<Placed, Placed>
-beside.seed([O_h, D_h], [B, ZERO]) :- placement(O_h, D_h), bar(B, _).
-beside.edge([O_h, D_h], [H, D_host], [O, Delta]) :-
-    placement(O_h, D_h), seat_step(H, D_host, O, Delta),
+.decl beside(o_h: Ident, d_h: Offset, o: Ident, delta: Offset)
+beside(O_h, D_h, B, ZERO) :- placement(O_h, D_h), bar(B, _).
+beside(O_h, D_h, O, Delta) :-
+    beside(O_h, D_h, H, D_host), seat_step(H, D_host, O, Delta),
     bar(B, _), !clash(O, Delta, B, ZERO),  // beside the bar
     !clash(O, Delta, O_h, D_h),            // beside the held piece
     (O != O_h ; Delta = D_h).              // the held piece stays held
 
-// The objects still in reach with the placement held.
-.decl kept(o_h: Ident, d_h: Offset, o: Ident)
-kept(O_h, D_h, O) :- beside.distance([O_h, D_h], [O, _], _).
-
 .decl refuted(o: Ident, delta: Offset)
-refuted(O, Delta) :- placement(O, Delta), obj_cell(O2, _), !kept(O, Delta, O2).
+refuted(O, Delta) :- placement(O, Delta), obj_cell(O2, _), !beside(O, Delta, O2, _).
 
 .decl filled(p: Position, col: Color)
 filled(Q, Col) :-

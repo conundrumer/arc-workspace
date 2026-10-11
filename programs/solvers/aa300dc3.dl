@@ -177,17 +177,12 @@ subsumed($AnchorCorner($EveryCorner(), $AnchorFirst()), $TieMiddle()).
     // Consecutive cells of one segment along DA.
     .decl link(k: Key, e: Extent, da: DiagAxis, p: Position, q: Position)
 
-    // --- $Run, $NoPinch ---
-    // Neighboring cells along DA.
-    .decl diag_step(k: Key, da: DiagAxis, p: Position, q: Position)
-    diag_step(K, DA, P, Q) :- cell(K, P), diag_axis_of(D, DA), neighbor(P, D, Q), cell(K, Q).
-
     // --- $Run ---
-    link(K, $Run(), DA, P, Q) :- diag_step(K, DA, P, Q).
+    link(K, $Run(), DA, P, Q) :- cell(K, P), diag_axis_of(D, DA), neighbor(P, D, Q), cell(K, Q).
 
     // --- $NoPinch ---
     link(K, $NoPinch(), DA, P, Q) :-
-        diag_step(K, DA, P, Q), neighbor(P, D, Q),
+        link(K, $Run(), DA, P, Q), neighbor(P, D, Q),
         dir_of(D, _, D_side), neighbor(P, D_side, R), cell(K, R).   // a hole cell beside the step
 
     // --- $LineCount ---
@@ -195,14 +190,10 @@ subsumed($AnchorCorner($EveryCorner(), $AnchorFirst()), $TieMiddle()).
         cell(K, P), cell(K, Q), diag_axis_elem(DA), same_line(DA, P, Q).
 
     // --- shared ---
-    // The cells each cell reaches through links, keyed by that cell.
-    // @claim diagonal-runs
-    .init reach = GraphDistance<KeyCell, Position>
-    reach.seed([K, E, DA, P], P) :- cell(K, P), extent_choice(E), diag_axis_elem(DA).
-    reach.edge([K, E, DA, P], Q, R) :- reach.seed([K, E, DA, P], _), link(K, E, DA, Q, R).
-
     .init seg = Canon<KeyCell>
-    seg.equiv([K, E, DA, P], [K, E, DA, Q]) :- reach.distance([K, E, DA, P], Q, _).
+    seg.equiv([K, E, DA, P], [K, E, DA, P]) :- cell(K, P), extent_choice(E), diag_axis_elem(DA).
+    seg.equiv([K, E, DA, P], [K, E, DA, R]) :-
+        seg.equiv([K, E, DA, P], [K, E, DA, Q]), link(K, E, DA, Q, R).
 
     // Cell P of segment Sg, which runs along DA.
     .decl segment(k: Key, e: Extent, sg: Ident, da: DiagAxis, p: Position)

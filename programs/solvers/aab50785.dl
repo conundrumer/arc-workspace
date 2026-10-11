@@ -128,9 +128,6 @@
 // A window of an example.
 .type ExWindow = [e: Example, w: Box]
 
-// The blocks of one case, ordered from edge d of the pair axis.
-.type BandSide = [r: BlockReading, m: MarkerSource, d: Dir]
-
 // The two blocks that bound a window.
 .type Span = [r: BlockReading, m: MarkerSource, c: CrowdedRows, b1: Box, b2: Box]
 
@@ -167,10 +164,6 @@
     // sense S reaches from D. No pair has a band with two windows, so both
     // senses stay open.
     .decl band_sense(s: Sense) band_sense(SENSE_CW). band_sense(SENSE_CC).
-
-    // --- $PairLeftRight ---
-    // The blocks of a pair.
-    .decl pair_size(n: number) pair_size(2).
 
     // --- $PadWidest ---
     // The pair-axis edge a narrower window keeps flush with. No pair has
@@ -391,17 +384,11 @@ slot(R, M, C, W, Line, P_row) :-
     axis_inset(D, K1, K2, P_row).
 
 // --- $PairLeftRight ---
-// The blocks of each band that holds two or more, ranked from edge D.
-// @claim block-pairs
-.init band_rank = Order<BandSide, Box>
-band_rank.elem([R, M, D], B) :- ( parse.beyond([R, M], B, _, D) ; parse.beyond([R, M], _, B, D) ).
-band_rank.before([R, M, D], B1, B2) :- parse.beyond([R, M], B1, B2, D).
-
-// The blocks that open a pair, counting from edge D: each block after a
-// whole number of pairs.
+// The blocks that open a pair, counting from edge D: the first of the band,
+// and each block after a pair.
 .decl opens(r: BlockReading, m: MarkerSource, b: Box, d: Dir)
-opens(R, M, B, D) :-
-    band_rank.rank([R, M, D], B, K), params.pair_size(N), stride(K, N, 0, _, 0).
+opens(R, M, B, D) :- parse.beyond([R, M], B, _, D), !parse.beyond([R, M], _, B, D).
+opens(R, M, B3, D) :- span(R, M, $PairLeftRight(), _, B2, D), parse.adjacent([R, M], B2, B3, D).
 
 span(R, M, $PairLeftRight(), B1, B2, D) :- opens(R, M, B1, D), parse.adjacent([R, M], B1, B2, D).
 

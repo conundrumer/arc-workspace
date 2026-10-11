@@ -26,17 +26,17 @@ pattern(P, Col) :- in(P, Col), !line.value(_, Col).
 .init si = OffsetInvariance<Unit, Color>
 si.cell($U(), P, Col) :- pattern(P, Col).
 
-// A cell's lattice class along the axis of edge D: its distance to D,
-// read within the axis's period where the axis has one.
-.decl phase(p: Position, d: Dir, j: number)
-phase(P, D, J) :-
-    in(P, _), dir_elem(D), dist(P, D, T), axis_of(D, A),
-    ( si.min_period($U(), A, K), stride(T, K, 0, _, J)  // periodic: the place in the period
-    ; !si.min_period($U(), A, _), J = T                  // aperiodic: the line itself
-    ).
+// One lattice step, either way along its axis.
+.decl period_step(p: Position, q: Position)
+period_step(P, Q) :-
+    in(P, _), si.min_period($U(), A, K), si.cand($U(), A, K, Delta),
+    compose(P, Delta, Q), in(Q, _).
+
+// The cells the lattice identifies.
+.decl orbit(p: Position, q: Position)
+orbit(P, P) :- in(P, _).
+orbit(P, Q) :- orbit(P, R), period_step(R, Q).
 
 out(P, Col) :-
-    axis_of(D1, A), perp(A, A2), axis_of(D2, A2),
-    phase(P, D1, J1), phase(P, D2, J2),
-    phase(Q, D1, J1), phase(Q, D2, J2),                      // a cell of P's class
+    orbit(P, Q),                                    // a cell of P's class
     pattern(R, Col), params.move_dir(D), neighbor(R, D, Q).  // what the move puts there

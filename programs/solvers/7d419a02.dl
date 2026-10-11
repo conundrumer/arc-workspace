@@ -69,9 +69,6 @@ across_axis(A2) :- band_axis(A), perp(A, A2).
 .decl band_of(p: Position, t: Position)
 band_of(P, T) :- band_axis(A), frame.part_of($U(), P, A, T).
 
-.decl strip(t: Position)
-strip(T) :- band_of(_, T).
-
 .decl line(p: Position, x: Position)
 line(P, X) :- in(P, _), across_axis(A), split(P, A, X, _).
 
@@ -127,31 +124,23 @@ near.dir($U(), D) :- across_axis(A), axis_of(D, A).
 near.cell($U(), X) :- line(_, X).
 near.mark($U(), X) :- line(_, X).
 
-// The cone on the block's side d: a band's line it covers. Beside the
-// block's band, the block's lines; each band on, one step wider.
-.type Side = [s: Step, d: Dir]
-.type BandLine = [t: Position, x: Position]
-
-.init cone = GraphDistance<Side, BandLine>
-cone.seed([S, D], [T2, X]) :-
-    mark_band(T), step_choice(S), band_axis(A), axis_of(D, A),
-    neighbor(T, D, T2), strip(T2),                        // the band beside the block's
-    mark_cell(M), line(M, X).                             // the block's lines
-cone.edge([S, D], [T, X0], [T2, X]) :-
-    step_choice(S), band_axis(A), axis_of(D, A),
-    strip(T), neighbor(T, D, T2), strip(T2),              // the band beyond T
-    near.cell($U(), X0), near.ray($U(), X, _, K, X0), step(W, S), K <= W.   // one step wider
-
-// The cone covers line x in band t, on either side.
-.decl shade(s: Step, t: Position, x: Position)
-shade(S, T, X) :- cone.distance([S, _], [T, X], _).
+// The lines the cone covers in the band beyond t on the block's side d:
+// beside the block's band, the block's lines; each band on, one step wider.
+.decl shade(s: Step, d: Dir, t: Position, x: Position)
+shade(S, D, T2, X) :-
+    neighbor(T, D, T2), band_of(_, T2),                   // the band beyond T
+    ( mark_band(T), step_choice(S),                       // the block's band: its lines
+      band_axis(A), axis_of(D, A), mark_cell(M), line(M, X)
+    ; shade(S, D, T, X0),                                 // a shaded band: one step wider
+      near.ray($U(), X, _, K, X0), step(W, S), K <= W
+    ).
 
 // Ink outside the cone, off the block's band.
 .decl faded(p: Position, ch: Choice)
 faded(P, [S, I]) :-
     in(P, Col), ink(Col, I),                              // ink
     band_of(P, T), !mark_band(T),                         // off the block's band
-    line(P, X), step_choice(S), !shade(S, T, X).          // outside the cone
+    line(P, X), step_choice(S), !shade(S, _, T, X).       // outside the cone
 
 out(P, Col, Ch) :- faded(P, Ch), params.fill(Col).
 out(P, Col, [S, I]) :- step_choice(S), ink_choice(I), in(P, Col), !faded(P, [S, I]).

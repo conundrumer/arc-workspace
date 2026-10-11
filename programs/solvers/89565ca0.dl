@@ -3,8 +3,8 @@
 // input: Frames of distinct colors lie stacked on the background, and
 //  specks of one further color litter the grid.
 // output: A frame's lines run on under whatever hides them — a speck, or a
-//  frame lying over it: a line runs straight on past two cells of the frame
-//  in a row, and only background stops it.
+//  frame lying over it: a hidden cell carries the line when the two cells
+//  behind it on that line already do, and only background stops a line.
 //  Each frame closes off some number of compartments from the grid edge.
 //  The output is a bar chart, one row per frame from params.rank_dir in
 //  ascending compartment count, each row that many cells of the frame's
@@ -16,9 +16,6 @@
     End {} | Sit {row: number, f: Color, rest: TiebreakResolution}
 
 .decl out(p: Position, col: Color, res: TiebreakResolution)
-
-// A frame's lines run on toward one direction.
-.type Run = [f: Color, d: Dir]
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -51,19 +48,12 @@ frame(Col) :- ink(_, Col), !speck(Col).
 
 // --- each frame's lines, read through what hides them ---
 
-// A line of frame f runs on toward d from a cell of f with another cell of f
-// behind it, over hidden cells, until background stops it.
-.init run_on = Ray<Run>
-run_on.dir([F, D], D) :- frame(F), dir_elem(D).
-run_on.cell([F, D], P) :- frame(F), dir_elem(D), in(P, _).
-run_on.mark([F, D], P) :-
-    ink(P, F), frame(F), dir_elem(D),
-    opposite(D, O), neighbor(P, O, Q), ink(Q, F).   // the cell behind it on the line
-run_on.blocked([F, D], P) :- frame(F), dir_elem(D), in(P, Col), params.bg(Col).
-
 .decl line(f: Color, p: Position)
 line(F, P) :- frame(F), ink(P, F).
-line(F, P) :- run_on.clear([F, _], P, _, _, _).
+line(F, P) :-
+    frame(F), ink(P, _),                          // a cell something hides
+    dir_elem(D), neighbor(P, D, Q), line(F, Q),   // the cell behind it on the line
+    neighbor(Q, D, Q2), line(F, Q2).              // and the one behind that
 
 // --- the compartments a frame closes off ---
 

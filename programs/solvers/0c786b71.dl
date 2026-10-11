@@ -25,10 +25,6 @@
     .decl anchor(d: DiagDir)
     anchor(DIAG_BR).
 
-    // --- $Unfold ---
-    // The tiles in one period of the reflection lattice: a tile and its mirror.
-    .decl lattice_period(k: number) lattice_period(2).
-
     // --- $Lookup ---
     .decl tile_d4(p: Position, d: D4)
     GRID_2x2(tile_d4,
@@ -61,20 +57,18 @@ out(P_grid, Col, $Mirror()) :-
     concat_2d(T, P_intile, 0, P_grid).                      // recompose
 
 // --- $Unfold ---
-// Per-axis within-tile image: the reflections across shared tile edges
-// alternate, so a tile a whole number of lattice periods from the anchor side
-// passes through, and the tile between flips.
-.decl unfold(a: Axis, p_tile: Position, p: Position, p_img: Position)
-unfold(A, T, P, P_img) :-
-    in(P, _),
-    params.arr_pos(T), params.anchor(Diag), dir_of(Diag, A, D),
-    dist(T, D, K), params.lattice_period(N), stride(K, N, 0, _, R),   // phase in the lattice
-    ( R = 0, P_img = P                                     // in phase — passes through
-    ; R != 0, flip_of(A, F), apply(F, P, P_img)            // out of phase — flips
-    ).
+.decl anchor_tile(p: Position)
+anchor_tile(T) :- params.arr_pos(T), params.anchor(Diag), corner_anchor(Diag, T, ZERO).
+
+// Tile contents: the input seeds the anchor tile; each neighbor reflects
+// across the shared boundary.
+.decl unfold_val(p_tile: Position, p_intile: Position, col: Color)
+unfold_val(T, P, Col) :- in(P, Col), anchor_tile(T).
+unfold_val(T2, P_img, Col) :-
+    unfold_val(T, P, Col),                              // known tile
+    axis_of(D, A), neighbor(T, D, T2), params.arr_pos(T2),
+    flip_of(A, F), apply(F, P, P_img).                  // reflect across the shared edge
 
 out(P_grid, Col, $Unfold()) :-
-    in(P_in, Col),                                          // input cell
-    perp(A1, A2),
-    unfold(A1, T, P_in, P1), unfold(A2, T, P1, P_intile),   // image through both axes
-    concat_2d(T, P_intile, 0, P_grid).                      // recompose
+    unfold_val(T, P_intile, Col),
+    concat_2d(T, P_intile, 0, P_grid).

@@ -14,26 +14,22 @@
 
 .init params = Params
 
-// Line fill: each dot casts its color toward params.dir through bg; the next
-// dot occludes.
-.init legs = Ray<Unit>
-legs.dir($U(), D) :- params.dir(D).
-legs.cell($U(), P) :- in(P, _).
-legs.mark($U(), P) :- in(P, Col), !params.bg(Col).
-legs.blocked($U(), P) :- in(P, Col), !params.bg(Col).
-
+// Line fill: color flows stepwise through bg toward params.dir; a dot occludes.
 .decl leg(p: Position, col: Color)
-leg(P, Col) :- legs.clear($U(), P, _, _, Src), in(Src, Col).
+leg(P, Col) :- in(P, Col), !params.bg(Col).
+leg(P2, Col) :-
+    leg(P, Col),                            // colored cell
+    params.dir(D), neighbor(P, D, P2),
+    in(P2, Bg), params.bg(Bg).                   // still bg — a dot occludes
 
-// At the params.dir edge the fill bends and runs along the edge; legs occlude.
-.init bends = Ray<Unit>
-bends.dir($U(), D2) :- params.dir(D), params.sense(S), turn(S, D, D2).  // bent direction
-bends.cell($U(), P) :- in(P, _).
-bends.mark($U(), P) :- leg(P, _), params.dir(D), dist(P, D, 0).        // filled edge cell
-bends.blocked($U(), P) :- leg(P, _).
-
+// At the params.dir edge the fill bends and runs through bg; legs occlude.
 .decl bend(p: Position, col: Color)
-bend(P, Col) :- bends.clear($U(), P, _, _, Src), leg(Src, Col).
+bend(P, Col) :- leg(P, Col), params.dir(D), dist(P, D, 0).
+bend(P2, Col) :-
+    bend(P, Col),                                     // filled edge cell
+    params.dir(D), params.sense(S), turn(S, D, D2),   // bent direction
+    neighbor(P, D2, P2),
+    in(P2, _), !leg(P2, _).                 // unfilled — a leg occludes
 
 out(P, Col) :- leg(P, Col).
 out(P, Col) :- bend(P, Col).

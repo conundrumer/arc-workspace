@@ -69,21 +69,16 @@ domino_end(E, D) :- ink(E), dir_elem(D), neighbor(E, D, F), ink(F).
 // --- $Near ---
 
 // A domino points at P from direction D, one cell away.
-.decl pointed(p: Position, d: Dir)
-pointed(P, D) :- in(P, _), neighbor(P, D, G), neighbor(G, D, E), domino_end(E, D).
-
-// The arms each sight counts.
 .decl near_arm(s: Sight, p: Position, d: Dir)
-near_arm($Any(), P, D) :- pointed(P, D).
+near_arm($Any(), P, D) :-
+    in(P, _), neighbor(P, D, G), neighbor(G, D, E), domino_end(E, D).
+// Clear adds to Any that the cell between holds no ink.
+near_arm($Clear(), P, D) :- near_arm($Any(), P, D), neighbor(P, D, G), !ink(G).
 
 // A domino points at P from each side of axis A, one cell away.
 .decl near_pair(s: Sight, p: Position, a: Axis)
 near_pair(S, P, A) :-
     near_arm(S, P, D), axis_of(D, A), opposite(D, O), near_arm(S, P, O).
-
-// --- $Near & $Clear ---
-// Clear adds that the cell between holds no ink.
-near_arm($Clear(), P, D) :- pointed(P, D), neighbor(P, D, G), !ink(G).
 
 // --- $Centered, $Midpoint ---
 

@@ -103,20 +103,18 @@ paint(P_grid_out, $Mirror()) :-
 
 // --- $Unfold ---
 
-// The pattern reflected across a shared boundary on each axis, once per
-// tile step away from the anchor tile along that axis.
-.init reflect = CycleWalk<Axis, Position>
-reflect.succ(A, P_intile, P_img) :-
-    cell(_, _, P_intile, _), flip_of(A, F), apply(F, P_intile, P_img).
-reflect.step(A, K) :-
-    cell(_, P_tile, _, _), params.anchor(Diag), dir_of(Diag, A, D), dist(P_tile, D, K).
+// Tile contents: the pattern seeds the anchor tile; each neighbor
+// reflects across the shared boundary.
+.decl unfold(p_tile: Position, p_intile: Position)
+unfold(P_tile, P_intile) :- pattern(P_intile), anchor_tile(P_tile).
+unfold(P_tile2, P_img) :-
+    unfold(P_tile, P_intile),                                   // known tile
+    axis_of(D, A), neighbor(P_tile, D, P_tile2),
+    cell(_, P_tile2, _, _),                                     // adjacent tile
+    flip_of(A, F), apply(F, P_intile, P_img).                   // across the shared edge
 
 paint(P_grid_out, $Unfold()) :-
-    pattern(P_intile), cell(_, P_tile, _, _), params.anchor(Diag), perp(A1, A2),
-    dir_of(Diag, A1, D1), dist(P_tile, D1, K1),                      // steps along A1
-    dir_of(Diag, A2, D2), dist(P_tile, D2, K2),                      // steps along A2
-    reflect.walk(A1, P_intile, K1, P1), reflect.walk(A2, P1, K2, P_intile2),
-    concat_2d(P_tile, P_intile2, 0, P_grid_out).
+    unfold(P_tile, P_intile), concat_2d(P_tile, P_intile, 0, P_grid_out).
 
 // --- output ---
 

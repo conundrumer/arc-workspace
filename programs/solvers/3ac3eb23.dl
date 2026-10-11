@@ -16,8 +16,8 @@
 
 // how each marker's trail is cast
 .type Choice =
-    // alternation: centers every params.step_cells-th cell from the marker,
-    // flanks diagonal from each center
+    // alternation: centers every second cell from the marker, flanks
+    // diagonal from each center; no parameter
     Parity {s: Seat}
     // two zigzag walks; the side direction flips each step
   | Walk {s: Seat}
@@ -36,10 +36,6 @@
 
     // --- $Dir ---
     .decl dir(d: Dir) dir(DIR_T).   // the marker edge
-
-    // --- $Parity, $Walk ---
-    // The cells one step of the trail crosses: a center and the cell after it.
-    .decl step_cells(k: number) step_cells(2).
 
     // --- $Banner ---
     .decl slot(k: number)
@@ -78,22 +74,15 @@ seat_choice($Dir()). seat_choice($Edge()).
 seed($Dir(), Col, D, P)  :- marker(P, Col), params.dir(E), opposite(E, D).
 seed($Edge(), Col, D, P) :- marker(P, Col), dir_elem(E), dist(P, E, 0), opposite(E, D).
 
-// The trail: the cells from each marker away from its edge.
-.init trail = Ray<Seat>
-trail.dir(S, D) :- seed(S, _, D, _).
-trail.cell(S, P) :- seat_choice(S), in(P, _).
-trail.mark(S, P) :- seed(S, _, _, P).
-
-// The trail cell K steps out from the marker.
-.decl trail_cell(s: Seat, col: Color, d: Dir, src: Position, p: Position, k: number)
-trail_cell(S, Col, D, Src, P, K) :- trail.ray(S, P, D, K, Src), seed(S, Col, D, Src).
-
 // --- $Parity ---
 
-// Centers: the marker and every params.step_cells-th cell along the trail.
+// Centers: the marker and every second cell along the trail.
 .decl center(s: Seat, col: Color, d: Dir, p: Position)
-center(S, Col, D, P) :-
-    trail_cell(S, Col, D, _, P, K), params.step_cells(N), stride(K, N, 0, _, 0).
+center(S, Col, D, P) :- seed(S, Col, D, P).
+center(S, Col, D, Q) :-
+    center(S, Col, D, P),
+    neighbor(P, D, M), in(M, _),  // the skipped cell
+    neighbor(M, D, Q), in(Q, _).
 
 lit(P, Col, $Parity(S)) :- center(S, Col, _, P).
 
@@ -105,35 +94,31 @@ lit(Q, Col, $Parity(S)) :-
 
 // --- $Walk ---
 
-// Two zigzag walks from the marker, one per side: each step goes one cell on
-// and one to the side, and the side flips each step, so a walk stands on the
-// trail at the end of each step and to its side between. A walk with no
-// room on its side stops at the marker.
-lit(P, Col, $Walk(S)) :- seed(S, Col, _, P).
-lit(Q, Col, $Walk(S)) :-
-    trail_cell(S, Col, D, Src, P, K), perp_dir(D, Ds),
-    neighbor(Src, Ds, Q0), in(Q0, _),                     // room on the walk's side
-    params.step_cells(N), stride(K, N, 0, _, J),
-    ( J = 0, Q = P                                        // on the trail
-    ; J != 0, neighbor(P, Ds, Q), in(Q, _)                // to the side
-    ).
+.decl walk(s: Seat, col: Color, d: Dir, p: Position, side: Dir)
+walk(S, Col, D, P, Ds) :- seed(S, Col, D, P), perp_dir(D, Ds).
+walk(S, Col, D, Q, Ds2) :-
+    walk(S, Col, D, P, Ds),
+    neighbor(P, D, M), neighbor(M, Ds, Q), in(Q, _),   // a step on, then to the side
+    opposite(Ds, Ds2).                                 // flip for the next step
+
+lit(P, Col, $Walk(S)) :- walk(S, Col, _, P, _).
 
 // --- $Banner ---
 
 .init slots = IndexCycle<Unit>
 slots.idx($U(), K) :- params.slot(K).
 
-// The slot cycle, advanced once per step along the trail.
-.init slot_walk = CycleWalk<Unit, number>
-slot_walk.succ($U(), K, K2) :- slots.succ($U(), K, K2).
-slot_walk.step($U(), I) :- trail.ray(_, _, _, I, _).
+// Walk the marker's line, advancing the slot cycle at each step.
+.decl slot_at(s: Seat, col: Color, d: Dir, p: Position, k: number)
+slot_at(S, Col, D, P, 0) :- seed(S, Col, D, P).
+slot_at(S, Col, D, Q, K2) :-
+    slot_at(S, Col, D, P, K), slots.succ($U(), K, K2),   // next slot
+    neighbor(P, D, Q), in(Q, _).
 
-// Light each slot's radius, both sides of the line: the trail cell K steps
-// out takes the slot K steps around the cycle.
+// Light each slot's radius, both sides of the line.
 lit(Q, Col, $Banner(S)) :-
-    trail_cell(S, Col, D, _, P, I), slot_walk.walk($U(), 0, I, K),   // slot cell
-    params.banner(K, R),                                              // its lit radius
-    perp_dir(D, Ds), jump(P, Ds, R, Q), in(Q, _).                     // out to that radius, each side
+    slot_at(S, Col, D, P, K), params.banner(K, R),  // slot cell, its lit radius
+    perp_dir(D, Ds), jump(P, Ds, R, Q), in(Q, _).   // out to that radius, each side
 
 // --- $Stamp ---
 
@@ -192,9 +177,6 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), params.bg(Col).
 
     .decl period(n: number)
     period(N) :- unbroken.low($U(), N).
-
-    .decl step_cells(k: number)
-    step_cells(N) :- period(N).
 
     .decl slot(k: number)
     slot(K) :- radius(_, _, K, _), period(N), K < N.

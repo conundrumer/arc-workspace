@@ -5,9 +5,6 @@
 //  gaps growing by one per step, cycling the seed colors in order, until it
 //  leaves the grid.
 
-// A mark and the jump it arrived by.
-.type Mark = [p: Position, delta: Offset]
-
 .decl out(p: Position, col: Color)
 
 .comp Params {
@@ -31,30 +28,19 @@ order.before($U(), P1, P2) :-
 seed_next(P1, P2) :- order.next($U(), P1, P2).
 seed_next(P1, P2) :- order.last($U(), P1), order.first($U(), P2).
 
-// The jumps a walk can take: none, or some cells toward the grow edge.
-.decl jump_size(delta: Offset)
-jump_size(ZERO).
-jump_size(V) :- in(P, _), params.grow(D), axis_of(D, A), sub_extent(P, A, K), jump_offset(D, K, V).
-
-// The first seed arrives with no jump; each step lengthens the jump by one
-// cell, and the walk stops where it leaves the grid.
-.init grown = GraphDistance<Unit, Mark>
-grown.seed($U(), [P, ZERO]) :- order.first($U(), P).
-grown.edge($U(), [P1, V1], [P2, V2]) :-
-    in(P1, _), jump_size(V1),
-    params.grow(D), neighbor(V1, D, V2),    // jump grows one cell
-    compose(P1, V2, P2), in(P2, _).         // next mark, on grid
-
-// Each step advances the color cursor one seed.
-.init cursor = CycleWalk<Unit, Position>
-cursor.succ($U(), P1, P2) :- seed_next(P1, P2).
-cursor.step($U(), N) :- grown.distance($U(), _, N).
+// A mark: its arriving jump and the seed whose color it carries. The
+// first seed arrives with no jump; each step lengthens the jump by one
+// cell and advances the color cursor.
+.decl grown(p: Position, delta: Offset, q: Position)
+grown(P, ZERO, P) :- order.first($U(), P).
+grown(P2, Delta2, Q2) :-
+    grown(P1, Delta1, Q1), seed_next(Q1, Q2),       // color cursor advances
+    params.grow(D), neighbor(Delta1, D, Delta2),    // jump grows one cell
+    compose(P1, Delta2, P2), in(P2, _).             // next mark, on grid
 
 .decl marked(p: Position, col: Color)
 marked(P, Col) :- ink(P, Col).
-marked(P, Col) :-
-    grown.distance($U(), [P, _], N),
-    order.first($U(), P0), cursor.walk($U(), P0, N, Q), ink(Q, Col).
+marked(P, Col) :- grown(P, _, Q), ink(Q, Col).
 
 out(P, Col) :- marked(P, Col).
 out(P, Col) :- in(P, _), params.bg(Col), !marked(P, _).

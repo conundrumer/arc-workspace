@@ -71,16 +71,10 @@ source(Q, P, Ch) :-
     opposite(D2, O2), dist(V, O2, K2), stride(K2, F, 0, N2, _),   // steps toward D2, scaled down
     jump(P_back, D1, N1, P1), jump(P1, D2, N2, P).
 
-.type ChoiceColor = [ch: Choice, col: Color]
-
-// The cells a chain of sources leads back to a seed cell of each color.
-.init chain = GraphDistance<ChoiceColor, Position>
-chain.edge([Ch, Col], P, Q) :- seed.cell($U(), S), in(S, Col), source(Q, P, Ch).
-chain.seed([Ch, Col], P) :- seed.cell($U(), P), in(P, Col), impl_choice(Ch).
-
 // The seed and its copies.
 .decl copy(p: Position, col: Color, ch: Choice)
-copy(P, Col, Ch) :- chain.distance([Ch, Col], P, _).
+copy(P, Col, Ch) :- seed.cell($U(), P), in(P, Col), impl_choice(Ch).
+copy(Q, Col, Ch) :- source(Q, P, Ch), copy(P, Col, Ch).
 
 out(P, Col, Ch) :-
     in(P, _), impl_choice(Ch),

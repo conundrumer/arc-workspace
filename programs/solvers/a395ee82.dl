@@ -110,8 +110,8 @@
 // crosses.
 .type Leg = [m: Position, a: Axis, l: Position]
 
-// A dot of a read, counted toward d from the anchor.
-.type Rung = [r: Read, q: Position, d: Dir]
+// The dots' lines of a read, ordered toward d.
+.type Sweep = [r: Read, d: Dir]
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -328,76 +328,64 @@ marker([Sh, An, J], M) :-
 paint(R, P, C) :- anchor.value(R, P), ink.value(R, C).
 paint([Sh, An, J], M, S) :- marker([Sh, An, J], M), shape(Sh, J, _, S).
 
-// The lattice place each read gives each dot it stamps at: the count of
-// lattice steps from the anchor to the dot toward each side, as an offset in
-// steps.
-.decl place(r: Read, la: Lattice, q: Position, i: Offset)
+// The move from one block to the next toward d: the shape's extent on d's
+// axis, then the gap.
+.decl block(sh: Shape, j: Adjacency, d: Dir, v: Offset)
+block(Sh, J, D, V) :-
+    shape(Sh, J, Id, _), parse.box.box([$U(), J, Id], B), parse.object($U(), J, Id, _, P),
+    axis_of(D, A), box_extent(B, P, A, N),
+    params.stamp_gap(G), jump_offset(D, N, V1), jump(V1, D, G, V).
 
-// Some marker lies off the lattice.
+// The lattice places each read walks from its anchor, each with the move its
+// block takes from the shape.
+.decl place(r: Read, la: Lattice, q: Position, v: Offset)
+place(R, La, P, ZERO) :- anchor.value(R, P), lattice_choice(La).
+
+// Some marker lies off the walked lattice.
 .decl astray(r: Read, la: Lattice)
 astray(R, La) :- marker(R, M), lattice_choice(La), !place(R, La, M, _).
 
 // --- $StoredStep, $StepGcd ---
-// The lattice steps each reading tries.
-.decl pitch(r: Read, la: Lattice, k: number)
+// The lattice step each read takes.
+.decl step(r: Read, la: Lattice, k: number)
 
-// Dot q lies a whole number of steps k from the anchor on each axis, and i
-// counts those steps.
-.decl on_step(r: Read, la: Lattice, k: number, q: Position, i: Offset)
-on_step(R, La, K, Q, I) :-
-    pitch(R, La, K), anchor.value(R, P), paint(R, Q, _), relative(P, Q, V),
-    diag_dirs(_, _, D1, D2), opposite(D1, O1), opposite(D2, O2),
-    dist(V, O1, T1), dist(V, O2, T2),                     // toward d1 and d2
-    stride(T1, K, 0, N1, 0), stride(T2, K, 0, N2, 0),     // whole steps
-    jump(ZERO, D1, N1, I1), jump(I1, D2, N2, I).
+place([Sh, An, J], La, Q, V) :-
+    place([Sh, An, J], La, P, V0), step([Sh, An, J], La, K),
+    jump(P, D, K, Q), in(Q, _),                               // one lattice step, in the grid
+    block(Sh, J, D, W), compose(V0, W, V).                    // one block
 
 // --- $StoredStep ---
-pitch(R, $StoredStep(), K) :- read(R), params.dot_step(K).
-
-place(R, $StoredStep(), Q, I) :- on_step(R, $StoredStep(), _, Q, I).
+step(R, $StoredStep(), K) :- read(R), params.dot_step(K).
 
 // --- $StepGcd ---
-pitch(R, $StepGcd(), K) :- anchor.value(R, P), axis_elem(A), sub_extent(P, A, K).
+// The lattice through the anchor at each step k.
+.decl reach(r: Read, k: number, q: Position)
+reach(R, K, P) :- anchor.value(R, P), axis_elem(A), sub_extent(P, A, K).
+reach(R, K, Q) :- reach(R, K, P), dir_elem(D), jump(P, D, K, Q), in(Q, _).
 
 // Some marker lies off the lattice at step k.
 .decl off_step(r: Read, k: number)
-off_step(R, K) :- pitch(R, $StepGcd(), K), marker(R, M), !on_step(R, $StepGcd(), K, M, _).
+off_step(R, K) :- reach(R, K, _), marker(R, M), !reach(R, K, M).
 
 // @claim lattice
 // @ignore cand: store — the stored reading of the step is StoredStep
 .init steps = Extremes<Read>
-steps.cand(R, K) :- pitch(R, $StepGcd(), K), !off_step(R, K).
+steps.cand(R, K) :- reach(R, K, _), !off_step(R, K).
 
-place(R, $StepGcd(), Q, I) :- steps.high(R, K), on_step(R, $StepGcd(), K, Q, I).
+step(R, $StepGcd(), K) :- steps.high(R, K).
 
 // --- $LatticeRank ---
-// The dot lines past the anchor's line toward d, up to the dot's own.
 // @claim lattice
-.init rungs = Tally<Rung, Position>
-rungs.domain([R, Q, D]) :-
-    anchor.value(R, P), paint(R, Q, _), dir_elem(D), opposite(D, O), !nearer(O, Q, P).
-rungs.item([R, Q, D], L) :-
-    anchor.value(R, P), paint(R, Q, _), paint(R, Q2, _), axis_of(D, A),
-    split(Q2, A, L, _), split(P, A, L_p, _), split(Q, A, L_q, _),
-    nearer(D, L, L_p), !nearer(D, L, L_q).
+.init lines = Order<Sweep, Position>
+lines.elem([R, D], L) :- paint(R, P, _), axis_of(D, A), split(P, A, L, _).
+lines.before([R, D], L1, L2) :-
+    lines.elem([R, D], L1), lines.elem([R, D], L2), nearer(D, L2, L1).
 
-place(R, $LatticeRank(), Q, I) :-
-    diag_dirs(_, _, D1, D2), rungs.tally([R, Q, D1], N1), rungs.tally([R, Q, D2], N2),
-    jump(ZERO, D1, N1, I1), jump(I1, D2, N2, I).
-
-// --- shared ---
-// The move from the shape's own block to the block i blocks away: each block
-// spans the shape's extent, then the gap. A block counts where its corner
-// nearest the shape lies in the grid.
-.decl block(sh: Shape, j: Adjacency, i: Offset, v: Offset)
-block(Sh, J, I, V) :-
-    shape(Sh, J, Id, _), parse.box.box([$U(), J, Id], B), params.stamp_gap(G),
-    diag_dirs(_, A, D1, D2), perp(A, A2), opposite(D1, O1), opposite(D2, O2),
-    in(X, _), relative(B, X, X_rel), dist(X_rel, O1, T1), dist(X_rel, O2, T2),
-    box_extent(B, X, A, N1), box_extent(B, X, A2, N2),
-    stride(T1, N1, G, K1, 0), stride(T2, N2, G, K2, 0),   // x starts a block on each axis
-    jump(ZERO, D1, K1, I1), jump(I1, D2, K2, I),
-    jump(ZERO, D1, T1, V1), jump(V1, D2, T2, V).
+place([Sh, An, J], $LatticeRank(), Q, V) :-
+    place([Sh, An, J], $LatticeRank(), P, V0),
+    axis_of(D, A), split(P, A, L1, X),
+    lines.next([[Sh, An, J], D], L1, L2), compose(L2, X, Q),  // the next dot line toward d
+    block(Sh, J, D, W), compose(V0, W, V).
 
 // --- shared ---
 // A cell the stamp copies, at the shape's own place, with its input color.
@@ -413,7 +401,7 @@ source(Sh, $BoxStamp(), J, P, Col) :-
 // --- shared ---
 .decl stamped(ch: Choice, p: Position, col: Color)
 stamped([Sh, An, La, Co, J], P2, Col) :-
-    paint([Sh, An, J], Q, C_stamp), place([Sh, An, J], La, Q, I), block(Sh, J, I, V),
+    paint([Sh, An, J], Q, C_stamp), place([Sh, An, J], La, Q, V),
     source(Sh, Co, J, P, C_own), compose(P, V, P2), in(P2, _),   // clipped at the grid edge
     shape(Sh, J, _, S),
     ( C_own = S, Col = C_stamp
@@ -448,17 +436,23 @@ out(P, Col, Ch) :-
     gap(E, 0) :- shape_cell(E, _, _).
     gap(E, G) :- shape_cell(E, P, _), axis_elem(A), sub_extent(P, A, G).
 
-    // A cell of the grid that a copy of the shape's cell p covers, with blocks
-    // at gap g: q sits at p's place within its block on each axis.
-    .decl covered(e: Example, g: number, q: Position)
-    covered(E, G, Q) :-
+    // The move from one block to the next toward d, at gap g.
+    .decl block(e: Example, g: number, d: Dir, v: Offset)
+    block(E, G, D, V) :-
         gap(E, G), parse.sole.value([E, $CornerJoin()], Id),
         parse.box.box([E, $CornerJoin(), Id], B), shape_cell(E, P, _),
-        diag_dirs(_, A, D1, D2), perp(A, A2), opposite(D1, O1), opposite(D2, O2),
-        relative(B, P, P_rel), dist(P_rel, O1, K1), dist(P_rel, O2, K2),
-        ex_in(E, Q, _), relative(B, Q, Q_rel), dist(Q_rel, O1, T1), dist(Q_rel, O2, T2),
-        box_extent(B, Q, A, N1), box_extent(B, Q, A2, N2),
-        stride(T1, N1, G, _, K1), stride(T2, N2, G, _, K2).
+        axis_of(D, A), box_extent(B, P, A, N), jump_offset(D, N, V1), jump(V1, D, G, V).
+
+    // The blocks at gap g that reach into the grid, each as its move from the
+    // shape.
+    .decl tiled(e: Example, g: number, v: Offset)
+    tiled(E, G, ZERO) :- gap(E, G).
+    tiled(E, G, V) :-
+        tiled(E, G, V0), block(E, G, _, W), compose(V0, W, V),
+        shape_cell(E, P, _), compose(P, V, Q), ex_in(E, Q, _).
+
+    .decl covered(e: Example, g: number, q: Position)
+    covered(E, G, Q) :- tiled(E, G, V), shape_cell(E, P, _), compose(P, V, Q).
 
     // An output cell in S that no block at gap g covers.
     .decl gap_defect(g: number)

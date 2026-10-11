@@ -38,23 +38,20 @@ pair(D, M1, C1, M2, C2) :-
 
 // --- $Meet, $Near: lockstep fronts ---
 
-// A cell between the marks of a pair: k1 steps on from m1, k2 steps back
-// from m2.
-.decl between(p: Position, c1: Color, k1: number, k2: number)
-between(P, C1, K1, K2) :-
-    pair(D, M1, C1, M2, _), params.axis(A), opposite(D, O),
-    in(P, _), same_line(A, M1, P),                   // on the pair's row
-    relative(M1, P, V1), dist(V1, D, K1), K1 >= 0,   // on from m1
-    relative(M2, P, V2), dist(V2, O, K2), K2 >= 0.   // back from m2
+// Both fronts advance one step toward each other while they stay ordered;
+// landing on one cell is the clash.
+.decl walk(d: Dir, p1: Position, c1: Color, p2: Position, c2: Color)
+walk(D, M1, C1, M2, C2) :- pair(D, M1, C1, M2, C2).
+walk(D, Q1, C1, Q2, C2) :-
+    walk(D, P1, C1, P2, C2), P1 != P2,                          // fronts still apart
+    opposite(D, O), neighbor(P1, O, Q1), neighbor(P2, D, Q2),   // advance both
+    dist(Q1, D, Kq1), dist(Q2, D, Kq2), Kq1 <= Kq2.             // still ordered
 
-// The fronts advance in lockstep from the two marks toward each other: a cell
-// nearer one mark is that mark's front, and a cell they reach together is the
-// clash.
 .decl front(p: Position, col: Color)
-front(P, C1) :- between(P, C1, K1, K2), K1 < K2.
+front(P1, C1) :- walk(_, P1, C1, P2, _), P1 != P2.
 
 .decl clash_cell(p: Position)
-clash_cell(P) :- between(P, _, K, K).
+clash_cell(P) :- walk(_, P, _, P, _).
 
 // --- $Meet ---
 

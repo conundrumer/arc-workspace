@@ -18,14 +18,10 @@
 .decl ink(p: Position)
 ink(P) :- in(P, Col), !params.bg(Col).
 
-// The ink cells that line sharing connects to each ink cell.
-.init linked = GraphDistance<Position, Position>
-linked.edge(P, Q, R) :- ink(P), ink(Q), ink(R), axis_elem(A), same_line(A, Q, R).
-linked.seed(P, P) :- ink(P).
-
 // A group is what line sharing connects.
 .init group = Canon<Position>
-group.equiv(P, Q) :- linked.distance(P, Q, _).
+group.equiv(P, P) :- ink(P).
+group.equiv(P, R) :- group.equiv(P, Q), ink(R), axis_elem(A), same_line(A, Q, R).
 
 .init group_box = Bbox<Ident>
 group_box.cell(Id, P) :- group.id(P, Id).

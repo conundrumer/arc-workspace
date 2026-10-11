@@ -69,51 +69,43 @@ at_block(Pm, Q) :-
     mark(Pm, Cc),                          // the color names the block
     copy_cell(Pm, Q, P, _), block(Cc, P).  // a cell of the copy on it
 
-// The pitch from one copy to the next, along each cardinal.
-.decl march(p_mark: Position, d: Dir, k: number, ch: Choice)
+// The step from one copy to the next.
+.decl march(p_mark: Position, d: Dir, v: Offset, ch: Choice)
 
 // --- $Abut ---
 
 .init mbox = Bbox<Position>
 mbox.cell(Pm, P) :- mark_cell(Pm, P).
 
-march(Pm, D, N, $Abut()) :-
+march(Pm, D, V, $Abut()) :-
     dir_elem(D), axis_of(D, A),
-    mbox.box(Pm, B), box_extent(B, Pm, A, N).   // the mark's extent along the march
+    mbox.box(Pm, B), box_extent(B, Pm, A, N),   // the mark's extent along the march
+    jump_offset(D, N, V).
 
 // --- $Stride ---
 
-march(Pm, D, K, $Stride()) :- mark(Pm, _), dir_elem(D), params.pitch(K).
+march(Pm, D, V, $Stride()) :-
+    mark(Pm, _), dir_elem(D),
+    params.pitch(K), jump_offset(D, K, V).
 
 // --- output ---
 
-// A copy centered at q, n pitches on from the mark toward d, inside the grid.
-.decl step_copy(p_mark: Position, d: Dir, q: Position, n: number, ch: Choice)
-step_copy(Pm, D, Q, N, Ch) :-
-    march(Pm, D, K, Ch), axis_of(D, A), opposite(D, O),
-    in(Q, _), same_line(A, Pm, Q),                      // in line with the mark
-    relative(Pm, Q, V), dist(V, O, T),                  // t cells on toward d
-    stride(T, K, 0, N, 0).                              // a whole number of pitches
-
-// The copy n pitches on lands on the block its mark names.
-.decl landing(p_mark: Position, d: Dir, n: number, ch: Choice)
-landing(Pm, D, N, Ch) :- step_copy(Pm, D, Q, N, Ch), at_block(Pm, Q).
-
-// A landing comes before the copy n pitches on.
-.decl landed_before(p_mark: Position, d: Dir, n: number, ch: Choice)
-landed_before(Pm, D, N, Ch) :-
-    step_copy(Pm, D, _, N, Ch), landing(Pm, D, N2, Ch), N2 < N.
-
-// The copies of a march that arrives at the block: the mark, then one per
-// pitch, up to the first that lands on the block.
+// The copies of a march: the mark, then one per step, halting at the block or
+// the grid edge.
 .decl copy(p_mark: Position, d: Dir, q: Position, ch: Choice)
-copy(Pm, D, Q, Ch) :-
-    step_copy(Pm, D, Q, N, Ch), landing(Pm, D, N2, Ch), N <= N2,
-    !landed_before(Pm, D, N, Ch).
+copy(Pm, D, Pm, Ch) :- march(Pm, D, _, Ch).
+copy(Pm, D, Q2, Ch) :-
+    copy(Pm, D, Q, Ch), !at_block(Pm, Q),
+    march(Pm, D, V, Ch), compose(Q, V, Q2), in(Q2, _).
+
+// The march that arrives at the block.
+// @ignore: single-consumer — naming the concept the model turns on
+.decl arrives(p_mark: Position, d: Dir, ch: Choice)
+arrives(Pm, D, Ch) :- copy(Pm, D, Q, Ch), at_block(Pm, Q).
 
 .decl paint(p: Position, col: Color, ch: Choice)
 paint(P, Col, Ch) :-
-    copy(Pm, _, Q, Ch),                        // a copy of an arriving march
+    copy(Pm, D, Q, Ch), arrives(Pm, D, Ch),    // a copy of an arriving march
     copy_cell(Pm, Q, P, Col), in(P, _).        // drawn, clipped to the grid
 
 out(P, Col, Ch) :- paint(P, Col, Ch).

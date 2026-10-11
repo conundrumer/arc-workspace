@@ -46,15 +46,10 @@ uncut(L, L2) :-
     params.axis(A), axis_of(D, A), neighbor(L, D, L2),    // neighbors along the axis
     !differ(L, L2).                                       // no place cuts them
 
-// The lines each line reaches through uncut neighbors, keyed by that line.
-// @claim shapes
-.init run = GraphDistance<Position, Position>
-run.seed(L, L) :- line_cell(L, _, _).
-run.edge(L, L2, L3) :- line_cell(L, _, _), uncut(L2, L3).
-
 // A band is a maximal run of lines that agree.
 .init bands = Canon<Position>
-bands.equiv(L, L2) :- run.distance(L, L2, _).
+bands.equiv(L, L) :- line_cell(L, _, _).
+bands.equiv(L, L3) :- bands.equiv(L, L2), uncut(L2, L3).
 
 // The bands that hold ink: each is one rectangle.
 .decl shape(id: Ident)

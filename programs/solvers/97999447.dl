@@ -53,11 +53,8 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !on_ray(P, _, _).   // off every
 
 // Each dot color's two-color cycle, one advance per ray step.
 .init colors = CycleWalk<Color, Color>
-colors.succ(M, A, B) :-
-    mark(_, M), params.alt_color(Alt),
-    ( A = M, B = Alt      // the dot color, then the alt color
-    ; A = Alt, B = M      // and back
-    ).
+colors.succ(M, M, Alt) :- mark(_, M), params.alt_color(Alt).
+colors.succ(M, A, B)   :- colors.succ(M, B, A).
 colors.step(M, K)      :- on_ray(_, M, K).
 
 out(P, Col, $Toggle()) :- on_ray(P, M, K), colors.walk(M, M, K, Col).   // K steps on from the dot color

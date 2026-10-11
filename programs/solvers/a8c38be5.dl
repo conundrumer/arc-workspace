@@ -216,9 +216,9 @@ impl_choice([Pc, Ff, $SkipUnmarked(), Dr, $FillDefault(), Fc, Sz]) :-
 
     // A cell a multiple of n from the end of its run toward d.
     .decl cut(k: Key, n: number, d: Dir, p: Position)
-    cut(K, N, D, P) :-
-        side(K, N), dir_elem(D), runs.rest(K, P, D, Q),        // q ends p's run toward d
-        relative(Q, P, V), dist(V, D, T), stride(T, N, 0, _, 0).
+    cut(K, N, D, P) :- side(K, N), runs.rim_dir(K, P, D), dir_elem(D).
+    cut(K, N, D, Q) :-
+        cut(K, N, D, P), opposite(D, O), jump(P, O, N, Q), runs.run(K, P, O, Q).
 
     // The corner of a piece cut from origin o, and the piece.
     .decl corner(k: Key, n: number, o: DiagDir, p: Position)

@@ -362,12 +362,6 @@ bar_len.item([$OpenRows(), L], R) :-
 // The level's ladder reaches down.
 .decl reaches(re: ReachTest, l: Position)
 
-// The ladder's last row lies just before the next full row.
-.decl abuts_next(l: Position)
-abuts_next(L) :-
-    lines.next($U(), L, L2), params.floor_side(D), opposite(D, U), neighbor(L2, U, R),
-    ladder_row(L, R).
-
 // A level whose ladder does not reach down.
 .decl short(f: Position, re: ReachTest, l: Position)
 short(F, Re, L) :- level(F, L), reach_test_choice(Re), !reaches(Re, L).
@@ -411,12 +405,15 @@ gap_mark(F, $TopGap(), Re, L) :-
     level(F, L), lines.first($U(), L), reach_test_choice(Re), !short(F, Re, _).
 
 // --- $AbutsNext ---
-reaches($AbutsNext(), L) :- abuts_next(L).
+// The ladder's last row lies just before the next full row.
+reaches($AbutsNext(), L) :-
+    lines.next($U(), L, L2), params.floor_side(D), opposite(D, U), neighbor(L2, U, R),
+    ladder_row(L, R).
 
 // --- $BothEnds ---
 // The ladder also starts in the row just past its level.
 reaches($BothEnds(), L) :-
-    abuts_next(L), params.floor_side(D), neighbor(L, D, R), ladder_row(L, R).
+    reaches($AbutsNext(), L), params.floor_side(D), neighbor(L, D, R), ladder_row(L, R).
 
 // --- $FewestRungs ---
 // @claim climb

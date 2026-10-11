@@ -28,23 +28,15 @@ sight.dir($U(), Diag) :- diag_dir_elem(Diag).
 sight.cell($U(), P) :- mark(P).
 sight.mark($U(), P) :- mark(P).
 
-// G is within reach of mark G2 toward corner Diag.
-.decl hop(diag: DiagDir, g2: Position, g: Position)
-hop(Diag, G2, G) :-
-    diag_dir_elem(Diag), sight.ray($U(), G, Diag, K, G2),
-    K != 0, params.reach(R), K <= R.
-
-// The arm from apex A toward corner Diag.
-.type Arm = [a: Position, diag: DiagDir]
-
-// The arm marks: a chain of hops from the apex, the first hop seeding it.
-.init chain = GraphDistance<Arm, Position>
-chain.seed([A, Diag], G) :- hop(Diag, A, G).
-chain.edge([A, Diag], G2, G) :- chain.seed([A, Diag], _), hop(Diag, G2, G).
-
-// A mark on the arm from mark A toward corner Diag.
+// A mark on the arm from mark A toward corner Diag: within reach of A, or
+// of an earlier arm mark.
 .decl arm(a: Position, diag: DiagDir, g: Position)
-arm(A, Diag, G) :- chain.distance([A, Diag], G, _).
+arm(A, Diag, G) :-
+    diag_dir_elem(Diag), sight.ray($U(), G, Diag, K, G2),
+    K != 0, params.reach(R), K <= R,                   // G within reach of mark G2
+    ( A = G2               // the apex itself
+    ; arm(A, Diag, G2)     // an earlier arm mark
+    ).
 
 // An apex toward D: a mark with an arm toward each of D's two corners.
 .decl one_armed(a: Position, d: Dir)

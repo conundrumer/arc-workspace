@@ -55,16 +55,23 @@ out(P, Col, $Shift()) :-
 
 // --- $Period ---
 
-// A corrupted cell and the clean cells whole stored periods apart from it
-// along the period's axis: in line, at the same place within the period.
-.decl peer(p: Position, q: Position, col: Color)
-peer(P, Q, Col) :-
-    in(P, N), params.noise(N), params.period(A, K), axis_of(D, A),
-    clean(Q, Col), same_line(A, P, Q),
-    dist(P, D, T_p), stride(T_p, K, 0, _, R),
-    dist(Q, D, T_q), stride(T_q, K, 0, _, R).
+// The stored period as a delta, both directions; materialized so the walk
+// below joins against it instead of rebuilding it per step.
+.decl period_delta(delta: Position)
+period_delta(Delta) :-
+    params.period(A, K), axis_of(D, A), jump_offset(D, K, Delta).
 
-out(P, Col, $Period()) :- peer(P, _, Col).
+// Cells whole stored periods apart along the period's axis.
+.decl peer(p: Position, q: Position)
+peer(P, P) :- in(P, _).
+peer(P, Q2) :-
+    peer(P, Q),
+    period_delta(Delta), compose(Q, Delta, Q2),        // one period over
+    in(Q2, _).
+
+out(P, Col, $Period()) :-
+    in(P, N), params.noise(N),                         // corrupted cell
+    peer(P, Q), clean(Q, Col).                         // clean peer
 
 // --- $Rows ---
 

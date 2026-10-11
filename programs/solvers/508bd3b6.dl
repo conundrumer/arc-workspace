@@ -16,9 +16,6 @@
 
 .decl out(p: Position, col: Color, ch: Choice)
 
-// The beam at a cell, with its heading.
-.type Beam = [p: Position, d: DiagDir]
-
 .comp Params {
     .decl bg(col: Color) bg(0).
     .decl mark(col: Color) mark(8).
@@ -75,16 +72,15 @@ bounce(P, D, D_out, Ch) :-
     leave_dir(P, D, D1, Ch), leave_dir(P, D, D2, Ch),       // the two components
     diag_dirs(D_out, _, D1, D2).                            // one on each axis
 
-// The beam reaches p heading d: from a mark along the aim, it leaves each
-// cell with the heading the walls there turn it to, into the open cell ahead.
-.init beam = GraphDistance<Choice, Beam>
-beam.seed(Ch, [P, D]) :- mark_cell(P), aim(D), impl_choice(Ch).
-beam.edge(Ch, [P, D], [Q, D_out]) :-
-    bounce(P, D, D_out, Ch),                             // the heading it leaves p with
+// The beam reaches p heading d.
+.decl beam(p: Position, d: DiagDir, ch: Choice)
+beam(P, D, Ch) :- mark_cell(P), aim(D), impl_choice(Ch).
+beam(Q, D_out, Ch) :-
+    beam(P, D, Ch), bounce(P, D, D_out, Ch),             // the heading it leaves p with
     neighbor(P, D_out, Q), in(Q, Bg), params.bg(Bg).     // the open cell ahead
 
 .decl painted(p: Position, ch: Choice)
-painted(P, Ch) :- beam.distance(Ch, [P, _], _), in(P, Bg), params.bg(Bg).
+painted(P, Ch) :- beam(P, _, Ch), in(P, Bg), params.bg(Bg).
 
 out(P, Col, Ch) :- painted(P, Ch), params.paint(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, Ch).

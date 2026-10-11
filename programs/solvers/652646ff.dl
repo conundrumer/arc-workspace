@@ -74,21 +74,12 @@ drawn(Col, P_grid) :-
 .decl shared(col: Color, col2: Color, p: Position)
 shared(Col, Col2, P_grid) :- drawn(Col, P_grid), drawn(Col2, P_grid), Col != Col2.
 
-// Col is directly in front of Col2.
 .decl front(col: Color, col2: Color, ch: Choice)
-
-// One figure under one case, as the key of the pile's closure.
-.type Layer = [ch: Choice, col: Color]
-
-// The figures behind each figure through any run of shared cells: the pile is
-// an order.
-.init behind = GraphDistance<Layer, Color>
-behind.seed([Ch, Col], Col) :- drawn(Col, _), impl_choice(Ch).
-behind.edge([Ch, Col], Col1, Col2) :- drawn(Col, _), front(Col1, Col2, Ch).
+front(Col, Col2, Ch) :- front(Col, Mid, Ch), front(Mid, Col2, Ch).   // the pile is an order
 
 .init stack = Order<Choice, Color>
 stack.elem(Ch, Col) :- drawn(Col, _), impl_choice(Ch).
-stack.before(Ch, Col, Col2) :- behind.distance([Ch, Col], Col2, _), Col != Col2.
+stack.before(Ch, Col, Col2) :- front(Col, Col2, Ch).
 
 // The figure's tile, at its rank from the edge the stack runs from.
 .decl tile(col: Color, p_tile: Position, ch: Choice)

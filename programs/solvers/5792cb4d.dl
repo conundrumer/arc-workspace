@@ -25,13 +25,21 @@ link(P, Q) :- node(P), dir_elem(D), neighbor(P, D, Q), node(Q).
 .init lone = Unanimous<Position, Position>
 lone.item(P, Q) :- link(P, Q).
 
-// Each cell's distance along the chain from each end.
-.init along = GraphDistance<Position, Position>
-along.seed(E, E) :- lone.value(E, _).
-along.edge(E, P, Q) :- lone.value(E, _), link(P, Q).
+// The walk from each end: every step but the first leads away from the cell
+// the walk came from.
+.decl step(e: Position, p: Position, q: Position)
+step(E, E, Q) :- lone.value(E, Q).
+step(E, P, Q) :- step(E, Prev, P), link(P, Q), Q != Prev.
+
+// Each end orders the chain, and the two orders are reverses, so the
+// reversal below reads the same from either.
+.init chain = Order<Position, Position>
+chain.elem(E, P) :- lone.value(E, _), node(P).
+chain.before(E, P, Q) :- step(E, P, Q).
+chain.before(E, P, R) :- chain.before(E, P, Q), chain.before(E, Q, R).
 
 out(P, Col) :- in(P, Col), params.bg(Col).
 out(P, Col) :-
-    along.distance(E, P, R),               // P's distance from one end
-    along.distance(E2, Q, R), E2 != E,     // the cell as far from the other end
+    chain.rank(E, P, R),       // cells behind P
+    chain.rank_desc(E, Q, R),  // the cell as far ahead as P is behind
     in(Q, Col).

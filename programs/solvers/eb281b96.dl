@@ -44,24 +44,15 @@ out(P_grid, Col, $Lookup()) :-
     concat_slab(P_tile, P_intile, A, G, P_grid).             // recompose with passthrough
 
 // --- $Unfold ---
-// The input seeds the anchor-end tile, and each boundary crossed from it
-// reflects the content once, so a tile an even count of tiles from the
-// anchor tile holds the input: some tile lies midway between the two.
-.decl anchor_tile(p_tile: Position)
-anchor_tile(T) :- arr.cell($U(), _, T), params.anchor(D), dist(T, D, 0).
-
-.decl even_off(p_tile: Position)
-even_off(T) :-
-    arr.cell($U(), _, T), anchor_tile(Anc), arr.cell($U(), _, M),
-    relative(Anc, M, V), relative(M, T, V).                 // M midway
-
-// The tile's content: the input, flipped across the axis at an odd count.
+// Tile contents: the input seeds the anchor-end tile; each neighbor
+// reflects across the shared boundary.
 .decl unfold_val(p_tile: Position, p_intile: Position, col: Color)
-unfold_val(T, P_img, Col) :-
-    in(P, Col), arr.cell($U(), A, T),
-    ( even_off(T), P_img = P                                // even: the input
-    ; !even_off(T), flip_of(A, F), apply(F, P, P_img)       // odd: flipped
-    ).
+unfold_val(T, P, Col) :- in(P, Col), arr.cell($U(), _, T), params.anchor(D), dist(T, D, 0).
+unfold_val(T2, P_img, Col) :-
+    unfold_val(T, P, Col),                // known tile
+    axis_of(D, A), neighbor(T, D, T2),
+    arr.cell($U(), A, T2),                // still on the arrangement
+    flip_of(A, F), apply(F, P, P_img).    // reflect across the shared edge
 
 out(P_grid, Col, $Unfold()) :-
     unfold_val(T, P_intile, Col),

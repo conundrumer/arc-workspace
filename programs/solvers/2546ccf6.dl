@@ -71,14 +71,12 @@ block_broken(Col, P_tile, G) :-
 gap(Col, P_tile, G) :-
     block_tile(Col, P_tile, G, _, _), !tile_holds(Col, P_tile), !block_broken(Col, P_tile, G).
 
-// Reflection in the cut crossed on the way toward d.
-.decl flip(d: Dir, p_intile: Position, p_out: Position)
-flip(D, P, Q) :- tile_cell(_, _, P), axis_of(D, A), flip_of(A, F), apply(F, P, Q).
-
 // Reflection in the cut, or the pair of cuts, crossed on the way toward d.
 .decl reflect(d: Dir8, p_intile: Position, p_out: Position)
-reflect(D, P, Q) :- flip(D, P, Q).
-reflect(G, P, Q) :- diag_dirs(G, _, D1, D2), flip(D1, P, P_mid), flip(D2, P_mid, Q).
+reflect(D, P, Q) :-
+    tile_cell(_, _, P), axis_of(D, A), flip_of(A, F), apply(F, P, Q).
+reflect(G, P, Q) :-
+    diag_dirs(G, _, D1, D2), reflect(D1, P, P_mid), reflect(D2, P_mid, Q).
 
 // A cell of col's block and the cell of the missing tile it mirrors onto.
 .decl mirror(col: Color, p_src: Position, p_dst: Position)

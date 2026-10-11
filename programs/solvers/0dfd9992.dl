@@ -26,9 +26,5 @@ wp.cell($U(), P, Col) :- intact(P, Col).
 wp.grid($U(), P) :- in(P, _).
 wp.period($U(), A, K) :- si.min_period($U(), A, K).
 
-// The cells each color reaches from its survivors along the symmetries.
-.init orbit = GraphDistance<Color, Position>
-orbit.seed(Col, P) :- intact(P, Col).
-orbit.edge(Col, P, Q) :- intact(_, Col), wp.action($U(), P, Q).
-
-out(P, Col) :- orbit.distance(Col, P, _).
+out(P, Col) :- intact(P, Col).
+out(Q, Col) :- out(P, Col), wp.action($U(), P, Q).

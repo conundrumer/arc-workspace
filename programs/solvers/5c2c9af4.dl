@@ -1,6 +1,6 @@
 // 5c2c9af4
 // @draft
-// @keywords: markers border rings
+// @keywords: markers walk border rings
 // output: Three dots of one color sit equally spaced along a diagonal. The
 //  output draws concentric square outlines around the middle dot, spaced by the
 //  gap between neighboring dots, as far out as the grid shows any part of one.
@@ -34,28 +34,28 @@ center(P) :-
     bbox.cell($U(), P), bbox.box($U(), B), crop(P, B, P_inner),
     centered(P_inner).    // the middle dot
 
-// The spacing: how far the center lies inside the innermost outline.
-.decl spacing(k: number)
-spacing(K) :-
-    center(P), bbox.box($U(), B), crop(P, B, P_inner),
-    dir_elem(D), dist(P_inner, D, K).
+// The spacing, as the frame change carrying the center out to the innermost outline.
+.decl spread(b: Box)
+spread(B_spread) :- center(P), bbox.box($U(), B), relative(P, B, B_spread).
 
 // --- program ---
 
-// The cells the outlines draw: a cell lies on the outline as far out from the
-// center as its farther offset along either axis, and the outlines stand at
-// every multiple of the spacing, the center cell being the innermost.
-.decl drawn(p: Position)
-drawn(P) :-
-    in(P, _), center(C), relative(C, P, V),
-    dir_elem(D), dist(V, D, K),                                 // an offset from the center
-    spacing(G), stride(K, G, 0, _, 0),                          // a multiple of the spacing
-    uniform_outset(K, B_out), compose(C, B_out, B), box_edge(P, B, _).   // on that outline
+.decl outline(b: Box)
+
+// The cells an outline draws on the grid.
+.decl drawn(b: Box, p: Position)
+drawn(B, P) :- outline(B), in(P, _), box_edge(P, B, _).
+
+// Each outline is the one inside it grown by the spacing, the center cell
+// being the innermost. An outline that draws nothing lies wholly off the
+// grid, and so does every outline beyond it.
+outline(B) :- center(B).
+outline(B2) :- drawn(B, _), spread(B_spread), compose(B, B_spread, B2).
 
 // --- $Passthrough ---
-out(P, Col, $Passthrough()) :- drawn(P), mark(_, Col).
-out(P, Col, $Passthrough()) :- in(P, Col), !drawn(P).
+out(P, Col, $Passthrough()) :- drawn(_, P), mark(_, Col).
+out(P, Col, $Passthrough()) :- in(P, Col), !drawn(_, P).
 
 // --- $Repaint ---
-out(P, Col, $Repaint()) :- drawn(P), mark(_, Col).
-out(P, Col, $Repaint()) :- in(P, _), !drawn(P), params.bg(Col).
+out(P, Col, $Repaint()) :- drawn(_, P), mark(_, Col).
+out(P, Col, $Repaint()) :- in(P, _), !drawn(_, P), params.bg(Col).

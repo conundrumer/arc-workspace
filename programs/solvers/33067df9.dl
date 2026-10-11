@@ -69,14 +69,10 @@ join(P_tile, Q_tile) :-
       span.axis_pos(Q_tile, A, P_span)                   // over the same tiles
     ).
 
-// The tiles a chain of joins reaches from each tile.
-.init joined = GraphDistance<Position, Position>
-joined.seed(P_tile, P_tile) :- ink(P_tile, _).
-joined.edge(P_tile, Q_tile, R_tile) :- joined.seed(P_tile, _), join(Q_tile, R_tile).
-
 // A group is what the joins connect.
 .init group = Canon<Position>
-group.equiv(P_tile, R_tile) :- joined.distance(P_tile, R_tile, _).
+group.equiv(P_tile, P_tile) :- ink(P_tile, _).
+group.equiv(P_tile, R_tile) :- group.equiv(P_tile, Q_tile), join(Q_tile, R_tile).
 
 // --- the output lattice ---
 
