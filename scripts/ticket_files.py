@@ -70,7 +70,13 @@ def ticket_status(path: Path) -> Status:
 
 
 def ticket_files(tickets: Path, status: Status) -> list[Path]:
-    return sorted((tickets / status).glob(f"*{SUFFIX}"))
+    """The files of a status's directory. A closed file whose name
+    `TICKET_NAME` does not match is left out: it is a ticket of an old form,
+    which no ticket number finds."""
+    found = sorted((tickets / status).glob(f"*{SUFFIX}"))
+    if status is Status.CLOSED:
+        return [p for p in found if TICKET_NAME.fullmatch(p.name)]
+    return found
 
 
 def ticket_path(tickets: Path, number: TicketNumber) -> Path:

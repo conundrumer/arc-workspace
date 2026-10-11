@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 from controlled_markdown import mctx
-from ticket_files import TICKET_NAME, ticket_files, ticket_name
+from ticket_files import ticket_files, ticket_name
 from ticket_form import DEFAULT_PRIORITY, FRONT, front_fields, list_items, title
 from ticket_log import WAIT, Wait, holder, log_lines, waited, waited_change
 from transcripts import Refused
@@ -60,17 +60,13 @@ def read_tickets(tickets: Path) -> tuple[dict[str, Ticket], tuple[Unread, ...]]:
     """Each ticket of the tracker, and each ticket file whose read refused
     or failed other than for a move, which it leaves out of the tickets. A
     ticket that moves between the listing and its read is read again from
-    a new listing. A closed ticket whose name has no number in the form
-    `ticket_files.TICKET_NAME` gives is one no number finds, so no
-    procedure reads it."""
+    a new listing."""
     for _ in range(3):
         try:
             out: dict[str, Ticket] = {}
             unread: list[Unread] = []
             for s in Status:
                 for path in ticket_files(tickets, s):
-                    if s is Status.CLOSED and not TICKET_NAME.fullmatch(path.name):
-                        continue
                     try:
                         t = read_ticket(path)
                     except FileNotFoundError:
