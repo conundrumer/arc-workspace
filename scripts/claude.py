@@ -13,14 +13,14 @@ from handbook.paths import console_importable
 
 console_importable()
 
-from handbook.agents import render, write_agent  # noqa: E402
-from handbook.context import sweep_digests  # noqa: E402
+from handbook.agents import write_agent  # noqa: E402
+from handbook.context import USER_SESSION_DOC, entry_text, sweep_digests  # noqa: E402
 from solver_console import config  # noqa: E402
 
 
 def main() -> None:
     write_agent()
-    text = render()
+    text = entry_text(USER_SESSION_DOC)
     digest = hashlib.sha1(text.encode()).hexdigest()[:10]
     path = config.STATE_DIR / f"handbook-{digest}.md"
     if path.exists():

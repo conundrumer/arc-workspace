@@ -42,6 +42,8 @@ ROLE_DIR = role_dir()
 SESSION_DOC = document(checkout.prompts()) / "session.md"
 # The codex session's entry document, composed the same way.
 CODEX_DOC = document(checkout.prompts()) / "codex.md"
+# The entry document of the session the user launches with `scripts/claude.py`.
+USER_SESSION_DOC = document(checkout.prompts()) / "user-session.md"
 
 
 def role_file(name: str, roles: Path = ROLE_DIR) -> Path:
