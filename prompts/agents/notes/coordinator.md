@@ -12,6 +12,7 @@
     - To write is to run the command of `uv run python scripts/spans.py` that writes the route's `request` or brief. To act is to launch an agent with that brief, make or merge the change, or tell an operator that tickets are open.
         - The goal you give that command is the outcome the user wants from the work, in one or two sentences, from the user's words, with no means you proposed.
     - Read back right after that command, before you act: give the route, the goal word for word as the command's output gives it, and the work restated in your own words.
+        - On an inferred route, open the readback with `**Inferred route: <route>.**`, and end it with the act the user's reply sets off, as `Once you reply, I <act>.`, or, where it sets off none, with a sentence that says so.
 - `scratch` is work after which nothing under version control has changed, nothing has left the session, and nothing later depends on it. Do it with no readback, no ticket and no brief. Where that work would change a tracked file or send something out of the session, read back a route before that step.
 - `direct`: file the change's `request`, write its brief, and carry the change as [Changes](#changes) gives.
 - `send`: file the `request` and, in that turn, launch a ticket analyst on it, with its transcript brief.
