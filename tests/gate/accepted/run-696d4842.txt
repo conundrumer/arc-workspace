@@ -4,7 +4,7 @@ train 2: PASS
 test 0: PASS
 
 --- 1 finding(s) ---
-  696d4842.dl:66: recursion: the clauses of `crawl.pick`, `crawl.take`, `crawl.taken`, `crawl.untaken` close a cycle; a closure is an instance of a lib construction, and only the `step`, `skip` and `take` inputs of a `Take` instance may read its relations, through an atom whose every variable another atom of the clause grounds; see [Bans](docs/handbook/style.md#bans)
+  696d4842.dl:66: recursion: the clauses of `crawl.pick`, `crawl.take`, `crawl.taken`, `crawl.untaken` close a cycle; a closure is an instance of a lib construction, and only the `skip`, `step`, `take` inputs of a `Take` instance may read its relations, through an atom whose every variable another atom of the clause grounds; see [Bans](docs/handbook/style.md#bans)
 
 --- 1 hint(s) ---
   696d4842.dl:38: single-consumer: `dot` has one clause and one use (line 52); an `@ignore` directive can keep the relation it fires on

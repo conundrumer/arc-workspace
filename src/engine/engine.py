@@ -367,7 +367,11 @@ class Engine(Protocol):
         its own rules; every other relation's tuples are what they would be
         with that value. It is the one operation for a parameter's facts, a
         parameter's grid, a set of cases held in `impl_choice`, and a
-        relation's value for a `@store` branch."""
+        relation's value for a `@store` branch. Raises `ValueError` where no
+        declaration answers `relation`, for a grid with an anchor on a
+        relation whose call is no stamp or one without an anchor on a stamp,
+        and for a cell other than 0 and 1 on a form that takes members
+        alone."""
         ...
 
     def place_grid(self, layout: GridLayout, mark: tuple[int, int] | None,
@@ -378,17 +382,21 @@ class Engine(Protocol):
         size, anchored at `mark`, or a grid of any other layout. A layout
         that takes members alone takes 1 and 0 cells only. Where the grid
         is placed by none of these, why. `fix_relation` places a grid by
-        this rule."""
+        this rule. Raises `ValueError` for a stamp layout with no `mark`, which no
+        parsed call is."""
         ...
 
     def remove(self, program: Program, target: RemovalTarget) -> Program:
-        """`program` without `target`, for deletions and drop-one."""
+        """`program` without `target`, for deletions and drop-one. Raises
+        `ValueError` where `program` lacks `target`: no such unit, literal,
+        branch, column or fact."""
         ...
 
     def instantiate(self, program: Program, component: str, name: str) -> Program:
         """`program` with an instance `name` of `component`, for the
         Determine run and the proposer probe. The instance's output
-        directives are the engine's, from the `outputs` of `run`."""
+        directives are the engine's, from the `outputs` of `run`. Raises `ValueError` where no top-level component is
+        `component`."""
         ...
 
     def run(self, program: Program, inputs: Mapping[RelationName, InputValue],
@@ -420,7 +428,8 @@ class Engine(Protocol):
                          atom: Atom) -> bool:
         """Whether the rest of the clause of `unit`, a unit of `program`,
         grounds every variable of `atom`, an atom of its body found by
-        identity, as the engine grounds a clause before a run."""
+        identity, as the engine grounds a clause before a run. Raises `ValueError` where
+        `atom` stands in no body literal or disjunction branch of `unit`."""
         ...
 
     def render(self, program: Program) -> Rendered:

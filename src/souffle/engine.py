@@ -65,22 +65,16 @@ class SouffleEngine(TextMethods):
 
     def fix_relation(self, program: Program, relation: RelationName,
                      value: RelationValue) -> Program:
-        """Raises `ValueError` where no declaration answers `relation`, and
-        for a grid it cannot place in the relation's GRID form
-        (`souffle.ops`)."""
         return ops.fix_relation(program, relation, value)
 
     def place_grid(self, layout: GridLayout, mark: tuple[int, int] | None,
                    value: GridValue) -> GridValue | GridMisfit:
-        """Raises `ValueError` for a stamp layout with no `mark`."""
         return ops.place_grid(layout, mark, value)
 
     def remove(self, program: Program, target: RemovalTarget) -> Program:
-        """Raises `ValueError` where `program` lacks `target`."""
         return ops.remove(program, target)
 
     def instantiate(self, program: Program, component: str, name: str) -> Program:
-        """Raises `ValueError` where no top-level component is `component`."""
         return ops.instantiate(program, component, name)
 
     def run(self, program: Program, inputs: Mapping[RelationName, InputValue],
@@ -97,8 +91,6 @@ class SouffleEngine(TextMethods):
 
     def grounded_without(self, program: Program, unit: Unit,
                          atom: Atom) -> bool:
-        """Raises `ValueError` where `atom` stands in no body literal or
-        disjunction branch of `unit`."""
         return grounded_without(program, unit, atom)
 
     def render(self, program: Program) -> Rendered:

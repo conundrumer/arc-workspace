@@ -20,6 +20,7 @@ from checker.finding import (
     LintRun,
     LintSentence,
 )
+from checker.lint.recursion import RECURSIVE_INPUTS
 from checker.render.faults import parse_failure_text
 from checker.render.locations import LineForm, line_text, where_text
 from checker.render.no_result import failure_text
@@ -56,6 +57,10 @@ TYPED_ORDER = mctx("`{0}` {how} `{1}`, a `{2}`, which has no order; store "
 """The sentence of a `typed-order` finding: the operator, aggregate or
 lib relation `{0}` that orders, `{how}` the verb of its ordering, the
 variable `{1}` and its type `{2}`."""
+
+_RECURSIVE_INPUTS_CLAUSE = " or ".join(
+    f"the {_ticked(sorted(inputs))} inputs of a `{name}` instance"
+    for name, inputs in sorted(RECURSIVE_INPUTS.items()))
 
 LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
                                        str]] = {
@@ -165,11 +170,11 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
         "`{0}` in the program; read it through a lib component").format(*n),
     LintSentence.RECURSION: lambda n, _: mctx(
         "the clauses of {rels} close a cycle; a closure is an instance of "
-        "a lib construction, and only the `step`, `skip` and `take` inputs of a `Take` instance "
+        "a lib construction, and only {inputs} "
         "may read its relations, through an atom whose every variable "
         "another atom of the clause grounds; see "
         "[Bans](docs/handbook/style.md#bans)").format(
-        rels=_ticked(n)),
+        rels=_ticked(n), inputs=_RECURSIVE_INPUTS_CLAUSE),
     LintSentence.PASS_THROUGH: lambda n, _: mctx(
         "`{0}` only feeds `{1}`").format(*n),
     LintSentence.CHAIN_JOIN: lambda n, _: mctx(

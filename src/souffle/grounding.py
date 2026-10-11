@@ -69,10 +69,9 @@ def ungrounded(program: Program) -> UngroundedVariable | None:
 def grounded_without(program: Program, unit: Unit, atom: Atom) -> bool:
     """Whether the rest of the clause of `unit` grounds every variable of
     `atom`, an atom of the clause's body or of a disjunction branch in it,
-    found by identity: each clause the body gives (`_conjunctions`) that
+    found by identity (`engine.Engine.grounded_without`): each clause the body gives (`_conjunctions`) that
     holds `atom`, with `atom` left out and its arguments added to the
-    head, leaves no variable ungrounded (`_first_ungrounded`). Raises
-    `ValueError` where `atom` stands in no such place."""
+    head, leaves no variable ungrounded (`_first_ungrounded`)."""
     def is_atom(x: Conjunct) -> bool:
         return isinstance(x, AtomLiteral) and x.atom is atom
 

@@ -31,7 +31,7 @@ from transcripts import epoch, find, read_entries, session_directory
 from operations.merging import MERGE_SCRIPT, merge_messages
 from operations.reports import TICKETS_FILED, heading_part
 from operations.roles import PASSES, Role, described
-from operations.state import Agent, Call, Merge, Message, Report
+from operations.state import Agent, Call, Merge, Message, Report, Tool
 from operations.command_words import COMMAND, is_next
 from operations.printing import unfenced
 
@@ -97,7 +97,7 @@ def pass_tickets(report: str, main: Path) -> tuple[str, ...] | None:
         rf"{TICKET_NUMBER.pattern}_", section))
 
 
-FILED_FIELDS = {"Agent": "prompt", "SendMessage": "message"}
+FILED_FIELDS: dict[str, str] = {Tool.AGENT: "prompt", Tool.SEND_MESSAGE: "message"}
 """The field of each tool's input that may give a file the command wrote."""
 
 
@@ -111,14 +111,14 @@ def unfiled_call(aid: str, tool: str, inp: dict[str, Any], result: str | None,
     where = mctx("{run}: a call of {tool}").format(run=aid, tool=tool)
     if (name := FILED_FIELDS.get(tool)) is not None:
         inp = {**inp, name: unfiled(unfenced(str(inp.get(name, ""))), where, undecided)}
-    elif tool == "Bash" and result is not None and is_next(str(inp.get("command", "")), aid):
+    elif tool == Tool.BASH and result is not None and is_next(str(inp.get("command", "")), aid):
         result = unfiled(result, where, undecided)
     return inp, result
 
 
 def ran_command(path: Path) -> bool:
     """Whether the transcript at `path` holds a Bash call of the command."""
-    return any(b.get("name") == "Bash" and COMMAND in str((b.get("input") or {}).get("command"))
+    return any(b.get("name") == Tool.BASH and COMMAND in str((b.get("input") or {}).get("command"))
                for e in read_entries(path, naming={COMMAND}) if e.get("type") == "assistant"
                for b in blocks(e, "tool_use"))
 
@@ -252,9 +252,9 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
         inp, text = unfiled_call(aid, tool, inp, text, undecided)
         uses[call] = (t, inp, tool)
         calls.append(Call(aid, t, tool, inp, text, error, merge_outcome(
-            aid, str(inp.get("command", "")) if tool == "Bash" else "", t, text, error,
+            aid, str(inp.get("command", "")) if tool == Tool.BASH else "", t, text, error,
             subjects, denied, undecided)))
-    if not any(tool == "Agent" and described(str(inp.get("description", "")))
+    if not any(tool == Tool.AGENT and described(str(inp.get("description", "")))
                for _, inp, tool in uses.values()):
         return
     found = launched(path, undecided)

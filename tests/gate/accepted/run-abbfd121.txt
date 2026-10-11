@@ -4,8 +4,8 @@ train 2: PASS (12 witnessed cases)
 test 0: PASS (12 witnessed cases)
 
 --- 2 finding(s) ---
-  abbfd121.dl:234: recursion: the clauses of `parse.axis_color` close a cycle; a closure is an instance of a lib construction, and only the `step`, `skip` and `take` inputs of a `Take` instance may read its relations, through an atom whose every variable another atom of the clause grounds; see [Bans](docs/handbook/style.md#bans)
-  abbfd121.dl:274: recursion: the clauses of `parse.color` close a cycle; a closure is an instance of a lib construction, and only the `step`, `skip` and `take` inputs of a `Take` instance may read its relations, through an atom whose every variable another atom of the clause grounds; see [Bans](docs/handbook/style.md#bans)
+  abbfd121.dl:234: recursion: the clauses of `parse.axis_color` close a cycle; a closure is an instance of a lib construction, and only the `skip`, `step`, `take` inputs of a `Take` instance may read its relations, through an atom whose every variable another atom of the clause grounds; see [Bans](docs/handbook/style.md#bans)
+  abbfd121.dl:274: recursion: the clauses of `parse.color` close a cycle; a closure is an instance of a lib construction, and only the `skip`, `step`, `take` inputs of a `Take` instance may read its relations, through an atom whose every variable another atom of the clause grounds; see [Bans](docs/handbook/style.md#bans)
 
 --- 2 hint(s) ---
   abbfd121.dl:419: case section: by the program's rules, not by a run, `$IsometryOrbit` read `kind`, which the clause feeds, and the marker `// --- $LatticePeriod ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases); an `@ignore` directive can keep the relation it fires on

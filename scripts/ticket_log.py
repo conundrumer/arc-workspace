@@ -291,16 +291,9 @@ def log_moves(tickets: Path, number: TicketNumber, status: Status, agent: str, s
 
 def unblock(tickets: Path, change: TicketNumber, agent: str, agent_id: str | None,
             resolution: Resolution, note: str) -> Moves:
-    """Moves each ticket under `blocked` that waits on the change
-    `change`, closed with `resolution` and `note`, in the order of their
-    file names, and returns what it did. A ticket that is a `change` moves
-    into `open`, with the note `UNBLOCKED_BY` gives, whatever `resolution`
-    is. Each other ticket moves into `closed`, with the note `CLOSED_BY`
-    gives, where `resolution` is `fixed`, and else into `open`, with the
-    note `UNBLOCKED_BY` gives. Each line is as `log_moves` writes it. A
-    ticket that another call moves first is skipped. A ticket whose move
-    is refused for another reason is given among the refused, and the
-    moves of the others go on."""
+    """Carries out, for the change `change` closed with `resolution` and `note`,
+    the moves of the tickets that wait on it that `file_ticket.LOG_RULES`
+    gives, and returns what it did. Each line is as `log_moves` writes it."""
     moves = Moves()
     opened = UNBLOCKED_BY.format(change=Wait.CHANGE, number=change, resolution=resolution)
     closed = CLOSED_BY.format(fixed=resolution, change=Wait.CHANGE, number=change, note=note)

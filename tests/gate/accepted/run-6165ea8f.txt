@@ -5,7 +5,7 @@ test 0: PASS
 test 1: PASS
 
 --- 1 finding(s) ---
-  6165ea8f.dl:88: recursion: the clauses of `slot` close a cycle; a closure is an instance of a lib construction, and only the `step`, `skip` and `take` inputs of a `Take` instance may read its relations, through an atom whose every variable another atom of the clause grounds; see [Bans](docs/handbook/style.md#bans)
+  6165ea8f.dl:88: recursion: the clauses of `slot` close a cycle; a closure is an instance of a lib construction, and only the `skip`, `step`, `take` inputs of a `Take` instance may read its relations, through an atom whose every variable another atom of the clause grounds; see [Bans](docs/handbook/style.md#bans)
 
 --- 1 hint(s) ---
   6165ea8f.dl:57: common-subexpr: 3 literals shared with `legend` (line 46); an `@ignore` directive can keep the relation it fires on

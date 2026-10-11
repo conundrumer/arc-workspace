@@ -60,9 +60,8 @@ from souffle.values import NotConstant, constant
 
 
 def remove(program: Program, target: RemovalTarget) -> Program:
-    """`program` without `target`. An emptied conjunction holds `true`.
-    Raises `ValueError` where the program lacks the target: no such unit,
-    literal, branch, column or fact."""
+    """`program` without `target` (`engine.Engine.remove`). An emptied
+    conjunction holds `true`."""
     match target:
         case RemoveUnit(unit):
             return _remove_unit(program, unit)
@@ -273,8 +272,8 @@ def _remove_fact(program: Program, relation: RelationName, row: Row) -> Program:
 
 
 def instantiate(program: Program, component: str, name: str) -> Program:
-    """`program` with a top-level instance `name` of `component`. Raises
-    `ValueError` where no top-level component has that name."""
+    """`program` with a top-level instance `name` of `component`
+    (`engine.Engine.instantiate`)."""
     if not any(c.name == component and not c.scope.components for c in program.components):
         raise ValueError(f"no component {component}")
     inst = Instance(DeclId(next_decl(program)), name, Scope(()), component, (), None)
@@ -294,12 +293,8 @@ program it gives keeps the text and the reading its runs share."""
 def fix_relation(program: Program, relation: RelationName, value: RelationValue) -> Program:
     """`program` with `relation`, named from the top level, holding exactly
     `value`, as facts or as one GRID call of the form the relation's calls
-    had, fed by none of its units. Where a component that feeds it is held
-    by another instance too, the instance on the path reads a copy. Raises
-    `ValueError` where no declaration answers the name, for a grid with an
-    anchor on a relation whose call is no stamp or one without an anchor on
-    a stamp, and for a cell other than 0 and 1 on a form that takes members
-    alone. Computed once per program, relation and value while the program
+    had, fed by none of its units (`engine.Engine.fix_relation`). Where a component that feeds it is held
+    by another instance too, the instance on the path reads a copy. Computed once per program, relation and value while the program
     lives."""
     return _FIXED.keyed(program, (relation, value),
                         lambda: _fix_relation(program, relation, value))
@@ -421,9 +416,7 @@ def _uses(tree: Tree, program: Program, path: tuple[str, ...], depth: int = 0) -
 def place_grid(layout: GridLayout, mark: tuple[int, int] | None,
                value: GridValue) -> GridValue | GridMisfit:
     """`value` as the value of a relation one GRID call of `layout` stores,
-    the call's cell marked `@` at `mark` (`engine.Engine.place_grid`).
-    Raises `ValueError` for a stamp layout with no `mark`, which no parsed
-    call is."""
+    the call's cell marked `@` at `mark` (`engine.Engine.place_grid`)."""
     grid, anchor = value.grid, value.anchor
     if anchor is not None and not layout.stamp:
         return AnchorOffStamp()
