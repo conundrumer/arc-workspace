@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from ticketing.vocabulary import DEFECT_SECTIONS, Kind
 
 SECTIONS = {Kind.CHANGE: ("Intent", "Motivation", "Scope", "Grounds"),
-            Kind.REQUEST: ("Transcript", "Grounds")}
+            Kind.REQUEST: ("Goal", "Transcript", "Grounds")}
 """The sections of each kind that has its own; every other kind has
 `DEFECT_SECTIONS`."""
 

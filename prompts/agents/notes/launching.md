@@ -33,9 +33,10 @@
 - Where a brief leaves out a part that a statement of its form gives it, the agent it briefs gives in its reply the work that needs that part as unfinished, with the missing part as its reason.
 
 ### A transcript brief
-- A transcript brief is the output of `uv run python scripts/spans.py brief`, written to a file: each message of the user and of the coordinator in each span, in full and in time order, then the Grounds. It is rendered from a `request`, or from the words of a span's first and last message with the Grounds on the command's stdin.
+- A transcript brief is the output of `uv run python scripts/spans.py brief`, written to a file: the Goal, where it has one, then each message of the user and of the coordinator in each span, in full and in time order, then the Grounds. It is rendered from a `request`, or from the words of a span's first and last message with the Grounds on the command's stdin.
 - A brief that gives one gives that file's path, with the other parts its form gives.
 - Where an agent's documents give its brief's items or its Intent, the work the user's messages in those spans ask for, with what the Grounds add to it, stands for them.
+    - The Goal guides how that agent reads those messages, and where it and a message of the user differ, the message rules.
 
 ### An editor's brief
 - An editor's brief gives the change's worktree, and the agent id of the agent that launches it, where that is not the coordinator.

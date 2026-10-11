@@ -18,7 +18,7 @@ from file_ticket import file_ticket, main_tickets, run  # noqa: E402
 from run_reads import blocks, message_text  # noqa: E402
 from senders import Origin, origin  # noqa: E402
 from ticket_files import ticket_name, ticket_path, ticket_status  # noqa: E402
-from ticket_form import bounds, section  # noqa: E402
+from ticket_form import bounds, section, section_head  # noqa: E402
 from ticket_log import log_moves  # noqa: E402
 from ticket_numbers import TicketNumber, session_id, ticket_number  # noqa: E402
 from ticketing.text import SECTIONS, heading, ticket_text  # noqa: E402
@@ -29,7 +29,7 @@ from transcripts import Entry, Refused, epoch, find, read_entries  # noqa: E402
 
 INVOCATION = "uv run python scripts/spans.py"
 
-TRANSCRIPT, GROUNDS = SECTIONS[Kind.REQUEST]
+GOAL, TRANSCRIPT, GROUNDS = SECTIONS[Kind.REQUEST]
 
 
 class Route(Enum):
@@ -66,34 +66,38 @@ def route_label(route: Route | FollowUp) -> str:
 
 
 HELP = mctx("""
-    - `{invocation} file <route> [{inferred}] <subject> <title> <start words> <end words>` files a `request` whose span runs from the message `<start words>` gives to the one `<end words>` gives, with the Grounds lines on its stdin, and prints its path.
+    - `{invocation} file <route> [{inferred}] <subject> <title> <goal> <start words> <end words>` files a `request` whose span runs from the message `<start words>` gives to the one `<end words>` gives, with the Grounds lines on its stdin, and prints its path.
     - `{invocation} brief [--route <route>] <number>` prints the brief of the request `<number>`.
-    - `{invocation} brief --route <route> <start words> <end words>` prints the brief of that span, with the Grounds lines on its stdin.
-    - `{invocation} append [{inferred}] <number> <start words> <end words>` appends that span to the request `<number>`, with a log line, and prints its path. Its route is `{follow_up}`, for a follow-up on that request and for a ruling the user gives on it.
+    - `{invocation} brief --route <route> <start words> <end words> <goal>` prints the brief of that span and `<goal>`, with the Grounds lines on its stdin.
+    - `{invocation} append [{inferred}] [{goal_flag} <goal>] <number> <start words> <end words>` appends that span to the request `<number>`, with a log line, and prints its path. `{goal_flag}` gives `<goal>` as the request's `{goal}`, in place of the one it holds, or before its `{transcript}` where it holds none. Its route is `{follow_up}`, for a follow-up on that request and for a ruling the user gives on it.
     - Usage:
         ```
-        {invocation} file send <namespace>-<short-title> '<target>: <what the user asks for>' '<start words>' '<end words>' <<'EOF'
+        {invocation} file send <namespace>-<short-title> '<target>: <what the user asks for>' '<the outcome the user wants>' '<start words>' '<end words>' <<'EOF'
         - <one addition to what the span gives, with its source>
         EOF
         ```
     - `<route>` is one of {routes}. `{inferred}` marks a route the coordinator inferred, which waits on the user's reply.
     - `<subject>` and `<title>` are a `request`'s, as `uv run python scripts/file_ticket.py --help` gives them.
+    - `<goal>` is the outcome the user wants from the work, in one or two sentences.
     - A message is a message of the user, or the text of one of the coordinator's replies, in the session whose id the shell holds in `CLAUDE_CODE_SESSION_ID`.
     - A words argument matches a message whose words hold its words in a row, where a word is a run of letters and digits, compared in lower case, and each other character only separates words.
     - A words argument that is a time in the form `{time_form}` names the one message of the session at that time, in place of a match of words.
     - The command refuses, and prints each match, where a words argument matches no message or more than one, and ends the refusal on a words argument that matches more than one message with a line that says the argument may give one of the printed times in its place, and refuses where the end comes before the start.
     - A span is the line `<session id> <start> <end>` under the request's `{transcript}`, with each time in UTC to the second, and holds each message from its start to its end, inclusive.
-    - `file` writes the request with `{transcript}` and `{grounds}`, and files it as `uv run python scripts/file_ticket.py` files. On `draft`, and on a route given with `{inferred}`, it then moves the request to `tickets/draft/`. On each of {held} with no `{inferred}`, it then moves the request to `tickets/assigned/`, with an `assigned` line whose holder is the session id the shell holds in `CLAUDE_CODE_SESSION_ID`.
-    - A brief gives each message of each span of the request, in full and in time order, each with its time and its sender, and then its Grounds.
+    - `file` writes the request with `{goal}`, `{transcript}` and `{grounds}`, and files it as `uv run python scripts/file_ticket.py` files. On `draft`, and on a route given with `{inferred}`, it then moves the request to `tickets/draft/`. On each of {held} with no `{inferred}`, it then moves the request to `tickets/assigned/`, with an `assigned` line whose holder is the session id the shell holds in `CLAUDE_CODE_SESSION_ID`.
+    - A brief gives its goal under `{goal}`, where it has one, then each message of each span of the request, in full and in time order, each with its time and its sender, and then its Grounds.
     - `append` adds the span line under the request's `{transcript}`, and writes a log line in the status the request stands in.
-    - `file`, `append`, and `brief` with `--route` end with a readback prompt, which gives the route and the first and the last message of the span. `brief` prints that prompt on stderr, so that its stdout is the brief alone.
+    - `file`, `append`, and `brief` with `--route` end with a readback prompt, which gives the route and the goal as the request or the command line gives it, or says that the request holds no goal, and has the coordinator restate that goal word for word and the work in its own words. `brief` prints that prompt on stderr, so that its stdout is the brief alone.
     """)
 
 READBACK = mctx("""
-    - Read the route back to the user now: `{route}`{inferred}, your restatement of the work in your own words, and the span's first and last message.
-    - First: {first}
-    - Last: {last}
+    - Read the route back to the user now: `{route}`{inferred}, the goal word for word where the line below gives one, and your restatement of the work in your own words.
+    {goal_line}
     """)
+
+GOAL_LINE = mctx("- Goal: {goal}")
+
+NO_GOAL_LINE = mctx("- The request holds no goal.")
 
 INFERRED_NOTE = mctx(", inferred, so wait for the user's reply before you act")
 
@@ -195,13 +199,10 @@ def resolve_span(start_words: str, end_words: str) -> Span:
     return Span(session, start.time, end.time)
 
 
-def readback_prompt(route: Route | FollowUp, first: Message, last: Message, inferred: bool) -> str:
+def readback_prompt(route: Route | FollowUp, goal: str | None, inferred: bool) -> str:
+    line = NO_GOAL_LINE if goal is None else GOAL_LINE.format(goal=goal)
     return READBACK.format(route=route_label(route), inferred=INFERRED_NOTE if inferred else "",
-                           first=first.render(), last=last.render())
-
-
-def span_readback(route: Route | FollowUp, spans: list[Span], inferred: bool) -> str:
-    return readback_prompt(route, span_messages(spans[0])[0], span_messages(spans[-1])[-1], inferred)
+                           goal_line=line)
 
 
 def route_of(word: str) -> Route:
@@ -216,10 +217,10 @@ def grounds_lines() -> str:
     return sys.stdin.read().strip("\n")
 
 
-def file_request(route: Route, inferred: bool, subject: str, title: str, start_words: str,
+def file_request(route: Route, inferred: bool, subject: str, title: str, goal: str, start_words: str,
                  end_words: str) -> str:
     span = resolve_span(start_words, end_words)
-    text = ticket_text(Kind.REQUEST, title, {TRANSCRIPT: span.line(), GROUNDS: grounds_lines()})
+    text = ticket_text(Kind.REQUEST, title, {GOAL: goal, TRANSCRIPT: span.line(), GROUNDS: grounds_lines()})
     tickets = main_tickets()
     path = file_ticket(tickets, Domain.CHANGE.value, subject, COORDINATOR, text)
     number = ticket_name(path).number
@@ -229,7 +230,7 @@ def file_request(route: Route, inferred: bool, subject: str, title: str, start_w
     elif route in HELD:
         path = log_moves(tickets, number, Status.ASSIGNED, COORDINATOR, Status.OPEN,
                          session_id(), None).moved[0]
-    return f"{path}\n\n{span_readback(route, [span], inferred)}"
+    return f"{path}\n\n{readback_prompt(route, goal, inferred)}"
 
 
 def no_form() -> Refused:
@@ -246,9 +247,25 @@ def spans_of(text: str) -> list[Span]:
     return spans
 
 
-def render_brief(spans: list[Span], grounds: str) -> str:
+def request_goal(text: str) -> str | None:
+    """The goal of a request's `text`, or None where it holds no goal
+    section, as a request filed before requests held one does."""
+    return section(text, GOAL) if section_head(text, GOAL) is not None else None
+
+
+def with_goal(text: str, goal: str) -> str:
+    if section_head(text, GOAL) is not None:
+        start, end = bounds(text, GOAL)
+        return f"{text[:start]}\n{goal}\n\n{text[end:]}"
+    start, _ = bounds(text, TRANSCRIPT)
+    head = text.rfind("\n", 0, start) + 1
+    return f"{text[:head]}{heading(GOAL)}\n{goal}\n\n{text[head:]}"
+
+
+def render_brief(goal: str | None, spans: list[Span], grounds: str) -> str:
     held = [m for s in spans for m in span_messages(s)]
-    return "\n\n".join([*(m.render() for m in held), heading(GROUNDS), grounds]).rstrip("\n")
+    lead = [] if goal is None else [heading(GOAL), goal]
+    return "\n\n".join([*lead, *(m.render() for m in held), heading(GROUNDS), grounds]).rstrip("\n")
 
 
 def brief(*args: str) -> str:
@@ -259,35 +276,39 @@ def brief(*args: str) -> str:
         rest = rest[2:]
     if len(rest) == 1:
         text = ticket_path(main_tickets(), ticket_number(rest[0])).read_text()
-        spans, grounds = spans_of(text), section(text, GROUNDS)
-    elif len(rest) == 2 and route is not None:
-        spans, grounds = [resolve_span(*rest)], grounds_lines()
+        goal, spans, grounds = request_goal(text), spans_of(text), section(text, GROUNDS)
+    elif len(rest) == 3 and route is not None:
+        goal, spans, grounds = rest[2], [resolve_span(rest[0], rest[1])], grounds_lines()
     else:
         raise no_form()
     if route is not None:
-        print(span_readback(route, spans, False), file=sys.stderr)
-    return render_brief(spans, grounds)
+        print(readback_prompt(route, goal, False), file=sys.stderr)
+    return render_brief(goal, spans, grounds)
 
 
-def append(inferred: bool, number: str, start_words: str, end_words: str) -> str:
+def append(inferred: bool, goal: str | None, number: str, start_words: str, end_words: str) -> str:
     span = resolve_span(start_words, end_words)
     tickets = main_tickets()
     ref = ticket_number(number)
     path = ticket_path(tickets, ref)
     text = path.read_text()
+    if goal is not None:
+        text = with_goal(text, goal)
     _, cut = bounds(text, TRANSCRIPT)
     rest = text[cut:]
     path.write_text(f"{text[:cut].rstrip(chr(10))}\n{span.line()}\n" + (f"\n{rest}" if rest else ""))
     status = ticket_status(path)
     moved = log_moves(tickets, ref, status, COORDINATOR, status, None,
                       SPAN_NOTE.format(span=span.line())).moved[0]
-    return f"{moved}\n\n{span_readback(FollowUp(ref), [span], inferred)}"
+    return f"{moved}\n\n{readback_prompt(FollowUp(ref), request_goal(text), inferred)}"
 
 
-def marked(args: tuple[str, ...], count: int) -> tuple[bool, list[str]]:
+def marked(args: tuple[str, ...], count: int | None) -> tuple[bool, list[str]]:
+    """Whether `args` open with `INFERRED`, and the rest of them, which
+    number `count` where it is given."""
     inferred = args[:1] == (INFERRED,)
     rest = list(args[1 if inferred else 0:])
-    if len(rest) != count:
+    if count is not None and len(rest) != count:
         raise no_form()
     return inferred, rest
 
@@ -295,13 +316,21 @@ def marked(args: tuple[str, ...], count: int) -> tuple[bool, list[str]]:
 def file_command(*args: str) -> str:
     if not args:
         raise no_form()
-    inferred, rest = marked(args[1:], 4)
+    inferred, rest = marked(args[1:], 5)
     return file_request(route_of(args[0]), inferred, *rest)
 
 
+GOAL_FLAG = "--goal"
+
+
 def append_command(*args: str) -> str:
-    inferred, rest = marked(args, 3)
-    return append(inferred, *rest)
+    inferred, rest = marked(args, None)
+    goal = None
+    if rest[:1] == [GOAL_FLAG] and len(rest) >= 2:
+        goal, rest = rest[1], rest[2:]
+    if len(rest) != 3:
+        raise no_form()
+    return append(inferred, goal, *rest)
 
 
 SUBCOMMANDS = {
@@ -319,7 +348,7 @@ def unknown(word: str) -> str:
 def main(args: list[str]) -> int:
     text = HELP.format(invocation=INVOCATION, inferred=INFERRED, routes=ROUTES,
                        held=ticked(r.value for r in HELD), time_form=TIME_FORM,
-                       transcript=heading(TRANSCRIPT), follow_up=FOLLOW_UP.format(number="<number>"), grounds=heading(GROUNDS))
+                       goal=heading(GOAL), goal_flag=GOAL_FLAG, transcript=heading(TRANSCRIPT), follow_up=FOLLOW_UP.format(number="<number>"), grounds=heading(GROUNDS))
     act = SUBCOMMANDS.get(args[0]) if args else None
     if act is None:
         return run(args, text, 1, unknown, False, args)

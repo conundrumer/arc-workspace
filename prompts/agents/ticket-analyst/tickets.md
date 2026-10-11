@@ -2,7 +2,7 @@
 - For each ticket your brief gives to settle:
     1. Take it, as [Tracking](prompts/agents/notes/tickets.md#tracking) gives.
     2. Find its duplicates under `tickets/` by their evidence, or, for a `request`, the tickets that ask for the same change.
-    3. Check its evidence against the current tree, or, for a `request`, read its spans and its Grounds, in the transcript brief your brief gives, or else in the output of `uv run python scripts/spans.py brief <number>`, and, where a message of the user in a span answers a message of the coordinator, the first message of the coordinator that gives what it answers, wherever it lies before that span's end.
+    3. Check its evidence against the current tree, or, for a `request`, read its Goal, its spans and its Grounds, in the transcript brief your brief gives, or else in the output of `uv run python scripts/spans.py brief <number>`, and, where a message of the user in a span answers a message of the coordinator, the first message of the coordinator that gives what it answers, wherever it lies before that span's end.
         - While you work on a `request`, read no entry of its session's transcript after the end of its last span.
     4. Then settle it by [Settling](prompts/agents/ticket-analyst.md#settling).
 - Where the log of a `request` you take shows a `change` filed for it before, judge its resolution again with its spans and Grounds and the part of its need that a line of its log gives as unmet.
