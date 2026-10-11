@@ -13,7 +13,7 @@ from agent_launches import runs_under
 from controlled_markdown import mctx
 from run_reads import run_entries
 from ticket_files import ticket_files, ticket_name
-from ticket_form import FRONT, front_fields, list_items
+from ticket_form import FRONT, front_fields, list_items, ticket_kind
 from ticket_log import log_lines, log_moves, read_ticket, resolution_of
 from ticket_numbers import TicketNumber
 from ticketing.times import TIME_FORM, stamp_time
@@ -103,8 +103,8 @@ def threshold(tickets: Path, editor: str, undecided: list[str]) -> float | None:
     `undecided` line, where fewer exist."""
     costs: list[float] = []
     for path in sorted(ticket_files(tickets, Status.CLOSED), key=closed_at, reverse=True):
-        fields = front(read_ticket(path))
-        if fields.get("kind") != Kind.CHANGE or editor not in list_items(fields.get("editors", "")):
+        text = read_ticket(path)
+        if ticket_kind(text) is not Kind.CHANGE or editor not in list_items(front(text).get("editors", "")):
             continue
         cost = change_cost(path, undecided)
         if cost is not None:
