@@ -163,9 +163,10 @@ def agent_transcripts() -> dict[str, list[Path]]:
     return out
 
 
-def find(ident: str) -> Path:
+def find(ident: str, *, recheck: bool = False) -> Path:
     """The transcript `ident` names, and for a run of more than one
-    transcript, its last."""
+    transcript, its last. `recheck` reads the agent index again on a miss,
+    for an id taken from a read later than the index."""
     if ident.endswith(".jsonl"):
         path = Path(ident).expanduser()
         if not path.is_file():
@@ -174,6 +175,10 @@ def find(ident: str) -> Path:
     for found in (sorted(p for d in project_dirs() for p in d.glob(f"*/{ident}.jsonl")),
                   agent_transcripts().get(bare_id(ident), [])):
         path = one_of(ident, found)
+        if path:
+            return path
+    if recheck:
+        path = one_of(ident, agent_transcripts.__wrapped__().get(bare_id(ident), []))
         if path:
             return path
     raise Refused(mctx("no transcript of session or agent `{ident}` under "

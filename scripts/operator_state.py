@@ -189,7 +189,7 @@ def read_state(me: str) -> tuple[State, MonitorState]:
         open_operators=frozenset(aid for aid, p in runs[run_index(runs, me) + 1:]
                                  if work_open(p, [])),
         past_bound=past_bound(context_size(entries_back(my_path))),
-        open_holders=frozenset(h for h in holders if work_open(find(h), [])),
+        open_holders=frozenset(h for h in holders if work_open(find(h, recheck=True), [])),
         tickets=tickets, agents=tuple(sorted(agents, key=lambda a: a.launched)),
         calls=tuple(sorted(calls, key=lambda c: c.time)), messages=tuple(messages),
         to_settle=(), worktrees=frozenset(trees), claims=claims(main),
