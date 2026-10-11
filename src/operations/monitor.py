@@ -22,7 +22,7 @@ from operations.steps import Send, Step
 class Watched:
     """A watched agent at the time of the read. `hung` is the time its oldest
     call in flight counted as hung (`hung_from`), or None where none has.
-    `over_budget` is whether its own time is past its budget. `stalled`
+    `over_budget` is whether its self time is past its budget. `stalled`
     is the time its turn ended where it stalled, as `ALERTS` gives a
     stall, or None. `repeated` gives the time of the last call of each run
     of `REPEATS` or more identical Bash calls with identical results."""

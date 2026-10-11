@@ -113,7 +113,7 @@ class Run:
         run's parent. None where its start or a message is unknown."""
         return self.active_over(i, self.period_end(i))
 
-    def own_from(self, i: int) -> float | None:
+    def self_from(self, i: int) -> float | None:
         """The active time over the period of the `i`-th message from the
         run's parent, less the run's waits on agents over that period."""
         end = self.period_end(i)
@@ -130,11 +130,11 @@ class Run:
         is unknown."""
         return self.latest_at(now, self.active_from, True)
 
-    def own_at(self, now: float) -> float | None:
-        """`active_at`, less the run's waits on agents over that period: the
-        time since its last entry is a wait where the run waits on agents at
-        that entry."""
-        return self.latest_at(now, self.own_from, not self.waiting)
+    def self_at(self, now: float) -> float | None:
+        """`active_at`, less the run's waits on agents over that period, as
+        `HELP` of `scripts/profile_runs.py` gives the time since the run's
+        last entry."""
+        return self.latest_at(now, self.self_from, not self.waiting)
 
     def latest_at(self, now: float, over: Callable[[int], float | None],
                   grows: bool) -> float | None:

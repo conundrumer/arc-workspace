@@ -18,7 +18,7 @@ from controlled_markdown import mctx
 from open_agents import Listed, hung_time, running_agents, work_open
 from operator_reads import (ended_elsewhere, ended_with, operator_runs, read_operator,
                             resumed_at, stalled_reports)
-from run_prints import own_of
+from run_prints import self_of
 from run_reads import bash_spans, context_size, parent_id, repeated_runs, run_entries
 from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
@@ -294,10 +294,10 @@ def watched(listing: list[Listed], launched: set[str],
                 or (aid not in launched and listed.parent != COORDINATOR)):
             continue
         budget = next(reversed(budgets_in_force(r, undecided)), None)
-        own = own_of(listed, now)
+        self_time = self_of(listed, now)
         out.append(Watched(
             agent_id=aid, hung=hung_at(listed, listing, opened),
-            over_budget=past_budget(own, budget),
+            over_budget=past_budget(self_time, budget),
             stalled=stalled_at(listed, listing, undecided), repeated=repeated(listed)))
     return out
 

@@ -29,10 +29,10 @@ def active_of(listed: Listed, now: float) -> float | None:
     return latest_of(listed, listed.run.active_from, lambda: listed.run.active_at(now))
 
 
-def own_of(listed: Listed, now: float) -> float | None:
-    """The own time `--running` gives a listed agent, or None where it is
+def self_of(listed: Listed, now: float) -> float | None:
+    """The self time `--running` gives a listed agent, or None where it is
     unknown."""
-    return latest_of(listed, listed.run.own_from, lambda: listed.run.own_at(now))
+    return latest_of(listed, listed.run.self_from, lambda: listed.run.self_at(now))
 
 
 def latest_of(listed: Listed, over: Callable[[int], float | None],
@@ -56,15 +56,15 @@ def print_running(agents: list[Listed], now: float, calls_since: float | None,
         active = (mctx("{active} since {time}{to}").format(
             active=minutes(active_time), time=clock(r.messages[-1].time), to=to)
             if active_time is not None else "?")
-        own_time = own_of(listed, now)
-        own = minutes_or_unknown(own_time)
+        self_time = self_of(listed, now)
+        self_text = minutes_or_unknown(self_time)
         budget = next(reversed(budgets_in_force(r, undecided)), None)
         context = f"{r.context:,}" if r.context is not None else "?"
         past = "past " if past_bound(r.context) else ""
         mark = (" " + mctx("{past}bound {bound:,}").format(
             past=past, bound=CONTEXT_BOUND) if bounded(r.agent_type) else "")
         print(f"{r.label} {r.agent_type}  parent {listed.parent}  {since}  "
-              f"active {active}  own {own}{of_budget(budget)}  "
+              f"active {active}  self {self_text}{of_budget(budget)}  "
               f"context {context} tokens{mark}: {r.description}")
         print(f"  cwd: {r.cwd or '?'}")
         if listed.ended:
@@ -104,18 +104,18 @@ def print_ended(r: Run, end: float | None, now: float,
 
 def print_messages(r: Run, undecided: list[str]) -> None:
     """Print each message from the parent of `r` with its active time, its
-    own time and the budget in force for it, marking each own time past its
+    self time and the budget in force for it, marking each self time past its
     budget."""
     if r.agent_type == MAIN:
         return
     print("  messages from the parent:")
     budgets = budgets_in_force(r, undecided)
     for i, (m, budget) in enumerate(zip(r.messages, budgets, strict=True)):
-        active, own = r.active_from(i), r.own_from(i)
-        past = "  past budget" if past_budget(own, budget) else ""
+        active, self_time = r.active_from(i), r.self_from(i)
+        past = "  past budget" if past_budget(self_time, budget) else ""
         active_text = minutes_or_unknown(active)
-        own_text = minutes_or_unknown(own)
-        print(f"    {clock(m.time)}  active {active_text}  own {own_text}"
+        self_text = minutes_or_unknown(self_time)
+        print(f"    {clock(m.time)}  active {active_text}  self {self_text}"
               f"{of_budget(budget)}{past}")
 
 
