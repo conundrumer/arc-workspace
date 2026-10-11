@@ -265,7 +265,7 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
                      None if background else answered.get(tid)]
             done = max((t for t in signs if t is not None), default=None)
             aid = agent_id(child) if child else result.get("agentId")
-            if child is None and done is None:
+            if child is None and done is None and given is not None:
                 undecided.append(mctx("{run}: no transcript gives call {call} as "
                                       "its launch").format(run=path.stem, call=tid))
             named = {id(n): n for v in (tid, *([aid] if aid else []))

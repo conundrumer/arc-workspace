@@ -4,13 +4,13 @@ transcript and those of the operators it launched give (`Relay`).
 The launcher's first operator takes the launcher's brief. Each later line
 of the coordinator's goes to the operator that runs when it reaches the
 launcher, or, where none runs, to the brief of the next operator the
-launcher launches. While an operator runs and no line of the
+launcher launches, each distinct text once. While an operator runs and no line of the
 coordinator's waits for it, the launcher ends its turn, and the operator's
 end or the coordinator's next line resumes it. Once an operator's final text reaches the launcher, a
 text that opens with `plan.FOR_CONTEXT` gives the launch of the next
 operator, or, past the launcher's bound, the launcher's final reply, which
 asks the coordinator for a fresh operator launcher whose brief is the lines
-of the coordinator's that wait for the next operator, and gives them; any other text, and an
+of the coordinator's that wait for the next operator, each distinct text once, and gives them; any other text, and an
 operator's end with none, goes to the coordinator, after a line that gives
 the operator's agent id, and the launcher then gives its final reply,
 unless a line of the coordinator's waits for the next operator."""
@@ -98,7 +98,7 @@ def next_step(relay: Relay) -> Step:
         return operator_launch(relay, relay.lines[0].text)
     run = relay.runs[-1]
     lines = waiting(relay)
-    brief = "\n".join(m.text for m in lines)
+    brief = "\n".join(dict.fromkeys(m.text for m in lines))
     if run.pending and run.final is None:
         if not lines:
             return EndTurn()

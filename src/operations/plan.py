@@ -349,9 +349,10 @@ def sentence(clause: str) -> str:
 
 def line_states(state: State) -> list[str]:
     """Each line of the operator's brief and of the coordinator's later
-    messages to it, as done or as unfinished with its reasons."""
+    messages to it, as done or as unfinished with its reasons, each distinct item once, in
+    the order of its first line."""
     _, outcomes = passes.step(state)
-    return [line_state(state, ln, outcomes) for ln in lines(state)]
+    return list(dict.fromkeys(line_state(state, ln, outcomes) for ln in lines(state)))
 
 
 def reply_lines(state: State) -> list[str]:
