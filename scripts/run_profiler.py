@@ -95,6 +95,8 @@ def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Ru
     running: dict[str, tuple[Key, float]] = {}   # tool-use id -> key, start
     spans: dict[str, Span] = {}
     said: str | None = None
+    agents: set[str] = set()
+    waits = 0.0
     idle = False
     prev: float | None = None
     first: float | None = None
@@ -109,6 +111,11 @@ def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Ru
             parts[k[0]] += d / len(keys)
 
     def spend(d: float) -> None:
+        nonlocal waits
+        if (agents & (pending.keys() | running.keys())
+                and all(k[0] is Part.WAITS for k in pending.values())
+                and (pending or idle)):
+            waits += d
         if pending:
             share(pending.values(), d)
         elif not idle:
@@ -141,9 +148,9 @@ def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Ru
             who = sender(e, parent, children, sessions)
             if who is Sender.PARENT:
                 messages.append(Message(i, t, unfiled(message_text(e), label, undecided),
-                                        parts[Part.IDLE]))
+                                        parts[Part.IDLE], waits))
             elif who is Sender.AGENT:
-                others.append(Message(i, t, message_text(e), parts[Part.IDLE]))
+                others.append(Message(i, t, message_text(e), parts[Part.IDLE], waits))
             elif who is Sender.UNKNOWN:
                 unknown.append(message_text(e))
         if etype == "assistant":
@@ -153,6 +160,8 @@ def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Ru
                 tid = b.get("id", "")
                 c = calls[tid] = classify(b, results.get(tid), tid in found,
                                           session, undecided, label)
+                if b.get("name") in AGENT_TOOLS:
+                    agents.add(tid)
                 pending[tid] = c.pending
                 spans[tid] = Span(c.pending[1], call_command(b, undecided, label), t, tid)
                 group(c.pending).calls += 1
@@ -174,7 +183,7 @@ def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Ru
     brief = [unfiled(message_text(e), label, undecided)
              for e in entries[:briefed + 1] if is_prompt(e)]
     if brief and first is not None:
-        messages.insert(0, Message(briefed, first, "\n".join(brief), 0.0))
+        messages.insert(0, Message(briefed, first, "\n".join(brief), 0.0, 0.0))
     cwd = next((e["cwd"] for e in entries if e.get("cwd")), None)
     context = context_size(reversed(entries))
     request_contexts = [int(request_input(e["message"]["usage"]))
@@ -195,5 +204,5 @@ def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Ru
     return Run(label, agent_type, description, first, wall, parts,
                {k: g for k, g in groups.items() if g.time or g.calls},
                list(spans.values()), in_flight, backgrounded, ended, context, request_contexts,
-               cost, said,
+               cost, said, waits,
                messages, others, unknown, cwd, path)

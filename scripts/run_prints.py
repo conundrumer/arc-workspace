@@ -87,18 +87,21 @@ def print_ended(r: Run, end: float | None, now: float,
 
 
 def print_messages(r: Run, undecided: list[str]) -> None:
-    """Print each message from the parent of `r` with its active time and
-    the budget in force for it, marking each active time past its budget."""
+    """Print each message from the parent of `r` with its active time, its
+    own time and the budget in force for it, marking each own time past its
+    budget."""
     if r.agent_type == MAIN:
         return
     print("  messages from the parent:")
     budgets = budgets_in_force(r, undecided)
     for i, (m, budget) in enumerate(zip(r.messages, budgets, strict=True)):
-        active = r.active_from(i)
-        past = ("  past budget" if active is not None and budget is not None
-                and active > budget * 60 else "")
+        active, own = r.active_from(i), r.own_from(i)
+        past = ("  past budget" if own is not None and budget is not None
+                and own > budget * 60 else "")
         active_text = minutes(active) if active is not None else "?"
-        print(f"    {clock(m.time)}  active {active_text}{of_budget(budget)}{past}")
+        own_text = minutes(own) if own is not None else "?"
+        print(f"    {clock(m.time)}  active {active_text}  own {own_text}"
+              f"{of_budget(budget)}{past}")
 
 
 def print_report_line(r: Run, found: list[Report] | None) -> None:

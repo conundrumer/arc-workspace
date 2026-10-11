@@ -40,11 +40,12 @@ class Span:
 @dataclass
 class Message:
     """A message to a run: the index of its entry, its time, its text, and
-    the run's `idle` time before it."""
+    the run's `idle` time and its waits on agents before it."""
     index: int
     time: float
     text: str
     idle: float
+    waits: float
 
 
 @dataclass
@@ -65,6 +66,9 @@ class Run:
     request_contexts: list[int]
     cost: float | None
     said: str | None
+    # The run's waits on agents it launched, as `profile_runs.py` HELP
+    # gives them.
+    waits: float
     # The messages from the run's parent, the brief first, the messages
     # from other agents, and the text of each later message whose sender is
     # unknown.
@@ -97,6 +101,15 @@ class Run:
             return (nxt.time - m.time) - (nxt.idle - m.idle)
         end = self.start + self.wall
         return (end - m.time) - (self.parts[Part.IDLE] - m.idle)
+
+    def own_from(self, i: int) -> float | None:
+        """The active time over the period of the `i`-th message from the
+        run's parent, less the run's waits on agents over that period."""
+        active = self.active_from(i)
+        if active is None:
+            return None
+        nxt = self.period_end(i)
+        return active - ((self.waits if nxt is None else nxt.waits) - self.messages[i].waits)
 
     def active_at(self, now: float) -> float | None:
         """The active time of a run whose turn has not ended, over the period
