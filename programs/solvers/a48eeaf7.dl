@@ -59,7 +59,7 @@
     // @claim block
     ColorCells {}
     // @scene block: the block is the last 2×2 square of params.block_color in
-    //  the scan order from params.scan_corner along params.scan_axis.
+    //  each scan order of params.scan_order, from its corner along its axis.
     //  Undefined when there is no such square, or when the open scan orders
     //  pick different squares.
     // @witness big-block: variant concept
@@ -103,10 +103,11 @@
     .decl marker_color(c: Color) marker_color(5).
 
     // --- $Last2x2 ---
-    .decl scan_corner(d: DiagDir)
-    scan_corner(DIAG_TL). scan_corner(DIAG_TR). scan_corner(DIAG_BL). scan_corner(DIAG_BR).
-    .decl scan_axis(a: Axis)
-    scan_axis(AXIS_V). scan_axis(AXIS_H).
+    .decl scan_order(c: DiagDir, a: Axis)
+    scan_order(DIAG_TL, AXIS_V). scan_order(DIAG_TL, AXIS_H).
+    scan_order(DIAG_TR, AXIS_V). scan_order(DIAG_TR, AXIS_H).
+    scan_order(DIAG_BL, AXIS_V). scan_order(DIAG_BL, AXIS_H).
+    scan_order(DIAG_BR, AXIS_V). scan_order(DIAG_BR, AXIS_H).
 }
 
 .init params = Params
@@ -243,7 +244,7 @@ block([$ColorCells(), R], P) :- block_color(R, Col), in(P, Col).
 
 // --- $Last2x2 ---
 parse.cell(R, P) :- block_color(R, Col), in(P, Col).
-parse.order(C, A) :- params.scan_corner(C), params.scan_axis(A).
+parse.order(C, A) :- params.scan_order(C, A).
 
 // The square every scan order picks.
 // @claim block
@@ -377,9 +378,6 @@ landed([$Clamp(), Bp, R], M, Q) :-
         ex.last_square.box([E, C, A], _), ex_out(E, P, Col), params.marker_color(Col),
         !touching(E, C, A, P).
 
-    .decl scan_corner(d: DiagDir)
-    scan_corner(C) :- ex.order(C, A), !astray(C, A).
-
-    .decl scan_axis(a: Axis)
-    scan_axis(A) :- ex.order(C, A), !astray(C, A).
+    .decl scan_order(c: DiagDir, a: Axis)
+    scan_order(C, A) :- ex.order(C, A), !astray(C, A).
 }
