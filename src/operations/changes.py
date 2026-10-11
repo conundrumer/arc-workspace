@@ -84,6 +84,7 @@ from operations.reports import (NO_FINDING, OPEN_LABELS, Label, budget_passed, i
                                 left_for_decision, no_finding)
 from operations.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
 from operations.state import Agent, Budget, Spend, State, Ticket
+from operations.final_reply import live_holder
 from operations.handled import answered, repeated, sends_to, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids, key
 from operations.tracker import AGENT, COORDINATOR, FILE_TICKET, closed, log, worktree
@@ -110,16 +111,16 @@ def scope(state: State) -> set[str]:
 
 def release(state: State) -> Step | None:
     """The move back to `tickets/open/` of a ticket of `scope` under
-    `tickets/assigned/` whose holder's work is not open, where its last
+    `tickets/assigned/` whose holder is not live (`live_holder`), where its last
     line's note does not open with `coordinator`."""
     for n in sorted(scope(state)):
         t = state.tickets.get(n)
         if (t is None or t.status is not Status.ASSIGNED
                 or (t.log and t.log[-1].note.startswith(COORDINATOR))):
             continue
-        if t.holder is None or t.holder not in state.open_holders:
+        if t.holder is None or not live_holder(state, t.holder):
             return Bash(log(n, Status.OPEN, Status.ASSIGNED,
-                            f"released: holder {t.holder or 'none'} has no open work", None))
+                            f"released: holder {t.holder or 'none'} is not live", None))
     return None
 
 
@@ -208,7 +209,8 @@ def of_change(state: State, number: str) -> list[Agent]:
 
 def give_up(state: State) -> Step | None:
     """A message that tells an agent at work on a change that no operator
-    carries any more, or that another holder carries, to end."""
+    carries any more, or that another live holder (`live_holder`) carries,
+    to end."""
     for a in state.agents:
         if not a.pending or a.agent_id is None:
             continue
@@ -224,7 +226,7 @@ def give_up(state: State) -> Step | None:
             continue
         lost = t.status in (Status.DRAFT, Status.CLOSED) or (
             t.status is Status.ASSIGNED and t.holder not in (state.me, None)
-            and t.holder in state.open_holders)
+            and live_holder(state, t.holder))
         message = briefs.stop_work(number)
         if lost and not sent(state, a.agent_id, message):
             return Send(a.agent_id, message)

@@ -2,7 +2,8 @@
 (`final_text`, `sent_final_text`), whose form `printing.final_message`
 gives, whether that text ends the operator for
 its context (`for_context`), the calls that sent its text to its parent
-(`final_sends`), the operator whose final reply carries what
+(`final_sends`), whether a holder of a change is live (`live_holder`),
+the operator whose final reply carries what
 reached an earlier one (`carrier`), and the lines the reply nests; with
 the pattern of the report of an agent that sent its final reply by
 SendMessage (`SENT_BY_MESSAGE`)."""
@@ -62,11 +63,37 @@ def final_sends_in(calls: Iterable[Call], operator: str, to: str) -> list[Call]:
             and sent_final_text(c) is not None]
 
 
+def next_call(c: Call, operator: str) -> bool:
+    """Whether `c` is a call of `next` by `operator`."""
+    return (c.operator == operator and c.tool == Tool.BASH
+            and is_next(str(c.input.get("command", "")), operator))
+
+
+def live_holder(state: State, holder: str) -> bool:
+    """Whether `holder` holds its changes live: it stands in
+    `open_holders`, and it is not an operator launched before `me` that
+    has sent its final reply and made only calls of `next` since. The
+    final send is itself a SendMessage call, so only the calls after it
+    are read. An earlier operator whose step is in flight when `me`
+    starts has made no final send yet, and holds its changes until its
+    next call of `next` ends it."""
+    if holder not in state.open_holders:
+        return False
+    if (holder not in state.operators or state.me not in state.operators
+            or state.operators.index(holder) >= state.operators.index(state.me)):
+        return True
+    sends = final_sends(state, holder)
+    if not sends:
+        return True
+    last = sends[-1].time
+    return not all(next_call(c, holder) for c in state.calls
+                   if c.operator == holder and c.time > last)
+
+
 def final_replies(state: State, operator: str) -> list[float]:
     """The times of the calls of `next` that printed `operator` the
     messages of `final_sends`: for each, the last call of `next` before it."""
-    nexts = [c.time for c in state.calls if c.operator == operator and c.tool == Tool.BASH
-             and is_next(str(c.input.get("command", "")), operator)]
+    nexts = [c.time for c in state.calls if next_call(c, operator)]
     return [max((t for t in nexts if t < c.time), default=c.time)
             for c in final_sends(state, operator)]
 

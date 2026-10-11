@@ -65,7 +65,7 @@ from operations.roles import Role, description
 from operations.state import Call, State, Ticket, Tool
 from ticketing.vocabulary import Status
 from operations.final_reply import (FOR_CONTEXT, ending_step, failure, final_sends,
-                                   for_context, nested, sent_final_text)
+                                   for_context, live_holder, nested, sent_final_text)
 from operations.handled import bash_calls, repeated
 from operations.steps import (Bash, Launch, Poll, Reply, Send, Step, Undecided, decision_key, key,
                               unread_line)
@@ -201,11 +201,11 @@ def pipelines(state: State) -> Step | None:
 
 
 def elsewhere(state: State) -> list[str]:
-    """The tickets of the operators' scope that another holder whose work
-    is open holds."""
+    """The tickets of the operators' scope that another live holder
+    (`live_holder`) holds."""
     return [n for n in sorted(changes.scope(state))
             if (t := state.tickets.get(n)) is not None and t.status is Status.ASSIGNED
-            and t.holder not in (None, state.me) and t.holder in state.open_holders]
+            and t.holder not in (None, state.me) and live_holder(state, t.holder)]
 
 
 EARLY: tuple[Callable[[State], Step | None], ...] = (
