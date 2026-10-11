@@ -155,11 +155,11 @@
 - Purpose: know what each change touches, and keep the changes that touch the same thing in order.
 - Principles: "split work that can run in parallel on disjoint files and run its parts at once, with no contention", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
 - Outcomes:
-    - Changes whose Scopes overlap are ordered before the build.
+    - Changes that edit the same part of a file are ordered before the build.
     - Each worktree belongs to one live change.
 - Owner: the ticket analyst for `depends-on`, and [merge_change.py](scripts/merge_change.py) for the worktrees.
 - Takes from: the Scopes. Gives to: merge.
-- How it can fail: an order slows changes that do not conflict: the ticket analyst may override an order with its reason.
+- How it can fail: two changes that edit different parts of a file conflict in the rebase: the later change runs again with a new first editor.
 
 ## Solver passes (implementation)
 - Purpose: solve a task by the Analyze, Create and Refine passes on it.

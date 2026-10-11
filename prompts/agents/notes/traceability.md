@@ -105,8 +105,8 @@
 - [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief): Configuration management: one live change per worktree.
     - "It gives the accepted gate outputs": Merge: each merge passes the gate and the checks.
 - [A code editor's brief](prompts/agents/notes/launching.md#a-code-editors-brief): none. Kept: it gives a code editor the directories its work writes to.
-- [A change's brief](prompts/agents/notes/launching.md#a-changes-brief): Requirements: requirements traced to the spans; Configuration management: overlapping changes ordered.
-- [Items and files](prompts/agents/notes/launching.md#items-and-files): Configuration management: overlapping changes ordered.
+- [A change's brief](prompts/agents/notes/launching.md#a-changes-brief): Requirements: requirements traced to the spans; Configuration management: changes that edit the same part ordered.
+- [Items and files](prompts/agents/notes/launching.md#items-and-files): Configuration management: changes that edit the same part ordered.
 - [A doc editor's brief](prompts/agents/notes/launching.md#a-doc-editors-brief): none. Kept: the principle of Design, one idea in one place.
 - [A ticket reviewer's brief](prompts/agents/notes/launching.md#a-ticket-reviewers-brief): Verification: each `change` ticket checked before the build.
 - [A ticket analyst's brief](prompts/agents/notes/launching.md#a-ticket-analysts-brief): Work control: stopped work reaches an agent.
@@ -130,7 +130,7 @@
     - "Send each draft `change` ticket", "Revise a `change` ticket that stands under": Verification: each `change` ticket checked before the build.
     - "Once the user rules on a draft `change` ticket": Requirements: requirements checked against added words.
     - "Ask an operator for no message to you": none. Kept: it keeps an operator's messages to the coordinator to those the coordinator acts on.
-    - "Each time a `change` of your session comes to stand": Configuration management: overlapping changes ordered.
+    - "Each time a `change` of your session comes to stand": Configuration management: changes that edit the same part ordered.
 - [While the user gives feedback](prompts/agents/notes/launching.md#while-the-user-gives-feedback): none. Kept: the principle of Process assessment, spend no run the work does not need.
     - "Where a request touches the files of a change": Configuration management: one live change per worktree.
 - [draft-outcome](prompts/agents/notes/launching.md#draft-outcome): Verification: each `change` ticket checked before the build.
@@ -165,7 +165,7 @@
     - "`tickets/` is in the main tree", "Every session on the repository shares", "Where you look for a ticket that already exists", "Make each transition": none. Kept: they give where the tickets are and how a ticket's state changes, which every holder's step uses.
     - "Close the ticket of a place that is judged and kept": Decisions: each decision recorded with what it was made from.
     - "Read a ticket you do not edit": Process assessment: the context each run of an agent loads holds only the lines each of its runs needs.
-- [Change tickets](prompts/agents/notes/tickets.md#change-tickets): Configuration management: overlapping changes ordered.
+- [Change tickets](prompts/agents/notes/tickets.md#change-tickets): Configuration management: changes that edit the same part ordered.
     - "A ticket that asks for a change", "Give each `change` you file or revise the `mechanical` field": none. Kept: they give the fields a `change` ticket's handling reads.
 
 ## Worktree notes
@@ -247,7 +247,7 @@
 - [A later round](prompts/agents/ticket-reviewer/later-rounds.md): Verification: a later round on changed text only.
 - [Checks](prompts/agents/ticket-reviewer.md#checks): Verification: each `change` ticket checked before the build.
     - "Report nothing on a draft's wording": none. Kept: it keeps the review on what a requirement states, a way Verification can fail.
-    - "A `change`, other than one under `tickets/blocked/`", "Instructions that change the same files are ordered", "A `change` ticket's `depends-on` gives": Configuration management: overlapping changes ordered.
+    - "A `change`, other than one under `tickets/blocked/`", "Instructions that edit the same part of a file", "A `change` ticket's `depends-on` gives": Configuration management: changes that edit the same part ordered.
     - "A `change` to the agents' processes": Process assessment: each rule maps to an outcome.
     - "In a `change` that serves a `request`, each item of the Intent": Requirements: requirements traced to the spans.
     - "A `change` that adds a mechanism to code has a `Design`", "A `change` that adds or changes a rule or a fact", "A `Design` lists each state": Design: the design checked before the build.
