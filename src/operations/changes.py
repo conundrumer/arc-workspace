@@ -77,7 +77,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
-from controlled_markdown import mctx
+from controlled_markdown import form, mctx
 from operations import briefs, merging
 from operations.directives import Decision, Directive, decided, held_on, named, numbers
 from operations.reports import (NO_FINDING, OPEN_LABELS, Label, budget_passed, items_of,
@@ -151,21 +151,29 @@ def waiting(state: State) -> list[tuple[str, list[str]]]:
             and t.status is Status.OPEN and not all(closed(state, d) for d in t.depends_on)]
 
 
-TAKE_NOTE = "taking: budget {dollars:.2f} dollars, {seconds:.0f} s"
+TAKE_NOTE = "taking: budget {dollars} dollars, {seconds} s"
 """The note of the log line of a take, with the change's cost budget and
 time budget."""
 
-TAKEN = re.compile(r"taking: budget (?P<dollars>[0-9.]+) dollars, (?P<seconds>[0-9]+) s")
+TAKEN = re.compile(form(TAKE_NOTE, {"dollars": r"(?P<dollars>[0-9.]+)",
+                                    "seconds": r"(?P<seconds>[0-9]+)"}))
+
+
+def next_take(state: State) -> Ticket | None:
+    """The first ticket of `takeable`, or None where it gives none."""
+    return next(iter(takeable(state)), None)
 
 
 def take(state: State) -> Step | None:
-    for t in takeable(state):
+    t = next_take(state)
+    if t is not None:
         b = state.budgets.get(t.number)
         if b is None:
             return Undecided(mctx("the budget of change {number} is unknown").format(
                 number=t.number))
         return Bash(log(t.number, Status.ASSIGNED, Status.OPEN,
-                        TAKE_NOTE.format(dollars=b.dollars, seconds=b.seconds), state.me))
+                        TAKE_NOTE.format(dollars=f"{b.dollars:.2f}", seconds=f"{b.seconds:.0f}"),
+                        state.me))
     for n, _ in numbers(state, Directive.MERGE):
         t = state.tickets.get(n)
         if t is not None and t.status is Status.BLOCKED and t.kind is Kind.CHANGE:
@@ -277,7 +285,7 @@ def carry(state: State, t: Ticket) -> Step | None:
     if any(a.pending for a in here):
         return None
     latest = {a.role: a for a in here}
-    if (step := past_budget(state, t, list(latest.values()))) is not None:
+    if (step := over_budget_step(state, t, list(latest.values()))) is not None:
         return step
     if (step := leftover(state, t, w, list(latest.values()), agents)) is not False:
         return step
@@ -303,6 +311,13 @@ def taken(t: Ticket) -> tuple[float, float] | None:
         if ln.time >= since and (m := TAKEN.fullmatch(ln.note)) is not None:
             return ln.time, float(m["dollars"])
     return None
+
+
+def past_budget(t: Ticket, spent: Spend) -> bool:
+    """Whether `t` has a take and `spent` is past the cost budget it
+    gives."""
+    take_line = taken(t)
+    return take_line is not None and spent.dollars > take_line[1]
 
 
 def merge(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
@@ -378,7 +393,7 @@ def over_budget(state: State, t: Ticket, w: Path,
     if spent is None:
         return Undecided(mctx("the spend of change {number} since its take is unknown").format(
             number=t.number))
-    if spent.dollars <= limit:
+    if not past_budget(t, spent):
         return False
     trip = overrun_ticket(state, t, since)
     if trip is None:
@@ -418,7 +433,7 @@ def over_budget(state: State, t: Ticket, w: Path,
             roles=by_role(spent.by_role), agent=checker.agent_id), state.me))
 
 
-def past_budget(state: State, t: Ticket, latest: list[Agent]) -> Step | None:
+def over_budget_step(state: State, t: Ticket, latest: list[Agent]) -> Step | None:
     """The message to the first editor of `latest` whose latest reply says
     its budget is passed, or None where no such reply is."""
     for a in latest:

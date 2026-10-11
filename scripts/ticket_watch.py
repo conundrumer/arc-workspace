@@ -1,5 +1,5 @@
 """The routing of a `delay` ticket that gives a case: the priced loss of a
-case, the cost of a `change`, the threshold of an editor, and the moves of
+case, the threshold of an editor, and the moves of
 a ticket into and out of `tickets/watching/`. `file_ticket.py
 case --help-all` states the rules. It also gives the spend of a change by
 role, and the budget of a change taken over the changes like it."""
@@ -7,6 +7,7 @@ role, and the budget of a change taken over the changes like it."""
 import re
 import statistics
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -117,16 +118,17 @@ def change_spend(path: Path, undecided: list[str]) -> Spend | None:
     return spend(runs, undecided) if runs else None
 
 
-def change_cost(path: Path, undecided: list[str]) -> float | None:
-    """The cost of the `change` at `path`, closed `fixed`: the token cost
-    of the runs its closing line gives and of the runs under them, or None
-    where that line gives no run or a run has no transcript or no price."""
-    s = change_spend(path, undecided)
-    return None if s is None else s.dollars
-
-
 def closed_at(path: Path) -> float:
     return stamp_time(log_lines(read_ticket(path))[-1].group().split(" ", 1)[0])
+
+
+def closed_changes(tickets: Path) -> Iterator[tuple[Path, str]]:
+    """The path and text of each ticket under `tickets/closed/` of kind
+    `change`."""
+    for path in ticket_files(tickets, Status.CLOSED):
+        text = read_ticket(path)
+        if ticket_kind(text) is Kind.CHANGE:
+            yield path, text
 
 
 def threshold(tickets: Path, editor: str, undecided: list[str]) -> float | None:
@@ -134,13 +136,13 @@ def threshold(tickets: Path, editor: str, undecided: list[str]) -> float | None:
     with a known cost whose `editors` give `editor`, or None, with an
     `undecided` line, where fewer exist."""
     costs: list[float] = []
-    for path in sorted(ticket_files(tickets, Status.CLOSED), key=closed_at, reverse=True):
-        text = read_ticket(path)
-        if ticket_kind(text) is not Kind.CHANGE or editor not in list_items(front(text).get("editors", "")):
+    for path, text in sorted(closed_changes(tickets), key=lambda c: closed_at(c[0]),
+                             reverse=True):
+        if editor not in editors_of(text):
             continue
-        cost = change_cost(path, undecided)
-        if cost is not None:
-            costs.append(cost)
+        s = change_spend(path, undecided)
+        if s is not None:
+            costs.append(s.dollars)
         if len(costs) == CHANGES:
             return statistics.median(costs)
     undecided.append(mctx("threshold of `{editor}` unknown: {count} fixed changes with a known "
@@ -168,9 +170,8 @@ def like_changes(tickets: Path, editors: frozenset[str], before: float,
     known spend whose `editors` set is `editors`, or of each such change
     whatever its `editors` where fewer than `FEWEST_LIKE` have it."""
     every: list[tuple[frozenset[str], Spend]] = []
-    for path in ticket_files(tickets, Status.CLOSED):
-        text = read_ticket(path)
-        if ticket_kind(text) is not Kind.CHANGE or closed_at(path) >= before:
+    for path, text in closed_changes(tickets):
+        if closed_at(path) >= before:
             continue
         s = change_spend(path, undecided)
         if s is not None:

@@ -4,7 +4,7 @@ operators' calls in the state.
 Which call makes a step the command printed is as the HELP of `operate.py`
 gives it, and `made` reads the call made right after `next`. A message
 counts as made as well by each SendMessage call that holds the printed
-message."""
+message. `next_call` tells a call of `next` by an operator."""
 
 import re
 from collections.abc import Callable, Iterable
@@ -18,6 +18,12 @@ from operations.printing import KEY_LINE, bash_text, opening, send_opening, unfe
 from operations.roles import Purpose
 from operations.state import Agent, Call, Made, State, Tool
 from operations.steps import STEP_KEY, UNDECIDED, Bash, Send, Step, Undecided, decision_key, key
+
+
+def next_call(c: Call, operator: str) -> bool:
+    """Whether `c` is a call of `next` by `operator`."""
+    return (c.operator == operator and c.tool == Tool.BASH
+            and is_next(str(c.input.get("command", "")), operator))
 
 
 def decided_by(state: State, step: Undecided) -> list[Agent]:
@@ -168,8 +174,7 @@ def made(calls: Iterable[Call]) -> tuple[Made, ...]:
     out: list[Made] = []
     for operator, own in by.items():
         for c, after in zip(own, own[1:], strict=False):
-            command = str(c.input.get("command", ""))
-            if (c.tool != Tool.BASH or c.result is None or not is_next(command, operator)
+            if (c.result is None or not next_call(c, operator)
                     or (after.tool == Tool.BASH
                         and only_command(str(after.input.get("command", "")), operator))):
                 continue

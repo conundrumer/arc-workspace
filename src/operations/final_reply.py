@@ -6,18 +6,18 @@ its context (`for_context`), the calls that sent its text to its parent
 the operator whose final reply carries what
 reached an earlier one (`carrier`), and the lines the reply nests; with
 the pattern of the report of an agent that sent its final reply by
-SendMessage (`SENT_BY_MESSAGE`)."""
+SendMessage (`SENT_BY_MESSAGE`). `live_holder` and `carrier` read the calls of
+`next` by `handled.next_call`."""
 
 import re
 from collections.abc import Iterable
 
 from controlled_markdown import form, mctx
-from operations.command_words import is_next
 from operations.constants import COORDINATOR
-from operations.handled import sends_in
+from operations.handled import next_call, sends_in
 from operations.printing import FINAL_REPLY, SENT, final_message, unfenced
 from operations.roles import AGENT_ID
-from operations.state import Call, State, Tool
+from operations.state import Call, State
 from operations.steps import Reply, Send
 
 
@@ -61,12 +61,6 @@ def final_sends_in(calls: Iterable[Call], operator: str, to: str) -> list[Call]:
     text of its final reply, in the order they were made."""
     return [c for c in sends_in(calls, to) if c.operator == operator
             and sent_final_text(c) is not None]
-
-
-def next_call(c: Call, operator: str) -> bool:
-    """Whether `c` is a call of `next` by `operator`."""
-    return (c.operator == operator and c.tool == Tool.BASH
-            and is_next(str(c.input.get("command", "")), operator))
 
 
 def live_holder(state: State, holder: str) -> bool:

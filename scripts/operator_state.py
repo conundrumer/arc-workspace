@@ -193,13 +193,12 @@ def change_budgets(state: State, spent: dict[str, Spend], tickets: Path,
         return budget(tickets, frozenset(r.value for r in t.editors), before, undecided)
 
     out: dict[str, Budget] = {}
-    for t in changes.takeable(state)[:1]:
-        if (b := of(t, state.now)) is not None:
-            out[t.number] = b
+    if (t := changes.next_take(state)) is not None and (b := of(t, state.now)) is not None:
+        out[t.number] = b
     for t in changes.held(state):
         take = changes.taken(t)
         s = spent.get(t.number)
-        if take is not None and s is not None and s.dollars > take[1] \
+        if take is not None and s is not None and changes.past_budget(t, s) \
                 and (b := of(t, take[0])) is not None:
             out[t.number] = b
     return out
