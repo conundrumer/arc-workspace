@@ -117,6 +117,7 @@ def read_state(me: str) -> tuple[State, MonitorState]:
         subjects[c.subject] = max(subjects.get(c.subject, c.time), c.time)
     for aid, path in runs:
         read_operator(aid, path, main, undecided, agents, calls, messages, passes, subjects)
+    agents += editor_reviewers(agents, main, undecided)
     late = late_resumes(runs, undecided)
     launched = {a.agent_id for a in agents if a.agent_id}
     watching: list[str] = []
@@ -172,6 +173,20 @@ def read_state(me: str) -> tuple[State, MonitorState]:
                     budgets=change_budgets(state, spent, tickets_dir, undecided))
     return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(state.stalled),
                                undecided=tuple(watching))
+
+
+def editor_reviewers(agents: list[Agent], main: Path, undecided: list[str]) -> list[Agent]:
+    """The doc reviewers that the doc editors among `agents` launched, read
+    from those editors' transcripts as an operator's launches are read,
+    with the doc editor as their `operator`."""
+    out: list[Agent] = []
+    for a in agents:
+        if a.role is not Role.DOC_EDITOR or a.agent_id is None:
+            continue
+        theirs: list[Agent] = []
+        read_operator(a.agent_id, find(a.agent_id), main, undecided, theirs, [], [], {}, {})
+        out += [r for r in theirs if r.role is Role.DOC_REVIEWER]
+    return out
 
 
 def change_spend(state: State, undecided: list[str]) -> dict[str, Spend]:

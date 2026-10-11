@@ -87,10 +87,11 @@ def union_seconds(spans: list[tuple[float, float]]) -> float:
 
 def spend(runs: list[str], undecided: list[str]) -> Spend | None:
     """The spend of the runs `runs` and of the runs under them, or None
-    where a run has no transcript, no price, no time or no agent type."""
-    total = 0.0
-    spans: list[tuple[float, float]] = []
-    by_role: dict[str, float] = {}
+    where a run has no transcript, no price, no time or no agent type.
+    Each transcript counts once, under the agent type of the nearest run
+    of `runs` at or above it, so a run of `runs` launched under another
+    keeps its own type."""
+    trees: list[tuple[str, list[Path]]] = []
     for run in runs:
         try:
             top = find(run)
@@ -99,14 +100,23 @@ def spend(runs: list[str], undecided: list[str]) -> Spend | None:
         role = agent_type(top)
         if role is None:
             return None
-        for p in [top, *runs_under(top)]:
-            cost = run_cost(run_entries(p), undecided)
-            start, end = first_time(p), last_time(p)
-            if cost is None or start is None or end is None:
-                return None
-            total += cost
-            by_role[role] = by_role.get(role, 0.0) + cost
-            spans.append((start, end))
+        trees.append((role, [top, *runs_under(top)]))
+    owner: dict[Path, tuple[int, str]] = {}
+    for role, tree in trees:
+        for p in tree:
+            if p not in owner or len(tree) < owner[p][0]:
+                owner[p] = (len(tree), role)
+    total = 0.0
+    spans: list[tuple[float, float]] = []
+    by_role: dict[str, float] = {}
+    for p, (_, role) in owner.items():
+        cost = run_cost(run_entries(p), undecided)
+        start, end = first_time(p), last_time(p)
+        if cost is None or start is None or end is None:
+            return None
+        total += cost
+        by_role[role] = by_role.get(role, 0.0) + cost
+        spans.append((start, end))
     return Spend(total, union_seconds(spans), by_role)
 
 

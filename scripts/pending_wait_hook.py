@@ -25,15 +25,27 @@ from operations.constants import FOREGROUND_MS
 HOOK = "pending_wait_hook"
 
 
-def pending_reason(agents: list[str]) -> str:
+def pending_reason(agents: list[str], caller: str | None) -> str:
+    """The denial of a wait on `agents`, which gives a subagent `caller` the
+    start of its keep-alive timer, and the main session, `caller` None, no
+    timer, since its documents hold none."""
     from controlled_markdown import mctx
 
-    return mctx(
+    blocked = mctx(
         "Blocked: this call waits on {agents}, which you launched and which "
         "has not reported since its launch or its last resume, by you or by "
         "another agent, so end your turn now, and the harness re-invokes you "
         "when it reports."
     ).format(agents=", ".join(agents))
+    if caller is None:
+        return blocked
+    return blocked + "\n" + mctx(
+        "Before you end your turn, start your keep-alive timer, as "
+        "[Background agents](prompts/agents/notes/commands.md#background-agents) "
+        "gives: run this command in the background: `: 'unattended-wait: "
+        "keep-alive timer'; uv run python scripts/agent_timer.py start "
+        "keep-alive {caller}`."
+    ).format(caller=caller)
 
 
 def over_bound(tool: str, inp: dict[str, Any], subagent: bool) -> str | None:
@@ -121,7 +133,7 @@ def check(hook: dict[str, Any]) -> str | None:
     waited = [a for a in pending_agents(path, undecided) if a in named]
     for line in undecided:
         print(f"{HOOK}: undecided: {line}", file=sys.stderr)
-    return pending_reason(waited) if waited else None
+    return pending_reason(waited, caller_id(hook)) if waited else None
 
 
 def main() -> int:

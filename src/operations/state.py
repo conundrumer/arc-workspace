@@ -103,7 +103,9 @@ class LateResume:
 @dataclass(frozen=True)
 class Agent:
     """An agent an operator of the session launched with a description the
-    command gave. `pending` holds where that operator holds neither the
+    command gave, or a doc reviewer that a doc editor such an operator
+    launched launched, which is read as a launch of that doc editor's, with
+    the doc editor as its `operator`. `pending` holds where that operator holds neither the
     result of a launch in the foreground nor a sign since its launch or
     its last resume, in any transcript of the session, that its turn
     ended, as `agent_reports.last_sign` gives the latest sign: a

@@ -2,7 +2,9 @@
 that is not the launch `operate.py next` last printed to it, other than the
 launch of a reply-only agent (`context_bound_hook.reply_only`). An operator
 launcher is held the same way to the launch `operate.py relay` last printed
-to it (`context_bound_hook.ACTIONS`).
+to it (`context_bound_hook.ACTIONS`), and a doc editor's launch of a doc
+reviewer to the launch `operate.py review` last printed to it
+(`EDITOR_LAUNCHES`).
 
 The printed launch is read from the result of the last call of `next` in
 the caller's own transcript (`printing.printed_launch`). Where that result
@@ -20,9 +22,13 @@ from typing import Any, NamedTuple
 
 from context_bound_hook import ACTIONS, reply_only
 from operations.command_words import Action
+from operations.roles import Role
 from hook_entry import not_registered, run_pre_tool_use
 
 HOOK = "printed_launch_hook"
+EDITOR_LAUNCHES = {Role.DOC_EDITOR.agent_type: (Role.DOC_REVIEWER.agent_type, Action.REVIEW)}
+"""For each agent type held only in its launches of one agent type, that
+type and the action of `operate.py` that prints those launches."""
 UNSEEN = "run_in_background"
 
 
@@ -73,9 +79,21 @@ class NextCaller(NamedTuple):
     found: tuple[str, str] | None
 
 
+def held_action(kind: str, inp: dict[str, Any]) -> Action | None:
+    """The action of `operate.py` whose printed launch holds the Agent call
+    input `inp` of a caller of agent type `kind`, or None where none
+    does."""
+    if kind in ACTIONS:
+        return ACTIONS[kind]
+    if kind in EDITOR_LAUNCHES:
+        launched, action = EDITOR_LAUNCHES[kind]
+        return action if inp.get("subagent_type") == launched else None
+    return None
+
+
 def operator_next(hook: dict[str, Any], name: str) -> NextCaller | None:
-    """The agent id of the caller of `hook` where its agent type is one of
-    `ACTIONS`, with the action and the command that prints its calls and
+    """The agent id of the caller of `hook` where `held_action` gives its
+    call an action, with the action and the command that prints its calls and
     the id and the result of its last call of that command
     (`last_next_call`), or None where it is of another type, or where its
     agent type is unknown, which the hook `name` says on stderr."""
@@ -87,9 +105,9 @@ def operator_next(hook: dict[str, Any], name: str) -> NextCaller | None:
     if kind is None:
         return None
     agent = caller_id(hook)
-    if kind not in ACTIONS or agent is None:
+    action = held_action(kind, hook["tool_input"])
+    if action is None or agent is None:
         return None
-    action = ACTIONS[kind]
     return NextCaller(agent, action, next_command(agent, action),
                       last_next_call(entries_back(path), agent, action))
 
@@ -109,13 +127,13 @@ def first_at(hook: dict[str, Any], records: str, agent: str, call: str) -> bool:
     return True
 
 
-def no_launch_reason(command: str) -> str:
+def no_launch_reason(command: str, action: Action) -> str:
     from controlled_markdown import mctx
 
     return mctx(
         "Blocked: the last result of `{command}` gives no whole launch. Make "
-        "only the launch that `next` prints, and run `next` with no pipe."
-    ).format(command=command)
+        "only the launch that `{action}` prints, and run `{action}` with no pipe."
+    ).format(command=command, action=action)
 
 
 def differ_reason(command: str, diffs: list[tuple[str, str | None, str | None]]) -> str:
@@ -133,9 +151,9 @@ def differ_reason(command: str, diffs: list[tuple[str, str | None, str | None]])
 
 
 def check(hook: dict[str, Any]) -> str | None:
-    """The reason to deny the Agent call `hook` gives where its caller is an
-    operator and the call is not the launch `next` last printed to it, and
-    None otherwise."""
+    """The reason to deny the Agent call `hook` gives where `held_action`
+    holds it and it is not the launch its command last printed to its
+    caller, and None otherwise."""
     from operations.printing import printed_launch
 
     tool, inp = hook["tool_name"], hook["tool_input"]
@@ -149,7 +167,7 @@ def check(hook: dict[str, Any]) -> str | None:
     command, found = caller.command, caller.found
     printed = None if found is None else printed_launch(found[1])
     if printed is None:
-        return no_launch_reason(command)
+        return no_launch_reason(command, caller.action)
     diffs = differing(printed, inp)
     return differ_reason(command, diffs) if diffs else None
 

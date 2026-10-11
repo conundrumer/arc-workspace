@@ -57,6 +57,7 @@
 - [ending-commands](prompts/agents/notes/commands.md#ending-commands): none. Kept: an agent ends its own processes, and signals no process of another agent.
 - [Background agents](prompts/agents/notes/commands.md#background-agents): Work control: stopped work reaches an agent.
     - "Call SubagentHandback only": Implementation: each item not done reaches the agent that decides it.
+    - "Before you end your turn while an agent you launched is running", "Where your keep-alive timer has completed", "Once no agent you launched is running": none. Kept: the principle of Process assessment, spend no run the work does not need.
 - [denied-calls](prompts/agents/notes/commands.md#denied-calls): Implementation: each item not done reaches the agent that decides it.
 - [resumed-agents](prompts/agents/notes/commands.md#resumed-agents): Implementation: each item not done reaches the agent that decides it.
 - [coordinator](prompts/agents/notes/commands.md#coordinator): none. Kept: it gives the coordinator's address, which the lines on a final reply use.
@@ -297,6 +298,7 @@
     - "Build the `Design` of your change's ticket": Design: a design from the documents.
     - "Before you write anything, take these steps", "Judge each line you write or keep", "After each edit you make", "Fix each finding that needs no decision", "Then judge each line of the place you edited again": none. Kept: the principle of Verification, check new agent-facing text against each agent it reaches.
     - "Where you ran the gate": Merge: each merge passes the gate and the checks.
+    - "Then run `uv run python scripts/operate.py review`": Verification: another agent checks the built change.
     - "Read [Prose in code]": none. Kept: the principle of Process assessment, spend no run the work does not need.
     - "The kind of a ticket you file is `question`": none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
 

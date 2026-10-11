@@ -50,6 +50,8 @@ class Action(StrEnum):
     """The action that prints an operator's next step."""
     RELAY = "relay"
     """The action that prints an operator launcher's next step."""
+    REVIEW = "review"
+    """The action that prints a doc editor the launch of its doc reviewer."""
 
 
 def next_command(agent: str, action: Action = Action.NEXT) -> str:

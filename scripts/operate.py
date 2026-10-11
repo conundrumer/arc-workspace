@@ -30,10 +30,11 @@ importable(checkout.scripts())
 from agent_launches import accepted_after, last_delivered  # noqa: E402
 from operator_state import read_relay, read_state  # noqa: E402
 from profile_runs import budget_of  # noqa: E402
+from run_reads import agent_type, parent_id  # noqa: E402
 from transcripts import Refused, find  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 
-from operations import briefs, plan, relay  # noqa: E402
+from operations import briefs, changes, plan, relay  # noqa: E402
 from operations.decisions import WRITE_SECONDS  # noqa: E402
 from operations.monitor import ALERTS  # noqa: E402
 from operations.command_words import Action  # noqa: E402
@@ -41,7 +42,8 @@ from operations.roles import BARE_BRIEFS, Role  # noqa: E402
 from operations.filing import filed, with_report  # noqa: E402
 from operations.printing import key_line, printed  # noqa: E402
 from operations.state import State  # noqa: E402
-from operations.steps import BLOCK_SECONDS, Bash, EndTurn, Launch, Poll, Send, Step  # noqa: E402
+from operations.steps import (BLOCK_SECONDS, Bash, EndTurn, Launch, Poll, Send, Step,  # noqa: E402
+                              Undecided)
 from collections.abc import Callable  # noqa: E402
 from operations.task_work import restore, set_aside  # noqa: E402
 
@@ -50,6 +52,7 @@ HELP = mctx("""
         ```
         uv run python scripts/operate.py next <agent id>
         uv run python scripts/operate.py relay <agent id>
+        uv run python scripts/operate.py review <agent id>
         uv run python scripts/operate.py set-aside <task id> analyze|create
         uv run python scripts/operate.py restore <task id>
         ```
@@ -63,6 +66,7 @@ HELP = mctx("""
     - A ticket file whose read refuses or fails, other than a file that moved during the read, leaves its ticket out of every procedure, and a ticket that depends on it waits. `next` gives that file, once for each content it has and once its last write is {write} seconds old, to a ticket analyst it launches, as a step it cannot place, with the read's failure, and goes on with every other procedure. Where the file still does not read once that analyst returned, the final reply gives it.
     - A step `next` printed counts as made by the call the operator made: a Bash call whose command runs the printed command among others, or the call the operator made right after the call of `next` that printed the step, other than a call of `next` alone.
     - `relay` prints the next step of the operator launcher whose agent id it is given, in the forms of `next`. Where an operator of the launcher's runs and no line of the coordinator's waits for it, it prints at once, with no block, that the launcher ends its turn with no call, or, where a message to the launcher waits that the harness accepted during the call, as the block of `next` reads one, that the launcher runs the command again. Its first step launches an operator whose brief is the launcher's brief. Each later message of the coordinator's to the launcher goes, unchanged, to the operator of the launcher's that runs, or, where none runs or the one that runs sent the launcher its final reply, into the brief of the next operator it launches. Where an operator's final reply ends it for its context, it launches a fresh operator, or, where the launcher's context is past the bound `context_bound_hook.py` gives, sends the coordinator the launcher's final reply, which asks for a fresh operator launcher whose brief is the lines that wait for a next operator, and gives them. Any other final reply of an operator, and an operator's end with no final reply, it sends the coordinator after a line that gives that operator's agent id, and then, unless a line of the coordinator's waits for a next operator, prints the launcher's final reply.
+    - `review` prints, to the doc editor whose agent id it is given, which an operator of the session launched, the launch of its change's doc reviewer, in the form of `next`'s, with the brief `next` gives a doc reviewer, the doc editor as its launcher, and each editor of the change in its worktree. Where the change already has a doc reviewer, whoever launched it, it prints that reviewer's agent id and that the doc editor launches no other. Where an editor the change's ticket gives has no agent in the worktree, or another editor of the change there has not reported, it prints instead that the operator launches the review, and that the doc editor gives its final reply. Where the agent is no doc editor that an operator of the session launched, it prints that no launch is printed, and that the agent gives its final reply. It reads the state as the doc editor's operator's `next` reads it.
     - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass, and `restore` puts it back and removes the task's claim, as the section `Passes on a task` of `prompts/agents/notes/launching.md` gives.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives, and the command refuses where the shell gives none.
     {alerts}
@@ -80,6 +84,7 @@ class OperateAction(StrEnum):
     RELAY = Action.RELAY
     SET_ASIDE = "set-aside"
     RESTORE = "restore"
+    REVIEW = Action.REVIEW
 
 
 def with_budget(step: Launch) -> Launch:
@@ -144,6 +149,27 @@ def operator_step(me: str, deadline: float) -> tuple[Step, Path]:
         return step, state.scratch
 
 
+def review(editor: str) -> int:
+    """Print the step `changes.editor_review` gives the doc editor
+    `editor`, as HELP gives `review`."""
+    parent = parent_id(find(editor))
+    if agent_type(find(parent)) != Role.OPERATOR.agent_type:
+        print(changes.NO_OPERATOR.format(agent=editor))
+        return 0
+    state, _ = read_state(parent)
+    step = changes.editor_review(state, editor)
+    if isinstance(step, str):
+        print(step)
+        return 0
+    if isinstance(step, Undecided):
+        print(f"operate: {step.what}", file=sys.stderr)
+        return 1
+    if not isinstance(step, Launch):
+        raise TypeError(f"review step {step!r} is no launch")
+    print_step(with_budget(with_report(step, state.scratch)), state.scratch, editor)
+    return 0
+
+
 def relay_step(me: str, deadline: float) -> tuple[Step, Path]:
     found, scratch = read_relay(me)
     return relay.next_step(found), scratch
@@ -164,6 +190,10 @@ def main(argv: list[str]) -> int:
                 return block(args.ident, Action.NEXT, lambda deadline: operator_step(args.ident, deadline))
             case OperateAction.RELAY:
                 return block(args.ident, Action.RELAY, lambda deadline: relay_step(args.ident, deadline))
+            case OperateAction.REVIEW:
+                if args.rest:
+                    parser.error("review takes an agent id alone")
+                return review(args.ident)
             case OperateAction.SET_ASIDE:
                 if (len(args.rest) != 1 or args.rest[0] not in (Role.ANALYZE, Role.CREATE)
                         or not TASK_ID.fullmatch(args.ident)):

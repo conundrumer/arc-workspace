@@ -1,6 +1,7 @@
 """A change from its take to its merge: the release of tickets, the take of
 open changes, the editors, the review of the documents, the item checker
-and the ticket analyst on what the editors leave. The steps carry out
+and the ticket analyst on what the editors leave; `doc_review` gives the
+review of the documents. The steps carry out
 [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change);
 `merging` gives the merge and what follows it.
 
@@ -74,9 +75,10 @@ from operations import briefs, merging
 from operations.change_budget import (OVERRUN_FINDING, TAKE_NOTE, TIME_NOTE, TIME_OPENING,
                                       by_role, file_overrun, left_draft, overrun_ticket,
                                       past_budget, taken)
+from operations.doc_review import doc_review, review_launch
 from operations.directives import Decision, Directive, decided, held_on, named, numbers
-from operations.reports import (NO_FINDING, OPEN_LABELS, Label, budget_passed, items_of,
-                                left_for_decision, no_finding)
+from operations.reports import (OPEN_LABELS, Label, budget_passed, items_of,
+                                left_for_decision)
 from operations.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
 from operations.state import Agent, State, Ticket
 from operations.final_reply import live_holder
@@ -231,6 +233,11 @@ def in_worktree(a: Agent, w: Path) -> bool:
     return briefs.WORK_IN.format(worktree=w) in a.brief
 
 
+def editors_in(agents: list[Agent], w: Path) -> list[Agent]:
+    """The editors among `agents` launched in the worktree `w`."""
+    return [a for a in agents if a.role in EDITORS and in_worktree(a, w)]
+
+
 def change_editors(t: Ticket) -> tuple[Role, ...] | Undecided:
     """The editors of the change `t`, those its `editors` field gives; a
     change whose ticket gives none is undecided."""
@@ -248,13 +255,12 @@ def carry(state: State, t: Ticket) -> Step | None:
     if not isinstance(editors, tuple):
         return editors
     agents = of_change(state, t.number)
-    launched = [a for a in agents if a.role in EDITORS]
     w = worktree(t, state)
     if w is None:
         return Bash(make_worktree(t.number, state.me))
     if (step := over_budget(state, t, w, agents)) is not False:
         return step
-    here = [a for a in launched if in_worktree(a, w)]
+    here = editors_in(agents, w)
     for role in (r for r in EDITORS if r in editors):
         if not any(a.role is role for a in here):
             return Launch(role, t.number, briefs.editor(
@@ -271,6 +277,49 @@ def carry(state: State, t: Ticket) -> Step | None:
             step := doc_review(state, t, w, here, agents)) is not False:
         return step
     return merge(state, t, w, list(latest.values()))
+
+
+NO_OPERATOR = mctx("{agent} is no doc editor that an operator of the session launched, so no "
+                   "launch is printed: give your final reply.")
+"""The line `editor_review` gives an agent that is no doc editor an operator
+launched."""
+
+
+def editor_review(state: State, editor: str) -> Step | str:
+    """The launch of the doc reviewer of the change of the doc editor
+    `editor`, launched by it. In its place it gives a line: where
+    `editor` is no doc editor an operator launched, `NO_OPERATOR`; where the change has a doc
+    reviewer, whoever launched it, the line that names the latest one, so
+    the editor launches no other; and where an editor role of the change
+    has no agent in its worktree or another editor there is pending, the
+    line that says the operator launches the review."""
+    mine = [a for a in state.agents if a.agent_id == editor and a.role is Role.DOC_EDITOR]
+    if not mine:
+        return NO_OPERATOR.format(agent=editor)
+    t = state.tickets.get(mine[-1].subject)
+    if t is None:
+        return Undecided(mctx("the ticket of change {number} of doc editor {agent} is not "
+                              "read").format(number=mine[-1].subject, agent=editor))
+    editors = change_editors(t)
+    if not isinstance(editors, tuple):
+        return editors
+    w = worktree(t, state)
+    if w is None:
+        return Undecided(mctx("change {number} gives no worktree").format(number=t.number))
+    agents = of_change(state, t.number)
+    if reviewers := [a for a in agents if a.role is Role.DOC_REVIEWER]:
+        ids = agent_ids(reviewers[-1:])
+        if isinstance(ids, Undecided):
+            return ids
+        return mctx("Change {number} already has doc reviewer {agent}, so launch no other "
+                    "doc reviewer.").format(number=t.number, agent=ids[0])
+    here = editors_in(agents, w)
+    if (any(not any(a.role is r for a in here) for r in editors)
+            or any(a.pending for a in here if a.agent_id != editor)):
+        return mctx("Another editor of change {number} has not reported, so the operator "
+                    "launches the review: give your final reply.").format(number=t.number)
+    return review_launch(t, w, here, editor)
+
 
 
 def merge(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
@@ -446,78 +495,6 @@ def check_items(state: State, t: Ticket, w: Path, needing: list[Agent],
     return Launch(Role.ITEM_CHECKER, t.number, briefs.item_check(
         t.number, w, reports, decisions, list(state.gate_outputs.get(w, ())), editors, state.me,
         past))
-
-
-def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
-               agents: list[Agent]) -> Step | None | Literal[False]:
-    """The step of the review of the change's documents, or False where it
-    has passed."""
-    reviewers = [a for a in agents if a.role is Role.DOC_REVIEWER]
-    if not reviewers:
-        return review_launch(t, w, here, state)
-    r = reviewers[-1]
-    if r.pending:
-        return None
-    reply = r.last_report
-    if reply is not None and (late := [a for a in here if (rep := a.last_report) is not None
-                                       and rep.time > reply.time]):
-        return review_stale(state, t, w, here, r, reply.time, late)
-    if reply is not None and no_finding(r):
-        return False
-    if reply is None:
-        return review_decided(state, t, w, here, unreplied(r, t))
-    return review_decided(state, t, w, here, mctx(
-        "the reply of doc reviewer {agent} on change {number} does not open with "
-        "`{no_finding}`").format(agent=r.agent_id, number=t.number, no_finding=NO_FINDING))
-
-
-def unreplied(r: Agent, t: Ticket) -> str:
-    return mctx("doc reviewer {agent} of change {number} has not replied since its editors "
-                "ended").format(agent=r.agent_id, number=t.number)
-
-
-def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, since: float,
-                 late: list[Agent]) -> Step | Literal[False]:
-    """The step on the reply at `since` of the doc reviewer `r`, which
-    precedes the last report of the editors `late`: False where it opens
-    with `no finding stands` and `r` sent each of them a message, and
-    otherwise the message that asks `r` to review the change again."""
-    if no_finding(r):
-        if r.messaged is None:
-            return Undecided(mctx("the transcript of doc reviewer {agent} of change {number} "
-                                  "is unknown, so the command cannot read whom it sent a "
-                                  "message").format(agent=r.agent_id, number=t.number))
-        ids = agent_ids(late)
-        if isinstance(ids, Undecided):
-            return ids
-        if all(i in r.messaged for i in ids):
-            return False
-    message = briefs.review_again(since)
-    if r.agent_id is not None and not sent(state, r.agent_id, message):
-        return Send(r.agent_id, message)
-    return review_decided(state, t, w, here, unreplied(r, t))
-
-
-def review_decided(state: State, t: Ticket, w: Path, here: list[Agent],
-                 what: str) -> Step | Literal[False]:
-    """The step on a review held for `what`, by its decision:
-    False where the review passes."""
-    choice = decided(state, what, {Decision.PASSES: mctx("the review passes"),
-                                 Decision.AGAIN: mctx("launch another doc reviewer")})
-    if isinstance(choice, Undecided):
-        return choice
-    if choice is Decision.PASSES:
-        return False
-    return review_launch(t, w, here, state)
-
-
-def review_launch(t: Ticket, w: Path, here: list[Agent], state: State) -> Step:
-    """The launch of a doc reviewer on the change, with its editors."""
-    ids = agent_ids(here)
-    if isinstance(ids, Undecided):
-        return ids
-    return Launch(Role.DOC_REVIEWER, t.number, briefs.doc_review(
-        t.number, w, [(a.role, i) for a, i in zip(here, ids, strict=True)], state.me))
 
 
 def step(state: State) -> Step | None:
