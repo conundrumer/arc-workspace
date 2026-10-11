@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from engine import checkout
+from handbook.coordinator_document import SESSION_READER_ENV
 
 BEFORE = "9902f864930978d057225b591ef940510bfa6543"
 OPERATOR_ID = "a0123456789abcdef"
@@ -30,7 +31,8 @@ def command(event: str, matcher: str | None = None, script: str = "") -> str:
 def ran(cmd: str, hook: dict[str, Any]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, shell=True, input=json.dumps(hook),
                           capture_output=True, text=True, check=True,
-                          env={**os.environ, "CLAUDE_PROJECT_DIR": str(checkout.ROOT),
+                          env={**{k: v for k, v in os.environ.items() if k != SESSION_READER_ENV},
+                               "CLAUDE_PROJECT_DIR": str(checkout.ROOT),
                                "CLAUDE_CODE_ENTRYPOINT": "cli"})
 
 
