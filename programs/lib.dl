@@ -17,8 +17,7 @@
 //! - A caller populates the inputs that the outputs it reads derive from.
 //! - An `inline` relation sits under negation only when its clauses
 //!   introduce no variable and the use binds every column. A record literal
-//!   under negation binds every field. No inline relation can appear inside
-//!   an aggregate; a non-inline relation wraps it.
+//!   under negation binds every field.
 //! - The anchor relations (`same_dist`, `corner_anchor`, `slab_anchor`, and
 //!   relations built from them) require every position argument to be bound.
 //!
