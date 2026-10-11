@@ -10,7 +10,7 @@ from pathlib import Path
 from string import Formatter
 
 from controlled_markdown import mctx
-from operations.reports import FOR_COORDINATOR, LIST_MARKER, TICKETS_FILED
+from operations.reports import FOR_COORDINATOR, LEFT_FOR_DECISION, LIST_MARKER, TICKETS_FILED
 from operations.roles import Role
 from operations.tracker import FILE_TICKET
 from ticketing.times import utc_stamp
@@ -212,14 +212,29 @@ def change_lines(number: str, worktree: Path) -> list[str]:
     return [read_ticket(number), mctx("Its worktree: {worktree}.").format(worktree=worktree)]
 
 
-def item_check(number: str, worktree: Path, reports: list[tuple[str, str]], gate: list[str],
-               editors: list[str], operator: str) -> str:
+def item_check(number: str, worktree: Path, reports: list[tuple[str, str]],
+               decisions: list[tuple[str, str]], gate: list[str], editors: list[str],
+               operator: str) -> str:
     """The brief of an item checker that checks the items of a change's
     editors, by each editor's agent id and latest report, and the accepted
-    gate outputs the change writes, with the agent ids of its editors."""
+    gate outputs the change writes, with the agent ids of its editors.
+    Where `decisions` gives the agent id and latest report of ticket
+    analysts on the change, it tells the checker to leave out of its
+    `LEFT_FOR_DECISION` part what those decisions settle, unless the
+    editor's report gives a reason they did not judge."""
     lines = change_lines(number, worktree)
     for editor_id, report in reports:
         lines.append(mctx("The latest report of editor {editor}:").format(editor=editor_id))
+        lines.append(f"\n{report}\n")
+    if decisions:
+        lines.append(mctx(
+            "Ticket analysts on the change, {analysts}, already decided the items their "
+            "reports below give. Leave out of your `{heading}` part each finding, item or "
+            "standing place one of those decisions settles, where the editor's report gives "
+            "no reason for it that the decision did not judge.").format(
+                analysts=", ".join(i for i, _ in decisions), heading=LEFT_FOR_DECISION))
+    for analyst_id, report in decisions:
+        lines.append(mctx("The latest report of ticket analyst {analyst}:").format(analyst=analyst_id))
         lines.append(f"\n{report}\n")
     if gate:
         lines.append(mctx(

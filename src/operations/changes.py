@@ -329,14 +329,20 @@ def check_items(state: State, t: Ticket, w: Path, needing: list[Agent],
                 editors: list[str]) -> Step:
     """The launch of an item checker on the latest reports of the editors
     `needing`, which have reported since the last item checker was launched
-    on the change `t`, and on the accepted gate outputs the change writes."""
+    on the change `t`, and on the accepted gate outputs the change writes,
+    with the latest report of each ticket analyst launched on `t` that has
+    reported, in launch order, so the checker leaves out what they already
+    decided."""
     reporting = [(a, r) for a in needing if (r := a.last_report) is not None]
     reporters = agent_ids(a for a, _ in reporting)
     if isinstance(reporters, Undecided):
         return reporters
     reports = [(i, r.text) for i, (_, r) in zip(reporters, reporting, strict=True)]
+    decisions = [(a.agent_id, r.text) for a in of_change(state, t.number)
+                 if a.role is Role.TICKET_ANALYST and a.agent_id is not None
+                 and (r := a.last_report) is not None]
     return Launch(Role.ITEM_CHECKER, t.number, briefs.item_check(
-        t.number, w, reports, list(state.gate_outputs.get(w, ())), editors, state.me))
+        t.number, w, reports, decisions, list(state.gate_outputs.get(w, ())), editors, state.me))
 
 
 def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],

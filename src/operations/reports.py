@@ -7,7 +7,7 @@ import re
 from collections.abc import Iterable
 from enum import StrEnum
 
-from operations.roles import Role
+from operations.roles import AGENT_ID, Role
 from operations.state import Agent
 
 BUDGET_PASSED = "budget passed"
@@ -49,13 +49,16 @@ def heading_part(text: str, heading: str) -> str | None:
 
 def left_for_decision(a: Agent) -> str | None:
     """The part of an item checker's latest reply under
-    `LEFT_FOR_DECISION`, or None where it has no such part or that part is
-    empty."""
+    `LEFT_FOR_DECISION`, or None where it has no such part or no line of
+    that part is a list item that holds an agent id: a part such as
+    `None.` or `- None.` leaves nothing for a decision."""
     r = a.last_report
     if a.role is not Role.ITEM_CHECKER or r is None:
         return None
     part = heading_part(r.text, LEFT_FOR_DECISION)
-    return None if part is None else part.strip("\n") or None
+    if part is None or not ITEM_WITH_AGENT.search(part):
+        return None
+    return part.strip("\n")
 
 
 class Label(StrEnum):
@@ -74,6 +77,8 @@ LABELS = f"(?P<label>{'|'.join(Label)})"
 LIST_MARKER = r"(?:[-*+]|\d+[.)])"
 """The marker of a Markdown list item, which the command reads past at the
 opening of a line."""
+
+ITEM_WITH_AGENT = re.compile(rf"^[ \t]*{LIST_MARKER}[ \t]+.*\b{AGENT_ID}\b", re.MULTILINE)
 
 LABEL_OPENING = rf"^(?P<indent>[ \t]*)(?:{LIST_MARKER}[ \t]+)?[*_`]*{LABELS}"
 """The opening of an item of the part for the coordinator by one of
