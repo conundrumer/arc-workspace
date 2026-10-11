@@ -30,10 +30,16 @@ coordinator's record at a `startup` or a `clear`, and at a `compact` or a
 `resume` only where the coordinator has no record, since a summary or a
 restored conversation may still hold documents from before. The
 SubagentStart hook writes a subagent's record where it has none yet, at its
-launch (`start_agent`): its context's commit is the one `master` stood at
-one reload wait (`RELOAD_WAIT`) before the launch, where the `HEAD` of its
-tree descends from it, since the harness may not yet have loaded the agent
-file a merge in that wait rendered; and its tree's `HEAD` otherwise. Its
+launch (`start_agent`): its context's commit is the session's
+agent-definition commit, where the `HEAD` of its tree descends from it, and
+its tree's `HEAD` otherwise. The session's agent-definition commit is the
+one `master` stood at, by its reflog, at the time of the first line with a
+timestamp in the session's main transcript, the time of its `startup`,
+since the harness may give a subagent the agent file it loaded then. No
+record holds it: it is read from the transcript at each launch, so a
+`compact`, a `clear` and a `resume` leave it as it stands. A transcript
+with no timestamp, and a reflog that does not reach back to that time, are
+faults. Its
 instructions' commit is the session's record; a session that has none is a
 fault, and its subagents get no record. A subagent's own compaction, at
 which no `SessionStart` runs, leaves its record as it stands.
@@ -101,10 +107,6 @@ FRESH_SOURCES = {SessionSource.STARTUP, SessionSource.CLEAR}
 """The sources that start the coordinator's context anew. After any other,
 it may still hold documents from before, in a summary or a restored
 conversation."""
-
-RELOAD_WAIT = 30
-"""The seconds the harness may take to load an agent file after it is
-written, as the launching notes give the wait before a launch."""
 
 UPDATE = "reader_update"
 """The name a failed diff run is said under on stderr."""
@@ -186,16 +188,27 @@ def start_session(hook: dict[str, Any], coordinator: bool) -> None:
                 _write(f, head, head)
 
 
-def _launch_commit(tree: Path, head: str) -> str:
-    """The commit `master` stood at one reload wait ago, where `head`
-    descends from it, and `head` otherwise."""
-    from engine import checkout
-    from handbook.reader_diffs import descends
-    from merge_change import MASTER
+def _startup_commit(hook: dict[str, Any], tree: Path) -> str:
+    """The session's agent-definition commit, as the module docstring gives
+    it, resolved in `tree`."""
+    from datetime import datetime, timezone
 
-    then = checkout.git_out(tree, "rev-parse", "--verify",
-                            f"{MASTER}@{{{RELOAD_WAIT}.seconds.ago}}").strip()
-    return then if descends(tree, head, then) else head
+    from agent_turns import first_time
+    from engine import checkout
+    from merge_change import MASTER
+    from run_reads import hook_session, main_transcript
+
+    transcript = main_transcript(hook_session(hook))
+    started = first_time(transcript)
+    if started is None:
+        raise ValueError(f"the transcript {transcript} has no timestamp, so "
+                         "the session's agent-definition commit is unknown")
+    when = datetime.fromtimestamp(started, timezone.utc).strftime("%Y-%m-%d %H:%M:%S +0000")
+    argv = ("rev-parse", "--verify", f"{MASTER}@{{{when}}}")
+    done = checkout.git(tree, *argv)
+    if done.returncode != 0 or "only goes back to" in done.stderr:
+        raise checkout.GitFailed(tree, argv, done.stderr)
+    return done.stdout.strip()
 
 
 def start_agent(hook: dict[str, Any]) -> None:
@@ -204,8 +217,11 @@ def start_agent(hook: dict[str, Any]) -> None:
     with _locked(record_path(hook)) as f:
         if f.read().strip():
             return
+        from handbook.reader_diffs import descends
+
         tree, head = tree_head(hook)
-        context = _launch_commit(tree, head)
+        startup = _startup_commit(hook, tree)
+        context = startup if descends(tree, head, startup) else head
         session = _records(hook) / SESSION
         if not session.exists():
             raise FileNotFoundError(f"the session has no record {session}, so "

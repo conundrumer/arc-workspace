@@ -90,7 +90,7 @@
 
 ## Launching notes
 - [Launching](prompts/agents/notes/launching.md#launching): Implementation: each item not done reaches the agent that decides it; Requirements: requirements traced to the spans.
-    - "After an agent's definition changes": none. Kept: the harness reloads an agent's file only after that wait.
+    - "A newly added agent type": none. Kept: the harness can take minutes to know a new agent type.
     - "Give an agent a brief in the form": none. Kept: it leads a launcher to the form of each brief.
     - "Where a brief gives a scratch directory": none. Kept: it keeps the session's files in the session's scratchpad.
     - "Give each way the edit can fail": Risk management: each way a design can fail is a requirement.

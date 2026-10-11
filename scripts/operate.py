@@ -52,7 +52,7 @@ HELP = mctx("""
         uv run python scripts/operate.py set-aside <task id> analyze|create
         uv run python scripts/operate.py restore <task id>
         ```
-    - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters, or the final reply. Before the final reply, it prints a SendMessage call that sends the operator's parent, the coordinator or the operator launcher that launched it, the reply's text, and the final reply it then prints is the line that says so. It writes the brief of a launch, and a message to an agent other than the coordinator, to a file under the session's scratchpad, and the call's prompt or message gives that file's path. The value of a prompt or a message parameter it prints stands between two lines of three backticks, and the value to pass is the text between those lines, without them. A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items. The brief of a launch other than a solver pass's gives the file the agent writes its final reply to, and ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where the budget `profile_runs.py --help` gives the brief, over every run under the project directories, is N minutes rounded up. A brief that gives items, as `profile_runs.py --help` gives them, takes that budget per item times the number of items it gives, and any other brief takes that budget for a run. Where there is no such budget, the brief has no such line. It holds back the launch of an agent type until {reload} seconds after the last write of its rendered definition `.claude/agents/<agent type>.md`, and not at all where that file is absent. Where its last call of a launch failed with a result whose first line is `Agent type '<agent type>' not found`, or starts with that text followed by `.`, less than {load} seconds after that write, it gives the launch again once {retry} seconds have passed since that call, in place of a step on that failure; where that call came {load} seconds or more after that write, that failure is undecided, as that of any other failed call is. Where no step is ready, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again. The block ends too, and it prints that the operator runs it again, once a message to the operator waits that the harness accepted after the latest `user` entry of the operator's transcript before the call: a SubagentHandback of an agent the operator launched or last resumed, or a SendMessage call, in any transcript of the session, to the operator's agent id or name, each with a result that gives success, and for SendMessage that it queued the message or resumed the operator. Each such message thus ends at most one call early, since the result of that call is a later `user` entry.
+    - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters, or the final reply. Before the final reply, it prints a SendMessage call that sends the operator's parent, the coordinator or the operator launcher that launched it, the reply's text, and the final reply it then prints is the line that says so. It writes the brief of a launch, and a message to an agent other than the coordinator, to a file under the session's scratchpad, and the call's prompt or message gives that file's path. The value of a prompt or a message parameter it prints stands between two lines of three backticks, and the value to pass is the text between those lines, without them. A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items. The brief of a launch other than a solver pass's gives the file the agent writes its final reply to, and ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where the budget `profile_runs.py --help` gives the brief, over every run under the project directories, is N minutes rounded up. A brief that gives items, as `profile_runs.py --help` gives them, takes that budget per item times the number of items it gives, and any other brief takes that budget for a run. Where there is no such budget, the brief has no such line. Where its last call of a launch failed with a result whose first line is `Agent type '<agent type>' not found`, or starts with that text followed by `.`, less than {load} seconds after the last write of its rendered definition `.claude/agents/<agent type>.md`, it gives the launch again once {retry} seconds have passed since that call, in place of a step on that failure; where that call came {load} seconds or more after that write, that failure is undecided, as that of any other failed call is. Where no step is ready, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again. The block ends too, and it prints that the operator runs it again, once a message to the operator waits that the harness accepted after the latest `user` entry of the operator's transcript before the call: a SubagentHandback of an agent the operator launched or last resumed, or a SendMessage call, in any transcript of the session, to the operator's agent id or name, each with a result that gives success, and for SendMessage that it queued the message or resumed the operator. Each such message thus ends at most one call early, since the result of that call is a later `user` entry.
     - Before each call it prints, `next` prints that step's key, on a line that gives the command to run after the call, so the text it prints ends with the call's last field. The key is the same at each read of the state that gives the same step.
     - `next` applies the rulings that the coordinator gives an operator of the session, and that the reply of a ticket analyst on a held step gives, each a line in one of these forms, matched whole, past a list marker:
         - `Decision: <decision key> <choice>` rules a held step, with one of the choices that step gives.
@@ -91,22 +91,12 @@ def print_step(step: Step, scratch: Path, me: str) -> None:
     print(printed(step, me, scratch))
 
 
-RELOAD_SECONDS = 30
-"""How long after the last write of an agent type's rendered definition
-`.claude/agents/<agent type>.md` the harness takes to load it, as the
-section `Launching` of `prompts/agents/notes/launching.md` gives."""
-
-
 def reloading(step: Launch, state: State) -> float:
-    """The seconds left until the launch `step` is made: until
-    `RELOAD_SECONDS` after the last write of its agent type's rendered
-    definition, and, where `plan.unloaded` gives its last call, until
-    `plan.RETRY_SECONDS` after that call."""
-    written = state.definitions.get(step.role.agent_type)
-    until = [] if written is None else [written + RELOAD_SECONDS]
-    if (failed := plan.unloaded(state, step)) is not None:
-        until.append(failed.time + plan.RETRY_SECONDS)
-    return max([0.0, *(t - time.time() for t in until)])
+    """The seconds left until the launch `step` is made: where
+    `plan.unloaded` gives its last call, until `plan.RETRY_SECONDS` after
+    that call."""
+    failed = plan.unloaded(state, step)
+    return 0.0 if failed is None else max(0.0, failed.time + plan.RETRY_SECONDS - time.time())
 
 
 def block(me: str, action: Action, step_at: Callable[[float], tuple[Step, Path]]) -> int:
@@ -152,7 +142,7 @@ def relay_step(me: str, deadline: float) -> tuple[Step, Path]:
 
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("--help", "-h"):
-        print(HELP.format(block=BLOCK_SECONDS, reload=RELOAD_SECONDS, load=plan.LOAD_SECONDS, retry=plan.RETRY_SECONDS, write=round(WRITE_SECONDS), alerts=ALERTS))
+        print(HELP.format(block=BLOCK_SECONDS, load=plan.LOAD_SECONDS, retry=plan.RETRY_SECONDS, write=round(WRITE_SECONDS), alerts=ALERTS))
         return 0
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
     parser.add_argument("action", choices=[*Action, "set-aside", "restore"])

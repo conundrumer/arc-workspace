@@ -5,6 +5,7 @@ update given twice, or a record that does not move gives no sign in use."""
 import json
 import os
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -39,7 +40,8 @@ def line(**fields: Any) -> str:
 
 def session(tmp: Path) -> Path:
     main = tmp / "S.jsonl"
-    main.write_text(line(parentUuid=None, type="user", uuid="u0"))
+    now = datetime.now(timezone.utc).isoformat()
+    main.write_text(line(parentUuid=None, type="user", uuid="u0", timestamp=now))
     subs = tmp / "S" / "subagents"
     subs.mkdir(parents=True)
     for aid, kind in [(OPERATOR_ID, "operator"), (GENERAL_ID, "general-purpose")]:
