@@ -28,7 +28,8 @@ importable(checkout.scripts())
 from ticket_files import FIELD, NAME_FORM, TicketName, ticket_path, ticket_status  # noqa: E402
 from ticket_form import (DEFAULT_PRIORITY, DESIGN, LOG, LOG_SECTION, MECHANICAL,  # noqa: E402
                          RETIRED, checked_kind, section, sections_example, title_line)
-from ticket_log import (AGENT_ID, CLOSED_BY, UNBLOCKED_BY, VALIDATING, Wait,  # noqa: E402
+from ticket_log import (AGENT_ID, CLOSED_BY, SESSION_ID, UNBLOCKED_BY, VALIDATING,  # noqa: E402
+                        Wait,
                         log_moves, logged, read_ticket, status_of)
 from ticket_numbers import (SESSION_VAR, SESSIONS, reserve, session_id,  # noqa: E402
                             session_index, ticket_number, write_new)
@@ -173,7 +174,7 @@ ASKS_CHANGE = frozenset({Kind.CHANGE, Kind.REQUEST})
 def check_subject(tickets: Path, domain: Domain, subject: str) -> None:
     """Refuses a `subject` that is no id of a thing of `domain`: a task
     with no file, a ticket the ticket tracker does not hold, a hash of no commit, or
-    no agent id."""
+    no agent id or session id."""
     match domain:
         case Domain.TASK:
             known = task_file(subject).exists()
@@ -184,7 +185,7 @@ def check_subject(tickets: Path, domain: Domain, subject: str) -> None:
             known = bool(COMMIT.fullmatch(subject)) and checkout.git(
                 checkout.ROOT, "cat-file", "-e", f"{subject}^{{commit}}").returncode == 0
         case Domain.AGENT:
-            known = bool(AGENT_ID.fullmatch(subject))
+            known = bool(AGENT_ID.fullmatch(subject) or SESSION_ID.fullmatch(subject))
     if not known:
         raise Refused(mctx("`{subject}` is no `{domain}` id").format(subject=subject, domain=domain))
 
