@@ -48,11 +48,11 @@ impl_choice($Contact()). impl_choice($WallAxis()).
 .decl wall(p: Position)
 wall(P) :- in(P, Col), params.reflective(Col).
 
-// The beam reaches p heading d.
-.decl enter(p: Position, d: DiagDir, ch: Choice)
+// A beam at a cell, with its heading.
+.type Beam = [p: Position, d: DiagDir]
 
-// The beam leaves p heading d.
-.decl leave(p: Position, d: DiagDir, ch: Choice)
+// The beam's walk: a beam heading d at p moves on to the next cell, or turns.
+.init walk = GraphDistance<Choice, Beam>
 
 // The seed continues from p toward d.
 .decl seed_dir(p: Position, d: DiagDir)
@@ -60,13 +60,15 @@ seed_dir(P, D) :-
     in(P, Col), params.ray(Col), diag_dir_elem(D), neighbor(P, D, Q), in(Q, Col).
 
 // The beam launches from each end of the seed, heading away from it.
-enter(P, D, Ch) :-
+walk.seed(Ch, [P, D]) :-
     impl_choice(Ch), diag_opposite(D, D_back),
     seed_dir(P, D_back), !seed_dir(P, D).
 
-enter(Q, D, Ch) :-
-    leave(P, D, Ch), neighbor(P, D, Q),
-    in(Q, Col), params.passable(Col).
+// The beam leaving p heading d enters the next cell when it is passable.
+.decl step(p: Position, d: DiagDir, q: Position)
+step(P, D, Q) :-
+    in(Q, Col), params.passable(Col),
+    diag_opposite(D, D_back), neighbor(Q, D_back, P).   // the cell the beam steps from
 
 // --- $Contact ---
 
@@ -88,7 +90,7 @@ bounce(P, D, D_out) :-
     leave_dir(P, D, D1), leave_dir(P, D, D2),
     diag_dirs(D_out, _, D1, D2).
 
-leave(P, D_out, $Contact()) :- enter(P, D, $Contact()), bounce(P, D, D_out).
+walk.edge($Contact(), [P, D], [Q, D_out]) :- bounce(P, D, D_out), step(P, D_out, Q).
 
 // --- $WallAxis ---
 
@@ -98,14 +100,18 @@ wall_axis(P, A) :- wall(P), axis_of(D, A), neighbor(P, D, Q), wall(Q).
 
 // A beam facing a wall turns in place: its heading reflects across the wall's
 // line, and the turned beam faces its next cell from p again.
-enter(P, D_out, $WallAxis()) :-
-    enter(P, D, $WallAxis()), neighbor(P, D, Q), wall_axis(Q, A),
+walk.edge($WallAxis(), [P, D], [P, D_out]) :-
+    in(P, _), diag_dir_elem(D), neighbor(P, D, Q), wall_axis(Q, A),
     perp(A, A_flip), flip_of(A_flip, F), apply_diag_dir(F, D, D_out).
 
 // Every heading leaves; the step into a wall finds no passable cell.
-leave(P, D, $WallAxis()) :- enter(P, D, $WallAxis()).
+walk.edge($WallAxis(), [P, D], [Q, D]) :- step(P, D, Q).
 
 // --- output ---
 
-out(P, Col, Ch) :- enter(P, _, Ch), params.ray(Col).
-out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !enter(P, _, Ch).
+// The beam reaches p.
+.decl enter(p: Position, ch: Choice)
+enter(P, Ch) :- walk.distance(Ch, [P, _], _).
+
+out(P, Col, Ch) :- enter(P, Ch), params.ray(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !enter(P, Ch).

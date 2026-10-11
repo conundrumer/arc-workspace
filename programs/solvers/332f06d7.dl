@@ -58,9 +58,12 @@ halt(Delta, D, Delta2) :-
     slide.travel([Delta, D], $U(), V), V != ZERO, compose(Delta, V, Delta2).
 
 // The stops of the journey: the piece starts where it stands and slides on.
+.init journey = GraphDistance<Unit, Offset>
+journey.seed($U(), ZERO).
+journey.edge($U(), Delta, Delta2) :- halt(Delta, _, Delta2).
+
 .decl stop(delta: Offset)
-stop(ZERO).
-stop(Delta2) :- stop(Delta), halt(Delta, _, Delta2).
+stop(Delta) :- journey.distance($U(), Delta, _).
 
 // The cells the piece covers at a stop.
 .decl covered(delta: Offset, p: Position)

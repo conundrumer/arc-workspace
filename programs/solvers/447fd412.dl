@@ -75,25 +75,57 @@ template_mark(P) :- template_cell(P, Col), params.mark(Col).
 
 // --- placement ---
 
-// Placement (T0, Id) sends template mark T0 to block Id. Under it, template
-// cell P covers the box B.
-.decl carry(t0: Position, id: Ident, p: Position, b: Box)
-carry(T0, Id, T0, B) :- template_mark(T0), block.box(Id, B).
-carry(T0, Id, P2, B2) :-
-    carry(T0, Id, P, B),                                     // known correspondence
-    dir_elem(D), neighbor(P, D, P2), template_cell(P2, _),   // one step along the template
-    axis_elem(A), perp(A, A2),
-    box_extent(B, P, A, K), box_extent(B, P, A2, K),         // K, the block's side
-    jump(B, D, K, B2).                                       // K cells in the grid
+// Block Id is a K by K square.
+.decl side(id: Ident, k: number)
+side(Id, K) :-
+    block.box(Id, B), block.cell(Id, P),
+    axis_elem(A), perp(A, A2), box_extent(B, P, A, K), box_extent(B, P, A2, K).
+
+// Grid cell Q lies in the strip N block sides past block Id toward D, K_in
+// cells into that strip.
+.decl strip(id: Ident, q: Position, d: Dir, n: number, k_in: number)
+strip(Id, Q, D, N, K_in) :-
+    side(Id, K), block.box(Id, B), in(Q, _), relative(B, Q, Q_rel),
+    dir_elem(D), opposite(D, O), dist(Q_rel, O, T),   // T, cells past the block's far edge from D
+    stride(T, K, 0, N, K_in).
+
+// Grid cell Q's strips on both axes.
+.decl strips(id: Ident, q: Position, d1: Dir, n1: number, k1: number, d2: Dir, n2: number, k2: number)
+strips(Id, Q, D1, N1, K1, D2, N2, K2) :-
+    strip(Id, Q, D1, N1, K1), strip(Id, Q, D2, N2, K2),
+    axis_of(D1, A1), axis_of(D2, A2), perp(A1, A2).
+
+// Placement (T0, Id) sends template mark T0 to block Id. Under it, each step
+// of one cell in the template is a step of K cells in the grid, so grid cell
+// Q lies in the box of template cell P.
+.decl scaled(t0: Position, id: Ident, p: Position, q: Position)
+scaled(T0, Id, P, Q) :-
+    template_mark(T0), strips(Id, Q, D1, N1, _, D2, N2, _),
+    jump(T0, D1, N1, P1), jump(P1, D2, N2, P), template_cell(P, _).
+
+// C is grid cell Q's counterpart in block Id's box: the cell at the same
+// place within its box.
+.decl twin(id: Ident, q: Position, c: Position)
+twin(Id, Q, C) :-
+    strips(Id, Q, D1, _, K1, D2, _, K2),
+    strip(Id, C, D1, 0, K1), strip(Id, C, D2, 0, K2).
+
+// Under placement (T0, Id), the box of template mark P is the box of a block.
+.decl seated(t0: Position, id: Ident, p: Position)
+seated(T0, Id, P) :-
+    scaled(T0, Id, P, C), template_mark(P),
+    block.cell(Id2, C), side(Id, K), side(Id2, K),   // a block of the same side
+    block.box(Id2, B2), crop(C, B2, R),
+    twin(Id, C, C2), block.box(Id, B), crop(C2, B, R).  // at the same place in both boxes
 
 // A placement that sends some template mark where no block stands.
 .decl astray(t0: Position, id: Ident)
-astray(T0, Id) :- carry(T0, Id, P, B), template_mark(P), !block.box(_, B).
+astray(T0, Id) :- template_mark(T0), side(Id, _), template_mark(P), !seated(T0, Id, P).
 
-// The box a template cell covers, under a placement that holds, with the
-// block that placement seats on.
-.decl covers(id: Ident, p: Position, b: Box)
-covers(Id, P, B) :- carry(T0, Id, P, B), !astray(T0, Id).
+// Grid cell Q, in the box of template cell P, under a placement that holds,
+// with the block that placement seats on.
+.decl covers(id: Ident, p: Position, q: Position)
+covers(Id, P, Q) :- scaled(T0, Id, P, Q), !astray(T0, Id).
 
 // --- stamp ---
 
@@ -116,11 +148,6 @@ carried(P, Col, $Whole()) :- template_cell(P, Col).
 
 // --- $Box, $Cells ---
 
-// The block's cells in its own frame.
-.decl block_shape(id: Ident, p_inner: Position)
-block_shape(Id, P_inner) :- block.cell(Id, P), block.box(Id, B), crop(P, B, P_inner).
-
-covered_cell(P, Q, $Box()) :- covers(_, P, B), in(Q, _), inside(Q, B).  // as far as the grid reaches
+covered_cell(P, Q, $Box()) :- covers(_, P, Q).
 covered_cell(P, Q, $Cells()) :-
-    covers(Id, P, B), in(Q, _), crop(Q, B, Q_inner),  // as far as the grid reaches
-    block_shape(Id, Q_inner).                         // where the block carries a cell
+    covers(Id, P, Q), twin(Id, Q, C), block.cell(Id, C).  // where the block carries a cell

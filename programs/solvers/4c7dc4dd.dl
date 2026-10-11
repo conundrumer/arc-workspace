@@ -89,13 +89,16 @@ catalog.demonstration($U(), Pan, Pan2) :- content(Pan), content(Pan2), Pan != Pa
 
 // The canvas the marks lie on: one color along a diagonal, chained across
 // the two diagonal families.
-.decl spread(pan: Box, p_inner: Position, col: Color)
-spread(Pan, P_inner, Col) :- mark(Pan, P_inner, Col).
-spread(Pan, Q, Col) :-
-    spread(Pan, P, Col), diag_axis_elem(Da), same_line(Da, P, Q), pval(Pan, Q, _).
+.type PanelColor = [pan: Box, col: Color]
+
+.init spread = GraphDistance<PanelColor, Position>
+spread.edge([Pan, Col], P, Q) :-
+    mark(Pan, _, Col), pval(Pan, P, _), pval(Pan, Q, _),
+    diag_axis_elem(Da), same_line(Da, P, Q).
+spread.seed([Pan, Col], P_inner) :- mark(Pan, P_inner, Col).
 
 .init canvas = Unanimous<PanelCell, Color>
-canvas.item([Pan, P_inner], Col) :- spread(Pan, P_inner, Col).
+canvas.item([Pan, P_inner], Col) :- spread.distance([Pan, Col], P_inner, _).
 
 catalog.prediction($U(), $Extend(), Pan, P_inner, Col) :-
     pval(Pan, P_inner, V), params.hole(H),

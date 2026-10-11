@@ -88,6 +88,9 @@
 // A cell under one scene and one path shape.
 .type Track = [s: Scene, ps: PathShape, p: Position]
 
+// The lines of one scene under one stop rule.
+.type Cast = [s: Scene, stop: Stop]
+
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
@@ -250,17 +253,17 @@ picked.item(R, B) :- parse.last_square.box([R, _, _], B).
 block([$Last2x2(), R], Q) :- picked.value(R, B), in(Q, _), inside(Q, B).
 
 // --- $Walk ---
-// Marker M walks through P.
-.decl on_path(s: Scene, ps: PathShape, m: Position, p: Position)
-on_path(S, Ps, M, M) :- bbox.box(S, _), S = [_, R], marker(R, M, _), path_shape_choice(Ps).
-on_path(S, Ps, M, Q) :- next(S, Ps, M, _, Q).
+// Marker M's walk reaches P after K steps.
+.decl walk_cell(s: Scene, ps: PathShape, m: Position, p: Position, k: number)
 
-// M's walk steps from P to Q.
-.decl next(s: Scene, ps: PathShape, m: Position, p: Position, q: Position)
+// The walk's step counts.
+// @claim slide
+.init walk_length = Extremes<Track>
+walk_length.cand([S, Ps, M], K) :- walk_cell(S, Ps, M, _, K).
 
 // The walk's last cell.
 .decl end(s: Scene, ps: PathShape, m: Position, p: Position)
-end(S, Ps, M, P) :- on_path(S, Ps, M, P), !next(S, Ps, M, P, _).
+end(S, Ps, M, P) :- walk_cell(S, Ps, M, P, K), walk_length.high([S, Ps, M], K).
 
 // The cell the marker stops at.
 .decl arrive(s: Scene, ps: PathShape, m: Position, p: Position)
@@ -270,24 +273,49 @@ end(S, Ps, M, P) :- on_path(S, Ps, M, P), !next(S, Ps, M, P, _).
 .decl aim(s: Scene, m: Position, d: Dir8)
 aim(S, M, D) :- S = [_, R], marker(R, M, _), toward(S, M, D).
 
+// Each marker's line toward the block, cut short at the first cell the stop
+// rule bars.
+// @claim slide
+.init lines = Ray<Cast>
+lines.dir([S, St], D) :- aim(S, _, D), stop_choice(St).
+lines.cell([S, St], P) :- bbox.box(S, _), stop_choice(St), in(P, _).
+lines.mark([S, St], M) :- aim(S, M, _), stop_choice(St).
+
+// Each walk starts at its marker.
+walk_cell(S, $Line(St), M, M, 0) :- bbox.box(S, _), S = [_, R], marker(R, M, _), stop_choice(St).
+
 // --- $Touch ---
-next(S, $Line($Touch()), M, P, Q) :-
-    on_path(S, $Line($Touch()), M, P), !touch(S, P),
-    aim(S, M, D), neighbor(P, D, Q), in(Q, _).
+// The line goes on through the first cell that touches the block, and no
+// further.
+lines.blocked([S, $Touch()], P) :- touch(S, P).
+
+walk_cell(S, $Line($Touch()), M, P, K) :-
+    aim(S, M, D), !touch(S, M),
+    ( lines.clear([S, $Touch()], P, D, K, M)   // the open line
+    ; lines.stop([S, $Touch()], P, D, K, M)    // the touching cell
+    ).
 
 arrive(S, $Line($Touch()), M, P) :- end(S, $Line($Touch()), M, P), touch(S, P).
 
 // --- $PassBy ---
-next(S, $Line($PassBy()), M, P, Q) :-
-    on_path(S, $Line($PassBy()), M, P),
-    aim(S, M, D), neighbor(P, D, Q), in(Q, _), !block(S, Q).
+// The line goes on up to the block or the grid edge.
+lines.blocked([S, $PassBy()], P) :- block(S, P).
+
+walk_cell(S, $Line($PassBy()), M, P, K) :- aim(S, M, D), lines.clear([S, $PassBy()], P, D, K, M).
 
 arrive(S, $Line($PassBy()), M, P) :- end(S, $Line($PassBy()), M, P).
 
 // --- $KingPath ---
-next(S, $KingPath(), M, P, Q) :-
-    on_path(S, $KingPath(), M, P), !touch(S, P),
-    toward(S, P, D), neighbor(P, D, Q).               // the direction from here
+// Each marker's walk, each step in the direction that points at the block
+// from where it stands, up to the first cell that touches the block.
+// @claim slide
+.init king = GraphDistance<Track, Position>
+king.seed([S, $KingPath(), M], M) :- bbox.box(S, _), S = [_, R], marker(R, M, _).
+king.edge([S, $KingPath(), M], P, Q) :-
+    king.seed([S, $KingPath(), M], _), in(P, _), !touch(S, P),
+    toward(S, P, D), neighbor(P, D, Q).                    // the direction from here
+
+walk_cell(S, $KingPath(), M, P, K) :- king.distance([S, $KingPath(), M], P, K).
 
 arrive(S, $KingPath(), M, P) :- end(S, $KingPath(), M, P).
 
@@ -295,24 +323,19 @@ arrive(S, $KingPath(), M, P) :- end(S, $KingPath(), M, P).
 landed([$Walk(Ps, $Merge()), Bp, R], M, P) :- arrive([Bp, R], Ps, M, P).
 
 // --- $Stack ---
-// Q comes later than P on M's walk.
-.decl ahead(s: Scene, ps: PathShape, m: Position, p: Position, q: Position)
-ahead(S, Ps, M, P, Q) :- next(S, Ps, M, P, Q).
-ahead(S, Ps, M, P, Q2) :- ahead(S, Ps, M, P, Q), next(S, Ps, M, Q, Q2).
-
 // Each walk's cells in walking order.
 // @claim slide
 .init trail = Order<Track, Position>
-trail.elem([S, Ps, M], P) :- on_path(S, Ps, M, P).
-trail.before([S, Ps, M], P, Q) :- ahead(S, Ps, M, P, Q).
+trail.elem([S, Ps, M], P) :- walk_cell(S, Ps, M, P, _).
+trail.before([S, Ps, M], P, Q) :- walk_cell(S, Ps, M, P, K), walk_cell(S, Ps, M, Q, K2), K < K2.
 
 // The markers that stop at one cell, by path length.
 // @claim slide
 .init pile = Order<Track, Position>
 pile.elem([S, Ps, Q], M) :- arrive(S, Ps, M, Q).
 pile.before([S, Ps, Q], M1, M2) :-
-    arrive(S, Ps, M1, Q), trail.rank([S, Ps, M1], Q, N1),
-    arrive(S, Ps, M2, Q), trail.rank([S, Ps, M2], Q, N2), N1 < N2.
+    arrive(S, Ps, M1, Q), walk_cell(S, Ps, M1, Q, N1),
+    arrive(S, Ps, M2, Q), walk_cell(S, Ps, M2, Q, N2), N1 < N2.
 
 // The marker with K shorter paths before it stops K cells back on its path.
 landed([$Walk(Ps, $Stack()), Bp, R], M, P) :-

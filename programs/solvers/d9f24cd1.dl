@@ -13,6 +13,9 @@
 // The cases coincide here — every mark is on the bottom edge — and diverge
 // when marks sit on another edge.
 
+// A walker: the cell it stands on and its heading.
+.type Walker = [p: Position, w: Dir]
+
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
@@ -30,29 +33,35 @@
 
 // The walk: starts at each mark, headed away from the mark edge; steps
 // ahead while clear; deflects one cell to the dodge side when blocked.
-.decl walk(p: Position, d: Dir, ch: Choice)
+.init walk = GraphDistance<Choice, Walker>
 
 // --- $Dir ---
-walk(P, W, $Dir()) :-
+walk.seed($Dir(), [P, W]) :-
     in(P, Col), params.mark(Col),       // mark cell
     params.dir(D), opposite(D, W).      // away from the params.dir edge
 
 // --- $Edge ---
-walk(P, W, $Edge()) :-
+walk.seed($Edge(), [P, W]) :-
     in(P, Col), params.mark(Col),    // mark cell
     dir_elem(D), dist(P, D, 0),      // on some edge
     opposite(D, W).                  // away from it
 
-walk(P2, W, Ch) :-
-    walk(P, W, Ch), neighbor(P, W, Q),         // cell ahead
+// --- $Dir, $Edge ---
+walk.edge(Ch, [P, W], [P2, W]) :-
+    impl_choice(Ch), in(P, _), dir_elem(W),
+    neighbor(P, W, Q),                         // cell ahead
     ( in(Q, Col), !params.block(Col), P2 = Q   // clear — step onto it
     ; in(Q, Col), params.block(Col),           // holds the block color
       params.dodge(Sn), turn(Sn, W, Dd),       // dodge direction
       neighbor(P, Dd, P2), in(P2, _)           // sidestep instead
     ).
 
+// The cells a walk visits.
+.decl walked(p: Position, ch: Choice)
+walked(P, Ch) :- walk.distance(Ch, [P, _], _).
+
 .decl impl_choice(ch: Choice)
 impl_choice($Dir()). impl_choice($Edge()).
 
-out(P, Col, Ch) :- walk(P, _, Ch), params.mark(Col).
-out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !walk(P, _, Ch).
+out(P, Col, Ch) :- walked(P, Ch), params.mark(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !walked(P, Ch).

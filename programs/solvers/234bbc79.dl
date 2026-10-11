@@ -80,19 +80,25 @@ link(Id, Id2) :-
 
 // --- the slide ---
 
-// Where a piece's trailing joint ends up. The piece with nothing linking into
-// it keeps its place.
-.decl trail_dest(id: Ident, p_dest: Position)
-trail_dest(Id, P_dest) :- trail_joint(Id, P_dest), !link(_, Id).
-trail_dest(Id2, P_dest) :-
-    link(Id, Id2), slide(Id, Delta),                // the piece before it, already slid
+// A piece set down with its trailing joint at a place.
+.type Seated = [id: Ident, p_dest: Position]
+
+// Where each piece's trailing joint ends up, walked down the chain from the
+// piece with nothing linking into it, which keeps its place. Once a piece is
+// set down, the piece it links to sets its trailing joint beside the joint
+// the first one leads with.
+.init chain = GraphDistance<Unit, Seated>
+chain.seed($U(), [Id, P_dest]) :- trail_joint(Id, P_dest), !link(_, Id).
+chain.edge($U(), [Id, P_dest], [Id2, P_dest2]) :-
+    link(Id, Id2), remap(_, P_dest),                // the piece before it, set down anywhere
+    trail_joint(Id, P_pack), relative(P_pack, P_dest, Delta),
     lead_joint(Id, P_lead), compose(P_lead, Delta, P_lead_dest),
-    params.chain_dir(D), neighbor(P_lead_dest, D, P_dest).
+    params.chain_dir(D), neighbor(P_lead_dest, D, P_dest2).
 
 // How far the piece travels.
 .decl slide(id: Ident, delta: Offset)
 slide(Id, Delta) :-
-    trail_joint(Id, P_pack), trail_dest(Id, P_dest), relative(P_pack, P_dest, Delta).
+    trail_joint(Id, P_pack), chain.distance($U(), [Id, P_dest], _), relative(P_pack, P_dest, Delta).
 
 .decl place(id: Ident, p_dest: Position)
 place(Id, P_dest) :-

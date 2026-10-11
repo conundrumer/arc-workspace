@@ -114,13 +114,14 @@ impl_choice($Momentum()). impl_choice($Nearest()).
 // A step of the journey: the dot taken, and the way it was taken.
 .decl hop(pan: Position, p: Position, d: Dir, q: Position, d2: Dir, ch: Choice)
 
-.decl state(pan: Position, p: Position, d: Dir, ch: Choice)
-state(Pan, P, D, Ch) :- tip(Pan, P, D), impl_choice(Ch).
-state(Pan, Q, D2, Ch) :- state(Pan, P, D, Ch), hop(Pan, P, D, Q, D2, Ch).
+// The journey: from the tip, one hop after another.
+.init journey = GraphDistance<Choice, Stance>
+journey.seed(Ch, [Pan, P, D]) :- tip(Pan, P, D), impl_choice(Ch).
+journey.edge(Ch, [Pan, P, D], [Pan, Q, D2]) :- hop(Pan, P, D, Q, D2, Ch).
 
 // The journey ends where no way holds a dot.
 .decl rest(pan: Position, p: Position, d: Dir, ch: Choice)
-rest(Pan, P, D, Ch) :- state(Pan, P, D, Ch), !hop(Pan, P, D, _, _, Ch).
+rest(Pan, P, D, Ch) :- journey.distance(Ch, [Pan, P, D], _), !hop(Pan, P, D, _, _, Ch).
 
 // --- $Momentum ---
 

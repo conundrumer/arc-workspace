@@ -33,40 +33,42 @@ block.item($U(), P) :- mark(P, _).
 
 // The border as a cycle, walked in sense s. At a corner only one of the cell's
 // two edges keeps the step on the grid, so each cell has one successor.
-.init ring = CycleWalk<Sense, Position>
-ring.succ(S, P, Q) :-
+.decl ring_step(s: Sense, p: Position, q: Position)
+ring_step(S, P, Q) :-
     in(P, _), turn(S, D, D_step), dist(P, D, 0),   // a cell on edge D
     neighbor(P, D_step, Q), in(Q, _).              // the step along that edge
-ring.step(S, N) :- sense_elem(S), block.tally($U(), N).
 
-// One block-length along the cycle.
-.decl stretch(s: Sense, p: Position, q: Position)
-stretch(S, P, Q) :- block.tally($U(), N), ring.walk(S, P, N, Q).
+// The distance of each border cell along the cycle from the block's first
+// cell in sense s.
+.init ring = GraphDistance<Sense, Position>
+ring.edge(S, P, Q) :- ring_step(S, P, Q).
+ring.seed(S, P) :- mark(P, _), sense_elem(S), !leads(S, P).
+
+// A block cell that another block cell precedes in sense s.
+.decl leads(s: Sense, p: Position)
+leads(S, P) :- mark(P, _), ring_step(S, Q, P), mark(Q, _).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Alternate()).
 impl_choice($Period()).
 
+// The cells of each case's copies, under sense s.
 .decl paint(s: Sense, p: Position, ch: Choice)
-paint(S, P, Ch) :- impl_choice(Ch), sense_elem(S), mark(P, _).
 
 // --- $Alternate ---
 
-// The stretch after a painted one is blank, and the one after that is painted.
-.decl blank(s: Sense, p: Position)
-blank(S, Q) :- paint(S, P, $Alternate()), stretch(S, P, Q).
-
-paint(S, Q, $Alternate()) :- blank(S, P), stretch(S, P, Q).
+// Painted and blank stretches of one block-length alternate from the block.
+paint(S, P, $Alternate()) :-
+    ring.distance(S, P, T), block.tally($U(), N),
+    stride(T, N, N, _, _).                         // in a painted stretch
 
 // --- $Period ---
 
-.init period = CycleWalk<Sense, Position>
-period.succ(S, P, Q) :- stretch(S, P, Q).
-period.step(S, K) :- sense_elem(S), params.period_blocks(K).
-
-paint(S, Q, $Period()) :-
-    paint(S, P, $Period()),                            // a painted cell
-    params.period_blocks(K), period.walk(S, P, K, Q).  // K stretches on
+// The block recurs every K stretches.
+paint(S, P, $Period()) :-
+    ring.distance(S, P, T), block.tally($U(), N),
+    stride(T, N, 0, J, _),                         // in stretch J
+    params.period_blocks(K), stride(J, K, 0, _, 0).  // a stretch that starts a period
 
 // --- output ---
 

@@ -48,11 +48,16 @@ line(Col, P) :- family(Col, A), ink(Col, Q), in(P, _), same_line(A, P, Q).
 .decl hides(hi: Color, lo: Color)
 hides(Hi, Lo) :- line(Hi, P), line(Lo, P), Hi != Lo, in(P, Hi).
 
+// The lines above each line through any run of crossings, keyed by the
+// lower line.
+.init above = GraphDistance<Color, Color>
+above.seed(Col, Col) :- ink(Col, _).
+above.edge(Col, Lo, Hi) :- ink(Col, _), hides(Hi, Lo).
+
 // Stack order: below through any run of crossings.
 .init stack = Order<Unit, Color>
 stack.elem($U(), Col) :- ink(Col, _).
-stack.before($U(), Lo, Hi) :- hides(Hi, Lo).
-stack.before($U(), Lo, Hi) :- stack.before($U(), Lo, Mid), stack.before($U(), Mid, Hi).
+stack.before($U(), Lo, Hi) :- above.distance(Lo, Hi, _), Lo != Hi.
 
 // --- the output row ---
 

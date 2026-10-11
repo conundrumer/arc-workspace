@@ -161,10 +161,20 @@ grow_box(L, B)  :- sq.box(L, B).
 grow_box(L, B2) :- sq.box(L, B), sq_jump(L, V), compose(B, V, B2), inside(B2, ZERO).
 
 // --- $Fit ---
-// Boxes chain while they stay on the frame.
-.decl fit_box(l: Locate, b: Box)
-fit_box(L, B)  :- sq.box(L, B).
-fit_box(L, B2) :- fit_box(L, B), sq_jump(L, V), compose(B, V, B2), inside(B2, ZERO).
+// Boxes chain while they stay on the frame: canvas cell p lies n boxes along
+// the diagonal from the first box, on both axes, and that box lies on the
+// frame.
+.decl fit_cell(l: Locate, p: Position)
+fit_cell(L, P) :-
+    diag(L, Diag), diag_opposite(Diag, Od), diag_dirs(Od, A, O1, O2),   // dirs away from the corner
+    sq.box(L, B), params.canvas(P),
+    perp(A, A2), box_extent(B, P, A, K1), box_extent(B, P, A2, K2),     // the box's extents
+    relative(B, P, R), opposite(O1, C1), opposite(O2, C2),
+    dist(R, C1, T1), stride(T1, K1, 0, N, R1),                          // box n along one axis
+    dist(R, C2, T2), stride(T2, K2, 0, N, R2),                          // and along the other
+    jump(P, C1, R1, P1), jump(P1, C2, R2, P_corner),                    // box n's corner cell
+    params.canvas(P0), box_corner(P0, B, Diag),                         // the first box's
+    relative(P0, P_corner, V), compose(B, V, B_n), inside(B_n, ZERO).   // box n on the frame
 
 // --- Paint cases: the box color ---
 
@@ -179,7 +189,7 @@ paint(Col, $Ink())   :- params.ink(Col).
 
 .decl lit(p: Position, col: Color, ch: Choice)
 lit(P, Col, $Loc(L, $Grow(), F)) :- grow_box(L, B), params.canvas(P), inside(P, B), paint(Col, F).
-lit(P, Col, $Loc(L, $Fit(), F))  :- fit_box(L, B), params.canvas(P), inside(P, B), paint(Col, F).
+lit(P, Col, $Loc(L, $Fit(), F))  :- fit_cell(L, P), paint(Col, F).
 lit(Q, Col, $Loc(L, $Stamp(), F)) :-
     params.mask_corner(Dm), rot_to(L, Dm, R),         // the mask's rotation
     params.mask(Pm), apply(R, Pm, Q),                 // its cells, rotated

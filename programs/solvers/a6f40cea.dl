@@ -162,12 +162,15 @@ piece_color(B, Id, Col) :- pieces.label(B, P, Id), in(P, Col).
 // Two pieces that one grouping joins directly.
 .decl joined(b: Box, g: Grouping, id: Ident, id2: Ident)
 
-.decl linked(b: Box, g: Grouping, id: Ident, id2: Ident)
-linked(B, G, Id, Id2) :- joined(B, G, Id, Id2).
-linked(B, G, Id, Id3) :- linked(B, G, Id, Id2), joined(B, G, Id2, Id3).
+// The pieces a chain of joins reaches from each piece.
+// @claim group-outline
+.init linked = GraphDistance<Piece, Ident>
+linked.seed([B, G, Id], Id) :- piece_color(B, Id, _), grouping_choice(G).
+linked.edge([B, G, Id], Id2, Id3) :-
+    piece_color(B, Id, _), grouping_choice(G), joined(B, G, Id2, Id3).
 
 .init outline_id = Canon<Piece>
-outline_id.equiv([B, G, Id], [B, G, Id2]) :- linked(B, G, Id, Id2).
+outline_id.equiv([B, G, Id], [B, G, Id2]) :- linked.distance([B, G, Id], Id2, _).
 
 .decl outline(o: Piece, p: Position)
 outline([B, G, Oid], P) :- pieces.label(B, P, Id), outline_id.id([B, G, Id], Oid).
@@ -224,14 +227,19 @@ perimeter(O, P) :- outline_box.box(O, B_o), in(P, _), box_edge(P, B_o, _).
 
 // --- $Parity, $ContactCorner ---
 
-// A checkerboard class: the cells an outline's visible cell reaches by
-// diagonal steps, in that cell's color.
-.decl phase(o: Piece, p: Position, col: Color)
-phase(O, P, Col) :- outline(O, P), in(P, Col).
-phase(O, Q, Col) :- phase(O, P, Col), diag_dir_elem(D), neighbor(P, D, Q), in(Q, _).
+// A checkerboard class: the cells an outline's visible cells of one color
+// reach by diagonal steps.
+.type Phase = [o: Piece, col: Color]
+
+// @claim parity-color
+.init phase = GraphDistance<Phase, Position>
+phase.seed([O, Col], P) :- outline(O, P), in(P, Col).
+phase.edge([O, Col], P, Q) :-
+    outline(O, P0), in(P0, Col), in(P, _), diag_dir_elem(D), neighbor(P, D, Q), in(Q, _).
 
 // --- $Parity ---
-paint(B, G, $Complete($Parity()), P, Col) :- perimeter([B, G, Oid], P), phase([B, G, Oid], P, Col).
+paint(B, G, $Complete($Parity()), P, Col) :-
+    perimeter([B, G, Oid], P), phase.distance([[B, G, Oid], Col], P, _).
 
 // --- $PerimeterPeriod ---
 
@@ -248,10 +256,15 @@ loop.succ([O, S], P, Q) :-
     turn(S, D, D2), neighbor(P, D2, Q), perimeter(O, Q).
 loop.step([O, S], N) :- perimeter_len.tally(O, N), sense_elem(S).
 
-// The class of a visible cell P0 under a period of n steps.
+// The class of a visible cell P0 under a period of n steps: the cells a
+// whole number of periods on. A period that fits divides the perimeter
+// length, or the classes of the period and the length's common divisor, a
+// shorter period, would be the same.
 .decl orbit(l: Loop, n: number, p0: Position, p: Position)
-orbit([O, S], N, P0, P0) :- outline(O, P0), loop.walk([O, S], P0, N, _), N > 0.
-orbit(L, N, P0, P2) :- orbit(L, N, P0, P1), loop.walk(L, P1, N, P2).
+orbit([O, S], N, P0, P) :-
+    outline(O, P0), loop.walk([O, S], P0, N, _), N > 0,     // a period
+    perimeter_len.tally(O, Len), stride(Len, N, 0, _, 0),   // that divides the length
+    loop.walk([O, S], P0, M, P), stride(M, N, 0, _, 0).     // whole periods on
 
 // A class under period n holds two colors.
 .decl clash(o: Piece, n: number)
@@ -297,4 +310,5 @@ contact_cell([B, G, Oid], P) :-
       !nearer(D, Q2, P) ),                                                   //  up to the other side's contact
     axis_of(D, A), hole(B, P), same_line(A, P, Q).
 
-paint(B, G, $ContactCorner(), P, Col) :- contact_cell([B, G, Oid], P), phase([B, G, Oid], P, Col).
+paint(B, G, $ContactCorner(), P, Col) :-
+    contact_cell([B, G, Oid], P), phase.distance([[B, G, Oid], Col], P, _).

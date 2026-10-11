@@ -2,10 +2,8 @@
 // @keywords: wallpaper count
 // input: A band of patterned rows sits in an otherwise empty grid.
 // output: Output tiles the whole grid with the band along the axis, phase
-//  preserved: colors propagate from the band by jumps of the band's extent
-//  in both directions.
+//  preserved: the band's extent is the period along the axis.
 
-// Closure under the tiling's translations: band-extent jumps along the axis.
 .decl out(p: Position, col: Color)
 
 .comp Params {
@@ -22,8 +20,11 @@ band_row(Al) :- in(P, Col), !params.bg(Col), params.axis(A), split(P, A, Al, _).
 .init period = Tally<Unit, Position>
 period.item($U(), Al) :- band_row(Al).
 
-out(P, Col) :- in(P, Col), params.axis(A), split(P, A, Al, _), band_row(Al).
+// Each cell takes the color of the band cell on its line at its place
+// within the band's extent.
 out(Q, Col) :-
-    out(P, Col),
-    params.axis(A), axis_of(D, A), period.tally($U(), N),   // the axis's two jump directions
-    jump(P, D, N, Q), in(Q, _).
+    in(P, Col), params.axis(A), split(P, A, Al, _), band_row(Al),   // a band cell
+    in(Q, _), same_line(A, P, Q),                                   // a cell on its line
+    period.tally($U(), N), axis_of(D, A),
+    dist(P, D, T), stride(T, N, 0, _, R),
+    dist(Q, D, T2), stride(T2, N, 0, _, R).                         // one place within the period

@@ -93,13 +93,17 @@ ink($Legend(), P_grid_out, Col) :-
 
 // --- $Concat ---
 
-ink($Concat(), P_grid_out, Col) :-
+// The crops abutting in the quadrant arrangement.
+.decl abutted(p_grid_out: Position, col: Color)
+abutted(P_grid_out, Col) :-
     quadrant_ink(P_tile, P_intile, Col),
-    params.gap(G), concat_2d(P_tile, P_intile, G, P_grid_out).  // crops abut
+    params.gap(G), concat_2d(P_tile, P_intile, G, P_grid_out).
+
+ink($Concat(), P_grid_out, Col) :- abutted(P_grid_out, Col).
 
 // The assembled frame, gap cells included.
 .init assembled = Frame2D<Unit>
-assembled.extent($U(), A, N) :- ink($Concat(), P, _), axis_elem(A), axis_dim(P, A, N).
+assembled.extent($U(), A, N) :- abutted(P, _), axis_elem(A), axis_dim(P, A, N).
 
 canvas($Concat(), P) :- assembled.cell($U(), P).
 

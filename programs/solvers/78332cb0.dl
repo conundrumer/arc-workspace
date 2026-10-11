@@ -47,11 +47,17 @@ port(P_tile, D, Across) :-
 .decl link(x: Position, d: Dir, y: Position)
 link(X, D, Y) :- port(X, D, Across), opposite(D, D2), port(Y, D2, Across), X != Y.
 
+.type DirTile = [d: Dir, x: Position]
+
+// The tiles the chain reaches from tile x toward d.
+.init onward = GraphDistance<DirTile, Position>
+onward.edge([D, X], Y, Z) :- link(X, D, _), link(Y, D, Z).
+onward.seed([D, X], Y) :- link(X, D, Y).
+
 // The tiles ordered along the chain, read toward d.
 .init chain = Order<Dir, Position>
 chain.elem(D, X) :- link(_, D, _), tile.cell(X, _).
-chain.before(D, X, Y) :- link(X, D, Y).
-chain.before(D, X, Z) :- chain.before(D, X, Y), link(Y, D, Z).
+chain.before(D, X, Y) :- onward.distance([D, X], Y, _).
 
 // Each tile's place in the strip along the chain's axis: toward each
 // edge, the tiles beyond it.

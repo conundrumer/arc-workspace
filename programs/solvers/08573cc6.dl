@@ -49,17 +49,25 @@ other_color(Col) :-
     marker(P, Col), params.marker_corner(Diag),
     dir_of(Diag, _, D), !dist(P, D, 0).    // off the corner
 
-// An arm runs from p_start (exclusive) to p_end; p_end may sit off the
-// grid, and only an arm ending on the grid continues the walk.
-.decl arm(p_start: Position, d: Dir, delta: Offset, p_end: Position)
-arm(P, D, Delta, P_end) :-
+// An arm, by where it ends and its move: p_end may sit off the grid, and
+// only an arm ending on the grid continues the walk.
+.type Arm = [p_end: Position, d: Dir, delta: Offset]
+
+// The arms the walk reaches: from an arm that ends on the grid, the next arm
+// turns and is one cell longer.
+.init spiral = GraphDistance<Unit, Arm>
+spiral.seed($U(), [P_end, D, Delta]) :-
     seed(P), params.start_dir(D), params.len0(N),
     jump(P, D, N, P_end), jump_offset(D, N, Delta).
-arm(P, D2, Delta2, P_end2) :-
-    arm(_, D, Delta, P), in(P, _),                          // previous arm ended on-grid
+spiral.edge($U(), [P, D, Delta], [P_end2, D2, Delta2]) :-
+    in(P, _), dir_elem(D), axis_of(D, A), sub_extent(P, A, N), jump_offset(D, N, Delta),
     params.sense(S), turn(S, D, D2), rotation(S, M),
     apply(M, Delta, DeltaR), neighbor(DeltaR, D2, Delta2),  // the arm turned, one cell longer
     compose(P, Delta2, P_end2).
+
+// An arm runs from p_start (exclusive) to p_end.
+.decl arm(p_start: Position, d: Dir, delta: Offset, p_end: Position)
+arm(P, D, Delta, P_end) :- spiral.distance($U(), [P_end, D, Delta], _), relative(Delta, P_end, P).
 
 // An arm read back from its end, keyed by where it starts. An arm the grid
 // edge cuts short ends off the grid, so a forward cast from the start has no

@@ -197,13 +197,20 @@ move(T, D, K, [$Color(), Dc]) :- parse.glyph_color(Dc, T, Col), params.color_mov
 
 // --- the walk ---
 
-// Where the pen stands before glyph T's stroke.
-.decl pen(t: Position, p: Position, ch: Choice)
-pen(T, P, [M, Dc]) :- parse.order.first(Dc, T), parse.marker_cell(Dc, P), move_choice(M).
-pen(T2, P2, [M, Dc]) :- parse.order.next(Dc, T1, T2), stroke_end(T1, P2, [M, Dc]).
+// A glyph, with a canvas cell the pen may stand on before its stroke.
+.type Pen = [t: Position, p: Position]
+
+// The pen's walk: it stands on the marker before the first glyph, and after
+// each glyph's stroke it stands where the stroke ends.
+.init walk = GraphDistance<Choice, Pen>
+walk.seed([M, Dc], [T, P]) :- parse.order.first(Dc, T), parse.marker_cell(Dc, P), move_choice(M).
+walk.edge([M, Dc], [T1, P], [T2, P2]) :-
+    parse.order.next(Dc, T1, T2), parse.canvas(Dc, _, P),
+    params.advance(Da), neighbor(P, Da, P1),        // the step before the run
+    move(T1, D, K, [M, Dc]), jump(P1, D, K, P2).    // the glyph's run
 
 .decl stroke_start(t: Position, p: Position, ch: Choice)
-stroke_start(T, P2, Ch) :- pen(T, P, Ch), params.advance(D), neighbor(P, D, P2).
+stroke_start(T, P2, Ch) :- walk.distance(Ch, [T, P], _), params.advance(D), neighbor(P, D, P2).
 
 .decl stroke_end(t: Position, p: Position, ch: Choice)
 stroke_end(T, P2, Ch) :-
@@ -284,33 +291,41 @@ out(P, Col, [M, Dc]) :-
     .decl stroke_cell(e: Example, t: Position, p: Position)
     stroke_cell(E, T, P) :- parse.glyph_color(E, T, Col), ex_out(E, P, Col).
 
-    .decl pen(e: Example, t: Position, p: Position)
-    pen(E, T, P) :- drawn(E), parse.order.first(E, T), parse.marker_cell(E, P).
-    pen(E, T2, P) :- parse.order.next(E, T1, T2), drew(E, T1, _, _, P).
-
-    .decl start(e: Example, t: Position, p: Position)
-    start(E, T, P2) :- pen(E, T, P), params.advance(D), neighbor(P, D, P2).
-
     // The move tables record the stroke's direction, so runs are taken in
     // every direction.
     .init run = Slide<GT>
     run.node([E, T], P) :- stroke_cell(E, T, P).
     run.dir([E, T], D) :- stroke_cell(E, T, _), dir_elem(D).
 
-    // A run cell with its step count from the start.
-    .decl run_len(e: Example, t: Position, d: Dir, k: number, p: Position)
-    run_len(E, T, D, K, P) :-
-        start(E, T, P0), run.run([E, T], P0, D, P),
+    // A run from start cell P0, with its step count.
+    .decl run_len(e: Example, t: Position, p0: Position, d: Dir, k: number, p: Position)
+    run_len(E, T, P0, D, K, P) :-
+        run.run([E, T], P0, D, P),
         axis_of(D, A), sub_extent(P0, A, K), jump(P0, D, K, P).
 
-    .decl drew(e: Example, t: Position, d: Dir, k: number, p: Position)
-    drew(E, T, D, K, P) :-
-        run_len(E, T, D, K, P),
+    // A run from P0 that the walk can take: the next stroke can start at its
+    // end, or the stroke is the last and its run is maximal.
+    .decl fit(e: Example, t: Position, p0: Position, d: Dir, k: number, p: Position)
+    fit(E, T, P0, D, K, P) :-
+        run_len(E, T, P0, D, K, P),
         ( parse.order.next(E, T, T2),                                     // the successor stroke
           params.advance(Da), neighbor(P, Da, P2), stroke_cell(E, T2, P2) // can start at this end
         ; parse.order.last(E, T),                                         // no successor
           run.rim_dir([E, T], P, D)                                       // the run is maximal
         ).
+
+    // The pen's walk: it stands on the marker before the first glyph, and
+    // after each glyph's stroke on the end of a run the stroke can take.
+    .init walk = GraphDistance<Example, Pen>
+    walk.seed(E, [T, P]) :- drawn(E), parse.order.first(E, T), parse.marker_cell(E, P).
+    walk.edge(E, [T1, P], [T2, P2]) :-
+        parse.order.next(E, T1, T2), fit(E, T1, P0, _, _, P2),
+        params.advance(Da), opposite(Da, Db), neighbor(P0, Db, P).   // the pen one step back
+
+    .decl drew(e: Example, t: Position, d: Dir, k: number, p: Position)
+    drew(E, T, D, K, P) :-
+        walk.distance(E, [T, P0], _), params.advance(Da), neighbor(P0, Da, P1),
+        fit(E, T, P1, D, K, P).
 
     .decl occurrence(e: Example, t: Position)
     occurrence(E, T) :- drawn(E), parse.glyph(E, T).

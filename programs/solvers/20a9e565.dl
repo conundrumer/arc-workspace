@@ -21,7 +21,8 @@
 //  figures grow, each new slot one spacing of the series past the one before
 //     @approximated: each new figure holds the one before it plus a new
 //      step, made of the cells of the step one period before, each moved
-//      again by the move it made over the period before; a cell's move is
+//      again by the move it made over the period before, while it lies on
+//      the grid; a cell's move is
 //      the one most cells of its step share, the shortest where moves tie.
 //      The period is the least at which some two drawn steps a period apart
 //      pair off cell by cell with one move to each connected piece of the
@@ -214,6 +215,14 @@ extent(F, N) :- pax(F, A), in(P, _), axis_dim(P, A, N).
 .decl in_bound(f: FigureParse, l: Position) inline
 in_bound(F, L) :- extent(F, N), uniform_outset(N, B), inside(L, B).
 
+// The stages' lines: the drawn ones, and each past either end within the
+// bound.
+.decl stage_line(f: FigureParse, l: Position)
+stage_line(F, L) :- drawn_line(F, L).
+stage_line(F, L) :-
+    end_fig(F, D, Id), stage_order.pos(F, Id, L_end), neighbor(L_end, D, L1),   // past the end
+    in(P, _), dist(P, D, K), jump(L1, D, K, L), in_bound(F, L).                 // any count of lines on
+
 // scene frame
 
 // Each figure cell in the scene frame: the figure moved along the axis until
@@ -311,30 +320,72 @@ grounded(F, Pn, L) :-
     period_cand(F, Pn), layer(F, L, _),
     trail_dir(F, Td), jump(L, Td, Pn, L2), jump(L2, Td, Pn, L3), drawn_line(F, L3).
 
+.type Move = [f: FigureParse, pn: number, v: Offset]
+
 // A move holds along its chain: picks at grounded layers pass down to the
 // sources they name, over the shallower layers' own picks.
+// @claim continue
+.init held = GraphDistance<Move, Position>
+held.seed([F, Pn, V], X) :- pick(F, Pn, X, V), layer(F, L, X), grounded(F, Pn, L).
+held.edge([F, Pn, V], X, Y) :- cand(F, Pn, _, X, Y, V).
+
 .decl chain(f: FigureParse, pn: number, x: Position, v: Offset)
-chain(F, Pn, X, V) :- pick(F, Pn, X, V), layer(F, L, X), grounded(F, Pn, L).
-chain(F, Pn, Y, V) :- chain(F, Pn, X, V), cand(F, Pn, _, X, Y, V).
+chain(F, Pn, X, V) :- held.distance([F, Pn, V], X, _).
 
 .decl vec(f: FigureParse, pn: number, x: Position, v: Offset)
 vec(F, Pn, X, V) :- chain(F, Pn, X, V).
 vec(F, Pn, X, V) :- pick(F, Pn, X, V), !chain(F, Pn, X, _).
 
-// The cells each stage's step adds at period Pn, each with its source and
-// its move: a cell of the step Pn stages back moves by its vector, and keeps
-// it.
-.decl step(f: FigureParse, pn: number, l: Position, x: Position, y: Position, v: Offset)
-step(F, Pn, L2, X, Y, V) :-
-    step_from(F, Pn, L, X, V), compose(X, V, Y),
+// The cells a drawn step's cells move to at period Pn, each with its source
+// and its move: the step Pn stages on.
+.decl first_step(f: FigureParse, pn: number, l: Position, x: Position, y: Position, v: Offset)
+first_step(F, Pn, L2, X, Y, V) :-
+    layer(F, L, X), vec(F, Pn, X, V), compose(X, V, Y),
     grow_dir(F, G), jump(L, G, Pn, L2), in_bound(F, L2).
-
-.decl step_from(f: FigureParse, pn: number, l: Position, x: Position, v: Offset)
-step_from(F, Pn, L, X, V) :- layer(F, L, X), vec(F, Pn, X, V).
-step_from(F, Pn, L, Y, V) :- step(F, Pn, L, _, Y, V), !drawn_line(F, L).
 
 // The period each reading continues the series with.
 .decl reading_period(f: FigureParse, rc: Recolor, pn: number)
+
+// The period a reading continues with, walked toward an edge of the axis:
+// each stage to the stage a period on.
+.type Course = [f: FigureParse, rc: Recolor, d: Dir]
+
+// The count of stages from the trailing edge to each stage, which bounds
+// every walk over the stages.
+.decl stage_count(f: FigureParse, k: number)
+stage_count(F, K) :- stage_line(F, L), trail_dir(F, Td), dist(L, Td, K).
+
+// @claim continue
+.init stages = CycleWalk<Course, Position>
+stages.succ([F, Rc, D], L, L2) :-
+    reading_period(F, Rc, Pn), pax(F, A), axis_of(D, A),
+    stage_line(F, L), jump(L, D, Pn, L2), stage_line(F, L2).
+stages.step([F, Rc, D], K) :- reading_period(F, Rc, _), pax(F, A), axis_of(D, A), stage_count(F, K).
+
+// A reading's move of a drawn step's cell, either way.
+.type Drift = [f: FigureParse, rc: Recolor, v: Offset]
+
+.decl course_move(m: Drift)
+course_move([F, Rc, V2]) :-
+    reading_period(F, Rc, Pn), layer(F, _, X), vec(F, Pn, X, V),
+    ( V2 = V ; relative(V, ZERO, V2) ).
+
+// A cell walked by its move.
+// @claim continue
+.init drift = CycleWalk<Drift, Position>
+drift.succ([F, Rc, V], X, Y) :- course_move([F, Rc, V]), in(X, _), compose(X, V, Y).
+drift.step([F, Rc, V], K) :- course_move([F, Rc, V]), stage_count(F, K).
+
+// The cells each stage's step adds under a reading, each with its source and
+// its move: a cell of the step a period back moves by its vector, and keeps
+// it, so a first step past the drawn figures repeats a period on for as many
+// periods as the stages run.
+.decl step(f: FigureParse, rc: Recolor, l: Position, x: Position, y: Position, v: Offset)
+step(F, Rc, L, X, Y, V) :- reading_period(F, Rc, Pn), first_step(F, Pn, L, X, Y, V).
+step(F, Rc, L, X, Y, V) :-
+    reading_period(F, Rc, Pn), first_step(F, Pn, L1, _, Y1, V), !drawn_line(F, L1),  // past the drawn figures
+    grow_dir(F, G), stages.walk([F, Rc, G], L1, K, L),        // K periods on
+    drift.walk([F, Rc, V], Y1, K, Y), relative(V, Y, X).      // moved K times more
 
 // the continued series
 
@@ -342,9 +393,13 @@ step_from(F, Pn, L, Y, V) :- step(F, Pn, L, _, Y, V), !drawn_line(F, L).
 // with the step's cells added.
 .decl grown(f: FigureParse, rc: Recolor, l: Position, y: Position)
 grown(F, Rc, L, Y) :- reading_period(F, Rc, _), drawn(F, L, Y, _).
-grown(F, Rc, L2, Y) :-
-    grown(F, Rc, L, Y), grow_dir(F, G), neighbor(L, G, L2), in_bound(F, L2), !drawn_line(F, L2).
-grown(F, Rc, L, Y) :- reading_period(F, Rc, Pn), step(F, Pn, L, _, Y, _), !drawn_line(F, L).
+grown(F, Rc, L, Y) :-
+    reading_period(F, Rc, _), stage_line(F, L), !drawn_line(F, L),
+    grow_dir(F, G), end_fig(F, G, Id), stage_order.pos(F, Id, L_last),
+    nearer(G, L, L_last),                                             // past the drawn figures
+    ( drawn(F, L_last, Y, _)                                          // the last drawn figure
+    ; step(F, Rc, L2, _, Y, _), !drawn_line(F, L2), !nearer(G, L2, L) // and the steps up to L
+    ).
 
 // The cells of each stage's figure, among the stages the series runs to.
 .decl shown_cell(f: FigureParse, rc: Recolor, ix: FigureIndex, l: Position, y: Position)
@@ -365,17 +420,26 @@ cell_color(F, Rc, Ix, L, Y, C) :- stage_color(F, Rc, L, Y, C), figure_index_choi
 .init far = Extremes<Stage>
 far.cand([F, Rc, Ix, L], K) :- shown_cell(F, Rc, Ix, L, Y), trail_dir(F, Td), dist(Y, Td, K).
 
-// Each stage's slot, by its trailing line: a drawn figure's slot is where it
-// lies, and each later slot starts one spacing past the figure before.
-.decl slot(f: FigureParse, rc: Recolor, ix: FigureIndex, l: Position, lg: Position)
-slot(F, Rc, Ix, L, Lg) :-
+.type Run = [f: FigureParse, rc: Recolor, ix: FigureIndex]
+
+// A stage's slot, by its trailing line.
+.type Slot = [l: Position, lg: Position]
+
+// Each stage's slot: a drawn figure's slot is where it lies, and each later
+// slot starts one spacing past the figure before.
+// @claim continue
+.init slots = GraphDistance<Run, Slot>
+slots.seed([F, Rc, Ix], [L, Lg]) :-
     reading_period(F, Rc, _), figure_index_choice(Ix), stage_order.pos(F, Id, L), lead(F, Id, T),
     axis_line(F, Lg), trail_dir(F, Td), dist(Lg, Td, T).
-slot(F, Rc, Ix, L2, Lg2) :-
-    slot(F, Rc, Ix, L, Lg), far.high([F, Rc, Ix, L], K),
+slots.edge([F, Rc, Ix], [L, Lg], [L2, Lg2]) :-
+    far.high([F, Rc, Ix, L], K), axis_line(F, Lg),
     grow_dir(F, G), neighbor(L, G, L2), grown(F, Rc, L2, _), !drawn_line(F, L2),
     jump(Lg, G, K, Lfar), neighbor(Lfar, G, Ln),          // past the figure
     spacing.value(F, Gp), jump(Ln, G, Gp, Lg2).           // and the spacing
+
+.decl slot(f: FigureParse, rc: Recolor, ix: FigureIndex, l: Position, lg: Position)
+slot(F, Rc, Ix, L, Lg) :- slots.distance([F, Rc, Ix], [L, Lg], _).
 
 // The stages whose slot may hold the window.
 .decl later(f: FigureParse, rc: Recolor, ix: FigureIndex, l: Position)
@@ -495,45 +559,57 @@ later(F, Rc, $LaterFigures(), L) :- slot(F, Rc, $LaterFigures(), L, _), !drawn_l
 // --- $EitherEnd ---
 
 // The stages before the seed. The cells each such stage's step added: the
-// cells of the step a period after it, each moved back by its vector.
+// cells of a drawn step past the seed, each moved back by its vector once
+// for each period back, at or before the seed.
 .decl back_step(f: FigureParse, rc: Recolor, l: Position, x: Position, v: Offset)
 back_step(F, Rc, L, X, V) :-
-    back_from(F, Rc, L2, Y, V), relative(V, Y, X),            // the cell that moves onto Y
-    reading_period(F, Rc, Pn), trail_dir(F, Td), jump(L2, Td, Pn, L), in_bound(F, L),
-    drawn_line(F, L0), dist(L0, Td, 0), !nearer(Td, L0, L).   // at or before the seed
+    reading_period(F, Rc, Pn), layer(F, L0, Y), vec(F, Pn, Y, V),
+    trail_dir(F, Td), !dist(L0, Td, 0),                       // a drawn step past the seed
+    jump(L0, Td, Pn, L1), stage_line(F, L1),
+    drawn_line(F, L_seed), dist(L_seed, Td, 0), !nearer(Td, L_seed, L1),   // at or before the seed
+    relative(V, Y, X1), relative(V, ZERO, V_back),            // the cell that moves onto Y
+    ( L = L1, X = X1
+    ; stages.walk([F, Rc, Td], L1, K, L), drift.walk([F, Rc, V_back], X1, K, X)   // K periods back
+    ).
 
-.decl back_from(f: FigureParse, rc: Recolor, l: Position, y: Position, v: Offset)
-back_from(F, Rc, L, Y, V) :-
-    reading_period(F, Rc, Pn), layer(F, L, Y), vec(F, Pn, Y, V),
-    trail_dir(F, Td), !dist(L, Td, 0).                        // a drawn step past the seed
-back_from(F, Rc, L, X, V) :- back_step(F, Rc, L, X, V).
+// A cell that the step at a later stage, at or before the seed, adds.
+.decl back_added(f: FigureParse, rc: Recolor, l: Position, y: Position)
+back_added(F, Rc, L, Y) :-
+    back_step(F, Rc, L2, Y, _), stage_line(F, L), trail_dir(F, Td), nearer(Td, L, L2).
 
-// The figure at each stage before the seed: the figure after it, less the
-// cells that figure's step added.
+// The figure at each stage before the seed: the seed's figure, less the cells
+// each step after the stage added.
 .decl back_grown(f: FigureParse, rc: Recolor, l: Position, y: Position)
 back_grown(F, Rc, L, Y) :-
-    ( reading_period(F, Rc, _), drawn(F, L2, Y, _), trail_dir(F, Td), dist(L2, Td, 0)
-    ; back_grown(F, Rc, L2, Y) ),
-    trail_dir(F, Td), neighbor(L2, Td, L), in_bound(F, L), !back_step(F, Rc, L2, Y, _).
+    reading_period(F, Rc, _), drawn(F, L0, Y, _), trail_dir(F, Td), dist(L0, Td, 0),   // the seed
+    stage_line(F, L), nearer(Td, L, L0),                                               // a stage before it
+    !back_added(F, Rc, L, Y).
+
+.type Series = [f: FigureParse, rc: Recolor]
+
+// A figure cell at a stage, with a color.
+.type Tint = [l: Position, y: Position, c: Color]
 
 // A cell's color before the seed: the color the map between consecutive
 // figures takes to its color in the figure after.
-.decl back_color(f: FigureParse, rc: Recolor, l: Position, y: Position, col: Color)
-back_color(F, Rc, L, Y, C) :-
-    back_grown(F, Rc, L, Y), grow_dir(F, G), neighbor(L, G, L2),
-    ( drawn(F, L2, Y, C2) ; back_color(F, Rc, L2, Y, C2) ),
-    stage_map(F, C, C2).
+// @claim continue
+.init back_tint = GraphDistance<Series, Tint>
+back_tint.seed([F, Rc], [L0, Y, C]) :-
+    reading_period(F, Rc, _), drawn(F, L0, Y, C), trail_dir(F, Td), dist(L0, Td, 0).
+back_tint.edge([F, Rc], [L2, Y, C2], [L, Y, C]) :-
+    back_grown(F, Rc, L, Y), grow_dir(F, G), neighbor(L, G, L2), stage_map(F, C, C2).
+
 
 shown_cell(F, Rc, $EitherEnd(), L, Y) :- back_grown(F, Rc, L, Y).
 
-cell_color(F, Rc, $EitherEnd(), L, Y, C) :- back_color(F, Rc, L, Y, C).
+cell_color(F, Rc, $EitherEnd(), L, Y, C) :-
+    back_grown(F, Rc, L, Y), back_tint.distance([F, Rc], [L, Y, C], _).
 
 // Each slot before the seed ends one spacing before the slot after it.
-slot(F, Rc, $EitherEnd(), L, Lg) :-
-    slot(F, Rc, $EitherEnd(), L2, Lg2), trail_dir(F, Td), neighbor(L2, Td, L),
-    back_grown(F, Rc, L, _),
-    spacing.value(F, Gp), jump(Lg2, Td, Gp, L1), neighbor(L1, Td, Lfar),   // the spacing before
-    far.high([F, Rc, $EitherEnd(), L], K), jump(Lfar, Td, K, Lg).          // and the figure
+slots.edge([F, Rc, $EitherEnd()], [L2, Lg2], [L, Lg]) :-
+    back_grown(F, Rc, L, _), grow_dir(F, G), neighbor(L, G, L2), axis_line(F, Lg2),
+    trail_dir(F, Td), spacing.value(F, Gp), jump(Lg2, Td, Gp, L1), neighbor(L1, Td, Lfar),   // the spacing before
+    far.high([F, Rc, $EitherEnd(), L], K), jump(Lfar, Td, K, Lg).                           // and the figure
 
 later(F, Rc, $EitherEnd(), L) :- slot(F, Rc, $EitherEnd(), L, _).
 
@@ -576,11 +652,11 @@ drawn_parent(F, X, Y) :- period_pick.low(F, Pn), vec(F, Pn, X, V), cand(F, Pn, _
 // The layers, drawn and continued, and the source of each cell.
 .decl ext_layer(f: FigureParse, l: Position, y: Position)
 ext_layer(F, L, Y) :- layer(F, L, Y).
-ext_layer(F, L, Y) :- period_pick.low(F, Pn), step(F, Pn, L, _, Y, _), !drawn_line(F, L).
+ext_layer(F, L, Y) :- step(F, $Invariances(), L, _, Y, _), !drawn_line(F, L).
 
 .decl ext_parent(f: FigureParse, x: Position, y: Position)
 ext_parent(F, X, Y) :- drawn_parent(F, X, Y).
-ext_parent(F, Y, X) :- period_pick.low(F, Pn), step(F, Pn, L, X, Y, _), !drawn_line(F, L).
+ext_parent(F, Y, X) :- step(F, $Invariances(), L, X, Y, _), !drawn_line(F, L).
 
 .type FigCell = [f: FigureParse, y: Position]
 
@@ -596,14 +672,20 @@ birth(F, Y, L) :- layer_stage.low([F, Y], L, _).
 .decl drawn_birth(f: FigureParse, y: Position, l: Position)
 drawn_birth(F, Y, L) :- birth(F, Y, L), drawn_line(F, L).
 
-// Ancestry along the source edges: the drawn edges, and the continued ones.
-.decl anc_drawn(f: FigureParse, y: Position, z: Position)
-anc_drawn(F, Y, Y) :- layer(F, _, Y).
-anc_drawn(F, Y, Z) :- anc_drawn(F, Y, Z1), drawn_parent(F, Z1, Z).
+// Ancestry along the source edges: a cell's source, that source's source,
+// and so on, over the drawn edges, and over the continued ones.
+// @claim continue
+.init drawn_lineage = CycleWalk<FigureParse, Position>
+drawn_lineage.succ(F, X, Y) :- drawn_parent(F, X, Y).
+drawn_lineage.step(F, K) :- stage_count(F, K).
 
-.decl anc_ext(f: FigureParse, y: Position, z: Position)
-anc_ext(F, Y, Y) :- ext_layer(F, _, Y).
-anc_ext(F, Y, Z) :- anc_ext(F, Y, Z1), ext_parent(F, Z1, Z).
+.decl anc_drawn(f: FigureParse, y: Position, z: Position)
+anc_drawn(F, Y, Z) :- layer(F, _, Y), ( Z = Y ; drawn_lineage.walk(F, Y, _, Z) ).
+
+// @claim continue
+.init ext_lineage = CycleWalk<FigureParse, Position>
+ext_lineage.succ(F, X, Y) :- ext_parent(F, X, Y).
+ext_lineage.step(F, K) :- stage_count(F, K).
 
 // An invariance observation: a drawn cell's color beside another drawn
 // cell's color, dj between their births and dk between the stages read.
@@ -638,20 +720,29 @@ lgen_mismatch(F, Dk, Dj) :- gen_obs(F, Dk, Dj, _, _, C, C2), C2 != C.
 state_cell(F, L, Y) :- drawn_line(F, L), birth(F, Y, _).
 state_cell(F, L, Y) :- grown(F, $Invariances(), L, Y), !drawn_line(F, L).
 
-// A cell's color is what the invariances reach in the drawn figures; out's
-// single value per cell requires every path to agree.
-.decl col_reach(f: FigureParse, l: Position, y: Position, col: Color)
-col_reach(F, L, Y, C) :- drawn(F, L, Y, C).
-col_reach(F, L, Y, C) :-
+// An invariance read: the cell at L2 whose color a state cell at L takes.
+.decl reads_from(f: FigureParse, l2: Position, z: Position, l: Position, y: Position)
+reads_from(F, L2, Z, L, Y) :-
     state_cell(F, L, Y), birth(F, Y, Ly), compose(Ly, Dj, Lz),
-    ( agen(F, Dk, Dj), anc_ext(F, Y, Z), birth(F, Z, Lz)     // ancestor read
+    ( agen(F, Dk, Dj), ( Z = Y ; ext_lineage.walk(F, Y, _, Z) ), birth(F, Z, Lz)   // ancestor read
     ; lgen(F, Dk, Dj), drawn_birth(F, Z, Lz)                 // layer read
     ),
     !drawn(F, L, Y, _),
-    compose(L, Dk, L2), drawn_line(F, L2),
-    col_reach(F, L2, Z, C).
+    compose(L, Dk, L2), drawn_line(F, L2).
 
-stage_color(F, $Invariances(), L, Y, C) :- col_reach(F, L, Y, C).
+.type Hue = [f: FigureParse, c: Color]
+
+// A figure cell at a stage.
+.type StageCell = [l: Position, y: Position]
+
+// A cell's color is what the invariances reach in the drawn figures; out's
+// single value per cell requires every path to agree.
+// @claim continue
+.init col_reach = GraphDistance<Hue, StageCell>
+col_reach.seed([F, C], [L, Y]) :- drawn(F, L, Y, C).
+col_reach.edge([F, C], [L2, Z], [L, Y]) :- col_reach.seed([F, C], _), reads_from(F, L2, Z, L, Y).
+
+stage_color(F, $Invariances(), L, Y, C) :- col_reach.distance([F, C], [L, Y], _).
 
 // --- $Demonstration ---
 
@@ -666,31 +757,22 @@ stage_color(F, $Invariances(), L, Y, C) :- col_reach(F, L, Y, C).
 .decl demonstrated_choice(r: DemonstratedChoice)
 demonstrated_choice($ParentNow()). demonstrated_choice($BirthMap()).
 
-// The figure at L under rule R: drawn, or grown from the figure before.
-.decl state(f: FigureParse, pn: number, r: DemonstratedChoice, l: Position, y: Position, col: Color)
-state(F, Pn, R, L, Y, C) :- period_cand(F, Pn), demonstrated_choice(R), drawn(F, L, Y, C).
-state(F, Pn, R, L, Y, C) :- predicted(F, Pn, R, L, Y, C), !drawn_line(F, L).
+// A drawn cell's color in the figure before L2, through the map between
+// figures.
+.decl carried(f: FigureParse, l2: Position, y: Position, col: Color)
+carried(F, L2, Y, C2) :- drawn_pair(F, L, L2), drawn(F, L, Y, C), stage_map(F, C, C2).
 
-// The figure rule R predicts at L from the figure before it: the old cells
-// through the map between figures, and the new cells by the rule.
+// The figure rule R predicts at a drawn L2 from the drawn figure before it:
+// the old cells through the map between figures, and the new cells by the
+// rule.
 .decl predicted(f: FigureParse, pn: number, r: DemonstratedChoice, l: Position, y: Position, col: Color)
-predicted(F, Pn, R, L2, Y, C2) :-
-    state(F, Pn, R, L, Y, C), stage_map(F, C, C2),
-    grow_dir(F, G), neighbor(L, G, L2), in_bound(F, L2).
+predicted(F, Pn, R, L2, Y, C2) :- period_cand(F, Pn), demonstrated_choice(R), carried(F, L2, Y, C2).
 
 // ParentNow
 
-predicted(F, Pn, $ParentNow(), L2, Y, C2) :-
-    step(F, Pn, L2, X, Y, _), grow_dir(F, G), neighbor(L, G, L2),
-    state(F, Pn, $ParentNow(), L, X, C), stage_map(F, C, C2).
+predicted(F, Pn, $ParentNow(), L2, Y, C2) :- first_step(F, Pn, L2, X, Y, _), carried(F, L2, X, C2).
 
 // BirthMap
-
-// The color a cell takes at its birth.
-.decl birth_color(f: FigureParse, pn: number, x: Position, col: Color)
-birth_color(F, Pn, X, C) :- period_cand(F, Pn), layer(F, L, X), drawn(F, L, X, C).
-birth_color(F, Pn, Y, C) :-
-    step(F, Pn, L, _, Y, _), !drawn_line(F, L), state(F, Pn, $BirthMap(), L, Y, C).
 
 // The map between birth colors: a drawn step cell's birth color beside its
 // source's, where the source is itself a step cell.
@@ -701,7 +783,9 @@ layer_map(F, Pn, C, C2) :-
     drawn(F, Lx, X, C).
 
 predicted(F, Pn, $BirthMap(), L2, Y, C2) :-
-    step(F, Pn, L2, X, Y, _), birth_color(F, Pn, X, C), layer_map(F, Pn, C, C2).
+    first_step(F, Pn, L2, X, Y, _), drawn_line(F, L2),
+    layer(F, L, X), drawn(F, L, X, C),                                // the source's birth color
+    layer_map(F, Pn, C, C2).
 
 // demonstration
 
@@ -734,8 +818,36 @@ demo_period.cand(F, Pn) :- standing(F, Pn, _).
 
 reading_period(F, $Demonstration(), Pn) :- demo_period.low(F, Pn).
 
+.type Rule = [f: FigureParse, pn: number, r: DemonstratedChoice]
+
+// The figure at each stage under a standing rule at the period: drawn, or
+// grown from the figure before, the old cells through the map between
+// figures, and the new cells by the rule.
+// @claim continue
+.init state = GraphDistance<Rule, Tint>
+state.seed([F, Pn, R], [L, Y, C]) :- demo_period.low(F, Pn), standing(F, Pn, R), drawn(F, L, Y, C).
+state.edge([F, Pn, R], [L, Y, C], [L2, Y, C2]) :-
+    demo_period.low(F, Pn), standing(F, Pn, R),
+    grown(F, $Demonstration(), L, Y), stage_map(F, C, C2),
+    grow_dir(F, G), neighbor(L, G, L2), stage_line(F, L2), !drawn_line(F, L2).
+
+// ParentNow: a new cell takes its source's color in the figure before,
+// through the map between figures.
+state.edge([F, Pn, $ParentNow()], [L, X, C], [L2, Y, C2]) :-
+    demo_period.low(F, Pn), standing(F, Pn, $ParentNow()),
+    step(F, $Demonstration(), L2, X, Y, _), !drawn_line(F, L2), trail_dir(F, Td), neighbor(L2, Td, L),
+    stage_map(F, C, C2).
+
+// BirthMap: a new cell takes its source's birth color, through the map
+// between birth colors.
+state.edge([F, Pn, $BirthMap()], [Lb, X, C], [L2, Y, C2]) :-
+    demo_period.low(F, Pn), standing(F, Pn, $BirthMap()),
+    step(F, $Demonstration(), L2, X, Y, _), !drawn_line(F, L2),
+    ( layer(F, Lb, X) ; step(F, $Demonstration(), Lb, _, X, _), !drawn_line(F, Lb) ),   // the source's birth
+    layer_map(F, Pn, C, C2).
+
 stage_color(F, $Demonstration(), L, Y, C) :-
-    demo_period.low(F, Pn), standing(F, Pn, R), state(F, Pn, R, L, Y, C).
+    demo_period.low(F, Pn), standing(F, Pn, R), state.distance([F, Pn, R], [L, Y, C], _).
 
 .comp Determine {
     .init parse = Parse<Example>

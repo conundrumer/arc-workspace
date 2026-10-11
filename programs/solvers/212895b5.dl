@@ -66,23 +66,27 @@ diag_arm(P) :- cast.clear($U(), P, D, K, Src), parse.corner($U(), Src, D), K != 
 
 // --- side arms ---
 
+.type Turtle = [p: Position, h: Dir, phase: number]
+
 .init cycle = IndexCycle<Unit>
 cycle.idx($U(), K) :- params.gait(K, _).
 
 // The turtle: its cell, heading, and phase. Each step moves along the
 // heading onto a cell it may enter, then turns by the phase's rotation.
-.decl turtle(p: Position, h: Dir, phase: number)
-turtle(P, D, 0) :- parse.seed($U(), P, D).
-turtle(Q, H2, K2) :-
-    turtle(P, H, K), neighbor(P, H, Q), in(Q, Col), !params.stop(Col),  // one step along the heading
-    params.gait(K, T), apply_dir(T, H, H2),                             // the phase's rotation
+.init turtle = GraphDistance<Unit, Turtle>
+turtle.seed($U(), [P, D, 0]) :- parse.seed($U(), P, D).
+turtle.edge($U(), [P, H, K], [Q, H2, K2]) :-
+    in(P, _), dir_elem(H), neighbor(P, H, Q), in(Q, Col), !params.stop(Col),  // one step along the heading
+    params.gait(K, T), apply_dir(T, H, H2),                                   // the phase's rotation
     cycle.succ($U(), K, K2).
 
 // --- output ---
 
 .decl paint(p: Position, col: Color)
 paint(P, Col) :- diag_arm(P), params.diag_paint(Col).
-paint(P, Col) :- turtle(P, _, _), !parse.block_cell($U(), P), params.arm_paint(Col).
+paint(P, Col) :-
+    turtle.distance($U(), [P, _, _], _),        // a cell the turtle reaches
+    !parse.block_cell($U(), P), params.arm_paint(Col).
 
 out(P, Col) :- in(P, Col_in), ( paint(P, Col) ; !paint(P, _), Col = Col_in ).
 

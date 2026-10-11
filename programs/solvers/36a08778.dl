@@ -23,7 +23,7 @@
 
 // how the water passes a block, and where its direction comes from
 .type Choice = [flow: Flow, seat: Seat]
-.type Stream = [ch: Choice, d: Dir]
+.type Pour = [p: Position, d: Dir]
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -63,28 +63,37 @@ stub_flow(Id, D) :-
 pour($Dir(), P, D)  :- source(P), params.fall(D).
 pour($Stub(), P, D) :- stub.label($U(), P, Id), stub_flow(Id, D).
 
-// The water's course: a cast from each pour cell toward its direction, halted
-// by a block. Keyed by case and direction: each case seeds its own marks, and
-// a key casts toward one direction.
-.init stream = Ray<Stream>
-stream.dir([Ch, D], D)      :- impl_choice(Ch), dir_elem(D).
-stream.cell([Ch, D], P)     :- impl_choice(Ch), dir_elem(D), in(P, _).
-stream.blocked([Ch, D], P)  :- impl_choice(Ch), dir_elem(D), block(P).
-stream.mark([[F, S], D], P) :- impl_choice([F, S]), pour(S, P, D).
+// The course water poured at a cell toward a direction takes: a cast toward
+// that direction, halted by a block. Keyed by direction.
+.init stream = Ray<Dir>
+stream.dir(D, D)     :- dir_elem(D).
+stream.cell(D, P)    :- dir_elem(D), in(P, _).
+stream.blocked(D, P) :- dir_elem(D), block(P).
+stream.mark(D, P)    :- dir_elem(D), in(P, _), !block(P).
+
+// Block B halts the pour from M toward d at cell P.
+.decl barred(m: Position, d: Dir, p: Position, b: Position)
+barred(M, D, P, B) :-
+    stream.clear(D, P, D, _, M), neighbor(P, D, B), stream.stop(D, B, D, _, M).
+
+// The pour from M toward d, once barred, pours on from Q under flow f.
+.decl pour_on(f: Flow, m: Position, d: Dir, q: Position)
+
+// The pours the water makes: the stub's pours, and each pour on from a
+// barred one.
+.init flow = GraphDistance<Choice, Pour>
+flow.seed([F, S], [P, D]) :- impl_choice([F, S]), pour(S, P, D).
+flow.edge([F, S], [M, D], [Q, D]) :- impl_choice([F, S]), pour_on(F, M, D, Q).
 
 // The cells the water reaches, and the direction it travels there.
 .decl wet(ch: Choice, d: Dir, p: Position)
-wet(Ch, D, P) :- stream.clear([Ch, D], P, D, _, _).
-
-// Block B halts the pour at wet cell P.
-.decl barred(ch: Choice, d: Dir, p: Position, b: Position)
-barred(Ch, D, P, B) :- wet(Ch, D, P), neighbor(P, D, B), stream.stop([Ch, D], B, D, _, _).
+wet(Ch, D, P) :- flow.distance(Ch, [M, D], _), stream.clear(D, P, D, _, M).
 
 // --- $Step ---
 
 // A cell to each side, across the flow, pours on.
-stream.mark([[$Step(), S], D], Q) :-
-    barred([$Step(), S], D, P, _),
+pour_on($Step(), M, D, Q) :-
+    barred(M, D, P, _),
     perp_dir(D, D2), neighbor(P, D2, Q), in(Q, _), !block(Q).
 
 // --- $Shell ---
@@ -110,7 +119,7 @@ shell(D, B, P) :-
 
 // Where a block stands on another's shell row (test 1), the water past it
 // arrives by another pour, so $Step and $Shell agree there too.
-stream.mark([[$Shell(), S], D], Q) :- barred([$Shell(), S], D, _, B), shell(D, B, Q).
+pour_on($Shell(), M, D, Q) :- barred(M, D, _, B), shell(D, B, Q).
 
 // --- output ---
 

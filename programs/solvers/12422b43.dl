@@ -7,8 +7,8 @@
 
 // two models place the copies
 .type Choice =
-    // seat the unit one pattern-length past itself, then step it one
-    // unit-length at a time while it stays on the grid
+    // seat the unit one pattern-length past itself, and again every
+    // unit-length past that seat
     Stamp {}
     // the remainder divides into unit-sized tiles; each tile takes the unit's
     // ink
@@ -53,10 +53,11 @@ unit_len.item($U(), R) :- marker_line(R).
 // --- $Stamp ---
 
 copy(P2, Col, $Stamp()) :-
-    ( unit(P1, Col, _), pat_len.tally($U(), N)          // seed: one pattern-length on
-    ; copy(P1, Col, $Stamp()), unit_len.tally($U(), N)  // grow: one unit-length on
-    ),
-    params.flow(D), jump(P1, D, N, P2), in(P2, _).   // lands on the grid
+    unit(P1, Col, _), pat_len.tally($U(), N),                   // a unit cell, and the pattern length
+    params.flow(D), jump(P1, D, N, P_seat),                     // its seat one pattern-length on
+    in(P2, _), same_line(A, P_seat, P2), axis_of(D, A),         // a grid cell on its line
+    relative(P_seat, P2, V), opposite(D, O), dist(V, O, T),     // how far past the seat
+    unit_len.tally($U(), K), stride(T, K, 0, _, 0).             // a whole number of unit lengths
 
 // --- $Tile ---
 

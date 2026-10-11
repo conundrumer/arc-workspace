@@ -39,9 +39,6 @@ legend_cell(P) :- in(P, Col), !field(Col).
 .decl swatch_cell(p: Position)
 swatch_cell(P) :- legend_cell(P), dir_elem(D), neighbor(P, D, Q), legend_cell(Q).
 
-.decl seed(p: Position)
-seed(P) :- legend_cell(P), !swatch_cell(P).
-
 // The swatches are drawn on the wall, so the wall surrounds them.
 .decl wall(col: Color)
 wall(Col) :- swatch_cell(P), dir_elem(D), neighbor(P, D, Q), in(Q, Col), field(Col).
@@ -84,38 +81,52 @@ pattern(K, Col) :-
     params.read_dir(D), opposite(D_start, D),          // the end the reading starts from
     dist(P_pos, D_start, K).                           // index = swatches before it
 
-.init cycle = IndexCycle<Unit>
-cycle.idx($U(), K) :- pattern(K, _).
+// The pattern's length.
+.init period = Tally<Unit, number>
+period.item($U(), K) :- pattern(K, _).
 
 // --- walk ---
 
 // A seed lies on one edge of the frame; the walk heads inward from it.
 .decl head(p: Position, d: Dir)
-head(P, D) :- seed(P), opposite(D_edge, D), dist(P, D_edge, 0).
+head(P, D) :-
+    legend_cell(P), !swatch_cell(P),                   // a seed
+    opposite(D_edge, D), dist(P, D_edge, 0).
 
 // The walk alternates between two headings.
 .decl alt(d: Dir, d2: Dir)
-alt(D, D2) :- head(_, D), params.turn_sense(S), turn(S, D, D2).
-alt(D2, D) :- alt(D, D2).
+alt(D, D2) :-
+    head(_, D0), params.turn_sense(S), turn(S, D0, D1),
+    ( D = D0, D2 = D1
+    ; D = D1, D2 = D0
+    ).
 
-// P is on the walk, heading D; the heading flips where a run meets the wall.
-.decl walk(p: Position, d: Dir)
-walk(P, D) :- head(P, D).
-walk(Q, D) :- step(_, D, Q).
-walk(P, D2) :- walk(P, D), neighbor(P, D, Q), wall_cell(Q), alt(D, D2).
+// A place on the walk: at p, heading d.
+.type Heading = [p: Position, d: Dir]
+
+// The walk: each hop is one step onto a corridor cell, and the heading flips
+// where a run meets the wall.
+.init walk = GraphDistance<Unit, Heading>
+walk.seed($U(), [P, D]) :- head(P, D).
+walk.seed($U(), [P, D2]) :- head(P, D), neighbor(P, D, Q), wall_cell(Q), alt(D, D2).
+walk.edge($U(), [P, D], [Q, D2]) :-
+    in(P, _), alt(D, _), neighbor(P, D, Q), corridor_cell(Q),
+    ( D2 = D
+    ; neighbor(Q, D, R), wall_cell(R), alt(D, D2)       // the wall ahead turns it
+    ).
 
 // One step of the walk: from P toward D onto corridor cell Q.
 .decl step(p: Position, d: Dir, q: Position)
-step(P, D, Q) :- walk(P, D), neighbor(P, D, Q), corridor_cell(Q).
+step(P, D, Q) :- walk.distance($U(), [P, D], _), neighbor(P, D, Q), corridor_cell(Q).
 
 // A run that took at least one step marks the wall cell that halts it.
 .decl stop(p: Position)
 stop(Q) :- step(_, D, P), neighbor(P, D, Q), wall_cell(Q).
 
-// The pattern's phase along the walk, starting at the seed.
+// The pattern's phase along the walk: the steps from the seed, around the
+// pattern's length.
 .decl phase(p: Position, k: number)
-phase(P, 0) :- seed(P).
-phase(Q, K2) :- phase(P, K), step(P, _, Q), cycle.succ($U(), K, K2).
+phase(P, K) :- walk.distance($U(), [P, _], N), period.tally($U(), L), stride(N, L, 0, _, K).
 
 // --- output ---
 

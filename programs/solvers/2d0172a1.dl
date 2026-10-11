@@ -119,10 +119,17 @@ mark_apart([Ch, X1, D1], [Ch, X2, D2]) :-
 mark_same([Ch, X1, D1], [Ch, X2, D2]) :-
     mark_axis([Ch, X1, D1], A), mark_axis([Ch, X2, D2], A),
     !mark_apart([Ch, X1, D1], [Ch, X2, D2]).
-mark_same(M1, M3) :- mark_same(M1, M2), mark_same(M2, M3).
+
+// The marks a run of overlaps links to each mark, keyed by that mark.
+// @claim position
+.init linked = GraphDistance<Mark, Mark>
+linked.seed(M, M) :- mark_axis(M, _).
+linked.edge([Ch, X, D], [Ch, X1, D1], M2) :-
+    mark_axis([Ch, X, D], A), mark_axis([Ch, X1, D1], A),   // marks on one axis
+    mark_same([Ch, X1, D1], M2).
 
 .init grp = Canon<Mark>
-grp.equiv(M1, M2) :- mark_same(M1, M2).
+grp.equiv(M1, M2) :- linked.distance(M1, M2, _).
 
 // --- layout ---
 

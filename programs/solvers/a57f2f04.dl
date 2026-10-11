@@ -192,13 +192,18 @@
         dist(B_rel, D2, K2), jump_offset(D2, K2, V2), compose(V1, V2, V).
 
     // The copies: the tile's cells moved by v, then repeated by the tile's
-    // extent along both axes inside the panel's box.
+    // extent along both axes inside the panel's box. A cell q of the box
+    // takes the tile cell at q's place within its copy on each axis.
     .decl copy(k: Key, b: Box, v: Offset, p: Position, col: Color)
-    copy(K, B, V, Q, Col) :- lay(K, B, V), color(K, P, Col), inside(P, B), compose(P, V, Q).
     copy(K, B, V, Q, Col) :-
-        copy(K, B, V, P, Col),
-        axis_of(D, A), box_extent(B, P, A, N), jump(P, D, N, Q),  // one tile on
-        box.box(K, B_p), inside(Q, B_p).
+        lay(K, B, V), color(K, Q, _), relative(V, Q, Q_v),        // q, moved back by v
+        diag_dirs(_, A, D1, D2), perp(A, A2), opposite(D1, O1), opposite(D2, O2),
+        relative(B, Q_v, Q_rel), dist(Q_rel, O1, T1), dist(Q_rel, O2, T2),
+        box_extent(B, Q, A, N1), box_extent(B, Q, A2, N2),
+        stride(T1, N1, 0, _, K1), stride(T2, N2, 0, _, K2),      // q's place in its copy
+        jump(Q_v, O1, T1, P1), jump(P1, D1, K1, P2),              // back to the tile's edge,
+        jump(P2, O2, T2, P3), jump(P3, D2, K2, P),                // then to that place
+        color(K, P, Col), inside(P, B).
 }
 
 .decl field_color_choice(f: FieldColor)

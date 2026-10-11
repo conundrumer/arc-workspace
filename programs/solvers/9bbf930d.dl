@@ -151,16 +151,24 @@ inlet(L, P0, $Mouth()) :-
     ( channel(Q, A, _)
     ; run.run($U(), Q, D, R), channel(R, A, _), !lane_blocked(L, P0, R) ).
 
-// The ink from wall cell P0 rests at P, heading D, at the end of a run.
-.decl rest(p_wall: Position, p: Position, d: Dir, ch: Choice)
-rest(P0, R, D, [F, O, L]) :-
+// The ink's place and heading along its roll.
+.type Pose = [p: Position, d: Dir]
+
+// The roll of the ink from a wall cell, under one case.
+.type Roll = [p_wall: Position, ch: Choice]
+
+// The roll: from the end of the run inward from the mouth, each bend turns
+// the ink into a new run.
+// @claim roll
+.init roll = GraphDistance<Roll, Pose>
+roll.seed([P0, [F, O, L]], [R, D]) :-
     inlet(L, P0, O), follow_choice(F), mouth(L, P0, Q, D), run.rest($U(), Q, D, R).
-rest(P0, R, D2, [F, O, L]) :-
-    rest(P0, Q, D, [F, O, L]), bend(Q, D, D2, F), run.rest($U(), Q, D2, R).
+roll.edge([P0, [F, O, L]], [Q, D], [R, D2]) :-
+    roll.seed([P0, [F, O, L]], _), bend(Q, D, D2, F), run.rest($U(), Q, D2, R).
 
 // Where the ink from wall cell P0 lands: a rest with no bend to follow.
 .decl landing(p_wall: Position, p: Position, ch: Choice)
-landing(P0, Q, [F, O, L]) :- rest(P0, Q, D, [F, O, L]), !bend(Q, D, _, F).
+landing(P0, Q, [F, O, L]) :- roll.distance([P0, [F, O, L]], [Q, D], _), !bend(Q, D, _, F).
 
 out(P, Col, [F, O, L]) :- inlet(L, P, O), follow_choice(F), params.bg(Col).
 out(P, Col, [F, O, L]) :- landing(P0, P, [F, O, L]), wall(L, P0, Col).

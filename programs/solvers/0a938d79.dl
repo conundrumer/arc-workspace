@@ -2,8 +2,8 @@
 // @keywords: markers lines walk
 // output: Two marks sit on edges of one axis, and each casts a line across
 //  the grid. The lines then repeat by the step from one mark to the other,
-//  colors alternating, until the walk leaves the grid; the strip before the
-//  leading line stays bg.
+//  colors alternating, so each mark's line recurs every two steps; the
+//  strip before the leading line stays bg.
 
 // which mark leads
 .type Choice =
@@ -45,6 +45,12 @@ step_axis(A2) :- axis_elem(A), !off_axis_edge(A), perp(A, A2).
 .decl cell_line(p: Position, p_line: Position)
 cell_line(P, P_line) :- in(P, _), step_axis(A2), split(P, A2, P_line, _).
 
+// Line q lies k lines ahead of line p toward d.
+.decl ahead(p: Position, d: Dir, q: Position, k: number)
+ahead(P, D, Q, K) :-
+    cell_line(_, P), cell_line(_, Q), step_axis(A2), axis_of(D, A2),
+    relative(P, Q, V), opposite(D, O), dist(V, O, K), K >= 0.
+
 .decl mark_line(p: Position, col: Color)
 mark_line(P_line, Col) :- mark(P, Col), cell_line(P, P_line).
 
@@ -64,23 +70,22 @@ lead(P_line, $Margin()) :-
     dist(P_line, D, K), dist_pair(Q, D, K2, K2_opp),     // distances from it
     K < K2, K < K2_opp.                                  // the empty strip at that side is the narrower
 
-// One step of the walk: the lead line to the other one.
-.decl step(ch: Choice, delta: Offset)
-step(Ch, Delta) :- lead(P, Ch), mark_line(Q, _), Q != P, relative(P, Q, Delta).
-
-// Each mark color paired with the other one.
-.decl other_col(col: Color, col2: Color)
-other_col(Col, Col2) :- mark_line(_, Col), mark_line(_, Col2), Col != Col2.
+// The walk's heading, from the lead line toward the other, and its step: the
+// gap between the two mark lines.
+.decl step(ch: Choice, d: Dir, k: number)
+step(Ch, D, K) :-
+    lead(P, Ch), mark_line(Q, _), Q != P,                 // the lead line and the other
+    ahead(P, D, Q, K), K > 0.                             // heading toward the other, the gap
 
 .decl impl_choice(ch: Choice)
 impl_choice($Corner()). impl_choice($Margin()).
 
+// Each mark line repeats every two steps ahead of itself, so the colors
+// alternate.
 .decl line(p: Position, col: Color, ch: Choice)
-line(P_line, Col, Ch) :- mark_line(P_line, Col), impl_choice(Ch).
-line(P2, Col2, Ch) :-
-    line(P, Col, Ch), step(Ch, Delta),          // one step along the repetition
-    compose(P, Delta, P2), cell_line(_, P2),    // still a line of the grid
-    other_col(Col, Col2).                       // the colors alternate
+line(P_line, Col, Ch) :-
+    mark_line(M, Col), step(Ch, D, K), ahead(M, D, P_line, T),    // a line ahead of a mark line
+    stride(T, K, K, _, 0).                                        // a whole number of two-step periods
 
 out(P, Col, Ch) :- cell_line(P, P_line), line(P_line, Col, Ch).
 out(P, Col, Ch) :-

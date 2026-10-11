@@ -38,15 +38,21 @@ placement(Delta) :-
     ink_cell(P), params.sym(D), apply(D, P, P_turn),  // an ink cell, turned
     ink_cell(Q), relative(P_turn, Q, Delta).          // onto another ink cell
 
-// The placed turn, and the cells it reaches from the ink. Cells off the grid
-// stay in.
+// One application of the placed turn: turned, then placed.
+.decl placed_turn(delta: Offset, p: Position, q: Position) inline
+placed_turn(Delta, P, Q) :- params.sym(D), apply(D, P, P_turn), compose(P_turn, Delta, Q).
+
+// The placed turn's orbit of the ink: each ink cell under each power of the
+// turn, up to the three that a D4 element of order four needs. Cells off the
+// grid stay in.
 .decl orbit(delta: Offset, p: Position)
-.decl turn_step(delta: Offset, p: Position, q: Position)
-orbit(Delta, P) :- placement(Delta), ink_cell(P).
-turn_step(Delta, P, Q) :-
-    orbit(Delta, P),                                                 // a cell in play
-    params.sym(D), apply(D, P, P_turn), compose(P_turn, Delta, Q).   // turned, then placed
-orbit(Delta, Q) :- turn_step(Delta, _, Q).
+orbit(Delta, Q) :-
+    placement(Delta), ink_cell(P),
+    ( Q = P
+    ; placed_turn(Delta, P, Q)
+    ; placed_turn(Delta, P, Q1), placed_turn(Delta, Q1, Q)
+    ; placed_turn(Delta, P, Q1), placed_turn(Delta, Q1, Q2), placed_turn(Delta, Q2, Q)
+    ).
 
 // A cell the turn adds that the input does not hold.
 .decl restored(p: Position, ch: Choice)
@@ -68,7 +74,7 @@ restored(P, $Complete()) :-
 // --- $Copy ---
 
 .decl copy_cell(delta: Offset, p: Position)
-copy_cell(Delta, Q) :- turn_step(Delta, P, Q), ink_cell(P).
+copy_cell(Delta, Q) :- placement(Delta), ink_cell(P), placed_turn(Delta, P, Q).
 
 .init fittest = Mode<Unit, Offset, Position>
 fittest.item($U(), Delta, P) :- copy_cell(Delta, P), ink_cell(P).

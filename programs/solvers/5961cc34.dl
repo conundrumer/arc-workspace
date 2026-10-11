@@ -75,25 +75,26 @@ feeds(Id, Id2) :- beam.stop(_, P, _, _, P_port), obj(P_port, Id), obj(P, Id2).
 
 // --- the current ---
 
-.decl live(id: Ident, ch: Choice)
-live(Id2, Ch) :- live(Id, Ch), feeds(Id, Id2).   // it carries on down the beam
+// The objects it reaches from the source, carrying on down the beams.
+.init live = GraphDistance<Choice, Ident>
+live.edge(Ch, Id, Id2) :- impl_choice(Ch), feeds(Id, Id2).
 
 // --- $Lit ---
-live(Id, $Lit()) :- obj(P, Id), in(P, Col), params.lit(Col).
+live.seed($Lit(), Id) :- obj(P, Id), in(P, Col), params.lit(Col).
 
 // --- $Marked ---
-live(Id, $Marked()) :- obj(P, Id), in(P, Col), params.source(Col).
+live.seed($Marked(), Id) :- obj(P, Id), in(P, Col), params.source(Col).
 
 // --- $Rim ---
-live(Id, $Rim()) :- obj(P, Id), dir_elem(D), dist(P, D, 0).
+live.seed($Rim(), Id) :- obj(P, Id), dir_elem(D), dist(P, D, 0).
 
 // --- output ---
 
 .decl lit_cell(p: Position, ch: Choice)
 lit_cell(P, Ch) :-
-    live(Id, Ch), obj(P_obj, Id),        // a cell of a live object
-    ( P = P_obj                          // the object's own cell
-    ; beam.clear(_, P, _, _, P_obj)      // the field a beam from it crosses
+    live.distance(Ch, Id, _), obj(P_obj, Id),  // a cell of a live object
+    ( P = P_obj                                // the object's own cell
+    ; beam.clear(_, P, _, _, P_obj)            // the field a beam from it crosses
     ).
 
 out(P, Col, Ch) :- lit_cell(P, Ch), params.lit(Col).

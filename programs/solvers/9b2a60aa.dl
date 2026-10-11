@@ -34,6 +34,12 @@
 // the walk's reach crossed with the copy's precedence over input ink
 .type Choice = [w: Walk, o: Precedence]
 
+// A walk from the shape's marker, and its direction.
+.type Lane = [w: Walk, d: Dir]
+
+// A cell of the marker line, and how far into its slot the walk has come.
+.type Spot = [p: Position, i: number]
+
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
@@ -63,15 +69,39 @@ own_marker(P) :- marker(P), in(P, Col), shape(Q), in(Q, Col).
 .decl walk_choice(w: Walk)
 walk_choice($Line()). walk_choice($FourDir()).
 
-// The walk toward d from the shape's marker; each Walk branch supplies its
-// base. Box b is the shape's box moved along the walk to begin at cell p's
-// slot.
+// The walks from the shape's marker; each Walk branch supplies them.
+.decl walk_start(w: Walk, d: Dir, p: Position)
+
+// How far into the shape's extent along d a cell of the shape's box lies,
+// and how far the next cell toward d lies.
+.decl inner_step(d: Dir, i: number, i2: number)
+inner_step(D, I, I2) :-
+    shape_box.box($U(), B), in(C, _), crop(C, B, C_rel),
+    neighbor(C, D, C2), crop(C2, B, C2_rel),
+    opposite(D, O), dist(C_rel, O, I), dist(C2_rel, O, I2).
+
+// The far end of the shape's extent along d.
+.decl inner_end(d: Dir, i: number)
+inner_end(D, I) :-
+    shape_box.box($U(), B), in(C, _), crop(C, B, C_rel),
+    dir_elem(D), opposite(D, O), dist(C_rel, O, I), !inner_step(D, I, _).
+
+// The walk unrolls the marker line: a marker spans the shape's extent along
+// the line, and a gap cell spans one cell.
+// @claim slots
+.init unroll = GraphDistance<Lane, Spot>
+unroll.seed([W, D], [P, 0]) :- walk_start(W, D, P).
+unroll.edge([W, D], [P, I], [P, I2]) :- walk_start(W, D, _), marker(P), inner_step(D, I, I2).
+unroll.edge([W, D], [P, I], [Q, 0]) :-
+    walk_start(W, D, _), neighbor(P, D, Q), in(Q, _),
+    ( marker(P), inner_end(D, I)                // past a marker's full slot
+    ; in(P, _), !marker(P), I = 0 ).            // past a gap cell
+
+// Box b is the shape's box moved along the walk toward d to begin at cell
+// p's slot.
 .decl slot(w: Walk, d: Dir, p: Position, b: Box)
-slot(W, D, Q, B2) :-
-    slot(W, D, P, B), neighbor(P, D, Q), in(Q, _),
-    ( marker(P),                                              // a marker takes a full slot
-      axis_of(D, A), box_extent(B, Q, A, K), jump(B, D, K, B2)
-    ; !marker(P), neighbor(B, D, B2) ).                       // a gap cell takes one cell
+slot(W, D, P, B2) :-
+    unroll.distance([W, D], [P, 0], N), shape_box.box($U(), B), jump(B, D, N, B2).
 
 // A cell of a marker's copy: the shape's cell at the same place in the
 // marker's slot, in the marker's color.
@@ -96,11 +126,11 @@ bent(A) :- marker(P), marker(Q), axis_elem(A), !aligned(A, P, Q).
 .decl line_axis(a: Axis)
 line_axis(A) :- axis_elem(A), !bent(A).
 
-slot($Line(), D, P, B) :- own_marker(P), line_axis(A), axis_of(D, A), shape_box.box($U(), B).
+walk_start($Line(), D, P) :- own_marker(P), line_axis(A), axis_of(D, A).
 
 // --- $FourDir ---
 
-slot($FourDir(), D, P, B) :- own_marker(P), dir_elem(D), shape_box.box($U(), B).
+walk_start($FourDir(), D, P) :- own_marker(P), dir_elem(D).
 
 // --- $Stamp ---
 

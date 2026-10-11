@@ -78,17 +78,22 @@ same_shape(A, B) :- cong.map([A, B], D), d4_inverse(D, D_back), cong.map([B, A],
 
 // --- the matrix ---
 
-// The color's row and its column, as tile lines on each axis. The list's
-// order carries over to the axis it runs along.
-.decl slot(col: Color, a: Axis, p: Position)
-slot(Col, A, P) :-
+// The color's tile line on the axis the list runs along: the list's order
+// carries over to it.
+.decl list_slot(col: Color, a: Axis, p: Position)
+list_slot(Col, A, P) :-
     order.pos($U(), Col, P_order), legend_axis(A),
     params.header_corner(Cn), diag_dirs(Cn, A, D, _),
     params.header(K), edge_inset(D, K, Delta), compose(P_order, Delta, P).
-slot(Col, A2, P2) :-
-    slot(Col, A, P), perp(A, A2),
-    params.header_corner(Cn), diag_axis_of(Cn, DA), diag_flip_of(DA, T),
-    apply(T, P, P2).                                // rows and columns transpose
+
+// The color's row and its column, as tile lines on each axis.
+.decl slot(col: Color, a: Axis, p: Position)
+slot(Col, A, P) :-
+    list_slot(Col, A0, P0),
+    ( A = A0, P = P0                                     // along the list
+    ; perp(A0, A), params.header_corner(Cn),             // rows and columns transpose
+      diag_axis_of(Cn, DA), diag_flip_of(DA, T), apply(T, P0, P)
+    ).
 
 .init tile_line = AxisFrame<Unit>
 tile_line.extent($U(), A, N) :- slot(_, A, P), axis_dim(P, A, N).

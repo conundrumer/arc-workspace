@@ -51,18 +51,26 @@ bar_cell(P_base, P) :- base(P_base), ( P = P_base ; rise.run($U(), P_base, _, P)
 
 // --- the topple chain ---
 
-.decl toppled(p_base: Position)
-toppled(P_base) :- base(P_base), in(P_base, Col), params.pusher(Col).
-toppled(P_base2) :-
-    landed(P, _), params.fall(D), neighbor(P, D, Q),    // a landed cell touches, in the fall direction,
-    bar_cell(P_base2, Q).                               // a cell of a standing bar
-
-// Where each cell of a toppled bar lands: turned about the bar's base.
-.decl landed(p: Position, col: Color)
-landed(P_out, Col) :-
-    toppled(P_base), bar_cell(P_base, P), in(P, Col),
+// Where each cell of a bar lands if the bar topples: turned about its base.
+.decl fallen(p_base: Position, p: Position, col: Color)
+fallen(P_base, P_out, Col) :-
+    bar_cell(P_base, P), in(P, Col),
     params.topple(S), rotation(S, R4),
     relative(P_base, P, V), apply(R4, V, V2), compose(P_base, V2, P_out).
+
+// The bars that topple: the pusher's bars, then each standing bar that a
+// toppled bar's landed cell touches in the fall direction.
+.init chain = GraphDistance<Unit, Position>
+chain.seed($U(), P_base) :- base(P_base), in(P_base, Col), params.pusher(Col).
+chain.edge($U(), P_base, P_base2) :-
+    fallen(P_base, P, _), params.fall(D), neighbor(P, D, Q),   // a landed cell touches, in the fall direction,
+    bar_cell(P_base2, Q).                                      // a cell of a standing bar
+
+.decl toppled(p_base: Position)
+toppled(P_base) :- chain.distance($U(), P_base, _).
+
+.decl landed(p: Position, col: Color)
+landed(P, Col) :- toppled(P_base), fallen(P_base, P, Col).
 
 .decl cleared(p: Position)
 cleared(P) :- toppled(P_base), bar_cell(P_base, P).

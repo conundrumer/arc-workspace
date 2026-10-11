@@ -25,6 +25,10 @@
     .decl shift_dist(k: number) shift_dist(1).
     // a quarter turn from shift_dir: the edge the anchor line lies nearest
     .decl anchor_sense(s: Sense) anchor_sense(SENSE_CC).
+
+    // --- $Sequence, $Stripes ---
+    // The lines alternate between two states, staying and shifting.
+    .decl alternation(n: number) alternation(2).
 }
 
 .init params = Params
@@ -40,9 +44,6 @@ anchor_dir(D_anchor) :- params.shift_dir(D), params.anchor_sense(S), turn(S, D, 
 .decl cell_split(p: Position, col: Color, p_line: Position, p_across: Position)
 cell_split(P, Col, Line, Across) :-
     in(P, Col), anchor_dir(D), axis_of(D, A), split(P, A, Line, Across).
-
-.decl line(p_line: Position)
-line(Line) :- cell_split(_, _, Line, _).
 
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !params.bg(Col).
@@ -69,18 +70,19 @@ shifts($Match(), Line) :-
 
 // --- $Sequence, $Stripes ---
 
-// L2 is one place further from the anchor edge than L, over the case's own
-// line set.
-.decl alt_next(ch: Choice, p_line: Position, p_line2: Position)
-alt_next($Sequence(), L, L2) :- lines.next($U(), L, L2).
-alt_next($Stripes(), L, L2) :-
-    line(L), anchor_dir(D), opposite(D, D_far), neighbor(L, D_far, L2), line(L2).
+// A line's place counted from the anchor edge, over the case's own line set:
+// its rank among the inked lines, or its distance to that edge.
+.decl place(ch: Choice, p_line: Position, k: number)
+place($Sequence(), L, K) :- lines.rank($U(), L, K).
+place($Stripes(), L, K) :- cell_split(_, _, L, _), anchor_dir(D), dist(L, D, K).
 
-// The alternation: the anchor line stays, and each step swaps side.
-.decl alt_stay(ch: Choice, p_line: Position)
-alt_stay(Ch, Line) :- anchor_line(Line), alt_next(Ch, _, _).   // the cases that alternate
-shifts(Ch, L2)     :- alt_stay(Ch, L), alt_next(Ch, L, L2).
-alt_stay(Ch, L2)   :- shifts(Ch, L), alt_next(Ch, L, L2).
+// The lines past the anchor line whose place is out of phase with the
+// anchor line's.
+shifts(Ch, L) :-
+    anchor_line(L_anc), anchor_dir(D), nearer(D, L_anc, L),        // past the anchor line
+    params.alternation(N),
+    place(Ch, L_anc, K_anc), stride(K_anc, N, 0, _, R_anc),        // the anchor's phase
+    place(Ch, L, K), stride(K, N, 0, _, R), R != R_anc.            // another phase
 
 // --- the shift ---
 

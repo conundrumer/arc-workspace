@@ -72,9 +72,13 @@ block_band($Runs(), A, Id, B) :- block(Id), region_line(Id, A, P_line), runs.lab
 overlap([Id, A], [Id2, A]) :-
     block(Id), block(Id2), region_line(Id, A, P_line), region_line(Id2, A, P_line).
 
+// The rectangles a chain of alignments reaches from each rectangle.
+.init aligned = GraphDistance<RegionAxis, RegionAxis>
+aligned.seed(X, X) :- overlap(X, X).
+aligned.edge(X, Y, Z) :- aligned.seed(X, _), overlap(Y, Z).
+
 .init cls = Canon<RegionAxis>
-cls.equiv(X, Y) :- overlap(X, Y).
-cls.equiv(X, Z) :- cls.equiv(X, Y), overlap(Y, Z).
+cls.equiv(X, Y) :- aligned.distance(X, Y, _).
 
 block_band($Overlap(), A, Id, B) :- cls.id([Id, A], B).
 

@@ -27,13 +27,20 @@ shape_box.cell(Id, P) :- shapes.label($U(), P, Id).
 .decl target(p: Position, p2: Position)
 target(P, P2) :- ink(P, _), params.dir(D), neighbor(P, D, P2).
 
+// A cell is stuck when the unbroken run of ink ahead of it reaches its
+// shape's leading edge: a cast back from each leading-edge cell through ink.
 // A landing site adjacent to its source is in the source's own shape, so
 // the pile-up needs no shape key.
-.decl stuck(p: Position)
-stuck(P) :-
+.init pile = Ray<Unit>
+pile.dir($U(), D2) :- params.dir(D), opposite(D, D2).
+pile.cell($U(), P) :- ink(P, _).
+pile.mark($U(), P) :-
     shapes.label($U(), P, Id), shape_box.box(Id, B),  // a shape cell, with its shape's box
     params.dir(D), box_edge(P, B, D).                 // on the box's leading edge
-stuck(P) :- target(P, P2), stuck(P2).
+pile.blocked($U(), P) :- in(P, Col), params.bg(Col).
+
+.decl stuck(p: Position)
+stuck(P) :- pile.clear($U(), P, _, _, _).
 
 .decl slid(p: Position, col: Color)
 slid(P, Col)  :- ink(P, Col), stuck(P).

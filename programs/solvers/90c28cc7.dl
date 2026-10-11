@@ -52,10 +52,14 @@ uncut([Ch, A, L], [Ch, A, L2]) :-
     axis_of(D, A), neighbor(L, D, L2),
     !differ(A, L, L2, Ch).
 
+// The lines each line reaches through uncut neighbors, keyed by that line.
+.init run = GraphDistance<Line, Line>
+run.seed([Ch, A, L], [Ch, A, L]) :- line(A, L, Ch).
+run.edge([Ch, A, L], [Ch, A, L2], Z) :- line(A, L, Ch), uncut([Ch, A, L2], Z).
+
 // A band is a run of lines that no boundary cuts.
 .init bands = Canon<Line>
-bands.equiv([Ch, A, L], [Ch, A, L]) :- line(A, L, Ch).
-bands.equiv(X, Z) :- bands.equiv(X, Y), uncut(Y, Z).
+bands.equiv(X, Z) :- run.distance(X, Z, _).
 
 // One output line per band. Band line sets are disjoint runs, as OrderFrame
 // assumes.

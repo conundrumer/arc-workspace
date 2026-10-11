@@ -46,27 +46,31 @@ seated(P_out, Col) :-
     same_dist(D_adv, P_in, P_out),                       // aligned along the line
     opposite(D_stack, D_seed), dist(P_out, D_seed, 0).   // on the seed edge
 
+// Each seated cell casts toward params.diag.
+.init rays = Ray<Unit>
+rays.dir($U(), D)  :- params.diag(D).
+rays.cell($U(), P) :- frame.cell($U(), P).
+rays.mark($U(), P) :- seated(P, _).
+
 // --- $Grow ---
 
+// Ink spreads down the stack from each cell of an ink cell's diagonal cast:
+// a step down the stack or toward the corner per row.
+.decl ink_cast(p: Position, col: Color)
+ink_cast(P, Col) :- rays.ray($U(), P, _, _, Q), seated(Q, Col), !params.bg(Col).
+
+.init fall = Ray<Unit>
+fall.dir($U(), D_stack) :- params.diag(Diag), long_axis(A), diag_dirs(Diag, A, _, D_stack).
+fall.cell($U(), P) :- frame.cell($U(), P).
+fall.mark($U(), P) :- ink_cast(P, _).
+
 .decl grown(p: Position, col: Color)
-grown(P, Col) :- seated(P, Col), !params.bg(Col).
-grown(P2, Col) :-
-    grown(P1, Col), params.diag(Diag),
-    ( long_axis(A), diag_dirs(Diag, A, _, D_stack),
-      neighbor(P1, D_stack, P2)                       // down the stack
-    ; neighbor(P1, Diag, P2)                          // toward the corner
-    ),
-    frame.cell($U(), P2).
+grown(P, Col) :- fall.ray($U(), P, _, _, Q), ink_cast(Q, Col).
 
 out(P, Col, $Grow()) :- grown(P, Col).
 out(P, Col, $Grow()) :- frame.cell($U(), P), !grown(P, _), params.bg(Col).
 
 // --- $Slide ---
-
-.init rays = Ray<Unit>
-rays.dir($U(), D)  :- params.diag(D).
-rays.cell($U(), P) :- frame.cell($U(), P).
-rays.mark($U(), P) :- seated(P, _).
 
 // The color at the run's anchored end — the corner the slide leaves.
 .decl anchor_color(col: Color)

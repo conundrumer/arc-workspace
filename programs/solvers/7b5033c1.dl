@@ -37,19 +37,10 @@ end(P) :- link(P, _), !fork(P).
 .decl head(d: Dir, p: Position)
 head(D, P) :- params.line_axis(A), axis_of(D, A), end(P), end(Q), nearer(D, P, Q).
 
-// The walk from the head: each step takes the neighbor it did not come from.
-.decl step(d: Dir, p: Position, q: Position)
-step(D, P, Q) :- head(D, P), link(P, Q).
-step(D, Q, R) :- step(D, P, Q), link(Q, R), R != P.
-
-// Q lies beyond P along the walk.
-.decl before(d: Dir, p: Position, q: Position)
-before(D, P, Q) :- step(D, P, Q).
-before(D, P, R) :- before(D, P, Q), step(D, Q, R).
-
-.init path = Order<Dir, Position>
-path.elem(D, P) :- head(D, _), ink(P).
-path.before(D, P, Q) :- before(D, P, Q).
+// Each path cell's place along the walk from the head: its hop count.
+.init path = GraphDistance<Dir, Position>
+path.edge(D, P, Q) :- head(D, _), link(P, Q).
+path.seed(D, P) :- head(D, P).
 
 // The output line: one cell per path cell.
 .init total = Tally<Unit, Position>
@@ -59,5 +50,5 @@ total.item($U(), P) :- ink(P).
 line.extent($U(), A, N) :- params.line_axis(A), total.tally($U(), N).
 
 out(P_out, Col) :-
-    path.rank(D, P, K), in(P, Col),           // k-th path cell from the head at edge D
+    path.distance(D, P, K), in(P, Col),       // k-th path cell from the head at edge D
     line.cell($U(), _, P_out), dist(P_out, D, K).  // k from edge D of the line

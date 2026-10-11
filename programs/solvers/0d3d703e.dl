@@ -1,17 +1,20 @@
 // 0d3d703e
 // @keywords: mapping
-// output: Color swap via a symmetric mapping relation. The mapping is declared
-//  one-direction per pair and closed under symmetry by a rule.
+// output: Color swap. Each swap pair is stored once, and the mapping takes
+//  each pair in both directions.
 
 .decl out(p: Position, col: Color)
 
 .comp Params {
+    // the color pairs that trade places
+    .decl swap(c1: Color, c2: Color)
+    swap(1, 5).
+    swap(2, 6).
+    swap(3, 4).
+    swap(8, 9).
+
     .decl mapping(c_from: Color, c_to: Color)
-    mapping(B, A) :- mapping(A, B).   // symmetric closure
-    mapping(1, 5).
-    mapping(2, 6).
-    mapping(3, 4).
-    mapping(8, 9).
+    mapping(A, B) :- ( swap(A, B) ; swap(B, A) ).
 }
 
 .init params = Params

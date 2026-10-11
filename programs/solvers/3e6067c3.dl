@@ -98,16 +98,22 @@ names(L, Id) :- seq_cell(L), in(L, Col), label_color(Id, Col).
 
 // --- the walk ---
 
+// A slot of the sequence and a box it names.
+.type Stop = [l: Position, id: Ident]
+
 // A box a slot may stand on.
 .decl cand(l: Position, id: Ident, ch: Choice)
 
-// A box the walk stands on at L, having come from the sequence's start.
+// The boxes the walk stands on, having come from the sequence's start: each
+// hop crosses a corridor to a box the next slot may stand on.
+.init walk = GraphDistance<Choice, Stop>
+walk.seed(Ch, [L, Id]) :- cand(L, Id, Ch), seq.first($U(), L).
+walk.edge(Ch, [L2, Id2], [L, Id]) :-
+    cand(L2, Id2, Ch), seq.next($U(), L2, L), cand(L, Id, Ch), joined(Id2, Id).
+
+// A box the walk stands on at L.
 .decl at(l: Position, id: Ident, ch: Choice)
-at(L, Id, Ch) :-
-    cand(L, Id, Ch),
-    ( seq.first($U(), L)                                            // the sequence starts here
-    ; seq.next($U(), L2, L), at(L2, Id2, Ch), joined(Id2, Id)       // a corridor arrives
-    ).
+at(L, Id, Ch) :- walk.distance(Ch, [L, Id], _).
 
 // --- output ---
 
@@ -122,12 +128,15 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !fill(P, _, Ch).
 
 // --- $Route ---
 
-// The rest of the sequence is still walkable from the box.
-cand(L, Id, $Route()) :-
-    names(L, Id),
-    ( seq.last($U(), L)                                                   // the sequence ends here
-    ; seq.next($U(), L, L2), cand(L2, Id2, $Route()), joined(Id, Id2)     // a corridor carries on
-    ).
+// The rest of the sequence is still walkable from the box: walked back from
+// the sequence's end, each hop crosses a corridor to a box the slot before
+// names.
+.init route = GraphDistance<Unit, Stop>
+route.seed($U(), [L, Id]) :- names(L, Id), seq.last($U(), L).
+route.edge($U(), [L2, Id2], [L, Id]) :-
+    names(L2, Id2), seq.next($U(), L, L2), names(L, Id), joined(Id, Id2).
+
+cand(L, Id, $Route()) :- route.distance($U(), [L, Id], _).
 
 // --- $Walk ---
 

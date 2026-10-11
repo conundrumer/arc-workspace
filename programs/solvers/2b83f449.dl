@@ -86,9 +86,10 @@ drop(P, P_land) :-
 // --- the walk ---
 
 // A dot enters a run at one end and drops through a gap at the far end.
-.decl arrive(src: Position, p: Position)
-arrive(P, P) :- in(P, Col), params.dot(Col).
-arrive(Src, P_land) :- arrive(Src, P), far_end(P, Q), drop(Q, P_land).
+// The run ends a dot arrives at, keyed by the dot.
+.init arrive = GraphDistance<Position, Position>
+arrive.seed(P, P) :- in(P, Col), params.dot(Col).
+arrive.edge(Src, P, P_land) :- arrive.seed(Src, _), far_end(P, Q), drop(Q, P_land).
 
 .decl post_side(p: Position, d: Dir)
 post_side(P, D) :- open_cell(P), across_dir(D), neighbor(P, D, Q), post_cell(Q).
@@ -100,7 +101,7 @@ backed(P) :- run_end(P, D), !post_side(P, D).
 
 .decl rest_at(src: Position, p: Position)
 rest_at(Src, T) :-
-    arrive(Src, P), far_end(P, Q), !drop(Q, _),   // nowhere left to drop
+    arrive.distance(Src, P, _), far_end(P, Q), !drop(Q, _),   // nowhere left to drop
     ( backed(P), T = P                            // pressed where it landed
     ; !backed(P), T = Q                           // pressed at the far end
     ).

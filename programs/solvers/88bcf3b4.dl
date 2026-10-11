@@ -111,13 +111,6 @@ toward(P, G, D8) :-
     ; dir_elem(D2), nearer(D2, G, P), diag_dirs(D8, _, D, D2)
     ).
 
-// The walk's legs: at p, heading for contour cell g. The first goal is the
-// contour's first cell, and a reached goal hands over to the next.
-.decl leg(w: Ident, p: Position, g: Position)
-leg(W, Root, G) :- worm(W, _, Root, _), contour(W, G), !next(W, _, G).
-leg(W, G, G2) :- leg(W, G, G), next(W, G, G2).
-leg(W, Q, G) :- leg(W, P, G), P != G, step(W, P, Q).
-
 // Past the last contour cell the walk leaves, along the heading and back
 // toward the pole's line.
 .decl depart(w: Ident, d: DiagDir)
@@ -125,28 +118,38 @@ depart(W, Diag) :-
     worm(W, Pole, _, S), heading(Pole, T), opposite(S, S_back),
     diag_dirs(Diag, _, T, S_back).
 
-.decl free(w: Ident, p: Position)
-free(W, G) :- leg(W, G, G), !next(W, G, _).
-free(W, Q) :- free(W, P), step(W, P, Q).
+// A state of the walk: at p, heading for contour cell g. A state whose goal
+// is its own cell has no goal left, and the walk leaves.
+.type WalkState = [p: Position, g: Position]
 
-// Each step of the walk: toward the leg's goal, or away.
-.decl step(w: Ident, p: Position, q: Position)
-step(W, P, Q) :- leg(W, P, G), P != G, toward(P, G, D), neighbor(P, D, Q).
-step(W, P, Q) :- free(W, P), depart(W, D), neighbor(P, D, Q), in(Q, _).
+// The state on reaching goal g: the next contour cell becomes the goal, and
+// past the last one the walk leaves.
+.decl arrive(w: Ident, g: Position, s: WalkState)
+arrive(W, G, S) :-
+    contour(W, G),
+    ( next(W, G, G2), S = [G, G2]   // the next goal
+    ; !next(W, G, _), S = [G, G]    // no goal left
+    ).
 
-// The walk's cells, ranked by their place along it.
-.decl before(w: Ident, p: Position, q: Position)
-before(W, P, Q) :- step(W, P, Q).
-before(W, P, R) :- before(W, P, Q), step(W, Q, R).
-
-.init walk = Order<Ident, Position>
-walk.elem(W, P) :- worm(W, _, P, _).
-walk.elem(W, Q) :- step(W, _, Q).
-walk.before(W, P, Q) :- before(W, P, Q).
+// The walk: from the root, the first goal is the contour's first cell; each
+// step heads toward the goal, and once no goal is left, away.
+.init walk = GraphDistance<Ident, WalkState>
+walk.seed(W, S) :-
+    worm(W, _, Root, _), contour(W, G), !next(W, _, G),  // the first goal
+    ( Root != G, S = [Root, G]
+    ; Root = G, arrive(W, G, S)
+    ).
+walk.edge(W, [P, G], S) :-
+    in(P, _), contour(W, G), P != G, toward(P, G, D), neighbor(P, D, Q),  // a step toward the goal
+    ( Q != G, S = [Q, G]
+    ; Q = G, arrive(W, G, S)
+    ).
+walk.edge(W, [P, P], [Q, Q]) :-
+    in(P, _), depart(W, D), neighbor(P, D, Q), in(Q, _).                  // a step away
 
 // The worm's new body: the walk's first cells, as many as the worm has.
 .decl body(w: Ident, p: Position)
-body(W, P) :- walk.rank(W, P, R), size.tally(W, N), R < N.
+body(W, P) :- walk.distance(W, [P, _], R), size.tally(W, N), R < N.
 
 // --- output ---
 

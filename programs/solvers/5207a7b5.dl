@@ -29,14 +29,6 @@
     // The edge the bar hangs from: back along the slant's own axis.
     .decl base(d: Dir)
     base(B) :- slant_dir(Dg), rise_axis(A), diag_dirs(Dg, A, D, _), opposite(D, B).
-
-    // The slant's step, and its inverse: one line runs both ways.
-    .decl slant(v: Offset)
-    slant(V) :-
-        slant_dir(Dg), rise_axis(A), diag_dirs(Dg, A, D, D_side),
-        rise(K), jump_offset(D, K, V_along), step_offset(D_side, V_across),
-        compose(V_along, V_across, V).
-    slant(V2) :- slant(V), relative(V, ZERO, V2).
 }
 
 .init params = Params
@@ -44,12 +36,24 @@
 .decl bar_cell(p: Position)
 bar_cell(P) :- in(P, Col), params.bar(Col).
 
+// P lies on the slant through a bar cell: J columns across toward one side,
+// and rise times J cells along toward that side's end of the slant.
+.decl on_slant(p: Position)
+on_slant(P) :-
+    bar_cell(Q), in(P, _), relative(Q, P, R),
+    params.slant_dir(Dg), params.rise_axis(A), diag_dirs(Dg, A, D, D_side),
+    ( D1 = D, D2 = D_side                                // toward the slant's corner
+    ; opposite(D, D1), opposite(D_side, D2) ),           // or away from it
+    opposite(D1, O1), dist(R, O1, T),                    // T cells along toward D1
+    opposite(D2, O2), dist(R, O2, J),                    // J columns across toward D2
+    params.rise(K), stride(T, K, 0, J, 0).               // T is rise times J
+
+// A cell of the slant, and every cell back toward the base edge from it.
 .decl region(p: Position)
-region(P) :- bar_cell(P).
-region(Q) :-
-    region(P), in(Q, _),
-    ( params.slant(V), compose(P, V, Q)      // one column across, at the slant
-    ; params.base(B), neighbor(P, B, Q) ).   // one cell back toward the base edge
+region(P) :-
+    on_slant(Q), in(P, _),
+    ( P = Q
+    ; params.rise_axis(A), same_line(A, P, Q), params.base(B), nearer(B, P, Q) ).
 
 out(P, Col) :-
     region(P), bar_cell(Q),

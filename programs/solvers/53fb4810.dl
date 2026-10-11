@@ -4,7 +4,7 @@
 // input: each band of cells that are neither background nor anchor color
 //  rests against an anchor
 // output: The band's pattern continues away from that anchor to the frame
-//  edge, one period at a step, and covers whatever it lands on. Coincide on
+//  edge, each cell recurring every period, and covers whatever it lands on. Coincide on
 //  every pair: each continuing band's shortest period is its extent, and
 //  each band that shows a shorter one reaches the frame edge on its growth
 //  side, so it continues under neither case.
@@ -44,12 +44,14 @@ grow_axis(Id, A) :- grow_dir(Id, D), axis_of(D, A).
 
 .decl period(id: Ident, k: number, ch: Choice)
 
-// The band's pattern carried onward, a period at a step.
+// The band's pattern carried onward: each band cell recurs at every whole
+// period ahead of itself.
 .decl pattern(id: Ident, p: Position, col: Color, ch: Choice)
-pattern(Id, P, Col, Ch) :- bands.label($U(), P, Id), in(P, Col), impl_choice(Ch).
 pattern(Id, Q, Col, Ch) :-
-    pattern(Id, P, Col, Ch), grow_dir(Id, D), period(Id, K, Ch),
-    jump(P, D, K, Q), in(Q, _).
+    bands.label($U(), P, Id), in(P, Col), grow_dir(Id, D), period(Id, K, Ch),
+    in(Q, _), axis_of(D, A), same_line(A, P, Q),                 // a cell on its line
+    relative(P, Q, V), opposite(D, O), dist(V, O, T),            // how far ahead
+    stride(T, K, 0, _, 0).                                       // a whole number of periods
 
 // What the continuation covers, past the band itself.
 .decl beyond(p: Position, col: Color, ch: Choice)

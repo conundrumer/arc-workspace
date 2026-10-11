@@ -40,6 +40,10 @@
 
     .decl tf(t: D4)
     tf(D4_LR).
+
+    // --- $Alt ---
+    // The bands cycle through two states, plain and flipped.
+    .decl band_cycle(n: number) band_cycle(2).
 }
 
 .init params = Params
@@ -51,22 +55,16 @@ out(P_grid, Col, $Lookup()) :-
     concat_2d(P_tile, P_intile, 0, P_grid).                   // recompose
 
 // --- $Alt ---
-.decl band_step(p_tile: Position, p_tile2: Position)
-band_step(T, T2) :-
-    params.anchor(D), opposite(D, O),
-    params.arr_pos(T), neighbor(T, O, T2), params.arr_pos(T2).
-
-// Bands alternate plain and flipped, plain at the anchor edge.
+// The plain bands: alternate bands, plain at the anchor edge.
 .decl plain_tile(p_tile: Position)
-.decl flip_tile(p_tile: Position)
-plain_tile(T)  :- params.arr_pos(T), params.anchor(D), dist(T, D, 0).
-flip_tile(T2)  :- plain_tile(T), band_step(T, T2).
-plain_tile(T2) :- flip_tile(T), band_step(T, T2).
+plain_tile(T) :-
+    params.arr_pos(T), params.anchor(D), dist(T, D, K),
+    params.band_cycle(N), stride(K, N, 0, _, 0).          // an even band from the anchor
 
 out(P_grid, Col, $Alt()) :-
     in(P_in, Col),                                           // input cell
     ( plain_tile(T), P_intile = P_in                         // plain band — as-is
-    ; flip_tile(T), params.tf(F), apply(F, P_in, P_intile)   // flipped band — transformed
+    ; params.arr_pos(T), !plain_tile(T), params.tf(F), apply(F, P_in, P_intile)   // flipped band — transformed
     ),
     concat_2d(T, P_intile, 0, P_grid).
 

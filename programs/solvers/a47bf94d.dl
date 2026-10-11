@@ -89,6 +89,12 @@
 // A visible wire end at a block, and the side the block lies on.
 .type End = [p: Position, e: Dir]
 
+// A wire's start: the join case and the port it leaves.
+.type WireStart = [j: Join, p0: Position]
+
+// A place along a wire: the cell and the heading.
+.type Walker = [p: Position, d: Dir]
+
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
@@ -259,22 +265,21 @@ lone(P, E, Id) :- occ_end(P, E, Q), blocks.label($U(), Q, Id), !across(P, E, _, 
 .decl join(j: Join, p: Position, e: Dir, p2: Position, e2: Dir)
 join(J, P, E, P2, E2) :- join_choice(J), across(P, E, P2, E2).
 
-// The wire from port P0 reaches P heading D.
-.decl walk(j: Join, p0: Position, p: Position, d: Dir)
-walk(J, P0, P0, D) :- join_choice(J), parse.port($U(), P0, D0), opposite(D0, D).
-walk(J, P0, Q, D2) :-
-    walk(J, P0, P, D),
-    ( parse.wire_link($U(), P, D), D2 = D                     // straight on
-    ; !parse.wire_link($U(), P, D), perp_dir(D, D2),          // a corner
-      parse.wire_link($U(), P, D2) ),
-    neighbor(P, D2, Q).
-walk(J, P0, P2, D2) :-
-    walk(J, P0, P, D), join(J, P, E, P2, E2), !opposite(D, E),
-    opposite(E2, D2).                                         // under a block
+// The wire from port P0, under join case J, reaches cell P heading D.
+// @claim trace
+.init walk = GraphDistance<WireStart, Walker>
+walk.seed([J, P0], [P0, D]) :- join_choice(J), parse.port($U(), P0, D0), opposite(D0, D).
+walk.edge([J, P0], [P, D], [Q, D2]) :-
+    join_choice(J), parse.port($U(), P0, _), parse.wire($U(), P), dir_elem(D),
+    ( parse.wire_link($U(), P, D), D2 = D, neighbor(P, D2, Q)      // straight on
+    ; !parse.wire_link($U(), P, D), perp_dir(D, D2),               // a corner
+      parse.wire_link($U(), P, D2), neighbor(P, D2, Q)
+    ; join(J, P, E, Q, E2), !opposite(D, E), opposite(E2, D2)      // under a block
+    ).
 
 // Port P0's wire ends at port P1.
 .decl partner(j: Join, p0: Position, p1: Position)
-partner(J, P0, P1) :- walk(J, P0, P1, D), parse.port($U(), P1, D), P0 != P1.
+partner(J, P0, P1) :- walk.distance([J, P0], [P1, D], _), parse.port($U(), P1, D), P0 != P1.
 
 // The grid stays as it is.
 .decl unchanged(g: Grouping)

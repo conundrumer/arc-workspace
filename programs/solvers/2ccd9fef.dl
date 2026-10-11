@@ -248,14 +248,20 @@ turned.item([L, Pan, Col], Col2) :-
     next_stage(L, Pan, Pan2), fig(L, Pan, P_intile, Col), fig(L, Pan2, P_intile, Col2),
     shifting(L, Col), shifting(L, Col2).
 
-// Stage pan shows the first stage's color x as col.
-.decl hue(l: Layout, pan: Position, x: Color, col: Color)
-hue(L, Pan, X, X) :- stage_color(L, Pan, X), !next_stage(L, _, Pan).
-hue(L, Pan2, X, Col2) :-
-    hue(L, Pan, X, Col), next_stage(L, Pan, Pan2),
+// A first-stage color x, followed stage by stage: a shifting color turns,
+// and any other color keeps itself.
+// @claim color-cycle
+.init hue_walk = GraphDistance<StageColor, StageColor>
+hue_walk.seed([L, Pan, X], [L, Pan, X]) :- stage_color(L, Pan, X), !next_stage(L, _, Pan).
+hue_walk.edge([L, Pan0, X], [L, Pan, Col], [L, Pan2, Col2]) :-
+    hue_walk.seed([L, Pan0, X], _), next_stage(L, Pan, Pan2), stage_color(L, _, Col),
     ( shifting(L, Col), turned.value([L, Pan, Col], Col2)
     ; !shifting(L, Col), Col2 = Col
     ).
+
+// Stage pan shows the first stage's color x as col.
+.decl hue(l: Layout, pan: Position, x: Color, col: Color)
+hue(L, Pan, X, Col) :- hue_walk.distance([L, _, X], [L, Pan, Col], _).
 
 // --- $ReadPeriod ---
 
@@ -319,11 +325,18 @@ rank_split(L, Pan, F, Pan2, F2) :-
     rank_pair(L, Pan, F, Pan2, F2),
     figure_rank(L, Pan, F, Dg, A, R), figure_rank(L, Pan2, F2, Dg, A, R2), R != R2.
 
+// A first-stage figure, followed stage by stage through the figures every
+// order ranks alike.
+// @claim slices
+.init figure_walk = GraphDistance<StageFigure, StageFigure>
+figure_walk.seed([L, Pan, F], [L, Pan, F]) :- figure.label([L, Pan], _, F), !next_stage(L, _, Pan).
+figure_walk.edge([L, Pan0, F0], [L, Pan, F], [L, Pan2, F2]) :-
+    figure_walk.seed([L, Pan0, F0], _),
+    rank_pair(L, Pan, F, Pan2, F2), !rank_split(L, Pan, F, Pan2, F2).
+
 // Figure f of stage pan continues figure f0 of the first stage.
 .decl track(l: Layout, pan: Position, f: Ident, f0: Ident)
-track(L, Pan, F, F) :- figure.label([L, Pan], _, F), !next_stage(L, _, Pan).
-track(L, Pan2, F2, F0) :-
-    track(L, Pan, F, F0), rank_pair(L, Pan, F, Pan2, F2), !rank_split(L, Pan, F, Pan2, F2).
+track(L, Pan, F, F0) :- figure_walk.distance([L, _, F0], [L, Pan, F], _).
 
 // The stages' figures do not continue one another one to one.
 .decl unmatched(l: Layout)
@@ -443,9 +456,10 @@ slice_member(L, Pa, F, D, Pan, J, Across, X) :-
 .decl slice_diff(l: Layout, pa: FigureParse, f: Ident, d: Dir, pan: Position, j: number,
                  pan2: Position, j2: number)
 slice_diff(L, Pa, F, D, Pan, J, Pan2, J2) :-
-    slice_member(L, Pa, F, D, Pan, J, Across, X), slice_line(L, Pa, F, D, Pan2, J2, _, _),
-    !slice_member(L, Pa, F, D, Pan2, J2, Across, X).
-slice_diff(L, Pa, F, D, Pan2, J2, Pan, J) :- slice_diff(L, Pa, F, D, Pan, J, Pan2, J2).
+    ( slice_member(L, Pa, F, D, Pan, J, Across, X), slice_line(L, Pa, F, D, Pan2, J2, _, _),
+      !slice_member(L, Pa, F, D, Pan2, J2, Across, X)       // the first line holds more
+    ; slice_member(L, Pa, F, D, Pan2, J2, Across, X), slice_line(L, Pa, F, D, Pan, J, _, _),
+      !slice_member(L, Pa, F, D, Pan, J, Across, X) ).      // the second line holds more
 
 // The figure's box in stage pan, on the growth axis, and its length.
 .decl extent(l: Layout, pa: FigureParse, f: Ident, d: Dir, pan: Position, b_along: Box,
@@ -797,6 +811,8 @@ run_paint($Runs($Velocity(M)), Q, Col) :-
 .type RunKey = [d: Dir, l: Position, r: number]
 .type EndSteps = [vn: Offset, vf: Offset]
 .type PanelCell = [pan: Position, p: Position]
+.type Hued = [p: Position, col: Color]
+.type RunId = [pan: Position, d: Dir, s: Position]
 
 // The step each end of a run takes, the same over every step of the input.
 // @claim growth
@@ -853,11 +869,13 @@ rule_paint($Drag(), Pan, Q, Col) :-
     ).
 
 // The $Stay rule.
-// A color of stage j, as stage k shows it: turned once per step between them.
-.decl phase(j: Position, k: Position, c: Color, c2: Color)
-phase(J, J, C, C) :- content(J, _, C).
-phase(J, K, C, C2) :-
-    phase(J, K1, C, C1),
+// A color of stage j, as each stage shows it: turned once per step between
+// them.
+// @claim growth
+.init phase = GraphDistance<Hued, Hued>
+phase.seed([J, C], [J, C]) :- content(J, _, C).
+phase.edge([J, C], [K1, C1], [K, C2]) :-
+    phase.seed([J, C], _),
     ( succ_stage(K1, K), recolor(C1, C2)      // a step on
     ; succ_stage(K, K1), recolor(C2, C1) ).   // a step back
 
@@ -867,20 +885,25 @@ phase(J, K, C, C2) :-
 .init recall = Unanimous<PanelCell, Color>
 recall.item([Pan, Q], Col2) :-
     content(J, Q, C), stage_panel(Pan), !succ_stage(Pan, J),
-    phase(J, Pan, C, C1), recolor(C1, Col2).
+    phase.distance([J, C], [Pan, C1], _), recolor(C1, Col2).
 
 .decl stay(pan: Position, d: Dir, s: Position, q: Position, col: Color)
 stay(Pan, D, S, Q, Col) :-
     next_cell(Pan, D, S, Q),
     ( run_cell(Pan, D, S, Q), content(Pan, Q, Col0), recolor(Col0, Col)   // a cell the run holds
     ; !run_cell(Pan, D, S, Q), recall.value([Pan, Q], Col) ).            // a cell the run gains
-stay(Pan, D, S, Q, Col) :-
-    stay(Pan, D, S, Q1, Col),
+
+// A gained cell no stage shows repeats the cell one moving step back.
+// @claim growth
+.init repeat = GraphDistance<RunId, Hued>
+repeat.seed([Pan, D, S], [Q, Col]) :- stay(Pan, D, S, Q, Col).
+repeat.edge([Pan, D, S], [Q1, Col], [Q, Col]) :-
+    stay(Pan, D, S, _, Col), next_cell(Pan, D, S, Q1),
     ahead(Pan, D, S, Vn, Vf, _, _), ( V = Vn ; V = Vf ), V != ZERO,
     compose(Q1, V, Q), next_cell(Pan, D, S, Q),               // one moving step on
     !run_cell(Pan, D, S, Q), !recall.value([Pan, Q], _).      // a gained cell no stage shows
 
-rule_paint($Stay(), Pan, Q, Col) :- stay(Pan, _, _, Q, Col).
+rule_paint($Stay(), Pan, Q, Col) :- repeat.distance([Pan, _, _], [Q, Col], _).
 
 // A stage and the stage after it.
 // @claim growth

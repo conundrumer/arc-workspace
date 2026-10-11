@@ -449,16 +449,28 @@ impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
 
     // --- $FirstChange ---
 
-    // The first change, moved j cells toward d, across the time axis, once
-    // per frame; the frames show at least two steps.
-    .decl placed(key: Key, k: Frames, d: Dir, j: number, p_tile: Position, p_intile: Position,
-                 from: Color, to: Color)
-    placed(Ky, [T, C, G, N], D, J, P_tile, P_intile, Col, Col2) :-
-        first_step(Ky, [T, C, G, N], P_tile), change(Ky, [T, C, G, N], P_tile, P_intile, Col, Col2),
+    // A step of j cells toward d, across the time axis, that the first change
+    // may move by; the frames show at least two steps.
+    .decl motion(key: Key, k: Frames, d: Dir, j: number)
+    motion(Ky, [T, C, G, N], D, J) :-
+        first_step(Ky, [T, C, G, N], P_tile), change(Ky, [T, C, G, N], P_tile, _, _, _),
         succ_panel(Ky, [T, C, G, N], P_tile, P_tile2), succ_panel(Ky, [T, C, G, N], P_tile2, _),
         perp_dir(T, D), panel(Ky, [T, C, G, N], _, Q, _), dist(Q, D, J), J > 0.
-    placed(Ky, K, D, J, P_tile2, Q, Col, Col2) :-
-        placed(Ky, K, D, J, P_tile, P, Col, Col2), succ_panel(Ky, K, P_tile, P_tile2), jump(P, D, J, Q).
+
+    // A frame, i frames after the first step's.
+    .decl frame_index(key: Key, k: Frames, p_tile: Position, i: number)
+    frame_index(Ky, [T, C, G, N], P_tile, I) :-
+        first_step(Ky, [T, C, G, N], P_tile0), panel(Ky, [T, C, G, N], P_tile, _, _),
+        relative(P_tile0, P_tile, R), opposite(T, O), dist(R, O, I), I >= 0.
+
+    // The first change, moved j cells toward d once per frame.
+    .decl placed(key: Key, k: Frames, d: Dir, j: number, p_tile: Position, p_intile: Position,
+                 from: Color, to: Color)
+    placed(Ky, K, D, J, P_tile, Q, Col, Col2) :-
+        motion(Ky, K, D, J), first_step(Ky, K, P_tile0), change(Ky, K, P_tile0, P, Col, Col2),
+        frame_index(Ky, K, P_tile, I), panel(Ky, K, P_tile, Q, _),
+        relative(P, Q, R), perp_dir(D, D_across), dist(R, D_across, 0),  // on the change's line
+        opposite(D, O), dist(R, O, Tq), stride(Tq, J, 0, I, 0).           // i steps of j toward d
 
     // The moved change recolors a cell that holds the color it recolors from.
     .decl paint(key: Key, k: Frames, d: Dir, j: number, p_tile: Position, p_intile: Position,
@@ -471,7 +483,7 @@ impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
     defect(Ky, K, D, J, P_tile, P_intile) :-
         paint(Ky, K, D, J, P_tile, P_intile, Col), !change(Ky, K, P_tile, P_intile, _, Col).
     defect(Ky, K, D, J, P_tile, P_intile) :-
-        change(Ky, K, P_tile, P_intile, _, Col), placed(Ky, K, D, J, P_tile, _, _, _),
+        change(Ky, K, P_tile, P_intile, _, Col), motion(Ky, K, D, J), frame_index(Ky, K, P_tile, _),
         !paint(Ky, K, D, J, P_tile, P_intile, Col).
 
     .decl refuted(key: Key, k: Frames, ck: StepCheck, sc: StepScope, s: Position, d: Dir, j: number)
@@ -486,7 +498,7 @@ impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
     next_frame(Ky, K, Ck, Sc, D, P_intile, Col) :-
         last_frame(Ky, K, P_tile), panel(Ky, K, P_tile, P_intile, Col0),
         scope(Ky, K, Sc, P_intile, S), checked(Ky, K, Ck, _),
-        placed(Ky, K, D, J, P_tile, _, _, _), !refuted(Ky, K, Ck, Sc, S, D, J),
+        motion(Ky, K, D, J), !refuted(Ky, K, Ck, Sc, S, D, J),
         ( paint(Ky, K, D, J, P_tile, P_intile, Col)                // the moved change recolors it
         ; Col = Col0, !paint(Ky, K, D, J, P_tile, P_intile, _)     // the moved change passes it by
         ).

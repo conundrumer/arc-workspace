@@ -26,12 +26,10 @@ bb.cell(Id, P) :- blocks.label($U(), P, Id).
 .decl block_corner(id: Ident, p: Position, d: DiagDir)
 block_corner(Id, P, D) :- blocks.label($U(), P, Id), bb.box(Id, B), box_corner(P, B, D).
 
-// The two corners the chain runs through.
+// The corner the chain enters each block by; it leaves by the block's
+// params.corner.
 .decl near(id: Ident, p: Position)
 near(Id, P) :- params.corner(Diag), diag_opposite(Diag, Start), block_corner(Id, P, Start).
-
-.decl far(id: Ident, p: Position)
-far(Id, P) :- params.corner(Diag), block_corner(Id, P, Diag).
 
 // Id2 stands further along the order than Id1.
 .decl beyond(id1: Ident, id2: Ident)
@@ -42,18 +40,27 @@ beyond(Id1, Id2) :-
 chain.elem($U(), Id) :- blocks.label($U(), _, Id).
 chain.before($U(), Id1, Id2) :- beyond(Id1, Id2).
 
-// Where each block's near corner lands.
-.decl anchor(id: Ident, p: Position)
-anchor(Id, P) :-
+// A block, with a cell its near corner may land on.
+.type Landing = [id: Ident, p: Position]
+
+// The chain's walk: the first block's near corner lands on the start corner,
+// and each next block's near corner lands where the previous block's far
+// corner lands.
+.init walk = GraphDistance<Unit, Landing>
+walk.seed($U(), [Id, P]) :-
     chain.first($U(), Id),
     params.corner(Diag), diag_opposite(Diag, Start),
     in(P, _), corner_dist(P, Start, 0).                // grid corner the chain starts at
-anchor(Id2, P2) :- chain.next($U(), Id1, Id2), far(Id1, P), place(Id1, P, P2).
+walk.edge($U(), [Id1, A], [Id2, A2]) :-
+    chain.next($U(), Id1, Id2), in(A, _),
+    near(Id1, N), params.corner(Diag), block_corner(Id1, F, Diag),
+    relative(N, F, V),                                 // the far corner as an offset from the near
+    compose(A, V, A2).
 
 // Where each block cell lands.
 .decl place(id: Ident, p_in: Position, p_out: Position)
 place(Id, P, P_out) :-
-    anchor(Id, A), blocks.label($U(), P, Id),
+    walk.distance($U(), [Id, A], _), blocks.label($U(), P, Id),   // where the near corner lands
     near(Id, N), relative(N, P, V),        // the cell as an offset from the near corner
     compose(A, V, P_out).
 
