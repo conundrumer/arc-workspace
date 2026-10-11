@@ -1,5 +1,6 @@
 # Traceability matrix
 - The map of each rule of the documents under [notes](prompts/agents/notes) and of the agent definitions under [agents](prompts/agents) to the outcomes of [Process notes](prompts/agents/notes/process.md) it serves.
+- The map holds for each rule as it stands at commit `4afea2b8e666096c17a533cf7deae808a99c6cfb` of `master`.
 - Each entry is a section, with the outcomes its rules serve, each as its process and a phrase of its words. Under the entry stands each rule of that section that serves another outcome or none, by its opening words.
 - An entry or a rule that serves no outcome gives the judgment that keeps it.
 - An entry on a document's title heading covers the lines above its first section. A section with no rule of its own, only lines that inline or include another document, has no entry.
@@ -19,6 +20,7 @@
     - "Leave the judgment of how the code is written, past the `Design`": none. Kept: the principle of Design.
 - [The user's part](prompts/agents/notes/decisions.md#the-users-part): Decisions: a departing decision reaches the user; a decline carries its defense.
     - "Tell the user, without waiting on them", "Bring the user nothing else": none. Kept: the principle of Decisions and of Requirements.
+    - "A ticket analyst's resolution of a ticket that leaves unmet": Requirements: a part the change leaves unmet is a decline; Decisions: a decline carries its defense.
 - [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences): none. Kept: each line is a preference of the user, which the decisions on its subject apply, and each line a process gives as a principle serves that process.
 - [Decisions on solver work](prompts/agents/notes/decisions.md#decisions-on-solver-work): none. Kept: the principle of Solver passes.
 - [Decisions on the agents' documents](prompts/agents/notes/decisions.md#decisions-on-the-agents-documents): Verification: evidence of a reader's behavior.
@@ -77,7 +79,7 @@
     - "Run a change yourself only on `direct` and `hotfix`", "Where a ticket it would settle waits on a `change`": Work control: one live holder per ticket.
     - "Once a change you run is on `master`": Merge: a hotfix reviewed after it merges.
 - [Worktrees](prompts/agents/notes/coordinator.md#worktrees): Configuration management: one live change per worktree.
-- [Reports to the user](prompts/agents/notes/coordinator.md#reports-to-the-user): Decisions: a departing decision reaches the user.
+- [Reports to the user](prompts/agents/notes/coordinator.md#reports-to-the-user): none. Kept: it gives the user the source and the route of each report it relays.
 - [Cards](prompts/agents/notes/coordinator.md#cards): Decisions: a departing decision reaches the user.
 - [Codex](prompts/agents/notes/coordinator.md#codex): Decisions: a departing decision reaches the user.
     - "When specifying an issue in prose to fix": Requirements: requirements traced to the spans.
@@ -93,7 +95,7 @@
     - "A newly added agent type": none. Kept: the harness can take minutes to know a new agent type.
     - "Give an agent a brief in the form": none. Kept: it leads a launcher to the form of each brief.
     - "Where a brief gives a scratch directory": none. Kept: it keeps the session's files in the session's scratchpad.
-    - "Give each way the edit can fail": Risk management: each way a design can fail is a requirement.
+    - "Give each item as a requirement": Risk management: each way a design can fail is a requirement.
     - "Before you give another agent a draft `change` ticket": Verification: each `change` ticket checked before the build.
     - "Split work between agents": none. Kept: the principle of Process assessment and of Configuration management.
     - "Token cost is the list price", "Take each token cost you give": Measurement: each figure cites its command.
@@ -116,9 +118,10 @@
 - [An operator's brief](prompts/agents/notes/launching.md#an-operators-brief): Work control: stopped work reaches an agent.
     - "`Merge: <number>`": Merge: a failed or denied merge reaches an agent.
     - "`Decision: <decision key> <choice>`": Decisions: a departing decision reaches the user.
-    - "`Solve: <task id> ...`", "`Solve from the queue`", "`Override: <task id> <pass> <override>`", "`Override: pass over <step key>`": Solver passes: a pass runs its operations on its task.
+    - "`Solve: <task id> ...`", "`Solve from the queue: <count>`", "`Override: <task id> <pass> <override>`", "`Override: pass over <step key>`": Solver passes: a pass runs its operations on its task.
 - [A code reviewer's brief](prompts/agents/notes/launching.md#a-code-reviewers-brief): Verification: a standing review of the lines in force.
 - [A doc reviewer's brief](prompts/agents/notes/launching.md#a-doc-reviewers-brief): Verification: another agent checks the built change; a standing review of the lines in force.
+    - "A doc reviewer's brief on a commit of `master`": Merge: a hotfix reviewed after it merges.
 - [Solver work](prompts/agents/notes/launching.md#solver-work): Solver passes: a pass runs its operations on its task; a pass writes only where its notes give.
 - [A solver work brief](prompts/agents/notes/launching.md#a-solver-work-brief): Solver passes: a pass runs its operations on its task.
 - [Writing a solver work brief](prompts/agents/notes/launching.md#writing-a-solver-work-brief): Solver passes: a pass runs its operations on its task.
@@ -164,7 +167,9 @@
 - [Tracking](prompts/agents/notes/tickets.md#tracking): Work control: one live holder per ticket.
     - "`tickets/` is in the main tree", "Every session on the repository shares", "Where you look for a ticket that already exists", "Make each transition": none. Kept: they give where the tickets are and how a ticket's state changes, which every holder's step uses.
     - "Close the ticket of a place that is judged and kept": Decisions: each decision recorded with what it was made from.
+    - "Where you read the titles of tickets": none. Kept: the principle of Process assessment, spend no run the work does not need.
     - "Read a ticket you do not edit": Process assessment: the context each run of an agent loads holds only the lines each of its runs needs.
+    - "A ticket under `tickets/watching/`": none. Kept: the principle of Quality assurance, the fault options: a loss below its fix's cost is accepted until its cases' summed loss reaches that cost.
 - [Change tickets](prompts/agents/notes/tickets.md#change-tickets): Configuration management: changes that edit the same part ordered.
     - "A ticket that asks for a change", "Give each `change` you file or revise the `mechanical` field": none. Kept: they give the fields a `change` ticket's handling reads.
 
@@ -220,7 +225,7 @@
     - "Settle by [Settling]": Process assessment: the faults of the processes reach the user.
 - [Commands](prompts/agents/ticket-analyst.md#commands): Process assessment: the context each run of an agent loads holds only the lines each of its runs needs.
 - [Settling tickets](prompts/agents/ticket-analyst/tickets.md): Requirements: requirements traced to the spans; Decisions: each decision recorded with what it was made from.
-    - "Where the log of a `request` you take shows a `change` filed": Requirements: requirements checked against added words.
+    - "Where the log of a `request` you take shows a `change` filed": Requirements: requirements checked against added words; Validation: a need not met goes back to a ticket analyst.
     - "Where the log of a `request` you take gives a commit": Merge: a hotfix reviewed after it merges.
     - "A ticket of kind `refactor` is a defect place": none. Kept: the principle of Design, one idea in one place.
     - "Judge a ticket a solver pass filed": none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
@@ -234,6 +239,7 @@
     - "Where the operator's command could have decided": none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
 - [Process assessment](prompts/agents/ticket-analyst/process-assessment.md): Process assessment: the faults of the processes reach the user; each rule maps to an outcome.
 - [An editor's findings](prompts/agents/ticket-analyst/findings.md): Decisions: a decline carries its defense.
+    - "That change's ticket is no ticket you resolve": Work control: one live holder per ticket.
     - "Judge each `refactor` place": Implementation: each item not done reaches the agent that decides it.
 
 ## Item checker
@@ -294,6 +300,7 @@
 - [Doc reviewer](prompts/agents/doc-reviewer.md#doc-reviewer): Verification: another agent checks the built change.
     - "File as a `bug` ticket each finding on a fault the change did not make", "The kind of a ticket you file is `bug`": none. Kept: they serve the purpose of Quality assurance, the cause of each fault.
     - "When the editor's fixes arrive, review the change again": Verification: a later round on changed text only.
+    - "Where your brief gives a commit of `master`": Merge: a hotfix reviewed after it merges.
     - "Hold back each finding an editor's message gives as left for a decision": Implementation: each item not done reaches the agent that decides it.
     - "Message no agent other than the editors", "Edit no file other than the tickets you file": none. Kept: they leave each finding's fix to the editor and each decision to the agent that decides it.
     - "File a `performance` ticket": Process assessment: the faults of the processes reach the user.
