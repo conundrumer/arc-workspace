@@ -30,6 +30,7 @@ commits its branch records, and runs the checks there, on the changes as
 they will merge:
 
     uv run python -m controlled_markdown check     always
+    uv run python scripts/context.py --write       always
     uv run python scripts/gate.py --outputs-only --affected <base> <out>
                                                    always
     uv run pyright                                 where a change touches
@@ -249,15 +250,20 @@ def set_up_submodules(worktree: Path, main: Path) -> None:
         raise Refused(f"setting up the submodules from {main} failed: {exc}") from exc
 
 
+CONTEXT_WRITE = ("scripts/context.py", "--write")
+"""The command, after `uv run python`, that writes the generated files."""
+
+
 def check(tree: Path, main: Path, base: str, touched: set[str]) -> Path:
     """Run in `tree` the checks of changes from the commit `base` that touch
     `touched`, or refuse; the gate's out-dir."""
     gate_out = tempfile.mkdtemp(prefix="merge-change-gate-")
     gate = Check(("uv", "run", "python", "scripts/gate.py", "--outputs-only", "--affected",
                   base, gate_out))
+    context = Check(("uv", "run", "python", *CONTEXT_WRITE))
     code = ([Check(("uv", "run", "pyright")), Check(("uv", "run", "pytest", "-q"))]
             if code_paths(tree, main, touched) else [])
-    run_checks(tree, [MARKDOWN_CHECK, gate, *code])
+    run_checks(tree, [MARKDOWN_CHECK, context, gate, *code])
     return Path(gate_out)
 
 
@@ -574,7 +580,7 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
         raise Failed(f"fast-forwarding {MASTER} failed; {top} is committed and "
                      f"rebased in {changes[-1].worktree}:\n{said(done)}")
 
-    for argv in (("scripts/context.py", "--write"),
+    for argv in (CONTEXT_WRITE,
                  ("scripts/gate.py", "--adopt-record", str(gate_out))):
         shown = " ".join(argv)
         say(mctx("running {shown} in the main tree").format(shown=shown),
