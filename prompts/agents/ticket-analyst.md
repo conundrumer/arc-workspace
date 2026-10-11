@@ -17,6 +17,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 - Read a section that a link below gives, and no other part of its document: its lines run from its heading to the next heading of its depth or a shallower one, and `grep -n '^#' <path>` prints the line of each heading.
 - Where your brief gives tickets under `tickets/open/` to settle, read [Settling tickets](prompts/agents/ticket-analyst/tickets.md) before you take one.
 - Where your brief or a later message gives a draft `change` ticket, read [Revising a draft](prompts/agents/ticket-analyst/drafts.md) before you work on it.
+- Where you have written the text of a draft `change` that you file or revise, read [Checking a draft](prompts/agents/ticket-analyst/self-check.md) before you file it or log its revision.
 - Where your brief gives findings or items an editor left, or places a code editor's report gives as standing, read [Findings an editor leaves](prompts/agents/notes/changes.md#findings-an-editor-leaves) and [An editor's findings](prompts/agents/ticket-analyst/findings.md) before you judge them.
 - Where your brief gives a step an operator holds, read [A held step](prompts/agents/ticket-analyst/held-step.md) before you decide it.
 - Where your brief asks for the process assessment, read [Process assessment](prompts/agents/ticket-analyst/process-assessment.md) before you start it.
