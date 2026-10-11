@@ -96,7 +96,9 @@ def operator_next(hook: dict[str, Any], name: str) -> NextCaller | None:
     call an action, with the action and the command that prints its calls and
     the id and the result of its last call of that command
     (`last_next_call`), or None where it is of another type, or where its
-    agent type is unknown, which the hook `name` says on stderr."""
+    agent type is unknown, which the hook `name` says on stderr. A hook with
+    no tool input, the SubagentStop hook, gives `held_action` an empty
+    input."""
     from operations.command_words import next_command
     from run_reads import caller_id, caller_type
     from transcripts import entries_back
@@ -105,7 +107,7 @@ def operator_next(hook: dict[str, Any], name: str) -> NextCaller | None:
     if kind is None:
         return None
     agent = caller_id(hook)
-    action = held_action(kind, hook["tool_input"])
+    action = held_action(kind, hook.get("tool_input") or {})
     if action is None or agent is None:
         return None
     return NextCaller(agent, action, next_command(agent, action),
