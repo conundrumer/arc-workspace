@@ -59,15 +59,17 @@ class Record:
                            for p in sorted(deps_dir.glob("*.json"))}}
         return Record(head(), {k: deps[k] for k in keys_of(COMMANDS.values()) if k in deps})
 
-    def moved(self) -> dict[str, Deps]:
-        """Each entry, with each line number of a Python file the change
-        from the record's commit to the checkout modifies moved to the
-        number that line has in the checkout. It is exact for the entries
-        of the commands that `traced_keys` leaves untraced."""
+    def moved(self, keys: set[str]) -> dict[str, Deps]:
+        """Each entry of a key outside `keys`, the keys the run traces
+        again, with each line number of a Python file the change from the
+        record's commit to the checkout modifies moved to the number that
+        line has in the checkout. It moves only the entries the run keeps:
+        the move is exact only for the entries of the commands that
+        `traced_keys` leaves untraced."""
         hunks = {t.path: t.hunks for t in touched_from(self.commit, self.commit)}
         return {k: Deps({p: moved(ns, hunks[p]) if p in hunks else ns
                          for p, ns in d.lines.items()}, d.reads, d.listed)
-                for k, d in self.deps.items()}
+                for k, d in self.deps.items() if k not in keys}
 
 
 def read_record() -> Record | None:

@@ -295,7 +295,7 @@ def run_gate(argv: Sequence[str]) -> int:
         keys = traced_keys(select(cmds, head() if record is None else record.commit,
                                   accepted, timed))
         if record is not None:
-            kept = {k: d for k, d in record.moved().items() if k not in keys}
+            kept = record.moved(keys)
     if a.since_timed:
         since = read_base(base_file(accepted))
         if since is None:
