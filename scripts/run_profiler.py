@@ -110,11 +110,14 @@ def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Ru
             group(k).time += d / len(keys)
             parts[k[0]] += d / len(keys)
 
+    def waiting() -> bool:
+        return bool(agents & (pending.keys() | running.keys())
+                    and all(k[0] is Part.WAITS for k in pending.values())
+                    and (pending or idle))
+
     def spend(d: float) -> None:
         nonlocal waits
-        if (agents & (pending.keys() | running.keys())
-                and all(k[0] is Part.WAITS for k in pending.values())
-                and (pending or idle)):
+        if waiting():
             waits += d
         if pending:
             share(pending.values(), d)
@@ -180,6 +183,7 @@ def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Ru
         if i in ends:
             pending.clear()
     end = prev or 0.0
+    waiting_at_end = waiting()
     brief = [unfiled(message_text(e), label, undecided)
              for e in entries[:briefed + 1] if is_prompt(e)]
     if brief and first is not None:
@@ -204,5 +208,5 @@ def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Ru
     return Run(label, agent_type, description, first, wall, parts,
                {k: g for k, g in groups.items() if g.time or g.calls},
                list(spans.values()), in_flight, backgrounded, ended, context, request_contexts,
-               cost, said, waits,
+               cost, said, waits, waiting_at_end,
                messages, others, unknown, cwd, path)

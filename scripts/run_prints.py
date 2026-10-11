@@ -2,8 +2,10 @@
 from a run's parent, and of the run's report to that parent, as the HELP of
 `profile_runs` gives them."""
 
+from collections.abc import Callable
+
 from agent_reports import Report
-from budgets import budgets_in_force, of_budget
+from budgets import budgets_in_force, of_budget, past_budget
 from context_bound_hook import CONTEXT_BOUND, bounded, past_bound
 from controlled_markdown import mctx
 from open_agents import Listed, parent_reports
@@ -24,9 +26,21 @@ def print_span(m: Span, time_text: str) -> None:
 def active_of(listed: Listed, now: float) -> float | None:
     """The active time `--running` gives a listed agent, or None where it is
     unknown."""
+    return latest_of(listed, listed.run.active_from, lambda: listed.run.active_at(now))
+
+
+def own_of(listed: Listed, now: float) -> float | None:
+    """The own time `--running` gives a listed agent, or None where it is
+    unknown."""
+    return latest_of(listed, listed.run.own_from, lambda: listed.run.own_at(now))
+
+
+def latest_of(listed: Listed, over: Callable[[int], float | None],
+              running: Callable[[], float | None]) -> float | None:
+    """`over` of the latest message from a listed agent's parent where its
+    turn has ended, and `running` otherwise."""
     r = listed.run
-    return (r.active_from(len(r.messages) - 1) if listed.ended and r.messages
-            else r.active_at(now))
+    return over(len(r.messages) - 1) if listed.ended and r.messages else running()
 
 
 def print_running(agents: list[Listed], now: float, calls_since: float | None,
@@ -42,13 +56,15 @@ def print_running(agents: list[Listed], now: float, calls_since: float | None,
         active = (mctx("{active} since {time}{to}").format(
             active=minutes(active_time), time=clock(r.messages[-1].time), to=to)
             if active_time is not None else "?")
+        own_time = own_of(listed, now)
+        own = minutes(own_time) if own_time is not None else "?"
         budget = next(reversed(budgets_in_force(r, undecided)), None)
         context = f"{r.context:,}" if r.context is not None else "?"
         past = "past " if past_bound(r.context) else ""
         mark = (" " + mctx("{past}bound {bound:,}").format(
             past=past, bound=CONTEXT_BOUND) if bounded(r.agent_type) else "")
         print(f"{r.label} {r.agent_type}  parent {listed.parent}  {since}  "
-              f"active {active}{of_budget(budget)}  "
+              f"active {active}  own {own}{of_budget(budget)}  "
               f"context {context} tokens{mark}: {r.description}")
         print(f"  cwd: {r.cwd or '?'}")
         if listed.ended:
@@ -96,8 +112,7 @@ def print_messages(r: Run, undecided: list[str]) -> None:
     budgets = budgets_in_force(r, undecided)
     for i, (m, budget) in enumerate(zip(r.messages, budgets, strict=True)):
         active, own = r.active_from(i), r.own_from(i)
-        past = ("  past budget" if own is not None and budget is not None
-                and own > budget * 60 else "")
+        past = "  past budget" if past_budget(own, budget) else ""
         active_text = minutes(active) if active is not None else "?"
         own_text = minutes(own) if own is not None else "?"
         print(f"    {clock(m.time)}  active {active_text}  own {own_text}"

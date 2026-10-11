@@ -111,7 +111,7 @@ counts as hung, once. A call whose usual time no run gives takes
 
 
 READING = {k: v.format(factor=HUNG_FACTOR, repeats=REPEATS) for k, v in {
-    AlertKind.BUDGET: mctx("Its active time is past its budget"),
+    AlertKind.BUDGET: mctx("Its own time is past its budget"),
     AlertKind.HUNG: mctx("A call of it in flight has run {factor} times its usual time"),
     AlertKind.REPEATED: mctx("It ran the same Bash command with the same result at least "
                              "{repeats} times in a row"),

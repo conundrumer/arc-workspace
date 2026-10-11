@@ -357,7 +357,7 @@ BATCH_PROFILE = mctx("""
 
 
 REVIEW = mctx("""
-    - Launch a transcript review of each of these runs that is no solver work and of which the output of that `--each` call marks a message `past budget`, and of no other run: {reviewable}. That mark is the only test of a run's budget. Once a ticket filing of yours, or the reply of a review you launched, gives that `uv run python scripts/file_ticket.py` failed, launch no further review. A transcript review is a `general-purpose` agent, with the brief that {review_brief} gives, with the run's agent id in place of `{run}`.
+    - Launch a transcript review of each of these runs that is no solver work and of which the output of that `--each` call marks a message `past budget`, and of no other run: {reviewable}. That mark is the only test of a run's budget. Once a ticket filing of yours, or the reply of a review you launched, gives that a command the brief of a transcript review has it run failed, launch no further review. A transcript review is a `general-purpose` agent, with the brief that {review_brief} gives, with the run's agent id in place of `{run}`.
     """)
 
 NO_REVIEW = mctx("- Launch no transcript review.")

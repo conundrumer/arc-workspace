@@ -12,13 +12,13 @@ from pathlib import Path
 from agent_launches import handed_back
 from agent_reports import parent_transcripts
 from agent_turns import first_time, last_time
-from budgets import budgets_in_force
+from budgets import budgets_in_force, past_budget
 from context_bound_hook import OPERATORS, past_bound
 from controlled_markdown import mctx
 from open_agents import Listed, hung_time, running_agents, work_open
 from operator_reads import (ended_elsewhere, ended_with, operator_runs, read_operator,
                             resumed_at, stalled_reports)
-from run_prints import active_of
+from run_prints import own_of
 from run_reads import bash_spans, context_size, parent_id, repeated_runs, run_entries
 from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
@@ -294,10 +294,10 @@ def watched(listing: list[Listed], launched: set[str],
                 or (aid not in launched and listed.parent != COORDINATOR)):
             continue
         budget = next(reversed(budgets_in_force(r, undecided)), None)
-        active = active_of(listed, now)
+        own = own_of(listed, now)
         out.append(Watched(
             agent_id=aid, hung=hung_at(listed, listing, opened),
-            over_budget=budget is not None and active is not None and active > budget * 60,
+            over_budget=past_budget(own, budget),
             stalled=stalled_at(listed, listing, undecided), repeated=repeated(listed)))
     return out
 

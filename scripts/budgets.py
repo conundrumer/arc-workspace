@@ -238,13 +238,13 @@ def censored(r: Run, undecided: list[str]) -> bool | None:
     for i, budget in enumerate(budgets_in_force(r, undecided)):
         if budget is None:
             continue
-        active = r.active_from(i)
-        if active is None:
+        own = r.own_from(i)
+        if own is None:
             unknown = True
-        elif active >= budget * 60:
+        elif own >= budget * 60:
             return True
     if unknown:
-        undecided.append(mctx("{run}: the active time of a message with a budget "
+        undecided.append(mctx("{run}: the own time of a message with a budget "
                               "in force is unknown, so whether its budget cut it "
                               "is unknown, and it is left out of its type's "
                               "budget").format(run=r.label))
@@ -252,6 +252,11 @@ def censored(r: Run, undecided: list[str]) -> bool | None:
     return False
 
 
+def past_budget(own: float | None, budget: float | None) -> bool:
+    """Whether an own time in seconds is known and past a budget in minutes."""
+    return own is not None and budget is not None and own > budget * 60
+
+
 def of_budget(budget: float | None) -> str:
-    """The text that follows an active time to give its budget in minutes."""
+    """The text that follows an own time to give its budget in minutes."""
     return f" of budget {minutes(budget * 60)}" if budget is not None else ""

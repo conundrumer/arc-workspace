@@ -70,6 +70,8 @@ class Run:
     # The run's waits on agents it launched, as `profile_runs.py` HELP
     # gives them.
     waits: float
+    # Whether the run waits on agents at its last entry.
+    waiting: bool
     # The messages from the run's parent, the brief first, the messages
     # from other agents, and the text of each later message whose sender is
     # unknown.
@@ -126,13 +128,26 @@ class Run:
         not ended: the time since its last entry goes to a pending call or
         to the model, so it is active. None where its start or that message
         is unknown."""
+        return self.latest_at(now, self.active_from, True)
+
+    def own_at(self, now: float) -> float | None:
+        """`active_at`, less the run's waits on agents over that period: the
+        time since its last entry is a wait where the run waits on agents at
+        that entry."""
+        return self.latest_at(now, self.own_from, not self.waiting)
+
+    def latest_at(self, now: float, over: Callable[[int], float | None],
+                  grows: bool) -> float | None:
+        """`over` of the latest message from the run's parent, plus the time
+        since the run's last entry where `grows` holds and that message's
+        period has not ended."""
         if self.start is None or not self.messages:
             return None
         last = len(self.messages) - 1
-        active = self.active_from(last)
-        if active is None or self.period_end(last) is not None:
-            return active
-        return active + max(0.0, now - (self.start + self.wall))
+        time = over(last)
+        if time is None or self.period_end(last) is not None or not grows:
+            return time
+        return time + max(0.0, now - (self.start + self.wall))
 
 
 @dataclass
