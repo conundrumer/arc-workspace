@@ -62,9 +62,9 @@
     SeparatorLines {}
     // @rule crop-gap-rectangle: on each axis, the lines drawn inside the
     //  rectangle fall at every multiple of the first band's width plus one,
-    //  counted from the rectangle's side at edge params.first_edge; the first
-    //  band runs from that side to the next separator line; undefined where
-    //  the open edges of an axis draw different lines
+    //  counted from a side of the rectangle; the first band runs from that
+    //  side to the next separator line; undefined where the two sides of an
+    //  axis draw different lines
     // @witness uneven-bands: borderline concept
     //     @relaxed lattice
   | FirstBand {}
@@ -93,13 +93,7 @@
 
 .decl out(p: Position, col: Color, ch: Choice)
 
-.comp Params {
-    // --- $FirstBand ---
-    // The edge each axis measures its first band from. The pairs have equal
-    // bands, so every edge stays open.
-    .decl first_edge(d: Dir)
-    first_edge(DIR_T). first_edge(DIR_B). first_edge(DIR_L). first_edge(DIR_R).
-}
+.comp Params {}
 
 .init params = Params
 
@@ -124,64 +118,51 @@ impl_choice([$Background(), $Crossing(), $GapCorners(), $Copy()]).
 impl_choice([G, S, $GapBbox(), C]) :- gap_color_choice(G), gap_site_choice(S), content_choice(C).
 impl_choice([G, $SeparatorCell(), $BrokenLines(), C]) :- gap_color_choice(G), content_choice(C).
 
-// The lattice of a grid, and the lines at each multiple of a rectangle's
-// first band.
-.comp Parse<Key> {
-    // A row or column: the axis whose component names it, and that component.
-    .type Line = [ky: Key, a: Axis, p_line: Position]
+// A row or column: the axis whose component names it, and that component.
+.type Line = [a: Axis, p_line: Position]
 
-    // A rectangle, read from one of its edges.
-    .type Edge = [ky: Key, b: Box, d: Dir]
+// A rectangle, read from one of its edges.
+.type Edge = [b: Box, d: Dir]
 
-    .decl cell(ky: Key, p: Position, col: Color)
+// The color of each line that holds one color along its whole length.
+// @claim lattice
+.init uniform = Unanimous<Line, Color>
+uniform.item([A, P_line], Col) :- in(P, Col), axis_elem(A), split(P, A, P_line, _).
 
-    // The color of each line that holds one color along its whole length.
-    // @claim lattice
-    .init uniform = Unanimous<Line, Color>
-    uniform.item([Ky, A, P_line], Col) :- cell(Ky, P, Col), axis_elem(A), split(P, A, P_line, _).
+.decl line_color(col: Color)
+line_color(Col) :- uniform.value(_, Col).
 
-    .decl line_color(ky: Key, col: Color)
-    line_color(Ky, Col) :- uniform.value([Ky, _, _], Col).
+// A line along which two neighboring cells hold the line color.
+.decl separator(a: Axis, p_line: Position)
+separator(A, P_line) :-
+    line_color(Col), in(P, Col), split(P, A, P_line, _),
+    perp(A, A2), axis_of(D, A2), neighbor(P, D, Q), in(Q, Col).   // its neighbor along the line
 
-    // A line along which two neighboring cells hold the line color.
-    .decl separator(ky: Key, a: Axis, p_line: Position)
-    separator(Ky, A, P_line) :-
-        line_color(Ky, Col), cell(Ky, P, Col), split(P, A, P_line, _),
-        perp(A, A2), axis_of(D, A2), neighbor(P, D, Q), cell(Ky, Q, Col).   // its neighbor along the line
+// A cell on a separator line of axis A.
+.decl on_separator(a: Axis, p: Position)
+on_separator(A, P) :- in(P, _), split(P, A, P_line, _), separator(A, P_line).
 
-    // A cell on a separator line of axis A.
-    .decl on_separator(ky: Key, a: Axis, p: Position)
-    on_separator(Ky, A, P) :- cell(Ky, P, _), split(P, A, P_line, _), separator(Ky, A, P_line).
+// The distance from edge D of a rectangle to each separator line of D's axis
+// past it; the least is the first band's width plus one.
+// @claim crop-gap-rectangle
+.init first_band = Extremes<Edge>
+first_band.cand([B, D], K) :-
+    frame(_, _, _, B), axis_of(D, A), on_separator(A, P),
+    crop(P, B, P_inner), dist(P_inner, D, K), K > 0.
 
-    // The rectangles whose bands are read.
-    .decl frame(ky: Key, b: Box)
-
-    // The distance from edge D of the rectangle to each separator line of
-    // D's axis past it; the least is the first band's width plus one.
-    // @claim crop-gap-rectangle
-    .init first_band = Extremes<Edge>
-    first_band.cand([Ky, B, D], K) :-
-        frame(Ky, B), axis_of(D, A), on_separator(Ky, A, P),
-        crop(P, B, P_inner), dist(P_inner, D, K), K > 0.
-
-    // A cell at a multiple of the first band's period from edge D.
-    .decl periodic(ky: Key, b: Box, d: Dir, p: Position)
-    periodic(Ky, B, D, P) :-
-        first_band.low([Ky, B, D], N),
-        cell(Ky, P, _), crop(P, B, P_inner), dist(P_inner, D, K), stride(K, N, 0, _, 0).
-}
-
-.init parse = Parse<Unit>
-parse.cell($U(), P, Col) :- in(P, Col).
-parse.frame($U(), B) :- frame(_, _, _, B).
+// A cell at a multiple of the first band's period from edge D.
+.decl periodic(b: Box, d: Dir, p: Position)
+periodic(B, D, P) :-
+    first_band.low([B, D], N),
+    in(P, _), crop(P, B, P_inner), dist(P_inner, D, K), stride(K, N, 0, _, 0).
 
 // @claim lattice
 .init bg = Mode<Unit, Color, Position>
-bg.item($U(), Col, P) :- in(P, Col), !parse.line_color($U(), Col).
+bg.item($U(), Col, P) :- in(P, Col), !line_color(Col).
 
 // A cell where a separator row and a separator column cross.
 .decl crossing(p: Position)
-crossing(P) :- parse.on_separator($U(), A, P), perp(A, A2), parse.on_separator($U(), A2, P).
+crossing(P) :- on_separator(A, P), perp(A, A2), on_separator(A2, P).
 
 // A cell in the color that marks a gap.
 .decl gap_colored(g: GapColor, p: Position)
@@ -199,13 +180,13 @@ gap_box.cell([G, S], P) :- gap(G, S, P).
 gap_colored($Background(), P) :- in(P, Col), bg.mode($U(), Col).
 
 // --- $NonlineGap ---
-gap_colored($NonlineGap(), P) :- in(P, Col), !parse.line_color($U(), Col).
+gap_colored($NonlineGap(), P) :- in(P, Col), !line_color(Col).
 
 // --- $Crossing ---
 gap(G, $Crossing(), P) :- gap_colored(G, P), crossing(P).
 
 // --- $SeparatorCell ---
-gap(G, $SeparatorCell(), P) :- gap_colored(G, P), parse.on_separator($U(), _, P).
+gap(G, $SeparatorCell(), P) :- gap_colored(G, P), on_separator(_, P).
 
 // --- $GapCorners ---
 .decl box_corner_cell(g: GapColor, s: GapSite, p: Position)
@@ -228,7 +209,7 @@ frame(G, S, $GapBbox(), B) :- gap_box.box([G, S], B).
 // @claim crop-gap-rectangle
 .init broken = Bbox<Broken>
 broken.cell([G, S, A], P_line) :-
-    gap(G, S, P), parse.on_separator($U(), A, P), split(P, A, P_line, _).
+    gap(G, S, P), on_separator(A, P), split(P, A, P_line, _).
 
 frame(G, S, $BrokenLines(), B) :-
     broken.box([G, S, A], B1), perp(A, A2), broken.box([G, S, A2], B2),   // the span on each axis
@@ -253,35 +234,18 @@ out(P_inner, Col, [G, S, F, $RedrawLattice(Bs)]) :-
 // --- $SeparatorLines ---
 redrawn($SeparatorLines(), B, P, Col) :-
     frame(_, _, _, B), in(P, C), inside(P, B),
-    ( parse.on_separator($U(), _, P), parse.line_color($U(), Col)   // a separator cell
-    ; !parse.on_separator($U(), _, P), Col = C ).                   // a lattice cell's content
+    ( on_separator(_, P), line_color(Col)   // a separator cell
+    ; !on_separator(_, P), Col = C ).                   // a lattice cell's content
 
 // --- $FirstBand ---
-// The cell's color under each open pair of edges, one per axis.
+// The cell's color under each pair of edges, one per axis.
 // @claim crop-gap-rectangle
 .init banded = Unanimous<Spot, Color>
 banded.item([B, P], Col) :-
     frame(_, _, _, B), in(P, C), inside(P, B),
-    params.first_edge(D1), params.first_edge(D2), perp_dir(D1, D2),
-    ( (parse.periodic($U(), B, D1, P) ; parse.periodic($U(), B, D2, P)),   // on a drawn line
-      parse.line_color($U(), Col)
-    ; !parse.periodic($U(), B, D1, P), !parse.periodic($U(), B, D2, P), Col = C ).
+    perp_dir(D1, D2),
+    ( (periodic(B, D1, P) ; periodic(B, D2, P)),   // on a drawn line
+      line_color(Col)
+    ; !periodic(B, D1, P), !periodic(B, D2, P), Col = C ).
 
 redrawn($FirstBand(), B, P, Col) :- banded.value([B, P], Col).
-
-.comp Determine {
-    .init parse = Parse<Example>
-    parse.cell(E, P, Col) :- ex_out(E, P, Col).
-    parse.frame(E, ZERO) :- ex_out(E, _, _).
-
-    // An output line on D's axis where being a separator line and lying at a
-    // multiple of the first band's period from edge D part ways.
-    .decl edge_contradicted(d: Dir)
-    edge_contradicted(D) :-
-        ex_out(E, P, _), axis_of(D, A), split(P, A, P_line, _),
-        ( parse.periodic(E, ZERO, D, P), !parse.separator(E, A, P_line)
-        ; !parse.periodic(E, ZERO, D, P), parse.separator(E, A, P_line) ).
-
-    .decl first_edge(d: Dir)
-    first_edge(D) :- dir_elem(D), !edge_contradicted(D).
-}

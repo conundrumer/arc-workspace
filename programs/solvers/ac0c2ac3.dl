@@ -9,26 +9,15 @@
 // @rule fill-ring: the output has the input's frame, and every cell of a ring
 //  takes the color of the mark that lies on that ring
 
-// where the center is
-.type Center =
-    // @claim square-odd
-    CellCenter {}
-    // @scene square-odd: the center is the middle cell of each axis, and on
-    //  an axis of even length it is the one of the two middle cells nearer
-    //  params.center_corner. Undefined where the open corners give different
-    //  outputs.
-    // @witness even-grid: borderline $FloorCenter & $EmptyBg & $ScanLast
-    //     @relaxed square-odd
-    //     @reassigned center_corner
-  | FloorCenter {}
-
 // what a ring is
 .type Rings =
     // @claim square-odd
-    CenterRings {center: Center}
+    CenterRings {}
     // @scene square-odd: the grid may have any shape, and its rings are the
     //  cells at each distance from the nearest grid edge
     // @witness wide-grid: borderline $DepthRings & $EmptyBg & $ScanLast
+    //     @relaxed square-odd
+    // @witness long-grid: borderline $DepthRings & $EmptyBg & $ScanLast
     //     @relaxed square-odd
   | DepthRings {}
 
@@ -82,14 +71,8 @@
     // @derive DominantColor: variant derived
     //     @relaxed one-mark-per-ring
     // @ignore: derive concept — wherever it is defined, it gives the output of
-    //  the FloorCenter & EmptyBg & ScanLast copy
+    //  the EmptyBg & ScanLast copy
     .decl bg(c: Color) bg(7).
-
-    // --- $FloorCenter ---
-    // on an axis of even length, the center is the middle cell nearer this
-    // corner
-    .decl center_corner(d: DiagDir)
-    center_corner(DIAG_TL). center_corner(DIAG_TR). center_corner(DIAG_BL). center_corner(DIAG_BR).
 
     // --- $ScanLast ---
     // the scan starts at this corner and runs along this axis first
@@ -100,46 +83,17 @@
 
 .init params = Params
 
-.comp Parse<Key> {
-    .decl grid(key: Key, p: Position, col: Color)
-
-    // P is no farther from edge D than from its opposite.
-    .decl leans(key: Key, p: Position, d: Dir)
-    leans(Ky, P, D) :- grid(Ky, P, _), dist_pair(P, D, K, K2), K <= K2.
-
-    // P is the middle cell of D's axis, or of two middle cells the one nearer
-    // D: it leans toward D, and the cell one step away from D does not.
-    .decl middle(key: Key, p: Position, d: Dir)
-    middle(Ky, P, D) :- leans(Ky, P, D), opposite(D, D2), neighbor(P, D2, Q), !leans(Ky, Q, D).
-
-    // The center cell, taking the middle cell nearer corner C on an axis of
-    // even length.
-    .decl center(key: Key, c: DiagDir, p: Position)
-    center(Ky, C, P) :- diag_dirs(C, _, D1, D2), middle(Ky, P, D1), middle(Ky, P, D2).
-
-    // P lies on ring K about center O: on the outline of the square that
-    // reaches K cells past O on every side.
-    .decl ring(key: Key, o: Position, p: Position, k: number)
-    ring(Ky, O, P, K) :-
-        center(Ky, _, O), grid(Ky, P, _), relative(O, P, P_rel), dir_elem(D), dist(P_rel, D, K),
-        uniform_outset(K, B_out), compose(O, B_out, B), box_edge(P, B, _).
-}
-
-.init parse = Parse<Unit>
-parse.grid($U(), P, Col) :- in(P, Col).
-
 .decl rings_choice(g: Rings)
-rings_choice($CenterRings($FloorCenter())). rings_choice($DepthRings()).
+rings_choice($CenterRings()). rings_choice($DepthRings()).
 
 .decl unmarked_choice(u: Unmarked)
 unmarked_choice($EmptyBg()). unmarked_choice($RankRings()).
 
 // The concept case, and the combinations no other case subsumes. Each
-// non-concept case with CellCenter gives its FloorCenter twin's output
-// wherever it is defined, with NeedsMark its EmptyBg twin's, and with
-// OneMark its ScanLast twin's.
+// non-concept case with NeedsMark gives its EmptyBg twin's output wherever
+// it is defined, and with OneMark its ScanLast twin's.
 .decl impl_choice(ch: Choice)
-impl_choice([$CenterRings($CellCenter()), $NeedsMark(), $OneMark()]).
+impl_choice([$CenterRings(), $NeedsMark(), $OneMark()]).
 impl_choice([G, U, $ScanLast()]) :- rings_choice(G), unmarked_choice(U).
 
 .decl shared_choice(s: Shared)
@@ -151,14 +105,14 @@ mark(P, Col) :- in(P, Col), !params.bg(Col).
 .decl reading(r: Reading)
 .decl ring(r: Reading, p: Position, k: number)
 
-// --- $CellCenter ---
-reading([$CenterRings($CellCenter()), C]) :- in(C, _), centered(C).
-
-// --- $FloorCenter ---
-reading([$CenterRings($FloorCenter()), P]) :- params.center_corner(C), parse.center($U(), C, P).
-
 // --- $CenterRings ---
-ring(R, P, K) :- reading(R), R = [$CenterRings(_), O], parse.ring($U(), O, P, K).
+reading([$CenterRings(), C]) :- in(C, _), centered(C).
+// P lies on ring K about center O: on the outline of the square that reaches
+// K cells past O on every side.
+ring(R, P, K) :-
+    reading(R), R = [$CenterRings(), O],
+    in(P, _), relative(O, P, P_rel), dir_elem(D), dist(P_rel, D, K),
+    uniform_outset(K, B_out), compose(O, B_out, B), box_edge(P, B, _).
 
 // --- $DepthRings ---
 reading([$DepthRings(), ZERO]).
@@ -224,7 +178,7 @@ nest.elem(R, K) :- marked(R, K).
 
 // --- $CenterRings & $RankRings ---
 // farther from the center lies outside
-nest.before(R, K, K2) :- marked(R, K), marked(R, K2), R = [$CenterRings(_), _], K > K2.
+nest.before(R, K, K2) :- marked(R, K), marked(R, K2), R = [$CenterRings(), _], K > K2.
 
 // --- $DepthRings & $RankRings ---
 // nearer the edge lies outside
@@ -256,18 +210,6 @@ blank(G, U, S) :- frame([G, O], U, P), shared_choice(S), !draw([G, O], U, S, P, 
 out(P, Col, [G, U, S]) :- impl_choice([G, U, S]), draw([G, _], U, S, P, Col), !blank(G, U, S).
 
 .comp Determine {
-    .init ex = Parse<Example>
-    ex.grid(E, P, Col) :- ex_in(E, P, Col).
-
-    // Two output cells on one ring about corner C's center differ in color.
-    .decl ring_clash(c: DiagDir)
-    ring_clash(C) :-
-        ex.center(E, C, O), ex.ring(E, O, P, K), ex.ring(E, O, Q, K),
-        ex_out(E, P, Col), ex_out(E, Q, Col2), Col != Col2.
-
-    .decl center_corner(c: DiagDir)
-    center_corner(C) :- diag_dir_elem(C), !ring_clash(C).
-
     // The marks of each example, in each scan order.
     .init order = LexOrder<ExScan>
     order.cell([E, C, A], P) :-

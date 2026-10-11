@@ -30,10 +30,9 @@
     // @claim erase-noise
     Commonest {}
     // @rule erase-noise: each component of at most params.noise_size cells
-    //  takes the background color, the color of the cells at the corners in
-    //  params.bg_corner; undefined when those cells differ
+    //  takes the background color, the color of the cells at the four grid
+    //  corners; undefined when those cells differ
     // @witness corner-noise: ordinary concept
-    //     @reassigned bg_corner
   | CornerBg {}
 
 // which cells are figure cells
@@ -107,12 +106,6 @@
     // The color each mirror class takes, keyed by the class's symmetry group.
     .decl class_color(s: Sym, c: Color)
     class_color(SYM_TB, 1). class_color(SYM_LR, 3). class_color(SYM_X, 6).
-
-    // --- $CornerBg ---
-    // The corner whose cell gives the background. Every pair's corners share
-    // one color, so every corner stays open.
-    .decl bg_corner(d: DiagDir)
-    bg_corner(DIAG_TL). bg_corner(DIAG_TR). bg_corner(DIAG_BL). bg_corner(DIAG_BR).
 
     // --- $StoredFigure ---
     // @derive RarestColor: variant derived
@@ -279,7 +272,7 @@ commonest.item($U(), Col, P) :- in(P, Col).
 background.item($Commonest(), Col) :- commonest.mode($U(), Col).
 
 // --- $CornerBg ---
-background.item($CornerBg(), Col) :- in(P, Col), params.bg_corner(D), box_corner(P, ZERO, D).
+background.item($CornerBg(), Col) :- in(P, Col), diag_dir_elem(D), box_corner(P, ZERO, D).
 
 // --- $StoredFigure ---
 figure([B, $StoredFigure()], P) :- background_choice(B), in(P, Col), params.figure_color(Col).
@@ -357,15 +350,6 @@ two_axis_color([B, F], C, Id, $TwoAxisErased(), BG) :-
 
     .decl noise_size(k: number)
     noise_size(K) :- noise_cand(K), !size_contradicted(K).
-
-    // A corner whose color a cleared component does not take.
-    .decl corner_contradicted(d: DiagDir)
-    corner_contradicted(D) :-
-        ex_in(E, Q, Col), box_corner(Q, ZERO, D),                  // the corner's color
-        cleared(E, Id), parse.member(E, $Conn8(), Id, P), ex_out(E, P, Col2), Col2 != Col.
-
-    .decl bg_corner(d: DiagDir)
-    bg_corner(D) :- diag_dir_elem(D), !corner_contradicted(D).
 
     // A component in no class, mirrored across an axis.
     .decl two_axis(e: Example, id: Ident)

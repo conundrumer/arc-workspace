@@ -17,7 +17,6 @@
 //  anchor box above the arrow box
 // @scene legend-left: a legend stands left of the field
 // @scene mask-color: the mask color is not a pattern color
-// @scene fits: the scaled mask fits in the field
 // @rule crop: the output is the field, with its size and content, before the
 //  stamps
 // @rule orient: the mask's bounding box, read as a set of cells, turns by the
@@ -109,21 +108,8 @@
     //     @relaxed field
   | FieldByPosition {}
 
-// a scaled mask larger than the field
-.type Overflow =
-    // @claim anchor
-    CutAtEdge {}
-    // @rule anchor: along an axis where the scaled mask is longer than the
-    //  field, the blocks are placed flush with the side of
-    //  params.clamp_origin instead
-    // @rule stamp: a block that does not fit whole in the field is skipped
-    // @witness oversize-mask: borderline concept
-    //     @relaxed fits
-    //     @reassigned clamp_origin
-  | ClampWholeBlocks {}
-
 .type Choice = [arrow: ArrowFind, pattern: PatternFind, mask: MaskFind,
-                anchor: AnchorFind, field: FieldFind, overflow: Overflow]
+                anchor: AnchorFind, field: FieldFind]
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -157,12 +143,6 @@
 
     // --- $FieldByPosition ---
     .decl legend_side(d: Dir) legend_side(DIR_L).
-
-    // --- $ClampWholeBlocks ---
-    // The corner that an overflowing mask is kept flush with. No pair
-    // overflows, so every corner stays open.
-    .decl clamp_origin(d: DiagDir)
-    clamp_origin(DIAG_TL). clamp_origin(DIAG_TR). clamp_origin(DIAG_BL). clamp_origin(DIAG_BR).
 }
 
 .init params = Params
@@ -176,14 +156,12 @@
     .type FieldKey = [ky: Key, f: FieldFind]
     .type PatternKey = [ky: Key, pa: PatternFind, pl: Position]
     .type MaskKey = [ky: Key, pa: PatternFind, mk: MaskFind, pl: Position]
-    .type Spot = [ky: Key, ch: Choice, pl: Position, a: Axis]
 
     .decl cell(ky: Key, p: Position, col: Color)
     .decl case(ky: Key, ch: Choice)
 
     // The open values each input is read with.
     .decl reading_corner(ky: Key, c: DiagDir)
-    .decl clamp_origin(ky: Key, d: DiagDir)
 
     // A line of axis A that holds a cell other than params.sep.
     .decl line_break(ky: Key, a: Axis, l: Position)
@@ -247,12 +225,6 @@
     .decl field_at(ky: Key, f: FieldFind, p_inner: Position, col: Color)
     field_at(Ky, F, P_inner, Col) :-
         field_cell(Ky, F, P), cell(Ky, P, Col), field_box.box([Ky, F], B), crop(P, B, P_inner).
-
-    // A field cell by its distances to the two edges of each corner.
-    .decl field_pos(ky: Key, f: FieldFind, diag: DiagDir, a: Axis, k1: number, k2: number,
-                    p_inner: Position)
-    field_pos(Ky, F, Diag, A, K1, K2, P_inner) :-
-        field_at(Ky, F, P_inner, _), diag_dist(P_inner, Diag, A, K1, K2).
 
     .decl legend_cell(ky: Key, pl: Position, p: Position, col: Color)
     legend_cell(Ky, Pl, P, Col) :- legend(Ky, _, Pl), panel_cell(Ky, Pl, P, Col), !params.sep(Col).
@@ -501,8 +473,8 @@
     // A turned mask cell Q, and the stamp cell T its block holds at P_s in the
     // frame of the scaled mask.
     .decl scaled(ky: Key, ch: Choice, pl: Position, q: Position, t: Position, p_s: Position)
-    scaled(Ky, [Af, Pa, Mk, A, F, O], Pl, Q, T, P_s) :-
-        case(Ky, [Af, Pa, Mk, A, F, O]), legend(Ky, F, Pl),
+    scaled(Ky, [Af, Pa, Mk, A, F], Pl, Q, T, P_s) :-
+        case(Ky, [Af, Pa, Mk, A, F]), legend(Ky, F, Pl),
         mask_cell(Ky, Pa, Mk, Pl, P), mask_box.box([Ky, Pa, Mk, Pl], B), crop(P, B, S),
         mask_turn(Ky, Af, Pl, G), apply(G, S, Q),                   // turned
         stamp_frame(Ky, Pa, Pl, T), concat_2d(Q, T, 0, P_s).        // scaled
@@ -510,59 +482,11 @@
     // Legend Pl lays stamp cell T on field cell P_inner.
     .decl cover(ky: Key, ch: Choice, pl: Position, t: Position, p_inner: Position)
 
-    // --- $CutAtEdge ---
-
-    cover(Ky, [Af, Pa, Mk, A, F, $CutAtEdge()], Pl, T, P_inner) :-
-        scaled(Ky, [Af, Pa, Mk, A, F, $CutAtEdge()], Pl, _, T, P_s),
+    cover(Ky, [Af, Pa, Mk, A, F], Pl, T, P_inner) :-
+        scaled(Ky, [Af, Pa, Mk, A, F], Pl, _, T, P_s),
         anchor_corner(Ky, A, Pl, Diag),
-        diag_dist(P_s, Diag, Ax, K1, K2), field_pos(Ky, F, Diag, Ax, K1, K2, P_inner).
-
-    // --- $ClampWholeBlocks ---
-
-    .decl scaled_dim(ky: Key, ch: Choice, pl: Position, a: Axis, n: number)
-    scaled_dim(Ky, [Af, Pa, Mk, A, F, $ClampWholeBlocks()], Pl, Ax, N) :-
-        scaled(Ky, [Af, Pa, Mk, A, F, $ClampWholeBlocks()], Pl, _, _, P_s),
-        axis_elem(Ax), axis_dim(P_s, Ax, N).
-
-    .decl field_dim(ky: Key, f: FieldFind, a: Axis, n: number)
-    field_dim(Ky, F, A, N) :-
-        field_at(Ky, F, P_inner, _), axis_elem(A), axis_dim(P_inner, A, N).
-
-    .decl overflows(ky: Key, ch: Choice, pl: Position, a: Axis)
-    overflows(Ky, [Af, Pa, Mk, A, F, O], Pl, Ax) :-
-        scaled_dim(Ky, [Af, Pa, Mk, A, F, O], Pl, Ax, N), field_dim(Ky, F, Ax, N_f), N > N_f.
-
-    // The side the blocks are flush with along axis Ax, under each open
-    // origin, kept where they agree.
-    // @claim anchor
-    .init clamp_dir = Unanimous<Spot, Dir>
-    clamp_dir.item([Ky, [Af, Pa, Mk, A, F, $ClampWholeBlocks()], Pl, Ax], D) :-
-        scaled_dim(Ky, [Af, Pa, Mk, A, F, $ClampWholeBlocks()], Pl, Ax, _),
-        anchor_corner(Ky, A, Pl, Diag), dir_of(Diag, Ax, D),
-        !overflows(Ky, [Af, Pa, Mk, A, F, $ClampWholeBlocks()], Pl, Ax).
-    clamp_dir.item([Ky, Ch, Pl, Ax], D) :-
-        overflows(Ky, Ch, Pl, Ax), clamp_origin(Ky, Diag), dir_of(Diag, Ax, D).
-
-    .decl clamp_corner(ky: Key, ch: Choice, pl: Position, diag: DiagDir)
-    clamp_corner(Ky, Ch, Pl, Diag) :-
-        clamp_dir.value([Ky, Ch, Pl, Ax], D1), perp(Ax, Ax2),
-        clamp_dir.value([Ky, Ch, Pl, Ax2], D2), diag_dirs(Diag, Ax, D1, D2).
-
-    .decl clamp_land(ky: Key, ch: Choice, pl: Position, q: Position, t: Position, p_inner: Position)
-    clamp_land(Ky, [Af, Pa, Mk, A, F, O], Pl, Q, T, P_inner) :-
-        clamp_corner(Ky, [Af, Pa, Mk, A, F, O], Pl, Diag),
-        scaled(Ky, [Af, Pa, Mk, A, F, O], Pl, Q, T, P_s),
-        diag_dist(P_s, Diag, Ax, K1, K2), field_pos(Ky, F, Diag, Ax, K1, K2, P_inner).
-
-    // A block that does not fit whole in the field.
-    .decl block_cut(ky: Key, ch: Choice, pl: Position, q: Position)
-    block_cut(Ky, Ch, Pl, Q) :-
-        clamp_corner(Ky, Ch, Pl, _), scaled(Ky, Ch, Pl, Q, T, _), !clamp_land(Ky, Ch, Pl, Q, T, _).
-
-    cover(Ky, Ch, Pl, T, P_inner) :-
-        clamp_land(Ky, Ch, Pl, Q, T, P_inner), !block_cut(Ky, Ch, Pl, Q).
-
-    // --- shared ---
+        diag_dist(P_s, Diag, Ax, K1, K2),                            // flush with the corner
+        field_at(Ky, F, P_inner, _), diag_dist(P_inner, Diag, Ax, K1, K2).
 
     // Legend Pl is stamped over at P_inner by a legend stamped after it, when
     // the legend on side D stamps first.
@@ -573,15 +497,14 @@
 
     // Every legend of the case has an anchor, a turn, and a stamp.
     .decl ready(ky: Key, ch: Choice, pl: Position)
-    ready(Ky, [Af, Pa, Mk, A, F, O], Pl) :-
-        case(Ky, [Af, Pa, Mk, A, F, O]), legend(Ky, F, Pl),
+    ready(Ky, [Af, Pa, Mk, A, F], Pl) :-
+        case(Ky, [Af, Pa, Mk, A, F]), legend(Ky, F, Pl),
         mask_turn(Ky, Af, Pl, _), anchor_corner(Ky, A, Pl, _), stamp_frame(Ky, Pa, Pl, _).
 
     .decl unready(ky: Key, ch: Choice)
-    unready(Ky, [Af, Pa, Mk, A, F, O]) :-
-        case(Ky, [Af, Pa, Mk, A, F, O]), legend(Ky, F, Pl),
-        !ready(Ky, [Af, Pa, Mk, A, F, O], Pl).
-    unready(Ky, Ch) :- clamp_dir.clash([Ky, Ch, _, _]).
+    unready(Ky, [Af, Pa, Mk, A, F]) :-
+        case(Ky, [Af, Pa, Mk, A, F]), legend(Ky, F, Pl),
+        !ready(Ky, [Af, Pa, Mk, A, F], Pl).
 
     // A side a legend can stand on: across the separators.
     .decl side(ky: Key, d: Dir)
@@ -589,13 +512,13 @@
 
     // The case's output when the legend on side D stamps first.
     .decl shown(ky: Key, ch: Choice, d: Dir, p_inner: Position, col: Color)
-    shown(Ky, [Af, Pa, Mk, A, F, O], D, P_inner, Col) :-
-        side(Ky, D), cover(Ky, [Af, Pa, Mk, A, F, O], Pl, T, P_inner),
-        !hidden(Ky, [Af, Pa, Mk, A, F, O], D, Pl, P_inner),
-        stamp_color(Ky, Pa, Pl, T, Col), !unready(Ky, [Af, Pa, Mk, A, F, O]).
-    shown(Ky, [Af, Pa, Mk, A, F, O], D, P_inner, Col) :-
-        side(Ky, D), case(Ky, [Af, Pa, Mk, A, F, O]), field_at(Ky, F, P_inner, Col),
-        !cover(Ky, [Af, Pa, Mk, A, F, O], _, _, P_inner), !unready(Ky, [Af, Pa, Mk, A, F, O]).
+    shown(Ky, [Af, Pa, Mk, A, F], D, P_inner, Col) :-
+        side(Ky, D), cover(Ky, [Af, Pa, Mk, A, F], Pl, T, P_inner),
+        !hidden(Ky, [Af, Pa, Mk, A, F], D, Pl, P_inner),
+        stamp_color(Ky, Pa, Pl, T, Col), !unready(Ky, [Af, Pa, Mk, A, F]).
+    shown(Ky, [Af, Pa, Mk, A, F], D, P_inner, Col) :-
+        side(Ky, D), case(Ky, [Af, Pa, Mk, A, F]), field_at(Ky, F, P_inner, Col),
+        !cover(Ky, [Af, Pa, Mk, A, F], _, _, P_inner), !unready(Ky, [Af, Pa, Mk, A, F]).
 }
 
 .decl arrow_find_choice(af: ArrowFind)
@@ -614,63 +537,51 @@ anchor_find_choice($AnchorByShape()).
 .decl field_find_choice(f: FieldFind)
 field_find_choice($NoSepPanel()). field_find_choice($FieldByPosition()).
 
-.decl overflow_choice(o: Overflow)
-overflow_choice($CutAtEdge()). overflow_choice($ClampWholeBlocks()).
-
 .init parse = Parse<Unit>
 parse.cell($U(), P, Col) :- in(P, Col).
 parse.reading_corner($U(), C) :- params.reading_corner(C).
-parse.clamp_origin($U(), D) :- params.clamp_origin(D).
-parse.case($U(), [Af, Pa, Mk, A, F, O]) :-
+parse.case($U(), [Af, Pa, Mk, A, F]) :-
     arrow_find_choice(Af), pattern_find_choice(Pa), mask_find_choice(Mk),
-    anchor_find_choice(A), field_find_choice(F), overflow_choice(O).
+    anchor_find_choice(A), field_find_choice(F).
 
 out(P, Col, Ch) :- params.stamp_order(D), parse.shown($U(), Ch, D, P, Col).
 
 .comp Determine {
-    // A trained example, read with one reading corner and one clamp origin.
-    .type Probe = [e: Example, c: DiagDir, o: DiagDir]
+    // A trained example, read with one reading corner.
+    .type Probe = [e: Example, c: DiagDir]
 
     .decl trained(e: Example)
     trained(E) :- ex_out(E, _, _).
 
     .decl probe_key(k: Probe)
-    probe_key([E, C, O]) :- trained(E), diag_dir_elem(C), diag_dir_elem(O).
+    probe_key([E, C]) :- trained(E), diag_dir_elem(C).
 
     .init probe = Parse<Probe>
-    probe.cell([E, C, O], P, Col) :- probe_key([E, C, O]), ex_in(E, P, Col).
-    probe.reading_corner([E, C, O], C) :- probe_key([E, C, O]).
-    probe.clamp_origin([E, C, O], O) :- probe_key([E, C, O]).
+    probe.cell([E, C], P, Col) :- probe_key([E, C]), ex_in(E, P, Col).
+    probe.reading_corner([E, C], C) :- probe_key([E, C]).
     probe.case(K, Ch) :- probe_key(K), probe_case(Ch).
 
     // The concept case, and one case of each branch that reads an open value.
     .decl probe_case(ch: Choice)
     probe_case(Ch) :- concept(Ch).
     probe_case(Ch) :- reads_corner(Ch).
-    probe_case(Ch) :- reads_origin(Ch).
 
     .decl concept(ch: Choice)
-    concept([$ArrowColor(), $PatternRect(), $MaskShape(), $AnchorColor(), $NoSepPanel(),
-             $CutAtEdge()]).
+    concept([$ArrowColor(), $PatternRect(), $MaskShape(), $AnchorColor(), $NoSepPanel()]).
 
     .decl reads_corner(ch: Choice)
-    reads_corner([$ArrowColor(), $StampFirst(), $MaskShape(), $AnchorColor(), $NoSepPanel(),
-                  $CutAtEdge()]).
+    reads_corner([$ArrowColor(), $StampFirst(), $MaskShape(), $AnchorColor(), $NoSepPanel()]).
     reads_corner([$ArrowColor(), $PatternRect(), $MaskShape(), $AnchorByPosition(),
-                  $NoSepPanel(), $CutAtEdge()]).
-
-    .decl reads_origin(ch: Choice)
-    reads_origin([$ArrowColor(), $PatternRect(), $MaskShape(), $AnchorColor(), $NoSepPanel(),
-                  $ClampWholeBlocks()]).
+                  $NoSepPanel()]).
 
     // Case Ch on probe K, read with stamp order D, misses the example's output.
     .decl wrong(k: Probe, ch: Choice, d: Dir)
-    wrong([E, C, O], Ch, D) :-
-        probe.case([E, C, O], Ch), dir_elem(D), ex_out(E, P, Col),
-        ( probe.shown([E, C, O], Ch, D, P, Col2), Col != Col2
-        ; !probe.shown([E, C, O], Ch, D, P, _)
+    wrong([E, C], Ch, D) :-
+        probe.case([E, C], Ch), dir_elem(D), ex_out(E, P, Col),
+        ( probe.shown([E, C], Ch, D, P, Col2), Col != Col2
+        ; !probe.shown([E, C], Ch, D, P, _)
         ).
-    wrong([E, C, O], Ch, D) :- probe.shown([E, C, O], Ch, D, P, _), !ex_out(E, P, _).
+    wrong([E, C], Ch, D) :- probe.shown([E, C], Ch, D, P, _), !ex_out(E, P, _).
 
     .decl stamp_contradicted(d: Dir)
     stamp_contradicted(D) :- concept(Ch), wrong(_, Ch, D).
@@ -679,23 +590,17 @@ out(P, Col, Ch) :- params.stamp_order(D), parse.shown($U(), Ch, D, P, Col).
     stamp_order(D) :- dir_elem(D), !stamp_contradicted(D).
 
     .decl corner_contradicted(c: DiagDir)
-    corner_contradicted(C) :- reads_corner(Ch), stamp_order(D), wrong([_, C, _], Ch, D).
+    corner_contradicted(C) :- reads_corner(Ch), stamp_order(D), wrong([_, C], Ch, D).
 
     .decl reading_corner(c: DiagDir)
     reading_corner(C) :- diag_dir_elem(C), !corner_contradicted(C).
-
-    .decl origin_contradicted(o: DiagDir)
-    origin_contradicted(O) :- reads_origin(Ch), stamp_order(D), wrong([_, _, O], Ch, D).
-
-    .decl clamp_origin(o: DiagDir)
-    clamp_origin(O) :- diag_dir_elem(O), !origin_contradicted(O).
 
     // The side of a filled square region that params.sep closes off in
     // example E.
     .decl square(e: Example, n: number)
     square(E, N) :-
-        probe.region.label([[E, C, O], _], P, Id), probe.region_box.box([[E, C, O], Id], B),
-        !probe.region_gap([E, C, O], Id),
+        probe.region.label([[E, C], _], P, Id), probe.region_box.box([[E, C], Id], B),
+        !probe.region_gap([E, C], Id),
         box_extent(B, P, A, N), perp(A, A2), box_extent(B, P, A2, N).
 
     .decl box_side_missing(n: number)
@@ -705,7 +610,7 @@ out(P, Col, Ch) :- params.stamp_order(D), parse.shown($U(), Ch, D, P, Col).
     box_side(N) :- square(_, N), !box_side_missing(N).
 
     .decl anchor_in(e: Example, col: Color)
-    anchor_in(E, Col) :- probe.anchor_cand([E, _, _], _, _, Col).
+    anchor_in(E, Col) :- probe.anchor_cand([E, _], _, _, Col).
 
     .decl anchor_missing(col: Color)
     anchor_missing(Col) :- anchor_in(_, Col), trained(E), !anchor_in(E, Col).
@@ -714,7 +619,7 @@ out(P, Col, Ch) :- params.stamp_order(D), parse.shown($U(), Ch, D, P, Col).
     anchor(Col) :- anchor_in(_, Col), !anchor_missing(Col).
 
     .decl arrow_in(e: Example, col: Color)
-    arrow_in(E, Col) :- probe.arrow_pair([E, _, _], _, _, Col).
+    arrow_in(E, Col) :- probe.arrow_pair([E, _], _, _, Col).
 
     .decl arrow_missing(col: Color)
     arrow_missing(Col) :- arrow_in(_, Col), trained(E), !arrow_in(E, Col).
@@ -725,8 +630,8 @@ out(P, Col, Ch) :- params.stamp_order(D), parse.shown($U(), Ch, D, P, Col).
     // The end panel on side D of example E's input holds params.sep.
     .decl legend_end(e: Example, d: Dir)
     legend_end(E, D) :-
-        probe.side([E, C, O], D), probe.panels.part_idx([E, C, O], P, D, 0),
-        probe.panels.tile_of([E, C, O], P, Pl), probe.sep_panel([E, C, O], Pl).
+        probe.side([E, C], D), probe.panels.part_idx([E, C], P, D, 0),
+        probe.panels.tile_of([E, C], P, Pl), probe.sep_panel([E, C], Pl).
 
     .decl legend_side_missing(d: Dir)
     legend_side_missing(D) :- legend_end(_, D), trained(E), !legend_end(E, D).

@@ -7,8 +7,8 @@
 // @rule greedy-rect-fill: from the params.hole cells not yet claimed, take the
 //  all-params.hole rectangle of largest area with each side at least
 //  params.min_side, and paint its cells params.fill; repeat until no such
-//  rectangle is left. Among overlapping rectangles of equal area, the one
-//  first in a scan of params.tie_order claims first.
+//  rectangle is left. Undefined where overlapping rectangles of equal area
+//  claim differently under different claim orders.
 // @rule keep-rest: every other cell keeps its input color
 
 // which cells stay claimed when rectangles share cells
@@ -45,14 +45,6 @@
     .decl hole(c: Color) hole(0).
     .decl fill(c: Color) fill(2).
     .decl min_side(k: number) min_side(2).
-
-    // --- concept, $ThicknessTwo, $AxisFirst ---
-    // No pair holds a tie, so every scan stays open.
-    .decl tie_order(c: DiagDir, a: Axis)
-    tie_order(DIAG_TL, AXIS_V). tie_order(DIAG_TL, AXIS_H).
-    tie_order(DIAG_TR, AXIS_V). tie_order(DIAG_TR, AXIS_H).
-    tie_order(DIAG_BL, AXIS_V). tie_order(DIAG_BL, AXIS_H).
-    tie_order(DIAG_BR, AXIS_V). tie_order(DIAG_BR, AXIS_H).
 
     // --- $AxisFirst, $AxisFirst & $ThicknessTwo ---
     .decl first_axis(a: Axis) first_axis(AXIS_V).
@@ -252,8 +244,10 @@ parse.cell($U(), P, Col) :- in(P, Col).
 
 // --- concept, $ThicknessTwo, $AxisFirst ---
 
+// Every scan's claims fill, so a cell two scans claim differently takes two
+// colors.
 out(P, Col, Ch) :-
-    in(P, C), parse.greedy(Ch), params.tie_order(D, A),
+    in(P, C), parse.greedy(Ch), parse.scan($U(), D, A),
     ( parse.claimed_cell($U(), Ch, D, A, P), params.fill(Col)
     ; !parse.claimed_cell($U(), Ch, D, A, P), Col = C
     ).
@@ -297,19 +291,6 @@ out(P, Col, [$AxisFirst(), $ThicknessTwo()]) :-
 
     .decl changed(e: Example, p: Position)
     changed(E, P) :- ex_in(E, P, Col_in), ex_out(E, P, Col), Col != Col_in.
-
-    // Under scan (c, a), the concept fills a cell the example does not, or
-    // leaves a changed cell unfilled.
-    .decl tie_contradicted(c: DiagDir, a: Axis)
-    tie_contradicted(C, A) :-
-        parse.claimed_cell(E, [$LargestFirst(), $AnyRect()], C, A, P),
-        ex_out(E, P, Col), !params.fill(Col).
-    tie_contradicted(C, A) :-
-        changed(E, P), parse.scan(E, C, A),
-        !parse.claimed_cell(E, [$LargestFirst(), $AnyRect()], C, A, P).
-
-    .decl tie_order(c: DiagDir, a: Axis)
-    tie_order(C, A) :- parse.scan(_, C, A), !tie_contradicted(C, A).
 
     // Under start corner c, the strip reading fills a cell the example does
     // not, or leaves a changed cell unfilled.

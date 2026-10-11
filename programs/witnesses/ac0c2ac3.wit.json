@@ -1,49 +1,8 @@
 {
   "id": "ac0c2ac3",
   "witnesses": [{
-    "id": "even-grid",
-    "separates": "$FloorCenter from the concept: a 6x6 grid has no center cell, so the concept is undefined. With the center taken toward the bottom-right corner, $FloorCenter draws rings about (3,3) that the bottom and right edges cut.",
-    "input": [
-      [5,7,7,7,7,7],
-      [7,7,7,7,7,8],
-      [7,7,9,7,7,7],
-      [7,7,7,2,7,7],
-      [7,7,7,7,7,7],
-      [7,7,7,7,7,7]
-    ],
-    "assign": {
-      "center_corner": [
-        ["DIAG_BR"]
-      ]
-    },
-    "output": [{
-      "cases": ["concept","$DepthRings"],
-      "grid": null
-    }, {
-      "cases": ["$CenterRings & $EmptyBg"],
-      "grid": [
-        [5,5,5,5,5,5],
-        [5,8,8,8,8,8],
-        [5,8,9,9,9,8],
-        [5,8,9,2,9,8],
-        [5,8,9,9,9,8],
-        [5,8,8,8,8,8]
-      ]
-    }, {
-      "cases": ["$CenterRings & $RankRings"],
-      "grid": [
-        [5,5,5,5,5,5,5],
-        [5,8,8,8,8,8,5],
-        [5,8,9,9,9,8,5],
-        [5,8,9,2,9,8,5],
-        [5,8,9,9,9,8,5],
-        [5,8,8,8,8,8,5],
-        [5,5,5,5,5,5,5]
-      ]
-    }]
-  }, {
     "id": "wide-grid",
-    "separates": "$DepthRings from the concept and $FloorCenter: in a 7x9 grid the four marks sit one per ring of depth from the edge, and two of them share a Chebyshev ring about the center cell, so the concept is undefined; $DepthRings draws nested rectangles.",
+    "separates": "$DepthRings from the concept: in a 7x9 grid the four marks sit one per ring of depth from the edge, and two of them share a Chebyshev ring about the center cell, so the concept is undefined; $DepthRings draws nested rectangles.",
     "input": [
       [7,7,5,7,7,7,7,7,7],
       [7,7,7,7,7,7,7,7,7],
@@ -245,6 +204,46 @@
         [7,7,7],
         [7,2,7],
         [7,7,7]
+      ]
+    }]
+  }, {
+    "id": "long-grid",
+    "separates": "$CenterRings from $DepthRings: a 3x7 grid has a center cell, and the mark 8 lies nearer the center and nearer the edge than the mark 5, so the two readings nest the rings in opposite orders; the concept is undefined, since the center ring and the outermost Chebyshev ring hold no mark.",
+    "input": [
+      [7,7,7,8,7,7,7],
+      [7,5,7,7,7,7,7],
+      [7,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$CenterRings & $EmptyBg"],
+      "grid": [
+        [7,5,8,8,8,5,7],
+        [7,5,8,7,8,5,7],
+        [7,5,8,8,8,5,7]
+      ]
+    }, {
+      "cases": ["$CenterRings & $RankRings"],
+      "grid": [
+        [5,5,5],
+        [5,8,5],
+        [5,5,5]
+      ]
+    }, {
+      "cases": ["$DepthRings & $EmptyBg"],
+      "grid": [
+        [8,8,8,8,8,8,8],
+        [8,5,5,5,5,5,8],
+        [8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$DepthRings & $RankRings"],
+      "grid": [
+        [8,8,8],
+        [8,5,8],
+        [8,8,8]
       ]
     }]
   }]
