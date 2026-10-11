@@ -26,10 +26,10 @@
 .type Anchor =
     // @claim place
     Fill {}
-    // @rule place: the shape translates so that the center of its bounding
-    //  box is the center of the marker rectangle, a half-cell offset rounding
-    //  toward params.round_toward on its axis; undefined when a moved cell
-    //  falls off the grid
+    // @rule place: the shape translates so that its bounding box sits at
+    //  equal margins from the marker rectangle on each axis; undefined where
+    //  the two extents differ in parity on an axis, or a moved cell falls off
+    //  the grid
     // @witness smaller-shape: variant $Center
     //     @relaxed fits
   | Center {top: Layer}
@@ -98,10 +98,7 @@
 // One connected piece of a load.
 .type Piece = [others: Others, k: Color, g: Grouping, id: Ident]
 
-// A unit that moves as one piece, named by its bounding box.
-.type Mover = [others: Others, k: Color, g: Grouping, b: Box]
-
-// A cell of the output a plan draws.
+// A cell of the output under one reading of the load and units.
 .type Spot = [a: Anchor, others: Others, k: Color, g: Grouping, q: Position]
 
 .decl out(p: Position, col: Color, ch: Choice)
@@ -109,8 +106,6 @@
 .comp Params {
     // @derive DominantColor: variant derived
     //     @relaxed shape
-    // @ignore: derive concept — wherever it is defined, Center with the
-    //  derived background gives its output
     .decl background(c: Color) background(0).
 
     // --- $KeepRest, $EraseRest ---
@@ -120,31 +115,9 @@
     // @derive RarestColor: variant derived
     //     @relaxed markers
     .decl marker_color(c: Color) marker_color(3).
-
-    // --- $Center ---
-    // The edge a half-cell center offset rounds toward, one per axis. The
-    // pairs hold no half-cell offset, so every value stays open.
-    .decl round_toward(d: Dir)
-    round_toward(DIR_T). round_toward(DIR_B). round_toward(DIR_L). round_toward(DIR_R).
 }
 
 .init params = Params
-
-// Which way a box's center is off its frame's center.
-.comp Parse<Key> {
-    // Boxes, each in the frame of its marker rectangle.
-    .decl placed(ky: Key, t: Box)
-
-    // Box T sits no farther from edge D than from its opposite, and one step
-    // farther from D it would sit farther: its center is the frame's center,
-    // rounded toward D.
-    .decl rounds(ky: Key, t: Box, d: Dir)
-    rounds(Ky, T, D) :-
-        placed(Ky, T), dist_pair(T, D, K1, K2), K1 <= K2,
-        opposite(D, O), neighbor(T, O, T2), dist_pair(T2, D, J1, J2), J1 > J2.
-}
-
-.init parse = Parse<Unit>
 
 .decl anchor_choice(a: Anchor)
 anchor_choice($Fill()). anchor_choice($Center($MarkerTop())). anchor_choice($Center($ShapeTop())).
@@ -181,25 +154,25 @@ color_box.cell(Col, P) :- in(P, Col), !params.background(Col).
 // The input cells that stay in place under each load.
 .decl stays(l: Load, p: Position, col: Color)
 
-// The cells of each unit.
-.decl unit(m: Mover, p: Position, col: Color)
+// The cells of each unit that moves as one piece, named by its bounding box.
+.decl unit(o: Others, k: Color, g: Grouping, b: Box, p: Position, col: Color)
 
-.decl mover(m: Mover)
-mover(M) :- unit(M, _, _).
+.decl mover(o: Others, k: Color, g: Grouping, b: Box)
+mover(O, K, G, B) :- unit(O, K, G, B, _, _).
 
 // Every translation from one grid cell to another.
 .decl shift(v: Offset)
 shift(V) :- in(P, _), in(Q, _), relative(P, Q, V).
 
 // The translation each anchor gives a unit.
-.decl place(a: Anchor, m: Mover, v: Offset)
+.decl place(a: Anchor, o: Others, k: Color, g: Grouping, b: Box, v: Offset)
 
 // Where each unit's cells land.
 // @ignore: store — the stored readings of the marker color and the moved
 //  color are StoredMarker and the params.shape_color of KeepRest
 .decl landed(a: Anchor, o: Others, k: Color, g: Grouping, q: Position, col: Color)
 landed(A, O, K, G, Q, Col) :-
-    place(A, [O, K, G, B], V), unit([O, K, G, B], P, Col), compose(P, V, Q).
+    place(A, O, K, G, B, V), unit(O, K, G, B, P, Col), compose(P, V, Q).
 
 // The color each landed cell shows; two pieces that give one cell different
 // colors leave it none.
@@ -209,11 +182,11 @@ shows.item([A, O, K, G, Q], Col) :- landed(A, O, K, G, Q, Col), in(Q, C), C != K
 
 // A reading of the load and units, under an anchor, that has a unit to move.
 .decl plan(a: Anchor, o: Others, k: Color, g: Grouping)
-plan(A, O, K, G) :- anchor_choice(A), mover([O, K, G, _]).
+plan(A, O, K, G) :- anchor_choice(A), mover(O, K, G, _).
 
 // Some unit has no translation.
 .decl stranded(a: Anchor, o: Others, k: Color, g: Grouping)
-stranded(A, O, K, G) :- plan(A, O, K, G), mover([O, K, G, B]), !place(A, [O, K, G, B], _).
+stranded(A, O, K, G) :- plan(A, O, K, G), mover(O, K, G, B), !place(A, O, K, G, B, _).
 
 // Some moved cell falls off the grid.
 .decl strays(a: Anchor, o: Others, k: Color, g: Grouping)
@@ -273,13 +246,13 @@ stays([$Carry(), K], P, Col) :- marker_color(_, K), in(P, Col), !cargo([$Carry()
 .init joint = Bbox<Load>
 joint.cell(L, P) :- cargo(L, P, _).
 
-unit([O, K, $ColorClass(), B], P, Col) :- cargo([O, K], P, Col), joint.box([O, K], B).
+unit(O, K, $ColorClass(), B, P, Col) :- cargo([O, K], P, Col), joint.box([O, K], B).
 
 // --- $PerObject ---
 // @claim place
 .init piece_box = Bbox<Piece>
 
-unit([O, K, G, B], P, Col) :-
+unit(O, K, G, B, P, Col) :-
     piece_box.cell([O, K, G, Id], P), piece_box.box([O, K, G, Id], B), cargo([O, K], P, Col).
 
 // --- $Conn4 ---
@@ -303,39 +276,19 @@ piece_box.cell([O, K, $PerObject($Conn8()), Id], P) :- piece8.label([O, K], P, I
 inner.cell(K, P) :- marker_color(_, K), color_box.box(K, R), in(P, _), interior(P, R).
 
 // The unit's box is a translate of the interior.
-place($Fill(), [O, K, G, B], V) :-
-    mover([O, K, G, B]), inner.box(K, I), relative(B, I, V), shift(V).
+place($Fill(), O, K, G, B, V) :-
+    mover(O, K, G, B), inner.box(K, I), relative(B, I, V), shift(V).
 
 // --- $Center ---
-// The rounding readings: one edge on each axis.
-.decl rounding(d1: Dir, d2: Dir)
-rounding(D1, D2) :- params.round_toward(D1), params.round_toward(D2), perp_dir(D1, D2).
-
 // Where each translation puts a unit's box, in its marker rectangle's frame.
-.decl lands(m: Mover, v: Offset, t: Box)
-lands([O, K, G, B], V, T) :-
-    mover([O, K, G, B]), color_box.box(K, R),
+.decl lands(o: Others, k: Color, g: Grouping, b: Box, v: Offset, t: Box)
+lands(O, K, G, B, V, T) :-
+    mover(O, K, G, B), color_box.box(K, R),
     shift(V), compose(B, V, T_grid), relative(R, T_grid, T).
 
-parse.placed($U(), T) :- lands(_, _, T).
-
-// The translation each rounding reading gives a unit.
-// @ignore: store — the rounding columns range over the open values of
-//  params.round_toward
-.decl centered_at(m: Mover, d1: Dir, d2: Dir, v: Offset)
-centered_at(M, D1, D2, V) :-
-    rounding(D1, D2), lands(M, V, T), parse.rounds($U(), T, D1), parse.rounds($U(), T, D2).
-
-// Some rounding places the unit nowhere.
-.decl unrounded(m: Mover)
-unrounded(M) :- mover(M), rounding(D1, D2), !centered_at(M, D1, D2, _).
-
-// The translation every rounding gives.
-// @claim place
-.init center = Unanimous<Mover, Offset>
-center.item(M, V) :- centered_at(M, _, _, V).
-
-place($Center(L), M, V) :- anchor_choice($Center(L)), center.value(M, V), !unrounded(M).
+// The box sits at equal margins from the rectangle on each axis.
+place($Center(L), O, K, G, B, V) :-
+    anchor_choice($Center(L)), lands(O, K, G, B, V, T), centered(T).
 
 // --- $MarkerTop ---
 shows.item([$Center($MarkerTop()), O, K, G, Q], K) :-
@@ -345,22 +298,4 @@ shows.item([$Center($MarkerTop()), O, K, G, Q], K) :-
 shows.item([$Center($ShapeTop()), O, K, G, Q], Col) :-
     landed($Center($ShapeTop()), O, K, G, Q, Col).
 
-.comp Determine {
-    // The marker rectangle of each example's input.
-    .init rect = Bbox<Example>
-    rect.cell(E, P) :- ex_in(E, P, Col), params.marker_color(Col).
-
-    // The shape's box in each example's output.
-    .init moved = Bbox<Example>
-    moved.cell(E, P) :- ex_out(E, P, Col), params.shape_color(Col).
-
-    .init parse = Parse<Example>
-    parse.placed(E, T) :- rect.box(E, R), moved.box(E, B), relative(R, B, T).
-
-    // An example's output box is not centered with rounding toward D.
-    .decl round_contradicted(d: Dir)
-    round_contradicted(D) :- parse.placed(E, T), dir_elem(D), !parse.rounds(E, T, D).
-
-    .decl round_toward(d: Dir)
-    round_toward(D) :- dir_elem(D), !round_contradicted(D).
-}
+.comp Determine {}

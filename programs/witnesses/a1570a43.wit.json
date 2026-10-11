@@ -1,41 +1,8 @@
 {
   "id": "a1570a43",
   "witnesses": [{
-    "id": "smaller-shape",
-    "separates": "$Center from the concept: the shape's bounding box is 3x3 and the marker interior is 5x5. The concept places the shape only where its bounding box is the interior, so it is undefined; $Center puts the shape's center on the interior's center.",
-    "input": [
-      [3,0,0,0,0,0,3,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0],
-      [3,0,0,0,0,0,3,0,2,0],
-      [0,0,0,0,0,0,0,2,2,2],
-      [0,0,0,0,0,0,0,0,2,2],
-      [0,0,0,0,0,0,0,0,0,0]
-    ],
-    "output": [{
-      "cases": ["concept"],
-      "grid": null
-    }, {
-      "cases": ["$Center"],
-      "grid": [
-        [3,0,0,0,0,0,3,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,2,0,0,0,0,0,0],
-        [0,0,2,2,2,0,0,0,0,0],
-        [0,0,0,2,2,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0],
-        [3,0,0,0,0,0,3,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0]
-      ]
-    }]
-  }, {
     "id": "two-color-shape",
-    "separates": "$Center & $EraseRest and $Center & $Carry from $Center, and $Center & $PerObject & $Conn8 from $Center & $PerObject: the shape has one cell of color 5 at its center. $Center moves the color-2 cells and leaves the 5 in place, as the concept does; $Center & $EraseRest blanks the 5; $Center & $Carry moves the 5 with the shape. The 5 cuts the color-2 cells so that 4-adjacency parts off a two-cell piece whose center is a half cell off the rectangle's, so $Center & $PerObject is undefined; under $Conn8 the color-2 cells stay one piece.",
+    "separates": "$EraseRest and $Carry from the concept, and $PerObject & $Conn8 from $PerObject: the shape has one cell of color 5 at its center. The concept moves the color-2 cells into the interior and leaves the 5 in place; $EraseRest blanks the 5; $Carry moves the 5 with the shape. The 5 cuts the color-2 cells so that 4-adjacency parts them into pieces whose boxes are not the interior, so $PerObject is undefined; under $Conn8 the color-2 cells stay one piece.",
     "input": [
       [3,0,0,0,0,0,3,0,0,0,0,0],
       [0,0,0,0,0,0,0,0,0,0,0,0],
@@ -51,10 +18,7 @@
       [0,0,0,0,0,0,0,0,2,2,0,0]
     ],
     "output": [{
-      "cases": [
-        "$KeepRest & $ColorClass & marker_color=stored",
-        "$KeepRest & $Conn8 & marker_color=stored"
-      ],
+      "cases": ["$KeepRest & $ColorClass & marker_color=stored","$Conn8 & marker_color=stored"],
       "grid": [
         [3,0,0,0,0,0,3,0,0,0,0,0],
         [0,0,0,2,0,0,0,0,0,0,0,0],
@@ -72,12 +36,27 @@
     }, {
       "cases": [
         "$Fill & marker_color=RarestColor",
-        "$Carry & $ColorClass & marker_color=RarestColor",
         "$Conn4 & marker_color=RarestColor",
         "$EraseRest & $Conn4",
         "$KeepRest & $Conn4"
       ],
       "grid": null
+    }, {
+      "cases": ["$MarkerTop & $Carry & $Conn8","$EraseRest & marker_color=RarestColor"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,0,0,2,2,5,2,2],
+        [0,0,0,0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0,0,2,2,0,0]
+      ]
     }, {
       "cases": ["$Carry & marker_color=stored"],
       "grid": [
@@ -95,30 +74,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$MarkerTop & $Carry & $Conn8 & marker_color=RarestColor",
-        "$EraseRest & $Conn8 & marker_color=RarestColor",
-        "$EraseRest & $ColorClass & marker_color=RarestColor"
-      ],
-      "grid": [
-        [0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,2,0,0],
-        [0,0,0,0,0,0,0,0,2,2,0,0],
-        [0,0,0,0,0,0,0,2,2,5,2,2],
-        [0,0,0,0,0,0,0,0,2,0,0,0],
-        [0,0,0,0,0,0,0,0,2,2,0,0]
-      ]
-    }, {
-      "cases": [
-        "$EraseRest & $Conn8 & marker_color=stored",
-        "$EraseRest & $ColorClass & marker_color=stored"
-      ],
+      "cases": ["$EraseRest & $ColorClass & marker_color=stored"],
       "grid": [
         [3,0,0,0,0,0,3,0,0,0,0,0],
         [0,0,0,2,0,0,0,0,0,0,0,0],
@@ -134,10 +90,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$KeepRest & $Conn8 & marker_color=RarestColor",
-        "$Center & $KeepRest & $ColorClass & marker_color=RarestColor"
-      ],
+      "cases": ["$Center & $KeepRest & marker_color=RarestColor"],
       "grid": [
         [3,0,0,0,0,0,3,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0],
@@ -153,7 +106,7 @@
         [0,0,0,0,0,0,0,0,2,2,0,0]
       ]
     }, {
-      "cases": ["$ShapeTop & $Carry & $Conn8 & marker_color=RarestColor"],
+      "cases": ["$ShapeTop & $Carry"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0],
@@ -171,7 +124,7 @@
     }]
   }, {
     "id": "split-shape",
-    "separates": "$Center & $PerObject from $Center: the color-2 cells form two pieces, a 5x1 bar and a 3x3 ring, whose joint bounding box is 5x5. $Center moves both as one unit into the interior, as the concept does; $Center & $PerObject centers each piece alone, so the bar crosses the ring. Under $Conn8 the pieces are the same.",
+    "separates": "$PerObject from the concept: the color-2 cells form two pieces, a 5x1 bar and a 3x3 ring, whose joint bounding box is 5x5. The concept moves both as one unit into the interior; under $PerObject the box of neither piece is the interior, so it is undefined. Under $Conn8 the pieces are the same.",
     "input": [
       [3,0,0,0,0,0,3,0,0,0,0,0],
       [0,0,0,0,0,0,0,0,0,0,0,0],
@@ -221,7 +174,7 @@
     }]
   }, {
     "id": "new-marker-color",
-    "separates": "$Center & $DeriveMarker from $Center: train0's input with the four markers recolored 4. The concept and $Center read markers of the stored color 3, find none, and are undefined; $Center & $DeriveMarker takes 4 as the color of the four corner cells and moves the shape into their interior.",
+    "separates": "$DeriveMarker from the concept: train0's input with the four markers recolored 4. The concept reads markers of the stored color 3, finds none, and is undefined; $DeriveMarker takes 4 as the color of the four corner cells and moves the shape into their interior.",
     "input": [
       [4,0,2,0,0,0,4],
       [0,2,2,0,0,0,0],
@@ -247,58 +200,8 @@
       ]
     }]
   }, {
-    "id": "big-shape",
-    "separates": "$ShapeTop from $Center: the shape's bounding box is 5x5, the whole marker rectangle, and has a cell at its top-left corner. Centered, that cell lands on the top-left marker; $Center keeps the marker there, and $ShapeTop covers it with the shape. The concept is undefined, since the box is not the 3x3 interior.",
-    "input": [
-      [3,0,0,0,3,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0],
-      [3,0,0,0,3,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,2,2,0,0,0],
-      [0,0,0,0,0,0,0,2,2,0,0],
-      [0,0,0,0,0,0,0,0,2,2,2],
-      [0,0,0,0,0,0,0,0,2,0,0],
-      [0,0,0,0,0,0,0,2,2,0,0]
-    ],
-    "output": [{
-      "cases": ["concept"],
-      "grid": null
-    }, {
-      "cases": ["$MarkerTop"],
-      "grid": [
-        [3,2,0,0,3,0,0,0,0,0,0],
-        [0,2,2,0,0,0,0,0,0,0,0],
-        [0,0,2,2,2,0,0,0,0,0,0],
-        [0,0,2,0,0,0,0,0,0,0,0],
-        [3,2,2,0,3,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0]
-      ]
-    }, {
-      "cases": ["$ShapeTop"],
-      "grid": [
-        [2,2,0,0,3,0,0,0,0,0,0],
-        [0,2,2,0,0,0,0,0,0,0,0],
-        [0,0,2,2,2,0,0,0,0,0,0],
-        [0,0,2,0,0,0,0,0,0,0,0],
-        [3,2,2,0,3,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0]
-      ]
-    }]
-  }, {
     "id": "two-copies",
-    "separates": "$Center & $PerObject from $Center: two copies of one 5x5 shape stand apart. Their joint box is not the interior, so $Center and the concept are undefined; $Center & $PerObject centers each copy on the rectangle, where they coincide.",
+    "separates": "$PerObject from the concept: two copies of one 5x5 shape stand apart. Their joint box is not the interior, so the concept is undefined; $PerObject moves each copy into the interior, where they coincide.",
     "input": [
       [3,0,0,0,0,0,3,0,0,0,0,0,0],
       [0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -337,7 +240,7 @@
     }]
   }, {
     "id": "diagonal-link",
-    "separates": "$Center & $PerObject & $Conn8 from $Center & $PerObject: the shape's top-left cell touches the rest only at a corner. Under 4-adjacency that cell is a piece of its own, and the rest has a 4x4 box whose center is a half cell off the rectangle's, so $Center & $PerObject is undefined; under $Conn8 the shape is one piece and moves into the interior as under the concept.",
+    "separates": "$PerObject & $Conn8 from $PerObject: the shape's top-left cell touches the rest only at a corner. Under 4-adjacency that cell is a piece of its own, and neither piece has the interior as its box, so $PerObject is undefined; under $Conn8 the shape is one piece and moves into the interior as under the concept.",
     "input": [
       [3,0,0,0,0,0,3,0,0,0,0,0],
       [0,0,0,0,0,0,0,0,0,0,0,0],
@@ -374,7 +277,7 @@
     }]
   }, {
     "id": "stray-cell",
-    "separates": "$Center & $EraseRest & $PerObject from $Center & $PerObject: two copies of one 5x5 shape stand apart, and a color-5 cell sits off the rectangle. The joint box of the color-2 cells is not the interior, so $Center and the concept are undefined; $Center & $PerObject centers each copy on the rectangle, where they coincide, and keeps the 5, which $Center & $EraseRest & $PerObject blanks.",
+    "separates": "$EraseRest & $PerObject from $PerObject: two copies of one 5x5 shape stand apart, and a color-5 cell sits off the rectangle. The joint box of the color-2 cells is not the interior, so the concept is undefined; $PerObject moves each copy into the interior, where they coincide, and keeps the 5, which $EraseRest & $PerObject blanks.",
     "input": [
       [3,0,0,0,0,0,3,0,0,0,0,0,5],
       [0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -394,10 +297,10 @@
       "cases": ["$ColorClass","marker_color=RarestColor"],
       "grid": null
     }, {
-      "cases": ["$Carry & $PerObject & marker_color=stored"],
+      "cases": ["$Carry & $Conn4 & marker_color=stored"],
       "grid": null
     }, {
-      "cases": ["$EraseRest & $PerObject & marker_color=stored"],
+      "cases": ["$EraseRest & $Conn4"],
       "grid": [
         [3,0,0,0,0,0,3,0,0,0,0,0,0],
         [0,0,0,2,0,0,0,0,0,0,0,0,0],
@@ -414,7 +317,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$KeepRest & $PerObject & marker_color=stored"],
+      "cases": ["$KeepRest & $PerObject"],
       "grid": [
         [3,0,0,0,0,0,3,0,0,0,0,0,5],
         [0,0,0,2,0,0,0,0,0,0,0,0,0],
@@ -433,7 +336,7 @@
     }]
   }, {
     "id": "diagonal-copies",
-    "separates": "$Center & $PerObject & $Conn8 from $Center & $PerObject: two copies of one 5x5 shape touch only where the bottom-right cell of one meets the top-left cell of the other at a corner. Under 4-adjacency they are two pieces, each centered on the rectangle, where they coincide; under $Conn8 they are one piece with a 10x10 box whose center is a half cell off the rectangle's, so $Conn8 is undefined. $Center and the concept are undefined for the same reason.",
+    "separates": "$PerObject & $Conn8 from $PerObject: two copies of one 5x5 shape touch only where the bottom-right cell of one meets the top-left cell of the other at a corner. Under 4-adjacency they are two pieces, each moved into the interior, where they coincide; under $Conn8 they are one piece with a 10x10 box, which is not the interior, so $Conn8 is undefined. The concept is undefined for the same reason.",
     "input": [
       [3,0,0,0,0,0,3,0,0,0],
       [0,0,0,0,0,0,0,0,0,0],
@@ -480,7 +383,7 @@
     }]
   }, {
     "id": "corner-cells",
-    "separates": "$Center & $DeriveMarker from $Center: four color-5 cells sit at the empty corners of the shape's bounding box. The concept and $Center move the shape into the interior and leave the 5s in place; $Center & $Carry moves the 5s with the shape; $Center & $DeriveMarker finds two colors whose cells are exactly the four corners of a rectangle, 3 and 5, and is undefined.",
+    "separates": "$DeriveMarker from the concept: four color-5 cells sit at the empty corners of the shape's bounding box. The concept moves the shape into the interior and leaves the 5s in place; $Carry moves the 5s with the shape; $DeriveMarker finds two colors whose cells are exactly the four corners of a rectangle, 3 and 5, and is undefined.",
     "input": [
       [3,0,0,0,0,0,3,0,0,0,0,0],
       [0,0,0,0,0,0,0,0,0,0,0,0],
@@ -512,16 +415,10 @@
         [0,0,0,0,0,0,0,5,0,0,0,5]
       ]
     }, {
-      "cases": ["$DeriveMarker"],
+      "cases": ["$Carry & $Conn8"],
       "grid": null
     }, {
-      "cases": ["$Carry & $PerObject & $StoredMarker & marker_color=stored"],
-      "grid": null
-    }, {
-      "cases": ["$Carry & $Conn8 & marker_color=RarestColor"],
-      "grid": null
-    }, {
-      "cases": ["$Carry & $ColorClass & $StoredMarker"],
+      "cases": ["$Carry & $ColorClass"],
       "grid": [
         [3,0,0,0,0,0,3,0,0,0,0,0],
         [0,5,0,2,0,5,0,0,0,0,0,0],
@@ -537,10 +434,13 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$Carry & $Conn4 & marker_color=RarestColor"],
+      "cases": ["$Carry & $Conn4 & marker_color=stored"],
       "grid": null
     }, {
-      "cases": ["$EraseRest & $StoredMarker & marker_color=stored"],
+      "cases": ["$Conn4 & marker_color=RarestColor"],
+      "grid": null
+    }, {
+      "cases": ["$EraseRest & marker_color=stored"],
       "grid": [
         [3,0,0,0,0,0,3,0,0,0,0,0],
         [0,0,0,2,0,0,0,0,0,0,0,0],
@@ -559,12 +459,15 @@
       "cases": ["$EraseRest & marker_color=RarestColor"],
       "grid": null
     }, {
+      "cases": ["$DeriveMarker"],
+      "grid": null
+    }, {
       "cases": ["$Center & $KeepRest & marker_color=RarestColor"],
       "grid": null
     }]
   }, {
     "id": "corner-rectangle",
-    "separates": "$Center & $Carry & $PerObject from $Center & $Carry & $PerObject & $DeriveMarker: a 3x3 ring of color 2 with an empty center lies apart from the 3x3 marker interior, and four color-5 cells stand alone at the corners of another rectangle. Under $Carry and $PerObject each 5 is a one-cell piece, centered on the interior's center, where the ring's hole is, so the case reading the stored marker color 3 is defined; $DeriveMarker finds two colors whose cells are exactly the four corners of a rectangle, 3 and 5, and is undefined. The concept moves the ring and leaves the 5s in place.",
+    "separates": "$DeriveMarker from the concept: a 3x3 ring of color 2 with an empty center lies apart from the 3x3 marker interior, and four color-5 cells stand alone at the corners of another rectangle. The concept moves the ring into the interior and leaves the 5s in place; $DeriveMarker finds two colors whose cells are exactly the four corners of a rectangle, 3 and 5, and is undefined.",
     "input": [
       [3,0,0,0,3,0,0,0,0,0],
       [0,0,0,0,0,0,5,0,0,5],
@@ -592,10 +495,7 @@
         [0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$DeriveMarker","$Carry & $ColorClass"],
-      "grid": null
-    }, {
-      "cases": ["$Carry & $PerObject & $StoredMarker"],
+      "cases": ["$Carry & $PerObject"],
       "grid": [
         [3,0,0,0,3,0,0,0,0,0],
         [0,2,2,2,0,0,0,0,0,0],
@@ -609,7 +509,10 @@
         [0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$EraseRest & $StoredMarker"],
+      "cases": ["$Carry & $ColorClass","$DeriveMarker"],
+      "grid": null
+    }, {
+      "cases": ["$EraseRest"],
       "grid": [
         [3,0,0,0,3,0,0,0,0,0],
         [0,2,2,2,0,0,0,0,0,0],
@@ -647,17 +550,6 @@
         [3,1,1,1,1,1,3]
       ]
     }, {
-      "cases": ["$Carry & background=stored"],
-      "grid": [
-        [3,1,2,1,1,1,3],
-        [1,2,2,1,1,1,1],
-        [2,2,2,2,2,1,1],
-        [1,2,1,1,1,1,1],
-        [1,2,2,1,1,1,1],
-        [1,1,1,1,1,1,1],
-        [3,1,1,1,1,1,3]
-      ]
-    }, {
       "cases": ["background=DominantColor"],
       "grid": [
         [3,1,1,1,1,1,3],
@@ -669,7 +561,18 @@
         [3,1,1,1,1,1,3]
       ]
     }, {
-      "cases": ["$EraseRest & background=stored"],
+      "cases": ["$Carry"],
+      "grid": [
+        [3,1,2,1,1,1,3],
+        [1,2,2,1,1,1,1],
+        [2,2,2,2,2,1,1],
+        [1,2,1,1,1,1,1],
+        [1,2,2,1,1,1,1],
+        [1,1,1,1,1,1,1],
+        [3,1,1,1,1,1,3]
+      ]
+    }, {
+      "cases": ["$EraseRest"],
       "grid": [
         [3,0,0,0,0,0,3],
         [0,0,0,2,0,0,0],
@@ -705,6 +608,89 @@
         [0,0,2,0,0,0,0],
         [0,0,2,2,0,0,0],
         [1,0,0,0,0,0,1]
+      ]
+    }]
+  }, {
+    "id": "smaller-shape",
+    "separates": "$Center from the concept: the shape's bounding box is 3x3 and the marker interior is 5x5. The concept places the shape only where its bounding box is the interior, so it is undefined; $Center puts the box at a margin of 2 from the marker rectangle on every side.",
+    "input": [
+      [3,0,0,0,0,0,3,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [3,0,0,0,0,0,3,0,2,0],
+      [0,0,0,0,0,0,0,2,2,2],
+      [0,0,0,0,0,0,0,0,2,2],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$Center"],
+      "grid": [
+        [3,0,0,0,0,0,3,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,2,0,0,0,0,0,0],
+        [0,0,2,2,2,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [3,0,0,0,0,0,3,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "big-shape",
+    "separates": "$ShapeTop from $Center: the shape's bounding box is 5x5, the whole marker rectangle, and has a cell at its top-left corner. At margin 0 from the rectangle, that cell lands on the top-left marker; $Center keeps the marker there, and $ShapeTop covers it with the shape. The concept is undefined, since the box is not the 3x3 interior.",
+    "input": [
+      [3,0,0,0,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0],
+      [3,0,0,0,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,2,2,0,0,0],
+      [0,0,0,0,0,0,0,2,2,0,0],
+      [0,0,0,0,0,0,0,0,2,2,2],
+      [0,0,0,0,0,0,0,0,2,0,0],
+      [0,0,0,0,0,0,0,2,2,0,0]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$MarkerTop"],
+      "grid": [
+        [3,2,0,0,3,0,0,0,0,0,0],
+        [0,2,2,0,0,0,0,0,0,0,0],
+        [0,0,2,2,2,0,0,0,0,0,0],
+        [0,0,2,0,0,0,0,0,0,0,0],
+        [3,2,2,0,3,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$ShapeTop"],
+      "grid": [
+        [2,2,0,0,3,0,0,0,0,0,0],
+        [0,2,2,0,0,0,0,0,0,0,0],
+        [0,0,2,2,2,0,0,0,0,0,0],
+        [0,0,2,0,0,0,0,0,0,0,0],
+        [3,2,2,0,3,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0]
       ]
     }]
   }]
