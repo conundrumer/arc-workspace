@@ -245,6 +245,7 @@
 
 ## Item checker
 - [Item checker](prompts/agents/item-checker.md#item-checker): Verification: another agent checks the built change; Implementation: each item not done reaches the agent that decides it.
+    - "An editor's items are the Intent items": Verification: another agent checks the built change against each requirement.
     - "Run none of the checks that [merge_change.py]": none. Kept: the principle of Process assessment, spend no run the work does not need.
     - "Where your brief gives the change past its cost budget": Process assessment: the faults of the processes reach the user; Implementation: each item not done reaches the agent that decides it.
 

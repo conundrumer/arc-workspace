@@ -65,7 +65,7 @@
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 
 ### An item checker's brief
-- An item checker's brief gives the number of a change's ticket, or, where the change has none, the transcript brief its editors' briefs give, its worktree, the latest report of each editor of the change that has reported since the last item checker launched on the change, with that editor's agent id, the agent id of each other editor of the change, the accepted gate outputs the change writes, where it writes any, and the agent id of the agent that launches it, where that is not the coordinator.
+- An item checker's brief gives the number of a change's ticket, or, where the change has none, the transcript brief its editors' briefs give, its worktree, where the change is past its cost budget, that it is, the latest report of each editor of the change that has reported since the last item checker launched on the change, with that editor's agent id, where ticket analysts already decided items on the change, their agent ids and latest reports, the agent id of each other editor of the change, the accepted gate outputs the change writes, where it writes any, and the agent id of the agent that launches it, where that is not the coordinator.
 
 ### An operator's brief
 - An operator's brief gives only lines in these forms, each on a line of its own:
