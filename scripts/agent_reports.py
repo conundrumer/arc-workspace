@@ -26,6 +26,10 @@ from transcripts import Entry, agent_id, chain, epoch, main_transcript, read_ent
 # of its own still running.
 STILL_RUNNING = "This agent stopped with background work of its own still running"
 
+# The words of the summary of a notification of status `failed` that the
+# usage limit stopped the agent.
+RATE_LIMIT = "error type rate_limit"
+
 HAND_BACK = re.compile(r"\A\[Subagent hand-back\] [^\n]*The report follows:\n")
 """The preamble of a message that delivers an agent's SubagentHandback
 report, on the message's first line."""
@@ -74,11 +78,13 @@ class Sign(Enum):
     """What an entry of a parent's transcripts says of an agent's turn: a
     notification that it stopped (`is_stop`), a SubagentHandback message
     from it, a notification that it stopped with background work of its
-    own still running, which says it has not reported yet, or any other
-    notification of it."""
+    own still running, which says it has not reported yet, a notification
+    that the usage limit stopped it (`limit_stop`), which says it has not
+    ended its work, or any other notification of it."""
     STOPPED = "stopped"
     HANDED_BACK = "handed back"
     STILL_RUNNING = "still running"
+    LIMITED = "limited"
     OTHER = "other"
 
 
@@ -99,6 +105,8 @@ def handed_back(text: str) -> str | None:
 
 
 def sign_of(n: Notification) -> Sign:
+    if limit_stop(n):
+        return Sign.LIMITED
     if is_stop(n):
         return Sign.STOPPED
     if still_running(n):
@@ -119,10 +127,11 @@ def entry_signs(e: Entry) -> list[tuple[str, Sign]]:
     return out
 
 
-def last_sign(entries: Iterable[Entry], since: float, ids: set[str]) -> Sign | None:
+def last_sign(entries: Iterable[Entry], since: float,
+              ids: set[str]) -> tuple[Sign, float] | None:
     """The latest sign among `entries` timestamped after `since` of an
-    agent that one of `ids` names, other than `Sign.OTHER`, or None. Of
-    signs at one time, one of `ENDED` counts as the latest."""
+    agent that one of `ids` names, other than `Sign.OTHER`, with its time,
+    or None. Of signs at one time, one of `ENDED` counts as the latest."""
     found: tuple[float, bool, Sign] | None = None
     for e in entries_after(entries, since):
         t = epoch(e["timestamp"])
@@ -131,7 +140,7 @@ def last_sign(entries: Iterable[Entry], since: float, ids: set[str]) -> Sign | N
                 k = (t, sign in ENDED, sign)
                 if found is None or k[:2] > found[:2]:
                     found = k
-    return found[2] if found else None
+    return (found[2], found[0]) if found else None
 
 
 def can_report(entry: Entry) -> bool:
@@ -246,6 +255,12 @@ def is_stop(n: Notification) -> bool:
     background work of its own still running."""
     return (n.status not in (None, Status.RUNNING)
             and not still_running(n))
+
+
+def limit_stop(n: Notification) -> bool:
+    """Whether `n` says the usage limit stopped the agent: a notification
+    of status `failed` whose summary gives `RATE_LIMIT`."""
+    return n.status is Status.FAILED and RATE_LIMIT in (n.summary or "")
 
 
 def still_running(n: Notification) -> bool:

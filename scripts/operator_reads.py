@@ -268,12 +268,14 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
         if d is None:
             continue
         reports = tuple(Report(r.time, r.text, r.file) for r in launch.reports(0.0, undecided))
-        sign = (signs.get(launch.agent or "") if launch.pending else
-                last_sign(launch.entries, launch.since, {launch.agent or "", launch.call}))
+        signed = (signs.get(launch.agent or "") if launch.pending else
+                  last_sign(launch.entries, launch.since, {launch.agent or "", launch.call}))
+        sign, at = signed if signed else (None, None)
         still = sign is Sign.STILL_RUNNING
+        limited = at if sign is Sign.LIMITED else None
         a = Agent(launch.agent, aid, d.role, d.subject, str(use[1].get("prompt", "")),
-                  use[0], still or (launch.pending and sign not in ENDED), reports,
-                  still_running=still,
+                  use[0], still or limited is not None or (launch.pending and sign not in ENDED),
+                  reports, still_running=still, limited=limited,
                   notifies=launch.since <= max(use[0], own.get(launch.agent or "", 0.0)),
                   messaged=sent_to(launch.path) if d.role is Role.DOC_REVIEWER and launch.path
                   else None)

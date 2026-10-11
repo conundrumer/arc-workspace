@@ -4,6 +4,7 @@ transcripts of the session's operators, and of the state the monitor's
 steps read, from the session's running agents and their transcripts; and
 the assembly of what an operator launcher reads (`read_relay`)."""
 
+import json
 import os
 import time
 from dataclasses import replace
@@ -51,6 +52,46 @@ DEPRECATED = frozenset({ReaderName.ROLE, ReaderName.CONSOLE, ReaderName.SURVEY,
                         ReaderName.WORKFLOW})
 """The readers of the deprecated mechanisms, which no standing doc review
 reads."""
+
+
+USAGE_STALE = 10 * 60
+"""How old, in seconds, the usage file (`usage_file`) may be to give the
+usage limit as lifted."""
+
+
+def usage_file() -> Path:
+    """The file the harness keeps the account's rate limit data in, in the
+    Claude config directory: `$CLAUDE_CONFIG_DIR`, or `~/.claude` where
+    that is unset."""
+    home = os.environ.get("CLAUDE_CONFIG_DIR")
+    return (Path(home) if home else Path.home() / ".claude") / "usage.json"
+
+
+def limit_lifted(now: float, undecided: list[str]) -> float | None:
+    """The time of the last write of the usage file, where it was written
+    less than `USAGE_STALE` before `now` and each window it gives has a
+    `used_pct` under 100, and otherwise None, for the limit in force. A
+    file of no known form gives None, and an `undecided` line names it."""
+    path = usage_file()
+    try:
+        written = path.stat().st_mtime
+        windows = json.loads(path.read_text())
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as e:
+        undecided.append(mctx("{path}: it does not read as JSON ({why}), so whether "
+                              "the usage limit is lifted is unknown").format(path=path, why=e))
+        return None
+    if now - written >= USAGE_STALE:
+        return None
+    found = [w.get("used_pct") if isinstance(w, dict) else None
+             for w in (windows.values() if isinstance(windows, dict) else [None])]
+    used = [u for u in found if isinstance(u, int | float)]
+    if not used or len(used) < len(found):
+        undecided.append(mctx("{path}: a window of it gives no numeric `used_pct`, so "
+                              "whether the usage limit is lifted is unknown").format(path=path))
+        return None
+    return written if all(u < 100 for u in used) else None
 
 
 def session_id() -> str:
@@ -140,8 +181,9 @@ def read_state(me: str) -> tuple[State, MonitorState]:
     holders = {t.holder for t in tickets.values() if t.status is Status.ASSIGNED and t.holder}
     my_path = dict(runs)[me]
     trees = worktrees(main)
+    now = time.time()
     state = State(
-        me=me, now=time.time(), session=session, started=started(session), index=index, main_tree=main,
+        me=me, now=now, session=session, started=started(session), index=index, main_tree=main,
         scratch=scratch(session), operators=tuple(aid for aid, _ in runs),
         parents={aid: parent_id(p) for aid, p in runs},
         open_operators=frozenset(aid for aid, p in runs[run_index(runs, me) + 1:]
@@ -159,7 +201,8 @@ def read_state(me: str) -> tuple[State, MonitorState]:
         made=made(calls), unread=unread,
         definitions={d.stem: d.stat().st_mtime
                      for d in sorted(agents_of(main).glob("*.md"))},
-        branches={w: b for w, b in trees.items() if b is not None})
+        branches={w: b for w, b in trees.items() if b is not None},
+        limit_lifted=limit_lifted(now, watching))
     state = replace(state, taken_up=taken_up(state))
     given = [ticket_number(n) for n in named(state) if n in tickets]
     held = {w for t in tickets.values() if t.status is Status.ASSIGNED and t.holder == me

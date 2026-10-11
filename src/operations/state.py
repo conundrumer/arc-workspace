@@ -113,6 +113,9 @@ class Agent:
     holds too where the latest sign is a notification that it stopped
     with work of its own still running, and then `still_running` holds:
     it has not reported yet, and the operator's turn may not end on it.
+    It holds as well where the latest sign is a notification that the
+    usage limit stopped it, and then `limited` gives that sign's time: it
+    has not ended its work, and waits for a resume (`limit_resume`).
     Where a sign ends it and no report of it reached that operator since
     its launch or its last resume, the final reply in its transcript, where
     it gives one after them and it went to that operator or is the path of
@@ -137,6 +140,7 @@ class Agent:
     still_running: bool
     notifies: bool
     messaged: frozenset[str] | None = None
+    limited: float | None = None
 
     @property
     def last_report(self) -> Report | None:
@@ -311,7 +315,9 @@ class State:
     `changes.of_change` gives for it. `budgets` gives the budget of the
     change `changes.take` takes next, taken at `now`, and of each change
     `me` holds whose spend passes the budget its take gives, taken at that
-    take."""
+    take. `limit_lifted` is the time of the reading of the usage limit that
+    gives it as lifted, or None where the reading gives it in force, as
+    `operator_state.limit_lifted` gives it."""
     me: str
     now: float
     session: str
@@ -343,6 +349,7 @@ class State:
     taken_up: frozenset[str] = frozenset()
     unread: tuple[Unread, ...] = ()
     definitions: Mapping[str, float] = field(default_factory=dict)
+    limit_lifted: float | None = None
     parents: Mapping[str, str] = field(default_factory=dict)
     spent: Mapping[str, Spend] = field(default_factory=dict)
     budgets: Mapping[str, Budget] = field(default_factory=dict)

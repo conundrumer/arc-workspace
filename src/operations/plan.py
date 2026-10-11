@@ -20,7 +20,8 @@ that the operators before it in a row that ended so received
 `changes.release`, the changes of the session and of the tickets named
 to it.
 
-The steps come in this order: the coordinator's lines in no form the
+The steps come in this order: the resume of each agent the usage limit
+stopped (`limit_resume`); the coordinator's lines in no form the
 command reads, each given back to the coordinator once; the ticket
 files the read of the tracker left out (`decisions.unread_files`); the
 alerts; the tickets on stalled agents; the request to a ticket analyst on a held step to give its decision
@@ -49,8 +50,8 @@ its text (`ending`)."""
 from collections.abc import Callable
 
 from controlled_markdown import mctx
-from operations import (alerts, batches, changes, decisions, drafts, lineage, monitor, passes,
-                        triage)
+from operations import (alerts, batches, changes, decisions, drafts, limit_resume, lineage,
+                        monitor, passes, triage)
 from operations.directives import (
     NUMBER,
     TASK,
@@ -209,7 +210,7 @@ def elsewhere(state: State) -> list[str]:
 
 
 EARLY: tuple[Callable[[State], Step | None], ...] = (
-    unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.late_resumes, decisions.asks, triage.decisions, triage.for_coordinator,
+    limit_resume.step, unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.late_resumes, decisions.asks, triage.decisions, triage.for_coordinator,
     triage.unfinished)
 LATE: tuple[Callable[[State], Step | None], ...] = (
     launching, triage.reopen, triage.later_lines, triage.settle, drafts.step, changes.step,

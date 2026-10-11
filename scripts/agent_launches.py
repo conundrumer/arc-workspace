@@ -400,8 +400,9 @@ def session_entries(found: list[tuple[Path, Launch]], since: float) -> list[Entr
     return [e for p in changed_since(sessions, since) for e in read_entries(p, naming=agents)]
 
 
-def turn_signs(path: Path, found: list[Launch]) -> dict[str, Sign]:
-    """The latest sign of its turn (`agent_reports.last_sign`) of the agent
+def turn_signs(path: Path, found: list[Launch]) -> dict[str, tuple[Sign, float]]:
+    """The latest sign of its turn (`agent_reports.last_sign`), with its
+    time, of the agent
     of each launch of `found`, launched by the run at `path`, after the
     call that launched or last resumed it, in the transcripts
     `session_entries` gives, where one stands."""
