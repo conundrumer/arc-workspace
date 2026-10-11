@@ -29,7 +29,7 @@ from ticket_numbers import TICKET_NUMBER
 from transcripts import epoch, find, read_entries, session_directory
 
 from operations.merging import MERGE_SCRIPT, merge_messages
-from operations.reports import TICKETS_FILED
+from operations.reports import TICKETS_FILED, heading_part
 from operations.roles import PASSES, Role, described
 from operations.state import Agent, Call, Merge, Message, Report
 from operations.command_words import COMMAND, is_next
@@ -89,10 +89,10 @@ def pass_tickets(report: str, main: Path) -> tuple[str, ...] | None:
     path = Path(text) if Path(text).is_absolute() else main / text
     if not path.is_file():
         return None
-    body = path.read_text().split(TICKETS_FILED, 1)
-    if len(body) < 2:
+    body = heading_part(path.read_text(), TICKETS_FILED)
+    if body is None:
         return None
-    section = body[1].split("\n## ", 1)[0]
+    section = body.split("\n## ", 1)[0]
     return tuple(m.group(0).rstrip("_") for m in re.finditer(
         rf"{TICKET_NUMBER.pattern}_", section))
 

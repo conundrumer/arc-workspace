@@ -38,14 +38,24 @@ and the items the editors' reports leave for a decision and the `refactor`
 places they give as standing."""
 
 
+def heading_part(text: str, heading: str) -> str | None:
+    """The text after the last line of `text` that is `heading` alone, or
+    None where no line is."""
+    last = None
+    for last in re.finditer(rf"^{re.escape(heading)}[ \t]*$", text, re.MULTILINE):
+        pass
+    return None if last is None else text[last.end():]
+
+
 def left_for_decision(a: Agent) -> str | None:
     """The part of an item checker's latest reply under
     `LEFT_FOR_DECISION`, or None where it has no such part or that part is
     empty."""
     r = a.last_report
-    if a.role is not Role.ITEM_CHECKER or r is None or LEFT_FOR_DECISION not in r.text:
+    if a.role is not Role.ITEM_CHECKER or r is None:
         return None
-    return r.text.rsplit(LEFT_FOR_DECISION, 1)[1].strip("\n") or None
+    part = heading_part(r.text, LEFT_FOR_DECISION)
+    return None if part is None else part.strip("\n") or None
 
 
 class Label(StrEnum):
@@ -108,12 +118,13 @@ def coordinator_part(a: Agent) -> tuple[list[tuple[Label, list[str]]], list[str]
     nested under it, and the other lines, or none where it has no such
     part."""
     r = a.last_report
-    if a.role is not Role.TICKET_ANALYST or r is None or FOR_COORDINATOR not in r.text:
+    part = None if r is None else heading_part(r.text, FOR_COORDINATOR)
+    if a.role is not Role.TICKET_ANALYST or part is None:
         return [], []
     labeled: list[tuple[Label, list[str]]] = []
     other: list[str] = []
     top: int | None = None
-    for line in r.text.rsplit(FOR_COORDINATOR, 1)[1].splitlines():
+    for line in part.splitlines():
         if top is not None and (not line.strip() or indent(line) > top):
             labeled[-1][1].append(line)
             continue
