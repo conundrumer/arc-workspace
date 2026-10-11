@@ -2,7 +2,7 @@
 that is not the launch `operate.py next` last printed to it, other than the
 launch of a reply-only agent (`context_bound_hook.reply_only`). An operator
 launcher is held the same way to the launch `operate.py relay` last printed
-to it (`ACTIONS`).
+to it (`context_bound_hook.ACTIONS`).
 
 The printed launch is read from the result of the last call of `next` in
 the caller's own transcript (`printing.printed_launch`). Where that result
@@ -18,15 +18,12 @@ from collections.abc import Iterable
 from contextlib import nullcontext
 from typing import Any
 
-from context_bound_hook import OPERATOR, OPERATOR_LAUNCHER, reply_only
+from context_bound_hook import ACTIONS, reply_only
 from operations.command_words import Action
 from hook_entry import not_registered, run_pre_tool_use
 
 HOOK = "printed_launch_hook"
 UNSEEN = "run_in_background"
-ACTIONS: dict[str, Action] = {OPERATOR: Action.NEXT, OPERATOR_LAUNCHER: Action.RELAY}
-"""The action of `operate.py` that prints the calls of each agent type the
-hooks hold to them."""
 
 
 def differing(printed: dict[str, str], inp: dict[str, Any]) -> list[tuple[str, str | None, str | None]]:

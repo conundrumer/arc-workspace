@@ -4,7 +4,7 @@ the text of its final reply (`printing.printed_reply`), or prints a
 SendMessage call (`printing.printed_send`), which the operator has still to
 make, and the reason tells it to run `next` again. An operator launcher
 is held the same way to the result of `operate.py relay`
-(`printed_launch_hook.ACTIONS`), which also lets it stop where that result
+(`context_bound_hook.ACTIONS`), which also lets it stop where that result
 is the end of its turn (`printing.printed_end_turn`).
 
 A blocked stop is recorded with the id of the operator's last call of

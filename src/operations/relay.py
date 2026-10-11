@@ -13,7 +13,9 @@ asks the coordinator for a fresh operator launcher whose brief is the lines
 of the coordinator's that wait for the next operator, each distinct text once, and gives them; any other text, and an
 operator's end with none, goes to the coordinator, after a line that gives
 the operator's agent id, and the launcher then gives its final reply,
-unless a line of the coordinator's waits for the next operator."""
+unless a line of the coordinator's waits for the next operator, which gives
+the next operator's launch, or, past the launcher's bound, the final reply
+that asks for a fresh operator launcher whose brief is those lines."""
 
 from dataclasses import dataclass
 
@@ -93,6 +95,15 @@ def ending(relay: Relay, text: str) -> Step:
                        sent(relay, COORDINATOR, final_message(text), since))
 
 
+def after(relay: Relay, run: Run, brief: str) -> Step:
+    """The step after the end of the operator `run`, where the brief `brief`
+    waits for the next operator: its launch, or, past the launcher's bound,
+    the launcher's final reply that gives `brief`."""
+    if not relay.past_bound:
+        return operator_launch(relay, brief)
+    return ending(relay, "\n".join([WITH_HELD.format(operator=run.agent_id), brief]))
+
+
 def next_step(relay: Relay) -> Step:
     if not relay.runs:
         return operator_launch(relay, relay.lines[0].text)
@@ -107,13 +118,11 @@ def next_step(relay: Relay) -> Step:
                              "agent id")
         return Send(run.agent_id, lines[0].text)
     if run.final is not None and for_context(run.final):
-        if not relay.past_bound:
-            return operator_launch(relay, brief)
-        if not lines:
+        if relay.past_bound and not lines:
             return ending(relay, FRESH_LAUNCHER)
-        return ending(relay, "\n".join([WITH_HELD.format(operator=run.agent_id), brief]))
+        return after(relay, run, brief)
     carried = (CARRIED.format(operator=run.agent_id) + "\n" + run.final if run.final is not None
                else NO_REPLY.format(operator=run.agent_id))
     if not sent(relay, COORDINATOR, carried, run.launched):
         return Send(COORDINATOR, carried)
-    return operator_launch(relay, brief) if lines else Reply(COORDINATOR)
+    return after(relay, run, brief) if lines else Reply(COORDINATOR)

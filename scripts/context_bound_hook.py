@@ -1,6 +1,8 @@
 """PreToolUse hook on Agent: denies the Agent call of an operator or an
 operator launcher subagent whose context is past `CONTEXT_BOUND` tokens, other than the launch of a
-reply-only agent, a `general-purpose` agent on `haiku`.
+reply-only agent, a `general-purpose` agent on `haiku`. The denial gives the
+caller the call of `operate.py` that prints its calls (`ACTIONS`), which
+prints its end for its context.
 
 The context is read from the end of the caller's own transcript. Where the
 hook cannot tell the caller's agent type or context, it allows the call and
@@ -10,12 +12,16 @@ import sys
 from typing import Any
 
 from hook_entry import not_registered, run_pre_tool_use
+from operations.command_words import Action
 from operations.roles import Role
 
 HOOK = "context_bound_hook"
 OPERATOR = Role.OPERATOR.agent_type
 OPERATOR_LAUNCHER = "operator-launcher"
-OPERATORS = frozenset({OPERATOR, OPERATOR_LAUNCHER})
+ACTIONS: dict[str, Action] = {OPERATOR: Action.NEXT, OPERATOR_LAUNCHER: Action.RELAY}
+"""The action of `operate.py` that prints the calls of each agent type the
+hooks hold to them."""
+OPERATORS = frozenset(ACTIONS)
 """The agent types that make only the calls their command prints."""
 CONTEXT_BOUND = 100_000
 """Has no margin under it: the requests of a run's hand-over may go past
@@ -39,20 +45,21 @@ def reply_only(inp: dict[str, Any]) -> bool:
         and inp.get("model") == REPLY_ONLY_MODEL
 
 
-def past_reason(context: int) -> str:
+def past_reason(context: int, command: str) -> str:
     from controlled_markdown import mctx
 
     return mctx(
         "Blocked: your context is {context:,} tokens, past the "
-        "bound of {bound:,} tokens. Past that bound you end as your "
-        "documents give for your context."
-    ).format(context=context, bound=CONTEXT_BOUND)
+        "bound of {bound:,} tokens. Run `{command}` again: it prints "
+        "how you end."
+    ).format(context=context, bound=CONTEXT_BOUND, command=command)
 
 
 def check(hook: dict[str, Any]) -> str | None:
     """The reason to deny the Agent call `hook` gives where its caller is
     past the bound, and None otherwise."""
-    from run_reads import caller_type, context_size
+    from operations.command_words import next_command
+    from run_reads import caller_id, caller_type, context_size
     from transcripts import entries_back
 
     tool, inp = hook["tool_name"], hook["tool_input"]
@@ -70,7 +77,12 @@ def check(hook: dict[str, Any]) -> str | None:
         print(f"{HOOK}: allowed: no assistant entry of {path} gives usage, so "
               "the context is unknown", file=sys.stderr)
         return None
-    return past_reason(context) if past_bound(context) else None
+    if not past_bound(context):
+        return None
+    agent = caller_id(hook)
+    if agent is None:
+        raise ValueError(f"{HOOK}: the {kind} caller of {path} gives no agent id")
+    return past_reason(context, next_command(agent, ACTIONS[kind]))
 
 
 def main() -> int:

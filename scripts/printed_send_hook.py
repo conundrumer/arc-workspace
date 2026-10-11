@@ -5,7 +5,7 @@ one to another recipient, or where the call's message, without its fence
 lines, does not open with the printed message. Free text may follow the
 printed message, and keys of the call other than `to` and `message` are
 not compared. An operator launcher is held the same way to the result of
-`operate.py relay` (`printed_launch_hook.ACTIONS`). Where the hook cannot
+`operate.py relay` (`context_bound_hook.ACTIONS`). Where the hook cannot
 tell the caller's agent type, it allows the call and says why on stderr."""
 
 import sys
