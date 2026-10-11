@@ -16,7 +16,7 @@ from agent_reports import ENDED, Sign, last_sign
 from agent_turns import first_time, has_ended, turns
 from context_bound_hook import OPERATOR
 from controlled_markdown import mctx
-from filed_texts import unfiled
+from filed_texts import report_file, report_text, unfiled
 from merge_change import conflicted, left_edits, ran
 from open_agents import work_open
 from pending_wait_hook import bound_denied
@@ -237,7 +237,7 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
                   else None)
         if launch.pending and not a.pending and launch.agent:
             a = ended_with(a, None if any(r.time > launch.since for r in reports)
-                           else reply_to(a, launch.since))
+                           else reply_to(a, launch.since, undecided))
         agents.append(a)
         if d.role in PASSES and launch.agent and reports:
             passes[launch.agent] = pass_tickets(reports[-1].text, main)
@@ -297,11 +297,19 @@ def reply_since(agent: str, since: float) -> Report | None:
     return r if r is not None and r.time > since else None
 
 
-def reply_to(a: Agent, since: float) -> Report | None:
+def reply_to(a: Agent, since: float, undecided: list[str]) -> Report | None:
     """The final reply in the transcript of `a` after `since`, where its
     operator launched or last resumed it itself, so that reply went to
-    that operator, or None."""
-    return reply_since(a.agent_id, since) if a.agent_id and a.notifies else None
+    that operator, or where it is the path of a report file alone
+    (`filed_texts.report_file`), whichever agent it went to, read from
+    that file, or None. A reply whose file is gone keeps the path as its
+    text."""
+    r = reply_since(a.agent_id, since) if a.agent_id else None
+    path = report_file(r.text) if r is not None else None
+    if r is None or path is None:
+        return r if a.notifies else None
+    text = report_text(path, a.agent_id or "", undecided)
+    return r if text is None else replace(r, text=text, file=path)
 
 
 def stalled_reports(agents: list[Agent], coordinators: dict[str, float],
@@ -327,11 +335,12 @@ def ended_with(a: Agent, reply: Report | None) -> Agent:
     return replace(a, pending=False, reports=a.reports if reply is None else (*a.reports, reply))
 
 
-def ended_elsewhere(agents: list[Agent], me: str) -> dict[str, Report | None]:
+def ended_elsewhere(agents: list[Agent], me: str,
+                    undecided: list[str]) -> dict[str, Report | None]:
     """For each pending agent of another operator whose work is no longer
     open, an agent whose report reaches no running operator, the final
-    reply in its transcript, where it gives one after its launch and went
-    to that operator (`reply_to`), or None."""
+    reply in its transcript that `reply_to` gives after its launch, or
+    None."""
     out: dict[str, Report | None] = {}
     for a in agents:
         if not a.pending or a.operator == me or a.agent_id is None or a.agent_id in out:
@@ -339,5 +348,5 @@ def ended_elsewhere(agents: list[Agent], me: str) -> dict[str, Report | None]:
         path = find(a.agent_id)
         if work_open(path, []):
             continue
-        out[a.agent_id] = reply_to(a, a.launched)
+        out[a.agent_id] = reply_to(a, a.launched, undecided)
     return out

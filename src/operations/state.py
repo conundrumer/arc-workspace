@@ -102,11 +102,13 @@ class Agent:
     it has not reported yet, and the operator's turn may not end on it.
     Where a sign ends it and no report of it reached that operator since
     its launch or its last resume, the final reply in its transcript, where
-    it gives one after them and went to that operator, ends its `reports`.
+    it gives one after them and it went to that operator or is the path of
+    a report file alone, read from that file, ends its `reports`.
     `pending` does not hold either for an agent in `State.stalled`, nor
     for an agent of another operator whose work is no longer open, and
     the final reply in its transcript, where it gives one and it went to
-    that operator, then ends its `reports`. `notifies` holds where that
+    that operator or is the path of a report file alone, read from that
+    file, then ends its `reports`. `notifies` holds where that
     operator launched or last resumed it itself, so the notification of
     its end and its final reply reach that operator. `messaged` holds, for
     a doc reviewer whose transcript is known, the agent ids its SendMessage

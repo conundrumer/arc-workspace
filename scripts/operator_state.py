@@ -123,7 +123,7 @@ def read_state(me: str) -> tuple[State, MonitorState]:
                     if (aid := x.launch.agent) in watched_ids and aid not in launched}
     stalled = stalled_reports(agents, coordinators,
                               [w.agent_id for w in now_watched if w.stalled is not None])
-    ended: dict[str, Report | None] = {**ended_elsewhere(agents, me), **stalled}
+    ended: dict[str, Report | None] = {**ended_elsewhere(agents, me, undecided), **stalled}
     agents = [ended_with(a, ended[a.agent_id]) if a.pending and a.agent_id in ended else a
               for a in agents]
     known = {a.agent_id for a in agents if a.agent_id} | {aid for aid, _ in runs}
