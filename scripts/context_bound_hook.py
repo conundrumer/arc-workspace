@@ -13,7 +13,7 @@ from typing import Any
 
 from hook_entry import not_registered, run_pre_tool_use
 from operations.command_words import Action
-from operations.roles import Role
+from operations.roles import Model, Role
 
 HOOK = "context_bound_hook"
 OPERATOR = Role.OPERATOR.agent_type
@@ -27,7 +27,6 @@ CONTEXT_BOUND = 100_000
 """Has no margin under it: the requests of a run's hand-over may go past
 it."""
 REPLY_ONLY_TYPE = "general-purpose"
-REPLY_ONLY_MODEL = "haiku"
 
 
 def bounded(agent_type: str) -> bool:
@@ -42,7 +41,7 @@ def reply_only(inp: dict[str, Any]) -> bool:
     """Whether the Agent call input `inp` launches a `general-purpose` agent,
     the type a call that gives none launches, on `haiku`."""
     return (inp.get("subagent_type") or REPLY_ONLY_TYPE) == REPLY_ONLY_TYPE \
-        and inp.get("model") == REPLY_ONLY_MODEL
+        and inp.get("model") == Model.HAIKU
 
 
 def past_reason(context: int, command: str) -> str:

@@ -185,8 +185,9 @@ class Call:
 
 
 class Printed(Enum):
-    """The tool of a step the command prints to an operator for it to call
-    in the foreground, by the name the harness gives that tool."""
+    """The tool of a call the command prints to an operator, by the name the
+    harness gives that tool."""
+    AGENT = "Agent"
     SEND_MESSAGE = "SendMessage"
     BASH = "Bash"
 

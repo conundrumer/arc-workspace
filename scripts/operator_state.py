@@ -89,6 +89,11 @@ def read_relay(me: str) -> tuple[Relay, Path]:
     return relay, scratch(session)
 
 
+def run_index(runs: list[tuple[str, Path]], me: str) -> int:
+    """The position of `me` among the operator runs `runs`."""
+    return [a for a, _ in runs].index(me)
+
+
 def read_state(me: str) -> tuple[State, MonitorState]:
     """The state the operator's procedures read, and the state the
     monitor's steps read."""
@@ -136,7 +141,7 @@ def read_state(me: str) -> tuple[State, MonitorState]:
         me=me, now=time.time(), session=session, started=started(session), index=index, main_tree=main,
         scratch=scratch(session), operators=tuple(aid for aid, _ in runs),
         parents={aid: parent_id(p) for aid, p in runs},
-        open_operators=frozenset(aid for aid, p in runs[[a for a, _ in runs].index(me) + 1:]
+        open_operators=frozenset(aid for aid, p in runs[run_index(runs, me) + 1:]
                                  if work_open(p, [])),
         past_bound=past_bound(context_size(entries_back(my_path))),
         open_holders=frozenset(h for h in holders if work_open(find(h), [])),
@@ -169,7 +174,7 @@ def given_lines(runs: list[tuple[str, Path]], me: str, calls: list[Call]) -> set
     sent its parent, other than one that ends it for its context: a line
     one of them gave reaches the coordinator in no later reply."""
     out: set[str] = set()
-    for aid, path in runs[:[a for a, _ in runs].index(me)]:
+    for aid, path in runs[:run_index(runs, me)]:
         for c in final_sends_in(calls, aid, parent_id(path)):
             text = sent_final_text(c)
             if text is not None and not for_context(text):
