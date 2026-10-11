@@ -166,7 +166,7 @@ def take(state: State) -> Step | None:
         t = state.tickets.get(n)
         if t is not None and t.status is Status.BLOCKED and t.kind is Kind.CHANGE:
             return Bash(log(n, Status.ASSIGNED, Status.BLOCKED,
-                            "taking: the user decided, to merge", state.me))
+                            "taking: the coordinator's Merge line rules the merge", state.me))
     return None
 
 

@@ -8,7 +8,7 @@ word of its kind and a colon, past a list marker:
 - `Drafts to review: <number>, ...`;
 - `Tickets named: <number>, ...`;
 - `Merged: <number>, ...`, the changes the coordinator gives as merged;
-- `Merge: <number>`, a change under `tickets/blocked/` the user decided on;
+- `Merge: <number>`, a change under `tickets/blocked/` whose merge that line rules;
 - `Tickets are open.`;
 - the rulings, `Decision:` and `Override:` lines in the forms that
   `scripts/operate.py --help` gives, which the command applies (`decided`,
