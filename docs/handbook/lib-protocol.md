@@ -46,6 +46,7 @@
             - a citation is the stem and the relation name
         - a survey result is under a `Survey:` line, and the survey command writes the line and that result together
         - text with no `Survey:` line above it counts as no result
+        - cite a draft in a doc under `docs/` only in a survey result
         - a survey result stays as written, except for a strike: strike a solver from its `Callers` list when that solver no longer writes the operation, and strike a statement that the entry's current code form, `Not:` line, or `Match:` line contradicts
         - a survey result's spec question is the user's to apply
         - a pass that finds a further site for one lists that site in the review

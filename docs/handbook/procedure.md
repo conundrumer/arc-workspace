@@ -13,7 +13,6 @@
     - If you do, say why in the review, as a gap in the docs or the runner.
 - **Corpus.**
     - Take a draft as no evidence for a claim about the corpus.
-    - Cite a draft in a doc under `docs/` only in a survey result.
 - **Keywords.**
     - If no keyword in [Keywords](docs/handbook/keywords.md) fits, propose one in the review, and add it to the solver's `@keywords:` line.
     - If an existing keyword's gloss should change, propose it in the review.
