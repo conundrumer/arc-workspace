@@ -71,9 +71,9 @@
     - "Where a `request` under `tickets/blocked/` waits on `validation`": Validation: a run shows the need met.
     - "Where the user rules on a ticket under `tickets/blocked/`": Decisions: a departing decision reaches the user.
 - [Decisions](prompts/agents/notes/coordinator.md#decisions): Decisions: each decision recorded with what it was made from.
-- [Declines](prompts/agents/notes/coordinator.md#declines): Decisions: a decline carries its defense.
+- [Declines](prompts/agents/notes/coordinator.md#declines): none. Kept: it leads the coordinator to the notes on a decline when one reaches it.
 - [Changes](prompts/agents/notes/coordinator.md#changes): Process assessment: the agent and the reviews of each work product.
-    - "Before you launch an agent, read", "Where you run no solver pass, read": none. Kept: they lead the coordinator to the notes its work there needs.
+    - "Before you launch a pass on a task, read", "Before you send an operator a line, or move or revise", "While the user gives feedback, read", "Where you run no solver pass, read": none. Kept: they lead the coordinator to the notes its work there needs.
     - "Run a change yourself only on `direct` and `hotfix`", "Where a ticket it would settle waits on a `change`": Work control: one live holder per ticket.
     - "Once a change you run is on `master`": Merge: a hotfix reviewed after it merges.
 - [Worktrees](prompts/agents/notes/coordinator.md#worktrees): Configuration management: one live change per worktree.
@@ -81,6 +81,9 @@
 - [Cards](prompts/agents/notes/coordinator.md#cards): Decisions: a departing decision reaches the user.
 - [Codex](prompts/agents/notes/coordinator.md#codex): Decisions: a departing decision reaches the user.
     - "When specifying an issue in prose to fix": Requirements: requirements traced to the spans.
+
+## Decline notes
+- [Declines](prompts/agents/notes/declines.md#declines): Decisions: a decline carries its defense.
 
 ## Card notes
 - [Cards](prompts/agents/notes/cards.md#cards): Decisions: a departing decision reaches the user.

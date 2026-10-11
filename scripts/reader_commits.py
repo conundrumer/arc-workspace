@@ -295,7 +295,11 @@ def update_text(tree: Path, after: str, context: str, instructions: str,
         "lines. After those two, the diff gives each section that a chain of "
         "links from them reaches, under one line for each chain: the section, "
         "then after each `via` the target of the link before it in the chain, "
-        "the last one linked from your context or from `CLAUDE.md`. Act by a "
+        "the last one linked from your context or from `CLAUDE.md`. A section "
+        "that lies within another section or document the diff gives stands "
+        "only within that one's diff, with its chains among that one's lines, "
+        "and each `@@` line ends in the headings that hold the first line of "
+        "its hunk, outermost first. Act by a "
         "section's `+` lines only where each link of such a chain has you read "
         "its target, and not where a link only names it."
     ).format(**fields)

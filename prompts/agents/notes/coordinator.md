@@ -34,15 +34,14 @@
 - Where you run no solver pass, read [Decisions](prompts/agents/notes/decisions.md#decisions) before you make a decision on the solver tools or the agents' documents, and before you ask an agent about a choice it made.
 
 ## Declines
-- A `decision:` item whose text opens with `decline` or `user decline` gives a ticket analyst's decline: the part of a need the user stated that its resolution leaves unmet, with its defense. Judge each decline with what you know of what the user asked for:
-    - Where the user asked for the declined part and the defense does not hold, veto the decline. Revise a `change` with the declined part, as [Operators](prompts/agents/notes/launching.md#operators) gives, move another ticket to `tickets/open/` with the veto in the note and tell an operator that tickets are open, and on a step held on what a change's editors leave, write the veto in a log line on the change's ticket and rule the step with the choice that launches another ticket analyst.
-    - Where the defense holds, bring the decline to the user as a decision: the declined part, the defense and your own view. What it settles waits on the user's ruling.
-    - Otherwise let it stand. Move a `change` to `tickets/draft/` with a note that says so and send it in a `Drafts to review` line, close another ticket with the resolution the decline gives, and on a step held on what a change's editors leave, say so in a log line on the change's ticket and rule the step with the choice that goes on to the merge.
+- When a `decision:` item whose text opens with `decline` or `user decline` reaches you, read [Declines](prompts/agents/notes/declines.md#declines) before you act on it.
 
 ## Changes
 - To edit a document an agent reads, send a request to the `doc-editor` agent.
-- Before you launch an agent, read [Launching notes](prompts/agents/notes/launching.md), where your context does not hold it.
-- Where you run no solver pass, read [Changes](prompts/agents/notes/changes.md#changes) before you change the code or the documents.
+- Before you launch a pass on a task, read [Passes on a task](prompts/agents/notes/launching.md#passes-on-a-task).
+- Before you send an operator a line, or move or revise a `change` ticket, and when an operator's message reaches you, the user rules on a `change` ticket, or a `change` of your session comes to stand under `tickets/open/`, read [Operators](prompts/agents/notes/launching.md#operators).
+- While the user gives feedback, read [While the user gives feedback](prompts/agents/notes/launching.md#while-the-user-gives-feedback).
+- Where you run no solver pass, read [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change) before you change the code or the documents, [Merging a change](prompts/agents/notes/changes.md#merging-a-change) before you merge a change, and [A denied merge](prompts/agents/notes/changes.md#a-denied-merge) where a merge call of a change is denied, yours or one an agent you launched gives.
 - Run a change yourself only on `direct` and `hotfix`, and before you act, take each ticket it would settle that waits on no `change`.
 - Where a ticket it would settle waits on a `change` or its take is refused, do not act: move each ticket you took to `tickets/open/` and the `request` to wait on that `change`, or else to `tickets/open/`, and tell an operator that tickets are open.
 - Once a change you run is on `master`, write a line in its `request`'s log that gives its commit and the number of each ticket it settles, move the `request` and each ticket you took that is no `change` to `tickets/open/`, leave held each `change` you took, and tell an operator that tickets are open.

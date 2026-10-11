@@ -18,9 +18,9 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 
-from controlled_markdown import mctx
 from engine import checkout
-from handbook.linked import LinkedChange, LinkTarget, linked_changes, sides
+from controlled_markdown import markdown_headings, mctx, outside_fences
+from handbook.linked import LinkedChange, LinkTarget, folded, linked_changes, sides
 from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT
 from handbook.readers import (calls_of, context_command, context_text, reader_calls,
                               reader_named)
@@ -83,10 +83,43 @@ def context_at(commit: str, reader: str, args: list[str]) -> str:
         return _render_in(tree, commit, reader, args)
 
 
+def _heading_paths(lines: list[str]) -> list[tuple[str, ...]]:
+    """For each of `lines`, a Markdown text, the heading lines whose
+    sections hold it, outermost first, a heading line holding itself. A
+    heading line is one `markdown_headings` finds, so one in a fenced code
+    block is none, and its depth is the count of its leading `#`."""
+    bare = [line.rstrip("\n") for line in lines]
+
+    def outside(through: int) -> int:
+        return sum(1 for _ in outside_fences("\n".join(bare[:through]))) if through else 0
+
+    out: list[tuple[str, ...]] = []
+    path: list[tuple[int, str]] = []
+    for at, text in enumerate(bare):
+        if markdown_headings(text) and outside(at + 1) > outside(at):
+            depth = len(text.lstrip(" ")) - len(text.lstrip(" ").lstrip("#"))
+            path = [*(h for h in path if h[0] < depth), (depth, text.strip())]
+        out.append(tuple(h for _, h in path))
+    return out
+
+
 def _unified(before: str, after: str, head: str, commit: str) -> str:
-    return "".join(difflib.unified_diff(
-        before.splitlines(keepends=True), after.splitlines(keepends=True),
-        fromfile=f"{head} at {commit}", tofile=head))
+    """The unified diff from `before` to `after`, whose hunk header lines
+    each end in the heading lines that hold the hunk's first line in the
+    text it stands in (`_heading_paths`), joined by ` > `."""
+    old, new = before.splitlines(keepends=True), after.splitlines(keepends=True)
+    paths = {"-": _heading_paths(old), "+": _heading_paths(new)}
+    hunks = iter(difflib.SequenceMatcher(None, old, new).get_grouped_opcodes(3))
+    out: list[str] = []
+    for line in difflib.unified_diff(old, new, fromfile=f"{head} at {commit}",
+                                     tofile=head):
+        if line.startswith("@@"):
+            tag, i1, _i2, j1, _j2 = next(hunks)[0]
+            first = paths["+"][j1] if tag == "insert" else paths["-"][i1]
+            if first:
+                line = f"{line.rstrip()} {' > '.join(first)}\n"
+        out.append(line)
+    return "".join(out)
 
 
 @dataclass(frozen=True)
@@ -116,23 +149,32 @@ def _diff_text(diffs: list[_TextDiff]) -> str:
     each target they reach by links, in target order, under one line for
     each chain that leads to it (`LinkedChange.chain_lines`). A target
     whose change two of them give with the same text on each side stands
-    once, under the chains of both, and a target that is one of the texts
-    stands only as that text, which the reader holds whole. Empty where none
-    of these differ."""
-    held = {d.head for d in diffs}
-    linked: dict[tuple[LinkTarget, str, str], tuple[str, list[str]]] = {}
+    once, under the chains of both. A target that is one of the texts,
+    or a section that one of them holds and whose diff runs from that
+    text's commit, stands only as that text, which the reader holds whole,
+    with no chain lines. Of the other targets whose diffs run from the same
+    commit, one that another holds stands as `folded` gives it. Empty where
+    none of these differ."""
+    held = {d.head: d.commit for d in diffs}
+    merged: dict[tuple[LinkTarget, str, str], tuple[str, LinkedChange]] = {}
     for d in diffs:
         for c in d.linked:
-            if str(c.target) in held:
+            whole = LinkTarget(c.target.path, "")
+            if str(c.target) in held or (
+                    held.get(str(whole)) == d.linked_commit and whole in c.within):
                 continue
-            commit, lines = linked.setdefault((c.target, c.before, c.after),
-                                              (d.linked_commit, []))
-            lines += [line for line in c.chain_lines() if line not in lines]
+            commit, kept = merged.setdefault((c.target, c.before, c.after),
+                                             (d.linked_commit, c))
+            merged[c.target, c.before, c.after] = (commit, kept.joined(c.chains))
+    by_commit: dict[str, list[LinkedChange]] = {}
+    for commit, c in merged.values():
+        by_commit.setdefault(commit, []).append(c)
+    shown = sorted(((commit, c) for commit, changes in by_commit.items()
+                    for c in folded(changes)), key=lambda item: item[1].target)
     return ("".join(_unified(d.before, d.after, d.head, d.commit) for d in diffs)
-            + "".join("".join(f"{line}\n" for line in lines)
-                      + _unified(before, after, str(target), commit)
-                      for (target, before, after), (commit, lines)
-                      in sorted(linked.items(), key=lambda item: item[0][0])))
+            + "".join("".join(f"{line}\n" for line in c.chain_lines())
+                      + _unified(c.before, c.after, str(c.target), commit)
+                      for commit, c in shown))
 
 
 def _context_sides(tree: Path, commit: str, reader: str,

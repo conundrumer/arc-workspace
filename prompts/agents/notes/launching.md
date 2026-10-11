@@ -5,7 +5,7 @@
 - After an agent's definition changes, wait until 30 seconds after the write of its rendered file, `.claude/agents/<agent type>.md`, before you launch that agent, so the harness reloads that file.
     - A newly added agent type can stay unknown to the harness for minutes after that write: where a launch fails with that type not found, make it again a minute after that failure, until 15 minutes have passed since that write. After that, give the launch as unfinished, with the failure's text as its reason.
     - Wait each of these waits out in a foreground Bash call that sleeps for the rest of it, with its command led by `: 'unattended-wait: <agent type> reload';`.
-- Give an agent a brief in the form [Briefs](prompts/agents/notes/launching.md#briefs) gives for its work, where it gives one, and restate neither a docstring of the code nor the agent's definition.
+- Give an agent a brief in the form the sections under [Briefs](prompts/agents/notes/launching.md#briefs) for its agent type and its work give, where any does: read each of those sections and each section they link. Restate neither a docstring of the code nor the agent's definition.
 - Where a brief gives a scratch directory, give a new directory under the session's scratchpad directory, `/private/tmp/claude-<uid>/<working directory>/<session id>/scratchpad`, where `<uid>` is what `id -u` prints, `<working directory>` is the directory the session started in with each `/` as `-`, and `<session id>` is `$CLAUDE_CODE_SESSION_ID`.
 - In a brief or a `change` ticket that gives the items or the Intent of an edit, give the meaning to state, the case that shows the need, and the span the edit may change, and no wording.
     - Give each item as a requirement: a statement of what holds once the edit is made, that a check or a reading of the result can confirm. Give each way the edit can fail that you foresee as an item that gives what holds in that case, and ask no agent to think a case through.
@@ -134,7 +134,7 @@
 - Once the user rules on a draft `change` ticket under `tickets/blocked/` that waits on the user, move it back to `tickets/draft/` with the ruling in the note, revise it where the ruling needs that, and send it to an operator in a `Drafts to review: <number>` line.
 
 ## While the user gives feedback
-- Gather each request the user approves into a batch, and when the user pauses or asks you to send it, send the whole batch at once: give each request to the agent whose description covers its work, as the split line above allows, with one brief per agent.
+- Gather each request the user approves into a batch, and when the user pauses or asks you to send it, send the whole batch at once: give each request to the agent whose description covers its work, as the split line of [Launching](#launching) allows, with one brief per agent.
 - Where a request touches the files of a change that has not passed, send it to that change's editor with SendMessage. Add every other request to the batch.
 
 ## draft-outcome

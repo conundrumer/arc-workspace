@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import difflib
 from collections import deque
-from collections.abc import Iterator
-from dataclasses import dataclass
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import controlled_markdown as nm
@@ -83,7 +83,10 @@ class _Side:
         rendering = self._rendering(target)
         return None if rendering is None else rendering[0]
 
-    def _render(self, target: LinkTarget) -> tuple[str, list[LinkTarget]] | None:
+    def _opened(self, target: LinkTarget) -> tuple[nm.Node, nm.Node | None] | None:
+        """The document of `target` on this side, and the heading node of
+        its section, None where it names the whole document; None where the
+        side has no such document or no such section in it."""
         file = (self.root / target.path).resolve()
         if file not in self.documents:
             return None
@@ -92,14 +95,56 @@ class _Side:
         except nm.ControlledMarkdownError as e:
             raise SystemExit(mctx("A document at {where} does not parse: "
                                   "{error}").format(where=self.where, error=e))
-        if target.ident:
-            node = self.registry.ids[document.source].get(target.ident)
-            if node is None:
-                return None
+        if not target.ident:
+            return document, None
+        node = self.registry.ids[document.source].get(target.ident)
+        return None if node is None else (document, node)
+
+    def _render(self, target: LinkTarget) -> tuple[str, list[LinkTarget]] | None:
+        opened = self._opened(target)
+        if opened is None:
+            return None
+        document, node = opened
+        if node is not None:
             document = nm.section_document(document, node)
         text, found = nm.render_linked(document, self.registry)
         return text, [t for file, ident in found
                       if (t := self._known(file, ident)) is not None]
+
+    def holders(self, target: LinkTarget) -> frozenset[LinkTarget] | None:
+        """The targets whose text holds the text of `target` on this side,
+        by heading depth in its document: the whole document and each
+        section above it; None where the side has no such document or no
+        such section in it."""
+        opened = self._opened(target)
+        if opened is None:
+            return None
+        document, node = opened
+        if node is None:
+            return frozenset()
+        idents = {id(n): ident for ident, n in
+                  self.registry.ids[document.source].items()}
+
+        def above(parent: nm.Node) -> list[nm.Node] | None:
+            for child in parent.children:
+                if child is node:
+                    return []
+                if (path := above(child)) is not None:
+                    return [child, *path]
+            return None
+
+        path = above(document)
+        if path is None:
+            raise SystemExit(mctx("The section {target} at {where} stands in no "
+                                  "heading of its document.").format(
+                                      target=target, where=self.where))
+        headings = [n for n in path if n.kind == nm.HEADING]
+        if any(id(n) not in idents for n in headings):
+            raise SystemExit(mctx("A heading above the section {target} at "
+                                  "{where} has no id.").format(
+                                      target=target, where=self.where))
+        return frozenset({LinkTarget(target.path, ""),
+                          *(LinkTarget(target.path, idents[id(n)]) for n in headings)})
 
     def links(self, target: LinkTarget) -> list[LinkTarget]:
         """The targets the links in the text of `target` name, a link to
@@ -160,13 +205,19 @@ class LinkedChange:
     """A link target whose text the change alters, and that a chain of
     links leads a reader's context to: each such chain, as `_Side.chains`
     gives it, those of the checkout first, then those only the commit
-    has; and its text on each side, empty where that side has no such
-    document or no such section in it."""
+    has; its text on each side, empty where that side has no such
+    document or no such section in it; and the targets that hold its text
+    on each side that has it (`_Side.holders`)."""
 
     target: LinkTarget
     chains: tuple[tuple[LinkTarget, ...], ...]
     before: str
     after: str
+    within: frozenset[LinkTarget]
+
+    def joined(self, chains: Iterable[tuple[LinkTarget, ...]]) -> LinkedChange:
+        """This change with `chains` after its own, each chain once."""
+        return replace(self, chains=tuple(dict.fromkeys((*self.chains, *chains))))
 
     @property
     def lines(self) -> set[str]:
@@ -193,22 +244,41 @@ def linked_changes(before: str, after: str, then: _Side,
     """Each link target a reader with the context `before` at the commit
     and `after` in the checkout reaches on either side, whose text differs
     between the sides, in target order, other than the ones
-    `scripts/context.py` `HELP` gives as left out."""
+    `scripts/context.py` `HELP` gives as left out, as `folded` gives
+    them."""
     shown = _changed_lines(before, after)
     found: list[LinkedChange] = []
     for target in sorted(set(now.reached(after)) | set(then.reached(before))):
         then_text, now_text = then.text(target) or "", now.text(target) or ""
-        change = LinkedChange(target, (), then_text, now_text)
-        if then_text != now_text and not change.lines <= shown:
-            found.append(change)
+        if then_text == now_text or _changed_lines(then_text, now_text) <= shown:
+            continue
+        holders = [h for h in (then.holders(target), now.holders(target))
+                   if h is not None]
+        found.append(LinkedChange(target, (), then_text, now_text,
+                                  frozenset.intersection(*holders)))
     goals = {c.target for c in found}
     now_chains, then_chains = now.chains(after, goals), then.chains(before, goals)
-    found = [LinkedChange(c.target, tuple(dict.fromkeys(
-                 now_chains[c.target] + then_chains[c.target])), c.before, c.after)
-             for c in found]
-    whole = {c.target.path: c.lines for c in found if not c.target.ident}
-    return [c for c in found if not c.target.ident
-            or not c.lines <= whole.get(c.target.path, set())]
+    return folded([c.joined(now_chains[c.target] + then_chains[c.target])
+                   for c in found])
+
+
+def folded(changes: list[LinkedChange]) -> list[LinkedChange]:
+    """`changes`, whose diffs run between the same two commits, with each
+    one whose text another of them holds (`LinkedChange.within`) left out,
+    and its chains, after theirs, among those of each outermost one that
+    holds it, in target order. A section can have two outermost holders
+    where its sides nest it differently, and each holds its text on both
+    sides."""
+    present = {c.target: c for c in changes}
+    outer = {c.target: sorted(t for t in c.within if t in present
+                              and not present[t].within & present.keys())
+             for c in changes}
+    carried: dict[LinkTarget, list[tuple[LinkTarget, ...]]] = {}
+    for c in changes:
+        for top in outer[c.target]:
+            carried.setdefault(top, []).extend(c.chains)
+    return [c.joined(carried.get(c.target, []))
+            for c in changes if not outer[c.target]]
 
 
 def sides(tree: Path, commit: str) -> tuple[_Side, _Side]:
