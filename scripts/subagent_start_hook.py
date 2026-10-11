@@ -1,7 +1,7 @@
 """SubagentStart hook: gives each subagent, in its context at its start, its
-own agent id, the `agent_id` of the hook input, and then records the
-commits whose documents it starts at (`reader_commits.start_agent`), where
-it has none yet.
+own agent id, the `agent_id` of the hook input, and then records its
+launch commit, its tree's `HEAD` (`reader_commits.start_agent`), where it
+has no record yet.
 
 Where the input is not a `SubagentStart` input, or gives no `agent_id`, or
 an `agent_id` that is not of the form a ticket's log line takes, the hook

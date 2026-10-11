@@ -1,7 +1,8 @@
 """A reader's context rendered in a tree of a commit, and its diff since
 that commit, with the diff of each section it reaches by links; and the
 diff of what a running reader holds, its context and the project
-instructions Claude Code gives it beside its context."""
+instructions Claude Code gives it beside its context, from the commits it
+may hold them at, or from the texts it was given at its launch."""
 
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ from engine import checkout
 from controlled_markdown import markdown_heading_lines, mctx
 from handbook.linked import (CONTEXT_SOURCE, Link, LinkedChange, LinkTarget, folded,
                             link_lines, linked_changes, sides)
+from handbook.contexts import MARKER, marked_section
 from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT
 from handbook.readers import (calls_of, context_command, context_text, reader_calls,
                               reader_named)
@@ -34,6 +36,12 @@ PROJECT_INSTRUCTIONS = Path("CLAUDE.md")
 """The project instructions, from a checkout's root: the file Claude Code
 puts in the context of each session and subagent in the checkout, beside
 the session's or the agent's own context."""
+
+HELD = mctx("launch")
+"""What the diff of a text a reader was given at its launch names as its
+before side, in place of a commit."""
+
+_MARKER_LINE = re.compile(re.escape(MARKER).replace(re.escape("{what}"), "(.+)"))
 
 
 @contextmanager
@@ -245,6 +253,49 @@ def update_diff(context_commit: str, instructions_commit: str, reader: str,
             _text_diff(str(PROJECT_INSTRUCTIONS), linked_before, after,
                        linked_tree, linked, str(PROJECT_INSTRUCTIONS)),
             commit=instructions_commit, before=before)
+    return _diff_text([context, instructions])
+
+
+def _held_context(rendered: str, held: str) -> str:
+    """`rendered`, an agent's context, with its first marked section, the
+    agent's own definition, replaced by `held`, the definition the harness
+    gave the agent, so that each later marked section stands as rendered. A
+    render that does not open with a marker line is a fault."""
+    lines = rendered.splitlines(keepends=True)
+    opening = _MARKER_LINE.fullmatch(lines[0]) if lines else None
+    if opening is None:
+        raise SystemExit(mctx("The context does not open with a marker line, "
+                              "so its first marked section is unknown."))
+    later = [i for i, line in enumerate(lines) if i and _MARKER_LINE.fullmatch(line)]
+    rest = "".join(lines[later[0]:]) if later else ""
+    return marked_section(opening[1], held) + ("\n" + rest if rest else "")
+
+
+def held_update_diff(held_context: str, held_instructions: str, launch: str,
+                     reader: str, args: list[str]) -> str:
+    """The diff of what a running agent holds at its first update: its
+    context from `held_context`, the definition the harness gave it, in
+    place of the first marked section of its context at `launch`
+    (`_held_context`), and the project instructions from
+    `held_instructions`, with a final newline, as the file has, each to the
+    checkout, with the sections each reaches by links from `launch`, as
+    `_diff_text` gives them. Where `launch` is the checkout's `HEAD`, the
+    checkout serves as its tree."""
+    with ExitStack() as stack:
+        tree = (REPO_ROOT if launch == checkout.git_out(REPO_ROOT, "rev-parse", "HEAD").strip()
+                else stack.enter_context(_tree_at(launch)))
+        rendered, after = _context_sides(tree, launch, reader, args)
+        context = replace(
+            _text_diff(context_command(reader, args), _held_context(rendered, held_context),
+                       after, tree, launch, CONTEXT_SOURCE),
+            commit=HELD)
+        launch_text, after_text = (_text_or_empty(root / PROJECT_INSTRUCTIONS)
+                                   for root in (tree, DOCUMENTS_ROOT))
+        before = held_instructions if held_instructions.endswith("\n") else held_instructions + "\n"
+        instructions = replace(
+            _text_diff(str(PROJECT_INSTRUCTIONS), launch_text, after_text, tree,
+                       launch, str(PROJECT_INSTRUCTIONS)),
+            commit=HELD, before=before)
     return _diff_text([context, instructions])
 
 

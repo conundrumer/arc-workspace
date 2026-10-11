@@ -27,11 +27,15 @@ def command(event: str, matcher: str | None = None, script: str = "") -> str:
     return cmd
 
 
-def run(cmd: str, hook: dict[str, Any]) -> str:
+def ran(cmd: str, hook: dict[str, Any]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, shell=True, input=json.dumps(hook),
                           capture_output=True, text=True, check=True,
                           env={**os.environ, "CLAUDE_PROJECT_DIR": str(checkout.ROOT),
-                               "CLAUDE_CODE_ENTRYPOINT": "cli"}).stdout
+                               "CLAUDE_CODE_ENTRYPOINT": "cli"})
+
+
+def run(cmd: str, hook: dict[str, Any]) -> str:
+    return ran(cmd, hook).stdout
 
 
 def line(**fields: Any) -> str:
@@ -52,9 +56,9 @@ def session(tmp: Path) -> Path:
 
 
 def record(main: Path, who: str) -> Path:
-    """The record of `who`: the coordinator's and the session's in the
-    session directory, a subagent's in the directory of the sessions."""
-    where = main.with_suffix("") if who in ("main", "session") else main.parent
+    """The record of `who`: the coordinator's in the session directory, a
+    subagent's in the directory of the sessions."""
+    where = main.with_suffix("") if who == "main" else main.parent
     return where / "reader-commits" / who
 
 
@@ -79,7 +83,6 @@ def test_coordinator_gets_the_diff_once(tmp_path: Path) -> None:
     bash = command("PreToolUse", "Bash|Monitor")
     session_start(main)
     assert record(main, "main").read_text() == both(head())
-    assert record(main, "session").read_text() == f"{head()}\n"
     record(main, "main").write_text(both(BEFORE))
     session_start(main)
     assert record(main, "main").read_text() == both(BEFORE)
@@ -97,7 +100,7 @@ def test_subagents(tmp_path: Path) -> None:
     for aid in (OPERATOR_ID, GENERAL_ID):
         run(start, {"hook_event_name": "SubagentStart", "agent_id": aid,
                     "transcript_path": str(main), "cwd": str(checkout.ROOT)})
-        assert record(main, aid).read_text().split()[1] == head()
+        assert record(main, aid).read_text() == f"{head()}\n"
         record(main, aid).write_text(both(BEFORE))
     run(start, {"hook_event_name": "SubagentStart", "agent_id": OPERATOR_ID,
                 "transcript_path": str(main), "cwd": str(checkout.ROOT)})
@@ -111,3 +114,24 @@ def test_subagents(tmp_path: Path) -> None:
     assert run(agent, call(main, "Agent", {"subagent_type": "operator"}, OPERATOR_ID)) == ""
     assert run(agent, call(main, "Agent", {"subagent_type": "operator"}, GENERAL_ID)) == ""
     assert record(main, GENERAL_ID).read_text() == both(head())
+
+
+def test_subagent_first_update_from_held_texts(tmp_path: Path) -> None:
+    from handbook.agents import agent_prompt_text
+
+    main = session(tmp_path)
+    bash = command("PreToolUse", "Bash|Monitor")
+    transcript = main.with_suffix("") / "subagents" / f"agent-{OPERATOR_ID}.jsonl"
+    record(main, OPERATOR_ID).parent.mkdir(parents=True, exist_ok=True)
+    record(main, OPERATOR_ID).write_text(f"{head()}\n")
+    ls = call(main, "Bash", {"command": "ls"}, OPERATOR_ID)
+    assert "holds no context" in ran(bash, ls).stderr
+    assert record(main, OPERATOR_ID).read_text() == f"{head()}\n"
+    project = (checkout.ROOT / "CLAUDE.md").read_text().rstrip("\n")
+    with transcript.open("a") as f:
+        f.write(line(type="attachment", attachment={"type": "instructions", "files": [
+            {"path": str(checkout.ROOT / "CLAUDE.md"), "type": "Project", "content": project}]}))
+        f.write(line(type="attachment", attachment={
+            "type": "prompt_snapshot", "systemPrompt": [agent_prompt_text("operator")]}))
+    assert run(bash, ls) == ""
+    assert record(main, OPERATOR_ID).read_text() == both(head())

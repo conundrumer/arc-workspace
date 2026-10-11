@@ -15,42 +15,31 @@ worktree of its own has its branch's documents, and a merge to `master`
 changes them only where its branch moves.
 
 A reader's record holds two commits, one line each: the oldest commit it
-may hold its own context at, then the one for its project instructions.
+may hold its own context at, then the one for its project instructions; or,
+for a subagent before its first update, one commit, the launch commit: its
+tree's `HEAD` at its launch.
 The coordinator's record is a file of its session directory named `main`,
 and a subagent's is a file named by its agent id in the directory of the
 project's sessions, so a resume in any session keeps the commits the
-agent's run last had. The session's record, a file of its session
-directory named `session`, holds one commit: the one at which Claude Code
-last loaded the project instructions it gives the session's subagents.
+agent's run last had.
 
-The session-start hook writes, at each `SessionStart` of any source, the
-`HEAD` of the checkout as the session's record. Where it gives the
-coordinator's document, it writes that `HEAD` as both commits of the
-coordinator's record at a `startup` or a `clear`, and at a `compact` or a
-`resume` only where the coordinator has no record, since a summary or a
-restored conversation may still hold documents from before. The
-SubagentStart hook writes a subagent's record where it has none yet, at its
-launch (`start_agent`): its context's commit is the session's
-agent-definition commit, where the `HEAD` of its tree descends from it, and
-its tree's `HEAD` otherwise. The session's agent-definition commit is the
-one `master` stood at, by its reflog, at the time of the first line with a
-timestamp in the session's main transcript, the time of its `startup`,
-since the harness may give a subagent the agent file it loaded then. No
-record holds it: it is read from the transcript at each launch, so a
-`compact`, a `clear` and a `resume` leave it as it stands. A transcript
-with no timestamp, and a reflog that does not reach back to that time, are
-faults. Its
-instructions' commit is the session's record; a session that has none is a
-fault, and its subagents get no record. A subagent's own compaction, at
-which no `SessionStart` runs, leaves its record as it stands.
+Where the session-start hook gives the coordinator's document, it writes
+the `HEAD` of the checkout as both commits of the coordinator's record at a
+`startup` or a `clear`, and at a `compact` or a `resume` only where the
+coordinator has no record, since a summary or a restored conversation may
+still hold documents from before. The SubagentStart hook writes a
+subagent's record where it has none yet, at its launch (`start_agent`). A
+subagent's own compaction, at which no `SessionStart` runs, leaves its
+record as it stands.
 
-At each call of a tool a PreToolUse hook covers, `reader_update` compares
-the reader's commits with its tree's `HEAD`, and where both are the same it
-gives nothing. Otherwise it gives the reader, under a head that says it may
-already hold some of the changes and how to read them, the diff of its
-documents since its commits, as `scripts/context.py context --update`
-prints it in the reader's tree, or the failure of that run, and records
-`HEAD` as both commits once the hook's output is printed. That diff runs
+At each call of a tool a PreToolUse hook covers, `reader_update` gives the
+reader its update, and records `HEAD` as both commits once the hook's
+output is printed. For a record of two commits, it compares them with its
+tree's `HEAD`, and where both are the same it gives nothing. Otherwise it
+gives the reader, under a head that says it may already hold some of the
+changes and how to read them, the diff of its documents since its commits,
+as `scripts/context.py context --update` prints it in the reader's tree,
+or the failure of that run. That diff runs
 for the context from the context's commit, for `CLAUDE.md` from the
 instructions' commit, and for the sections links from `CLAUDE.md`
 reach from the context's commit where it descends from the
@@ -58,7 +47,23 @@ instructions' commit, and from the instructions' commit otherwise. That run
 is skipped where the context's commit is `HEAD`, `CLAUDE.md` does not
 differ between the instructions' commit and `HEAD`, and no file of the
 document set `[tool.controlled_markdown]` names differs between the linked
-sections' commit and `HEAD`. A reader whose diff holds nothing, and a caller that is no reader, get
+sections' commit and `HEAD`.
+
+For a record of one commit, the held texts date the subagent's documents in
+place of a commit, since the harness may give a subagent an agent
+definition other than the one its tree holds at its launch. The held
+context is the `systemPrompt[0]` of the first `prompt_snapshot` attachment
+of the subagent's transcript, and the held `CLAUDE.md` the `content` of the
+first entry of `type` `Project` whose `path` ends in `/CLAUDE.md` in the
+`files` of its first `instructions` attachment: the texts the harness gave
+it. The update gives, under a head that says so, the diff from those texts
+and of each section their links reach from the launch commit, as
+`scripts/context.py context --update --held` prints it in the reader's
+tree, or the failure of that run. A transcript of a subagent whose type has
+a document, that holds either text in no such form, is a fault, and its
+record does not move.
+
+A reader whose diff holds nothing, and a caller that is no reader, get
 nothing, and the record moves all the same. A caller with no record, such
 as a `claude -p` session, gets nothing, and so does a session started
 before its session-start hook wrote one. A caller of unknown type is a
@@ -85,9 +90,6 @@ from typing import IO, Any
 RECORDS = "reader-commits"
 """The directory of the records, in a session directory or in the
 directory of the project's sessions."""
-
-SESSION = "session"
-"""The name of the session's record."""
 
 COMMIT = re.compile(r"[0-9a-f]{40}")
 
@@ -156,13 +158,13 @@ def _locked(path: Path) -> Iterator[IO[str]]:
         yield f
 
 
-def _commits(f: IO[str], count: int) -> list[str]:
-    """The `count` commits the record `f` holds, one per line. Any other
+def _commits(f: IO[str]) -> list[str]:
+    """The one or two commits the record `f` holds, one per line. Any other
     text is a fault."""
     lines = f.read().split()
-    if len(lines) != count or not all(COMMIT.fullmatch(c) for c in lines):
+    if len(lines) not in (1, 2) or not all(COMMIT.fullmatch(c) for c in lines):
         raise ValueError(f"the record {f.name} holds `{' '.join(lines)}`, "
-                         f"not {count} commits")
+                         "not one or two commits")
     return lines
 
 
@@ -174,61 +176,24 @@ def _write(f: IO[str], *commits: str) -> None:
 
 
 def start_session(hook: dict[str, Any], coordinator: bool) -> None:
-    """Record the `HEAD` of the checkout as the record of the session the
-    `SessionStart` input `hook` names, and, where `coordinator`, as both
-    commits of the coordinator's record, at a `startup` or `clear` or where
-    it has none. Any other source is a fault."""
+    """Where `coordinator`, record the `HEAD` of the checkout as both
+    commits of the record of the coordinator of the session the
+    `SessionStart` input `hook` names, at a `startup` or `clear` or where it
+    has none. Any other source is a fault."""
     source = SessionSource(hook["source"])
-    head = tree_head(hook)[1]
-    with _locked(_records(hook) / SESSION) as f:
-        _write(f, head)
     if coordinator:
+        head = tree_head(hook)[1]
         with _locked(record_path(hook)) as f:
             if source in FRESH_SOURCES or not f.read().strip():
                 _write(f, head, head)
 
 
-def _startup_commit(hook: dict[str, Any], tree: Path) -> str:
-    """The session's agent-definition commit, as the module docstring gives
-    it, resolved in `tree`."""
-    from datetime import datetime, timezone
-
-    from agent_turns import first_time
-    from engine import checkout
-    from merge_change import MASTER
-    from run_reads import hook_session, main_transcript
-
-    transcript = main_transcript(hook_session(hook))
-    started = first_time(transcript)
-    if started is None:
-        raise ValueError(f"the transcript {transcript} has no timestamp, so "
-                         "the session's agent-definition commit is unknown")
-    when = datetime.fromtimestamp(started, timezone.utc).strftime("%Y-%m-%d %H:%M:%S +0000")
-    argv = ("rev-parse", "--verify", f"{MASTER}@{{{when}}}")
-    done = checkout.git(tree, *argv)
-    if done.returncode != 0 or "only goes back to" in done.stderr:
-        raise checkout.GitFailed(tree, argv, done.stderr)
-    return done.stdout.strip()
-
-
 def start_agent(hook: dict[str, Any]) -> None:
-    """Record the commits of the subagent the `SubagentStart` input `hook`
-    names, where it has no record. A session with no record is a fault."""
+    """Record the launch commit of the subagent the `SubagentStart` input
+    `hook` names, where it has no record."""
     with _locked(record_path(hook)) as f:
-        if f.read().strip():
-            return
-        from handbook.reader_diffs import descends
-
-        tree, head = tree_head(hook)
-        startup = _startup_commit(hook, tree)
-        context = startup if descends(tree, head, startup) else head
-        session = _records(hook) / SESSION
-        if not session.exists():
-            raise FileNotFoundError(f"the session has no record {session}, so "
-                                    "the commit of its project instructions is unknown")
-        with _locked(session) as g:
-            [instructions] = _commits(g, 1)
-        _write(f, context, instructions)
+        if not f.read().strip():
+            _write(f, tree_head(hook)[1])
 
 
 def reader_call(hook: dict[str, Any]) -> tuple[str, list[str]] | None:
@@ -264,6 +229,55 @@ def _documents_differ(tree: Path, before: str, after: str,
                                *(paths or configured(tree))).returncode == 1
 
 
+def _run_update(tree: Path, argv: list[str], fields: dict[str, Any],
+                failed: str, head: str) -> str | None:
+    """The text that gives a reader the output of `argv`, a `context --update`
+    run in `tree`, under `head`; `failed`, then the stderr of the run, where
+    it fails; or None where it prints nothing. `fields`, with the run's
+    `command` and its exit `code`, fill both texts."""
+    from controlled_markdown import mctx
+    from engine import checkout
+    from handbook.coordinator_document import HOOK_TEXT_CAP
+
+    done = subprocess.run(argv, cwd=tree, env=checkout.tree_env(),
+                          capture_output=True, text=True)
+    fields = {**fields, "command": " ".join(argv), "code": done.returncode,
+              "opening": mctx(
+                  "Your working tree is at commit {after}, and your documents "
+                  "there may differ from the ones you hold").format(**fields)}
+    if done.returncode != 0:
+        said = failed.format(**fields)
+        print(f"{UPDATE}: {said}\n{done.stderr.strip()}", file=sys.stderr)
+        return f"{said}\n\n{done.stderr.strip()}"
+    if not done.stdout.strip():
+        return None
+    text = head.format(**fields) + " " + mctx(
+        "From now on, act by your context and `CLAUDE.md` as "
+        "the diff leaves them: by its `+` lines, and no longer by its `-` "
+        "lines. After those two, the diff gives each section that links from "
+        "them reach, each under a line that names it, a section that lies "
+        "within another section or document the diff gives only within that "
+        "one's diff, then one line `<target> via <source>` for each link on "
+        "the way: a line of `<source>` links to `<target>`, and `<source>` is "
+        "`context` or `CLAUDE.md` where the link stands there. Each `@@` line "
+        "ends in the headings that hold the first line of its hunk, outermost "
+        "first. Act by a section's `+` lines only where a path of those links, "
+        "each of which has you read its target, runs from your context or "
+        "`CLAUDE.md` to it, and not where a link only names it.")
+    if len(text) + len(done.stdout) > HOOK_TEXT_CAP:
+        text += " " + mctx(
+            "This text is longer than Claude Code puts in your context whole, "
+            "so you see a preview of it and the path of a file that holds it: "
+            "read that file whole before you act.")
+    return f"{text}\n\n{done.stdout}"
+
+
+def _update_argv(*args: str) -> list[str]:
+    from handbook.reader_diffs import CONTEXT_SCRIPT
+
+    return ["uv", "run", "python", str(CONTEXT_SCRIPT), "context", "--update", *args]
+
+
 def update_text(tree: Path, after: str, context: str, instructions: str,
                 call: tuple[str, list[str]]) -> str | None:
     """The text that gives the reader `call` the diff of its context from
@@ -276,70 +290,112 @@ def update_text(tree: Path, after: str, context: str, instructions: str,
     set since the linked sections' commit (`linked_commit`) differs from
     it."""
     from controlled_markdown import mctx
-    from engine import checkout
-    from handbook.coordinator_document import HOOK_TEXT_CAP
-    from handbook.reader_diffs import CONTEXT_SCRIPT, PROJECT_INSTRUCTIONS, linked_commit
+    from handbook.reader_diffs import PROJECT_INSTRUCTIONS, linked_commit
 
     if context == after and not (
             _documents_differ(tree, instructions, after, str(PROJECT_INSTRUCTIONS))
             or _documents_differ(tree, linked_commit(tree, context, instructions), after)):
         return None
     reader, args = call
-    argv = ["uv", "run", "python", str(CONTEXT_SCRIPT), "context", "--update",
-            context, instructions, reader, *args]
-    done = subprocess.run(argv, cwd=tree, env=checkout.tree_env(),
-                          capture_output=True, text=True)
-    fields = {"after": after, "context": context, "instructions": instructions,
-              "command": " ".join(argv),
-              "opening": mctx(
-                  "Your working tree is at commit {after}, and your documents "
-                  "there may differ from the ones you hold").format(after=after)}
-    if done.returncode != 0:
-        failed = mctx(
+    return _run_update(
+        tree, _update_argv(context, instructions, reader, *args),
+        {"after": after, "context": context, "instructions": instructions},
+        mctx(
             "{opening}: your own context may be at commit {context}, and the "
             "project instructions, `CLAUDE.md`, at commit {instructions}. The "
             "diff of your documents between those commits could not be "
             "computed: `{command}` exited {code} and wrote what follows. Before you act by a document of yours, run "
             "`git diff --stat <commit> {after}` in your working tree with each "
             "of those two commits, and read again each file it lists that your "
-            "context or `CLAUDE.md` holds or has you read."
-        ).format(**fields, code=done.returncode)
-        print(f"{UPDATE}: {failed}\n{done.stderr.strip()}", file=sys.stderr)
-        return f"{failed}\n\n{done.stderr.strip()}"
-    if not done.stdout.strip():
-        return None
-    head = mctx(
-        "{opening}. The diff below, which `{command}` prints, runs from the "
-        "oldest commit you may hold each of them at: "
-        "your own context from commit {context}, and the project instructions, "
-        "`CLAUDE.md`, from commit {instructions}. So you may already hold some "
-        "of its changes. From now on, act by your context and `CLAUDE.md` as "
-        "the diff leaves them: by its `+` lines, and no longer by its `-` "
-        "lines. After those two, the diff gives each section that links from "
-        "them reach, each under a line that names it, a section that lies "
-        "within another section or document the diff gives only within that "
-        "one's diff, then one line `<target> via <source>` for each link on "
-        "the way: a line of `<source>` links to `<target>`, and `<source>` is "
-        "`context` or `CLAUDE.md` where the link stands there. Each `@@` line "
-        "ends in the headings that hold the first line of its hunk, outermost "
-        "first. Act by a section's `+` lines only where a path of those links, "
-        "each of which has you read its target, runs from your context or "
-        "`CLAUDE.md` to it, and not where a link only names it."
-    ).format(**fields)
-    if len(head) + len(done.stdout) > HOOK_TEXT_CAP:
-        head += " " + mctx(
-            "This text is longer than Claude Code puts in your context whole, "
-            "so you see a preview of it and the path of a file that holds it: "
-            "read that file whole before you act.")
-    return f"{head}\n\n{done.stdout}"
+            "context or `CLAUDE.md` holds or has you read."),
+        mctx(
+            "{opening}. The diff below, which `{command}` prints, runs from the "
+            "oldest commit you may hold each of them at: "
+            "your own context from commit {context}, and the project instructions, "
+            "`CLAUDE.md`, from commit {instructions}. So you may already hold some "
+            "of its changes."))
+
+
+SNAPSHOT = "prompt_snapshot"
+"""The type of the transcript attachment that holds the system prompt the
+harness gave a run."""
+
+INSTRUCTIONS = "instructions"
+"""The type of the transcript attachment that holds the instruction files
+the harness gave a run."""
+
+
+def held_texts(path: Path) -> tuple[str, str]:
+    """The context and the `CLAUDE.md` the transcript at `path` holds as
+    given to its run, as the module docstring gives them. A transcript that
+    holds either in no such form is a fault."""
+    from transcripts import entries_forward
+
+    first: dict[str, dict[str, Any]] = {}
+    for e in entries_forward(path):
+        a = e.get("attachment") if e.get("type") == "attachment" else None
+        if isinstance(a, dict) and a.get("type") in (SNAPSHOT, INSTRUCTIONS):
+            first.setdefault(a["type"], a)
+            if len(first) == 2:
+                break
+    prompt = first[SNAPSHOT].get("systemPrompt") if SNAPSHOT in first else None
+    files = first[INSTRUCTIONS].get("files") if INSTRUCTIONS in first else None
+    projects = [f.get("content") for f in files
+                if isinstance(f, dict) and f.get("type") == "Project"
+                and isinstance(f.get("path"), str) and f["path"].endswith("/CLAUDE.md")
+                ] if isinstance(files, list) else []
+    context = prompt[0] if isinstance(prompt, list) and prompt else None
+    instructions = projects[0] if projects else None
+    if not isinstance(context, str) or not isinstance(instructions, str):
+        raise ValueError(f"the transcript {path} holds no context or no "
+                         f"`CLAUDE.md` as given to its run, in a `{SNAPSHOT}` "
+                         f"and an `{INSTRUCTIONS}` attachment")
+    return context, instructions
+
+
+def held_update_text(tree: Path, after: str, launch: str,
+                     call: tuple[str, list[str]], held: tuple[str, str]) -> str | None:
+    """The text that gives the reader `call` the diff of its context and its
+    project instructions from `held`, the texts it was given at its launch,
+    and of the sections they reach by links from `launch`, to `after`, the
+    `HEAD` of `tree`, as `context --update --held` prints it in `tree`; the
+    failure of that run; or None where the diff holds nothing."""
+    import tempfile
+
+    from controlled_markdown import mctx
+
+    reader, args = call
+    with tempfile.TemporaryDirectory() as tmp:
+        files = [Path(tmp) / "context", Path(tmp) / "CLAUDE.md"]
+        for file, text in zip(files, held, strict=True):
+            file.write_text(text)
+        return _run_update(
+            tree, _update_argv("--held", *map(str, files), launch, reader, *args),
+            {"after": after, "launch": launch},
+            mctx(
+                "{opening}: your own context and the project instructions, "
+                "`CLAUDE.md`, are the ones you were given at your launch, at "
+                "commit {launch}. The diff of your documents since then could "
+                "not be computed: `{command}` exited {code} and wrote what "
+                "follows. Before you act by a document of yours, run "
+                "`git diff --stat {launch} {after}` in your working tree, and "
+                "read again each file it lists that your context or "
+                "`CLAUDE.md` holds or has you read."),
+            mctx(
+                "{opening}. The diff below, which `{command}` prints, runs "
+                "from the texts you were given at your launch: your own "
+                "context and the project instructions, `CLAUDE.md`, from "
+                "those texts, and each section that links from them reach "
+                "from commit {launch}, your tree's `HEAD` at your launch."))
 
 
 @contextmanager
 def reader_update(hook: dict[str, Any]) -> Iterator[str | None]:
     """The text that gives the caller of the hook input `hook` the diff of
-    its documents since its recorded commits, or None, held under the lock
-    of its record. Where the block ends without an error, the record moves
-    to the tree's `HEAD`. A record that holds no two commits is a fault."""
+    its documents since its record, as the module docstring gives it, or
+    None, held under the lock of its record. Where the block ends without
+    an error, the record moves to the tree's `HEAD`. A record that holds no
+    one or two commits is a fault."""
     try:
         f = record_path(hook).open("r+")
     except FileNotFoundError:
@@ -347,12 +403,20 @@ def reader_update(hook: dict[str, Any]) -> Iterator[str | None]:
         return
     with f:
         fcntl.flock(f, fcntl.LOCK_EX)
-        context, instructions = _commits(f, 2)
+        commits = _commits(f)
         tree, after = tree_head(hook)
-        if context == instructions == after:
+        if commits == [after, after]:
             yield None
             return
         call = reader_call(hook)
-        yield None if call is None else update_text(tree, after, context,
-                                                    instructions, call)
+        if call is None:
+            yield None
+        elif len(commits) == 2:
+            context, instructions = commits
+            yield update_text(tree, after, context, instructions, call)
+        else:
+            from run_reads import caller_transcript
+
+            yield held_update_text(tree, after, commits[0], call,
+                                   held_texts(caller_transcript(hook)))
         _write(f, after, after)
