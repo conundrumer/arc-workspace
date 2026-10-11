@@ -15,7 +15,7 @@
         - On an inferred route, open the readback with `**Inferred route: <route>.**`, and end it with the act the user's reply sets off, as `Once you reply, I <act>.`, or, where it sets off none, with a sentence that says so.
 - `scratch` is work after which nothing under version control has changed, nothing has left the session, and nothing later depends on it. Do it with no readback, no ticket and no brief. Where that work would change a tracked file or send something out of the session, read back a route before that step.
 - `direct`: file the change's `request`, write its brief, and carry the change as [Changes](#changes) gives.
-- `send`: file the `request` and, in that turn, launch a ticket analyst on it, with its transcript brief.
+- `send`: file the `request` and, in that turn, tell an operator that tickets are open where an operator launcher of yours runs, and otherwise launch a ticket analyst on it, with its transcript brief.
 - `hotfix`: file the change's `request`, write its brief, launch at once on a worktree the editors it needs, each with that brief, and merge the change as [Changes](#changes) gives.
 
 ## Tickets
@@ -30,7 +30,7 @@
     - Where the `change` of that `request` has merged, file those words as a new `request` in place of the append, with a line under `Grounds` that gives the earlier one, and where those words withdraw the earlier `request`'s need, close it `wontfix` with the new `request`'s number.
 - Where the user rules on a ticket under `tickets/blocked/` that waits on the user and is no `change`, move it to `tickets/open/`, and record the ruling on it: as a span, as the line above gives, where it is a `request`, and otherwise in the note of the line that moves it.
 - Where a `request` under `tickets/blocked/` waits on `validation`, and you read a run that exercises the change its log gives, or, where it waits for a change that cuts agents' context, the output of `uv run python scripts/profile_runs.py --split` run as its `--help` gives, close the request `fixed` where that run or output shows its need met, and otherwise move it to `tickets/open/` with the part of its need that run or output shows unmet in the note.
-- Launch no ticket analyst for a ticket you file, other than a `request` on `send`. Once a line above writes on a ticket outside `tickets/draft/`, other than such a `request` or one you hold, and before you end your turn with no other work, tell an operator that tickets are open, as [Operators](prompts/agents/notes/launching.md#operators) gives.
+- Launch no ticket analyst for a ticket you file, other than a `request` on `send` while no operator launcher of yours runs. Once a line above writes on a ticket outside `tickets/draft/`, other than such a `request` or one you hold, and before you end your turn with no other work, tell an operator that tickets are open, as [Operators](prompts/agents/notes/launching.md#operators) gives.
 
 ## Decisions
 - Where you run no solver pass, read [Decisions](prompts/agents/notes/decisions.md#decisions) before you make a decision on the solver tools or the agents' documents, and before you ask an agent about a choice it made.
