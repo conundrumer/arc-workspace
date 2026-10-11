@@ -66,6 +66,27 @@ def ungrounded(program: Program) -> UngroundedVariable | None:
     return None
 
 
+def grounded_without(program: Program, unit: Unit, atom: Atom) -> bool:
+    """Whether the rest of the clause of `unit` grounds every variable of
+    `atom`, an atom of the clause's body or of a disjunction branch in it,
+    found by identity: each clause the body gives (`_conjunctions`) that
+    holds `atom`, with `atom` left out and its arguments added to the
+    head, leaves no variable ungrounded (`_first_ungrounded`). Raises
+    `ValueError` where `atom` stands in no such place."""
+    def is_atom(x: Conjunct) -> bool:
+        return isinstance(x, AtomLiteral) and x.atom is atom
+
+    holding = [c for c in _conjunctions(unit.body or ())
+               if any(is_atom(x) for x in c)]
+    if not holding:
+        raise ValueError("the atom stands in no body literal or disjunction "
+                         "branch of the unit")
+    inline = _Inline(program)
+    head = replace(unit.head, args=unit.head.args + atom.args)
+    return all(_first_ungrounded(replace(unit, head=head, body=tuple(
+        x for x in c if not is_atom(x))), inline) is None for c in holding)
+
+
 class _Inline:
     """The relations of a program declared `inline`, each with its rules:
     the units of the text that declares it whose head names it with no

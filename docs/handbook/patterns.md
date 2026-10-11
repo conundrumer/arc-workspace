@@ -214,14 +214,6 @@
 - The observed tiles at a cell are exactly the entry's members, so this example uses `equals`.
 - Where the observed set may have members beyond the pattern, `covers` applies.
 
-## Bidirectional mapping via positive recursion
-- A symmetric relation is declared in one direction, and `mapping(B, A) :- mapping(A, B)` provides closure.
-    ```
-    .decl mapping(c_from: Color, c_to: Color)
-    mapping(5, 8).
-    mapping(B, A) :- mapping(A, B).
-    ```
-
 ## `divide_by_size` (K, G) parameter space
 - Different (K, G) splits of one step size model the same periodic layout with different tile/gap semantics. The step between tile starts is `K + G`.
 - For a frame extent H and effective step S = K + G, divisibility requires `(H + G) % S = 0`.

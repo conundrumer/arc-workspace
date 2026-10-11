@@ -3,8 +3,10 @@ train 1: PASS (2 resolutions, 2 grids)
 train 2: PASS
 test 0: PASS
 
+--- 1 finding(s) ---
+  89565ca0.dl:53: recursion: the clauses of `line` close a cycle; a closure is an instance of a lib construction, and only the `step`, `skip` and `take` inputs of a `Take` instance may read its relations, through an atom whose every variable another atom of the clause grounds; see [Bans](docs/handbook/style.md#bans)
+
 --- 1 hint(s) ---
   89565ca0.dl:102: common-subexpr: 3 literals shared with `row` (line 85); an `@ignore` directive can keep the relation it fires on
 
-lint: ok, 1 hint
 determination: no Determine comp

@@ -17,9 +17,10 @@ from engine.engine import (
     RunResult,
 )
 from engine import checkout
-from engine.program import (DeclId, GridLayout, Instance, Program, RelationName,
-                            Scope, TypeName)
+from engine.program import (Atom, DeclId, GridLayout, Instance, Program,
+                            RelationName, Scope, TypeName, Unit)
 from souffle import classify, expand, ops, parser, printer, render
+from souffle.grounding import grounded_without
 from souffle.text import TextMethods
 from souffle.index import index_of
 from souffle.run import Runner
@@ -93,6 +94,12 @@ class SouffleEngine(TextMethods):
 
     def expand(self, program: Program) -> Program:
         return expand.expand(program)
+
+    def grounded_without(self, program: Program, unit: Unit,
+                         atom: Atom) -> bool:
+        """Raises `ValueError` where `atom` stands in no body literal or
+        disjunction branch of `unit`."""
+        return grounded_without(program, unit, atom)
 
     def render(self, program: Program) -> Rendered:
         return render.render(program)

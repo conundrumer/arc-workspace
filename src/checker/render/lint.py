@@ -163,6 +163,13 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
         "it").format(name=n[0], over=", ".join(m)),
     LintSentence.RAW_AGGREGATE: lambda n, _: mctx(
         "`{0}` in the program; read it through a lib component").format(*n),
+    LintSentence.RECURSION: lambda n, _: mctx(
+        "the clauses of {rels} close a cycle; a closure is an instance of "
+        "a lib construction, and only the `step`, `skip` and `take` inputs of a `Take` instance "
+        "may read its relations, through an atom whose every variable "
+        "another atom of the clause grounds; see "
+        "[Bans](docs/handbook/style.md#bans)").format(
+        rels=_ticked(n)),
     LintSentence.PASS_THROUGH: lambda n, _: mctx(
         "`{0}` only feeds `{1}`").format(*n),
     LintSentence.CHAIN_JOIN: lambda n, _: mctx(

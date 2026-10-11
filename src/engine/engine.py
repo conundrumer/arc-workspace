@@ -24,6 +24,7 @@ from engine.program import (
     Term,
     TypeDecl,
     TypeName,
+    Unit,
     UnitId,
     Value,
 )
@@ -413,6 +414,13 @@ class Engine(Protocol):
 
     def expand(self, program: Program) -> Program:
         """`program` with its GRID and RIGID macro calls as plain units."""
+        ...
+
+    def grounded_without(self, program: Program, unit: Unit,
+                         atom: Atom) -> bool:
+        """Whether the rest of the clause of `unit`, a unit of `program`,
+        grounds every variable of `atom`, an atom of its body found by
+        identity, as the engine grounds a clause before a run."""
         ...
 
     def render(self, program: Program) -> Rendered:

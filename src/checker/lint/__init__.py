@@ -24,7 +24,15 @@ from checker.judged import (
     parse_failure,
     reading_names,
 )
-from checker.lint import bans, constants, idioms, names, rewrites, style
+from checker.lint import (
+    bans,
+    constants,
+    idioms,
+    names,
+    recursion,
+    rewrites,
+    style,
+)
 from checker.lint.form import (
     case_type,
     components,
@@ -59,6 +67,7 @@ PROGRAM_CHECKS: tuple[Check, ...] = (
     header.check_demonstrated_choice, names.check_rigid_chart,
     bans.check_orientation_literal, bans.check_nonzero_literal,
     bans.check_arithmetic, bans.check_range, bans.check_ord,
+    recursion.check_recursion,
     names.check_reserved_name,
     names.check_shadowed_type, names.check_lib_name,
     names.check_lib_internal, names.check_enumerator_name,

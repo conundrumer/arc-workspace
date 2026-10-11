@@ -160,6 +160,10 @@ class FakeEngine(TextMethods):
     def expand(self, program: Program) -> Program:
         return program
 
+    def grounded_without(self, program: Program, unit: Unit,
+                         atom: Atom) -> bool:
+        raise NotImplementedError
+
     def render(self, program: Program) -> Rendered:
         return Rendered(())
 

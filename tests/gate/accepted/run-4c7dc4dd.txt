@@ -3,5 +3,7 @@ train 1: PASS
 test 0: PASS
 test 1: PASS
 
-lint: ok
+--- 1 finding(s) ---
+  4c7dc4dd.dl:94: recursion: the clauses of `spread` close a cycle; a closure is an instance of a lib construction, and only the `step`, `skip` and `take` inputs of a `Take` instance may read its relations, through an atom whose every variable another atom of the clause grounds; see [Bans](docs/handbook/style.md#bans)
+
 determination: no Determine comp

@@ -245,6 +245,7 @@ class LintSentence(StrEnum):
     INSTANCE_UNCLAIMED = "instance unclaimed"
     CONCEPT_UNCLAIMED = "concept unclaimed"
     BANNED_TYPE = "banned type"
+    RECURSION = "recursion"
     DEAD = "dead"
     ALIAS = "alias"
     NEGATED_USE = "negated use"

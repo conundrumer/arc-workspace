@@ -1,4 +1,6 @@
 
+--- findings: 1 across 1 solver(s) ---
+  9b30e358.dl:124: recursion: the clauses of `fill` close a cycle; a closure is an instance of a lib construction, and only the `step`, `skip` and `take` inputs of a `Take` instance may read its relations, through an atom whose every variable another atom of the clause grounds; see [Bans](docs/handbook/style.md#bans)
+
 --- hints: 1 across 1 solver(s) ---
   9b30e358.dl:102: case section: by the program's rules, not by a run, `$Toward` read `case_axis`, which the clause feeds, and the marker `// --- $Both ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases); an `@ignore` directive can keep the relation it fires on
-lint: ok, 1 hint

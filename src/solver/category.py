@@ -41,6 +41,7 @@ class Category(StrEnum):
     BANNED_TYPE = "banned type"
     DEMONSTRATED_CHOICE = "demonstrated choice"
     PARAMS_DATA = "params data"
+    RECURSION = "recursion"
     DEAD = "dead"
     ALIAS_INLINE = "alias-inline"
     NEGATED_USE = "negated-use"

@@ -18,6 +18,7 @@ from engine import (
 from engine.program import POSE_COLUMN, Atom, RigidCall, Unit, body_atoms
 from engine.quotes import quotes
 from solver.aggregate import Solver, has_determine
+from solver.cycles import cyclic_components
 from solver.model import Parameter, StoredGrid
 from solver.probe import example_inputs
 from solver.readers import instance_of, parameter, row_value
@@ -340,37 +341,8 @@ def cycles(solver: Solver, params_instance: str,
                 else:
                     stack += local(read)
         edges[p] = found
-    # Strongly connected components (Tarjan), each with an edge inside.
-    index: dict[str, int] = {}
-    low: dict[str, int] = {}
-    on: set[str] = set()
-    path: list[str] = []
-    groups: list[list[str]] = []
-
-    def visit(v: str) -> None:
-        index[v] = low[v] = len(index)
-        path.append(v)
-        on.add(v)
-        for w in sorted(edges.get(v, {})):
-            if w not in index:
-                visit(w)
-                low[v] = min(low[v], low[w])
-            elif w in on:
-                low[v] = min(low[v], index[w])
-        if low[v] == index[v]:
-            comp: list[str] = []
-            while True:
-                w = path.pop()
-                on.discard(w)
-                comp.append(w)
-                if w == v:
-                    break
-            if len(comp) > 1 or v in edges.get(v, {}):
-                groups.append(sorted(comp))
-
-    for v in sorted(determined):
-        if v not in index:
-            visit(v)
+    groups = [sorted(c) for c in cyclic_components(
+        sorted(determined), lambda v: sorted(edges.get(v, {})))]
     out = [tuple(CycleRead(p, q, *edges[p][q]) for p in group
                  for q in sorted(edges[p]) if q in group)
            for group in groups]

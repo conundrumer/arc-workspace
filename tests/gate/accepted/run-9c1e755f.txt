@@ -4,5 +4,7 @@ train 2: PASS (3 witnessed cases)
 train 3: PASS (3 witnessed cases)
 test 0: PASS (3 witnessed cases)
 
-lint: ok
+--- 1 finding(s) ---
+  9c1e755f.dl:80: recursion: the clauses of `copy` close a cycle; a closure is an instance of a lib construction, and only the `step`, `skip` and `take` inputs of a `Take` instance may read its relations, through an atom whose every variable another atom of the clause grounds; see [Bans](docs/handbook/style.md#bans)
+
 determination: no Determine comp
