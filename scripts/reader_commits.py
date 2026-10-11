@@ -46,8 +46,8 @@ documents since its commits, as `scripts/context.py context --update`
 prints it in the reader's tree, or the failure of that run, and records
 `HEAD` as both commits once the hook's output is printed. That diff runs
 for the context from the context's commit, for `CLAUDE.md` from the
-instructions' commit, and for the sections a chain of links from
-`CLAUDE.md` reaches from the context's commit where it descends from the
+instructions' commit, and for the sections links from `CLAUDE.md`
+reach from the context's commit where it descends from the
 instructions' commit, and from the instructions' commit otherwise. That run
 is skipped where the context's commit is `HEAD`, `CLAUDE.md` does not
 differ between the instructions' commit and `HEAD`, and no file of the
@@ -299,16 +299,16 @@ def update_text(tree: Path, after: str, context: str, instructions: str,
         "`CLAUDE.md`, from commit {instructions}. So you may already hold some "
         "of its changes. From now on, act by your context and `CLAUDE.md` as "
         "the diff leaves them: by its `+` lines, and no longer by its `-` "
-        "lines. After those two, the diff gives each section that a chain of "
-        "links from them reaches, under one line for each chain: the section, "
-        "then after each `via` the target of the link before it in the chain, "
-        "the last one linked from your context or from `CLAUDE.md`. A section "
-        "that lies within another section or document the diff gives stands "
-        "only within that one's diff, with its chains among that one's lines, "
-        "and each `@@` line ends in the headings that hold the first line of "
-        "its hunk, outermost first. Act by a "
-        "section's `+` lines only where each link of such a chain has you read "
-        "its target, and not where a link only names it."
+        "lines. After those two, the diff gives each section that links from "
+        "them reach, each under a line that names it, a section that lies "
+        "within another section or document the diff gives only within that "
+        "one's diff, then one line `<target> via <source>` for each link on "
+        "the way: a line of `<source>` links to `<target>`, and `<source>` is "
+        "`context` or `CLAUDE.md` where the link stands there. Each `@@` line "
+        "ends in the headings that hold the first line of its hunk, outermost "
+        "first. Act by a section's `+` lines only where a path of those links, "
+        "each of which has you read its target, runs from your context or "
+        "`CLAUDE.md` to it, and not where a link only names it."
     ).format(**fields)
     if len(head) + len(done.stdout) > HOOK_TEXT_CAP:
         head += " " + mctx(

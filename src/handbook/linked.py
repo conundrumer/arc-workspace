@@ -6,13 +6,18 @@ from __future__ import annotations
 import difflib
 from collections import deque
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
 import controlled_markdown as nm
 from controlled_markdown import mctx
 from controlled_markdown.__main__ import collect, configured, repo_root
 from handbook.paths import DOCUMENTS_ROOT
+
+
+CONTEXT_SOURCE = "context"
+"""The source a link line gives for a link that stands in a reader's
+context."""
 
 
 @dataclass(frozen=True, order=True)
@@ -26,6 +31,27 @@ class LinkTarget:
 
     def __str__(self) -> str:
         return f"{self.path}#{self.ident}" if self.ident else str(self.path)
+
+
+@dataclass(frozen=True)
+class Link:
+    """A link from the text of `source`, None where the link stands in the
+    text a walk of links starts from, to `target`."""
+
+    source: LinkTarget | None
+    target: LinkTarget
+
+    def line(self, start: str) -> str:
+        """The link's line, as `scripts/context.py` `HELP` gives it, with
+        `start` as the source of a link in the text the walk starts
+        from."""
+        return f"{self.target} via {start if self.source is None else self.source}"
+
+
+def link_lines(links: Iterable[tuple[Link, str]]) -> list[str]:
+    """The line of each link, with the start it is given, each once,
+    sorted."""
+    return sorted({link.line(start) for link, start in links})
 
 
 def _text_links(text: str) -> Iterator[tuple[str, str]]:
@@ -171,62 +197,43 @@ class _Side:
                     queue.append(after)
         return list(seen)
 
-    def chains(self, context: str, goals: set[LinkTarget]
-               ) -> dict[LinkTarget, list[tuple[LinkTarget, ...]]]:
-        """Each chain of links that leads `context` to a target in `goals`,
-        as the targets of its links, the goal last, with no target twice,
-        by goal. The chains of a goal come in the order of a depth-first
-        walk that takes the links of each text in the order they stand."""
-        toward = set(goals)
-        sources = self.reached(context)
-        while True:
-            more = {t for t in sources if t not in toward
-                    and any(after in toward for after in self.links(t))}
-            if not more:
-                break
-            toward |= more
-        out: dict[LinkTarget, list[tuple[LinkTarget, ...]]] = {g: [] for g in goals}
-
-        def walk(chain: tuple[LinkTarget, ...]) -> None:
-            if chain[-1] in goals:
-                out[chain[-1]].append(chain)
-            for after in self.links(chain[-1]):
-                if after in toward and after not in chain:
-                    walk((*chain, after))
-
-        for first in self._firsts(context):
-            if first in toward:
-                walk((first,))
-        return out
+    def leading(self, context: str, goals: set[LinkTarget]) -> set[Link]:
+        """Each link that stands on a walk of links from `context` to a
+        target in `goals`, a walk that may pass a target twice: a link in
+        the context or in the text of a target `reached` gives, whose
+        target is a goal or leads by links to one."""
+        reached = self.reached(context)
+        into: dict[LinkTarget, list[LinkTarget]] = {}
+        for source in reached:
+            for after in self.links(source):
+                into.setdefault(after, []).append(source)
+        toward = goals & set(reached)
+        queue: deque[LinkTarget] = deque(toward)
+        while queue:
+            for source in into.get(queue.popleft(), []):
+                if source not in toward:
+                    toward.add(source)
+                    queue.append(source)
+        return ({Link(None, t) for t in self._firsts(context) if t in toward}
+                | {Link(source, after) for source in reached
+                   for after in self.links(source) if after in toward})
 
 
 @dataclass(frozen=True)
 class LinkedChange:
-    """A link target whose text the change alters, and that a chain of
-    links leads a reader's context to: each such chain, as `_Side.chains`
-    gives it, those of the checkout first, then those only the commit
-    has; its text on each side, empty where that side has no such
-    document or no such section in it; and the targets that hold its text
-    on each side that has it (`_Side.holders`)."""
+    """A link target whose text the change alters, and that links lead a
+    reader's context to: its text on each side, empty where that side has
+    no such document or no such section in it; and the targets that hold
+    its text on each side that has it (`_Side.holders`)."""
 
     target: LinkTarget
-    chains: tuple[tuple[LinkTarget, ...], ...]
     before: str
     after: str
     within: frozenset[LinkTarget]
 
-    def joined(self, chains: Iterable[tuple[LinkTarget, ...]]) -> LinkedChange:
-        """This change with `chains` after its own, each chain once."""
-        return replace(self, chains=tuple(dict.fromkeys((*self.chains, *chains))))
-
     @property
     def lines(self) -> set[str]:
         return _changed_lines(self.before, self.after)
-
-    def chain_lines(self) -> list[str]:
-        """One line for each chain, as `scripts/context.py` `HELP` gives
-        it."""
-        return [" via ".join(str(t) for t in reversed(chain)) for chain in self.chains]
 
 
 def _changed_lines(before: str, after: str) -> set[str]:
@@ -244,8 +251,7 @@ def linked_changes(before: str, after: str, then: _Side,
     """Each link target a reader with the context `before` at the commit
     and `after` in the checkout reaches on either side, whose text differs
     between the sides, in target order, other than the ones
-    `scripts/context.py` `HELP` gives as left out, as `folded` gives
-    them."""
+    `scripts/context.py` `HELP` gives as left out, before `folded`."""
     shown = _changed_lines(before, after)
     found: list[LinkedChange] = []
     for target in sorted(set(now.reached(after)) | set(then.reached(before))):
@@ -254,31 +260,19 @@ def linked_changes(before: str, after: str, then: _Side,
             continue
         holders = [h for h in (then.holders(target), now.holders(target))
                    if h is not None]
-        found.append(LinkedChange(target, (), then_text, now_text,
+        found.append(LinkedChange(target, then_text, now_text,
                                   frozenset.intersection(*holders)))
-    goals = {c.target for c in found}
-    now_chains, then_chains = now.chains(after, goals), then.chains(before, goals)
-    return folded([c.joined(now_chains[c.target] + then_chains[c.target])
-                   for c in found])
+    return found
 
 
 def folded(changes: list[LinkedChange]) -> list[LinkedChange]:
     """`changes`, whose diffs run between the same two commits, with each
     one whose text another of them holds (`LinkedChange.within`) left out,
-    and its chains, after theirs, among those of each outermost one that
-    holds it, in target order. A section can have two outermost holders
-    where its sides nest it differently, and each holds its text on both
-    sides."""
+    in target order."""
     present = {c.target: c for c in changes}
-    outer = {c.target: sorted(t for t in c.within if t in present
-                              and not present[t].within & present.keys())
-             for c in changes}
-    carried: dict[LinkTarget, list[tuple[LinkTarget, ...]]] = {}
-    for c in changes:
-        for top in outer[c.target]:
-            carried.setdefault(top, []).extend(c.chains)
-    return [c.joined(carried.get(c.target, []))
-            for c in changes if not outer[c.target]]
+    return [c for c in changes
+            if not any(t in present and not present[t].within & present.keys()
+                       for t in c.within)]
 
 
 def sides(tree: Path, commit: str) -> tuple[_Side, _Side]:
