@@ -45,7 +45,7 @@ def filed_path(m: re.Match[str]) -> Path:
 REPORT_SUFFIX = "-report.md"
 
 
-REPORT_NAME = re.compile(rf"{STEP_KEY.pattern}{re.escape(REPORT_SUFFIX)}")
+REPORT_NAME = re.compile(rf"(?:{STEP_KEY.pattern})(?:-[0-9]+)?{re.escape(REPORT_SUFFIX)}")
 """The name of the report file a brief gives."""
 
 
@@ -65,7 +65,17 @@ def file_path(step: Step, scratch: Path) -> Path:
 
 
 def report_path(step: Launch, scratch: Path) -> Path:
-    return files_of(scratch) / f"{key(step)}{REPORT_SUFFIX}"
+    """The report file of the launch `step`: the first name of
+    `<key>-report.md`, `<key>-2-report.md`, `<key>-3-report.md`, ... whose
+    file does not exist. The path stays the same at each print of the step
+    until the launched agent writes the file, and a later launch of the same
+    step gets the next free name, so no run writes over an earlier run's
+    report."""
+    k = key(step)
+    n = 1
+    while (path := files_of(scratch) / f"{k}{'' if n == 1 else f'-{n}'}{REPORT_SUFFIX}").exists():
+        n += 1
+    return path
 
 
 def with_report(step: Launch, scratch: Path) -> Launch:
