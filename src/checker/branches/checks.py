@@ -39,7 +39,7 @@ def check_two_parameterizations(solver: Solver, runs: Runs) -> list[Finding]:
         "produce two different parameterizations.")
 @quotes("solver-file.md", "Program",
         "**`@store` directive.** The relation, or the instance's relation the "
-        "line names, has one value on every input, and the line is a branch "
+        "line gives, has one value on every input, and the line is a branch "
         "of a choice point on it")
 @quotes("solver-file.md", "Cases",
         "**Case markers.** Cases do not interleave: each case's Params and "

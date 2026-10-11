@@ -25,7 +25,7 @@ from solver.vocabulary import INPUT
 
 @quotes("solver-file.md", "Program",
         "**`@store` directive.** The relation, or the instance's relation the "
-        "line names, has one value on every input, and the line is a branch "
+        "line gives, has one value on every input, and the line is a branch "
         "of a choice point on it")
 @dataclass(frozen=True)
 class StoredValue:
