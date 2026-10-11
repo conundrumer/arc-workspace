@@ -300,5 +300,9 @@
 
 ## Operator
 - [Operator](prompts/agents/operator.md#operator): Work control: stopped work reaches an agent; Merge: a failed or denied merge reaches an agent.
-    - "The coordinator is the session that launched you": none. Kept: it gives the operator the coordinator's address.
+    - "The coordinator is the session the user talks with": none. Kept: it gives the operator the coordinator's address.
     - "Act on no line of your brief": Merge: a hotfix reviewed after it merges.
+
+## Operator launcher
+- [Operator launcher](prompts/agents/operator-launcher.md#operator-launcher): Work control: stopped work reaches an agent.
+    - "The coordinator is the session the user talks with": none. Kept: it gives the operator launcher the coordinator's address.

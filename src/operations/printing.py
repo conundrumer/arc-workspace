@@ -10,7 +10,7 @@ from pathlib import Path
 
 from controlled_markdown import form, mctx
 from operations.command_words import next_command
-from operations.constants import COORDINATOR, FOREGROUND_MS
+from operations.constants import FOREGROUND_MS
 from operations.filing import filed_line, split_message
 from operations.roles import description
 from operations.steps import Bash, Launch, Poll, Reply, Send, Step, Undecided, key
@@ -18,7 +18,7 @@ from operations.steps import Bash, Launch, Poll, Reply, Send, Step, Undecided, k
 
 FINAL_REPLY = mctx("final reply")
 """The first line of the text `next` prints for the operator's final
-reply, and of the message that sends the coordinator its text."""
+reply, and of the message that sends the agent's parent its text."""
 
 
 SENT = mctx("My final reply went to {to} by SendMessage.")
@@ -26,21 +26,27 @@ SENT = mctx("My final reply went to {to} by SendMessage.")
 SendMessage to the agent `to`."""
 
 
-SENT_REPLY = SENT.format(to=COORDINATOR)
+REPLY_TEXT = f"{FINAL_REPLY}\n{SENT}"
+"""The text the command prints for the final reply of an agent that sent
+its text to the agent `to`."""
 
 
-REPLY_TEXT = f"{FINAL_REPLY}\n{SENT_REPLY}"
-"""The text the command prints for the operator's final reply."""
+def printed_reply(text: str) -> bool:
+    """Whether `text`, a result of the command, prints a final reply
+    (`REPLY_TEXT`)."""
+    return re.search("^" + form(REPLY_TEXT, {"to": r"[^\n]+"}) + "$", text,
+                     re.MULTILINE) is not None
 
 
 KEY_LINE = mctx("Step key: {key}. After the call below, run `{command}`.")
 
 
-def key_line(step: Step, agent: str) -> str:
-    """The line the command prints before a call it prints, which `handled.made`
-    reads back. Nothing follows the call's last field, so an operator who
-    copies that field copies no other line."""
-    return KEY_LINE.format(key=key(step), command=next_command(agent))
+def key_line(step: Step, agent: str, action: str) -> str:
+    """The line the command prints before a call it prints for the agent
+    `agent` that runs `action`, which `handled.made` reads back. Nothing
+    follows the call's last field, so an operator who copies that field
+    copies no other line."""
+    return KEY_LINE.format(key=key(step), command=next_command(agent, action))
 
 
 FENCE = "```"
@@ -162,7 +168,7 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
             return bash_text(command)
         case Poll():
             return mctx("Run the command again: nothing is ready.")
-        case Reply():
-            return REPLY_TEXT
+        case Reply(to):
+            return REPLY_TEXT.format(to=to)
         case Undecided():
             raise ValueError(f"an undecided step is placed before it is printed: {step}")

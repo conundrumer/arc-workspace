@@ -13,8 +13,8 @@ a `Decision:` line that rules a held step holds for every operator
 (`directives`), and the items for the coordinator of a ticket analyst's
 reply go to the final reply of the operator that carries that reply
 (`final_reply.carrier`). An operator past its context bound ends at once
-too, and asks the coordinator for a fresh operator with no lines; the
-operator the coordinator launches next takes up from the state each line
+too, and asks its parent, the coordinator or an operator launcher, for a
+fresh operator with no lines; the operator launched next takes up from the state each line
 that the operators before it in a row that ended so received
 (`taken_up`), and, once their work is no longer open, through
 `changes.release`, the changes of the session and of the tickets named
@@ -43,8 +43,8 @@ the operators' waits on another holder whose work is open, or a ticket
 file the read of the tracker left out may still be written
 (`decisions.writing`), the agent runs
 the command again, which blocks in the foreground first. Otherwise the
-agent gives its final reply, after the message that sends the
-coordinator its text (`ending`)."""
+agent gives its final reply, after the message that sends its parent
+its text (`ending`)."""
 
 from collections.abc import Callable
 
@@ -64,8 +64,7 @@ from operations.directives import (
 from operations.roles import Role, description
 from operations.state import Call, State, Ticket
 from ticketing.vocabulary import Status
-from operations.constants import COORDINATOR
-from operations.final_reply import failure, final_sends, nested
+from operations.final_reply import ending_step, failure, final_sends, nested
 from operations.handled import bash_calls, repeated
 from operations.printing import FINAL_REPLY, unfenced
 from operations.steps import (Bash, Launch, Poll, Reply, Send, Step, Undecided, decision_key, key,
@@ -253,12 +252,12 @@ def monitor_step(state: State, watch: monitor.MonitorState) -> Step | None:
 
 def ending(state: State, text: str) -> Step:
     """The operator's final reply, whose text is `text`: the message that
-    sends the coordinator `text`, where the operator sent none since the
-    last message that reached it, then the reply."""
+    sends its parent (`State.parents`) `text`, where the operator sent none
+    since the last message that reached it, then the reply."""
+    parent = state.parents[state.me]
     since = max((m.time for m in state.received), default=0.0)
-    if any(c.time > since for c in final_sends(state, state.me)):
-        return Reply()
-    return Send(COORDINATOR, f"{FINAL_REPLY}\n{text}")
+    return ending_step(parent, text,
+                       any(c.time > since for c in final_sends(state, state.me)))
 
 
 def taken_up(state: State) -> frozenset[str]:

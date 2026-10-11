@@ -1,8 +1,10 @@
 """SubagentStop hook: blocks the stop of an operator subagent where the
 result of the last call of `operate.py next` in its own transcript is not
-the text of its final reply (`printing.REPLY_TEXT`), or prints a
+the text of its final reply (`printing.printed_reply`), or prints a
 SendMessage call (`printing.printed_send`), which the operator has still to
-make, and the reason tells it to run `next` again.
+make, and the reason tells it to run `next` again. An operator launcher
+is held the same way to the result of `operate.py relay`
+(`printed_launch_hook.ACTIONS`).
 
 A blocked stop is recorded with the id of the operator's last call of
 `next`, in a file named by its agent id under `STOPS` of its session
@@ -34,20 +36,19 @@ def check(hook: dict[str, Any]) -> str | None:
     """The reason to block the stop `hook` gives where its agent is an
     operator that `next` has not given its final reply, and None
     otherwise."""
-    from operations.command_words import next_command
-    from operations.printing import REPLY_TEXT, printed_send
+    from operations.printing import printed_reply, printed_send
     from run_reads import hook_session
 
     caller = operator_next(hook, HOOK)
     if caller is None:
         return None
-    agent, found = caller
+    agent, command, found = caller
     if found is None:
         print(f"{HOOK}: allowed: the transcript of {agent} holds no result of `next`",
               file=sys.stderr)
         return None
     call, result = found
-    if REPLY_TEXT in result and printed_send(result) is None:
+    if printed_reply(result) and printed_send(result) is None:
         return None
     record = hook_session(hook) / STOPS / agent
     if record.exists() and record.read_text() == call:
@@ -56,7 +57,7 @@ def check(hook: dict[str, Any]) -> str | None:
         return None
     record.parent.mkdir(parents=True, exist_ok=True)
     record.write_text(call)
-    return stop_reason(next_command(agent))
+    return stop_reason(command)
 
 
 def main() -> int:

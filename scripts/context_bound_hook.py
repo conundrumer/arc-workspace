@@ -1,5 +1,5 @@
-"""PreToolUse hook on Agent: denies the Agent call of an operator subagent
-whose context is past `CONTEXT_BOUND` tokens, other than the launch of a
+"""PreToolUse hook on Agent: denies the Agent call of an operator or an
+operator launcher subagent whose context is past `CONTEXT_BOUND` tokens, other than the launch of a
 reply-only agent, a `general-purpose` agent on `haiku`.
 
 The context is read from the end of the caller's own transcript. Where the
@@ -13,6 +13,9 @@ from hook_entry import run_pre_tool_use
 
 HOOK = "context_bound_hook"
 OPERATOR = "operator"
+OPERATOR_LAUNCHER = "operator-launcher"
+OPERATORS = frozenset({OPERATOR, OPERATOR_LAUNCHER})
+"""The agent types that make only the calls their command prints."""
 CONTEXT_BOUND = 100_000
 """Has no margin under it: the requests of a run's hand-over may go past
 it."""
@@ -21,7 +24,7 @@ REPLY_ONLY_MODEL = "haiku"
 
 
 def bounded(agent_type: str) -> bool:
-    return agent_type == OPERATOR
+    return agent_type in OPERATORS
 
 
 def past_bound(context: int | None) -> bool:
@@ -39,7 +42,7 @@ def past_reason(context: int) -> str:
     from controlled_markdown import mctx
 
     return mctx(
-        "Blocked: your context is {context:,} tokens, past the operator's "
+        "Blocked: your context is {context:,} tokens, past the "
         "bound of {bound:,} tokens. Past that bound you end as your "
         "documents give for your context."
     ).format(context=context, bound=CONTEXT_BOUND)

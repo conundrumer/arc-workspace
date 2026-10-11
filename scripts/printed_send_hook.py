@@ -4,8 +4,9 @@ its own transcript prints no message (`printing.printed_send`), or prints
 one to another recipient, or where the call's message, without its fence
 lines, does not open with the printed message. Free text may follow the
 printed message, and keys of the call other than `to` and `message` are
-not compared. Where the hook cannot tell the caller's agent type, it allows
-the call and says why on stderr."""
+not compared. An operator launcher is held the same way to the result of
+`operate.py relay` (`printed_launch_hook.ACTIONS`). Where the hook cannot
+tell the caller's agent type, it allows the call and says why on stderr."""
 
 import sys
 from contextlib import nullcontext
@@ -43,7 +44,6 @@ def check(hook: dict[str, Any]) -> str | None:
     """The reason to deny the SendMessage call `hook` gives where its caller
     is an operator and the call is not the message `next` last printed to
     it, and None otherwise."""
-    from operations.command_words import next_command
     from operations.printing import printed_send, unfenced
 
     tool, inp = hook["tool_name"], hook["tool_input"]
@@ -53,8 +53,7 @@ def check(hook: dict[str, Any]) -> str | None:
     caller = operator_next(hook, HOOK)
     if caller is None:
         return None
-    agent, found = caller
-    command = next_command(agent)
+    _, command, found = caller
     printed = None if found is None else printed_send(found[1])
     if printed is None:
         return no_send_reason(command)

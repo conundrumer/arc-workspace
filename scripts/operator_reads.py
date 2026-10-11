@@ -21,7 +21,7 @@ from merge_change import conflicted, left_edits, ran
 from open_agents import work_open
 from pending_wait_hook import bound_denied
 from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks, is_prompt,
-                       message_text, notifications, output_file, run_entries,
+                       message_text, notifications, output_file, parent_id, run_entries,
                        run_sessions, session_agents, tool_results)
 from run_reads import Status as TaskStatus
 from senders import Sender, sender
@@ -146,10 +146,28 @@ def unwrapped(text: str) -> str:
     return "\n".join(line for line in text.splitlines() if line.strip() not in WRAP)
 
 
+def from_parent(aid: str, e: dict[str, Any], parent: str, undecided: list[str]) -> str:
+    """The text of the brief or the message from its parent that the entry
+    `e` of the operator `aid` gives. An operator launcher's brief and
+    messages are files the command wrote, read in place of the line that
+    gives each, and a message of its arrives in the form of any agent's."""
+    text = unwrapped(message_text(e))
+    if parent == MAIN:
+        return text
+    given = [t for s, t in agent_messages(e) if s == parent]
+    where = mctx("{run}: a message from").format(run=aid)
+    return unfiled(unfenced("\n".join(given) if given else text), f"{where} {parent}",
+                   undecided)
+
+
 def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
                   agents: list[Agent], calls: list[Call], messages: list[Message],
                   passes: dict[str, tuple[str, ...] | None],
                   subjects: dict[str, float]) -> None:
+    """Read the transcript at `path` of the operator `aid` into `agents`,
+    `calls`, `messages` and `passes`. A message from the operator's parent,
+    the coordinator or the operator launcher that launched it, is read as
+    a message of the coordinator's."""
     entries = run_entries(path)
     uses: dict[str, tuple[float, dict[str, Any], str]] = {}
     results: dict[str, tuple[str | None, bool]] = {}
@@ -158,6 +176,7 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
     briefed = False
     children = run_launches(path)[1].get(aid, frozenset())
     sessions = run_sessions(path)
+    parent = parent_id(path)
     for e in entries:
         stamp = e.get("timestamp")
         if e.get("type") == "assistant" and stamp:
@@ -174,9 +193,10 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
                 for v in n.ids:
                     tasks[v] = n.status
         if stamp and is_prompt(e):
-            if not briefed or sender(e, MAIN, frozenset(), sessions) is Sender.PARENT:
+            if not briefed or sender(e, parent, frozenset(), sessions) is Sender.PARENT:
                 briefed = True
-                messages.append(Message(aid, epoch(stamp), None, unwrapped(message_text(e))))
+                messages.append(Message(aid, epoch(stamp), None, from_parent(
+                    aid, e, parent, undecided)))
             else:
                 where = mctx("{run}: a message from").format(run=aid)
                 messages += [Message(aid, epoch(stamp), s, unfiled(

@@ -1,24 +1,26 @@
 """The assembly of the state the operator's procedures read, from the reads
 of the ticket tracker, of git and the main worktree, and of the
 transcripts of the session's operators, and of the state the monitor's
-steps read, from the session's running agents and their transcripts."""
+steps read, from the session's running agents and their transcripts; and
+the assembly of what an operator launcher reads (`read_relay`)."""
 
 import os
 import sys
 import time
 from dataclasses import replace
+from pathlib import Path
 
 from agent_launches import handed_back
 from agent_reports import parent_transcripts
 from agent_turns import first_time, last_time
 from budgets import budgets_in_force
-from context_bound_hook import OPERATOR, past_bound
+from context_bound_hook import OPERATORS, past_bound
 from controlled_markdown import mctx
 from open_agents import Listed, hung_time, running_agents, work_open
 from operator_reads import (ended_elsewhere, ended_with, operator_runs, read_operator,
                             stalled_reports)
 from run_prints import active_of
-from run_reads import bash_spans, context_size, repeated_runs, run_entries
+from run_reads import bash_spans, context_size, parent_id, repeated_runs, run_entries
 from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
 from ticket_settle import to_settle
@@ -31,6 +33,10 @@ from handbook.reader_names import ReaderName
 from handbook.readers import reader_calls
 
 from operations.constants import COORDINATOR
+from operations.final_reply import final_sends_in
+from operations.printing import unfenced
+from operations.relay import Relay, Run
+from operations.roles import Role
 from operations.directives import named
 from operations.plan import taken_up
 from operations import monitor
@@ -47,13 +53,51 @@ DEPRECATED = frozenset({ReaderName.ROLE, ReaderName.CONSOLE, ReaderName.SURVEY,
 reads."""
 
 
+def session_id() -> str:
+    """The session `CLAUDE_CODE_SESSION_ID` gives, which the command refuses
+    without."""
+    session = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if not session:
+        raise Refused(mctx("the shell gives no `CLAUDE_CODE_SESSION_ID`"))
+    return session
+
+
+def read_relay(me: str) -> tuple[Relay, Path]:
+    """What the operator launcher `me` reads, from its own transcript and
+    those of the operators it launched, and the session's scratchpad."""
+    session = session_id()
+    main = main_tree()
+    undecided: list[str] = []
+    path = find(me)
+    agents: list[Agent] = []
+    calls: list[Call] = []
+    messages: list[Message] = []
+    read_operator(me, path, main, undecided, agents, calls, messages, {}, {})
+    runs: list[Run] = []
+    for a in sorted(agents, key=lambda a: a.launched):
+        if a.role is not Role.OPERATOR:
+            continue
+        final = None
+        if a.agent_id is not None:
+            theirs: list[Call] = []
+            read_operator(a.agent_id, find(a.agent_id), main, undecided, [], theirs, [], {}, {})
+            sends = [c for c in final_sends_in(theirs, a.agent_id, me) if c.time > a.launched]
+            final = unfenced(str(sends[0].input.get("message", ""))) if sends else None
+        runs.append(Run(a.agent_id, a.launched, a.pending, final))
+    for line in dict.fromkeys(undecided):
+        print(f"operate: undecided: {line}", file=sys.stderr)
+    relay = Relay(me, tuple(sorted((m for m in messages if m.sender is None),
+                                   key=lambda m: m.time)),
+                  tuple(runs), tuple(sorted(calls, key=lambda c: c.time)),
+                  past_bound(context_size(entries_back(path))))
+    return relay, scratch(session)
+
+
 def read_state(me: str) -> tuple[State, MonitorState]:
     """The state the operator's procedures read, and the state the
     monitor's steps read."""
     opened = new_state()
-    session = os.environ.get("CLAUDE_CODE_SESSION_ID")
-    if not session:
-        raise Refused(mctx("the shell gives no `CLAUDE_CODE_SESSION_ID`"))
+    session = session_id()
     main = main_tree()
     tickets_dir = main / "tickets"
     undecided: list[str] = []
@@ -94,6 +138,7 @@ def read_state(me: str) -> tuple[State, MonitorState]:
     state = State(
         me=me, now=time.time(), session=session, started=started(session), index=index, main_tree=main,
         scratch=scratch(session), operators=tuple(aid for aid, _ in runs),
+        parents={aid: parent_id(p) for aid, p in runs},
         open_operators=frozenset(aid for aid, p in runs[[a for a, _ in runs].index(me) + 1:]
                                  if work_open(p, [])),
         past_bound=past_bound(context_size(entries_back(my_path))),
@@ -122,7 +167,7 @@ def read_state(me: str) -> tuple[State, MonitorState]:
                                undecided=tuple(watching))
 
 
-UNWATCHED = frozenset({OPERATOR})
+UNWATCHED = OPERATORS
 """The agent types the monitor's steps do not watch."""
 
 

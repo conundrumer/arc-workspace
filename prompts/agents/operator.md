@@ -9,7 +9,7 @@ tools: Bash, Agent, SendMessage
 + message: brief
 
 # Operator
-- The coordinator is the session that launched you.
+- The coordinator is the session the user talks with, and SendMessage reaches it at `main`.
 - Run `uv run python scripts/operate.py next <agent id>`, with your own agent id, in the foreground with a timeout of 240000 ms on the Bash call, and make the one call it prints, with each parameter as it prints it, and a value it prints between two lines of three backticks as the text between them. Then run the command again, other than where its output has you give your final reply.
 - Each time a message or a notification resumes you, or the harness asks for your report, before the command prints a final reply, run the command again.
 - Make no call that the command does not print.

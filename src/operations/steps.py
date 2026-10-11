@@ -55,9 +55,10 @@ class Poll:
 
 @dataclass(frozen=True)
 class Reply:
-    """The operator's final reply, printed once the operator sent its text
-    to the coordinator (`final_reply.final_sends`): an agent's report is not delivered
+    """The final reply, printed once the agent sent its text to `to`, its
+    parent (`final_reply.final_sends`): an agent's report is not delivered
     while an agent it resumed by SendMessage runs."""
+    to: str
 
 
 @dataclass(frozen=True)

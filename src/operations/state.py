@@ -189,8 +189,10 @@ class Made:
 
 @dataclass(frozen=True)
 class Message:
-    """A message that reached an operator: from the coordinator, as its
-    brief or a later message, where `sender` is None, or otherwise from the
+    """A message that reached an operator: from the coordinator, or from
+    the operator launcher that launched it, which passes on the
+    coordinator's lines, as its brief or a later message, where `sender`
+    is None, or otherwise from the
     agent `sender`, which that operator did not launch."""
     operator: str
     time: float
@@ -231,9 +233,10 @@ class Reader:
 @dataclass(frozen=True)
 class State:
     """What the procedures read. `operators` holds the agent ids of the
-    session's operators in the order of their launch, and `open_operators`
-    those after `me` whose work is open, the only ones a procedure asks
-    after. `pass_tickets` gives, for each solver pass
+    session's operators in the order of their launch, `parents` the parent
+    of each, `main` or the agent id of the operator launcher that launched
+    it, and `open_operators` those after `me` whose work is open, the only
+    ones a procedure asks after. `pass_tickets` gives, for each solver pass
     that reported, the numbers of the tickets its report lists under
     `## Tickets filed`, or None where its reply is no report's path.
     `to_settle` is the list `file_ticket.py to-settle` prints for the
@@ -289,6 +292,7 @@ class State:
     taken_up: frozenset[str] = frozenset()
     unread: tuple[Unread, ...] = ()
     definitions: Mapping[str, float] = field(default_factory=dict)
+    parents: Mapping[str, str] = field(default_factory=dict)
 
     @property
     def arrived(self) -> list[Message]:

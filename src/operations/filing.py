@@ -6,8 +6,7 @@ printed prompt or message is the line `FILED` with that file's path. A
 message to the coordinator that opens with `steps.DECISION` keeps its
 first line, which names what it gives, and files the rest. Each brief
 gives the report file the agent writes its final reply to
-(`with_report`), other than a solver pass's: the documents of a solver
-pass give its report file. The readers of a launched agent's brief, of a
+(`with_report`), other than a brief of `roles.BARE_BRIEFS`. The readers of a launched agent's brief, of a
 message to it and of its report read the file in place of the line."""
 
 import re
@@ -17,7 +16,7 @@ from pathlib import Path
 from controlled_markdown import form, mctx
 from operations import briefs
 from operations.constants import COORDINATOR
-from operations.roles import GENERAL_ROLES, PASSES, Role
+from operations.roles import BARE_BRIEFS, GENERAL_ROLES
 from operations.steps import DECISION, STEP_KEY, Launch, Send, Step, key
 
 
@@ -56,8 +55,8 @@ def report_path(step: Launch, scratch: Path) -> Path:
 
 def with_report(step: Launch, scratch: Path) -> Launch:
     """`step` with the line of its brief that gives its report file, other
-    than a solver pass's."""
-    if step.role in PASSES:
+    than one of `BARE_BRIEFS`."""
+    if step.role in BARE_BRIEFS:
         return step
     form = briefs.REPORT_RULE if step.role in GENERAL_ROLES else briefs.REPORT_FILE
     report = report_path(step, scratch)

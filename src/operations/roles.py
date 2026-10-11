@@ -26,6 +26,7 @@ class Role(StrEnum):
     BATCH_PROFILE = "batch-profile"
     BATCH_GATE = "batch-gate"
     AFTER_MERGE = "after-merge"
+    OPERATOR = "operator"
 
     @property
     def agent_type(self) -> str:
@@ -50,6 +51,10 @@ AGENT_ID = r"a[0-9a-f]{16}"
 
 PASSES = (Role.ANALYZE, Role.CREATE, Role.REFINE)
 """The passes of a solver pipeline, in their order."""
+
+BARE_BRIEFS = (*PASSES, Role.OPERATOR)
+"""The roles whose brief gives neither a report file nor a budget: their
+documents give where their final reply goes."""
 
 EDITORS = (Role.CODE_EDITOR, Role.HANDBOOK_EXPANDED, Role.DOC_EDITOR)
 """The editors a change's `editors` field may give, in the order the

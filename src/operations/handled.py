@@ -74,7 +74,13 @@ def sent(state: State, to: str, message: str, mark: str | None = None) -> bool:
 def sends_to(state: State, to: str) -> list[Call]:
     """The operators' SendMessage calls to `to` that the harness gave no
     error, in the order they were made."""
-    return sorted((c for c in state.calls if c.tool == "SendMessage"
+    return sends_in(state.calls, to)
+
+
+def sends_in(calls: Iterable[Call], to: str) -> list[Call]:
+    """The SendMessage calls of `calls` to `to` that the harness gave no
+    error, in the order they were made."""
+    return sorted((c for c in calls if c.tool == "SendMessage"
                    and c.input.get("to") == to and not c.error), key=lambda c: c.time)
 
 

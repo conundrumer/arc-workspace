@@ -1,6 +1,8 @@
 """PreToolUse hook on Agent: denies the Agent call of an operator subagent
 that is not the launch `operate.py next` last printed to it, other than the
-launch of a reply-only agent (`context_bound_hook.reply_only`).
+launch of a reply-only agent (`context_bound_hook.reply_only`). An operator
+launcher is held the same way to the launch `operate.py relay` last printed
+to it (`ACTIONS`).
 
 The printed launch is read from the result of the last call of `next` in
 the caller's own transcript (`printing.printed_launch`). Where that result
@@ -16,11 +18,14 @@ from collections.abc import Iterable
 from contextlib import nullcontext
 from typing import Any
 
-from context_bound_hook import OPERATOR, reply_only
+from context_bound_hook import OPERATOR, OPERATOR_LAUNCHER, reply_only
 from hook_entry import run_pre_tool_use
 
 HOOK = "printed_launch_hook"
 UNSEEN = "run_in_background"
+ACTIONS = {OPERATOR: "next", OPERATOR_LAUNCHER: "relay"}
+"""The action of `operate.py` that prints the calls of each agent type the
+hooks hold to them."""
 
 
 def differing(printed: dict[str, str], inp: dict[str, Any]) -> list[tuple[str, str | None, str | None]]:
@@ -42,10 +47,11 @@ def differing(printed: dict[str, str], inp: dict[str, Any]) -> list[tuple[str, s
     return out
 
 
-def last_next_call(entries: Iterable[dict[str, Any]], agent: str) -> tuple[str, str] | None:
-    """The id and the result of the last call of `next` for the operator
-    `agent` among `entries`, read last first, or None where none has a
-    result."""
+def last_next_call(entries: Iterable[dict[str, Any]], agent: str,
+                   action: str) -> tuple[str, str] | None:
+    """The id and the result of the last call of `operate.py` with `action`
+    for the agent `agent` among `entries`, read last first, or None where
+    none has a result."""
     from operations.command_words import is_next
     from run_reads import blocks, tool_results
 
@@ -56,17 +62,20 @@ def last_next_call(entries: Iterable[dict[str, Any]], agent: str) -> tuple[str, 
         if e.get("type") == "assistant":
             for b in reversed(blocks(e, "tool_use")):
                 command = str((b.get("input") or {}).get("command", ""))
-                if (b.get("name") == "Bash" and is_next(command, agent)
+                if (b.get("name") == "Bash" and is_next(command, agent, action)
                         and b.get("id", "") in results):
                     return b["id"], results[b["id"]]
     return None
 
 
-def operator_next(hook: dict[str, Any], name: str) -> tuple[str, tuple[str, str] | None] | None:
-    """The agent id of the caller of `hook` where it is an operator, with
-    the id and the result of its last call of `next` (`last_next_call`),
-    or None where it is no operator, or where its agent type is unknown,
-    which the hook `name` says on stderr."""
+def operator_next(hook: dict[str, Any], name: str
+                  ) -> tuple[str, str, tuple[str, str] | None] | None:
+    """The agent id of the caller of `hook` where its agent type is one of
+    `ACTIONS`, with the command that prints its calls and the id and the
+    result of its last call of that command (`last_next_call`), or None
+    where it is of another type, or where its agent type is unknown, which
+    the hook `name` says on stderr."""
+    from operations.command_words import next_command
     from run_reads import UNKNOWN_TYPE, agent_type, caller_id, caller_transcript
     from transcripts import entries_back
 
@@ -76,9 +85,10 @@ def operator_next(hook: dict[str, Any], name: str) -> tuple[str, tuple[str, str]
         print(f"{name}: allowed: {UNKNOWN_TYPE.format(path=path)}", file=sys.stderr)
         return None
     agent = caller_id(hook)
-    if kind != OPERATOR or agent is None:
+    if kind not in ACTIONS or agent is None:
         return None
-    return agent, last_next_call(entries_back(path), agent)
+    action = ACTIONS[kind]
+    return agent, next_command(agent, action), last_next_call(entries_back(path), agent, action)
 
 
 def no_launch_reason(command: str) -> str:
@@ -108,7 +118,6 @@ def check(hook: dict[str, Any]) -> str | None:
     """The reason to deny the Agent call `hook` gives where its caller is an
     operator and the call is not the launch `next` last printed to it, and
     None otherwise."""
-    from operations.command_words import next_command
     from operations.printing import printed_launch
 
     tool, inp = hook["tool_name"], hook["tool_input"]
@@ -120,8 +129,7 @@ def check(hook: dict[str, Any]) -> str | None:
     caller = operator_next(hook, HOOK)
     if caller is None:
         return None
-    agent, found = caller
-    command = next_command(agent)
+    _, command, found = caller
     printed = None if found is None else printed_launch(found[1])
     if printed is None:
         return no_launch_reason(command)

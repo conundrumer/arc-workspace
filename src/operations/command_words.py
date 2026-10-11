@@ -44,8 +44,16 @@ def simple_commands(command: str) -> list[list[str]]:
     return [words for words in out if words]
 
 
-def next_command(agent: str) -> str:
-    return " ".join(run_words("next", agent))
+NEXT = "next"
+"""The action that prints an operator's next step."""
+
+
+RELAY = "relay"
+"""The action that prints an operator launcher's next step."""
+
+
+def next_command(agent: str, action: str = NEXT) -> str:
+    return " ".join(run_words(action, agent))
 
 
 def run_words(action: str, agent: str) -> list[str]:
@@ -66,5 +74,5 @@ def is_call(words: list[str], action: str, agent: str) -> bool:
     return words == run_words(action, agent)
 
 
-def is_next(command: str, agent: str) -> bool:
-    return runs(command, "next", agent)
+def is_next(command: str, agent: str, action: str = NEXT) -> bool:
+    return runs(command, action, agent)

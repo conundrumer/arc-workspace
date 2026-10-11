@@ -1,18 +1,20 @@
-"""The operator's final reply: the calls that sent its text to the
-coordinator (`final_sends`), the operator whose final reply carries what
+"""The operator's final reply: the calls that sent its text to its parent
+(`final_sends`), the operator whose final reply carries what
 reached an earlier one (`carrier`), and the lines the reply nests; with
 the pattern of the report of an agent that sent its final reply by
 SendMessage (`SENT_BY_MESSAGE`)."""
 
 import re
+from collections.abc import Iterable
 
 from controlled_markdown import form, mctx
 from operations.command_words import is_next
 from operations.constants import COORDINATOR
-from operations.handled import sends_to
+from operations.handled import sends_in
 from operations.printing import FINAL_REPLY, SENT, unfenced
 from operations.roles import AGENT_ID
 from operations.state import Call, State
+from operations.steps import Reply, Send
 
 
 SENT_BY_MESSAGE = re.compile(
@@ -21,9 +23,16 @@ SENT_BY_MESSAGE = re.compile(
 
 
 def final_sends(state: State, operator: str) -> list[Call]:
-    """The SendMessage calls by which `operator` sent the coordinator the
+    """The SendMessage calls by which `operator` sent its parent
+    (`State.parents`) the text of its final reply, in the order they were
+    made."""
+    return final_sends_in(state.calls, operator, state.parents[operator])
+
+
+def final_sends_in(calls: Iterable[Call], operator: str, to: str) -> list[Call]:
+    """The SendMessage calls of `calls` by which `operator` sent `to` the
     text of its final reply, in the order they were made."""
-    return [c for c in sends_to(state, COORDINATOR) if c.operator == operator
+    return [c for c in sends_in(calls, to) if c.operator == operator
             and unfenced(str(c.input.get("message", ""))).startswith(FINAL_REPLY + "\n")]
 
 
@@ -46,6 +55,13 @@ def carrier(state: State, operator: str, time: float) -> str | None:
     if state.me in after:
         printed_at.append((state.now, state.me))
     return min(printed_at)[1] if printed_at else None
+
+
+def ending_step(to: str, text: str, sent: bool) -> Send | Reply:
+    """The step of a final reply whose text is `text`, to the parent `to`:
+    the message that sends `to` the text, or, where `sent`, as the
+    message was already sent, the reply."""
+    return Reply(to) if sent else Send(to, f"{FINAL_REPLY}\n{text}")
 
 
 def nested(text: str) -> list[str]:
