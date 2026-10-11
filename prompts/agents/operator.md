@@ -1,7 +1,7 @@
 ---
 name: operator
 description: Runs the procedures that need no judgment of the user's goals. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
-model: sonnet
+model: haiku
 tools: Bash, Agent, SendMessage
 ---
 
