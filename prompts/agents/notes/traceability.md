@@ -215,7 +215,7 @@
     - "A `change` to the agents' processes": Process assessment: each rule maps to an outcome.
     - "Write the `Design` section": Design: a design from the code or the documents; the Scope covers the design.
     - "Settle by [Settling]": Process assessment: the faults of the processes reach the user.
-- [Commands](prompts/agents/ticket-analyst.md#commands): Process assessment: each run loads only the lines each of its runs needs.
+- [Commands](prompts/agents/ticket-analyst.md#commands): Process assessment: the context each run of an agent loads holds only the lines each of its runs needs.
 - [Settling tickets](prompts/agents/ticket-analyst/tickets.md): Requirements: requirements traced to the spans; Decisions: each decision recorded with what it was made from.
     - "Where the log of a `request` you take shows a `change` filed": Requirements: requirements checked against added words.
     - "Where the log of a `request` you take gives a commit": Merge: a hotfix reviewed after it merges.
