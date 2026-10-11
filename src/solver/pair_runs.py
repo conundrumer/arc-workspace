@@ -12,7 +12,7 @@ from engine.quotes import quotes
 from solver.aggregate import Solver
 from solver.cases import cases as cases_of
 from solver.model import Case
-from solver.outcome import Assignment, Grids, Outcome, is_result
+from solver.outcome import Assignment, Grids, Outcome, first_failure
 from solver.solve import outcomes_on
 
 
@@ -172,7 +172,7 @@ def fits_pairs(engine: Engine, solver: Solver, case: Case,
     got = [o[case] for o in outcomes_on(
         engine, solver, (case,),
         [(as_grid(ex.input), Assignment(())) for _p, ex in pairs], limits)]
-    failed = next((o for o in got if not is_result(o)), None)
+    failed = first_failure(got)
     if failed is not None:
         return failed
     return matches_every([candidates(ex) for _p, ex in pairs], got)

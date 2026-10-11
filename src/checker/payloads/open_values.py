@@ -1,6 +1,6 @@
 """The payloads of the open-values check (`checker.open_values`): a stored
-fact of a parameter, the fact no input exercises, and the check not
-run."""
+fact of a parameter, the fact no input exercises, and the stored program
+failing a train pair."""
 
 from dataclasses import dataclass
 
@@ -19,12 +19,14 @@ class Fact:
 
 @dataclass(frozen=True)
 class UnexercisedPayload:
-    """A stored fact whose removal changes no outcome of any case on any
-    input of the task or of the witness file."""
+    """The payload of an `unexercised` finding
+    (`checker.finding.Kind.UNEXERCISED`): the fact."""
 
     fact: Fact
 
 
 @dataclass(frozen=True)
-class TrainFailsPayload:
-    """The check did not run: the stored program fails a train pair."""
+class TrainFails:
+    """The stored program fails a train pair, so the drop-one survey
+    (`checker.drop_one.survey_drop_one`), and the open-values check that
+    reads it, do not run."""

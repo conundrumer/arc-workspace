@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from checker.domains import enumerable
 from checker.finding import Finding
-from checker.payloads.open_values import Fact
+from checker.payloads.open_values import Fact, TrainFails
 from checker.runs import Runs
 from checker.variants import (
     Fails,
@@ -48,11 +48,6 @@ class DropOneReport:
     tested: int
     parameters: int
     timed_out: tuple[tuple[Fact, Finding], ...]
-
-
-@dataclass(frozen=True)
-class TrainFails:
-    """The stored program fails a train pair."""
 
 
 type DropOneResult = DropOneReport | TrainFails | TimedOut

@@ -56,8 +56,8 @@ from checker.determination_plan import (
 from checker.domains import (
     MAGNITUDE_TYPES,
 )
-from checker.drop_one import DropOneResult, DroppedFact, TrainFails
-from checker.payloads.open_values import Fact, UnexercisedPayload
+from checker.drop_one import DropOneResult, DroppedFact
+from checker.payloads.open_values import Fact, TrainFails, UnexercisedPayload
 from checker.render import finding_lines, noun, verb_s
 from checker.render.cases import names_text, under_case
 from checker.render.lint import marker_text

@@ -1,6 +1,7 @@
 """What a case gives on an input: the assignment it runs at, its grids, and
 its outcome, which is those grids, undefined, or the failure of its run."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Annotated
 
@@ -52,6 +53,12 @@ def is_result(outcome: Outcome | Fault) -> "TypeIs[Grids | Undefined]":
     """Whether a run gave a result: grids, or undefined; not a run's
     failure, nor the fault that stopped the run."""
     return isinstance(outcome, Grids | Undefined)
+
+
+def first_failure(outcomes: Iterable[Outcome]) -> RunFailure | None:
+    """The first of `outcomes` that is no result (`is_result`), or None
+    where each is one."""
+    return next((o for o in outcomes if not is_result(o)), None)
 
 
 def group_grid(outcome: Grids | Undefined) -> GroupGrid:

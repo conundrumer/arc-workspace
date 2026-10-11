@@ -13,17 +13,15 @@ from checker.finding import (
 )
 from checker.judged import no_result
 from checker.payloads.open_values import (
-    TrainFailsPayload,
+    TrainFails,
     UnexercisedPayload,
 )
 from checker.runs import Runs
 from checker.variants import TimedOut, with_program
-from engine import RunFailure
 from engine.quotes import quotes
 from solver.aggregate import Solver
-from solver.outcome import Outcome, is_result
-from solver.model import Case
-from solver.witnessed_cases import entry_assignments, task_inputs
+from solver.outcome import first_failure
+from solver.witnessed_cases import entry_assignments, placed_inputs
 
 
 @quotes("principles.md", "Choice points and open parameters",
@@ -43,25 +41,24 @@ def check_open_values(solver: Solver, runs: Runs) -> list[Finding]:
         return [got.finding]
     if not isinstance(got, DropOneReport):
         return [Finding(Kind.OPEN_VALUES_UNCHECKED, AtFile(WholeFile.SOLVER),
-                        TrainFailsPayload())]
+                        got)]
     cases = runs.cases
     if not isinstance(cases, tuple):
         return [no_result(cases, RunKind.CASE, None, AtFile(WholeFile.SOLVER))] \
             if got.dropped else []
-    pair_inputs = [] if solver.task is None else task_inputs(solver.task)
     entries = entry_assignments(runs.engine, solver, runs.entries,
                                 runs.file_role)
     out: list[Finding] = []
     for d in got.dropped:
         f = d.fact
-        inputs = pair_inputs + [
-            (e.input, at) for e, at in entries
-            if all(name != f.parameter for name, _v in e.assign)]
+        inputs = placed_inputs(solver, [
+            (e, at) for e, at in entries
+            if all(name != f.parameter for name, _v in e.assign)])
         before = runs.outcomes_on(solver, cases, inputs)
         after = runs.outcomes_on(
             with_program(solver, removal(runs.engine, solver, f)),
             cases, inputs)
-        failed = _failure(after)
+        failed = first_failure(o for got in after for o in got.values())
         if failed is not None:
             out.append(no_result(failed, RunKind.DELETION, None,
                                  AtParameter(f.parameter)))
@@ -70,8 +67,3 @@ def check_open_values(solver: Solver, runs: Runs) -> list[Finding]:
                                UnexercisedPayload(f)))
     return out
 
-
-def _failure(outcomes: list[dict[Case, Outcome]]) -> RunFailure | None:
-    """The first run of `outcomes` that gave no result."""
-    return next((o for got in outcomes for o in got.values()
-                 if not is_result(o)), None)

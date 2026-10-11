@@ -22,7 +22,7 @@ from checker.finding import (
     Kind,
     NoResultPayload,
     UndecidedPayload,
-    TrainFailsPayload,
+    TrainFails,
     UnexercisedPayload,
     is_hint,
 )
@@ -150,7 +150,7 @@ def finding_lines(solver: Solver, f: Finding,
         case UnexercisedPayload():
             from checker.render.surveys import unexercised_line
             return [unexercised_line(solver, at, p)]
-        case TrainFailsPayload():
+        case TrainFails():
             from checker.render.surveys import UNCHECKED_TRAIN_FAILS
             return [UNCHECKED_TRAIN_FAILS.format(at=at)]
         case _ if isinstance(p, LINT_SHAPES):

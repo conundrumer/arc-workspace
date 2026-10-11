@@ -46,11 +46,19 @@ def recorded_inputs(engine: Engine, solver: Solver, entries: Sequence[Entry],
     stored assignment, then each of `entries`', entries of `file`, inputs
     at its entry's assignment, each once. An entry whose assignment the
     model cannot place (`assignment`) gives none."""
+    return placed_inputs(solver, entry_assignments(engine, solver, entries,
+                                                   file))
+
+
+def placed_inputs(solver: Solver, placed: Iterable[tuple[Entry, Assignment]]
+                  ) -> list[tuple[Grid, Assignment]]:
+    """The task's inputs, train then test, at the stored assignment, where
+    the solver has a task, then the input of each entry of `placed` at its
+    assignment, each once."""
     out: list[tuple[Grid, Assignment]] = []
     if solver.task is not None:
         out += task_inputs(solver.task)
-    out += [(e.input, at)
-            for e, at in entry_assignments(engine, solver, entries, file)]
+    out += [(e.input, at) for e, at in placed]
     return list(dict.fromkeys(out))
 
 
