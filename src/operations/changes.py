@@ -47,6 +47,22 @@ any other form holds the review. The command launches no editor for a
 reviewer's findings: that reviewer sends them to the editors of its
 brief.
 
+A take writes in its log line the change's cost budget and time budget,
+taken over the changes closed `fixed` before it with the same `editors`
+(`scripts/ticket_watch.py`). The agents of a change are those launched
+since its last move out of `tickets/draft/`, and its spend is theirs and
+that of the runs under them. Once that spend passes the cost budget, at
+the command's next call, whether or not an agent of the change is at
+work, the command files a `performance` ticket on the change, on the
+agent type whose spend most exceeds its median over those changes. Each
+agent of the change at work before that ticket is told once to end
+(`briefs.over_budget`), and none other is launched but one item checker
+on each editor's latest report, once none is at work. Where that checker
+leaves nothing for a decision, the change merges; otherwise it moves to
+`tickets/draft/` with a line that opens with `OVERRUN_FINDING`, which
+`drafts` reads as findings. The line before a merge gives the change's
+agent-running time since its take; neither time figure stops anything.
+
 A next step of a change that is a message an operator already sent,
 whose recipient answered it, leaves the change where it was, and the
 command cannot place it.
@@ -55,7 +71,9 @@ A step of a change that the command cannot place holds that change alone,
 until a `Decision:` line rules it with one of the choices the step gives
 (`directives.decided`)."""
 
+import re
 import shlex
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
@@ -65,11 +83,12 @@ from operations.directives import Decision, Directive, decided, held_on, named, 
 from operations.reports import (NO_FINDING, OPEN_LABELS, Label, budget_passed, items_of,
                                 left_for_decision, no_finding)
 from operations.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
-from operations.state import Agent, State, Ticket
+from operations.state import Agent, Budget, Spend, State, Ticket
 from operations.handled import answered, repeated, sends_to, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids, key
-from operations.tracker import AGENT, COORDINATOR, closed, log, worktree
-from ticketing.vocabulary import Domain, Kind, Status
+from operations.tracker import AGENT, COORDINATOR, FILE_TICKET, closed, log, worktree
+from ticketing.text import ticket_text
+from ticketing.vocabulary import DEFECT_SECTIONS, Domain, Kind, Note, Status
 
 
 def scope(state: State) -> set[str]:
@@ -131,9 +150,21 @@ def waiting(state: State) -> list[tuple[str, list[str]]]:
             and t.status is Status.OPEN and not all(closed(state, d) for d in t.depends_on)]
 
 
+TAKE_NOTE = "taking: budget {dollars:.2f} dollars, {seconds:.0f} s"
+"""The note of the log line of a take, with the change's cost budget and
+time budget."""
+
+TAKEN = re.compile(r"taking: budget (?P<dollars>[0-9.]+) dollars, (?P<seconds>[0-9]+) s")
+
+
 def take(state: State) -> Step | None:
     for t in takeable(state):
-        return Bash(log(t.number, Status.ASSIGNED, Status.OPEN, "taking", state.me))
+        b = state.budgets.get(t.number)
+        if b is None:
+            return Undecided(mctx("the budget of change {number} is unknown").format(
+                number=t.number))
+        return Bash(log(t.number, Status.ASSIGNED, Status.OPEN,
+                        TAKE_NOTE.format(dollars=b.dollars, seconds=b.seconds), state.me))
     for n, _ in numbers(state, Directive.MERGE):
         t = state.tickets.get(n)
         if t is not None and t.status is Status.BLOCKED and t.kind is Kind.CHANGE:
@@ -150,13 +181,29 @@ def held(state: State) -> list[Ticket]:
                   key=lambda t: t.order)
 
 
-def of_change(state: State, number: str) -> list[Agent]:
+def launched_on(state: State, number: str) -> list[Agent]:
     """The editors, doc reviewers, item checkers and ticket analysts
     launched on the change `number`."""
     roles = (*EDITORS, Role.DOC_REVIEWER, Role.ITEM_CHECKER)
     out = [a for a in state.agents if a.role in roles and a.subject == number]
     out += [a for a, p, nums in state.analysts() if p is Purpose.CHANGE and number in nums]
     return sorted(out, key=lambda a: a.launched)
+
+
+def left_draft(t: Ticket) -> float:
+    """The time of the last line of `t`'s log that moves it out of
+    `tickets/draft/`, or 0 where none does."""
+    return max((t.log[i].time for i in range(1, len(t.log))
+                if t.log[i - 1].status is Status.DRAFT and t.log[i].status is not Status.DRAFT),
+               default=0.0)
+
+
+def of_change(state: State, number: str) -> list[Agent]:
+    """The agents `launched_on` gives for the change `number` since its
+    last move out of `tickets/draft/`."""
+    t = state.tickets.get(number)
+    since = 0.0 if t is None else left_draft(t)
+    return [a for a in launched_on(state, number) if a.launched > since]
 
 
 def give_up(state: State) -> Step | None:
@@ -173,7 +220,7 @@ def give_up(state: State) -> Step | None:
         else:
             number = a.subject
         t = state.tickets.get(number)
-        if t is None or t.kind is not Kind.CHANGE or a not in of_change(state, number):
+        if t is None or t.kind is not Kind.CHANGE or a not in launched_on(state, number):
             continue
         lost = t.status in (Status.DRAFT, Status.CLOSED) or (
             t.status is Status.ASSIGNED and t.holder not in (state.me, None)
@@ -217,6 +264,8 @@ def carry(state: State, t: Ticket) -> Step | None:
     w = worktree(t, state)
     if w is None:
         return Bash(make_worktree(t.number, state.me))
+    if (step := over_budget(state, t, w, agents)) is not False:
+        return step
     here = [a for a in launched if in_worktree(a, w)]
     for role in (r for r in EDITORS if r in editors):
         if not any(a.role is role for a in here):
@@ -233,7 +282,138 @@ def carry(state: State, t: Ticket) -> Step | None:
     if Role.DOC_EDITOR in editors and (
             step := doc_review(state, t, w, here, agents)) is not False:
         return step
-    return merging.merge_steps(state, t, w, list(latest.values()))
+    return merge(state, t, w, list(latest.values()))
+
+
+TIME_OPENING = "agent-running time"
+
+TIME_NOTE = TIME_OPENING + " {seconds:.0f} s since the take"
+"""The note of the log line that gives a change's agent-running time
+before its merge."""
+
+
+def taken(t: Ticket) -> tuple[float, float] | None:
+    """The time of the last take of `t` since its last move out of
+    `tickets/draft/`, with the cost budget its note gives, or None where
+    no take line gives one."""
+    since = left_draft(t)
+    for ln in reversed(t.log):
+        if ln.time >= since and (m := TAKEN.fullmatch(ln.note)) is not None:
+            return ln.time, float(m["dollars"])
+    return None
+
+
+def merge(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
+    """The line that gives the change's agent-running time since its take,
+    where none follows that take and that time reads, and then the merge."""
+    since = taken(t)
+    start = since[0] if since is not None else left_draft(t)
+    spent = state.spent.get(t.number)
+    if spent is not None and not any(ln.time >= start and ln.note.startswith(TIME_OPENING)
+                                     for ln in t.log):
+        return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED,
+                        TIME_NOTE.format(seconds=spent.seconds), state.me))
+    return merging.merge_steps(state, t, w, latest)
+
+
+def overrun_ticket(state: State, t: Ticket, since: float) -> Ticket | None:
+    """The `performance` ticket an operator filed on the change `t` at or
+    after `since`."""
+    return next((p for p in sorted(state.tickets.values(), key=lambda p: p.order)
+                 if p.kind is Kind.PERFORMANCE and p.domain is Domain.CHANGE
+                 and p.subject == t.number and p.filer == AGENT and p.filed >= since), None)
+
+
+def at_fault(spent: Spend, budget: Budget) -> str:
+    """The agent type whose spend most exceeds its median spend over the
+    changes the budget is taken over; an agent type with no median spent
+    nothing on them (ticket 6-634)."""
+    return max(sorted(spent.by_role),
+               key=lambda r: spent.by_role[r] - budget.role_medians.get(r, 0.0))
+
+
+def by_role(dollars: Mapping[str, float]) -> str:
+    return ", ".join(f"{r} {d:.2f} dollars" for r, d in sorted(dollars.items()))
+
+
+def file_overrun(t: Ticket, spent: Spend, budget: Budget, limit: float,
+                 agents: list[Agent]) -> Step:
+    """The command that files the `performance` ticket on the change `t`
+    past its cost budget `limit`, on the agent type at fault."""
+    role = at_fault(spent, budget)
+    ids = [a.agent_id for a in agents if a.role.agent_type == role and a.agent_id is not None]
+    title = mctx("change {number}: {role} spent most over its usual spend, past the change's "
+                 "cost budget").format(number=t.number, role=role)
+    impact, evidence = DEFECT_SECTIONS
+    text = ticket_text(Kind.PERFORMANCE, title, {
+        impact: mctx("Change {number} spent {spent} dollars, past its cost budget of {limit} "
+                     "dollars, and its work in flight ended.").format(
+                         number=t.number, spent=f"{spent.dollars:.2f}", limit=f"{limit:.2f}"),
+        evidence: "\n".join([
+            mctx("Spend by role: {spend}.").format(spend=by_role(spent.by_role)),
+            mctx("Median spend by role over the changes the budget is taken over: "
+                 "{medians}.").format(medians=by_role(budget.role_medians)),
+            mctx("Agents of {role} on the change: {ids}.").format(
+                role=role, ids=", ".join(ids) or "none")])})
+    return Bash(shlex.join([*FILE_TICKET, Domain.CHANGE.value, t.number, AGENT])
+                + " <<'TICKET'\n" + text + "TICKET")
+
+
+OVERRUN_FINDING = f"{Note.FINDING}: past its cost budget"
+"""The opening of the note of the line that moves a change past its cost
+budget to `tickets/draft/`."""
+
+
+def over_budget(state: State, t: Ticket, w: Path,
+                agents: list[Agent]) -> Step | None | Literal[False]:
+    """The step on the change `t` past the budget its take gives, or False
+    where it is not past it or no take gives a budget."""
+    take_line = taken(t)
+    if take_line is None:
+        return False
+    since, limit = take_line
+    spent = state.spent.get(t.number)
+    if spent is None:
+        return Undecided(mctx("the spend of change {number} since its take is unknown").format(
+            number=t.number))
+    if spent.dollars <= limit:
+        return False
+    trip = overrun_ticket(state, t, since)
+    if trip is None:
+        budget = state.budgets.get(t.number)
+        if budget is None:
+            return Undecided(mctx("the median spend by role of the changes the budget of "
+                                  "change {number} is taken over is unknown").format(
+                                      number=t.number))
+        return file_overrun(t, spent, budget, limit, agents)
+    for a in agents:
+        if a.pending and a.agent_id is not None and a.launched < trip.filed:
+            message = briefs.over_budget(t.number, a.role is Role.DOC_REVIEWER)
+            if not sent(state, a.agent_id, message):
+                return Send(a.agent_id, message)
+    if any(a.pending for a in agents):
+        return None
+    latest = list({a.role: a for a in agents if a.role in EDITORS and in_worktree(a, w)}.values())
+    reported = max((r.time for a in latest if (r := a.last_report) is not None), default=0.0)
+    checkers = [a for a in agents if a.role is Role.ITEM_CHECKER
+                and a.launched > trip.filed and a.launched > reported]
+    if not checkers:
+        editors = agent_ids(latest)
+        if isinstance(editors, Undecided):
+            return editors
+        return check_items(state, t, w, latest, editors, past=True)
+    checker = checkers[-1]
+    if checker.last_report is None:
+        return Undecided(mctx("item checker {agent} on change {number}, past its cost budget, "
+                              "returned no report").format(agent=checker.agent_id,
+                                                          number=t.number))
+    if left_for_decision(checker) is None:
+        return merge(state, t, w, latest)
+    return Bash(log(t.number, Status.DRAFT, Status.ASSIGNED, mctx(
+        "{opening} of {limit} dollars: spent {spent} dollars, {roles}; item checker {agent} "
+        "leaves items for a decision").format(
+            opening=OVERRUN_FINDING, limit=f"{limit:.2f}", spent=f"{spent.dollars:.2f}",
+            roles=by_role(spent.by_role), agent=checker.agent_id), state.me))
 
 
 def past_budget(state: State, t: Ticket, latest: list[Agent]) -> Step | None:
@@ -326,13 +506,13 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
 
 
 def check_items(state: State, t: Ticket, w: Path, needing: list[Agent],
-                editors: list[str]) -> Step:
+                editors: list[str], past: bool = False) -> Step:
     """The launch of an item checker on the latest reports of the editors
     `needing`, which have reported since the last item checker was launched
     on the change `t`, and on the accepted gate outputs the change writes,
     with the latest report of each ticket analyst launched on `t` that has
     reported, in launch order, so the checker leaves out what they already
-    decided."""
+    decided. `past` gives that the change is past its cost budget."""
     reporting = [(a, r) for a in needing if (r := a.last_report) is not None]
     reporters = agent_ids(a for a, _ in reporting)
     if isinstance(reporters, Undecided):
@@ -342,7 +522,8 @@ def check_items(state: State, t: Ticket, w: Path, needing: list[Agent],
                  if a.role is Role.TICKET_ANALYST and a.agent_id is not None
                  and (r := a.last_report) is not None]
     return Launch(Role.ITEM_CHECKER, t.number, briefs.item_check(
-        t.number, w, reports, decisions, list(state.gate_outputs.get(w, ())), editors, state.me))
+        t.number, w, reports, decisions, list(state.gate_outputs.get(w, ())), editors, state.me,
+        past))
 
 
 def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],

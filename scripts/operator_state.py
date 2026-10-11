@@ -23,6 +23,7 @@ from run_reads import bash_spans, context_size, parent_id, repeated_runs, run_en
 from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
 from ticket_settle import to_settle
+from ticket_watch import budget, spend
 from transcripts import Refused, entries_back, epoch, find, new_state
 from tree_reads import (claims, code_review, commits, doc_reviews, gate_outputs, main_tree,
                         scratch, worktrees)
@@ -37,9 +38,10 @@ from operations.relay import Relay, Run
 from operations.roles import Role
 from operations.directives import named
 from operations.plan import taken_up, unknown_line
-from operations import monitor
+from operations import changes, monitor
 from operations.monitor import MonitorState, Watched
-from operations.state import Agent, Call, LateResume, Message, Reader, Report, State
+from operations.state import (Agent, Budget, Call, LateResume, Message, Reader, Report, Spend,
+                              State, Ticket)
 from operations.handled import made
 from operations.tracker import worktree
 from ticketing.vocabulary import Status
@@ -165,8 +167,42 @@ def read_state(me: str) -> tuple[State, MonitorState]:
                     to_settle=tuple(str(n) for n in to_settle(tickets_dir, index, given)
                                     if str(n) in tickets),
                     gate_outputs={w: gate_outputs(w) for w in held})
+    spent = change_spend(state, undecided)
+    state = replace(state, spent=spent,
+                    budgets=change_budgets(state, spent, tickets_dir, undecided))
     return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(state.stalled),
                                undecided=tuple(watching))
+
+
+def change_spend(state: State, undecided: list[str]) -> dict[str, Spend]:
+    """The spend of each change `state.me` holds whose spend reads."""
+    out: dict[str, Spend] = {}
+    for t in changes.held(state):
+        ids = [a.agent_id for a in changes.of_change(state, t.number) if a.agent_id is not None]
+        if (s := spend(ids, undecided)) is not None:
+            out[t.number] = s
+    return out
+
+
+def change_budgets(state: State, spent: dict[str, Spend], tickets: Path,
+                   undecided: list[str]) -> dict[str, Budget]:
+    """The budgets `State.budgets` gives."""
+    def of(t: Ticket, before: float) -> Budget | None:
+        if t.editors is None:
+            return None
+        return budget(tickets, frozenset(r.value for r in t.editors), before, undecided)
+
+    out: dict[str, Budget] = {}
+    for t in changes.takeable(state)[:1]:
+        if (b := of(t, state.now)) is not None:
+            out[t.number] = b
+    for t in changes.held(state):
+        take = changes.taken(t)
+        s = spent.get(t.number)
+        if take is not None and s is not None and s.dollars > take[1] \
+                and (b := of(t, take[0])) is not None:
+            out[t.number] = b
+    return out
 
 
 def given_lines(runs: list[tuple[str, Path]], me: str, calls: list[Call]) -> set[str]:

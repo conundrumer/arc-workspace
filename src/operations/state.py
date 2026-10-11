@@ -250,6 +250,27 @@ class Reader:
 
 
 @dataclass(frozen=True)
+class Spend:
+    """The spend of runs: their token cost and that of the runs under
+    them, their agent-running time, the union of the wall time of all
+    those runs, and their cost by the agent type of each run, the runs
+    under it summed with it (`scripts/ticket_watch.py`)."""
+    dollars: float
+    seconds: float
+    by_role: dict[str, float]
+
+
+@dataclass(frozen=True)
+class Budget:
+    """A change's cost budget in dollars and its time budget in seconds,
+    with the median spend of each agent type over the changes the budget
+    is taken over (`scripts/ticket_watch.py`)."""
+    dollars: float
+    seconds: float
+    role_medians: dict[str, float]
+
+
+@dataclass(frozen=True)
 class State:
     """What the procedures read. `operators` holds the agent ids of the
     session's operators in the order of their launch, `parents` the parent
@@ -283,7 +304,12 @@ class State:
     `doc_reviews` the time of the commit each `Reader.tag` points at, by
     that tag, or is None where the tags do not read. `definitions` gives
     the `st_mtime` of each rendered definition
-    `.claude/agents/<agent type>.md` of the main tree, by agent type."""
+    `.claude/agents/<agent type>.md` of the main tree, by agent type.
+    `spent` gives, for each change `me` holds, the spend of the agents
+    `changes.of_change` gives for it. `budgets` gives the budget of the
+    change `changes.take` takes next, taken at `now`, and of each change
+    `me` holds whose spend passes the budget its take gives, taken at that
+    take."""
     me: str
     now: float
     session: str
@@ -316,6 +342,8 @@ class State:
     unread: tuple[Unread, ...] = ()
     definitions: Mapping[str, float] = field(default_factory=dict)
     parents: Mapping[str, str] = field(default_factory=dict)
+    spent: Mapping[str, Spend] = field(default_factory=dict)
+    budgets: Mapping[str, Budget] = field(default_factory=dict)
 
     @property
     def arrived(self) -> list[Message]:

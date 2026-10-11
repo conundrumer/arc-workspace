@@ -183,8 +183,23 @@ def settle(numbers: list[str], operator: str) -> str:
                       LAUNCHER.format(operator=operator)])
 
 
-def revise(numbers: list[str], last: list[str], operator: str) -> str:
-    return "\n".join([*revise_lines(numbers, last), LAUNCHER.format(operator=operator)])
+def revise(numbers: list[str], last: list[str], operator: str,
+           overruns: list[tuple[str, str, str | None]]) -> str:
+    """The brief of a ticket analyst that revises the drafts `numbers`,
+    with, for each draft `overruns` gives by its number, the line of the
+    operator's that moved it past its cost budget to `tickets/draft/`, and the
+    part of the item checker's reply that line names that gives what it
+    leaves for a decision."""
+    lines = revise_lines(numbers, last)
+    for number, line, left in overruns:
+        lines.append(mctx("The findings of draft {number} include the operator's line below, "
+                          "which moved it past its cost budget to `tickets/draft/`:").format(
+                              number=number))
+        lines.append(f"\n{line}\n")
+        if left is not None:
+            lines.append(mctx("What that item checker leaves for a decision:"))
+            lines.append(f"\n{left}\n")
+    return "\n".join([*lines, LAUNCHER.format(operator=operator)])
 
 
 def weigh_suggestions(number: str, reviewers: list[str], last: bool) -> str:
@@ -214,15 +229,18 @@ def change_lines(number: str, worktree: Path) -> list[str]:
 
 def item_check(number: str, worktree: Path, reports: list[tuple[str, str]],
                decisions: list[tuple[str, str]], gate: list[str], editors: list[str],
-               operator: str) -> str:
+               operator: str, past: bool = False) -> str:
     """The brief of an item checker that checks the items of a change's
     editors, by each editor's agent id and latest report, and the accepted
     gate outputs the change writes, with the agent ids of its editors.
     Where `decisions` gives the agent id and latest report of ticket
     analysts on the change, it tells the checker to leave out of its
     `LEFT_FOR_DECISION` part what those decisions settle, unless the
-    editor's report gives a reason they did not judge."""
+    editor's report gives a reason they did not judge. `past` gives that
+    the change is past its cost budget."""
     lines = change_lines(number, worktree)
+    if past:
+        lines.append(OVER_BUDGET.format(number=number))
     for editor_id, report in reports:
         lines.append(mctx("The latest report of editor {editor}:").format(editor=editor_id))
         lines.append(f"\n{report}\n")
@@ -384,6 +402,22 @@ def stop_work(number: str) -> str:
     ticket the operator no longer carries to end."""
     return mctx("Write nothing further on {number}, and end with your open work in your "
                 "reply.").format(number=number)
+
+
+OVER_BUDGET = mctx("Change {number} is past its cost budget.")
+
+
+def over_budget(number: str, reviewer: bool) -> str:
+    """The message to an agent at work on the change `number` once the
+    change passes its budget; `reviewer` gives the form of its doc
+    reviewer."""
+    lines = [OVER_BUDGET.format(number=number), mctx(
+        "Launch nothing more on it, end the work at hand, and reply with what stands.")]
+    if reviewer:
+        lines.append(mctx("Before you reply, file each finding of yours that stands as a `bug` "
+                          "ticket, with `change` as its domain and {number} as its "
+                          "subject.").format(number=number))
+    return "\n".join(lines)
 
 
 AT_BUDGET = mctx("Where your documents give what you do at your budget, do that at it, and "

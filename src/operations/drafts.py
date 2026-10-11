@@ -17,7 +17,10 @@ a line of its log runs.
 
 A draft waits for a ticket analyst where its log holds findings after its
 last `filed` or `revised` line, and no ticket reviewer or ticket analyst
-runs on it; one ticket analyst takes each such draft with the others a
+runs on it; a line of the operator's that moves a change past its cost
+budget to `tickets/draft/` (`changes.OVERRUN_FINDING`) counts as findings,
+and the analyst's brief gives that line and what the item checker it names leaves
+for a decision; one ticket analyst takes each such draft with the others a
 chain of `depends-on` links to it. Where the log holds only suggestions
 there, the command resumes by SendMessage the ticket analyst that wrote
 that last line, where an operator launched it, and otherwise the draft
@@ -38,13 +41,15 @@ returned with no revision written, the review of that draft holds until a
 
 from controlled_markdown import mctx
 from operations import briefs
+from operations.changes import OVERRUN_FINDING
 from operations.directives import Decision, Directive, decided, named, numbers
 from operations.roles import Purpose, Role, analyst_subject, joined, subjects
+from operations.reports import left_for_decision
 from operations.state import Agent, LogLine, State, Ticket
 from ticketing.vocabulary import Kind, Note, Status
 from operations.handled import repeated, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, decision_key
-from operations.tracker import COORDINATOR, after, last_index, log
+from operations.tracker import AGENT, COORDINATOR, after, last_index, log
 
 CAP = 3
 """The review rounds with findings or suggestions that close a draft's
@@ -58,7 +63,9 @@ def drafts(state: State) -> list[Ticket]:
     analysed = {n for _, p, nums in state.analysts() if p is not Purpose.TRIAGE for n in nums}
     return sorted((t for t in state.tickets.values()
                    if t.status is Status.DRAFT and t.kind is Kind.CHANGE
-                   and (state.mine(t) or t.number in names or t.number in analysed)),
+                   and (state.mine(t) or t.number in names or t.number in analysed
+                        or ((ln := overrun_line(t, base(t))) is not None
+                            and ln.agent_id in state.operators))),
                   key=lambda t: t.order)
 
 
@@ -103,6 +110,25 @@ def review_lines_after(t: Ticket, since: float, opening: str) -> list[str]:
             if ln.time >= since and by_reviewer(ln, opening)]
 
 
+def overrun_line(t: Ticket, since: float) -> LogLine | None:
+    """The last line of the operator's in `t`'s log after `since` that
+    moves the change past its cost budget to `tickets/draft/`."""
+    return next((ln for ln in reversed(t.log) if ln.time >= since and ln.agent == AGENT
+                 and ln.note.startswith(OVERRUN_FINDING)), None)
+
+
+def overrun(state: State, t: Ticket) -> tuple[str, str, str | None] | None:
+    """The number of `t`, the line of `overrun_line` since its last
+    `filed` or `revised` line, and what the last item checker launched on
+    `t` before that line leaves for a decision, or None where no such line
+    is."""
+    ln = overrun_line(t, base(t))
+    if ln is None:
+        return None
+    checkers = [a for a in state.agents_of(Role.ITEM_CHECKER, t.number) if a.launched < ln.time]
+    return t.number, ln.note, left_for_decision(checkers[-1]) if checkers else None
+
+
 def rounds_since_draft(t: Ticket) -> int:
     """The review rounds `t`'s log gives since the line that filed it or
     last moved it into `tickets/draft/`: a round is the ticket reviewer
@@ -145,8 +171,9 @@ def step(state: State) -> Step | None:
         group = linked(waiting[0], waiting)
         nums = [t.number for t in group]
         last = [t.number for t in group if at_cap(t)]
+        overruns = [o for t in group if (o := overrun(state, t)) is not None]
         return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.DRAFT, joined(nums)),
-                      briefs.revise(nums, last, state.me), items=len(nums))
+                      briefs.revise(nums, last, state.me, overruns), items=len(nums))
     return None
 
 
@@ -169,12 +196,13 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
         return None
     since = base(t)
     found = review_lines_after(t, since, Note.FINDING)
+    overran = overrun_line(t, since) is not None
     suggested = review_lines_after(t, since, Note.SUGGESTION)
     last_i = last_index(t, FILED_OR_REVISED)
-    if found or suggested:
+    if found or suggested or overran:
         analyst_done = [a for a in agents if a.role is Role.TICKET_ANALYST
                         and a.launched > t.log[-1].time]
-        writer = resumable(state, t) if not found else None
+        writer = resumable(state, t) if not (found or overran) else None
         if writer is not None and writer.agent_id is not None:
             message = briefs.weigh_suggestions(t.number, list(dict.fromkeys(suggested)),
                                                at_cap(t))

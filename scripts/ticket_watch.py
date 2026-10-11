@@ -1,7 +1,8 @@
 """The routing of a `delay` ticket that gives a case: the priced loss of a
 case, the cost of a `change`, the threshold of an editor, and the moves of
 a ticket into and out of `tickets/watching/`. `file_ticket.py
-case --help-all` states the rules."""
+case --help-all` states the rules. It also gives the spend of a change by
+role, and the budget of a change taken over the changes like it."""
 
 import re
 import statistics
@@ -10,8 +11,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent_launches import runs_under
+from agent_turns import first_time, last_time
 from controlled_markdown import mctx
-from run_reads import run_entries
+from operations.state import Budget, Spend
+from run_reads import agent_type, run_entries
 from ticket_files import ticket_files, ticket_name
 from ticket_form import FRONT, front_fields, list_items, ticket_kind
 from ticket_log import log_lines, log_moves, read_ticket, resolution_of
@@ -70,27 +73,56 @@ def front(text: str) -> dict[str, str]:
     return {} if head is None else dict(front_fields(head))
 
 
-def change_cost(path: Path, undecided: list[str]) -> float | None:
-    """The cost of the `change` at `path`, closed `fixed`: the token cost
-    of the runs its closing line gives and of the runs under them, or None
-    where that line gives no run or a run has no transcript or no price."""
-    closing = [m for m in log_lines(read_ticket(path)) if m["status"] == Status.CLOSED
-               and resolution_of(m["note"]) is Resolution.FIXED]
-    runs = (closing[-1]["note"] or "").split()[3:] if closing else []
-    if not runs:
-        return None
+def union_seconds(spans: list[tuple[float, float]]) -> float:
+    total, end = 0.0, float("-inf")
+    for a, b in sorted(spans):
+        if b > end:
+            total += b - max(a, end)
+            end = b
+    return total
+
+
+def spend(runs: list[str], undecided: list[str]) -> Spend | None:
+    """The spend of the runs `runs` and of the runs under them, or None
+    where a run has no transcript, no price, no time or no agent type."""
     total = 0.0
+    spans: list[tuple[float, float]] = []
+    by_role: dict[str, float] = {}
     for run in runs:
         try:
             top = find(run)
         except Refused:
             return None
+        role = agent_type(top)
+        if role is None:
+            return None
         for p in [top, *runs_under(top)]:
             cost = run_cost(run_entries(p), undecided)
-            if cost is None:
+            start, end = first_time(p), last_time(p)
+            if cost is None or start is None or end is None:
                 return None
             total += cost
-    return total
+            by_role[role] = by_role.get(role, 0.0) + cost
+            spans.append((start, end))
+    return Spend(total, union_seconds(spans), by_role)
+
+
+def change_spend(path: Path, undecided: list[str]) -> Spend | None:
+    """The spend of the `change` at `path`, closed `fixed`: that of the
+    runs its closing line gives, or None where that line gives no run or
+    `spend` gives none."""
+    closing = [m for m in log_lines(read_ticket(path)) if m["status"] == Status.CLOSED
+               and resolution_of(m["note"]) is Resolution.FIXED]
+    runs = (closing[-1]["note"] or "").split()[3:] if closing else []
+    return spend(runs, undecided) if runs else None
+
+
+def change_cost(path: Path, undecided: list[str]) -> float | None:
+    """The cost of the `change` at `path`, closed `fixed`: the token cost
+    of the runs its closing line gives and of the runs under them, or None
+    where that line gives no run or a run has no transcript or no price."""
+    s = change_spend(path, undecided)
+    return None if s is None else s.dollars
 
 
 def closed_at(path: Path) -> float:
@@ -115,6 +147,53 @@ def threshold(tickets: Path, editor: str, undecided: list[str]) -> float | None:
                           "cost, of the {changes} it is taken over").format(
                               editor=editor, count=len(costs), changes=CHANGES))
     return None
+
+
+OVERRUN = 8
+"""The multiple of the median of the changes like a change that is its
+budget."""
+
+FEWEST_LIKE = 5
+"""The fewest earlier changes with the change's `editors` set that its
+budget is taken over; with fewer, it is taken over every earlier one."""
+
+
+def editors_of(text: str) -> frozenset[str]:
+    return frozenset(list_items(front(text).get("editors", "")))
+
+
+def like_changes(tickets: Path, editors: frozenset[str], before: float,
+                 undecided: list[str]) -> list[Spend]:
+    """The spend of each `change` closed `fixed` before `before` with a
+    known spend whose `editors` set is `editors`, or of each such change
+    whatever its `editors` where fewer than `FEWEST_LIKE` have it."""
+    every: list[tuple[frozenset[str], Spend]] = []
+    for path in ticket_files(tickets, Status.CLOSED):
+        text = read_ticket(path)
+        if ticket_kind(text) is not Kind.CHANGE or closed_at(path) >= before:
+            continue
+        s = change_spend(path, undecided)
+        if s is not None:
+            every.append((editors_of(text), s))
+    like = [s for e, s in every if e == editors]
+    return like if len(like) >= FEWEST_LIKE else [s for _, s in every]
+
+
+def budget(tickets: Path, editors: frozenset[str], before: float,
+           undecided: list[str]) -> Budget | None:
+    """The budget of a change with the `editors` set `editors` taken at
+    `before`, or None, with an `undecided` line, where no earlier change
+    has a known spend. A role with no run on a change spent nothing on
+    it."""
+    like = like_changes(tickets, editors, before, undecided)
+    if not like:
+        undecided.append(mctx("budget unknown: no change closed `fixed` before the take has a "
+                              "known spend"))
+        return None
+    roles = sorted({r for s in like for r in s.by_role})
+    return Budget(OVERRUN * statistics.median(s.dollars for s in like),
+                  OVERRUN * statistics.median(s.seconds for s in like),
+                  {r: statistics.median(s.by_role.get(r, 0.0) for s in like) for r in roles})
 
 
 def cases(text: str) -> list[tuple[float, float]]:

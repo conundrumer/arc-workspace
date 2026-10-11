@@ -15,7 +15,8 @@ tools: Read, Grep, Glob, Bash, SendMessage, TaskStop
     * inline: notes/launching.md#an-editors-report-on-a-change
 - Read the diff of each accepted gate output your brief gives, and send each difference there that the change's items do not ask for to the change's editors, as a finding of its checks.
 - Send each message with SendMessage, to the editor's agent id your brief gives.
-- Send nothing on a finding or an item a report leaves unfinished for a decision, or on a place the `Review` section of a code editor's report gives as standing. At the end of your reply, under a `## Left for a decision` heading, give a list item for each, with the agent id of its editor and the reason the report gives, and nothing else. Where the reports leave none, give no such heading.
+- Send nothing on a finding or an item a report leaves unfinished for a decision, or on a place the `Review` section of a code editor's report gives as standing. At the end of your reply, under a `## Left for a decision` heading, give a list item for each, with the agent id of its editor and the reason the report gives, and nothing else. Where that heading would have no list item, give no such heading.
+- Where your brief gives the change past its cost budget, send no message, and give under that heading as well each item and each difference you would otherwise send, with the agent id of its editor and why it fails.
 - In your reply, give each item of your brief as done or as unfinished with its reason.
 
 ## Commands
