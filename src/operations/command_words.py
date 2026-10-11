@@ -3,6 +3,7 @@ command, `scripts/operate.py`, that a printed step runs."""
 
 import shlex
 from enum import StrEnum
+from pathlib import PurePosixPath
 
 
 COMMAND = "scripts/operate.py"
@@ -69,8 +70,15 @@ def runs(command: str, action: Action, agent: str) -> bool:
 
 def is_call(words: list[str], action: Action, agent: str) -> bool:
     """Whether the simple command `words` is the call of `operate.py` with
-    `action` for the operator `agent`."""
-    return words == run_words(action, agent)
+    `action` for the operator `agent`: the words of `run_words`, where the
+    script word may be any path, absolute or relative, that ends in
+    `scripts/operate.py`, as the path to the main tree's or a worktree's
+    script does."""
+    expected = run_words(action, agent)
+    script = expected.index(COMMAND)
+    return (len(words) == len(expected)
+            and words[:script] + words[script + 1:] == expected[:script] + expected[script + 1:]
+            and PurePosixPath(words[script]).parts[-2:] == PurePosixPath(COMMAND).parts)
 
 
 def is_next(command: str, agent: str, action: Action = Action.NEXT) -> bool:
