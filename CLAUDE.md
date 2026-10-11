@@ -30,7 +30,7 @@
 - `tickets/` is the ticket tracker, which holds the tickets agents file, and [Ticket notes](prompts/agents/notes/tickets.md) states its conventions.
 
 ## Launching
-- Before you launch an agent, read [Launching](prompts/agents/notes/launching.md#launching), where your context does not hold it.
+- Before you launch an agent by a call that no command printed to you, read [Launching](prompts/agents/notes/launching.md#launching), where your context does not hold it.
 
 ## Conventions
 - **Patches are the source of truth** for corrections.

@@ -86,8 +86,9 @@ def carrier(state: State, operator: str, time: float) -> str | None:
 def ending_step(to: str, text: str, sent: bool) -> Send | Reply:
     """The step of a final reply whose text is `text`, to the parent `to`:
     the message that sends `to` the text, or, where `sent`, as the
-    message was already sent, the reply."""
-    return Reply(to) if sent else Send(to, final_message(text))
+    message was already sent, the reply. A parent other than the
+    coordinator is an operator launcher, whose command reads the message."""
+    return Reply(to) if sent else Send(to, final_message(text), commanded=to != COORDINATOR)
 
 
 def nested(text: str) -> list[str]:

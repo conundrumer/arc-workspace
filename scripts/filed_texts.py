@@ -1,8 +1,8 @@
 """The reads of the files the operator's command writes for the calls it
 prints (`operations.filing.filed`): a brief or a message whose text gives a
-file by the line `operations.filing.FILED`, and a report that is the path of
-a report file alone. A file that is gone leaves its text unknown, and an
-`undecided` line names it."""
+file by the line `operations.filing.FILED` or `operations.filing.COMMANDED`,
+and a report that is the path of a report file alone. A file that is gone
+leaves its text unknown, and an `undecided` line names it."""
 
 import re
 from pathlib import Path
@@ -10,14 +10,14 @@ from pathlib import Path
 from controlled_markdown import mctx
 
 from noted_reads import note_read
-from operations.filing import FILED_LINE, REPORT_NAME
+from operations.filing import FILED_LINE, REPORT_NAME, filed_path
 
 
 def unfiled(text: str, where: str, undecided: list[str]) -> str:
-    """`text` with each `FILED` line in it replaced by the text of the file
+    """`text` with each `FILED_LINE` line in it replaced by the text of the file
     it gives. `where` names the text in an `undecided` line."""
     def read(m: re.Match[str]) -> str:
-        path = Path(m["path"])
+        path = filed_path(m)
         note_read(path)
         if not path.is_file():
             undecided.append(mctx("{where}: the file {path} its text gives is gone, so that "

@@ -83,3 +83,12 @@ def is_call(words: list[str], action: Action, agent: str) -> bool:
 
 def is_next(command: str, agent: str, action: Action = Action.NEXT) -> bool:
     return runs(command, action, agent)
+
+
+def only_command(command: str, agent: str, action: Action = Action.NEXT) -> bool:
+    """Whether the Bash command `command` runs `operate.py` with `action`
+    for the operator `agent` and nothing else but `cd` and `:`, which run
+    no step the command prints."""
+    return is_next(command, agent, action) and all(
+        words[0] in ("cd", ":") or is_call(words, action, agent)
+        for words in simple_commands(command))

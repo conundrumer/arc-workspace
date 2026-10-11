@@ -2,7 +2,9 @@
 
 A brief, and a message to an agent other than the coordinator, goes to a
 file the command writes before it prints the call (`filed`), and the
-printed prompt or message is the line `FILED` with that file's path. A
+printed prompt or message is the line `FILED` with that file's path, or,
+for an agent whose own command reads that file, an operator or an
+operator launcher, the line `COMMANDED`, which asks for no read. A
 message to the coordinator that opens with `steps.DECISION` keeps its
 first line, which names what it gives, and files the rest. Each brief
 gives the report file the agent writes its final reply to
@@ -16,7 +18,7 @@ from pathlib import Path
 from controlled_markdown import form, mctx
 from operations import briefs
 from operations.constants import COORDINATOR
-from operations.roles import BARE_BRIEFS, GENERAL_ROLES
+from operations.roles import BARE_BRIEFS, GENERAL_ROLES, Role
 from operations.steps import DECISION, STEP_KEY, Launch, Send, Step, key
 
 
@@ -24,7 +26,20 @@ FILED = mctx("Read the file {path} first: it holds the text of this message.")
 """The line that gives the file a brief or a message is in."""
 
 
-FILED_LINE = re.compile("^" + form(FILED, {"path": r"(?P<path>/[^\n]*?)"}) + "$", re.MULTILINE)
+COMMANDED = mctx("The text of this message is in the file {path}, which your command reads.")
+"""The line that gives the file a brief or a message is in, to an agent
+whose command reads it."""
+
+
+FILED_LINE = re.compile(
+    "^(?:" + "|".join(form(line, {"path": f"(?P<{name}>/[^\\n]*?)"})
+                      for name, line in (("path", FILED), ("commanded", COMMANDED)))
+    + ")$", re.MULTILINE)
+
+
+def filed_path(m: re.Match[str]) -> Path:
+    """The path of the file the match `m` of `FILED_LINE` gives."""
+    return Path(m["path"] or m["commanded"])
 
 
 REPORT_SUFFIX = "-report.md"
@@ -87,4 +102,9 @@ def filed(step: Step, scratch: Path) -> dict[Path, str]:
 
 
 def filed_line(step: Step, scratch: Path) -> str:
-    return FILED.format(path=file_path(step, scratch))
+    match step:
+        case Launch(role=Role.OPERATOR) | Send(commanded=True):
+            line = COMMANDED
+        case _:
+            line = FILED
+    return line.format(path=file_path(step, scratch))

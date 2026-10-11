@@ -16,7 +16,7 @@ allows the call and says why on stderr."""
 import sys
 from collections.abc import Iterable
 from contextlib import nullcontext
-from typing import Any
+from typing import Any, NamedTuple
 
 from context_bound_hook import ACTIONS, reply_only
 from operations.command_words import Action
@@ -66,13 +66,19 @@ def last_next_call(entries: Iterable[dict[str, Any]], agent: str,
     return None
 
 
-def operator_next(hook: dict[str, Any], name: str
-                  ) -> tuple[str, str, tuple[str, str] | None] | None:
+class NextCaller(NamedTuple):
+    agent: str
+    action: Action
+    command: str
+    found: tuple[str, str] | None
+
+
+def operator_next(hook: dict[str, Any], name: str) -> NextCaller | None:
     """The agent id of the caller of `hook` where its agent type is one of
-    `ACTIONS`, with the command that prints its calls and the id and the
-    result of its last call of that command (`last_next_call`), or None
-    where it is of another type, or where its agent type is unknown, which
-    the hook `name` says on stderr."""
+    `ACTIONS`, with the action and the command that prints its calls and
+    the id and the result of its last call of that command
+    (`last_next_call`), or None where it is of another type, or where its
+    agent type is unknown, which the hook `name` says on stderr."""
     from operations.command_words import next_command
     from run_reads import caller_id, caller_type
     from transcripts import entries_back
@@ -84,7 +90,23 @@ def operator_next(hook: dict[str, Any], name: str
     if kind not in ACTIONS or agent is None:
         return None
     action = ACTIONS[kind]
-    return agent, next_command(agent, action), last_next_call(entries_back(path), agent, action)
+    return NextCaller(agent, action, next_command(agent, action),
+                      last_next_call(entries_back(path), agent, action))
+
+
+def first_at(hook: dict[str, Any], records: str, agent: str, call: str) -> bool:
+    """Whether the caller `agent` of `hook` has no record under `records`
+    of its session directory that gives `call`, the id of its last call of
+    its command, which it then records: a hook that holds the caller to
+    that call's result acts on it once."""
+    from run_reads import hook_session
+
+    record = hook_session(hook) / records / agent
+    if record.exists() and record.read_text() == call:
+        return False
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text(call)
+    return True
 
 
 def no_launch_reason(command: str) -> str:
@@ -124,7 +146,7 @@ def check(hook: dict[str, Any]) -> str | None:
     caller = operator_next(hook, HOOK)
     if caller is None:
         return None
-    _, command, found = caller
+    command, found = caller.command, caller.found
     printed = None if found is None else printed_launch(found[1])
     if printed is None:
         return no_launch_reason(command)

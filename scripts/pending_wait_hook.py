@@ -1,7 +1,9 @@
 """PreToolUse hook on Bash and Monitor: denies a subagent's foreground Bash
-call whose `timeout` is over `FOREGROUND_MS` ms, and a timed wait whose text
-names, by agent id, an agent pending to the caller, as
-`profile_runs.py --pending` gives the agents pending to a run.
+call whose `timeout` is over `FOREGROUND_MS` ms, a Bash call that
+`printed_bash_check` denies, and a timed wait whose text names, by agent
+id, an agent pending to the caller, as `profile_runs.py --pending` gives
+the agents pending to a run. The check of `printed_bash_check` runs in this
+process, so that no Bash call starts a process of its own for it.
 
 The bound enforces the command notes' line on a foreground call's timeout.
 Only the subagent definitions under `.claude/agents/` hold that line, so the
@@ -80,8 +82,10 @@ def bound_denied(result: str) -> bool:
 
 
 def check(hook: dict[str, Any]) -> str | None:
-    """The reason to deny the call `hook` gives where it is over the bound
-    or waits on an agent pending to its caller, and None otherwise."""
+    """The reason to deny the call `hook` gives where it is over the bound,
+    where `printed_bash_check` denies it, or where it waits on an agent
+    pending to its caller, and None otherwise."""
+    import printed_bash_check
     from agent_launches import pending_agents
     from command_labels import runs_sleep
     from ticket_log import AGENT_ID
@@ -92,6 +96,8 @@ def check(hook: dict[str, Any]) -> str | None:
     if (bound := over_bound(tool, inp, caller_id(hook) is not None)) is not None:
         return bound
     if tool == "Bash":
+        if (off_script := printed_bash_check.check(hook)) is not None:
+            return off_script
         text = inp["command"]
         if not runs_sleep(text):
             return None

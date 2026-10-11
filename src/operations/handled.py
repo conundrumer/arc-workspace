@@ -12,7 +12,7 @@ from functools import cache
 
 from controlled_markdown import form
 from operations import briefs
-from operations.command_words import Action, is_call, is_next, simple_commands
+from operations.command_words import is_next, only_command
 from operations.constants import COORDINATOR
 from operations.printing import KEY_LINE, bash_text, opening, send_opening, unfenced
 from operations.roles import Purpose
@@ -142,15 +142,6 @@ def bash_calls(state: State, command: str) -> list[Call]:
     return sorted({id(c): c for c in out}.values(), key=lambda c: c.time)
 
 
-def only_command(command: str, agent: str) -> bool:
-    """Whether the Bash command `command` runs the command's `next` for the
-    operator `agent` and nothing else but `cd` and `:`, which run no step
-    the command prints."""
-    return is_next(command, agent) and all(
-        words[0] in ("cd", ":") or is_call(words, Action.NEXT, agent)
-        for words in simple_commands(command))
-
-
 PRINTED_KEY = form(KEY_LINE, {"key": f"(?P<key>{STEP_KEY.pattern})", "command": "[^\n]*"}) + "\n"
 
 
@@ -182,13 +173,22 @@ def made(calls: Iterable[Call]) -> tuple[Made, ...]:
                     or (after.tool == "Bash"
                         and only_command(str(after.input.get("command", "")), operator))):
                 continue
-            # The first opening: a message or a command may hold a line
-            # that reads as one, and the key line comes before both.
-            opening = printed_opening().search(c.result)
-            if opening is None:
-                continue
-            tool = Printed.SEND_MESSAGE if opening["to"] is not None else Printed.BASH
-            text = c.result[opening.end():].rstrip("\n")
-            out.append(Made(opening["key"], tool, opening["to"],
-                            unfenced(text) if tool is Printed.SEND_MESSAGE else text, after))
+            step = printed_step(c.result)
+            if step is not None:
+                out.append(Made(*step, after))
     return tuple(out)
+
+
+def printed_step(result: str) -> tuple[str | None, Printed, str | None, str] | None:
+    """The message or the Bash call in the foreground that `result`, the
+    result of a call of `next`, prints, as `Made` gives it without the call,
+    or None where it prints neither."""
+    # The first opening: a message or a command may hold a line that
+    # reads as one, and the key line comes before both.
+    opening = printed_opening().search(result)
+    if opening is None:
+        return None
+    tool = Printed.SEND_MESSAGE if opening["to"] is not None else Printed.BASH
+    text = result[opening.end():].rstrip("\n")
+    return (opening["key"], tool, opening["to"],
+            unfenced(text) if tool is Printed.SEND_MESSAGE else text)

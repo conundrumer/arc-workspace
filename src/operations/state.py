@@ -163,7 +163,7 @@ class Call:
     """A tool call of an operator of the session: its tool, its input, and
     its result, None while it is pending, each with the text of each file
     the command wrote for a call it printed in place of the line that gives
-    that file (`filing.FILED`), with whether the harness gave the
+    that file (`filing.FILED_LINE`), with whether the harness gave the
     result as an error, and for a call of `scripts/merge_change.py` that
     has its result, what it did. The result of a Bash call the harness ran
     or moved to the background is the output its command wrote, once a

@@ -52,7 +52,7 @@ def check(hook: dict[str, Any]) -> str | None:
     caller = operator_next(hook, HOOK)
     if caller is None:
         return None
-    _, command, found = caller
+    command, found = caller.command, caller.found
     printed = None if found is None else printed_send(found[1])
     if printed is None:
         return no_send_reason(command)

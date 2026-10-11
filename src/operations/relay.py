@@ -116,7 +116,7 @@ def next_step(relay: Relay) -> Step:
         if run.agent_id is None:
             raise ValueError(f"the running operator launched at {run.launched} has no known "
                              "agent id")
-        return Send(run.agent_id, lines[0].text)
+        return Send(run.agent_id, lines[0].text, commanded=True)
     if run.final is not None and for_context(run.final):
         if relay.past_bound and not lines:
             return ending(relay, FRESH_LAUNCHER)

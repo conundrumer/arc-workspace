@@ -37,10 +37,14 @@ class Launch:
 @dataclass(frozen=True)
 class Send:
     """A SendMessage call. Where `since` is given, only a call an operator
-    made after that time counts as made of it."""
+    made after that time counts as made of it. `commanded` is whether `to`
+    is an agent whose command reads its messages (`filing.COMMANDED`); it
+    stays out of the step's key and its equality, which `to` already
+    fixes."""
     to: str
     message: str
     since: float | None = None
+    commanded: bool = field(default=False, repr=False, compare=False)
 
 
 @dataclass(frozen=True)

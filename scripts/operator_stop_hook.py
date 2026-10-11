@@ -18,7 +18,7 @@ import sys
 from typing import Any
 
 from hook_entry import run_subagent_stop
-from printed_launch_hook import operator_next
+from printed_launch_hook import first_at, operator_next
 
 HOOK = "operator_stop_hook"
 STOPS = "operator-stops"
@@ -38,12 +38,11 @@ def check(hook: dict[str, Any]) -> str | None:
     operator that `next` has not given its final reply, and None
     otherwise."""
     from operations.printing import printed_end_turn, printed_reply, printed_send
-    from run_reads import hook_session
 
     caller = operator_next(hook, HOOK)
     if caller is None:
         return None
-    agent, command, found = caller
+    agent, command, found = caller.agent, caller.command, caller.found
     if found is None:
         print(f"{HOOK}: allowed: the transcript of {agent} holds no result of `next`",
               file=sys.stderr)
@@ -51,13 +50,10 @@ def check(hook: dict[str, Any]) -> str | None:
     call, result = found
     if printed_end_turn(result) or (printed_reply(result) and printed_send(result) is None):
         return None
-    record = hook_session(hook) / STOPS / agent
-    if record.exists() and record.read_text() == call:
+    if not first_at(hook, STOPS, agent, call):
         print(f"{HOOK}: allowed: the stop was blocked at call {call} of `next`, "
               "and the operator made no call of `next` since", file=sys.stderr)
         return None
-    record.parent.mkdir(parents=True, exist_ok=True)
-    record.write_text(call)
     return stop_reason(command)
 
 
