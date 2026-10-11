@@ -28,14 +28,18 @@ def not_ran(a):
 RAN = frozenset({1, 3, 6, 7, 9, 10, 13})
 
 
+def H(start, count):
+    return deps.Hunk(start, count, start, count)
+
+
 @pytest.mark.parametrize(("hunks", "runs"), [
-    (((9, 1),), True),
-    (((14, 1),), False),
-    (((13, 0),), False),
-    (((14, 0),), True),
-    (((13, 1),), True),
-    (((3, 1),), True),
-    (((11, 0),), True),
+    ((H(9, 1),), True),
+    ((H(14, 1),), False),
+    ((H(13, 0),), False),
+    ((H(14, 0),), True),
+    ((H(13, 1),), True),
+    ((H(3, 1),), True),
+    ((H(11, 0),), True),
     ((), True),
 ])
 def test_a_hunk_runs_where_its_innermost_function_body_ran(hunks, runs):
@@ -43,7 +47,7 @@ def test_a_hunk_runs_where_its_innermost_function_body_ran(hunks, runs):
 
 
 def test_a_file_none_of_which_ran_runs_no_hunk():
-    assert deps.runs_hunks(SOURCE, ((3, 1),), frozenset()) is False
+    assert deps.runs_hunks(SOURCE, (H(3, 1),), frozenset()) is False
 
 
 def test_a_change_affects_a_command_through_what_it_read_listed_or_ran():
@@ -61,8 +65,8 @@ def test_a_change_affects_a_command_through_what_it_read_listed_or_ran():
     assert not affects(T("programs/other.dl", S.MODIFIED))
     assert affects(T("programs/solvers/new.dl", S.ADDED))
     assert not affects(T("programs/solvers/ac0c5833.dl", S.MODIFIED))
-    assert not affects(T("src/m.py", S.MODIFIED, ((14, 1),)))
-    assert affects(T("src/m.py", S.MODIFIED, ((9, 1),)))
+    assert not affects(T("src/m.py", S.MODIFIED, (H(14, 1),)))
+    assert affects(T("src/m.py", S.MODIFIED, (H(9, 1),)))
     assert affects(T("src/m.py", S.DELETED))
     assert not affects(T("src/new.py", S.ADDED))
     assert affects(T("tests/gate/accepted/lint-ac0c5833.txt", S.MODIFIED))
@@ -74,4 +78,9 @@ def test_the_old_side_of_each_hunk_is_read_from_a_git_diff():
             "@@ -9 +9 @@ def ran(a):\n-    b = a + 1\n+    b = a + 2\n"
             "@@ -13,0 +14,2 @@ def not_ran(a):\n+    x\n+    y\n"
             "@@ -20,3 +22 @@\n-a\n-b\n-c\n+d\n")
-    assert deps.hunks_of(diff) == ((9, 1), (13, 0), (20, 3))
+    assert deps.hunks_of(diff) == ((9, 1, 9, 1), (13, 0, 14, 2), (20, 3, 22, 1))
+
+
+def test_a_line_outside_every_hunk_moves_by_the_lines_the_hunks_before_it_add():
+    hunks = (deps.Hunk(9, 1, 9, 1), deps.Hunk(13, 0, 14, 2), deps.Hunk(20, 3, 22, 1))
+    assert deps.moved(frozenset({8, 10, 13, 14, 19, 23}), hunks) == {8, 10, 13, 16, 21, 23}

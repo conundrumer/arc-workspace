@@ -1,5 +1,5 @@
 """The gate's records of the machine, under `.cache/gate/` of the main
-worktree: the accepted times, the commands an earlier timed run gave a
+worktree, or the directory `RECORDS_ENV` names: the accepted times, the commands an earlier timed run gave a
 `LOADED` line, the commit of the last timed run that `--since-timed`
 accepted, and the dependency record's file."""
 
@@ -27,10 +27,16 @@ DEPS_FILE = "deps.json"
 """The dependency record, under `records_dir` (`deps_file`)."""
 
 
+RECORDS_ENV = "ARC_GATE_RECORDS_DIR"
+"""The environment variable that names the directory of the gate's records
+in place of `gate/` under `.cache/`."""
+
+
 def records_dir() -> Path:
     """`gate/` under the main worktree's `.cache/`, where the machine's
-    accepted times and the dependency record stand."""
-    return checkout.caches() / "gate"
+    accepted times and the dependency record stand, unless `RECORDS_ENV`
+    names another directory."""
+    return checkout.from_env(RECORDS_ENV, lambda: checkout.caches() / "gate")
 
 
 def times_file(accepted: Path) -> Path:

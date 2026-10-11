@@ -125,11 +125,16 @@ def each(stems: Iterable[str], run: Callable[[str], None]) -> None:
         raise RuntimeError(f"{len(errors)} stem sequences failed") from errors[0]
 
 
+class Skipped(Exception):
+    """A timed run whose hold was not free at once, and which ran no
+    command; its text is the line that says so."""
+
+
 class Gate:
     """One gate run into `out/gate/`."""
 
     def __init__(self, out: Path, accepted: Path, timed: bool, traced: bool,
-                 covers: bool) -> None:
+                 covers: bool, tries: bool = False, prefixed: bool = False) -> None:
         self.dir = out.resolve() / "gate"
         self.new = self.dir / "new"
         self.warm = self.new / "warm"
@@ -150,6 +155,12 @@ class Gate:
         self.covers = covers
         """Whether each command also runs on the stems of `STEMS` it drops,
         as `--coverage` gives."""
+        self.prefixed = timed or prefixed
+        """Whether each command before the last judged one on a stem runs,
+        untraced, for the cache state, in the order of `COMMANDS`."""
+        self.tries = tries
+        """Whether the cold pass takes its hold only where it is free at
+        once (`rwlock.tried`), as `--since-timed` gives."""
         self.times_file = times_file(accepted)
         self.times = read_times(self.times_file)
         self.cold_times: dict[str, AcceptedTime] = {}
@@ -225,7 +236,7 @@ class Gate:
             shutil.copyfile(frozen_witness(stem), wf)
         key = cmd.key(stem)
         script = [str(checkout.scripts() / cmd.script), *cmd.argv(stem, wf)]
-        if self.traced and cold:
+        if self.traced and cold and role is not Role.PREFIX:
             script = [str(checkout.ROOT / GATE_SCRIPT), TRACE, str(self.deps_of(role, key)),
                       str(self.traced_dirs(role)[1] / f".coverage.{key}"), *script]
         argv = ["uv", "run", "--project", str(checkout.ROOT), "python", *script]
@@ -328,9 +339,17 @@ class Gate:
     def cold_hold(self, runs: bool) -> Iterator[rwlock.Hold | None]:
         """The hold the cold commands run under, or None where each takes
         its own. Where the process started under a hold, `rwlock.taken`
-        gives that hold."""
+        gives that hold. Under `tries`, a hold that is not free at once is
+        a `Skipped`."""
         if not (self.timed and runs):
             yield None
+            return
+        if self.tries:
+            with rwlock.tried() as tried:
+                if tried is None:
+                    raise Skipped(rwlock.SKIP.format(
+                        path=checkout.git_common_dir(checkout.ROOT) / rwlock.LOCK_FILE))
+                yield tried
             return
         with rwlock.taken(rwlock.Hold.EXCLUSIVE, rwlock.Notice()) as hold:
             yield hold
@@ -399,8 +418,8 @@ class Gate:
         shutil.copytree(DOCUMENTS, self.documents)
         stems = sorted({s for c in cmds for s in (*c.stems, *dropped_stems(c))
                         if c.key(s) in keys | dropped})
-        order = list(COMMANDS.values()) if self.timed else cmds
-        runs = {s: sequence(s, order, keys, dropped, prefixed=self.timed) for s in stems}
+        order = list(COMMANDS.values()) if self.prefixed else cmds
+        runs = {s: sequence(s, order, keys, dropped, prefixed=self.prefixed) for s in stems}
         if any(r is Role.PREFIX for s in stems for _, r in runs[s]):
             self.prefix.mkdir(parents=True, exist_ok=True)
         lines: dict[str, list[Line]] = {s: [] for s in stems}

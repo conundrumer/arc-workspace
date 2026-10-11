@@ -10,6 +10,7 @@ import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 import coverage
 from coverage.sysmon import SysMonitor
@@ -181,27 +182,55 @@ def trace(deps_out: Path, cov_out: Path, script: Path, args: Sequence[str]) -> i
     return status
 
 
+class Hunk(NamedTuple):
+    """A hunk of a `-U0` unified diff: the first line and the count of its
+    old side, and of its new side, a count of 0 an insertion after, or a
+    deletion after, the first line."""
+    start: int
+    count: int
+    new_start: int
+    new_count: int
+
+
 @dataclass(frozen=True)
 class Touched:
     """A path the change touches, how it touches it, and, for a modified
     Python file, the line ranges of its recorded text it replaces, each its
     first line and its count, a count of 0 an insertion after the first
-    line. `unrecorded` is a Python file that stands at the change's base
+    line, with the new side of each. `unrecorded` is a Python file that stands at the change's base
     and not at the recorded commit, whose lines no command's record
     holds."""
     path: str
     status: checkout.Change
-    hunks: tuple[tuple[int, int], ...] = ()
+    hunks: tuple[Hunk, ...] = ()
     unrecorded: bool = False
 
 
-_HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+", re.M)
+_HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.M)
 
 
-def hunks_of(diff: str) -> tuple[tuple[int, int], ...]:
-    """The old side of each hunk of the unified diff `diff`: its first line
-    and its count, which git leaves out where it is 1."""
-    return tuple((int(a), int(b) if b else 1) for a, b in _HUNK_RE.findall(diff))
+def hunks_of(diff: str) -> tuple[Hunk, ...]:
+    """Each hunk of the unified diff `diff`, a count git leaves out read as
+    1."""
+    return tuple(Hunk(int(a), int(b) if b else 1, int(c), int(d) if d else 1)
+                 for a, b, c, d in _HUNK_RE.findall(diff))
+
+
+def moved(ran: frozenset[int], hunks: Sequence[Hunk]) -> frozenset[int]:
+    """The lines `ran` of an old text, each numbered as it stands in the
+    new text that `hunks` give. A line inside a hunk's old side has no
+    number in the new text, and is a fault."""
+    out: set[int] = set()
+    for n in ran:
+        shift = 0
+        for h in hunks:
+            end = h.start + h.count - 1 if h.count else h.start
+            if h.count and h.start <= n <= end:
+                raise ValueError(f"line {n} stands inside the hunk {h}")
+            if n > end:
+                shift += h.new_count - h.count
+        out.add(n + shift)
+    return frozenset(out)
 
 
 def between(old: str, new: str, *flags: str) -> set[str]:
@@ -235,7 +264,7 @@ def touched_from(base: str, recorded: str) -> list[Touched]:
                 status = checkout.Change.ADDED
         elif c.path in gone:
             status = checkout.Change.MODIFIED
-        hunks: tuple[tuple[int, int], ...] = ()
+        hunks: tuple[Hunk, ...] = ()
         if (status is checkout.Change.MODIFIED and Path(c.path).suffix in PY_SUFFIXES
                 and c.path not in moved):
             hunks = hunks_of(checkout.git_out(checkout.ROOT, "diff", "-U0", "--no-color",
@@ -260,7 +289,7 @@ def functions(source: str) -> list[Function]:
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
 
 
-def runs_hunks(source: str, hunks: Sequence[tuple[int, int]], ran: frozenset[int]) -> bool:
+def runs_hunks(source: str, hunks: Sequence[Hunk], ran: frozenset[int]) -> bool:
     """Whether a command that ran the lines `ran` of the Python text
     `source` runs a part that `hunks` replace. A hunk inside the body of a
     function is run where a line of the innermost such function's body
@@ -274,7 +303,7 @@ def runs_hunks(source: str, hunks: Sequence[tuple[int, int]], ran: frozenset[int
     if not hunks:
         return True
     fs = functions(source)
-    for start, count in hunks:
+    for start, count, _, _ in hunks:
         lo, hi = (start, start + count - 1) if count else (start, start + 1)
         inside = [f for f in fs if f.first <= lo and hi <= f.last]
         if not inside:

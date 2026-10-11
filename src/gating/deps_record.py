@@ -1,5 +1,6 @@
 """The dependency record: the commands it selects for a change, the record
-a traced run writes, and its adoption."""
+a traced run writes, its entries moved to the lines of `HEAD`, and its
+adoption."""
 
 import json
 import sys
@@ -10,8 +11,8 @@ from pathlib import Path
 from controlled_markdown import mctx
 from engine import checkout
 from engine.memo import write_whole
-from gating.commands import GateCommand, keys_of
-from gating.deps import PY_SUFFIXES, Deps, affects, touched_from
+from gating.commands import COMMANDS, GateCommand, keys_of
+from gating.deps import PY_SUFFIXES, Deps, affects, moved, touched_from
 from gating.records import deps_file
 
 RECORD_OUT = "record.json"
@@ -50,10 +51,42 @@ class Record:
         write_whole(path, (json.dumps(body) + "\n").encode())
 
     @staticmethod
-    def traced(deps_dir: Path) -> "Record":
-        deps = {p.stem: Deps.from_json(json.loads(p.read_text()))
-                for p in sorted(deps_dir.glob("*.json"))}
-        return Record(head(), deps)
+    def traced(deps_dir: Path, kept: dict[str, Deps]) -> "Record":
+        """The record at `HEAD` of the dependencies traced under
+        `deps_dir`, each over the entry of its key in `kept`, with an
+        entry for each command of the gate and for no other key."""
+        deps = {**kept, **{p.stem: Deps.from_json(json.loads(p.read_text()))
+                           for p in sorted(deps_dir.glob("*.json"))}}
+        return Record(head(), {k: deps[k] for k in keys_of(COMMANDS.values()) if k in deps})
+
+    def moved(self) -> dict[str, Deps]:
+        """Each entry, with each line number of a Python file the change
+        from the record's commit to the checkout modifies moved to the
+        number that line has in the checkout. It is exact for the entries
+        of the commands that `traced_keys` leaves untraced."""
+        hunks = {t.path: t.hunks for t in touched_from(self.commit, self.commit)
+                 if t.status is checkout.Change.MODIFIED and Path(t.path).suffix in PY_SUFFIXES}
+        return {k: Deps({p: moved(ns, hunks[p]) if p in hunks else ns
+                         for p, ns in d.lines.items()}, d.reads, d.listed)
+                for k, d in self.deps.items()}
+
+
+def read_record() -> Record | None:
+    path = deps_file()
+    return Record.read(path) if path.exists() else None
+
+
+def traced_keys(keys: set[str]) -> set[str]:
+    """`keys`, and on each stem each key of `COMMANDS` after the first of
+    them, since what a command runs depends on what the commands before it
+    on its stem cached."""
+    stems = sorted({s for c in COMMANDS.values() for s in c.stems})
+    out = set(keys)
+    for s in stems:
+        on = [c.key(s) for c in COMMANDS.values() if s in c.stems]
+        first = next((i for i, k in enumerate(on) if k in keys), len(on))
+        out.update(on[first:])
+    return out
 
 
 def affected(cmds: Sequence[GateCommand], base: str) -> tuple[set[str], str | None, int]:
@@ -62,10 +95,9 @@ def affected(cmds: Sequence[GateCommand], base: str) -> tuple[set[str], str | No
     commit of the record, or None where none stands; and the count of the
     keys of `cmds`."""
     keys = keys_of(cmds)
-    path = deps_file()
-    if not path.exists():
+    record = read_record()
+    if record is None:
         return keys, None, len(keys)
-    record = Record.read(path)
     touched = touched_from(base, record.commit)
     recorded = {t.path: checkout.git_out(checkout.ROOT, "show", f"{record.commit}:{t.path}")
                 for t in touched if Path(t.path).suffix in PY_SUFFIXES

@@ -72,7 +72,12 @@ run's commands in flight. The warm pass starts after the cold pass releases
 its hold, since a warm command that asked for a shared hold while the run
 holds the lock exclusively would wait for the run itself. Where the run has
 to wait for the lock, it says so on stderr once for the cold pass's hold,
-and once for its commands' shared holds.
+and once for its commands' shared holds. A `--since-timed` run waits for
+no hold of its cold pass: it takes the lock only where no holder and no
+pending writer stands, and marks itself pending only for the instant of
+its tries. Where the lock is not free at once, it prints one `timed:` line
+that says it skips timing, runs no command, writes no accepted time, keeps
+no commit in `timed.json`, leaves `loaded.json` as it stands, and exits 0.
 
 `--outputs-only` runs the cold pass alone, and compares its outputs alone:
 it prints `DIFF` lines, and no `SLOW`, `LOADED` or `NOTIME` line, and writes no
@@ -103,10 +108,21 @@ A traced run that wrote no dependencies counts as covering no line, and a
 One more `coverage:` line names each command that runs on only part of
 its own stems, as `--affected` may run it, and so gets none.
 
-`--record-deps` traces every command as `--coverage` does, and writes their
+`--record-deps` traces commands as `--coverage` does, and writes their
 dependencies, with the `HEAD` commit, to the dependency record. It runs on
 a checkout with no change to a tracked file against `HEAD`, so that the
-lines it records are the lines of that commit.
+lines it records are the lines of that commit. It traces the commands that
+the change from the record's commit to `HEAD` can affect, as `--affected`
+selects them with the record's commit as `<base>`, and prints the
+`affected:` line an `--affected` run prints; and on each stem it traces
+each command after the first such one, since a command's runs depend on
+what the commands before it cached. Each command before the first traced
+one on its stem runs untraced, for the cache state alone, its outputs
+under `<out-dir>/gate/prefix/`. Each command it does not trace keeps its
+entry, with each line of a Python file the change modifies moved to the
+number that line has at `HEAD`. The record holds an entry for each command
+of the gate at `HEAD` and for no other key. Where no record stands, it
+traces every command.
 
 `--affected` runs only the commands that the change can affect, as
 `gating.deps.affects` decides, and every command where no dependency record
@@ -148,7 +164,8 @@ above the last line.
 The accepted times depend on the machine, so every worktree of the
 repository reads them from one file: `accepted-times.json` under
 `.cache/gate/` of the main worktree, the directory that holds the repository's common git
-directory. The dependency record is read and written there too, as
+directory, or under the directory that `ARC_GATE_RECORDS_DIR`
+(`gating.records.RECORDS_ENV`) names, where it is set. The dependency record is read and written there too, as
 `deps.json`, and so is the commit `--since-timed` keeps, as `timed.json`.
 So are the commands that a timed run gives a `LOADED` line, as
 `loaded.json`, until a later timed run judges their time and gives them no
@@ -183,10 +200,19 @@ from controlled_markdown import mctx
 from engine.duration import footer
 from gating.commands import ACCEPTED, COMMANDS, GateCommand, keys_of, stems_listing
 from gating.cpu import CpuSample
-from gating.deps import TRACE, trace
-from gating.deps_record import RECORD_OUT, Record, adopt_record, affected, head, head_clean
+from gating.deps import TRACE, Deps, trace
+from gating.deps_record import (
+    RECORD_OUT,
+    Record,
+    adopt_record,
+    affected,
+    head,
+    head_clean,
+    read_record,
+    traced_keys,
+)
 from gating.records import base_file, deps_file, keep_base, loaded_file, read_base, read_loaded
-from gating.run import Gate, Role
+from gating.run import Gate, Role, Skipped
 
 
 def main(argv: Sequence[str]) -> int:
@@ -220,8 +246,8 @@ def run_gate(argv: Sequence[str]) -> int:
                              "or every command where it keeps none; with --accept, keep "
                              "HEAD there")
     picked.add_argument("--record-deps", action="store_true",
-                        help="with --outputs-only, trace every command and write the "
-                             "dependency record")
+                        help="with --outputs-only, trace the commands the change since the "
+                             "dependency record can affect, and write the record at HEAD")
     ap.add_argument("--coverage", action="store_true",
                     help="with --outputs-only, trace every command run, writing its coverage "
                          "data and dependencies under the out-dir, and report the lines its "
@@ -263,24 +289,36 @@ def run_gate(argv: Sequence[str]) -> int:
     keys = keys_of(cmds)
     if a.affected is not None:
         keys = select(cmds, a.affected, accepted, timed)
+    kept: dict[str, Deps] = {}
+    if a.record_deps:
+        record = read_record()
+        keys = traced_keys(select(cmds, head() if record is None else record.commit,
+                                  accepted, timed))
+        if record is not None:
+            kept = {k: d for k, d in record.moved().items() if k not in keys}
     if a.since_timed:
-        kept = read_base(base_file(accepted))
-        if kept is None:
+        since = read_base(base_file(accepted))
+        if since is None:
             print(mctx("affected: no commit of a timed run is kept at {path}, so every one "
                        "of the {n} commands runs").format(
                 path=base_file(accepted), n=len(keys)), flush=True)
         else:
-            keys = select(cmds, kept, accepted, timed)
+            keys = select(cmds, since, accepted, timed)
     records = (not timed and a.affected is not None and keys == keys_of(COMMANDS.values())
                and head_clean())
     gate = Gate(a.out, accepted, timed=timed,
-                traced=a.record_deps or a.coverage or records, covers=a.coverage)
+                traced=a.record_deps or a.coverage or records, covers=a.coverage,
+                tries=a.since_timed, prefixed=a.record_deps)
     if a.accept:
         if gate.dir.exists():
             ap.error(f"{gate.dir} exists; give an empty out-dir")
         a.accepted.mkdir(parents=True, exist_ok=True)
     sample = CpuSample.now() if a.accept else None
-    lines = gate.run(cmds, keys)
+    try:
+        lines = gate.run(cmds, keys)
+    except Skipped as skip:
+        print(skip, flush=True)
+        return 0
     if sample is not None:
         print(f"run: {sample.outside(CpuSample.now())}")
     for ln in lines:
@@ -293,9 +331,11 @@ def run_gate(argv: Sequence[str]) -> int:
     print("gate: " + ", ".join(f"{n} {k}" for k, n in counts.items()))
     record_to = deps_file() if a.record_deps else gate.dir / RECORD_OUT if records else None
     if record_to is not None:
-        Record.traced(gate.traced_dirs(Role.JUDGED)[0]).write(record_to)
-        print(mctx("deps: the dependencies of {n} commands are written to {path}").format(
-            n=len(keys), path=record_to))
+        written = Record.traced(gate.traced_dirs(Role.JUDGED)[0], kept)
+        written.write(record_to)
+        print(mctx("deps: the dependencies of {n} commands, {traced} of them traced, are "
+                   "written to {path}").format(n=len(written.deps), traced=len(keys),
+                                               path=record_to))
     if a.accept:
         times, outputs = gate.accept(a.replace)
         print(f"baseline: {times} accepted times written to {gate.times_file}, "

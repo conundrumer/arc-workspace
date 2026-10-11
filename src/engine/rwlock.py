@@ -84,6 +84,10 @@ WAITS = {
                          "until they are done."),
 }
 
+SKIP = mctx("timed: another heavy command holds {path} or waits for it, so this timed "
+            "run skips timing, runs no command, and leaves the records of timed runs as "
+            "they are")
+
 
 def inherited() -> Hold | None:
     """The hold the process started under, or None where it started under
@@ -158,6 +162,32 @@ def taken(hold: Hold, notice: Notice) -> Iterator[Hold]:
         return
     with lock_files(hold, checkout.git_common_dir(checkout.ROOT), notice):
         yield hold
+
+
+@contextlib.contextmanager
+def tried() -> Iterator[Hold | None]:
+    """The exclusive hold on the repository's lock where it is free at
+    once, or the hold the process started under; None where a holder or a
+    pending writer stands. The mark is held only for the tries."""
+    started = outer(Hold.EXCLUSIVE)
+    if started is not None:
+        yield started
+        return
+    directory = checkout.git_common_dir(checkout.ROOT)
+    with open(directory / PENDING_FILE, "a") as pending, \
+            open(directory / LOCK_FILE, "a") as lock:
+        try:
+            fcntl.flock(pending, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield None
+            return
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            fcntl.flock(pending, fcntl.LOCK_UN)
+            yield None
+            return
+        yield Hold.EXCLUSIVE
 
 
 @contextlib.contextmanager
