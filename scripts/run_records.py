@@ -2,6 +2,7 @@
 the messages to the run, and the run itself, as the HELP of
 `profile_runs` gives them."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -90,26 +91,34 @@ class Run:
                  if n.index > m.index]
         return min(later, key=lambda n: n.index, default=None)
 
+    def growth(self, i: int, end: Message | None, total: Callable[[Message], float],
+               last: float) -> float:
+        """The growth of a running total of the run over the period of the
+        `i`-th message from its parent, which `end`, its `period_end`, ends:
+        `total` reads the total at a message, and `last` is its value at
+        the run's last entry."""
+        return (last if end is None else total(end)) - total(self.messages[i])
+
+    def active_over(self, i: int, end: Message | None) -> float | None:
+        """`active_from`, with the `period_end` `end` of that period."""
+        if self.start is None or self.unknown:
+            return None
+        return (self.growth(i, end, lambda m: m.time, self.start + self.wall)
+                - self.growth(i, end, lambda m: m.idle, self.parts[Part.IDLE]))
+
     def active_from(self, i: int) -> float | None:
         """The active time over the period of the `i`-th message from the
         run's parent. None where its start or a message is unknown."""
-        if self.start is None or self.unknown:
-            return None
-        m = self.messages[i]
-        nxt = self.period_end(i)
-        if nxt is not None:
-            return (nxt.time - m.time) - (nxt.idle - m.idle)
-        end = self.start + self.wall
-        return (end - m.time) - (self.parts[Part.IDLE] - m.idle)
+        return self.active_over(i, self.period_end(i))
 
     def own_from(self, i: int) -> float | None:
         """The active time over the period of the `i`-th message from the
         run's parent, less the run's waits on agents over that period."""
-        active = self.active_from(i)
+        end = self.period_end(i)
+        active = self.active_over(i, end)
         if active is None:
             return None
-        nxt = self.period_end(i)
-        return active - ((self.waits if nxt is None else nxt.waits) - self.messages[i].waits)
+        return active - self.growth(i, end, lambda m: m.waits, self.waits)
 
     def active_at(self, now: float) -> float | None:
         """The active time of a run whose turn has not ended, over the period

@@ -14,12 +14,14 @@ from pathlib import Path
 from agent_launches import runs_under
 from agent_turns import first_time, last_time
 from controlled_markdown import mctx
+from operations.roles import Role
 from operations.state import Budget, Spend
 from run_reads import agent_type, run_entries
 from ticket_files import ticket_files, ticket_name
-from ticket_form import FRONT, front_fields, list_items, ticket_kind
+from ticket_form import FRONT, front_fields, ticket_kind
 from ticket_log import log_lines, log_moves, read_ticket, resolution_of
 from ticket_numbers import TicketNumber
+from ticket_reads import editors_field
 from ticketing.times import TIME_FORM, stamp_time
 from ticketing.vocabulary import Kind, Resolution, Status
 from token_prices import run_cost, span_cost
@@ -138,7 +140,7 @@ def threshold(tickets: Path, editor: str, undecided: list[str]) -> float | None:
     costs: list[float] = []
     for path, text in sorted(closed_changes(tickets), key=lambda c: closed_at(c[0]),
                              reverse=True):
-        if editor not in editors_of(text):
+        if editor not in (editors_field(front(text)) or ()):
             continue
         s = change_spend(path, undecided)
         if s is not None:
@@ -160,23 +162,19 @@ FEWEST_LIKE = 5
 budget is taken over; with fewer, it is taken over every earlier one."""
 
 
-def editors_of(text: str) -> frozenset[str]:
-    return frozenset(list_items(front(text).get("editors", "")))
-
-
 def like_changes(tickets: Path, editors: frozenset[str], before: float,
                  undecided: list[str]) -> list[Spend]:
     """The spend of each `change` closed `fixed` before `before` with a
     known spend whose `editors` set is `editors`, or of each such change
     whatever its `editors` where fewer than `FEWEST_LIKE` have it."""
-    every: list[tuple[frozenset[str], Spend]] = []
+    every: list[tuple[tuple[Role, ...] | None, Spend]] = []
     for path, text in closed_changes(tickets):
         if closed_at(path) >= before:
             continue
         s = change_spend(path, undecided)
         if s is not None:
-            every.append((editors_of(text), s))
-    like = [s for e, s in every if e == editors]
+            every.append((editors_field(front(text)), s))
+    like = [s for e, s in every if e is not None and frozenset(e) == editors]
     return like if len(like) >= FEWEST_LIKE else [s for _, s in every]
 
 

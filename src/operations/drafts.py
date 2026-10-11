@@ -18,7 +18,7 @@ a line of its log runs.
 A draft waits for a ticket analyst where its log holds findings after its
 last `filed` or `revised` line, and no ticket reviewer or ticket analyst
 runs on it; a line of the operator's that moves a change past its cost
-budget to `tickets/draft/` (`changes.OVERRUN_FINDING`) counts as findings,
+budget to `tickets/draft/` (`change_budget.OVERRUN_FINDING`) counts as findings,
 and the analyst's brief gives that line and what the item checker it names leaves
 for a decision; one ticket analyst takes each such draft with the others a
 chain of `depends-on` links to it. Where the log holds only suggestions
@@ -41,7 +41,7 @@ returned with no revision written, the review of that draft holds until a
 
 from controlled_markdown import mctx
 from operations import briefs
-from operations.changes import OVERRUN_FINDING
+from operations.change_budget import OVERRUN_FINDING
 from operations.directives import Decision, Directive, decided, named, numbers
 from operations.roles import Purpose, Role, analyst_subject, joined, subjects
 from operations.reports import left_for_decision

@@ -3,6 +3,7 @@ procedures read."""
 
 import hashlib
 import re
+from collections.abc import Mapping
 from pathlib import Path
 
 from controlled_markdown import mctx
@@ -11,7 +12,7 @@ from ticket_form import DEFAULT_PRIORITY, FRONT, front_fields, list_items, title
 from ticket_log import WAIT, Wait, holder, log_lines, waited, waited_change
 from transcripts import Refused
 
-from operations.roles import editors_of
+from operations.roles import Role, editors_of
 from operations.state import LogLine, Ticket, Unread
 from ticketing.times import stamp_time
 from ticketing.vocabulary import Domain, Kind, Status
@@ -34,6 +35,14 @@ def log_line(m: re.Match[str]) -> LogLine:
                    None if change is None else str(change), wait is not None)
 
 
+def editors_field(fields: Mapping[str, str]) -> tuple[Role, ...] | None:
+    """The roles the `editors` field of a ticket's front matter `fields`
+    gives, or None where it has none. Raises ValueError on a name that is
+    no role."""
+    value = fields.get("editors")
+    return None if value is None else editors_of(list_items(value))
+
+
 def read_ticket(path: Path) -> Ticket:
     name = ticket_name(path)
     text = path.read_text()
@@ -44,7 +53,6 @@ def read_ticket(path: Path) -> Ticket:
     lines = tuple(log_line(m) for m in log_lines(text))
     if not lines:
         raise Refused(mctx("{path} has no log line").format(path=path))
-    editors = fields.get("editors")
     return Ticket(
         number=str(name.number), order=name.number.order, session=name.number.session,
         status=Status(path.parent.name), kind=Kind(head["kind"]), domain=Domain(name.domain),
@@ -52,7 +60,7 @@ def read_ticket(path: Path) -> Ticket:
         title=title(path, text),
         depends_on=tuple(list_items(fields["depends-on"])) if "depends-on" in fields else (),
         priority=int(fields["priority"]) if "priority" in fields else DEFAULT_PRIORITY,
-        editors=None if editors is None else editors_of(list_items(editors)),
+        editors=editors_field(fields),
         after_merge=fields.get("after-merge"), mechanical="mechanical" in fields, log=lines, holder=holder(text), path=path)
 
 

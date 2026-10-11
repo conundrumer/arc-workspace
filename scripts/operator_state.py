@@ -38,7 +38,7 @@ from operations.relay import Relay, Run
 from operations.roles import Role
 from operations.directives import named
 from operations.plan import taken_up, unknown_line
-from operations import changes, monitor
+from operations import change_budget, changes, monitor
 from operations.monitor import MonitorState, Watched
 from operations.state import (Agent, Budget, Call, LateResume, Message, Reader, Report, Spend,
                               State, Ticket)
@@ -196,10 +196,10 @@ def change_budgets(state: State, spent: dict[str, Spend], tickets: Path,
     if (t := changes.next_take(state)) is not None and (b := of(t, state.now)) is not None:
         out[t.number] = b
     for t in changes.held(state):
-        take = changes.taken(t)
+        take = change_budget.taken(t)
         s = spent.get(t.number)
-        if take is not None and s is not None and changes.past_budget(t, s) \
-                and (b := of(t, take[0])) is not None:
+        if take is not None and s is not None and change_budget.past_budget(take, s) \
+                and (b := of(t, take.time)) is not None:
             out[t.number] = b
     return out
 
