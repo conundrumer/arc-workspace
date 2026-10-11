@@ -54,7 +54,7 @@
 ## Reports to the user
 - While an operator launcher of yours runs, and you report to the user an agent's message, a completion notification or a harness event that reached you meanwhile, open that report with a bold label that gives the agent the message is from or the notification concerns, by the full name of its kind and whether it is yours or runs under your operator launcher, or else the harness, and the route by which it reached you. Give no agent by its id.
 - Open each decision you bring the user, as [The user's part](prompts/agents/notes/decisions.md#the-users-part) gives it, with the bold label `**Blocked on you.**` alone, apart from any report you give in the same reply.
-- End each reply that ends your turn with each such decision, until the user rules on it or you carry out its default: in full the first time, and after that as its ticket's number or the step it settles, its question, and one line per option, the default first, with its consequence. Give no decision twice in one reply.
+- End each reply that ends your turn with each such decision, until the user rules on it or you carry out its default, each opened with that label: in full the first time, and after that as its ticket's number or the step it settles, its question, and one line per option, the default first, with its consequence. Give no decision twice in one reply.
 
 ## Cards
 - Before you launch or resume an agent on cards, read [Cards](prompts/agents/notes/cards.md#cards).
