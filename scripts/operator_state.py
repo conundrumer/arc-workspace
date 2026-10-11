@@ -5,7 +5,6 @@ steps read, from the session's running agents and their transcripts; and
 the assembly of what an operator launcher reads (`read_relay`)."""
 
 import os
-import sys
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -33,11 +32,11 @@ from handbook.reader_names import ReaderName
 from handbook.readers import reader_calls
 
 from operations.constants import COORDINATOR
-from operations.final_reply import final_sends_in, sent_final_text
+from operations.final_reply import final_sends_in, for_context, sent_final_text
 from operations.relay import Relay, Run
 from operations.roles import Role
 from operations.directives import named
-from operations.plan import taken_up
+from operations.plan import taken_up, unknown_line
 from operations import monitor
 from operations.monitor import MonitorState, Watched
 from operations.state import Agent, Call, LateResume, Message, Reader, Report, State
@@ -83,8 +82,6 @@ def read_relay(me: str) -> tuple[Relay, Path]:
             sends = [c for c in final_sends_in(theirs, a.agent_id, me) if c.time > a.launched]
             final = sent_final_text(sends[0]) if sends else None
         runs.append(Run(a.agent_id, a.launched, a.pending, final))
-    for line in dict.fromkeys(undecided):
-        print(f"operate: undecided: {line}", file=sys.stderr)
     relay = Relay(me, tuple(sorted((m for m in messages if m.sender is None),
                                    key=lambda m: m.time)),
                   tuple(runs), tuple(sorted(calls, key=lambda c: c.time)),
@@ -127,9 +124,9 @@ def read_state(me: str) -> tuple[State, MonitorState]:
     agents = [ended_with(a, ended[a.agent_id]) if a.pending and a.agent_id in ended else a
               for a in agents]
     known = {a.agent_id for a in agents if a.agent_id} | {aid for aid, _ in runs}
-    for line in dict.fromkeys(undecided):
-        if line.split(":", 1)[0] in known:
-            print(f"operate: undecided: {line}", file=sys.stderr)
+    given = given_lines(runs, me, calls)
+    watching.extend(line for line in dict.fromkeys(undecided)
+                    if line.split(":", 1)[0] in known and unknown_line(line) not in given)
     tickets, unread = read_tickets(tickets_dir)
     index = session_index(tickets_dir, session)
     holders = {t.holder for t in tickets.values() if t.status is Status.ASSIGNED and t.holder}
@@ -165,6 +162,19 @@ def read_state(me: str) -> tuple[State, MonitorState]:
                     gate_outputs={w: gate_outputs(w) for w in held})
     return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(state.stalled),
                                undecided=tuple(watching))
+
+
+def given_lines(runs: list[tuple[str, Path]], me: str, calls: list[Call]) -> set[str]:
+    """The lines of each final reply that an operator of `runs` before `me`
+    sent its parent, other than one that ends it for its context: a line
+    one of them gave reaches the coordinator in no later reply."""
+    out: set[str] = set()
+    for aid, path in runs[:[a for a, _ in runs].index(me)]:
+        for c in final_sends_in(calls, aid, parent_id(path)):
+            text = sent_final_text(c)
+            if text is not None and not for_context(text):
+                out.update(text.split("\n"))
+    return out
 
 
 def late_resumes(runs: list[tuple[str, Path]],

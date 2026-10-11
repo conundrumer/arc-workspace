@@ -217,11 +217,17 @@ LATE: tuple[Callable[[State], Step | None], ...] = (
 PROCEDURES = EARLY + LATE
 
 
+def unknown_line(line: str) -> str:
+    """The line of a final reply that gives the `monitor.undecided` line
+    `line`."""
+    return f"- {line}"
+
+
 def next_step(state: State, watch: monitor.MonitorState) -> Step:
     """The operator's next step, where `watch` is the state the monitor's
     steps read. Each reply gives, after its lines, each line
     `monitor.undecided` gives."""
-    unknown = [f"- {line}" for line in dict.fromkeys(monitor.undecided(watch))]
+    unknown = [unknown_line(line) for line in dict.fromkeys(monitor.undecided(watch))]
     mine = state.operators.index(state.me) if state.me in state.operators else -1
     later = [o for o in state.operators[mine + 1:] if o in state.open_operators]
     if later:
