@@ -5,11 +5,16 @@ gives the claim and the work set aside around them. Whether a task is
 claimed is read from its claim file: a pipeline on a task another session
 claims stops, and a pipeline from the queue takes no such task.
 
-After each pass, a transcript review of it, then one ticket analyst with
-the tickets the pass's report lists under `## Tickets filed` and those the
-review filed, and the review. The next pass runs once each `interference`
-ticket on the task filed since the pipeline started stands under
-`tickets/closed/`; the changes that settle them are taken first, as
+The pipeline keeps two chains on the task. On the pass chain, the next
+pass runs once the pass before it ended with its report and no
+`interference` ticket on the task filed since the pipeline started stands
+outside `tickets/closed/`; it waits on no review and no analyst. On the
+review chain, each ended pass gets a transcript review once the review of
+the pass before it returned, then one ticket analyst with the tickets the
+pass's report lists under `## Tickets filed` and those its review filed,
+and the review; a pass's analyst is the one whose brief gives that pass's
+review. The pipeline ends once each review and analyst has returned. For
+the `interference` tickets, the changes that settle them are taken first, as
 `changes.boosted` gives. A pass's reply that is no report's path, or a
 report with no `## Tickets filed` section, goes back to the pass once,
 with a request to send it again in that form. The pipeline stops where
@@ -86,41 +91,117 @@ def latest(state: State, role: Role, subject: str, since: float) -> Agent | None
     return found[-1] if found else None
 
 
-def review_tickets(state: State, task: str, review: Agent) -> list[str]:
+def review_tickets(state: State, task: str, review: Agent, after: Agent | None) -> list[str]:
+    """The tickets `review` filed on `task`: those of the transcript review
+    filed from its launch up to the launch of `after`, the review that
+    follows it."""
     return [t.number for t in state.tickets.values() if t.domain is Domain.TASK
             and t.subject == task and t.filer == Role.TRANSCRIPT_REVIEW.value
-            and t.filed >= review.launched and t.status is not Status.WATCHING]
+            and t.filed >= review.launched and (after is None or t.filed < after.launched)
+            and t.status is not Status.WATCHING]
+
+
+def settles(analyst: Agent, nums: list[str], review: str) -> bool:
+    """Whether the pass analyst `analyst`, whose subject gives `nums`, is
+    the one of the pass whose transcript review is the agent `review`."""
+    task, *numbers = nums
+    first = briefs.PASS_SETTLE.format(numbers=briefs.item_list(numbers), task=task, review=review)
+    return analyst.brief.startswith(first)
+
+
+type Ended = tuple[str, Agent, tuple[str, ...]]
+"""A pass that ended with its report: its agent id, the pass, and the
+tickets its report lists."""
+
+
+def reviews(state: State, task: str, ended: list[Ended]) -> Outcome | None:
+    """The review chain over the passes of `ended`: its next step,
+    Outcome(None) where it waits, or None where each review and analyst
+    has returned."""
+    found = [latest(state, Role.TRANSCRIPT_REVIEW, i, a.launched) for i, a, _ in ended]
+    waits = False
+    for (i, _, filed), review, after in zip(ended, found, [*found[1:], None], strict=True):
+        if review is None:
+            return Outcome(Launch(Role.TRANSCRIPT_REVIEW, i, briefs.transcript_review(
+                i, Domain.TASK.value, task, True)))
+        if review.pending:
+            return Outcome(None)
+        reviewer = agent_ids([review])
+        if isinstance(reviewer, Undecided):
+            return Outcome(reviewer)
+        numbers = [*filed, *review_tickets(state, task, review, after)]
+        analyst = [x for x, purpose, nums in state.analysts()
+                   if purpose is Purpose.PASS and nums[0] == task and settles(x, nums, reviewer[0])]
+        if numbers and not analyst:
+            subject = analyst_subject(Purpose.PASS, joined([task, *numbers]))
+            return Outcome(Launch(Role.TICKET_ANALYST, subject, briefs.pass_settle(
+                numbers, task, reviewer[0], state.me), items=len(numbers)))
+        waits = waits or any(x.pending for x in analyst)
+    return Outcome(None) if waits else None
+
+
+def interference(state: State, p: Pipeline) -> Outcome | str | None:
+    """The `interference` check before a pass: the reason the pipeline
+    stops, Outcome(None) where a ticket holds the next pass, or None where
+    none does."""
+    found = [t for t in state.tickets.values() if t.kind is Kind.INTERFERENCE
+             and t.domain is Domain.TASK and t.subject == p.task
+             and t.filed >= p.since and t.status is not Status.CLOSED]
+    for t in found:
+        if blocked_on_user(t) is not None:
+            return f"interference ticket {t.number} waits on the user"
+        given = [x for x, _, nums in state.analysts()
+                 if t.number in nums and x.launched > t.filed]
+        if t.status in (Status.OPEN, Status.ASSIGNED) and given and not any(
+                x.pending for x in given):
+            return f"the ticket analyst left interference ticket {t.number} open"
+    return Outcome(None) if found else None
 
 
 def run(state: State, p: Pipeline) -> Outcome:
+    """The next step of the pipeline `p`, the step of its review chain
+    first, then that of its pass chain."""
     since = p.since
     restore = restore_command(p.task)
     order = PASSES[PASSES.index(p.start):]
+    ended: list[Ended] = []
+
+    def stop(reason: str | None) -> Outcome:
+        chain = reviews(state, p.task, ended)
+        return chain if chain is not None else end(state, p, restore, reason)
+
     for role in order:
+        chain = reviews(state, p.task, ended)
+        if chain is not None and chain.step is not None:
+            return chain
         a = latest(state, role, p.task, since)
         if a is None:
+            held = interference(state, p)
+            if isinstance(held, str):
+                return stop(held)
+            if held is not None:
+                return held
             holder = state.claims.get(p.task)
             if holder is not None and holder != state.session:
-                return Outcome(None, True, f"the claim on task {p.task} fails: session "
-                                           f"{holder} holds it")
+                return stop(f"the claim on task {p.task} fails: session {holder} holds it")
             if holder is None:
                 claim = claim_command(state, p.task)
                 tries = ran(state, claim, since)
                 if any(tries):
-                    return Outcome(None, True, f"the claim on task {p.task} fails")
+                    return stop(f"the claim on task {p.task} fails")
                 return Outcome(None if tries else Bash(claim))
             aside = aside_command(p.task, role)
             if role in SETS_ASIDE and not ran(state, aside, since):
                 return Outcome(Bash(aside))
             launch = Launch(role, p.task, briefs.solver_pass(p.task, overrides(state, p.task, role, since)))
             if (line := passed(launch, state)) is not None:
-                return end(state, p, restore, f"the line `{line}` passed over its {role} pass")
+                return stop(f"the line `{line}` passed over its {role} pass")
             return Outcome(launch)
         since = a.launched
         if a.pending:
             return Outcome(None)
         if a.agent_id is None:
-            return end(state, p, restore, f"the {role} pass on {p.task} has no agent id")
+            return stop(f"the {role} pass on {p.task} has no agent id")
         filed = state.pass_tickets.get(a.agent_id)
         if filed is None:
             if a.reports:
@@ -131,39 +212,16 @@ def run(state: State, p: Pipeline) -> Outcome:
             told = no_report(role, a)
             if not repeated(told, state):
                 return Outcome(told)
-            return end(state, p, restore, f"the {role} pass {a.agent_id} replied with no "
-                                          f"path of a report with a `{TICKETS_FILED}` "
-                                          f"section")
-        review = latest(state, Role.TRANSCRIPT_REVIEW, a.agent_id, a.launched)
-        if review is None:
-            return Outcome(Launch(Role.TRANSCRIPT_REVIEW, a.agent_id, briefs.transcript_review(
-                a.agent_id, Domain.TASK.value, p.task, True)))
-        if review.pending:
-            return Outcome(None)
-        numbers = [*filed, *review_tickets(state, p.task, review)]
-        analyst = [x for x, purpose, nums in state.analysts()
-                   if purpose is Purpose.PASS and p.task in nums and x.launched > review.launched]
-        if numbers and not analyst:
-            subject = analyst_subject(Purpose.PASS, joined([p.task, *numbers]))
-            reviewer = agent_ids([review])
-            if isinstance(reviewer, Undecided):
-                return Outcome(reviewer)
-            return Outcome(Launch(Role.TICKET_ANALYST, subject, briefs.pass_settle(
-                numbers, p.task, reviewer[0], state.me), items=len(numbers)))
-        if any(x.pending for x in analyst):
-            return Outcome(None)
-        interference = [t for t in state.tickets.values() if t.kind is Kind.INTERFERENCE
-                        and t.domain is Domain.TASK and t.subject == p.task
-                        and t.filed >= p.since and t.status is not Status.CLOSED]
-        for t in interference:
-            if blocked_on_user(t) is not None:
-                return end(state, p, restore, f"interference ticket {t.number} waits on the user")
-            if t.status in (Status.OPEN, Status.ASSIGNED):
-                return end(state, p, restore, f"the ticket analyst left interference ticket "
-                                              f"{t.number} open")
-        if interference:
-            return Outcome(None)
-    return end(state, p, restore, None)
+            return stop(f"the {role} pass {a.agent_id} replied with no path of a report with "
+                        f"a `{TICKETS_FILED}` section")
+        ended.append((a.agent_id, a, filed))
+    chain = reviews(state, p.task, ended)
+    if chain is not None:
+        return chain
+    held = interference(state, p)
+    if isinstance(held, Outcome):
+        return held
+    return end(state, p, restore, held)
 
 
 def no_report(role: Role, a: Agent) -> Undecided:
@@ -263,21 +321,26 @@ def step(state: State) -> tuple[Step | None, list[tuple[Pipeline, Outcome]]]:
     return first, outcomes
 
 
-def awaits_analyst(state: State, task: str) -> bool:
-    """Whether a pipeline on `task` has yet to launch the ticket analyst of
-    its latest pass."""
+def awaits_analyst(state: State, number: str) -> bool:
+    """Whether a pipeline on the task of the ticket `number` has not ended,
+    no pass analyst was launched with the ticket among its tickets, and the
+    pipeline will give it one: a transcript review filed it since the
+    pipeline started, or a solver pass did, while a pass of the pipeline is
+    pending or the report of one that ended lists it."""
+    t = state.tickets[number]
+    if t.domain is not Domain.TASK or any(
+            purpose is Purpose.PASS and number in nums for _, purpose, nums in state.analysts()):
+        return False
     for p in every(state):
-        if p.task != task:
+        if p.task != t.subject or t.filed < p.since or run(state, p).ended:
             continue
-        o = run(state, p)
-        if o.ended:
+        if t.filer == Role.TRANSCRIPT_REVIEW.value:
+            return True
+        if t.filer not in {r.value for r in PASSES}:
             continue
-        passes = [a for r in PASSES for a in state.agents_of(r, task) if a.launched >= p.since]
-        if not passes:
-            continue
-        last = max(passes, key=lambda a: a.launched)
-        if not any(x.launched > last.launched for x, purpose, nums in state.analysts()
-                   if purpose is Purpose.PASS and task in nums):
+        passes = [a for r in PASSES for a in state.agents_of(r, t.subject) if a.launched >= p.since]
+        if any(a.pending or a.agent_id is not None
+               and number in (state.pass_tickets.get(a.agent_id) or ()) for a in passes):
             return True
     return False
 

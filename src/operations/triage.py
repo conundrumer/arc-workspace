@@ -54,7 +54,7 @@ from operations.reports import Label, items_of, mislabeled
 from operations.passes import awaits_analyst
 from operations.roles import Purpose, Role, analyst_subject, joined
 from operations.state import Agent, LogLine, State, Ticket
-from ticketing.vocabulary import Domain, Kind, Status
+from ticketing.vocabulary import Kind, Status
 from operations.constants import COORDINATOR
 from operations.final_reply import carrier, nested
 from operations.handled import repeated, sent
@@ -79,12 +79,9 @@ def given(state: State, number: str) -> bool:
 
 
 def awaits_pipeline(state: State, number: str) -> bool:
-    """Whether `number` is a ticket on a task whose pipeline has a pass
-    with no ticket analyst launched after it."""
-    t = state.tickets[number]
-    if t.domain is not Domain.TASK:
-        return False
-    return awaits_analyst(state, t.subject)
+    """Whether `number` is a ticket on a task that a pipeline will give a
+    pass analyst and has not yet, as `awaits_analyst` gives the rule."""
+    return awaits_analyst(state, number)
 
 
 REOPENED = (Status.BLOCKED, Status.CLOSED)
