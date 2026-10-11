@@ -120,7 +120,7 @@ def reviews(state: State, task: str, ended: list[Ended]) -> Outcome | None:
     has returned."""
     found = [latest(state, Role.TRANSCRIPT_REVIEW, i, a.launched) for i, a, _ in ended]
     waits = False
-    for (i, _, filed), review, after in zip(ended, found, [*found[1:], None], strict=True):
+    for (i, _, filed), review, after in zip(ended, found, [*found[1:], None][:len(found)], strict=True):
         if review is None:
             return Outcome(Launch(Role.TRANSCRIPT_REVIEW, i, briefs.transcript_review(
                 i, Domain.TASK.value, task, True)))
