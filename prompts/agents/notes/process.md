@@ -27,7 +27,7 @@
 - Purpose: turn the user's words into requirements that a check can confirm, each traced to those words.
 - Principles: [The user's part](prompts/agents/notes/decisions.md#the-users-part).
 - Outcomes:
-    - Each `change` that serves a `request` gives its requirements in its Intent: statements of what holds once the change is made, each one checkable, each traced to the part of a span of the request it rests on, quoted, or to a line of the request's Grounds.
+    - Each `change` that serves a `request` gives its requirements in its Intent: statements of what holds once the change is made, each one checkable, each traced to the user's words in a span of the request, quoted, or to a line of the request's Grounds for what that line itself asks for or states, with a means the coordinator proposed a candidate design.
     - A part of what the request's spans ask for that the change leaves unmet is a decline.
     - When the user adds words, each requirement is checked against them.
 - Owner: the ticket analyst writes the requirements, and the ticket reviewer checks each trace.
@@ -53,6 +53,7 @@
 - Outcomes:
     - Each `change` that adds a mechanism to code has a design, made from reading the code, that gives the existing operations it uses or extends, and each new operation with its module.
     - Each `change` that adds or changes a rule or a fact in the agent-facing documents has a design, made from reading those documents, that gives for each line it adds or changes each reader that loads the line and the part of its work for which it loads it, the existing line or the general term the line extends or is an instance of, or that it found none, and how the line goes in: as a change to that existing line, as a new line in a section its reader loads for that part of its work, or not at all.
+    - Each design gives what it costs and what it gains against the goal of [The user's goals](prompts/agents/notes/decisions.md#the-users-goals) that its change serves, a part whose gain its grounds do not show to exceed its cost is left out, and a requirement that costs more than it gains is not built, and reaches the user as a decline where it serves a need the user stated.
     - An agent other than the one that wrote the design checks it before the build, against the code, or against the documents and the rules for editing them.
     - The Scope covers each file the design names.
 - Owner: the ticket analyst writes the design, and the ticket reviewer checks it.
@@ -78,7 +79,7 @@
 - Outcomes:
     - Each `change` ticket is checked before the build: each requirement traces to the request's spans or Grounds and can be checked, each claim about the current state holds, and the Scope covers the design.
     - An agent other than its editor checks the built change against each requirement, for documents as for code.
-    - For a document change that alters what an agent does, there is evidence before the merge that its reader acts as the requirement states.
+    - For a document change that alters what an agent does, there is evidence before the merge that its reader acts as the requirement states, from a trial that read nothing that reveals its case's outcome.
     - The lines in force in the agents' documents get a standing review, as the code in the tree gets the code review.
     - A finding in a later round of a review falls only on text that changed since the earlier round.
 - Owner: the ticket reviewer for the `change` ticket, the item checker for the built change, the doc reviewer for the form of the documents and, by its trials, for the evidence of a reader's behavior, a standing doc review for the lines in force in the agents' documents, and the code reviewer and the gate for the code.

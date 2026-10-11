@@ -213,7 +213,10 @@
 - [Tracking](prompts/agents/ticket-analyst.md#tracking): Decisions: each decision recorded with what it was made from.
     - "The kind of a ticket you file is `change`": none. Kept: it gives the form of the tickets the analyst files.
     - "A `change` to the agents' processes": Process assessment: each rule maps to an outcome.
-    - "Write the `Design` section": Design: a design from the code or the documents; the Scope covers the design.
+    - "Give with each Intent item": Requirements: requirements traced to the spans.
+    - "Write the `Design` section", "List each state the design acts in", "Give what each part of the design costs", "Cover in its Scope each file": Design: a design from the code or the documents; its cost and gain against the goal; the Scope covers the design.
+    - "Where meeting an Intent item costs more": Design: a requirement that costs more than it gains reaches the user; Decisions: a decline carries its defense.
+    - "Leave out of the design", "Where a part's gain exceeds its cost": Design: its cost and gain against the goal.
     - "Settle by [Settling]": Process assessment: the faults of the processes reach the user.
 - [Commands](prompts/agents/ticket-analyst.md#commands): Process assessment: the context each run of an agent loads holds only the lines each of its runs needs.
 - [Settling tickets](prompts/agents/ticket-analyst/tickets.md): Requirements: requirements traced to the spans; Decisions: each decision recorded with what it was made from.
@@ -247,7 +250,7 @@
     - "A `change`, other than one under `tickets/blocked/`", "Instructions that change the same files are ordered", "A `change` ticket's `depends-on` gives": Configuration management: overlapping changes ordered.
     - "A `change` to the agents' processes": Process assessment: each rule maps to an outcome.
     - "In a `change` that serves a `request`, each item of the Intent": Requirements: requirements traced to the spans.
-    - "A `change` that adds a mechanism to code has a `Design`", "A `change` that adds or changes a rule or a fact": Design: the design checked before the build.
+    - "A `change` that adds a mechanism to code has a `Design`", "A `change` that adds or changes a rule or a fact", "A `Design` lists each state": Design: the design checked before the build.
     - "Each item of the Intent is a requirement": Requirements: requirements traced to the spans.
     - "No case that the readers of a line": Risk management: each way a design can fail is a requirement.
     - "A finding quotes the draft's line": none. Kept: it gives the form of a finding, which the ticket analyst acts on.
@@ -296,7 +299,7 @@
     - "File a `performance` ticket": Process assessment: the faults of the processes reach the user.
     - "Where your brief gives a standing doc review": Verification: a standing review of the lines in force.
     - "Read [Prose in code]", "Where your brief gives the number of the change's ticket, read [Trials]": none. Kept: the principle of Process assessment, spend no run the work does not need.
-- [Trials](prompts/agents/doc-reviewer/trials.md): Verification: evidence of a reader's behavior.
+- [Trials](prompts/agents/doc-reviewer/trials.md): Verification: evidence of a reader's behavior, from a trial that read nothing that reveals its case's outcome.
 
 ## Operator
 - [Operator](prompts/agents/operator.md#operator): Work control: stopped work reaches an agent; Merge: a failed or denied merge reaches an agent.
