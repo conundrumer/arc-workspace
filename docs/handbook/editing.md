@@ -25,9 +25,9 @@
 - The theory of tasks, models and encodings: [Principles](docs/handbook/principles.md) and [Encoding](docs/handbook/encoding.md).
 - The lib's sections: the `//!` and `///` comments of [lib.dl](programs/lib.dl) and of the modules under [lib](programs/lib).
 - What each Claude Code session on the repo and each agent launched in such a session reads, and no codex session reads: [arc-workspace](CLAUDE.md).
-- What the coordinator, the session the user talks with, reads: [Coordinator](prompts/agents/notes/coordinator.md), rendered to `.claude/coordinator.md`.
+- What the coordinator, the session the user talks with, reads: [Coordinator](prompts/agents/notes/coordinator.md), rendered to `.claude/coordinator.md`, and, where the user starts it with [claude.py](scripts/claude.py), [User session](prompts/user-session.md), as its appended system prompt.
     - Its context: `context coordinator`, then the user's messages.
-    - The coordinator also reads each document or section a link of that document leads to, where the link's condition holds, and no `context` command prints those.
+    - The coordinator also reads each document or section outside its `context` output that a link of those documents leads to, where the link's condition holds.
 - What a session at a terminal reads, and the passes it runs: [Session](.claude/skills/session/SKILL.md), then [Solver session](prompts/session.md).
     - [Session](.claude/skills/session/SKILL.md) is deprecated, and has no `comment` directive.
     - Its context: `context session`, then the output of each command the text gives.
