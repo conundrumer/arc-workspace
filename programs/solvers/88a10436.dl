@@ -3,7 +3,8 @@
 // @keywords: markers objects stamp bbox
 // input: A multicolor shape and one marker cell sit on bg.
 // output: A copy of the shape lands with the center of its box on the
-//  marker; the rest of the input stands.
+//  marker; the rest of the input stands. Where the box has an even extent on
+//  an axis, no cell is its center, and there is no output.
 
 // which cells are the marker
 .type Marker =
@@ -62,11 +63,14 @@ bbox.cell(M, P) :- shape(P, M).
 .decl boxed(p: Position, m: Marker)
 boxed(P, M) :- in(P, _), bbox.box(M, B), inside(P, B).
 
+// The center cell of the shape's box.
+.decl center(p: Position, m: Marker)
+center(Ctr, M) :- bbox.box(M, B), in(Ctr, _), crop(Ctr, B, P_inner), centered(P_inner).
+
 // Where each cell of the shape's box lands: the box's center goes on a marker.
 .decl seated(p: Position, q: Position, m: Marker)
 seated(P, Q, M) :-
-    bbox.box(M, B), in(Ctr, _),
-    crop(Ctr, B, P_inner), centered(P_inner),    // the box's center
+    center(Ctr, M),
     boxed(P, M), relative(Ctr, P, V),            // a box cell, as its offset from the center
     marker(A, M), compose(A, V, Q), in(Q, _).    // laid off from a marker, on the grid
 
@@ -80,4 +84,4 @@ content(P, Col, [M, $Box()]) :- boxed(P, M), in(P, Col).
 paint(Q, Col, [M, C]) :- content(P, Col, [M, C]), seated(P, Q, M).
 
 out(P, Col, Ch) :- paint(P, Col, Ch).
-out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
+out(P, Col, [M, C]) :- in(P, Col), impl_choice([M, C]), center(_, M), !paint(P, _, [M, C]).

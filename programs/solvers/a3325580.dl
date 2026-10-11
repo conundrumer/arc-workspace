@@ -37,21 +37,6 @@
 .type Rank =
     // @claim order
     NearEdge {}
-    // @rule order: the key is the center of the unit's bounding box
-    // @witness top-right-arm: borderline $BboxCenter
-    //     @relaxed apart
-    // @witness corner-vs-block: borderline $MeanCol
-    //     @relaxed apart
-    // @witness long-bar: borderline other
-    //     @relaxed apart
-  | BboxCenter {}
-    // @rule order: the key is the mean distance of the unit's cells
-    // @witness skewed-mass: borderline concept
-    //     @relaxed apart
-    // @witness top-right-arm: borderline $BboxCenter
-    // @witness corner-vs-block: borderline $MeanCol
-    // @witness long-bar: borderline other
-  | MeanCol {}
     // @rule order: the key is read over the unit's line nearest
     //  params.scan_from alone
     // @witness narrow-ends: borderline concept
@@ -90,9 +75,6 @@
 
 // A unit, read toward an edge.
 .type Lean = [part: Part, d: Dir]
-
-// A cell with a cell between it and an edge.
-.type CellPair = [p: Position, q: Position]
 
 // A case's order under one open value: the lead edge, or for FirstScan the
 // corner the scan starts from.
@@ -136,12 +118,7 @@ line_of(Pc, P, P_line) :- chart.cell(Pc, P), layout_axis(A), split(P, A, P_line,
 .init obox = Bbox<Part>
 obox.cell([Pc, Id], P) :- cell(Pc, Id, P).
 
-// The keys read toward the lead edge alone.
-.decl lead_rank(k: Rank)
-lead_rank($NearEdge()). lead_rank($BboxCenter()). lead_rank($MeanCol()).
-
 .decl view(w: View, lead: Dir)
-view([[Pc, K], L], L) :- piece_choice(Pc), lead_rank(K), params.lead(L).
 
 // @claim order
 .init order = Order<View, Ident>
@@ -207,34 +184,12 @@ cell($ColorClass(), Id, P) :- classes.id(P, Id).
 
 // --- $NearEdge ---
 
+view([[Pc, $NearEdge()], L], L) :- piece_choice(Pc), params.lead(L).
+
 order.before([[Pc, $NearEdge()], L], A, B) :-
     params.lead(L),
     obox.box([Pc, A], B1), dist(B1, L, K1),
     obox.box([Pc, B], B2), dist(B2, L, K2), K1 < K2.
-
-// --- $BboxCenter ---
-
-// B's box is farther than A's from the lead edge by more than it is farther
-// from the opposite edge, so its center is farther from the lead edge.
-order.before([[Pc, $BboxCenter()], L], A, B) :-
-    params.lead(L), opposite(L, O),
-    obox.box([Pc, A], B1), obox.box([Pc, B], B2), relative(B1, B2, B_shift),
-    dist(B_shift, L, K1), dist(B_shift, O, K2), K1 > K2.
-
-// --- $MeanCol ---
-
-// The sum of a unit's cell distances to an edge: one member per cell and per
-// cell between it and that edge on its line.
-// @claim order
-.init reach = Tally<Lean, CellPair>
-reach.item([[Pc, Id], L], [P, Q]) :-
-    cell(Pc, Id, P), params.lead(L), axis_of(L, A),
-    in(Q, _), same_line(A, P, Q), nearer(L, Q, P).
-reach.domain([[Pc, Id], L]) :- cell(Pc, Id, _), params.lead(L).
-
-// The kept units share one size, so the lower sum is the lower mean.
-order.before([[Pc, $MeanCol()], L], A, B) :-
-    reach.tally([[Pc, A], L], N1), reach.tally([[Pc, B], L], N2), N1 < N2.
 
 // --- $FirstScan ---
 

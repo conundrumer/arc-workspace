@@ -12,8 +12,10 @@
 // @scene one-per-position: the nine pieces point to the nine blocks of a 3×3
 //  arrangement, and the piece with no marks points to the center
 // @rule direction: a piece points to the block given by the side, on each
-//  axis, that the mean of its marks lies on from the piece center; on an axis
-//  where the mean is at the center, and for a piece with no marks, the middle
+//  axis, whose half of the piece holds more of its marks than the opposite
+//  half, a half being the cells nearer that side's edge than the opposite
+//  edge; on an axis where the two halves hold equally many, and for a piece
+//  with no marks, the middle
 // @rule assemble: the output is the 3×3 arrangement of params.piece_size
 //  blocks, with no gap. Each piece is copied unchanged into the block it
 //  points to
@@ -51,7 +53,7 @@
 // how a piece's marks give the block it points to
 .type Direction =
     // @claim direction
-    MarkMean {}
+    HalfCount {}
     // @rule direction: a piece points to the block given by the side, on each
     //  axis, that the center of its marks' bounding box lies on from the piece
     //  center
@@ -110,9 +112,8 @@
 // A piece's marks under one fill reading.
 .type Marked = [fill: FillColor, b: Box]
 
-// A piece and a side, and a pair of cells that weighs its lean toward that side.
+// A piece and a side.
 .type Lean = [fill: FillColor, b: Box, d: Dir]
-.type CellPair = [mark: Position, cell: Position]
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -155,7 +156,7 @@ piece_parse_choice($WindowParse()). piece_parse_choice($TileParse()).
 fill_free_choice($FillFreeCenter()). fill_free_choice($NeedsFill()).
 
 .decl direction_choice(dr: Direction)
-direction_choice($MarkMean()). direction_choice($BboxCenter()). direction_choice($EdgeCount()).
+direction_choice($HalfCount()). direction_choice($BboxCenter()). direction_choice($EdgeCount()).
 direction_choice($EdgeTouch()).
 
 .decl fill_color_choice(fc: FillColor)
@@ -168,7 +169,7 @@ piece_size_choice($StoredSize()). piece_size_choice($SizeDerived()).
 // params.bg, or with params.fill after dropping the unmarked pieces. Each other
 // case fails Fit or is subsumed by one of these.
 .decl impl_choice(ch: Choice)
-impl_choice([$WindowParse(), $FillFreeCenter(), $UnmarkedCenter(), $MarkMean(),
+impl_choice([$WindowParse(), $FillFreeCenter(), $UnmarkedCenter(), $HalfCount(),
              $EmptyUndefined(), $StoredFill(), $StoredSize()]).
 impl_choice([Pc, Ff, $UnmarkedCenter(), Dr, $BgDefault(), Fc, Sz]) :-
     piece_parse_choice(Pc), fill_free_choice(Ff), direction_choice(Dr), fill_color_choice(Fc),
@@ -335,21 +336,17 @@ member(Sz, Fc, Pc, Ff, $UnmarkedCenter(), B) :- candidate(Sz, Fc, Pc, Ff, B).
 // --- $SkipUnmarked ---
 member(Sz, Fc, Pc, Ff, $SkipUnmarked(), B) :- candidate(Sz, Fc, Pc, Ff, B), mark(Fc, B, _).
 
-// --- $MarkMean ---
-// Toward d, the marks' distances to edge d add up to less than their distances
-// to the opposite edge: the mean of the marks lies off the center toward d.
-// Each distance is counted as the cells of the mark's line nearer that edge.
+// --- $HalfCount ---
+// A mark nearer edge d than the opposite edge.
+.decl half_mark(fc: FillColor, b: Box, d: Dir, m: Position)
+half_mark(Fc, B, D, P) :- mark(Fc, B, P), dir_elem(D), dist_pair(P, D, K1, K2), K1 < K2.
+
 // @claim direction
-.init lean = Excess<Lean, CellPair>
-lean.plus([Fc, B, D], [P, Q]) :- mark_line(Fc, B, D, P, Q), opposite(D, O), nearer(O, Q, P).
-lean.minus([Fc, B, D], [P, Q]) :- mark_line(Fc, B, D, P, Q), nearer(D, Q, P).
+.init lean = Excess<Lean, Position>
+lean.plus([Fc, B, D], P) :- half_mark(Fc, B, D, P).
+lean.minus([Fc, B, D], P) :- half_mark(Fc, B, O, P), opposite(D, O).
 
-// A mark, and a cell of the piece on its line along the axis of d.
-.decl mark_line(fc: FillColor, b: Box, d: Dir, m: Position, q: Position)
-mark_line(Fc, B, D, P, Q) :-
-    mark(Fc, B, P), parse.window_color($U(), B, Q, _), axis_of(D, A), same_line(A, P, Q).
-
-toward(Fc, $MarkMean(), B, D) :- lean.excess([Fc, B, D], _).
+toward(Fc, $HalfCount(), B, D) :- lean.excess([Fc, B, D], _).
 
 // --- $BboxCenter ---
 // @claim direction

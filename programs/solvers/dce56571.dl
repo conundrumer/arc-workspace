@@ -2,7 +2,8 @@
 // @keywords: count
 // output: Ink of one color on bg. The output is bg except a line of the ink
 //  color whose length is the ink-cell count, centered on both axes, running
-//  along params.axis.
+//  along params.axis. Where no such line lies at equal distances from both
+//  grid edges on each axis, there is no output.
 
 .decl out(p: Position, col: Color)
 
@@ -32,10 +33,17 @@ center_line(P, K) :-
 centrality.elem($U(), P) :- center_line(P, _).
 centrality.before($U(), Q, P) :- center_line(Q, Kq), center_line(P, K), Kq > K.
 
-// The line: the ink-count most-central cells — the centered band of
-// that extent.
+// The cells fewer than the ink count of cells are more central than. They
+// number other than the ink count where no centered band has that extent.
+.decl band_cell(p: Position)
+band_cell(P) :- ink_count.tally($U(), N), centrality.rank($U(), P, M), M < N.
+
+.init band_size = Tally<Unit, Position>
+band_size.item($U(), P) :- band_cell(P).
+
+// The band is the line where it holds exactly the ink count.
 .decl line_cell(p: Position)
-line_cell(P) :- ink_count.tally($U(), N), centrality.rank($U(), P, M), M < N.
+line_cell(P) :- band_cell(P), band_size.tally($U(), N), ink_count.tally($U(), N).
 
 out(P, Col) :- line_cell(P), ink(_, Col).
-out(P, Col) :- in(P, _), !line_cell(P), params.bg(Col).
+out(P, Col) :- in(P, _), line_cell(_), !line_cell(P), params.bg(Col).

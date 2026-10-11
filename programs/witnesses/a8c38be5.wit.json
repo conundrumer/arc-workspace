@@ -136,7 +136,7 @@
     }]
   }, {
     "id": "long-stem",
-    "separates": "$BboxCenter from the concept: the top piece has a T of marks whose stem reaches the bottom row. The mean of its marks lies above the piece center, and the center of their bounding box is the piece center.",
+    "separates": "$BboxCenter from the concept: the top piece has a T of marks whose stem reaches the bottom row. The top half of the piece holds more of its marks than the bottom half, and the center of their bounding box is the piece center.",
     "input": [
       [6,6,5,0,0,0,2,2,2,0,0,5,1,1],
       [6,5,5,0,0,0,5,2,5,0,0,5,5,1],
@@ -154,7 +154,7 @@
       [0,0,0,0,0,4,4,4,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$MarkMean","$EdgeCount"],
+      "cases": ["$HalfCount","$EdgeCount"],
       "grid": [
         [6,6,5,2,2,2,5,1,1],
         [6,5,5,5,2,5,5,5,1],
@@ -333,7 +333,7 @@
     }]
   }, {
     "id": "no-center-stem",
-    "separates": "$BboxCenter and $EdgeTouch from the concept and $EdgeCount, when a block no piece points to is filled: the mark-free piece is missing, and the top piece's T of marks has a stem that reaches the bottom row. The mean of its marks sends the piece to the top block; the center of their bounding box, and the edges they touch, send it to the center block.",
+    "separates": "$BboxCenter and $EdgeTouch from the concept and $EdgeCount, when a block no piece points to is filled: the mark-free piece is missing, and the top piece's T of marks has a stem that reaches the bottom row. The top half's larger share of its marks sends the piece to the top block; the center of their bounding box, and the edges they touch, send it to the center block.",
     "input": [
       [5,5,5,0,0,0,0,0,0,0,0,0,0,0],
       [8,5,5,0,0,0,0,0,2,2,2,0,0,0],
@@ -367,7 +367,7 @@
         [8,8,5,4,4,4,5,9,9]
       ]
     }, {
-      "cases": ["$EdgeCount & $BgDefault","$MarkMean & $BgDefault"],
+      "cases": ["$EdgeCount & $BgDefault","$HalfCount & $BgDefault"],
       "grid": [
         [6,6,5,2,2,2,5,1,1],
         [6,5,5,5,2,5,5,5,1],
@@ -393,7 +393,7 @@
         [8,8,5,4,4,4,5,9,9]
       ]
     }, {
-      "cases": ["$EdgeCount & $FillDefault","$MarkMean & $FillDefault"],
+      "cases": ["$EdgeCount & $FillDefault","$HalfCount & $FillDefault"],
       "grid": [
         [6,6,5,2,2,2,5,1,1],
         [6,5,5,5,2,5,5,5,1],
@@ -467,7 +467,7 @@
     }]
   }, {
     "id": "bar-four",
-    "separates": "$EdgeCount and $EdgeTouch from the concept and $BboxCenter, at piece size 4: the top piece's marks are two cells on its second row, touching no edge. The mean of the marks and the center of their bounding box lie above the piece center; no mark lies on an edge line, so $EdgeCount and $EdgeTouch send the piece to the center block, where the mark-free piece stands.",
+    "separates": "$EdgeCount and $EdgeTouch from the concept and $BboxCenter, at piece size 4: the top piece's marks are two cells on its second row, touching no edge. Both marks lie in the top half of the piece, and the center of their bounding box lies above the piece center; no mark lies on an edge line, so $EdgeCount and $EdgeTouch send the piece to the center block, where the mark-free piece stands.",
     "input": [
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,6,6,6,5,0,5,5,5,5,0,5,1,1,1,0],
@@ -492,7 +492,7 @@
       ]
     },
     "output": [{
-      "cases": ["$MarkMean","$BboxCenter"],
+      "cases": ["$HalfCount","$BboxCenter"],
       "grid": [
         [6,6,6,5,5,5,5,5,5,1,1,1],
         [6,5,5,5,5,2,2,5,5,5,5,1],
@@ -529,7 +529,7 @@
     }]
   }, {
     "id": "bar-four-open",
-    "separates": "$EdgeCount and $EdgeTouch from the concept and $BboxCenter, at piece size 4, when a block no piece points to is filled: bar-four without the mark-free piece. The mean and bounding-box readings place the bar piece in the top block; $EdgeCount and $EdgeTouch place it in the center block.",
+    "separates": "$EdgeCount and $EdgeTouch from the concept and $BboxCenter, at piece size 4, when a block no piece points to is filled: bar-four without the mark-free piece. The half-count and bounding-box readings place the bar piece in the top block; $EdgeCount and $EdgeTouch place it in the center block.",
     "input": [
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,6,6,6,5,0,5,5,5,5,0,5,1,1,1,0],
@@ -557,7 +557,7 @@
       "cases": ["concept"],
       "grid": null
     }, {
-      "cases": ["$BboxCenter & $BgDefault","$MarkMean & $BgDefault"],
+      "cases": ["$BboxCenter & $BgDefault","$HalfCount & $BgDefault"],
       "grid": [
         [6,6,6,5,5,5,5,5,5,1,1,1],
         [6,5,5,5,5,2,2,5,5,5,5,1],
@@ -589,7 +589,7 @@
         [8,8,8,5,4,4,4,4,5,9,9,9]
       ]
     }, {
-      "cases": ["$BboxCenter & $FillDefault","$MarkMean & $FillDefault"],
+      "cases": ["$BboxCenter & $FillDefault","$HalfCount & $FillDefault"],
       "grid": [
         [6,6,6,5,5,5,5,5,5,1,1,1],
         [6,5,5,5,5,2,2,5,5,5,5,1],
@@ -945,7 +945,7 @@
     }, {
       "cases": [
         "$WindowParse & $EdgeCount & $BgDefault & $SizeDerived",
-        "$WindowParse & $MarkMean & $BgDefault & $SizeDerived"
+        "$WindowParse & $HalfCount & $BgDefault & $SizeDerived"
       ],
       "grid": [
         [6,6,5,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -995,7 +995,7 @@
     }, {
       "cases": [
         "$WindowParse & $EdgeCount & $FillDefault & $SizeDerived",
-        "$WindowParse & $MarkMean & $FillDefault & $SizeDerived"
+        "$WindowParse & $HalfCount & $FillDefault & $SizeDerived"
       ],
       "grid": [
         [6,6,5,2,2,2,5,5,5,5,5,5,5,5,5,5,5,5],
@@ -1127,7 +1127,7 @@
     ],
     "output": [{
       "cases": [
-        "$WindowParse & $UnmarkedCenter & $MarkMean & $StoredFill & $StoredSize & bg=stored",
+        "$WindowParse & $UnmarkedCenter & $HalfCount & $StoredFill & $StoredSize & bg=stored",
         "$WindowParse & $EdgeCount & $BgDefault & $StoredFill & $StoredSize & bg=stored"
       ],
       "grid": null
@@ -1248,7 +1248,7 @@
     }, {
       "cases": [
         "$EdgeCount & $BgDefault & $FillDerived & $SizeDerived & bg=stored",
-        "$MarkMean & $BgDefault & $FillDerived & $SizeDerived & bg=stored"
+        "$HalfCount & $BgDefault & $FillDerived & $SizeDerived & bg=stored"
       ],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -1297,7 +1297,7 @@
     }, {
       "cases": [
         "$EdgeCount & $BgDefault & $StoredFill & $SizeDerived & bg=stored",
-        "$MarkMean & $BgDefault & $StoredFill & $SizeDerived & bg=stored"
+        "$HalfCount & $BgDefault & $StoredFill & $SizeDerived & bg=stored"
       ],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,5,5,7,7,7,7,7,7,7,7,7,7,7],
@@ -1358,13 +1358,13 @@
     }, {
       "cases": [
         "$WindowParse & $FillFreeCenter & $EdgeCount & $FillDerived & $StoredSize & bg=stored",
-        "$WindowParse & $FillFreeCenter & $MarkMean & $FillDerived & $StoredSize & bg=stored"
+        "$WindowParse & $FillFreeCenter & $HalfCount & $FillDerived & $StoredSize & bg=stored"
       ],
       "grid": null
     }, {
       "cases": [
         "$WindowParse & $NeedsFill & $EdgeCount & $FillDerived & $StoredSize & bg=stored",
-        "$WindowParse & $NeedsFill & $MarkMean & $FillDerived & $StoredSize & bg=stored"
+        "$WindowParse & $NeedsFill & $HalfCount & $FillDerived & $StoredSize & bg=stored"
       ],
       "grid": null
     }, {
@@ -1468,7 +1468,7 @@
     }, {
       "cases": [
         "$EdgeCount & $FillDefault & $FillDerived & $SizeDerived & bg=stored",
-        "$MarkMean & $FillDefault & $FillDerived & $SizeDerived & bg=stored"
+        "$HalfCount & $FillDefault & $FillDerived & $SizeDerived & bg=stored"
       ],
       "grid": [
         [7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7],
@@ -1517,7 +1517,7 @@
     }, {
       "cases": [
         "$EdgeCount & $FillDefault & $StoredFill & $SizeDerived & bg=stored",
-        "$MarkMean & $FillDefault & $StoredFill & $SizeDerived & bg=stored"
+        "$HalfCount & $FillDefault & $StoredFill & $SizeDerived & bg=stored"
       ],
       "grid": [
         [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,7,7,7,7,7,7,7,7,7,7,7],
@@ -1566,7 +1566,7 @@
     }, {
       "cases": [
         "$WindowParse & $EdgeCount & $FillDefault & $StoredFill & $StoredSize & bg=stored",
-        "$WindowParse & $MarkMean & $FillDefault & $StoredFill & $StoredSize & bg=stored"
+        "$WindowParse & $HalfCount & $FillDefault & $StoredFill & $StoredSize & bg=stored"
       ],
       "grid": null
     }]
