@@ -22,7 +22,8 @@ a foreground call, with room for the read of the state."""
 @dataclass(frozen=True)
 class Launch:
     """An Agent call, in the background, with no isolation. `model` gives
-    the call's `model`. `items` is the
+    the call's `model` in place of the one the agent's document gives
+    (`Role.document_model`). `items` is the
     number of items a brief that gives several items of the same work
     gives (`briefs.ITEM_LINES`), and None for any other brief; it stays
     out of the step's key, which its brief already fixes."""

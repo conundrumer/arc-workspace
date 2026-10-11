@@ -73,8 +73,9 @@ class Ticket:
 
     def model(self, role: Role) -> Model | None:
         """The model a launch of `role` on this ticket gives: Sonnet for a
-        code editor of a `mechanical` change, and otherwise the one the
-        agent's definition gives."""
+        code editor of a `mechanical` change, in place of the one the
+        agent's document gives, and otherwise None, for the one the
+        agent's document gives."""
         return Model.SONNET if self.mechanical and role is Role.CODE_EDITOR else None
 
 

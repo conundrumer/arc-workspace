@@ -7,6 +7,16 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
+from handbook.agents import agent_meta
+
+
+class Model(StrEnum):
+    """A model a launch gives as the Agent call's `model`: the one the
+    agent's document gives, or the one the step sets in its place."""
+    OPUS = "opus"
+    SONNET = "sonnet"
+    HAIKU = "haiku"
+
 
 class Role(StrEnum):
     """What an agent the operator launches does, by the word its
@@ -33,11 +43,17 @@ class Role(StrEnum):
         """The `subagent_type` its launch gives."""
         return GENERAL if self in GENERAL_ROLES else self.value
 
-
-class Model(StrEnum):
-    """A model a launch gives as the Agent call's `model`, in place of the
-    one the agent's definition gives."""
-    SONNET = "sonnet"
+    @property
+    def document_model(self) -> Model | None:
+        """The model the front matter of its agent document in this tree
+        gives, read at each call so that a launch in a running session
+        takes the document's current model, where the harness holds the
+        definition it loaded at the session's start. Raises ValueError on
+        a model that is no `Model`."""
+        if self in GENERAL_ROLES:
+            return None
+        model = agent_meta(self.agent_type).get("model")
+        return None if model is None else Model(model)
 
 
 GENERAL = "general-purpose"
