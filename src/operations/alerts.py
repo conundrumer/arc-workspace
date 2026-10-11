@@ -32,7 +32,9 @@ the first such agent's step files it, and each further one's writes a line
 in it while it stands outside `tickets/closed/`.
 
 A resume of an operator of the session after the next operator of the
-session made its first entry (`State.late_resumes`) is recorded the same
+session made its first entry (`State.late_resumes`), other than one by a
+prompt whose agent messages and task notifications, at least one of them,
+are all from agents that operator launched or last resumed, is recorded the same
 way, in one `bug` ticket of its own kind (`late_resumes`): each line is on
 one operator, and gives each of its resumes that no earlier line on it
 gives."""

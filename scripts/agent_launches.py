@@ -173,13 +173,16 @@ def note_latest(times: dict[str, float], agent: str, t: float) -> None:
 
 
 def resumes(entries: list[Entry], run: str, agents: set[str] | None,
-            undecided: list[str]) -> dict[str, float]:
+            undecided: list[str], before: float | None = None) -> dict[str, float]:
     """The time of the last SendMessage call among `entries` that resumed
-    each agent, or with `agents` each of those agents."""
+    each agent, or with `agents` each of those agents, and with `before`
+    only of the calls earlier than it."""
     results = results_by_call(entries)
     out: dict[str, float] = {}
     for e in entries:
         if e.get("type") != "assistant" or not e.get("timestamp"):
+            continue
+        if before is not None and epoch(e["timestamp"]) >= before:
             continue
         for b in blocks(e, "tool_use"):
             if b.get("name") != "SendMessage":
@@ -192,11 +195,11 @@ def resumes(entries: list[Entry], run: str, agents: set[str] | None,
 
 
 def session_resumes(path: Path, agents: set[str], since: float,
-                    undecided: list[str]) -> dict[str, float]:
+                    undecided: list[str], before: float | None = None) -> dict[str, float]:
     """The time of the last SendMessage call that resumed each of `agents`,
     among the calls of each agent of the sessions of the run at `path`, main
     among them, other than that run, whose transcript changed at or after
-    `since`."""
+    `since`, and with `before` only of the calls earlier than it."""
     own = chain(path)
     out: dict[str, float] = {}
     for p in changed_since(run_sessions(path), since):
@@ -204,7 +207,7 @@ def session_resumes(path: Path, agents: set[str], since: float,
             continue
         entries = read_entries(p, naming=agents | {"SendMessage"})
         for aid, t in resumes(entries, parent_label(p), agents,
-                              undecided).items():
+                              undecided, before).items():
             note_latest(out, aid, t)
     return out
 
@@ -275,18 +278,19 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
     return out
 
 
-def resume_times(path: Path, found: list[Launch],
-                 undecided: list[str]) -> tuple[dict[str, float], dict[str, float]]:
+def resume_times(path: Path, found: list[Launch], undecided: list[str],
+                 before: float | None = None) -> tuple[dict[str, float], dict[str, float]]:
     """The time of the last SendMessage call that resumed each agent: the
     calls of the run at `path`, and the calls of the other runs of its
     sessions that resumed an agent of `found`, the run's launches, or an
-    agent the run resumed."""
-    own = resumes(timed_entries(path), path.stem, None, undecided)
+    agent the run resumed, with `before` only of the calls earlier than
+    it."""
+    own = resumes(timed_entries(path), path.stem, None, undecided, before)
     agents = {a.agent for a in found if a.agent} | set(own)
     if not agents:
         return own, {}
     since = min([a.since for a in found] + list(own.values()))
-    return own, session_resumes(path, agents, since, undecided)
+    return own, session_resumes(path, agents, since, undecided, before)
 
 
 def launched(path: Path, undecided: list[str]) -> list[Launch]:
@@ -300,11 +304,13 @@ def launched(path: Path, undecided: list[str]) -> list[Launch]:
     return out
 
 
-def callees(path: Path, undecided: list[str]) -> set[str]:
+def callees(path: Path, undecided: list[str], before: float | None = None) -> set[str]:
     """The agent ids of the agents whose last launch or resume was a call
-    of the run at `path`, so that their reports go to that run."""
-    found = launches(path, undecided)
-    own, others = resume_times(path, found, undecided)
+    of the run at `path`, so that their reports go to that run, and with
+    `before` the same among the calls earlier than it, so that their reports
+    go to that run at that time."""
+    found = [a for a in launches(path, undecided) if before is None or a.since < before]
+    own, others = resume_times(path, found, undecided, before)
     mine = {a.agent: a.since for a in found if a.agent}
     for aid, t in own.items():
         note_latest(mine, aid, t)

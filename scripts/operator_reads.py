@@ -11,7 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from agent_launches import launched, resumes, run_launches, sent_to, timed_entries, turn_signs
+from agent_launches import callees, launched, resumes, run_launches, sent_to, timed_entries, turn_signs
 from agent_reports import ENDED, Sign, last_sign
 from agent_turns import first_time, has_ended, turns
 from context_bound_hook import OPERATOR
@@ -139,8 +139,9 @@ def operator_runs(session: str, me: str) -> list[tuple[str, Path]]:
 def resumed_at(aid: str, path: Path, undecided: list[str]) -> list[float]:
     """The time of each resume of the agent `aid` whose transcript is at
     `path`, as `monitor.ALERTS` gives one, of the first prompt alone after
-    each entry that ended a run. A resume whose entry gives no time is left
-    out, and an `undecided` line names it."""
+    each entry that ended a run, other than a prompt `by_callees` gives. A
+    resume whose entry gives no time is left out, and an `undecided` line
+    names it."""
     out: list[float] = []
     ended = False
     for e in run_entries(path):
@@ -151,12 +152,27 @@ def resumed_at(aid: str, path: Path, undecided: list[str]) -> list[float]:
         elif ended and is_prompt(e):
             ended = False
             if e.get("timestamp"):
-                out.append(epoch(e["timestamp"]))
+                t = epoch(e["timestamp"])
+                if not by_callees(path, e, t, undecided):
+                    out.append(t)
             else:
                 undecided.append(mctx("{run}: a prompt resumed it after its run ended, yet its "
                                       "entry gives no time, so it counts as no "
                                       "resume").format(run=aid))
     return out
+
+
+def by_callees(path: Path, e: dict[str, Any], t: float, undecided: list[str]) -> bool:
+    """Whether the prompt `e` at time `t` gives at least one agent message
+    or task notification, each from an agent of `callees` of the run at
+    `path` at `t`. A notification counts where any of its ids lies there."""
+    senders = [s for s, _ in agent_messages(e)]
+    notes = notifications(e)
+    if not senders and not notes:
+        return False
+    mine = callees(path, undecided, before=t)
+    return (all(s in mine for s in senders)
+            and all(any(i in mine for i in n.ids) for n in notes))
 
 
 WRAP = ("The coordinator sent a message while you were working:",
