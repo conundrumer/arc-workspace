@@ -178,7 +178,7 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
         case Launch(role, subject, _, model):
             fields = {"description": description(role, subject),
                       "subagent_type": role.agent_type, "run_in_background": parameter(True)}
-            model = model or role.document_model
+            model = model or role.model
             return launch_text(fields | ({"model": model} if model is not None else {}),
                                filed_line(step, scratch))
         case Send(to):

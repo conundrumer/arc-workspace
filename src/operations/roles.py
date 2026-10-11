@@ -44,14 +44,16 @@ class Role(StrEnum):
         return GENERAL if self in GENERAL_ROLES else self.value
 
     @property
-    def document_model(self) -> Model | None:
-        """The model the front matter of its agent document in this tree
-        gives, read at each call so that a launch in a running session
-        takes the document's current model, where the harness holds the
-        definition it loaded at the session's start. Raises ValueError on
-        a model that is no `Model`."""
+    def model(self) -> Model | None:
+        """For a role in `GENERAL_ROLES`, the model `GENERAL_MODELS` gives,
+        or None where it gives none. For any other role, the model the
+        front matter of its agent document in this tree gives, read at each
+        call so that a launch in a running session takes the document's
+        current model, where the harness holds the definition it loaded at
+        the session's start. Raises ValueError on a model that is no
+        `Model`."""
         if self in GENERAL_ROLES:
-            return None
+            return GENERAL_MODELS.get(self)
         model = agent_meta(self.agent_type).get("model")
         return None if model is None else Model(model)
 
@@ -61,6 +63,10 @@ GENERAL = "general-purpose"
 GENERAL_ROLES = frozenset({Role.TRANSCRIPT_REVIEW, Role.BATCH_PROFILE, Role.BATCH_GATE,
                            Role.AFTER_MERGE})
 """The roles no agent document gives, whose brief gives their work."""
+
+GENERAL_MODELS: dict[Role, Model] = {Role.TRANSCRIPT_REVIEW: Model.SONNET}
+"""The model a launch of a role in `GENERAL_ROLES` gives, where the model it
+inherits is not the one its work needs."""
 
 AGENT_ID = r"a[0-9a-f]{16}"
 """The form of an agent id."""

@@ -357,7 +357,7 @@ BATCH_PROFILE = mctx("""
 
 
 REVIEW = mctx("""
-    - Launch a transcript review of each of these runs that is no solver work and of which the output of that `--each` call marks a message `past budget`, and of no other run: {reviewable}. That mark is the only test of a run's budget. Once a ticket filing of yours, or the reply of a review you launched, gives that a command the brief of a transcript review has it run failed, launch no further review. A transcript review is a `general-purpose` agent, with the brief that {review_brief} gives, with the run's agent id in place of `{run}`.
+    - Launch a transcript review of each of these runs that is no solver work and of which the output of that `--each` call marks a message `past budget`, and of no other run: {reviewable}. That mark is the only test of a run's budget. Once a ticket filing of yours, or the reply of a review you launched, gives that a command the brief of a transcript review has it run failed, launch no further review. A transcript review is a `general-purpose` agent, with `{model}` as the Agent call's `model`, and with the brief that {review_brief} gives, with the run's agent id in place of `{run}`.
     """)
 
 NO_REVIEW = mctx("- Launch no transcript review.")
@@ -369,7 +369,8 @@ def batch_profile(runs: list[str], reviewable: list[str], commit: str) -> str:
     if not reviewable:
         return BATCH_PROFILE.format(runs=", ".join(runs), commit=commit, review=NO_REVIEW)
     review = REVIEW.format(reviewable=", ".join(reviewable),
-                           review_brief=mctx("the block below"), run=RUN)
+                           review_brief=mctx("the block below"), run=RUN,
+                           model=Role.TRANSCRIPT_REVIEW.model)
     text = BATCH_PROFILE.format(runs=", ".join(runs), commit=commit, review=review)
     brief = transcript_review(RUN, "agent", RUN, False)
     return f"{text}\n\n```\n{brief}\n```"
