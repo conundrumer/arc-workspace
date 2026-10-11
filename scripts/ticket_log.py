@@ -293,24 +293,24 @@ def unblock(tickets: Path, change: TicketNumber, agent: str, agent_id: str | Non
             resolution: Resolution, note: str) -> Moves:
     """Moves each ticket under `blocked` that waits on the change
     `change`, closed with `resolution` and `note`, in the order of their
-    file names, and returns what it did: into `closed`, with the note
-    `CLOSED_BY` gives, where `resolution` is `fixed`, and else into `open`,
-    with the note `UNBLOCKED_BY` gives, each line as `log_moves` writes
-    it. A ticket that another call moves
-    first is skipped. A ticket whose move is refused for another reason is
-    given among the refused, and the moves of the others go on. A ticket
-    closed this way that is a `change` moves the tickets that wait on it in
-    turn, and what that does is part of what this call returns."""
+    file names, and returns what it did. A ticket that is a `change` moves
+    into `open`, with the note `UNBLOCKED_BY` gives, whatever `resolution`
+    is. Each other ticket moves into `closed`, with the note `CLOSED_BY`
+    gives, where `resolution` is `fixed`, and else into `open`, with the
+    note `UNBLOCKED_BY` gives. Each line is as `log_moves` writes it. A
+    ticket that another call moves first is skipped. A ticket whose move
+    is refused for another reason is given among the refused, and the
+    moves of the others go on."""
     moves = Moves()
-    if resolution is Resolution.FIXED:
-        to, line = Status.CLOSED, CLOSED_BY.format(fixed=resolution, change=Wait.CHANGE, number=change,
-                                                   note=note)
-    else:
-        to, line = Status.OPEN, UNBLOCKED_BY.format(change=Wait.CHANGE, number=change,
-                                                    resolution=resolution)
+    opened = UNBLOCKED_BY.format(change=Wait.CHANGE, number=change, resolution=resolution)
+    closed = CLOSED_BY.format(fixed=resolution, change=Wait.CHANGE, number=change, note=note)
     for path in ticket_files(tickets, Status.BLOCKED):
         try:
             if waits_on(read_ticket(path)) == change:
+                if resolution is Resolution.FIXED and not is_change(path):
+                    to, line = Status.CLOSED, closed
+                else:
+                    to, line = Status.OPEN, opened
                 moves.add(log_moves(tickets, ticket_name(path).number, to, agent, Status.BLOCKED,
                                     agent_id, line))
         except Moved:
