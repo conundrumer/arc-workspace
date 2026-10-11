@@ -9,7 +9,7 @@ says why on stderr."""
 import sys
 from typing import Any
 
-from hook_entry import run_pre_tool_use
+from hook_entry import not_registered, run_pre_tool_use
 
 HOOK = "context_bound_hook"
 OPERATOR = "operator"
@@ -51,20 +51,16 @@ def past_reason(context: int) -> str:
 def check(hook: dict[str, Any]) -> str | None:
     """The reason to deny the Agent call `hook` gives where its caller is
     past the bound, and None otherwise."""
-    from run_reads import UNKNOWN_TYPE, agent_type, caller_transcript, context_size
+    from run_reads import caller_type, context_size
     from transcripts import entries_back
 
     tool, inp = hook["tool_name"], hook["tool_input"]
     if tool != "Agent":
-        raise ValueError(f"the hook is registered on Agent, and the input "
-                         f"gives tool `{tool}`")
+        raise not_registered("Agent", "tool", tool)
     if reply_only(inp):
         return None
-    path = caller_transcript(hook)
-    kind = agent_type(path)
+    path, kind = caller_type(HOOK, hook)
     if kind is None:
-        print(f"{HOOK}: allowed: {UNKNOWN_TYPE.format(path=path)}",
-              file=sys.stderr)
         return None
     if not bounded(kind):
         return None

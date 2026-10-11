@@ -12,7 +12,7 @@ import sys
 from contextlib import nullcontext
 from typing import Any
 
-from hook_entry import run_pre_tool_use
+from hook_entry import not_registered, run_pre_tool_use
 from printed_launch_hook import operator_next
 
 HOOK = "printed_send_hook"
@@ -48,8 +48,7 @@ def check(hook: dict[str, Any]) -> str | None:
 
     tool, inp = hook["tool_name"], hook["tool_input"]
     if tool != "SendMessage":
-        raise ValueError(f"the hook is registered on SendMessage, and the input "
-                         f"gives tool `{tool}`")
+        raise not_registered("SendMessage", "tool", tool)
     caller = operator_next(hook, HOOK)
     if caller is None:
         return None

@@ -17,7 +17,7 @@ import re
 import sys
 from typing import Any
 
-from hook_entry import run_pre_tool_use
+from hook_entry import not_registered, run_pre_tool_use
 from operations.constants import FOREGROUND_MS
 
 HOOK = "pending_wait_hook"
@@ -98,8 +98,7 @@ def check(hook: dict[str, Any]) -> str | None:
     elif tool == "Monitor":
         text = f"{inp['command']}\n{inp['description']}"
     else:
-        raise ValueError(f"the hook is registered on Bash and Monitor, and "
-                         f"the input gives tool `{tool}`")
+        raise not_registered("Bash and Monitor", "tool", tool)
     named = set(AGENT_ID.findall(text))
     if not named:
         return None

@@ -1,7 +1,7 @@
 """The list prices of the tokens a request uses, in dollars per million tokens, keyed by the model ids the transcripts give, and the token cost of a run's requests at those prices.
 
 - Source: Anthropic's pricing page and release notes, https://platform.claude.com/docs/en/release-notes/overview, which carry price changes the bundled claude-api skill lags. 5-minute cache writes are 1.25x input and 1-hour cache writes 2x input.
-- A request is the entries of one message id. Its usage is, for each count, the most any of its entries gives, where an entry gives its top-level counts, or the sum over its `iterations` where that sum is larger.
+- A request is the entries of one message id, and an entry with no message id makes the cost unknown. Its usage is, for each count, the most any of its entries gives, where an entry gives its top-level counts, or the sum over its `iterations` where that sum is larger.
 """
 
 from dataclasses import dataclass, fields
@@ -107,43 +107,76 @@ def unpriced(usage: dict[str, Any]) -> str | None:
     return None
 
 
+def model_price(model: Any, undecided: list[str]) -> Price | None:
+    """The prices of `model`, or None where the table gives none, with an
+    `undecided` line for it."""
+    if model not in PRICES:
+        undecided.append(mctx("token cost unknown: no price for model {model}").format(model=model))
+        return None
+    return PRICES[model]
+
+
+def grouped(entries: list[dict[str, Any]]) -> dict[str | None, list[dict[str, Any]]]:
+    """The assistant entries that give a usage, by message id, None for an
+    entry with no message id."""
+    groups: dict[str | None, list[dict[str, Any]]] = {}
+    for e in entries:
+        message = e.get("message") or {}
+        if e.get("type") == "assistant" and isinstance(message.get("usage"), dict):
+            groups.setdefault(message.get("id"), []).append(e)
+    return groups
+
+
+def requests(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The first entry of each group `grouped` gives."""
+    return [g[0] for g in grouped(entries).values()]
+
+
+def priced_requests(entries: list[dict[str, Any]],
+                    undecided: list[str]) -> dict[str, list[dict[str, Any]]] | None:
+    """The groups `grouped` gives, or None where an entry has no message id,
+    with an `undecided` line for it."""
+    groups = grouped(entries)
+    if None in groups:
+        undecided.append(mctx("token cost unknown: no message id"))
+        return None
+    return {k: v for k, v in groups.items() if k is not None}
+
+
 def run_cost(entries: list[dict[str, Any]], undecided: list[str],
              at: str | None = None) -> float | None:
-    """The token cost in dollars of the requests the assistant entries give,
+    """The token cost in dollars of the requests `priced_requests` gives,
     each at the prices of the model that made it, at the tier of its largest
-    `request_input`, or of the model `at` where
-    one is given, or None where a request that used tokens has no price,
-    with an `undecided` line for it."""
-    requests: dict[str, tuple[str, Usage, float]] = {}
-    known = True
-    for entry in entries:
-        message = entry.get("message") or {}
-        usage = message.get("usage")
-        if entry.get("type") != "assistant" or not isinstance(usage, dict):
-            continue
-        got = entry_counts(usage)
-        if not got.total():
-            continue
-        model = message.get("model")
-        priced = model if at is None else at
-        ident = message.get("id")
-        field = unpriced(usage)
-        if priced not in PRICES or ident is None or field is not None:
-            reason = (mctx("no price for model {model}").format(model=priced)
-                      if priced not in PRICES
-                      else mctx("no message id") if ident is None
-                      else mctx("no price for {field} of model {model}").format(
-                          field=field, model=model))
-            undecided.append(mctx("token cost unknown: {reason}").format(reason=reason))
-            known = False
-            continue
-        before = requests.get(ident)
-        size = request_input(usage)
-        requests[ident] = ((priced, got, size) if before is None
-                           else (priced, before[1].most(got), max(before[2], size)))
-    if not known:
+    `request_input`, or of the model `at` where one is given, or None where a
+    request that used tokens has no price, with an `undecided` line for it."""
+    groups = priced_requests(entries, undecided)
+    if groups is None:
         return None
-    return sum(u.cost(PRICES[m].at(size)) for m, u, size in requests.values())
+    total = 0.0
+    known = True
+    for group in groups.values():
+        used: Usage | None = None
+        size = 0.0
+        table: Price | None = None
+        for entry in group:
+            message = entry["message"]
+            usage = message["usage"]
+            got = entry_counts(usage)
+            if not got.total():
+                continue
+            table = model_price(message.get("model") if at is None else at, undecided)
+            field = unpriced(usage)
+            if field is not None:
+                undecided.append(mctx("token cost unknown: no price for {field} of model {model}").format(
+                    field=field, model=message.get("model")))
+            if table is None or field is not None:
+                known = False
+                continue
+            used = got if used is None else used.most(got)
+            size = max(size, request_input(usage))
+        if used is not None and table is not None:
+            total += used.cost(table.at(size))
+    return total if known else None
 
 
 def span_cost(entries: list[dict[str, Any]], start: float, end: float,
@@ -153,32 +186,22 @@ def span_cost(entries: list[dict[str, Any]], start: float, end: float,
     prices them, plus the growth of its context across the span, from the
     last request before the span to the first after it, at the cache-read
     price of the run's model once for each request after the span. None
-    where a request has no price, with an `undecided` line for it."""
+    where `run_cost` gives None, with its `undecided` line."""
     entries = [e for e in entries if e.get("timestamp")]
     inside = [e for e in entries if start <= epoch(e["timestamp"]) <= end]
     cost = run_cost(inside, undecided)
-    if cost is None:
+    groups = priced_requests(entries, undecided) if cost is not None else None
+    if cost is None or groups is None:
         return None
-    before = [e for e in requests(entries) if epoch(e["timestamp"]) < start]
-    after = [e for e in requests(entries) if epoch(e["timestamp"]) > end]
+    firsts = [g[0] for g in groups.values()]
+    before = [e for e in firsts if epoch(e["timestamp"]) < start]
+    after = [e for e in firsts if epoch(e["timestamp"]) > end]
     if not before or not after:
         return cost
     message = after[0]["message"]
-    model = message.get("model")
-    if model not in PRICES:
-        undecided.append(mctx("token cost unknown: no price for model {model}").format(model=model))
+    table = model_price(message.get("model"), undecided)
+    if table is None:
         return None
     size = request_input(message["usage"])
     growth = max(0.0, size - request_input(before[-1]["message"]["usage"]))
-    later = len({e["message"].get("id") for e in after})
-    return cost + growth * PRICES[model].at(size).cache_read / 1e6 * later
-
-
-def requests(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The assistant entries that give a usage, one for each message id."""
-    seen: dict[str, dict[str, Any]] = {}
-    for e in entries:
-        message = e.get("message") or {}
-        if e.get("type") == "assistant" and isinstance(message.get("usage"), dict):
-            seen.setdefault(message.get("id") or "", e)
-    return list(seen.values())
+    return cost + growth * table.at(size).cache_read / 1e6 * len(after)

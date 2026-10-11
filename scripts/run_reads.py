@@ -5,6 +5,7 @@ belong to."""
 
 import json
 import re
+import sys
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from enum import Enum
@@ -417,3 +418,14 @@ def repeated_runs(calls: Iterable[tuple[str, str, float]], entries: list[Entry],
     if count >= least:
         out.append(last)
     return out
+
+
+def caller_type(hook: str, data: dict[str, Any]) -> tuple[Path, str | None]:
+    """The transcript of the caller of the hook input `data`, and its agent
+    type, or None where it is unknown, which the hook `hook` says on stderr
+    with an `allowed:` line."""
+    path = caller_transcript(data)
+    kind = agent_type(path)
+    if kind is None:
+        print(f"{hook}: allowed: {UNKNOWN_TYPE.format(path=path)}", file=sys.stderr)
+    return path, kind

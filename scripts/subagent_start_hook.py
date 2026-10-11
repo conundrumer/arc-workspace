@@ -11,7 +11,7 @@ import json
 import sys
 from typing import Any
 
-from hook_entry import run_hook, run_part
+from hook_entry import not_registered, run_hook, run_part
 
 HOOK = "subagent_start_hook"
 
@@ -23,8 +23,7 @@ def context(hook: dict[str, Any]) -> str:
 
     event = hook.get("hook_event_name")
     if event != "SubagentStart":
-        raise ValueError(f"the hook is registered on SubagentStart, and the "
-                         f"input gives event `{event}`")
+        raise not_registered("SubagentStart", "event", event)
     aid = hook.get("agent_id")
     if not isinstance(aid, str) or not AGENT_ID.fullmatch(aid):
         raise ValueError(f"the input gives agent id `{aid}`, which is not of "

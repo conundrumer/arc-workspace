@@ -19,7 +19,7 @@ from contextlib import nullcontext
 from typing import Any
 
 from context_bound_hook import OPERATOR, OPERATOR_LAUNCHER, reply_only
-from hook_entry import run_pre_tool_use
+from hook_entry import not_registered, run_pre_tool_use
 
 HOOK = "printed_launch_hook"
 UNSEEN = "run_in_background"
@@ -76,13 +76,11 @@ def operator_next(hook: dict[str, Any], name: str
     where it is of another type, or where its agent type is unknown, which
     the hook `name` says on stderr."""
     from operations.command_words import next_command
-    from run_reads import UNKNOWN_TYPE, agent_type, caller_id, caller_transcript
+    from run_reads import caller_id, caller_type
     from transcripts import entries_back
 
-    path = caller_transcript(hook)
-    kind = agent_type(path)
+    path, kind = caller_type(name, hook)
     if kind is None:
-        print(f"{name}: allowed: {UNKNOWN_TYPE.format(path=path)}", file=sys.stderr)
         return None
     agent = caller_id(hook)
     if kind not in ACTIONS or agent is None:
@@ -122,8 +120,7 @@ def check(hook: dict[str, Any]) -> str | None:
 
     tool, inp = hook["tool_name"], hook["tool_input"]
     if tool != "Agent":
-        raise ValueError(f"the hook is registered on Agent, and the input "
-                         f"gives tool `{tool}`")
+        raise not_registered("Agent", "tool", tool)
     if reply_only(inp):
         return None
     caller = operator_next(hook, HOOK)

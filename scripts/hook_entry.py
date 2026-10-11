@@ -34,6 +34,13 @@ UPDATE_FAILED = "gave no update of the caller's documents"
 """The failure text of a PreToolUse hook whose update fails."""
 
 
+def not_registered(on: str, kind: str, given: object) -> ValueError:
+    """The error a hook registered on `on` raises on input whose `kind`,
+    `tool` or `event`, is `given`."""
+    return ValueError(f"the hook is registered on {on}, and the input "
+                      f"gives {kind} `{given}`")
+
+
 def _failed(hook: str, failure: str, e: Exception) -> None:
     print(f"{hook}: {failure}: {type(e).__name__}: {e}", file=sys.stderr)
 
