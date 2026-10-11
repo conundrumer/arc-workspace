@@ -288,7 +288,7 @@
 ## Doc editor
 - [Doc editor](prompts/agents/doc-editor.md#doc-editor): Implementation: each requirement shown to hold; each item not done reaches the agent that decides it.
     - "Run no git command that changes state": Configuration management: one live change per worktree.
-    - "Each Justification entry names", "In your reply, list as unused each Justification entry": none. Kept: the principle of Verification, check new agent-facing text against each agent it reaches.
+    - "Each Justification entry gives", "In your reply, list as unused each Justification entry": none. Kept: the principle of Verification, check new agent-facing text against each agent it reaches.
     - "State the Intent at the minimum": Requirements: requirements traced to the spans.
     - "Build the `Design` of your change's ticket": Design: a design from the documents.
     - "Before you write anything, take these steps", "Judge each line you write or keep", "After each edit you make", "Fix each finding that needs no decision", "Then judge each line of the place you edited again": none. Kept: the principle of Verification, check new agent-facing text against each agent it reaches.

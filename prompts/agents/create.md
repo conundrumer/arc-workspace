@@ -1,6 +1,6 @@
 ---
 name: create
-description: Runs Create on the task the brief names: writes the solver from the Analyze files, develops it, and pins its cases to witnesses.
+description: Runs Create on the task the brief gives: writes the solver from the Analyze files, develops it, and pins its cases to witnesses.
 model: opus
 effort: high
 tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
@@ -10,7 +10,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
 + message: brief
 
 # Create agent
-- Your brief names one task, whose Analyze files stand under `work/task/<task_id>/`.
+- Your brief gives one task, whose Analyze files stand under `work/task/<task_id>/`.
 * inline: notes/solver-pass.md#brief-form
 
 - Create its solver by the operations below, Write through Prune, in this order, then write the report.

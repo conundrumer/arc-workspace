@@ -138,7 +138,7 @@
     - A concept branch's constructor takes a name of your own.
     - An open parameter of that report, unless [Principles](docs/handbook/principles.md) make it a choice point, is a `Params` relation with a fact per open value, and no constructor; its values are the report's where it gives them, whatever the concept file gives.
     - The cases are the combinations of those branches that fit, which the run shows, whether or not one case's model subsumes another's.
-    - A line of that report that names a `<property>` & `<property>` pair gives what each case that takes a non-concept branch at both points of that pair reads, and a `<branch>` & `<branch>` line under it gives what the case that takes both branches reads.
+    - A line of that report that gives a `<property>` & `<property>` pair gives what each case that takes a non-concept branch at both points of that pair reads, and a `<branch>` & `<branch>` line under it gives what the case that takes both branches reads.
     - Leave the `Determine` comp for the Determine operation.
 
 ### Develop
@@ -147,7 +147,7 @@
     - When a hint appears, judge it, and put that judgment in the review.
     - Flag performance issues in the review.
     - When a performance issue prevents the principled form, make a temporary workaround, marked with the `@workaround` directive.
-3. Form each claim under the Analyze report's Not formed as a branch, with each reading of an item that names several as a claim of its own, and add as cases the combinations that take it and meet Fit and Relational form.
+3. Form each claim under the Analyze report's Not formed as a branch, with each reading of an item that gives several as a claim of its own, and add as cases the combinations that take it and meet Fit and Relational form.
 4. Hold as a branch each built-in derivation that fits a parameter, and each stored reading of a derived value, other than one for which `store` finds that no grid gives a witness.
     - `uv run python scripts/run_dl.py derive <task_id>` lists the built-in derivations that fit.
     - `uv run python scripts/run_dl.py store <task_id>` lists the derived values that are the same on every input.

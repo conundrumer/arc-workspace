@@ -17,7 +17,7 @@
     - A render fills text with values and builds no structure, so the format has no reordering and no loop.
 - The documents are the data. What each reader gets is stated in a document, and the rendering code follows from it.
     - A render gives its reader the lines, never a pointer at a source file.
-    - A section a render abridges names the command that prints it in full.
+    - A section a render abridges gives the command that prints it in full.
 - A feature exists because a document needs it. The format is reconsidered when a need arrives.
 
 ## The documents

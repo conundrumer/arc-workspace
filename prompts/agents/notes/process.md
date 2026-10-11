@@ -20,7 +20,7 @@
     - It runs too often: the count of merged changes that launches it bounds its runs.
     - It cuts a check whose value shows only in rare runs: it cuts nothing itself, and brings each cut to the user with the check's cost.
     - It does the root-cause work of quality assurance again: that work looks at one fault family, and the assessment at the processes as a whole.
-    - A rule that maps to no outcome guards a case these notes do not name: the assessment judges that rule, and that finding alone cuts no rule.
+    - A rule that maps to no outcome guards a case these notes do not give: the assessment judges that rule, and that finding alone cuts no rule.
     - The map of rules to outcomes costs a pass over every rule on each run: the map is made once, and checked again only for a rule or an outcome a change has altered since.
 
 ## Requirements (stakeholder needs and requirements definition, system/software requirements definition)
@@ -55,11 +55,11 @@
     - Each `change` that adds or changes a rule or a fact in the agent-facing documents has a design, made from reading those documents, that gives for each line it adds or changes each reader that loads the line and the part of its work for which it loads it, the existing line or the general term the line extends or is an instance of, or that it found none, and how the line goes in: as a change to that existing line, as a new line in a section its reader loads for that part of its work, or not at all.
     - Each design gives what it costs and what it gains against the goal of [The user's goals](prompts/agents/notes/decisions.md#the-users-goals) that its change serves, a part whose gain its grounds do not show to exceed its cost is left out, and a requirement that costs more than it gains is not built, and reaches the user as a decline where it serves a need the user stated.
     - An agent other than the one that wrote the design checks it before the build, against the code, or against the documents and the rules for editing them.
-    - The Scope covers each file the design names.
+    - The Scope covers each file the design gives.
 - Owner: the ticket analyst writes the design, and the ticket reviewer checks it.
 - Takes from: requirements. Gives to: implementation, and configuration management, by the Scope.
 - How it can fail:
-    - The design names a file outside the Scope: the ticket reviewer checks the Scope against the files the design names.
+    - The design gives a file outside the Scope: the ticket reviewer checks the Scope against the files the design gives.
     - The design is worse than a shape the code or the documents show: the editor builds that shape, and gives the departure with its reason in its report.
     - The design adds a step before each change: only a change that adds a mechanism to code, or adds or changes a rule or a fact in the documents, has one.
 
@@ -120,7 +120,7 @@
     - These notes give which review covers each run, so that no run gets two transcript reviews.
         - The checks during a run are those the module docstring of [monitor.py](src/operations/monitor.py) gives, and the batch profile at a batch's end is the one the brief that `batch_profile` in [briefs.py](src/operations/briefs.py) writes gives.
         - A solver pass gets a transcript review at its end, as the module docstring of [passes.py](src/operations/passes.py) gives, and the batch profile launches one on each other run its brief gives. A transcript review looks for what the brief that `transcript_review` in [briefs.py](src/operations/briefs.py) writes asks of it.
-    - A fault that recurs after a fix is taken as one family: its common cause is removed, and the fixes that removal makes redundant are named.
+    - A fault that recurs after a fix is taken as one family: its common cause is removed, and the fixes that removal makes redundant are listed.
 - Owner: the operator's checks, the batch profile and transcript reviews for the runs, and the ticket analyst for the causes.
 - Takes from: the runs of every process. Gives to: process assessment, the fault families, and every process, as `change` tickets.
 - How it can fail: one review at a run's end misses what another would have found: these notes give what each review looks for, and the process assessment checks the split.

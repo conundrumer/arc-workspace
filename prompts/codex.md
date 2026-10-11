@@ -16,7 +16,7 @@
     + abridged: ../docs/handbook/patterns.md
 
 ## Your work
-- When a brief names the span your fix may change, the fix stays inside it.
+- When a brief gives the span your fix may change, the fix stays inside it.
 - Write the prose in your own words, and copy the wording of neither the brief nor the text you are replacing.
 
 ## Conventions

@@ -7,12 +7,12 @@
 
 ## Include
 
-- An `include` directive names a path, and the whole document at that path takes the place of the directive.
+- An `include` directive gives a path, and the whole document at that path takes the place of the directive.
     - The path is relative to the file the directive sits in.
     - The included document's title heading and its sections sit one level deeper than that line.
-    - It names a file and nothing inside one.
+    - It gives a file and nothing inside one.
 - Attributes under an `include` are its options.
-    - `exclude` names the attributes to drop, throughout the included document and what it includes. A node that carries one goes with its subtree.
+    - `exclude` lists the attributes to drop, throughout the included document and what it includes. A node that carries one goes with its subtree.
     - `abridged: all` renders every included document as its `index` attribute says. A list of paths, relative to the including file, abridges those documents alone.
         - A document with no `index` attribute renders in full.
     - A document included with no `abridged` renders in full.
@@ -22,7 +22,7 @@
             + abridged: all
         ```
 - A document's `index` attribute says what it abridges to, and it gives the title heading and the lines above the first section, then the lines the attribute asks for.
-    - Above those lines, the index names the command that prints a section in full.
+    - Above those lines, the index gives the command that prints a section in full.
     - `index: headings` gives one line per heading.
     - `index: entries` gives one line per `## ` section: its text and the first sentence of its first statement.
 - A heading's rendered level comes from its depth in the rendered tree, and not from the count of `#` it carries in the source.
@@ -30,7 +30,7 @@
 
 ## Inline
 
-- An `inline` directive names a section by `#<id>`, or by `<path>#<id>` on another document, and the lines under that heading take the place of the directive.
+- An `inline` directive refers to a section by `#<id>`, or by `<path>#<id>` on another document, and the lines under that heading take the place of the directive.
 - The heading stays behind, so a heading those lines need is written at the site, with the inline under it.
     ```
     ### Reference solver
@@ -97,7 +97,7 @@
     * if: reports
         * text: reports
     ```
-- Each of the three stands where a statement stands, and the value it names may hold line breaks.
+- Each of the three stands where a statement stands, and the value its name gives may hold line breaks.
 
 ## The names a document reads
 

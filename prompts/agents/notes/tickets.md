@@ -22,7 +22,7 @@
 - `<domain>` and `<subject>` give what a ticket of another kind than `change` and `request` is about:
     - `task` and the task id: a solver pass's ticket, and a transcript review's ticket on a pass.
     - `change` and the number of the change's ticket: an editor's or a doc reviewer's ticket on its change where its brief gives that number, the ticket the agent that merges a change files on that change, and a transcript review's ticket on such an editor's run.
-    - `commit` and the commit's hash: a code reviewer's ticket, on the commit its baseline tag names, and a ticket a brief has its agent file on a commit of `master` that the brief gives.
+    - `commit` and the commit's hash: a code reviewer's ticket, on the commit its baseline tag gives, and a ticket a brief has its agent file on a commit of `master` that the brief gives.
     - `ticket` and the ticket's number: a ticket on another ticket.
     - `agent` and the agent's id: every ticket no entry above fits, on the agent whose run it concerns, or, where it concerns no agent's run, the agent in whose run the fault showed, your own included.
 - A subagent's own agent id is the one the line `Your agent id is <id>.` in its context gives, or, where its context holds no such line, the agent id of its own entry in the listing `uv run python scripts/profile_runs.py --running <session id>` prints, with the id `echo $CLAUDE_CODE_SESSION_ID` prints as `<session id>`: the entry whose call in flight is that listing's command.
@@ -31,7 +31,7 @@
 ## Tracking
 - `tickets/` is in the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints, and in no other worktree. Git ignores it.
 - Every session on the repository shares the ticket tracker. A ticket belongs to the session whose index its number gives before the `-`, and a ticket with a bare number belongs to no session. `uv run python scripts/file_ticket.py index` prints the index of your session.
-- Take, release, move and settle only your session's tickets, those your brief or a message names, and each `change` of another session that your documents have you take or release.
+- Take, release, move and settle only your session's tickets, those your brief or a message gives, and each `change` of another session that your documents have you take or release.
 - Where you look for a ticket that already exists, look among every session's tickets.
 - Where you read the titles of tickets, print the path and title of each with one `grep -m1 -H '^# '` call whose arguments are all those ticket files.
 - The directories `tickets/draft/`, `tickets/open/`, `tickets/watching/`, `tickets/assigned/`, `tickets/blocked/` and `tickets/closed/` are a ticket's statuses, and moving its file between them is its transition. `uv run python scripts/file_ticket.py path <number>` prints the path of the ticket with that number.

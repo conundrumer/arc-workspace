@@ -29,5 +29,5 @@
 ## gate
 - `uv run python scripts/gate.py --outputs-only <out-dir> [cmd ...]` is the gate: it runs the gate commands it is given on the fixed inputs under `tests/gate/` that `gate.py --help` lists, and compares their outputs with the accepted ones.
 - Run it only to write the accepted gate outputs your brief lists and those a finding of your checks gives to update, with the commands whose outputs those are as `cmd` and a new directory under your scratch directory as `<out-dir>`.
-    - Where your brief gives those outputs as the ones a `DIFF` of the gate your items cause names, run it with no `cmd` and with `--affected <base>`, where `<base>` is the commit `git merge-base HEAD master` prints in your worktree.
+    - Where your brief gives those outputs as the ones that a `DIFF` of the gate your items cause gives, run it with no `cmd` and with `--affected <base>`, where `<base>` is the commit `git merge-base HEAD master` prints in your worktree.
 - Copy each of those outputs from `<out-dir>/gate/new/` to its accepted file under `tests/gate/accepted/`, and run no `gate.py --accept`.

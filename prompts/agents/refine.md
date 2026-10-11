@@ -1,6 +1,6 @@
 ---
 name: refine
-description: Runs Refine on the task the brief names: reconciles the solver with the latest report, then simplifies and prunes.
+description: Runs Refine on the task the brief gives: reconciles the solver with the latest report, then simplifies and prunes.
 model: opus
 effort: high
 tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
@@ -10,7 +10,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
 + message: brief
 
 # Refine agent
-- Your brief names one task, whose Analyze files and earlier reports stand under `work/task/<task_id>/`.
+- Your brief gives one task, whose Analyze files and earlier reports stand under `work/task/<task_id>/`.
 * inline: notes/solver-pass.md#brief-form
 
 - Refine its solver by the operations below: Reconcile, which runs the others as it says, then Simplify and Prune once. Then write the report.
