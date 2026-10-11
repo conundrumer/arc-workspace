@@ -64,10 +64,9 @@ from operations.directives import (
 from operations.roles import Role, description
 from operations.state import Call, State, Ticket
 from ticketing.vocabulary import Status
-from operations.final_reply import (FOR_CONTEXT, ending_step, failure, final_sends, final_text,
-                                   for_context, nested)
+from operations.final_reply import (FOR_CONTEXT, ending_step, failure, final_sends,
+                                   for_context, nested, sent_final_text)
 from operations.handled import bash_calls, repeated
-from operations.printing import unfenced
 from operations.steps import (Bash, Launch, Poll, Reply, Send, Step, Undecided, decision_key, key,
                               unread_line)
 
@@ -265,7 +264,7 @@ def taken_up(state: State) -> frozenset[str]:
     mine = state.operators.index(state.me) if state.me in state.operators else 0
     out: set[str] = set()
     for o in reversed(state.operators[:mine]):
-        if not any(for_context(final_text(unfenced(str(c.input.get("message", "")))) or "")
+        if not any(for_context(sent_final_text(c) or "")
                    for c in final_sends(state, o)):
             break
         out.add(o)

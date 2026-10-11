@@ -37,7 +37,7 @@ def repeated(step: Step, state: State) -> bool:
         case Undecided(what, given):
             return bool(decided_by(state, step)) or sent(state, COORDINATOR,
                                                        f"{UNDECIDED} {what}") or (
-                bool(given) and any(all(g in str(c.input.get("message", "")) for g in given)
+                bool(given) and any(all(g in c.message for g in given)
                                     for c in sends_to(state, COORDINATOR)))
         case Send():
             return bool(sendings(step, state))
@@ -86,7 +86,7 @@ def sends_in(calls: Iterable[Call], to: str) -> list[Call]:
 
 def sent_with(state: State, to: str, text: str) -> list[float]:
     """The times of the calls of `sends_to` whose message holds `text`."""
-    return [c.time for c in sends_to(state, to) if text in str(c.input.get("message", ""))]
+    return [c.time for c in sends_to(state, to) if text in c.message]
 
 
 def sent_at(state: State, to: str, message: str, mark: str | None = None) -> list[float]:

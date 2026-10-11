@@ -234,7 +234,9 @@ def _run_update(tree: Path, argv: list[str], fields: dict[str, Any],
     """The text that gives a reader the output of `argv`, a `context --update`
     run in `tree`, under `head`; `failed`, then the stderr of the run, where
     it fails; or None where it prints nothing. `fields`, with the run's
-    `command` and its exit `code`, fill both texts."""
+    `command` and its exit `code`, fill both texts. `failed` goes on to the
+    step that has the reader read its documents again, from the commit
+    `fields` gives as `since`, in the place it gives as `where`."""
     from controlled_markdown import mctx
     from engine import checkout
     from handbook.coordinator_document import HOOK_TEXT_CAP
@@ -246,7 +248,10 @@ def _run_update(tree: Path, argv: list[str], fields: dict[str, Any],
                   "Your working tree is at commit {after}, and your documents "
                   "there may differ from the ones you hold").format(**fields)}
     if done.returncode != 0:
-        said = failed.format(**fields)
+        said = (failed + " " + mctx(
+            "Before you act by a document of yours, run `git diff --stat {since} {after}` "
+            "{where}, and read again each file it lists that your context or "
+            "`CLAUDE.md` holds or has you read.")).format(**fields)
         print(f"{UPDATE}: {said}\n{done.stderr.strip()}", file=sys.stderr)
         return f"{said}\n\n{done.stderr.strip()}"
     if not done.stdout.strip():
@@ -299,15 +304,14 @@ def update_text(tree: Path, after: str, context: str, instructions: str,
     reader, args = call
     return _run_update(
         tree, _update_argv(context, instructions, reader, *args),
-        {"after": after, "context": context, "instructions": instructions},
+        {"after": after, "context": context, "instructions": instructions,
+         "since": "<commit>",
+         "where": mctx("in your working tree with each of those two commits")},
         mctx(
             "{opening}: your own context may be at commit {context}, and the "
             "project instructions, `CLAUDE.md`, at commit {instructions}. The "
             "diff of your documents between those commits could not be "
-            "computed: `{command}` exited {code} and wrote what follows. Before you act by a document of yours, run "
-            "`git diff --stat <commit> {after}` in your working tree with each "
-            "of those two commits, and read again each file it lists that your "
-            "context or `CLAUDE.md` holds or has you read."),
+            "computed: `{command}` exited {code} and wrote what follows."),
         mctx(
             "{opening}. The diff below, which `{command}` prints, runs from the "
             "oldest commit you may hold each of them at: "
@@ -329,6 +333,7 @@ def held_texts(path: Path) -> tuple[str, str]:
     """The context and the `CLAUDE.md` the transcript at `path` holds as
     given to its run, as the module docstring gives them. A transcript that
     holds either in no such form is a fault."""
+    from handbook.reader_diffs import PROJECT_INSTRUCTIONS
     from transcripts import entries_forward
 
     first: dict[str, dict[str, Any]] = {}
@@ -342,7 +347,7 @@ def held_texts(path: Path) -> tuple[str, str]:
     files = first[INSTRUCTIONS].get("files") if INSTRUCTIONS in first else None
     projects = [f.get("content") for f in files
                 if isinstance(f, dict) and f.get("type") == "Project"
-                and isinstance(f.get("path"), str) and f["path"].endswith("/CLAUDE.md")
+                and isinstance(f.get("path"), str) and f["path"].endswith(f"/{PROJECT_INSTRUCTIONS}")
                 ] if isinstance(files, list) else []
     context = prompt[0] if isinstance(prompt, list) and prompt else None
     instructions = projects[0] if projects else None
@@ -363,24 +368,23 @@ def held_update_text(tree: Path, after: str, launch: str,
     import tempfile
 
     from controlled_markdown import mctx
+    from handbook.reader_diffs import PROJECT_INSTRUCTIONS
 
     reader, args = call
     with tempfile.TemporaryDirectory() as tmp:
-        files = [Path(tmp) / "context", Path(tmp) / "CLAUDE.md"]
+        files = [Path(tmp) / "context", Path(tmp) / PROJECT_INSTRUCTIONS]
         for file, text in zip(files, held, strict=True):
             file.write_text(text)
         return _run_update(
             tree, _update_argv("--held", *map(str, files), launch, reader, *args),
-            {"after": after, "launch": launch},
+            {"after": after, "launch": launch, "since": launch,
+             "where": mctx("in your working tree")},
             mctx(
                 "{opening}: your own context and the project instructions, "
                 "`CLAUDE.md`, are the ones you were given at your launch, at "
                 "commit {launch}. The diff of your documents since then could "
                 "not be computed: `{command}` exited {code} and wrote what "
-                "follows. Before you act by a document of yours, run "
-                "`git diff --stat {launch} {after}` in your working tree, and "
-                "read again each file it lists that your context or "
-                "`CLAUDE.md` holds or has you read."),
+                "follows."),
             mctx(
                 "{opening}. The diff below, which `{command}` prints, runs "
                 "from the texts you were given at your launch: your own "

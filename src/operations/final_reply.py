@@ -1,5 +1,6 @@
-"""The operator's final reply: the form of the message that sends its text
-(`final_message`, `final_text`), whether that text ends the operator for
+"""The operator's final reply: the text of the message that sends it
+(`final_text`, `sent_final_text`), whose form `printing.final_message`
+gives, whether that text ends the operator for
 its context (`for_context`), the calls that sent its text to its parent
 (`final_sends`), the operator whose final reply carries what
 reached an earlier one (`carrier`), and the lines the reply nests; with
@@ -13,7 +14,7 @@ from controlled_markdown import form, mctx
 from operations.command_words import is_next
 from operations.constants import COORDINATOR
 from operations.handled import sends_in
-from operations.printing import FINAL_REPLY, SENT, unfenced
+from operations.printing import FINAL_REPLY, SENT, final_message, unfenced
 from operations.roles import AGENT_ID
 from operations.state import Call, State
 from operations.steps import Reply, Send
@@ -23,16 +24,17 @@ FOR_CONTEXT = mctx("I ended for my context: launch a fresh operator with no line
                    "takes up from the state each line below that stands unfinished.")
 
 
-def final_message(text: str) -> str:
-    """The message that sends the final reply whose text is `text`."""
-    return f"{FINAL_REPLY}\n{text}"
-
-
 def final_text(message: str) -> str | None:
     """The text of the final reply that `message` sends, or None where
     `message` sends none."""
     head, newline, text = message.partition("\n")
     return text if head == FINAL_REPLY and newline else None
+
+
+def sent_final_text(call: Call) -> str | None:
+    """The text of the final reply that the SendMessage call `call` sends,
+    with or without the fence lines, or None where it sends none."""
+    return final_text(unfenced(call.message))
 
 
 def for_context(text: str) -> bool:
@@ -57,7 +59,7 @@ def final_sends_in(calls: Iterable[Call], operator: str, to: str) -> list[Call]:
     """The SendMessage calls of `calls` by which `operator` sent `to` the
     text of its final reply, in the order they were made."""
     return [c for c in sends_in(calls, to) if c.operator == operator
-            and final_text(unfenced(str(c.input.get("message", "")))) is not None]
+            and sent_final_text(c) is not None]
 
 
 def final_replies(state: State, operator: str) -> list[float]:

@@ -1,5 +1,6 @@
 """The text the command prints for a step, with the key line before it
-(`key_line`), and the lines of the operator's final reply.
+(`key_line`), the lines of the operator's final reply, and the message
+that sends a final reply's text (`final_message`).
 
 Each printed prompt or message is fenced (`fenced`): the value to pass is
 the text inside the fence, and its readers read a value given with or
@@ -26,7 +27,12 @@ SENT = mctx("My final reply went to {to} by SendMessage.")
 SendMessage to the agent `to`."""
 
 
-REPLY_TEXT = f"{FINAL_REPLY}\n{SENT}"  # the form of final_reply.final_message, which imports this module
+def final_message(text: str) -> str:
+    """The message that sends the final reply whose text is `text`."""
+    return f"{FINAL_REPLY}\n{text}"
+
+
+REPLY_TEXT = final_message(SENT)
 """The text the command prints for the final reply of an agent that sent
 its text to the agent `to`."""
 

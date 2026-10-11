@@ -176,6 +176,12 @@ class Call:
     error: bool
     merge: Merge | None = None
 
+    @property
+    def message(self) -> str:
+        """The message text of a SendMessage call, which the harness takes as
+        empty where its input gives none."""
+        return str(self.input.get("message", ""))
+
 
 class Printed(Enum):
     """The tool of a step the command prints to an operator for it to call
@@ -264,9 +270,8 @@ class State:
     the transcript of each agent a stall alert names that reached no
     operator as a report. `late_resumes` gives, for each operator of
     `operators`, its resumes after the next operator of `operators` made its
-    first entry, other than those by a prompt whose agent messages and task
-    notifications, at least one of them, are all from agents it launched or
-    last resumed, in the order of their time. `made` holds each step the command printed to an operator
+    first entry, other than those by a prompt `monitor.ALERTS` exempts, in
+    the order of their time. `made` holds each step the command printed to an operator
     with the call that operator made next (`handled.made`). `messages` holds
     the messages that reached any operator of the session, and `received`
     those that reached `me` or an operator it takes up the lines of

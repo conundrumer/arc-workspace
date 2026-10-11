@@ -14,6 +14,7 @@ import re
 import sys
 import time
 from dataclasses import replace
+from enum import StrEnum
 from pathlib import Path
 
 from arc import task
@@ -71,6 +72,14 @@ POLL_SECONDS = 15
 CALLS = (Launch, Send, Bash)
 """The steps after whose call the operator runs `next` again."""
 TASK_ID = re.compile(task.TASK_ID)
+
+
+class OperateAction(StrEnum):
+    """An action of this script."""
+    NEXT = Action.NEXT
+    RELAY = Action.RELAY
+    SET_ASIDE = "set-aside"
+    RESTORE = "restore"
 
 
 def with_budget(step: Launch) -> Launch:
@@ -145,23 +154,23 @@ def main(argv: list[str]) -> int:
         print(HELP.format(block=BLOCK_SECONDS, load=plan.LOAD_SECONDS, retry=plan.RETRY_SECONDS, write=round(WRITE_SECONDS), alerts=ALERTS))
         return 0
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
-    parser.add_argument("action", choices=[*Action, "set-aside", "restore"])
+    parser.add_argument("action", choices=list(OperateAction))
     parser.add_argument("ident")
     parser.add_argument("rest", nargs="*")
     args = parser.parse_args(argv)
     try:
-        match args.action:
-            case Action.NEXT:
+        match OperateAction(args.action):
+            case OperateAction.NEXT:
                 return block(args.ident, Action.NEXT, lambda deadline: operator_step(args.ident, deadline))
-            case Action.RELAY:
+            case OperateAction.RELAY:
                 return block(args.ident, Action.RELAY, lambda deadline: relay_step(args.ident, deadline))
-            case "set-aside":
+            case OperateAction.SET_ASIDE:
                 if (len(args.rest) != 1 or args.rest[0] not in (Role.ANALYZE, Role.CREATE)
                         or not TASK_ID.fullmatch(args.ident)):
                     parser.error("set-aside takes a task id and `analyze` or `create`")
                 print(set_aside(main_tree(), args.ident, Role(args.rest[0])))
                 return 0
-            case _:
+            case OperateAction.RESTORE:
                 if args.rest:
                     parser.error("restore takes a task id alone")
                 restore(main_tree(), args.ident)

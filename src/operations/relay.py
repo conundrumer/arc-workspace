@@ -19,7 +19,8 @@ from dataclasses import dataclass
 
 from controlled_markdown import mctx
 from operations.constants import COORDINATOR
-from operations.final_reply import ending_step, final_message, for_context
+from operations.final_reply import ending_step, for_context
+from operations.printing import final_message
 from operations.handled import sends_in
 from operations.roles import Role
 from operations.state import Call, Message
@@ -64,7 +65,7 @@ NO_REPLY = mctx("Operator {operator} ended with no final reply.")
 def sent(relay: Relay, to: str, message: str, since: float) -> bool:
     """Whether the launcher sent `to` a message that opens with `message`
     after `since`."""
-    return any(c.time > since and str(c.input.get("message", "")).startswith(message)
+    return any(c.time > since and c.message.startswith(message)
                for c in sends_in(relay.calls, to))
 
 

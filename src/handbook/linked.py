@@ -7,6 +7,7 @@ import difflib
 from collections import deque
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 import controlled_markdown as nm
@@ -15,9 +16,14 @@ from controlled_markdown.__main__ import collect, configured, repo_root
 from handbook.paths import DOCUMENTS_ROOT
 
 
-CONTEXT_SOURCE = "context"
-"""The source a link line gives for a link that stands in a reader's
-context."""
+class WalkStart(StrEnum):
+    """The text a walk of links starts from, as the source a link line gives
+    for a link that stands in it."""
+
+    CONTEXT = "context"
+    """A reader's context."""
+    INSTRUCTIONS = "CLAUDE.md"
+    """The project instructions."""
 
 
 @dataclass(frozen=True, order=True)
@@ -41,14 +47,14 @@ class Link:
     source: LinkTarget | None
     target: LinkTarget
 
-    def line(self, start: str) -> str:
+    def line(self, start: WalkStart) -> str:
         """The link's line, as `scripts/context.py` `HELP` gives it, with
         `start` as the source of a link in the text the walk starts
         from."""
         return f"{self.target} via {start if self.source is None else self.source}"
 
 
-def link_lines(links: Iterable[tuple[Link, str]]) -> list[str]:
+def link_lines(links: Iterable[tuple[Link, WalkStart]]) -> list[str]:
     """The line of each link, with the start it is given, each once,
     sorted."""
     return sorted({link.line(start) for link, start in links})

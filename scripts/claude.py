@@ -4,8 +4,7 @@ that a spawned role runs under. Arguments pass through to claude.
 
 The session this starts is the coordinator, the session the user talks
 with, and it reads both that appendix and the session-start hook's text
-(`handbook.coordinator_document`). Its reader is `user-session`, which this
-names in `SESSION_READER_ENV` in the environment of the claude it starts.
+(`handbook.coordinator_document`). Its reader is `user-session`.
 
     uv run python scripts/claude.py [claude args]
 """

@@ -243,7 +243,7 @@ def past_budget(state: State, t: Ticket, latest: list[Agent]) -> Step | None:
         r = a.last_report
         if r is None or a.agent_id is None or not budget_passed(a):
             continue
-        given = [a.brief] + [str(c.input.get("message", "")) for c in sends_to(state, a.agent_id)]
+        given = [a.brief] + [c.message for c in sends_to(state, a.agent_id)]
         stated = next((s for text in reversed(given) if (s := briefs.budgets(text))), set[float]())
         if len(stated) != 1:
             return Undecided(mctx("editor {agent} of change {number} says its budget is "
