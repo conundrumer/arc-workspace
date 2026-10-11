@@ -198,9 +198,9 @@
 - [Report](prompts/agents/refine.md#report): Solver passes: a pass's report gives its judgments, its open items and its tickets.
 
 ## Handbook agents
-- [handbook](prompts/agents/handbook.md): Solver passes: a fault a pass meets reaches a ticket.
+- [handbook](prompts/agents/handbook.md): none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
     - "File a `delay` ticket for each step": Process assessment: the faults of the processes reach the user.
-- [handbook-expanded](prompts/agents/handbook-expanded.md), its lines above its first heading: Solver passes: a fault a pass meets reaches a ticket.
+- [handbook-expanded](prompts/agents/handbook-expanded.md), its lines above its first heading: none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
     - "File a `delay` ticket for each step": Process assessment: the faults of the processes reach the user.
 - [Carrying a change](prompts/agents/handbook-expanded.md#carrying-a-change): Implementation: each item not done reaches the agent that decides it.
     - "The lines below apply where your brief gives": none. Kept: it gives the work the lines below it apply to.
