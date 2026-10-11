@@ -69,9 +69,7 @@ def claims(main: Path) -> dict[str, str]:
 def gate_outputs(tree: Path) -> tuple[str, ...]:
     """The accepted gate outputs the change in the worktree `tree` writes,
     against `master`."""
-    changed = git(tree, "diff", "--name-only", "master", "--", ACCEPTED).split()
-    added = git(tree, "ls-files", "--others", "--exclude-standard", "--", ACCEPTED).split()
-    return tuple(sorted({*changed, *added}))
+    return tuple(sorted({c.path for c in checkout.changed_paths(tree, "master", ACCEPTED)}))
 
 
 def fragments(tree: Path) -> tuple[Place, ...]:
@@ -84,10 +82,9 @@ def fragments(tree: Path) -> tuple[Place, ...]:
     is one place in their stead, at the line of the error, or line 1 where
     the error gives none."""
     base = git(tree, "merge-base", "HEAD", "master").strip()
-    names = git(tree, "diff", "--name-only", base, "--", "*.py", "*.js").split()
-    names += git(tree, "ls-files", "--others", "--exclude-standard", "--", "*.py", "*.js").split()
+    names = {c.path for c in checkout.changed_paths(tree, base, "*.py", "*.js")}
     out: list[Place] = []
-    for name in sorted(set(names)):
+    for name in sorted(names):
         path = tree / name
         if not path.is_file():
             continue
