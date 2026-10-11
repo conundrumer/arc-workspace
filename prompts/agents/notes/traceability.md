@@ -1,6 +1,6 @@
 # Traceability matrix
 - The map of each rule of the documents under [notes](prompts/agents/notes) and of the agent definitions under [agents](prompts/agents) to the outcomes of [Process notes](prompts/agents/notes/process.md) it serves.
-- The map holds for each rule as it stands at commit `4afea2b8e666096c17a533cf7deae808a99c6cfb` of `master`.
+- The map holds for each rule as it stands at commit `9f2beeef62524301599a253a6958e26ba731db23` of `master`.
 - Each entry is a section, with the outcomes its rules serve, each as its process and a phrase of its words. Under the entry stands each rule of that section that serves another outcome or none, by its opening words.
 - An entry or a rule that serves no outcome gives the judgment that keeps it.
 - An entry on a document's title heading covers the lines above its first section. A section with no rule of its own, only lines that inline or include another document, has no entry.
@@ -75,7 +75,7 @@
 - [Decisions](prompts/agents/notes/coordinator.md#decisions): Decisions: each decision recorded with what it was made from.
 - [Declines](prompts/agents/notes/coordinator.md#declines): none. Kept: it leads the coordinator to the notes on a decline when one reaches it.
 - [Changes](prompts/agents/notes/coordinator.md#changes): Process assessment: the agent and the reviews of each work product.
-    - "Before you launch a pass on a task, read", "Before you send an operator a line, or move or revise", "While the user gives feedback, read", "Where you run no solver pass, read": none. Kept: they lead the coordinator to the notes its work there needs.
+    - "Before you launch a pass on a task, read", "Before you send an operator a line, or move or revise", "While the user gives feedback, read", "Read [Carrying a change]": none. Kept: they lead the coordinator to the notes its work there needs.
     - "Run a change yourself only on `direct` and `hotfix`", "Where a ticket it would settle waits on a `change`": Work control: one live holder per ticket.
     - "Once a change you run is on `master`": Merge: a hotfix reviewed after it merges.
 - [Worktrees](prompts/agents/notes/coordinator.md#worktrees): Configuration management: one live change per worktree.
