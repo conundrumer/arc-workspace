@@ -176,12 +176,12 @@ class CanonRows(NamedTuple):
     id: Relation
 
 
-def Canon(T: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, equiv: Iterable[PyRow] | None = None) -> CanonRows:
+def Canon(T: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, equiv: Iterable[PyRow] | None = None, edge: Iterable[PyRow] | None = None) -> CanonRows:
     """Runs `Canon` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Canon', [T],
                GridTypes(LibType.POSITION, LibType.OFFSET),
-               {'equiv': Columns((T, T, ), False), 'rep': Columns((T, T, ), False), 'id': Columns((T, LibType.IDENT, ), False)},
-               {'equiv': equiv},
+               {'equiv': Columns((T, T, ), False), 'edge': Columns((T, T, ), False), 'rep': Columns((T, T, ), False), 'id': Columns((T, LibType.IDENT, ), False)},
+               {'equiv': equiv, 'edge': edge},
                ['rep', 'id'], sizes)
     return CanonRows(got['rep'], got['id'])
 
@@ -255,6 +255,22 @@ def GraphDistance(Key: TypeArg, Node: TypeArg, *, sizes: Mapping[PyValue, Size] 
                {'edge': edge, 'seed': seed},
                ['distance', 'pred'], sizes)
     return GraphDistanceRows(got['distance'], got['pred'])
+
+
+class ReachabilityRows(NamedTuple):
+    """The output relations of `Reachability` (programs/lib/orders.dl)."""
+
+    reachable: Relation
+
+
+def Reachability(Key: TypeArg, Node: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, edge: Iterable[PyRow] | None = None) -> ReachabilityRows:
+    """Runs `Reachability` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
+    got = call('Reachability', [Key, Node],
+               GridTypes(LibType.POSITION, LibType.OFFSET),
+               {'edge': Columns((Key, Node, Node, ), True), 'reachable': Columns((Key, Node, Node, ), True)},
+               {'edge': edge},
+               ['reachable'], sizes)
+    return ReachabilityRows(got['reachable'])
 
 
 class IndexCycleRows(NamedTuple):

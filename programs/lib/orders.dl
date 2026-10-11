@@ -91,6 +91,18 @@
     pred(Ky, B, A) :- edge(Ky, A, B), distance(Ky, A, K), distance(Ky, B, K + 1).
 }
 
+/// The pairs of nodes joined by a walk of one or more edges: the transitive
+/// closure of a supplied edge relation.
+.comp Reachability<Key, Node> {
+    /// The directed edges.
+    .decl edge(key: Key, a: Node, b: Node)  // @input
+
+    /// Some walk of one or more edges leads from a to b.
+    .decl reachable(key: Key, a: Node, b: Node)
+    reachable(Ky, A, B) :- edge(Ky, A, B).
+    reachable(Ky, A, C) :- reachable(Ky, A, B), edge(Ky, B, C).
+}
+
 /// Z/N successor over a dense 0-based index set: increment, with the max
 /// wrapping to 0.
 .comp IndexCycle<Key> {

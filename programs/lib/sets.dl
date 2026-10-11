@@ -121,8 +121,11 @@
     id(V, as(ord(V), Ident)) :- value(V).
 }
 
-/// One id per class of an equivalence relation. The representative is
-/// arbitrary but deterministic.
+/// One id per class of an equivalence relation, given whole or as a relation
+/// that generates it. The representative is arbitrary but deterministic.
+///
+/// Requires: an element stands in only one of `equiv` and `edge`; the two
+/// classes of an element in both do not merge.
 .comp Canon<T> {  // @construction
     /// The equivalence. Requires: `equiv` is transitive, symmetric, and
     /// holds a self pair for every element of the domain; an element outside
@@ -130,10 +133,21 @@
     /// one class different ids.
     .decl equiv(a: T, b: T)  // @input
 
+    /// A relation whose reflexive, symmetric and transitive closure is the
+    /// equivalence, over the elements it holds.
+    .decl edge(a: T, b: T)  // @input
+
+    // The least label that a walk along edge in either direction reaches.
+    .decl _label(a: T, l: T)
+    _label(A, A) :- ( edge(A, _) ; edge(_, A) ).
+    _label(B, L) :- _label(A, L), ( edge(A, B) ; edge(B, A) ).
+    _label(A, L) <= _label(A, L2) :- ord(L) > ord(L2).
+
     /// The representative of each element's class; a self-paired row marks a
     /// representative.
     .decl rep(a: T, b: T)
     rep(A, B) :- equiv(A, B).
+    rep(A, B) :- _label(A, B).
     rep(A, B) <= rep(A, B2) :- ord(B) > ord(B2).
 
     .init _ident = IdentOf<T>
