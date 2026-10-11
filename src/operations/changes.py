@@ -275,7 +275,18 @@ def drafter_ids(here: list[Agent]) -> list[str] | Undecided:
     return agent_ids([a for a in latest_editors(here) if a.role in DRAFTERS])
 
 
-def fragments_step(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
+def lacking_doc_editor(t: Ticket, w: Path | None,
+                       state: State) -> tuple[Role, ...] | None:
+    """The `editors` field of the held change `t`, where it gives no doc
+    editor while the `fragments` of `t`'s worktree `w` are not empty, and
+    otherwise None."""
+    if (t.editors is None or Role.DOC_EDITOR in t.editors or w is None
+            or not state.fragments.get(w)):
+        return None
+    return t.editors
+
+
+def fragments_step(state: State, t: Ticket, w: Path,
                    here: list[Agent]) -> Step | None:
     """The step that gives the fragments whose text the change adds or
     changes to a doc editor launched for them, once a drafter of the change
@@ -288,7 +299,7 @@ def fragments_step(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
     if not places or not reported or any(
             a.role is Role.DOC_EDITOR and a.launched > max(reported) for a in here):
         return None
-    if Role.DOC_EDITOR not in editors:
+    if lacking_doc_editor(t, w, state) is not None:
         if t.number not in state.doc_budgets:
             return Undecided(mctx("the budget of change {number} with a doc editor is "
                                   "unknown").format(number=t.number))
@@ -326,7 +337,7 @@ def carry(state: State, t: Ticket) -> Step | None:
                 state.fragments.get(w, ()), tuple(drafters)), model=t.model(role))
     if any(a.pending for a in here):
         return None
-    if (step := fragments_step(state, t, w, editors, here)) is not None:
+    if (step := fragments_step(state, t, w, here)) is not None:
         return step
     latest = latest_editors(here)
     if (step := over_budget_step(state, t, latest)) is not None:
@@ -402,7 +413,7 @@ def over_budget(state: State, t: Ticket, w: Path,
     take_line = taken(t)
     if take_line is None:
         return False
-    since, limit = take_line
+    since, limit, _ = take_line
     spent = state.spent.get(t.number)
     if spent is None:
         return Undecided(mctx("the spend of change {number} since its take is unknown").format(

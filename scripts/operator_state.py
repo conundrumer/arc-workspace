@@ -24,7 +24,7 @@ from run_reads import bash_spans, context_size, parent_id, repeated_runs, run_en
 from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
 from ticket_settle import to_settle
-from ticket_watch import budget, spend
+from ticket_watch import budget, budget_with, spend
 from transcripts import Refused, entries_back, epoch, find, new_state
 from tree_reads import (claims, code_review, commits, doc_reviews, fragments, gate_outputs, main_tree,
                         scratch, worktrees)
@@ -259,7 +259,7 @@ def change_budgets(state: State, spent: dict[str, Spend], tickets: Path,
         take = change_budget.taken(t)
         s = spent.get(t.number)
         if take is not None and s is not None and change_budget.past_budget(take, s) \
-                and (b := of(t, take.time)) is not None:
+                and (b := of(t, take.budgeted)) is not None:
             out[t.number] = b
     return out
 
@@ -268,11 +268,10 @@ def doc_budgets(state: State, tickets: Path, undecided: list[str]) -> dict[str, 
     """The budgets `State.doc_budgets` gives."""
     out: dict[str, Budget] = {}
     for t in changes.held(state):
-        w = worktree(t, state)
-        if (t.editors is None or Role.DOC_EDITOR in t.editors or w is None
-                or not state.fragments.get(w)):
+        editors = changes.lacking_doc_editor(t, worktree(t, state), state)
+        if editors is None:
             continue
-        b = budget(tickets, frozenset({*t.editors, Role.DOC_EDITOR}), state.now, undecided)
+        b = budget_with(tickets, editors, Role.DOC_EDITOR, state.now, undecided)
         if b is not None:
             out[t.number] = b
     return out

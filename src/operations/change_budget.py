@@ -60,10 +60,12 @@ before its merge."""
 
 
 class Take(NamedTuple):
-    """What a take line gives: its time, and the cost budget its note
-    gives."""
+    """What a take line gives: its time, the cost budget of the change,
+    and the time of the line that gives that budget, the take line or an
+    `editors` line since it."""
     time: float
     dollars: float
+    budgeted: float
 
 
 def taken(t: Ticket) -> Take | None:
@@ -71,14 +73,15 @@ def taken(t: Ticket) -> Take | None:
     with the cost budget of the last line since that take that gives one,
     or None where no take line gives one."""
     since = left_draft(t)
-    dollars: float | None = None
+    rebudget: tuple[float, float] | None = None
     for ln in reversed(t.log):
         if ln.time < since:
             break
-        if dollars is None and (m := REBUDGETED.fullmatch(ln.note)) is not None:
-            dollars = float(m["dollars"])
+        if rebudget is None and (m := REBUDGETED.fullmatch(ln.note)) is not None:
+            rebudget = (float(m["dollars"]), ln.time)
         if (m := TAKEN.fullmatch(ln.note)) is not None:
-            return Take(ln.time, float(m["dollars"]) if dollars is None else dollars)
+            dollars, budgeted = (float(m["dollars"]), ln.time) if rebudget is None else rebudget
+            return Take(ln.time, dollars, budgeted)
     return None
 
 
