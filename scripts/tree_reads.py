@@ -1,13 +1,16 @@
 """The reads of git and of the main worktree that the operator's procedures
 take their state from: the worktrees, the commits of `master`, the code
 review tags, the standing doc review tags, the task claims, the accepted
-gate outputs a change writes, and the session's scratchpad directory."""
+gate outputs a change writes, the `mctx` fragments a change adds or
+changes, and the session's scratchpad directory."""
 
 import os
 from pathlib import Path
 
+from controlled_markdown import ControlledMarkdownError
+from controlled_markdown.prose import text_fragments
 from engine import checkout
-from operations.state import DOC_REVIEW, Commit
+from operations.state import DOC_REVIEW, Commit, Place
 from operations.task_work import CLAIM, tasks_work
 
 COMMITS = 300
@@ -69,6 +72,38 @@ def gate_outputs(tree: Path) -> tuple[str, ...]:
     changed = git(tree, "diff", "--name-only", "master", "--", ACCEPTED).split()
     added = git(tree, "ls-files", "--others", "--exclude-standard", "--", ACCEPTED).split()
     return tuple(sorted({*changed, *added}))
+
+
+def fragments(tree: Path) -> tuple[Place, ...]:
+    """The fragments whose text the change in the worktree `tree` adds or
+    changes, against its merge base with `master`: those of each `.py` and
+    `.js` file the diff names whose text is not the text of a fragment of
+    that file at the merge base, so a fragment that only moved is no
+    change. A file whose text in the worktree does not read as fragments,
+    as a Python file that does not parse or an `mctx` call with no literal,
+    is one place in their stead, at the line of the error, or line 1 where
+    the error gives none."""
+    base = git(tree, "merge-base", "HEAD", "master").strip()
+    names = git(tree, "diff", "--name-only", base, "--", "*.py", "*.js").split()
+    names += git(tree, "ls-files", "--others", "--exclude-standard", "--", "*.py", "*.js").split()
+    out: list[Place] = []
+    for name in sorted(set(names)):
+        path = tree / name
+        if not path.is_file():
+            continue
+        old: set[str] = set()
+        if git(tree, "ls-tree", "--name-only", base, "--", name).strip():
+            old = {f.text for f in text_fragments(git(tree, "show", f"{base}:{name}"), path, name)}
+        try:
+            now = list(text_fragments(path.read_text(), path, name))
+        except SyntaxError as e:
+            out.append(Place(name, e.lineno or 1))
+            continue
+        except ControlledMarkdownError as e:
+            out.append(Place(name, e.line or 1))
+            continue
+        out += [Place(name, f.line) for f in now if f.text not in old]
+    return tuple(sorted(out, key=lambda p: (p.file, p.line)))
 
 
 def scratch(session: str) -> Path:

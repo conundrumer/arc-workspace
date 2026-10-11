@@ -14,7 +14,12 @@ reply that precedes the last report of any other editor is read for no
 finding, and that reviewer is asked once to review the change again, and
 the review is held where it has not replied since. A reply in any other
 form holds the review. The command launches no editor for a reviewer's
-findings: that reviewer sends them to the editors of its brief."""
+findings: that reviewer sends them to the editors of its brief.
+
+A doc editor that `changes` launches on a change's `mctx` fragments after
+the reviewer replied neither launched that reviewer nor got a message from
+it, so its report after that reply is among those the review must
+follow."""
 
 from pathlib import Path
 from typing import Literal

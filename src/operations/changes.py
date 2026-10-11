@@ -37,7 +37,18 @@ which gets those items with the line that rules the step
 (`triage.for_coordinator`), and otherwise it goes to a ticket analyst
 (`decisions`).
 
-A change with a doc editor passes its review once the latest reply of its
+Once a code editor or a `handbook-expanded` editor of a change has
+reported, where the change adds or changes the text of an `mctx` fragment
+(`State.fragments`) and no doc editor was launched since that report, the
+fragments go to a doc editor launched for them: a change whose `editors`
+field gives no doc editor first gets one in that field, with the budget of
+its new `editors` set, and the doc editor the field then gives is
+launched with the fragments; a change that gives one gets a doc editor
+of the fragments alone (`briefs.FRAGMENTS_PART`), which is the latest
+editor of its part beside the doc editor of the documents.
+
+A change whose `editors` field gives a doc editor, the one that step adds
+included, passes its review once the latest reply of its
 doc reviewer opens with `no finding stands` and follows each editor's last
 report, or precedes the last report only of editors that reviewer sent a
 message, since such an editor sends that reviewer its fixes before each
@@ -84,7 +95,7 @@ from operations.state import Agent, State, Ticket
 from operations.final_reply import live_holder
 from operations.handled import answered, repeated, sends_to, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids, key
-from operations.tracker import AGENT, COORDINATOR, closed, log, worktree
+from operations.tracker import AGENT, COORDINATOR, add_editor, closed, log, worktree
 from ticketing.vocabulary import Domain, Kind, Status
 
 
@@ -246,6 +257,50 @@ def change_editors(t: Ticket) -> tuple[Role, ...] | Undecided:
             number=t.number))
     return t.editors
 
+DRAFTERS = (Role.CODE_EDITOR, Role.HANDBOOK_EXPANDED)
+"""The editors that draft the text of the fragments their code needs."""
+
+
+def latest_editors(here: list[Agent]) -> list[Agent]:
+    """The latest editor of `here` of each role, with the doc editor of
+    the fragments (`briefs.FRAGMENTS_PART`) apart from the doc editor of
+    the documents."""
+    return list({(a.role, briefs.FRAGMENTS_PART in a.brief): a for a in here}.values())
+
+
+def drafter_ids(here: list[Agent]) -> list[str] | Undecided:
+    """The agent ids of the latest drafters of `here`, which the brief of a
+    doc editor gives for the code changes a move of a fragment's text
+    needs."""
+    return agent_ids([a for a in latest_editors(here) if a.role in DRAFTERS])
+
+
+def fragments_step(state: State, t: Ticket, w: Path, editors: tuple[Role, ...],
+                   here: list[Agent]) -> Step | None:
+    """The step that gives the fragments whose text the change adds or
+    changes to a doc editor launched for them, once a drafter of the change
+    has reported and no doc editor was launched since its latest report:
+    the addition of `doc-editor` to the `editors` field of a change that
+    gives none, and otherwise the launch of a doc editor on the
+    fragments."""
+    places = state.fragments.get(w, ())
+    reported = [r.time for a in here if a.role in DRAFTERS and (r := a.last_report) is not None]
+    if not places or not reported or any(
+            a.role is Role.DOC_EDITOR and a.launched > max(reported) for a in here):
+        return None
+    if Role.DOC_EDITOR not in editors:
+        if t.number not in state.doc_budgets:
+            return Undecided(mctx("the budget of change {number} with a doc editor is "
+                                  "unknown").format(number=t.number))
+        return Bash(add_editor(t.number, Role.DOC_EDITOR, state.me))
+    drafters = drafter_ids(here)
+    if isinstance(drafters, Undecided):
+        return drafters
+    return Launch(Role.DOC_EDITOR, t.number, briefs.editor(
+        Role.DOC_EDITOR, t.number, True, w, state.scratch / t.number, state.me,
+        places, tuple(drafters), of_fragments=True), model=t.model(Role.DOC_EDITOR))
+
+
 def carry(state: State, t: Ticket) -> Step | None:
     """The next step on the change `t` the operator holds, or None where it
     waits on an agent."""
@@ -263,20 +318,25 @@ def carry(state: State, t: Ticket) -> Step | None:
     here = editors_in(agents, w)
     for role in (r for r in EDITORS if r in editors):
         if not any(a.role is role for a in here):
+            drafters = drafter_ids(here)
+            if isinstance(drafters, Undecided):
+                return drafters
             return Launch(role, t.number, briefs.editor(
-                role, t.number, len(editors) > 1, w, state.scratch / t.number, state.me),
-                model=t.model(role))
+                role, t.number, len(editors) > 1, w, state.scratch / t.number, state.me,
+                state.fragments.get(w, ()), tuple(drafters)), model=t.model(role))
     if any(a.pending for a in here):
         return None
-    latest = {a.role: a for a in here}
-    if (step := over_budget_step(state, t, list(latest.values()))) is not None:
+    if (step := fragments_step(state, t, w, editors, here)) is not None:
         return step
-    if (step := leftover(state, t, w, list(latest.values()), agents)) is not False:
+    latest = latest_editors(here)
+    if (step := over_budget_step(state, t, latest)) is not None:
+        return step
+    if (step := leftover(state, t, w, latest, agents)) is not False:
         return step
     if Role.DOC_EDITOR in editors and (
             step := doc_review(state, t, w, here, agents)) is not False:
         return step
-    return merge(state, t, w, list(latest.values()))
+    return merge(state, t, w, latest)
 
 
 NO_OPERATOR = mctx("{agent} is no doc editor that an operator of the session launched, so no "
@@ -364,7 +424,7 @@ def over_budget(state: State, t: Ticket, w: Path,
                 return Send(a.agent_id, message)
     if any(a.pending for a in agents):
         return None
-    latest = list({a.role: a for a in agents if a.role in EDITORS and in_worktree(a, w)}.values())
+    latest = latest_editors(editors_in(agents, w))
     reported = max((r.time for a in latest if (r := a.last_report) is not None), default=0.0)
     checkers = [a for a in agents if a.role is Role.ITEM_CHECKER
                 and a.launched > trip.filed and a.launched > reported]

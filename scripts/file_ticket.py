@@ -11,12 +11,14 @@ import re
 import subprocess
 import sys
 import textwrap
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from arc.task import task_file
 from controlled_markdown import mctx
+from operations.change_budget import EDITORS_NOTE
 from operations.roles import EDITORS, Role
 from engine import checkout
 from handbook.paths import importable
@@ -34,7 +36,8 @@ from ticket_log import (AGENT_ID, CLOSED_BY, SESSION_ID, UNBLOCKED_BY, VALIDATIN
 from ticket_numbers import (SESSION_VAR, SESSIONS, reserve, session_id,  # noqa: E402
                             session_index, ticket_number, write_new)
 from ticket_settle import to_settle  # noqa: E402
-from ticket_watch import (CAP, CHANGES, Case, add_evidence, case_loss, evict,  # noqa: E402
+from ticket_reads import editors_field  # noqa: E402
+from ticket_watch import (CAP, CHANGES, Case, add_evidence, budget, case_loss, evict,  # noqa: E402
                           front, route, threshold)  # noqa: E402
 from ticketing.text import SECTIONS, heading  # noqa: E402
 from ticketing.times import TIME_FORM  # noqa: E402
@@ -157,6 +160,16 @@ SHOW_HELP = mctx("""
     - The command prints the ticket's path and its title line, and then each named section, from its heading to the next heading, in the order the call names them. Where the call names no section, it prints the path and then the whole ticket.
     - A `<section>` is the text of a heading after its mark, as `{log_section}` for `{log}`.
     - The command refuses, and names the sections the ticket has, where a named section is not in the ticket.
+    """)
+
+EDITORS_HELP = mctx("""
+    - `<number>` is the number of a `{change_kind}` ticket that stands under `tickets/{assigned}/`, `<editor>` one of {editors} that its `editors` field does not give, and `<agent id>` the holder of the ticket.
+    - The command adds `<editor>` to the ticket's `editors` field, appends a log line with the budget of the change for its new `editors` set, and prints the ticket's path.
+    """)
+
+EDITORS_RULES = mctx("""
+    - The budget is the one a take of the change would give at the time of the call. The change's agent-running time still counts from its take.
+    - The command refuses, and writes nothing, where no change closed `{fixed}` before the call has a known spend, and prints an `undecided` line on stderr.
     """)
 
 EMPTY = mctx("the list is empty")
@@ -350,6 +363,39 @@ def log_command(ref: str, status: str, agent: str, source: str, agent_id: str | 
                        "{refused}").format(path=moves.moved[0], closed=Status.CLOSED, refused=refused))
 
 
+EDITORS_LINE = re.compile(r"^editors: .*$", re.MULTILINE)
+
+
+def editors_command(ref: str, editor: str, agent: str, agent_id: str) -> Path:
+    """Adds `editor` to the `editors` field of the held change `ref`, and
+    logs the change's budget for its new `editors` set."""
+    tickets = main_tickets()
+    number = ticket_number(ref)
+    path = ticket_path(tickets, number)
+    text = read_ticket(path)
+    fields = front(text)
+    if fields.get("kind") != Kind.CHANGE or ticket_status(path) is not Status.ASSIGNED:
+        raise Refused(mctx("{path} is no `{change}` that stands under `{assigned}`").format(
+            path=path, change=Kind.CHANGE, assigned=Status.ASSIGNED))
+    given = editors_field(fields)
+    added = next((r for r in EDITORS if r.value == editor), None)
+    if given is None or added is None or added in given:
+        raise Refused(mctx("{path} gives no `editors` field that `{editor}` is an editor to add "
+                           "to").format(path=path, editor=editor))
+    roles = [r for r in EDITORS if r in given or r is added]
+    undecided: list[str] = []
+    b = budget(tickets, frozenset(roles), time.time(), undecided)
+    if b is None:
+        print_undecided(undecided)
+        raise Refused(mctx("the budget of {path} is unknown").format(path=path))
+    names = ", ".join(map(str, roles))
+    path.write_text(EDITORS_LINE.sub(f"editors: {names}", text, count=1))
+    note = EDITORS_NOTE.format(editors=names, dollars=f"{b.dollars:.2f}",
+                               seconds=f"{b.seconds:.0f}")
+    return log_moves(tickets, number, Status.ASSIGNED, agent, Status.ASSIGNED, agent_id,
+                     note).moved[0]
+
+
 def show_command(*given: str) -> str:
     """The ticket `given[0]`, whole where `given` names no section, and
     otherwise its title line and each section `given[1:]` names."""
@@ -391,6 +437,10 @@ SUBCOMMANDS = {
     "to-settle": Subcommand(mctx("prints the open tickets an operator gives a ticket analyst to settle "
                                  "after a batch"),
                             " [<number> ...]", TO_SETTLE_HELP, TO_SETTLE_RULES, None, settle_command, False),
+    "editors": Subcommand(mctx("adds an editor to a held change's `editors` field, with the "
+                               "change's budget for its new `editors` set"),
+                          " <number> <editor> <agent> <agent id>", EDITORS_HELP, EDITORS_RULES, 4,
+                          editors_command, True),
     "show": Subcommand(mctx("prints a ticket, or only the sections the call names"),
                        " <number> [<section> ...]", SHOW_HELP, "", None, show_command, False),
 }
@@ -422,7 +472,7 @@ def help_values() -> dict[str, str]:
                 change_domain=Domain.CHANGE,
                 full_flag=FULL_FLAG, log_section=LOG_SECTION,
                 many_ideas=MANY_IDEAS, empty=EMPTY, delay=Kind.DELAY, watching=Status.WATCHING,
-                open=Status.OPEN, wontfix=Resolution.WONTFIX, changes=str(CHANGES), cap=str(CAP),
+                assigned=Status.ASSIGNED, open=Status.OPEN, wontfix=Resolution.WONTFIX, changes=str(CHANGES), cap=str(CAP),
                 subcommands="\n".join(SUBCOMMAND_LINE.format(
                     invocation=INVOCATION, name=name, purpose=sub.purpose)
                     for name, sub in SUBCOMMANDS.items()))

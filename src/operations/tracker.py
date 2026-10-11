@@ -5,6 +5,7 @@ import re
 import shlex
 from pathlib import Path
 
+from operations.roles import Role
 from operations.state import LogLine, State, Ticket
 from ticketing.vocabulary import COORDINATOR, Note, Status
 
@@ -27,6 +28,12 @@ def log(number: str, status: Status, current: Status, note: str, agent_id: str |
     if agent_id is not None:
         args += ["--id", agent_id]
     return shlex.join([*args, note])
+
+
+def add_editor(number: str, editor: Role, agent_id: str) -> str:
+    """The Bash command that adds `editor` to the `editors` field of the
+    change `number` that `agent_id` holds."""
+    return shlex.join([*FILE_TICKET, "editors", number, str(editor), AGENT, agent_id])
 
 
 

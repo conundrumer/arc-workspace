@@ -26,7 +26,7 @@ from ticket_reads import read_tickets
 from ticket_settle import to_settle
 from ticket_watch import budget, spend
 from transcripts import Refused, entries_back, epoch, find, new_state
-from tree_reads import (claims, code_review, commits, doc_reviews, gate_outputs, main_tree,
+from tree_reads import (claims, code_review, commits, doc_reviews, fragments, gate_outputs, main_tree,
                         scratch, worktrees)
 
 from engine.checkout import agents_of
@@ -210,10 +210,12 @@ def read_state(me: str) -> tuple[State, MonitorState]:
     state = replace(state,
                     to_settle=tuple(str(n) for n in to_settle(tickets_dir, index, given)
                                     if str(n) in tickets),
-                    gate_outputs={w: gate_outputs(w) for w in held})
+                    gate_outputs={w: gate_outputs(w) for w in held},
+                    fragments={w: fragments(w) for w in held})
     spent = change_spend(state, undecided)
     state = replace(state, spent=spent,
-                    budgets=change_budgets(state, spent, tickets_dir, undecided))
+                    budgets=change_budgets(state, spent, tickets_dir, undecided),
+                    doc_budgets=doc_budgets(state, tickets_dir, undecided))
     return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(state.stalled),
                                undecided=tuple(watching))
 
@@ -258,6 +260,20 @@ def change_budgets(state: State, spent: dict[str, Spend], tickets: Path,
         s = spent.get(t.number)
         if take is not None and s is not None and change_budget.past_budget(take, s) \
                 and (b := of(t, take.time)) is not None:
+            out[t.number] = b
+    return out
+
+
+def doc_budgets(state: State, tickets: Path, undecided: list[str]) -> dict[str, Budget]:
+    """The budgets `State.doc_budgets` gives."""
+    out: dict[str, Budget] = {}
+    for t in changes.held(state):
+        w = worktree(t, state)
+        if (t.editors is None or Role.DOC_EDITOR in t.editors or w is None
+                or not state.fragments.get(w)):
+            continue
+        b = budget(tickets, frozenset({*t.editors, Role.DOC_EDITOR}), state.now, undecided)
+        if b is not None:
             out[t.number] = b
     return out
 

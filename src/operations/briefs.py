@@ -12,6 +12,7 @@ from string import Formatter
 from controlled_markdown import mctx
 from operations.reports import FOR_COORDINATOR, LEFT_FOR_DECISION, LIST_MARKER, TICKETS_FILED
 from operations.roles import Role
+from operations.state import Place
 from operations.tracker import FILE_TICKET
 from ticketing.times import utc_stamp
 
@@ -35,24 +36,43 @@ def read_ticket(number: str) -> str:
         number=number, command=TICKET_PATH.format(number=number))
 
 PARTS: dict[Role, str] = {
-    Role.CODE_EDITOR: mctx("the code under `src/`, `scripts/` and `tests/`"),
+    Role.CODE_EDITOR: mctx("the code under `src/`, `scripts/` and `tests/`, with a draft of the "
+                           "text of each `mctx` fragment it needs"),
     Role.HANDBOOK_EXPANDED: mctx("the lib, its modules and the solvers under `programs/`, with "
                                  "the accepted gate outputs its items change"),
-    Role.DOC_EDITOR: mctx("the documents"),
+    Role.DOC_EDITOR: mctx("the documents and the text of the `mctx` fragments"),
 }
 """The part of a change each editor takes, where the change has more than
 one, as [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change)
 splits it."""
 
 
+FRAGMENTS_PART = mctx("Your part: the text of the `mctx` fragments below, with the moves "
+                      "that text needs.")
+"""The part of the doc editor `changes` launches on a change's fragments,
+which keys that editor apart from the change's doc editor of the
+documents."""
+
+
 def editor(role: Role, number: str, part: bool, worktree: Path, scratch: Path,
-           operator: str) -> str:
+           operator: str, fragments: tuple[Place, ...] = (),
+           code_editors: tuple[str, ...] = (), of_fragments: bool = False) -> str:
     """The brief of an editor of the change `number`, with its part where
-    `part`, in the change's worktree `worktree`."""
+    `part`, or `FRAGMENTS_PART` where `of_fragments`, in the change's
+    worktree `worktree`. A doc editor's brief gives the `fragments` whose
+    text the change adds or changes, and the agent ids of the change's
+    `code_editors`."""
     lines = [read_ticket(number)]
-    if part:
+    if of_fragments:
+        lines.append(FRAGMENTS_PART)
+    elif part:
         lines.append(mctx("Your part: {part}.").format(part=PARTS[role]))
     lines.append(WORK_IN.format(worktree=worktree))
+    if role is Role.DOC_EDITOR and fragments:
+        lines.append(FRAGMENTS)
+        lines += [FRAGMENT.format(file=f.file, line=f.line) for f in fragments]
+        if code_editors:
+            lines.append(CODE_EDITORS.format(ids=", ".join(code_editors)))
     lines.append(mctx("Accepted gate outputs under `tests/gate/accepted/` you may write: each "
                       "that a `DIFF` of the gate your items cause names."))
     if role is Role.CODE_EDITOR:
@@ -60,6 +80,17 @@ def editor(role: Role, number: str, part: bool, worktree: Path, scratch: Path,
     lines.append(SCRATCH.format(scratch=scratch))
     lines.append(LAUNCHER.format(operator=operator))
     return "\n".join(lines)
+
+
+FRAGMENTS = mctx("Each `mctx` fragment below holds text a code editor drafted for you to "
+                 "write. First judge whether its text belongs in its program, by [What goes "
+                 "where](docs/handbook/editing.md#what-goes-where), and move what does not to "
+                 "where it belongs; then write the text that stays.")
+
+FRAGMENT = mctx("- `{file}`, line {line}")
+
+CODE_EDITORS = mctx("Where a move needs the code to change, send that code change by "
+                    "SendMessage to the code editor of the change: {ids}.")
 
 
 def doc_review(number: str, worktree: Path, editors: list[tuple[Role, str]],

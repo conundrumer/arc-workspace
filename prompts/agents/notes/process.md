@@ -177,7 +177,7 @@
 - A `request`: a ticket analyst writes the `change` tickets that serve it. Its reviews: the ticket reviewer's check of each requirement's trace to its spans or Grounds, and validation.
 - A `change` ticket with its design: a ticket analyst writes it. Its review: a ticket reviewer's, before the build.
 - A built code change: a code editor builds it, and the `handbook-expanded` agent the part in the lib and the solvers. Its reviews: the item checker's check of its items, the gate at its merge, and the code review that follows its merge.
-- A built document change: the doc editor builds it. Its reviews: the doc reviewer's, the item checker's check of its items, and the `controlled_markdown` check.
+- A built document change, the text of each `mctx` fragment a change adds or changes included: the doc editor builds it, from a code editor's draft for a fragment's text. Its reviews: the doc reviewer's, the item checker's check of its items, and the `controlled_markdown` check.
 - A solver: the Create pass writes it, and each Refine pass reconciles it with the latest report. Its review: the transcript review of each pass that writes it.
 - A pass's report: the pass writes it, and a ticket analyst takes the tickets it lists. Its review: the transcript review of that pass.
 - A ticket of a fault: a ticket analyst settles it. Its review: the ticket analyst's check of it against the state that produced it.

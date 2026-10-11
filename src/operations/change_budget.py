@@ -4,7 +4,9 @@ its spend is counted over, the test of that spend against it, and the
 
 A take writes in its log line the change's cost budget and time budget,
 taken over the changes closed `fixed` before it with the same `editors`
-(`scripts/ticket_watch.py`). The agents of a change are those launched
+(`scripts/ticket_watch.py`). A line that gives the held change a new
+`editors` field writes the budgets of that field's set, which stand in
+place of the take's from then on. The agents of a change are those launched
 since its last move out of `tickets/draft/`, and its spend is theirs and
 that of the runs under them. Once that spend passes the cost budget, the
 command files a `performance` ticket on the change, on the agent type
@@ -32,6 +34,15 @@ time budget."""
 TAKEN = re.compile(form(TAKE_NOTE, {"dollars": r"(?P<dollars>[0-9.]+)",
                                     "seconds": r"(?P<seconds>[0-9]+)"}))
 
+EDITORS_NOTE = "editors: {editors}; budget {dollars} dollars, {seconds} s"
+"""The note of the log line that gives a held change a new `editors`
+field, with the cost budget and time budget of that field's set, which
+take the place of those of its take."""
+
+REBUDGETED = re.compile(form(EDITORS_NOTE, {"editors": r"[a-z, -]+",
+                                            "dollars": r"(?P<dollars>[0-9.]+)",
+                                            "seconds": r"(?P<seconds>[0-9]+)"}))
+
 
 def left_draft(t: Ticket) -> float:
     """The time of the last line of `t`'s log that moves it out of
@@ -57,11 +68,17 @@ class Take(NamedTuple):
 
 def taken(t: Ticket) -> Take | None:
     """The last take of `t` since its last move out of `tickets/draft/`,
+    with the cost budget of the last line since that take that gives one,
     or None where no take line gives one."""
     since = left_draft(t)
+    dollars: float | None = None
     for ln in reversed(t.log):
-        if ln.time >= since and (m := TAKEN.fullmatch(ln.note)) is not None:
-            return Take(ln.time, float(m["dollars"]))
+        if ln.time < since:
+            break
+        if dollars is None and (m := REBUDGETED.fullmatch(ln.note)) is not None:
+            dollars = float(m["dollars"])
+        if (m := TAKEN.fullmatch(ln.note)) is not None:
+            return Take(ln.time, float(m["dollars"]) if dollars is None else dollars)
     return None
 
 

@@ -277,6 +277,13 @@ class Budget:
 
 
 @dataclass(frozen=True)
+class Place:
+    """A fragment by its file, relative to the worktree, and its line."""
+    file: str
+    line: int
+
+
+@dataclass(frozen=True)
 class State:
     """What the procedures read. `operators` holds the agent ids of the
     session's operators in the order of their launch, `parents` the parent
@@ -293,7 +300,9 @@ class State:
     `profile_runs.py --open` gives it. `index` is the session's index.
     `gate_outputs` gives, for the worktree of each
     change `me` holds, the accepted gate outputs under
-    `tests/gate/accepted/` its change writes. `branches` gives the branch
+    `tests/gate/accepted/` its change writes, and `fragments` the
+    fragments whose text that change adds or changes, as
+    `tree_reads.fragments` gives them. `branches` gives the branch
     of each worktree that stands on one, and `stalled` the final reply in
     the transcript of each agent a stall alert names that reached no
     operator as a report. `late_resumes` gives, for each operator of
@@ -315,7 +324,10 @@ class State:
     `changes.of_change` gives for it. `budgets` gives the budget of the
     change `changes.take` takes next, taken at `now`, and of each change
     `me` holds whose spend passes the budget its take gives, taken at that
-    take. `limit_lifted` is the time of the reading of the usage limit that
+    take. `doc_budgets` gives, for each change `me` holds whose `editors`
+    field gives no doc editor and whose worktree's `fragments` are not
+    empty, the budget, taken at `now`, of that field's set with the doc
+    editor. `limit_lifted` is the time of the reading of the usage limit that
     gives it as lifted, or None where the reading gives it in force, as
     `operator_state.limit_lifted` gives it."""
     me: str
@@ -341,6 +353,7 @@ class State:
     readers: tuple[Reader, ...] = ()
     doc_reviews: Mapping[str, float] | None = field(default_factory=dict)
     gate_outputs: Mapping[Path, tuple[str, ...]] = field(default_factory=dict)
+    fragments: Mapping[Path, tuple[Place, ...]] = field(default_factory=dict)
     branches: Mapping[Path, str] = field(default_factory=dict)
     stalled: Mapping[str, Report] = field(default_factory=dict)
     late_resumes: Mapping[str, tuple[LateResume, ...]] = field(default_factory=dict)
@@ -353,6 +366,7 @@ class State:
     parents: Mapping[str, str] = field(default_factory=dict)
     spent: Mapping[str, Spend] = field(default_factory=dict)
     budgets: Mapping[str, Budget] = field(default_factory=dict)
+    doc_budgets: Mapping[str, Budget] = field(default_factory=dict)
 
     @property
     def arrived(self) -> list[Message]:

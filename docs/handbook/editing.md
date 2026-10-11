@@ -49,7 +49,7 @@
     - Its context: `context role <name>`.
     - A role's brief comes from the script or the session that spawns it, and the `context role` output gives that file's path.
 - The `deletions` report: [Deletion report](prompts/run_dl.md).
-- The other sentences a runner tool prints: the `mctx` strings of the modules under [render](src/checker/render) and of [text.py](src/cli/text.py), and the help text in [parser.py](src/cli/parser.py) and [context.py](scripts/context.py).
+- Each text a program puts in an agent's context: its `mctx` fragments, as [Prose in code](src/controlled_markdown/writing.md#prose-in-code) gives them.
 - What the callout-rate classifier reads, deprecated with the console: [Classification rubric](tools/console/recal/RUBRIC.md).
 - The classifier, deprecated with the console: [Callout rate recalibration](tools/console/recal/README.md).
 - The workflow briefs and the schema descriptions, deprecated: the scripts under [workflows](.claude/workflows).

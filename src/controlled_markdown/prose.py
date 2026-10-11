@@ -204,7 +204,12 @@ def check_fragment(fragment: Fragment, root: Path | None = None) -> None:
 
 def fragments(path: Path, source: str):
     """Every fragment a file holds."""
-    text = path.read_text()
+    yield from text_fragments(path.read_text(), path, source)
+
+
+def text_fragments(text: str, path: Path, source: str):
+    """Every fragment the text `text` of the file `path` holds, which may
+    be the file's text at another commit than the tree's."""
     if path.suffix == ".py":
         if "mctx" not in text:
             return
