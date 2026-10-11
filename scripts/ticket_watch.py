@@ -133,7 +133,7 @@ def closed_changes(tickets: Path) -> Iterator[tuple[Path, str]]:
             yield path, text
 
 
-def threshold(tickets: Path, editor: str, undecided: list[str]) -> float | None:
+def threshold(tickets: Path, editor: Role, undecided: list[str]) -> float | None:
     """The median cost of the most recent `CHANGES` changes closed `fixed`
     with a known cost whose `editors` give `editor`, or None, with an
     `undecided` line, where fewer exist."""
@@ -162,7 +162,7 @@ FEWEST_LIKE = 5
 budget is taken over; with fewer, it is taken over every earlier one."""
 
 
-def like_changes(tickets: Path, editors: frozenset[str], before: float,
+def like_changes(tickets: Path, editors: frozenset[Role], before: float,
                  undecided: list[str]) -> list[Spend]:
     """The spend of each `change` closed `fixed` before `before` with a
     known spend whose `editors` set is `editors`, or of each such change
@@ -178,7 +178,7 @@ def like_changes(tickets: Path, editors: frozenset[str], before: float,
     return like if len(like) >= FEWEST_LIKE else [s for _, s in every]
 
 
-def budget(tickets: Path, editors: frozenset[str], before: float,
+def budget(tickets: Path, editors: frozenset[Role], before: float,
            undecided: list[str]) -> Budget | None:
     """The budget of a change with the `editors` set `editors` taken at
     `before`, or None, with an `undecided` line, where no earlier change
@@ -221,7 +221,7 @@ def route(tickets: Path, number: TicketNumber, path: Path, agent: str,
     fix = front(read_ticket(path)).get("fix")
     if fix is None:
         raise Refused(mctx("{path} gives no `fix`").format(path=path))
-    limit = threshold(tickets, fix, undecided)
+    limit = threshold(tickets, Role(fix), undecided)
     dollars, _ = summed(path)
     if limit is None:
         note = mctx("summed loss {dollars:.4f} dollars, the threshold of `{fix}` unknown").format(

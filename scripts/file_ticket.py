@@ -17,7 +17,7 @@ from pathlib import Path
 
 from arc.task import task_file
 from controlled_markdown import mctx
-from operations.roles import EDITORS
+from operations.roles import EDITORS, Role
 from engine import checkout
 from handbook.paths import importable
 
@@ -222,7 +222,7 @@ def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str,
         undecided: list[str] = []
         run_id, start, end = case
         found = case_loss(run_id, start, end, undecided)
-        limit = None if found.dollars is None else threshold(tickets, fix, undecided)
+        limit = None if found.dollars is None else threshold(tickets, Role(fix), undecided)
         print_undecided(undecided)
         if found.dollars is not None and limit is not None and found.dollars < limit:
             status = Status.WATCHING

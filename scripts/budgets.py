@@ -241,7 +241,7 @@ def censored(r: Run, undecided: list[str]) -> bool | None:
         own = r.own_from(i)
         if own is None:
             unknown = True
-        elif own >= budget * 60:
+        elif past_budget(own, budget):
             return True
     if unknown:
         undecided.append(mctx("{run}: the own time of a message with a budget "

@@ -9,7 +9,7 @@ from budgets import budgets_in_force, of_budget, past_budget
 from context_bound_hook import CONTEXT_BOUND, bounded, past_bound
 from controlled_markdown import mctx
 from open_agents import Listed, parent_reports
-from run_profile import clock, minutes, one_line
+from run_profile import clock, minutes, minutes_or_unknown, one_line
 from run_records import Run, Span
 from run_reads import MAIN
 from ticketing.times import utc_stamp
@@ -47,7 +47,7 @@ def print_running(agents: list[Listed], now: float, calls_since: float | None,
                   undecided: list[str]) -> None:
     for listed in agents:
         r = listed.run
-        since = minutes(now - r.start) if r.start is not None else "?"
+        since = minutes_or_unknown(now - r.start if r.start is not None else None)
         last = len(r.messages) - 1
         active_time = active_of(listed, now)
         period_end = r.period_end(last) if r.messages else None
@@ -57,7 +57,7 @@ def print_running(agents: list[Listed], now: float, calls_since: float | None,
             active=minutes(active_time), time=clock(r.messages[-1].time), to=to)
             if active_time is not None else "?")
         own_time = own_of(listed, now)
-        own = minutes(own_time) if own_time is not None else "?"
+        own = minutes_or_unknown(own_time)
         budget = next(reversed(budgets_in_force(r, undecided)), None)
         context = f"{r.context:,}" if r.context is not None else "?"
         past = "past " if past_bound(r.context) else ""
@@ -113,8 +113,8 @@ def print_messages(r: Run, undecided: list[str]) -> None:
     for i, (m, budget) in enumerate(zip(r.messages, budgets, strict=True)):
         active, own = r.active_from(i), r.own_from(i)
         past = "  past budget" if past_budget(own, budget) else ""
-        active_text = minutes(active) if active is not None else "?"
-        own_text = minutes(own) if own is not None else "?"
+        active_text = minutes_or_unknown(active)
+        own_text = minutes_or_unknown(own)
         print(f"    {clock(m.time)}  active {active_text}  own {own_text}"
               f"{of_budget(budget)}{past}")
 

@@ -190,7 +190,7 @@ def change_budgets(state: State, spent: dict[str, Spend], tickets: Path,
     def of(t: Ticket, before: float) -> Budget | None:
         if t.editors is None:
             return None
-        return budget(tickets, frozenset(r.value for r in t.editors), before, undecided)
+        return budget(tickets, frozenset(t.editors), before, undecided)
 
     out: dict[str, Budget] = {}
     if (t := changes.next_take(state)) is not None and (b := of(t, state.now)) is not None:

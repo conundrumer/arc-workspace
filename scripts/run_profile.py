@@ -17,6 +17,10 @@ def minutes(s: float) -> str:
     return f"{s / 60:.1f}m"
 
 
+def minutes_or_unknown(s: float | None) -> str:
+    return minutes(s) if s is not None else "?"
+
+
 def clock(t: float | None) -> str:
     return time.strftime(MINUTE_FORM, time.gmtime(t)) if t is not None else "?"
 
