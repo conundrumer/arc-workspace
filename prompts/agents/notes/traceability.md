@@ -68,6 +68,7 @@
     - "Where you run no solver pass, file each fault": none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
     - "Tell the user what each ticket": none. Kept: the principle of Requirements, the user's part.
     - "Where the user's later words bear on a `request`": Requirements: requirements checked against added words.
+    - "Where a `request` under `tickets/blocked/` waits on `validation`": Validation: a run shows the need met.
     - "Where the user rules on a ticket under `tickets/blocked/`": Decisions: a departing decision reaches the user.
 - [Decisions](prompts/agents/notes/coordinator.md#decisions): Decisions: each decision recorded with what it was made from.
 - [Declines](prompts/agents/notes/coordinator.md#declines): Decisions: a decline carries its defense.
@@ -80,6 +81,9 @@
 - [Cards](prompts/agents/notes/coordinator.md#cards): Decisions: a departing decision reaches the user.
 - [Codex](prompts/agents/notes/coordinator.md#codex): Decisions: a departing decision reaches the user.
     - "When specifying an issue in prose to fix": Requirements: requirements traced to the spans.
+
+## Card notes
+- [Cards](prompts/agents/notes/cards.md#cards): Decisions: a departing decision reaches the user.
 
 ## Launching notes
 - [Launching](prompts/agents/notes/launching.md#launching): Implementation: each item not done reaches the agent that decides it; Requirements: requirements traced to the spans.

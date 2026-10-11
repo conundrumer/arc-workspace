@@ -62,6 +62,7 @@ class Run:
     # The end of each call the run backgrounded whose end is known.
     ended: list[float]
     context: int | None
+    request_contexts: list[int]
     cost: float | None
     said: str | None
     # The messages from the run's parent, the brief first, the messages

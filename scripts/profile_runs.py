@@ -34,7 +34,8 @@ from open_agents import Listed, hung_time, running_agents, work_open  # noqa: E4
 from run_prints import (RECENT_CALLS, print_messages,  # noqa: E402
                         print_report, print_running)
 from run_profile import (COMMAND_WIDTH, clock, dollars, minutes,  # noqa: E402
-                         part_split, print_groups, print_types)
+                         part_split, print_groups, print_split,
+                         print_types)
 from run_profiler import profile  # noqa: E402
 from run_records import Run  # noqa: E402
 from run_reads import (BACKGROUND_TASK, agent_type, bash_spans, blocks, refused_at,  # noqa: E402
@@ -70,7 +71,7 @@ REPRICED = mctx("each token cost is of the same requests at the same token "
 HELP = mctx("""
     - Usage:
         ```
-        uv run python scripts/profile_runs.py ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--runs] [--since DATE] [--price-at MODEL]
+        uv run python scripts/profile_runs.py ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--runs] [--since DATE] [--price-at MODEL] [--split TIME]
         uv run python scripts/profile_runs.py --under ID [--pct P] [--top N] [--since DATE] [--price-at MODEL]
         uv run python scripts/profile_runs.py --running ID [--calls-since TIME]
         uv run python scripts/profile_runs.py --pending ID
@@ -100,6 +101,8 @@ HELP = mctx("""
     - A report's text is the entry's text, and of a message that delivers the agent's SubagentHandback, that text without the harness's preamble and indent. An entry whose text is the harness's pointer to such a message, or the line an agent gives after it sent its final reply by SendMessage, gives no report. A report whose text is the path alone of a report file that `operate.py next` gives in a brief is that file's text, for the latest report that gives that path; an earlier one keeps the path as its text, and where the file is gone, an `undecided` line on stderr names it.
     - Where the latest message from the parent is unknown, or no transcript of the parent is found, it prints `?`. A notification or a launch result whose status is of no known form gives no report, and where no `.meta.json` of the run gives a `toolUseId`, no launch result is matched to it. A launch result whose status is of no known form counts as not in the background, wherever it is read. An `undecided` line on stderr names each, and each distinct line is printed once.
     - More than one run prints, per agent type, the number of runs, the minimum, median, P-th percentile and maximum of wall time, the total, the median and P-th percentile of active time, which is wall time less `idle`, and each part's share of the total, then per agent type the total token cost of its runs of known cost, its share of that total over all types, the median cost of such a run, and the number of runs of unknown cost it leaves out, then each type's labels by time, with the number of runs each appears in.
+    - `--split TIME` prints last, per agent type, for its runs whose first entry is before TIME and for those at or after it, apart: the number of runs, the median context per request over all their requests, the median context of a run's first request, and the median token cost of a run of known cost. A request is one that `token_prices.requests` gives, and its context is what `token_prices.request_input` gives for its usage. A type with no run on one side prints `-` for that side, and a median over no value prints `?`. A run whose start is unknown joins neither side, and an `undecided` line on stderr names it.
+        - To judge a cut of an agent type's context, run `--split` with the merge time of the change that cut it as TIME, and as IDs the sessions that ran that type both before and after that time. The cut held where that type's median context per request and median cost per run are both lower after than before.
     - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over. In place of a budget of type `{general}`, it prints one for each role of `operations.roles.GENERAL_ROLES`, taken over the runs of type `{general}` whose description `operations.roles.described` gives that role, and a run of that type whose description gives no such role joins no budget. The budget `operate.py next` gives a brief is the budget of its role where that role is one of these, and otherwise the budget of its agent type. That median is taken over the runs an operator launched alone, with or without a budget in force, and of those, over the runs their budget did not cut. An operator launched a run where its parent, as `--running` gives it, is an agent of type `{operator}`, and a run whose parent's type no transcript of the sessions of the run gives is left out, and an `undecided` line on stderr names it. A run's budget cut it where its agent type's rendered prompt gives the reply that opens with `{budget_passed}`, which is what it does at its budget, and the active time of a message from its parent with a budget in force, as one run prints that budget, is at or past that budget, so that its wall time is no measure of what its work needed. A run of any other type does all its work past its budget, and its budget cut none. Where the active time of such a message is unknown and no other message shows it cut, whether its budget cut it is unknown: it is left out, and an `undecided` line on stderr names it.
         - A brief gives items where its first line is one of the lines `operations.briefs` gives for a brief of several items of the same work, each item a ticket number. Where the brief of some run of a type or a role gives items, it also prints, on a line led by `per item`, the budget per item of that type or role, which is {factor} times the median of the wall time per item, a run's wall time over the number of items its brief gives. That median is taken by the lines below over the runs an operator launched that their budget did not cut and whose brief gives items.
         - The window of a role of `operations.roles.GENERAL_ROLES` is the runs whose first entry is at or after the last commit that changed `src/operations/briefs.py`.
@@ -324,6 +327,9 @@ def main(argv: list[str]) -> int:
                     help=mctx("start of the window of runs each type's "
                               "budget is taken over, in place of the type's "
                               "own: ") + ISO_TIME)
+    ap.add_argument("--split", type=utc_time, metavar="TIME",
+                    help=mctx("print per agent type the runs before TIME and "
+                              "those at or after it apart: ") + ISO_TIME)
     args = ap.parse_args(argv)
     types = set(args.type.split(",")) if args.type else None
     undecided: list[str] = []
@@ -345,6 +351,9 @@ def main(argv: list[str]) -> int:
     if args.calls_since is not None and not args.running:
         print(mctx("refused: `--calls-since` goes with `--running ID` alone"),
               file=sys.stderr)
+        return 2
+    if args.split is not None and not args.ids:
+        print(mctx("refused: `--split` goes with IDs alone"), file=sys.stderr)
         return 2
     if args.price_at is not None:
         print(mctx("price at {model}: {repriced}").format(
@@ -395,6 +404,8 @@ def main(argv: list[str]) -> int:
         print_types(runs, args.pct, args.top)
         print()
         print_budgets(runs, args.since, undecided)
+    if args.split is not None:
+        print_split(runs, args.split, undecided)
     for line in dict.fromkeys(undecided):
         print(mctx("undecided: {line}").format(line=line), file=sys.stderr)
     return 0

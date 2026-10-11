@@ -4,6 +4,7 @@ it."""
 import math
 import time
 
+from controlled_markdown import mctx
 from run_records import Group, Key, Part, Run
 from ticketing.times import MINUTE_FORM
 
@@ -62,6 +63,35 @@ def print_costs(by_type: dict[str, list[Run]], order: list[str]) -> None:
         median = dollars(percentile(costs, 50)) if costs else "?"
         print(f"{kind:<18} {dollars(total):>9} {share} {median:>8} "
               f"{len(by_type[kind]) - len(costs):>8}")
+
+
+def print_split(runs: list[Run], split: float, undecided: list[str]) -> None:
+    """The print of `--split`, as the HELP of `profile_runs` gives it."""
+    sides: dict[str, tuple[list[Run], list[Run]]] = {}
+    for r in runs:
+        if r.start is None:
+            undecided.append(mctx("{run}: its start is unknown, so it joins "
+                                  "no side of the split").format(run=r.label))
+            continue
+        side = sides.setdefault(r.agent_type, ([], []))
+        side[r.start >= split].append(r)
+    print(f"\n{'type':<18} {'side':<6} {'runs':>4} {'ctx p50':>8} "
+          f"{'first p50':>9} {'cost p50':>8}")
+    for kind in sorted(sides):
+        for name, rs in zip(("before", "after"), sides[kind]):
+            if not rs:
+                print(f"{kind:<18} {name:<6} {'-':>4} {'-':>8} {'-':>9} {'-':>8}")
+                continue
+            contexts = [c for r in rs for c in r.request_contexts]
+            firsts = [r.request_contexts[0] for r in rs if r.request_contexts]
+            costs = [r.cost for r in rs if r.cost is not None]
+            print(f"{kind:<18} {name:<6} {len(rs):>4} "
+                  f"{median_tokens(contexts):>8} {median_tokens(firsts):>9} "
+                  f"{dollars(percentile(costs, 50)) if costs else '?':>8}")
+
+
+def median_tokens(values: list[int]) -> str:
+    return f"{percentile([float(v) for v in values], 50):.0f}" if values else "?"
 
 
 def part_split(parts: dict[Part, float]) -> str:

@@ -27,7 +27,7 @@
 - Where the user's later words bear on a `request` you filed, append their span to it with `uv run python scripts/spans.py append`. Send that span to each agent that holds the `request` or the `change` it waits on, and move the `request` to `tickets/open/` where it waits on a `change` that has not merged.
     - Where the `change` of that `request` has merged, file those words as a new `request` in place of the append, with a line under `Grounds` that gives the earlier one, and where those words withdraw the earlier `request`'s need, close it `wontfix` with the new `request`'s number.
 - Where the user rules on a ticket under `tickets/blocked/` that waits on the user and is no `change`, move it to `tickets/open/`, and record the ruling on it: as a span, as the line above gives, where it is a `request`, and otherwise in the note of the line that moves it.
-- Where a `request` under `tickets/blocked/` waits on `validation`, and you read a run that exercises the change its log gives, close the request `fixed` where the run shows its need met, and otherwise move it to `tickets/open/` with the part of its need the run shows unmet in the note.
+- Where a `request` under `tickets/blocked/` waits on `validation`, and you read a run that exercises the change its log gives, or, where it waits for a change that cuts agents' context, the output of `uv run python scripts/profile_runs.py --split` run as its `--help` gives, close the request `fixed` where that run or output shows its need met, and otherwise move it to `tickets/open/` with the part of its need that run or output shows unmet in the note.
 - Launch no ticket analyst for a ticket you file, other than a `request` on `send`. Once a line above writes on a ticket outside `tickets/draft/`, other than such a `request` or one you hold, and before you end your turn with no other work, tell an operator that tickets are open, as [Operators](prompts/agents/notes/launching.md#operators) gives.
 
 ## Decisions
@@ -54,9 +54,7 @@
 - While an operator of yours runs, and you report to the user an agent's message, a completion notification or an event the harness reports that reached you meanwhile, open that report with a bold label that gives the agent the message is from or the notification concerns, by the full name of its kind and whether it is yours or an operator's, or the harness for an event it reports, and the route by which what you report reached you. Give no agent by its id.
 
 ## Cards
-- When the user requests cards to help make a decision regarding a solver, launch one handbook agent for all the cards of that request, and tell it to make each based on [card_spec.py](src/study/card_spec.py), to bundle them with `uv run python scripts/cards.py bundle <name> <page> ...` where they are several, to publish the card or the bundle as a private artifact, and to report the artifact's link.
-- Give the user the link that agent reports, in place of the path of the card or the bundle.
-- When you launch or resume an agent to render again a card or a bundle whose link you gave the user, tell it to publish it to that link.
+- Before you launch or resume an agent on cards, read [Cards](prompts/agents/notes/cards.md#cards).
 
 ## Codex
 - Codex already has the handbook in context.
