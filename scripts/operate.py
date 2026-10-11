@@ -30,7 +30,7 @@ importable(checkout.scripts())
 from agent_launches import accepted_after, last_delivered  # noqa: E402
 from operator_state import USAGE_STALE, read_relay, read_state  # noqa: E402
 from profile_runs import budget_of  # noqa: E402
-from run_reads import agent_type, parent_id  # noqa: E402
+from run_reads import MAIN, agent_type, parent_id  # noqa: E402
 from transcripts import Refused, find  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 
@@ -153,7 +153,7 @@ def review(editor: str) -> int:
     """Print the step `changes.editor_review` gives the doc editor
     `editor`, as HELP gives `review`."""
     parent = parent_id(find(editor))
-    if agent_type(find(parent)) != Role.OPERATOR.agent_type:
+    if parent == MAIN or agent_type(find(parent)) != Role.OPERATOR.agent_type:
         print(changes.NO_OPERATOR.format(agent=editor))
         return 0
     state, _ = read_state(parent)
