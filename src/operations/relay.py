@@ -7,7 +7,7 @@ launcher, or, where none runs, to the brief of the next operator the
 launcher launches, each distinct text once. While an operator runs and no line of the
 coordinator's waits for it, the launcher ends its turn, and the operator's
 end or the coordinator's next line resumes it. Once an operator's final text reaches the launcher, a
-text that opens with `plan.FOR_CONTEXT` gives the launch of the next
+text that opens with `final_reply.FOR_CONTEXT` gives the launch of the next
 operator, or, past the launcher's bound, the launcher's final reply, which
 asks the coordinator for a fresh operator launcher whose brief is the lines
 of the coordinator's that wait for the next operator, each distinct text once, and gives them; any other text, and an
@@ -19,9 +19,8 @@ from dataclasses import dataclass
 
 from controlled_markdown import mctx
 from operations.constants import COORDINATOR
-from operations.final_reply import ending_step
-from operations.plan import FOR_CONTEXT
-from operations.printing import FINAL_REPLY
+from operations.final_reply import ending_step, final_message, for_context
+from operations.handled import sends_in
 from operations.roles import Role
 from operations.state import Call, Message
 from operations.steps import EndTurn, Launch, Reply, Send, Step
@@ -31,8 +30,9 @@ from operations.steps import EndTurn, Launch, Reply, Send, Step
 class Run:
     """An operator the launcher launched: its agent id, the time of its
     launch, whether its end has not reached the launcher (`Agent.pending`),
-    and the text of the first message by which it sent the launcher its
-    final reply (`final_reply.final_sends`), or None where it sent none."""
+    and the text of the final reply that the first message by which it
+    sent the launcher its final reply gives (`final_reply.final_sends`,
+    `final_reply.final_text`), or None where it sent none."""
     agent_id: str | None
     launched: float
     pending: bool
@@ -64,9 +64,8 @@ NO_REPLY = mctx("Operator {operator} ended with no final reply.")
 def sent(relay: Relay, to: str, message: str, since: float) -> bool:
     """Whether the launcher sent `to` a message that opens with `message`
     after `since`."""
-    return any(c.tool == "SendMessage" and not c.error and c.time > since
-               and c.input.get("to") == to and str(c.input.get("message", "")).startswith(message)
-               for c in relay.calls)
+    return any(c.time > since and str(c.input.get("message", "")).startswith(message)
+               for c in sends_in(relay.calls, to))
 
 
 def waiting(relay: Relay) -> list[Message]:
@@ -90,7 +89,7 @@ def ending(relay: Relay, text: str) -> Step:
     last launch, then the reply."""
     since = relay.runs[-1].launched if relay.runs else 0.0
     return ending_step(COORDINATOR, text,
-                       sent(relay, COORDINATOR, f"{FINAL_REPLY}\n{text}", since))
+                       sent(relay, COORDINATOR, final_message(text), since))
 
 
 def next_step(relay: Relay) -> Step:
@@ -106,7 +105,7 @@ def next_step(relay: Relay) -> Step:
             raise ValueError(f"the running operator launched at {run.launched} has no known "
                              "agent id")
         return Send(run.agent_id, lines[0].text)
-    if run.final is not None and run.final.startswith(f"{FINAL_REPLY}\n{FOR_CONTEXT}"):
+    if run.final is not None and for_context(run.final):
         if not relay.past_bound:
             return operator_launch(relay, brief)
         if not lines:

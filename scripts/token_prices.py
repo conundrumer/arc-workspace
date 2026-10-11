@@ -107,11 +107,17 @@ def unpriced(usage: dict[str, Any]) -> str | None:
     return None
 
 
+def unknown(undecided: list[str], reason: str) -> None:
+    """Add to `undecided` the line that gives a token cost as unknown for
+    `reason`."""
+    undecided.append(mctx("token cost unknown: {reason}").format(reason=reason))
+
+
 def model_price(model: Any, undecided: list[str]) -> Price | None:
     """The prices of `model`, or None where the table gives none, with an
     `undecided` line for it."""
     if model not in PRICES:
-        undecided.append(mctx("token cost unknown: no price for model {model}").format(model=model))
+        unknown(undecided, mctx("no price for model {model}").format(model=model))
         return None
     return PRICES[model]
 
@@ -127,9 +133,9 @@ def grouped(entries: list[dict[str, Any]]) -> dict[str | None, list[dict[str, An
     return groups
 
 
-def requests(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The first entry of each group `grouped` gives."""
-    return [g[0] for g in grouped(entries).values()]
+def requests[K](groups: dict[K, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """The first entry of each group of `groups`, as `grouped` gives them."""
+    return [g[0] for g in groups.values()]
 
 
 def priced_requests(entries: list[dict[str, Any]],
@@ -138,7 +144,7 @@ def priced_requests(entries: list[dict[str, Any]],
     with an `undecided` line for it."""
     groups = grouped(entries)
     if None in groups:
-        undecided.append(mctx("token cost unknown: no message id"))
+        unknown(undecided, mctx("no message id"))
         return None
     return {k: v for k, v in groups.items() if k is not None}
 
@@ -167,7 +173,7 @@ def run_cost(entries: list[dict[str, Any]], undecided: list[str],
             table = model_price(message.get("model") if at is None else at, undecided)
             field = unpriced(usage)
             if field is not None:
-                undecided.append(mctx("token cost unknown: no price for {field} of model {model}").format(
+                unknown(undecided, mctx("no price for {field} of model {model}").format(
                     field=field, model=message.get("model")))
             if table is None or field is not None:
                 known = False
@@ -193,7 +199,7 @@ def span_cost(entries: list[dict[str, Any]], start: float, end: float,
     groups = priced_requests(entries, undecided) if cost is not None else None
     if cost is None or groups is None:
         return None
-    firsts = [g[0] for g in groups.values()]
+    firsts = requests(groups)
     before = [e for e in firsts if epoch(e["timestamp"]) < start]
     after = [e for e in firsts if epoch(e["timestamp"]) > end]
     if not before or not after:

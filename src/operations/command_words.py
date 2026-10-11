@@ -2,8 +2,7 @@
 command, `scripts/operate.py`, that a printed step runs."""
 
 import shlex
-
-
+from enum import StrEnum
 
 
 COMMAND = "scripts/operate.py"
@@ -44,35 +43,35 @@ def simple_commands(command: str) -> list[list[str]]:
     return [words for words in out if words]
 
 
-NEXT = "next"
-"""The action that prints an operator's next step."""
+class Action(StrEnum):
+    """An action of `operate.py` that prints an agent's next step."""
+    NEXT = "next"
+    """The action that prints an operator's next step."""
+    RELAY = "relay"
+    """The action that prints an operator launcher's next step."""
 
 
-RELAY = "relay"
-"""The action that prints an operator launcher's next step."""
-
-
-def next_command(agent: str, action: str = NEXT) -> str:
+def next_command(agent: str, action: Action = Action.NEXT) -> str:
     return " ".join(run_words(action, agent))
 
 
-def run_words(action: str, agent: str) -> list[str]:
+def run_words(action: Action, agent: str) -> list[str]:
     """The words of the call of `operate.py` with `action` for the operator
     `agent`."""
     return [*RUN_COMMAND.split(), action, agent]
 
 
-def runs(command: str, action: str, agent: str) -> bool:
+def runs(command: str, action: Action, agent: str) -> bool:
     """Whether the Bash command `command` runs `operate.py` with `action`
     for the operator `agent`, whatever else it runs."""
     return any(is_call(words, action, agent) for words in simple_commands(command))
 
 
-def is_call(words: list[str], action: str, agent: str) -> bool:
+def is_call(words: list[str], action: Action, agent: str) -> bool:
     """Whether the simple command `words` is the call of `operate.py` with
     `action` for the operator `agent`."""
     return words == run_words(action, agent)
 
 
-def is_next(command: str, agent: str, action: str = NEXT) -> bool:
+def is_next(command: str, agent: str, action: Action = Action.NEXT) -> bool:
     return runs(command, action, agent)

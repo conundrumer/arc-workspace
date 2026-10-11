@@ -348,7 +348,7 @@ class Gate:
             with rwlock.tried() as tried:
                 if tried is None:
                     raise Skipped(rwlock.SKIP.format(
-                        path=checkout.git_common_dir(checkout.ROOT) / rwlock.LOCK_FILE))
+                        path=rwlock.lock_dir() / rwlock.LOCK_FILE))
                 yield tried
             return
         with rwlock.taken(rwlock.Hold.EXCLUSIVE, rwlock.Notice()) as hold:

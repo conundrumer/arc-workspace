@@ -186,10 +186,15 @@ class Hunk(NamedTuple):
     """A hunk of a `-U0` unified diff: the first line and the count of its
     old side, and of its new side, a count of 0 an insertion after, or a
     deletion after, the first line."""
-    start: int
-    count: int
+    old_start: int
+    old_count: int
     new_start: int
     new_count: int
+
+    @property
+    def old_end(self) -> int:
+        """The last line of the old side, where its count is not 0."""
+        return self.old_start + self.old_count - 1
 
 
 @dataclass(frozen=True)
@@ -224,11 +229,11 @@ def moved(ran: frozenset[int], hunks: Sequence[Hunk]) -> frozenset[int]:
     for n in ran:
         shift = 0
         for h in hunks:
-            end = h.start + h.count - 1 if h.count else h.start
-            if h.count and h.start <= n <= end:
+            end = h.old_end if h.old_count else h.old_start
+            if h.old_count and h.old_start <= n <= end:
                 raise ValueError(f"line {n} stands inside the hunk {h}")
             if n > end:
-                shift += h.new_count - h.count
+                shift += h.new_count - h.old_count
         out.add(n + shift)
     return frozenset(out)
 
@@ -303,13 +308,13 @@ def runs_hunks(source: str, hunks: Sequence[Hunk], ran: frozenset[int]) -> bool:
     if not hunks:
         return True
     fs = functions(source)
-    for start, count, _, _ in hunks:
-        lo, hi = (start, start + count - 1) if count else (start, start + 1)
+    for h in hunks:
+        lo, hi = (h.old_start, h.old_end) if h.old_count else (h.old_start, h.old_start + 1)
         inside = [f for f in fs if f.first <= lo and hi <= f.last]
         if not inside:
             return True
         f = max(inside, key=lambda f: f.first)
-        header = lo < f.body if count else start < f.body - 1
+        header = lo < f.body if h.old_count else h.old_start < f.body - 1
         if header or any(f.body <= n <= f.last for n in ran):
             return True
     return False

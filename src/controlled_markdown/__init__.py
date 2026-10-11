@@ -142,6 +142,7 @@ from controlled_markdown.renderers import entries as entries
 from controlled_markdown.renderers import full as full
 from controlled_markdown.renderers import gist as gist
 from controlled_markdown.renderers import headings as headings
+from controlled_markdown.renderers import markdown_heading_lines as markdown_heading_lines
 from controlled_markdown.renderers import markdown_headings as markdown_headings
 from controlled_markdown.renderers import outside_fences as outside_fences
 from controlled_markdown.renderers import render as render

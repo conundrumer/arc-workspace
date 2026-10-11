@@ -19,7 +19,7 @@ from run_reads import (blocks, context_size, is_prompt, message_text, parent_id,
                        tool_calls, type_in)
 from run_records import Call, Group, Key, Message, Part, Run, Span
 from senders import Sender, sender
-from token_prices import request_input, requests, run_cost
+from token_prices import grouped, request_input, requests, run_cost
 from transcripts import agent_id, epoch, is_subagent
 
 
@@ -177,7 +177,8 @@ def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Ru
         messages.insert(0, Message(briefed, first, "\n".join(brief), 0.0))
     cwd = next((e["cwd"] for e in entries if e.get("cwd")), None)
     context = context_size(reversed(entries))
-    request_contexts = [int(request_input(e["message"]["usage"])) for e in requests(entries)]
+    request_contexts = [int(request_input(e["message"]["usage"]))
+                        for e in requests(grouped(entries))]
     unpriced: list[str] = []
     cost = run_cost(entries, unpriced, price_at)
     undecided.extend(f"{label}: {line}" for line in dict.fromkeys(unpriced))

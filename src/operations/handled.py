@@ -12,7 +12,7 @@ from functools import cache
 
 from controlled_markdown import form
 from operations import briefs
-from operations.command_words import is_call, is_next, simple_commands
+from operations.command_words import Action, is_call, is_next, simple_commands
 from operations.constants import COORDINATOR
 from operations.printing import KEY_LINE, bash_text, opening, send_opening, unfenced
 from operations.roles import Purpose
@@ -147,7 +147,7 @@ def only_command(command: str, agent: str) -> bool:
     operator `agent` and nothing else but `cd` and `:`, which run no step
     the command prints."""
     return is_next(command, agent) and all(
-        words[0] in ("cd", ":") or is_call(words, "next", agent)
+        words[0] in ("cd", ":") or is_call(words, Action.NEXT, agent)
         for words in simple_commands(command))
 
 

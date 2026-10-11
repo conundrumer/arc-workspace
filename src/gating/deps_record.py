@@ -64,8 +64,7 @@ class Record:
         from the record's commit to the checkout modifies moved to the
         number that line has in the checkout. It is exact for the entries
         of the commands that `traced_keys` leaves untraced."""
-        hunks = {t.path: t.hunks for t in touched_from(self.commit, self.commit)
-                 if t.status is checkout.Change.MODIFIED and Path(t.path).suffix in PY_SUFFIXES}
+        hunks = {t.path: t.hunks for t in touched_from(self.commit, self.commit)}
         return {k: Deps({p: moved(ns, hunks[p]) if p in hunks else ns
                          for p, ns in d.lines.items()}, d.reads, d.listed)
                 for k, d in self.deps.items()}

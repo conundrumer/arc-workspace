@@ -33,7 +33,7 @@ from handbook.reader_names import ReaderName
 from handbook.readers import reader_calls
 
 from operations.constants import COORDINATOR
-from operations.final_reply import final_sends_in
+from operations.final_reply import final_sends_in, final_text
 from operations.printing import unfenced
 from operations.relay import Relay, Run
 from operations.roles import Role
@@ -82,7 +82,7 @@ def read_relay(me: str) -> tuple[Relay, Path]:
             theirs: list[Call] = []
             read_operator(a.agent_id, find(a.agent_id), main, undecided, [], theirs, [], {}, {})
             sends = [c for c in final_sends_in(theirs, a.agent_id, me) if c.time > a.launched]
-            final = unfenced(str(sends[0].input.get("message", ""))) if sends else None
+            final = final_text(unfenced(str(sends[0].input.get("message", "")))) if sends else None
         runs.append(Run(a.agent_id, a.launched, a.pending, final))
     for line in dict.fromkeys(undecided):
         print(f"operate: undecided: {line}", file=sys.stderr)

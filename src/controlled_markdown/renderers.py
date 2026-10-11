@@ -536,10 +536,18 @@ MD_INDENT = 3
 
 def outside_fences(text: str) -> Iterator[str]:
     """Each line of ordinary Markdown outside its fenced code blocks, the
-    fence lines left out. A fence counts at any indent, since a render nests
-    a code block under a list item at that item's indent."""
+    fence lines left out (`numbered_outside_fences`)."""
+    for _, line in numbered_outside_fences(text):
+        yield line
+
+
+def numbered_outside_fences(text: str) -> Iterator[tuple[int, str]]:
+    """Each line of ordinary Markdown outside its fenced code blocks, with
+    its index in `text.split("\n")`, the fence lines left out. A fence
+    counts at any indent, since a render nests a code block under a list
+    item at that item's indent."""
     fence = ""
-    for line in text.split("\n"):
+    for at, line in enumerate(text.split("\n")):
         body = line.strip()
         if fence:
             if _closes(body, fence):
@@ -547,20 +555,28 @@ def outside_fences(text: str) -> Iterator[str]:
         elif (m := FENCE_RE.match(body)) is not None:
             fence = m.group(1)
         else:
-            yield line
+            yield at, line
 
 
-def markdown_headings(text: str) -> list[str]:
-    """The text of each ATX heading in ordinary Markdown, the lines of its
-    fenced code blocks left out (`outside_fences`)."""
-    out: list[str] = []
-    for line in outside_fences(text):
+def markdown_heading_lines(text: str) -> list[tuple[int, int, str]]:
+    """Each ATX heading in ordinary Markdown, the lines of its fenced code
+    blocks left out (`numbered_outside_fences`): the index of its line, its
+    depth, the count of its leading `#`, and its text."""
+    out: list[tuple[int, int, str]] = []
+    for at, line in numbered_outside_fences(text):
         lead = len(line) - len(line.lstrip(" "))
         if lead > MD_INDENT:
             continue
         if (h := MD_HEADING_RE.match(line[lead:])) is not None:
-            out.append(h.group(1) or "")
+            depth = len(line[lead:]) - len(line[lead:].lstrip("#"))
+            out.append((at, depth, h.group(1) or ""))
     return out
+
+
+def markdown_headings(text: str) -> list[str]:
+    """The text of each ATX heading in ordinary Markdown
+    (`markdown_heading_lines`)."""
+    return [heading for _, _, heading in markdown_heading_lines(text)]
 
 
 def _lay_out(nodes: list[Node], st: _State, after: str = "") -> str:

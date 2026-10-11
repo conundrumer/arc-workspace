@@ -35,7 +35,7 @@ from tree_reads import main_tree  # noqa: E402
 from operations import briefs, plan, relay  # noqa: E402
 from operations.decisions import WRITE_SECONDS  # noqa: E402
 from operations.monitor import ALERTS  # noqa: E402
-from operations.command_words import NEXT, RELAY  # noqa: E402
+from operations.command_words import Action  # noqa: E402
 from operations.roles import BARE_BRIEFS, Role  # noqa: E402
 from operations.filing import filed, with_report  # noqa: E402
 from operations.printing import key_line, printed  # noqa: E402
@@ -109,7 +109,7 @@ def reloading(step: Launch, state: State) -> float:
     return max([0.0, *(t - time.time() for t in until)])
 
 
-def block(me: str, action: str, step_at: Callable[[float], tuple[Step, Path]]) -> int:
+def block(me: str, action: Action, step_at: Callable[[float], tuple[Step, Path]]) -> int:
     """Print the step `step_at` gives, with the scratchpad its files go
     under, by the deadline it is given, as HELP gives the block of `next`
     and the end of the turn of `relay`."""
@@ -155,16 +155,16 @@ def main(argv: list[str]) -> int:
         print(HELP.format(block=BLOCK_SECONDS, reload=RELOAD_SECONDS, load=plan.LOAD_SECONDS, retry=plan.RETRY_SECONDS, write=round(WRITE_SECONDS), alerts=ALERTS))
         return 0
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
-    parser.add_argument("action", choices=[NEXT, RELAY, "set-aside", "restore"])
+    parser.add_argument("action", choices=[*Action, "set-aside", "restore"])
     parser.add_argument("ident")
     parser.add_argument("rest", nargs="*")
     args = parser.parse_args(argv)
     try:
         match args.action:
-            case "next":
-                return block(args.ident, NEXT, lambda deadline: operator_step(args.ident, deadline))
-            case "relay":
-                return block(args.ident, RELAY, lambda deadline: relay_step(args.ident, deadline))
+            case Action.NEXT:
+                return block(args.ident, Action.NEXT, lambda deadline: operator_step(args.ident, deadline))
+            case Action.RELAY:
+                return block(args.ident, Action.RELAY, lambda deadline: relay_step(args.ident, deadline))
             case "set-aside":
                 if (len(args.rest) != 1 or args.rest[0] not in (Role.ANALYZE, Role.CREATE)
                         or not TASK_ID.fullmatch(args.ident)):

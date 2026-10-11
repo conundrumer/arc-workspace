@@ -10,9 +10,10 @@ import sys
 from typing import Any
 
 from hook_entry import not_registered, run_pre_tool_use
+from operations.roles import Role
 
 HOOK = "context_bound_hook"
-OPERATOR = "operator"
+OPERATOR = Role.OPERATOR.agent_type
 OPERATOR_LAUNCHER = "operator-launcher"
 OPERATORS = frozenset({OPERATOR, OPERATOR_LAUNCHER})
 """The agent types that make only the calls their command prints."""

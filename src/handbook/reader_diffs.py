@@ -19,7 +19,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from engine import checkout
-from controlled_markdown import markdown_headings, mctx, outside_fences
+from controlled_markdown import markdown_heading_lines, mctx
 from handbook.linked import LinkedChange, LinkTarget, folded, linked_changes, sides
 from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT
 from handbook.readers import (calls_of, context_command, context_text, reader_calls,
@@ -86,19 +86,15 @@ def context_at(commit: str, reader: str, args: list[str]) -> str:
 def _heading_paths(lines: list[str]) -> list[tuple[str, ...]]:
     """For each of `lines`, a Markdown text, the heading lines whose
     sections hold it, outermost first, a heading line holding itself. A
-    heading line is one `markdown_headings` finds, so one in a fenced code
-    block is none, and its depth is the count of its leading `#`."""
+    heading line is one `markdown_heading_lines` finds, so one in a fenced
+    code block is none."""
     bare = [line.rstrip("\n") for line in lines]
-
-    def outside(through: int) -> int:
-        return sum(1 for _ in outside_fences("\n".join(bare[:through]))) if through else 0
-
+    depths = {at: depth for at, depth, _ in markdown_heading_lines("\n".join(bare))}
     out: list[tuple[str, ...]] = []
     path: list[tuple[int, str]] = []
     for at, text in enumerate(bare):
-        if markdown_headings(text) and outside(at + 1) > outside(at):
-            depth = len(text.lstrip(" ")) - len(text.lstrip(" ").lstrip("#"))
-            path = [*(h for h in path if h[0] < depth), (depth, text.strip())]
+        if at in depths:
+            path = [*(h for h in path if h[0] < depths[at]), (depths[at], text.strip())]
         out.append(tuple(h for _, h in path))
     return out
 

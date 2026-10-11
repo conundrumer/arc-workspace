@@ -120,6 +120,19 @@ def _take(fh: IO[str], op: int, notice: Notice, line: Callable[[], str]) -> None
         fcntl.flock(fh, op)
 
 
+def lock_dir() -> Path:
+    """The directory the repository's lock files stand in."""
+    return checkout.git_common_dir(checkout.ROOT)
+
+
+@contextlib.contextmanager
+def opened(directory: Path) -> Iterator[tuple[IO[str], IO[str]]]:
+    """The pending mark and the lock whose files stand in `directory`, open
+    to append, the pending mark opened first."""
+    with open(directory / PENDING_FILE, "a") as pending, open(directory / LOCK_FILE, "a") as lock:
+        yield pending, lock
+
+
 @contextlib.contextmanager
 def lock_files(hold: Hold, directory: Path, notice: Notice) -> Iterator[None]:
     """`hold` on the lock whose files stand in `directory`, its wait said
@@ -130,7 +143,7 @@ def lock_files(hold: Hold, directory: Path, notice: Notice) -> Iterator[None]:
     def line() -> str:
         return text
 
-    with open(directory / PENDING_FILE, "a") as pending, open(path, "a") as lock:
+    with opened(directory) as (pending, lock):
         op = fcntl.LOCK_SH if hold is Hold.SHARED else fcntl.LOCK_EX
         _take(pending, op, notice, line)
         _take(lock, op, notice, line)
@@ -160,7 +173,7 @@ def taken(hold: Hold, notice: Notice) -> Iterator[Hold]:
     if started is not None:
         yield started
         return
-    with lock_files(hold, checkout.git_common_dir(checkout.ROOT), notice):
+    with lock_files(hold, lock_dir(), notice):
         yield hold
 
 
@@ -173,9 +186,7 @@ def tried() -> Iterator[Hold | None]:
     if started is not None:
         yield started
         return
-    directory = checkout.git_common_dir(checkout.ROOT)
-    with open(directory / PENDING_FILE, "a") as pending, \
-            open(directory / LOCK_FILE, "a") as lock:
+    with opened(lock_dir()) as (pending, lock):
         try:
             fcntl.flock(pending, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:

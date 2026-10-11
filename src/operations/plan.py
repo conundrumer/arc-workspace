@@ -64,14 +64,13 @@ from operations.directives import (
 from operations.roles import Role, description
 from operations.state import Call, State, Ticket
 from ticketing.vocabulary import Status
-from operations.final_reply import ending_step, failure, final_sends, nested
+from operations.final_reply import (FOR_CONTEXT, ending_step, failure, final_sends, final_text,
+                                   for_context, nested)
 from operations.handled import bash_calls, repeated
-from operations.printing import FINAL_REPLY, unfenced
+from operations.printing import unfenced
 from operations.steps import (Bash, Launch, Poll, Reply, Send, Step, Undecided, decision_key, key,
                               unread_line)
 
-FOR_CONTEXT = mctx("I ended for my context: launch a fresh operator with no lines, which "
-                   "takes up from the state each line below that stands unfinished.")
 GIVEN_AGAIN = mctx("a line below that stands unfinished reaches it only where it is given to it "
                    "again")
 
@@ -264,10 +263,9 @@ def taken_up(state: State) -> frozenset[str]:
     """The operators launched right before `me`, in a row, each of which
     `next` printed the final reply `FOR_CONTEXT`."""
     mine = state.operators.index(state.me) if state.me in state.operators else 0
-    ended = f"{FINAL_REPLY}\n{FOR_CONTEXT}\n"
     out: set[str] = set()
     for o in reversed(state.operators[:mine]):
-        if not any(unfenced(str(c.input.get("message", ""))).startswith(ended)
+        if not any(for_context(final_text(unfenced(str(c.input.get("message", "")))) or "")
                    for c in final_sends(state, o)):
             break
         out.add(o)

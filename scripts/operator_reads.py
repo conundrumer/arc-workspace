@@ -165,6 +165,9 @@ WRAP = ("The coordinator sent a message while you were working:",
 arrives while the operator works."""
 
 
+MESSAGE_FROM = mctx("{run}: a message from")
+
+
 def unwrapped(text: str) -> str:
     return "\n".join(line for line in text.splitlines() if line.strip() not in WRAP).strip()
 
@@ -178,7 +181,7 @@ def from_parent(aid: str, e: dict[str, Any], parent: str, undecided: list[str]) 
     if parent == MAIN:
         return text
     given = [t for s, t in agent_messages(e) if s == parent]
-    where = mctx("{run}: a message from").format(run=aid)
+    where = MESSAGE_FROM.format(run=aid)
     return unfiled(unfenced("\n".join(given) if given else text), f"{where} {parent}",
                    undecided)
 
@@ -221,7 +224,7 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
                 messages.append(Message(aid, epoch(stamp), None, from_parent(
                     aid, e, parent, undecided)))
             else:
-                where = mctx("{run}: a message from").format(run=aid)
+                where = MESSAGE_FROM.format(run=aid)
                 messages += [Message(aid, epoch(stamp), s, unfiled(
                     unfenced(text), f"{where} {s}", undecided))
                              for s, text in agent_messages(e) if s not in children]

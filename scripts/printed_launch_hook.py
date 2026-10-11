@@ -19,11 +19,12 @@ from contextlib import nullcontext
 from typing import Any
 
 from context_bound_hook import OPERATOR, OPERATOR_LAUNCHER, reply_only
+from operations.command_words import Action
 from hook_entry import not_registered, run_pre_tool_use
 
 HOOK = "printed_launch_hook"
 UNSEEN = "run_in_background"
-ACTIONS = {OPERATOR: "next", OPERATOR_LAUNCHER: "relay"}
+ACTIONS: dict[str, Action] = {OPERATOR: Action.NEXT, OPERATOR_LAUNCHER: Action.RELAY}
 """The action of `operate.py` that prints the calls of each agent type the
 hooks hold to them."""
 
@@ -48,7 +49,7 @@ def differing(printed: dict[str, str], inp: dict[str, Any]) -> list[tuple[str, s
 
 
 def last_next_call(entries: Iterable[dict[str, Any]], agent: str,
-                   action: str) -> tuple[str, str] | None:
+                   action: Action) -> tuple[str, str] | None:
     """The id and the result of the last call of `operate.py` with `action`
     for the agent `agent` among `entries`, read last first, or None where
     none has a result."""

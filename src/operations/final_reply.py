@@ -1,4 +1,6 @@
-"""The operator's final reply: the calls that sent its text to its parent
+"""The operator's final reply: the form of the message that sends its text
+(`final_message`, `final_text`), whether that text ends the operator for
+its context (`for_context`), the calls that sent its text to its parent
 (`final_sends`), the operator whose final reply carries what
 reached an earlier one (`carrier`), and the lines the reply nests; with
 the pattern of the report of an agent that sent its final reply by
@@ -17,6 +19,28 @@ from operations.state import Call, State
 from operations.steps import Reply, Send
 
 
+FOR_CONTEXT = mctx("I ended for my context: launch a fresh operator with no lines, which "
+                   "takes up from the state each line below that stands unfinished.")
+
+
+def final_message(text: str) -> str:
+    """The message that sends the final reply whose text is `text`."""
+    return f"{FINAL_REPLY}\n{text}"
+
+
+def final_text(message: str) -> str | None:
+    """The text of the final reply that `message` sends, or None where
+    `message` sends none."""
+    head, newline, text = message.partition("\n")
+    return text if head == FINAL_REPLY and newline else None
+
+
+def for_context(text: str) -> bool:
+    """Whether the final reply whose text is `text` ends the operator for
+    its context."""
+    return text.split("\n", 1)[0] == FOR_CONTEXT
+
+
 SENT_BY_MESSAGE = re.compile(
     r"\A" + form(SENT, {"to": rf"(?:{re.escape(COORDINATOR)}|{AGENT_ID})"}) + r"\Z")
 """The whole text of `printing.SENT`, to the coordinator or to any agent."""
@@ -33,7 +57,7 @@ def final_sends_in(calls: Iterable[Call], operator: str, to: str) -> list[Call]:
     """The SendMessage calls of `calls` by which `operator` sent `to` the
     text of its final reply, in the order they were made."""
     return [c for c in sends_in(calls, to) if c.operator == operator
-            and unfenced(str(c.input.get("message", ""))).startswith(FINAL_REPLY + "\n")]
+            and final_text(unfenced(str(c.input.get("message", "")))) is not None]
 
 
 def final_replies(state: State, operator: str) -> list[float]:
@@ -61,7 +85,7 @@ def ending_step(to: str, text: str, sent: bool) -> Send | Reply:
     """The step of a final reply whose text is `text`, to the parent `to`:
     the message that sends `to` the text, or, where `sent`, as the
     message was already sent, the reply."""
-    return Reply(to) if sent else Send(to, f"{FINAL_REPLY}\n{text}")
+    return Reply(to) if sent else Send(to, final_message(text))
 
 
 def nested(text: str) -> list[str]:

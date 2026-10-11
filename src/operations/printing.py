@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 
 from controlled_markdown import form, mctx
-from operations.command_words import next_command
+from operations.command_words import Action, next_command
 from operations.constants import FOREGROUND_MS
 from operations.filing import filed_line, split_message
 from operations.roles import description
@@ -26,16 +26,21 @@ SENT = mctx("My final reply went to {to} by SendMessage.")
 SendMessage to the agent `to`."""
 
 
-REPLY_TEXT = f"{FINAL_REPLY}\n{SENT}"
+REPLY_TEXT = f"{FINAL_REPLY}\n{SENT}"  # the form of final_reply.final_message, which imports this module
 """The text the command prints for the final reply of an agent that sent
 its text to the agent `to`."""
+
+
+def printed_line(pattern: str, text: str) -> bool:
+    """Whether `text` holds a line that the regular expression `pattern`
+    matches whole."""
+    return re.search(f"^(?:{pattern})$", text, re.MULTILINE) is not None
 
 
 def printed_reply(text: str) -> bool:
     """Whether `text`, a result of the command, prints a final reply
     (`REPLY_TEXT`)."""
-    return re.search("^" + form(REPLY_TEXT, {"to": r"[^\n]+"}) + "$", text,
-                     re.MULTILINE) is not None
+    return printed_line(form(REPLY_TEXT, {"to": r"[^\n]+"}), text)
 
 
 END_TURN = mctx("End your turn with no call: a message or your operator's end resumes you.")
@@ -44,13 +49,13 @@ END_TURN = mctx("End your turn with no call: a message or your operator's end re
 def printed_end_turn(text: str) -> bool:
     """Whether `text`, a result of the command, prints the end of the
     agent's turn (`END_TURN`)."""
-    return re.search("^" + re.escape(END_TURN) + "$", text, re.MULTILINE) is not None
+    return printed_line(re.escape(END_TURN), text)
 
 
 KEY_LINE = mctx("Step key: {key}. After the call below, run `{command}`.")
 
 
-def key_line(step: Step, agent: str, action: str) -> str:
+def key_line(step: Step, agent: str, action: Action) -> str:
     """The line the command prints before a call it prints for the agent
     `agent` that runs `action`, which `handled.made` reads back. Nothing
     follows the call's last field, so an operator who copies that field
