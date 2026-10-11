@@ -173,6 +173,8 @@ frame(R, $EmptyBg(), P) :- ring(R, P, _).
 
 // --- $RankRings ---
 // The marked rings, outermost first.
+// @ignore last: store — no case that stores it fits the pairs along with the
+//  case that differs from it by that branch alone, so no grid gives a witness
 // @claim fill-ring
 .init nest = Order<Reading, number>
 nest.elem(R, K) :- marked(R, K).

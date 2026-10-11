@@ -53,7 +53,6 @@
     //  separator row, and from the first to the last separator column, that
     //  hold a gap; undefined when no separator row or no separator column does
     // @witness two-diagonal-gaps: borderline $GapBbox
-    // @witness sep-cell-on-column: borderline concept
   | BrokenLines {}
 
 // which cells a redrawn lattice draws as lines
