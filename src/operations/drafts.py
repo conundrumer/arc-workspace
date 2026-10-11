@@ -21,9 +21,9 @@ runs on it; one ticket analyst takes each such draft with the others a
 chain of `depends-on` links to it. Where the log holds only suggestions
 there, the command resumes by SendMessage the ticket analyst that wrote
 that last line, where an operator launched it, and otherwise the draft
-waits for a ticket analyst as for findings. Where the log gives findings or
-suggestions of `CAP` ticket reviewers since the line that filed the draft
-or last moved it into `tickets/draft/`, the analyst's brief gives its
+waits for a ticket analyst as for findings. Where the log gives `CAP` review
+rounds with findings or suggestions since the line that filed the draft or
+last moved it into `tickets/draft/`, the analyst's brief gives its
 revision as the last, and once that revision is written, the command moves
 the draft to `tickets/open/`.
 
@@ -47,8 +47,8 @@ from operations.steps import Bash, Launch, Send, Step, Undecided, decision_key
 from operations.tracker import COORDINATOR, after, last_index, log
 
 CAP = 3
-"""The ticket reviewers whose findings or suggestions close a draft's
-review rounds."""
+"""The review rounds with findings or suggestions that close a draft's
+review."""
 
 FILED_OR_REVISED = (Note.FILED, Note.REVISED)
 
@@ -99,20 +99,29 @@ def review_lines_after(t: Ticket, since: float, opening: str) -> list[str]:
             and ln.note.startswith(opening)]
 
 
-def reviewers_since_draft(t: Ticket) -> int:
-    """The ticket reviewers whose findings or suggestions `t`'s log gives
-    since the line that filed it or last moved it into `tickets/draft/`."""
+def rounds_since_draft(t: Ticket) -> int:
+    """The review rounds `t`'s log gives since the line that filed it or
+    last moved it into `tickets/draft/`: a round is the ticket reviewer
+    lines whose note opens with `finding` or `suggestion` after one `filed`
+    or `revised` line, or after that start line before any, whatever agent
+    id they give."""
     start = 0
     for i in range(1, len(t.log)):
         if t.log[i].status is Status.DRAFT and t.log[i - 1].status is not Status.DRAFT:
             start = i
-    return len({ln.agent_id or ln.agent for ln in t.log[start:]
-                if ln.agent == Role.TICKET_REVIEWER
-                and ln.note.startswith((Note.FINDING, Note.SUGGESTION))})
+    rounds: set[int] = set()
+    opened = start
+    for i in range(start, len(t.log)):
+        ln = t.log[i]
+        if ln.note.startswith(FILED_OR_REVISED):
+            opened = i
+        elif ln.agent == Role.TICKET_REVIEWER and ln.note.startswith((Note.FINDING, Note.SUGGESTION)):
+            rounds.add(opened)
+    return len(rounds)
 
 
 def at_cap(t: Ticket) -> bool:
-    return reviewers_since_draft(t) >= CAP
+    return rounds_since_draft(t) >= CAP
 
 
 def step(state: State) -> Step | None:
