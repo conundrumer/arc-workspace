@@ -37,7 +37,8 @@
     // @claim longest-run
     EveryCornerCell {}
     // @rule longest-run: of the cells tied for an anchor corner, only the
-    //  first in reading order anchors; the reading order is open
+    //  one nearest params.pick_dir, the edge the reading starts from,
+    //  anchors; that edge is open
     // @witness tied-anchor: ordinary concept
   | AnchorFirst {}
 
@@ -117,19 +118,15 @@
     .decl anchor_edge(d: Dir) anchor_edge(DIR_T).
 
     // --- $AnchorFirst ---
-    // The reading orders, by starting corner and primary axis, that pick the
+    // The edges a reading starts from: the cell nearest that edge is the
     // first of the cells tied for an anchor corner.
-    .decl pick_order(d: DiagDir, a: Axis)
-    pick_order(DIAG_TL, AXIS_V). pick_order(DIAG_TL, AXIS_H).
-    pick_order(DIAG_TR, AXIS_V). pick_order(DIAG_TR, AXIS_H).
-    pick_order(DIAG_BL, AXIS_V). pick_order(DIAG_BL, AXIS_H).
-    pick_order(DIAG_BR, AXIS_V). pick_order(DIAG_BR, AXIS_H).
+    .decl pick_dir(d: Dir) pick_dir(DIR_T). pick_dir(DIR_B). pick_dir(DIR_L). pick_dir(DIR_R).
 }
 
 .init params = Params
 
 .type ArenaCell = [h: HoleColor, s: Scope, p: Position]
-.type DrawKey = [a: Ident, d: DiagDir, ax: Axis]
+.type DrawKey = [a: Ident, d: Dir]
 .type Pool = [e: Extent, c: Candidates, dr: Ident]
 .type DirPool = [pool: Pool, da: DiagAxis]
 .type Side = [pool: Pool, dc: DiagDir]
@@ -170,7 +167,7 @@ subsumed($AnchorCorner($EveryCorner(), $AnchorFirst()), $TieMiddle()).
 // one segment is painted.
 .comp Parse<Key> {
     .type KeyCell = [k: Key, e: Extent, da: DiagAxis, p: Position]
-    .type KeyCorner = [k: Key, dp: DiagDir, ax: Axis, dc: DiagDir]
+    .type KeyCorner = [k: Key, dp: Dir, dc: DiagDir]
 
     .decl cell(k: Key, p: Position)
 
@@ -224,15 +221,16 @@ subsumed($AnchorCorner($EveryCorner(), $AnchorFirst()), $TieMiddle()).
     corner(K, Dc, P) :- cell(K, P), diag_dir_elem(Dc), !passed(K, Dc, P).
 
     // --- $AnchorFirst ---
-    // The reading orders, by starting corner and primary axis.
-    .decl order(k: Key, dp: DiagDir, ax: Axis)
+    // The edges a reading starts from.
+    .decl order(k: Key, dp: Dir)
 
-    // The first corner cell of corner Dc in reading order [Dp, Ax].
+    // The first corner cell of corner Dc in the reading from edge Dp: the one
+    // nearest that edge.
     // @claim longest-run
-    .init first_cell = LexOrder<KeyCorner>
-    first_cell.corner([K, Dp, Ax, Dc], Dp) :- order(K, Dp, Ax), corner(K, Dc, _).
-    first_cell.axis([K, Dp, Ax, Dc], Ax) :- order(K, Dp, Ax), corner(K, Dc, _).
-    first_cell.cell([K, Dp, Ax, Dc], P) :- order(K, Dp, Ax), corner(K, Dc, P).
+    .init first_cell = Order<KeyCorner, Position>
+    first_cell.elem([K, Dp, Dc], P) :- order(K, Dp), corner(K, Dc, P).
+    first_cell.before([K, Dp, Dc], P, Q) :-
+        order(K, Dp), corner(K, Dc, P), corner(K, Dc, Q), nearer(Dp, P, Q).
 }
 
 // --- $HoleStored ---
@@ -300,15 +298,15 @@ cand([E, $AnchorCorner(Cs, $EveryCornerCell()), A], Sg) :-
     anchor(Cs, Dc), diag_axis_of(Dc, DA), parse.corner(A, Dc, P), parse.segment(A, E, Sg, DA, P).
 
 // --- $AnchorFirst ---
-parse.order(A, Dp, Ax) :- arena_of(_, _, A), params.pick_order(Dp, Ax).
+parse.order(A, Dp) :- arena_of(_, _, A), params.pick_dir(Dp).
 
 // One draw per arena and reading order.
 .init draw = Canon<DrawKey>
-draw.equiv([A, Dp, Ax], [A, Dp, Ax]) :- parse.order(A, Dp, Ax).
+draw.equiv([A, Dp], [A, Dp]) :- parse.order(A, Dp).
 
 cand([E, $AnchorCorner(Cs, $AnchorFirst()), Dr], Sg) :-
-    draw.id([A, Dp, Ax], Dr), anchor(Cs, Dc), diag_axis_of(Dc, DA),
-    parse.first_cell.first([A, Dp, Ax, Dc], P), parse.segment(A, E, Sg, DA, P).
+    draw.id([A, Dp], Dr), anchor(Cs, Dc), diag_axis_of(Dc, DA),
+    parse.first_cell.first([A, Dp, Dc], P), parse.segment(A, E, Sg, DA, P).
 
 // --- shared ---
 .decl pool_arena(pool: Pool, a: Ident)
@@ -406,12 +404,12 @@ out(P, Col, Ch) :- painted(Ch, P), params.paint_color(Col).
 out(P, Col, Ch) :- settled(Ch), in(P, Col), !painted(Ch, P).
 
 .comp Determine {
-    .type ExOrder = [e: Example, dp: DiagDir, ax: Axis]
+    .type ExOrder = [e: Example, dp: Dir]
 
     // Train pairs only: the ex_out atom holds the test inputs out.
     .init parse = Parse<Example>
     parse.cell(E, P) :- ex_in(E, P, Col), params.hole_color(Col), ex_out(E, _, _).
-    parse.order(E, Dp, Ax) :- ex_out(E, _, _), diag_dir_elem(Dp), axis_elem(Ax).
+    parse.order(E, Dp) :- ex_out(E, _, _), dir_elem(Dp).
 
     .decl painted(e: Example, p: Position)
     painted(E, P) :- ex_out(E, P, Col), params.paint_color(Col).
@@ -434,12 +432,12 @@ out(P, Col, Ch) :- settled(Ch), in(P, Col), !painted(Ch, P).
     .decl tie_dir(da: DiagAxis)
     tie_dir(V) :- diag_axis_elem(V), !tie_dir_defect(V).
 
-    // --- pick_order: the anchored runs of the order give the painted run ---
+    // --- pick_dir: the anchored runs of the order give the painted run ---
 
     // The runs through the cells the order picks at the corners of the anchor edge.
     .init anchor_longest = ArgExtremes<ExOrder, Ident>
-    anchor_longest.cand([E, Dp, Ax], Sg, N) :-
-        anchor($EdgeCorners(), Dc), diag_axis_of(Dc, DA), parse.first_cell.first([E, Dp, Ax, Dc], P),
+    anchor_longest.cand([E, Dp], Sg, N) :-
+        anchor($EdgeCorners(), Dc), diag_axis_of(Dc, DA), parse.first_cell.first([E, Dp, Dc], P),
         parse.segment(E, $Run(), Sg, DA, P), parse.seg_len.tally(Sg, N).
 
     .init anchor_nearest = ArgExtremes<ExOrder, Ident>
@@ -448,12 +446,12 @@ out(P, Col, Ch) :- settled(Ch), in(P, Col), !painted(Ch, P).
     .init anchor_pick = Unanimous<ExOrder, Ident>
     anchor_pick.item(O, Sg) :- anchor_nearest.high(O, Sg, _).
 
-    .decl order_ok(e: Example, dp: DiagDir, ax: Axis)
-    order_ok(E, Dp, Ax) :- anchor_pick.value([E, Dp, Ax], Sg), !unpainted(Sg).
+    .decl order_ok(e: Example, dp: Dir)
+    order_ok(E, Dp) :- anchor_pick.value([E, Dp], Sg), !unpainted(Sg).
 
-    .decl order_defect(dp: DiagDir, ax: Axis)
-    order_defect(Dp, Ax) :- parse.order(E, Dp, Ax), !order_ok(E, Dp, Ax).
+    .decl order_defect(dp: Dir)
+    order_defect(Dp) :- parse.order(E, Dp), !order_ok(E, Dp).
 
-    .decl pick_order(dp: DiagDir, ax: Axis)
-    pick_order(Dp, Ax) :- diag_dir_elem(Dp), axis_elem(Ax), !order_defect(Dp, Ax).
+    .decl pick_dir(dp: Dir)
+    pick_dir(Dp) :- dir_elem(Dp), !order_defect(Dp).
 }

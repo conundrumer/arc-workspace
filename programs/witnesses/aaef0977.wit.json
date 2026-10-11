@@ -84,8 +84,9 @@
       [7,7,7,7,7,7,7,7]
     ],
     "assign": {
-      "scan_corner": [
-        ["DIAG_TL"]
+      "scan_order": [
+        ["DIAG_TL", "AXIS_V"],
+        ["DIAG_TL", "AXIS_H"]
       ]
     },
     "output": [{
@@ -130,8 +131,9 @@
       [3,3,3,3,3,3,3,3]
     ],
     "assign": {
-      "scan_corner": [
-        ["DIAG_TL"]
+      "scan_order": [
+        ["DIAG_TL", "AXIS_V"],
+        ["DIAG_TL", "AXIS_H"]
       ]
     },
     "output": [{

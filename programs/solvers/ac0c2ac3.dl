@@ -40,14 +40,13 @@
     // @claim one-mark-per-ring
     OneMark {}
     // @rule fill-ring: a ring takes the color of its mark that comes last in
-    //  the scan from params.scan_corner along params.scan_axis first.
+    //  the scan from the corner of a params.scan_order along its axis first.
     //  Undefined where the open scan orders pick marks of different colors.
     // @witness shared-color: borderline $ScanLast
     //     @relaxed one-mark-per-ring
     // @witness mixed-ring: borderline $ScanLast
     //     @relaxed one-mark-per-ring
-    //     @reassigned scan_corner
-    //     @reassigned scan_axis
+    //     @reassigned scan_order
   | ScanLast {}
 
 .type Choice = [rings: Rings, unmarked: Unmarked, shared: Shared]
@@ -76,9 +75,11 @@
 
     // --- $ScanLast ---
     // the scan starts at this corner and runs along this axis first
-    .decl scan_corner(d: DiagDir)
-    scan_corner(DIAG_TL). scan_corner(DIAG_TR). scan_corner(DIAG_BL). scan_corner(DIAG_BR).
-    .decl scan_axis(a: Axis) scan_axis(AXIS_V). scan_axis(AXIS_H).
+    .decl scan_order(d: DiagDir, a: Axis)
+    scan_order(DIAG_TL, AXIS_V). scan_order(DIAG_TL, AXIS_H).
+    scan_order(DIAG_TR, AXIS_V). scan_order(DIAG_TR, AXIS_H).
+    scan_order(DIAG_BL, AXIS_V). scan_order(DIAG_BL, AXIS_H).
+    scan_order(DIAG_BR, AXIS_V). scan_order(DIAG_BR, AXIS_H).
 }
 
 .init params = Params
@@ -143,7 +144,7 @@ ring_color(R, $OneMark(), K, Col) :- mark_ring(R, K, _, Col), !crowded(R, K).
 // @ignore rank: store — the program reads only the last mark of the scan, not the ranks
 .init scan = LexOrder<Scan>
 scan.cell([[R, K], C, A], P) :-
-    mark_ring(R, K, P, _), params.scan_corner(C), params.scan_axis(A).
+    mark_ring(R, K, P, _), params.scan_order(C, A).
 scan.corner([Ri, C, A], C) :- scan.cell([Ri, C, A], _).
 scan.axis([Ri, C, A], A) :- scan.cell([Ri, C, A], _).
 
@@ -228,9 +229,6 @@ out(P, Col, [G, U, S]) :- impl_choice([G, U, S]), draw([G, _], U, S, P, Col), !b
         order.cell([E, C, A], Q), ex_in(E, Q, Col_in), ex_out(E, Q, Col), Col != Col_in,
         !later(E, C, A, Q, Col).
 
-    .decl scan_corner(c: DiagDir)
-    scan_corner(C) :- diag_dir_elem(C), axis_elem(A), !scan_clash(C, A).
-
-    .decl scan_axis(a: Axis)
-    scan_axis(A) :- axis_elem(A), diag_dir_elem(C), !scan_clash(C, A).
+    .decl scan_order(c: DiagDir, a: Axis)
+    scan_order(C, A) :- diag_dir_elem(C), axis_elem(A), !scan_clash(C, A).
 }

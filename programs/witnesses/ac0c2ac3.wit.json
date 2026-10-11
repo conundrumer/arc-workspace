@@ -114,11 +114,8 @@
       [4,7,7,7,7,7,7]
     ],
     "assign": {
-      "scan_corner": [
-        ["DIAG_TL"]
-      ],
-      "scan_axis": [
-        ["AXIS_V"]
+      "scan_order": [
+        ["DIAG_TL", "AXIS_V"]
       ]
     },
     "output": [{

@@ -21,10 +21,10 @@
   | NearestSeed {}
     // @scene seed: one or more non-background cells, each a seed.
     // @rule diamond-rings: each cell's ring is its Manhattan distance to the
-    //  last seed in the scan order params.scan_corner, params.scan_axis.
+    //  last seed in the scan order params.scan_order, a corner and an axis.
     // @witness two-seeds-scan: variant $NearestSeed
     //     @relaxed seed
-    //     @reassigned scan_corner
+    //     @reassigned scan_order
   | LastSeed {}
 
 .decl out(p: Position, col: Color, ch: Choice)
@@ -49,9 +49,11 @@
     // --- $LastSeed ---
     // The scan order whose last seed rings the grid. The pairs hold one seed
     // each, so every value stays open.
-    .decl scan_corner(d: DiagDir)
-    scan_corner(DIAG_TL). scan_corner(DIAG_TR). scan_corner(DIAG_BL). scan_corner(DIAG_BR).
-    .decl scan_axis(a: Axis) scan_axis(AXIS_V). scan_axis(AXIS_H).
+    .decl scan_order(d: DiagDir, a: Axis)
+    scan_order(DIAG_TL, AXIS_V). scan_order(DIAG_TL, AXIS_H).
+    scan_order(DIAG_TR, AXIS_V). scan_order(DIAG_TR, AXIS_H).
+    scan_order(DIAG_BL, AXIS_V). scan_order(DIAG_BL, AXIS_H).
+    scan_order(DIAG_BR, AXIS_V). scan_order(DIAG_BR, AXIS_H).
 }
 
 .init params = Params
@@ -106,7 +108,7 @@ out(P, Col, $NearestSeed()) :- nearest.low(P, S, _), hue(P, S, Col).
 // --- $LastSeed ---
 // Each open scan order's last seed; seeds that differ give a cell two colors.
 out(P, Col, $LastSeed()) :-
-    params.scan_corner(C), params.scan_axis(A), parse.scan.last([$U(), C, A], S),
+    params.scan_order(C, A), parse.scan.last([$U(), C, A], S),
     hue(P, S, Col).
 
 .comp Determine {
@@ -128,9 +130,6 @@ out(P, Col, $LastSeed()) :-
         parse.taxicab(E, P, S, K), parse.taxicab(E, Q, S, K),
         ex_out(E, P, C), ex_out(E, Q, C2), C != C2.
 
-    .decl scan_kept(d: DiagDir, a: Axis)
-    scan_kept(D, A) :- diag_dir_elem(D), axis_elem(A), !scan_contradicted(D, A).
-
-    .decl scan_corner(d: DiagDir) scan_corner(D) :- scan_kept(D, _).
-    .decl scan_axis(a: Axis) scan_axis(A) :- scan_kept(_, A).
+    .decl scan_order(d: DiagDir, a: Axis)
+    scan_order(D, A) :- diag_dir_elem(D), axis_elem(A), !scan_contradicted(D, A).
 }
