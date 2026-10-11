@@ -43,7 +43,7 @@ from operations import briefs
 from operations.directives import reply_decisions
 from operations.reports import Label, items_of
 from operations.roles import Purpose, Role, analyst_of, analyst_subject, described
-from operations.state import Agent, State, Unread
+from operations.state import Agent, State, Tool, Unread
 from operations.final_reply import failure, final_replies, nested
 from operations.handled import ask_again, decided_by, repeated
 from operations.steps import Launch, Send, Step, Undecided, decision_key, rulable
@@ -146,7 +146,7 @@ def failed(state: State) -> list[str]:
     last: dict[str, tuple[float, str, str, str]] = {}
     for c in sorted(state.calls, key=lambda c: c.time):
         what = str(c.input.get("description", ""))
-        d = described(what) if c.operator == state.me and c.tool == "Agent" else None
+        d = described(what) if c.operator == state.me and c.tool == Tool.AGENT else None
         if d is None or d.role is not Role.TICKET_ANALYST:
             continue
         parsed = analyst_of(d.subject)

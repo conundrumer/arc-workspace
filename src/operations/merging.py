@@ -35,7 +35,7 @@ from controlled_markdown.nodes import Rule, finding_lines
 from operations import briefs
 from operations.reports import splits
 from operations.roles import Role
-from operations.state import Agent, Call, Merge, State, Ticket
+from operations.state import Agent, Call, Merge, State, Ticket, Tool
 from operations.command_words import simple_commands
 from operations.handled import bash_calls
 from operations.steps import Bash, Launch, Send, Step
@@ -87,7 +87,7 @@ def merge_calls(state: State, t: Ticket) -> list[Call]:
     pending, and those with an outcome (`state.Merge`), which a call that
     merges no change, as a call of the script's `--help`, has not."""
     paths = log_worktrees(t)
-    return [c for c in state.calls if c.tool == "Bash" and MERGE_SCRIPT in str(
+    return [c for c in state.calls if c.tool == Tool.BASH and MERGE_SCRIPT in str(
         c.input.get("command", "")) and any(p in str(c.input.get("command", "")) for p in paths)
         and (c.result is None or c.merge is not None)]
 

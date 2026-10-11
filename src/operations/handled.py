@@ -16,7 +16,7 @@ from operations.command_words import is_next, only_command
 from operations.constants import COORDINATOR
 from operations.printing import KEY_LINE, bash_text, opening, send_opening, unfenced
 from operations.roles import Purpose
-from operations.state import Agent, Call, Made, Printed, State
+from operations.state import Agent, Call, Made, State, Tool
 from operations.steps import STEP_KEY, UNDECIDED, Bash, Send, Step, Undecided, decision_key, key
 
 
@@ -80,7 +80,7 @@ def sends_to(state: State, to: str) -> list[Call]:
 def sends_in(calls: Iterable[Call], to: str) -> list[Call]:
     """The SendMessage calls of `calls` to `to` that the harness gave no
     error, in the order they were made."""
-    return sorted((c for c in calls if c.tool == "SendMessage"
+    return sorted((c for c in calls if c.tool == Tool.SEND_MESSAGE
                    and c.input.get("to") == to and not c.error), key=lambda c: c.time)
 
 
@@ -93,12 +93,12 @@ def sent_at(state: State, to: str, message: str, mark: str | None = None) -> lis
     """The times of the calls by which an operator made the step that sends
     `to` the message `message`, as `sent` reads them."""
     return sent_with(state, to, message if mark is None else mark) + [
-        c.time for c in made_calls(state, Printed.SEND_MESSAGE, Send(to, message),
+        c.time for c in made_calls(state, Tool.SEND_MESSAGE, Send(to, message),
                                    lambda m: m.to == to and message.startswith(m.text))
         if not c.error and c.input.get("to") == to]
 
 
-def made_calls(state: State, tool: Printed, step: Step, printed: Callable[[Made], bool]) -> list[Call]:
+def made_calls(state: State, tool: Tool, step: Step, printed: Callable[[Made], bool]) -> list[Call]:
     """The calls of `tool` that `state.made` gives as made after the
     printing of `step`, a step of `tool`: by its key, or where the result
     cut the key, where `printed` holds of the printed step."""
@@ -137,8 +137,8 @@ def bash_calls(state: State, command: str) -> list[Call]:
     """The operators' Bash calls that made the Bash step `command`, in the
     order they were made."""
     out = [c for c in state.calls
-           if c.tool == "Bash" and command in str(c.input.get("command", ""))]
-    out += made_calls(state, Printed.BASH, Bash(command), lambda m: m.text == command)
+           if c.tool == Tool.BASH and command in str(c.input.get("command", ""))]
+    out += made_calls(state, Tool.BASH, Bash(command), lambda m: m.text == command)
     return sorted({id(c): c for c in out}.values(), key=lambda c: c.time)
 
 
@@ -169,8 +169,8 @@ def made(calls: Iterable[Call]) -> tuple[Made, ...]:
     for operator, own in by.items():
         for c, after in zip(own, own[1:], strict=False):
             command = str(c.input.get("command", ""))
-            if (c.tool != "Bash" or c.result is None or not is_next(command, operator)
-                    or (after.tool == "Bash"
+            if (c.tool != Tool.BASH or c.result is None or not is_next(command, operator)
+                    or (after.tool == Tool.BASH
                         and only_command(str(after.input.get("command", "")), operator))):
                 continue
             step = printed_step(c.result)
@@ -179,7 +179,7 @@ def made(calls: Iterable[Call]) -> tuple[Made, ...]:
     return tuple(out)
 
 
-def printed_step(result: str) -> tuple[str | None, Printed, str | None, str] | None:
+def printed_step(result: str) -> tuple[str | None, Tool, str | None, str] | None:
     """The message or the Bash call in the foreground that `result`, the
     result of a call of `next`, prints, as `Made` gives it without the call,
     or None where it prints neither."""
@@ -188,7 +188,7 @@ def printed_step(result: str) -> tuple[str | None, Printed, str | None, str] | N
     opening = printed_opening().search(result)
     if opening is None:
         return None
-    tool = Printed.SEND_MESSAGE if opening["to"] is not None else Printed.BASH
+    tool = Tool.SEND_MESSAGE if opening["to"] is not None else Tool.BASH
     text = result[opening.end():].rstrip("\n")
     return (opening["key"], tool, opening["to"],
-            unfenced(text) if tool is Printed.SEND_MESSAGE else text)
+            unfenced(text) if tool is Tool.SEND_MESSAGE else text)

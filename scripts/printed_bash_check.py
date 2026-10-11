@@ -19,13 +19,13 @@ on stderr."""
 import sys
 from typing import Any
 
-from operations.state import Printed
+from operations.state import Tool
 
 HOOK = "printed_bash_check"
 DENIALS = "printed-call-denials"
 
 
-def printed_call(result: str) -> tuple[Printed, str] | None:
+def printed_call(result: str) -> tuple[Tool, str] | None:
     """The tool and the text of the call `result`, a result of the command,
     prints, or None where it prints no call."""
     from operations.handled import printed_step
@@ -34,19 +34,19 @@ def printed_call(result: str) -> tuple[Printed, str] | None:
     launch = printed_launch(result)
     if launch is not None:
         fields = {k: v for k, v in launch.items() if k != PROMPT}
-        return Printed.AGENT, launch_text(fields, launch[PROMPT])
+        return Tool.AGENT, launch_text(fields, launch[PROMPT])
     step = printed_step(result)
     if step is None:
         return None
     _, tool, to, text = step
-    if tool is Printed.SEND_MESSAGE:
+    if tool is Tool.SEND_MESSAGE:
         if to is None:
             raise ValueError(f"a printed message has no recipient: {result!r}")
         return tool, send_text(to, text)
     return tool, bash_text(text)
 
 
-def made_since(entries: list[dict[str, Any]], tool: Printed, current: str) -> bool:
+def made_since(entries: list[dict[str, Any]], tool: Tool, current: str) -> bool:
     """Whether `entries`, the transcript after a result of the command,
     holds a call of `tool` other than the call `current` the hook holds,
     or a message or notification that reached the caller."""
@@ -117,7 +117,7 @@ def check(hook: dict[str, Any]) -> str | None:
                       hook["tool_use_id"]):
             return None
         reason = skip_reason(caller.command, call_text)
-    elif printed is not None and printed == (Printed.BASH, bash_text(text)):
+    elif printed is not None and printed == (Tool.BASH, bash_text(text)):
         return None
     else:
         reason = off_script_reason(caller.command, None if printed is None else printed[1])

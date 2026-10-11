@@ -40,7 +40,7 @@ from controlled_markdown import mctx
 from operations import briefs
 from operations.directives import Decision, Directive, decided, named, numbers
 from operations.roles import Purpose, Role, analyst_subject, joined, subjects
-from operations.state import Agent, State, Ticket
+from operations.state import Agent, LogLine, State, Ticket
 from ticketing.vocabulary import Kind, Note, Status
 from operations.handled import repeated, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, decision_key
@@ -90,13 +90,17 @@ def given_after(state: State, t: Ticket) -> bool:
                for n, time in numbers(state, Directive.DRAFTS))
 
 
+def by_reviewer(ln: LogLine, opening: str | tuple[str, ...]) -> bool:
+    """Whether `ln` is a ticket reviewer's line whose note opens with `opening`, or with one of them."""
+    return ln.agent == Role.TICKET_REVIEWER and ln.note.startswith(opening)
+
+
 def review_lines_after(t: Ticket, since: float, opening: str) -> list[str]:
     """The agent ids of the lines of `t`'s log after `since` whose note
     opens with `opening` and whose agent is a ticket reviewer, in log
     order."""
     return [ln.agent_id or ln.agent for ln in t.log
-            if ln.time >= since and ln.agent == Role.TICKET_REVIEWER
-            and ln.note.startswith(opening)]
+            if ln.time >= since and by_reviewer(ln, opening)]
 
 
 def rounds_since_draft(t: Ticket) -> int:
@@ -115,7 +119,7 @@ def rounds_since_draft(t: Ticket) -> int:
         ln = t.log[i]
         if ln.note.startswith(FILED_OR_REVISED):
             opened = i
-        elif ln.agent == Role.TICKET_REVIEWER and ln.note.startswith((Note.FINDING, Note.SUGGESTION)):
+        elif by_reviewer(ln, (Note.FINDING, Note.SUGGESTION)):
             rounds.add(opened)
     return len(rounds)
 

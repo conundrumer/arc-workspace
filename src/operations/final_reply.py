@@ -16,7 +16,7 @@ from operations.constants import COORDINATOR
 from operations.handled import sends_in
 from operations.printing import FINAL_REPLY, SENT, final_message, unfenced
 from operations.roles import AGENT_ID
-from operations.state import Call, State
+from operations.state import Call, State, Tool
 from operations.steps import Reply, Send
 
 
@@ -65,7 +65,7 @@ def final_sends_in(calls: Iterable[Call], operator: str, to: str) -> list[Call]:
 def final_replies(state: State, operator: str) -> list[float]:
     """The times of the calls of `next` that printed `operator` the
     messages of `final_sends`: for each, the last call of `next` before it."""
-    nexts = [c.time for c in state.calls if c.operator == operator and c.tool == "Bash"
+    nexts = [c.time for c in state.calls if c.operator == operator and c.tool == Tool.BASH
              and is_next(str(c.input.get("command", "")), operator)]
     return [max((t for t in nexts if t < c.time), default=c.time)
             for c in final_sends(state, operator)]

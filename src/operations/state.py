@@ -5,7 +5,7 @@ session's operators.
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -184,9 +184,8 @@ class Call:
         return str(self.input.get("message", ""))
 
 
-class Printed(Enum):
-    """The tool of a call the command prints to an operator, by the name the
-    harness gives that tool."""
+class Tool(StrEnum):
+    """A tool an operator calls, by the name the harness gives that tool."""
     AGENT = "Agent"
     SEND_MESSAGE = "SendMessage"
     BASH = "Bash"
@@ -201,7 +200,7 @@ class Made:
     message, and the message or the command as far as the result gives
     it."""
     key: str | None
-    tool: Printed
+    tool: Tool
     to: str | None
     text: str
     call: Call

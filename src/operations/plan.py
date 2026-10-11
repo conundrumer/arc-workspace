@@ -62,7 +62,7 @@ from operations.directives import (
     unread,
 )
 from operations.roles import Role, description
-from operations.state import Call, State, Ticket
+from operations.state import Call, State, Ticket, Tool
 from ticketing.vocabulary import Status
 from operations.final_reply import (FOR_CONTEXT, ending_step, failure, final_sends,
                                    for_context, nested, sent_final_text)
@@ -129,7 +129,7 @@ def launch_calls(state: State, step: Launch) -> list[Call]:
     """The Agent calls of `step` by `state.me`."""
     what = description(step.role, step.subject)
     return [c for c in state.calls if c.operator == state.me
-            and c.tool == "Agent" and c.input.get("description") == what]
+            and c.tool == Tool.AGENT and c.input.get("description") == what]
 
 
 def failed_last(calls: list[Call]) -> Call | None:
@@ -191,7 +191,7 @@ def unread_lines(state: State) -> Step | None:
 
 def launching(state: State) -> Step | None:
     """The release of tickets, before the operator's first launch."""
-    if any(c.operator == state.me and c.tool == "Agent" for c in state.calls):
+    if any(c.operator == state.me and c.tool == Tool.AGENT for c in state.calls):
         return None
     return changes.release(state)
 
