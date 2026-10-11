@@ -36,7 +36,7 @@
     - "Make the worktree of a change": Configuration management: one live change per worktree.
     - "Where you take up a change that another agent held", "Then, where your brief", "Send no message to an editor or reviewer that other agent launched": Work control: one live holder per ticket.
     - "Run the changes you launch at the same time": none. Kept: the principle of Configuration management, run parallel parts at once.
-    - "Where the operator's command carries a change whose take's log line gives a cost budget": Process assessment: the faults of the processes reach the user; Work control: stopped work reaches an agent.
+    - "Where the operator's command carries a change whose ticket's log gives a cost budget": Process assessment: the faults of the processes reach the user; Work control: stopped work reaches an agent.
 - [Findings an editor leaves](prompts/agents/notes/changes.md#findings-an-editor-leaves): Implementation: each item not done reaches the agent that decides it.
     - "Judge each finding a change's editor leaves": Decisions: each decision recorded with what it was made from.
 - [Merging a change](prompts/agents/notes/changes.md#merging-a-change): Merge: each merge passes the gate and the checks; a failed or denied merge reaches an agent.
