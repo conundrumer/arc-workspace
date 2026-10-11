@@ -10,6 +10,7 @@ class ReaderName(StrEnum):
     line gives it."""
 
     COORDINATOR = "coordinator"
+    USER_SESSION = "user-session"
     SESSION = "session"
     CODEX = "codex"
     AGENT = "agent"

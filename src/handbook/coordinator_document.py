@@ -16,11 +16,14 @@ process, `CLAUDE_PID`, was started with `-p` or `--print`. The hook's text
 reaches the session whole only up to `HOOK_TEXT_CAP` characters, so a
 longer rendering is a fault.
 
-Where the user starts the coordinator with `scripts/claude.py`, the
-coordinator reads both texts: that script's appendix to the system prompt
-(`coordinator_appendix`), and the session-start hook's text. The appendix
-reaches the session by `--append-system-prompt-file` and not by the hook,
-so `HOOK_TEXT_CAP` does not bound it.
+Where the user starts the coordinator with `claude`, its reader is
+`coordinator`, and it reads the session-start hook's text alone
+(`coordinator_context`). Where the user starts it with `scripts/claude.py`,
+its reader is `user-session`, and it reads both texts: that script's
+appendix to the system prompt (`coordinator_appendix`), then the
+session-start hook's text (`user_session_context`). The appendix reaches
+the session by `--append-system-prompt-file` and not by the hook, so
+`HOOK_TEXT_CAP` does not bound it.
 """
 
 from __future__ import annotations
@@ -48,6 +51,10 @@ file that holds the text."""
 ENTRY_POINT_ENV = "CLAUDE_CODE_ENTRYPOINT"
 SESSION_PID_ENV = "CLAUDE_PID"
 PRINT_FLAGS = frozenset({"-p", "--print"})
+
+SESSION_READER_ENV = "ARC_SESSION_READER"
+"""The environment variable an entry point sets to the name of the reader
+of the session it starts."""
 
 
 class EntryPoint(StrEnum):
@@ -93,12 +100,17 @@ def coordinator_appendix() -> str:
 
 
 def coordinator_context() -> str:
-    """What reaches the coordinator, in the order the session receives it:
-    the system-prompt appendix `scripts/claude.py` gives, then the
+    """What reaches the coordinator the user starts with `claude`: the
     session-start hook's text, as `session-start` gives it."""
-    return "\n".join([
-        marked_section(APPENDIX, coordinator_appendix()),
-        marked_section(repo_label(COORDINATOR_PATH), coordinator_text())])
+    return marked_section(repo_label(COORDINATOR_PATH), coordinator_text())
+
+
+def user_session_context() -> str:
+    """What reaches the coordinator the user starts with `scripts/claude.py`,
+    in the order the session receives it: the system-prompt appendix that
+    script gives, then the session-start hook's text."""
+    return "\n".join([marked_section(APPENDIX, coordinator_appendix()),
+                      coordinator_context()])
 
 
 def coordinator_rendering(path: Path = COORDINATOR_PATH,

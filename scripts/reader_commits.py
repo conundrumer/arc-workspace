@@ -2,7 +2,10 @@
 that gives a reader the diff of its documents since those commits.
 
 A reader is the coordinator, the session the user talks with, or a
-subagent whose type has a document under `prompts/agents/`. Its documents
+subagent whose type has a document under `prompts/agents/`. The
+coordinator's reader is the one its entry point names in its environment
+(`handbook.coordinator_document.SESSION_READER_ENV`), and `coordinator`
+where it names none. Its documents
 are its own context, as `scripts/context.py context` prints it, and the
 project instructions, `CLAUDE.md` with the sections its links lead to,
 which Claude Code gives each session and subagent beside its context. Its
@@ -63,6 +66,7 @@ the reader as a preview and the path of a file that holds it, and its head,
 which stands in that preview, has the reader read that file whole."""
 
 import fcntl
+import os
 import re
 import subprocess
 import sys
@@ -214,9 +218,11 @@ def start_agent(hook: dict[str, Any]) -> None:
 def reader_call(hook: dict[str, Any]) -> tuple[str, list[str]] | None:
     """The reader of the `context` command whose context the caller of the
     hook input `hook` has, with its arguments, or None where the caller is
-    a subagent whose type has no document. A caller of unknown type is a
-    fault."""
+    a subagent whose type has no document. A caller of unknown type, and a
+    reader name in `SESSION_READER_ENV` that no `ReaderName` gives, are
+    faults."""
     from handbook.agents import agent_names
+    from handbook.coordinator_document import SESSION_READER_ENV
     from handbook.reader_names import ReaderName
     from run_reads import MAIN, UNKNOWN_TYPE, agent_type, caller_transcript
 
@@ -225,7 +231,8 @@ def reader_call(hook: dict[str, Any]) -> tuple[str, list[str]] | None:
     if kind is None:
         raise ValueError(UNKNOWN_TYPE.format(path=path))
     if kind == MAIN:
-        return ReaderName.COORDINATOR, []
+        name = os.environ.get(SESSION_READER_ENV)
+        return (ReaderName.COORDINATOR if name is None else ReaderName(name)), []
     return (ReaderName.AGENT, [kind]) if kind in agent_names() else None
 
 
