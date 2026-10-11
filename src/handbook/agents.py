@@ -73,8 +73,7 @@ def agent_meta(name: str, agents: Path = AGENT_DIR) -> dict[str, str]:
     return out
 
 
-def render(name: str = "handbook-expanded", lib: Path = LIB_SRC,
-           agents: Path = AGENT_DIR) -> str:
+def render(name: str, lib: Path = LIB_SRC, agents: Path = AGENT_DIR) -> str:
     """The handbook an agent document composes: its body, with the doc each
     include names put in place, then the lib as its `lib` attribute says."""
     return entry_text(agent_doc(name, agents), lib)

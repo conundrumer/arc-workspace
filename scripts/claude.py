@@ -1,6 +1,10 @@
-"""Start claude with the handbook appended to the session's system prompt,
-after writing the handbook agents that a spawned role runs under. Arguments
-pass through to claude.
+"""Start claude with the coordinator's appendix (`coordinator_appendix`)
+appended to the session's system prompt, after writing the handbook agents
+that a spawned role runs under. Arguments pass through to claude.
+
+The session this starts is the coordinator, the session the user talks
+with, and it reads both that appendix and the session-start hook's text
+(`handbook.coordinator_document`).
 
     uv run python scripts/claude.py [claude args]
 """
@@ -14,13 +18,14 @@ from handbook.paths import console_importable
 console_importable()
 
 from handbook.agents import write_agent  # noqa: E402
-from handbook.context import USER_SESSION_DOC, entry_text, sweep_digests  # noqa: E402
+from handbook.context import sweep_digests  # noqa: E402
+from handbook.coordinator_document import coordinator_appendix  # noqa: E402
 from solver_console import config  # noqa: E402
 
 
 def main() -> None:
     write_agent()
-    text = entry_text(USER_SESSION_DOC)
+    text = coordinator_appendix()
     digest = hashlib.sha1(text.encode()).hexdigest()[:10]
     path = config.STATE_DIR / f"handbook-{digest}.md"
     if path.exists():

@@ -15,6 +15,12 @@ hook gives nothing to a session whose entry point is a kept one and whose
 process, `CLAUDE_PID`, was started with `-p` or `--print`. The hook's text
 reaches the session whole only up to `HOOK_TEXT_CAP` characters, so a
 longer rendering is a fault.
+
+Where the user starts the coordinator with `scripts/claude.py`, the
+coordinator reads both texts: that script's appendix to the system prompt
+(`coordinator_appendix`), and the session-start hook's text. The appendix
+reaches the session by `--append-system-prompt-file` and not by the hook,
+so `HOOK_TEXT_CAP` does not bound it.
 """
 
 from __future__ import annotations
@@ -26,8 +32,8 @@ from pathlib import Path
 
 from engine import checkout
 from handbook.agents import agent_dir
-from handbook.context import entry_text
-from handbook.contexts import marked_section
+from handbook.context import USER_SESSION_DOC, entry_text
+from handbook.contexts import APPENDIX, marked_section
 from handbook.generated import Rendering, write_generated
 from handbook.paths import repo_label
 
@@ -80,10 +86,19 @@ def coordinator_text(doc: Path = COORDINATOR_DOC) -> str:
     return text
 
 
+def coordinator_appendix() -> str:
+    """The text `scripts/claude.py` appends to the coordinator's system
+    prompt."""
+    return entry_text(USER_SESSION_DOC)
+
+
 def coordinator_context() -> str:
-    """What reaches the coordinator from the session-start hook, as
-    `session-start` gives it."""
-    return marked_section(repo_label(COORDINATOR_PATH), coordinator_text())
+    """What reaches the coordinator, in the order the session receives it:
+    the system-prompt appendix `scripts/claude.py` gives, then the
+    session-start hook's text, as `session-start` gives it."""
+    return "\n".join([
+        marked_section(APPENDIX, coordinator_appendix()),
+        marked_section(repo_label(COORDINATOR_PATH), coordinator_text())])
 
 
 def coordinator_rendering(path: Path = COORDINATOR_PATH,

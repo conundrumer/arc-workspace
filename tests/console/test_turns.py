@@ -141,7 +141,7 @@ def test_worker_cmd_stays_well_under_the_argument_limit(srv, tmp_path, monkeypat
     from handbook.agents import render
     monkeypatch.setattr(srv, "FAKE", False)
     append = tmp_path / "append.md"
-    append.write_text(render())   # the repo's own docs and lib.dl
+    append.write_text(render("handbook-expanded"))   # the repo's own docs and lib.dl
     it = item(srv, "a", srv.NEEDS_REVIEW, append=str(append))
     cmd = srv.worker_cmd(it, "refine")
     env = [f"{k}={v}" for k, v in srv.WORKER_ENV.items()]
