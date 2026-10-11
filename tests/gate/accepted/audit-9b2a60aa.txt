@@ -15,3 +15,6 @@ dropped cases: ok
 
 --- store ---
 store: ok
+
+--- open values ---
+open values: ok

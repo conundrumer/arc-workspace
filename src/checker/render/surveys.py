@@ -56,7 +56,8 @@ from checker.determination_plan import (
 from checker.domains import (
     MAGNITUDE_TYPES,
 )
-from checker.drop_one import DropOneResult, DroppedFact, Fact, TrainFails
+from checker.drop_one import DropOneResult, DroppedFact, TrainFails
+from checker.payloads.open_values import Fact, UnexercisedPayload
 from checker.render import finding_lines, noun, verb_s
 from checker.render.cases import names_text, under_case
 from checker.render.lint import marker_text
@@ -240,6 +241,17 @@ SWEEP_NOTE = mctx("an enumerable parameter, so `sweep` can report the same "
 
 def _fact_text(solver: Solver, f: Fact) -> str:
     return f"{f.parameter}{row_text(f.row, f.types, solver)}"
+
+
+def unexercised_line(solver: Solver, at: str, p: UnexercisedPayload) -> str:
+    """The line of an `unexercised` finding at `at`."""
+    return mctx("{at}: removing `{fact}` changes no output on any input of "
+                "the task or of the witness file").format(
+                    at=at, fact=_fact_text(solver, p.fact))
+
+
+UNCHECKED_TRAIN_FAILS = mctx("{at}: open values not checked: the stored "
+                             "program fails a train pair")
 
 
 def render_drop_one(solver: Solver, result: DropOneResult) -> list[str]:

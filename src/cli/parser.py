@@ -273,7 +273,8 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
         "audit",
         lambda a: audit.cmd_audit(a.stem, a.witness_file),
         help=mctx("witness report + dropped case report + derive report + "
-                  "store report; writes no witness"),
+                  "store report + open values report; writes no "
+                  "witness"),
         description=mctx("Each section prints when it completes, with the "
                          "seconds it took on its header line."),
     )

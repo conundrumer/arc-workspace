@@ -22,6 +22,8 @@ from checker.finding import (
     Kind,
     NoResultPayload,
     UndecidedPayload,
+    TrainFailsPayload,
+    UnexercisedPayload,
     is_hint,
 )
 from checker.render.faults import reading_lines
@@ -43,6 +45,7 @@ class Section(StrEnum):
     DROPPED_CASES = "dropped cases"
     PAIRS = "pairs"
     DETERMINATION = "determination"
+    OPEN_VALUES = "open values"
 
 
 def line_form(section: Section) -> LineForm:
@@ -144,6 +147,12 @@ def finding_lines(solver: Solver, f: Finding,
     if f.kind in WITNESS_KINDS:
         return witness_lines(solver, f)
     match p:
+        case UnexercisedPayload():
+            from checker.render.surveys import unexercised_line
+            return [unexercised_line(solver, at, p)]
+        case TrainFailsPayload():
+            from checker.render.surveys import UNCHECKED_TRAIN_FAILS
+            return [UNCHECKED_TRAIN_FAILS.format(at=at)]
         case _ if isinstance(p, LINT_SHAPES):
             return [lint_line(solver, f)]
         case FaultPayload():

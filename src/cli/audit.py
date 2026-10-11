@@ -27,6 +27,7 @@ from checker.render.store_block import store_lines
 from checker.render.witness import try_lines
 from checker.store.survey import Found
 from checker.case_conditions import check_case_conditions
+from checker.open_values import check_open_values
 from checker.witness import WITNESS_CHECKS
 from checker.witness_try import TRY_ID, TryResult, survey_witness_try
 from cli import text
@@ -365,9 +366,10 @@ def cmd_store(arg: str, witness_file: str | None = None,
 
 def cmd_audit(arg: str, witness_file: str | None = None) -> int:
     """The checks of a finished solver: the witness report, the dropped
-    cases, and the derive and store findings, each section printed when
-    it completes with the seconds it took on its header line; the pass
-    line and the exit code follow those checks. It writes no witness."""
+    cases, the derive and store findings, and the stored facts no input
+    exercises (`checker.open_values.check_open_values`), each section
+    printed when it completes with the seconds it took on its header
+    line; the pass line and the exit code follow those checks. It writes no witness."""
     eng = engine()
     solver = command_solver(arg, eng)
     if solver is None:
@@ -425,5 +427,8 @@ def cmd_audit(arg: str, witness_file: str | None = None) -> int:
         Section.STORE, lambda: check_stored_or_derived(solver, runs)
         + check_color_structure_stored(solver, runs),
         lambda fs: commands.indented(solver, Section.STORE, fs))
+    unexercised = section(
+        Section.OPEN_VALUES, lambda: check_open_values(solver, runs),
+        lambda fs: commands.indented(solver, Section.OPEN_VALUES, fs))
     return 1 if not isinstance(every, list) \
-        else exit_code([*found, *dropped, *derive, *store])
+        else exit_code([*found, *dropped, *derive, *store, *unexercised])

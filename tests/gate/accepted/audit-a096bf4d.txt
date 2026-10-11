@@ -21,3 +21,6 @@ dropped cases: ok
 --- store ---
   in_scope: one value on every input and no `@store` or `@ignore: store` line; case `$Interior`
   span.axis: one value on every input and no `@store` or `@ignore: store` line
+
+--- open values ---
+open values: ok

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from checker.domains import enumerable
 from checker.finding import Finding
+from checker.payloads.open_values import Fact
 from checker.runs import Runs
 from checker.variants import (
     Fails,
@@ -16,7 +17,7 @@ from checker.variants import (
     test_verdicts,
     with_program,
 )
-from engine import Program, RemoveFact, Row, RunFailure
+from engine import Engine, Program, RemoveFact, Row, RunFailure
 from engine.quotes import quotes
 from solver.aggregate import Solver
 from solver.readers import parameter
@@ -25,16 +26,6 @@ from solver.variations import Remove, variation
 from solver.pair_runs import TaskSection
 from solver.group_runs import at_once
 from solver.per_case import PerCase, by_base, parameter_reading
-
-
-@dataclass(frozen=True)
-class Fact:
-    """One stored fact of a parameter: the parameter, its column types
-    (`solver.columns.column_types`), and the fact's row."""
-
-    parameter: str
-    types: tuple[str, ...]
-    row: Row
 
 
 @dataclass(frozen=True)
@@ -106,8 +97,7 @@ def survey_drop_one(solver: Solver, runs: Runs) -> DropOneResult:
     ref = reference
 
     def program_of(f: Fact) -> Program:
-        return variation(engine, solver, Remove(
-            RemoveFact(parameter(solver, f.parameter), f.row)))
+        return removal(engine, solver, f)
 
     train_fits = at_once(
         lambda f: same_profile(engine, with_program(solver, program_of(f)),
@@ -126,6 +116,12 @@ def survey_drop_one(solver: Solver, runs: Runs) -> DropOneResult:
             continue
         dropped.append(DroppedFact(f, v, many[f.parameter]))
     return DropOneReport(tuple(dropped), len(work), len(many), tuple(timed))
+
+
+def removal(engine: Engine, solver: Solver, fact: Fact) -> Program:
+    """The solver's program with `fact` removed."""
+    return variation(engine, solver, Remove(
+        RemoveFact(parameter(solver, fact.parameter), fact.row)))
 
 
 def _tried(solver: Solver, runs: Runs, reading: PerCase, rows: list[Row]

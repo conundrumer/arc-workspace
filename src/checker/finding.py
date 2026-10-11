@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from checker.payloads.branches import BranchesPayload
+from checker.payloads.open_values import TrainFailsPayload, UnexercisedPayload
 from checker.payloads.witness import (  # noqa: F401  (re-exported)
     AnnotationPayload,
     ApproximatedWithoutWitness,
@@ -115,6 +116,14 @@ class Kind(StrEnum):
     NOT_CHECKED = "not-checked"
     """The store check did not run: no relation both reads `in` and feeds
     `out`; outside `FAILING`."""
+
+    UNEXERCISED = "unexercised"
+    """A stored fact of a parameter whose removal changes no output of any
+    case on any input of the task or of the witness file
+    (`checker.open_values.check_open_values`)."""
+    OPEN_VALUES_UNCHECKED = "open-values-unchecked"
+    """The open-values check did not run: the stored program fails a
+    train pair."""
 
     # Runs that gave no result.
     TIMEOUT = "timeout"
@@ -500,7 +509,8 @@ class UndecidedPayload:
 
 
 type Payload = (WitnessPayload | FaultPayload | LintPayload
-                | BranchesPayload | NoResultPayload | UndecidedPayload)
+                | BranchesPayload | NoResultPayload | UndecidedPayload
+                | UnexercisedPayload | TrainFailsPayload)
 
 
 @dataclass(frozen=True)

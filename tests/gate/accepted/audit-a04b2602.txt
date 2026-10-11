@@ -20,3 +20,6 @@ derive: ok
 
 --- store ---
 store: ok
+
+--- open values ---
+open values: ok
