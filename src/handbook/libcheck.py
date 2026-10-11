@@ -21,9 +21,10 @@ from souffle.lexer import lex
 
 
 def input_marks(path: Path, text: str) -> list[str]:
-    """Inside a component, a relation is `@input` iff no rule of that
-    component derives it; facts under it are its default either way. A
-    top-level `@input` has no rule."""
+    """Inside a component, a relation no rule of that component derives is
+    `@input`; an `@input` may also have rules of that component, which are
+    its default, as the facts under it are. A top-level `@input` has no
+    rule."""
     program = SouffleEngine(functor_dir=None, cache_dir=None).parse(
         text, checkout.programs())
     if isinstance(program, ParseFailure):
@@ -42,7 +43,7 @@ def input_marks(path: Path, text: str) -> list[str]:
         where = ".".join((*scope, r.name))
         marked = input_marked(r.span, marks)
         rule = (scope, r.name) in derived
-        if marked and rule:
+        if marked and rule and not scope:
             out.append(f"{path.name}:{r.span.first}: `{where}` has a rule "
                        f"and an `@input` mark")
         elif scope and not marked and not rule:

@@ -29,20 +29,21 @@ across(A, B) :-
     region.label($U(), Q, A), region.label($U(), Q_opp, B),  // their regions
     A != B.
 
-// Two crossings return to the side started from.
-.decl same_side(a: Ident, b: Ident)
-same_side(A, A) :- region.label($U(), _, A).
-same_side(A, C) :- same_side(A, B), across(B, X), across(X, C).
-
 .init area = Tally<Ident, Position>
 area.item(A, P) :- region.label($U(), P, A).
 
 .init smallest = ArgExtremes<Unit, Ident>
 smallest.cand($U(), A, N) :- area.tally(A, N).
 
+// The regions on the smallest region's side: those a walk of crossing pairs
+// reaches from it, since two crossings return to the side started from.
+.init same_side = Propagation<Unit, Ident>
+same_side.source($U(), B) :- smallest.low($U(), B, _).
+same_side.edge($U(), A, C) :- across(A, X), across(X, C).
+
 out(P, Col) :- in(P, Col), params.wall(Col).
 out(P, Col) :-
-    region.label($U(), P, A), smallest.low($U(), B, _),  // P's region, the smallest region
-    ( same_side(A, B), params.small_side(Col)            // the side that holds it
-    ; !same_side(A, B), params.other_side(Col)           // the other side
+    region.label($U(), P, A),                   // P's region
+    ( same_side.reached($U(), A), params.small_side(Col)    // the side that holds the smallest region
+    ; !same_side.reached($U(), A), params.other_side(Col)   // the other side
     ).

@@ -27,9 +27,6 @@
 
 .init params = Params
 
-.decl impl_choice(ch: Choice)
-impl_choice($Line()). impl_choice($Grid()).
-
 // Input cell with the across-line it sits on.
 .decl cell_line(p: Position, line: Position, col: Color)
 cell_line(P, Line, Col) :- in(P, Col), params.axis(A), split(P, A, _, Line).
@@ -49,17 +46,17 @@ base(Line, P_grid_out, Col) :-
 // The period the continuation repeats by, per case and line.
 .decl period_at(ch: Choice, line: Position, k: number)
 
-// Colors over the output frame: the input, then each cell repeating the
-// one a period back. A jump along params.dir keeps the line.
-.decl fill(ch: Choice, line: Position, p: Position, col: Color)
-fill(Ch, Line, P, Col) :- impl_choice(Ch), base(Line, P, Col).
-fill(Ch, Line, P2, Col) :-
-    fill(Ch, Line, P, Col),
-    params.dir(D), period_at(Ch, Line, K), jump(P, D, K, P2),
-    frame.cell($U(), P2).
+// Colors over the output frame: each cell repeats the input cell of its
+// line a whole number of periods back toward the edge the growth leaves.
+.decl fill(ch: Choice, p: Position, col: Color)
+fill(Ch, P, Col) :-
+    frame.cell($U(), P), params.axis(A), split(P, A, _, Line),   // output cell, its line
+    period_at(Ch, Line, K), params.dir(D), opposite(D, O),
+    dist(P, O, T), stride(T, K, 0, _, R),                         // its place in a period
+    base(Line, Q, Col), dist(Q, O, R).                            // the input cell there
 
 out(P, Col, Ch) :-
-    fill(Ch, _, P, C),
+    fill(Ch, P, C),
     ( !params.bg(C), params.ink(Col)  // ink recolored
     ; params.bg(C), Col = C           // bg passes
     ).

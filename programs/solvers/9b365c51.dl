@@ -48,8 +48,8 @@ uncut(L, L2) :-
 
 // A band is a maximal run of lines that agree.
 .init bands = Canon<Position>
-bands.equiv(L, L) :- line_cell(L, _, _).
-bands.equiv(L, L3) :- bands.equiv(L, L2), uncut(L2, L3).
+bands.edge(L, L) :- line_cell(L, _, _).
+bands.edge(L2, L3) :- uncut(L2, L3).
 
 // The bands that hold ink: each is one rectangle.
 .decl shape(id: Ident)

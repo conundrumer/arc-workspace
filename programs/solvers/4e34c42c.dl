@@ -50,8 +50,11 @@ occ.shape([K1, K2, Col], P, $U()) :- motif(K2, Col, P), motif(K1, Col, _), K1 !=
 // The shift that takes one fragment's whole motif into the other: V carries
 // K2 into K1's frame. The fit read from the other frame is the same fit.
 .decl fitted(k1: Ident, k2: Ident, v: Offset)
-fitted(K1, K2, V) :- occ.occurrence([K1, K2, _], V).
-fitted(K2, K1, V_inv) :- fitted(K1, K2, V), relative(V, ZERO, V_inv).
+fitted(K1, K2, V) :-
+    occ.occurrence([K, K_other, _], V_occ),
+    ( K1 = K, K2 = K_other, V = V_occ                               // as found
+    ; K1 = K_other, K2 = K, relative(V_occ, ZERO, V)                // read from the other frame
+    ).
 
 // Where the two fragments cover one cell and disagree on it.
 .decl disagree(k1: Ident, k2: Ident, v: Offset)
@@ -74,15 +77,47 @@ join(K1, K2, V) :- seam_cell.clash([K1, K2, V]), !disagree(K1, K2, V).
 
 // --- the scene ---
 
-// Each fragment's shift into the frame of the fragment held still. Every
-// fragment serves as the one held still, and the crop takes the choice back
-// out.
-.decl place(base: Ident, k: Ident, v: Offset)
-place(Base, Base, ZERO) :- frags.label($U(), _, Base).
-place(Base, K2, V) :- place(Base, K1, V1), join(K1, K2, V2), compose(V1, V2, V).
+// The scene spans no more lines along an axis than every fragment's box laid
+// end to end.
+.type Line = [k: Ident, p_along: Position]
+
+.init span = Tally<Axis, Line>
+span.item(A, [K, P_along]) :- content(K, P, _), axis_elem(A), split(P, A, P_along, _).
+
+// The room the scene can take around the fragment held still: that
+// fragment's box, grown past both ends of each axis by the axis's span.
+.decl room(base: Ident, b: Box)
+room(Base, B) :-
+    bbox.box(Base, B_base),
+    span.tally(A_v, N_v), axis_of(D_v, A_v), axis_outset(D_v, N_v, N_v, B_v),
+    perp(A_v, A_h), span.tally(A_h, N_h), axis_of(D_h, A_h), axis_outset(D_h, N_h, N_h, B_h),
+    compose(B_v, B_h, B_grow), compose(B_base, B_grow, B).
+
+.init room_frame = Frame2D<Ident>
+room_frame.extent(Base, A, N) :- room(Base, B), in(P, _), axis_elem(A), box_extent(B, P, A, N).
+
+// A shift that keeps fragment k's box inside the room.
+.decl roomy(base: Ident, k: Ident, v: Offset)
+roomy(Base, K, V) :-
+    room(Base, B_room), room_frame.cell(Base, Q_rel), compose(B_room, Q_rel, Q),
+    bbox.box(K, B_k), content(K, P0, _), box_corner(P0, B_k, _),     // a corner of k's box
+    relative(P0, Q, V),                                               // moved onto q
+    compose(B_k, V, B_placed), inside(B_placed, B_room).
+
+// Each fragment's shift into the frame of the fragment held still, laid
+// join by join out from it. Every fragment serves as the one held still,
+// and the crop takes the choice back out.
+.type Placed = [k: Ident, v: Offset]
+
+.init layout = Propagation<Ident, Placed>
+layout.source(Base, [Base, ZERO]) :- bbox.box(Base, _).
+layout.edge(Base, [K1, V1], [K2, V]) :-
+    roomy(Base, K1, V1), join(K1, K2, V2), compose(V1, V2, V), roomy(Base, K2, V).
 
 .decl scene(base: Ident, p: Position, col: Color)
-scene(Base, P, Col) :- place(Base, K, V), content(K, P0, Col), compose(P0, V, P).
+scene(Base, P, Col) :-
+    layout.reached(Base, [K, V]),
+    content(K, P0, Col), compose(P0, V, P).
 
 // --- the crop ---
 

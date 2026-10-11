@@ -41,9 +41,6 @@ anchor_dir(D_anchor) :- params.shift_dir(D), params.anchor_sense(S), turn(S, D, 
 cell_split(P, Col, Line, Across) :-
     in(P, Col), anchor_dir(D), axis_of(D, A), split(P, A, Line, Across).
 
-.decl line(p_line: Position)
-line(Line) :- cell_split(_, _, Line, _).
-
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !params.bg(Col).
 
@@ -58,39 +55,52 @@ lines.before($U(), L1, L2) :- inked_line(L1), inked_line(L2), anchor_dir(D), nea
 .decl anchor_line(p_line: Position)
 anchor_line(Line) :- lines.first($U(), Line).
 
-// The lines that shift.
-.decl shifts(ch: Choice, p_line: Position)
+// The shift: the offset a shifting line's cells make.
+.decl shift(v: Offset)
+shift(V) :- params.shift_dir(D), params.shift_dist(K), jump_offset(D, K, V).
+
+// Each line's move: none, or the shift.
+.decl move(ch: Choice, p_line: Position, v: Offset)
 
 // --- $Match ---
-shifts($Match(), Line) :-
+// A line whose cells differ from the anchor line's.
+.decl differs(p_line: Position)
+differs(Line) :-
     cell_split(_, Col, Line, Across),                         // a cell of the line
     anchor_line(L_anc), cell_split(_, Col2, L_anc, Across),   // the anchor's cell across from it
     Col != Col2.
 
+move($Match(), Line, V) :- differs(Line), shift(V).
+move($Match(), Line, ZERO) :- inked_line(Line), !differs(Line).
+
 // --- $Sequence, $Stripes ---
 
-// L2 is one place further from the anchor edge than L, over the case's own
-// line set.
-.decl alt_next(ch: Choice, p_line: Position, p_line2: Position)
-alt_next($Sequence(), L, L2) :- lines.next($U(), L, L2).
-alt_next($Stripes(), L, L2) :-
-    line(L), anchor_dir(D), opposite(D, D_far), neighbor(L, D_far, L2), line(L2).
+// A line's count of steps from the anchor line, over the case's own line set:
+// the inked lines before it, or the grid lines from the anchor line to it.
+.decl steps(ch: Choice, p_line: Position, n: number)
+steps($Sequence(), L, N) :- lines.rank($U(), L, N).
+steps($Stripes(), L, N) :-
+    anchor_line(L_anc), cell_split(_, _, L, _),
+    relative(L_anc, L, V), anchor_dir(D), dist(V, D, N), N >= 0.   // from the anchor line on
 
-// The alternation: the anchor line stays, and each step swaps side.
-.decl alt_stay(ch: Choice, p_line: Position)
-alt_stay(Ch, Line) :- anchor_line(Line), alt_next(Ch, _, _).   // the cases that alternate
-shifts(Ch, L2)     :- alt_stay(Ch, L), alt_next(Ch, L, L2).
-alt_stay(Ch, L2)   :- shifts(Ch, L), alt_next(Ch, L, L2).
+// The two moves a line makes.
+.decl line_move(v: Offset)
+line_move(ZERO).
+line_move(V) :- shift(V).
+
+// The alternation: the anchor line makes no move, and each step from it swaps
+// the move.
+.init alternation = CycleWalk<Unit, Offset>
+alternation.succ($U(), V, V2) :- line_move(V), line_move(V2), V != V2.   // the other move
+alternation.step($U(), N) :- steps(_, _, N).
+
+move(Ch, L, V) :- steps(Ch, L, N), alternation.walk($U(), ZERO, N, V).
 
 // --- the shift ---
 
 .decl placed(ch: Choice, p: Position, col: Color)
 placed(Ch, P_out, Col) :-
-    ink(P, Col), cell_split(P, _, Line, _), impl_choice(Ch),
-    ( shifts(Ch, Line), params.shift_dir(D), params.shift_dist(K),
-      jump(P, D, K, P_out)                                     // the line shifts
-    ; !shifts(Ch, Line), P_out = P                             // the line stays
-    ).
+    ink(P, Col), cell_split(P, _, Line, _), move(Ch, Line, V), compose(P, V, P_out).
 
 out(P, Col, Ch) :- placed(Ch, P, Col).
 out(P, Col, Ch) :- in(P, _), impl_choice(Ch), params.bg(Col), !placed(Ch, P, _).

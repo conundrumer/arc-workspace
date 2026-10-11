@@ -3,7 +3,8 @@
 //! Reading a component:
 //!
 //! - A relation marked `// @input` is one the caller populates, and the facts
-//!   under it are its default. Every other relation derives.
+//!   under it hold beside the rows the caller adds. Every other relation
+//!   derives.
 //! - In a keyed component, the first column of a relation is its key, and each
 //!   key is one independent instance of the component.
 //! - A `Requires:` sentence states a precondition the component does not check,

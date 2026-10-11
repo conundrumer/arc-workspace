@@ -87,13 +87,14 @@ hops.seed([Ch, E], E) :- end_piece(Ch, E).
 
 // The route: traced from the other end back toward the seed along
 // fewest-hop predecessors. Each end seeds the same route.
-.decl on_route(ch: Choice, e: Ident, id: Ident)
-on_route(Ch, E, E2) :- end_piece(Ch, E), end_piece(Ch, E2), E != E2.
-on_route(Ch, E, A) :- on_route(Ch, E, B), hops.pred([Ch, E], B, A).
+.init back = Propagation<EndKey, Ident>
+back.source([Ch, E], E2) :- end_piece(Ch, E), end_piece(Ch, E2), E != E2.   // the other end
+back.edge([Ch, E], B, A) :- hops.pred([Ch, E], B, A).
 
 .decl route_cell(ch: Choice, p: Position, col: Color)
 route_cell(Ch, P, Col) :-
-    on_route(Ch, _, Id), piece_cell(Id, P), piece_color(Id, C),  // a route piece's cell
+    back.reached([Ch, _], Id),
+    piece_cell(Id, P), piece_color(Id, C),                       // a route piece's cell
     ( wire_color(Ch, C), params.wire_fill(Col)                   // a wire
     ; square_color(Ch, C), !end_color(Ch, C), params.square_fill(Col)  // a square, not an end
     ).

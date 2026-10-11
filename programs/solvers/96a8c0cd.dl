@@ -40,15 +40,19 @@
 .init parse = Parse<Unit>
 parse.cell($U(), P, Col) :- in(P, Col).
 
-// The cells the walker visits.
-.decl at(p: Position)
-at(P) :- parse.marker($U(), P).
-at(Q) :-
-    at(P), parse.heading($U(), D), neighbor(P, D, Q_ahead),
+// The walker's steps from the marker.
+.init walk = Propagation<Unit, Position>
+walk.source($U(), P) :- parse.marker($U(), P).
+walk.edge($U(), P, Q) :-
+    in(P, _), parse.heading($U(), D), neighbor(P, D, Q_ahead),
     ( Q = Q_ahead                                          // ahead
     ; in(Q_ahead, Col_bar), params.deflect(Col_bar, S),    // a bar stands ahead
       turn(S, D, D_side), neighbor(P, D_side, Q) ),        // aside, the way it deflects
     in(Q, Col), params.bg(Col).                            // onto an open cell
+
+// The cells the walker visits.
+.decl at(p: Position)
+at(P) :- walk.reached($U(), P).
 
 out(P, Col) :- at(P), params.marker(Col).
 out(P, Col) :- in(P, Col), !at(P).

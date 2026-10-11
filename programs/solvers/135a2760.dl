@@ -43,12 +43,14 @@ period.cand([T, A], K) :- si.period(T, A, K).
 
 // --- repair ---
 
-// Orbits of the lattice: the cells a run of periods reaches.
+// Orbits of the lattice: the cells of one interior whose distance on each
+// axis is a whole number of periods.
 .init orbit = Canon<Position>
-orbit.equiv(P, P) :- inner_cell(_, P).
 orbit.equiv(P, Q) :-
-    orbit.equiv(P, R),                              // reached so far
-    si.pair(T, A, K, R, Q), period.low([T, A], K).  // one period on
+    inner_cell(T, P), inner_cell(T, Q), relative(P, Q, V),
+    diag_dirs(_, A, D1, D2), perp(A, A2), dist(V, D1, K1), dist(V, D2, K2),
+    period.low([T, A], N1), period.low([T, A2], N2),
+    stride(K1, N1, 0, _, 0), stride(K2, N2, 0, _, 0).
 
 .init pattern = Mode<Ident, Color, Position>
 pattern.item(Cls, Col, P) :- orbit.id(P, Cls), in(P, Col).

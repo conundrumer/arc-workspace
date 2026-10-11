@@ -44,19 +44,25 @@ slide.node($U(), P) :-
     open(P), params.climb_dir(D), neighbor(P, D, Q), in(Q, Col), params.wall(Col).
 slide.dir($U(), D) :- params.aside_dir(D).
 
+// The slide from b, under a wall, reaches an open cell r past the wall's end.
+.decl turn_step(b: Position, r: Position)
+turn_step(B, R) :-
+    slide.rest($U(), B, _, Q),                        // the slide's rest
+    params.aside_dir(D), neighbor(Q, D, R), open(R).  // one open cell on
+
+// The climb starts the walk reaches: a climb from p rests under a wall,
+// and the turn there leads to the next start r.
+.init walk = Propagation<Unit, Position>
+walk.edge($U(), P, R) :- climb.rest($U(), P, _, B), turn_step(B, R).
+walk.source($U(), P) :- in(P, Col), params.marker(Col).
+
 // A climb from p comes to rest at q.
 .decl climb_leg(p: Position, q: Position)
-climb_leg(P, Q) :-
-    ( in(P, Col), params.marker(Col)  // from a marker
-    ; turned(_, P)                    // from the corner past a wall's end
-    ), climb.rest($U(), P, _, Q).
+climb_leg(P, Q) :- walk.reached($U(), P), climb.rest($U(), P, _, Q).
 
-// The slide from a climb's rest b reaches an open cell r past the wall's
-// end: the walker turns.
+// The walker turns at a climb's rest b, and climbs on from r.
 .decl turned(b: Position, r: Position)
-turned(B, R) :-
-    climb_leg(_, B), slide.rest($U(), B, _, Q),       // the slide's rest
-    params.aside_dir(D), neighbor(Q, D, R), open(R).  // one open cell on
+turned(B, R) :- climb_leg(_, B), turn_step(B, R).
 
 // The cells a climb, or a turn's slide, passes over, its start excluded.
 .decl trail(p: Position)

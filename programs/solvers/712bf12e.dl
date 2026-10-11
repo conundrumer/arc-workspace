@@ -12,6 +12,9 @@
     // the edge each marker sits on
   | Edge {}
 
+// A walker: the cell it stands on and the marker edge it walks away from.
+.type Walker = [p: Position, d: Dir]
+
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
@@ -25,20 +28,22 @@
 
 .init params = Params
 
-// The line drawn from a marker cell, walking away from edge d.
-.decl line(p: Position, d: Dir, ch: Choice)
-
 // The models coincide here (every marker is on the bottom edge, which
 // params.dir names); they diverge when markers sit elsewhere.
 
+// The walks of each case: from each marker cell, steps away from its edge.
+.init walk = Propagation<Choice, Walker>
+
 // --- $Dir ---
-line(P, D, $Dir()) :- in(P, Col), params.mark(Col), params.dir(D).
+walk.source($Dir(), [P, D]) :- in(P, Col), params.mark(Col), params.dir(D).
 
 // --- $Edge ---
-line(P, D, $Edge()) :- in(P, Col), params.mark(Col), dir_elem(D), dist(P, D, 0).
+walk.source($Edge(), [P, D]) :- in(P, Col), params.mark(Col), dir_elem(D), dist(P, D, 0).
 
-line(P2, D, Ch) :-
-    line(P, D, Ch), opposite(D, W),                          // the walk away from d
+// --- $Dir, $Edge ---
+walk.edge(Ch, [P, D], [P2, D]) :-
+    impl_choice(Ch),
+    in(P, _), dir_elem(D), opposite(D, W),                   // the walk away from d
     neighbor(P, W, P_a),                                     // the cell ahead
     ( P2 = P_a                                               // step into it
     ; in(P_a, Blk), !params.bg(Blk),                         // ink ahead — blocked
@@ -46,8 +51,12 @@ line(P2, D, Ch) :-
     ),
     in(P2, Bg), params.bg(Bg).                               // the cell entered is bg
 
+// The line drawn from a marker cell.
+.decl line(p: Position, ch: Choice)
+line(P, Ch) :- walk.reached(Ch, [P, _]).
+
 .decl impl_choice(ch: Choice)
 impl_choice($Dir()). impl_choice($Edge()).
 
-out(P, Col, Ch) :- line(P, _, Ch), params.mark(Col).
-out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !line(P, _, Ch).
+out(P, Col, Ch) :- line(P, Ch), params.mark(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !line(P, Ch).

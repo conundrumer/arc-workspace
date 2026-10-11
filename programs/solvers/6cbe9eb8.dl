@@ -1,6 +1,6 @@
 // 6cbe9eb8
 // @draft
-// @keywords: rank move border bbox crop enclose
+// @keywords: rank count move border bbox crop enclose
 // input: A striped background holds rectangles, one color each: a block,
 //  whose box it covers, or else an outline, whose cells all lie on its box's
 //  edge lines.
@@ -59,24 +59,21 @@ nest.before($U(), Col, Col2) :- shape(Col), shape(Col2), Col != Col2, !overflows
 .init frame = Frame2D<Unit>
 frame.extent($U(), A, N) :- nest.first($U(), Col), box_size(Col, A, N).
 
-// Each shape's box in the output frame: the next shape's corner cell lands
-// on the anchor of the shape before it.
-.decl obox(col: Color, b: Box)
-obox(Col, ZERO) :- nest.first($U(), Col).
-obox(Col2, B) :-
-    nest.next($U(), Col, Col2), anchor(Col, Q),
-    params.corner(Diag), in(P, _), bbox.box(Col2, B2),
-    box_corner(P, B2, Diag), crop(P, B2, P_inner),  // Col2's corner cell, in its own frame
-    relative(P_inner, Q, B).
+// Each outline a shape nests in takes it one step in from that outline's
+// rim; a block takes it no step in.
+.init rims = Tally<Color, Color>
+rims.domain(Col) :- shape(Col).
+rims.item(Col2, Col) :- nest.before($U(), Col, Col2), outline(Col).
 
-// The corner cell of a shape's interior.
-.decl anchor(col: Color, p: Position)
-anchor(Col, Q) :-
-    obox(Col, B), params.corner(Diag),
-    frame.cell($U(), P_corner), box_corner(P_corner, B, Diag),
-    ( block(Col), Q = P_corner
-    ; outline(Col), diag_opposite(Diag, Opp), neighbor(P_corner, Opp, Q)  // one step in from the rim
-    ).
+// Each shape's box in the output frame: its corner cell lands on the corner
+// of the frame inset by the rims around it.
+.decl obox(col: Color, b: Box)
+obox(Col, B) :-
+    rims.tally(Col, K), params.corner(Diag),
+    edge_inset(Diag, K, B_in), frame.cell($U(), Q), box_corner(Q, B_in, Diag),  // the inset corner
+    in(P, _), bbox.box(Col, B2),
+    box_corner(P, B2, Diag), crop(P, B2, P_inner),  // the shape's corner cell, in its own frame
+    relative(P_inner, Q, B).
 
 .decl paint(col: Color, p: Position)
 paint(Col, P) :-

@@ -98,22 +98,24 @@ names(L, Id) :- seq_cell(L), in(L, Col), label_color(Id, Col).
 
 // --- the walk ---
 
+// A slot of the sequence and a box it names.
+.type Stop = [l: Position, id: Ident]
+
 // A box a slot may stand on.
 .decl cand(l: Position, id: Ident, ch: Choice)
 
-// A box the walk stands on at L, having come from the sequence's start.
-.decl at(l: Position, id: Ident, ch: Choice)
-at(L, Id, Ch) :-
-    cand(L, Id, Ch),
-    ( seq.first($U(), L)                                            // the sequence starts here
-    ; seq.next($U(), L2, L), at(L2, Id2, Ch), joined(Id2, Id)       // a corridor arrives
-    ).
+// The boxes the walk stands on, having come from the sequence's start: each
+// hop crosses a corridor to a box the next slot may stand on.
+.init walk = Propagation<Choice, Stop>
+walk.source(Ch, [L0, Id0]) :- cand(L0, Id0, Ch), seq.first($U(), L0).
+walk.edge(Ch, [L2, Id2], [L, Id]) :-
+    cand(L2, Id2, Ch), seq.next($U(), L2, L), cand(L, Id, Ch), joined(Id2, Id).
 
 // --- output ---
 
 .decl fill(p: Position, col: Color, ch: Choice)
 fill(P, Col, Ch) :-
-    at(L, Id, Ch), seq.next($U(), L, L2), at(L2, Id2, Ch),   // consecutive stops
+    walk.reached(Ch, [L, Id]), seq.next($U(), L, L2), walk.reached(Ch, [L2, Id2]),   // consecutive stops
     joined(Id, Id2), corridor(Id, Id2, P),                   // the clear corridor between them
     label_color(Id, Col).                                    // painted by the box it leaves
 
@@ -122,12 +124,15 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !fill(P, _, Ch).
 
 // --- $Route ---
 
-// The rest of the sequence is still walkable from the box.
-cand(L, Id, $Route()) :-
-    names(L, Id),
-    ( seq.last($U(), L)                                                   // the sequence ends here
-    ; seq.next($U(), L, L2), cand(L2, Id2, $Route()), joined(Id, Id2)     // a corridor carries on
-    ).
+// The rest of the sequence is still walkable from the box: traced back from
+// a box the last slot names, each hop crosses a corridor to a box the
+// previous slot names.
+.init route = Propagation<Unit, Stop>
+route.source($U(), [L, Id]) :- seq.last($U(), L), names(L, Id).
+route.edge($U(), [L2, Id2], [L, Id]) :-
+    names(L, Id), seq.next($U(), L, L2), names(L2, Id2), joined(Id, Id2).
+
+cand(L, Id, $Route()) :- route.reached($U(), [L, Id]).
 
 // --- $Walk ---
 

@@ -65,12 +65,17 @@ tile_cell(P_tile, P, P_intile) :-
     lattice.tile_of($U(), P, P_tile),
     tile_box.box(P_tile, B), crop(P, B, P_intile).
 
+// A tile's place within the tile period, counted toward each edge.
+.init tile_phase = DirPack<Position>
+tile_phase.edge(P_tile, D, R) :-
+    lattice.tile_of($U(), _, P_tile), params.tile_period(K),
+    dir_elem(D), dist(P_tile, D, T), stride(T, K, 0, _, R).
+
+// A tile at the place in the tile period of the tile the ink sits in.
 .decl copy_tile(p_tile: Position)
-copy_tile(P_tile) :- lattice.tile_of($U(), P, P_tile), ink(P, _).   // the tile the ink sits in
 copy_tile(P_tile2) :-
-    copy_tile(P_tile), params.tile_period(K), dir_elem(D),
-    jump(P_tile, D, K, P_tile2),                // one period on
-    lattice.tile_of($U(), _, P_tile2).          // a tile of the lattice
+    lattice.tile_of($U(), P, P_tile), ink(P, _), tile_phase.box(P_tile, B),
+    tile_phase.box(P_tile2, B).
 
 paint(Q, Col, $Alternate()) :-
     tile_cell(_, P, P_intile), ink(P, Col),                    // an ink cell in its tile
@@ -79,11 +84,14 @@ paint(Q, Col, $Alternate()) :-
 
 // --- $Wallpaper ---
 
-paint(P, Col, $Wallpaper()) :- ink(P, Col).
-paint(Q, Col, $Wallpaper()) :-
-    paint(P, Col, $Wallpaper()),
-    dir_elem(D), axis_of(D, A), params.period(A, K),
-    jump(P, D, K, Q), in(Q, _).                 // one period on, inside the grid
+// A cell's place within the period, counted toward each edge.
+.init phase = DirPack<Position>
+phase.edge(P, D, R) :-
+    in(P, _), dir_elem(D), axis_of(D, A), params.period(A, K),
+    dist(P, D, T), stride(T, K, 0, _, R).
+
+// A cell at the place in the period of an ink cell.
+paint(Q, Col, $Wallpaper()) :- ink(P, Col), phase.box(P, B), phase.box(Q, B).
 
 // --- output ---
 

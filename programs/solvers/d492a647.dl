@@ -1,5 +1,5 @@
 // d492a647
-// @keywords: markers walk parity noise
+// @keywords: markers wallpaper parity noise
 // output: A noise-speckled bg grid holds a single seed cell of a unique
 //  color. The seed's color paints every bg cell offset from it by an even
 //  count on both axes. Noise cells stay.
@@ -31,21 +31,30 @@ impl_choice($Period()). impl_choice($Parity()).
 .decl seed(p: Position, col: Color)
 seed(P, Col) :- in(P, Col), !params.bg(Col), !params.noise(Col).
 
-// The lattice the seed anchors: closure under jumps on the four cardinals.
-.decl lattice(p: Position, ch: Choice)
-lattice(P, Ch) :- seed(P, _), impl_choice(Ch).
+// Each axis's lines, walked outward from the seed's.
+.init lines = Ray<Axis>
+lines.dir(A, D) :- axis_of(D, A).
+lines.cell(A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
+lines.mark(A, L) :- seed(P, _), axis_elem(A), split(P, A, L, _).
+
+// A line on axis a that the lattice the seed anchors crosses.
+.decl lattice_line(a: Axis, l: Position, ch: Choice)
 
 // --- $Period ---
-lattice(Q, $Period()) :-
-    lattice(P, $Period()),
-    params.period(K), dir_elem(D),         // a period jump, any cardinal
-    jump(P, D, K, Q), in(Q, _).
+// A whole number of jumps from the seed's line.
+lattice_line(A, L, $Period()) :- lines.ray(A, L, _, K, _), params.period(W), stride(K, W, 0, _, 0).
 
 // --- $Parity ---
-lattice(Q, $Parity()) :-
-    lattice(P, $Parity()), dir_elem(D),
-    neighbor(P, D, M), in(M, _),      // the skipped cell
-    neighbor(M, D, Q), in(Q, _).
+// An even count of lines from the seed's: a line lies midway.
+lattice_line(A, L, $Parity()) :- lines.ray(A, M, D, K, _), jump(M, D, K, L), lines.cell(A, L).
+
+// --- $Period, $Parity ---
+// The lattice: a cell on a lattice line of each axis.
+.decl lattice(p: Position, ch: Choice)
+lattice(P, Ch) :-
+    in(P, _), perp(A1, A2),
+    split(P, A1, L1, _), lattice_line(A1, L1, Ch),
+    split(P, A2, L2, _), lattice_line(A2, L2, Ch).
 
 .decl painted(p: Position, ch: Choice)
 painted(P, Ch) :- lattice(P, Ch), in(P, Col), params.bg(Col).

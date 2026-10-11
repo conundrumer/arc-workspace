@@ -91,16 +91,22 @@
     pred(Ky, B, A) :- edge(Ky, A, B), distance(Ky, A, K), distance(Ky, B, K + 1).
 }
 
-/// The pairs of nodes joined by a walk of one or more edges: the transitive
-/// closure of a supplied edge relation.
-.comp Reachability<Key, Node> {
-    /// The directed edges.
+/// Forward chaining: the nodes reachable from the sources through `edge`
+/// and `join` rows.
+.comp Propagation<Key, Node> {  // @construction
+    /// The nodes reached at the start.
+    .decl source(key: Key, n: Node)  // @input
+
+    /// b is reached once a is.
     .decl edge(key: Key, a: Node, b: Node)  // @input
 
-    /// Some walk of one or more edges leads from a to b.
-    .decl reachable(key: Key, a: Node, b: Node)
-    reachable(Ky, A, B) :- edge(Ky, A, B).
-    reachable(Ky, A, C) :- reachable(Ky, A, B), edge(Ky, B, C).
+    /// c is reached once a and b both are.
+    .decl join(key: Key, a: Node, b: Node, c: Node)  // @input
+
+    .decl reached(key: Key, n: Node)
+    reached(Ky, N) :- source(Ky, N).
+    reached(Ky, B) :- edge(Ky, A, B), reached(Ky, A).
+    reached(Ky, C) :- join(Ky, A, B, C), reached(Ky, A), reached(Ky, B).
 }
 
 /// Z/N successor over a dense 0-based index set: increment, with the max
@@ -135,15 +141,21 @@
         _bound(Ky, N1), N1 = N + 1.      // N1 is the Z/n step count
 }
 
-/// The items taken so far and the items left, at each state of a walk that
-/// takes one item per step. `step` and `take` may be recursive with
-/// `taken`/`untaken`, so the state can choose the walk and the item taken.
+/// The items taken so far and the items left, at each state of a walk. At a
+/// state two branches of the walk reach, an item taken on one branch and
+/// left untaken on the other is in both `taken` and `untaken`. `step`,
+/// `skip` and `take` may be recursive with `taken`, `untaken` and
+/// `excluded`.
+///
+/// Requires: at each t a `step` leaves, `take` gives one item, and that
+/// item is in `untaken` at t; a `step` with no `take` item empties the
+/// untaken side, a `take` item not in `untaken` joins the taken side while
+/// the untaken side carries over, less the items `conflict` gives for it,
+/// and two `take` items at one t both join the taken side and both stay on
+/// the untaken side. With `score`, each t has one predecessor: at a t two
+/// predecessors reach, `take` may also hold an item above the least score.
 .comp Take<Key, T, Item> {
     .decl start(key: Key, t: T)               // @input
-    .decl step(key: Key, t: T, t2: T)         // @input
-
-    /// The item taken at t.
-    .decl take(key: Key, t: T, item: Item)    // @input
 
     /// The taken side before the first step.
     .decl init_taken(key: Key, item: Item)    // @input
@@ -151,11 +163,42 @@
     /// The untaken side before the first step.
     .decl init_untaken(key: Key, item: Item)  // @input
 
+    /// When item is taken, item2 leaves the untaken side without joining
+    /// the taken side.
+    .decl conflict(key: Key, item: Item, item2: Item)  // @input
+
+    /// Where a caller gives it, `take` holds each `pick` item.
+    .decl score(key: Key, t: T, item: Item, s: number)  // @input
+
+    /// A step from t to t2: the item `take` gives at t leaves the untaken
+    /// side and joins the taken side.
+    .decl step(key: Key, t: T, t2: T)         // @input
+
+    /// A step from t to t2 at which both sides carry over.
+    .decl skip(key: Key, t: T, t2: T)         // @input
+
+    .decl take(key: Key, t: T, item: Item)    // @input
+    take(Ky, T, X) :- pick(Ky, T, X, _).
+
+    /// The untaken items of least score at t.
+    .decl pick(key: Key, t: T, item: Item, s: number)
+    pick(Ky, T, X, S) :- untaken(Ky, T, X), score(Ky, T, X, S).
+    pick(Ky, T, X, S) <= pick(Ky, T, _, S2) :- S > S2.
+
     .decl taken(key: Key, t: T, item: Item)
     taken(Ky, T, X) :- start(Ky, T), init_taken(Ky, X).
     taken(Ky, T2, X) :- step(Ky, T, T2), ( taken(Ky, T, X) ; take(Ky, T, X) ).
+    taken(Ky, T2, X) :- skip(Ky, T, T2), taken(Ky, T, X).
 
     .decl untaken(key: Key, t: T, item: Item)
     untaken(Ky, T, X) :- start(Ky, T), init_untaken(Ky, X).
-    untaken(Ky, T2, X) :- step(Ky, T, T2), untaken(Ky, T, X), take(Ky, T, Y), X != Y.
+    untaken(Ky, T2, X) :-
+        step(Ky, T, T2), untaken(Ky, T, X), take(Ky, T, Y), X != Y, !conflict(Ky, Y, X).
+    untaken(Ky, T2, X) :- skip(Ky, T, T2), untaken(Ky, T, X).
+
+    /// The items `conflict` removed up to t.
+    .decl excluded(key: Key, t: T, item: Item)
+    excluded(Ky, T2, X) :-
+        step(Ky, T, T2), untaken(Ky, T, X), take(Ky, T, Y), X != Y, conflict(Ky, Y, X).
+    excluded(Ky, T2, X) :- ( step(Ky, T, T2) ; skip(Ky, T, T2) ), excluded(Ky, T, X).
 }

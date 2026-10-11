@@ -36,9 +36,6 @@ legend(P, Col) :-
     carry(D, _), neighbor(P, D, Q),                     // either way along the legend
     in(Q, Col2), !params.bg(Col2), Col2 != Col.         // onto another color
 
-.decl legend_next(d: Dir, col: Color, col2: Color)
-legend_next(D, Col, Col2) :- carry(D, _), legend(P, Col), neighbor(P, D, Q), legend(Q, Col2).
-
 // A copy of the shape: the ink of one color outside the legend.
 .decl copy(col: Color, p: Position)
 copy(Col, P) :- in(P, Col), !params.bg(Col), !legend(P, _).
@@ -46,20 +43,18 @@ copy(Col, P) :- in(P, Col), !params.bg(Col), !legend(P, _).
 .init copy_box = Bbox<Color>
 copy_box.cell(Col, P) :- copy(Col, P).
 
-// One slot of the stack: a copy's own extent along the stack axis.
-.decl stack_step(d_legend: Dir, v: Offset)
-stack_step(D_legend, V) :-
-    carry(D_legend, D_stack), axis_of(D_stack, A),
-    copy(Col, P), copy_box.box(Col, B), box_extent(B, P, A, N),   // the copy's extent along the stack
-    jump_offset(D_stack, N, V).
-
-// Each copy keeps the place it holds, and the next legend color's copy sits
-// one slot further along the stack.
+// Each copy keeps the place it holds. The slots of the stack run on from it
+// toward D_stack, each one copy's extent along the stack, and the copy in the
+// slot N on takes the legend color N steps on toward D_legend.
 .decl ink(p: Position, col: Color)
-ink(P, Col) :- copy(Col, P).
-ink(P_out, Col2) :-
-    ink(P, Col), legend_next(D, Col, Col2), stack_step(D, V),
-    compose(P, V, P_out), in(P_out, _).             // clipped to the grid
+ink(Q, Col2) :-
+    carry(D_legend, D_stack), axis_of(D_stack, A), opposite(D_stack, O),
+    copy(Col, P), copy_box.box(Col, B), box_extent(B, P, A, W),   // the copy's extent along the stack
+    relative(B, P, P_rel), dist(P_rel, O, K),                      // the copy cell's place in its slot
+    in(Q, _), same_line(A, P, Q),                                  // a grid cell in line with it
+    relative(B, Q, Q_rel), dist(Q_rel, O, T),
+    stride(T, W, 0, N, K),                                         // N slots on, at the same place
+    legend(L, Col), jump(L, D_legend, N, L2), legend(L2, Col2).    // N legend steps on
 
 out(P, Col) :- ink(P, Col).
 out(P, Col) :- in(P, _), !ink(P, _), params.bg(Col).

@@ -114,13 +114,10 @@ impl_choice($Momentum()). impl_choice($Nearest()).
 // A step of the journey: the dot taken, and the way it was taken.
 .decl hop(pan: Position, p: Position, d: Dir, q: Position, d2: Dir, ch: Choice)
 
-.decl state(pan: Position, p: Position, d: Dir, ch: Choice)
-state(Pan, P, D, Ch) :- tip(Pan, P, D), impl_choice(Ch).
-state(Pan, Q, D2, Ch) :- state(Pan, P, D, Ch), hop(Pan, P, D, Q, D2, Ch).
-
-// The journey ends where no way holds a dot.
-.decl rest(pan: Position, p: Position, d: Dir, ch: Choice)
-rest(Pan, P, D, Ch) :- state(Pan, P, D, Ch), !hop(Pan, P, D, _, _, Ch).
+// The journey: from the tip, one hop after another.
+.init journey = Propagation<Choice, Stance>
+journey.source(Ch, [Pan, P0, D0]) :- tip(Pan, P0, D0), impl_choice(Ch).
+journey.edge(Ch, [Pan, P, D], [Pan, Q, D2]) :- hop(Pan, P, D, Q, D2, Ch).
 
 // --- $Momentum ---
 
@@ -140,7 +137,8 @@ hop(Pan, P, D, Q, D2, $Nearest()) :-
 // The arrow at its rest, turned from its old heading onto its new one.
 .decl placed(pan: Position, p: Position, ch: Choice)
 placed(Pan, P2, Ch) :-
-    tip(Pan, T, D0), arrow(Pan, P), rest(Pan, R, D, Ch),
+    tip(Pan, T, D0), arrow(Pan, P),
+    journey.reached(Ch, [Pan, R, D]), !hop(Pan, R, D, _, _, Ch),   // its rest: no way holds a dot
     c4_elem(G), apply_dir(G, D0, D),                         // the turn it made
     relative(T, P, V), apply(G, V, V2), compose(R, V2, P2).  // the cell, turned and seated
 

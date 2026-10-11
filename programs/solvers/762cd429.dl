@@ -71,10 +71,16 @@ source(Q, P, Ch) :-
     opposite(D2, O2), dist(V, O2, K2), stride(K2, F, 0, N2, _),   // steps toward D2, scaled down
     jump(P_back, D1, N1, P1), jump(P1, D2, N2, P).
 
+// The cells a chain of sources leads back to each seed cell.
+.type SeedKey = [ch: Choice, s: Position]
+
+.init chain = Propagation<SeedKey, Position>
+chain.source([Ch, S], S) :- seed.cell($U(), S), impl_choice(Ch).
+chain.edge([Ch, S], P, Q) :- source(Q, P, Ch), seed.cell($U(), S).
+
 // The seed and its copies.
 .decl copy(p: Position, col: Color, ch: Choice)
-copy(P, Col, Ch) :- seed.cell($U(), P), in(P, Col), impl_choice(Ch).
-copy(Q, Col, Ch) :- source(Q, P, Ch), copy(P, Col, Ch).
+copy(P, Col, Ch) :- chain.reached([Ch, S], P), in(S, Col).
 
 out(P, Col, Ch) :-
     in(P, _), impl_choice(Ch),

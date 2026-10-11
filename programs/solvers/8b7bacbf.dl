@@ -43,20 +43,18 @@ contact(A, B) :- object.label(_, P, A), beside(P, Q, _), object.label(_, Q, B).
 .decl multi_cell(col: Color)
 multi_cell(Col) :- ink(P, Col), ink(Q, Col), P != Q.
 
-.decl marker(p: Position, col: Color)
-marker(P, M) :- ink(P, M), !multi_cell(M).
-
-// The marker's circuit: the objects reached from it by touching. The
+// The circuits: the classes of objects joined by touching. The marker's
 // circuit stands in for a wire's continuation under a wire that crosses it:
 // the crossing wire touches both parts. It also reaches a wire that another
 // wire of the circuit merely touches.
-.decl circuit(m: Color, w: Ident)
-circuit(M, W) :- marker(P, M), object.label(M, P, W).
-circuit(M, W2) :- circuit(M, W), contact(W, W2).
+.init circuit = Canon<Ident>
+circuit.edge(W, W2) :- contact(W, W2).
 
-// A live wire: an object of the marker's guide color in its circuit.
+// A live wire: an object of the marker's guide color in the marker's circuit.
 .decl live(w: Ident, m: Color)
-live(W, M) :- marker(P, M), beside(P, _, G), object.label(G, _, W), circuit(M, W).
+live(W, M) :-
+    ink(P, M), !multi_cell(M), object.label(M, P, W0), circuit.id(W0, C),  // the marker's circuit
+    beside(P, _, G), object.label(G, _, W), circuit.id(W, C).
 
 // Background regions, and the ink beside each.
 .init region = Components<Unit>

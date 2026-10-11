@@ -68,15 +68,20 @@ out(P_grid, Col, $Mirror()) :-
     concat_2d(T, P_intile, 0, P_grid).                      // recompose
 
 // --- $Unfold ---
-// Tile contents: the input seeds the anchor tile; each neighbor reflects
-// across the shared boundary.
-.decl unfold_val(p_tile: Position, p_intile: Position, col: Color)
-unfold_val(T, P, Col) :- in(P, Col), anchor_tile(T).
-unfold_val(T2, P_img, Col) :-
-    unfold_val(T, P, Col),                                 // known tile
-    axis_of(D, A), neighbor(T, D, T2), params.arr_pos(T2), // adjacent tile
-    flip_of(A, F), apply(F, P, P_img).                     // reflect across the shared edge
+// A tile's count of tile steps from the anchor tile along each axis.
+.decl tile_off(p_tile: Position, a: Axis, k: number)
+tile_off(T, A, K) :-
+    params.arr_pos(T), anchor_tile(Anc), relative(Anc, T, V),   // the tile, from the anchor
+    axis_of(D, A), dist(V, D, K), K >= 0.                       // its steps along the axis
+
+// The input reflected across a shared boundary on each axis, once per tile
+// step away from the anchor tile along that axis.
+.init reflect = CycleWalk<Axis, Position>
+reflect.succ(A, P, P_img) :- in(P, _), axis_elem(A), flip_of(A, F), apply(F, P, P_img).
+reflect.step(A, K) :- tile_off(_, A, K).
 
 out(P_grid, Col, $Unfold()) :-
-    unfold_val(T, P_intile, Col),
-    concat_2d(T, P_intile, 0, P_grid).
+    in(P_in, Col), perp(A1, A2),                                          // input cell
+    tile_off(T, A1, K1), tile_off(T, A2, K2),                             // a tile's steps on each axis
+    reflect.walk(A1, P_in, K1, P1), reflect.walk(A2, P1, K2, P_intile),   // reflected K1, then K2 times
+    concat_2d(T, P_intile, 0, P_grid).                                    // recompose

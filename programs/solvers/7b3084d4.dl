@@ -39,16 +39,19 @@ content(P, Col) :- in(P, Col), !params.bg(Col).
 
 // --- $ByColor ---
 
-// Cells of one color are one piece, and the marker joins the color it
-// touches.
-.init by_color = Canon<Position>
-by_color.equiv(P, Q) :-
-    content(P, Col),
-    ( content(Q, Col)                                        // the same color
-    ; params.marker(Col), dir8_elem(D), neighbor(P, D, Q0),  // the marker touches
-      content(Q0, Col2), content(Q, Col2)                    // a color, and joins it
+// The color whose piece a cell joins: its own, or, for the marker, the
+// color it touches.
+.decl joins(p: Position, col: Color)
+joins(P, Col) :-
+    content(P, Col0),
+    ( !params.marker(Col0), Col = Col0                       // its own color
+    ; params.marker(Col0), dir8_elem(D), neighbor(P, D, Q),  // the marker touches
+      content(Q, Col), !params.marker(Col)                   // a color, and joins it
     ).
-by_color.equiv(Q, P) :- by_color.equiv(P, Q).
+
+// The cells that join one color are one piece.
+.init by_color = Canon<Position>
+by_color.equiv(P, Q) :- joins(P, Col), joins(Q, Col).
 
 piece_cell($ByColor(), O, P, Col) :- by_color.id(P, O), content(P, Col).
 

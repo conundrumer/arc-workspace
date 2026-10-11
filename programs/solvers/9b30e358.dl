@@ -117,13 +117,15 @@ unit_box([$Edge(), Sp, G], B) :-
 
 // --- $Ink, $Edge ---
 
-// The copies of the unit: the unit itself, then each cell repeating the one
-// a unit's extent back.
+// The copies of the unit: each cell from the unit on toward a step direction
+// repeats the unit cell of its line at its place within the unit's extent.
 .decl fill(ch: Choice, p: Position, col: Color)
-fill(Ch, P, Col) :- in(P, Col), unit_box(Ch, B), inside(P, B).
-fill(Ch, P2, Col) :-
-    fill(Ch, P, Col), unit_box(Ch, B), case_axis(Ch, A), box_extent(B, P, A, K),
-    step_dir(Ch, D), jump(P, D, K, P2), in(P2, _).
+fill(Ch, Q, Col) :-
+    unit_box(Ch, B), step_dir(Ch, D), case_axis(Ch, A), opposite(D, O),
+    in(Q, _), relative(B, Q, Q_rel), dist(Q_rel, O, T),          // t lines on from the unit's start
+    in(P, Col), inside(P, B), same_line(A, P, Q),                 // a unit cell in line with it
+    box_extent(B, P, A, K), relative(B, P, P_rel), dist(P_rel, O, R),
+    stride(T, K, 0, _, R).                                        // at the same place in the unit
 
 out(P, Col, Ch) :- fill(Ch, P, Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !fill(Ch, P, _).

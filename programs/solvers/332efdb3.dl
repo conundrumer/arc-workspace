@@ -55,13 +55,21 @@ out(P, Col, $Stripes()) :-
     ).
 
 // --- $Motif ---
+// A cell's place in the lattice, seen from a corner: its distances to the
+// corner's edges, each within its axis's period. The motif's own cells have
+// one too.
+.decl lattice_phase(dg: DiagDir, a: Axis, p: Position, r: number, r2: number)
+lattice_phase(Dg, A, P, R, R2) :-
+    ( in(P, _) ; params.motif(P, _) ),                       // a grid or motif cell
+    diag_dist(P, Dg, A, T, T2), perp(A, A2),                 // its distances to a corner's edges
+    params.period(A, K), stride(T, K, 0, _, R),              // within the periods
+    params.period(A2, K2), stride(T2, K2, 0, _, R2).
+
+// The motif seats at every corner, and each cell takes the motif cell at
+// its place in the lattice.
 out(Q, Col, $Motif()) :-
-    in(Q, _), params.motif(Pm, Col),
-    diag_dir_elem(Dg), corner_anchor(Dg, Pm, Q).        // seated at each corner
-out(Q2, Col, $Motif()) :-
-    out(Q, Col, $Motif()),
-    params.period(A, K), axis_of(D, A), jump(Q, D, K, Q2),   // a lattice step in each cardinal
-    in(Q2, _).
+    params.motif(Pm, Col), lattice_phase(Dg, A, Pm, R, R2),
+    in(Q, _), lattice_phase(Dg, A, Q, R, R2).
 
 // --- $Inset ---
 .decl interior_tile(p: Position)

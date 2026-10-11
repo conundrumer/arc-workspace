@@ -16,6 +16,9 @@
     // comes in along the target stub's line
   | Jog {}
 
+// A leg: a cell the path runs from and the direction it runs.
+.type Leg = [p: Position, d: Dir]
+
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
@@ -38,8 +41,7 @@ stub_dir(Col, P, D) :-
     in(P, Col), in(P2, Col), P != P2,     // the stub's two cells
     axis_of(D, A), same_line(A, P, P2).   // the line they share
 
-// A leg is a cell the path runs from and the direction it runs. The path
-// leaves the source stub along the stub's own line.
+// The path leaves the source stub along the stub's own line.
 .decl leg_start(p: Position, d: Dir)
 leg_start(P, D) :- params.source(Col), stub_dir(Col, P, D).
 
@@ -96,20 +98,21 @@ target_side(P, D) :-
     params.target(Col), in(T, Col), nearer(D, T, P).
 
 // The turn the walker takes: toward the target's side.
-.decl toward_edge(a: Position, d: Dir, a2: Position, d2: Dir)
-toward_edge(A, D, E, D2) :- leg_edge(A, D, E, D2), target_side(E, D2).
+.decl toward(a: Position, d: Dir, a2: Position, d2: Dir)
+toward(A, D, A2, D2) :- leg_edge(A, D, A2, D2), target_side(A2, D2).
 
 // The legs the walker reaches from the source.
-.decl toward_reach(p: Position, d: Dir)
-toward_reach(A, D) :- leg_start(A, D).
-toward_reach(A2, D2) :- toward_reach(A, D), toward_edge(A, D, A2, D2).
+.init reach = Propagation<Unit, Leg>
+reach.source($U(), [A, D]) :- leg_start(A, D).
+reach.edge($U(), [A, D], [A2, D2]) :- toward(A, D, A2, D2).
 
-// The legs whose walk goes on to arrive.
-.decl toward_arrives(p: Position, d: Dir)
-toward_arrives(A, D) :- leg_goal(A, D).
-toward_arrives(A, D) :- toward_edge(A, D, A2, D2), toward_arrives(A2, D2).
+// The legs whose walk goes on to a last leg.
+.init arrive = Propagation<Unit, Leg>
+arrive.source($U(), [A, D]) :- leg_goal(A, D).
+arrive.edge($U(), [A2, D2], [A, D]) :- toward(A, D, A2, D2).
 
-on_path(A, D, $Toward()) :- toward_reach(A, D), toward_arrives(A, D).
+// A leg the walker reaches from the source, whose walk goes on to arrive.
+on_path(A, D, $Toward()) :- reach.reached($U(), [A, D]), arrive.reached($U(), [A, D]).
 
 // --- $Jog ---
 

@@ -26,5 +26,8 @@ wp.cell($U(), P, Col) :- intact(P, Col).
 wp.grid($U(), P) :- in(P, _).
 wp.period($U(), A, K) :- si.min_period($U(), A, K).
 
-out(P, Col) :- intact(P, Col).
-out(Q, Col) :- out(P, Col), wp.action($U(), P, Q).
+// The orbits of the frame positions under the symmetries.
+.init orbit = Canon<Position>
+orbit.edge(P, Q) :- wp.action($U(), P, Q).
+
+out(P, Col) :- orbit.id(P, Id), orbit.id(Q, Id), intact(Q, Col).

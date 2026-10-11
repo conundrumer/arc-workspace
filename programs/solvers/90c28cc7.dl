@@ -54,8 +54,8 @@ uncut([Ch, A, L], [Ch, A, L2]) :-
 
 // A band is a run of lines that no boundary cuts.
 .init bands = Canon<Line>
-bands.equiv([Ch, A, L], [Ch, A, L]) :- line(A, L, Ch).
-bands.equiv(X, Z) :- bands.equiv(X, Y), uncut(Y, Z).
+bands.edge([Ch, A, L], [Ch, A, L]) :- line(A, L, Ch).
+bands.edge(Y, Z) :- uncut(Y, Z).
 
 // One output line per band. Band line sets are disjoint runs, as OrderFrame
 // assumes.

@@ -62,9 +62,8 @@ separated($Contrast(), [A, L], [A, L2]) :-
 
 // A block-line is a run of adjacent lines that no boundary separates.
 .init block_line = Canon<ChoiceLine>
-block_line.equiv([C, L], [C, L]) :- impl_choice(C), line_color(L, _).
-block_line.equiv([C, L], [C, L3]) :-
-    block_line.equiv([C, L], [C, L2]), adjacent(L2, L3), !separated(C, L2, L3).
+block_line.edge([C, L], [C, L]) :- impl_choice(C), line_color(L, _).
+block_line.edge([C, L2], [C, L3]) :- impl_choice(C), adjacent(L2, L3), !separated(C, L2, L3).
 
 // The frame the block-lines induce on each axis.
 .init layout = OrderFrame<ChoiceAxis, Ident>

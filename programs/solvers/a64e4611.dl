@@ -136,7 +136,7 @@
 impl_choice([$LargestArea(), $BandAnchor(), $StopAtBand(), $AnyHeading(), $ClearLine(), $OpenEdge()]).
 impl_choice([Bd, An, Ex, Hd, Ln, Eg]) :-
     band_choice(Bd), anchor_choice(An), extent_choice(Ex), heading_choice(Hd),
-    line_choice(Ln), edge_choice(Eg), !flooding(An, Ex, Hd, Ln).
+    line_rule_choice(Ln), edge_rule_choice(Eg), !flooding(An, Ex, Hd, Ln).
 
 // Arms off every side of every arm, each painted over any color to its
 // piece's far side, cover the pairs' noise: these cases fit no pair.
@@ -157,11 +157,11 @@ extent_choice($StopAtBand()). extent_choice($ChannelRect()).
 .decl heading_choice(hd: Heading)
 heading_choice($AnyHeading()). heading_choice($PerpendicularChannels()).
 
-.decl line_choice(ln: LineRule)
-line_choice($ClearLine()). line_choice($SideEmpty()).
+.decl line_rule_choice(ln: LineRule)
+line_rule_choice($ClearLine()). line_rule_choice($SideEmpty()).
 
-.decl edge_choice(eg: EdgeRule)
-edge_choice($OpenEdge()). edge_choice($BandEdgeMargin()).
+.decl edge_rule_choice(eg: EdgeRule)
+edge_rule_choice($OpenEdge()). edge_rule_choice($BandEdgeMargin()).
 
 .comp Parse<Key> {
     .decl cell(key: Key, p: Position, col: Color)  // input
@@ -383,12 +383,12 @@ band_box([$EmptyLineBands(), Q], B) :- parse.line_band(_, Q, B).
 // Box B is longer along A.
 .decl long_axis(b: Box, a: Axis)
 long_axis(B, A) :-
-    piece(_, B), in(P, _), box_extent(B, P, A, N),
+    shape(B), in(P, _), corner_dist(P, _, 0), box_extent(B, P, A, N),   // a grid corner gives the frame
     perp(A, A2), box_extent(B, P, A2, N2), N > N2.
 
-// A piece may be left toward D.
+// A piece of box B may be left toward D.
 .decl across(hd: Heading, b: Box, d: Dir)
-across($AnyHeading(), B, D) :- piece(_, B), dir_elem(D).
+across($AnyHeading(), B, D) :- shape(B), dir_elem(D).
 // --- $PerpendicularChannels ---
 across($PerpendicularChannels(), B, D) :- long_axis(B, A), perp(A, A2), axis_of(D, A2).
 
@@ -397,7 +397,7 @@ across($PerpendicularChannels(), B, D) :- long_axis(B, A), perp(A, A2), axis_of(
 
 // A side of the band that keeps the margin.
 .decl kept_side(eg: EdgeRule, b: Box, d: Dir)
-kept_side(Eg, B, D) :- edge_choice(Eg), band_box(_, B), dir_elem(D), !dist(B, D, 0).
+kept_side(Eg, B, D) :- edge_rule_choice(Eg), band_box(_, B), dir_elem(D), !dist(B, D, 0).
 // --- $BandEdgeMargin ---
 kept_side($BandEdgeMargin(), B, D) :-
     band_box(_, B), long_axis(B, A), perp(A, A2), axis_of(D, A2).
@@ -408,7 +408,7 @@ band_rim(Eg, B, P) :- kept_side(Eg, B, D), in(P, _), near_side(B, P, D).
 
 .decl band_green(r: Reading, eg: EdgeRule, b: Box, p: Position)
 band_green(R, Eg, B, P) :-
-    edge_choice(Eg), band_box(R, B), in(P, _), inside(P, B), !band_rim(Eg, B, P).
+    edge_rule_choice(Eg), band_box(R, B), in(P, _), inside(P, B), !band_rim(Eg, B, P).
 
 // ---------------------------------------------------------------------------
 // --- $ClearLine ---
@@ -425,25 +425,44 @@ lit([R, Eg]) :- band_green(R, Eg, _, _).
 lane_run.node(G, P) :- lit(G), G = [R, Eg], in(P, _), !crowded(P), !band_green(R, Eg, _, P).
 lane_run.dir(G, D) :- lit(G), dir_elem(D).
 
-.type Lanes = [r: Reading, eg: EdgeRule, hd: Heading, an: Anchor]
+.type Feed = [r: Reading, eg: EdgeRule, hd: Heading]
 
 // P lies on a line that runs to edge D and the other way to the green it
 // leaves.
-.decl lane(k: Lanes, d: Dir, p: Position)
-lane([R, Eg, Hd, An], D, P) :-
-    anchor_choice(An), lane_run.rest([R, Eg], P, D, E), dist(E, D, 0),
+.decl lane(f: Feed, d: Dir, p: Position)
+lane([R, Eg, Hd], D, P) :-
+    lane_run.rest([R, Eg], P, D, E), dist(E, D, 0),
     opposite(D, D2), lane_run.rest([R, Eg], P, D2, F), neighbor(F, D2, G),
     band_green(R, Eg, B, G), across(Hd, B, D).
+
+.type Lanes = [r: Reading, eg: EdgeRule, hd: Heading, an: Anchor]
+
+// The lanes each case fills.
+.decl channel_lane(k: Lanes, d: Dir, p: Position)
+channel_lane([R, Eg, Hd, $BandAnchor()], D, P) :- lane([R, Eg, Hd], D, P).
 
 // --- $ClearLine & $ChannelChain ---
 // A lane toward D may leave from a lane toward D_q.
 .decl turns(hd: Heading, d: Dir, d_q: Dir)
 turns($AnyHeading(), D, D_q) :- dir_elem(D), dir_elem(D_q).
 
-lane([R, Eg, Hd, $ChannelChain()], D, P) :-
-    lane_run.rest([R, Eg], P, D, E), dist(E, D, 0),
-    opposite(D, D2), lane_run.run([R, Eg], P, D2, Q),
-    lane([R, Eg, Hd, $ChannelChain()], D_q, Q), turns(Hd, D, D_q).
+.type Spot = [d: Dir, p: Position]
+
+// The lanes that lanes leave from: a cell whose line runs to edge D lies on
+// a lane toward D when the cell behind it lies on a lane it may leave, or on
+// a lane toward D.
+// @claim channel-fill
+.init chain_lane = Propagation<Feed, Spot>
+chain_lane.source([R, Eg, Hd], [D, P]) :- lane([R, Eg, Hd], D, P).
+chain_lane.edge([R, Eg, Hd], [D_q, Q], [D, P]) :-
+    impl_choice([Bd, $ChannelChain(), _, Hd, $ClearLine(), Eg]), R = [Bd, Q_r],
+    lane_run.rest([R, Eg], P, D, E), dist(E, D, 0),                   // P's line runs to edge D
+    opposite(D, D2), neighbor(P, D2, Q), lane_run.node([R, Eg], Q),   // the clear cell behind P
+    ( turns(Hd, D, D_q)                                               // on a lane P may leave
+    ; D_q = D                                                         // on a lane toward D
+    ).
+
+channel_lane([R, Eg, Hd, $ChannelChain()], D, P) :- chain_lane.reached([R, Eg, Hd], [D, P]).
 
 // --- $ClearLine & $ChannelChain & $PerpendicularChannels ---
 turns($PerpendicularChannels(), D, D_q) :- axis_of(D, A), axis_of(D_q, A2), perp(A, A2).
@@ -451,7 +470,7 @@ turns($PerpendicularChannels(), D, D_q) :- axis_of(D, A), axis_of(D_q, A2), perp
 .decl channel_green(k: Lanes, ex: Extent, p: Position)
 
 // --- $ClearLine & $StopAtBand ---
-channel_green(K, $StopAtBand(), P) :- lane(K, _, P).
+channel_green(K, $StopAtBand(), P) :- channel_lane(K, _, P).
 
 // --- $ClearLine & $ChannelRect ---
 .type Edgeward = [k: Lanes, d: Dir]
@@ -459,7 +478,7 @@ channel_green(K, $StopAtBand(), P) :- lane(K, _, P).
 // Lanes toward one edge whose edge cells touch form one channel.
 // @claim channel-fill
 .init channel = Components<Edgeward>
-channel.node([K, D], E) :- lane(K, D, E), dist(E, D, 0).
+channel.node([K, D], E) :- channel_lane(K, D, E), dist(E, D, 0).
 
 .type Channel = [k: Lanes, d: Dir, id: Ident]
 
@@ -538,29 +557,6 @@ cut_end(G, E) :- group_end(G, E, D_p), group_box.box(G, B), !dist(B, D_p, 0).
 .init arm_span = Bbox<Group>
 arm_span.cell(G, E) :- arm_line(G, E).
 
-.type Sides = [r: Reading, hd: Heading, an: Anchor, ex: Extent]
-
-// The boxes that channels and arms leave: the bands, and under ChannelChain
-// the arms.
-.decl piece(s: Sides, b: Box)
-piece([R, Hd, An, Ex], B) :-
-    band_box(R, B), heading_choice(Hd), anchor_choice(An), extent_choice(Ex).
-
-// Group G stands on side D of piece B: its level is B's distance from edge D.
-.decl arm_of(s: Sides, b: Box, g: Group)
-arm_of(S, B, [D, K, Id]) :-
-    piece(S, B), S = [_, Hd, _, _], dist(B, D, K), !dist(B, D, 0),
-    across(Hd, B, D), arm_span.box([D, K, Id], _).
-
-// The arm's distance from the far edge.
-.decl arm_far(s: Sides, b: Box, g: Group, k: number)
-
-// --- $SideEmpty & $StopAtBand ---
-// Through the far side of the piece's green.
-arm_far([R, Hd, An, $StopAtBand()], B, [D, K, Id], N) :-
-    arm_of([R, Hd, An, $StopAtBand()], B, [D, K, Id]),
-    opposite(D, D2), params.margin(M), jump(B, D, M, B2), dist(B2, D2, N).
-
 // --- $SideEmpty & $ChannelRect ---
 // The far end F of the blank run on a line of the group, N from the edge.
 .decl line_end(g: Group, f: Position, n: number)
@@ -582,22 +578,83 @@ rect_far([D, K, Id], N) :-
     ),
     dist(F2, D2, N).
 
-arm_far([R, Hd, An, $ChannelRect()], B, G, N) :-
-    arm_of([R, Hd, An, $ChannelRect()], B, G), rect_far(G, N).
+// An arm on group G, its far side N from the far edge.
+.type Arm = [g: Group, n: number]
 
-.type Arm = [s: Sides, b: Box, g: Group]
+// The far sides an arm on group G may take.
+.decl arm_reach(g: Group, n: number)
 
+// --- $SideEmpty & $StopAtBand ---
+// The margin past any line across the group's side, as the far side of a
+// piece's green lies the margin past the piece's far line.
+arm_reach([D, K, Id], N) :-
+    arm_span.box([D, K, Id], _), opposite(D, D2), perp_dir(D, D_p), edge_cell(D_p, E),
+    params.margin(M), jump(E, D, M, E2), dist(E2, D2, N).
+
+// --- $SideEmpty & $ChannelRect ---
+arm_reach(G, N) :- rect_far(G, N).
+
+// --- $SideEmpty ---
 .init arm = DirPack<Arm>
-arm.edge([S, B, [D, K, Id]], D_s, N) :-
-    arm_far(S, B, [D, K, Id], _), arm_span.box([D, K, Id], B_s),
-    ( D_s = D ; perp_dir(D, D_s) ), dist(B_s, D_s, N).
-arm.edge([S, B, [D, K, Id]], D2, N) :- arm_far(S, B, [D, K, Id], N), opposite(D, D2).
+arm.edge([[D, K, Id], N], D_s, N_s) :-
+    arm_reach([D, K, Id], N), arm_span.box([D, K, Id], B_s),
+    ( D_s = D ; perp_dir(D, D_s) ), dist(B_s, D_s, N_s).
+arm.edge([[D, K, Id], N], D2, N) :- arm_reach([D, K, Id], N), opposite(D, D2).
+
+// The boxes a piece may have: the bands, and the boxes of arms.
+.decl shape(b: Box)
+shape(B) :- band_box(_, B).
+// --- $SideEmpty ---
+shape(B) :- arm.box(_, B).
+
+// Group G stands on side D of box B: its level is B's distance from edge D.
+.decl arm_off(hd: Heading, b: Box, g: Group)
+arm_off(Hd, B, [D, K, Id]) :-
+    shape(B), dist(B, D, K), !dist(B, D, 0), across(Hd, B, D), arm_span.box([D, K, Id], _).
+
+// The far side of the arm group G sends off box B.
+.decl arm_far(hd: Heading, ex: Extent, b: Box, g: Group, n: number)
+
+// --- $SideEmpty & $StopAtBand ---
+// Through the far side of the piece's green.
+arm_far(Hd, $StopAtBand(), B, [D, K, Id], N) :-
+    arm_off(Hd, B, [D, K, Id]),
+    opposite(D, D2), params.margin(M), jump(B, D, M, B2), dist(B2, D2, N).
+
+// --- $SideEmpty & $ChannelRect ---
+arm_far(Hd, $ChannelRect(), B, G, N) :- arm_off(Hd, B, G), rect_far(G, N).
 
 // --- $SideEmpty & $ChannelChain ---
-piece([R, Hd, $ChannelChain(), Ex], B) :- arm.box([[R, Hd, $ChannelChain(), Ex], _, _], B).
+// A band some case leaves through arms off arms.
+.decl track(hd: Heading, ex: Extent, b: Box)
+track(Hd, Ex, B) :-
+    impl_choice([Bd, $ChannelChain(), Ex, Hd, $SideEmpty(), _]), band_box([Bd, _], B).
 
-.decl arm_cell(s: Sides, p: Position)
-arm_cell(S, P) :- arm.box([S, _, _], B), in(P, _), inside(P, B).
+// A band, and the arm rule of a case that leaves it through arms off arms.
+.type Arms = [hd: Heading, ex: Extent, b0: Box]
+
+// The boxes reached from the band, each box sending off its arm.
+// @claim channel-fill
+.init chain = Propagation<Arms, Box>
+chain.source([Hd, Ex, B0], B0) :- track(Hd, Ex, B0).
+chain.edge([Hd, Ex, B0], B, B_arm) :-
+    track(Hd, Ex, B0), arm_far(Hd, Ex, B, G, N), arm.box([G, N], B_arm).
+
+// --- $SideEmpty ---
+// The boxes that channels and arms leave: the bands, and under ChannelChain
+// the arms.
+.decl piece(r: Reading, hd: Heading, an: Anchor, ex: Extent, b: Box)
+piece(R, Hd, An, Ex, B) :-
+    band_box(R, B), heading_choice(Hd), anchor_choice(An), extent_choice(Ex).
+// --- $SideEmpty & $ChannelChain ---
+piece(R, Hd, $ChannelChain(), Ex, B) :-
+    band_box(R, B0), track(Hd, Ex, B0),
+    chain.reached([Hd, Ex, B0], B).            // a box reached through arms off arms
+
+.decl arm_cell(r: Reading, hd: Heading, an: Anchor, ex: Extent, p: Position)
+arm_cell(R, Hd, An, Ex, P) :-
+    piece(R, Hd, An, Ex, B), arm_far(Hd, Ex, B, G, N), arm.box([G, N], B_arm),
+    in(P, _), inside(P, B_arm).
 
 // ---------------------------------------------------------------------------
 // Output
@@ -613,7 +670,7 @@ green([Bd, An, Ex, Hd, $ClearLine(), Eg], Q, P) :-
 
 // --- $SideEmpty ---
 green([Bd, An, Ex, Hd, $SideEmpty(), Eg], Q, P) :-
-    edge_choice(Eg), arm_cell([[Bd, Q], Hd, An, Ex], P).
+    edge_rule_choice(Eg), arm_cell([Bd, Q], Hd, An, Ex, P).
 
 // The band branch finds its band or bands, or keeps the input.
 .decl framed(r: Reading)
@@ -624,7 +681,7 @@ framed([$EmptyLineBands(), Q]) :- params.quorum(Q).
 // The case reads the band's long axis.
 .decl needs_axis(hd: Heading, eg: EdgeRule)
 // --- $PerpendicularChannels ---
-needs_axis($PerpendicularChannels(), Eg) :- edge_choice(Eg).
+needs_axis($PerpendicularChannels(), Eg) :- edge_rule_choice(Eg).
 // --- $BandEdgeMargin ---
 needs_axis(Hd, $BandEdgeMargin()) :- heading_choice(Hd).
 

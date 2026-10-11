@@ -57,12 +57,15 @@ cell(P_grid_out, P_tile, P_intile, $Crop()) :-
     concat_2d(P_tile, P_intile, 0, P_grid_out).
 
 // $Divide — the block holding ink; the output decomposes as the input does.
-cell(P_grid, P_tile, P_intile, $Divide()) :-
+.decl block(p_grid: Position, p_tile: Position, p_intile: Position)
+block(P_grid, P_tile, P_intile) :-
     in(P_grid, _), params.tile_dim(K), divide_by_size_2d(P_grid, K, 0, P_tile, P_intile).
 
+cell(P_grid, P_tile, P_intile, $Divide()) :- block(P_grid, P_tile, P_intile).
+
 shape(P_intile, Col, $Divide()) :-
-    cell(P, P_tile, P_intile, $Divide()), in(P, Col),   // a block's cell
-    cell(P_ink, P_tile, _, $Divide()), ink(P_ink).      // the block holds ink
+    block(P, P_tile, P_intile), in(P, Col),   // a block's cell
+    block(P_ink, P_tile, _), ink(P_ink).      // the block holds ink
 
 // An ink cell of the shape.
 .decl active(p: Position, pa: Parse)

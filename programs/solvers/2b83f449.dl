@@ -86,9 +86,14 @@ drop(P, P_land) :-
 // --- the walk ---
 
 // A dot enters a run at one end and drops through a gap at the far end.
-.decl arrive(src: Position, p: Position)
-arrive(P, P) :- in(P, Col), params.dot(Col).
-arrive(Src, P_land) :- arrive(Src, P), far_end(P, Q), drop(Q, P_land).
+.decl dot(src: Position)
+dot(Src) :- in(Src, Col), params.dot(Col).
+
+// The run ends each dot arrives at: its own cell, and each drop on from
+// there.
+.init drops = Propagation<Position, Position>
+drops.source(Src, Src) :- dot(Src).
+drops.edge(Src, P, P_land) :- dot(Src), far_end(P, Q), drop(Q, P_land).
 
 .decl post_side(p: Position, d: Dir)
 post_side(P, D) :- open_cell(P), across_dir(D), neighbor(P, D, Q), post_cell(Q).
@@ -100,7 +105,7 @@ backed(P) :- run_end(P, D), !post_side(P, D).
 
 .decl rest_at(src: Position, p: Position)
 rest_at(Src, T) :-
-    arrive(Src, P), far_end(P, Q), !drop(Q, _),   // nowhere left to drop
+    drops.reached(Src, P), far_end(P, Q), !drop(Q, _),   // nowhere left to drop
     ( backed(P), T = P                            // pressed where it landed
     ; !backed(P), T = Q                           // pressed at the far end
     ).

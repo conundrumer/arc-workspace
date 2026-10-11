@@ -49,12 +49,14 @@ base(P_grid_out, Col) :-
 // The period the continuation repeats by, per case and line.
 .decl period_at(ch: Choice, line: Position, k: number)
 
-out(P, Col, Ch) :- impl_choice(Ch), base(P, Col).
+// Each output cell repeats the base cell of its line that stands at its
+// place within the period, counted from the edge the growth moves away from.
 out(P_grid_out, Col, Ch) :-
-    out(P, Col, Ch),
-    params.dir(D), axis_of(D, A), split(P, A, _, Line),      // the cell's line
-    period_at(Ch, Line, K), jump(P, D, K, P_grid_out),
-    out_cell(P_grid_out).
+    out_cell(P_grid_out), impl_choice(Ch),
+    params.dir(D), axis_of(D, A), opposite(D, O),
+    split(P_grid_out, A, _, Line), period_at(Ch, Line, K),        // the cell's line and its period
+    dist(P_grid_out, O, T), stride(T, K, 0, _, R),                // its place within the period
+    base(P, Col), split(P, A, _, Line), dist(P, O, R).            // the base cell at that place
 
 // --- $Line ---
 

@@ -71,7 +71,6 @@
     .type Rect = [ky: Key, b: Box]
     .type KeyScan = [ky: Key, c: DiagDir, a: Axis]
     .type Run = [ky: Key, ch: Choice, c: DiagDir, a: Axis]
-    .type Step = [run: Run, b: Box]
 
     .decl cell(ky: Key, p: Position, c: Color)
 
@@ -140,9 +139,17 @@
     lex.axis([Ky, C, A], A) :- scan(Ky, C, A).
     lex.cell([Ky, C, A], P) :- scan(Ky, C, A), corner_cell(Ky, _, _, P).
 
+    // b has the larger area.
+    .decl larger(ky: Key, b: Box, b2: Box)
+    larger(Ky, B, B2) :- area.tally([Ky, B], N), area.tally([Ky, B2], N2), N > N2.
+
+    // b and b2 have one area.
+    .decl same_area(ky: Key, b: Box, b2: Box)
+    same_area(Ky, B, B2) :- area.tally([Ky, B], N), area.tally([Ky, B2], N).
+
     // b claims before b2 whatever the scan.
     .decl prior(ky: Key, ov: Overlap, b: Box, b2: Box)
-    prior(Ky, $LargestFirst(), B, B2) :- area.tally([Ky, B], N), area.tally([Ky, B2], N2), N > N2.
+    prior(Ky, $LargestFirst(), B, B2) :- larger(Ky, B, B2).
 
     // @claim greedy-rect-fill
     .init claim_order = Order<Run, Box>
@@ -150,25 +157,20 @@
     // A claim of b_last takes b out of the running.
     .decl blocks(run: Run, b_last: Box, b: Box)
 
-    // The rectangles no claim up to b_last takes out.
-    .decl free(run: Run, b_last: Box, b: Box)
-    free(Ru, B_last, B) :-
-        claim_order.first(Ru, B_last), claim_order.elem(Ru, B), !blocks(Ru, B_last, B).
-    free(Ru, B_next, B) :-
-        advance(Ru, B_last, B_next), free(Ru, B_last, B), !blocks(Ru, B_next, B).
-
-    // The next claim: the free rectangle first in the claim order.
+    // The walk along the claim order: a rectangle no earlier claim took out
+    // claims, and takes out each rectangle it blocks; a rectangle taken out
+    // is passed over.
     // @claim greedy-rect-fill
-    .init next_claim = ArgExtremes<Step, Box>
-    next_claim.cand([Ru, B_last], B, K) :- free(Ru, B_last, B), claim_order.rank(Ru, B, K).
-
-    .decl advance(run: Run, b_last: Box, b_next: Box)
-    advance(Ru, B_last, B_next) :- next_claim.low([Ru, B_last], B_next, _).
+    .init claim = Take<Run, Box, Box>
+    claim.start(Ru, B) :- claim_order.first(Ru, B).
+    claim.init_untaken(Ru, B) :- claim_order.elem(Ru, B).
+    claim.conflict(Ru, B, B2) :- blocks(Ru, B, B2).
+    claim.step(Ru, B, B2) :- claim_order.next(Ru, B, B2), claim.untaken(Ru, B, B).
+    claim.skip(Ru, B, B2) :- claim_order.next(Ru, B, B2), claim.excluded(Ru, B, B).
+    claim.take(Ru, B, B) :- claim_order.elem(Ru, B), claim.untaken(Ru, B, B).
 
     .decl claimed_cell(ky: Key, ch: Choice, c: DiagDir, a: Axis, p: Position)
-    claimed_cell(Ky, Ch, C, A, P) :-
-        ( claim_order.first([Ky, Ch, C, A], B) ; advance([Ky, Ch, C, A], _, B) ),
-        rect_cell(Ky, B, P).
+    claimed_cell(Ky, Ch, C, A, P) :- claim.take([Ky, Ch, C, A], B, B), rect_cell(Ky, B, P).
 
     // --- concept, $ThicknessTwo, $AxisFirst ---
 
@@ -190,7 +192,7 @@
 
     // b and b2 claim in the scan's order.
     .decl level(ky: Key, ov: Overlap, b: Box, b2: Box)
-    level(Ky, $LargestFirst(), B, B2) :- area.tally([Ky, B], N), area.tally([Ky, B2], N).
+    level(Ky, $LargestFirst(), B, B2) :- same_area(Ky, B, B2).
 
     claim_order.elem([Ky, [Ov, Q], C, A], B) :- greedy([Ov, Q]), scan(Ky, C, A), cand(Ky, Q, B).
     claim_order.before([Ky, [Ov, Q], C, A], B, B2) :-
@@ -212,10 +214,9 @@
     prior(Ky, $AxisFirst(), B, B2) :-
         axis_len(Ky, B, N), axis_len(Ky, B2, N2),
         ( N > N2
-        ; N = N2, prior(Ky, $LargestFirst(), B, B2)
+        ; N = N2, larger(Ky, B, B2)
         ).
-    level(Ky, $AxisFirst(), B, B2) :-
-        axis_len(Ky, B, N), axis_len(Ky, B2, N), level(Ky, $LargestFirst(), B, B2).
+    level(Ky, $AxisFirst(), B, B2) :- axis_len(Ky, B, N), axis_len(Ky, B2, N), same_area(Ky, B, B2).
 
     // --- $AxisFirst & $ThicknessTwo ---
 
@@ -234,7 +235,7 @@
         params.first_axis(A), strip(Ky, B, A), strip(Ky, B2, A),
         corner_cell(Ky, B, C, P), corner_cell(Ky, B2, C, P2),
         ( lex.before([Ky, C, A], P, P2)
-        ; P = P2, prior(Ky, $LargestFirst(), B, B2)
+        ; P = P2, larger(Ky, B, B2)
         ).
     blocks([Ky, [$AxisFirst(), $ThicknessTwo()], C, A], B, B2) :-
         claim_order.elem([Ky, [$AxisFirst(), $ThicknessTwo()], C, A], B), rect_cell(Ky, B, P),

@@ -71,8 +71,8 @@ join(P_tile, Q_tile) :-
 
 // A group is what the joins connect.
 .init group = Canon<Position>
-group.equiv(P_tile, P_tile) :- ink(P_tile, _).
-group.equiv(P_tile, R_tile) :- group.equiv(P_tile, Q_tile), join(Q_tile, R_tile).
+group.edge(P_tile, P_tile) :- ink(P_tile, _).
+group.edge(Q_tile, R_tile) :- join(Q_tile, R_tile).
 
 // --- the output lattice ---
 

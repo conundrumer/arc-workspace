@@ -61,20 +61,30 @@ placed($Canvas(), P_grid, P_in) :-
 .decl on_diag(c: Choice, p_grid: Position)
 on_diag(Ch, P) :- frame_cell(Ch, P), params.growth(Diag), diag_dist(P, Diag, _, K, K).
 
-// The diagonal advance of one period.
-.decl period_jump(delta: Position)
-period_jump(Delta) :-
-    params.growth(Diag), params.period(N), jump_offset(Diag, N, Delta).
+// The color of each diagonal cell: the input's own inside the input, and
+// outside it the diagonal continuing periodically, each cell the color of the
+// input's diagonal cell at its place within the period among the input's
+// last period of the diagonal.
+.decl diag_color(c: Choice, p_grid: Position, col: Color)
+diag_color(Ch, P, Col) :-
+    on_diag(Ch, P),
+    ( placed(Ch, P, P_in), in(P_in, Col)                              // an input diagonal cell
+    ; !placed(Ch, P, _),                                              // a continued diagonal cell
+      params.growth(Diag), params.period(N),
+      diag_dist(P, Diag, _, K, K), stride(K, N, 0, _, R),             // its place within the period
+      on_diag(Ch, Q), placed(Ch, Q, Q_in), in(Q_in, Col),             // an input diagonal cell
+      diag_dist(Q, Diag, _, Kq, Kq), stride(Kq, N, 0, _, R),          // at that place
+      jump(Q, Diag, N, Q2), !placed(Ch, Q2, _)                        // in the input's last period
+    ).
 
 // The input in place.
 out(P_grid, Col, Ch) :- placed(Ch, P_grid, P_in), in(P_in, Col).
 
-// From a diagonal cell the growth continues two ways: the diagonal itself
-// carries on one period out, and each diagonal cell paints two arms one
-// shell out. Both only reach outside the input.
+// Outside the input, the diagonal continues, and each diagonal cell paints
+// two arms one shell out: a step toward the corner, then a ray back across.
 out(P, Col, Ch) :-
-    out(Q, Col, Ch), on_diag(Ch, Q),                                  // diagonal source
-    ( period_jump(Delta), compose(Q, Delta, P), on_diag(Ch, P)        // one period out
+    diag_color(Ch, Q, Col),
+    ( P = Q                                                           // the diagonal cell itself
     ; params.growth(Diag), diag_dirs(Diag, _, D1, D2),                // the corner's dir pair
       neighbor(Q, D1, M),                                             // step off the diagonal
       frame_cell(Ch, P),                                              // an arm cell

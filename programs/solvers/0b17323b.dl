@@ -2,7 +2,7 @@
 // @keywords: markers cast
 // output: Marks of params.mark_color sit on one diagonal, evenly spaced. The
 //  output keeps the input and continues the sequence in params.new_color,
-//  stepping by the mark spacing until it leaves the grid.
+//  on every cell a whole number of mark spacings along the diagonal.
 
 // which ends of the diagonal the sequence continues from
 .type Choice =
@@ -43,12 +43,14 @@ spacing.cand($U(), K) :- sep(_, K).
 // The corners each case continues toward.
 .decl walk_dir(ch: Choice, d: DiagDir)
 
-// The sequence: the marks, and every further step of it on the grid.
+// The sequence: the cells a whole number of steps ahead of a mark.
 .decl walk(ch: Choice, p: Position)
-walk(Ch, P) :- mark(P), impl_choice(Ch).
-walk(Ch, P_next) :-
-    walk(Ch, P), walk_dir(Ch, D), spacing.low($U(), K),     // a cell of it, and the step
-    jump(P, D, K, P_next), in(P_next, _).                   // the next one, still on the grid
+walk(Ch, Q) :-
+    mark(P), walk_dir(Ch, D), spacing.low($U(), K),            // a mark, a heading, the step
+    in(Q, _), relative(P, Q, V),                               // a grid cell, from the mark
+    dir_of(D, _, D_c), opposite(D_c, O), dist(V, O, T),        // how far toward the corner
+    jump_offset(D, T, V),                                      // on the mark's diagonal, that far
+    stride(T, K, 0, _, 0).                                     // a whole number of steps
 
 .decl added(ch: Choice, p: Position)
 added(Ch, P) :- walk(Ch, P), !mark(P).

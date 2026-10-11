@@ -41,28 +41,21 @@ sight.blocked($U(), B) :- block(B, _).
 .decl seed_block(b: Box)
 seed_block(B) :- block(B, Col), params.seed(Col).
 
-// The partition the chain carries: the blocks it holds (taken) and the rest
-// (untaken).
+// The chain stands at a block and steps to the nearest block it sees and
+// does not hold, so a tie forks the walk. The partition it carries: the
+// blocks it holds (taken) and the rest (untaken).
 .init state = Take<Unit, Box, Box>
 state.start($U(), B) :- seed_block(B).
-state.step($U(), B, B2) :- hop(B, B2).
-state.take($U(), B, B2) :- hop(B, B2).
 state.init_taken($U(), B) :- seed_block(B).
 state.init_untaken($U(), B) :- block(B, _), !seed_block(B).
-
-// The step taken: of the blocks the chain reaches and does not hold, the
-// one at the fewest steps. A tie leaves both, and the walk forks.
-.init nearest = ArgExtremes<Box, Box>
-nearest.cand(B, B2, K) :- state.untaken($U(), B, B2), sight.stop($U(), B2, _, K, B).
-
-.decl hop(b: Box, b2: Box)
-hop(B, B2) :- nearest.low(B, B2, _).
+state.score($U(), B, X, K) :- sight.stop($U(), X, _, K, B).           // distance to each block seen
+state.step($U(), B, X) :- sight.stop($U(), X, _, _, B), state.take($U(), B, X).
 
 // A link fills the box the two blocks span, less the blocks themselves.
 .type Link = [b: Box, b2: Box]
 
 .init span = Bbox<Link>
-span.cell([B, B2], B3) :- hop(B, B2), ( B3 = B ; B3 = B2 ).
+span.cell([B, B2], B3) :- state.take($U(), B, B2), ( B3 = B ; B3 = B2 ).
 
 .decl link_cell(p: Position)
 link_cell(P) :- span.box(_, B), in(P, _), inside(P, B), !blocks.node($U(), P).

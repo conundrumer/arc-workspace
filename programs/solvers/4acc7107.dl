@@ -10,6 +10,10 @@
 //  rank, each shape hugging the lane edge. A blank line separates adjacent
 //  lanes, and adjacent slots.
 
+// One line a pile member claims, for a lane and for a shape.
+.type ColorLine = [col: Color, k: number]
+.type ShapeLine = [id: Ident, k: number]
+
 .decl out(p: Position, col: Color)
 
 .comp Params {
@@ -76,26 +80,54 @@ color_ord.before($U(), Col, Col2) :- color_dist(Col, K), color_dist(Col2, K2), K
 .init lane_size = Extremes<Color>
 lane_size.cand(Col, W) :- shape_color(Id, Col), shape_size(Id, _, W).
 
-// The lane's cell at the corner: the first lane hugs it, and each next
-// lane clears the width of the one before it, plus the gap.
+// The grid cell at the layout's corner.
+.decl corner_cell(p: Position)
+corner_cell(P) :- in(P, _), params.corner(Cnr), corner_dist(P, Cnr, 0).
+
+// Line k from the corner, counted toward the opposite of edge d, lies
+// short of the cell n lines and then a gap further on: one of the lines a
+// pile member of n lines claims, with the gap after it.
+.decl claims(d: Dir, n: number, k: number)
+claims(D, N, K) :-
+    ( lane_size.high(_, N), lane_dir(D) ; shape_size(_, N, _), stack_dir(D) ),
+    corner_cell(Z), opposite(D, D_on), params.gap(G),
+    jump(Z, D_on, N, Q), jump(Q, D_on, G, Y),                // past the member and its gap
+    in(P, _), dist(P, D, K), jump(Z, D_on, K, L),            // line k
+    nearer(D, L, Y).
+
+// The lines each lane claims.
+.decl lane_line(col: Color, k: number)
+lane_line(Col, K) :- lane_size.high(Col, W), lane_dir(D), claims(D, W, K).
+
+// Lanes pile from the lane edge in color rank: each lane's lines, gap
+// included, come before every later lane's.
+.init lane_pile = Order<Unit, ColorLine>
+lane_pile.elem($U(), [Col, K]) :- lane_line(Col, K).
+lane_pile.before($U(), [Col, K], [Col2, K2]) :-
+    lane_line(Col, K), lane_line(Col2, K2), color_ord.before($U(), Col, Col2).
+
+// The lane's cell at the corner: past the lines the earlier lanes claim.
 .decl lane(col: Color, p: Position)
 lane(Col, P) :-
-    color_ord.first($U(), Col),
-    in(P, _), params.corner(Cnr), corner_dist(P, Cnr, 0).
-lane(Col2, P2) :-
-    color_ord.next($U(), Col, Col2), lane(Col, P),
-    lane_size.high(Col, W), lane_dir(D), opposite(D, D_on),
-    jump(P, D_on, W, Q), params.gap(G), jump(Q, D_on, G, P2).
+    lane_pile.rank($U(), [Col, _], R),
+    corner_cell(Z), lane_dir(D), opposite(D, D_on), jump(Z, D_on, R, P).
 
-// The slot's cell at the corner: the first shape of a lane takes the lane's
-// own corner, and each next shape clears the depth of the one before it,
-// plus the gap.
+// The lines each shape claims.
+.decl shape_line(id: Ident, k: number)
+shape_line(Id, K) :- shape_size(Id, N, _), stack_dir(D), claims(D, N, K).
+
+// Within a lane, shapes pile from the stack edge in shape rank.
+.init slot_pile = Order<Color, ShapeLine>
+slot_pile.elem(Col, [Id, K]) :- shape_color(Id, Col), shape_line(Id, K).
+slot_pile.before(Col, [Id, K], [Id2, K2]) :-
+    shape_line(Id, K), shape_line(Id2, K2), shape_ord.before(Col, Id, Id2).
+
+// The slot's cell at the corner: past the lines the earlier shapes of its
+// lane claim.
 .decl slot(id: Ident, p: Position)
-slot(Id, P) :- shape_ord.first(Col, Id), lane(Col, P).
-slot(Id2, P2) :-
-    shape_ord.next(_, Id, Id2), slot(Id, P), shape_size(Id, N, _),
-    stack_dir(D), opposite(D, D_on),
-    jump(P, D_on, N, Q), params.gap(G), jump(Q, D_on, G, P2).
+slot(Id, P) :-
+    slot_pile.rank(Col, [Id, _], R), lane(Col, P0),
+    stack_dir(D), opposite(D, D_on), jump(P0, D_on, R, P).
 
 // The grid cell at a shape's own corner.
 .decl anchor(id: Ident, p: Position)

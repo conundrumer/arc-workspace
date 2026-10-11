@@ -119,10 +119,10 @@ mark_apart([Ch, X1, D1], [Ch, X2, D2]) :-
 mark_same([Ch, X1, D1], [Ch, X2, D2]) :-
     mark_axis([Ch, X1, D1], A), mark_axis([Ch, X2, D2], A),
     !mark_apart([Ch, X1, D1], [Ch, X2, D2]).
-mark_same(M1, M3) :- mark_same(M1, M2), mark_same(M2, M3).
 
+// A group is what a run of overlaps links.
 .init grp = Canon<Mark>
-grp.equiv(M1, M2) :- mark_same(M1, M2).
+grp.edge(M1, M2) :- mark_same(M1, M2).
 
 // --- layout ---
 

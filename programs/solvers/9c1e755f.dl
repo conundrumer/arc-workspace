@@ -74,20 +74,25 @@ field(Y, B) :-
     swatch_box.box(Y, B_swatch), split(B_swatch, A, _, B_across),
     compose(B_along, B_across, B).
 
-// The copies of the swatch that paint the field: from the case's first copy,
-// each copy one swatch-length on from the last, either way along the rail.
+// The case's first copy of the swatch.
+.decl first_copy(ch: Choice, y: Ident, p: Position, col: Color)
+
+// The copies of the swatch that paint the field: the field cells in line with
+// a cell of the first copy, a whole number of swatch-lengths from it either
+// way along the rail.
 .decl copy(ch: Choice, y: Ident, p: Position, col: Color)
 copy(Ch, Y, Q, Col) :-
-    copy(Ch, Y, P, Col),
-    rail_axis(Y, A), axis_of(D, A),                   // either way along the rail
-    swatch_box.box(Y, B), box_extent(B, P, A, N),     // one swatch-length on
-    jump(P, D, N, Q), field(Y, B_field), inside(Q, B_field).
+    first_copy(Ch, Y, P, Col), rail_axis(Y, A), axis_of(D, A),
+    swatch_box.box(Y, B), box_extent(B, P, A, N),                 // one swatch-length
+    field(Y, B_field), in(Q, _), inside(Q, B_field), same_line(A, P, Q),
+    dist(P, D, T_p), stride(T_p, N, 0, _, R),                     // the same place within a swatch-length
+    dist(Q, D, T_q), stride(T_q, N, 0, _, R).
 
 out(P, Col, Ch) :- copy(Ch, _, P, Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !copy(Ch, _, P, _).
 
 // --- $Swatch ---
-copy($Swatch(), Y, P, Col) :- swatch(Y, P, Col).
+first_copy($Swatch(), Y, P, Col) :- swatch(Y, P, Col).
 
 // --- $FarEnd ---
 
@@ -98,4 +103,4 @@ far_end(Y, D, K) :-
     dir_elem(D), dist(B_rel, D, K), K > 0.
 
 // The swatch slid flush to the far end.
-copy($FarEnd(), Y, Q, Col) :- swatch(Y, P, Col), far_end(Y, D, K), jump(P, D, K, Q).
+first_copy($FarEnd(), Y, Q, Col) :- swatch(Y, P, Col), far_end(Y, D, K), jump(P, D, K, Q).

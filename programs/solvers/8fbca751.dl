@@ -20,8 +20,7 @@ ink(P) :- in(P, Col), !params.bg(Col).
 
 // A group is what line sharing connects.
 .init group = Canon<Position>
-group.equiv(P, P) :- ink(P).
-group.equiv(P, R) :- group.equiv(P, Q), ink(R), axis_elem(A), same_line(A, Q, R).
+group.edge(P, Q) :- ink(P), ink(Q), axis_elem(A), same_line(A, P, Q).
 
 .init group_box = Bbox<Ident>
 group_box.cell(Id, P) :- group.id(P, Id).

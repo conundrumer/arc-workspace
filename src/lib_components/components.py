@@ -257,20 +257,20 @@ def GraphDistance(Key: TypeArg, Node: TypeArg, *, sizes: Mapping[PyValue, Size] 
     return GraphDistanceRows(got['distance'], got['pred'])
 
 
-class ReachabilityRows(NamedTuple):
-    """The output relations of `Reachability` (programs/lib/orders.dl)."""
+class PropagationRows(NamedTuple):
+    """The output relations of `Propagation` (programs/lib/orders.dl)."""
 
-    reachable: Relation
+    reached: Relation
 
 
-def Reachability(Key: TypeArg, Node: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, edge: Iterable[PyRow] | None = None) -> ReachabilityRows:
-    """Runs `Reachability` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
-    got = call('Reachability', [Key, Node],
+def Propagation(Key: TypeArg, Node: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, source: Iterable[PyRow] | None = None, edge: Iterable[PyRow] | None = None, join: Iterable[PyRow] | None = None) -> PropagationRows:
+    """Runs `Propagation` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
+    got = call('Propagation', [Key, Node],
                GridTypes(LibType.POSITION, LibType.OFFSET),
-               {'edge': Columns((Key, Node, Node, ), True), 'reachable': Columns((Key, Node, Node, ), True)},
-               {'edge': edge},
-               ['reachable'], sizes)
-    return ReachabilityRows(got['reachable'])
+               {'source': Columns((Key, Node, ), True), 'edge': Columns((Key, Node, Node, ), True), 'join': Columns((Key, Node, Node, Node, ), True), 'reached': Columns((Key, Node, ), True)},
+               {'source': source, 'edge': edge, 'join': join},
+               ['reached'], sizes)
+    return PropagationRows(got['reached'])
 
 
 class IndexCycleRows(NamedTuple):
@@ -308,18 +308,20 @@ def CycleWalk(Key: TypeArg, T: TypeArg, *, sizes: Mapping[PyValue, Size] | None 
 class TakeRows(NamedTuple):
     """The output relations of `Take` (programs/lib/orders.dl)."""
 
+    pick: Relation
     taken: Relation
     untaken: Relation
+    excluded: Relation
 
 
-def Take(Key: TypeArg, T: TypeArg, Item: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, start: Iterable[PyRow] | None = None, step: Iterable[PyRow] | None = None, take: Iterable[PyRow] | None = None, init_taken: Iterable[PyRow] | None = None, init_untaken: Iterable[PyRow] | None = None) -> TakeRows:
+def Take(Key: TypeArg, T: TypeArg, Item: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, start: Iterable[PyRow] | None = None, init_taken: Iterable[PyRow] | None = None, init_untaken: Iterable[PyRow] | None = None, conflict: Iterable[PyRow] | None = None, score: Iterable[PyRow] | None = None, step: Iterable[PyRow] | None = None, skip: Iterable[PyRow] | None = None, take: Iterable[PyRow] | None = None) -> TakeRows:
     """Runs `Take` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Take', [Key, T, Item],
                GridTypes(LibType.POSITION, LibType.OFFSET),
-               {'start': Columns((Key, T, ), True), 'step': Columns((Key, T, T, ), True), 'take': Columns((Key, T, Item, ), True), 'init_taken': Columns((Key, Item, ), True), 'init_untaken': Columns((Key, Item, ), True), 'taken': Columns((Key, T, Item, ), True), 'untaken': Columns((Key, T, Item, ), True)},
-               {'start': start, 'step': step, 'take': take, 'init_taken': init_taken, 'init_untaken': init_untaken},
-               ['taken', 'untaken'], sizes)
-    return TakeRows(got['taken'], got['untaken'])
+               {'start': Columns((Key, T, ), True), 'init_taken': Columns((Key, Item, ), True), 'init_untaken': Columns((Key, Item, ), True), 'conflict': Columns((Key, Item, Item, ), True), 'score': Columns((Key, T, Item, Primitive.NUMBER, ), True), 'step': Columns((Key, T, T, ), True), 'skip': Columns((Key, T, T, ), True), 'take': Columns((Key, T, Item, ), True), 'pick': Columns((Key, T, Item, Primitive.NUMBER, ), True), 'taken': Columns((Key, T, Item, ), True), 'untaken': Columns((Key, T, Item, ), True), 'excluded': Columns((Key, T, Item, ), True)},
+               {'start': start, 'init_taken': init_taken, 'init_untaken': init_untaken, 'conflict': conflict, 'score': score, 'step': step, 'skip': skip, 'take': take},
+               ['pick', 'taken', 'untaken', 'excluded'], sizes)
+    return TakeRows(got['pick'], got['taken'], got['untaken'], got['excluded'])
 
 
 class DirFrameRows(NamedTuple):

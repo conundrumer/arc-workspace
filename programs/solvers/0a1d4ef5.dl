@@ -72,9 +72,9 @@ block_band($Runs(), A, Id, B) :- block(Id), region_line(Id, A, P_line), runs.lab
 overlap([Id, A], [Id2, A]) :-
     block(Id), block(Id2), region_line(Id, A, P_line), region_line(Id2, A, P_line).
 
+// The classes a chain of alignments connects.
 .init cls = Canon<RegionAxis>
-cls.equiv(X, Y) :- overlap(X, Y).
-cls.equiv(X, Z) :- cls.equiv(X, Y), overlap(Y, Z).
+cls.edge(X, Y) :- overlap(X, Y).
 
 block_band($Overlap(), A, Id, B) :- cls.id([Id, A], B).
 

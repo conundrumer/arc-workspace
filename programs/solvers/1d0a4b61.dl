@@ -21,11 +21,19 @@ intact(P, Col) :- in(P, Col), !params.hole(Col).
 .init si = OffsetInvariance<Unit, Color>
 si.cell($U(), P, Col) :- intact(P, Col).
 
-// One lattice step — the identification the orbit closes over.
-.decl step(p: Position, q: Position)
-step(P, Q) :-
-    si.min_period($U(), A, K), axis_of(D, A),  // the period, either direction
-    in(P, _), jump(P, D, K, Q), in(Q, _).      // within the frame
+// A cell's phase toward edge D: its distance to that edge modulo the
+// period on the edge's axis, or the distance itself on an axis with no
+// period.
+.decl phase(p: Position, d: Dir, k: number)
+phase(P, D, Ph) :-
+    in(P, _), dir_elem(D), axis_of(D, A), dist(P, D, T),
+    ( si.min_period($U(), A, K), stride(T, K, 0, _, Ph)
+    ; !si.min_period($U(), A, _), Ph = T
+    ).
 
-out(P, Col) :- intact(P, Col).
-out(Q, Col) :- out(P, Col), step(P, Q).
+// Each cell takes the color of an intact cell of its lattice orbit: one in
+// phase with it on both axes.
+out(Q, Col) :-
+    intact(P, Col), in(Q, _),
+    axis_of(D, A), perp(A, A2), axis_of(D2, A2),
+    phase(P, D, Ph), phase(Q, D, Ph), phase(P, D2, Ph2), phase(Q, D2, Ph2).

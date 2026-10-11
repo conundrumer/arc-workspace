@@ -179,6 +179,8 @@ impl_choice([O, R, $HiddenFill(), Sel, $TieFirst()]) :-
 // every scan order.
 .comp Parse<Key> {
     .type Hue = [ky: Key, col: Color]
+    // A recovery's colors from one axis-period color.
+    .type Shade = [ky: Key, r: Recovery, col: Color]
     .type Block = [ky: Key, b: Box]
     // A selection's order over the key's occluders, read along an axis.
     .type Rank = [ky: Key, sel: Selection, axis: Axis]
@@ -219,16 +221,23 @@ impl_choice([O, R, $HiddenFill(), Sel, $TieFirst()]) :-
     .init period = OffsetInvariance<Key, Color>
     period.cell(Ky, P, Col) :- visible(Ky, P, Col).
 
-    // Hidden q takes the color of the cells one period away on either axis.
-    .decl axis_link(ky: Key, p: Position, q: Position)
-    axis_link(Ky, P, Q) :-
-        period.min_period(Ky, A, K), axis_of(D, A), hidden(Ky, Q), jump(Q, D, K, P).
+    // The phase of p from edge d: its distance from d within the period of
+    // d's axis, or its whole distance where that axis has no period.
+    .decl phase(ky: Key, p: Position, d: Dir, k: number)
+    phase(Ky, P, D, K) :-
+        cell(Ky, P, _), dir_elem(D), dist(P, D, T), axis_of(D, A),
+        ( period.min_period(Ky, A, N), stride(T, N, 0, _, K)
+        ; !period.min_period(Ky, A, _), K = T
+        ).
 
     // The colors the axis periods give a cell: its own where visible, and
-    // those the links carry into hidden cells.
+    // those of the visible cells of its phase where hidden.
     .decl axis_color(ky: Key, p: Position, col: Color)
     axis_color(Ky, P, Col) :- visible(Ky, P, Col).
-    axis_color(Ky, Q, Col) :- axis_color(Ky, P, Col), axis_link(Ky, P, Q).
+    axis_color(Ky, Q, Col) :-
+        hidden(Ky, Q), diag_dirs(_, _, D1, D2),                     // an edge on each axis
+        phase(Ky, Q, D1, K1), phase(Ky, Q, D2, K2),
+        phase(Ky, P, D1, K1), phase(Ky, P, D2, K2), visible(Ky, P, Col).
 
     // Some axis has no period, so no map is read.
     .decl aperiodic(ky: Key)
@@ -245,8 +254,17 @@ impl_choice([O, R, $HiddenFill(), Sel, $TieFirst()]) :-
     // The colors each recovery gives a cell: those of the axis periods, and
     // those its maps carry into hidden cells.
     .decl color(ky: Key, r: Recovery, p: Position, col: Color)
-    color(Ky, R, P, Col) :- recovery_choice(R), axis_color(Ky, P, Col).
-    color(Ky, R, Q, Col) :- color(Ky, R, P, Col), map_link(Ky, R, P, Q).
+    color(Ky, R, Q, Col) :- shade_reach.reached([Ky, R, Col], Q).
+
+    // A recovery and an axis-period color it carries.
+    .decl source_color(ky: Key, r: Recovery, col: Color)
+    source_color(Ky, R, Col) :- recovery_choice(R), axis_color(Ky, _, Col).
+
+    // The colors the maps carry from the cells of each axis-period color.
+    // @claim recover
+    .init shade_reach = Propagation<Shade, Position>
+    shade_reach.source([Ky, R, Col], P) :- source_color(Ky, R, Col), axis_color(Ky, P, Col).
+    shade_reach.edge([Ky, R, Col], P, Q) :- source_color(Ky, R, Col), map_link(Ky, R, P, Q).
 
     // --- selection ---
 

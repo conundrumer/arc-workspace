@@ -1,6 +1,6 @@
 // 8b28cd80
 // @draft
-// @keywords: markers scale cast walk rings
+// @keywords: markers scale cast parity rings
 // input: One marked cell in a 3x3 input.
 // output: The output spreads the input's cells apart by a gap and draws a
 //  square spiral in the mark's color around the mark's cell. Square rings
@@ -29,10 +29,6 @@
 
     // The spacing between one ring and the next.
     .decl ring_gap(k: number) ring_gap(1).
-
-    // The step out from one ring to the next, at every edge.
-    .decl ring_step(w: Box)
-    ring_step(W) :- ring_gap(K), uniform_outset(K, W).
 }
 
 .init params = Params
@@ -57,18 +53,20 @@ palette(Col) :- params.bg(Col).
 .decl other(col: Color, col2: Color)
 other(C1, C2) :- palette(C1), palette(C2), C1 != C2.
 
-// Rings: the center, and each ring let out by one step, in the other color.
-// A ring that draws no cell ends the run: every ring beyond it is off the grid.
-.decl ring(b: Box, col: Color)
-ring(B, Col) :- center(B, Col).
-ring(B2, Col2) :- ring(B, Col), next_ring(B, B2), other(Col, Col2).
+// The rings: a frame cell lies on the ring as far out from the center as its
+// farther offset along either axis, and the rings stand at every multiple of
+// the spacing, counted out from the center.
+.decl ring_cell(n: number, p: Position)
+ring_cell(N, P) :-
+    frame.cell($U(), P), center(C, _), relative(C, P, V),
+    dir_elem(D), dist(V, D, K),                                  // an offset from the center
+    uniform_outset(K, B_out), compose(C, B_out, B), box_edge(P, B, _),   // on that ring's box
+    params.ring_gap(G), stride(K, G, 0, N, 0).                   // the ring's count out
 
-// The cells a ring draws: the frame cells on its box's edge lines.
-.decl ring_cell(b: Box, p: Position)
-ring_cell(B, P) :- ring(B, _), frame.cell($U(), P), box_edge(P, B, _).
-
-.decl next_ring(b: Box, b2: Box)
-next_ring(B, B2) :- ring_cell(B, _), params.ring_step(W), compose(W, B, B2).
+// The rings alternate between the two colors, out from the center's.
+.init alternate = CycleWalk<Unit, Color>
+alternate.succ($U(), C1, C2) :- other(C1, C2).
+alternate.step($U(), N) :- ring_cell(N, _).
 
 // The seam: the diagonal ray cast from the cell beside the center.
 .init seam = Ray<Unit>
@@ -77,7 +75,7 @@ seam.cell($U(), P) :- frame.cell($U(), P).
 seam.mark($U(), P) :- center(B, _), params.arm(D), neighbor(B, D, P).
 
 out(P, Col) :-
-    ring_cell(B, P),
-    ( !seam.ray($U(), P, _, _, _), ring(B, Col)                       // a ring cell keeps its ring's color
-    ; seam.ray($U(), P, _, _, _), next_ring(B_in, B), ring(B_in, Col) // a seam cell takes the inner ring's color
+    ring_cell(N, P), center(_, C0), alternate.walk($U(), C0, N, C),
+    ( !seam.ray($U(), P, _, _, _), Col = C   // a ring cell keeps its ring's color
+    ; seam.ray($U(), P, _, _, _), other(C, Col)   // a seam cell takes the inner ring's color
     ).

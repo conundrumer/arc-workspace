@@ -49,24 +49,36 @@ impl_choice($Passthrough()). impl_choice($Repaint()).
 .decl cycle_end(d: Dir)
 cycle_end(D) :- params.corner(C), diag_dirs(C, _, D, D2), params.sense(S), turn(S, D, D2).
 
-// The walk: at P, traveling toward D, turning on the margins of box B.
-.decl walk(p: Position, d: Dir, b: Box)
-walk(P, D, ZERO) :-
+// A step of the walk: at p, traveling toward d, turning on the margins of
+// box b.
+.type Step = [p: Position, d: Dir, b: Box]
+
+// The turn boxes: the frame, and each box inset from it on every side.
+.decl turn_box(b: Box)
+turn_box(ZERO).
+turn_box(B) :- in(P, _), axis_elem(A), sub_extent(P, A, K), uniform_inset(K, B).
+
+// The walk starts at the corner cell, on the frame.
+.init spiral = Propagation<Unit, Step>
+spiral.source($U(), [P, D, ZERO]) :-
     in(P, _), params.corner(C), corner_dist(P, C, 0),   // the corner cell
     cycle_end(D_end), opposite(D_end, D).               // the first arm runs against the closing one
-
-walk(P2, D2, B2) :-
-    walk(P, D, B),
+spiral.edge($U(), [P, D, B], [P2, D2, B2]) :-
+    in(P, _), dir_elem(D), turn_box(B),
     ( nearer(D, B, P), D2 = D, B2 = B, neighbor(P, D, P2)            // short of the margin: one step on
     ; same_dist(D, B, P), P2 = P, params.sense(S), turn(S, D, D2),   // on it: turn in the spiral's sense
       ( cycle_end(D), params.inset(B_inset), compose(B, B_inset, B2)
       ; !cycle_end(D), B2 = B )
     ).
 
-out(P, Col, Ch) :- walk(P, _, _), params.ink(Col), impl_choice(Ch).
+// The cells the walk reaches.
+.decl walk(p: Position)
+walk(P) :- spiral.reached($U(), [P, _, _]).
+
+out(P, Col, Ch) :- walk(P), params.ink(Col), impl_choice(Ch).
 
 // --- $Passthrough ---
-out(P, Col, $Passthrough()) :- in(P, Col), !walk(P, _, _).
+out(P, Col, $Passthrough()) :- in(P, Col), !walk(P).
 
 // --- $Repaint ---
-out(P, Col, $Repaint()) :- in(P, _), !walk(P, _, _), params.bg(Col).
+out(P, Col, $Repaint()) :- in(P, _), !walk(P), params.bg(Col).

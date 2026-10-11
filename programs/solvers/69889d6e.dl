@@ -40,17 +40,31 @@ blocked($Wall(), P) :- in(P, Col), params.wall(Col).
 // --- $Solid ---
 blocked($Solid(), P) :- in(P, Col), !params.bg(Col).
 
-// The walker at p, about to step toward d.
-.decl walk(ch: Choice, p: Position, d: Dir)
-walk(Ch, P, D) :-
-    impl_choice(Ch), in(P, Col), params.walker(Col),
+// --- $Wall, $Solid ---
+
+// The walker's state: its cell, and the direction it steps toward next.
+.type Pose = [p: Position, d: Dir]
+
+// The walker's first pose.
+.decl start(p: Position, d: Dir)
+start(P, D) :-
+    in(P, Col), params.walker(Col),
     params.corner(C), params.first_axis(A), diag_dirs(C, A, D, _).
-walk(Ch, P2, D2) :-
-    walk(Ch, P, D), neighbor(P, D, Q), in(Q, _),   // the cell ahead, on the grid
-    params.corner(C), diag_dirs(C, _, D, D2),      // the corner's other direction
+
+// One move from a pose: step into the open cell ahead, or turn in place
+// before a blocked one, taking the corner's other direction next.
+.init walk = Propagation<Choice, Pose>
+walk.source(Ch, [P0, D0]) :- start(P0, D0), impl_choice(Ch).
+walk.edge(Ch, [P, D], [P2, D2]) :-
+    impl_choice(Ch), in(P, _), params.corner(C), diag_dirs(C, _, D, D2),
+    neighbor(P, D, Q), in(Q, _),                   // the cell ahead, on the grid
     ( !blocked(Ch, Q), P2 = Q                      // open: step in
     ; blocked(Ch, Q), P2 = P                       // blocked: turn in place
     ).
 
-out(P, Col, Ch) :- walk(Ch, P, _), params.walker(Col).
-out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !walk(Ch, P, _).
+// The walker reaches p.
+.decl visited(ch: Choice, p: Position)
+visited(Ch, P) :- walk.reached(Ch, [P, _]).
+
+out(P, Col, Ch) :- visited(Ch, P), params.walker(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !visited(Ch, P).

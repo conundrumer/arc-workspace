@@ -29,11 +29,16 @@ rect.cell(Col, P) :- in(P, Col), !params.bg(Col).
 under(Col, Col2) :-
     rect.cell(Col2, P), Col != Col2,       // a cell of another color
     rect.box(Col, B), box_edge(P, B, _).   // on this color's outline
-under(Col, Col2) :- under(Col, Mid), under(Mid, Col2).
+
+// Drawn later through any run of overwrites. Each color starts its own walk
+// to the colors drawn after it.
+.init later = Propagation<Color, Color>
+later.source(Col, Col) :- rect.box(Col, _).
+later.edge(Col0, Col, Col2) :- under(Col, Col2), rect.box(Col0, _).
 
 .init order = Order<Unit, Color>
 order.elem($U(), Col) :- rect.cell(Col, _).
-order.before($U(), Col, Col2) :- under(Col, Col2).
+order.before($U(), Col, Col2) :- later.reached(Col, Col2), Col != Col2.
 
 // The listing: one cell per rank, from the edge the order runs from.
 .init listing = DirFrame<Unit>

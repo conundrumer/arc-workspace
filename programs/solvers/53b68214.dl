@@ -41,15 +41,11 @@ frame.extent($Square(), A, W) :- width(W), axis_elem(A).
 frame.extent($Canvas(), A, K)  :- params.growth(D), axis_of(D, A), params.out_dim(K).
 frame.extent($Canvas(), A2, W) :- width(W), params.growth(D), axis_of(D, A), perp(A, A2).
 
-// The input seated against the edge the growth flows away from.
-.decl placed(ch: Choice, p_grid: Position, p_in: Position)
-placed(Ch, P_grid, P_in) :-
-    frame.cell(Ch, P_grid), in(P_in, _),
-    params.growth(D), opposite(D, O), slab_anchor(O, P_in, P_grid).
-
-// The input in place; the pattern continues one period at a time.
-out(P_grid, Col, Ch) :- placed(Ch, P_grid, P_in), in(P_in, Col).
-out(P2, Col, Ch) :-
-    out(P1, Col, Ch),
-    params.growth(D), axis_of(D, A), si.min_period($U(), A, K),
-    jump(P1, D, K, P2), frame.cell(Ch, P2).
+// The input seated against the edge the growth flows away from, and the
+// pattern continuing from each input cell at every whole period on.
+out(P_grid, Col, Ch) :-
+    frame.cell(Ch, P_grid), in(P_in, Col),
+    params.growth(D), axis_of(D, A), same_line(A, P_in, P_grid),   // one line along the growth
+    opposite(D, O), dist(P_in, O, T), dist(P_grid, O, T2), T <= T2, // at or past the input cell
+    si.min_period($U(), A, K),
+    stride(T, K, 0, _, R), stride(T2, K, 0, _, R).                 // a whole number of periods on

@@ -51,24 +51,17 @@ out(P_grid, Col, $Lookup()) :-
     concat_2d(P_tile, P_intile, 0, P_grid).                   // recompose
 
 // --- $Alt ---
-.decl band_step(p_tile: Position, p_tile2: Position)
-band_step(T, T2) :-
-    params.anchor(D), opposite(D, O),
-    params.arr_pos(T), neighbor(T, O, T2), params.arr_pos(T2).
-
-// Bands alternate plain and flipped, plain at the anchor edge.
-.decl plain_tile(p_tile: Position)
-.decl flip_tile(p_tile: Position)
-plain_tile(T)  :- params.arr_pos(T), params.anchor(D), dist(T, D, 0).
-flip_tile(T2)  :- plain_tile(T), band_step(T, T2).
-plain_tile(T2) :- flip_tile(T), band_step(T, T2).
+// The input transformed by params.tf once per band step away from the
+// anchor edge: the anchor-edge band is plain, and each band step applies
+// params.tf once more.
+.init alternate = CycleWalk<Unit, Position>
+alternate.succ($U(), P, P_img) :- in(P, _), params.tf(F), apply(F, P, P_img).
+alternate.step($U(), K) :- params.arr_pos(T), params.anchor(D), dist(T, D, K).
 
 out(P_grid, Col, $Alt()) :-
-    in(P_in, Col),                                           // input cell
-    ( plain_tile(T), P_intile = P_in                         // plain band — as-is
-    ; flip_tile(T), params.tf(F), apply(F, P_in, P_intile)   // flipped band — transformed
-    ),
-    concat_2d(T, P_intile, 0, P_grid).
+    in(P_in, Col), params.arr_pos(T), params.anchor(D), dist(T, D, K),   // input cell, its band's steps from the anchor edge
+    alternate.walk($U(), P_in, K, P_intile),                               // transformed K times
+    concat_2d(T, P_intile, 0, P_grid).                                     // recompose
 
 // --- $Mid ---
 out(P_grid, Col, $Mid()) :-
