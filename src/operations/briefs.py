@@ -316,8 +316,7 @@ def standing_doc_review(reader: str, tag: str, commit: str, operator: str) -> st
 
 
 BATCH_PROFILE = mctx("""
-    - Run `uv run python scripts/profile_runs.py <id>` once for each of these runs, with that run's agent id alone as `<id>`; you may run those commands in one Bash call: {runs}.
-    - Then run `uv run python scripts/profile_runs.py --runs <id> ...` once, with the agent ids of all these runs.
+    - Run `uv run python scripts/profile_runs.py --each <id> ...` once, with the agent ids of all these runs as `<id> ...`: {runs}. You may write its output to a file and read it there.
     - File one `performance` ticket, with `commit` and `{commit}` as `<domain>` and `<subject>` and `operator` as `<agent>`, for each cause across these runs that you judge worth fixing, by the test that a change to a tool or a document could cut the time or the token cost it made, and give in it the time and the token cost that cause made in these runs. File none on a cause that a ticket outside `tickets/closed/` already records.
     {review}
     - Reply only once each transcript review you launched has replied, with the tickets you filed and the reviews you launched.
@@ -325,7 +324,7 @@ BATCH_PROFILE = mctx("""
 
 
 REVIEW = mctx("""
-    - Launch a transcript review of each of these runs that is no solver work and of which `uv run python scripts/profile_runs.py <agent id>` marks a message `past budget`, and of no other run: {reviewable}. That mark is the only test of a run's budget. A transcript review is a `general-purpose` agent, with the brief that {review_brief} gives, with the run's agent id in place of `{run}`.
+    - Launch a transcript review of each of these runs that is no solver work and of which the output of that `--each` call marks a message `past budget`, and of no other run: {reviewable}. That mark is the only test of a run's budget. A transcript review is a `general-purpose` agent, with the brief that {review_brief} gives, with the run's agent id in place of `{run}`.
     """)
 
 NO_REVIEW = mctx("- Launch no transcript review.")

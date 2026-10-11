@@ -72,12 +72,13 @@ HELP = mctx("""
     - Usage:
         ```
         uv run python scripts/profile_runs.py ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--runs] [--since DATE] [--price-at MODEL] [--split TIME]
+        uv run python scripts/profile_runs.py --each ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--since DATE] [--price-at MODEL] [--split TIME]
         uv run python scripts/profile_runs.py --under ID [--pct P] [--top N] [--since DATE] [--price-at MODEL]
         uv run python scripts/profile_runs.py --running ID [--calls-since TIME]
         uv run python scripts/profile_runs.py --pending ID
         uv run python scripts/profile_runs.py --open ID
         ```
-    - The items below say what an ID names, the zone of the times the tool reads and prints, how a run's wall time is cut into parts, what one run and several runs print, the budget of each agent type, what `--under`, `--running`, `--pending` and `--open` print, and how a call's command is printed. The options follow them.
+    - The items below say what an ID names, the zone of the times the tool reads and prints, how a run's wall time is cut into parts, what one run, several runs and `--each` print, the budget of each agent type, what `--under`, `--running`, `--pending` and `--open` print, and how a call's command is printed. The options follow them.
     - An ID is an agent id, a session id, or the path of a `.jsonl` transcript. A session brings its main transcript, as type `main`, and the run of each of its subagents. A run is the transcript of one agent, or where the top-level session takes a new session id while a subagent runs, that subagent's transcripts under each session's directory: each one under a later session goes on from the one before it, its first entry answering that one's last. A run's agent type, description and launching call are those the earliest of its transcripts' `.meta.json` files that gives each gives.
     - Each time the tool prints is in UTC, as `YYYY-MM-DDTHH:MMZ` where no item below gives another form. A DATE or TIME it reads is {iso_time}.
     - A run's wall time, from its first entry to its last, is cut at each entry's time, and each interval goes to one part:
@@ -100,6 +101,7 @@ HELP = mctx("""
         - `message`: a message from the agent.
     - A report's text is the entry's text, and of a message that delivers the agent's SubagentHandback, that text without the harness's preamble and indent. An entry whose text is the harness's pointer to such a message, or the line an agent gives after it sent its final reply by SendMessage, gives no report. A report whose text is the path alone of a report file that `operate.py next` gives in a brief is that file's text, for the latest report that gives that path; an earlier one keeps the path as its text, and where the file is gone, an `undecided` line on stderr names it.
     - Where the latest message from the parent is unknown, or no transcript of the parent is found, it prints `?`. A notification or a launch result whose status is of no known form gives no report, and where no `.meta.json` of the run gives a `toolUseId`, no launch result is matched to it. A launch result whose status is of no known form counts as not in the background, wherever it is read. An `undecided` line on stderr names each, and each distinct line is printed once.
+    - `--each` prints, for each run the IDs bring, in their order, what one run prints, with its burn readings taken among all the runs profiled, as `--runs` takes them, and then, where it profiles more than one run, what more than one run prints.
     - More than one run prints, per agent type, the number of runs, the minimum, median, P-th percentile and maximum of wall time, the total, the median and P-th percentile of active time, which is wall time less `idle`, and each part's share of the total, then per agent type the total token cost of its runs of known cost, its share of that total over all types, the median cost of such a run, and the number of runs of unknown cost it leaves out, then each type's labels by time, with the number of runs each appears in.
     - `--split TIME` prints last, per agent type, for its runs whose first entry is before TIME and for those at or after it, apart: the number of runs, the median context per request over all their requests, the median context of a run's first request, and the median token cost of a run of known cost. A request is one that `token_prices.requests` gives, and its context is what `token_prices.request_input` gives for its usage. A type with no run on one side prints `-` for that side, and a median over no value prints `?`. A run whose start is unknown joins neither side, and an `undecided` line on stderr names it.
         - To judge a cut of an agent type's context, run `--split` with the merge time of the change that cut it as TIME, and as IDs the sessions that ran that type both before and after that time. The cut held where that type's median context per request and median cost per run are both lower after than before.
@@ -320,6 +322,8 @@ def main(argv: list[str]) -> int:
                               "none per type and all for one run"))
     ap.add_argument("--runs", action="store_true",
                     help=mctx("also print one line per run"))
+    ap.add_argument("--each", action="store_true",
+                    help=mctx("print for each run what one run prints"))
     ap.add_argument("--price-at", choices=sorted(PRICES), metavar="MODEL",
                     help=mctx("one of {models}; the text above gives what it "
                               "does").format(models=", ".join(sorted(PRICES))))
@@ -351,6 +355,9 @@ def main(argv: list[str]) -> int:
     if args.calls_since is not None and not args.running:
         print(mctx("refused: `--calls-since` goes with `--running ID` alone"),
               file=sys.stderr)
+        return 2
+    if args.each and not args.ids:
+        print(mctx("refused: `--each` goes with IDs alone"), file=sys.stderr)
         return 2
     if args.split is not None and not args.ids:
         print(mctx("refused: `--split` goes with IDs alone"), file=sys.stderr)
@@ -388,17 +395,20 @@ def main(argv: list[str]) -> int:
     elif not runs and not args.pending and not args.open and not args.under:
         print(mctx("refused: no run to profile"), file=sys.stderr)
         return 2
-    elif runs and (len(runs) == 1 or args.runs or args.under):
+    elif runs and (len(runs) == 1 or args.runs or args.each or args.under):
+        whole = len(runs) == 1 or args.each
         for r in runs:
             print(f"{r.label} {r.agent_type} {clock(r.start)}: {r.description}\n"
                   f"  wall {minutes(r.wall)}  {part_split(r.parts)}  "
                   f"cost {dollars(r.cost)}")
             print_readings(r, runs)
-        if len(runs) == 1:
-            print_messages(runs[0], undecided)
-            print_report(runs[0], undecided)
-            print_groups(runs[0].groups, args.top, runs[0].wall)
-        else:
+            if whole:
+                print_messages(r, undecided)
+                print_report(r, undecided)
+                print_groups(r.groups, args.top, r.wall)
+            if args.each and len(runs) > 1:
+                print()
+        if len(runs) > 1 and not args.each:
             print()
     if len(runs) > 1 and not args.running:
         print_types(runs, args.pct, args.top)
