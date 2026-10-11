@@ -18,7 +18,7 @@ from context_bound_hook import OPERATORS, past_bound
 from controlled_markdown import mctx
 from open_agents import Listed, hung_time, running_agents, work_open
 from operator_reads import (ended_elsewhere, ended_with, operator_runs, read_operator,
-                            stalled_reports)
+                            resumed_at, stalled_reports)
 from run_prints import active_of
 from run_reads import bash_spans, context_size, parent_id, repeated_runs, run_entries
 from ticket_numbers import session_index, ticket_number
@@ -41,7 +41,7 @@ from operations.directives import named
 from operations.plan import taken_up
 from operations import monitor
 from operations.monitor import MonitorState, Watched
-from operations.state import Agent, Call, Message, Reader, Report, State
+from operations.state import Agent, Call, LateResume, Message, Reader, Report, State
 from operations.handled import made
 from operations.tracker import worktree
 from ticketing.vocabulary import Status
@@ -114,6 +114,7 @@ def read_state(me: str) -> tuple[State, MonitorState]:
         subjects[c.subject] = max(subjects.get(c.subject, c.time), c.time)
     for aid, path in runs:
         read_operator(aid, path, main, undecided, agents, calls, messages, passes, subjects)
+    late = late_resumes(runs, undecided)
     launched = {a.agent_id for a in agents if a.agent_id}
     watching: list[str] = []
     listing = running_agents(find(session), watching)
@@ -150,7 +151,7 @@ def read_state(me: str) -> tuple[State, MonitorState]:
         readers=tuple(Reader(name, tuple(args)) for name, args in reader_calls()
                       if name not in DEPRECATED),
         doc_reviews=doc_reviews(main),
-        pass_tickets=passes, stalled=stalled,
+        pass_tickets=passes, stalled=stalled, late_resumes=late,
         made=made(calls), unread=unread,
         definitions={d.stem: d.stat().st_mtime
                      for d in sorted(agents_of(main).glob("*.md"))},
@@ -165,6 +166,22 @@ def read_state(me: str) -> tuple[State, MonitorState]:
                     gate_outputs={w: gate_outputs(w) for w in held})
     return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(state.stalled),
                                undecided=tuple(watching))
+
+
+def late_resumes(runs: list[tuple[str, Path]],
+                 undecided: list[str]) -> dict[str, tuple[LateResume, ...]]:
+    """`State.late_resumes` of the operators `runs` gives, in the order of
+    their first entry."""
+    out: dict[str, tuple[LateResume, ...]] = {}
+    for (aid, path), (later, later_path) in zip(runs, runs[1:]):
+        first = first_time(later_path)
+        if first is None:
+            continue
+        found = tuple(LateResume(t, later, first) for t in resumed_at(aid, path, undecided)
+                      if t > first)
+        if found:
+            out[aid] = found
+    return out
 
 
 UNWATCHED = OPERATORS

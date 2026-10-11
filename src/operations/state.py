@@ -90,6 +90,16 @@ class Report:
 
 
 @dataclass(frozen=True)
+class LateResume:
+    """A resume of an operator after `later`, a later operator of the
+    session, made its first entry, at `later_first`, as `monitor.ALERTS`
+    gives a resume, at `time`."""
+    time: float
+    later: str
+    later_first: float
+
+
+@dataclass(frozen=True)
 class Agent:
     """An agent an operator of the session launched with a description the
     command gave. `pending` holds where that operator holds neither the
@@ -252,7 +262,9 @@ class State:
     `tests/gate/accepted/` its change writes. `branches` gives the branch
     of each worktree that stands on one, and `stalled` the final reply in
     the transcript of each agent a stall alert names that reached no
-    operator as a report. `made` holds each step the command printed to an operator
+    operator as a report. `late_resumes` gives, for each operator of
+    `operators`, its resumes after the next operator of `operators` made its
+    first entry, in the order of their time. `made` holds each step the command printed to an operator
     with the call that operator made next (`handled.made`). `messages` holds
     the messages that reached any operator of the session, and `received`
     those that reached `me` or an operator it takes up the lines of
@@ -289,6 +301,7 @@ class State:
     gate_outputs: Mapping[Path, tuple[str, ...]] = field(default_factory=dict)
     branches: Mapping[Path, str] = field(default_factory=dict)
     stalled: Mapping[str, Report] = field(default_factory=dict)
+    late_resumes: Mapping[str, tuple[LateResume, ...]] = field(default_factory=dict)
     pass_tickets: Mapping[str, tuple[str, ...] | None] = field(default_factory=dict)
     made: tuple[Made, ...] = ()
     taken_up: frozenset[str] = frozenset()

@@ -136,6 +136,29 @@ def operator_runs(session: str, me: str) -> list[tuple[str, Path]]:
     return [(aid, p) for aid, p, _ in sorted(runs, key=lambda r: r[2])]
 
 
+def resumed_at(aid: str, path: Path, undecided: list[str]) -> list[float]:
+    """The time of each resume of the agent `aid` whose transcript is at
+    `path`, as `monitor.ALERTS` gives one, of the first prompt alone after
+    each entry that ended a run. A resume whose entry gives no time is left
+    out, and an `undecided` line names it."""
+    out: list[float] = []
+    ended = False
+    for e in run_entries(path):
+        if e.get("toolEndsTurn"):
+            ended = True
+        elif e.get("type") == "assistant":
+            ended = False
+        elif ended and is_prompt(e):
+            ended = False
+            if e.get("timestamp"):
+                out.append(epoch(e["timestamp"]))
+            else:
+                undecided.append(mctx("{run}: a prompt resumed it after its run ended, yet its "
+                                      "entry gives no time, so it counts as no "
+                                      "resume").format(run=aid))
+    return out
+
+
 WRAP = ("The coordinator sent a message while you were working:",
         "Address this before completing your current task.")
 """The lines the harness puts around a message from the coordinator that
