@@ -166,7 +166,7 @@ arrives while the operator works."""
 
 
 def unwrapped(text: str) -> str:
-    return "\n".join(line for line in text.splitlines() if line.strip() not in WRAP)
+    return "\n".join(line for line in text.splitlines() if line.strip() not in WRAP).strip()
 
 
 def from_parent(aid: str, e: dict[str, Any], parent: str, undecided: list[str]) -> str:
