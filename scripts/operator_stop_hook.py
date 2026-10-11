@@ -4,7 +4,8 @@ the text of its final reply (`printing.printed_reply`), or prints a
 SendMessage call (`printing.printed_send`), which the operator has still to
 make, and the reason tells it to run `next` again. An operator launcher
 is held the same way to the result of `operate.py relay`
-(`printed_launch_hook.ACTIONS`).
+(`printed_launch_hook.ACTIONS`), which also lets it stop where that result
+is the end of its turn (`printing.printed_end_turn`).
 
 A blocked stop is recorded with the id of the operator's last call of
 `next`, in a file named by its agent id under `STOPS` of its session
@@ -36,7 +37,7 @@ def check(hook: dict[str, Any]) -> str | None:
     """The reason to block the stop `hook` gives where its agent is an
     operator that `next` has not given its final reply, and None
     otherwise."""
-    from operations.printing import printed_reply, printed_send
+    from operations.printing import printed_end_turn, printed_reply, printed_send
     from run_reads import hook_session
 
     caller = operator_next(hook, HOOK)
@@ -48,7 +49,7 @@ def check(hook: dict[str, Any]) -> str | None:
               file=sys.stderr)
         return None
     call, result = found
-    if printed_reply(result) and printed_send(result) is None:
+    if printed_end_turn(result) or (printed_reply(result) and printed_send(result) is None):
         return None
     record = hook_session(hook) / STOPS / agent
     if record.exists() and record.read_text() == call:

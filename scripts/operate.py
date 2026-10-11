@@ -40,7 +40,7 @@ from operations.roles import BARE_BRIEFS, Role  # noqa: E402
 from operations.filing import filed, with_report  # noqa: E402
 from operations.printing import key_line, printed  # noqa: E402
 from operations.state import State  # noqa: E402
-from operations.steps import BLOCK_SECONDS, Bash, Launch, Poll, Send, Step  # noqa: E402
+from operations.steps import BLOCK_SECONDS, Bash, EndTurn, Launch, Poll, Send, Step  # noqa: E402
 from collections.abc import Callable  # noqa: E402
 from operations.task_work import restore, set_aside  # noqa: E402
 
@@ -61,7 +61,7 @@ HELP = mctx("""
     - A coordinator's line that opens with `Override:` or `Decision:` in none of these forms goes back to the coordinator once, as undecided. A ticket analyst's reply on a step that gives its decision key, with no ruling in these forms, goes back to it once, and where its answer gives none either, the step stays held. A step `next` cannot place gives no decision key: its ticket analyst makes the act it needs and gives no ruling.
     - A ticket file whose read refuses or fails, other than a file that moved during the read, leaves its ticket out of every procedure, and a ticket that depends on it waits. `next` gives that file, once for each content it has and once its last write is {write} seconds old, to a ticket analyst it launches, as a step it cannot place, with the read's failure, and goes on with every other procedure. Where the file still does not read once that analyst returned, the final reply gives it.
     - A step `next` printed counts as made by the call the operator made: a Bash call whose command runs the printed command among others, or the call the operator made right after the call of `next` that printed the step, other than a call of `next` alone.
-    - `relay` prints the next step of the operator launcher whose agent id it is given, in the forms and with the block of `next`. Its first step launches an operator whose brief is the launcher's brief. Each later message of the coordinator's to the launcher goes, unchanged, to the operator of the launcher's that runs, or, where none runs or the one that runs sent the launcher its final reply, into the brief of the next operator it launches. Where an operator's final reply ends it for its context, it launches a fresh operator, or, where the launcher's context is past the bound `context_bound_hook.py` gives, sends the coordinator the launcher's final reply, which asks for a fresh operator launcher whose brief is the lines that wait for a next operator, and gives them. Any other final reply of an operator, and an operator's end with no final reply, it sends the coordinator after a line that gives that operator's agent id, and then, unless a line of the coordinator's waits for a next operator, prints the launcher's final reply.
+    - `relay` prints the next step of the operator launcher whose agent id it is given, in the forms of `next`. Where an operator of the launcher's runs and no line of the coordinator's waits for it, it prints at once, with no block, that the launcher ends its turn with no call, or, where a message to the launcher waits that the harness accepted during the call, as the block of `next` reads one, that the launcher runs the command again. Its first step launches an operator whose brief is the launcher's brief. Each later message of the coordinator's to the launcher goes, unchanged, to the operator of the launcher's that runs, or, where none runs or the one that runs sent the launcher its final reply, into the brief of the next operator it launches. Where an operator's final reply ends it for its context, it launches a fresh operator, or, where the launcher's context is past the bound `context_bound_hook.py` gives, sends the coordinator the launcher's final reply, which asks for a fresh operator launcher whose brief is the lines that wait for a next operator, and gives them. Any other final reply of an operator, and an operator's end with no final reply, it sends the coordinator after a line that gives that operator's agent id, and then, unless a line of the coordinator's waits for a next operator, prints the launcher's final reply.
     - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass, and `restore` puts it back and removes the task's claim, as the section `Passes on a task` of `prompts/agents/notes/launching.md` gives.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives, and the command refuses where the shell gives none.
     {alerts}
@@ -112,12 +112,14 @@ def reloading(step: Launch, state: State) -> float:
 def block(me: str, action: str, step_at: Callable[[float], tuple[Step, Path]]) -> int:
     """Print the step `step_at` gives, with the scratchpad its files go
     under, by the deadline it is given, as HELP gives the block of `next`
-    and `relay`."""
+    and the end of the turn of `relay`."""
     deadline = time.monotonic() + BLOCK_SECONDS
     path = find(me)
     since = last_delivered(path)
     while True:
         step, scratch = step_at(deadline)
+        if isinstance(step, EndTurn) and accepted_after(path, since, []):
+            step = Poll()
         if (not isinstance(step, Poll) or time.monotonic() + POLL_SECONDS > deadline
                 or accepted_after(path, since, [])):
             if isinstance(step, CALLS):

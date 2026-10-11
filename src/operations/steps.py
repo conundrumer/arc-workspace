@@ -1,5 +1,6 @@
-"""The steps the command prints: each the one call the operator agent makes
-next, with its parameters, and the key that names a step."""
+"""The steps the command prints: each what the agent it serves does next,
+a call with its parameters, the end of its turn or its final reply, and
+the key that names a step."""
 
 import hashlib
 import re
@@ -51,6 +52,12 @@ class Bash:
 class Poll:
     """Nothing is ready by the end of the command's block: the agent runs
     the command again at once."""
+
+
+@dataclass(frozen=True)
+class EndTurn:
+    """The agent ends its turn with no call, and a message or the end of
+    an agent it launched resumes it."""
 
 
 @dataclass(frozen=True)
@@ -128,7 +135,7 @@ def held(what: str, choices: Mapping[str, str]) -> Undecided:
                                                                       given=given))
 
 
-type Step = Launch | Send | Undecided | Bash | Poll | Reply
+type Step = Launch | Send | Undecided | Bash | Poll | EndTurn | Reply
 
 
 def key(step: Step) -> str:

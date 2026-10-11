@@ -4,7 +4,9 @@ transcript and those of the operators it launched give (`Relay`).
 The launcher's first operator takes the launcher's brief. Each later line
 of the coordinator's goes to the operator that runs when it reaches the
 launcher, or, where none runs, to the brief of the next operator the
-launcher launches. Once an operator's final text reaches the launcher, a
+launcher launches. While an operator runs and no line of the
+coordinator's waits for it, the launcher ends its turn, and the operator's
+end or the coordinator's next line resumes it. Once an operator's final text reaches the launcher, a
 text that opens with `plan.FOR_CONTEXT` gives the launch of the next
 operator, or, past the launcher's bound, the launcher's final reply, which
 asks the coordinator for a fresh operator launcher whose brief is the lines
@@ -22,7 +24,7 @@ from operations.plan import FOR_CONTEXT
 from operations.printing import FINAL_REPLY
 from operations.roles import Role
 from operations.state import Call, Message
-from operations.steps import Launch, Poll, Reply, Send, Step
+from operations.steps import EndTurn, Launch, Reply, Send, Step
 
 
 @dataclass(frozen=True)
@@ -99,7 +101,7 @@ def next_step(relay: Relay) -> Step:
     brief = "\n".join(m.text for m in lines)
     if run.pending and run.final is None:
         if not lines:
-            return Poll()
+            return EndTurn()
         if run.agent_id is None:
             raise ValueError(f"the running operator launched at {run.launched} has no known "
                              "agent id")

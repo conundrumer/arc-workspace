@@ -13,7 +13,7 @@ from operations.command_words import next_command
 from operations.constants import FOREGROUND_MS
 from operations.filing import filed_line, split_message
 from operations.roles import description
-from operations.steps import Bash, Launch, Poll, Reply, Send, Step, Undecided, key
+from operations.steps import Bash, EndTurn, Launch, Poll, Reply, Send, Step, Undecided, key
 
 
 FINAL_REPLY = mctx("final reply")
@@ -36,6 +36,15 @@ def printed_reply(text: str) -> bool:
     (`REPLY_TEXT`)."""
     return re.search("^" + form(REPLY_TEXT, {"to": r"[^\n]+"}) + "$", text,
                      re.MULTILINE) is not None
+
+
+END_TURN = mctx("End your turn with no call: a message or your operator's end resumes you.")
+
+
+def printed_end_turn(text: str) -> bool:
+    """Whether `text`, a result of the command, prints the end of the
+    agent's turn (`END_TURN`)."""
+    return re.search("^" + re.escape(END_TURN) + "$", text, re.MULTILINE) is not None
 
 
 KEY_LINE = mctx("Step key: {key}. After the call below, run `{command}`.")
@@ -168,6 +177,8 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
             return bash_text(command)
         case Poll():
             return mctx("Run the command again: nothing is ready.")
+        case EndTurn():
+            return END_TURN
         case Reply(to):
             return REPLY_TEXT.format(to=to)
         case Undecided():
