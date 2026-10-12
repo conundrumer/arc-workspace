@@ -31,11 +31,11 @@ def simple_commands(command: str) -> list[list[str]]:
         for word in lexer:
             if redirect:
                 redirect = False
-            elif set(word) <= set(OPERATORS) and set(word) & set("<>"):
+            elif word and set(word) <= set(OPERATORS) and set(word) & set("<>"):
                 if out[-1] and out[-1][-1].isdigit():
                     out[-1].pop()
                 redirect = True
-            elif set(word) <= set(OPERATORS):
+            elif word and set(word) <= set(OPERATORS):
                 out.append([])
             else:
                 out[-1].append(word)

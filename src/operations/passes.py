@@ -86,15 +86,12 @@ def restore_step(task: str, reason: str | None) -> str:
 def restore_reason(c: Call, task: str) -> tuple[str | None] | None:
     """The reason the `restore` call `c` on `task` gives, None where it
     gives an empty argument, or None in place of the tuple where it gives
-    the task id alone. `simple_commands` drops an empty word, so the empty
-    argument is read from the text of the step that gives it."""
+    the task id alone."""
     command = str(c.input.get("command", ""))
-    if restore_step(task, None) in command:
-        return (None,)
     lead = restore_command(task).split()
     for words in simple_commands(command):
         if words[:len(lead)] == lead and len(words) == len(lead) + 1:
-            return (words[-1],)
+            return (words[-1] or None,)
     return None
 
 
