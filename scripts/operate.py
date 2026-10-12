@@ -31,7 +31,7 @@ from agent_launches import accepted_after, last_delivered  # noqa: E402
 from operator_state import USAGE_STALE, read_relay, read_state  # noqa: E402
 from agent_reports import parent_type  # noqa: E402
 from profile_runs import budget_of  # noqa: E402
-from run_reads import agent_type, parent_id  # noqa: E402
+from run_reads import parent_id  # noqa: E402
 from transcripts import Refused, find  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 
@@ -155,7 +155,7 @@ def review(editor: str) -> int:
     `editor`, as HELP gives `review`."""
     path = find(editor)
     parent = parent_id(path)
-    kind = parent_type(path) or agent_type(find(parent))
+    kind = parent_type(path)
     if kind != Role.OPERATOR.agent_type:
         print(changes.NO_OPERATOR.format(agent=editor))
         return 0

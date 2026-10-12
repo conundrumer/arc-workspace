@@ -20,7 +20,7 @@ from operations.final_reply import SENT_BY_MESSAGE
 from run_reads import (MAIN, LaunchStatus, Notification, Status, agent_messages, agent_type,
                        blocks, is_prompt, launch_status, notifications, notified, parent_id,
                        read_meta, run_sessions, session_agents, text_of)
-from transcripts import Entry, agent_id, chain, epoch, main_transcript, read_entries
+from transcripts import Entry, agent_id, chain, epoch, find, main_transcript, read_entries
 
 # The opening of the note of a notification that the agent stopped with work
 # of its own still running.
@@ -200,11 +200,13 @@ def parent_transcripts(path: Path) -> list[Path]:
 def parent_type(path: Path) -> str | None:
     """The agent type of the parent of the subagent at `path`: `main` where
     that parent is the main session, and otherwise `agent_type` of the
-    first of `parent_transcripts`, or None where none is found."""
-    if parent_id(path) == MAIN:
+    first of `parent_transcripts`, or, where none is found, of the
+    transcript `find` gives the parent, whose `Refused` it raises."""
+    parent = parent_id(path)
+    if parent == MAIN:
         return MAIN
     found = parent_transcripts(path)
-    return agent_type(found[0]) if found else None
+    return agent_type(found[0] if found else find(parent))
 
 
 def reports(path: Path, since: float, undecided: list[str]) -> list[Report] | None:

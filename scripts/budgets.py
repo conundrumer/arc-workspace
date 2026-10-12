@@ -19,7 +19,7 @@ from operations.roles import GENERAL, GENERAL_ROLES, Role, described
 from run_profile import clock, minutes, one_line, percentile
 from run_records import Message, Part, Run
 from run_reads import parent_id
-from transcripts import is_subagent
+from transcripts import Refused, is_subagent
 
 # The terms of the budget of a type or a role, which HELP states.
 BUDGET_FACTOR = 2
@@ -209,7 +209,10 @@ def operator_launched(r: Run, undecided: list[str]) -> bool:
     it."""
     if not is_subagent(r.path):
         return False
-    kind = parent_type(r.path)
+    try:
+        kind = parent_type(r.path)
+    except Refused:
+        kind = None
     if kind is None:
         undecided.append(mctx("{run}: the type of its parent {parent} is "
                               "unknown, so it is left out of its type's "
