@@ -36,7 +36,6 @@
 - Carry out no resolution whose need no output depends on, and anticipate only a practice that prevents a bad situation of the kind that prompted past changes, never a mechanical gap in the tooling.
 - Decide by [Principles](docs/handbook/principles.md) where it speaks, read for its intent: a line about one instance of a kind covers the kind when its reason does.
 - Where it is silent, follow the intent the support shows.
-- Where neither settles what the solver tool does, have the solver tool report an `undecided` finding.
 - A default's discretion tier is how far it goes beyond what its grounds determine:
     1. A ground states it outright, or it fixes a bug.
     2. A ground determines it through a reading of the user's intent or of an existing convention, and that reading admits no other.
@@ -50,11 +49,11 @@
 
 ### The user's part
 - Bring the user a decision only where every option, after you reframe the problem, still has a defensible reason against it.
-    - An option that departs from the user's words, a ruling of the user or a line of [Principles](docs/handbook/principles.md) has such a reason, which no reframe removes. Where every option left departs from one of them, bring the decision to the user at once, other than a ticket analyst's decline.
+    - An option that departs from the user's words, a ruling of the user or a line of [Principles](docs/handbook/principles.md) has such a reason, which no reframe removes. Where every option left departs from one of them, bring the decision to the user at once.
     - Give one line per option, the default first, with the option's consequence for the goals, and where the option changes a solver, that solver's code before and after.
     - Where the user does not rule on the decision, carry out its default.
 - A ticket analyst's resolution of a ticket that leaves unmet part of a need the user stated, and departs from no ruling of the user and no line of [Principles](docs/handbook/principles.md), is a decline. The user stated a need in a ticket the coordinator filed from the user's words, a `request` in its spans or another ticket under its `Evidence`, or in a ticket whose Motivation gives such a ticket.
-    - Carry a decline as a decision, with its defense: the concrete cost or risk of meeting the declined part, with its ground. A goal, a preference or another support line is a weight to judge by, and no defense.
+    - Carry a decline as a decision for the coordinator, in place of one for the user, with its defense: the concrete cost or risk of meeting the declined part, with its ground. A goal, a preference or another support line is a weight to judge by, and no defense.
     - A part whose decline a log line of the coordinator on the ticket lets stand is no decline again. Meet each part whose decline such a line vetoes.
 - Tell the user, without waiting on them, each change that affects the user directly, in one line, with the solver's code before and after where the user judges it by that code. A change affects the user directly where it does one of these:
     - It changes what the user reads, judges or uses. The user judges solver code, a concept an Analyze pass wrote and [Principles](docs/handbook/principles.md).
@@ -71,10 +70,13 @@
 - Spend no run the work does not need, recompute no output or measurement that a file already holds, record nothing that nothing reads afterwards, and keep no state in a second copy.
 - Keep the process, the code and their semantics in their best state, with maintainable code and good software practice the user need not ask for: fix the cause of a failure as well as the state it left, and keep no backwards compatibility with an old form.
 - Keep the process fast, on no more of the user's CPU than it needs: find slowness yourself, check time as you check output so that performance does not regress, fix machine load through the cost of the work and never by a cap on agents or commands, and keep a merge's gate under a minute.
-- Find the cause of a fault only as far as choosing among these options needs. Take option 1 where it applies and option 2 where it applies, and option 3 only where neither does. An agent's choice that departs from its documents is no fault of its documents, and a place where the code behaves right but is not in its best state is no fault this line weighs. For a fault that is one more instance of a fault earlier tickets fixed, the cheapest change in each option is the cheapest change that removes the fault those instances share. This line rules over the preference for the general option and over fixing the cause of a failure as well as the state it left, except where it has the tree changed for such a fault.
+- Find the cause of a fault only as far as choosing among these fault options needs. Take option 1 where it applies and option 2 where it applies, and option 3 only where neither does. These options rule over the preference for the general option and over fixing the cause of a failure as well as the state it left, except where they have the tree changed for such a fault.
     1. Where a line of the tree states or relies on what is not so, or agent-facing text misleads its reader, make the cheapest change that stops it: drop the reliance or the claim, or have a tool report less or `undecided`.
     2. Where the fault loses work, leaves work stuck or leaves an output wrong, or lets a wrong output stand where a line of the tree claims that a check or a report shows it, make the cheapest change or take the cheapest workaround that prevents that, counting what building it costs and what it costs after, in each reader's context or on each call, and accept the loss it leaves. A change that makes a check or a report show such an output, where a line of the tree claims that it does, anticipates no mechanical gap in the tooling.
-    3. Where its loss is time or token cost alone, or nothing, accept it with no change, and close its ticket `wontfix` with a note that gives that loss in dollars, its token cost as `uv run python scripts/profile_runs.py <agent id> ...` prints it for the runs the fault spent and its time at the rate above, beside the cheapest change that removes the fault with that change's cost in dollars, or beside the statement that no change removes it with what removed its cause where something did, unless the loss you see in this instance and in the earlier tickets of the fault exceeds what the cheapest change costs.
+    3. Where its loss is time or token cost alone, or nothing, accept it with no change and close its ticket `wontfix`, unless the loss you see in this instance and in the earlier tickets of the fault exceeds what the cheapest change costs.
+        - The close note gives that loss in dollars, its token cost as `uv run python scripts/profile_runs.py <agent id> ...` prints it for the runs the fault spent and its time at the rate above, beside the cheapest change that removes the fault with that change's cost in dollars, or beside the statement that no change removes it.
+- An agent's choice that departs from its documents is no fault of its documents, and a place where the code behaves right but is not in its best state is no fault the fault options weigh.
+- For a fault that is one more instance of a fault earlier tickets fixed, the cheapest change in each fault option is the cheapest change that removes the fault those instances share.
 - Prefer simple mechanisms: watch an agent by reading what it does, with no classifier.
 - Think a design through for how it can fail before it is implemented.
 - Take an agent's position: review the solver tool by reading a pass's transcript call by call, check a claim that an agent wasted work against its procedure, and where an agent departed from a rule, ask it about that departure before its document or the solver tool changes, and take its answer as the evidence.
@@ -84,22 +86,28 @@
 - Keep project content and ephemeral project state apart in git, lose no persistent working file in a migration, and scope the git permissions given to agents.
 - Make a change to the user's global Claude configuration as a project of its own: verify it first, and where it needs no judgment, have an agent make it on `~/code/claude-config`.
 - Resume an agent that the usage limit stopped by a message, in place of launching it again.
-- The full lib interface the Create and Refine passes read up front, and the handbook appended to a session the user launches, are intended, and their cost is no waste.
-- Keep in [arc-workspace](CLAUDE.md) only what its readers need, and in [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md) only what helps decide, from the user's rulings, how [Principles](docs/handbook/principles.md) and the rules on a solver's cases are written.
-- Choose the best term for each name, with no weight given to an existing one: a name may be abstract where it is precise, within the domain and with a qualifier where needed, a mathematical word imprecise for the thing is vetoed, abbreviations follow the software convention, judicious and consistent, and "task" may name a work item.
+- Choose the best term for each name, with no weight given to an existing one.
+    - A name may be abstract where it is precise, within the domain and with a qualifier where needed.
+    - A mathematical word imprecise for the thing is vetoed.
+    - Abbreviations follow the software convention, judicious and consistent.
+    - "task" may name a work item.
 - Choose a label for its use in deciding how to act on what it labels.
 
 ## Decisions on solver work
 - The agents produce good solvers through the arrangement around them, which is made so that the solver tool computes what the principles define, reports what an agent can act on, leaves judgments to the agent, and never reports what is not so.
 - The solver passes test that arrangement, and what a pass shows of a fault in it is evidence for a change to the documents, the solver tool or the pass structure. A behavior of the harness is no part of that arrangement.
+- Where neither [Principles](docs/handbook/principles.md) nor the support settles what the solver tool does, have the solver tool report an `undecided` finding.
 - Build the checker to change without breaking as the handbook changes.
-- Where every option left for a solver to encode a rule of the concept its Analyze pass gave exempts the solver from a line of [Principles](docs/handbook/principles.md) or of the handbook's rules, amends such a line, or reads that rule otherwise than the concept states it, the decision is that concept: bring the user the concept, that rule and the line the solver cannot meet, with a default that leaves the solver and its ticket as they stand. Where a default breaks a line of [Principles](docs/handbook/principles.md) otherwise, the decision becomes whether to amend that line.
+- Where every option left for a solver to encode a rule of the concept its Analyze pass gave exempts the solver from a line of [Principles](docs/handbook/principles.md) or of the handbook's rules, amends such a line, or reads that rule otherwise than the concept states it, the decision is that concept.
+    - Bring the user the concept, that rule and the line the solver cannot meet, with a default that leaves the solver and its ticket as they stand.
+    - Where that default breaks a line of [Principles](docs/handbook/principles.md) otherwise, the decision becomes whether to amend that line.
 - Where a check or survey runs slowly, change how its runs are made and batched before you reconsider what it computes.
 - Run a solver pass that ran under a wrong rule again once the rule is fixed, in place of patching its output.
 - The tooling may come to serve generators or another frontend language as well as Souffle solvers, so divide it by what varies.
 - Let a witness entry reassign any parameter, a grid-valued one with its anchor included, unless a good reason constrains it.
 - The lib is the authoritative vocabulary of the priors ARC tasks compose, with perfect interfaces and fast implementations, and it may be rewritten whole, in Souffle or not, with custom functors.
 - Keep no relation in the lib for convenience, a site count included, use no ADT as another way to write a disjunction, and count boilerplate in atoms.
+- Keep in [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md) only what helps decide, from the user's rulings, how [Principles](docs/handbook/principles.md) and the rules on a solver's cases are written.
 
 ## Decisions on the agents' documents
 - Write the documents first to serve the agents that read them, and check new agent-facing text against each agent it reaches before a pass runs on it: at the point where the text has that agent act, the agent, with only what its context holds there, can tell that the text applies and can do what it says.
@@ -108,6 +116,8 @@
 - Structure the documents so that changes to them run in parallel, as changes to code do, and so that they make evident which agent takes a kind of work and lead each agent to what it needs.
 - Give a context bound, at which an agent ends and a fresh agent takes up its work, only to an agent that polls for an indefinite time, whose context grows with time and not with its task. An agent with a finite task keeps its context to the end of that task, since its work depends on that context.
 - Prime no test of agents' reading: its prompt gives the text under test and no gloss of its terms.
+- The full lib interface the Create and Refine passes read up front, and the handbook appended to a session the user launches, are intended, and their cost is no waste.
+- Keep in [arc-workspace](CLAUDE.md) only what its readers need.
 
 ## Defaults
 - Say in a decision its default is the user's ruling unless their next reply rules on or asks about it.

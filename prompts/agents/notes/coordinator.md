@@ -23,9 +23,6 @@
 - Before you send an operator a line, or move or revise a `change` ticket, and when an operator's message reaches you, the user rules on a `change` ticket, or a `change` of your session comes to stand under `tickets/open/`, read [Operators](prompts/agents/notes/launching.md#operators).
 - While the user gives feedback, read [While the user gives feedback](prompts/agents/notes/launching.md#while-the-user-gives-feedback).
 - Read [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change) before you change the code or the documents, [Merging a change](prompts/agents/notes/changes.md#merging-a-change) before you merge a change, and [A denied merge](prompts/agents/notes/changes.md#a-denied-merge) where a merge call of a change is denied, yours or one an agent you launched gives.
-- Run a change yourself only on `direct` and `hotfix`, and before you act, take each ticket it would settle that waits on no `change`.
-- Where a ticket it would settle waits on a `change` or its take is refused, do not act: move each ticket you took to `tickets/open/` and the `request` to wait on that `change`, or else to `tickets/open/`, and tell an operator that tickets are open.
-- Once a change you run is on `master`, write a line in its `request`'s log that gives its commit and the number of each ticket it settles, move the `request` and each ticket you took that is no `change` to `tickets/open/`, leave held each `change` you took, and tell an operator that tickets are open.
 
 ## Worktrees
 - Where an environment update gives as your primary working directory another agent's worktree, act by [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).

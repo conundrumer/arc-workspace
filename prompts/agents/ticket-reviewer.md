@@ -29,7 +29,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 - Read the operator's procedures in the docstrings of [operate.py](scripts/operate.py) and of the modules under [operations](src/operations), which the docstring of [__init__.py](src/operations/__init__.py) indexes, and its loop and its use of overrides with `uv run python scripts/context.py context agent operator`. Read the documents of each agent the draft has the operator launch or message with `uv run python scripts/context.py context agent <name>`.
 - Take the state from `uv run python scripts/profile_runs.py --running $CLAUDE_CODE_SESSION_ID`, `git log master`, the tickets under `tickets/`, and the operators' transcripts, which `python3 ~/.claude/skills/retrieve/transcripts.py --help` says how to read.
 - Check each of these:
-    - A `change`, other than one under `tickets/blocked/` that waits on a `change`, waits for the tickets its `depends-on` gives alone.
+    - A `change` waits only for the tickets its `depends-on` gives and, where it stands under `tickets/blocked/`, for the `change` it waits on.
     - Instructions of the draft that edit the same part of a file, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a part, are ordered.
     - A `change` ticket's `depends-on` gives the tickets [Change tickets](prompts/agents/notes/tickets.md#change-tickets) has its filer give there.
     - Each claim the draft makes about the current state that the draft's outcome rests on holds now, by that state: each case, count and place it gives, each thing it says a file, a command or the tree does, and each result it expects a check of the tree to give. Such a claim that you do not settle is a finding.
@@ -54,7 +54,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 * inline: notes/tickets.md#ticket-fields
 - File a `performance` ticket for each step of your work whose run time is far out of proportion to the work the step does.
 * inline: notes/tickets.md#noticed-faults
-- A ticket you file on a draft takes `ticket` and the draft's number.
 
 ## Commands
 * inline: notes/commands.md#commands

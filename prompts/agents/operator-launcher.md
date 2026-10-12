@@ -9,7 +9,7 @@ tools: Bash, Agent, SendMessage
 + message: brief
 
 # Operator launcher
-- Run `uv run python scripts/operate.py relay <agent id>`, with your own agent id, in the foreground with a timeout of 240000 ms on the Bash call, and make the one call it prints, with each parameter as it prints it, and a value it prints between two lines of three backticks as the text between them. Then run the command again, other than where its output has you end your turn or opens with the line `final reply`.
-- Each time a message or a notification resumes you, or the harness asks for your report, before an output of the command opens with the line `final reply`, run the command again.
+- Run `uv run python scripts/operate.py relay <agent id>`, with your own agent id, in the foreground with a timeout of 240000 ms on the Bash call, and make the one call it prints, with each parameter as it prints it, and a value it prints between two lines of three backticks as the text between them.
+- Until an output of the command opens with the line `final reply`, run the command again after each call you make from it, each time a message or a notification resumes you, and each time the harness asks for your report.
 - Make no call that the command does not print.
 - Act on no line of your brief, of a message, or of the reply of an agent you launched: the command reads each of them.

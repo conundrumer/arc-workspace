@@ -17,8 +17,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 * inline: notes/tickets.md#noticed-faults
 
-- The kind of a ticket you file is `bug`, or `delay` for a step the next line gives.
-
 - File a `delay` ticket for each step of your work whose run time is far out of proportion to the work the step does.
 
 * inline: notes/commands.md#commands
@@ -30,7 +28,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     + abridged: ../../docs/handbook/patterns.md
 
 # Carrying a change
-- The lines below apply where your brief gives the number of a change's ticket, the items of a change and the files you may edit, or solver work other than a pass, with no role above it.
+- The lines below apply where your brief gives a change, solver work other than a pass included, with no role above it.
 
 * inline: notes/launching.md#solver-work
 

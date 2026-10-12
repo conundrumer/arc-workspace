@@ -17,8 +17,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Artifact, TaskStop
 
 * inline: notes/tickets.md#noticed-faults
 
-- The kind of a ticket you file is `bug`, or `delay` for a step the next line gives.
-
 - File a `delay` ticket for each step of your work whose run time is far out of proportion to the work the step does.
 
 * inline: notes/commands.md#commands

@@ -5,7 +5,7 @@
 - A newly added agent type can stay unknown to the harness for minutes after the write of its rendered file, `.claude/agents/<agent type>.md`: where a launch fails with that type not found, make it again a minute after that failure, until 15 minutes have passed since that write. After that, give the launch as unfinished, with the failure's text as its reason.
     - Wait that minute out in a foreground Bash call that sleeps for the rest of it, with its command led by `: 'unattended-wait: <agent type> reload';`.
 - Give an agent a brief in the form the sections under [Briefs](prompts/agents/notes/launching.md#briefs) for its agent type and its work give, where any does: read each of those sections and each section they link. Restate neither a docstring of the code nor the agent's definition.
-- Where a brief gives a scratch directory, give a new directory under the session's scratchpad directory, `/private/tmp/claude-<uid>/<working directory>/<session id>/scratchpad`, where `<uid>` is what `id -u` prints, `<working directory>` is the directory the session started in with each `/` as `-`, and `<session id>` is `$CLAUDE_CODE_SESSION_ID`.
+- Where a brief gives a scratch directory, give a new directory under the session's scratchpad directory.
 - In a brief or a `change` ticket that gives the items or the Intent of an edit, give the meaning to state, the case that shows the need, and the span the edit may change, and no wording.
     - Give each item as a requirement: a statement of what holds once the edit is made, that a check or a reading of the result can confirm. Give each way the edit can fail that you foresee as an item that gives what holds in that case, and ask no agent to think a case through.
     - In those items or that Intent, give no account of how each way the edit can fail is met, and no claim on what other lines of the documents or other branches of the code then do, unless the meaning to state, or the decision a `change` ticket gives, depends on it.
@@ -65,7 +65,13 @@
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 
 ### An item checker's brief
-- An item checker's brief gives the number of a change's ticket, or, where the change has none, the transcript brief its editors' briefs give, its worktree, where the change is past its cost budget, that it is, the latest report of each editor of the change that has reported since the last item checker launched on the change, with that editor's agent id, where ticket analysts already decided items on the change, their agent ids and latest reports, the agent id of each other editor of the change, the accepted gate outputs the change writes, where it writes any, where the operator launches it, the command whose output its final reply ends with, and the agent id of the agent that launches it, where that is not the coordinator.
+- An item checker's brief gives the change's worktree, and the number of the change's ticket, or, where the change has none, the transcript brief its editors' briefs give.
+- It gives the latest report of each editor of the change that has reported since the last item checker launched on the change, with that editor's agent id, and the agent id of each other editor of the change.
+- Where ticket analysts already decided items on the change, it gives their agent ids and latest reports.
+- Where the change is past its cost budget, it gives that it is.
+- Where the change writes accepted gate outputs, it gives them.
+- Where the operator launches it, it gives the command whose output its final reply ends with.
+- It gives the agent id of the agent that launches it, where that is not the coordinator.
 
 ### An operator's brief
 - An operator's brief gives only lines in these forms, each on a line of its own:
@@ -86,7 +92,9 @@
 
 ### A doc reviewer's brief
 - A doc reviewer's brief gives a change to the agent-facing documents, as the files or a diff, and the number of its ticket, or, where it has none, what is already settled about it.
-- It gives the change's worktree, the agent id of the change's doc editor, and of each of its code editors with the files that editor's brief gives, where the operator launches it, the command whose output its final reply ends with, and the agent id of the agent that launches it, where that is not the coordinator.
+- It gives the change's worktree, and the agent id of the change's doc editor, and of each of its code editors with the files that editor's brief gives.
+- Where the operator launches it, it gives the command whose output its final reply ends with.
+- It gives the agent id of the agent that launches it, where that is not the coordinator.
 - A doc reviewer's brief on a commit of `master` that the coordinator merged with no `change` ticket gives that commit's hash in place of a worktree and editors.
 - A doc reviewer's brief on a standing doc review gives the reader with its arguments, the commit of `master` it reviews, and the tag `doc-review/<reader>` that records that review in git, in place of a change, a worktree and editors.
 
@@ -120,7 +128,6 @@
 
 ## Operators
 - Send each line you give an operator to your running operator launcher, and where none runs, launch a new operator launcher with it. Give it in a form [An operator's brief](#an-operators-brief) gives, with nothing else in that message.
-- To tell an operator that tickets are open, give it `Tickets are open.`
 - The final reply of an operator or of an operator launcher is the text from a line `final reply` on in a message to you.
 - When an operator launcher's final reply asks for a fresh operator launcher, launch one with a brief that gives each line of yours that reply gives, and no line where it gives none.
 - When an operator's message, or a paragraph of it, that opens with `undecided:` reaches you, send the operator again the line of yours it gives, in a form [An operator's brief](#an-operators-brief) gives.

@@ -6,14 +6,14 @@
 * inline: #ending-commands
 
 ## waiting-on-commands
-- Run each command in the foreground, with a timeout of 240000 ms on the Bash call, other than a budget timer your documents have you start.
-- End your turn only once each command you started has finished. A turn that does not end with your final reply may end while that timer runs.
+- Run each command in the foreground, with a timeout of 240000 ms on the Bash call.
+- End your turn only once each command you started has finished.
 - Give your final reply only once the completion notification of each command of yours that ran in the background has reached you, or you have stopped waiting on it.
-- Where the harness moves a command to the background, or your final reply waits on the completion notification of a command, other than a budget timer of yours that you have not ended, wait in a foreground Bash call with a timeout of 240000 ms, whose until-loop gives up just under that timeout, and repeat the call until the command's completion notification has arrived.
-    - Lead its command with `: 'unattended-wait: <the command you wait on>';`. A command so led is exempt from the PreToolUse hook that blocks waits, `~/.claude/scripts/no-poll-wait.sh`, unless that command reads the output file the harness gave a command of yours that runs in the background.
-        * comment: Without the hook's script given here, a doc reviewer checking this section searched for it from `/`, and macOS prompted the user for access to the user's media: ticket `1791149774-commands-review-doc-reviewer-1`.
+- Where the harness moves a command to the background, or your final reply waits on the completion notification of a command, wait in a foreground Bash call with a timeout of 240000 ms, whose until-loop gives up just under that timeout, and repeat the call until the command's completion notification has arrived.
+    - Lead its command with `: 'unattended-wait: <the command you wait on>';`. A command so led is exempt from the PreToolUse hook that blocks waits, unless that command reads the output file the harness gave a command of yours that runs in the background.
     - Loop on the completion where you can observe it, and otherwise on the time alone.
     - Where a wait call that you started after the command completed ends with no notification of it, stop waiting on it.
+- Run a budget timer your documents have you start in the background, and wait on it only once you have ended it. A turn that does not end with your final reply may end while it runs.
 
 ## ending-commands
 - End a command of yours that runs in the background with the command a line of your documents gives to end it, and where none does, with `TaskStop` and the ID the harness gave that command. Signal no process that you pick by its name or by its command line.
@@ -24,7 +24,8 @@
 
 ## Background agents
 - When you end your turn while a command of yours runs on in the background and no agent you launched is running, the harness reports you to the session that launched you as stopped. It does not while an agent you launched is running.
-- While an agent you launched is running, other than one that a notification has said has not reported yet, no line of [waiting-on-commands](#waiting-on-commands) holds: run each command that can outlast the Bash call's default timeout in the background, and when no other work is ready, end your turn with a line that gives each agent you launched and each command of yours that is still running, and run no other command to wait on them. The harness resumes you when an agent sends you a message, when one of them that no agent has resumed by SendMessage completes, or when a command of yours that runs in the background completes.
+- An agent you launched that a notification has said has not reported yet counts as not running.
+- While an agent you launched is running, no line of [waiting-on-commands](#waiting-on-commands) holds: run each command that can outlast the Bash call's default timeout in the background, and when no other work is ready, end your turn with a line that gives each agent you launched and each command of yours that is still running, and run no other command to wait on them. The harness resumes you when an agent sends you a message, when one of them that no agent has resumed by SendMessage completes, or when a command of yours that runs in the background completes.
 - Once no such agent is running, wait on each command you ran in the background as on one the harness moved there.
 - Call SubagentHandback only with your final reply, or with the line that says where it went.
     * comment: With the harness's reminder that the call ends the run in its context, an operator waited with `echo waiting` and `true`, and once the hook denied `true`, it called SubagentHandback with `PLACEHOLDER` while its agents ran: agent `a37be74e20c8008ae` of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a`. With that reminder and its line on giving decisions in its final reply in its context, a ticket analyst of that session, then named `triage`, called SubagentHandback while its code editor ran, then sent its final report by SendMessage: agent `ac26fe1a2bcf9beb5`, lines 47 and 80 to 84.
@@ -33,12 +34,12 @@
     - Where the harness asks for your report while that agent has not reported, go on waiting that way, and call no SubagentHandback.
     * comment: Two agents of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a` ended their turn after this notification, the harness demanded their report, and each handed back mid-batch: agent `aa217e04abc30c823`, lines 266 to 270, and agent `ad4b827e59837a39f`, lines 228 to 232.
 
-- Before you end your turn while an agent you launched is running, other than one that a notification has said has not reported yet, start your keep-alive timer, where you launched no agent in this turn whose brief asks only for a reply, by running this command in the background, with your own agent id as `<agent id>`:
+- Before you end your turn while an agent you launched is running, start your keep-alive timer, where you launched no agent in this turn whose brief asks only for a reply, by running this command in the background, with your own agent id as `<agent id>`:
     ```
     : 'unattended-wait: keep-alive timer'; uv run python scripts/agent_timer.py start keep-alive <agent id>
     ```
 - Where your keep-alive timer has completed 11 times in a row with no message and no other notification reaching you between, start it no more until one does. The runs of that command that complete together count as one completion.
-- Once no agent you launched is running, other than one that a notification has said has not reported yet, and before anything else, end your keep-alive timer: run `uv run python scripts/agent_timer.py stop keep-alive <agent id>`.
+- Once no agent you launched is running, and before anything else, end your keep-alive timer: run `uv run python scripts/agent_timer.py stop keep-alive <agent id>`.
     - Each start of that timer has completed once `pgrep -f 'agent_timer[.]py start keep-alive <agent id>'` prints nothing.
 
 ## denied-calls

@@ -20,6 +20,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 - Run no git command that changes state.
 - The request is written from what the sending session knows. Decide where each thing goes and which lines change, and put what the document's readers need above what the request asks.
 - Build the `Design` of your change's ticket, where it gives one for the documents. Where the documents show a better place or a better existing line to extend, build that, and give in your report the departure with its reason.
+- Where you move the text of an `mctx` fragment, send the code change that move needs, with SendMessage, to a code editor of your change that your brief or a message gives.
 - State the Intent at the minimum the documents' readers need, in its general form where one exists, and trace each line you write to the Intent or to a Justification entry.
 * inline: notes/worktree.md#worktree
 * inline: notes/worktree.md#worktree-commands
@@ -35,7 +36,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 - After each edit you make, the fixes of a later message's findings included, run `uv run python scripts/context.py --write` and `uv run python -m controlled_markdown check` in the worktree, and review the edit by the steps [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) gives.
     * comment: With "After you edit" in its context, doc editor `a463cddaf6d2c10a9` answered four later messages of findings in change 17 by running only `context.py --write` and the check, and each fix brought the next finding: ~/.claude/projects/-Users-davidlu-code-arc-workspace/dc433af1-cf87-408d-ab9d-9a1ede6b1b2a/subagents/agent-a463cddaf6d2c10a9.jsonl, lines 75 to 155, and ticket 2 refers to that run as change 17.
 - Fix each finding that needs no decision, and review again, until a pass finds no such finding.
-- Then judge each line of the place you edited again as each of its readers, by the rules under step 2 above, cut each line there that those rules do not keep, then, where you have accepted gate outputs to write, run the gate as [Gate](#gate) gives.
+- Then judge each line of the place you edited again as each of its readers, by the rules under step 2 above, cut each line there that those rules do not keep, then, where you have accepted gate outputs to write, run the gate as [gate](prompts/agents/notes/worktree.md#gate) gives.
 - Then run `uv run python scripts/operate.py review <agent id>`, with your own agent id, and where it prints an Agent call, read [Background agents](prompts/agents/notes/commands.md#background-agents) and make that call. Give your final reply once each doc reviewer you launched has replied after your last edit, and otherwise at once.
 - In your reply, list as unused each Justification entry that kept no line from that cut.
 - In your reply, state each finding of the last review pass that you left unfixed because it needs a decision.
@@ -51,9 +52,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 * include: ../../src/controlled_markdown/writing.md
     + exclude: rules on prose in code
-
-## Gate
-* inline: notes/worktree.md#gate
 
 ## Commands
 * inline: notes/commands.md#commands

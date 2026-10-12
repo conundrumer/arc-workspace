@@ -9,7 +9,6 @@
 - Outcomes:
     - These notes give one owner for each process.
     - These notes give, for each kind of work product, the agent that acts on it and the reviews it gets.
-        - [Work products](#work-products) gives them.
     - Work that two processes duplicate, an outcome that no owner meets, rules that conflict, a step whose cost is out of proportion to what it finds, and a step or a rule that serves no outcome reach the user before the user asks.
     - Each rule of the notes and of the agent definitions maps to an outcome of these notes.
         - [Traceability matrix](prompts/agents/notes/traceability.md) holds that map.
@@ -40,8 +39,8 @@
 - Purpose: make each decision at the level that holds its context, and record it with its grounds.
 - Principles: [How a decision is made](prompts/agents/notes/decisions.md#how-a-decision-is-made) and [The user's part](prompts/agents/notes/decisions.md#the-users-part).
 - Outcomes:
-    - A decision that departs from the user's words, a ruling of the user or a line of [Principles](docs/handbook/principles.md) reaches the user, other than a ticket analyst's decline.
-    - A decline carries its defense, and the coordinator judges it before the change merges.
+    - A decision that departs from the user's words, a ruling of the user or a line of [Principles](docs/handbook/principles.md) reaches the user.
+    - A ticket analyst's decline reaches the coordinator in place of the user, with its defense, and the coordinator judges it before the change merges.
     - Each decision is recorded with what it was made from.
 - Owner: the ticket analyst decides, the coordinator judges each decline, and the user rules on each decision that reaches the user.
 - Takes from: every process that decides. Gives to: the user, through the coordinator.
@@ -53,7 +52,8 @@
 - Outcomes:
     - Each `change` that adds a mechanism to code has a design, made from reading the code, that gives the existing operations it uses or extends, and each new operation with its module.
     - Each `change` that adds or changes a rule or a fact in the agent-facing documents has a design, made from reading those documents, that plans each rule or fact it adds or changes against the rules and facts on the same act that its reader loads for the part of its work that needs it, so that, for each of those, the new rule or fact joins it, replaces it, retires it, or stands beside it as no exception to it.
-    - Each design gives what it costs and what it gains against the goal of [The user's goals](prompts/agents/notes/decisions.md#the-users-goals) that its change serves, a part whose gain its grounds do not show to exceed its cost is left out, and a requirement that costs more than it gains is not built, and reaches the user as a decline where it serves a need the user stated.
+    - Each design gives what it costs and what it gains against the goal of [The user's goals](prompts/agents/notes/decisions.md#the-users-goals) that its change serves.
+    - A part whose gain its grounds do not show to exceed its cost is left out, a requirement included, and leaving out a part that serves a need the user stated is a decline.
     - An agent other than the one that wrote the design checks it before the build, against the code, or against the documents and the rules for editing them.
     - The Scope covers each file the design gives.
 - Owner: the ticket analyst writes the design, and the ticket reviewer checks it.
