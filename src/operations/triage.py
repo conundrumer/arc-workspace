@@ -2,9 +2,7 @@
 labeled items of their replies for the coordinator.
 
 The operator takes each `request` and `bug` from its first ticket analyst
-on: once a ticket stands in the list `file_ticket.py to-settle` prints, which
-holds the tickets of each other session in which no agent runs where the
-session is the one whose id `tickets/main` holds,
+on: once a ticket stands in the list `file_ticket.py to-settle` prints,
 the command launches a ticket analyst with it, leaving out each ticket on a
 task whose solver pipeline has yet to launch its own ticket analyst, which
 `passes` gives that ticket. A ticket goes to no second analyst while one
@@ -50,10 +48,9 @@ item, and reads back that it was sent by the ticket's number and that
 line's time in the message. So a decision is sent by a later operator
 where the one before it ended before it sent it.
 
-Where a session in which no agent runs holds a ticket outside
-`tickets/closed/` and `tickets/watching/`, and no session whose id `tickets/main` holds
-runs an agent, the session whose id `tickets/main-wanted` holds
-sends the coordinator once a `decision:` item that asks the user to pick
+Where `idle_sessions.read_sessions` gives an idle session that holds a
+ticket and no main session runs an agent (`file_ticket.py main --help`),
+the session whose id `tickets/main-wanted` holds sends the coordinator once a `decision:` item that asks the user to pick
 a main (`main_wanted`)."""
 
 from controlled_markdown import mctx

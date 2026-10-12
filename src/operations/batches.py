@@ -49,7 +49,7 @@ from operations.roles import AGENT_ID, Purpose, Role, analyst_of, analyst_subjec
 from operations.state import DOC_REVIEW, Agent, Merge, State, Ticket
 from operations.handled import bash_calls
 from operations.steps import Bash, Launch, Step, Undecided
-from ticketing.vocabulary import Kind, Resolution, Status, Verdict
+from ticketing.vocabulary import Kind, Resolution, Status, Verdict, note_opening
 
 OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER, Role.VALIDATION_REVIEW})
 """The roles of After a batch, which no batch holds."""
@@ -163,7 +163,7 @@ def batch_runs(state: State, batch: list[Agent], since: float,
     return runs
 
 
-VERDICT = re.compile(rf"(?:{'|'.join(Verdict)})(?![\w-])")
+VERDICT = note_opening(*Verdict)
 """The opening of the note of a line a validation review writes."""
 
 

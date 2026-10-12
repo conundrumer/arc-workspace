@@ -60,11 +60,24 @@ def live(session: str, now: float) -> bool:
     return False
 
 
-def named_main(tickets: Path) -> str | None:
-    path = tickets / MAIN
-    if not path.is_file():
+def read_session(path: Path) -> tuple[str, float] | None:
+    """The stripped text of the session-id file at `path` with the time of
+    its write, None where the file is missing or holds no text."""
+    try:
+        text, written = path.read_text().strip(), path.stat().st_mtime
+    except FileNotFoundError:
         return None
-    return path.read_text().strip() or None
+    return (text, written) if text else None
+
+
+def session_line(session: str) -> str:
+    """The text a session-id file holds."""
+    return f"{session}\n"
+
+
+def named_main(tickets: Path) -> str | None:
+    held = read_session(tickets / MAIN)
+    return held[0] if held else None
 
 
 def read_sessions(tickets: Path, index: int, now: float) -> Sessions:
@@ -80,24 +93,20 @@ def read_sessions(tickets: Path, index: int, now: float) -> Sessions:
 
 def want_main(tickets: Path, session: str) -> None:
     """Creates `MAIN_WANTED` with `session`, where no file holds that name."""
-    with staged(tickets, f"{session}\n") as tmp:
+    with staged(tickets, session_line(session)) as tmp:
         link_new(tmp, tickets / MAIN_WANTED)
 
 
 def main_wanted(tickets: Path) -> tuple[str, float] | None:
     """The session id `MAIN_WANTED` holds, with the time of its write, or
     None where there is no such file."""
-    path = tickets / MAIN_WANTED
-    try:
-        return path.read_text().strip(), path.stat().st_mtime
-    except FileNotFoundError:
-        return None
+    return read_session(tickets / MAIN_WANTED)
 
 
 def name_main(tickets: Path, session: str) -> None:
     if not any(session in ids for ids in indexes(tickets).values()):
         raise Refused(mctx("no file under `tickets/{sessions}/` holds the session id `{session}`").format(
             sessions=SESSIONS, session=session))
-    with staged(tickets, f"{session}\n") as tmp:
+    with staged(tickets, session_line(session)) as tmp:
         os.replace(tmp, tickets / MAIN)
     (tickets / MAIN_WANTED).unlink(missing_ok=True)

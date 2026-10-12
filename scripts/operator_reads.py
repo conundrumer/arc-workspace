@@ -32,7 +32,7 @@ from operations.merging import MERGE_SCRIPT, merge_messages
 from operations.reports import TICKETS_FILED, heading_part
 from operations.roles import PASSES, Role, described
 from operations.state import Agent, Call, Merge, Message, Report, Tool
-from operations.task_work import tasks_work
+from operations.task_work import refine_report, tasks_work
 from operations.command_words import COMMAND, is_next
 from operations.printing import unfenced
 
@@ -91,7 +91,7 @@ def pass_report(task: str, role: Role, launched: float, main: Path) -> Path | No
     files = (sorted(work.glob(f"{role.value}-*.md")) if role is Role.REFINE
              else [work / f"{role.value}.md"])
     written = [(p.stat().st_mtime, p) for p in files if p.is_file()
-               and (role is not Role.REFINE or p.stem.removeprefix(f"{role.value}-").isdigit())]
+               and (role is not Role.REFINE or refine_report(p.name))]
     return min(((t, p) for t, p in written if t > launched), default=(0.0, None))[1]
 
 

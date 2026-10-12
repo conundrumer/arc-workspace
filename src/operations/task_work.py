@@ -5,6 +5,7 @@ task's claim once the pipeline ends, as the section `Passes on a task` of
 gives. `scripts/operate.py set-aside` and `restore` run these, as steps
 `passes` prints; this is the one module of the package that writes."""
 
+import re
 import shutil
 from pathlib import Path
 
@@ -15,7 +16,12 @@ from solver.vocabulary import SOLVER_SUFFIX, WITNESS_SUFFIX
 
 BEFORE_CREATE = ("create.md", "progress.md")
 """The entries of the task's work directory a Create pass sets aside, with
-each `refine-<n>.md`."""
+each Refine report (`refine_report`)."""
+
+
+def refine_report(name: str) -> bool:
+    """Whether `name` is `refine-<n>.md` with `<n>` all digits."""
+    return re.fullmatch(r"refine-\d+\.md", name) is not None
 
 CLAIM = "claim"
 
@@ -67,8 +73,7 @@ def set_aside(main: Path, task: str, role: Role) -> Path:
     for entry in sorted(work.iterdir()):
         if entry == target or entry.name == CLAIM or entry.name.isdigit():
             continue
-        if role is Role.ANALYZE or entry.name in BEFORE_CREATE or (
-                entry.name.startswith("refine-") and entry.suffix == ".md"):
+        if role is Role.ANALYZE or entry.name in BEFORE_CREATE or refine_report(entry.name):
             shutil.move(entry, target / entry.name)
     for p in paths:
         if checkout.git_out(main, "ls-files", str(p)).strip():

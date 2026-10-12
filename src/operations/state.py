@@ -355,15 +355,12 @@ class State:
     `operator_state.limit_lifted` gives it. `queue` is the queue's full
     listing, read only while a `Run:` line stands, and `run_starts` what
     the script of each `Run:` line gave at this read, by its run
-    (`runs.run_id`). `idle_indexes` holds each index other than the
-    session's that holds a ticket outside `tickets/closed/` and
-    `tickets/watching/` and in whose sessions no agent runs, `adopted`
-    those of them the operators act on as on the session's own, which are
-    all of them where the session is the one whose id `tickets/main`
-    holds, and none otherwise, `main_live` whether a session whose id
-    `tickets/main` holds runs an agent, and `main_wanted` the
-    session id `tickets/main-wanted` holds with the time of its write, as
-    `idle_sessions` gives them."""
+    (`runs.run_id`). `idle_indexes` holds the idle indexes
+    `idle_sessions.read_sessions` gives, `adopted` those of them the
+    operators act on as on the session's own (`file_ticket.py main
+    --help`), `main_live` whether the main session runs an agent, and
+    `main_wanted` the session id `tickets/main-wanted` holds with the
+    time of its write, as `idle_sessions` gives them."""
     me: str
     now: float
     session: str

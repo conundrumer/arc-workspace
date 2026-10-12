@@ -5,9 +5,10 @@ review of the documents. The steps carry out
 [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change);
 `merging` gives the merge and what follows it.
 
-The operators act on the tickets of the session and, where the session
-is the one whose id `tickets/main` holds, on those of each other session in which
-no agent runs (`State.adopted`), as `State.mine` gives them.
+The operators act on the tickets of the session and on those of the
+sessions `State.adopted` gives, as `State.mine` gives them. Which session
+is the main one, `file_ticket.py main --help` states; which sessions are
+idle, `idle_sessions.read_sessions` gives.
 
 The editors a change needs are those the `editors` field of its ticket
 gives, which the ticket analyst that files it writes, and a change whose

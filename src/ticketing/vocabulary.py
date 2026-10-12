@@ -4,6 +4,7 @@ between, the resolutions it closes with, the domains of its subject, its
 kinds, the note of the line that files it, and the end of the title of a
 `refactor` ticket on a module that holds more than one subject."""
 
+import re
 from enum import StrEnum
 
 class Status(StrEnum):
@@ -97,3 +98,9 @@ class Note(StrEnum):
 MANY_IDEAS = "many ideas in one place"
 """The end of the title of a `refactor` ticket on a module that holds more
 than one subject."""
+
+
+def note_opening(*alternatives: str) -> re.Pattern[str]:
+    """The opening of a log note from a closed vocabulary: one of
+    `alternatives`, not followed by a word character or a hyphen."""
+    return re.compile(rf"(?:{'|'.join(alternatives)})(?![\w-])")

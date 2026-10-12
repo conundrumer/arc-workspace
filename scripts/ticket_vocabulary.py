@@ -5,27 +5,28 @@ from collections.abc import Iterable
 from enum import StrEnum
 
 from controlled_markdown import mctx
+from operations.roles import Role
 from ticketing.vocabulary import COORDINATOR, EDITOR_KINDS, PASS_KINDS, REVIEW_KINDS, Kind
 from transcripts import Refused
 
 
 class Filer(StrEnum):
     """A filing agent, by its name."""
-    ANALYZE = "analyze"
-    CREATE = "create"
-    REFINE = "refine"
-    TRANSCRIPT_REVIEW = "transcript-review"
-    VALIDATION_REVIEW = "validation-review"
+    ANALYZE = Role.ANALYZE.value
+    CREATE = Role.CREATE.value
+    REFINE = Role.REFINE.value
+    TRANSCRIPT_REVIEW = Role.TRANSCRIPT_REVIEW.value
+    VALIDATION_REVIEW = Role.VALIDATION_REVIEW.value
     HANDBOOK = "handbook"
-    HANDBOOK_EXPANDED = "handbook-expanded"
-    CODE_EDITOR = "code-editor"
-    DOC_EDITOR = "doc-editor"
-    OPERATOR = "operator"
-    DOC_REVIEWER = "doc-reviewer"
-    TICKET_REVIEWER = "ticket-reviewer"
-    CODE_REVIEWER = "code-reviewer"
+    HANDBOOK_EXPANDED = Role.HANDBOOK_EXPANDED.value
+    CODE_EDITOR = Role.CODE_EDITOR.value
+    DOC_EDITOR = Role.DOC_EDITOR.value
+    OPERATOR = Role.OPERATOR.value
+    DOC_REVIEWER = Role.DOC_REVIEWER.value
+    TICKET_REVIEWER = Role.TICKET_REVIEWER.value
+    CODE_REVIEWER = Role.CODE_REVIEWER.value
     COORDINATOR = COORDINATOR
-    TICKET_ANALYST = "ticket-analyst"
+    TICKET_ANALYST = Role.TICKET_ANALYST.value
 
 
 FILER_KINDS: dict[Filer, frozenset[Kind]] = {

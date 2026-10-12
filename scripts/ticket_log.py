@@ -14,7 +14,7 @@ from ticket_numbers import TICKET_NUMBER, TicketNumber, matched_number
 from ticket_vocabulary import ticked
 from operations.roles import AGENT_ID as AGENT_ID_FORM
 from ticketing.times import utc_stamp
-from ticketing.vocabulary import Kind, Note, Resolution, Status, Wait
+from ticketing.vocabulary import Kind, Note, Resolution, Status, Wait, note_opening
 from transcripts import Refused
 
 AGENT_ID = re.compile(AGENT_ID_FORM)
@@ -27,7 +27,7 @@ HOLDER_ID = re.compile(rf"{AGENT_ID.pattern}|{SESSION_ID.pattern}")
 that holds a ticket itself."""
 
 
-RESOLUTION_WORD = re.compile(r"[a-z]+(?:-[a-z]+)*")
+RESOLUTION = note_opening(*Resolution)
 
 
 CLOSED_BY = "{fixed} by {change} {number}: {note}"
@@ -48,8 +48,7 @@ class Moved(Refused):
     """A refusal of a call whose ticket another call moved first."""
 
 
-WAIT = re.compile(rf"(?:{Wait.USER}|{Wait.CHANGE} (?P<change>{TICKET_NUMBER.pattern}))"
-                  rf"(?![\w-])")
+WAIT = note_opening(Wait.USER, rf"{Wait.CHANGE} (?P<change>{TICKET_NUMBER.pattern})")
 """The opening of the note of a line into `blocked`."""
 
 
@@ -92,8 +91,8 @@ def read_ticket(path: Path) -> str:
 
 def resolution_of(note: str | None) -> Resolution | None:
     """The resolution `note` opens with, None where it opens with none."""
-    word = RESOLUTION_WORD.match(note or "")
-    return Resolution(word.group()) if word and word.group() in set(Resolution) else None
+    opening = RESOLUTION.match(note or "")
+    return Resolution(opening.group()) if opening else None
 
 
 def is_change(path: Path) -> bool:
