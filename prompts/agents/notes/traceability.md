@@ -1,6 +1,6 @@
 # Traceability matrix
 - The map of each rule of the documents under [notes](prompts/agents/notes) and of the agent definitions under [agents](prompts/agents) to the outcomes of [Process notes](prompts/agents/notes/process.md) it serves.
-- The map holds for each rule as it stands at commit `75efc685b358e0a748dc551bc5d38ae1ec452fce` of `master`.
+- The map holds for each rule as it stands at commit `098c25eca423256971f7359e865fcb2cf449e418` of `master`.
 - Each entry is a section, with the outcomes its rules serve, each as its process and a phrase of its words. Under the entry stands each rule of that section that serves another outcome or none, by its opening words.
 - An entry or a rule that serves no outcome gives the judgment that keeps it.
 - An entry on a document's title heading covers the lines above its first section. A section with no rule of its own, only lines that inline or include another document, has no entry.
@@ -68,6 +68,7 @@
 - [Coordinator](prompts/agents/notes/coordinator.md#coordinator): none. Kept: it gives the coordinator its part and how it reads the documents.
 - [Routes](prompts/agents/notes/coordinator.md#routes), [Tickets](prompts/agents/notes/coordinator.md#tickets): none. Kept: they lead the coordinator to the notes its work there needs.
 - [Decisions](prompts/agents/notes/coordinator.md#decisions): Decisions: each decision recorded with what it was made from.
+    - "Say in a decision its default is the user's ruling": Decisions: a departing decision reaches the user.
 - [Declines](prompts/agents/notes/coordinator.md#declines): none. Kept: it leads the coordinator to the notes on a decline when one reaches it.
 - [Changes](prompts/agents/notes/coordinator.md#changes): Process assessment: the agent and the reviews of each work product.
     - "Before you launch a pass on a task, read", "Before you send an operator a line, or move or revise", "While the user gives feedback, read", "Read [Carrying a change]": none. Kept: they lead the coordinator to the notes its work there needs.
@@ -75,9 +76,10 @@
     - "Once a change you run is on `master`": Merge: a hotfix reviewed after it merges.
 - [Worktrees](prompts/agents/notes/coordinator.md#worktrees): Configuration management: one live change per worktree.
 - [Reports to the user](prompts/agents/notes/coordinator.md#reports-to-the-user): none. Kept: it gives the user the source and the route of each report it relays.
+    - "Open each decision you bring the user", "End each reply that ends your turn with each such decision": Decisions: a departing decision reaches the user.
 - [Cards](prompts/agents/notes/coordinator.md#cards): Decisions: a departing decision reaches the user.
 - [Codex](prompts/agents/notes/coordinator.md#codex): Decisions: a departing decision reaches the user.
-    - "When specifying an issue in prose to fix": Requirements: requirements traced to the spans.
+    - "When you give Codex an issue in prose to fix": Requirements: requirements traced to the spans.
 
 ## Request notes
 - [Routes](prompts/agents/notes/requests.md#routes): Requirements: requirements traced to the spans; Merge: a hotfix reviewed after it merges.
@@ -239,6 +241,7 @@
     - "Cut each line of the draft that a finding falls on": none. Kept: it keeps a requirement to what holds, a way Requirements can fail.
     - "Where a finding is a defensible reason", "Findings of two ticket reviewers": none. Kept: the principle of Decisions.
     - "Then think the whole revised design through": Risk management: each way a design can fail is a requirement.
+- [Checking a draft](prompts/agents/ticket-analyst/self-check.md): Verification: each `change` ticket checked before the build.
 - [A held step](prompts/agents/ticket-analyst/held-step.md): Work control: stopped work reaches an agent.
     - "Where [The user's part]": Decisions: a departing decision reaches the user.
     - "Where the operator's command could have decided": none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
