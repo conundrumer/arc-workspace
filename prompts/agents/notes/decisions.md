@@ -93,7 +93,7 @@
 - The agents produce good solvers through the arrangement around them, which is made so that the solver tool computes what the principles define, reports what an agent can act on, leaves judgments to the agent, and never reports what is not so.
 - The solver passes test that arrangement, and what a pass shows of a fault in it is evidence for a change to the documents, the solver tool or the pass structure. A behavior of the harness is no part of that arrangement.
 - Build the checker to change without breaking as the handbook changes.
-- Where a default breaks a line of [Principles](docs/handbook/principles.md), the decision becomes whether to amend that line.
+- Where every option left for a solver to encode a rule of the concept its Analyze pass gave exempts the solver from a line of [Principles](docs/handbook/principles.md) or of the handbook's rules, amends such a line, or reads that rule otherwise than the concept states it, the decision is that concept: bring the user the concept, that rule and the line the solver cannot meet, with a default that leaves the solver and its ticket as they stand. Where a default breaks a line of [Principles](docs/handbook/principles.md) otherwise, the decision becomes whether to amend that line.
 - Where a check or survey runs slowly, change how its runs are made and batched before you reconsider what it computes.
 - Run a solver pass that ran under a wrong rule again once the rule is fixed, in place of patching its output.
 - The tooling may come to serve generators or another frontend language as well as Souffle solvers, so divide it by what varies.
