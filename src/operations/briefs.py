@@ -139,7 +139,8 @@ def editor_lines(editors: list[tuple[Agent, str]]) -> list[str]:
 def doc_review(number: str, worktree: Path, editors: list[tuple[Agent, str]],
                operator: str) -> str:
     lines = [mctx("Review the change to the documents of change {number}: the diff that "
-                  "`git -C {worktree} diff --merge-base master` prints.").format(
+                  "`git -C {worktree} diff --merge-base master` prints, and each file that "
+                  "`git -C {worktree} ls-files --others --exclude-standard` prints.").format(
                       number=number, worktree=worktree)]
     lines.extend(editor_lines(editors))
     lines.append(fingerprint_line(worktree))
