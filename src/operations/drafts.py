@@ -5,15 +5,16 @@ ticket reviewer wrote whose note opens with `finding` or `suggestion`; a
 line of an analyst or the coordinator that opens so is none.
 
 The drafts given to the operator are the `change` tickets under
-`tickets/draft/` of the session, those the coordinator names, and those a
-ticket analyst an operator launched files. A draft is ready for a ticket
-reviewer once its log holds a `filed` or a `revised` line and no line
-after the last of them is the coordinator's or moves it out of
-`tickets/draft/`, as where the agent that filed or revised it records its
-decision on a line of its own below it; or once the coordinator gives it to review after
-its last line, as after the coordinator moves it back into `tickets/draft/`
-and revises it. A draft waits while an agent of the operators' that wrote
-a line of its log runs.
+`tickets/draft/` of the session, those the coordinator names, those a
+ticket analyst an operator launched files, and those of `changes.scope`
+of another session whose index `State.idle_indexes` holds. A draft is
+ready for a ticket reviewer once its log holds a `filed` or a `revised`
+line and no line after the last of them is the coordinator's or moves it
+out of `tickets/draft/`, as where the agent that filed or revised it
+records its decision on a line of its own below it; or once the
+coordinator gives it to review after its last line, as after the
+coordinator moves it back into `tickets/draft/` and revises it. A draft
+waits while an agent of the operators' that wrote a line of its log runs.
 
 A draft waits for a ticket analyst where its log holds findings after its
 last `filed` or `revised` line, and no ticket reviewer or ticket analyst
@@ -46,7 +47,7 @@ from collections.abc import Callable
 from controlled_markdown import mctx
 from operations import briefs, messages
 from operations.change_budget import OVERRUN_FINDING
-from operations.changes import STALLED
+from operations.changes import STALLED, scope
 from operations.directives import Decision, Directive, decided, named, numbers
 from operations.roles import Purpose, Role, analyst_subject, joined, subjects
 from operations.reports import left_for_decision
@@ -63,12 +64,24 @@ review."""
 FILED_OR_REVISED = (Note.FILED, Note.REVISED)
 
 
+def draft_change(t: Ticket) -> bool:
+    return t.status is Status.DRAFT and t.kind is Kind.CHANGE
+
+
+def elsewhere(state: State) -> list[Ticket]:
+    """The drafts of `changes.scope` of another session."""
+    return [t for n in sorted(scope(state)) if (t := state.tickets.get(n)) is not None
+            and draft_change(t) and t.session is not None and not state.mine(t)]
+
+
 def drafts(state: State) -> list[Ticket]:
     names = named(state)
     analysed = {n for _, p, nums in state.analysts() if p is not Purpose.TRIAGE for n in nums}
+    idle = {t.number for t in elsewhere(state) if t.session in state.idle_indexes}
     return sorted((t for t in state.tickets.values()
-                   if t.status is Status.DRAFT and t.kind is Kind.CHANGE
+                   if draft_change(t)
                    and (state.mine(t) or t.number in names or t.number in analysed
+                        or t.number in idle
                         or ((ln := operator_finding(t, base(t))) is not None
                             and ln.agent_id in state.operators))),
                   key=lambda t: t.order)

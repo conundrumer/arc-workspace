@@ -347,7 +347,10 @@ class State:
     `operator_state.limit_lifted` gives it. `queue` is the queue's full
     listing, read only while a `Run:` line stands, and `run_starts` what
     the script of each `Run:` line gave at this read, by its run
-    (`runs.run_id`)."""
+    (`runs.run_id`). `idle_indexes` holds the index of each session of
+    the drafts `drafts.elsewhere` gives whose session ids
+    `tickets/sessions/<index>` gives run no agent of type `operator` with
+    open work, as `open_agents.running_agents` gives it."""
     me: str
     now: float
     session: str
@@ -387,6 +390,7 @@ class State:
     doc_budgets: Mapping[str, Budget] = field(default_factory=dict)
     queue: tuple[str, ...] = ()
     run_starts: Mapping[str, Starts] = field(default_factory=dict)
+    idle_indexes: frozenset[int] = frozenset()
 
     @property
     def arrived(self) -> list[Message]:

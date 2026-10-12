@@ -28,7 +28,7 @@ from operator_reads import (ended_elsewhere, ended_with, operator_runs, read_ope
                             resumed_at, stalled_reports)
 from run_prints import self_of
 from run_reads import bash_spans, context_size, parent_id, repeated_runs, run_entries
-from ticket_numbers import session_index, ticket_number
+from ticket_numbers import indexes, session_index, ticket_number
 from ticket_reads import read_tickets
 from ticket_settle import to_settle
 from ticket_watch import budget, spend
@@ -46,7 +46,7 @@ from operations.relay import Relay, Run
 from operations.roles import Role
 from operations.directives import lines, named
 from operations.plan import taken_up, unknown_line
-from operations import change_budget, changes, monitor, passes, runs
+from operations import change_budget, changes, drafts, monitor, passes, runs
 from operations.monitor import MonitorState, Watched
 from operations.state import (Agent, Budget, Call, LateResume, Message, Reader, Report, Spend, Starts,
                               State, Ticket)
@@ -272,6 +272,7 @@ def read_state(me: str) -> tuple[State, MonitorState]:
         branches={w: b for w, b in trees.items() if b is not None},
         limit_lifted=limit_lifted(now, watching))
     state = replace(state, taken_up=taken_up(state))
+    state = replace(state, idle_indexes=idle_indexes(state, tickets_dir))
     given = [ticket_number(n) for n in named(state) if n in tickets]
     held = {w for t in tickets.values() if t.status is Status.ASSIGNED and t.holder == me
             and (w := worktree(t, state)) is not None}
@@ -287,6 +288,32 @@ def read_state(me: str) -> tuple[State, MonitorState]:
     state = with_runs(state)
     return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(state.stalled),
                                undecided=tuple(watching))
+
+
+def idle_indexes(state: State, tickets: Path) -> frozenset[int]:
+    """The indexes `State.idle_indexes` defines. An index whose session ids
+    no file of `tickets/sessions/` gives, and a session id with no
+    transcript, count as running no operator, since no session of them runs
+    in this project. The lines `running_agents` writes on another session's
+    agents are dropped: no reader of the operator's reply has an operation
+    on them."""
+    ids = indexes(tickets)
+    out: set[int] = set()
+    for index in sorted({t.session for t in drafts.elsewhere(state) if t.session is not None}):
+        if not any(x.run.agent_type == Role.OPERATOR
+                   for sid in ids.get(index, []) for x in session_agents(sid)):
+            out.add(index)
+    return frozenset(out)
+
+
+def session_agents(session: str) -> list[Listed]:
+    """The agents with open work under the session `session`, or none where
+    it has no transcript."""
+    try:
+        path = find(session)
+    except Refused:
+        return []
+    return running_agents(path, [])
 
 
 def editor_reviewers(agents: list[Agent], main: Path, undecided: list[str]) -> list[Agent]:
