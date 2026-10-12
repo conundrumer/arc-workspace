@@ -1,6 +1,6 @@
 # Traceability matrix
 - The map of each rule of the documents under [notes](prompts/agents/notes) and of the agent definitions under [agents](prompts/agents) to the outcomes of [Process notes](prompts/agents/notes/process.md) it serves.
-- The map holds for each rule as it stands at commit `36f665180d1a020ac99fef0506b09f1a636928dd` of `master`.
+- The map holds for each rule as it stands at commit `c8a01aabce9dac2f46b36fdb376fdf8ab72f7c1e` of `master`.
 - Each entry is a section, with the outcomes its rules serve, each as its process and a phrase of its words. Under the entry stands each rule of that section that serves another outcome or none, by its opening words.
 - An entry or a rule that serves no outcome gives the judgment that keeps it.
 - An entry on a document's title heading covers the lines above its first section. A section with no rule of its own, only lines that inline or include another document, has no entry.
@@ -23,6 +23,7 @@
     - "A ticket analyst's resolution of a ticket that leaves unmet": Requirements: a part the change leaves unmet is a decline; Decisions: a decline carries its defense.
 - [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences): none. Kept: each line is a preference of the user, which the decisions on its subject apply, and each line a process gives as a principle serves that process.
 - [Decisions on solver work](prompts/agents/notes/decisions.md#decisions-on-solver-work): none. Kept: the principle of Solver passes.
+    - "Where every option left for a solver to encode a rule of the concept": Decisions: a departing decision reaches the user.
 - [Decisions on the agents' documents](prompts/agents/notes/decisions.md#decisions-on-the-agents-documents): Verification: evidence of a reader's behavior.
     - "Write the documents first to serve": none. Kept: the principle of Verification.
     - "The user writes no text": Verification: another agent checks the built change.
