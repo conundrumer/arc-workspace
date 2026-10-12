@@ -4,7 +4,6 @@
         - A statement about how a file, a format, a marker, a command, or a tool's output represents them, or about how the solver's code is written, goes elsewhere.
         - So does a heuristic, a decision criterion, a convention, or a procedure step.
     - Place a statement in another document whose subject covers it, such as [Style](docs/handbook/style.md), [Patterns](docs/handbook/patterns.md), [Procedure](docs/handbook/procedure.md), [Lib addition protocol](docs/handbook/lib-protocol.md) or [Solver file](docs/handbook/solver-file.md), even where it relates to a principle. Place it in this doc or Encoding only where no other document's subject covers it.
-    - Before you add a statement to this doc or Encoding, find the other document whose subject comes closest to it, and state to the one who asked for the change which document that is and why its subject does not cover the statement.
     - Judge a principle placed here by whether it is consistent, useful, and general.
     - Prefer nested lists:
         - When a sentence states two or more parallel parts, write them as a nested list, one item each.
@@ -230,6 +229,7 @@
 - **One member.** If one member is used and another must not be used, a parameter stores the chosen member.
 - **Another orientation type.** Switching to another orientation type requires another program rather than a reassignment.
     - Switching between cardinal and diagonal directions is one example, and switching between 4- and 8-adjacency is another.
+        * comment: A Create pass on a3325580 reported its delay on connectivity for the third time, and the clause on 4- and 8-adjacency was added for it: session 631a6654, 2026-09-25T14:49 to 14:51.
     - a9f96cdd, d364b489
         - The two tasks paint one cell per direction and differ only in the type: a9f96cdd runs over the diagonals and d364b489 over the cardinals. Neither program reassigns into the other.
             + gloss

@@ -7,6 +7,7 @@
 - `uv run pyright`
 - `uv run python scripts/materialize.py`
 - `uv run python scripts/run_dl.py`
+    * comment: The user's words, session 6f8c73e4, 2026-10-02T22:45:12Z: "it needs to be known it is an expensive op".
     - Run every Souffle solver. It takes a long time, so run it only when the user asks to run every solver.
     - `--help` for per-solver tooling.
 - `uv run python scripts/run_dl.py <stem>`
@@ -17,6 +18,7 @@
 - The handbook is what a solver session reads.
 
 ## Lib
+* comment: The user's words, session dc433af1, 2026-10-04T21:27:39Z: "we need to have some pointer to souffle-undocumented.md so for agents looking to improve lib perf they can look here".
 - When you work to speed up the lib, look in [Souffle: undocumented features](docs/souffle-undocumented.md) for Souffle features the official documentation leaves out.
 
 ## Solver console
@@ -40,6 +42,7 @@
 - **A grid is drawn as a grid**, wherever one is written: one row per line, cells separated by spaces, 0 as `0`.
 
 ## Tests
+* comment: The user's words, session 7c26445d, 2026-09-15T21:30:26Z to 22:04:42Z: "we have a ton of useless tests ... requires maintanence like changing it when the impl changes. aggressively cut them", and "regression tests are theoretically useful, overwhemlingly useless".
 - A test costs an edit each time the code it pins changes, and a later session pays it.
 - So the default is no test, and a test has to earn its place.
 - Before you write one, ask: if this broke, what would a run show?

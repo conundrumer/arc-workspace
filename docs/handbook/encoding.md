@@ -25,7 +25,6 @@
 
 ### ARC types
 - The program works in the task's own types: colors and orientation types.
-- A program literal belonging to an ARC type breaks equivariance when the group transforms that value.
 
 ### Numbers
 - **Grounding.** Every number in a solver counts concrete things the task has.
