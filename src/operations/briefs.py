@@ -496,10 +496,11 @@ COST_AUDIT = mctx("""
     - Profile the runs with `uv run python scripts/profile_runs.py` and its `--each`, `--runs`, `--type` and `--top` options, read a run's transcript where a line of its profile looks suspect, and read a ticket's log for what an agent was launched for.
     - Where a run has entries before the window's start, count only the share of its cost from its entries in the window, as an estimated figure with that basis.
     - Find each kind of step whose summed cost over the window exceeds what it finds, and each cost that bought no work or that a cheaper path would have cut.
+    - Run `uv run python scripts/bottlenecks.py --since <the window's start>`. Each row of its output whose cost, with its hours priced at the rate [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences) gives for time, exceeds the cost of the change that would remove its cause is a finding, and no churn figure is one.
     - Leave out what a process covers and did not miss: the checks that [Quality assurance (quality assurance, incident management, problem management)](prompts/agents/notes/process.md#quality-assurance-quality-assurance-incident-management-problem-management) gives cover each run, and file nothing on a cause that a ticket outside `tickets/closed/` records.
     - File one `performance` ticket per finding, {filing}. Give in it the cost in dollars, the agent type, the evidence as agent ids, ticket numbers and times, the cause in one line, each figure labeled measured or estimated with the basis of each estimate, and what a cut of its step would trade off.
     - Edit no tracked file and launch no agent.
-    - Reply with the tickets you filed.
+    - Reply with the tickets you filed, and the files of highest churn in the `bottlenecks.py` output, with their waits and reruns.
     """)
 
 
