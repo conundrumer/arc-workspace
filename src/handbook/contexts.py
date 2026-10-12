@@ -10,9 +10,9 @@ import controlled_markdown as nm
 from controlled_markdown import mctx
 from engine import checkout
 from handbook import paths
-from handbook.agents import (ANALYZE_NEXT, ANALYZE_NEXT_PATH,
-                             ANALYZE_NEXT_READER, agent_document, agent_file,
-                             agent_names, agent_prompt_text, render)
+from handbook.agents import (agent_document, agent_file, agent_names,
+                             agent_prompt_text, next_file, next_readers,
+                             next_text)
 from handbook.context import (CODEX_DOC, ROLE_DIR, SESSION_DOC, entry_text,
                               first_heading, no_item_named, role_document,
                               role_file, session_text, workflow_file,
@@ -93,9 +93,9 @@ def agent_context(name: str) -> str:
     if name not in agent_names():
         raise no_item_named("agent", "agents", name, agent_names())
     text = marked_section(repo_label(agent_file(name)), agent_prompt_text(name))
-    if name == ANALYZE_NEXT_READER:
-        text += "\n" + marked_section(repo_label(ANALYZE_NEXT_PATH),
-                                render(ANALYZE_NEXT))
+    if name in next_readers():
+        text += "\n" + marked_section(repo_label(next_file(name)),
+                                       next_text(name))
     return text
 
 

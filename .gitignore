@@ -27,7 +27,7 @@ tests/scratch/
 .codex/
 /AGENTS.md
 .claude/agents/
-.claude/analyze-next.md
+.claude/*-next.md
 .claude/coordinator.md
 programs/lib.md
 programs/lib/*.md

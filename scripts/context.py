@@ -7,7 +7,7 @@ import signal
 import sys
 
 from controlled_markdown import mctx
-from handbook.agents import (agent_renderings, analyze_next_rendering,
+from handbook.agents import (agent_renderings, next_renderings,
                              unlisted_agents)
 from handbook.context import (codex_renderings, role_text, section_text,
                               session_text, workflow_bundle, write_lib_output)
@@ -45,7 +45,7 @@ HELP = mctx("""
         - Otherwise it writes the files below, which git ignores.
             - One agent under `.claude/agents/` per document that stands directly in `prompts/agents/`, in no subdirectory, and whose text opens with front matter, with the context its document composes as its system prompt.
             - `.claude/agents/.manifest`, which lists each generated file written in the checkout.
-            - `.claude/analyze-next.md`, the steps the `analyze` agent reads after it writes the concept.
+            - `.claude/<agent>-next.md` for each agent above that has a document `prompts/agents/<agent>-next.md` with no front matter: that document rendered, the steps the agent reads only once it has done the steps of its prompt.
             - `.claude/coordinator.md`, the document of the coordinator, the session the user talks with, rendered from `prompts/agents/notes/coordinator.md`.
             - The files a codex session on the repo reads: `AGENTS.md`, [Codex on arc-workspace](prompts/codex.md) rendered, and `.codex/config.toml`, with the main tree's `docs/codex-style.md` as its developer instructions.
         - A session reads those files only when they were written before it started.
@@ -127,7 +127,7 @@ if __name__ == "__main__":
         if findings := check():
             print("\n".join(findings))
             sys.exit(1)
-        rest = [*agent_renderings(), analyze_next_rendering(),
+        rest = [*agent_renderings(), *next_renderings(),
                 coordinator_rendering(), *codex_renderings()]
         unlisted = unlisted_agents()
         written, done = write_lib_output(rest, stale=True)

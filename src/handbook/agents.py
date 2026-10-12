@@ -9,6 +9,10 @@ runs a role under prompts/roles/ with the rendered document as its system
 prompt. A role's document states its agent in an `agent` attribute. The
 files under `.claude/agents/` are generated and listed in the manifest of
 `handbook.generated`.
+
+An agent's later steps, which it reads only once it has done the steps of
+its prompt, stand in a sibling document `<agent>-next.md` with no front
+matter, rendered to its own file under `.claude/`.
 """
 
 from __future__ import annotations
@@ -50,12 +54,9 @@ def agent_doc(name: str, agents: Path = AGENT_DIR) -> Path:
 
 
 AGENT_NAMES = (HANDBOOK_AGENT, "handbook-expanded")
-# The steps the analyze agent reads after it writes the concept: a document
-# under `AGENT_DIR` with no front matter, rendered to its own file.
-ANALYZE_NEXT = "analyze-next"
-ANALYZE_NEXT_PATH = checkout.claude() / "analyze-next.md"
-ANALYZE_NEXT_READER = "analyze"
-"""The agent that reads `ANALYZE_NEXT`, and whose context shows it."""
+
+NEXT_OUT = checkout.claude()
+"""Where each agent's later steps are written."""
 
 
 def agent_document(name: str, agents: Path = AGENT_DIR) -> nm.Node:
@@ -146,8 +147,11 @@ def _prompt(document: nm.Node, handbook: str) -> str:
 def agent_names(agents: Path = AGENT_DIR) -> list[str]:
     """The agents defined under `agents`: one per document with front
     matter."""
-    return [p.stem for p in sorted(agents.glob("*.md"))
-            if p.read_text().startswith("---\n")]
+    return [p.stem for p in sorted(agents.glob("*.md")) if _has_front(p)]
+
+
+def _has_front(path: Path) -> bool:
+    return path.read_text().startswith("---\n")
 
 
 def agent_renderings(out: Path = AGENT_OUT, lib: Path = LIB_SRC,
@@ -176,10 +180,32 @@ def unlisted_agents(out: Path = AGENT_OUT, agents: Path = AGENT_DIR,
             if file not in current and in_checkout(file, root) not in listed]
 
 
-def analyze_next_rendering(path: Path = ANALYZE_NEXT_PATH,
-                           agents: Path = AGENT_DIR) -> Rendering:
-    """The steps the analyze agent reads after it writes the concept."""
-    return Rendering(path, render(ANALYZE_NEXT, agents=agents))
+def next_name(agent: str) -> str:
+    """The document of the steps the agent `agent` reads only once it has
+    done the steps of its prompt."""
+    return f"{agent}-next"
+
+
+def next_readers(agents: Path = AGENT_DIR) -> list[str]:
+    """Each agent under `agents` with a document of later steps: one with
+    no front matter, which it reads from its own rendered file."""
+    return [name for name in agent_names(agents)
+            if (doc := agent_doc(next_name(name), agents)).is_file()
+            and not _has_front(doc)]
+
+
+def next_file(agent: str, out: Path = NEXT_OUT) -> Path:
+    return out / f"{next_name(agent)}.md"
+
+
+def next_text(agent: str, agents: Path = AGENT_DIR) -> str:
+    return render(next_name(agent), agents=agents)
+
+
+def next_renderings(out: Path = NEXT_OUT,
+                    agents: Path = AGENT_DIR) -> list[Rendering]:
+    return [Rendering(next_file(name, out), next_text(name, agents))
+            for name in next_readers(agents)]
 
 
 def agent_prompt_text(name: str, lib: Path = LIB_SRC,
