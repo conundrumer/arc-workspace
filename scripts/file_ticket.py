@@ -38,7 +38,7 @@ from ticket_numbers import (SESSION_VAR, SESSIONS, reserve, session_id,  # noqa:
 from ticket_settle import to_settle  # noqa: E402
 from ticket_reads import editors_field  # noqa: E402
 from ticket_watch import (CAP, CHANGES, Case, add_evidence, budget, case_loss, evict,  # noqa: E402
-                          front, route, threshold)  # noqa: E402
+                          fix_field, front, route, threshold)  # noqa: E402
 from ticketing.text import SECTIONS, heading  # noqa: E402
 from ticketing.times import TIME_FORM  # noqa: E402
 from ticket_vocabulary import ticked  # noqa: E402
@@ -261,7 +261,7 @@ def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str,
             raise Refused(mctx("a `{kind}` takes `change` and `<namespace>-<short-title>`").format(kind=kind))
     else:
         check_subject(tickets, dom, subject)
-    fix = front(text).get("fix")
+    fix = fix_field(text)
     if (case is None) != (fix is None) or (case is not None and kind is not Kind.DELAY):
         raise Refused(mctx("a `{delay}` that gives a case gives `fix`, and only then").format(
             delay=Kind.DELAY))
@@ -271,7 +271,7 @@ def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str,
         undecided: list[str] = []
         run_id, start, end = case
         found = case_loss(run_id, start, end, undecided)
-        limit = None if found.dollars is None else threshold(tickets, Role(fix), undecided)
+        limit = None if found.dollars is None else threshold(tickets, fix, undecided)
         print_undecided(undecided)
         if found.dollars is not None and limit is not None and found.dollars < limit:
             status = Status.WATCHING

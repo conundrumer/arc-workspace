@@ -42,9 +42,7 @@ def pending_reason(agents: list[str], caller: str | None) -> str:
     return blocked + "\n" + mctx(
         "Before you end your turn, start your keep-alive timer, as "
         "[Background agents](prompts/agents/notes/commands.md#background-agents) "
-        "gives: run this command in the background: `: 'unattended-wait: "
-        "keep-alive timer'; uv run python scripts/agent_timer.py start "
-        "keep-alive {caller}`."
+        "gives, with `{caller}` as `<agent id>`."
     ).format(caller=caller)
 
 

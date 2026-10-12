@@ -76,6 +76,19 @@ def front(text: str) -> dict[str, str]:
     return {} if head is None else dict(front_fields(head))
 
 
+def fix_field(text: str) -> Role | None:
+    """The role the `fix` field of the front matter of the ticket text
+    `text` gives, or None where it has none. Refuses a `fix` that is no
+    role."""
+    fix = front(text).get("fix")
+    if fix is None:
+        return None
+    try:
+        return Role(fix)
+    except ValueError:
+        raise Refused(mctx("`{fix}` is no role").format(fix=fix)) from None
+
+
 def union_seconds(spans: list[tuple[float, float]]) -> float:
     total, end = 0.0, float("-inf")
     for a, b in sorted(spans):
@@ -228,10 +241,10 @@ def route(tickets: Path, number: TicketNumber, path: Path, agent: str,
     """Moves the watching ticket at `path` to `open` where its summed
     dollars reach the threshold of its `fix`, or where that threshold is
     unknown, and returns its path."""
-    fix = front(read_ticket(path)).get("fix")
+    fix = fix_field(read_ticket(path))
     if fix is None:
         raise Refused(mctx("{path} gives no `fix`").format(path=path))
-    limit = threshold(tickets, Role(fix), undecided)
+    limit = threshold(tickets, fix, undecided)
     dollars, _ = summed(path)
     if limit is None:
         note = mctx("summed loss {dollars:.4f} dollars, the threshold of `{fix}` unknown").format(

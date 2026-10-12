@@ -30,7 +30,7 @@ importable(checkout.scripts())
 
 from agent_launches import accepted_after, last_delivered  # noqa: E402
 from operator_state import USAGE_STALE, read_relay, read_state, session_id  # noqa: E402
-from agent_reports import parent_type  # noqa: E402
+from agent_reports import RATE_LIMIT, parent_type  # noqa: E402
 from profile_runs import budget_of  # noqa: E402
 from run_reads import parent_id  # noqa: E402
 from transcripts import Refused, find  # noqa: E402
@@ -104,7 +104,7 @@ PARTS = {
             - Where there is no such budget, the brief has no such line.
         - Where its last call of a launch failed with a result whose first line is `Agent type '<agent type>' not found`, or starts with that text followed by `.`, less than {load} seconds after the last write of its rendered definition `.claude/agents/<agent type>.md`, it gives the launch again once {retry} seconds have passed since that call, in place of a step on that failure.
             - Where that call came {load} seconds or more after that write, that failure is undecided, as that of any other failed call is.
-        - An agent whose latest notification has the status `failed` and a summary that gives `error type rate_limit` was stopped by the usage limit.
+        - An agent whose latest notification has the status `failed` and a summary that gives `{rate_limit}` was stopped by the usage limit.
             - `next` counts such an agent as running, and takes nothing from that notification as its report.
             - Once the usage file of the Claude config directory (`$CLAUDE_CONFIG_DIR/usage.json`, or `~/.claude/usage.json` where that is unset) was written after that stop, less than {stale} seconds ago, with a `used_pct` under 100 in each window, `next` prints, ahead of every other step, a SendMessage call that asks the agent to carry on its work, once for each such stop.
         - Where no step is ready, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again.
@@ -281,7 +281,7 @@ def main(argv: list[str]) -> int:
         return print_help(argv[1:], HelpPart, lambda parts: USAGE.format(parts=parts), PURPOSES,
                           lambda part: PARTS[part].format(
                               block=BLOCK_SECONDS, load=plan.LOAD_SECONDS, retry=plan.RETRY_SECONDS,
-                              write=round(WRITE_SECONDS), stale=USAGE_STALE,
+                              write=round(WRITE_SECONDS), stale=USAGE_STALE, rate_limit=RATE_LIMIT,
                               script=runs.SCRIPT_SECONDS))
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
     parser.add_argument("action", choices=list(OperateAction))

@@ -34,14 +34,20 @@ from operations.state import Agent, State, Ticket
 from operations.steps import Launch, Send, Step, Undecided, agent_ids
 
 
+def latest_reviewer(agents: list[Agent]) -> Agent | None:
+    """The latest doc reviewer among a change's `agents`, which is the
+    change's doc reviewer, or None where it has none."""
+    reviewers = [a for a in agents if a.role is Role.DOC_REVIEWER]
+    return reviewers[-1] if reviewers else None
+
+
 def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
                agents: list[Agent]) -> Step | None | Literal[False]:
     """The step of the review of the change's documents, or False where it
     has passed."""
-    reviewers = [a for a in agents if a.role is Role.DOC_REVIEWER]
-    if not reviewers:
+    r = latest_reviewer(agents)
+    if r is None:
         return review_launch(t, w, here, state.me)
-    r = reviewers[-1]
     if r.pending:
         return None
     reply = r.last_report

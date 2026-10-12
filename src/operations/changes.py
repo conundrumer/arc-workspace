@@ -94,7 +94,7 @@ from operations import brief_reading, briefs, merging, messages
 from operations.change_budget import (OVERRUN_FINDING, TAKE_NOTE, TIME_NOTE, TIME_OPENING,
                                       by_role, file_overrun, left_draft, overrun_ticket,
                                       past_budget, taken)
-from operations.doc_review import doc_review, review_launch
+from operations.doc_review import doc_review, latest_reviewer, review_launch
 from operations.directives import Decision, Directive, decided, held_on, named, NUMBER, numbers
 from operations.reports import (OPEN_LABELS, Label, budget_passed, items_of,
                                 left_for_decision)
@@ -298,6 +298,12 @@ def change_editors(t: Ticket) -> tuple[Role, ...] | Undecided:
             number=t.number))
     return t.editors
 
+def unstaffed(editors: tuple[Role, ...], here: list[Agent]) -> list[Role]:
+    """The editor roles of `editors` with no agent among `here`, the
+    editors in the change's worktree, in the order of `EDITORS`."""
+    return [r for r in EDITORS if r in editors and not any(a.role is r for a in here)]
+
+
 DRAFTERS = (Role.CODE_EDITOR, Role.HANDBOOK_EXPANDED)
 """The editors that draft the text of the fragments their code needs."""
 
@@ -368,14 +374,14 @@ def carry(state: State, t: Ticket) -> Step | None:
     if (step := over_budget(state, t, w, agents)) is not False:
         return step
     here = editors_in(agents, w)
-    for role in (r for r in EDITORS if r in editors):
-        if not any(a.role is role for a in here):
-            drafters = drafter_ids(here)
-            if isinstance(drafters, Undecided):
-                return drafters
-            return Launch(role, t.number, briefs.editor(
-                role, t.number, len(editors) > 1, w, state.scratch / t.number, state.me,
-                state.fragments.get(w, ()), tuple(drafters)), model=t.model(role))
+    if missing := unstaffed(editors, here):
+        role = missing[0]
+        drafters = drafter_ids(here)
+        if isinstance(drafters, Undecided):
+            return drafters
+        return Launch(role, t.number, briefs.editor(
+            role, t.number, len(editors) > 1, w, state.scratch / t.number, state.me,
+            state.fragments.get(w, ()), tuple(drafters)), model=t.model(role))
     if any(a.pending for a in here):
         return None
     if (step := fragments_step(state, t, w, here)) is not None:
@@ -419,14 +425,14 @@ def editor_review(state: State, editor: str) -> Step | str:
     if w is None:
         return Undecided(mctx("change {number} gives no worktree").format(number=t.number))
     agents = of_change(state, t.number)
-    if reviewers := [a for a in agents if a.role is Role.DOC_REVIEWER]:
-        ids = agent_ids(reviewers[-1:])
+    if (reviewer := latest_reviewer(agents)) is not None:
+        ids = agent_ids([reviewer])
         if isinstance(ids, Undecided):
             return ids
         return mctx("Change {number} already has doc reviewer {agent}, so launch no other "
                     "doc reviewer.").format(number=t.number, agent=ids[0])
     here = editors_in(agents, w)
-    if (any(not any(a.role is r for a in here) for r in editors)
+    if (unstaffed(editors, here)
             or any(a.pending for a in here if a.agent_id != editor)):
         return mctx("Another editor of change {number} has not reported, so the operator "
                     "launches the review: give your final reply.").format(number=t.number)

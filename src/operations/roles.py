@@ -45,13 +45,10 @@ class Role(StrEnum):
 
     @property
     def model(self) -> Model | None:
-        """For a role in `GENERAL_ROLES`, the model `GENERAL_MODELS` gives,
-        or None where it gives none. For any other role, the model the
-        front matter of its agent document in this tree gives, read at each
-        call so that a launch in a running session takes the document's
-        current model, where the harness holds the definition it loaded at
-        the session's start. Raises ValueError on a model that is no
-        `Model`."""
+        """The agent document is read at each call so that a launch in a
+        running session takes the document's current model, where the
+        harness holds the definition it loaded at the session's start.
+        Raises ValueError on a model that is no `Model`."""
         if self in GENERAL_ROLES:
             return GENERAL_MODELS.get(self)
         model = agent_meta(self.agent_type).get("model")

@@ -67,23 +67,22 @@ usage limit as lifted."""
 
 
 def usage_file() -> Path:
-    """The file the harness keeps the account's rate limit data in, in the
-    Claude config directory: `$CLAUDE_CONFIG_DIR`, or `~/.claude` where
-    that is unset."""
+    """The usage file `operate.py --help next` gives."""
     home = os.environ.get("CLAUDE_CONFIG_DIR")
     return (Path(home) if home else Path.home() / ".claude") / "usage.json"
 
 
 def limit_lifted(now: float, undecided: list[str]) -> float | None:
-    """The time of the last write of the usage file, where it was written
-    less than `USAGE_STALE` before `now` and each window it gives has a
-    `used_pct` under 100, and otherwise None, for the limit in force. A
-    file of no known form gives None, and an `undecided` line names it."""
+    """The time of the last write of the usage file, where that file gives
+    the usage limit as lifted by the rule `operate.py --help next` gives,
+    and otherwise None."""
     path = usage_file()
     try:
         written = path.stat().st_mtime
         windows = json.loads(path.read_text())
     except FileNotFoundError:
+        undecided.append(mctx("{path} does not exist, so whether the usage limit is lifted "
+                              "is unknown").format(path=path))
         return None
     except (OSError, ValueError) as e:
         undecided.append(mctx("{path}: it does not read as JSON ({why}), so whether "

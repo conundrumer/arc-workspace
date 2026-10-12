@@ -78,12 +78,6 @@ def given(state: State, number: str) -> bool:
         for a, purpose, nums in state.analysts() if purpose in GIVEN)
 
 
-def awaits_pipeline(state: State, number: str) -> bool:
-    """Whether `number` is a ticket on a task that a pipeline will give a
-    pass analyst and has not yet, as `awaits_analyst` gives the rule."""
-    return awaits_analyst(state, number)
-
-
 REOPENED = (Status.BLOCKED, Status.CLOSED)
 """The statuses a ticket moves back to `tickets/open/` from on a line of
 the coordinator's."""
@@ -130,7 +124,7 @@ def later_lines(state: State) -> Step | None:
 
 def settle(state: State) -> Step | None:
     numbers = [n for n in state.to_settle
-               if not given(state, n) and not awaits_pipeline(state, n)]
+               if not given(state, n) and not awaits_analyst(state, n)]
     if not numbers:
         return None
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.TRIAGE, joined(numbers)),

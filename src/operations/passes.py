@@ -148,12 +148,13 @@ def interference(state: State, p: Pipeline) -> Outcome | str | None:
              and t.filed >= p.since and t.status is not Status.CLOSED]
     for t in found:
         if blocked_on_user(t) is not None:
-            return f"interference ticket {t.number} waits on the user"
+            return mctx("interference ticket {number} waits on the user").format(number=t.number)
         given = [x for x, _, nums in state.analysts()
                  if t.number in nums and x.launched > t.filed]
         if t.status in (Status.OPEN, Status.ASSIGNED) and given and not any(
                 x.pending for x in given):
-            return f"the ticket analyst left interference ticket {t.number} open"
+            return mctx("the ticket analyst left interference ticket {number} open").format(
+                number=t.number)
     return Outcome(None) if found else None
 
 
@@ -186,7 +187,7 @@ def run(state: State, p: Pipeline) -> Outcome:
                 claim = claim_command(state, p.task)
                 tries = ran(state, claim, since)
                 if any(tries):
-                    return stop(f"the claim on task {p.task} fails")
+                    return stop(mctx("the claim on task {task} fails").format(task=p.task))
                 return Outcome(None if tries else Bash(claim))
             aside = aside_command(p.task, role)
             if role in SETS_ASIDE and not ran(state, aside, since):
@@ -194,13 +195,14 @@ def run(state: State, p: Pipeline) -> Outcome:
             launch = Launch(role, p.task, briefs.solver_pass(p.task, overrides(state, p.task, role, since)))
             ruling = passed(launch, state)
             if ruling is not None and not restored(state, p.task, ruling.message.time, p.since):
-                return stop(f"the line `{ruling.text}` passed over its {role} pass")
+                return stop(mctx("the line `{line}` passed over its {role} pass").format(
+                    line=ruling.text, role=role))
             return Outcome(launch)
         since = a.launched
         if a.pending:
             return Outcome(None)
         if a.agent_id is None:
-            return stop(f"the {role} pass on {p.task} has no agent id")
+            return stop(mctx("the {role} pass on {task} has no agent id").format(role=role, task=p.task))
         filed = state.pass_tickets.get(a.agent_id)
         if filed is None:
             if a.reports:
@@ -211,8 +213,9 @@ def run(state: State, p: Pipeline) -> Outcome:
             told = no_report(role, a)
             if not repeated(told, state):
                 return Outcome(told)
-            return stop(f"the {role} pass {a.agent_id} replied with no path of a report with "
-                        f"a `{TICKETS_FILED}` section")
+            return stop(mctx("the {role} pass {agent} replied with no path of a report with a "
+                             "`{section}` section").format(role=role, agent=a.agent_id,
+                                                           section=TICKETS_FILED))
         ended.append((a.agent_id, a, filed))
     chain = reviews(state, p.task, ended)
     if chain is not None:
