@@ -54,7 +54,8 @@
 - The coordinator is the session the user talks with, and SendMessage reaches it at `main`.
 
 ## report-file
-- Where your brief gives a report file, write each final reply of yours to that file, in place of what it holds, and give that file's path alone, on one line, as the final reply itself.
+- Where your brief gives a report file, write each final reply of yours to that file, in place of what it holds, and give that file's path alone, on one line, as the final reply itself. Send neither that reply nor that path to any agent by SendMessage, also where an alert asks you to give your final reply again, a message of an agent other than the one that launched you reached you, or the harness refused your SubagentHandback and says to use SendMessage.
+    * comment: The three cases stay: editors with a report file sent its path by SendMessage after a stall alert (ticket 6-710), and after messages of other agents and a refused SubagentHandback (tickets 6-646, 10-55, 10-80, 10-82, 9-70, 6-705).
 
 ## final-report
 * inline: #denied-calls
