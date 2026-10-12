@@ -1,4 +1,9 @@
 + budget: 7200
+* comment: when editing this doc
+    - The coordinator loads each section by a link of its document: Routes before it acts on a user's message that asks for work, and Tickets at the ticket triggers its document gives.
+    - Acts, each with its section:
+        - Routing a user's request for work: [Routes](#routes).
+        - Filing, tracking and closing the coordinator's tickets: [Tickets](#tickets).
 
 # Request notes
 - The statements on the user's requests for work and on the tickets the coordinator files and tracks, that the coordinator reads at the triggers its document gives.

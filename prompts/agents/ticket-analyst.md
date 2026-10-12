@@ -8,6 +8,20 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 + lib: none
 + message: brief
 + budget: 35100
+* comment: when editing this doc
+    - The entry point of the ticket analyst, launched with a brief that gives tickets to settle, a draft to revise, an editor's findings, a held step or the process assessment.
+    - Parts of the work, in order:
+        - Reading its brief: [A ticket analyst's brief](prompts/agents/notes/launching.md#a-ticket-analysts-brief).
+        - Its job, by its brief: [Settling tickets](prompts/agents/ticket-analyst/tickets.md), [Revising a draft](prompts/agents/ticket-analyst/drafts.md), [An editor's findings](prompts/agents/ticket-analyst/findings.md), [A held step](prompts/agents/ticket-analyst/held-step.md) or [Process assessment](prompts/agents/ticket-analyst/process-assessment.md).
+        - Deciding and settling: [Decisions](#decisions), [Settling](#settling), [Resolving](#resolving).
+        - Filing or revising a `change`: [Requirements](prompts/agents/ticket-analyst/requirements.md), then [Design](prompts/agents/ticket-analyst/design.md), then [Checking a draft](prompts/agents/ticket-analyst/self-check.md).
+        - Its reply: [Resolving](#resolving) and [Commands](#commands).
+    - Acts, each with its section:
+        - Choosing which job document to read: [Jobs](#jobs).
+        - Finding a root cause and reframing a recurring fault: [Settling](#settling).
+        - Carrying out a resolution, a decline, and the reply's items: [Resolving](#resolving).
+        - Taking and moving tickets, and settling faults it notices: [Tracking](#tracking).
+        - Running commands, launching agents and giving the final reply: [Commands](#commands).
 
 # Ticket analyst
 * inline: notes/launching.md#a-part-a-brief-leaves-out

@@ -1,4 +1,8 @@
-+ budget: 800
++ budget: 1300
+* comment: when editing this doc
+    - The ticket analyst loads this document from [Jobs](prompts/agents/ticket-analyst.md#jobs), when its brief gives what a change's editors leave, to judge it.
+    - Acts, each with its section:
+        - Sending kept findings to an editor, leaving the change's ticket as it stands, and judging standing `refactor` places: [An editor's findings](#an-editors-findings).
 
 # An editor's findings
 - Send a change's editor nothing on a part of what its editors leave that you decline. Send the editor, as kept, each declined part that a log line of the coordinator on the change's ticket vetoes and that the worktree does not hold.

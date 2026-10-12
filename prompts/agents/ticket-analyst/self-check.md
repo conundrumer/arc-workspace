@@ -1,4 +1,8 @@
-+ budget: 800
++ budget: 1200
+* comment: when editing this doc
+    - The ticket analyst loads this document from [Jobs](prompts/agents/ticket-analyst.md#jobs), once it has written the text of a draft `change`, before it files the draft or logs its revision.
+    - Acts, each with its section:
+        - Checking the draft by the ticket reviewer's checks: [Checking a draft](#checking-a-draft).
 
 # Checking a draft
 - Check the draft by each check of [Checks](prompts/agents/ticket-reviewer.md#checks) on these, and fix each fault a check shows, before you file the draft or log its revision:

@@ -1,4 +1,14 @@
 + budget: 21400
+* comment: when editing this doc
+    - The ticket analyst loads this document by the links of its step documents, before it writes the Intent of a `change` to the agents' processes and at the process assessment; the ticket reviewer loads it by a link of its Checks, for such a `change`. Each serves judging a change to the processes against what they must achieve.
+    - Acts, each with its section, one process each, giving its outcomes and how it can fail:
+        - Assessing the processes: [Process assessment (life cycle model management)](#process-assessment-life-cycle-model-management).
+        - Stating requirements: [Requirements (stakeholder needs and requirements definition, system/software requirements definition)](#requirements-stakeholder-needs-and-requirements-definition-systemsoftware-requirements-definition).
+        - Making decisions: [Decisions (decision management)](#decisions-decision-management).
+        - Designing a change: [Design (design definition, architecture definition)](#design-design-definition-architecture-definition).
+        - Building, checking, validating and merging a change: [Implementation](#implementation), [Verification](#verification), [Validation](#validation), [Merge (integration, transition)](#merge-integration-transition).
+        - Quality assurance, measurement, risk, work control and configuration: [Quality assurance (quality assurance, incident management, problem management)](#quality-assurance-quality-assurance-incident-management-problem-management), [Measurement](#measurement), [Risk management](#risk-management), [Work control (project assessment and control)](#work-control-project-assessment-and-control), [Configuration management](#configuration-management).
+        - Solver passes and their work products: [Solver passes (implementation)](#solver-passes-implementation), [Work products](#work-products).
 
 # Process notes
 - The agents' processes, for changes and for solver passes, each in the project's terms with the name of its process in ISO/IEC/IEEE 12207 beside it, and what each must achieve, in its outcomes and in what holds in each way it can fail. The rules that achieve it stand in the documents of the agents that follow them, and where the tree does not achieve it, that gap is a finding for the process assessment.
@@ -51,6 +61,7 @@
 - Outcomes:
     - Each `change` that adds a mechanism to code has a design, made from reading the code, that gives the existing operations it uses or extends, and each new operation with its module.
     - Each `change` that adds or changes a rule or a fact in the agent-facing documents has a design, made from reading those documents, that plans each rule or fact it adds or changes against the rules and facts on the same act that its reader loads for the part of its work that needs it, so that, for each of those, the new rule or fact joins it, replaces it, retires it, or stands beside it as no exception to it.
+        - In a document under [agents](prompts/agents), the design puts each rule or fact under the act of that document's spec whose rule it joins, replaces or retires, or revises that spec.
     - Each design gives what it costs and what it gains against the goal of [The user's goals](prompts/agents/notes/decisions.md#the-users-goals) that its change serves.
     - A part whose gain its grounds do not show to exceed its cost is left out, a requirement included, and leaving out a part that serves a need the user stated is a decline.
     - An agent other than the one that wrote the design checks it before the build, against the code, or against the documents and the rules for editing them.

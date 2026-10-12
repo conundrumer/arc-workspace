@@ -1,4 +1,14 @@
 + budget: 21600
+* comment: when editing this doc
+    - Each Claude Code session and agent loads [Launching](#launching) by the link of [arc-workspace](CLAUDE.md), before it launches an agent by a call no command printed; the ticket reviewer inlines draft-outcome there too. Each agent inlines the sections under [Briefs](#briefs) that give its own brief's form, and the editors An editor's report on a change. The coordinator loads Passes on a task, Operators and While the user gives feedback by the links of its Changes section.
+    - Acts, each with its section:
+        - Launching an agent and acting on what it leaves unfinished: [Launching](#launching).
+        - Writing a brief, and reading one's own: [Briefs](#briefs), one section per form.
+        - Giving what shows a change's item holds: [An editor's report on a change](#an-editors-report-on-a-change).
+        - Launching a pass on a task: [Passes on a task](#passes-on-a-task).
+        - Sending an operator a line and taking its reply: [Operators](#operators).
+        - Batching the user's feedback: [While the user gives feedback](#while-the-user-gives-feedback).
+        - Cutting a draft's claims to its outcome: [draft-outcome](#draft-outcome).
 
 # Launching notes
 - The statements on launching an agent, that more than one entry point inlines or links.

@@ -1,4 +1,8 @@
-+ budget: 1100
++ budget: 1500
+* comment: when editing this doc
+    - The code editor loads this document from [Code editor](prompts/agents/code-editor.md), where its brief asks for a comparison with the tree before the change.
+    - Acts, each with its section:
+        - Making the before side and timing against it: [The before side](#the-before-side).
 
 # The before side
 - Where your brief or a file records the before side, compare against that record, and run nothing to make the before side.

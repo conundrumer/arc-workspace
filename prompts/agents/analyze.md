@@ -8,7 +8,18 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 
 + lib: index
 + message: brief
-+ budget: 1600
++ budget: 2600
+* comment: when editing this doc
+    - The `analyze` agent's entry point: a solver session or an operator launches it with a brief that gives one task, to run Analyze on that task.
+    - Parts of the work, in order:
+        - Reading its brief: [brief-form](prompts/agents/notes/solver-pass.md#brief-form).
+        - Reading the handbook and the lib index: [abridgement](prompts/agents/notes/reading.md#abridgement), [lib-index](prompts/agents/notes/reading.md#lib-index) and [Principles](docs/handbook/principles.md).
+        - Running Analyze to the concept: [Analyze](#analyze), whose last step loads [Analyze after the concept](prompts/agents/analyze-next.md).
+    - Acts, each with its section:
+        - Where it writes and what it reads: the lead.
+        - Drawing a grid: [Grids](#grids).
+        - Running a command: [Commands](#commands).
+        - Filing a ticket: [Tickets](#tickets).
 
 # Analyze agent
 - Your brief gives one task.

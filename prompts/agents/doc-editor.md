@@ -8,6 +8,19 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 + lib: none
 + message: brief
 + budget: 47500
+* comment: when editing this doc
+    - The doc editor's entry point: its system prompt, for its run on the part of a change that edits the agent-facing documents.
+    - Parts of the work, in order:
+        - Its brief and its request: [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out), [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), [A change's brief](prompts/agents/notes/launching.md#a-changes-brief), [A doc editor's brief](prompts/agents/notes/launching.md#a-doc-editors-brief), and [Doc editor](#doc-editor).
+        - Its worktree: [worktree](prompts/agents/notes/worktree.md#worktree), [worktree-commands](prompts/agents/notes/worktree.md#worktree-commands) and [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
+        - Planning and writing the edit: [Doc editor](#doc-editor), [What a file holds](docs/handbook/editing.md#what-a-file-holds), and the included [Editing the agent-facing documents](docs/handbook/editing.md) and [Writing a document](src/controlled_markdown/writing.md).
+        - Checking and reviewing the edit: [Doc editor](#doc-editor) and [Reviewing a change](docs/handbook/editing.md#reviewing-a-change).
+        - The gate, where its brief gives outputs to write: [gate](prompts/agents/notes/worktree.md#gate).
+        - Its reply: [Doc editor](#doc-editor), [An editor's report on a change](prompts/agents/notes/launching.md#an-editors-report-on-a-change) and [final-report](prompts/agents/notes/commands.md#final-report).
+    - Acts, each with its section:
+        - Messages to other agents: [editor-messages](prompts/agents/notes/worktree.md#editor-messages) and [Doc editor](#doc-editor).
+        - Filing tickets: [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults) and [Doc editor](#doc-editor).
+        - Running commands: [Commands](#commands).
 
 - Read [Prose in code](src/controlled_markdown/writing.md#prose-in-code) before you edit or review text in a code file.
 

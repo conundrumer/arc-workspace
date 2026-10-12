@@ -1,4 +1,7 @@
 + budget: 1800
+* comment: when editing this doc
+    - Reader: the coordinator, by a link, when a decline reaches it.
+    - Acts: judging and acting on a decline, [Declines](#declines).
 
 # Decline notes
 - The statements on a ticket analyst's decline, that the coordinator reads when a decline reaches it.

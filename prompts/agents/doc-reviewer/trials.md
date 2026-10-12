@@ -1,4 +1,8 @@
-+ budget: 5900
++ budget: 6400
+* comment: when editing this doc
+    - The doc reviewer loads this document from [Doc reviewer](prompts/agents/doc-reviewer.md), where its brief gives the number of the change's ticket, before its first review.
+    - Acts, each with its section:
+        - Launching trials of the readers a change alters, briefing them, and judging their replies: [Trials](#trials).
 
 # Trials
 - Launch a trial for each Intent item of the change's ticket that alters what an agent does at a point of its work, for each reader whose work at that point it alters, other than a `role`, `console`, `survey` or `workflow` reader, on the case that item gives, or, where it gives none, on the last entry in the session transcripts before the change's ticket was first taken where a reader whose work at that point it alters did that work, with the time of the entry just before it as the case's time. Where neither gives a case, or no transcript gives the text at the case's time of a ticket the case reads, write the case: a situation at that point of the reader's work that gives what the reader has before it and nothing of how it is to act, with the time the change's ticket was first taken as its time, and with the text of each ticket it reads written in it. In a later review, launch a trial again only for an item whose lines changed since its last trial.

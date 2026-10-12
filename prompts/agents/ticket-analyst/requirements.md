@@ -1,4 +1,8 @@
 + budget: 4000
+* comment: when editing this doc
+    - The ticket analyst loads this document from [Tracking](prompts/agents/ticket-analyst.md#tracking), when its resolution files a `change` or it revises one, to write that `change`'s Intent.
+    - Acts, each with its section:
+        - Writing the Intent, its items' traces and the coverage check that leads to [Design](prompts/agents/ticket-analyst/design.md): [Requirements](#requirements).
 
 # Requirements
 - In a `change` for speed where no profile exists, ask for one as its first deliverable.

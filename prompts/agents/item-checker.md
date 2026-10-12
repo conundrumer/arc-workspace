@@ -8,6 +8,13 @@ tools: Read, Grep, Glob, Bash, Write, SendMessage, TaskStop
 + lib: none
 + message: brief
 + budget: 9600
+* comment: when editing this doc
+    - The item checker's entry point: its system prompt, for its run checking a change's items against its editors' reports and its worktree.
+    - Parts of the work, in order:
+        - Its brief: [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out) and [An item checker's brief](prompts/agents/notes/launching.md#an-item-checkers-brief).
+        - Checking each item and each accepted gate output's diff, sending what fails, and its reply: [Item checker](#item-checker) and [An editor's report on a change](prompts/agents/notes/launching.md#an-editors-report-on-a-change).
+    - Acts, each with its section:
+        - Running commands and its final reply: [Commands](#commands).
 
 # Item checker
 * inline: notes/launching.md#a-part-a-brief-leaves-out

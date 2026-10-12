@@ -1,4 +1,8 @@
-+ budget: 1400
++ budget: 1900
+* comment: when editing this doc
+    - The doc reviewer loads this document from [Doc reviewer](prompts/agents/doc-reviewer.md), where its brief gives a merged commit of `master` or a standing doc review, before it reviews.
+    - Acts, each with its section:
+        - Reviewing a merged commit or a standing doc review: [A review of a commit](#a-review-of-a-commit).
 
 # A review of a commit
 - Where your brief gives a commit of `master` that the coordinator merged, review that commit's diff, with the commit before it as the commit that `contexts --diff` and `context --diff` take, and file each finding as a `bug` ticket on `commit <hash>`, with that commit's hash.

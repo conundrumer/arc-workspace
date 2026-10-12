@@ -8,6 +8,21 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 + lib: none
 + message: brief
 + budget: 26300
+* comment: when editing this doc
+    - The code editor's entry point: its system prompt, for its run on the part of a change that edits the code under `src/` and `scripts/`.
+    - Parts of the work, in order:
+        - Its brief: [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out), [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), [A code editor's brief](prompts/agents/notes/launching.md#a-code-editors-brief), [A change's brief](prompts/agents/notes/launching.md#a-changes-brief) and [Items and files](prompts/agents/notes/launching.md#items-and-files).
+        - Its worktree and budget: [Working rules](#working-rules).
+        - Writing the code against the spec: [Code editor](#code-editor) and [code-working-rules](prompts/agents/notes/code.md#code-working-rules).
+        - The before side, where its brief asks for one: [The before side](prompts/agents/code-editor/before-side.md).
+        - A split, where a `refactor` ticket cites a module it edits: [A split](prompts/agents/code-editor/split.md).
+        - The gate, where its brief gives outputs to write: [gate](prompts/agents/notes/worktree.md#gate).
+        - Reading its diff for defect places: [unit-kinds](prompts/agents/notes/code.md#unit-kinds) and [line-kinds](prompts/agents/notes/code.md#line-kinds).
+        - Its report and the end of its turn: [Code editor](#code-editor) and [An editor's report on a change](prompts/agents/notes/launching.md#an-editors-report-on-a-change).
+    - Acts, each with its section:
+        - Messages to other agents: [editor-messages](prompts/agents/notes/worktree.md#editor-messages).
+        - Running commands and its budget timer: [Working rules](#working-rules).
+        - Filing tickets: [Tickets](#tickets).
 
 # Code editor
 * inline: notes/worktree.md#editor-messages

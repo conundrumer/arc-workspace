@@ -1,4 +1,4 @@
-+ budget: 24200
++ budget: 25500
 
 # Editing the agent-facing documents
 - The handbook, the console's messages to a worker, the documents that say what each agent reads, and what the tools print to a session.
@@ -97,6 +97,9 @@
 - In an edit, follow the form the file's other lines show.
 - Before you edit or review a file that holds a directive other than `comment`, or that an `include` or `inline` directive of another file gives, read [Templating a document](src/controlled_markdown/templating.md).
 - A file that has editing notes opens with them, under a `* comment: when editing this doc` line. Read them before you edit the file.
+    - A document under [agents](prompts/agents) has editing notes that give its spec: the agents that load it, the part of each one's work it serves, and the acts whose rules it states, each with a link to its section, and, in an entry point, the parts of its agent's work in the order the agent meets them, each with a link to what the agent loads for it.
+    - Put each rule or fact your edit adds or changes in such a document under an act of its spec, or revise that spec.
+    - Where your edit moves, renames or splits a section, or adds or removes a link, an `inline` or an `include` that loads such a document or a section of it, revise each spec that gives it.
 - A line uses precise and conventional words, each term in the meaning the documents give it, and no contrastive structure unless the alternative must be addressed. The conventional word for a thing is the term practitioners of its discipline use for it, where one exists.
     - A line uses each word in its literal sense: `name` as a verb is for giving a thing a name, and nowhere else.
         * comment: The user's words, in the Global Style of the user's `~/.claude/CLAUDE.md`: "Use words only in their literal sense, e.g. the usages of "names" "carries" "holds" "reads" must be literal."
@@ -119,7 +122,7 @@
 - A reader's context is everything it receives, from its entry point to the last message, in the order it arrives.
 - `uv run python scripts/context.py contexts` lists the readers, and `uv run python scripts/context.py context <reader> [args]` prints one reader's context, with the argument the listing gives for that reader.
 - The `context` output leaves out [arc-workspace](CLAUDE.md), each `comment` directive with the lines under it, and the system reminders [workers.py](tools/console/solver_console/workers.py) prefixes to a console message.
-- The reader of a comment is the editor of its file, whose context is the `context agent doc-editor` output, then that file with its comments, and, for a comment in [arc-workspace](CLAUDE.md), which is read raw, each reader of that file as well.
+- The readers of a comment are the editor of its file, whose context is the `context agent doc-editor` output, then that file with its comments, and each reader whose documents have it read that file raw.
 - Review a change by reading each context that contains the changed lines, or whose reader reaches by links a section that contains them, from its entry point to the end, as the reader of that context.
     - `uv run python scripts/context.py contexts --diff <commit>`, with `git merge-base HEAD master` as the commit, lists each reader whose context the change alters or leads by links to a changed section, and under each reader, each such section outside its context, then each link on the way to such a section.
     - A reader of the change is a reader that listing gives, other than one it marks `(removed)`, whose context the change alters or that reaches a section listed under it.

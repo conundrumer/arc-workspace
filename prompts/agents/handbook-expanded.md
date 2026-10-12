@@ -6,7 +6,17 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 ---
 
 + lib: interface
-+ budget: 2600
++ budget: 4000
+* comment: when editing this doc
+    - The `handbook-expanded` agent's entry point: a session or an operator launches it for work on a task's solver, and as the editor of the part of a change in the lib or in a solver under `programs/solvers/`.
+    - Parts of the work, in order:
+        - Reading the handbook and the lib's interface: the lead and the handbook it includes.
+        - Carrying a change or solver work that a brief gives: [Carrying a change](#carrying-a-change), from its brief through its worktree and gate to its final report.
+    - Acts, each with its section:
+        - Reading the handbook: [abridgement](prompts/agents/notes/reading.md#abridgement), [citations](prompts/agents/notes/reading.md#citations).
+        - Filing a ticket: [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults).
+        - Running a command: [commands](prompts/agents/notes/commands.md#commands).
+        - A part its brief leaves out: [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out).
 
 * inline: notes/reading.md#abridgement
 

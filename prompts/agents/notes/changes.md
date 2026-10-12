@@ -1,4 +1,11 @@
 + budget: 11000
+* comment: when editing this doc
+    - The coordinator loads Carrying a change, Merging a change and A denied merge by the links of its Changes section, at the steps they give; the ticket analyst loads Findings an editor leaves by a link of its prompt, where its brief gives findings an editor left.
+    - Acts, each with its section:
+        - Having an editor write a change, and carrying it through its review and checks: [Carrying a change](#carrying-a-change).
+        - Judging the findings and items an editor leaves: [Findings an editor leaves](#findings-an-editor-leaves).
+        - Merging a change: [Merging a change](#merging-a-change).
+        - Acting on a denied merge call: [A denied merge](#a-denied-merge).
 
 # Change notes
 - The statements on carrying a change to the code or the documents from who writes it to its commit, that more than one entry point inlines or links.

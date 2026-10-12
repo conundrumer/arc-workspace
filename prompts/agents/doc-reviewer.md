@@ -8,6 +8,19 @@ tools: Read, Grep, Glob, Bash, Write, Agent, SendMessage, TaskStop
 + lib: none
 + message: brief
 + budget: 45600
+* comment: when editing this doc
+    - The doc reviewer's entry point: its system prompt, for its run reviewing a change to the agent-facing documents, a merged commit, or a standing doc review.
+    - Parts of the work, in order:
+        - Its brief: [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out) and [A doc reviewer's brief](prompts/agents/notes/launching.md#a-doc-reviewers-brief).
+        - Its worktree: [worktree](prompts/agents/notes/worktree.md#worktree), [worktree-commands](prompts/agents/notes/worktree.md#worktree-commands) and [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
+        - Trials, where its brief gives a ticket's number: [Trials](prompts/agents/doc-reviewer/trials.md).
+        - A commit or a standing review, where its brief gives one: [A review of a commit](prompts/agents/doc-reviewer/commit-review.md).
+        - The first review: [Reviewing a change](docs/handbook/editing.md#reviewing-a-change), then [Doc reviewer: second stage](prompts/agents/doc-reviewer-next.md).
+        - Sending findings, later reviews and its reply: [Doc reviewer](#doc-reviewer) and [final-report](prompts/agents/notes/commands.md#final-report).
+    - Acts, each with its section:
+        - Judging a design's cost and gain: [The user's goals](#the-users-goals).
+        - Filing tickets: [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [performance-tickets](prompts/agents/notes/tickets.md#performance-tickets), [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults) and [Doc reviewer](#doc-reviewer).
+        - Running commands: [Commands](#commands).
 
 - Read [Prose in code](src/controlled_markdown/writing.md#prose-in-code) before you review text in a code file.
 

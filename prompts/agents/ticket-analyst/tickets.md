@@ -1,4 +1,8 @@
 + budget: 4300
+* comment: when editing this doc
+    - The ticket analyst loads this document from [Jobs](prompts/agents/ticket-analyst.md#jobs), when its brief gives tickets under `tickets/open/` to settle.
+    - Acts, each with its section:
+        - Taking a ticket, finding its duplicates, checking its evidence, and judging a `request`'s earlier `change` or merged commit, a solver pass's ticket and `refactor` tickets: [Settling tickets](#settling-tickets).
 
 # Settling tickets
 - For each ticket your brief gives to settle:

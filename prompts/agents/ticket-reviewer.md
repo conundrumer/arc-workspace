@@ -8,6 +8,19 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 + lib: none
 + message: brief
 + budget: 21100
+* comment: when editing this doc
+    - The entry point of the ticket reviewer, launched with a brief that gives draft `change` tickets to review.
+    - Parts of the work, in order:
+        - Reading its brief: [A ticket reviewer's brief](prompts/agents/notes/launching.md#a-ticket-reviewers-brief).
+        - Reviewing each draft, in a later round after [A later round](prompts/agents/ticket-reviewer/later-rounds.md): [Ticket reviewer](#ticket-reviewer), [The user's goals](#the-users-goals) and [Checks](#checks).
+        - Logging findings and moving tickets: [Ticket reviewer](#ticket-reviewer) and [Tickets](#tickets).
+        - Its reply: [Commands](#commands) and [Reply](#reply).
+    - Acts, each with its section:
+        - Writing findings and suggestions and moving a draft: [Ticket reviewer](#ticket-reviewer).
+        - Checking a draft as an execution plan: [Checks](#checks).
+        - Writing log lines and filing tickets: [Tickets](#tickets).
+        - Running commands and giving the final reply: [Commands](#commands).
+        - What the reply gives: [Reply](#reply).
 
 # Ticket reviewer
 * inline: notes/launching.md#a-ticket-reviewers-brief
@@ -39,6 +52,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     - A `change` to the agents' processes, as [Process notes](prompts/agents/notes/process.md) gives it, gives in its Motivation an outcome of those notes, and serves it.
     - A `change` that adds a mechanism to code has a `Design`, each existing operation that design gives does in the code what the design uses it for, no operation in the code computes what a new one it gives computes, and the Scope covers each file that design gives.
     - A `change` that adds or changes a rule or a fact in the agent-facing documents has a `Design` that gives, for each rule or fact, each rule and fact of the documents on the same act that its reader loads for the part of its work the design gives, no rule that design leaves standing beside the new one is an exception to it, no existing line states what a line that design gives states, each such line stands, by the rules of [Editing the agent-facing documents](docs/handbook/editing.md), in the section whose subject it is, and each of its readers loads that section for the part of its work the design gives, each line, or words in a line, that the design adds to stop a reader's failure meets the observed-failure test of [What a file holds](docs/handbook/editing.md#what-a-file-holds) by the failure the `change` cites under its `Grounds`, and the Scope covers each file that design gives.
+        - For a rule or fact in a document under [agents](prompts/agents), the `Design` leaves no rule standing beside it, and gives the act it falls under of the spec in that document's editing notes, which you read in the file, and a revision of that spec gives the part of the reader's work that needs the new act and why no act's rule covers it.
     - The operator can carry out each instruction under its documents: each agent, tool, permission and name the instruction relies on exists.
     - A rule's stated scope covers the readers the draft means it for, and no others.
     - Each item of the Intent is a requirement, as [Launching](prompts/agents/notes/launching.md#launching) gives it.

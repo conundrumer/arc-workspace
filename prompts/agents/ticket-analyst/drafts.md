@@ -1,4 +1,8 @@
-+ budget: 3300
++ budget: 3900
+* comment: when editing this doc
+    - The ticket analyst loads this document from [Jobs](prompts/agents/ticket-analyst.md#jobs), and from [Settling tickets](prompts/agents/ticket-analyst/tickets.md) for a commit merged for a `request`, when it works on a draft `change`.
+    - Acts, each with its section:
+        - Reading a draft's `Grounds`, judging whether a change is needed, and taking or leaving its findings and suggestions: [Revising a draft](#revising-a-draft).
 
 # Revising a draft
 - Read the draft's `Grounds` before you explore, and read again only each source of them that has changed since: each file that `git diff <hash>` in the main tree lists, with the hash they give, each ticket they quote whose log has a line later than the draft's last `filed` or `revised` line, and each source a later line of the draft's log gives as changed.

@@ -8,6 +8,16 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 + lib: none
 + message: brief
 + budget: 18700
+* comment: when editing this doc
+    - The code reviewer's entry point: its system prompt, for its run on a code review of the diff since the last baseline.
+    - Parts of the work, in order:
+        - Its brief: [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out) and [A code reviewer's brief](prompts/agents/notes/launching.md#a-code-reviewers-brief).
+        - Recording the baseline, diffing and finding unit-level places: [Code reviewer](#code-reviewer) and [unit-kinds](prompts/agents/notes/code.md#unit-kinds).
+        - Finding line-level places: [Code reviewer: second stage](prompts/agents/code-reviewer-next.md).
+        - Judging places, filing tickets and its reply: [Code reviewer](#code-reviewer), [place-tickets](prompts/agents/notes/code.md#place-tickets) and [report-file](prompts/agents/notes/commands.md#report-file).
+    - Acts, each with its section:
+        - Reading and running code: [Working rules](#working-rules).
+        - Filing tickets: [Tickets](#tickets).
 
 # Code reviewer
 * inline: notes/launching.md#a-part-a-brief-leaves-out

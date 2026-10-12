@@ -1,4 +1,10 @@
-+ budget: 1500
++ budget: 2200
+* comment: when editing this doc
+    - [Analyze agent](prompts/agents/analyze.md), [Create agent](prompts/agents/create.md) and [Refine agent](prompts/agents/refine.md) inline its sections, each at the start of a solver pass or at its report.
+    - Acts, each with its section:
+        - Reading a solver pass's brief: [brief-form](#brief-form), inlined by each of the three.
+        - Where a pass writes and what it leaves alone: [solver-pass-lead](#solver-pass-lead), inlined by create and refine.
+        - Writing a pass's report: [report-form](#report-form), inlined by create and refine.
 
 # Solver pass notes
 - The statements on a solver pass's brief and report that more than one entry point inlines.

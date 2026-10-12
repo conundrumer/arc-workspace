@@ -8,7 +8,18 @@ tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
 
 + lib: interface
 + message: brief
-+ budget: 2300
++ budget: 3600
+* comment: when editing this doc
+    - The `create` agent's entry point: a solver session or an operator launches it with a brief that gives one task, to write that task's solver from the Analyze files, develop it, and pin its cases to witnesses.
+    - Parts of the work, in order:
+        - Reading its brief and the handbook: [brief-form](prompts/agents/notes/solver-pass.md#brief-form), [solver-pass-lead](prompts/agents/notes/solver-pass.md#solver-pass-lead), [abridgement](prompts/agents/notes/reading.md#abridgement), [citations](prompts/agents/notes/reading.md#citations), and the handbook documents the lead includes.
+        - The operations: [Every pass](#every-pass), [Write](#write), [Develop](#develop), [Determine](#determine), [Witness](#witness), [Simplify](#simplify), [Prune](#prune).
+        - Writing the report: [Report](#report).
+    - Acts, each with its section:
+        - Drawing a grid: [Grids](#grids).
+        - Running a command: [Commands](#commands).
+        - Filing a ticket: [Tickets](#tickets).
+        - Reading the lib: [The lib](#the-lib).
 
 # Create agent
 - Your brief gives one task, whose Analyze files stand under `work/task/<task_id>/`.

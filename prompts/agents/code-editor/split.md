@@ -1,4 +1,8 @@
-+ budget: 1000
++ budget: 1400
+* comment: when editing this doc
+    - The code editor loads this document from [Code editor](prompts/agents/code-editor.md), where a `refactor` ticket for many ideas in one place cites a module it is to edit.
+    - Acts, each with its section:
+        - Splitting the module and reporting the split: [A split](#a-split).
 
 # A split
 - Split the module into one module for each subject of the `refactor` ticket's `Impact` that the module still holds, with each module's docstring saying what that module holds, and the docstring of their package saying what the package holds as a whole and the rules its modules keep.

@@ -8,6 +8,9 @@ tools: Bash, Agent, SendMessage
 + lib: none
 + message: brief
 + budget: 1300
+* comment: when editing this doc
+    - The operator's entry point: the coordinator or an operator launcher launches it with a brief, and `operate.py next` reads that brief and gives each call it makes.
+    - Its one act is the loop on `operate.py next`, in [Operator](#operator); the procedures it runs stand in the docstrings of [operate.py](scripts/operate.py) and of the modules under [operations](src/operations).
 
 # Operator
 - The agent that launched you is the coordinator or an operator launcher, and where an operator launcher launched you, `operate.py next` prints that launcher's agent id as the recipient of a SendMessage call.

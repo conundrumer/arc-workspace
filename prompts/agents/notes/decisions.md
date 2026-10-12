@@ -1,4 +1,13 @@
 + budget: 22200
+* comment: when editing this doc
+    - The ticket analyst inlines [Decisions](#decisions) whole, for resolving a ticket; the ticket reviewer and the doc reviewer inline The user's goals, for weighing a design or a change. The coordinator loads Decisions, The user's part and Defaults by the links of its Decisions section, before it makes a decision or ends a turn with one. Process notes, the ticket analyst's step documents and the coordinator's change notes link sections of it.
+    - Acts, each with its section:
+        - Weighing what a decision serves: [The user's goals](#the-users-goals).
+        - Reading a rule by its intent: [Rule and intent](#rule-and-intent).
+        - Making a decision: [How a decision is made](#how-a-decision-is-made), with [Decisions on solver work](#decisions-on-solver-work) and [Decisions on the agents' documents](#decisions-on-the-agents-documents) for those subjects.
+        - Bringing a decision to the user: [The user's part](#the-users-part).
+        - Trading cost, time and quality: [The user's preferences](#the-users-preferences).
+        - Giving a decision's default and carrying it out: [Defaults](#defaults).
 
 # Decision notes
 - The user's goals, how a decision on the solver tools or the agents' documents is made, and which decisions reach the user.

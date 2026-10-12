@@ -1,4 +1,13 @@
 + budget: 8600
+* comment: when editing this doc
+    - Readers: each agent that files tickets inlines the sections for its work; the coordinator links them from [Tickets](prompts/agents/notes/requests.md#tickets); the ticket analyst and the ticket reviewer link Change tickets.
+    - Acts, each with its section:
+        - A solver pass's tickets: [pass-tickets](#pass-tickets).
+        - Filing a ticket: [Ticket files](#ticket-files), [Ticket fields](#ticket-fields).
+        - A `performance` ticket: [performance-tickets](#performance-tickets).
+        - A noticed fault: [Noticed faults](#noticed-faults).
+        - Finding, moving and closing a ticket: [Tracking](#tracking).
+        - A `change` ticket's fields: [Change tickets](#change-tickets).
 
 # Ticket notes
 - The statements on filing and tracking a ticket that more than one entry point inlines or links.

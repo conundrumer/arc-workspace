@@ -1,4 +1,14 @@
 + budget: 9800
+* comment: when editing this doc
+    - Each agent whose tools include `Bash` inlines [commands](#commands), for running, waiting on and ending its commands; each agent that gives a final reply to its launcher inlines [final-report](#final-report), and the code reviewer [report-file](#report-file). The doc editor and the ticket analyst load Background agents by a link, where a command prints an Agent call.
+    - Acts, each with its section:
+        - Running a command: [commands](#commands).
+        - Waiting on a command: [waiting-on-commands](#waiting-on-commands).
+        - Ending a command: [ending-commands](#ending-commands).
+        - Launching a background agent a command prints: [Background agents](#background-agents).
+        - Reporting a denied call: [denied-calls](#denied-calls).
+        - Waiting on an agent resumed by SendMessage: [resumed-agents](#resumed-agents).
+        - Giving the final reply: [final-report](#final-report), with [coordinator](#coordinator) and [report-file](#report-file).
 
 # Command notes
 - The statements on commands, and on sending a final reply, that more than one entry point inlines.

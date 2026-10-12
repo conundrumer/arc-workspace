@@ -1,4 +1,7 @@
 + budget: 1400
+* comment: when editing this doc
+    - Reader: the coordinator, by a link, before it launches an agent on cards.
+    - Acts: launching that agent, [Cards](#cards).
 
 # Card notes
 - The statements on cards, that the coordinator reads before it launches or resumes an agent on cards.

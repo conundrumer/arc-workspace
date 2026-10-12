@@ -1,4 +1,12 @@
 + budget: 5900
+* comment: when editing this doc
+    - Readers: the editors of a change and the doc reviewer inline its sections, the ticket analyst and the ticket reviewer the one on another agent's worktree, and the coordinator links that one.
+    - Acts, each with its section:
+        - Later findings and requests: [editor-messages](#editor-messages).
+        - Finding the worktree: [worktree](#worktree).
+        - Running commands there: [worktree-commands](#worktree-commands).
+        - Another agent's worktree: [Re-invoked in another agent's worktree](#re-invoked-in-another-agents-worktree).
+        - Writing accepted gate outputs: [gate](#gate).
 
 # Worktree notes
 - The statements on working in a worktree, that more than one entry point inlines or links.
