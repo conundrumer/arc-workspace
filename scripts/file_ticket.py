@@ -29,7 +29,7 @@ importable(checkout.scripts())
 
 from ticket_files import FIELD, NAME_FORM, TicketName, ticket_path, ticket_status  # noqa: E402
 from ticket_form import (DEFAULT_PRIORITY, DESIGN, LOG, LOG_SECTION, MECHANICAL,  # noqa: E402
-                         RETIRED, checked_kind, section, sections_example, title_line)
+                         RETIRED, checked_kind, section, sections_example, ticket_kind, title_line)
 from ticket_log import (AGENT_ID, CLOSED_BY, SESSION_ID, UNBLOCKED_BY, VALIDATING,  # noqa: E402
                         Wait,
                         log_moves, logged, read_ticket, status_of)
@@ -374,7 +374,7 @@ def editors_command(ref: str, editor: str, agent: str, agent_id: str) -> Path:
     path = ticket_path(tickets, number)
     text = read_ticket(path)
     fields = front(text)
-    if fields.get("kind") != Kind.CHANGE or ticket_status(path) is not Status.ASSIGNED:
+    if ticket_kind(text) != Kind.CHANGE or ticket_status(path) is not Status.ASSIGNED:
         raise Refused(mctx("{path} is no `{change}` that stands under `{assigned}`").format(
             path=path, change=Kind.CHANGE, assigned=Status.ASSIGNED))
     given = editors_field(fields)
