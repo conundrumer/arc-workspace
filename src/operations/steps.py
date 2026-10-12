@@ -26,12 +26,15 @@ class Launch:
     (`Role.model`). `items` is the
     number of items a brief that gives several items of the same work
     gives (`briefs.ITEM_LINES`), and None for any other brief; it stays
-    out of the step's key, which its brief already fixes."""
+    out of the step's key, which its brief already fixes. `reread` is the
+    mark of the `Undecided` step a launch of a ticket analyst is on, and
+    stays out of the step's key and its equality."""
     role: Role
     subject: str
     brief: str
     model: Model | None = None
     items: int | None = field(default=None, repr=False)
+    reread: bool = field(default=False, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -81,9 +84,13 @@ class Undecided:
     same at each read of the same state. `given` holds the texts that a
     message by which an operator gave the coordinator this step holds each
     of, in a form other than `UNDECIDED` and `what`, where the step has
-    such a form."""
+    such a form. `reread` is whether a reply that lands during the read of
+    the state can end the hold, so the command reads the state once more
+    before it launches the step's analyst (`scripts/operate.py`
+    `operator_step`); it stays out of the step's key and its equality."""
     what: str
     given: tuple[str, ...] = field(default=(), repr=False)
+    reread: bool = field(default=False, repr=False, compare=False)
 
 
 UNDECIDED = "undecided:"

@@ -15,8 +15,9 @@ finding, and that reviewer is asked once to review the change again, and
 the review is held where it has not replied since, unless that reply
 opens with `no finding stands` and its `reports.WORKTREE` line gives the
 `tracker.fingerprint` the worktree has now, as then the worktree is in
-the state that reply read. A reply in any other form holds the
-review. The command launches no editor for a reviewer's findings: that
+the state that reply read. That reply can land while the command reads
+the state, so the command reads the state once more before it launches
+an analyst on that hold. A reply in any other form holds the review. The command launches no editor for a reviewer's findings: that
 reviewer sends them to the editors of its brief.
 
 A doc editor that `changes` launches on a change's `mctx` fragments after
@@ -24,6 +25,7 @@ the reviewer replied neither launched that reviewer nor got a message from
 it, so its report after that reply is among those the review must
 follow."""
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Literal
 
@@ -60,15 +62,21 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
     if reply is not None and no_finding(r):
         return False
     if reply is None:
-        return review_decided(state, t, w, here, unreplied(r, t))
+        return unreplied(state, t, w, here, r)
     return review_decided(state, t, w, here, mctx(
         "the reply of doc reviewer {agent} on change {number} does not open with "
         "`{no_finding}`").format(agent=r.agent_id, number=t.number, no_finding=NO_FINDING))
 
 
-def unreplied(r: Agent, t: Ticket) -> str:
-    return mctx("doc reviewer {agent} of change {number} has not replied since its editors "
-                "ended").format(agent=r.agent_id, number=t.number)
+def unreplied(state: State, t: Ticket, w: Path, here: list[Agent],
+              r: Agent) -> Step | Literal[False]:
+    """The step on a review whose doc reviewer `r` has not replied since
+    its editors ended. A reply of `r` can land while the state is read, so
+    its held step is marked to be read again (`steps.Undecided.reread`)."""
+    step = review_decided(state, t, w, here, mctx(
+        "doc reviewer {agent} of change {number} has not replied since its editors "
+        "ended").format(agent=r.agent_id, number=t.number))
+    return replace(step, reread=True) if isinstance(step, Undecided) else step
 
 
 def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, since: float,
@@ -94,7 +102,7 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
     message = messages.review_again(since)
     if r.agent_id is not None and not sent(state, r.agent_id, message):
         return Send(r.agent_id, message)
-    return review_decided(state, t, w, here, unreplied(r, t))
+    return unreplied(state, t, w, here, r)
 
 
 def review_decided(state: State, t: Ticket, w: Path, here: list[Agent],
