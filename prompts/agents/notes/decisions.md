@@ -12,14 +12,14 @@
 
 ### Rule and intent
 - [Principles](docs/handbook/principles.md) is the theory.
-- [Procedure](docs/handbook/procedure.md), [Solver file](docs/handbook/solver-file.md), the text the tool prints, [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md), [The user's preferences](#the-users-preferences) and the user's other past words are support: they show what was intended, and none of them is a rule on its own.
+- [Procedure](docs/handbook/procedure.md), [Solver file](docs/handbook/solver-file.md), the text the solver tool, `scripts/run_dl.py`, prints, [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md), [The user's preferences](#the-users-preferences) and the user's other past words are support: they show what was intended, and none of them is a rule on its own.
     - Implement no line of them that has no principle behind it, and decide its question as [How a decision is made](#how-a-decision-is-made) gives.
 - The agents' definitions, the spec, and the lines after the goals are support too. The spec of a code change is the docstrings of the modules it touches. Where a line, read for its intent, works against a goal, have it rewritten.
 - Have a support line added only where a rule is missing.
 - Have a fix of agent-facing text that misled an agent change the line that misled it. Agent-facing text is each text an agent reads: the documents, the briefs, the text a tool prints, its `--help` included, and a hook's message.
 
 ### How a decision is made
-- Where a decision touches a solver, the lib, the tool or what it reports, the witnesses, a solver pass, [Principles](docs/handbook/principles.md) or [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md), read [Decisions on solver work](prompts/agents/notes/decisions.md#decisions-on-solver-work) as well.
+- Where a decision touches a solver, the lib, the solver tool or what it reports, the witnesses, a solver pass, [Principles](docs/handbook/principles.md) or [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md), read [Decisions on solver work](prompts/agents/notes/decisions.md#decisions-on-solver-work) as well.
 - Where a decision touches a document an agent or a session reads, read [Decisions on the agents' documents](prompts/agents/notes/decisions.md#decisions-on-the-agents-documents) as well.
 - A ground is a source that is quotable or checkable. Cite it so that every reader of your text can check it: by a path that reader can open, a command it can run, or the line quoted, and a bundled skill's file by the absolute path of the copy that invoking the skill extracts under `/private/tmp/claude-<uid>/bundled-skills/`.
 - Before you state a reason, verify each claim it depends on. State with each reason its ground, or where it has none, its assumption.
@@ -36,7 +36,7 @@
 - Carry out no resolution whose need no output depends on, and anticipate only a practice that prevents a bad situation of the kind that prompted past changes, never a mechanical gap in the tooling.
 - Decide by [Principles](docs/handbook/principles.md) where it speaks, read for its intent: a line about one instance of a kind covers the kind when its reason does.
 - Where it is silent, follow the intent the support shows.
-- Where neither settles what the tool does, have the tool report an `undecided` finding.
+- Where neither settles what the solver tool does, have the solver tool report an `undecided` finding.
 - A default's discretion tier is how far it goes beyond what its grounds determine:
     1. A ground states it outright, or it fixes a bug.
     2. A ground determines it through a reading of the user's intent or of an existing convention, and that reading admits no other.
@@ -77,7 +77,7 @@
     3. Where its loss is time or token cost alone, or nothing, accept it with no change, and close its ticket `wontfix` with a note that gives that loss in dollars, its token cost as `uv run python scripts/profile_runs.py <agent id> ...` prints it for the runs the fault spent and its time at the rate above, beside the cheapest change that removes the fault with that change's cost in dollars, or beside the statement that no change removes it with what removed its cause where something did, unless the loss you see in this instance and in the earlier tickets of the fault exceeds what the cheapest change costs.
 - Prefer simple mechanisms: watch an agent by reading what it does, with no classifier.
 - Think a design through for how it can fail before it is implemented.
-- Take an agent's position: review the tool by reading a pass's transcript call by call, check a claim that an agent wasted work against its procedure, and where an agent departed from a rule, ask it about that departure before its document or the tool changes, and take its answer as the evidence.
+- Take an agent's position: review the solver tool by reading a pass's transcript call by call, check a claim that an agent wasted work against its procedure, and where an agent departed from a rule, ask it about that departure before its document or the solver tool changes, and take its answer as the evidence.
     - Where you ask an agent about a choice it made, ask it to lay out its defense of the choice as a settled position, quoting the lines of its documents or its brief that the choice rests on, and ask for nothing that resembles an account of how it reached the choice or of what it recalls of its run.
 - The tooling serves the agents: decide each choice on its design, and each fix that removes an outdated rule for efficiency, without the user. The user reads no code other than solver code, and no tool output.
 - The solver console, retro, the `.claude/workflows` scripts, the role prompts and the `/session` skill are deprecated: note each as deprecated, remove none, and let none get in the way.
@@ -90,8 +90,8 @@
 - Choose a label for its use in deciding how to act on what it labels.
 
 ## Decisions on solver work
-- The agents produce good solvers through the arrangement around them, which is made so that the tool computes what the principles define, reports what an agent can act on, leaves judgments to the agent, and never reports what is not so.
-- The solver passes test that arrangement, and what a pass shows of a fault in it is evidence for a change to the documents, the tool or the pass structure. A behavior of the harness is no part of that arrangement.
+- The agents produce good solvers through the arrangement around them, which is made so that the solver tool computes what the principles define, reports what an agent can act on, leaves judgments to the agent, and never reports what is not so.
+- The solver passes test that arrangement, and what a pass shows of a fault in it is evidence for a change to the documents, the solver tool or the pass structure. A behavior of the harness is no part of that arrangement.
 - Build the checker to change without breaking as the handbook changes.
 - Where a default breaks a line of [Principles](docs/handbook/principles.md), the decision becomes whether to amend that line.
 - Where a check or survey runs slowly, change how its runs are made and batched before you reconsider what it computes.

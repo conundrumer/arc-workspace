@@ -193,8 +193,9 @@ def revise_lines(numbers: list[str], last: list[str]) -> list[str]:
     lines = [REVISE.format(numbers=item_list(numbers))]
     if last:
         lines.append(mctx(
-            "The revision of {last} is the last: the draft then opens with no further ticket "
-            "review, and the change's own review checks what the change writes.").format(
+            "The revision of {last} is the last: once it is written, the operator moves the draft to "
+            "`tickets/open/` with no further ticket review, and the change's own review checks "
+            "what the change writes.").format(
                 last=", ".join(last)))
     return lines
 
