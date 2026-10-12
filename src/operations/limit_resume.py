@@ -9,8 +9,10 @@ from controlled_markdown import mctx
 from operations.state import State
 from operations.steps import Send, Step
 
-RESUME = mctx("The usage limit stopped you, and it no longer stops calls. Carry on your "
-              "work from where it stopped.")
+RESUME = mctx("""
+    - The usage limit stopped you, and it no longer stops calls.
+    - Carry on your work from where it stopped.
+    """)
 
 
 def step(state: State) -> Step | None:

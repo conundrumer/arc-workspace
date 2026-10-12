@@ -74,13 +74,13 @@ def bound_reason(timeout: str) -> str:
     `FOREGROUND_MS`."""
     from controlled_markdown import mctx
 
-    return mctx(
-        "Blocked: this foreground Bash call has a timeout of {timeout} ms, "
-        "over the bound of {bound} ms, whatever timeout your documents give. "
-        "Run the same call again with a timeout of at most {bound} ms. Where "
-        "the command outlasts it, the harness moves the command to the "
-        "background, and you wait on it as your documents give."
-    ).format(timeout=timeout, bound=FOREGROUND_MS)
+    return "\n".join([
+        mctx("Blocked: this foreground Bash call has a timeout of {timeout} ms, over the "
+             "bound of {bound} ms, whatever timeout your documents give."),
+        mctx("Run the same call again with a timeout of at most {bound} ms."),
+        mctx("Where the command outlasts that timeout, the harness moves the command to "
+             "the background, and you wait on it as your documents give."),
+    ]).format(timeout=timeout, bound=FOREGROUND_MS)
 
 
 def bound_denied(result: str) -> bool:

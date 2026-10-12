@@ -36,10 +36,10 @@ PRE_TOOL_USE = "pre-tool-use"
 def stop_reason(command: str) -> str:
     from controlled_markdown import mctx
 
-    return mctx(
-        "Blocked: the last result of `{command}` is not your final reply. Run "
-        "`{command}` again, and make the call it prints."
-    ).format(command=command)
+    return "\n".join([
+        mctx("Blocked: the last result of `{command}` is not your final reply."),
+        mctx("Run `{command}` again, and make the call it prints."),
+    ]).format(command=command)
 
 
 def check(hook: dict[str, Any]) -> str | None:

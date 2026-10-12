@@ -47,11 +47,10 @@ def reply_only(inp: dict[str, Any]) -> bool:
 def past_reason(context: int, command: str) -> str:
     from controlled_markdown import mctx
 
-    return mctx(
-        "Blocked: your context is {context:,} tokens, past the "
-        "bound of {bound:,} tokens. Run `{command}` again: it prints "
-        "how you end."
-    ).format(context=context, bound=CONTEXT_BOUND, command=command)
+    return "\n".join([
+        mctx("Blocked: your context is {context:,} tokens, past the bound of "
+             "{bound:,} tokens.").format(context=context, bound=CONTEXT_BOUND),
+        mctx("Run `{command}` again: it prints how you end.").format(command=command)])
 
 
 def check(hook: dict[str, Any]) -> str | None:

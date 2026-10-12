@@ -228,10 +228,11 @@ def no_report(role: Role, a: Agent) -> Undecided:
     file with a `## Tickets filed` section."""
     r = a.last_report
     quoted = "\n".join(f"> {line}" for line in (r.text if r else "").strip().splitlines())
-    return Undecided(mctx("the {role} pass {agent} replied with no path of a report that has "
-                          "a `{section}` section, so its pipeline on {task} stops. Its "
-                          "reply:").format(role=role, agent=a.agent_id, section=TICKETS_FILED,
-                                           task=a.subject) + "\n" + quoted)
+    return Undecided("\n".join([
+        mctx("the {role} pass {agent} replied with no path of a report that has a "
+             "`{section}` section, so its pipeline on {task} stops.").format(
+                 role=role, agent=a.agent_id, section=TICKETS_FILED, task=a.subject),
+        mctx("Its reply:"), quoted]))
 
 
 def end(state: State, p: Pipeline, restore: str, reason: str | None) -> Outcome:

@@ -7,8 +7,10 @@ from operations.reports import FOR_COORDINATOR, TICKETS_FILED
 from ticketing.times import utc_stamp
 
 
-REVIEW_AGAIN = mctx("Your reply at {time} came before the last report of an editor of the "
-                    "change. Review the change again.")
+REVIEW_AGAIN = mctx("""
+    - Your reply at {time} came before the last report of an editor of the change.
+    - Review the change again.
+    """)
 
 
 def review_again(time: float) -> str:
@@ -60,8 +62,10 @@ def go_on(time: float, minutes: float) -> str:
     return "\n".join([GO_ON.format(time=utc_stamp(time)), BUDGET.format(minutes=f"{minutes:g}")])
 
 
-RESTATE = mctx("What you sent {reader} at {time} is in no form its command reads, so the "
-               "command cannot place it. Send it again, in full, in this form: {form}")
+RESTATE = mctx("""
+    - What you sent {reader} at {time} is in no form its command reads, so the command cannot place it.
+    - Send it again, in full, in this form: {form}
+    """)
 
 PASS_FORM = mctx("a reply that is the path of your report file alone, on one line, where that "
                  "report has a `{heading}` section.").format(heading=TICKETS_FILED)

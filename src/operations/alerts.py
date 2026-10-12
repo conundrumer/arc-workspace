@@ -123,13 +123,17 @@ READING = {k: v.format(factor=HUNG_FACTOR, repeats=REPEATS) for k, v in {
 
 LEAD = mctx("A monitor's alert:")
 BUDGET_MESSAGE = briefs.AT_BUDGET
-HUNG_MESSAGE = mctx("That call may have ended by the time you read this. Where it still runs, "
-                    "check whether it makes progress, and end it where it does not. Do not run "
-                    "it again unchanged.")
+HUNG_MESSAGE = mctx("""
+    - That call may have ended by the time you read this.
+    - Where it still runs, check whether it makes progress, and end it where it does not.
+    - Do not run it again unchanged.
+    """)
 REPEATED_MESSAGE = mctx("Run that command again only once something has changed that can "
                         "change its result.")
-STALL_MESSAGE = mctx("Where your work is done, give your final reply again. Otherwise, carry on "
-                     "your work.")
+STALL_MESSAGE = mctx("""
+    - Where your work is done, give your final reply again.
+    - Where it is not, carry on your work.
+    """)
 
 
 def to_agent(kind: AlertKind, agent: str) -> str:

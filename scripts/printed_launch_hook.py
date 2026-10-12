@@ -132,20 +132,20 @@ def first_at(hook: dict[str, Any], records: str, agent: str, call: str) -> bool:
 def no_launch_reason(command: str, action: Action) -> str:
     from controlled_markdown import mctx
 
-    return mctx(
-        "Blocked: the last result of `{command}` gives no whole launch. Make "
-        "only the launch that `{action}` prints, and run `{action}` with no pipe."
-    ).format(command=command, action=action)
+    return "\n".join([
+        mctx("Blocked: the last result of `{command}` gives no whole launch."),
+        mctx("Make only the launch that `{action}` prints, and run `{action}` with no "
+             "pipe."),
+    ]).format(command=command, action=action)
 
 
 def differ_reason(command: str, diffs: list[tuple[str, str | None, str | None]]) -> str:
     from controlled_markdown import mctx
 
-    head = mctx(
-        "Blocked: this Agent call differs from the launch the last result of "
-        "`{command}` prints. Make the call again with each parameter as "
-        "printed:"
-    ).format(command=command)
+    head = "\n".join([
+        mctx("Blocked: this Agent call differs from the launch the last result of "
+             "`{command}` prints.").format(command=command),
+        mctx("Make the call again with each parameter as printed:")])
     none = mctx("none")
     lines = [f"- `{name}`: printed `{none if want is None else want}`, given "
              f"`{none if got is None else got}`" for name, want, got in diffs]

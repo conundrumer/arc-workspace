@@ -21,22 +21,21 @@ HOOK = "printed_send_hook"
 def no_send_reason(command: str) -> str:
     from controlled_markdown import mctx
 
-    return mctx(
-        "Blocked: the last result of `{command}` gives no whole SendMessage "
-        "call. Send only the message that `next` prints, and run `next` with "
-        "no pipe."
-    ).format(command=command)
+    return "\n".join([
+        mctx("Blocked: the last result of `{command}` gives no whole SendMessage "
+             "call.").format(command=command),
+        mctx("Send only the message that `next` prints, and run `next` with no pipe.")])
 
 
 def differ_reason(command: str, to: str, message: str) -> str:
     from controlled_markdown import mctx
     from operations.printing import send_text
 
-    head = mctx(
-        "Blocked: this SendMessage call differs from the one the last result "
-        "of `{command}` prints. Make the call again with the printed `to`, "
-        "and a message that opens with the printed message:"
-    ).format(command=command)
+    head = "\n".join([
+        mctx("Blocked: this SendMessage call differs from the one the last result of "
+             "`{command}` prints.").format(command=command),
+        mctx("Make the call again with the printed `to`, and a message that opens with "
+             "the printed message:")])
     return "\n".join([head, send_text(to, message)])
 
 

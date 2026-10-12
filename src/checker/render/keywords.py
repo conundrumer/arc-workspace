@@ -11,7 +11,7 @@ SKIPPED_REWRITE = mctx("skipped {sha}: a mechanical rewrite, touching {n} "
                        "solvers of {total}, more than the {share:.0%} share")
 WINDOW_REWRITE = mctx("the window holds a corpus-wide rewrite: its commits "
                       "touch {n} solvers of {total}, more than the "
-                      "{share:.0%} share. The scope is the {kept} solvers "
+                      "{share:.0%} share, so the scope is the {kept} solvers "
                       "added since then.")
 IN_SCOPE = mctx("{n} solvers in scope.")
 SIZE_ROW = "{count}\t{stem}"

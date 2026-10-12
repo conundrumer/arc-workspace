@@ -120,13 +120,11 @@ def _takes_brief(document: nm.Node) -> bool:
 
 def agent_prompt(handbook: str) -> str:
     """The handbook agent's system prompt over a rendering of the handbook."""
-    return mctx(
-        "Your message is a brief, or a role and then its brief. A role is "
-        "the text of a file under `{roles}/`, as `uv run python "
-        "scripts/context.py role <stem>` prints it below its first line. "
-        "Where your message opens with a role, follow the role, and take the "
-        "rest of the message as its brief.").format(
-            roles=repo_label(ROLE_DIR)) + "\n\n" + handbook
+    return mctx("""
+        - Your message is a brief, or a role and then its brief.
+            - A role is the text of a file under `{roles}/`, as `uv run python scripts/context.py role <stem>` prints it below its first line.
+        - Where your message opens with a role, follow the role, and take the rest of the message as its brief.
+        """).format(roles=repo_label(ROLE_DIR)) + "\n\n" + handbook
 
 
 def agent_definition(document: nm.Node, handbook: str) -> str:

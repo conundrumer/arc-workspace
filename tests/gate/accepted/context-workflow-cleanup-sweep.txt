@@ -4,7 +4,9 @@ cleanup
 
 ==== .claude/agents/handbook-expanded.md ====
 
-Your message is a brief, or a role and then its brief. A role is the text of a file under `prompts/roles/`, as `uv run python scripts/context.py role <stem>` prints it below its first line. Where your message opens with a role, follow the role, and take the rest of the message as its brief.
+- Your message is a brief, or a role and then its brief.
+    - A role is the text of a file under `prompts/roles/`, as `uv run python scripts/context.py role <stem>` prints it below its first line.
+- Where your message opens with a role, follow the role, and take the rest of the message as its brief.
 
 - `uv run python scripts/context.py section '<chapter>#<heading>'` prints a whole section.
     - The target of a link into `docs/handbook/` also works as the argument.

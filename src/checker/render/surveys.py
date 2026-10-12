@@ -560,8 +560,10 @@ def render_determination_plan(solver: Solver, result: PlanResult,
             lines.append("  " + mctx(
                 "A Position parameter's candidates are the cells of the "
                 "frame its stored value implies, so its count follows the "
-                "frame the parse produces. A Box or Offset parameter's count "
-                "follows the largest height or width of the task's grids."))
+                "frame the parse produces."))
+            lines.append("  " + mctx(
+                "A Box or Offset parameter's count follows the largest "
+                "height or width of the task's grids."))
     section(mctx("determined"), list(by_parameter(classes.done)))
     if not isinstance(differing, frozenset):
         section(mctx("the determination run gives no result, so whether "

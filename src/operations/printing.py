@@ -54,7 +54,7 @@ def printed_end_turn(text: str) -> bool:
     return printed_line(re.escape(END_TURN), text)
 
 
-KEY_LINE = mctx("Step key: {key}. After the call below, run `{command}`.")
+KEY_LINE = mctx("Step key {key}: after the call below, run `{command}`.")
 
 
 def key_line(step: Step, agent: str, action: Action) -> str:
