@@ -298,9 +298,9 @@ class Found:
     """At every case the rows hold, and where no column carries the case
     at every row, the value is stored already (`StoredAlready`), or it is
     stored parameters' value read back (`reads_back`)."""
-    reads_back: tuple[str, ...] = ()
-    """The stored parameters whose rows, or the product of whose rows,
-    the value is on every input under a renaming of columns
+    reads_back: tuple[tuple[str, ...], ...] = ()
+    """Each set of stored parameters whose rows, or the product of whose
+    rows, the value equals on every input under a renaming of columns
     (`read_back`); empty where it is no such value."""
     read: bool = True
     used_in: tuple[str, ...] = ()

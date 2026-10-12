@@ -235,6 +235,14 @@ def _store_hints(engine: Engine, f: Found, alone: bool = False,
                            site=site))]
 
 
+def _product(params: Sequence[str]) -> str:
+    names = " and ".join(f"`{p}`" for p in params)
+    if len(params) == 1:
+        return mctx("the stored rows of {params}").format(params=names)
+    return mctx("the product of the stored rows of {params}").format(
+        params=names)
+
+
 def _no_case_text(f: Found) -> str:
 
     if f.kind is ValueKind.TRANSLATED:
@@ -277,9 +285,9 @@ def store_lines(solver: Solver, survey: StoreSurvey) -> list[str]:
         lines.append(_headline(solver, f) + cases_suffix(shown(f)))
         if f.reads_back and f.line is None:
             lines.append("  " + mctx(
-                "stored already: the value reads back the stored rows of "
-                "{params}").format(params=", ".join(
-                    f"`{p}`" for p in f.reads_back)))
+                "stored already: on every input the value equals "
+                "{params}").format(params=" or ".join(
+                    _product(ps) for ps in f.reads_back)))
         elif f.ignored:
             lines.append("  " + ignored_text(IgnoreForm.STORE))
         elif f.asks_line:

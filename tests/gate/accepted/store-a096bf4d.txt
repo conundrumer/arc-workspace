@@ -1,8 +1,8 @@
 in_scope: no witness: on no D4 image or color swap of a train input that changes the value does the branch's model `in_scope=stored` give an output other than `concept`; case `$WholeTile & $CommonColor & $EveryTile`
 line_color.value[v]: one color on every input: 0
-  stored already: the value reads back the stored rows of `separator`
+  stored already: on every input the value equals the stored rows of `separator`
 separator: one color on every input: 0
-  stored already: the value reads back the stored rows of `separator`
+  stored already: on every input the value equals the stored rows of `separator`
 span.axis[a]: one value on every input: AXIS_V, AXIS_H
   no witness: no case that takes the value fits the pairs along with the case that differs from it by this branch alone; a `@store` line needs a witness whose id is `span.axis=stored`
   add above `.init span`: // @store axis: <plausibility> <verdict>
@@ -29,6 +29,6 @@ in_scope: one cell set on every input; case `$Interior`
   no witness: with a `@store` line on the value, no witnessed case that holds the value takes the branch that line adds
   add: // @ignore: store — <reason>
 border.item: one color on every input: 0; under `$DerivedSeparator`
-  stored already: the value reads back the stored rows of `separator`
+  stored already: on every input the value equals the stored rows of `separator`
 border.value: one color on every input: 0; under `$DerivedSeparator`
-  stored already: the value reads back the stored rows of `separator`
+  stored already: on every input the value equals the stored rows of `separator`

@@ -1,17 +1,17 @@
 heading: one value on every input: DIAG_BR
-  stored already: the value reads back the stored rows of `line_dir`
+  stored already: on every input the value equals the stored rows of `line_dir`
 marked[d]: one value on every input: DIAG_BR
-  stored already: the value reads back the stored rows of `line_dir`
+  stored already: on every input the value equals the stored rows of `line_dir`
 touch.item: one value on every input: DAXIS_DG
   `@ignore: store` stands in place of its `@store` line
 touch.value: one value on every input: DAXIS_DG
   `@ignore: store` stands in place of its `@store` line
 pos[d]: one value on every input: DIAG_BR
-  stored already: the value reads back the stored rows of `line_dir`
+  stored already: on every input the value equals the stored rows of `line_dir`
 run.clear[d]: no witness: on no D4 image or color swap of a train input that changes the value does the branch's model `run.clear=stored` give an output other than `concept`
 run.dir[d]: no witness: on no D4 image or color swap of a train input that changes the value does the branch's model `run.dir=stored` give an output other than `concept`
 diagonal.cell[key]: one value on every input: DIAG_BR; under `$DiagonalClass, $GridDiagonal`
-  stored already: the value reads back the stored rows of `line_dir`
+  stored already: on every input the value equals the stored rows of `line_dir`
 diagonal.dir: no witness: on no D4 image or color swap of a train input that changes the value does the branch's model `$DiagonalClass & diagonal.dir=stored` give an output other than `$DiagonalClass`
 diagonal.ray[key, d]: one value on every input: (DIAG_BR, DIAG_BR); under `$DiagonalClass, $GridDiagonal`
   witness: train 1 turned a quarter turn clockwise

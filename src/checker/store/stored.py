@@ -257,14 +257,16 @@ class StoredAlready:
         return Qualifier.INLINE in self.program.declared_relation(place[1]).qualifiers
 
 
-def read_back(solver: Solver, f: Found) -> tuple[str, ...]:
+def read_back(solver: Solver, f: Found) -> tuple[tuple[str, ...], ...]:
     """The stored parameters whose value the found value is on every
     input: the same rows as one parameter's, or as the product of several
     parameters' rows, under a renaming of columns, each column of the
     value of a parameter column's type (principles.md, under "Stored or
     derived"); a parameter that stores a value per case gives its value at
-    the found value's bases (`_stored_reading`). The fewest parameters
-    that give it, in `Params` order; empty where none do."""
+    the found value's bases (`_stored_reading`). Each set of the fewest
+    parameters that gives it, each set and the sets in `Params` order;
+    empty where none do. The value equals those rows; whether a parameter
+    feeds it is not read."""
     if len(f.family) != 1:
         return ()
     (value,) = f.family
@@ -281,6 +283,7 @@ def read_back(solver: Solver, f: Found) -> tuple[str, ...]:
             stored[p.name] = read
     params = [n for n, (t, _r) in stored.items() if 0 < len(t) <= width]
     want = f.types
+    found: list[tuple[str, ...]] = []
     for k in range(1, width + 1):
         for chosen in combinations(params, k):
             if sum(len(stored[n][0]) for n in chosen) != width:
@@ -295,8 +298,11 @@ def read_back(solver: Solver, f: Found) -> tuple[str, ...]:
                     continue
                 if frozenset(tuple(r[order[i]] for i in range(width))
                              for r in product) == value:
-                    return tuple(chosen)
-    return ()
+                    found.append(tuple(chosen))
+                    break
+        if found:
+            break
+    return tuple(found)
 
 
 @quotes("solver-file.md", "Params",
