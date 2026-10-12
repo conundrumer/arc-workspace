@@ -134,7 +134,7 @@
     - Write the header's `@scene` and `@rule` lines from the concept file's claims, and `Params` from its Parameters section, under their names. The `@scene` line written from a claim gives the value of each parameter in its Scene parameters section that the claim reads.
     - A rule that report restates takes the restated text, and the concept file's text stands under it as its `@approximated:` line when the restated text has no relational form.
     - Each branch that report gives a witness, other than one that derives a parameter's value by a built-in derivation or stores a value the program derives, is a constructor, named as the report names it and nested as the report nests its choice point.
-        - [Develop](#develop) step 4 gives which such branches you hold.
+        - [Develop](#develop) step 4 gives which of the branches the line above leaves out you hold.
     - A concept branch's constructor takes a name of your own, and so does the constructor of a branch the report names in a form other than a constructor name, such as `<rel>=derived`. In the witness file, rewrite each name of that branch to that name.
     - An open parameter of that report, unless [Principles](docs/handbook/principles.md) make it a choice point, is a `Params` relation with a fact per open value, and no constructor; its values are the report's where it gives them, whatever the concept file gives.
     - The cases are the combinations of those branches that fit, which the run shows, whether or not one case's model subsumes another's.
