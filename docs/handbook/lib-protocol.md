@@ -79,9 +79,6 @@
         - the entry has no result: the scope is every solver
         - some solvers are newer than the entry's newest `Survey:` time: the scope is those solvers, as `uv run python scripts/run_dl.py since <time>` lists them for that time
         - the scope's size is no reason to skip the survey
-    - If the command fails, spawn the `survey` role with the entry's path, the scope the command would take, and a new directory under your session's scratchpad directory as its scratch path.
-        - Append at the end of the entry a blank line, the `Survey:` line in the form the entry's fields give, a blank line, then the role's report.
-        - say in the review that the command failed and the role ran
     - If the pass ends with the entry still unsurveyed, say so in the review.
 2. Decide whether to close the proposal.
     - **Close grounds.** Base that judgment on whether the operation does not follow principles, or whether it is not general and the solvers encode their tasks without it.
