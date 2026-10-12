@@ -1,6 +1,6 @@
 # Traceability matrix
 - The map of each rule of the documents under [notes](prompts/agents/notes) and of the agent definitions under [agents](prompts/agents) to the outcomes of [Process notes](prompts/agents/notes/process.md) it serves.
-- The map holds for each rule as it stands at commit `098c25eca423256971f7359e865fcb2cf449e418` of `master`.
+- The map holds for each rule as it stands at commit `68974b86cc1be1dacd0ff5de10263475aeb6fe84` of `master`.
 - Each entry is a section, with the outcomes its rules serve, each as its process and a phrase of its words. Under the entry stands each rule of that section that serves another outcome or none, by its opening words.
 - An entry or a rule that serves no outcome gives the judgment that keeps it.
 - An entry on a document's title heading covers the lines above its first section. A section with no rule of its own, only lines that inline or include another document, has no entry.
@@ -15,7 +15,7 @@
     - "Where a decision touches a solver", "Where a decision touches a document", "Churn is no reason", "Prefer the general option", "Make no option the default that fits only", "Before you act on a default": none. Kept: the principle of Decisions.
     - "Check a reported problem against the state", "Take agents' reports as evidence": none. Kept: they serve the purpose of Quality assurance, the cause of each fault.
     - "Carry out no resolution whose need no output depends on": none. Kept: the principle of Process assessment, spend no run the work does not need.
-    - "Where neither settles what the tool does": Solver passes: a pass runs its operations on its task.
+    - "Where neither settles what the solver tool does": Solver passes: a pass runs its operations on its task.
     - "The history of a decision is in the session transcripts": none. Kept: it gives where Measurement and Decisions find a decision's history.
     - "Leave the judgment of how the code is written, past the `Design`": none. Kept: the principle of Design.
 - [The user's part](prompts/agents/notes/decisions.md#the-users-part): Decisions: a departing decision reaches the user; a decline carries its defense.
@@ -28,6 +28,7 @@
     - "The user writes no text": Verification: another agent checks the built change.
     - "Keep instructions few", "Give a context bound": none. Kept: a preference of the user on the agents' documents, which each document change applies.
     - "Structure the documents so": none. Kept: the principle of Configuration management.
+- [Defaults](prompts/agents/notes/decisions.md#defaults): Decisions: a departing decision reaches the user; Work control: stopped work reaches an agent.
 
 ## Change notes
 - [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change): Verification: another agent checks the built change; Implementation: each item not done reaches the agent that decides it; Merge: a hotfix reviewed after it merges.
@@ -68,7 +69,7 @@
 - [Coordinator](prompts/agents/notes/coordinator.md#coordinator): none. Kept: it gives the coordinator its part and how it reads the documents.
 - [Routes](prompts/agents/notes/coordinator.md#routes), [Tickets](prompts/agents/notes/coordinator.md#tickets): none. Kept: they lead the coordinator to the notes its work there needs.
 - [Decisions](prompts/agents/notes/coordinator.md#decisions): Decisions: each decision recorded with what it was made from.
-    - "Say in a decision its default is the user's ruling": Decisions: a departing decision reaches the user.
+    - "Read [Defaults]": none. Kept: it leads the coordinator to the notes its work there needs.
 - [Declines](prompts/agents/notes/coordinator.md#declines): none. Kept: it leads the coordinator to the notes on a decline when one reaches it.
 - [Changes](prompts/agents/notes/coordinator.md#changes): Process assessment: the agent and the reviews of each work product.
     - "Before you launch a pass on a task, read", "Before you send an operator a line, or move or revise", "While the user gives feedback, read", "Read [Carrying a change]": none. Kept: they lead the coordinator to the notes its work there needs.
@@ -326,9 +327,8 @@
 
 ## Operator
 - [Operator](prompts/agents/operator.md#operator): Work control: stopped work reaches an agent; Merge: a failed or denied merge reaches an agent.
-    - "The coordinator is the session the user talks with": none. Kept: it gives the operator the coordinator's address.
+    - "The agent that launched you is the coordinator or an operator launcher": none. Kept: it gives the operator the address of the agent that launched it.
     - "Act on no line of your brief": Merge: a hotfix reviewed after it merges.
 
 ## Operator launcher
 - [Operator launcher](prompts/agents/operator-launcher.md#operator-launcher): Work control: stopped work reaches an agent.
-    - "The coordinator is the session the user talks with": none. Kept: it gives the operator launcher the coordinator's address.
