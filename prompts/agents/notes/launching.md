@@ -51,7 +51,7 @@
 - The brief of a code editor or of a `handbook-expanded` editor, for a change that has no ticket and is no solver work, gives a transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it, and the files the editor may edit.
 
 ### A doc editor's brief
-- A doc editor's brief for a change with no ticket gives a transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it, whose Grounds give a Justification for each restatement or elaboration to keep: the reader that failed without that text and the situation where it failed.
+- A doc editor's brief for a change with no ticket gives a transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it, whose Grounds give a Justification for each line to write that is to stop a reader's failure and each restatement or elaboration to keep: the reader that failed without that text and the situation where it failed.
 
 ### A ticket reviewer's brief
 - A ticket reviewer's brief gives the number of each ticket under `tickets/draft/` to review, and the agent id of the agent that launches it, where that is not the coordinator.

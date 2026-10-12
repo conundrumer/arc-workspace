@@ -7,7 +7,7 @@
 - Add or keep a line only where its reader needs it: where the reader could not infer what it says, assuming it can infer whatever you could infer from its context, or would misread its context without it.
 - A line is a restatement for a reader when another line of that reader's context says or implies what it says. An elaboration is detail, a reason or a consequence beyond what the reader needs, an example, or a list of kinds where a general term exists.
     - A line that has to be edited only because its list needs another item holds a list of kinds, and the general term goes in its place.
-- Write or keep a line that is a restatement or an elaboration for each of its readers only where an observed failure required it.
+- Write a line, or words in a line, that is to stop a reader's failure, and write or keep a line that is a restatement or an elaboration for each of its readers, only where an observed failure required it: one that a record, cited under the `Grounds` of the change's ticket or in the Justification of its transcript brief, shows to have recurred, that a run's output would not show, or that lost work or left an output wrong, and that no tool, hook or existing line could prevent at less cost, its upkeep counted.
     - An observed failure is a reader's failure without that text, at a session, a task and pass, or a run. An argued reason or a predicted failure is not one.
     - A restatement or an elaboration is required only by a failure its reader made with the text it restates or elaborates in its context.
 - Choose an edit in this order of preference: a deletion; no change, where a tool or another line already covers it; a change to existing words; and new words only where none of those is enough.
