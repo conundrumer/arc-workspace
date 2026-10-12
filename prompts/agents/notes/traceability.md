@@ -224,7 +224,7 @@
     - "The kind of a ticket you file is `change`": none. Kept: it gives the form of the tickets the analyst files.
     - "A `change` to the agents' processes": Process assessment: each rule maps to an outcome.
     - "Give with each Intent item": Requirements: requirements traced to the spans.
-    - "Write the `Design` section", "List each state the design acts in", "Give what each part of the design costs", "Cover in its Scope each file": Design: a design from the code or the documents; its cost and gain against the goal; the Scope covers the design.
+    - "Write the `Design` section", "For a `change` to the documents, plan by rule or fact", "List each state the design acts in", "Give what each part of the design costs", "Cover in its Scope each file": Design: a design from the code or the documents; its cost and gain against the goal; the Scope covers the design.
     - "Where meeting an Intent item costs more": Design: a requirement that costs more than it gains reaches the user; Decisions: a decline carries its defense.
     - "Leave out of the design", "Where a part's gain exceeds its cost": Design: its cost and gain against the goal.
     - "Settle by [Settling]": Process assessment: the faults of the processes reach the user.

@@ -48,11 +48,11 @@
 - How it can fail: each small choice is given as a decline and floods the coordinator: only a part of a need the user stated counts.
 
 ## Design (design definition, architecture definition)
-- Purpose: decide the shape of a change's code and of its document lines before they are written: the existing code or lines it uses or extends, each new operation and its module, each new line and its section, and how its parts fit.
+- Purpose: decide the shape of a change's code and of its document lines before they are written: the existing code or lines it uses or extends, each new operation and its module, each new rule or fact, its section and the rules and facts on the same act it joins, replaces or retires, and how its parts fit.
 - Principles: "Keep the process, the code and their semantics in their best state, with maintainable code", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences), and one idea in one place.
 - Outcomes:
     - Each `change` that adds a mechanism to code has a design, made from reading the code, that gives the existing operations it uses or extends, and each new operation with its module.
-    - Each `change` that adds or changes a rule or a fact in the agent-facing documents has a design, made from reading those documents, that gives for each line it adds or changes each reader that loads the line and the part of its work for which it loads it, the existing line or the general term the line extends or is an instance of, or that it found none, and how the line goes in: as a change to that existing line, as a new line in a section its reader loads for that part of its work, or not at all.
+    - Each `change` that adds or changes a rule or a fact in the agent-facing documents has a design, made from reading those documents, that plans each rule or fact it adds or changes against the rules and facts on the same act that its reader loads for the part of its work that needs it, so that, for each of those, the new rule or fact joins it, replaces it, retires it, or stands beside it as no exception to it.
     - Each design gives what it costs and what it gains against the goal of [The user's goals](prompts/agents/notes/decisions.md#the-users-goals) that its change serves, a part whose gain its grounds do not show to exceed its cost is left out, and a requirement that costs more than it gains is not built, and reaches the user as a decline where it serves a need the user stated.
     - An agent other than the one that wrote the design checks it before the build, against the code, or against the documents and the rules for editing them.
     - The Scope covers each file the design gives.

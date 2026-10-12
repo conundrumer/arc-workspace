@@ -64,10 +64,7 @@ HELP = mctx("""
         - It gives `mechanical` only where its Intent gives each edit under `src/` and `scripts/` outright, so that its code editors make no design choice.
         - It has `# <title>` as its title, and has the sections {change_sections} in place of {defect_headings}, with, where it adds a mechanism to code or adds or changes a rule or a fact in the agent-facing documents, a `{design}` section after `## Intent`.
         - For code, that section gives the existing operations the change uses or extends and each new operation with its module.
-        - For the documents, it gives, for each line the change adds or changes:
-            - each reader that loads the line and the part of its work for which it loads it;
-            - the existing line or the general term the line extends or is an instance of, or that it found none;
-            - how the line goes in: as a change to that existing line, as a new line in a section its reader loads for that part of its work, or not at all.
+        - For the documents, it gives the plan that [Tracking](prompts/agents/ticket-analyst.md#tracking) gives.
     - A `request` has `# <target>: <what the user asks for>` as its title, and the sections {request_sections} in place of {defect_headings}, and no `{request_retired}` section.
         - `uv run python scripts/spans.py file` writes and files a `request`.
     - `<domain>` is one of {domains}, and `<subject>` is the id of the thing it names: a task id for `task`, a ticket's number for `change` and `ticket`, a commit hash for `commit`, an agent id for `agent`.
