@@ -100,7 +100,7 @@
     .decl quadrant(key: Key, p: Position, diag: DiagDir)
     quadrant(Ky, P, Diag) :- diag_dirs(Diag, _, D1, D2), nearer(Ky, P, D1), nearer(Ky, P, D2).
 
-    /// On the diagonal of its quadrant, at ring K — the shared distance to both
+    /// On the diagonal of its quadrant, at ring — its shared distance to both
     /// edges of that corner.
     .decl diag_cell(key: Key, p: Position, diag: DiagDir, ring: number)
     diag_cell(Ky, P, Diag, K) :- quadrant(Ky, P, Diag), diag_dist(P, Diag, _, K, K).

@@ -1342,7 +1342,7 @@
 3. Leave promotion to the user, at the time they choose.
     - The `Callers` list is their evidence.
     - Nothing in the sequence reads its count.
-    - [Promote](#promote) states what a pass does at that time.
+    - [Promote](#promote) gives the items of a brief on `promote` or `migrate`.
 - **Reimplementations.** A reimplementation states an operation the lib already provides without calling it.
     - An entry lists the reimplementations its surveys found.
 - A site is no reimplementation when the lib call would need a value the program bans and no parameter supplies that value.

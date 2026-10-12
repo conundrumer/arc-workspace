@@ -905,7 +905,7 @@
 3. Leave promotion to the user, at the time they choose.
     - The `Callers` list is their evidence.
     - Nothing in the sequence reads its count.
-    - [Promote](docs/handbook/procedure.md#promote) states what a pass does at that time.
+    - [Promote](docs/handbook/procedure.md#promote) gives the items of a brief on `promote` or `migrate`.
 - **Reimplementations.** A reimplementation states an operation the lib already provides without calling it.
     - An entry lists the reimplementations its surveys found.
 - A site is no reimplementation when the lib call would need a value the program bans and no parameter supplies that value.
@@ -1929,7 +1929,7 @@ The quadrant each cell sits in, and its ring there.
     // The diagonal quadrant a cell sits in: nearer on both of that corner's edges.
     .decl quadrant(key: Key, p: Position, diag: DiagDir)
 
-    // On the diagonal of its quadrant, at ring K — the shared distance to both
+    // On the diagonal of its quadrant, at ring — its shared distance to both
     // edges of that corner.
     .decl diag_cell(key: Key, p: Position, diag: DiagDir, ring: number)
 }

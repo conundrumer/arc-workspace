@@ -1953,7 +1953,7 @@ The quadrant each cell sits in, and its ring there.
     // The diagonal quadrant a cell sits in: nearer on both of that corner's edges.
     .decl quadrant(key: Key, p: Position, diag: DiagDir)
 
-    // On the diagonal of its quadrant, at ring K — the shared distance to both
+    // On the diagonal of its quadrant, at ring — its shared distance to both
     // edges of that corner.
     .decl diag_cell(key: Key, p: Position, diag: DiagDir, ring: number)
 }
