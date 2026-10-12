@@ -294,7 +294,9 @@ def idle_indexes(state: State, tickets: Path) -> frozenset[int]:
     """The indexes `State.idle_indexes` defines. An index whose session ids
     no file of `tickets/sessions/` gives, and a session id with no
     transcript, count as running no operator, since no session of them runs
-    in this project. The lines `running_agents` writes on another session's
+    in this project. A session id that names more than one transcript, and
+    they differ, counts as running no operator too, as `session_agents`
+    gives it. The lines `running_agents` writes on another session's
     agents are dropped: no reader of the operator's reply has an operation
     on them."""
     ids = indexes(tickets)
@@ -308,7 +310,8 @@ def idle_indexes(state: State, tickets: Path) -> frozenset[int]:
 
 def session_agents(session: str) -> list[Listed]:
     """The agents with open work under the session `session`, or none where
-    it has no transcript."""
+    `transcripts.find` refuses it: where it has no transcript, or names
+    more than one, and they differ."""
     try:
         path = find(session)
     except Refused:
