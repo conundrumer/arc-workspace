@@ -360,10 +360,12 @@ class Found:
     @property
     def store_branch(self) -> bool:
         """A `@store` branch stores the value: a line stands on the
-        relation, or it is no color, which a Params parameter stores
-        instead, and no stored value gives it already."""
+        relation, or no stored value gives it already and no Params
+        parameter stores it: a Params parameter stores a color only where
+        the concept case reads it."""
         return self.storable and (self.line is not None or (
-            not self.colors and not self.stored))
+            not self.stored
+            and not (self.colors and self.read and self.concept)))
 
     @property
     def asks_params(self) -> bool:
