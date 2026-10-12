@@ -216,8 +216,11 @@ class CasePlaces:
     and `cut_choice($Mirror())` admits only the bases whose value there
     is one of the two, and so does a read of `cut.tile_of(S, _, _)` where
     the component's clauses take the key of `tile_of` from `cell` and
-    `cut.cell(S, P) :- cut_choice(S)` feeds `cut.cell`. An atom where
-    some such clause holds no term there sets no bound. The record types
+    `cut.cell(S, P) :- cut_choice(S)` feeds `cut.cell`. An atom of a
+    relation that no unit heads, a unit an operation wrote included,
+    holds no row, so it admits no base. An atom where some clause holds
+    no term there, or whose relation only units an operation wrote head,
+    sets no bound. The record types
     that carry a case are those of the solver's own text, so a column of a
     record type that a lib component declares carries none, though the
     component holds its key in a field of it.
@@ -637,12 +640,15 @@ class CasePlaces:
                 node = self.graph.node(at, lit.atom.relation)
                 if node is None:
                     continue
-                heads = self.graph.read_heads(node)
-                if not heads:
-                    continue
                 places = [(i, path) for i, arg in enumerate(lit.atom.args)
                           for path in _paths(arg, var)]
                 if not places:
+                    continue
+                if not self.graph.heading(node):
+                    out.append([])
+                    continue
+                heads = self.graph.read_heads(node)
+                if not heads:
                     continue
                 clauses = self._joined_heads(heads, lit.atom)
                 if all(i < len(typed) for _h, typed in clauses
