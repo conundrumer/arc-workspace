@@ -4,7 +4,9 @@
 The merge is `scripts/merge_change.py`, whose checks cover the
 `controlled_markdown` check. What a merge call did is read by that
 script's own forms and by `master` (`state.Merge`,
-`operator_reads.merge_outcome`):
+`operator_reads.merge_outcome`), and a commit of `master` whose subject is
+the change's title, made since it left `tickets/draft/`, counts as its
+merge whichever session's operator made it:
 
 - a call that left edits in the worktree after its commit leaves the
   change unmerged, and once no editor of the change runs, the merge call
@@ -38,6 +40,7 @@ from pathlib import Path
 from controlled_markdown import form, mctx
 from controlled_markdown.nodes import Rule, finding_lines
 from operations import briefs, messages
+from operations.change_budget import left_draft
 from operations.filing import editor_scratch
 from operations.reports import splits
 from operations.roles import Role
@@ -131,13 +134,20 @@ def merge_calls(state: State, t: Ticket) -> list[Call]:
 
 
 def merged(state: State, t: Ticket) -> bool:
-    """Whether a merge call landed the change `t`. A pending call that
+    """Whether the change `t` landed on `master`. A pending call that
     names a worktree that is gone counts as landed: `merge_change.py`
     removes a worktree only after it lands the change, and a call that
-    runs `operate.py next` after the merge has no result yet."""
+    runs `operate.py next` after the merge has no result yet. A commit of
+    `master` whose subject is `t`'s title, made since `t` left
+    `tickets/draft/`, counts as landed too, since the merge call gives
+    that title as the commit message and an operator of another session
+    may have made it, whose calls this session does not read."""
     gone = {p for p in log_worktrees(t) if Path(p) not in state.worktrees}
-    return any(c.merge is Merge.MERGED or (c.result is None and any(
-        p in str(c.input.get("command", "")) for p in gone)) for c in merge_calls(state, t))
+    if any(c.merge is Merge.MERGED or (c.result is None and any(
+            p in str(c.input.get("command", "")) for p in gone)) for c in merge_calls(state, t)):
+        return True
+    since = left_draft(t)
+    return any(c.subject == t.title and c.time >= since for c in state.commits)
 
 
 def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
