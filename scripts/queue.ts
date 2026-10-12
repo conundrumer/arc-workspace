@@ -7,7 +7,6 @@
 // re-minified.
 // With --json, prints the list as one JSON array of {id, size} objects in
 // place of one row per task.
-// Usage: queue.ts [-n COUNT | --all] [--order name|size] [--json]
 
 import fs from "node:fs";
 import path from "node:path";

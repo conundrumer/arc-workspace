@@ -308,26 +308,26 @@ def main(argv: list[str]) -> int:
                 return block(args.ident, Action.RELAY, lambda deadline: relay_step(args.ident, deadline))
             case OperateAction.REVIEW:
                 if args.rest:
-                    parser.error("review takes an agent id alone")
+                    parser.error(mctx("review takes an agent id alone"))
                 return review(args.ident)
             case OperateAction.START:
                 if args.run is None or runs.start_of(args.ident, args.rest) is None:
-                    parser.error(f"start takes {runs.RUN_OPTION} with its run, a task id, and "
-                                 f"one or more of {runs.PASS_LIST}")
+                    parser.error(mctx("start takes {run_option} with its run, a task id, and one or more of {pass_list}")
+                                 .format(run_option=runs.RUN_OPTION, pass_list=runs.PASS_LIST))
                 return claim_task(args.ident)
             case OperateAction.CLAIM:
                 if args.rest or not TASK_ID.fullmatch(args.ident):
-                    parser.error("claim takes a task id alone")
+                    parser.error(mctx("claim takes a task id alone"))
                 return claim_task(args.ident)
             case OperateAction.SET_ASIDE:
                 if (len(args.rest) != 1 or args.rest[0] not in (Role.ANALYZE, Role.CREATE)
                         or not TASK_ID.fullmatch(args.ident)):
-                    parser.error("set-aside takes a task id and `analyze` or `create`")
+                    parser.error(mctx("set-aside takes a task id and `analyze` or `create`"))
                 print(set_aside(main_tree(), args.ident, Role(args.rest[0])))
                 return 0
             case OperateAction.RESTORE:
                 if args.rest:
-                    parser.error("restore takes a task id alone")
+                    parser.error(mctx("restore takes a task id alone"))
                 restore(main_tree(), args.ident)
                 return 0
     except Refused as exc:
