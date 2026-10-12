@@ -128,10 +128,15 @@
 ## Measurement
 - Purpose: give each decision on cost or time a measured figure.
 - Principles: "recompute no output or measurement that a file already holds", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
-- Outcomes: each figure of cost or time in a decision cites the command that produced it.
-- Owner: the agent that gives the figure.
+- Outcomes:
+    - Each figure of cost or time in a decision cites the command that produced it.
+    - The summed cost of each kind of step over a window, against what it finds, reaches a ticket with no word of the user.
+- Owner: the agent that gives the figure, and, for the summed cost, the cost audit, a `general-purpose` agent an operator launches after each process assessment's launch.
 - Takes from: the transcripts. Gives to: each decision on cost or time.
-- How it can fail: a cited figure rests on a wrong price table: the table cites its source and its date.
+- How it can fail:
+    - A cited figure rests on a wrong price table: the table cites its source and its date.
+    - The audit files a finding a process already covers: it files none on a cause a ticket outside `tickets/closed/` records.
+    - The audits of concurrent sessions read the same runs: each audit's window opens at the launch of the latest cost audit of any session.
 
 ## Risk management
 - Purpose: find, before the build, how a design can fail, and decide what holds in each case.

@@ -36,6 +36,7 @@ class Role(StrEnum):
     BATCH_PROFILE = "batch-profile"
     BATCH_GATE = "batch-gate"
     VALIDATION_REVIEW = "validation-review"
+    COST_AUDIT = "cost-audit"
     AFTER_MERGE = "after-merge"
     OPERATOR = "operator"
 
@@ -59,7 +60,7 @@ class Role(StrEnum):
 GENERAL = "general-purpose"
 
 GENERAL_ROLES = frozenset({Role.TRANSCRIPT_REVIEW, Role.BATCH_PROFILE, Role.BATCH_GATE,
-                           Role.VALIDATION_REVIEW, Role.AFTER_MERGE})
+                           Role.VALIDATION_REVIEW, Role.AFTER_MERGE, Role.COST_AUDIT})
 """The roles no agent document gives, whose brief gives their work."""
 
 GENERAL_MODELS: dict[Role, Model] = {Role.BATCH_GATE: Model.SONNET,

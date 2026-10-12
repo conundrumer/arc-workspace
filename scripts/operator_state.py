@@ -257,7 +257,8 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     trees = worktrees(main)
     now = time.time()
     state = State(
-        me=me, now=now, session=session, started=started(session), index=index, main_tree=main,
+        me=me, now=now, session=session, started=started(session),
+        transcripts=find(session).parent, index=index, main_tree=main,
         scratch=scratch(session), operators=tuple(aid for aid, _ in runs),
         parents={aid: parent_id(p) for aid, p in runs},
         open_operators=frozenset(aid for aid, p in runs[run_index(runs, me) + 1:]

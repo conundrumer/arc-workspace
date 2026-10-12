@@ -9,7 +9,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from operations.reports import LEFT_FOR_DECISION, WORKTREE
-from operations.roles import Role
+from operations.roles import Role, description
 from operations.state import Place
 from operations.tracker import FILE_TICKET
 from ticketing.text import VALIDATION
@@ -460,6 +460,25 @@ PROCESS_ASSESSMENT = mctx("Make the process assessment of the agents' processes.
 
 def process_assessment(operator: str) -> str:
     return PROCESS_ASSESSMENT + "\n" + LAUNCHER.format(operator=operator)
+
+
+COST_AUDIT = mctx("""
+    - Audit the cost of the runs of each session in `{transcripts}` that were active in the window from {since}, or from the launch of the latest other cost audit of any session where that launch is later, to now.
+        - Another cost audit is a run under that directory whose `.meta.json` gives a `description` of the form `{description}`, and its launch is that run's first entry.
+    - Profile the runs with `uv run python scripts/profile_runs.py` and its `--each`, `--runs`, `--type` and `--top` options, read a run's transcript where a line of its profile looks suspect, and read a ticket's log for what an agent was launched for.
+    - Where a run has entries before the window's start, count only the share of its cost from its entries in the window, as an estimated figure with that basis.
+    - Find each kind of step whose summed cost over the window exceeds what it finds, and each cost that bought no work or that a cheaper path would have cut.
+    - Leave out what a process covers and did not miss: the checks that [Quality assurance (quality assurance, incident management, problem management)](prompts/agents/notes/process.md#quality-assurance-quality-assurance-incident-management-problem-management) gives cover each run, and file nothing on a cause that a ticket outside `tickets/closed/` records.
+    - File one `performance` ticket per finding, with `commit` and the hash `master` stands at as `<domain>` and `<subject>`, and `operator` as `<agent>`. Give in it the cost in dollars, the agent type, the evidence as agent ids, ticket numbers and times, the cause in one line, each figure labeled measured or estimated with the basis of each estimate, and what a cut of its step would trade off.
+    - Edit no tracked file and launch no agent.
+    - Reply with the tickets you filed.
+    """)
+
+
+def cost_audit(since: float, transcripts: Path, operator: str) -> str:
+    return (COST_AUDIT.format(since=utc_stamp(since), transcripts=transcripts,
+                              description=description(Role.COST_AUDIT, "<n>"))
+            + "\n" + LAUNCHER.format(operator=operator))
 
 
 OVER_BUDGET = mctx("Change {number} is past its cost budget.")

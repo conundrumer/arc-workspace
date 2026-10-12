@@ -6,8 +6,8 @@ where the batch merged a change, on the gate's timings and outputs.
 
 A batch is the agents the session's operators launched since the launch
 of the previous batch's profile agent, other than the agents of After a
-batch, the standing doc reviews and the process assessments, with the
-changes merged since: those an operator's merge call merged, as
+batch, the standing doc reviews, the process assessments and the cost
+audits, with the changes merged since: those an operator's merge call merged, as
 `state.Merge` reads it, and those the coordinator gives as merged. The
 launch of the profile agent opens the next batch.
 
@@ -25,6 +25,12 @@ once `ASSESS_AFTER` commits of `master` that change the agents' processes
 stand since the launch of the last one an operator of the session
 launched, or since the session's start where none was, and none runs. No
 batch holds it, so no profile launch waits on its run.
+
+A cost audit launches at the step after each launch of a process
+assessment: once a process assessment launched since the launch of the
+last cost audit an operator of the session launched, or since the
+session's start where none was, and none runs. No batch holds it, so no
+profile launch waits on its run.
 
 A standing doc review is a doc reviewer on one reader's whole context at
 the head of `master`: the first reader of `State.readers` that no tag
@@ -51,8 +57,9 @@ from operations.handled import bash_calls
 from operations.steps import Bash, Launch, Step, Undecided
 from ticketing.vocabulary import Kind, Resolution, Status, Verdict, note_opening
 
-OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER, Role.VALIDATION_REVIEW})
-"""The roles of After a batch, which no batch holds."""
+OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER, Role.VALIDATION_REVIEW,
+                 Role.COST_AUDIT})
+"""The roles of After a batch and the cost audit, which no batch holds."""
 
 
 
@@ -74,8 +81,7 @@ def followed(state: State, at: float) -> list[Agent]:
 
 
 def follows(role: Role, subject: str) -> bool:
-    """Whether a launch of `role` on `subject` is one no batch holds: one
-    of After a batch, a standing doc review or a process assessment."""
+    """Whether a launch of `role` on `subject` is one no batch holds."""
     return role in OWN or standing(role, subject) or assesses(role, subject)
 
 
@@ -137,6 +143,8 @@ def step(state: State) -> Step | None:
     if not isinstance(runs, list):
         return runs
     if (s := assessment(state)) is not None:
+        return s
+    if (s := audit(state)) is not None:
         return s
     ids = {a.agent_id for a in batch}
     return Launch(Role.BATCH_PROFILE, str(n),
@@ -229,13 +237,30 @@ ASSESS_AFTER = 20
 def assessment(state: State) -> Step | None:
     """The launch of a process assessment, where one is due."""
     past = [a for a in state.agents if assesses(a.role, a.subject)]
-    if past and past[-1].pending:
-        return None
-    since = past[-1].launched if past else state.started
-    if len({c.hash for c in state.commits if c.process and c.time > since}) < ASSESS_AFTER:
+    since = opened(state, past)
+    if since is None or len({c.hash for c in state.commits if c.process and c.time > since}) < ASSESS_AFTER:
         return None
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.ASSESS, str(len(past) + 1)),
                   briefs.process_assessment(state.me))
+
+
+def opened(state: State, past: list[Agent]) -> float | None:
+    """The time from which the next launch of the kind whose launches are
+    `past` counts what stands: the launch of the last of `past`, or the
+    session's start where `past` is empty. None where the last of `past`
+    runs."""
+    if past and past[-1].pending:
+        return None
+    return past[-1].launched if past else state.started
+
+
+def audit(state: State) -> Step | None:
+    """The launch of a cost audit, where one is due."""
+    past = state.agents_of(Role.COST_AUDIT)
+    since = opened(state, past)
+    if since is None or not any(assesses(a.role, a.subject) and a.launched > since for a in state.agents):
+        return None
+    return Launch(Role.COST_AUDIT, str(len(past) + 1), briefs.cost_audit(since, state.transcripts, state.me))
 
 
 def under_command(operator: str) -> str:

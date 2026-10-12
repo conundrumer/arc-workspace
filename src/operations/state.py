@@ -337,7 +337,8 @@ class State:
     those that reached `me` or an operator it takes up the lines of
     (`taken_up`, as `plan.taken_up` gives it). `unread` holds the ticket
     files the read of the tracker left out of `tickets`. `started` is the
-    time of the session's start. `readers` holds the readers a standing doc
+    time of the session's start, and `transcripts` the directory that holds
+    the session's transcript. `readers` holds the readers a standing doc
     review rotates over, in the order `context.py contexts` lists them, and
     `doc_reviews` the time of the commit each `Reader.tag` points at, by
     that tag, or is None where the tags do not read. `definitions` gives
@@ -365,6 +366,7 @@ class State:
     now: float
     session: str
     started: float
+    transcripts: Path
     index: int
     main_tree: Path
     scratch: Path
