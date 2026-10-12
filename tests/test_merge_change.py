@@ -4,11 +4,16 @@ its submodules, and, before the commit alone, submodule
 commits that only the worktree's own copies of the submodules' repositories
 hold. Before the removal, the script also moves the files under its
 `work/` to the main tree's, and fails on a file whose path there is
-taken."""
+taken. A file the main tree holds untracked and a change carries keeps
+its main-tree content where a pass edited it after the carry, which the
+merge refuses, and where the fast-forward fails after its removal, which
+writes it back."""
 
 import os
 import subprocess
 from pathlib import Path
+
+from types import SimpleNamespace
 
 import pytest
 
@@ -162,3 +167,46 @@ def test_work_link_is_removed_alone(merge_change, trees):
     merge_change.remove(main, merge_change.Change(worktree, "change", frozenset(), "", None, ""))
     assert not worktree.exists()
     assert (main / "work" / "kept").read_text() == "kept"
+
+
+@pytest.fixture
+def carrying(trees, tmp_path, merge_change, monkeypatch):
+    """The main tree of `trees` with the untracked file `p/u`, which the
+    worktree carries, and the checks and the main tree's commands stubbed
+    out."""
+    main, worktree = trees
+    (main / "p").mkdir()
+    (main / "p" / "u").write_text("pass")
+    ticket = tmp_path / "ticket.md"
+    ticket.write_text("# t\n\n## Scope\n- `p/u`\n")
+    script("change_worktree").copy_scope_untracked(main, worktree, SimpleNamespace(path=ticket))
+    (worktree / "p" / "u").write_text("edited")
+    monkeypatch.setattr(merge_change, "check", lambda *a: tmp_path)
+    monkeypatch.setattr(merge_change, "run_in",
+                        lambda tree, argv: subprocess.CompletedProcess(argv, 0, "", ""))
+    for k in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"):
+        monkeypatch.setenv(k, ENV[k])
+    return main, worktree
+
+
+def test_carried_file_edited_in_the_main_tree_is_refused(merge_change, carrying):
+    main, worktree = carrying
+    (main / "p" / "u").write_text("pass, edited")
+    assert not merge_change.merge([(worktree, "m")])
+    assert (main / "p" / "u").read_text() == "pass, edited"
+
+
+def test_carried_file_is_written_back_where_the_fast_forward_fails(
+        merge_change, carrying, monkeypatch):
+    main, worktree = carrying
+    git_ = merge_change.checkout.git
+
+    def failing(tree, *argv, **kw):
+        if argv[:1] == ("merge",):
+            return subprocess.CompletedProcess(argv, 1, "", "")
+        return git_(tree, *argv, **kw)
+
+    monkeypatch.setattr(merge_change.checkout, "git", failing)
+    with pytest.raises(merge_change.Failed):
+        merge_change.merge([(worktree, "m")])
+    assert (main / "p" / "u").read_text() == "pass"

@@ -3,6 +3,7 @@ usage form, the worktree's name and branch, and what a run does where the
 change already has a worktree."""
 
 import argparse
+import json
 import shutil
 import sys
 import textwrap
@@ -15,6 +16,7 @@ from handbook.paths import importable
 # `scripts/` is no package: the modules below import from there.
 importable(checkout.scripts())
 
+from bottlenecks import scope_paths  # noqa: E402
 from ticket_files import ticket_path  # noqa: E402
 from ticket_log import log_moves  # noqa: E402
 from ticket_numbers import ticket_number  # noqa: E402
@@ -44,12 +46,15 @@ HELP = mctx("""
         - Where no worktree stands at that path, the command adds it with `git worktree add` on a new branch of that name from `master`.
         - Where one stands there on that branch, as an earlier run left it, it adds none.
     - It then copies in from the main tree each untracked file that the patterns of the main tree's `.worktreeinclude` match.
+    - In the first form, it then copies in from the main tree each untracked file that git does not ignore, at a path that the ticket's `## Scope` gives.
+        - `merge_change.py` lands a change that touches such a path where the main tree's file there still has the content it had when copied, and its `--help` gives how.
     - In the first form, it then writes on the ticket the line `worktree <path>` in the status the ticket stands in.
     - The command refuses, adds nothing and writes no line, where a worktree stands at that path on another branch, or where that path or that branch exists with no worktree of that branch at that path.
     """)
 
 BASE = "master"
 INCLUDE = ".worktreeinclude"
+CARRIED = "carried-untracked.json"
 WORKTREE_NOTE = "worktree"
 
 
@@ -78,6 +83,12 @@ def add(main: Path, path: Path, branch: str) -> None:
     checkout.git_out(main, "worktree", "add", "-q", "-b", branch, str(path), BASE)
 
 
+def copy_in(main: Path, path: Path, rel: str) -> None:
+    target = path / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(main / rel, target)
+
+
 def copy_included(main: Path, path: Path) -> None:
     """Copy in from `main` each untracked file the patterns of its
     `.worktreeinclude` match."""
@@ -87,9 +98,40 @@ def copy_included(main: Path, path: Path) -> None:
     listed = checkout.git_out(main, "ls-files", "-z", "--others", "--ignored",
                               f"--exclude-from={include}")
     for rel in sorted(filter(None, listed.split("\0"))):
-        target = path / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(main / rel, target)
+        copy_in(main, path, rel)
+
+
+def carried_record(worktree: Path) -> Path:
+    """The record of the files `copy_scope_untracked` carried into
+    `worktree`, in its own git directory, which the worktree's removal
+    deletes."""
+    return Path(checkout.git_out(worktree, "rev-parse", "--path-format=absolute",
+                                 "--git-path", CARRIED).strip())
+
+
+def carried(worktree: Path) -> dict[str, str]:
+    """Each path `copy_scope_untracked` carried into `worktree`, with the
+    hash of the blob it recorded; none where it carried none."""
+    record = carried_record(worktree)
+    return json.loads(record.read_text()) if record.is_file() else {}
+
+
+def copy_scope_untracked(main: Path, path: Path, t: Ticket) -> None:
+    """Copy into the worktree `path` each file the `Scope` of `t` names that
+    `main` holds untracked, as `HELP` gives, and record it in
+    `carried_record` with the hash of its blob, which it writes into the
+    object store, so that the blob outlives the main tree's file."""
+    scope = sorted(scope_paths(t, main))
+    if not scope:
+        return
+    listed = checkout.git_out(main, "ls-files", "-z", "--others", "--exclude-standard",
+                              "--", *(f":(literal){p}" for p in scope))
+    hashes: dict[str, str] = {}
+    for rel in sorted(set(filter(None, listed.split("\0"))) & set(scope)):
+        copy_in(main, path, rel)
+        hashes[rel] = checkout.git_out(main, "hash-object", "-w", "--", rel).strip()
+    if hashes:
+        carried_record(path).write_text(json.dumps(hashes, indent=1, sort_keys=True) + "\n")
 
 
 def made(main: Path, branch: str) -> Path:
@@ -110,6 +152,7 @@ def of_change(number: str, agent: str, agent_id: str | None) -> Path:
     if logged is not None and logged in worktrees(main):
         return logged
     path = made(main, name(t))
+    copy_scope_untracked(main, path, t)
     log_moves(tickets, ref, t.status, agent, t.status, agent_id, f"{WORKTREE_NOTE} {path}")
     return path
 

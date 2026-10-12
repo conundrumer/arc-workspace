@@ -59,6 +59,14 @@ directory of the gate that checked the stack, so that a record the gate
 wrote stands as the dependency record of the new `master`. It then removes
 each worktree and its branch.
 
+A carried file is a file the main tree holds untracked at a path a change
+touches, where the worktree of each change that touches that path holds a
+copy that `change_worktree.py` made, and the main tree's file still has
+the content it had when copied. Just before the fast-forward, the script
+removes each carried file from the main tree, so that the fast-forward
+writes the change's version there. Where the fast-forward then fails, it
+writes each carried file back with the content and the mode it had.
+
 Where the stack's rebase conflicts or a check fails on the top of the stack,
 and the stack holds more than one change, the script moves each branch back
 to its commit before the rebase, and then merges the changes one at a time,
@@ -97,7 +105,8 @@ The script refuses a change, and says why, where:
   the change left uncommitted in the worktree and nothing staged;
 - the main tree has uncommitted changes to a path the change touches,
   among them a path the main tree marks skip-worktree whose file there
-  is moved away or holds other content than its commit;
+  is moved away or holds other content than its commit, and a carried
+  file is no such change;
 - a submodule of the worktree holds changes or untracked files, which no
   commit of the worktree's branch can hold;
 - a gitlink in the worktree's index, once the changes are staged, is not
@@ -136,11 +145,12 @@ import argparse
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
 from typing import TextIO
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -156,6 +166,7 @@ importable(checkout.scripts())
 
 from change_checks import (MARKDOWN_CHECK, Check, code_paths,  # noqa: E402
                            failures, run_in, said, timed)
+from change_worktree import carried  # noqa: E402
 from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
                                  submodules, update)
 
@@ -285,13 +296,30 @@ def run_checks(tree: Path, checks: Sequence[Check]) -> None:
         raise Refused("\n".join(failed))
 
 
-def refuse_main_touched(main: Path, touched: set[str]) -> None:
-    """Refuse where the main tree has uncommitted changes to a path the
-    change touches."""
-    hit = sorted({c.path for c in checkout.changed_paths(main, "HEAD")} & touched)
+def refuse_main_touched(main: Path, touched: Mapping[Path, frozenset[str]]) -> dict[str, str]:
+    """Refuse where the main tree has uncommitted changes to a path a change
+    touches, `touched` giving the paths each worktree's change touches,
+    other than a carried file, as the module docstring gives it. Return
+    each carried file, with the hash of its blob."""
+    every = set().union(*touched.values())
+    records = {w: carried(w) for w in touched}
+    hit: list[str] = []
+    replaced: dict[str, str] = {}
+    for c in checkout.changed_paths(main, "HEAD"):
+        if c.path not in every:
+            continue
+        hashes = {records[w].get(c.path) for w, paths in touched.items() if c.path in paths}
+        recorded = hashes.pop() if len(hashes) == 1 else None
+        if c.change is checkout.Change.UNTRACKED and recorded is not None:
+            if checkout.git_out(main, "hash-object", "--", c.path).strip() == recorded:
+                replaced[c.path] = recorded
+                continue
+        hit.append(c.path)
+    hit.sort()
     if hit:
         raise Refused(f"the main tree {main} has uncommitted changes the fast-forward "
                       "would touch:\n" + "\n".join(hit))
+    return replaced
 
 
 def submodule_changes(worktree: Path) -> list[str]:
@@ -428,7 +456,7 @@ def commit(worktree: Path, message: str, main: Path, backup: Path) -> Change:
     touched = set(changed_outside_work(worktree, base))
     if not touched:
         raise Refused(f"{branch} holds no change against {MASTER}")
-    refuse_main_touched(main, touched)
+    refuse_main_touched(main, {worktree: frozenset(touched)})
 
     set_up_submodules(worktree, main)
     refuse_dirty_submodules(worktree)
@@ -587,11 +615,18 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
     """Fast-forward `MASTER` to the top of `changes`, write the context in
     the main tree, adopt the dependency record the gate wrote into
     `gate_out`, and remove each change's worktree and branch."""
-    refuse_main_touched(main, touched_by(changes))
+    replaced = refuse_main_touched(main, {c.worktree: c.touched for c in changes})
+    modes = {p: (main / p).stat().st_mode for p in replaced}
+    for p in sorted(replaced):
+        (main / p).unlink()
     top = changes[-1].branch
     say(f"fast-forwarding {MASTER} to {top}", flush=True)
     done = checkout.git(main, "merge", "--ff-only", "-q", top)
     if done.returncode != 0:
+        for p, blob in sorted(replaced.items()):
+            (main / p).write_bytes(subprocess.run(["git", "cat-file", "blob", blob], cwd=main,
+                                                  capture_output=True, check=True).stdout)
+            os.chmod(main / p, modes[p])
         raise Failed(f"fast-forwarding {MASTER} failed; {top} is committed and "
                      f"rebased in {changes[-1].worktree}:\n{said(done)}")
 
