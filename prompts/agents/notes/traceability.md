@@ -217,6 +217,7 @@
 - [Ticket analyst](prompts/agents/ticket-analyst.md#ticket-analyst): none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
 - [Jobs](prompts/agents/ticket-analyst.md#jobs): none. Kept: the principle of Process assessment, spend no run the work does not need.
 - [Settling](prompts/agents/ticket-analyst.md#settling): Quality assurance: a recurring fault taken as one family; Decisions: each decision recorded with what it was made from.
+    - "Where a ticket, or your own reading of a fault, gives as the cause": none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
 - [Resolving](prompts/agents/ticket-analyst.md#resolving): Decisions: a departing decision reaches the user; a decline carries its defense; each decision recorded with what it was made from.
     - "Carry out every other resolution": Work control: one live holder per ticket.
     - "In a `change` for speed": Measurement: each figure cites its command.
