@@ -198,7 +198,8 @@
     - A case or branch that leaves under Subsumption is not an error of the Analyze report.
 - The audit reports each fact a parameter's relation stores whose removal changes no output on any input of the task or of the witness file. Resolve it by the first that applies, and put the resolution in the review.
     - No reader of the concept could take the value the fact stores: the fact leaves that relation.
-    - Some input, at some assignment of the other parameters, shows the fact's removal changing the output: build the witness that shows it, with `--assign` when it needs one.
+    - Some input, at some assignment of the other parameters, shows the fact's removal changing the output of a witnessed case: build the witness that shows it, with `--assign` when it needs one.
+        * comment: "of a witnessed case" restates the solver file's line that every check runs the witnessed cases alone. The Create pass on ad38a9d0 built witnesses on which each removal changed only a case that is not witnessed, so the audit kept every finding, as ticket 10-88 records.
     - Otherwise the fact stays.
 
 ### Simplify
