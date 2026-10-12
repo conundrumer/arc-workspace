@@ -13,7 +13,7 @@ from operations.roles import Role
 from operations.state import LogLine, State, Ticket
 from ticketing.vocabulary import COORDINATOR, Note, Status
 
-AGENT = "operator"
+AGENT = Role.OPERATOR.value
 """The `<agent>` of each log line the operator writes."""
 
 FILE_TICKET = ("uv", "run", "python", "scripts/file_ticket.py")

@@ -54,6 +54,10 @@ def heading_part(text: str, heading: str) -> str | None:
     return None if last is None else text[last.end():]
 
 
+def worktree_line(ln: str) -> bool:
+    return ln.strip().startswith(WORKTREE)
+
+
 def left_for_decision(a: Agent) -> str | None:
     """The part of an item checker's latest reply under
     `LEFT_FOR_DECISION`, or None where it has no such part or no line of
@@ -66,7 +70,7 @@ def left_for_decision(a: Agent) -> str | None:
     part = heading_part(r.text, LEFT_FOR_DECISION)
     if part is None or not ITEM_WITH_AGENT.search(part):
         return None
-    kept = [ln for ln in part.splitlines() if not ln.strip().startswith(WORKTREE)]
+    kept = [ln for ln in part.splitlines() if not worktree_line(ln)]
     return "\n".join(kept).strip("\n")
 
 
@@ -120,7 +124,7 @@ def reviewed_state(a: Agent) -> str | None:
     r = a.last_report
     if r is None:
         return None
-    lines = [ln.strip() for ln in r.text.splitlines() if ln.strip().startswith(WORKTREE)]
+    lines = [ln.strip() for ln in r.text.splitlines() if worktree_line(ln)]
     return lines[-1].removeprefix(WORKTREE).strip() or None if lines else None
 
 

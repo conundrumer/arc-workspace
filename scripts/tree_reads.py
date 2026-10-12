@@ -122,9 +122,8 @@ def fragments(tree: Path) -> tuple[Place, ...]:
 
 
 def write_seen(tree: Path, directory: Path) -> Path:
-    """Write the file and the text of each place of `fragments(tree)` that
-    has a text to a new file of `directory`, named by the time of the
-    write, whole or not at all."""
+    """Carry out the `seen` command that `HELP` gives, and return the path of
+    the file it wrote."""
     directory.mkdir(parents=True, exist_ok=True)
     out = directory / f"{time.time():.6f}.json"
     part = out.with_suffix(".part")
@@ -134,8 +133,7 @@ def write_seen(tree: Path, directory: Path) -> Path:
 
 
 def read_seen(directory: Path) -> tuple[Seen, ...]:
-    """The files `write_seen` wrote to `directory`, in the order of their
-    time."""
+    """The files `write_seen` wrote to `directory`."""
     out: list[Seen] = []
     for path in directory.glob("*.json"):
         try:

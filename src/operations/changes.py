@@ -383,12 +383,10 @@ def write_seen(number: str, w: Path, scratch: Path) -> str:
 
 
 def unseen(state: State, t: Ticket, w: Path, here: list[Agent]) -> tuple[Place, ...]:
-    """The places of `state.fragments` for the worktree `w` of the change `t` whose file and
-    text are not among those of the latest file of `state.seen` written
-    before the launch of the latest doc editor of the fragments
-    (`briefs.FRAGMENTS_PART`) of `here` that has reported, with each place
-    that has no text: all of them where no such doc editor or no such file
-    exists, or that file does not read."""
+    """The places of `state.fragments[w]` that `fragments_step` gives the
+    next doc editor of the fragments. A place with no text is always given:
+    its file does not read as fragments, so no file of `state.seen` can show
+    that its fragments are unchanged."""
     places = state.fragments.get(w, ())
     judged = [a.launched for a in here if a.role is Role.DOC_EDITOR
               and briefs.FRAGMENTS_PART in a.brief and a.last_report is not None]

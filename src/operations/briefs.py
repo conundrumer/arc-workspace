@@ -11,7 +11,7 @@ from controlled_markdown import mctx
 from operations.reports import LEFT_FOR_DECISION, WORKTREE
 from operations.roles import Role, description
 from operations.state import Place
-from operations.tracker import FILE_TICKET
+from operations.tracker import AGENT, FILE_TICKET
 from ticketing.text import VALIDATION
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Domain, Status, Verdict
@@ -26,7 +26,7 @@ FILE_AS = mctx("with {domain_subject} as `<domain>` and `<subject>`, and {agent}
 """The clause of a brief that gives its agent the domain, the subject and
 the agent to file its tickets with."""
 CODE_WORD = mctx("`{word}`")
-OPERATOR = mctx("`operator`")
+OPERATOR = CODE_WORD.format(word=AGENT)
 AT_MASTER = FILE_AS.format(domain_subject=mctx("`commit` and the hash `master` stands at"),
                            agent=OPERATOR)
 REPORT_FILE = mctx("Report file: `{path}`.")
