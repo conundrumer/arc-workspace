@@ -89,6 +89,45 @@ def ctor_text(engine: Engine, ctor: str) -> str:
     return engine.text(AdtValue(ctor, ()))
 
 
+@dataclass(frozen=True)
+class NameParts:
+    """A name's parts, each in a listed form: whether it holds `concept`,
+    its `<target>=<reading>` parts, and the constructors it names, without
+    their prefix."""
+
+    concept: bool
+    readings: tuple[tuple[str, str], ...]
+    constructors: tuple[str, ...]
+
+
+def name_parts(engine: Engine, name: str | tuple[str, ...]) -> NameParts | None:
+    """The parts of `name` in the forms solver-file.md lists under "Witness
+    file", judged with no solver; None where a part is in no listed form: a
+    bare constructor name, a slug, a constructor applied to a field or a
+    value (`Derive(g=Iso)`, `Rank(Big)`), or `&` without its spaces. `name` is
+    the name's parts as a reader gives them, or its string form, whose parts
+    ` & ` joins."""
+    parts = [p.strip() for p in (name.split(SEPARATOR) if isinstance(name, str)
+                                 else name)]
+    readings: list[tuple[str, str]] = []
+    ctors: list[str] = []
+    for part in parts:
+        if part == VerdictWord.CONCEPT:
+            continue
+        if any(ch in part for ch in "()&"):
+            return None
+        if "=" in part:
+            target, _eq, reading = (x.strip() for x in part.partition("="))
+            readings.append((target, reading))
+        elif (ctor := engine.prefixed(part)) is not None \
+                and _CTOR_RE.fullmatch(ctor):
+            ctors.append(ctor)
+        else:
+            return None
+    return NameParts(VerdictWord.CONCEPT in parts, tuple(readings),
+                     tuple(ctors))
+
+
 def denote(solver: Solver, name: str | tuple[str, ...]
            ) -> Denoted | NameFault:
     """The branches `name` fixes, a partial choice (solver-file.md, under
@@ -96,46 +135,31 @@ def denote(solver: Solver, name: str | tuple[str, ...]
     encodes; `<param>=<Proposer>`, `<rel>=stored`, `<param>=stored` and
     `<rel>=derived` the branch of that point; a constructor's name with
     Souffle's prefix, `$Drawn`, that branch at each point where the constructor
-    stands (solver-file.md, under "Witness file"). `name` is the name's parts
-    as a reader gives them, or its string form, whose parts ` & ` joins. A part
-    in no listed form is the problem `NAME_FORM`: a bare constructor name, a
-    slug, a constructor applied to a field or a value (`Derive(g=Iso)`,
-    `Rank(Big)`), or `&` without its spaces. Two constructors that are branches
-    of the same points denote no case. The problem's place is left for the
-    caller, which knows where the name stands (`NameFault.at`)."""
+    stands (solver-file.md, under "Witness file"). A name `name_parts` finds
+    off the listed forms is the problem `NAME_FORM`. Two constructors that are
+    branches of the same points denote no case. The problem's place is left
+    for the caller, which knows where the name stands (`NameFault.at`)."""
     text = name if isinstance(name, str) else SEPARATOR.join(name)
-    parts = [p.strip() for p in (text.split(SEPARATOR) if isinstance(name, str)
-                                 else name)]
-    ctor_parts: list[str] = []
+    parts = name_parts(solver.engine, name)
+    if parts is None:
+        return name_fault(ProblemKind.NAME_FORM, text)
     branches: list[Branch] = []
     derived: list[StoreBranch] = []
-    for part in parts:
-        if part == VerdictWord.CONCEPT:
+    for target, reading in parts.readings:
+        if reading == VerdictWord.DERIVED:
+            store = store_branch(solver, target)
+            if store is None:
+                return name_fault(ProblemKind.NAME_DENOTES_NO_CASE, text)
+            derived.append(store)
             continue
-        if any(ch in part for ch in "()&"):
-            return _problem(ProblemKind.NAME_FORM, text)
-        if "=" in part:
-            target, _eq, reading = (x.strip() for x in part.partition("="))
-            if reading == VerdictWord.DERIVED:
-                store = store_branch(solver, target)
-                if store is None:
-                    return _problem(ProblemKind.NAME_DENOTES_NO_CASE, text)
-                derived.append(store)
-                continue
-            branch = _branch(solver, target, reading)
-            if branch is None:
-                return _problem(ProblemKind.NAME_DENOTES_NO_CASE, text)
-            branches.append(branch)
-        elif (ctor := solver.engine.prefixed(part)) is not None \
-                and _CTOR_RE.fullmatch(ctor):
-            ctor_parts.append(ctor)
-        else:
-            return _problem(ProblemKind.NAME_FORM, text)
-    ctors = constructors_fixed(solver, ctor_parts)
+        branch = _branch(solver, target, reading)
+        if branch is None:
+            return name_fault(ProblemKind.NAME_DENOTES_NO_CASE, text)
+        branches.append(branch)
+    ctors = constructors_fixed(solver, parts.constructors)
     if ctors is None:
-        return _problem(ProblemKind.NAME_DENOTES_NO_CASE, text)
-    return Denoted(ctors, tuple(branches), VerdictWord.CONCEPT in parts,
-                   tuple(derived))
+        return name_fault(ProblemKind.NAME_DENOTES_NO_CASE, text)
+    return Denoted(ctors, tuple(branches), parts.concept, tuple(derived))
 
 
 def constructors_fixed(solver: Solver, ctors: Sequence[str]
@@ -234,7 +258,8 @@ def lists(solver: Solver, part: MarkerPart, base: Base | None) -> bool:
 _CTOR_RE = re.compile(r"[A-Z]\w*")
 
 
-def _problem(kind: ProblemKind, name: str) -> NameFault:
+def name_fault(kind: ProblemKind, name: str) -> NameFault:
+    """The problem `kind` at the name `name`, before its place is known."""
     return NameFault(kind, Named(name))
 
 

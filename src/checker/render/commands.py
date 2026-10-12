@@ -15,7 +15,7 @@ from checker.render import (
     pass_line,
     render,
 )
-from checker.render.faults import detail_text
+from checker.render.faults import problem_sentence
 from checker.render.lint import lint_line
 from checker.render.locations import LineForm, file_name, solver_name
 from checker.render.no_result import failure_text
@@ -24,7 +24,7 @@ from controlled_markdown import mctx
 from engine import Engine, RunFailure
 from solver.annotations import verdict_text
 from solver.aggregate import Solver
-from solver.problems import Fault
+from solver.problems import Fault, InWitnessFile
 
 # Files and the stamp
 
@@ -212,9 +212,14 @@ def indented(solver: Solver, section: Section,
 
 
 def shape_problem_line(engine: Engine, path: Path, problem: Fault) -> str:
-    """A witness file's shape problem, checked with no solver."""
-    return (f"{path}: {problem.kind.value}: "
-            f"{detail_text(engine, problem.detail)}")
+    """A problem of a witness file checked with no solver, after the entry
+    it stands in where it stands in one."""
+    sentence = problem_sentence(engine, problem)
+    match problem.place:
+        case InWitnessFile(entry=str() as entry):
+            return f"{path}: {entry}: {sentence}"
+        case _:
+            return f"{path}: {sentence}"
 
 
 def stem_head(stem: str) -> str:

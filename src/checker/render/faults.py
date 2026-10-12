@@ -26,6 +26,7 @@ from solver.problems import (
     CaseColumnOffForm,
     Detail,
     Expected,
+    Fault,
     FormPart,
     GridCellOffForm,
     GridOffLayout,
@@ -358,8 +359,13 @@ STORAGE_TEXT: dict[Storage, str] = {
 it."""
 
 
+def problem_sentence(engine: Engine, problem: Fault) -> str:
+    """The sentence that states `problem`, without its place."""
+    return PROBLEM_TEXT[problem.kind].format(
+        text=detail_text(engine, problem.detail))
+
+
 def reading_lines(solver: Solver, f: Finding, p: FaultPayload,
                    form: LineForm) -> list[str]:
-    text = PROBLEM_TEXT[p.problem.kind].format(
-        text=detail_text(solver.engine, p.problem.detail))
+    text = problem_sentence(solver.engine, p.problem)
     return [f"{where_text(solver, f.where, form)}: {text}"]

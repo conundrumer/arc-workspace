@@ -45,11 +45,18 @@ from cli.witness_file import absent, lined_solver, read_file, target, with_file
 from engine import RunFailure, checkout
 from solver import witness
 from solver.model import DeriveBranch
+from solver import names
 from solver.names import name as case_name
 from solver.form_checks import RecordedForm, recorded_form
 from solver.aggregate import Solver
 from solver.readers import declaration_of
-from solver.problems import OutputForm, VerdictsDisagree, WitnessFileRole
+from solver.problems import (
+    InWitnessFile,
+    OutputForm,
+    ProblemKind,
+    VerdictsDisagree,
+    WitnessFileRole,
+)
 from solver.witness import Entry, Groups, WitnessFile
 from souffle import SouffleEngine
 
@@ -216,12 +223,22 @@ def _try(eng: SouffleEngine, solver: Solver, path: str) -> int:
 
 
 def _shape_only(path: Path) -> int:
-    """The shape check of a witness file alone, with no solver."""
+    """The shape check of a witness file alone, with no solver: the read's
+    problems, and each group name with a part in no listed form
+    (`names.name_parts`)."""
     if absent(path):
         return 2
-    _file, problems = witness.read(path.read_text(), WitnessFileRole.GIVEN)
+    file, read_problems = witness.read(path.read_text(),
+                                       WitnessFileRole.GIVEN)
+    eng = engine()
+    problems = list(read_problems) + [
+        names.name_fault(ProblemKind.NAME_FORM, name).at(
+            InWitnessFile(e.id, WitnessFileRole.GIVEN))
+        for e in (file.entries if file is not None else ())
+        if isinstance(e.output, Groups)
+        for g in e.output.groups for name in g.cases
+        if names.name_parts(eng, name) is None]
     if problems:
-        eng = engine()
         for p in problems:
             print(commands.shape_problem_line(eng, path, p))
         return 1
