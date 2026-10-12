@@ -15,11 +15,12 @@ pass's report lists under `## Tickets filed` and those its review filed,
 and the review; a pass's analyst is the one whose brief gives that pass's
 review. The pipeline ends once each review and analyst has returned. For
 the `interference` tickets, the changes that settle them are taken first, as
-`changes.boosted` gives. A pass's reply that is no report's path, or a
-report with no `## Tickets filed` section, goes back to the pass once,
-with a request to send it again in that form. The pipeline stops where
-the pass's answer is still in no such form, once a ticket analyst on
-that answer, quoted, as an undecided step was launched; where an `interference`
+`changes.boosted` gives. A pass's tickets are read from the report file
+it wrote under the task's work directory since its launch, whatever its
+reply. Where it wrote no such file with a `## Tickets filed` section, the
+pass gets `messages.PASS_RESEND` on its reply once. The pipeline stops
+where the pass still wrote no such file, once a ticket analyst on its last reply, quoted, as an
+undecided step was launched; where an `interference`
 ticket waits on the user; where one stands open once the ticket analyst
 returned; or where a ruling passes over its next pass. A ruling on a pass
 holds for each pipeline on its task unless the work set aside for an
@@ -38,12 +39,15 @@ from operations.roles import PASSES, Purpose, Role, analyst_subject, joined
 from operations.state import Agent, State
 from ticketing.vocabulary import Domain, Kind, Status
 from operations.command_words import RUN_COMMAND
-from operations.handled import ask_again, bash_calls, repeated
+from operations.handled import bash_calls, repeated, send_again
 from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids
 from operations.task_work import CLAIM_HELD
 from operations.tracker import blocked_on_user
 
 SETS_ASIDE = (Role.ANALYZE, Role.CREATE)
+
+NO_REPORT = mctx("the {role} pass {agent} wrote, since its launch, no report file under its "
+                 "task's work directory with a `{section}` section")
 
 
 @dataclass(frozen=True)
@@ -203,16 +207,14 @@ def run(state: State, p: Pipeline) -> Outcome:
         filed = state.pass_tickets.get(a.agent_id)
         if filed is None:
             if a.reports:
-                asked = ask_again(state, a.agent_id, [r.time for r in a.reports],
-                                  messages.PASS_FORM)
+                asked = send_again(state, a.agent_id, [r.time for r in a.reports],
+                                   messages.pass_resend)
                 if isinstance(asked, Send):
                     return Outcome(asked)
             told = no_report(role, a)
             if not repeated(told, state):
                 return Outcome(told)
-            return stop(mctx("the {role} pass {agent} replied with no path of a report with a "
-                             "`{section}` section").format(role=role, agent=a.agent_id,
-                                                           section=TICKETS_FILED))
+            return stop(NO_REPORT.format(role=role, agent=a.agent_id, section=TICKETS_FILED))
         ended.append((a.agent_id, a, filed))
     chain = reviews(state, p.task, ended)
     if chain is not None:
@@ -224,15 +226,16 @@ def run(state: State, p: Pipeline) -> Outcome:
 
 
 def no_report(role: Role, a: Agent) -> Undecided:
-    """The undecided step on a pass's reply, quoted, that names no report
-    file with a `## Tickets filed` section."""
+    """The undecided step on a pass that wrote no report file with a
+    `## Tickets filed` section since its launch, with its last reply
+    quoted."""
     r = a.last_report
     quoted = "\n".join(f"> {line}" for line in (r.text if r else "").strip().splitlines())
     return Undecided("\n".join([
-        mctx("the {role} pass {agent} replied with no path of a report that has a "
-             "`{section}` section, so its pipeline on {task} stops.").format(
-                 role=role, agent=a.agent_id, section=TICKETS_FILED, task=a.subject),
-        mctx("Its reply:"), quoted]))
+        mctx("{stop}, so its pipeline on {task} stops.").format(
+            stop=NO_REPORT.format(role=role, agent=a.agent_id, section=TICKETS_FILED),
+            task=a.subject),
+        mctx("Its last reply:"), quoted]))
 
 
 def end(state: State, p: Pipeline, restore: str, reason: str | None) -> Outcome:

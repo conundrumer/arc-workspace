@@ -305,8 +305,10 @@ class State:
     of each, `main` or the agent id of the operator launcher that launched
     it, and `open_operators` those after `me` whose work is open, the only
     ones a procedure asks after. `pass_tickets` gives, for each solver pass
-    that reported, the numbers of the tickets its report lists under
-    `## Tickets filed`, or None where its reply is no report's path.
+    with an agent id, the numbers of the tickets the report file it wrote
+    under the task's work directory since its launch lists under
+    `## Tickets filed`, or None where it wrote no such file with that
+    section, whatever its reply.
     `to_settle` is the list `file_ticket.py to-settle` prints for the
     session, with the numbers the coordinator names, keeping only the
     tickets that `tickets` holds. `claims` gives the

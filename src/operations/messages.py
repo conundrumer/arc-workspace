@@ -67,8 +67,10 @@ RESTATE = mctx("""
     - Send it again, in full, in this form: {form}
     """)
 
-PASS_FORM = mctx("a reply that is the path of your report file alone, on one line, where that "
-                 "report has a `{heading}` section.").format(heading=TICKETS_FILED)
+PASS_RESEND = mctx("""
+    - When you replied at {time}, your task's work directory held no report that you wrote with a `{heading}` section.
+    - Write your report to its file, with that section, and reply with that file's path alone.
+    """)
 DECISION_FORM = mctx("a reply that gives, on a line of its own, the ruling on the step, in a "
                      "form that `uv run python scripts/operate.py --help rulings` gives; or, where the "
                      "decision goes to the user, a `decision:` item under `{heading}`.").format(
@@ -81,6 +83,12 @@ ALERT_FORM = mctx("where it is an alert, a message that opens with the line `ale
 OPERATOR = mctx("the operator")
 """The reader `restate` names, in the operator's command and in the
 monitor's steps."""
+
+
+def pass_resend(time: float) -> str:
+    """The message to a solver pass whose reply at `time` came with no
+    report file of its own."""
+    return PASS_RESEND.format(time=utc_stamp(time), heading=TICKETS_FILED)
 
 
 def restate(time: float, form: str, reader: str) -> str:

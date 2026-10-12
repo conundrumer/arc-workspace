@@ -32,6 +32,7 @@ from operations.merging import MERGE_SCRIPT, merge_messages
 from operations.reports import TICKETS_FILED, heading_part
 from operations.roles import PASSES, Role, described
 from operations.state import Agent, Call, Merge, Message, Report, Tool
+from operations.task_work import tasks_work
 from operations.command_words import COMMAND, is_next
 from operations.printing import unfenced
 
@@ -80,14 +81,26 @@ def merge_outcome(aid: str, command: str, time: float, result: str | None, error
     return Merge.REFUSED if conflict_paths(result) is None else Merge.CONFLICT
 
 
-def pass_tickets(report: str, main: Path) -> tuple[str, ...] | None:
-    """The numbers the report whose path a pass replied with lists under
-    `## Tickets filed`, or None where the reply is no report's path."""
-    text = report.strip()
-    if "\n" in text or not text:
+def pass_report(task: str, role: Role, launched: float, main: Path) -> Path | None:
+    """The report file the pass of `role` on `task` wrote since its launch
+    at `launched`, as `docs/handbook/procedure.md` names it: for Refine,
+    the `refine-<n>.md` first written after the launch."""
+    work = tasks_work(main) / task
+    if not work.is_dir():
         return None
-    path = Path(text) if Path(text).is_absolute() else main / text
-    if not path.is_file():
+    files = (sorted(work.glob(f"{role.value}-*.md")) if role is Role.REFINE
+             else [work / f"{role.value}.md"])
+    written = [(p.stat().st_mtime, p) for p in files if p.is_file()
+               and (role is not Role.REFINE or p.stem.removeprefix(f"{role.value}-").isdigit())]
+    return min(((t, p) for t, p in written if t > launched), default=(0.0, None))[1]
+
+
+def pass_tickets(task: str, role: Role, launched: float, main: Path) -> tuple[str, ...] | None:
+    """The numbers the report file of the pass lists under
+    `## Tickets filed`, or None where it wrote no such file with that
+    section since its launch."""
+    path = pass_report(task, role, launched, main)
+    if path is None:
         return None
     body = heading_part(path.read_text(), TICKETS_FILED)
     if body is None:
@@ -284,8 +297,8 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
             a = ended_with(a, None if any(r.time > launch.since for r in reports)
                            else reply_to(a, launch.since, undecided))
         agents.append(a)
-        if d.role in PASSES and launch.agent and reports:
-            passes[launch.agent] = pass_tickets(reports[-1].text, main)
+        if d.role in PASSES and launch.agent:
+            passes[launch.agent] = pass_tickets(d.subject, d.role, use[0], main)
 
 
 def background_output(aid: str, call: str, task: str, output: Path | None,

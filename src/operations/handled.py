@@ -114,29 +114,34 @@ def made_calls(state: State, tool: Tool, step: Step, printed: Callable[[Made], b
 
 
 def ask_again(state: State, to: str, replies: list[float], form: str) -> Send | bool:
+    """`send_again` with the message that asks `to` to give its reply
+    again in `form` (`messages.restate`)."""
+    return send_again(state, to, replies, lambda t: messages.restate(t, form, messages.OPERATOR))
+
+
+def send_again(state: State, to: str, replies: list[float],
+               message: Callable[[float], str]) -> Send | bool:
     """`asked_again` for the operator, over the operators' SendMessage
     calls."""
-    return asked_again(lambda who, message: sent_at(state, who, message), to, replies, form,
-                       messages.OPERATOR)
+    return asked_again(lambda who, text: sent_at(state, who, text), to, replies, message)
 
 
 def asked_again(sent_times: Callable[[str, str], list[float]], to: str, replies: list[float],
-                form: str, reader: str) -> Send | bool:
+                message: Callable[[float], str]) -> Send | bool:
     """The step on the latest of `replies`, the times of the replies of the
-    agent `to` to `reader`, in order, where that reply is in no form the
-    command reads: the message that asks `to` to give it again in `form`
-    (`messages.restate`), where `sent_times`, the times of the calls that
-    sent a message to an agent, gives none. True where the reply before it
-    had that request, sent before it: the reply that answers the request
-    is still in no such form, and the step is undecided. False where the
+    agent `to`, in order, where that reply leaves the command a request to
+    make of `to`: the request `message` gives for that reply's time,
+    where `sent_times`, the times of the calls that sent a message to an
+    agent, gives none. True where the reply before it
+    had its request, sent before it: the reply that answers the request
+    still leaves one, and the step is undecided. False where the
     request on it was sent and no reply of `to` followed it."""
     latest = replies[-1]
     before = [t for t in replies if t < latest]
-    if before and any(at < latest
-                      for at in sent_times(to, messages.restate(before[-1], form, reader))):
+    if before and any(at < latest for at in sent_times(to, message(before[-1]))):
         return True
-    message = messages.restate(latest, form, reader)
-    return False if sent_times(to, message) else Send(to, message)
+    text = message(latest)
+    return False if sent_times(to, text) else Send(to, text)
 
 
 def bash_calls(state: State, command: str) -> list[Call]:
