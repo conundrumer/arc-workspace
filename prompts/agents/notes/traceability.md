@@ -120,7 +120,7 @@
 - [An operator's brief](prompts/agents/notes/launching.md#an-operators-brief): Work control: stopped work reaches an agent.
     - "`Merge: <number>`": Merge: a failed or denied merge reaches an agent.
     - "`Decision: <decision key> <choice>`": Decisions: a departing decision reaches the user.
-    - "`Solve: <task id> ...`", "`Solve from the queue: <count>`", "`Override: <task id> <pass> <override>`", "`Override: pass over <step key>`": Solver passes: a pass runs its operations on its task.
+    - "`Solve: <task id> ...`", "`Run: <path>`", "`Override: <task id> <pass> <override>`", "`Override: pass over <step key>`": Solver passes: a pass runs its operations on its task.
 - [A code reviewer's brief](prompts/agents/notes/launching.md#a-code-reviewers-brief): Verification: a standing review of the lines in force.
 - [A doc reviewer's brief](prompts/agents/notes/launching.md#a-doc-reviewers-brief): Verification: another agent checks the built change; a standing review of the lines in force.
     - "A doc reviewer's brief on a commit of `master`": Merge: a hotfix reviewed after it merges.

@@ -28,25 +28,25 @@ console_importable()
 importable(checkout.scripts())
 
 from agent_launches import accepted_after, last_delivered  # noqa: E402
-from operator_state import USAGE_STALE, read_relay, read_state  # noqa: E402
+from operator_state import USAGE_STALE, read_relay, read_state, session_id  # noqa: E402
 from agent_reports import parent_type  # noqa: E402
 from profile_runs import budget_of  # noqa: E402
 from run_reads import parent_id  # noqa: E402
 from transcripts import Refused, find  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 
-from operations import briefs, changes, plan, relay  # noqa: E402
+from operations import briefs, changes, plan, relay, runs  # noqa: E402
 from operations.decisions import WRITE_SECONDS  # noqa: E402
 from operations.monitor import ALERTS  # noqa: E402
 from operations.command_words import Action  # noqa: E402
-from operations.roles import BARE_BRIEFS, Role  # noqa: E402
+from operations.roles import BARE_BRIEFS, PASSES, Role  # noqa: E402
 from operations.filing import filed, with_report  # noqa: E402
 from operations.printing import key_line, printed  # noqa: E402
 from operations.state import State  # noqa: E402
 from operations.steps import (BLOCK_SECONDS, Bash, EndTurn, Launch, Poll, Send, Step,  # noqa: E402
                               Undecided)
 from collections.abc import Callable  # noqa: E402
-from operations.task_work import restore, set_aside  # noqa: E402
+from operations.task_work import CLAIM_HELD, claim, restore, set_aside  # noqa: E402
 
 HELP = mctx("""
     - Usage:
@@ -54,6 +54,7 @@ HELP = mctx("""
         uv run python scripts/operate.py next <agent id>
         uv run python scripts/operate.py relay <agent id>
         uv run python scripts/operate.py review <agent id>
+        uv run python scripts/operate.py start --run <run> <task id> <pass> ...
         uv run python scripts/operate.py set-aside <task id> analyze|create
         uv run python scripts/operate.py restore <task id>
         ```
@@ -64,6 +65,7 @@ HELP = mctx("""
         - `Override: <task id> <pass> <override>` gives the override, labelled as an override, in the brief of the next launch of that pass on that task.
         - `Override: pass over <step key>` passes over the step whose key it gives, for each operator: `next` gives that step, once, as one its procedure waits on, to a ticket analyst it launches to rule it, other than a launch of a ticket analyst to rule a step, and goes on with the other procedures. A pipeline whose next pass is passed over stops instead. A solver pass's key is `<task id>-<pass>`, its task id and its pass (`analyze`, `create` or `refine`), so a ruling can name a pass that was never printed, and the ruling holds whatever overrides the pass's brief gains.
     - A coordinator's line that opens with `Override:` or `Decision:` in none of these forms goes back to the coordinator once, as undecided. A ticket analyst's reply on a step that gives its decision key, with no ruling in these forms, goes back to it once, and where its answer gives none either, the step stays held. A step `next` cannot place gives no decision key: its ticket analyst makes the act it needs and gives no ruling.
+    - `next` reads a coordinator's line `Run: <path>` as a run: the solver pipelines that the Python script at `<path>`, absolute or relative to the main tree, starts. Write a run script under `work/runs/` in the main tree, which git ignores. It defines `starts(run: Run) -> Iterable[Start]`, with `Run` and `Start(task, passes)` from the module `operations.runs`, each `passes` a non-empty sequence whose every item is `analyze`, `create` or `refine`. `run.queue` gives the task ids of the queue, in the order of their names, less each task a claim file gives and each task of the run's pipelines; `run.running` and `run.ended` give the run's pipelines, each with `task`, `passes` and `stopped`, which gives, for an ended one, the reason it stopped, or None where it ran to its end. At each read of the state, `next` loads the script again and calls `starts`, so an edit of the script changes the run. `next` gives as a step the `start` of the first item `starts` gives whose task no pipeline of the session runs and that matches no pipeline of the run by task and passes, with as `<run>` the time of the line's message and its path, which tell the run's pipelines from another run's, and passes over each other item. A `start` on a task whose claim file stands ends that pipeline, with the failure's text as its reason. Where the script fails to load, `starts` raises, the load and the call of `starts` run past {script} seconds, or `starts` gives a result in no form above, the run starts nothing while that fault stands, and the coordinator gets the fault's text, once for each distinct text. The line is done once no pipeline of the run runs, no fault of the script stands, and `starts` gives nothing to start.
     - A ticket file whose read refuses or fails, other than a file that moved during the read, leaves its ticket out of every procedure, and a ticket that depends on it waits. `next` gives that file, once for each content it has and once its last write is {write} seconds old, to a ticket analyst it launches, as a step it cannot place, with the read's failure, and goes on with every other procedure. Where the file still does not read once that analyst returned, the final reply gives it.
     - A step `next` printed counts as made by the call the operator made: a Bash call whose command runs the printed command among others, or the call the operator made right after the call of `next` that printed the step, other than a call of `next` alone.
     - `relay` prints the next step of the operator launcher whose agent id it is given, in the forms of `next`. Where an operator of the launcher's runs and no line of the coordinator's waits for it, it prints at once, with no block, that the launcher ends its turn with no call, or, where a message to the launcher waits that the harness accepted during the call, as the block of `next` reads one, that the launcher runs the command again. Its first step launches an operator whose brief is the launcher's brief. Each later message of the coordinator's to the launcher goes, unchanged, to the operator of the launcher's that runs, or, where none runs or the one that runs sent the launcher its final reply, into the brief of the next operator it launches. Where an operator's final reply ends it for its context, it launches a fresh operator, or, where the launcher's context is past the bound `context_bound_hook.py` gives, sends the coordinator the launcher's final reply, which asks for a fresh operator launcher whose brief is the lines that wait for a next operator, and gives them. Any other final reply of an operator, and an operator's end with no final reply, it sends the coordinator after a line that gives that operator's agent id, and then, unless a line of the coordinator's waits for a next operator, prints the launcher's final reply.
@@ -83,6 +85,7 @@ class OperateAction(StrEnum):
     """An action of this script."""
     NEXT = Action.NEXT
     RELAY = Action.RELAY
+    START = runs.START
     SET_ASIDE = "set-aside"
     RESTORE = "restore"
     REVIEW = Action.REVIEW
@@ -180,12 +183,13 @@ def relay_step(me: str, deadline: float) -> tuple[Step, Path]:
 
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("--help", "-h"):
-        print(HELP.format(block=BLOCK_SECONDS, load=plan.LOAD_SECONDS, retry=plan.RETRY_SECONDS, write=round(WRITE_SECONDS), alerts=ALERTS, stale=USAGE_STALE))
+        print(HELP.format(block=BLOCK_SECONDS, load=plan.LOAD_SECONDS, retry=plan.RETRY_SECONDS, write=round(WRITE_SECONDS), alerts=ALERTS, stale=USAGE_STALE, script=runs.SCRIPT_SECONDS))
         return 0
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
     parser.add_argument("action", choices=list(OperateAction))
     parser.add_argument("ident")
     parser.add_argument("rest", nargs="*")
+    parser.add_argument(runs.RUN_OPTION)
     args = parser.parse_args(argv)
     try:
         match OperateAction(args.action):
@@ -197,6 +201,16 @@ def main(argv: list[str]) -> int:
                 if args.rest:
                     parser.error("review takes an agent id alone")
                 return review(args.ident)
+            case OperateAction.START:
+                if (args.run is None or not args.rest or not all(p in PASSES for p in args.rest)
+                        or not TASK_ID.fullmatch(args.ident)):
+                    parser.error(f"start takes {runs.RUN_OPTION} with its run, a task id, and "
+                                 "one or more of `analyze`, `create` and `refine`")
+                holder = claim(main_tree(), args.ident, session_id())
+                if holder is not None:
+                    print(CLAIM_HELD.format(task=args.ident, holder=holder), file=sys.stderr)
+                    return 1
+                return 0
             case OperateAction.SET_ASIDE:
                 if (len(args.rest) != 1 or args.rest[0] not in (Role.ANALYZE, Role.CREATE)
                         or not TASK_ID.fullmatch(args.ident)):

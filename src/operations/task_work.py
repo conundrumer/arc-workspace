@@ -8,6 +8,7 @@ gives. `scripts/operate.py set-aside` and `restore` run these, as steps
 import shutil
 from pathlib import Path
 
+from controlled_markdown import mctx
 from engine import checkout
 from operations.roles import Role
 from solver.vocabulary import SOLVER_SUFFIX, WITNESS_SUFFIX
@@ -18,11 +19,26 @@ each `refine-<n>.md`."""
 
 CLAIM = "claim"
 
+CLAIM_HELD = mctx("the claim on task {task} fails: session {holder} holds it")
+
 
 def tasks_work(main: Path) -> Path:
     """The directory of each task's work and claim, in the main worktree
     `main`."""
     return main / "work" / "task"
+
+
+def claim(main: Path, task: str, session: str) -> str | None:
+    """Claim the task for `session` by the exclusive create of its claim
+    file, or give the session that holds it where that file stands."""
+    path = tasks_work(main) / task / CLAIM
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("x") as f:
+            f.write(session + "\n")
+    except FileExistsError:
+        return path.read_text().strip()
+    return None
 
 
 def task_paths(task: str) -> tuple[Path, Path]:

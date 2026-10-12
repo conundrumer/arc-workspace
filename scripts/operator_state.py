@@ -6,7 +6,14 @@ the assembly of what an operator launcher reads (`read_relay`)."""
 
 import json
 import os
+import signal
+import subprocess
+import sys
 import time
+import traceback
+from collections.abc import Iterator
+from contextlib import contextmanager
+from types import FrameType, ModuleType
 from dataclasses import replace
 from pathlib import Path
 
@@ -37,11 +44,11 @@ from operations.constants import COORDINATOR
 from operations.final_reply import final_sends_in, for_context, sent_final_text
 from operations.relay import Relay, Run
 from operations.roles import Role
-from operations.directives import named
+from operations.directives import lines, named
 from operations.plan import taken_up, unknown_line
-from operations import change_budget, changes, monitor
+from operations import change_budget, changes, monitor, passes, runs
 from operations.monitor import MonitorState, Watched
-from operations.state import (Agent, Budget, Call, LateResume, Message, Reader, Report, Spend,
+from operations.state import (Agent, Budget, Call, LateResume, Message, Reader, Report, Spend, Starts,
                               State, Ticket)
 from operations.handled import made
 from operations.tracker import worktree
@@ -137,6 +144,69 @@ def run_index(runs: list[tuple[str, Path]], me: str) -> int:
     return [a for a, _ in runs].index(me)
 
 
+QUEUE_COMMAND = ("bash", "scripts/queue.sh", "--order", "name", "--all")
+
+
+def with_runs(state: State) -> State:
+    """`state` with the queue's full listing and what the script of each
+    `Run:` line the operator received gave, where it received one. Where
+    the listing fails, its failure is the fault of each such line."""
+    given = runs.run_lines(lines(state))
+    if not given:
+        return state
+    listed = subprocess.run(QUEUE_COMMAND, cwd=state.main_tree, capture_output=True, text=True)
+    if listed.returncode != 0:
+        fault = mctx("the queue's listing `{command}` exited {code}: {stderr}").format(
+            command=" ".join(QUEUE_COMMAND), code=listed.returncode, stderr=listed.stderr.strip())
+        return replace(state, run_starts={runs.run_id(ln): fault for ln in given})
+    state = replace(state, queue=tuple(line.split()[-1] for line in listed.stdout.splitlines()
+                                       if line.strip()))
+    ended = {p: (o.ended, o.stopped) for p, o in passes.outcomes(state)}
+    return replace(state, run_starts={
+        runs.run_id(ln): script_starts(runs.script_path(state.main_tree, ln),
+                                    runs.view(state, ln, ended))
+        for ln in given})
+
+
+class ScriptTimeout(Exception):
+    pass
+
+
+@contextmanager
+def bounded(seconds: int) -> Iterator[None]:
+    """Raise `ScriptTimeout` in the block once `seconds` have passed."""
+    def expire(_signum: int, _frame: FrameType | None) -> None:
+        raise ScriptTimeout(mctx("the load and the call of `starts` ran past {seconds} "
+                                 "seconds").format(seconds=seconds))
+    before = signal.signal(signal.SIGALRM, expire)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, before)
+
+
+def script_starts(path: Path, run: runs.Run) -> Starts:
+    """What the run script at `path`, loaded afresh as a module, gives from
+    its `starts` called with `run`, or the text of its fault, within
+    `runs.SCRIPT_SECONDS`."""
+    name = f"run_script_{abs(hash((str(path), time.time())))}"
+    try:
+        with bounded(runs.SCRIPT_SECONDS):
+            # Compiled from its text at each read: a cached bytecode file
+            # hides an edit that keeps the file's size within one second.
+            module = ModuleType(name)
+            module.__file__ = str(path)
+            sys.modules[name] = module
+            exec(compile(path.read_text(), str(path), "exec"), module.__dict__)
+            return runs.read_starts(module.starts(run))
+    except (Exception, SystemExit) as e:
+        return "".join(traceback.format_exception_only(e)).strip()
+    finally:
+        sys.modules.pop(name, None)
+
+
 def read_state(me: str) -> tuple[State, MonitorState]:
     """The state the operator's procedures read, and the state the
     monitor's steps read."""
@@ -216,6 +286,7 @@ def read_state(me: str) -> tuple[State, MonitorState]:
     state = replace(state, spent=spent,
                     budgets=change_budgets(state, spent, tickets_dir, undecided),
                     doc_budgets=doc_budgets(state, tickets_dir, undecided))
+    state = with_runs(state)
     return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(state.stalled),
                                undecided=tuple(watching))
 

@@ -1,0 +1,186 @@
+"""A run: the solver pipelines that the script a `Run: <path>` line of the
+coordinator's gives starts, as `scripts/operate.py --help` gives the
+script's form. `scripts/operator_state.py` loads and calls the script at
+each read of the state, with the `Run` this module gives, and the state
+holds what it gave (`state.State.run_starts`).
+
+A run's pipelines are the calls of `operate.py start` that an operator of
+the session made with the run's `RUN_OPTION`, which its step gives, each
+with that call's time as its start; a failed call is a pipeline that
+stopped on its failure's text."""
+
+import re
+import shlex
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from pathlib import Path
+
+from arc.task import TASK_ID
+from controlled_markdown import mctx
+from operations.command_words import COMMAND, RUN_COMMAND, simple_commands
+from operations.constants import COORDINATOR
+from operations.directives import Directive, Line, Pipeline
+from operations.roles import PASSES, Role
+from operations.state import Call, Start, Starts, State, Tool
+from operations.steps import Bash, Send, Step
+
+__all__ = ["Begun", "Run", "Start", "fault_message", "read_starts", "start_command"]
+
+START = "start"
+"""The action of `operate.py` that starts a run's pipeline."""
+
+RUN_OPTION = "--run"
+"""The option of `operate.py start` that gives the run whose step the call
+makes, so that each run reads back its own pipelines."""
+
+TASK_ID_FORM = re.compile(TASK_ID)
+
+PASS_NAMES = frozenset(r.value for r in PASSES)
+
+SCRIPT_SECONDS = 10
+"""How long the load and the call of a run script may take at one read."""
+
+
+@dataclass(frozen=True)
+class Begun:
+    """A pipeline of a run, as its script reads it: its task, its passes,
+    and for one that ended, the reason it stopped, or None where it ran to
+    its end."""
+    task: str
+    passes: tuple[str, ...]
+    stopped: str | None = None
+
+
+@dataclass(frozen=True)
+class Run:
+    """What a run script reads: the tasks of the queue that no claim file
+    and no pipeline of the run gives, in the queue's order, and the run's
+    pipelines that run and that ended."""
+    queue: tuple[str, ...]
+    running: tuple[Begun, ...]
+    ended: tuple[Begun, ...]
+
+
+@dataclass(frozen=True)
+class Started:
+    """A pipeline of a run: the pipeline its call started, or the reason
+    its call failed."""
+    pipeline: Pipeline
+    failed: str | None
+
+
+def start_command(ln: Line, s: Start) -> str:
+    return " ".join([RUN_COMMAND, START, RUN_OPTION, shlex.quote(run_id(ln)), s.task, *s.passes])
+
+
+def run_id(ln: Line) -> str:
+    """The run of the `Run:` line `ln`, as its start calls give it: the
+    time of its message and its path."""
+    return f"{ln.message.time:.6f}:{ln.rest}"
+
+
+def script_path(main: Path, ln: Line) -> Path:
+    """The path of the script of the `Run:` line `ln`: absolute, or
+    relative to the main tree `main`."""
+    return main / ln.rest
+
+
+def given(state: State, ln: Line) -> Starts:
+    """What the script of the `Run:` line `ln` gave at this read."""
+    return state.run_starts[run_id(ln)]
+
+
+def run_lines(lines: Iterable[Line]) -> list[Line]:
+    """The `Run:` lines of `lines`. A run stands while its line is among
+    the lines the operator received (`state.State.received`)."""
+    return [ln for ln in lines if ln.kind is Directive.RUN and ln.rest]
+
+
+def start_words(c: Call) -> tuple[str, str, tuple[Role, ...]] | None:
+    """The run, the task and the passes of the call `c`, where it is a Bash
+    call of `operate.py start`, or None."""
+    if c.tool != Tool.BASH:
+        return None
+    lead = RUN_COMMAND.split()
+    script = lead.index(COMMAND)
+    for words in simple_commands(str(c.input.get("command", ""))):
+        if (len(words) > script + 5 and words[:script] == lead[:script]
+                and words[script].endswith(COMMAND) and words[script + 1] == START
+                and words[script + 2] == RUN_OPTION
+                and all(p in PASS_NAMES for p in words[script + 5:])):
+            return words[script + 3], words[script + 4], tuple(Role(p) for p in words[script + 5:])
+    return None
+
+
+def started(state: State, ln: Line) -> list[Started]:
+    """The pipelines of the run of `ln`, in the order of their calls."""
+    out: list[Started] = []
+    for c in state.calls:
+        words = start_words(c)
+        if words is None or words[0] != run_id(ln):
+            continue
+        p = Pipeline(words[1], words[2], c.time, c.operator)
+        failed = (c.result or "").strip() if c.result is not None and c.error else None
+        out.append(Started(p, failed))
+    return out
+
+
+def view(state: State, ln: Line, ended: Mapping[Pipeline, tuple[bool, str | None]]) -> Run:
+    """The `Run` the script of `ln` reads, where `ended` gives for each
+    pipeline of the run whether it ended, and the reason it stopped or
+    None."""
+    pipelines = started(state, ln)
+    taken = {s.pipeline.task for s in pipelines}
+    queue = tuple(t for t in state.queue if t not in state.claims and t not in taken)
+    running: list[Begun] = []
+    over: list[Begun] = []
+    for s in pipelines:
+        done, why = (True, s.failed) if s.failed is not None else ended[s.pipeline]
+        b = Begun(s.pipeline.task, tuple(s.pipeline.passes), why)
+        (over if done else running).append(b)
+    return Run(queue, tuple(running), tuple(over))
+
+
+def read_starts(result: object) -> Starts:
+    """The starts of a script's result, or the text of the way it is in no
+    form the command reads: an iterable of objects with a task id as
+    `task` and a non-empty sequence of passes as `passes`."""
+    if isinstance(result, (str, bytes)) or not isinstance(result, Iterable):
+        return mctx("the result of `starts` is no iterable of starts")
+    out: list[Start] = []
+    for item in result:
+        task = getattr(item, "task", None)
+        passes = getattr(item, "passes", None)
+        if not isinstance(task, str) or TASK_ID_FORM.fullmatch(task) is None:
+            return mctx("the start {item} gives no task id as `task`").format(item=repr(item))
+        if (isinstance(passes, str) or not isinstance(passes, Iterable)
+                or not (listed := list(passes)) or not all(p in PASS_NAMES for p in listed)):
+            return mctx("the start {item} gives no non-empty sequence of passes as "
+                        "`passes`").format(item=repr(item))
+        out.append(Start(task, tuple(Role(p) for p in listed)))
+    return tuple(out)
+
+
+def fault_message(ln: Line, fault: str) -> Send:
+    """The message that gives the coordinator the fault that stops the run
+    of its line `ln`."""
+    return Send(COORDINATOR, mctx("The run of the line `{line}` starts nothing: "
+                                  "{fault}").format(
+        line=ln.text, fault=fault))
+
+
+def next_start(state: State, ln: Line, running: Iterable[Pipeline]) -> Step | None:
+    """The run's next step: the call that starts the first start the
+    script gave whose task no pipeline of `running` gives and that matches
+    no pipeline of the run by its task and its passes, or None where the
+    script gave a fault or no such start."""
+    starts = given(state, ln)
+    if isinstance(starts, str):
+        return None
+    busy = {p.task for p in running}
+    had = {(s.pipeline.task, s.pipeline.passes) for s in started(state, ln)}
+    for s in starts:
+        if s.task not in busy and (s.task, s.passes) not in had:
+            return Bash(start_command(ln, s))
+    return None
+

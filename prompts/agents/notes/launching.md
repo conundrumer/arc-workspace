@@ -70,7 +70,7 @@
 ### An operator's brief
 - An operator's brief gives only lines in these forms, each on a line of its own:
     - `Solve: <task id> ...`: a solver pipeline on each task, from Analyze, or from the pass that `from create` or `from refine` after its task id gives.
-    - `Solve from the queue: <count>`: solver pipelines on that many tasks of the queue.
+    - `Run: <path>`: the solver pipelines that the run script at that path starts, as `uv run python scripts/operate.py --help` gives the script.
     - `Drafts to review: <number>, ...`: the draft `change` tickets to review.
     - `Tickets named: <number>, ...`: tickets of another session that the operator releases, takes and settles as it does its session's.
     - `Merged: <number>, ...`: the changes the coordinator merged itself.

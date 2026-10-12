@@ -4,7 +4,7 @@ word of its kind and a colon, past a list marker:
 
 - `Solve: <task id> [<task id> ...]`, with `from create` or `from refine`
   after a task id to start its pipeline at that pass;
-- `Solve from the queue: <count>`;
+- `Run: <path>`, a run script, as `runs` gives it;
 - `Drafts to review: <number>, ...`;
 - `Tickets named: <number>, ...`;
 - `Merged: <number>, ...`, the changes the coordinator gives as merged;
@@ -52,7 +52,7 @@ class Decision(StrEnum):
 
 class Directive(StrEnum):
     SOLVE = "Solve"
-    QUEUE = "Solve from the queue"
+    RUN = "Run"
     DRAFTS = "Drafts to review"
     NAMED = "Tickets named"
     MERGED = "Merged"
@@ -220,14 +220,13 @@ def named(state: State) -> set[str]:
 
 @dataclass(frozen=True)
 class Pipeline:
-    """A solver pipeline the coordinator gives: its task, the pass it
-    starts at, the time of the message that gives it, the operator that
-    message reached, and whether a `Solve from the queue` line gives it."""
+    """A solver pipeline: its task, its passes in their order, the time of
+    the message that gives it or of the call that starts it (`runs`), and
+    the operator that message reached or that made that call."""
     task: str
-    start: Role
+    passes: tuple[Role, ...]
     since: float
     operator: str
-    queued: bool = False
 
 
 def pipelines(given: list[Line]) -> list[Pipeline]:
@@ -237,15 +236,9 @@ def pipelines(given: list[Line]) -> list[Pipeline]:
         if ln.kind is Directive.SOLVE:
             for m in TASK.finditer(ln.rest):
                 start = Role(m["start"]) if m["start"] else PASSES[0]
-                out.append(Pipeline(m["task"], start, ln.message.time, ln.message.operator))
+                out.append(Pipeline(m["task"], PASSES[PASSES.index(start):], ln.message.time,
+                                    ln.message.operator))
     return out
-
-
-def queue_counts(given: list[Line]) -> list[tuple[int, Message]]:
-    """The count each `Solve from the queue` line of `given` gives, with
-    its message."""
-    return [(int(ln.rest), ln.message) for ln in given
-            if ln.kind is Directive.QUEUE and ln.rest.isdigit()]
 
 
 def unread(state: State) -> list[Line]:

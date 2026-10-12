@@ -284,6 +284,18 @@ class Place:
 
 
 @dataclass(frozen=True)
+class Start:
+    """A pipeline a run script starts: its task and its passes, in their
+    order (`runs`)."""
+    task: str
+    passes: tuple[Role, ...]
+
+
+type Starts = tuple[Start, ...] | str
+"""What a run script gave at a read: its starts, or the text of its fault."""
+
+
+@dataclass(frozen=True)
 class State:
     """What the procedures read. `operators` holds the agent ids of the
     session's operators in the order of their launch, `parents` the parent
@@ -329,7 +341,10 @@ class State:
     gives an `editors` field for, the budget, taken at `now`, of that
     field's set with the doc editor. `limit_lifted` is the time of the reading of the usage limit that
     gives it as lifted, or None where the reading gives it in force, as
-    `operator_state.limit_lifted` gives it."""
+    `operator_state.limit_lifted` gives it. `queue` is the queue's full
+    listing, read only while a `Run:` line stands, and `run_starts` what
+    the script of each `Run:` line gave at this read, by its run
+    (`runs.run_id`)."""
     me: str
     now: float
     session: str
@@ -367,6 +382,8 @@ class State:
     spent: Mapping[str, Spend] = field(default_factory=dict)
     budgets: Mapping[str, Budget] = field(default_factory=dict)
     doc_budgets: Mapping[str, Budget] = field(default_factory=dict)
+    queue: tuple[str, ...] = ()
+    run_starts: Mapping[str, Starts] = field(default_factory=dict)
 
     @property
     def arrived(self) -> list[Message]:

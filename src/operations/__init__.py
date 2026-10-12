@@ -44,7 +44,7 @@ its take to its merge), `change_budget` (the cost budget of a change),
 `doc_review` (the review of a change's documents), `merging` (the merge and
 what follows it), `alerts` (the alerts and the other agents' messages),
 `reports` (the fixed forms of the replies the command reads), `passes` (the
-solver pipelines),
+solver pipelines), `runs` (the pipelines a run script starts),
 `task_work` (the work a pipeline sets aside), `batches` (After a batch),
 `plan` (the order of the procedures, the block and the final reply),
 and `monitor` (the monitor's steps: the alerts on the watched agents' runs)."""

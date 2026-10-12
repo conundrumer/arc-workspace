@@ -3,7 +3,7 @@ the pass the coordinator gives, as
 [Passes on a task](prompts/agents/notes/launching.md#passes-on-a-task)
 gives the claim and the work set aside around them. Whether a task is
 claimed is read from its claim file: a pipeline on a task another session
-claims stops, and a pipeline from the queue takes no such task.
+claims stops.
 
 The pipeline keeps two chains on the task. On the pass chain, the next
 pass runs once the pass before it ended with its report and no
@@ -25,15 +25,12 @@ returned; or where a ruling passed over the launch of its next pass.
 Once it ends or stops, the work set aside goes back, as
 `scripts/operate.py restore` does."""
 
-import re
 import shlex
 from dataclasses import dataclass
 
-from arc.task import TASK_ID
 from controlled_markdown import mctx
-from operations import briefs
-from operations.directives import (Line, Pipeline, lines, overrides, passed, pipelines,
-                                   queue_counts, session_lines)
+from operations import briefs, runs
+from operations.directives import Line, Pipeline, lines, overrides, passed, pipelines, session_lines
 from operations.reports import TICKETS_FILED
 from operations.roles import PASSES, Purpose, Role, analyst_subject, joined
 from operations.state import Agent, State
@@ -41,18 +38,10 @@ from ticketing.vocabulary import Domain, Kind, Status
 from operations.command_words import RUN_COMMAND
 from operations.handled import ask_again, bash_calls, repeated
 from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids
-from operations.task_work import CLAIM, tasks_work
+from operations.task_work import CLAIM, CLAIM_HELD, tasks_work
 from operations.tracker import blocked_on_user
 
-TASK = re.compile(rf"\b{TASK_ID}\b")
 SETS_ASIDE = (Role.ANALYZE, Role.CREATE)
-QUEUE_SPARE = 3
-"""How many tasks the queue lists per task the coordinator asks for, so
-that a failed claim leaves one to take."""
-
-
-def queue_command(count: int) -> str:
-    return f"bash scripts/queue.sh --order name -n {count * QUEUE_SPARE}"
 
 
 @dataclass(frozen=True)
@@ -170,14 +159,13 @@ def run(state: State, p: Pipeline) -> Outcome:
     first, then that of its pass chain."""
     since = p.since
     restore = restore_command(p.task)
-    order = PASSES[PASSES.index(p.start):]
     ended: list[Ended] = []
 
     def stop(reason: str | None) -> Outcome:
         chain = reviews(state, p.task, ended)
         return chain if chain is not None else end(state, p, restore, reason)
 
-    for role in order:
+    for role in p.passes:
         chain = reviews(state, p.task, ended)
         if chain is not None and chain.step is not None:
             return chain
@@ -190,7 +178,7 @@ def run(state: State, p: Pipeline) -> Outcome:
                 return held
             holder = state.claims.get(p.task)
             if holder is not None and holder != state.session:
-                return stop(f"the claim on task {p.task} fails: session {holder} holds it")
+                return stop(CLAIM_HELD.format(task=p.task, holder=holder))
             if holder is None:
                 claim = claim_command(state, p.task)
                 tries = ran(state, claim, since)
@@ -257,43 +245,24 @@ def runs_at(state: State, p: Pipeline, time: float) -> bool:
         for c in bash_calls(state, restore_command(p.task)))
 
 
-def queued(state: State, given: list[Line]) -> list[Pipeline]:
-    """The pipelines on tasks taken from the queue: for each line of
-    `given` that asks for tasks from it, the tasks of the queue's listing
-    whose claim the session took, up to the count the line gives, from
-    Analyze. A line given while the pipelines of an earlier one run, as a
-    line given again, takes no tasks."""
-    out: list[Pipeline] = []
-    for count, m in queue_counts(given):
-        since = m.time
-        if any(not q.task or runs_at(state, q, since) for q in out):
-            continue
-        command = queue_command(count)
-        calls = [c for c in bash_calls(state, command) if c.time >= since and c.result]
-        if not calls:
-            out.append(Pipeline("", Role.ANALYZE, since, m.operator, True))
-            continue
-        tasks = list(dict.fromkeys(TASK.findall(calls[-1].result or "")))
-        taken = [t for t in tasks if state.claims.get(t) == state.session
-                 or any(a.launched >= since for a in state.agents_of(Role.ANALYZE, t))]
-        out += [Pipeline(t, Role.ANALYZE, since, m.operator, True) for t in taken[:count]]
-        if len(taken) < count:
-            for t in tasks:
-                if t not in taken and t not in state.claims:
-                    out.append(Pipeline(t, Role.ANALYZE, since, m.operator, True))
-                    break
-    return out
+def started(state: State, given: list[Line]) -> list[Pipeline]:
+    """The pipelines whose start calls the `Run:` lines of `given` give,
+    other than those whose call failed."""
+    return [s.pipeline for ln in runs.run_lines(given) for s in runs.started(state, ln)
+            if s.failed is None]
 
 
 def session(state: State) -> list[Pipeline]:
     """The pipelines the coordinator's lines to the session's operators
-    give, in the order their lines arrived. A line on a task whose pipeline
-    from an earlier line, or from the same line, runs when it is given, as
-    a line given again, starts none."""
+    give, and those their runs started, in the order of their lines and
+    calls. A line on a task whose pipeline from an earlier line, or from
+    the same line, runs when it is given, as a line given again, starts
+    none."""
     given = session_lines(state)
     out: list[Pipeline] = []
-    for p in sorted([*pipelines(given), *queued(state, given)], key=lambda x: x.since):
-        if p.task and any(q.task == p.task and runs_at(state, q, p.since) for q in out):
+    for p in sorted(dict.fromkeys([*pipelines(given), *started(state, given)]),
+                    key=lambda x: x.since):
+        if any(q.task == p.task and runs_at(state, q, p.since) for q in out):
             continue
         out.append(p)
     return out
@@ -301,31 +270,43 @@ def session(state: State) -> list[Pipeline]:
 
 def every(state: State) -> list[Pipeline]:
     """The pipelines of `session` that the coordinator's lines to the
-    operator `me` give: those a line to it starts, and those a line to it
-    gives again before they end, a `Solve` line by their task and a
-    `Solve from the queue` line each pipeline a line of that form gives."""
+    operator `me` give: those a line to it starts, those a `Run:` line to
+    it starts, and those a `Solve` line to it gives again by their task
+    before they end."""
     given = lines(state)
-    again = [(m.time, None) for _, m in queue_counts(given)]
-    again += [(p.since, p.task) for p in pipelines(given)]
-    return [p for p in session(state) if p.operator == state.me
-            or any((p.queued if task is None else p.task == task) and runs_at(state, p, time)
-                   for time, task in again)]
+    own = set(started(state, given))
+    again = [(p.since, p.task) for p in pipelines(given)]
+    return [p for p in session(state) if p.operator == state.me or p in own
+            or any(p.task == task and runs_at(state, p, time) for time, task in again)]
+
+
+DROPPED = mctx("a pipeline of an earlier line runs on its task")
+"""The reason a run's pipeline that `session` drops ended."""
+
+
+def running(state: State) -> list[Pipeline]:
+    """The pipelines of `session` that run now."""
+    return [p for p in session(state) if runs_at(state, p, state.now)]
+
+
+def outcomes(state: State) -> list[tuple[Pipeline, Outcome]]:
+    """Where each pipeline stands, and each run's pipeline that `session`
+    drops as ended."""
+    pipelines_now = every(state)
+    out = [(p, Outcome(None, True, DROPPED.format(task=p.task)))
+           for p in started(state, lines(state)) if p not in pipelines_now]
+    return out + [(p, run(state, p)) for p in pipelines_now]
 
 
 def step(state: State) -> tuple[Step | None, list[tuple[Pipeline, Outcome]]]:
-    """The next step of the pipelines, and where each stands."""
-    outcomes: list[tuple[Pipeline, Outcome]] = []
-    first: Step | None = None
-    for p in every(state):
-        if not p.task:
-            count = next(c for c, m in queue_counts(session_lines(state)) if m.time == p.since)
-            o = Outcome(Bash(queue_command(count)))
-        else:
-            o = run(state, p)
-        outcomes.append((p, o))
-        if first is None and o.step is not None:
-            first = o.step
-    return first, outcomes
+    """The next step of the pipelines, and where each stands (`outcomes`),
+    then the start that a run gives next."""
+    found = outcomes(state)
+    first = next((o.step for _, o in found if o.step is not None), None)
+    if first is None:
+        first = next((s for ln in runs.run_lines(lines(state))
+                      if (s := runs.next_start(state, ln, running(state))) is not None), None)
+    return first, found
 
 
 def awaits_analyst(state: State, number: str) -> bool:

@@ -22,7 +22,8 @@ to it.
 
 The steps come in this order: the resume of each agent the usage limit
 stopped (`limit_resume`); the coordinator's lines in no form the
-command reads, each given back to the coordinator once; the ticket
+command reads, each given back to the coordinator once, and then the
+fault of each run script, once for each text it has (`runs`); the ticket
 files the read of the tracker left out (`decisions.unread_files`); the
 alerts; the tickets on stalled agents; the request to a ticket analyst on a held step to give its decision
 again; the decisions for the user, and the items of each ticket analyst's
@@ -51,7 +52,7 @@ from collections.abc import Callable
 
 from controlled_markdown import mctx
 from operations import (alerts, batches, changes, decisions, drafts, limit_resume, lineage,
-                        monitor, passes, triage)
+                        monitor, passes, runs, triage)
 from operations.directives import (
     NUMBER,
     TASK,
@@ -183,11 +184,10 @@ def refused(state: State, step: Step) -> Undecided | None:
 
 
 def unread_lines(state: State) -> Step | None:
-    for ln in unread(state):
-        s = unread_line(ln.text)
-        if not repeated(s, state):
-            return s
-    return None
+    found = [unread_line(ln.text) for ln in unread(state)]
+    found += [runs.fault_message(ln, fault) for ln in runs.run_lines(lines(state))
+              if isinstance(fault := runs.given(state, ln), str)]
+    return next((s for s in found if not repeated(s, state)), None)
 
 
 def launching(state: State) -> Step | None:
@@ -292,7 +292,6 @@ def stands_under(t: Ticket) -> str:
 
 
 REASON = mctx("{of}: {reason}")
-THE_QUEUE = mctx("the queue")
 
 
 def line_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Outcome]]) -> str:
@@ -305,12 +304,8 @@ def line_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Out
             by_task = {p.task: o for p, o in outcomes}
             reasons = [REASON.format(of=m["task"], reason=r) for m in TASK.finditer(ln.rest)
                        if (r := pipeline_state(by_task.get(m["task"]))) is not None]
-        case Directive.QUEUE:
-            own = [(p, o) for p, o in outcomes if p.since == ln.message.time]
-            if not own:
-                own = [(p, o) for p, o in outcomes if p.since < ln.message.time and p.queued]
-            reasons = [REASON.format(of=p.task or THE_QUEUE, reason=r) for p, o in own
-                       if (r := pipeline_state(o)) is not None]
+        case Directive.RUN:
+            reasons = run_state(state, ln, outcomes)
         case Directive.DRAFTS:
             under = {t.number for t in drafts.unended(state)}
             reasons = [draft_stands(n) for n in numbers if n in under]
@@ -336,6 +331,29 @@ def line_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Out
         return mctx("- `{line}`: done").format(line=ln.text)
     return mctx("- `{line}`: unfinished: {reasons}").format(line=ln.text,
                                                              reasons="; ".join(reasons))
+
+
+def run_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Outcome]]) -> list[str]:
+    """The reasons the `Run:` line `ln` stands unfinished: each pipeline of
+    its run that runs, the start its script gives, and a standing fault,
+    with, where any of these stands, the reason each stopped pipeline
+    stopped."""
+    by_pipeline = dict(outcomes)
+    own = runs.started(state, ln)
+    fault = runs.given(state, ln)
+    going = [REASON.format(of=s.pipeline.task, reason=r) for s in own
+             if s.failed is None and not (o := by_pipeline[s.pipeline]).ended
+             and (r := pipeline_state(o)) is not None]
+    if runs.next_start(state, ln, passes.running(state)) is not None:
+        going.append(mctx("its script gives a pipeline to start"))
+    if isinstance(fault, str):
+        going.append(mctx("a fault stops it: {fault}").format(fault=fault))
+    if not going:
+        return []
+    stopped = [REASON.format(of=s.pipeline.task, reason=r) for s in own
+               if (r := s.failed if s.failed is not None
+                   else by_pipeline[s.pipeline].stopped) is not None]
+    return [*going, *stopped]
 
 
 def draft_stands(number: str) -> str:
