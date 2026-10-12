@@ -38,6 +38,7 @@ from pathlib import Path
 from controlled_markdown import form, mctx
 from controlled_markdown.nodes import Rule, finding_lines
 from operations import briefs, messages
+from operations.filing import editor_scratch
 from operations.reports import splits
 from operations.roles import Role
 from operations.state import Agent, Call, Merge, State, Ticket, Tool
@@ -175,7 +176,8 @@ def refused(state: State, t: Ticket, w: Path, last: Call, latest: list[Agent]) -
             return None
         files = sorted({m["path"] for m in QUOTE_LINE.finditer(text)})
         return Launch(Role.CODE_EDITOR, t.number, briefs.quotes_fix(
-            t.number, w, quotes, files, state.scratch / t.number, state.me),
+            t.number, w, quotes, files,
+            editor_scratch(t.number, Role.CODE_EDITOR, state.scratch), state.me),
             model=t.model(Role.CODE_EDITOR))
     first = latest[0] if latest else None
     if first is None or first.agent_id is None:

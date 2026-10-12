@@ -100,6 +100,7 @@ from operations.reports import (OPEN_LABELS, Label, budget_passed, items_of,
                                 left_for_decision)
 from operations.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
 from operations.state import Agent, State, Ticket
+from operations.filing import editor_scratch
 from operations.final_reply import live_holder
 from operations.handled import answered, repeated, sends_to, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids, key
@@ -355,7 +356,8 @@ def fragments_step(state: State, t: Ticket, w: Path,
     if isinstance(drafters, Undecided):
         return drafters
     return Launch(Role.DOC_EDITOR, t.number, briefs.editor(
-        Role.DOC_EDITOR, t.number, True, w, state.scratch / t.number, state.me,
+        Role.DOC_EDITOR, t.number, True, w,
+        editor_scratch(t.number, Role.DOC_EDITOR, state.scratch), state.me,
         places, tuple(drafters), of_fragments=True), model=t.model(Role.DOC_EDITOR))
 
 
@@ -380,7 +382,8 @@ def carry(state: State, t: Ticket) -> Step | None:
         if isinstance(drafters, Undecided):
             return drafters
         return Launch(role, t.number, briefs.editor(
-            role, t.number, len(editors) > 1, w, state.scratch / t.number, state.me,
+            role, t.number, len(editors) > 1, w,
+            editor_scratch(t.number, role, state.scratch), state.me,
             state.fragments.get(w, ()), tuple(drafters)), model=t.model(role))
     if any(a.pending for a in here):
         return None

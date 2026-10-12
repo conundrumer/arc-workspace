@@ -9,9 +9,12 @@ message to the coordinator that opens with `steps.DECISION` keeps its
 first line, which names what it gives, and files the rest. Each brief
 gives the report file the agent writes its final reply to
 (`with_report`), other than a brief of `roles.BARE_BRIEFS`. The readers of a launched agent's brief, of a
-message to it and of its report read the file in place of the line."""
+message to it and of its report read the file in place of the line.
+The scratch directory a brief gives is named here too (`scratch_dir`),
+by the same search for the first free name as the report file."""
 
 import re
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -72,10 +75,31 @@ def report_path(step: Launch, scratch: Path) -> Path:
     step gets the next free name, so no run writes over an earlier run's
     report."""
     k = key(step)
+    return first_free(lambda suffix: files_of(scratch) / f"{k}{suffix}{REPORT_SUFFIX}")
+
+
+def scratch_dir(name: str, scratch: Path) -> Path:
+    """The scratch directory a brief gives: the first of `<name>`,
+    `<name>-2`, `<name>-3`, ... under the session's scratchpad `scratch`
+    that does not exist. The path stays the same at each print of the step
+    until the launched agent creates the directory, so no brief gives a
+    directory an earlier run used."""
+    return first_free(lambda suffix: scratch / f"{name}{suffix}")
+
+
+def editor_scratch(number: str, role: Role, scratch: Path) -> Path:
+    """The scratch directory of the brief of an editor of role `role` on
+    the change `number`."""
+    return scratch_dir(f"{number}-{role}", scratch)
+
+
+def first_free(path: Callable[[str], Path]) -> Path:
+    """The first of `path("")`, `path("-2")`, `path("-3")`, ... that does
+    not exist."""
     n = 1
-    while (path := files_of(scratch) / f"{k}{'' if n == 1 else f'-{n}'}{REPORT_SUFFIX}").exists():
+    while (p := path("" if n == 1 else f"-{n}")).exists():
         n += 1
-    return path
+    return p
 
 
 def with_report(step: Launch, scratch: Path) -> Launch:

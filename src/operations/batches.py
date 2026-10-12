@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from controlled_markdown import mctx
 from operations import briefs
 from operations.changes import release
+from operations.filing import scratch_dir
 from operations.directives import Directive, numbers
 from operations.roles import AGENT_ID, Purpose, Role, analyst_of, analyst_subject
 from operations.state import DOC_REVIEW, Agent, Merge, State
@@ -107,7 +108,7 @@ def step(state: State) -> Step | None:
             if state.code_review is None:
                 return Undecided("no `code-review/<n>` tag gives the last code review's baseline")
             return Launch(Role.CODE_REVIEWER, f"code-review/{state.code_review + 1}",
-                          briefs.code_review(state.code_review, state.scratch / "code-review"))
+                          briefs.code_review(state.code_review, scratch_dir("code-review", state.scratch)))
         if reviewers[-1].pending:
             return None
     if merges:
