@@ -24,7 +24,7 @@
 /// Ranking over members of any type: the caller supplies the strict order,
 /// and the rank of t counts the members before it, ascending from 0.
 /// `before` is read over `elem`, and a row with an endpoint outside `elem`
-/// is ignored. `elem` and `before` may be recursive with `first` and `last`.
+/// is ignored.
 ///
 /// Requires: `before` is transitive; it is never closed, so a `before` that
 /// holds direct comparisons alone yields predecessor counts, not ranks.
