@@ -17,8 +17,8 @@ from pathlib import Path
 from controlled_markdown import mctx
 from filed_texts import report_file, report_text
 from operations.final_reply import SENT_BY_MESSAGE
-from run_reads import (MAIN, LaunchStatus, Notification, Status, agent_messages, blocks,
-                       is_prompt, launch_status, notifications, notified, parent_id,
+from run_reads import (MAIN, LaunchStatus, Notification, Status, agent_messages, agent_type,
+                       blocks, is_prompt, launch_status, notifications, notified, parent_id,
                        read_meta, run_sessions, session_agents, text_of)
 from transcripts import Entry, agent_id, chain, epoch, main_transcript, read_entries
 
@@ -195,6 +195,16 @@ def parent_transcripts(path: Path) -> list[Path]:
         return [m for s in sessions if (m := main_transcript(s)).is_file()]
     runs = [chain(a) for s in sessions if (a := session_agents(s).get(parent))]
     return list(dict.fromkeys(p for run in runs for p in run))
+
+
+def parent_type(path: Path) -> str | None:
+    """The agent type of the parent of the subagent at `path`: `main` where
+    that parent is the main session, and otherwise `agent_type` of the
+    first of `parent_transcripts`, or None where none is found."""
+    if parent_id(path) == MAIN:
+        return MAIN
+    found = parent_transcripts(path)
+    return agent_type(found[0]) if found else None
 
 
 def reports(path: Path, since: float, undecided: list[str]) -> list[Report] | None:

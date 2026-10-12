@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
-from agent_reports import parent_transcripts
+from agent_reports import parent_type
 from context_bound_hook import OPERATOR
 from controlled_markdown import mctx
 from engine import checkout
@@ -18,7 +18,7 @@ from operations.reports import BUDGET_PASSED
 from operations.roles import GENERAL, GENERAL_ROLES, Role, described
 from run_profile import clock, minutes, one_line, percentile
 from run_records import Message, Part, Run
-from run_reads import MAIN, agent_type, parent_id
+from run_reads import parent_id
 from transcripts import is_subagent
 
 # The terms of the budget of a type or a role, which HELP states.
@@ -209,15 +209,11 @@ def operator_launched(r: Run, undecided: list[str]) -> bool:
     it."""
     if not is_subagent(r.path):
         return False
-    parent = parent_id(r.path)
-    if parent == MAIN:
-        return False
-    found = parent_transcripts(r.path)
-    kind = agent_type(found[0]) if found else None
+    kind = parent_type(r.path)
     if kind is None:
         undecided.append(mctx("{run}: the type of its parent {parent} is "
                               "unknown, so it is left out of its type's "
-                              "budget").format(run=r.label, parent=parent))
+                              "budget").format(run=r.label, parent=parent_id(r.path)))
         return False
     return kind == OPERATOR
 

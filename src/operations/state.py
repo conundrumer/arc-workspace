@@ -325,9 +325,9 @@ class State:
     change `changes.take` takes next, taken at `now`, and of each change
     `me` holds whose spend passes the budget its take gives, taken at the
     line that gives that budget (`change_budget.Take`). `doc_budgets`
-    gives, for each change `me` holds whose `editors` field gives no doc
-    editor and whose worktree's `fragments` are not empty, the budget,
-    taken at `now`, of that field's set with the doc editor. `limit_lifted` is the time of the reading of the usage limit that
+    gives, for each change `me` holds that `changes.lacking_doc_editor`
+    gives an `editors` field for, the budget, taken at `now`, of that
+    field's set with the doc editor. `limit_lifted` is the time of the reading of the usage limit that
     gives it as lifted, or None where the reading gives it in force, as
     `operator_state.limit_lifted` gives it."""
     me: str

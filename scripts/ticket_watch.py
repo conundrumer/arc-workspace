@@ -7,7 +7,7 @@ role, and the budget of a change taken over the changes like it."""
 import re
 import statistics
 import time
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -203,12 +203,6 @@ def budget(tickets: Path, editors: frozenset[Role], before: float,
     return Budget(OVERRUN * statistics.median(s.dollars for s in like),
                   OVERRUN * statistics.median(s.seconds for s in like),
                   {r: statistics.median(s.by_role.get(r, 0.0) for s in like) for r in roles})
-
-
-def budget_with(tickets: Path, editors: Iterable[Role], added: Role, before: float,
-                undecided: list[str]) -> Budget | None:
-    """`budget` of the `editors` set with the editor `added`."""
-    return budget(tickets, frozenset({*editors, added}), before, undecided)
 
 
 def cases(text: str) -> list[tuple[float, float]]:

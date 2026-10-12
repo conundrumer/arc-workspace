@@ -37,7 +37,7 @@ from ticket_numbers import (SESSION_VAR, SESSIONS, reserve, session_id,  # noqa:
                             session_index, ticket_number, write_new)
 from ticket_settle import to_settle  # noqa: E402
 from ticket_reads import editors_field  # noqa: E402
-from ticket_watch import (CAP, CHANGES, Case, add_evidence, budget_with, case_loss, evict,  # noqa: E402
+from ticket_watch import (CAP, CHANGES, Case, add_evidence, budget, case_loss, evict,  # noqa: E402
                           front, route, threshold)  # noqa: E402
 from ticketing.text import SECTIONS, heading  # noqa: E402
 from ticketing.times import TIME_FORM  # noqa: E402
@@ -384,7 +384,7 @@ def editors_command(ref: str, editor: str, agent: str, agent_id: str) -> Path:
                            "to").format(path=path, editor=editor))
     roles = [r for r in EDITORS if r in given or r is added]
     undecided: list[str] = []
-    b = budget_with(tickets, given, added, time.time(), undecided)
+    b = budget(tickets, frozenset(roles), time.time(), undecided)
     if b is None:
         print_undecided(undecided)
         raise Refused(mctx("the budget of {path} is unknown").format(path=path))
