@@ -254,10 +254,9 @@ def block(me: str, action: Action, step_at: Callable[[float], tuple[Step, Path]]
 
 def operator_step(me: str, deadline: float) -> tuple[Step, Path]:
     """The operator's next step, with a launch held until `reloading` gives
-    no wait, or the wait, where the hold runs past `deadline`. Where the
-    step is the launch of an analyst on a held step marked `reread`, the
-    state is read once more, and the step is the one that read gives,
-    since a reply that lands during the first read can end the hold."""
+    no wait, or the wait, where the hold runs past `deadline`.
+    `steps.Undecided.reread` gives why the command reads the state again
+    before it launches an analyst on a step marked `reread`."""
     while True:
         state, watch = read_state(me)
         step = plan.next_step(state, watch)

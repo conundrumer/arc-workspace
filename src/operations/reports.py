@@ -125,8 +125,6 @@ def reviewed_state(a: Agent) -> str | None:
 
 
 def shows_current(a: Agent, w: Path) -> bool:
-    """Whether `reviewed_state(a)` is not None and equals the `fingerprint`
-    of the worktree `w`."""
     seen = reviewed_state(a)
     return seen is not None and seen == fingerprint(w)
 

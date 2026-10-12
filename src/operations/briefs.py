@@ -22,6 +22,13 @@ TESTS = mctx("Tests directory: `tests/`.")
 SCRATCH = mctx("Scratch directory: {scratch}.")
 LAUNCHER = mctx("The agent that launches you: {operator}.")
 MAY_EDIT = mctx("The files you may edit: {files}.")
+FILE_AS = mctx("with {domain_subject} as `<domain>` and `<subject>`, and {agent} as `<agent>`")
+"""The clause of a brief that gives its agent the domain, the subject and
+the agent to file its tickets with."""
+CODE_WORD = mctx("`{word}`")
+OPERATOR = mctx("`operator`")
+AT_MASTER = FILE_AS.format(domain_subject=mctx("`commit` and the hash `master` stands at"),
+                           agent=OPERATOR)
 REPORT_FILE = mctx("Report file: `{path}`.")
 """The line of each brief the operator gives that gives the file the agent
 writes its final reply to, for an agent whose documents say what it does
@@ -132,7 +139,7 @@ def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], 
 AFTER_MERGE = mctx("""
     - Change {number} is merged into `master` at {head}.
     - Run each check its ticket places after the merge, which `{command}` prints: {checks}.
-    - File each check that fails as a `bug` ticket, by the lines of the section `Ticket files` of `prompts/agents/notes/tickets.md`, with `change` and {number} as `<domain>` and `<subject>`, and `operator` as `<agent>`.
+    - File each check that fails as a `bug` ticket, by the lines of the section `Ticket files` of `prompts/agents/notes/tickets.md`, {filing}.
     - Give each check whose subject is an event that has not happened yet in your reply as unfinished, with that reason.
     - Run a check of what a running Claude Code session reads only at its start, such as its hooks, in a `claude -p` session you start in the main worktree.
     - Reply with each check as passed, failed with its ticket, or unfinished with its reason.
@@ -140,7 +147,9 @@ AFTER_MERGE = mctx("""
 
 
 def after_merge(number: str, checks: str, head: str) -> str:
-    return AFTER_MERGE.format(number=number, head=head, checks=checks,
+    filing = FILE_AS.format(domain_subject=mctx("`change` and {number}").format(number=number),
+                            agent=OPERATOR)
+    return AFTER_MERGE.format(number=number, head=head, checks=checks, filing=filing,
                               command=TICKET_PATH.format(number=number))
 
 
@@ -306,7 +315,7 @@ def held_step(what: str, operator: str, rulable: bool) -> str:
 
 TRANSCRIPT_REVIEW = mctx("""
     - Review the transcript of run {run}, which `python3 ~/.claude/skills/retrieve/transcripts.py --help` reads.
-    - File each ticket by the lines of the section `Ticket files` of `prompts/agents/notes/tickets.md`, with `{domain}` as `<domain>`, `{subject}` as `<subject>`, and `transcript-review` as `<agent>`.
+    - File each ticket by the lines of the section `Ticket files` of `prompts/agents/notes/tickets.md`, {filing}.
     - Find each place where the run explored to find what a docstring or a document line could have led it to.
     - At the first such place, list the titles under `tickets/watching/` in one `grep -m1 -H '^# '` call, and read no ticket's body to match.
     - At each such place:
@@ -320,7 +329,10 @@ PASS_REVIEW = mctx("""
 
 
 def transcript_review(run: str, domain: str, subject: str, solver_pass: bool) -> str:
-    text = TRANSCRIPT_REVIEW.format(run=run, domain=domain, subject=subject)
+    filing = FILE_AS.format(
+        domain_subject=mctx("`{domain}` and `{subject}`").format(domain=domain, subject=subject),
+        agent=CODE_WORD.format(word=Role.TRANSCRIPT_REVIEW))
+    text = TRANSCRIPT_REVIEW.format(run=run, filing=filing)
     return f"{text}\n{PASS_REVIEW}" if solver_pass else text
 
 
@@ -354,7 +366,7 @@ def standing_doc_review(reader: str, tag: str, commit: str, operator: str) -> st
 BATCH_PROFILE = mctx("""
     - Run `uv run python scripts/profile_runs.py --each <id> ...` once, with the agent ids of all these runs as `<id> ...`: {runs}.
         - You may write its output to a file and read it there.
-    - File one `performance` ticket, with `commit` and `{commit}` as `<domain>` and `<subject>` and `operator` as `<agent>`, for each cause across these runs that you judge worth fixing, by the test that a change to a tool or a document could cut the time or the token cost it made, and give in it the time and the token cost that cause made in these runs.
+    - File one `performance` ticket, {filing}, for each cause across these runs that you judge worth fixing, by the test that a change to a tool or a document could cut the time or the token cost it made, and give in it the time and the token cost that cause made in these runs.
         - File none on a cause that a ticket outside `tickets/closed/` already records.
     {review}
     - Reply only once each transcript review you launched has replied, with the tickets you filed and the reviews you launched.
@@ -374,12 +386,14 @@ RUN = "<run>"
 
 
 def batch_profile(runs: list[str], reviewable: list[str], commit: str) -> str:
+    filing = FILE_AS.format(domain_subject=mctx("`commit` and `{commit}`").format(commit=commit),
+                            agent=OPERATOR)
     if not reviewable:
-        return BATCH_PROFILE.format(runs=", ".join(runs), commit=commit, review=NO_REVIEW)
+        return BATCH_PROFILE.format(runs=", ".join(runs), filing=filing, review=NO_REVIEW)
     review = REVIEW.format(reviewable=", ".join(reviewable),
                            review_brief=mctx("the block below"), run=RUN,
                            model=Role.TRANSCRIPT_REVIEW.model)
-    text = BATCH_PROFILE.format(runs=", ".join(runs), commit=commit, review=review)
+    text = BATCH_PROFILE.format(runs=", ".join(runs), filing=filing, review=review)
     brief = transcript_review(RUN, "agent", RUN, False)
     return f"{text}\n\n```\n{brief}\n```"
 
@@ -395,13 +409,13 @@ BATCH_GATE = mctx("""
         - Each other step is `uv run python scripts/gate.py --outputs-only <out> <cmd>`, with that line's command.
         - A step at a commit whose gate has no such command counts as before the change.
         - File a `DIFF` line unbisected where it stands at that commit, where no `affected:` line of that run gives one, or where it ends in `warm` and its step at `master` does not print it, and say which in the ticket.
-    - File each ticket with `commit` and the hash `master` stands at as `<domain>` and `<subject>`, and `operator` as `<agent>`.
+    - File each ticket {filing}.
     - Reply with the tickets you filed.
     """)
 
 
 def batch_gate(scratch: Path) -> str:
-    return BATCH_GATE.format(scratch=scratch)
+    return BATCH_GATE.format(scratch=scratch, filing=AT_MASTER)
 
 
 VALIDATION_REVIEW = mctx("""
@@ -412,7 +426,7 @@ VALIDATION_REVIEW = mctx("""
         {checks}
     - Where a check gives a command, run it once, and judge its output in place of the runs.
     - Write each line on a request as `{log} <number> {closed} {agent} --from {closed} "<note>"`.
-    - File each ticket by the lines of the section `Ticket files` of `prompts/agents/notes/tickets.md`, with `{agent}` as `<agent>`, and with `{change}` and the change's number as `<domain>` and `<subject>`, or `{ticket}` and the request's number where its close gives no change.
+    - File each ticket by the lines of the section `Ticket files` of `prompts/agents/notes/tickets.md`, {filing}.
     - Where the command's output or a run shows that the check holds, write a line whose note opens with `{validated}`, then gives that run's agent id or the command.
     - Where it shows that the check fails, write a line whose note opens with `{failed}`, then gives that run's agent id or the command, then file a `bug` ticket with the request's number and that run's agent id or the command's output in its `Evidence`.
     - Where the check gives no command, none of those runs exercises what it checks, and the request closed {days} days ago or more, write a line whose note opens with `{unexercised}`, then file a `question` ticket that gives the request's number.
@@ -445,7 +459,12 @@ def validation_review(runs: list[str], checks: list[Check]) -> str:
         show=shlex.join([*FILE_TICKET, "show"]),
         log=shlex.join([*FILE_TICKET, "log"]), closed=Status.CLOSED, agent=Role.VALIDATION_REVIEW,
         validated=Verdict.VALIDATED, failed=Verdict.FAILED, unexercised=Verdict.UNEXERCISED,
-        change=Domain.CHANGE, ticket=Domain.TICKET, days=UNEXERCISED_DAYS,
+        filing=FILE_AS.format(
+            domain_subject=mctx("`{change}` and the change's number, or `{ticket}` and the "
+                                "request's number where its close gives no change,").format(
+                change=Domain.CHANGE, ticket=Domain.TICKET),
+            agent=CODE_WORD.format(word=Role.VALIDATION_REVIEW)),
+        days=UNEXERCISED_DAYS,
         checks="\n    ".join(check_line(c) for c in checks))
 
 
@@ -469,7 +488,7 @@ COST_AUDIT = mctx("""
     - Where a run has entries before the window's start, count only the share of its cost from its entries in the window, as an estimated figure with that basis.
     - Find each kind of step whose summed cost over the window exceeds what it finds, and each cost that bought no work or that a cheaper path would have cut.
     - Leave out what a process covers and did not miss: the checks that [Quality assurance (quality assurance, incident management, problem management)](prompts/agents/notes/process.md#quality-assurance-quality-assurance-incident-management-problem-management) gives cover each run, and file nothing on a cause that a ticket outside `tickets/closed/` records.
-    - File one `performance` ticket per finding, with `commit` and the hash `master` stands at as `<domain>` and `<subject>`, and `operator` as `<agent>`. Give in it the cost in dollars, the agent type, the evidence as agent ids, ticket numbers and times, the cause in one line, each figure labeled measured or estimated with the basis of each estimate, and what a cut of its step would trade off.
+    - File one `performance` ticket per finding, {filing}. Give in it the cost in dollars, the agent type, the evidence as agent ids, ticket numbers and times, the cause in one line, each figure labeled measured or estimated with the basis of each estimate, and what a cut of its step would trade off.
     - Edit no tracked file and launch no agent.
     - Reply with the tickets you filed.
     """)
@@ -477,7 +496,7 @@ COST_AUDIT = mctx("""
 
 def cost_audit(since: float, transcripts: Path, operator: str) -> str:
     return (COST_AUDIT.format(since=utc_stamp(since), transcripts=transcripts,
-                              description=description(Role.COST_AUDIT, "<n>"))
+                              description=description(Role.COST_AUDIT, "<n>"), filing=AT_MASTER)
             + "\n" + LAUNCHER.format(operator=operator))
 
 

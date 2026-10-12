@@ -15,9 +15,8 @@ finding, and that reviewer is asked once to review the change again, and
 the review is held where it has not replied since, unless that reply
 opens with `no finding stands` and its `reports.WORKTREE` line gives the
 `tracker.fingerprint` the worktree has now, as then the worktree is in
-the state that reply read. That reply can land while the command reads
-the state, so the command reads the state once more before it launches
-an analyst on that hold. A reply in any other form holds the review. The command launches no editor for a reviewer's findings: that
+the state that reply read. `steps.Undecided.reread` gives why the
+command reads the state again before it launches an analyst on that hold. A reply in any other form holds the review. The command launches no editor for a reviewer's findings: that
 reviewer sends them to the editors of its brief.
 
 A doc editor that `changes` launches on a change's `mctx` fragments after
@@ -71,8 +70,8 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
 def unreplied(state: State, t: Ticket, w: Path, here: list[Agent],
               r: Agent) -> Step | Literal[False]:
     """The step on a review whose doc reviewer `r` has not replied since
-    its editors ended. A reply of `r` can land while the state is read, so
-    its held step is marked to be read again (`steps.Undecided.reread`)."""
+    its editors ended. `steps.Undecided.reread` gives why its held step is
+    marked."""
     step = review_decided(state, t, w, here, mctx(
         "doc reviewer {agent} of change {number} has not replied since its editors "
         "ended").format(agent=r.agent_id, number=t.number))
