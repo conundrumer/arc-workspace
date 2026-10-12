@@ -152,14 +152,14 @@
 - How it can fail: work that is slow and not stuck is escalated: the trigger is the absence of a step, and not time alone.
 
 ## Configuration management
-- Purpose: know what each change touches, and keep the changes that touch the same thing in order.
-- Principles: "split work that can run in parallel on disjoint files and run its parts at once, with no contention", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
+- Purpose: know what each change touches, and build each change after each change whose result it reads.
+- Principles: "Save token cost first and time second, and count about 30 minutes saved as worth about $5 of token cost", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
 - Outcomes:
-    - Changes that edit the same part of a file are ordered before the build.
+    - A change is built after each change whose result its Design reads.
     - Each worktree belongs to one live change.
 - Owner: the ticket analyst for `depends-on`, and [merge_change.py](scripts/merge_change.py) for the worktrees.
 - Takes from: the Scopes. Gives to: merge.
-- How it can fail: two changes that edit different parts of a file conflict in the rebase: the later change runs again with a new first editor.
+- How it can fail: two changes in flight at once that edit one part of a file may conflict in the rebase, and where they do, the later change runs again with a new first editor.
 
 ## Solver passes (implementation)
 - Purpose: solve a task by the Analyze, Create and Refine passes on it.

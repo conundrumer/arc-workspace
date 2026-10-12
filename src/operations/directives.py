@@ -6,7 +6,7 @@ word of its kind and a colon, past a list marker:
   after a task id to start its pipeline at that pass;
 - `Run: <path>`, a run script, as `runs` gives it;
 - `Drafts to review: <number>, ...`;
-- `Tickets named: <number>, ...`;
+- `Expedite: <number>, ...`;
 - `Merged: <number>, ...`, the changes the coordinator gives as merged;
 - `Merge: <number>`, a change under `tickets/blocked/` whose merge that line rules;
 - `Tickets are open.`;
@@ -53,7 +53,7 @@ class Directive(StrEnum):
     SOLVE = "Solve"
     RUN = "Run"
     DRAFTS = "Drafts to review"
-    NAMED = "Tickets named"
+    EXPEDITE = "Expedite"
     MERGED = "Merged"
     MERGE = "Merge"
     OPEN = "Tickets are open"
@@ -202,8 +202,8 @@ def held_on(what: str, choices: dict[Decision, str]) -> Undecided:
 
 
 def named(state: State) -> set[str]:
-    """The tickets the coordinator names to the operator."""
-    return {n for k in (Directive.NAMED, Directive.DRAFTS, Directive.MERGE, Directive.MERGED)
+    """The tickets the coordinator gives the operator in a line."""
+    return {n for k in (Directive.EXPEDITE, Directive.DRAFTS, Directive.MERGE, Directive.MERGED)
             for n, _ in numbers(state, k)}
 
 

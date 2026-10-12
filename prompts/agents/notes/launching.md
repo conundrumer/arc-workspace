@@ -72,7 +72,7 @@
     - `Solve: <task id> ...`: a solver pipeline on each task, from Analyze, or from the pass that `from create` or `from refine` after its task id gives.
     - `Run: <path>`: the solver pipelines that the run script at that path starts, as `uv run python scripts/operate.py --help run` gives the script.
     - `Drafts to review: <number>, ...`: the draft `change` tickets to review.
-    - `Tickets named: <number>, ...`: tickets of another session that the operator releases, takes and settles as it does its session's.
+    - `Expedite: <number>, ...`: tickets of any session, and each `change` that a chain of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, reaches from them. The operator releases, takes and settles each of them as it does its session's, and takes each of those changes ahead of the other changes it may take.
     - `Merged: <number>, ...`: the changes the coordinator merged itself.
     - `Merge: <number>`: a `change` under `tickets/blocked/` that waits on the user, which the user's ruling has the operator merge.
     - `Tickets are open.`

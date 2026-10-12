@@ -17,8 +17,9 @@ too, and asks its parent, the coordinator or an operator launcher, for a
 fresh operator with no lines; the operator launched next takes up from the state each line
 that the operators before it in a row that ended so received
 (`taken_up`), and, once their work is no longer open, through
-`changes.release`, the changes of the session and of the tickets named
-to it.
+`changes.release`, the changes of the session and of the tickets the
+coordinator gives it in a line, and of each ticket a chain of links
+reaches from one of those.
 
 The steps come in this order: the resume of each agent the usage limit
 stopped (`limit_resume`); the coordinator's lines in no form the
@@ -312,11 +313,10 @@ def line_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Out
         case Directive.DRAFTS:
             under = {t.number for t in drafts.unended(state)}
             reasons = [draft_stands(n) for n in numbers if n in under]
-        case Directive.NAMED:
+        case Directive.EXPEDITE:
             reasons = [mctx("ticket {n} {stands}").format(n=n, stands=stands_under(t))
-                       for n in numbers
-                       if (t := state.tickets.get(n)) is not None
-                       and t.status in (Status.OPEN, Status.ASSIGNED)]
+                       for n in sorted(changes.reached(state, set(numbers)))
+                       if (t := state.tickets.get(n)) is not None and t.status is not Status.CLOSED]
         case Directive.MERGED:
             if not any(a.launched > ln.message.time for a in state.agents_of(Role.BATCH_PROFILE)):
                 reasons = [mctx("After a batch has not run since it was given")]

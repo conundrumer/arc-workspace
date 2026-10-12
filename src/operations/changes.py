@@ -111,19 +111,40 @@ from ticketing.vocabulary import Domain, Kind, Status
 
 def scope(state: State) -> set[str]:
     """The tickets the operators release and take changes among: the
-    session's, those the coordinator names to the operator `me`, and each `change` one of those
-    waits on through a chain of `depends-on`."""
-    base = {n for n, t in state.tickets.items() if state.mine(t)} | named(state)
-    todo = list(base)
+    session's, those the coordinator gives in a line to the operator `me`,
+    and each ticket a chain of links reaches from one of those."""
+    return reached(state, {n for n, t in state.tickets.items() if state.mine(t)} | named(state))
+
+
+def reached(state: State, start: set[str]) -> set[str]:
+    """`start` and each ticket a chain of links reaches from one of its
+    tickets, a link as
+    [Change tickets](prompts/agents/notes/tickets.md#change-tickets) defines
+    one."""
+    out = set(start)
+    todo = sorted(out)
     while todo:
         t = state.tickets.get(todo.pop())
         if t is None:
             continue
-        for d in t.depends_on:
-            if d not in base:
-                base.add(d)
+        for d in links(t):
+            if d not in out:
+                out.add(d)
                 todo.append(d)
-    return base
+    return out
+
+
+def links(t: Ticket) -> list[str]:
+    _, wait = final_run(t)
+    on = t.log[wait].on_change if t.status is Status.BLOCKED and wait is not None else None
+    return [*t.depends_on, *([on] if on is not None else [])]
+
+
+def expedited(state: State) -> set[str]:
+    """The tickets a chain of links reaches from a ticket an `Expedite:`
+    line to the operator gives, which the operator takes ahead of the
+    others."""
+    return reached(state, {n for n, _ in numbers(state, Directive.EXPEDITE)})
 
 
 def release(state: State) -> Step | None:
@@ -151,7 +172,7 @@ def boosted(state: State) -> set[str]:
 
 
 def takeable(state: State) -> list[Ticket]:
-    lead = boosted(state)
+    lead = boosted(state) | expedited(state)
     ts = [t for n in scope(state) if (t := state.tickets.get(n)) is not None
           and t.kind is Kind.CHANGE and t.status is Status.OPEN
           and all(closed(state, d) for d in t.depends_on)]

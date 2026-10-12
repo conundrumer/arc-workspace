@@ -2,17 +2,18 @@
 - The statements on the user's requests for work and on the tickets the coordinator files and tracks, that the coordinator reads at the triggers its document gives.
 
 ## Routes
-- A user's message may open or end with a route directive: `direct`, `send`, `hotfix`, `file`, `draft`, `scratch`, or `re <number>`, a follow-up on that `request`.
+- A user's message may open or end with a route directive: `direct`, `send`, `hotfix`, `expedite <number>`, `file`, `draft`, `scratch`, or `re <number>`, a follow-up on that `request`.
 - Where a user's message that asks for work gives no route directive, infer its route, the `request` a follow-up concerns, and the span.
-- On a route other than `scratch`, write, read back, then act: in the same turn on a route the user states, and on an inferred one only once the user replies to it.
-    - To write is to run the command of `uv run python scripts/spans.py` that writes the route's `request` or brief. To act is to launch an agent with that brief, make or merge the change, or tell an operator that tickets are open.
+- On a route other than `scratch`, write, read back, then act: in the same turn on a route the user states, and on an inferred one only once the user replies to it. On an `expedite` the user states, act with no readback.
+    - To write is to run the command of `uv run python scripts/spans.py` that writes the route's `request` or brief. To act is to launch an agent with that brief, make or merge the change, send an operator an `Expedite:` line, or tell an operator that tickets are open.
         - The goal you give that command is the outcome the user wants from the work, in one or two sentences, from the user's words, with no means you proposed.
-    - Read back right after that command: give the route, the goal word for word as the command prints it, and the work in your own words.
+    - Read back right after the write: give the route, the goal word for word as the command prints it where you ran one, and the work in your own words.
         - On an inferred route, open the readback with `**Inferred route: <route>.**`, and end it with the act the user's reply sets off, as `Once you reply, I <act>.`, or, where it sets off none, with a sentence that says so.
 - `scratch` is work after which nothing under version control has changed, nothing has left the session, and nothing later depends on it. Do it with no readback, no ticket and no brief. Where that work would change a tracked file or send something out of the session, read back a route before that step.
 - `direct`: file the change's `request`, write its brief, and carry the change as [Changes](prompts/agents/notes/coordinator.md#changes) gives.
-- `send`: file the `request` and, in that turn, tell an operator that tickets are open where an operator launcher of yours runs, and otherwise launch a ticket analyst on it, with its transcript brief.
+- `send`: file the `request` and, in that turn, send an operator `Expedite: <number>` with its number where an operator launcher of yours runs, and otherwise launch a ticket analyst on it, with its transcript brief, and send that line once the analyst replies.
 - `hotfix`: file the change's `request`, write its brief, launch at once on a worktree the editors it needs, each with that brief, and merge the change as [Changes](prompts/agents/notes/coordinator.md#changes) gives.
+- `expedite <number>`: write nothing, send an operator `Expedite: <number>`, and tell the user the tickets outside `tickets/closed/` that a chain of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, reaches from it.
 
 ## Tickets
 - File and track a ticket by [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Tracking](prompts/agents/notes/tickets.md#tracking) and [Change tickets](prompts/agents/notes/tickets.md#change-tickets).
@@ -26,4 +27,4 @@
     - Where the `change` of that `request` has merged, file those words as a new `request` in place of the append, with a line under `Grounds` that gives the earlier one, and where those words withdraw the earlier `request`'s need, close it `wontfix` with the new `request`'s number.
 - Where the user rules on a ticket under `tickets/blocked/` that waits on the user and is no `change`, move it to `tickets/open/`, and record the ruling on it: as a span where it is a `request`, and otherwise in the note of the line that moves it.
 - Where a `request` under `tickets/blocked/` waits on `validation`, and you read a run that exercises the change its log gives, or, for a change that cuts agents' context, the output of `uv run python scripts/profile_runs.py --split` run as `uv run python scripts/profile_runs.py --help many` gives, close the request `fixed` where that run or output shows its need met, and otherwise move it to `tickets/open/` with the unmet part of its need in the note.
-- Launch no ticket analyst for a ticket you file, other than a `request` on `send` while no operator launcher of yours runs. Once a line above writes on a ticket outside `tickets/draft/`, other than such a `request` or one you hold, and before you end your turn with no other work, tell an operator that tickets are open.
+- Launch no ticket analyst for a ticket you file, other than a `request` on `send` while no operator launcher of yours runs. Once a line above writes on a ticket outside `tickets/draft/`, other than a `request` on `send` or one you hold, and before you end your turn with no other work, tell an operator that tickets are open.

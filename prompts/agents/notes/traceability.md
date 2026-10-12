@@ -84,6 +84,7 @@
 ## Request notes
 - [Routes](prompts/agents/notes/requests.md#routes): Requirements: requirements traced to the spans; Merge: a hotfix reviewed after it merges.
     - "`scratch` is work after which": none. Kept: the principle of Process assessment, spend no run the work does not need.
+    - "`expedite <number>`": none. Kept: it lets the user have a ticket's chain taken first.
 - [Tickets](prompts/agents/notes/requests.md#tickets): Requirements: requirements traced to the spans; Work control: stopped work reaches an agent.
     - "Where you run no solver pass, file each fault": none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
     - "Tell the user what each ticket": none. Kept: the principle of Requirements, the user's part.
@@ -114,8 +115,8 @@
 - [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief): Configuration management: one live change per worktree.
     - "It gives the accepted gate outputs": Merge: each merge passes the gate and the checks.
 - [A code editor's brief](prompts/agents/notes/launching.md#a-code-editors-brief): none. Kept: it gives a code editor the directories its work writes to.
-- [A change's brief](prompts/agents/notes/launching.md#a-changes-brief): Requirements: requirements traced to the spans; Configuration management: changes that edit the same part ordered.
-- [Items and files](prompts/agents/notes/launching.md#items-and-files): Configuration management: changes that edit the same part ordered.
+- [A change's brief](prompts/agents/notes/launching.md#a-changes-brief): Requirements: requirements traced to the spans; Configuration management: a change built after the changes whose result it reads.
+- [Items and files](prompts/agents/notes/launching.md#items-and-files): Configuration management: a change built after the changes whose result it reads.
 - [A doc editor's brief](prompts/agents/notes/launching.md#a-doc-editors-brief): none. Kept: the principle of Design, one idea in one place.
 - [A ticket reviewer's brief](prompts/agents/notes/launching.md#a-ticket-reviewers-brief): Verification: each `change` ticket checked before the build.
 - [A ticket analyst's brief](prompts/agents/notes/launching.md#a-ticket-analysts-brief): Work control: stopped work reaches an agent.
@@ -140,7 +141,7 @@
     - "Send each draft `change` ticket", "Revise a `change` ticket that stands under": Verification: each `change` ticket checked before the build.
     - "Once the user rules on a draft `change` ticket": Requirements: requirements checked against added words.
     - "Ask an operator for no message to you": none. Kept: it keeps an operator's messages to the coordinator to those the coordinator acts on.
-    - "Each time a `change` of your session comes to stand": Configuration management: changes that edit the same part ordered.
+    - "Each time a `change` of your session comes to stand": Configuration management: a change built after the changes whose result it reads.
 - [While the user gives feedback](prompts/agents/notes/launching.md#while-the-user-gives-feedback): none. Kept: the principle of Process assessment, spend no run the work does not need.
     - "Where a request touches the files of a change": Configuration management: one live change per worktree.
 - [draft-outcome](prompts/agents/notes/launching.md#draft-outcome): Verification: each `change` ticket checked before the build.
@@ -177,7 +178,7 @@
     - "Where you read the titles of tickets": none. Kept: the principle of Process assessment, spend no run the work does not need.
     - "Read a ticket you do not edit": Process assessment: the context each run of an agent loads holds only the lines each of its runs needs.
     - "A ticket under `tickets/watching/`": none. Kept: the principle of Quality assurance, the fault options: a loss below its fix's cost is accepted until its cases' summed loss reaches that cost.
-- [Change tickets](prompts/agents/notes/tickets.md#change-tickets): Configuration management: changes that edit the same part ordered.
+- [Change tickets](prompts/agents/notes/tickets.md#change-tickets): Configuration management: a change built after the changes whose result it reads.
     - "A ticket that asks for a change", "Give each `change` you file or revise the `mechanical` field": none. Kept: they give the fields a `change` ticket's handling reads.
 
 ## Worktree notes
@@ -265,7 +266,8 @@
 - [A later round](prompts/agents/ticket-reviewer/later-rounds.md): Verification: a later round on changed text only.
 - [Checks](prompts/agents/ticket-reviewer.md#checks): Verification: each `change` ticket checked before the build.
     - "Report nothing on a draft's wording": none. Kept: it keeps the review on what a requirement states, a way Verification can fail.
-    - "A `change`, other than one under `tickets/blocked/`", "Instructions that edit the same part of a file", "A `change` ticket's `depends-on` gives": Configuration management: changes that edit the same part ordered.
+    - "A `change`, other than one under `tickets/blocked/`", "A `change` ticket's `depends-on` gives": Configuration management: a change built after the changes whose result it reads.
+    - "Instructions that edit the same part of a file": none. Kept: two instructions of one change that edit one part conflict where they stand out of order.
     - "A `change` to the agents' processes": Process assessment: each rule maps to an outcome.
     - "In a `change` that serves a `request`, each item of the Intent": Requirements: requirements traced to the spans.
     - "A `change` that adds a mechanism to code has a `Design`", "A `change` that adds or changes a rule or a fact", "A `Design` lists each state": Design: the design checked before the build.
