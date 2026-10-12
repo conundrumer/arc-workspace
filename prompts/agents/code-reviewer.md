@@ -46,5 +46,5 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 * inline: notes/tickets.md#ticket-files
 * inline: notes/tickets.md#ticket-fields
 * inline: notes/tickets.md#tracking
-- File a `performance` ticket for each step of your work whose run time is far out of proportion to the work the step does.
+* inline: notes/tickets.md#performance-tickets
 * inline: notes/tickets.md#noticed-faults

@@ -31,18 +31,20 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     2. Go through the request, find what each of those readers needs to know at that place, and put in only that, by these rules:
         * inline: ../../docs/handbook/editing.md#what-a-file-holds
 - Judge each line you write or keep as each of its readers. Put in a reason or a premise from the request only where it is true for each reader at that place, and a term only where each reader knows it there.
-- In your reply, give each thing the Intent asks for, and each thing a request a later message adds asks for, as done, or as unfinished with its reason, and state each place you departed from the request and why.
-* inline: notes/launching.md#an-editors-report-on-a-change
-- Open your reply with `done` where each of those things is done and you left no finding for a decision, and with `blocked` where each one not done is stopped by a tool or a document you find no way around and you left no finding for a decision.
 - After each edit you make, the fixes of a later message's findings included, run `uv run python scripts/context.py --write` and `uv run python -m controlled_markdown check` in the worktree, and review the edit by the steps [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) gives.
     * comment: With "After you edit" in its context, doc editor `a463cddaf6d2c10a9` answered four later messages of findings in change 17 by running only `context.py --write` and the check, and each fix brought the next finding: ~/.claude/projects/-Users-davidlu-code-arc-workspace/dc433af1-cf87-408d-ab9d-9a1ede6b1b2a/subagents/agent-a463cddaf6d2c10a9.jsonl, lines 75 to 155, and ticket 2 refers to that run as change 17.
 - Fix each finding that needs no decision, and review again, until a pass finds no such finding.
 - Then judge each line of the place you edited again as each of its readers, by the rules under step 2 above, cut each line there that those rules do not keep, then, where you have accepted gate outputs to write, run the gate as [gate](prompts/agents/notes/worktree.md#gate) gives.
 - Then run `uv run python scripts/operate.py review <agent id>`, with your own agent id, and where it prints an Agent call, read [Background agents](prompts/agents/notes/commands.md#background-agents) and make that call. Give your final reply once each doc reviewer you launched has replied after your last edit, and otherwise at once.
-- In your reply, list as unused each Justification entry that kept no line from that cut.
-- In your reply, state each finding of the last review pass that you left unfixed because it needs a decision.
-- In [Reviewing a change](docs/handbook/editing.md#reviewing-a-change), the one who asked for the change is, for what is settled, your request. Give each item that section has you report to that one in your reply, as a finding that needs a decision.
-- Where you ran the gate, state in your reply each output you copied, and each output a `DIFF` line gives that you did not copy, with that line.
+- In [Reviewing a change](docs/handbook/editing.md#reviewing-a-change), the one who asked for the change is, for what is settled, your request.
+- Your reply gives:
+    * comment: The cases this rule covers are those of the lines it replaced, each a part of the reply: the Intent and later requests, the departures, the opening word, the unused Justification entries, the findings left for a decision, the items Reviewing a change has you report to the one who asked, and the gate outputs.
+    - Each thing the Intent asks for, and each thing a request a later message adds asks for, as done, or as unfinished with its reason, and each place you departed from the request, with why.
+        * inline: notes/launching.md#an-editors-report-on-a-change
+    - Each finding of the last review pass that you left unfixed because it needs a decision, and each item [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) has you report to the one who asked for the change, as a finding that needs a decision.
+    - Each Justification entry that kept no line from the cut above, as unused.
+    - Where you ran the gate, each output you copied, and each output a `DIFF` line gives that you did not copy, with that line.
+- Open your reply with `done` where each thing the Intent and the later requests ask for is done and you left no finding for a decision, and with `blocked` where each one not done is stopped by a tool or a document you find no way around and you left no finding for a decision.
 * inline: notes/tickets.md#ticket-files
 * inline: notes/tickets.md#ticket-fields
 - The kind of a ticket you file is `question`, for a case your rules do not cover or a place that poses a question, or `bug`, where a tool or a document does the wrong thing.

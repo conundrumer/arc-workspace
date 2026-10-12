@@ -16,6 +16,9 @@
 - Where your instructions, your brief or a later message ask you to file a ticket, file it with `uv run python scripts/file_ticket.py`, in the form its `--help` gives.
     - Where the ticket has an `Evidence` section, write under it the line quoted, or the command and its output, or the grid, as you saw it, and leave out what the fix should be.
 
+## performance-tickets
+- File a `performance` ticket for each step of your work whose run time is far out of proportion to the work the step does.
+
 ## Noticed faults
 - File a `bug` ticket on each fault you notice in a tool, a document or an agent's run, when you notice it, whether or not it lies within your work, where no other line of your documents has you fix, send, report or file it, and no ticket of any session outside `tickets/closed/` records it.
 
