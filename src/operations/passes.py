@@ -27,8 +27,15 @@ holds for each pipeline on its task unless the work set aside for an
 earlier pipeline on that task went back after the ruling and before the
 pipeline started.
 Once it ends or stops, the work set aside goes back, as
-`scripts/operate.py restore` does."""
+`scripts/operate.py restore` does, with the reason it stopped, or an empty
+argument where it ran to its end. Once the first `restore` call on its
+task that did not fail at or after its start gives that argument, the
+pipeline has ended with that reason, and no later work on its task
+changes that. Where the first such call gives the task id
+alone, the pipeline's outcome is read from its passes, reviews and
+tickets, as for a pipeline whose work has not gone back."""
 
+import shlex
 from dataclasses import dataclass
 
 from controlled_markdown import mctx
@@ -36,9 +43,9 @@ from operations import briefs, messages, runs
 from operations.directives import Line, Pipeline, lines, overrides, passed, pipelines, session_lines
 from operations.reports import TICKETS_FILED
 from operations.roles import PASSES, Purpose, Role, analyst_subject, joined
-from operations.state import Agent, State
+from operations.state import Agent, Call, State
 from ticketing.vocabulary import Domain, Kind, Status
-from operations.command_words import RUN_COMMAND
+from operations.command_words import RUN_COMMAND, simple_commands
 from operations.handled import bash_calls, repeated, send_again
 from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids
 from operations.task_work import CLAIM_HELD
@@ -70,6 +77,25 @@ def aside_command(task: str, role: Role) -> str:
 
 def restore_command(task: str) -> str:
     return f"{RUN_COMMAND} restore {task}"
+
+
+def restore_step(task: str, reason: str | None) -> str:
+    return f"{restore_command(task)} {shlex.quote(reason or '')}"
+
+
+def restore_reason(c: Call, task: str) -> tuple[str | None] | None:
+    """The reason the `restore` call `c` on `task` gives, None where it
+    gives an empty argument, or None in place of the tuple where it gives
+    the task id alone. `simple_commands` drops an empty word, so the empty
+    argument is read from the text of the step that gives it."""
+    command = str(c.input.get("command", ""))
+    if restore_step(task, None) in command:
+        return (None,)
+    lead = restore_command(task).split()
+    for words in simple_commands(command):
+        if words[:len(lead)] == lead and len(words) == len(lead) + 1:
+            return (words[-1],)
+    return None
 
 
 def ran(state: State, command: str, since: float) -> list[bool]:
@@ -161,14 +187,20 @@ def interference(state: State, p: Pipeline) -> Outcome | str | None:
 
 def run(state: State, p: Pipeline) -> Outcome:
     """The next step of the pipeline `p`, the step of its review chain
-    first, then that of its pass chain."""
+    first, then that of its pass chain, or, where the first `restore`
+    call on its task that did not fail since its start gives the argument
+    after the task id, its end with that argument as the reason, or None
+    where it is empty."""
+    first = next(iter(restores(state, p.task, p.since, float("inf"))), None)
+    given = restore_reason(first, p.task) if first is not None else None
+    if given is not None:
+        return Outcome(None, True, given[0])
     since = p.since
-    restore = restore_command(p.task)
     ended: list[Ended] = []
 
     def stop(reason: str | None) -> Outcome:
         chain = reviews(state, p.task, ended)
-        return chain if chain is not None else end(state, p, restore, reason)
+        return chain if chain is not None else end(state, p, reason)
 
     for role in p.passes:
         chain = reviews(state, p.task, ended)
@@ -222,7 +254,7 @@ def run(state: State, p: Pipeline) -> Outcome:
     held = interference(state, p)
     if isinstance(held, Outcome):
         return held
-    return end(state, p, restore, held)
+    return end(state, p, held)
 
 
 def no_report(role: Role, a: Agent) -> Undecided:
@@ -238,8 +270,13 @@ def no_report(role: Role, a: Agent) -> Undecided:
         mctx("Its last reply:"), quoted]))
 
 
-def end(state: State, p: Pipeline, restore: str, reason: str | None) -> Outcome:
-    if not ran(state, restore, p.since):
+def end(state: State, p: Pipeline, reason: str | None) -> Outcome:
+    """The end of the pipeline `p` with `reason`, the reason it stopped,
+    or None where it ran to its end: the `restore` step that gives
+    `reason`, until a `restore` call on its task, with or without that
+    argument, came since the pipeline's start."""
+    restore = restore_step(p.task, reason)
+    if not (ran(state, restore_command(p.task), p.since) or ran(state, restore, p.since)):
         return Outcome(Bash(restore))
     return Outcome(None, True, reason)
 
@@ -254,8 +291,14 @@ def runs_at(state: State, p: Pipeline, time: float) -> bool:
 def restored(state: State, task: str, start: float, stop: float) -> bool:
     """Whether a `restore` call on `task` that did not fail came at or
     after `start` and before `stop`."""
-    return any(start <= c.time < stop and not c.error
-               for c in bash_calls(state, restore_command(task)))
+    return bool(restores(state, task, start, stop))
+
+
+def restores(state: State, task: str, start: float, stop: float) -> list[Call]:
+    """The `restore` calls on `task` that did not fail and came at or
+    after `start` and before `stop`, in the order they were made."""
+    return [c for c in bash_calls(state, restore_command(task))
+            if start <= c.time < stop and not c.error]
 
 
 def started(state: State, given: list[Line]) -> list[Pipeline]:
@@ -303,8 +346,8 @@ def running(state: State) -> list[Pipeline]:
 
 
 def outcomes(state: State) -> list[tuple[Pipeline, Outcome]]:
-    """Where each pipeline stands, and each run's pipeline that `session`
-    drops as ended."""
+    """Where each pipeline stands, as `run` gives it, ended pipelines
+    included, and each run's pipeline that `session` drops as ended."""
     pipelines_now = every(state)
     out = [(p, Outcome(None, True, DROPPED.format(task=p.task)))
            for p in started(state, lines(state)) if p not in pipelines_now]

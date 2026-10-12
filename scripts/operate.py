@@ -70,12 +70,13 @@ USAGE = mctx("""
         uv run python scripts/operate.py start --run <run> <task id> <pass> ...
         uv run python scripts/operate.py claim <task id>
         uv run python scripts/operate.py set-aside <task id> analyze|create
-        uv run python scripts/operate.py restore <task id>
+        uv run python scripts/operate.py restore <task id> [<reason>]
         ```
     {parts}
     - `claim` claims a task for the session, and, where a claim on the task stands, fails and prints the session that holds it.
     - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass, as the section `Passes on a task` of `prompts/agents/notes/launching.md` gives.
     - `restore` puts that work back and removes the task's claim, as that section gives.
+        - `<reason>` is the reason the task's pipeline stopped, or empty where that pipeline ran to its end, and `next` then takes that pipeline as ended with that reason.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives.
         - The command refuses where the shell gives none.
     """)
@@ -326,8 +327,8 @@ def main(argv: list[str]) -> int:
                 print(set_aside(main_tree(), args.ident, Role(args.rest[0])))
                 return 0
             case OperateAction.RESTORE:
-                if args.rest:
-                    parser.error(mctx("restore takes a task id alone"))
+                if len(args.rest) > 1:
+                    parser.error(mctx("restore takes a task id and, optionally, the reason its pipeline stopped"))
                 restore(main_tree(), args.ident)
                 return 0
     except Refused as exc:
