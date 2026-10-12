@@ -38,10 +38,12 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["lattice.divider=stored","$StoredTileSize"],
-      "grid": null
-    }, {
-      "cases": ["inked_line=stored"],
+      "cases": [
+        "lattice.divider=stored",
+        "inked_line=stored",
+        "$StoredTileSize",
+        "$StoredTileCount"
+      ],
       "grid": null
     }, {
       "cases": ["$AllCells & bg=DominantColor"],
@@ -57,9 +59,6 @@
         [5,0,5],
         [5,5,5]
       ]
-    }, {
-      "cases": ["$StoredTileCount"],
-      "grid": null
     }]
   }, {
     "id": "wide-blocks",
@@ -103,13 +102,7 @@
         [0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["inked_line=stored"],
-      "grid": null
-    }, {
-      "cases": ["$StoredTileCount & $AllCells"],
-      "grid": null
-    }, {
-      "cases": ["$StoredTileCount & $NonBgMode"],
+      "cases": ["inked_line=stored","$StoredTileCount"],
       "grid": null
     }]
   }, {
@@ -152,10 +145,12 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["inked_line=stored"],
-      "grid": null
-    }, {
-      "cases": ["margin=SepThickness"],
+      "cases": [
+        "inked_line=stored",
+        "margin=SepThickness",
+        "tile_gap=SepThickness",
+        "tile_edge=SepThickness"
+      ],
       "grid": null
     }, {
       "cases": [
@@ -169,12 +164,6 @@
         [0,6,4,3,0],
         [0,0,0,0,0]
       ]
-    }, {
-      "cases": ["tile_gap=SepThickness"],
-      "grid": null
-    }, {
-      "cases": ["tile_edge=SepThickness"],
-      "grid": null
     }]
   }, {
     "id": "two-block-columns",
@@ -211,7 +200,7 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["inked_line=stored"],
+      "cases": ["inked_line=stored","$StoredTileCount & $NonBgMode"],
       "grid": null
     }, {
       "cases": ["$StoredTileCount & $AllCells"],
@@ -221,9 +210,6 @@
         [0,5,0,1,0],
         [0,0,0,0,0]
       ]
-    }, {
-      "cases": ["$StoredTileCount & $NonBgMode"],
-      "grid": null
     }]
   }, {
     "id": "sparse-block",
@@ -290,7 +276,7 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["$Cardinal & canvas.extent=derived"],
+      "cases": ["$Components & canvas.extent=derived"],
       "grid": null
     }, {
       "cases": ["$Cardinal & canvas.extent=stored"],
@@ -300,9 +286,6 @@
         [0,0,0,0,0],
         [0,0,0,0,0]
       ]
-    }, {
-      "cases": ["$DiagonalJoin"],
-      "grid": null
     }]
   }, {
     "id": "wide-border",
@@ -347,6 +330,7 @@
     }, {
       "cases": [
         "inked_line=stored",
+        "$NonBgMode & lattice.divider=stored",
         "$StoredTileSize",
         "$StoredTileCount & tile_edge=stored",
         "tile_edge=SepThickness"
@@ -362,9 +346,6 @@
         [0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0]
       ]
-    }, {
-      "cases": ["$NonBgMode & lattice.divider=stored"],
-      "grid": null
     }]
   }, {
     "id": "margin=SepThickness",
@@ -396,10 +377,12 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["$AllCells & lattice.divider=stored"],
-      "grid": null
-    }, {
-      "cases": ["inked_line=stored","$StoredTileSize","$StoredTileCount & tile_gap=stored"],
+      "cases": [
+        "lattice.divider=stored",
+        "inked_line=stored",
+        "$StoredTileSize",
+        "$StoredTileCount"
+      ],
       "grid": null
     }, {
       "cases": ["margin=SepThickness","$InputMargin & region.box=derived"],
@@ -411,12 +394,6 @@
         [0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0]
       ]
-    }, {
-      "cases": ["$NonBgMode & lattice.divider=stored"],
-      "grid": null
-    }, {
-      "cases": ["tile_gap=SepThickness","tile_gap=TileDim"],
-      "grid": null
     }]
   }, {
     "id": "inked_line=stored",
@@ -448,7 +425,7 @@
       "cases": [
         "$AllCells & lattice.divider=stored",
         "inked_line=stored",
-        "$StoredTileSize & $AllCells",
+        "$StoredTileSize",
         "$StoredTileCount & $AllCells"
       ],
       "grid": [
@@ -500,13 +477,7 @@
         [0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["inked_line=stored"],
-      "grid": null
-    }, {
-      "cases": ["$StoredTileCount & $AllCells"],
-      "grid": null
-    }, {
-      "cases": ["$StoredTileCount & $NonBgMode"],
+      "cases": ["inked_line=stored","$StoredTileCount"],
       "grid": null
     }]
   }, {
@@ -552,6 +523,7 @@
     }, {
       "cases": [
         "inked_line=stored",
+        "$NonBgMode & lattice.divider=stored",
         "$StoredTileSize",
         "$StoredTileCount & tile_edge=stored",
         "tile_edge=SepThickness"
@@ -567,9 +539,6 @@
         [0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0]
       ]
-    }, {
-      "cases": ["$NonBgMode & lattice.divider=stored"],
-      "grid": null
     }]
   }, {
     "id": "canvas.extent=stored",
@@ -607,21 +576,12 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["$AllCells & lattice.divider=stored"],
-      "grid": null
-    }, {
       "cases": [
+        "lattice.divider=stored",
         "inked_line=stored",
         "$StoredTileSize",
-        "$StoredTileCount & tile_gap=stored",
-        "tile_gap=SepThickness"
+        "$StoredTileCount"
       ],
-      "grid": null
-    }, {
-      "cases": ["$NonBgMode & lattice.divider=stored"],
-      "grid": null
-    }, {
-      "cases": ["tile_gap=TileDim"],
       "grid": null
     }]
   }, {
@@ -744,7 +704,7 @@
     }, {
       "cases": [
         "$AllCells & lattice.divider=stored",
-        "$StoredTileSize & $AllCells",
+        "$StoredTileSize",
         "$StoredTileCount & $AllCells"
       ],
       "grid": [
@@ -797,13 +757,7 @@
         [0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["inked_line=stored"],
-      "grid": null
-    }, {
-      "cases": ["$StoredTileCount & $AllCells"],
-      "grid": null
-    }, {
-      "cases": ["$StoredTileCount & $NonBgMode"],
+      "cases": ["inked_line=stored","$StoredTileCount"],
       "grid": null
     }]
   }, {
@@ -873,10 +827,12 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["$AllCells & lattice.divider=stored","$StoredTileSize & $AllCells"],
-      "grid": null
-    }, {
-      "cases": ["inked_line=stored"],
+      "cases": [
+        "lattice.divider=stored",
+        "inked_line=stored",
+        "$StoredTileSize",
+        "$StoredTileCount & $NonBgMode"
+      ],
       "grid": null
     }, {
       "cases": ["$Dividers & $NonBgMode & lattice.divider=derived"],
@@ -887,9 +843,6 @@
         [0,0,0]
       ]
     }, {
-      "cases": ["$NonBgMode & lattice.divider=stored","$StoredTileSize & $NonBgMode"],
-      "grid": null
-    }, {
       "cases": ["$StoredTileCount & $AllCells","$Components"],
       "grid": [
         [0,0,0,0,0],
@@ -897,9 +850,6 @@
         [0,0,5,0,0],
         [0,0,0,0,0]
       ]
-    }, {
-      "cases": ["$StoredTileCount & $NonBgMode"],
-      "grid": null
     }]
   }, {
     "id": "diagonal-blocks",
@@ -932,19 +882,13 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["lattice.divider=stored"],
-      "grid": null
-    }, {
       "cases": [
+        "lattice.divider=stored",
         "inked_line=stored",
+        "margin=SepThickness",
         "$StoredTileSize",
-        "$StoredTileCount & tile_edge=stored & tile_gap=stored",
-        "tile_gap=TileDim",
-        "tile_edge=TileDim"
+        "$StoredTileCount"
       ],
-      "grid": null
-    }, {
-      "cases": ["margin=SepThickness"],
       "grid": null
     }, {
       "cases": ["$Dividers & $NonBgMode & lattice.divider=derived","$DiagonalJoin"],
@@ -953,12 +897,6 @@
         [0,3,0],
         [0,0,0]
       ]
-    }, {
-      "cases": ["tile_gap=SepThickness"],
-      "grid": null
-    }, {
-      "cases": ["tile_edge=SepThickness"],
-      "grid": null
     }, {
       "cases": ["$Cardinal & canvas.extent=derived"],
       "grid": [
@@ -1011,6 +949,7 @@
     }, {
       "cases": [
         "inked_line=stored",
+        "$NonBgMode & lattice.divider=stored",
         "$StoredTileSize",
         "$StoredTileCount & tile_edge=stored",
         "tile_edge=SepThickness"
@@ -1026,9 +965,6 @@
         [0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0]
       ]
-    }, {
-      "cases": ["$NonBgMode & lattice.divider=stored"],
-      "grid": null
     }]
   }, {
     "id": "tile_edge=SepThickness",
@@ -1084,10 +1020,13 @@
         [0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["inked_line=stored","$StoredTileSize","$StoredTileCount & tile_edge=stored"],
-      "grid": null
-    }, {
-      "cases": ["margin=SepThickness"],
+      "cases": [
+        "inked_line=stored",
+        "margin=SepThickness",
+        "$NonBgMode & lattice.divider=stored",
+        "$StoredTileSize",
+        "$StoredTileCount & tile_edge=stored"
+      ],
       "grid": null
     }, {
       "cases": ["$InputMargin & region.box=derived"],
@@ -1100,9 +1039,6 @@
         [0,0,0,0,0,0],
         [0,0,0,0,0,0]
       ]
-    }, {
-      "cases": ["$NonBgMode & lattice.divider=stored"],
-      "grid": null
     }, {
       "cases": ["tile_edge=SepThickness","tile_edge=TileDim"],
       "grid": [
@@ -1150,10 +1086,12 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["$AllCells & lattice.divider=stored"],
-      "grid": null
-    }, {
-      "cases": ["inked_line=stored","$StoredTileSize","$StoredTileCount & tile_gap=stored"],
+      "cases": [
+        "lattice.divider=stored",
+        "inked_line=stored",
+        "$StoredTileSize",
+        "$StoredTileCount & tile_gap=stored"
+      ],
       "grid": null
     }, {
       "cases": ["margin=SepThickness","$InputMargin & region.box=derived"],
@@ -1165,9 +1103,6 @@
         [0,0,0,0,0,0],
         [0,0,0,0,0,0]
       ]
-    }, {
-      "cases": ["$NonBgMode & lattice.divider=stored"],
-      "grid": null
     }]
   }, {
     "id": "tile_gap=TileDim",
@@ -1217,6 +1152,7 @@
     }, {
       "cases": [
         "inked_line=stored",
+        "$NonBgMode & lattice.divider=stored",
         "$StoredTileSize",
         "$StoredTileCount & tile_gap=stored",
         "tile_gap=SepThickness"
@@ -1246,9 +1182,6 @@
         [0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0]
       ]
-    }, {
-      "cases": ["$NonBgMode & lattice.divider=stored"],
-      "grid": null
     }, {
       "cases": ["tile_gap=TileDim"],
       "grid": [
@@ -1301,10 +1234,7 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["lattice.divider=stored"],
-      "grid": null
-    }, {
-      "cases": ["inked_line=stored","$StoredTileSize"],
+      "cases": ["lattice.divider=stored","inked_line=stored","$StoredTileSize"],
       "grid": null
     }, {
       "cases": ["tile_gap=TileDim"],

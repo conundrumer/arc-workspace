@@ -251,7 +251,7 @@
         [8,8,8,8,8,8,8,8,8,8,8,8]
       ]
     }, {
-      "cases": ["$MinSizeNoise & figure_color=RarestColor & smallest.low=derived"],
+      "cases": ["$MinSizeNoise & figure_color=RarestColor"],
       "grid": [
         [8,8,8,8,8,8,8,8,8,8,8,8],
         [8,8,8,8,8,8,8,8,8,8,2,8],
@@ -267,10 +267,7 @@
         [8,8,8,8,8,8,8,8,8,8,8,8]
       ]
     }, {
-      "cases": [
-        "figure_color=RarestColor & smallest.low=stored",
-        "$SizeBound & figure_color=RarestColor"
-      ],
+      "cases": ["$SizeBound & figure_color=RarestColor"],
       "grid": [
         [8,8,8,8,8,8,8,8,8,8,8,8],
         [8,8,1,8,8,8,8,8,8,8,2,8],
@@ -357,10 +354,7 @@
       [8,8,8,8,8,8,8,8,8,8,8,8]
     ],
     "output": [{
-      "cases": ["concept"],
-      "grid": null
-    }, {
-      "cases": ["$AxisPriority"],
+      "cases": ["concept","$AxisPriority"],
       "grid": null
     }, {
       "cases": ["$TwoAxisErased"],

@@ -30,10 +30,7 @@
         [7,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$StoredAxis & $DerivedWedgeColor"],
-      "grid": null
-    }, {
-      "cases": ["$StoredAxis & $StoredWedgeColor"],
+      "cases": ["$StoredAxis"],
       "grid": null
     }]
   }, {
@@ -85,7 +82,7 @@
       [0,0,0,0,0,0,0,0,0,7]
     ],
     "output": [{
-      "cases": ["$LegByExtent","$LegPlusGap"],
+      "cases": ["$LegPlusGap","$LegByExtent"],
       "grid": [
         [7,0,0,0,7,0,0,0,0,0],
         [0,7,0,0,0,7,0,0,0,0],
@@ -217,10 +214,7 @@
       [0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$ReadAxis & $StoredWedgeColor"],
-      "grid": null
-    }, {
-      "cases": ["$ReadAxis & $DerivedWedgeColor"],
+      "cases": ["$ReadAxis"],
       "grid": null
     }, {
       "cases": ["$StoredAxis"],
@@ -366,7 +360,7 @@
       [0,0,0,0,0,0,0,0,0,7]
     ],
     "output": [{
-      "cases": ["$LegByExtent & bg=stored","$LegPlusGap & bg=stored"],
+      "cases": ["$LegPlusGap & bg=stored","$LegByExtent"],
       "grid": [
         [7,0,0,0,0,0,0,0,0,7],
         [0,7,0,0,0,0,0,0,0,0],
@@ -380,10 +374,7 @@
         [7,0,0,0,0,0,0,0,0,7]
       ]
     }, {
-      "cases": [
-        "$DerivedWedgeColor & $LegByExtent & bg=DominantColor",
-        "$DerivedWedgeColor & $LegPlusGap & bg=DominantColor"
-      ],
+      "cases": ["$DerivedWedgeColor & $LegPlusGap & bg=DominantColor"],
       "grid": [
         [7,5,5,5,5,5,5,5,5,5],
         [5,7,5,5,5,5,5,5,5,5],
@@ -397,21 +388,7 @@
         [5,5,5,5,5,5,5,5,5,7]
       ]
     }, {
-      "cases": ["$NeighborLine & bg=stored"],
-      "grid": [
-        [7,0,0,0,0,0,0,0,7,0],
-        [0,7,0,0,0,0,0,0,0,7],
-        [0,0,7,0,0,0,0,0,0,0],
-        [0,0,0,7,0,0,0,0,0,0],
-        [0,0,0,0,7,0,0,0,0,0],
-        [0,0,0,0,0,7,0,0,0,0],
-        [0,0,0,0,0,0,7,0,0,0],
-        [0,0,0,0,0,0,0,7,0,0],
-        [7,0,0,0,0,0,0,0,7,0],
-        [0,7,0,0,0,0,0,0,0,7]
-      ]
-    }, {
-      "cases": ["$DerivedWedgeColor & $NeighborLine & bg=DominantColor"],
+      "cases": ["$DerivedWedgeColor & $NeighborLine"],
       "grid": [
         [7,5,5,5,5,5,5,7,5,5],
         [5,7,5,5,5,5,5,5,7,5],
@@ -427,6 +404,20 @@
     }, {
       "cases": ["$StoredWedgeColor & bg=DominantColor"],
       "grid": null
+    }, {
+      "cases": ["$NeighborLine & bg=stored"],
+      "grid": [
+        [7,0,0,0,0,0,0,0,7,0],
+        [0,7,0,0,0,0,0,0,0,7],
+        [0,0,7,0,0,0,0,0,0,0],
+        [0,0,0,7,0,0,0,0,0,0],
+        [0,0,0,0,7,0,0,0,0,0],
+        [0,0,0,0,0,7,0,0,0,0],
+        [0,0,0,0,0,0,7,0,0,0],
+        [0,0,0,0,0,0,0,7,0,0],
+        [7,0,0,0,0,0,0,0,7,0],
+        [0,7,0,0,0,0,0,0,0,7]
+      ]
     }]
   }]
 }

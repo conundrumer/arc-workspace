@@ -101,9 +101,8 @@ type UndefinedReason = (NoOutput | MissingCells | ConflictingCells
 @dataclass(frozen=True)
 class Undefined:
     """`null`: the cases are undefined on the input. Two values are equal
-    whatever their reasons, as a witness file's `null` states none; two
-    outputs are the same output only where their reasons are equal too
-    (`same_output`)."""
+    whatever their reasons, as a witness file's `null` states none, and are
+    one output (`same_output`)."""
 
     reason: UndefinedReason | None = field(default=None, compare=False)
     """Why a run gives no grid; None for a witness file's `null`, which
@@ -489,15 +488,15 @@ def _entry(raw: object, index: int, off: Off) -> Entry | None:
 
 def output_key(o: object) -> object:
     """A value two outputs share exactly where they are the same output
-    (`same_output`): an undefined output's reason beside `Undefined`, any
-    other output itself. `o` is what a witness file's group holds, or what
-    a run gives."""
-    return (Undefined, o.reason) if isinstance(o, Undefined) else o
+    (`same_output`): the output itself, as undefined outputs are one output
+    whatever their reasons. `o` is what a witness file's group holds, or
+    what a run gives."""
+    return o
 
 
 def same_output(a: object, b: object) -> bool:
     """Whether two cases give the same output: equal grids, or both
-    undefined for the same reason at the same cells. `a` and `b` are what
+    undefined, whatever the reason or the cells. `a` and `b` are what
     a witness file's group holds, or what a run gives."""
     return output_key(a) == output_key(b)
 

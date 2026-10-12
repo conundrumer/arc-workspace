@@ -95,6 +95,8 @@ def record_lines(entry: Entry, solver: Solver, cases: Sequence[Case],
     grids: set[object] = set()
     for g in groups:
         out = g.grid
+        if isinstance(out, Undefined):
+            grids.add(out)
         why = undefined_lines(out.reason) if isinstance(out, Undefined) \
             else []
         if isinstance(out, Undefined) and not why:
@@ -107,7 +109,6 @@ def record_lines(entry: Entry, solver: Solver, cases: Sequence[Case],
         else:
             lines.append(f"{joined}:")
         if isinstance(out, Undefined):
-            grids.add((Undefined, out.reason))
             lines += [f"  {ln}" for ln in why]
         elif isinstance(out, Resolutions):
             grids.update(out.grids)

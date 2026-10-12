@@ -1,7 +1,7 @@
-train 0: PASS (85 witnessed cases)
-train 1: PASS (85 witnessed cases)
-train 2: PASS (85 witnessed cases)
-test 0: PASS (85 witnessed cases)
+train 0: PASS (76 witnessed cases)
+train 1: PASS (76 witnessed cases)
+train 2: PASS (76 witnessed cases)
+test 0: PASS (76 witnessed cases)
 
 --- 1 finding(s) ---
   a934301b.dl:137: proposal comp: `MeanSplit` is a proposal comp, and the concept case reads none of its relations; the cases that read them: `$BelowMean` ([In the pass](docs/handbook/lib-protocol.md#in-the-pass))

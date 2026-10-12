@@ -116,7 +116,7 @@
       ]
     },
     "output": [{
-      "cases": ["concept"],
+      "cases": ["concept","$AxisThenCross"],
       "grid": null
     }, {
       "cases": ["$Area & $TieFirst","$LongestThenShortest","$Perimeter"],
@@ -126,9 +126,6 @@
         [4,4,4,4,4,4,4,4,4],
         [6,5,4,6,5,4,6,5,4]
       ]
-    }, {
-      "cases": ["$AxisThenCross"],
-      "grid": null
     }]
   }, {
     "id": "oblique-hidden",
@@ -145,16 +142,10 @@
       [5,1,3,6,2,5,1,3,6]
     ],
     "output": [{
-      "cases": ["concept"],
+      "cases": ["$AxisPeriods & fill=stored","$ComponentRect"],
       "grid": null
     }, {
-      "cases": [
-        "$ColorFill & $AxisPeriods & $HiddenFill & fill=stored",
-        "$MinTwoCells & $AxisPeriods"
-      ],
-      "grid": null
-    }, {
-      "cases": ["$ColorFill & $AxisPeriods & fill=DominantColor"],
+      "cases": ["fill=DominantColor"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
@@ -163,7 +154,7 @@
         [1,3,6,2,5]
       ]
     }, {
-      "cases": ["$ColorFill & $AxisPeriods & fill=RarestColor"],
+      "cases": ["$AxisPeriods & fill=RarestColor"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
@@ -172,11 +163,7 @@
         [1,3,6,2,5]
       ]
     }, {
-      "cases": [
-        "$ColorFill & $IsometryOrbit",
-        "$ColorFill & $LatticePeriod",
-        "$MinTwoCells & $LatticePeriod"
-      ],
+      "cases": ["$IsometryOrbit","$ColorFill & $LatticePeriod","$MinTwoCells & $LatticePeriod"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
@@ -184,18 +171,6 @@
         [6,2,5,1,3],
         [1,3,6,2,5]
       ]
-    }, {
-      "cases": [
-        "$ComponentRect & $AxisPeriods & fill=stored",
-        "$ComponentRect & $IsometryOrbit"
-      ],
-      "grid": null
-    }, {
-      "cases": ["$ComponentRect & fill=DominantColor","$ComponentRect & fill=RarestColor"],
-      "grid": null
-    }, {
-      "cases": ["$ComponentRect & $LatticePeriod"],
-      "grid": null
     }]
   }, {
     "id": "mirror-hidden",
@@ -215,16 +190,10 @@
       [3,6,5,4,3,6,5,4]
     ],
     "output": [{
-      "cases": ["concept","$ComponentRect"],
+      "cases": ["$AxisPeriods & fill=stored","$LatticePeriod"],
       "grid": null
     }, {
-      "cases": [
-        "$ColorFill & $AxisPeriods & $HiddenFill & fill=stored",
-        "$MinTwoCells & $AxisPeriods"
-      ],
-      "grid": null
-    }, {
-      "cases": ["$ColorFill & $AxisPeriods & fill=DominantColor"],
+      "cases": ["fill=DominantColor"],
       "grid": [
         [5,3],
         [3,5],
@@ -237,7 +206,7 @@
         [5,3]
       ]
     }, {
-      "cases": ["$ColorFill & $AxisPeriods & fill=RarestColor","$ColorFill & $IsometryOrbit"],
+      "cases": ["fill=RarestColor","$IsometryOrbit"],
       "grid": [
         [5,6],
         [3,5],
@@ -249,9 +218,6 @@
         [3,3],
         [5,6]
       ]
-    }, {
-      "cases": ["$ColorFill & $LatticePeriod","$MinTwoCells & $LatticePeriod"],
-      "grid": null
     }]
   }, {
     "id": "shared-color",
@@ -275,31 +241,26 @@
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
     ],
     "output": [{
-      "cases": ["concept"],
-      "grid": null
-    }, {
       "cases": [
-        "$ColorFill & $AxisPeriods & $HiddenFill & fill=stored",
+        "$ColorFill & $AxisPeriods & fill=stored",
+        "$IsometryOrbit & fill=stored",
         "$MinTwoCells & $AxisPeriods"
       ],
       "grid": null
     }, {
-      "cases": ["$ColorFill & $AxisPeriods & fill=DominantColor"],
+      "cases": ["fill=DominantColor"],
       "grid": [
         [4,4,4,4],
         [4,4,4,4],
         [4,4,4,4]
       ]
     }, {
-      "cases": ["$ColorFill & $AxisPeriods & fill=RarestColor"],
+      "cases": ["$AxisPeriods & fill=RarestColor"],
       "grid": [
         [8,8,8,8],
         [8,8,8,8],
         [8,8,8,8]
       ]
-    }, {
-      "cases": ["$ColorFill & $IsometryOrbit & fill=stored"],
-      "grid": null
     }, {
       "cases": ["$IsometryOrbit & fill=RarestColor"],
       "grid": [
@@ -356,13 +317,7 @@
         [5,3,5,3,5,3]
       ]
     }, {
-      "cases": ["$ComponentRect & $AxisPeriods"],
-      "grid": null
-    }, {
-      "cases": ["$ComponentRect & $IsometryOrbit"],
-      "grid": null
-    }, {
-      "cases": ["$ComponentRect & $LatticePeriod"],
+      "cases": ["$ComponentRect"],
       "grid": null
     }]
   }, {
@@ -396,11 +351,7 @@
         [5,6,4,5,6,4]
       ]
     }, {
-      "cases": [
-        "$ComponentRect & $AxisPeriods",
-        "$ComponentRect & $IsometryOrbit",
-        "$MinTwoCells & $AxisPeriods"
-      ],
+      "cases": ["$ComponentRect & $AxisPeriods","$MinTwoCells & $AxisPeriods"],
       "grid": [
         [6,5,4,6,5,4],
         [5,6,4,5,6,4],
@@ -550,13 +501,10 @@
       [5,1,3,6,2,5,1,3,6,2,5,1,3]
     ],
     "output": [{
-      "cases": ["concept"],
+      "cases": ["$AxisPeriods & fill=stored"],
       "grid": null
     }, {
-      "cases": ["$AxisPeriods & $HiddenFill & fill=stored"],
-      "grid": null
-    }, {
-      "cases": ["$AxisPeriods & fill=DominantColor"],
+      "cases": ["fill=DominantColor"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
@@ -601,13 +549,10 @@
       [3,6,5,4,3,6,5,4,3,6,5,4,3,6]
     ],
     "output": [{
-      "cases": ["concept"],
+      "cases": ["$AxisPeriods & fill=stored","$LatticePeriod"],
       "grid": null
     }, {
-      "cases": ["$AxisPeriods & $HiddenFill & fill=stored"],
-      "grid": null
-    }, {
-      "cases": ["$AxisPeriods & fill=DominantColor"],
+      "cases": ["fill=DominantColor"],
       "grid": [
         [3,3,3],
         [3,3,3],
@@ -651,12 +596,6 @@
         [5,6,3],
         [3,5,3]
       ]
-    }, {
-      "cases": ["$LatticePeriod & fill=stored"],
-      "grid": null
-    }, {
-      "cases": ["$LatticePeriod & fill=DominantColor","$LatticePeriod & fill=RarestColor"],
-      "grid": null
     }]
   }, {
     "id": "asym-hidden",
@@ -720,35 +659,24 @@
       [3,5,3,5,3,5,3,5,3,5,3]
     ],
     "output": [{
-      "cases": ["concept"],
+      "cases": ["$ColorFill & $AxisPeriods & fill=stored","$ColorFill & $LatticePeriod"],
       "grid": null
     }, {
-      "cases": [
-        "$ColorFill & $AxisPeriods & $HiddenFill & fill=stored",
-        "$ColorFill & $LatticePeriod & fill=stored"
-      ],
-      "grid": null
-    }, {
-      "cases": ["$ColorFill & fill=DominantColor"],
+      "cases": ["fill=DominantColor"],
       "grid": [
         [3,5,3,5,3,5,3],
         [5,3,3,6,5,3,3],
         [3,3,3,3,3,3,3]
       ]
     }, {
-      "cases": [
-        "$AxisPeriods & fill=RarestColor",
-        "$LatticePeriod & fill=RarestColor",
-        "$ComponentRect",
-        "$MinTwoCells"
-      ],
+      "cases": ["$AxisPeriods & fill=RarestColor","$ComponentRect","$MinTwoCells"],
       "grid": [
         [3,5,3,5,3,5,3],
         [5,7,3,6,5,7,3],
         [3,3,3,3,3,3,3]
       ]
     }, {
-      "cases": ["$ColorFill & $IsometryOrbit"],
+      "cases": ["$IsometryOrbit"],
       "grid": [
         [3,5,3,5,3,5,3],
         [5,4,3,6,5,4,3],
@@ -771,10 +699,7 @@
       [2,3,6,1,2,5,0,1,4,7]
     ],
     "output": [{
-      "cases": ["concept"],
-      "grid": null
-    }, {
-      "cases": ["$AxisPeriods & $HiddenFill","$IsometryOrbit"],
+      "cases": ["$AxisPeriods","$IsometryOrbit"],
       "grid": null
     }, {
       "cases": ["$LatticePeriod"],
@@ -805,7 +730,7 @@
       ]
     },
     "output": [{
-      "cases": ["concept"],
+      "cases": ["concept","$ComponentRect"],
       "grid": null
     }, {
       "cases": [
@@ -820,7 +745,7 @@
         [1,3,6,2,5]
       ]
     }, {
-      "cases": ["$ColorFill & $AxisPeriods & fill=DominantColor"],
+      "cases": ["fill=DominantColor"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
@@ -829,7 +754,7 @@
         [1,3,6,2,5]
       ]
     }, {
-      "cases": ["$ColorFill & $AxisPeriods & fill=RarestColor"],
+      "cases": ["$AxisPeriods & fill=RarestColor"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
@@ -838,11 +763,7 @@
         [1,3,6,2,5]
       ]
     }, {
-      "cases": [
-        "$ColorFill & $IsometryOrbit",
-        "$ColorFill & $LatticePeriod",
-        "$MinTwoCells & $LatticePeriod"
-      ],
+      "cases": ["$IsometryOrbit","$ColorFill & $LatticePeriod","$MinTwoCells & $LatticePeriod"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
@@ -850,15 +771,6 @@
         [6,2,5,1,3],
         [1,3,6,2,5]
       ]
-    }, {
-      "cases": ["$ComponentRect & $AxisPeriods"],
-      "grid": null
-    }, {
-      "cases": ["$ComponentRect & $IsometryOrbit"],
-      "grid": null
-    }, {
-      "cases": ["$ComponentRect & $LatticePeriod"],
-      "grid": null
     }]
   }, {
     "id": "tall-thin-v",
@@ -968,16 +880,10 @@
       [5,1,3,6,2,5,1,3,6]
     ],
     "output": [{
-      "cases": ["concept"],
+      "cases": ["$AxisPeriods & fill=stored","$ComponentRect"],
       "grid": null
     }, {
-      "cases": [
-        "$ColorFill & $AxisPeriods & $HiddenFill & fill=stored",
-        "$MinTwoCells & $AxisPeriods"
-      ],
-      "grid": null
-    }, {
-      "cases": ["$ColorFill & $AxisPeriods & fill=DominantColor"],
+      "cases": ["fill=DominantColor"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
@@ -986,7 +892,7 @@
         [1,3,6,2,5]
       ]
     }, {
-      "cases": ["$ColorFill & $AxisPeriods & fill=RarestColor"],
+      "cases": ["$AxisPeriods & fill=RarestColor"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
@@ -995,11 +901,7 @@
         [1,3,6,2,5]
       ]
     }, {
-      "cases": [
-        "$ColorFill & $IsometryOrbit",
-        "$ColorFill & $LatticePeriod",
-        "$MinTwoCells & $LatticePeriod"
-      ],
+      "cases": ["$IsometryOrbit","$ColorFill & $LatticePeriod","$MinTwoCells & $LatticePeriod"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
@@ -1007,18 +909,6 @@
         [6,2,5,1,3],
         [1,3,6,2,5]
       ]
-    }, {
-      "cases": [
-        "$ComponentRect & $AxisPeriods & fill=stored",
-        "$ComponentRect & $IsometryOrbit"
-      ],
-      "grid": null
-    }, {
-      "cases": ["$ComponentRect & fill=DominantColor","$ComponentRect & fill=RarestColor"],
-      "grid": null
-    }, {
-      "cases": ["$ComponentRect & $LatticePeriod"],
-      "grid": null
     }]
   }, {
     "id": "fill=RarestColor",
@@ -1035,16 +925,10 @@
       [5,1,3,6,2,5,1,3,6]
     ],
     "output": [{
-      "cases": ["concept"],
+      "cases": ["$AxisPeriods & fill=stored","$ComponentRect"],
       "grid": null
     }, {
-      "cases": [
-        "$ColorFill & $AxisPeriods & $HiddenFill & fill=stored",
-        "$MinTwoCells & $AxisPeriods"
-      ],
-      "grid": null
-    }, {
-      "cases": ["$ColorFill & $AxisPeriods & fill=DominantColor"],
+      "cases": ["fill=DominantColor"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
@@ -1053,7 +937,7 @@
         [1,3,6,2,5]
       ]
     }, {
-      "cases": ["$ColorFill & $AxisPeriods & fill=RarestColor"],
+      "cases": ["$AxisPeriods & fill=RarestColor"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
@@ -1062,11 +946,7 @@
         [1,3,6,2,5]
       ]
     }, {
-      "cases": [
-        "$ColorFill & $IsometryOrbit",
-        "$ColorFill & $LatticePeriod",
-        "$MinTwoCells & $LatticePeriod"
-      ],
+      "cases": ["$IsometryOrbit","$ColorFill & $LatticePeriod","$MinTwoCells & $LatticePeriod"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
@@ -1074,18 +954,6 @@
         [6,2,5,1,3],
         [1,3,6,2,5]
       ]
-    }, {
-      "cases": [
-        "$ComponentRect & $AxisPeriods & fill=stored",
-        "$ComponentRect & $IsometryOrbit"
-      ],
-      "grid": null
-    }, {
-      "cases": ["$ComponentRect & fill=DominantColor","$ComponentRect & fill=RarestColor"],
-      "grid": null
-    }, {
-      "cases": ["$ComponentRect & $LatticePeriod"],
-      "grid": null
     }]
   }, {
     "id": "wide-beside-square-v",
@@ -1153,7 +1021,7 @@
       ]
     },
     "output": [{
-      "cases": ["concept"],
+      "cases": ["concept","$LatticePeriod"],
       "grid": null
     }, {
       "cases": ["$AxisPeriods & $HiddenFill & fill=stored"],
@@ -1171,7 +1039,7 @@
         [3,5,3]
       ]
     }, {
-      "cases": ["$AxisPeriods & fill=DominantColor"],
+      "cases": ["fill=DominantColor"],
       "grid": [
         [3,3,3],
         [3,3,3],
@@ -1215,9 +1083,6 @@
         [5,6,3],
         [3,5,3]
       ]
-    }, {
-      "cases": ["$LatticePeriod"],
-      "grid": null
     }]
   }, {
     "id": "tall-beside-square-v",

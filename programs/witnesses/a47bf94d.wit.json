@@ -278,7 +278,7 @@
       [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
     ],
     "output": [{
-      "cases": ["$ByShape & background=stored"],
+      "cases": ["background=stored"],
       "grid": null
     }, {
       "cases": ["background=DominantColor"],
@@ -306,9 +306,6 @@
         [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
         [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
       ]
-    }, {
-      "cases": ["$SideRoles"],
-      "grid": null
     }]
   }, {
     "id": "two-turns",
@@ -342,7 +339,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$OneRemaining & $ByShape"],
+      "cases": ["$OneRemaining"],
       "grid": null
     }, {
       "cases": ["$Nearest"],
@@ -374,9 +371,6 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
-    }, {
-      "cases": ["$SideRoles"],
-      "grid": null
     }]
   }, {
     "id": "three-rows",

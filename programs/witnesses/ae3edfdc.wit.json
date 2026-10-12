@@ -17,7 +17,7 @@
       [0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["off_line=stored","$NearestCenter","$StoredPair"],
+      "cases": ["off_line=stored","$StoredPair","$NearestCenter"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0],
@@ -394,7 +394,7 @@
         [0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$AnyColorSatellite & $NearestCenter & $Stack"],
+      "cases": ["$NearestCenter & $Stack"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0],
@@ -478,7 +478,7 @@
         [0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$SlideBlocked","$NearestCenter & centers=stored & off_line=derived"],
+      "cases": ["$SlideBlocked","$NearestCenter & centers=stored"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0],
@@ -608,12 +608,13 @@
       "cases": [
         "$SameCell & off_line=stored",
         "$SameCell & $PassOver & $KeepUnmatched",
-        "$AnyColorSatellite & $SameCell & partner=derived"
+        "$AnyColorSatellite & $SameCell & partner=derived",
+        "$AnyColorSatellite & $NearestCenter"
       ],
       "grid": null
     }, {
       "cases": [
-        "$EveryCenter & $Stack & $ClearUnmatched & off_line=stored",
+        "$Stack & $ClearUnmatched & off_line=stored",
         "$AnyColorSatellite & $EveryCenter & $Stack & $ClearUnmatched"
       ],
       "grid": [
@@ -640,9 +641,6 @@
         [5,5,5,5,5,5,5,5,5],
         [5,5,5,5,5,5,5,5,5]
       ]
-    }, {
-      "cases": ["$NearestCenter & $Stack"],
-      "grid": null
     }, {
       "cases": ["background=DominantColor"],
       "grid": [
@@ -702,7 +700,7 @@
         [0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$PairFromAlignment & off_line=derived","$NearestCenter & off_line=stored"],
+      "cases": ["$PairFromAlignment & off_line=derived"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0],
@@ -720,7 +718,7 @@
       "cases": ["$SameCell & off_line=stored"],
       "grid": null
     }, {
-      "cases": ["$EveryCenter & $Stack & off_line=stored"],
+      "cases": ["$Stack & off_line=stored"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0],
@@ -797,7 +795,7 @@
       [0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["off_line=stored","$NearestCenter","$StoredPair"],
+      "cases": ["off_line=stored","$StoredPair","$NearestCenter"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0],

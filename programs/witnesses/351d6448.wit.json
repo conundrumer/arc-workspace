@@ -28,15 +28,12 @@
         [3,3,3,3,3,3,3,2,2,2,2,2,2]
       ]
     }, {
-      "cases": ["$FirstChange & $EveryStep","$FirstChange & $WholePanel"],
+      "cases": ["$FirstChange"],
       "grid": [
         [0,0,3,0,0,0,2,0,0,0,2,0,0],
         [0,3,3,3,0,3,3,2,0,2,2,2,0],
         [3,3,3,3,3,3,3,2,2,2,2,2,2]
       ]
-    }, {
-      "cases": ["$StepFromFirstTwo & $StepPerLine"],
-      "grid": null
     }, {
       "cases": ["$ObjectMotion & $StepFromFirstTwo"],
       "grid": null
@@ -62,10 +59,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$EveryStep & $WholePanel"],
-      "grid": null
-    }, {
-      "cases": ["$EveryStep & $StepPerLine"],
+      "cases": ["$EveryStep"],
       "grid": null
     }, {
       "cases": ["$FirstChange & $StepFromFirstTwo"],
@@ -295,10 +289,7 @@
         [3,3,3,3,3,2,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$StepPerLine"],
-      "grid": null
-    }, {
-      "cases": ["$FirstChange & $WholePanel","$StepFromFirstTwo & $WholePanel"],
+      "cases": ["$FirstChange","$StepFromFirstTwo"],
       "grid": null
     }]
   }, {
@@ -423,10 +414,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$ObjectMotion"],
-      "grid": null
-    }, {
-      "cases": ["$FirstChange & step_dir=derived"],
+      "cases": ["step_dir=derived","$ObjectMotion"],
       "grid": null
     }, {
       "cases": ["$FirstChange & step_dir=stored"],
@@ -465,13 +453,7 @@
       [3,3,3,3,2,2,2,2,2,2,2,2,2]
     ],
     "output": [{
-      "cases": ["$FirstChange & $WholePanel","$WholePanel & step_dir=derived"],
-      "grid": null
-    }, {
-      "cases": ["$EveryStep & $StepPerLine"],
-      "grid": null
-    }, {
-      "cases": ["$StepFromFirstTwo & $StepPerLine"],
+      "cases": ["$FirstChange","step_dir=derived"],
       "grid": null
     }, {
       "cases": ["$ObjectMotion & step_dir=stored"],
@@ -512,10 +494,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$ObjectMotion"],
-      "grid": null
-    }, {
-      "cases": ["$StepPerLine"],
+      "cases": ["$StepPerLine","$ObjectMotion"],
       "grid": null
     }, {
       "cases": ["$FirstChange & $WholePanel"],
@@ -579,7 +558,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$ObjectMotion"],
+      "cases": ["$StepFromFirstTwo","$ObjectMotion"],
       "grid": null
     }, {
       "cases": ["$FirstChange & $EveryStep"],
@@ -588,9 +567,6 @@
         [0,0,7,0,0,7,7,7,7,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
-    }, {
-      "cases": ["$FirstChange & $StepFromFirstTwo"],
-      "grid": null
     }]
   }]
 }

@@ -15,7 +15,7 @@
       [0,0,5,5,5,5,5,0,0]
     ],
     "output": [{
-      "cases": ["$FillOrder"],
+      "cases": ["$FillOrder","$CountTable"],
       "grid": null
     }, {
       "cases": ["$SnakeOrder"],
@@ -31,9 +31,6 @@
         [0,0,8],
         [0,0,8]
       ]
-    }, {
-      "cases": ["$CountTable"],
-      "grid": null
     }]
   }, {
     "id": "table-entry",

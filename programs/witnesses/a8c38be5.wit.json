@@ -267,10 +267,10 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$WindowParse & $StoredSize & bg=stored"],
+      "cases": ["$StoredSize & bg=stored","$FillFreeCenter & $StoredFill & $StoredSize"],
       "grid": null
     }, {
-      "cases": ["$SizeDerived & bg=stored"],
+      "cases": ["$SizeDerived"],
       "grid": [
         [6,6,5,5,5,2,2,5,5,5,1,1],
         [6,5,5,5,5,2,2,5,5,5,5,1],
@@ -286,10 +286,7 @@
         [8,8,5,5,5,4,4,5,5,5,9,9]
       ]
     }, {
-      "cases": ["$TileParse & bg=DominantColor","$TileParse & $StoredSize"],
-      "grid": null
-    }, {
-      "cases": ["$WindowParse & $BgDefault & $FillDerived & bg=DominantColor"],
+      "cases": ["$BgDefault & $FillDerived & bg=DominantColor"],
       "grid": [
         [5,5,5,9,0,8,5,5,5],
         [5,5,5,9,0,8,5,5,5],
@@ -302,10 +299,7 @@
         [5,5,5,1,0,6,5,5,5]
       ]
     }, {
-      "cases": ["$WindowParse & $FillFreeCenter & $StoredFill & bg=DominantColor"],
-      "grid": null
-    }, {
-      "cases": ["$WindowParse & $NeedsFill & $StoredFill & bg=DominantColor"],
+      "cases": ["$NeedsFill & bg=DominantColor"],
       "grid": [
         [5,5,5,5,5,5,5,5,5],
         [5,5,5,5,5,5,5,5,5],
@@ -318,7 +312,7 @@
         [5,5,5,5,5,5,5,5,5]
       ]
     }, {
-      "cases": ["$WindowParse & $FillDefault & $FillDerived & bg=DominantColor"],
+      "cases": ["$FillDefault & $FillDerived & bg=DominantColor"],
       "grid": [
         [0,0,0,9,0,8,0,0,0],
         [0,0,0,9,0,8,0,0,0],
@@ -354,6 +348,19 @@
       "cases": ["concept"],
       "grid": null
     }, {
+      "cases": ["$HalfCount & $BgDefault","$EdgeCount & $BgDefault"],
+      "grid": [
+        [6,6,5,2,2,2,5,1,1],
+        [6,5,5,5,2,5,5,5,1],
+        [5,5,5,5,2,5,5,5,5],
+        [2,5,5,0,0,0,5,5,3],
+        [2,2,5,0,0,0,5,3,3],
+        [2,5,5,0,0,0,5,5,3],
+        [5,5,5,5,5,5,5,5,5],
+        [8,5,5,5,4,5,5,5,9],
+        [8,8,5,4,4,4,5,9,9]
+      ]
+    }, {
       "cases": ["$BboxCenter & $BgDefault","$EdgeTouch & $BgDefault"],
       "grid": [
         [6,6,5,0,0,0,5,1,1],
@@ -367,14 +374,14 @@
         [8,8,5,4,4,4,5,9,9]
       ]
     }, {
-      "cases": ["$EdgeCount & $BgDefault","$HalfCount & $BgDefault"],
+      "cases": ["$HalfCount & $FillDefault","$EdgeCount & $FillDefault"],
       "grid": [
         [6,6,5,2,2,2,5,1,1],
         [6,5,5,5,2,5,5,5,1],
         [5,5,5,5,2,5,5,5,5],
-        [2,5,5,0,0,0,5,5,3],
-        [2,2,5,0,0,0,5,3,3],
-        [2,5,5,0,0,0,5,5,3],
+        [2,5,5,5,5,5,5,5,3],
+        [2,2,5,5,5,5,5,3,3],
+        [2,5,5,5,5,5,5,5,3],
         [5,5,5,5,5,5,5,5,5],
         [8,5,5,5,4,5,5,5,9],
         [8,8,5,4,4,4,5,9,9]
@@ -388,19 +395,6 @@
         [2,5,5,2,2,2,5,5,3],
         [2,2,5,5,2,5,5,3,3],
         [2,5,5,5,2,5,5,5,3],
-        [5,5,5,5,5,5,5,5,5],
-        [8,5,5,5,4,5,5,5,9],
-        [8,8,5,4,4,4,5,9,9]
-      ]
-    }, {
-      "cases": ["$EdgeCount & $FillDefault","$HalfCount & $FillDefault"],
-      "grid": [
-        [6,6,5,2,2,2,5,1,1],
-        [6,5,5,5,2,5,5,5,1],
-        [5,5,5,5,2,5,5,5,5],
-        [2,5,5,5,5,5,5,5,3],
-        [2,2,5,5,5,5,5,3,3],
-        [2,5,5,5,5,5,5,5,3],
         [5,5,5,5,5,5,5,5,5],
         [8,5,5,5,4,5,5,5,9],
         [8,8,5,4,4,4,5,9,9]
@@ -557,7 +551,7 @@
       "cases": ["concept"],
       "grid": null
     }, {
-      "cases": ["$BboxCenter & $BgDefault","$HalfCount & $BgDefault"],
+      "cases": ["$HalfCount & $BgDefault","$BboxCenter & $BgDefault"],
       "grid": [
         [6,6,6,5,5,5,5,5,5,1,1,1],
         [6,5,5,5,5,2,2,5,5,5,5,1],
@@ -589,7 +583,7 @@
         [8,8,8,5,4,4,4,4,5,9,9,9]
       ]
     }, {
-      "cases": ["$BboxCenter & $FillDefault","$HalfCount & $FillDefault"],
+      "cases": ["$HalfCount & $FillDefault","$BboxCenter & $FillDefault"],
       "grid": [
         [6,6,6,5,5,5,5,5,5,1,1,1],
         [6,5,5,5,5,2,2,5,5,5,5,1],
@@ -633,14 +627,26 @@
       [0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["concept","$TileParse & $StoredSize"],
-      "grid": null
-    }, {
       "cases": [
+        "concept",
+        "$TileParse",
         "$FillFreeCenter & $BgDefault & $SizeDerived",
         "$FillFreeCenter & $StoredFill & $SizeDerived"
       ],
       "grid": null
+    }, {
+      "cases": ["$WindowParse & $BgDefault & $StoredSize"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
     }, {
       "cases": ["$NeedsFill & $BgDefault & $FillDerived & $SizeDerived"],
       "grid": [
@@ -656,24 +662,37 @@
         [0,0,0]
       ]
     }, {
-      "cases": ["$WindowParse & $BgDefault & $StoredSize"],
-      "grid": [
-        [0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0]
-      ]
-    }, {
       "cases": ["$FillFreeCenter & $FillDefault & $FillDerived & $SizeDerived"],
       "grid": [
         [2,2,2],
         [2,3,2],
         [2,2,2]
+      ]
+    }, {
+      "cases": ["$WindowParse & $FillDefault & $StoredFill & $StoredSize"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$FillDefault & $FillDerived & $StoredSize"],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2,2,2]
       ]
     }, {
       "cases": ["$NeedsFill & $FillDefault & $FillDerived & $SizeDerived"],
@@ -688,32 +707,6 @@
         [5,5,5],
         [5,5,5],
         [5,5,5]
-      ]
-    }, {
-      "cases": ["$WindowParse & $FillDefault & $FillDerived & $StoredSize"],
-      "grid": [
-        [2,2,2,2,2,2,2,2,2],
-        [2,2,2,2,2,2,2,2,2],
-        [2,2,2,2,2,2,2,2,2],
-        [2,2,2,2,2,2,2,2,2],
-        [2,2,2,2,2,2,2,2,2],
-        [2,2,2,2,2,2,2,2,2],
-        [2,2,2,2,2,2,2,2,2],
-        [2,2,2,2,2,2,2,2,2],
-        [2,2,2,2,2,2,2,2,2]
-      ]
-    }, {
-      "cases": ["$WindowParse & $FillDefault & $StoredFill & $StoredSize"],
-      "grid": [
-        [5,5,5,5,5,5,5,5,5],
-        [5,5,5,5,5,5,5,5,5],
-        [5,5,5,5,5,5,5,5,5],
-        [5,5,5,5,5,5,5,5,5],
-        [5,5,5,5,5,5,5,5,5],
-        [5,5,5,5,5,5,5,5,5],
-        [5,5,5,5,5,5,5,5,5],
-        [5,5,5,5,5,5,5,5,5],
-        [5,5,5,5,5,5,5,5,5]
       ]
     }]
   }, {
@@ -844,7 +837,7 @@
       "cases": ["$TileParse"],
       "grid": null
     }, {
-      "cases": ["$WindowParse & $BgDefault & $SizeDerived"],
+      "cases": ["$BgDefault & $SizeDerived"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0],
@@ -860,7 +853,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$WindowParse & $FillDefault & $SizeDerived"],
+      "cases": ["$FillDefault & $SizeDerived"],
       "grid": [
         [5,5,5,5,5,5,5,5,5,5,5,5],
         [5,5,5,5,5,5,5,5,5,5,5,5],
@@ -902,10 +895,7 @@
       "cases": ["$WindowParse & $StoredSize"],
       "grid": null
     }, {
-      "cases": ["$TileParse & $SizeDerived"],
-      "grid": null
-    }, {
-      "cases": ["$TileParse & $StoredSize"],
+      "cases": ["$TileParse"],
       "grid": [
         [6,6,5,2,2,2,5,1,1],
         [6,5,5,5,2,5,5,5,1],
@@ -919,8 +909,8 @@
       ]
     }, {
       "cases": [
-        "$WindowParse & $BboxCenter & $BgDefault & $SizeDerived",
-        "$WindowParse & $EdgeTouch & $BgDefault & $SizeDerived"
+        "$BboxCenter & $BgDefault & $SizeDerived",
+        "$EdgeTouch & $BgDefault & $SizeDerived"
       ],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -943,10 +933,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$WindowParse & $EdgeCount & $BgDefault & $SizeDerived",
-        "$WindowParse & $HalfCount & $BgDefault & $SizeDerived"
-      ],
+      "cases": ["$HalfCount & $BgDefault & $SizeDerived"],
       "grid": [
         [6,6,5,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0],
         [6,5,5,5,2,5,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -969,8 +956,8 @@
       ]
     }, {
       "cases": [
-        "$WindowParse & $BboxCenter & $FillDefault & $SizeDerived",
-        "$WindowParse & $EdgeTouch & $FillDefault & $SizeDerived"
+        "$BboxCenter & $FillDefault & $SizeDerived",
+        "$EdgeTouch & $FillDefault & $SizeDerived"
       ],
       "grid": [
         [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
@@ -993,10 +980,7 @@
         [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5]
       ]
     }, {
-      "cases": [
-        "$WindowParse & $EdgeCount & $FillDefault & $SizeDerived",
-        "$WindowParse & $HalfCount & $FillDefault & $SizeDerived"
-      ],
+      "cases": ["$HalfCount & $FillDefault & $SizeDerived"],
       "grid": [
         [6,6,5,2,2,2,5,5,5,5,5,5,5,5,5,5,5,5],
         [6,5,5,5,2,5,5,5,5,5,5,5,5,5,5,5,5,5],
@@ -1084,7 +1068,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$WindowParse & $StoredSize"],
+      "cases": ["$StoredSize"],
       "grid": null
     }, {
       "cases": ["$SizeDerived"],
@@ -1102,9 +1086,6 @@
         [8,5,5,5,5,4,4,5,5,5,5,9],
         [8,8,5,5,5,4,4,5,5,5,9,9]
       ]
-    }, {
-      "cases": ["$TileParse & $StoredSize"],
-      "grid": null
     }]
   }, {
     "id": "bg=DominantColor",
@@ -1126,15 +1107,12 @@
       [5,9,9,7,7,7,7,7,7,7,5,5,5,7]
     ],
     "output": [{
-      "cases": [
-        "$WindowParse & $UnmarkedCenter & $HalfCount & $StoredFill & $StoredSize & bg=stored",
-        "$WindowParse & $EdgeCount & $BgDefault & $StoredFill & $StoredSize & bg=stored"
-      ],
+      "cases": ["$StoredSize & bg=stored"],
       "grid": null
     }, {
       "cases": [
-        "$BboxCenter & $BgDefault & $FillDerived & $SizeDerived & bg=stored",
-        "$EdgeTouch & $BgDefault & $FillDerived & $SizeDerived & bg=stored"
+        "$BboxCenter & $BgDefault & $FillDerived",
+        "$EdgeTouch & $BgDefault & $FillDerived"
       ],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -1181,25 +1159,9 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["bg=DominantColor"],
-      "grid": [
-        [6,6,5,2,2,2,5,1,1],
-        [6,5,5,5,2,5,5,5,1],
-        [5,5,5,5,5,5,5,5,5],
-        [2,5,5,5,5,5,5,5,3],
-        [2,2,5,5,5,5,5,3,3],
-        [2,5,5,5,5,5,5,5,3],
-        [5,5,5,5,5,5,5,5,5],
-        [8,5,5,5,4,5,5,5,9],
-        [8,8,5,4,4,4,5,9,9]
-      ]
-    }, {
-      "cases": ["$TileParse & $StoredSize & bg=stored"],
-      "grid": null
-    }, {
       "cases": [
-        "$BboxCenter & $BgDefault & $StoredFill & $SizeDerived & bg=stored",
-        "$EdgeTouch & $BgDefault & $StoredFill & $SizeDerived & bg=stored"
+        "$BboxCenter & $BgDefault & $StoredFill & $SizeDerived",
+        "$EdgeTouch & $BgDefault & $StoredFill & $SizeDerived"
       ],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -1246,10 +1208,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$EdgeCount & $BgDefault & $FillDerived & $SizeDerived & bg=stored",
-        "$HalfCount & $BgDefault & $FillDerived & $SizeDerived & bg=stored"
-      ],
+      "cases": ["$HalfCount & $BgDefault & $FillDerived & $SizeDerived"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -1295,10 +1254,20 @@
         [5,9,9,7,7,7,7,7,7,7,5,5,5,7,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$EdgeCount & $BgDefault & $StoredFill & $SizeDerived & bg=stored",
-        "$HalfCount & $BgDefault & $StoredFill & $SizeDerived & bg=stored"
-      ],
+      "cases": ["bg=DominantColor"],
+      "grid": [
+        [6,6,5,2,2,2,5,1,1],
+        [6,5,5,5,2,5,5,5,1],
+        [5,5,5,5,5,5,5,5,5],
+        [2,5,5,5,5,5,5,5,3],
+        [2,2,5,5,5,5,5,3,3],
+        [2,5,5,5,5,5,5,5,3],
+        [5,5,5,5,5,5,5,5,5],
+        [8,5,5,5,4,5,5,5,9],
+        [8,8,5,4,4,4,5,9,9]
+      ]
+    }, {
+      "cases": ["$HalfCount & $BgDefault & $StoredFill & $SizeDerived"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,5,5,7,7,7,7,7,7,7,7,7,7,7],
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,8,5,5,7,7,7,7,7,2,2,2,7,7,7],
@@ -1345,32 +1314,8 @@
       ]
     }, {
       "cases": [
-        "$WindowParse & $BboxCenter & $FillDerived & $StoredSize & bg=stored",
-        "$WindowParse & $EdgeTouch & $FillDerived & $StoredSize & bg=stored"
-      ],
-      "grid": null
-    }, {
-      "cases": [
-        "$WindowParse & $BboxCenter & $StoredFill & $StoredSize & bg=stored",
-        "$WindowParse & $EdgeTouch & $StoredFill & $StoredSize & bg=stored"
-      ],
-      "grid": null
-    }, {
-      "cases": [
-        "$WindowParse & $FillFreeCenter & $EdgeCount & $FillDerived & $StoredSize & bg=stored",
-        "$WindowParse & $FillFreeCenter & $HalfCount & $FillDerived & $StoredSize & bg=stored"
-      ],
-      "grid": null
-    }, {
-      "cases": [
-        "$WindowParse & $NeedsFill & $EdgeCount & $FillDerived & $StoredSize & bg=stored",
-        "$WindowParse & $NeedsFill & $HalfCount & $FillDerived & $StoredSize & bg=stored"
-      ],
-      "grid": null
-    }, {
-      "cases": [
-        "$BboxCenter & $FillDefault & $FillDerived & $SizeDerived & bg=stored",
-        "$EdgeTouch & $FillDefault & $FillDerived & $SizeDerived & bg=stored"
+        "$BboxCenter & $FillDefault & $FillDerived",
+        "$EdgeTouch & $FillDefault & $FillDerived"
       ],
       "grid": [
         [7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7],
@@ -1418,8 +1363,8 @@
       ]
     }, {
       "cases": [
-        "$BboxCenter & $FillDefault & $StoredFill & $SizeDerived & bg=stored",
-        "$EdgeTouch & $FillDefault & $StoredFill & $SizeDerived & bg=stored"
+        "$BboxCenter & $FillDefault & $StoredFill & $SizeDerived",
+        "$EdgeTouch & $FillDefault & $StoredFill & $SizeDerived"
       ],
       "grid": [
         [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
@@ -1466,10 +1411,7 @@
         [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5]
       ]
     }, {
-      "cases": [
-        "$EdgeCount & $FillDefault & $FillDerived & $SizeDerived & bg=stored",
-        "$HalfCount & $FillDefault & $FillDerived & $SizeDerived & bg=stored"
-      ],
+      "cases": ["$HalfCount & $FillDefault & $FillDerived & $SizeDerived"],
       "grid": [
         [7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7],
         [7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7],
@@ -1515,10 +1457,7 @@
         [5,9,9,7,7,7,7,7,7,7,5,5,5,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7]
       ]
     }, {
-      "cases": [
-        "$EdgeCount & $FillDefault & $StoredFill & $SizeDerived & bg=stored",
-        "$HalfCount & $FillDefault & $StoredFill & $SizeDerived & bg=stored"
-      ],
+      "cases": ["$HalfCount & $FillDefault & $StoredFill & $SizeDerived"],
       "grid": [
         [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,7,7,7,7,7,7,7,7,7,7,7],
         [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,8,5,5,7,7,7,7,7,2,2,2,7,7,7],
@@ -1563,12 +1502,6 @@
         [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
         [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5]
       ]
-    }, {
-      "cases": [
-        "$WindowParse & $EdgeCount & $FillDefault & $StoredFill & $StoredSize & bg=stored",
-        "$WindowParse & $HalfCount & $FillDefault & $StoredFill & $StoredSize & bg=stored"
-      ],
-      "grid": null
     }]
   }, {
     "id": "packed",
@@ -1600,10 +1533,7 @@
         [8,8,5,4,4,4,5,9,9]
       ]
     }, {
-      "cases": ["$TileParse & bg=DominantColor"],
-      "grid": null
-    }, {
-      "cases": ["$WindowParse & $BgDefault & $FillDerived & bg=DominantColor"],
+      "cases": ["$BgDefault & $FillDerived & bg=DominantColor"],
       "grid": [
         [5,5,5,5,5,5,5,5,5],
         [5,5,5,5,5,5,5,5,5],
@@ -1616,10 +1546,10 @@
         [5,5,5,5,5,5,5,5,5]
       ]
     }, {
-      "cases": ["$WindowParse & $FillFreeCenter & $StoredFill & bg=DominantColor"],
+      "cases": ["$FillFreeCenter & $StoredFill & bg=DominantColor"],
       "grid": null
     }, {
-      "cases": ["$WindowParse & $NeedsFill & $StoredFill & bg=DominantColor"],
+      "cases": ["$NeedsFill & bg=DominantColor"],
       "grid": [
         [5,5,5,5,5,5,5,5,5],
         [5,5,5,5,5,5,5,5,5],
@@ -1632,7 +1562,7 @@
         [5,5,5,5,5,5,5,5,5]
       ]
     }, {
-      "cases": ["$WindowParse & $FillDefault & $FillDerived & bg=DominantColor"],
+      "cases": ["$FillDefault & $FillDerived & bg=DominantColor"],
       "grid": [
         [0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0],

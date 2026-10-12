@@ -60,7 +60,7 @@
       "cases": ["concept","$Count & row_tile=derived"],
       "grid": null
     }, {
-      "cases": ["$Size & row_tile=derived"],
+      "cases": ["$Lookup & $Size"],
       "grid": [
         [2,2,2],
         [8,8,8],
@@ -795,10 +795,7 @@
       "cases": ["$Lookup & tile_size=SepTileDim"],
       "grid": null
     }, {
-      "cases": ["$HoleBox & $Size & row_tile=derived"],
-      "grid": null
-    }, {
-      "cases": ["tile_size=SepTileDim & row_tile=stored"],
+      "cases": ["$HoleBox & tile_size=SepTileDim"],
       "grid": [
         [2,2,2],
         [2,2,2],

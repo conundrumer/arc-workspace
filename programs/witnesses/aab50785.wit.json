@@ -282,14 +282,7 @@
       [1,8,8,8,1,4,6,0,0,8,8,8,3,0,1,4,0]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "$WindowBlocks & $PairLeftRight",
-        "$WindowBlocks & $ConsecutiveWindows"
-      ],
-      "grid": null
-    }, {
-      "cases": ["$WindowBlocks & $OuterSpan"],
+      "cases": ["$WindowBlocks"],
       "grid": null
     }, {
       "cases": ["$StoredShape"],

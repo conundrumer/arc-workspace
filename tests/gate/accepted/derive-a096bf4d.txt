@@ -12,7 +12,7 @@ separator: VanishedColor — a color in every input and no train output
 
 $StoredSeparator & separator=stored: emits nothing
 
-7 witnessed cases of 36, 1 distinct grid(s)
+7 witnessed cases of 36, 2 distinct grid(s)
 
 wrote witness `separator=SharedColor` to <out>/gate/wit/cur/a096bf4d.wit.json; its groups name `separator=SharedColor`, so add `// @derive SharedColor: <plausibility> <verdict>` above `.decl separator(c: Color)`, its verdict read from this witness
 
@@ -64,7 +64,7 @@ $DerivedSeparator, separator=SharedColor:
 
 $StoredSeparator & separator=stored: emits nothing
 
-7 witnessed cases of 36, 1 distinct grid(s)
+7 witnessed cases of 36, 2 distinct grid(s)
 
 wrote witness `separator=VanishedColor` to <out>/gate/wit/cur/a096bf4d.wit.json; its groups name `separator=VanishedColor`, so add `// @derive VanishedColor: <plausibility> <verdict>` above `.decl separator(c: Color)`, its verdict read from this witness
 

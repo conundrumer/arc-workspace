@@ -253,13 +253,10 @@
         [2,2,2,2,2,2,2,2,2,2,0,2,2,2]
       ]
     }, {
-      "cases": ["$BboxRingOrder & background=stored"],
+      "cases": ["$BboxRingOrder"],
       "grid": null
     }, {
-      "cases": ["$BboxRingOrder & background=DominantColor"],
-      "grid": null
-    }, {
-      "cases": ["$LoopWalk & background=DominantColor"],
+      "cases": ["background=DominantColor"],
       "grid": [
         [2,2,2,2,2,2,2,2,2,2,0,2,2,2],
         [2,3,3,3,3,3,3,3,3,2,1,2,6,2],

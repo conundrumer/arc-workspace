@@ -285,7 +285,7 @@
         [0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$TwoColors & $EraseKeyColor"],
+      "cases": ["$EraseKeyColor"],
       "grid": [
         [0,0,0,0,0,0,0],
         [3,3,0,0,0,0,0],
@@ -316,10 +316,7 @@
       [3,3,3,3,1]
     ],
     "output": [{
-      "cases": [
-        "$TwoColors & $BoxSide & $EveryKey & bg=stored",
-        "$AnchorTouch & $EveryKey & bg=stored"
-      ],
+      "cases": ["bg=stored"],
       "grid": null
     }, {
       "cases": ["bg=DominantColor"],
@@ -330,18 +327,6 @@
         [3,3,3,2,2],
         [3,3,3,3,2]
       ]
-    }, {
-      "cases": ["$FirstKey & bg=stored"],
-      "grid": null
-    }, {
-      "cases": ["$CenterLine & $EveryKey & $KeepOnTop & bg=stored"],
-      "grid": null
-    }, {
-      "cases": ["$CenterLine & $EveryKey & $StampOver & bg=stored"],
-      "grid": null
-    }, {
-      "cases": ["$SameColorDomino & $BoxSide & $EveryKey & bg=stored"],
-      "grid": null
     }]
   }, {
     "id": "ink-dominant",

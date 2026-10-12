@@ -202,8 +202,9 @@ def _drawn_outputs(solver: Solver, cases: Sequence[CaseOnPair],
                    ex: Example, shown: set[Case] | None) -> list[str]:
     """For each distinct output of the cases whose grids, all accepted
     or none, are no candidate of the pair (`_reasons`), its grids against
-    the stored output, or why it is undefined (`undefined_lines`), under
-    the fewest names of the cases that give it (`pair_failure_lines`)."""
+    the stored output, or why it is undefined (`undefined_lines`), one
+    group per reason, under the fewest names of the cases that give it
+    (`pair_failure_lines`)."""
     from checker.render.built import undefined_lines
 
     by: dict[object, tuple[Grids | Undefined, list[Case]]] = {}
@@ -219,7 +220,8 @@ def _drawn_outputs(solver: Solver, cases: Sequence[CaseOnPair],
         grids = o.grids if isinstance(o, Grids) else ()
         if not _reasons(grids, ex):
             continue
-        by.setdefault(output_key(o), (o, []))[1].append(c.case)
+        by.setdefault(o.reason if isinstance(o, Undefined)
+                      else output_key(o), (o, []))[1].append(c.case)
     expected = as_grid(ex.output)
     every = [c.case for c in cases]
     lines: list[str] = []

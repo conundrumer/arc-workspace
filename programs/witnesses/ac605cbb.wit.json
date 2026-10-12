@@ -121,10 +121,7 @@
       "cases": ["$EndLineClash"],
       "grid": null
     }, {
-      "cases": ["$RayAlongHorizontalLine & $CrossAtEndCell"],
-      "grid": null
-    }, {
-      "cases": ["$RayStoredDir & $CrossAtEndCell"],
+      "cases": ["$CrossAtEndCell"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0],

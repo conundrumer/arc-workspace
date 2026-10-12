@@ -21,6 +21,6 @@ $ColorComponent:
 
 $MulticolorObjects: emits nothing
 
-5 witnessed cases of 9, 1 distinct grid(s)
+5 witnessed cases of 9, 2 distinct grid(s)
 
 wrote witness `touching-pieces` to <out>/gate/wit/cur/a61ba2ce.wit.json

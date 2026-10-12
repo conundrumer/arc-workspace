@@ -21,4 +21,4 @@ $MulticolorObjects:
 
 $ColorComponent: emits nothing
 
-5 witnessed cases of 9, 1 distinct grid(s)
+5 witnessed cases of 9, 2 distinct grid(s)

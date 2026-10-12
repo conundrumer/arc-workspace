@@ -150,13 +150,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$RectMarker & marker_max_side=stored","marker_max_side=TileCount"],
-      "grid": null
-    }, {
-      "cases": ["marker_max_side=SepTileCount"],
-      "grid": null
-    }, {
-      "cases": ["marker_stride=SepTileCount"],
+      "cases": ["$RectMarker","marker_stride=SepTileCount"],
       "grid": null
     }]
   }, {
@@ -434,10 +428,7 @@
         [0,0,0,0,0,0,0,0,4,0,4,0,0,0]
       ]
     }, {
-      "cases": ["$RectMarker & marker_max_side=stored","marker_max_side=TileCount"],
-      "grid": null
-    }, {
-      "cases": ["marker_max_side=SepTileCount"],
+      "cases": ["$RectMarker","marker_stride=SepTileCount"],
       "grid": null
     }, {
       "cases": ["$BoxStamp"],
@@ -457,9 +448,6 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,4,0,4,0,0,0]
       ]
-    }, {
-      "cases": ["marker_stride=SepTileCount"],
-      "grid": null
     }]
   }, {
     "id": "copy-past-edge",
@@ -1015,10 +1003,11 @@
         [4,0,4,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$RectMarker & marker_max_side=stored"],
-      "grid": null
-    }, {
-      "cases": ["marker_max_side=SepTileCount"],
+      "cases": [
+        "$RectMarker & marker_max_side=stored",
+        "marker_max_side=SepTileCount",
+        "marker_stride=SepTileCount"
+      ],
       "grid": null
     }, {
       "cases": ["$Rotate & marker_stride=stored","$Rotate & marker_stride=TileCount"],
@@ -1035,9 +1024,6 @@
         [0,0,0,0,0,0,0,0,0,0,0],
         [4,0,4,0,0,0,0,0,0,0,0]
       ]
-    }, {
-      "cases": ["marker_stride=SepTileCount"],
-      "grid": null
     }]
   }, {
     "id": "swapped-colors",
@@ -1145,13 +1131,12 @@
         [0,0,2,2,2,2,2]
       ]
     }, {
-      "cases": ["marker_max_side=SepTileCount"],
-      "grid": null
-    }, {
-      "cases": ["bg=DominantColor","template_color=RarestColor"],
-      "grid": null
-    }, {
-      "cases": ["marker_stride=SepTileCount"],
+      "cases": [
+        "marker_max_side=SepTileCount",
+        "bg=DominantColor",
+        "template_color=RarestColor",
+        "marker_stride=SepTileCount"
+      ],
       "grid": null
     }]
   }, {
@@ -1333,14 +1318,7 @@
         [0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$RectMarker & marker_max_side=stored",
-        "marker_max_side=TileCount",
-        "marker_stride=TileCount"
-      ],
-      "grid": null
-    }, {
-      "cases": ["marker_max_side=SepTileCount"],
+      "cases": ["$RectMarker","marker_stride=TileCount","marker_stride=SepTileCount"],
       "grid": null
     }, {
       "cases": ["$Rotate & marker_stride=stored"],
@@ -1356,9 +1334,6 @@
         [0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0]
       ]
-    }, {
-      "cases": ["marker_stride=SepTileCount"],
-      "grid": null
     }]
   }]
 }

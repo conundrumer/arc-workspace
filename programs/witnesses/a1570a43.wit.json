@@ -34,12 +34,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$Fill & marker_color=RarestColor",
-        "$Conn4 & marker_color=RarestColor",
-        "$EraseRest & $Conn4",
-        "$KeepRest & $Conn4"
-      ],
+      "cases": ["$Fill & marker_color=RarestColor","$EraseRest & $Conn4","$KeepRest & $Conn4"],
       "grid": null
     }, {
       "cases": ["$MarkerTop & $Carry & $Conn8","$EraseRest & marker_color=RarestColor"],
@@ -294,10 +289,7 @@
       [0,2,2,0,0,0,0,0,2,2,0,0,0]
     ],
     "output": [{
-      "cases": ["$ColorClass","marker_color=RarestColor"],
-      "grid": null
-    }, {
-      "cases": ["$Carry & $Conn4 & marker_color=stored"],
+      "cases": ["$ColorClass","$Carry"],
       "grid": null
     }, {
       "cases": ["$EraseRest & $Conn4"],
@@ -415,7 +407,7 @@
         [0,0,0,0,0,0,0,5,0,0,0,5]
       ]
     }, {
-      "cases": ["$Carry & $Conn8"],
+      "cases": ["$Carry & $PerObject","$Center & marker_color=RarestColor","$DeriveMarker"],
       "grid": null
     }, {
       "cases": ["$Carry & $ColorClass"],
@@ -434,12 +426,6 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$Carry & $Conn4 & marker_color=stored"],
-      "grid": null
-    }, {
-      "cases": ["$Conn4 & marker_color=RarestColor"],
-      "grid": null
-    }, {
       "cases": ["$EraseRest & marker_color=stored"],
       "grid": [
         [3,0,0,0,0,0,3,0,0,0,0,0],
@@ -455,15 +441,6 @@
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
-    }, {
-      "cases": ["$EraseRest & marker_color=RarestColor"],
-      "grid": null
-    }, {
-      "cases": ["$DeriveMarker"],
-      "grid": null
-    }, {
-      "cases": ["$Center & $KeepRest & marker_color=RarestColor"],
-      "grid": null
     }]
   }, {
     "id": "corner-rectangle",

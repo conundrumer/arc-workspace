@@ -258,7 +258,7 @@
         [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]
       ]
     }, {
-      "cases": ["$EightConnected & $EnclosesHole","$EightConnected & $SelectNotFull"],
+      "cases": ["$EightConnected"],
       "grid": [
         [2,2,2,2,0,0,0,0,2,2,2,2,0,0,0,0],
         [2,0,0,2,0,0,0,0,2,0,0,2,0,0,0,0],
@@ -269,9 +269,6 @@
         [0,0,0,0,2,0,0,2,0,0,0,0,2,0,0,2],
         [0,0,0,0,2,2,2,2,0,0,0,0,2,2,2,2]
       ]
-    }, {
-      "cases": ["$EightConnected & $SelectFewestCells"],
-      "grid": null
     }]
   }, {
     "id": "small-solid",
@@ -388,16 +385,8 @@
         [2,2,2,2,2,2,2,2,3,3,3,3,4,4,4,4]
       ]
     }, {
-      "cases": ["$EightConnected & $EnclosesHole","$EightConnected & $SelectNotFull"],
+      "cases": ["$EightConnected"],
       "grid": null
-    }, {
-      "cases": ["$EightConnected & $SelectFewestCells"],
-      "grid": [
-        [3,3,3,3,4,4,4,4],
-        [3,0,0,3,4,0,0,4],
-        [3,0,0,3,4,0,0,4],
-        [3,3,3,3,4,4,4,4]
-      ]
     }]
   }, {
     "id": "wide-rings",
@@ -421,7 +410,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$ColorObjects & $AxisSpread","$ColorObjects & $SeparatingAxis"],
+      "cases": ["$ColorObjects & $SeparatingAxis","$AxisSpread"],
       "grid": [
         [2,2,2,2,2,2,2,2,2,2],
         [2,0,0,0,0,0,0,0,0,2],
@@ -465,12 +454,7 @@
       [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
     ],
     "output": [{
-      "cases": [
-        "$EnclosesHole & bg=stored",
-        "$SelectNotFull & $AxisSpread & bg=stored",
-        "$SelectNotFull & $SeparatingAxis & bg=stored",
-        "$StoredTemplate & bg=stored"
-      ],
+      "cases": ["$EnclosesHole & bg=stored","$SelectNotFull","$StoredTemplate"],
       "grid": null
     }, {
       "cases": ["bg=DominantColor"],
@@ -486,9 +470,6 @@
         [1,1,1,1],
         [1,1,1,1]
       ]
-    }, {
-      "cases": ["$SelectNotFull & $AxisBbox & bg=stored"],
-      "grid": null
     }]
   }, {
     "id": "dominant-solid",
@@ -509,11 +490,7 @@
         [2,2,2,2,3,3,3,3]
       ]
     }, {
-      "cases": [
-        "$EnclosesHole & bg=DominantColor",
-        "$SelectNotFull & $SeparatingAxis & bg=DominantColor",
-        "$StoredTemplate & bg=DominantColor"
-      ],
+      "cases": ["$EnclosesHole & bg=DominantColor"],
       "grid": null
     }, {
       "cases": ["$SelectFewestCells & bg=DominantColor"],
@@ -521,18 +498,6 @@
         [0,0,0,0],
         [0,0,0,0]
       ]
-    }, {
-      "cases": [
-        "$SelectNotFull & $AxisBbox & $AlongAxis & bg=DominantColor",
-        "$SelectNotFull & $AxisSpread & $AlongAxis & bg=DominantColor"
-      ],
-      "grid": null
-    }, {
-      "cases": [
-        "$SelectNotFull & $AxisBbox & $OrderColumnMajor & bg=DominantColor",
-        "$SelectNotFull & $AxisSpread & $OrderColumnMajor & bg=DominantColor"
-      ],
-      "grid": null
     }]
   }]
 }

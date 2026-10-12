@@ -22,18 +22,10 @@ fill: VanishedColor — a color in every input and no train output
   fill: `fill=SharedColor` fits and has no `@derive` or `@ignore: derive` line
   fill: `fill=VanishedColor` fits and has no `@derive` or `@ignore: derive` line
 
-$ComponentRect & $AxisPeriods:
-  conflicts at: [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (2, 0), (2, 1), (2, 3), (2, 4), (3, 0), (3, 1), (3, 2), (3, 3), (3, 4), (4, 0), (4, 1), (4, 2), (4, 3), (4, 4)]
-
-$ComponentRect & $IsometryOrbit:
-  conflicts at: [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (2, 0), (2, 1), (2, 2), (2, 3), (2, 4), (3, 0), (3, 1), (3, 2), (3, 3), (3, 4), (4, 0), (4, 1), (4, 2), (4, 3), (4, 4)]
-
-$ComponentRect & $LatticePeriod:
-  conflicts at: [(0, 0), (0, 2), (0, 3), (0, 4), (1, 0), (1, 1), (1, 2), (1, 4), (2, 1), (2, 2), (2, 3), (2, 4), (3, 0), (3, 1), (3, 3), (3, 4), (4, 0), (4, 1), (4, 2), (4, 3)]
-
 concept: emits nothing
+$ComponentRect: emits nothing
 
-13 witnessed cases of 73, 6 distinct grid(s)
+12 witnessed cases of 73, 4 distinct grid(s)
 
 wrote witness `fill=DominantColor` to <out>/gate/wit/cur/abbfd121.wit.json; its groups name `fill=DominantColor`, so add `// @derive DominantColor: <plausibility> <verdict>` above `.decl fill(col: Color)`, its verdict read from this witness
 
@@ -55,7 +47,7 @@ $ColorFill & $AxisPeriods & $HiddenFill & fill=stored, $MinTwoCells & $AxisPerio
   6 2 5 1 3
   1 3 6 2 5
 
-$ColorFill & $IsometryOrbit, $ColorFill & $LatticePeriod, $MinTwoCells & $LatticePeriod:
+$IsometryOrbit, $ColorFill & $LatticePeriod, $MinTwoCells & $LatticePeriod:
   2 5 1 3 6
   3 6 2 5 1
   5 1 3 6 2
@@ -69,18 +61,10 @@ fill=DominantColor:
   6 2 5 1 3
   1 3 6 2 5
 
-$ComponentRect & $AxisPeriods:
-  conflicts at: [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (2, 0), (2, 1), (2, 3), (2, 4), (3, 0), (3, 1), (3, 2), (3, 3), (3, 4), (4, 0), (4, 1), (4, 2), (4, 3), (4, 4)]
-
-$ComponentRect & $IsometryOrbit:
-  conflicts at: [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (2, 0), (2, 1), (2, 2), (2, 3), (2, 4), (3, 0), (3, 1), (3, 2), (3, 3), (3, 4), (4, 0), (4, 1), (4, 2), (4, 3), (4, 4)]
-
-$ComponentRect & $LatticePeriod:
-  conflicts at: [(0, 0), (0, 2), (0, 3), (0, 4), (1, 0), (1, 1), (1, 2), (1, 4), (2, 1), (2, 2), (2, 3), (2, 4), (3, 0), (3, 1), (3, 3), (3, 4), (4, 0), (4, 1), (4, 2), (4, 3)]
-
 concept: emits nothing
+$ComponentRect: emits nothing
 
-13 witnessed cases of 73, 6 distinct grid(s)
+12 witnessed cases of 73, 4 distinct grid(s)
 
 wrote witness `fill=RarestColor` to <out>/gate/wit/cur/abbfd121.wit.json; its groups name `fill=RarestColor`, so add `// @derive RarestColor: <plausibility> <verdict>` above `.decl fill(col: Color)`, its verdict read from this witness
 
@@ -102,7 +86,7 @@ $ColorFill & $AxisPeriods & $HiddenFill & fill=stored, $MinTwoCells & $AxisPerio
   6 2 5 1 3
   1 3 6 2 5
 
-$ColorFill & $IsometryOrbit, $ColorFill & $LatticePeriod, $MinTwoCells & $LatticePeriod:
+$IsometryOrbit, $ColorFill & $LatticePeriod, $MinTwoCells & $LatticePeriod:
   2 5 1 3 6
   3 6 2 5 1
   5 1 3 6 2

@@ -17,19 +17,19 @@
       [1,1,1,1,1,1,1,1,1,1,1]
     ],
     "output": [{
-      "cases": ["$DividerTiles & $BackgroundEmpty","$EdgeColor & $ClosedRegion"],
+      "cases": ["$EdgeColor & $ClosedRegion","$DividerTiles & $BackgroundEmpty"],
       "grid": [
         [2]
       ]
+    }, {
+      "cases": ["$BgRegionWindows","$DividerTiles & $WindowFill"],
+      "grid": null
     }, {
       "cases": ["$CommonestBackground"],
       "grid": [
         [2,4],
         [4,4]
       ]
-    }, {
-      "cases": ["$BgRegionWindows","$DividerTiles & $WindowFill"],
-      "grid": null
     }]
   }, {
     "id": "missing-window",
@@ -84,17 +84,14 @@
       [4,4,4,4,4,4,4,4,4,4,4,4,4]
     ],
     "output": [{
-      "cases": ["$SameExtent"],
+      "cases": ["$SameExtent","$WindowFill"],
       "grid": null
     }, {
-      "cases": ["$DividerTiles & $BackgroundEmpty","$WindowBands"],
+      "cases": ["$WindowBands","$DividerTiles & $BackgroundEmpty"],
       "grid": [
         [2,4],
         [4,4]
       ]
-    }, {
-      "cases": ["$DividerTiles & $WindowFill"],
-      "grid": null
     }]
   }, {
     "id": "split-window",
@@ -121,15 +118,15 @@
         [4,4]
       ]
     }, {
+      "cases": ["$WindowFill"],
+      "grid": null
+    }, {
       "cases": ["$BgRegionWindows"],
       "grid": [
         [4,4],
         [4,4],
         [4,4]
       ]
-    }, {
-      "cases": ["$WindowFill"],
-      "grid": null
     }]
   }, {
     "id": "window-fill",
@@ -150,13 +147,7 @@
       [4,4,4,4,4,4,4,4,4,4,4,4,4]
     ],
     "output": [{
-      "cases": [
-        "$DividerTiles & $BackgroundEmpty",
-        "$EdgeColor & $ClosedRegion & $BackgroundEmpty"
-      ],
-      "grid": null
-    }, {
-      "cases": ["$CommonestBackground","$BgRegionWindows"],
+      "cases": ["$BackgroundEmpty"],
       "grid": null
     }, {
       "cases": ["$WindowFill"],
@@ -187,15 +178,15 @@
       "cases": ["$SameExtent","$WindowFill"],
       "grid": null
     }, {
-      "cases": ["$DividerTiles & $BackgroundEmpty"],
-      "grid": [
-        [2,3]
-      ]
-    }, {
       "cases": ["$WindowBands"],
       "grid": [
         [2,3],
         [4,4]
+      ]
+    }, {
+      "cases": ["$DividerTiles & $BackgroundEmpty"],
+      "grid": [
+        [2,3]
       ]
     }]
   }]
