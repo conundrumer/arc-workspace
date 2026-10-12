@@ -18,6 +18,8 @@ from pathlib import Path
 
 from arc.task import Grid
 from arc.upstream import load
+from engine import checkout
+from worktree_submodules import set_up_in_script
 
 PATCHES_DIR = Path(__file__).resolve().parents[1] / "data" / "patches"
 
@@ -46,6 +48,8 @@ def main() -> int:
     out = PATCHES_DIR / f"{args.task_id}.arcpatch"
     if out.exists():
         print(f"refuse: {out} already exists", file=sys.stderr)
+        return 1
+    if not set_up_in_script(checkout.ROOT):
         return 1
 
     out.write_text(format_stub(args.task_id))

@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import argparse
+import sys
 from pathlib import Path
 
 from arc.jsonio import format_file
 from arc.materialize import materialize_default
 from arc.upstream import UPSTREAM_DIR
+from controlled_markdown import mctx
+from engine import checkout
+from worktree_submodules import set_up_in_script
 
 OUT_DIR = Path(__file__).resolve().parents[1] / "data" / "tasks"
 
@@ -25,12 +30,18 @@ def all_upstream_ids() -> set[str]:
     return ids
 
 
-def main() -> None:
+def main() -> int:
+    argparse.ArgumentParser(description=__doc__).parse_args()
+    if not set_up_in_script(checkout.ROOT):
+        return 1
+    ids = sorted(all_upstream_ids())
+    if not ids:
+        print(mctx("{path} holds no task").format(path=UPSTREAM_DIR), file=sys.stderr)
+        return 1
+
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     for old in OUT_DIR.glob("*.json"):
         old.unlink()
-
-    ids = sorted(all_upstream_ids())
     written = 0
     failures: list[tuple[str, str]] = []
     for tid in ids:
@@ -48,7 +59,8 @@ def main() -> None:
             print(f"  {tid}: {msg}")
         if len(failures) > 20:
             print(f"  ... +{len(failures) - 20} more")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

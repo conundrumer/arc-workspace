@@ -3,7 +3,6 @@ runs the commands in, and the `data/upstream/` submodules a test of the
 upstream tasks reads."""
 
 import contextlib
-import fcntl
 import importlib.util
 import sys
 from pathlib import Path
@@ -12,11 +11,6 @@ from types import ModuleType
 import pytest
 
 from engine import checkout, rwlock
-
-UPSTREAM_LOCK = "arc-upstream.lock"
-"""The lock file, in the repository's common git directory, that one
-submodule setup at a time holds."""
-
 
 def pytest_configure(config: pytest.Config) -> None:
     """The run holds the heavy commands' lock shared from its start to its
@@ -40,23 +34,14 @@ def script(name: str) -> ModuleType:
 
 @pytest.fixture(scope="session")
 def upstream() -> None:
-    """The checkout's `data/upstream/` submodules, set up where one is not
-    checked out, as `scripts/merge_change.py` sets them up: from the main
-    worktree's copies of their repositories, with no network. A worktree
-    starts with them empty. Where the setup fails, the test fails with its
-    cause."""
-    merge_change = script("merge_change")
+    """The checkout's `data/upstream/` submodules, set up. A worktree starts
+    with them empty. Where the setup fails, the test fails with its cause."""
     subs = script("worktree_submodules")
     root = checkout.ROOT
-    with open(checkout.git_common_dir(root) / UPSTREAM_LOCK, "a") as fh:
-        fcntl.flock(fh, fcntl.LOCK_EX)
-        if all(subs.checked_out(root, sub) for sub in subs.submodules(root)):
-            return
-        try:
-            merge_change.set_up_submodules(root, checkout.main_worktree(root))
-        except merge_change.Refused as exc:
-            pytest.fail(f"the data/upstream/ submodules are not checked out in {root}, "
-                        f"and {exc}", pytrace=False)
+    try:
+        subs.set_up(root)
+    except subs.SetupFailed as exc:
+        pytest.fail(str(exc), pytrace=False)
 
 
 @pytest.fixture

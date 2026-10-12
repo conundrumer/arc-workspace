@@ -1,13 +1,21 @@
-"""The git submodules of a worktree that `merge_change.py` sets up: the
+"""The git submodules of a worktree that `merge_change.py`, `materialize.py`,
+`patch_stub.py` and the `upstream` fixture of `tests/conftest.py` set up: the
 submodules a tree's `.gitmodules` lists, the main tree's copy of each one's
 repository, whether one is checked out, and the setup of a worktree's
 submodules from those copies with no network."""
 
+import fcntl
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from controlled_markdown import mctx
 from engine import checkout
+
+UPSTREAM_LOCK = "arc-upstream.lock"
+"""The lock file, in the repository's common git directory, that one
+submodule setup at a time holds."""
 
 
 @dataclass(frozen=True)
@@ -53,3 +61,35 @@ def checked_out(tree: Path, sub: Submodule) -> bool:
     path = tree / sub.path
     return path.is_dir() and Path(checkout.git_out(
         path, "rev-parse", "--show-toplevel").strip()) == path
+
+
+class SetupFailed(RuntimeError):
+    """A setup by `set_up` that failed, with its cause."""
+
+
+def set_up(tree: Path) -> None:
+    """Set up the submodules of `tree` as `update` does, from the main
+    tree's copies, where one is not checked out, one setup at a time across
+    the repository's worktrees."""
+    with open(checkout.git_common_dir(tree) / UPSTREAM_LOCK, "a") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        if all(checked_out(tree, sub) for sub in submodules(tree)):
+            return
+        main = checkout.main_worktree(tree)
+        try:
+            update(tree, main)
+        except checkout.GitFailed as exc:
+            raise SetupFailed(mctx(
+                "the submodules of {tree} are not checked out, and setting them up "
+                "from {main} failed: {cause}").format(tree=tree, main=main, cause=exc)) from exc
+
+
+def set_up_in_script(tree: Path) -> bool:
+    """Run `set_up` on `tree` for a script, and print its failure on
+    stderr. Whether the submodules stand checked out."""
+    try:
+        set_up(tree)
+    except SetupFailed as exc:
+        print(exc, file=sys.stderr)
+        return False
+    return True
