@@ -107,7 +107,7 @@ from operations import brief_reading, briefs, merging, messages
 from operations.change_budget import (OVERRUN_FINDING, TAKE_NOTE, TIME_NOTE, TIME_OPENING,
                                       by_role, file_overrun, left_draft, overrun_ticket,
                                       past_budget, taken)
-from operations.doc_review import doc_review, latest_reviewer, review_launch
+from operations.doc_review import doc_review, latest_reviewer, review_launch, with_ids
 from operations.directives import Decision, Directive, decided, held_on, named, NUMBER, numbers
 from operations.reports import (OPEN_LABELS, Label, budget_passed, items_of,
                                 left_for_decision, shows_current)
@@ -564,7 +564,7 @@ def over_budget(state: State, t: Ticket, w: Path,
     checkers = [a for a in agents if a.role is Role.ITEM_CHECKER
                 and a.launched > trip.filed and a.launched > reported]
     if not checkers:
-        editors = agent_ids(latest)
+        editors = with_ids(latest)
         if isinstance(editors, Undecided):
             return editors
         return check_items(state, t, w, latest, editors, past=True)
@@ -642,7 +642,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     analysts = [a for a in agents if a.role is Role.TICKET_ANALYST]
     if any(a.pending for a in checkers + analysts):
         return None
-    editors = agent_ids(latest)
+    editors = with_ids(latest)
     if isinstance(editors, Undecided):
         return editors
     checked = max((a.launched for a in checkers), default=0.0)
@@ -677,7 +677,8 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     if isinstance(reports, Undecided):
         return reports
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
-        t.number, w, parts, [q.number for q in questions], editors, reports, state.me))
+        t.number, w, parts, [q.number for q in questions], editors, reports,
+        state.me))
 
 
 def latest_reports(agents: list[Agent]) -> list[tuple[str, str]] | Undecided:
@@ -691,7 +692,7 @@ def latest_reports(agents: list[Agent]) -> list[tuple[str, str]] | Undecided:
 
 
 def check_items(state: State, t: Ticket, w: Path, needing: list[Agent],
-                editors: list[str], past: bool = False) -> Step:
+                editors: list[tuple[Agent, str]], past: bool = False) -> Step:
     """The launch of an item checker on the latest reports of the editors
     `needing`, which have reported since the last item checker was launched
     on the change `t`, and on the accepted gate outputs the change writes,

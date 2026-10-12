@@ -116,11 +116,20 @@ def review_decided(state: State, t: Ticket, w: Path, here: list[Agent],
     return review_launch(t, w, here, state.me)
 
 
+def with_ids(agents: list[Agent]) -> list[tuple[Agent, str]] | Undecided:
+    """Each of `agents` beside its agent id, as `agent_ids` gives it, for
+    the briefs that give each editor of a change with its part
+    (`briefs.editor_lines`)."""
+    ids = agent_ids(agents)
+    if isinstance(ids, Undecided):
+        return ids
+    return list(zip(agents, ids, strict=True))
+
+
 def review_launch(t: Ticket, w: Path, here: list[Agent], launcher: str) -> Step:
     """The launch of a doc reviewer on the change, with its editors, by
     `launcher`."""
-    ids = agent_ids(here)
-    if isinstance(ids, Undecided):
-        return ids
-    return Launch(Role.DOC_REVIEWER, t.number, briefs.doc_review(
-        t.number, w, [(a.role, i) for a, i in zip(here, ids, strict=True)], launcher))
+    editors = with_ids(here)
+    if isinstance(editors, Undecided):
+        return editors
+    return Launch(Role.DOC_REVIEWER, t.number, briefs.doc_review(t.number, w, editors, launcher))

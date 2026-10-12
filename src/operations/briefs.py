@@ -10,7 +10,7 @@ from pathlib import Path
 from controlled_markdown import mctx
 from operations.reports import LEFT_FOR_DECISION, WORKTREE
 from operations.roles import Role, description
-from operations.state import Place
+from operations.state import Agent, Place
 from operations.tracker import AGENT, FILE_TICKET
 from ticketing.text import VALIDATION
 from ticketing.times import utc_stamp
@@ -60,6 +60,27 @@ FRAGMENTS_PART = mctx("Your part: the text of the `mctx` fragments below, with t
 which keys that editor apart from the change's doc editor of the
 documents."""
 
+YOUR_PART = mctx("Your part: {part}.")
+OF_FRAGMENTS = mctx("the text of the `mctx` fragments that editor's brief gives, with the moves "
+                    "that text needs")
+QUOTES_ITEMS = mctx("Your items: repair each `quotes` call the `controlled_markdown` check "
+                    "reports below.")
+QUOTES_PART = mctx("the repair of each `quotes` call that editor's brief gives")
+WHOLE_CHANGE = mctx("the whole change")
+
+
+BRIEF_PARTS: tuple[tuple[str, str], ...] = (
+    (FRAGMENTS_PART, OF_FRAGMENTS), (QUOTES_ITEMS, QUOTES_PART),
+    *((YOUR_PART.format(part=part), part) for part in PARTS.values()))
+"""Each line that gives an editor's brief its part, beside the part as
+another brief gives it."""
+
+
+def part_of(agent: Agent) -> str:
+    """The part of a change its editor `agent` takes, as its own brief
+    gave it."""
+    return next((part for line, part in BRIEF_PARTS if line in agent.brief), WHOLE_CHANGE)
+
 
 def editor(role: Role, number: str, part: bool, worktree: Path, scratch: Path,
            operator: str, fragments: tuple[Place, ...] = (),
@@ -72,7 +93,7 @@ def editor(role: Role, number: str, part: bool, worktree: Path, scratch: Path,
     if of_fragments:
         lines.append(FRAGMENTS_PART)
     elif part:
-        lines.append(mctx("Your part: {part}.").format(part=PARTS[role]))
+        lines.append(YOUR_PART.format(part=PARTS[role]))
     lines.append(WORK_IN.format(worktree=worktree))
     if role is Role.DOC_EDITOR and fragments:
         lines.append(FRAGMENTS)
@@ -108,14 +129,19 @@ def fingerprint_line(worktree: Path) -> str:
     return FINGERPRINT.format(worktree=worktree, opening=WORKTREE)
 
 
-def doc_review(number: str, worktree: Path, editors: list[tuple[Role, str]],
+def editor_lines(editors: list[tuple[Agent, str]]) -> list[str]:
+    """The line of each editor of a change, with its agent id beside its
+    record, that gives its part."""
+    return [mctx("Its {role}: {aid}, whose part is {part}.").format(
+        role=agent.role, aid=aid, part=part_of(agent)) for agent, aid in editors]
+
+
+def doc_review(number: str, worktree: Path, editors: list[tuple[Agent, str]],
                operator: str) -> str:
     lines = [mctx("Review the change to the documents of change {number}: the diff that "
                   "`git -C {worktree} diff --merge-base master` prints.").format(
                       number=number, worktree=worktree)]
-    for role, aid in editors:
-        lines.append(mctx("Its {role}: {aid}, whose files are {part}.").format(
-            role=role, aid=aid, part=PARTS[role]))
+    lines.extend(editor_lines(editors))
     lines.append(fingerprint_line(worktree))
     lines.append(LAUNCHER.format(operator=operator))
     return "\n".join(lines)
@@ -128,8 +154,7 @@ def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], 
     gives it."""
     return "\n".join([
         read_ticket(number), WORK_IN.format(worktree=worktree),
-        mctx("Your items: repair each `quotes` call the `controlled_markdown` check reports "
-             "below."),
+        QUOTES_ITEMS,
         *calls,
         MAY_EDIT.format(files=", ".join(files)), TESTS, SCRATCH.format(scratch=scratch),
         LAUNCHER.format(operator=operator)])
@@ -232,7 +257,6 @@ def change_lines(number: str, worktree: Path) -> list[str]:
 
 
 def editor_reports(reports: list[tuple[str, str]]) -> list[str]:
-    """The lines that give each editor's agent id and latest report."""
     lines: list[str] = []
     for editor_id, report in reports:
         lines.append(mctx("The latest report of editor {editor}:").format(editor=editor_id))
@@ -241,17 +265,19 @@ def editor_reports(reports: list[tuple[str, str]]) -> list[str]:
 
 
 def item_check(number: str, worktree: Path, reports: list[tuple[str, str]],
-               decisions: list[tuple[str, str]], gate: list[str], editors: list[str],
+               decisions: list[tuple[str, str]], gate: list[str],
+               editors: list[tuple[Agent, str]],
                operator: str, past: bool = False) -> str:
     """The brief of an item checker that checks the items of a change's
     editors, by each editor's agent id and latest report, and the accepted
-    gate outputs the change writes, with the agent ids of its editors.
+    gate outputs the change writes, with the agent id and part of each of
+    its editors, each beside its record in `editors`.
     Where `decisions` gives the agent id and latest report of ticket
     analysts on the change, it tells the checker to leave out of its
     `LEFT_FOR_DECISION` part what those decisions settle, unless the
     editor's report gives a reason they did not judge. `past` gives that
     the change is past its cost budget."""
-    lines = change_lines(number, worktree)
+    lines = [*change_lines(number, worktree), *editor_lines(editors)]
     if past:
         lines.append(OVER_BUDGET.format(number=number))
     lines.extend(editor_reports(reports))
@@ -270,20 +296,22 @@ def item_check(number: str, worktree: Path, reports: list[tuple[str, str]],
             "Read the diff of each accepted gate output the change writes, {gate}, and send "
             "each difference there that the change's items do not ask for to its editors, "
             "{editors}, as a finding of its checks.").format(
-                gate=", ".join(gate), editors=", ".join(editors)))
+                gate=", ".join(gate), editors=", ".join(i for _, i in editors)))
     lines.append(fingerprint_line(worktree))
     lines.append(LAUNCHER.format(operator=operator))
     return "\n".join(lines)
 
 
 def findings(number: str, worktree: Path, left: str | None, questions: list[str],
-             editors: list[str], reports: list[tuple[str, str]], operator: str) -> str:
+             editors: list[tuple[Agent, str]], reports: list[tuple[str, str]],
+             operator: str) -> str:
     """The brief of a ticket analyst that judges what a change's editors
     leave for a decision, by the part of the latest item checker's reply
     that gives it, and the `question` tickets filed on the change, with
-    the agent ids of its editors and each editor's agent id and latest
-    report in `reports`, which that part refers to."""
-    lines = [*change_lines(number, worktree), mctx("Its editors: {editors}.").format(editors=", ".join(editors))]
+    the agent id and part of each of its editors, each beside its record
+    in `editors`, and each editor's agent id and latest report in
+    `reports`, which that part refers to."""
+    lines = [*change_lines(number, worktree), *editor_lines(editors)]
     if left is not None:
         lines.append(mctx("What the item checker on the change leaves for a decision:"))
         lines.append(f"\n{left}\n")

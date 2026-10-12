@@ -59,16 +59,23 @@
 - A ticket reviewer's brief gives the number of each ticket under `tickets/draft/` to review, and the agent id of the agent that launches it, where that is not the coordinator.
 
 ### A ticket analyst's brief
-- A ticket analyst's brief gives the tickets under `tickets/open/` to settle, a draft `change` ticket whose log holds findings or a suggestion, or the findings an editor left on a review of its change, the items an editor left unfinished for a decision and the places a code editor's report gives as standing, with the editor's reasons, or a step that an operator's command cannot decide, which the operator holds, or the process assessment.
-    - With each of those findings and items, it gives the agent id of the change's editor, the change's worktree, and the number of the change's ticket, or, where the change has none, its intent and what is already settled about it.
-    - With a draft whose next revision opens at its operator's cap of ticket reviews, it gives that this revision is the last: once it is written, the operator moves the draft to `tickets/open/` with no further ticket review, and the change's own review checks what the change writes.
+- A ticket analyst's brief gives one of these:
+    - The tickets under `tickets/open/` to settle.
+    - A draft `change` ticket whose log holds findings or a suggestion.
+        - With a draft whose next revision opens at its operator's cap of ticket reviews, it gives that this revision is the last: once it is written, the operator moves the draft to `tickets/open/` with no further ticket review, and the change's own review checks what the change writes.
+    - The findings an editor left on a review of its change, the items an editor left unfinished for a decision, and the places a code editor's report gives as standing, each with the editor's reasons.
+        - With those, it gives the agent id of each editor of the change, with the part that editor's brief gave it, or the whole change where its brief gave none.
+        - It gives the change's worktree, and the number of the change's ticket, or, where the change has none, its intent and what is already settled about it.
+    - A step that an operator's command cannot decide, which the operator holds.
+    - The process assessment.
 - With the tickets a solver pass filed, it gives the review of that pass's transcript, where one was made.
 - With a `request` that the coordinator filed on `send`, it gives that request's transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it.
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 
 ### An item checker's brief
 - An item checker's brief gives the change's worktree, and the number of the change's ticket, or, where the change has none, the transcript brief its editors' briefs give.
-- It gives the latest report of each editor of the change that has reported since the last item checker launched on the change, with that editor's agent id, and the agent id of each other editor of the change.
+- It gives the agent id of each editor of the change, with the part that editor's brief gave it, or the whole change where its brief gave none.
+- It gives the latest report of each editor of the change that has reported since the last item checker launched on the change.
 - Where ticket analysts already decided items on the change, it gives their agent ids and latest reports.
 - Where the change is past its cost budget, it gives that it is.
 - Where the change writes accepted gate outputs, it gives them.
@@ -94,7 +101,7 @@
 
 ### A doc reviewer's brief
 - A doc reviewer's brief gives a change to the agent-facing documents, as the files or a diff, and the number of its ticket, or, where it has none, what is already settled about it.
-- It gives the change's worktree, and the agent id of the change's doc editor, and of each of its code editors with the files that editor's brief gives.
+- It gives the change's worktree, and the agent id of each editor of the change, with the part that editor's brief gave it, or the whole change where its brief gave none.
 - Where the operator launches it, it gives the command whose output its final reply ends with.
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 - A doc reviewer's brief on a commit of `master` that the coordinator merged with no `change` ticket gives that commit's hash in place of a worktree and editors.

@@ -13,7 +13,7 @@ tools: Read, Grep, Glob, Bash, Write, SendMessage, TaskStop
 * inline: notes/launching.md#a-part-a-brief-leaves-out
 * inline: notes/launching.md#an-item-checkers-brief
 - Check each item of each editor whose latest report your brief gives against what that report gives for it, and against the worktree. Send each item that is not shown to hold, or that no report gives as done or as unfinished, to the editor whose part it is, as a kept finding.
-    - An editor's items are the Intent items of the change's ticket that fall in that editor's part, as [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change) splits a change into parts, or, where the change has no ticket, the items of the transcript brief your brief gives, with the items of each later request as the editor's report gives them. `uv run python scripts/file_ticket.py show <number> Intent Scope` prints a ticket's items.
+    - An editor's items are the Intent items of the change's ticket that fall in the part your brief gives for that editor, or, where the change has no ticket, the items of the transcript brief your brief gives, with the items of each later request as the editor's report gives them. `uv run python scripts/file_ticket.py show <number> Intent Scope` prints a ticket's items.
     * inline: notes/launching.md#an-editors-report-on-a-change
     - Run none of the checks that [merge_change.py](scripts/merge_change.py) runs on a change as it merges. For an item such a check shows, the output the report gives for that check is what shows it.
 - Read the diff of each accepted gate output your brief gives, and send each difference there that the change's items do not ask for to the change's editors, as a finding of its checks.
