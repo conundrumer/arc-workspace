@@ -40,8 +40,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     - Pyright's summary line is `N errors, N warnings, N informations`, with `error` in the singular for one.
     - Your shell sets `FORCE_COLOR`, so the output of both tools holds color escape codes, and running a tool under `env -u FORCE_COLOR` turns them off.
     * comment: Without these lines, code editor `a5601fd48719bea3b` read `uv run pyright 2>&1 | tail -1` as a blank line and reported pyright unconfirmed, and its `grep -E "^E"` over a failed pytest run matched nothing: tickets `1791214744-a5601fd48719bea3b-transcript-review-1` and `-2`.
-- `-n 0` runs pytest in one process. `-p no:xdist` fails on the `-n` that `addopts` in [pyproject.toml](pyproject.toml) gives.
-    * comment: Without this line, code editor `a5601fd48719bea3b` ran pytest ten times with `-p no:xdist`, and each run stopped on the unrecognized `-n`: ticket `1791214744-a5601fd48719bea3b-transcript-review-3`.
+- Run pytest with `-n 0`, in one process, only for a debugger or `-s`. `-p no:xdist` fails on the `-n` that `addopts` in [pyproject.toml](pyproject.toml) gives.
+    * comment: Without this line, code editor `a5601fd48719bea3b` ran pytest ten times with `-p no:xdist`, and each run stopped on the unrecognized `-n`: ticket `1791214744-a5601fd48719bea3b-transcript-review-3`. Without its condition for one process, code editors `a2f38cb4539af9799` and `af7175a5f8bbe70e8` ran the whole suite with `-n 0`, at about 2.5 times the time of the default workers: tickets 10-22 and 9-111.
 - End your turn only at one of these points:
     - Blocked: each item that is not done contradicts docstring text that no item changes, has no operation for what it implements, or is stopped by a tool or a document you find no way around. Give the concrete case, and meet each other condition of Done over the items that are done.
     - Cost, as [Working rules](#working-rules) gives it.
