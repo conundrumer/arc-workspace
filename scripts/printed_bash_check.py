@@ -71,6 +71,12 @@ def after_call(path: Any, call: str) -> list[dict[str, Any]]:
     raise ValueError(f"the transcript {path} holds no result of call {call}")
 
 
+def with_call(reason: str, printed: str) -> str:
+    from controlled_markdown import mctx
+
+    return "\n".join([reason, mctx("Make that call:"), printed])
+
+
 def off_script_reason(command: str, printed: str | None) -> str:
     from controlled_markdown import mctx
 
@@ -80,19 +86,17 @@ def off_script_reason(command: str, printed: str | None) -> str:
                  "`{command}` prints no call."),
             mctx("Run `{command}`, and make the call it prints."),
         ]).format(command=command)
-    return "\n".join([
+    return with_call(
         mctx("Blocked: this Bash call is neither `{command}` nor the call the last "
-             "result of `{command}` prints.").format(command=command),
-        mctx("Make that call:"), printed])
+             "result of `{command}` prints.").format(command=command), printed)
 
 
 def skip_reason(command: str, printed: str) -> str:
     from controlled_markdown import mctx
 
-    return "\n".join([
+    return with_call(
         mctx("Blocked: this Bash call runs `{command}` again, and you have not made the "
-             "call its last result prints.").format(command=command),
-        mctx("Make that call:"), printed])
+             "call its last result prints.").format(command=command), printed)
 
 
 def check(hook: dict[str, Any]) -> str | None:

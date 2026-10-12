@@ -90,6 +90,7 @@ def fix_field(text: str) -> Role | None:
 
 
 def union_seconds(spans: list[tuple[float, float]]) -> float:
+    """The seconds the spans cover, counting an overlap once."""
     total, end = 0.0, float("-inf")
     for a, b in sorted(spans):
         if b > end:

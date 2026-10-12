@@ -73,7 +73,12 @@ with `RERUN_OPENING` and gives none."""
 RERUN_OPENING = mctx("{rerun}: the rebase conflicts").format(rerun=Note.RERUN)
 
 PATHS_SEP = ", "
-"""What stands between two paths of `RERUN_CONFLICT`."""
+"""What stands between two paths of `RERUN_CONFLICT` and of the `CONFLICT`
+refusal of `scripts/merge_change.py`."""
+
+
+def split_paths(text: str) -> tuple[str, ...]:
+    return tuple(p for p in text.split(PATHS_SEP) if p)
 
 
 def rerun_paths(note: str) -> tuple[str, ...] | None:
@@ -84,7 +89,7 @@ def rerun_paths(note: str) -> tuple[str, ...] | None:
     m = re.match(form(RERUN_CONFLICT.format(rerun=Note.RERUN, paths="{paths}",
                                             worktree="{worktree}", branch="{branch}"),
                       {"paths": r"(?P<paths>.*?)", "worktree": r".*", "branch": r".*"}), note)
-    return () if m is None else tuple(p for p in m["paths"].split(PATHS_SEP) if p)
+    return () if m is None else split_paths(m["paths"])
 
 
 MESSAGE = "-m"

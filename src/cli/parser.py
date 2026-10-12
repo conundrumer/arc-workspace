@@ -80,7 +80,8 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
     sub = top.add_subparsers(dest="cmd", required=True)
 
     def command(name: str, handler: Handler, **kwargs: Any) -> argparse.ArgumentParser:
-        p = sub.add_parser(name, **kwargs)
+        p = sub.add_parser(
+            name, formatter_class=argparse.RawDescriptionHelpFormatter, **kwargs)
         p.set_defaults(handler=handler)
         return p
 
@@ -91,7 +92,6 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
         description=mctx("The arguments and options follow, then how to "
                          "profile one grid by hand."),
         epilog=RUN_HELP,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     lint = command(
         "lint", lambda a: run.cmd_lint(a.stems or None, a.hints),
@@ -140,7 +140,6 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
             {follows}
             """).format(width=GROUP_WIDTH, follows=GRID_FOLLOWS),
         epilog=GRID_HELP,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     grid_p.add_argument("stem", help=STEM_HELP)
     grid_p.add_argument("file", nargs="?",
@@ -168,7 +167,6 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
             - The command writes nothing but the run cache.
             """),
         epilog=GRID_HELP,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     relation.add_argument("stem", help=STEM_HELP)
     relation.add_argument("args", nargs="+", metavar="relation",
@@ -195,7 +193,6 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
             {follows}
             """).format(follows=GRID_FOLLOWS),
         epilog=GRID_HELP,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     record_p.add_argument("stem", help=STEM_HELP)
     record_p.add_argument("id", nargs="?",
@@ -232,7 +229,6 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
             - A ✓ marks a parameter that a whole sweep finds the train pairs fix to its stored value.
             - Where a parameter has more candidates than `cap`, the sweep tries only single-column changes of the stored facts, up to `cap`.
             """),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     sweep.add_argument("stem", help=STEM_HELP)
     sweep.add_argument("cap", nargs="?", type=int, default=MAX_CANDIDATES,
@@ -278,7 +274,6 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
             - The examples are the train and test examples.
             - A relation that is empty on every example is left out, and so is one that keeps its tuples on grids made from each example's palette.
             """),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
     ).add_argument("stem", help=STEM_HELP)
     witness = command(
         "witness",
@@ -292,11 +287,9 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
             - With --file and no stem, the shape check is the whole report, and it needs no solver.
             - A `stem` given as a path reads the witness file of its task id too.
             """),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     witness.add_argument("stem", nargs="?",
-                         help=mctx("a task id, or the path to a solver file "
-                                   "whose name starts with the task id"))
+                         help=STEM_HELP)
     file_or_every = witness.add_mutually_exclusive_group()
     file_or_every.add_argument(
         "--file", metavar="PATH",
@@ -344,7 +337,6 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
             - The command writes each witness it builds into the task's witness file, as `record` writes one, with the `@derive` line standing, and keeps a witness the file already holds for the branch.
             """)
         + "\n" + unwritten(Section.DERIVE),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     store = command(
         "store", partial(audit.derive_or_store, audit.cmd_store),
@@ -359,14 +351,11 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
             "- A relation with more than {cap} rows on some input is not "
             "checked, since that is too many rows to be a stored value."
         ).format(cap=ROW_CAP),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     for p in (derive, store):
         p.add_argument("stem", nargs="?",
-                       help=mctx("a task id, or the path to a solver file "
-                                 "whose name starts with the task id, or, "
-                                 "when omitted, every solver, with nothing "
-                                 "written"))
+                       help=mctx("{stem}, or, when omitted, every solver, with "
+                                 "nothing written").format(stem=STEM_HELP))
         p.add_argument("--witness-file", metavar="PATH", dest="witness_file",
                        help=mctx("a witness file to read and write in place "
                                  "of the task's"))
@@ -406,7 +395,6 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
             - A commit that touches more than half the solvers gives no stems.
             - When the other commits together touch more than half, only the solvers that those commits create are printed from them.
             """),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     since.add_argument("when", help=mctx("a date-time git reads, e.g. "
                                          '"2026-09-08 14:30"'))

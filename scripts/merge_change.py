@@ -159,6 +159,8 @@ from change_checks import (MARKDOWN_CHECK, Check, code_paths,  # noqa: E402
 from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
                                  submodules, update)
 
+from operations.merging import PATHS_SEP, split_paths  # noqa: E402
+
 MASTER = "master"
 """The branch a change merges into."""
 
@@ -197,16 +199,12 @@ LEFT_AFTER = mctx("the worktree holds changes made after the commit, in {left}")
 change's commit."""
 
 
-PATHS_SEP = ", "
-"""What stands between two paths of `CONFLICT`."""
-
-
 def conflict_paths(output: str) -> tuple[str, ...] | None:
     """The paths in which `output` gives that a change's rebase conflicts,
     or None where it refuses no change for a conflict."""
     m = re.search(form(REFUSED + CONFLICT, {"branch": r"\S+", "onto": r"\S+",
                                             "paths": r"(?P<paths>.*?)"}), output)
-    return None if m is None else tuple(p for p in m["paths"].split(PATHS_SEP) if p)
+    return None if m is None else split_paths(m["paths"])
 
 
 def left_edits(output: str) -> bool:

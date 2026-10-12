@@ -15,6 +15,7 @@ import shlex
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeGuard
 
 from arc.task import TASK_ID
 from controlled_markdown import mctx
@@ -160,10 +161,14 @@ def view(state: State, ln: Line, ended: Mapping[Pipeline, tuple[bool, str | None
     return Run(queue, tuple(running), tuple(over))
 
 
+def is_task_id(task: object) -> TypeGuard[str]:
+    return isinstance(task, str) and TASK_ID_FORM.fullmatch(task) is not None
+
+
 def start_of(task: object, passes: object) -> Start | None:
     """The start of the task id `task` and the non-empty sequence of
     passes `passes`, or None where they are in no such form."""
-    if not isinstance(task, str) or TASK_ID_FORM.fullmatch(task) is None:
+    if not is_task_id(task):
         return None
     if isinstance(passes, str) or not isinstance(passes, Iterable):
         return None
@@ -183,7 +188,7 @@ def read_starts(result: object) -> Starts:
     for item in result:
         task = getattr(item, "task", None)
         passes = getattr(item, "passes", None)
-        if not isinstance(task, str) or TASK_ID_FORM.fullmatch(task) is None:
+        if not is_task_id(task):
             return mctx("the start {item} gives no task id as `task`").format(item=repr(item))
         start = start_of(task, passes)
         if start is None:

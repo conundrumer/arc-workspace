@@ -19,11 +19,11 @@ longer rendering is a fault.
 The rendering has a budget below that cap, `BUDGET`, and a band below the
 budget that starts at `BUDGET_BAND`. Each command that renders the document
 for an editor or a reviewer, as `scripts/context.py --write` and
-`context coordinator` do, goes through `budgeted_text`: a rendering past the
-budget is a fault, and one within the band prints its size and the budget
-on stderr and fails nothing. The session-start hook checks its rendering
-against `HOOK_TEXT_CAP` alone, so a session starts with its document where
-an older rendering passes the budget.
+`context coordinator` do, goes through `budgeted_text`; what it does
+past the budget and within the band is as
+`uv run python scripts/context.py --help` gives it. The session-start
+hook checks its rendering against `HOOK_TEXT_CAP` alone, so a session
+starts with its document where an older rendering passes the budget.
 
 Where the user starts the coordinator with `claude`, its reader is
 `coordinator`, and it reads the session-start hook's text alone

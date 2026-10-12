@@ -21,6 +21,7 @@ importable(checkout.scripts())
 from file_ticket import print_undecided  # noqa: E402
 from ticket_form import section, section_head  # noqa: E402
 from ticket_reads import read_tickets  # noqa: E402
+from ticket_watch import union_seconds  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 
 from operations.merging import RERUN_OPENING, rerun_paths  # noqa: E402
@@ -75,16 +76,6 @@ def overlap(a: list[Span], b: list[Span]) -> list[Span]:
     return [(max(s, u), min(e, v)) for s, e in a for u, v in b if max(s, u) < min(e, v)]
 
 
-def union_hours(spans: list[Span]) -> float:
-    """The hours the spans cover, counting an overlap once."""
-    total, reach = 0.0, -float("inf")
-    for s, e in sorted(spans):
-        if e > reach:
-            total += e - max(s, reach)
-            reach = e
-    return total / 3600
-
-
 def bottlenecks(tickets: dict[str, Ticket], root: Path, now: float,
                 undecided: list[str]) -> list[tuple[str, float, int, int]]:
     """For each file, its wait hours, its waiting changes and its reruns,
@@ -110,7 +101,7 @@ def bottlenecks(tickets: dict[str, Ticket], root: Path, now: float,
             spans = overlap(waiting, spans_in(tickets[d], not_closed, now))
             for p in sorted(scopes[n] & scopes[d]) or [NO_SHARED_FILE]:
                 waits[p][n] += spans
-    rows = [(p, sum(union_hours(spans) for spans in waits[p].values()),
+    rows = [(p, sum(union_seconds(spans) / 3600 for spans in waits[p].values()),
              sum(1 for spans in waits[p].values() if spans), reruns[p])
             for p in sorted(set(waits) | set(reruns))]
     return sorted(rows, key=lambda r: (-(r[1] + r[3]), r[0]))
