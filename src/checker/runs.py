@@ -463,7 +463,11 @@ class Runs:
         `inputs`. Where `solver` shares these runs' program, an outcome
         these runs hold already is read, as those of the witnessed-case
         computation, and the others run as `_fill` runs them and are
-        held."""
+        held. `solver.witnessed_cases.recorded_inputs` gives in this
+        form a task's inputs and the inputs of a witness file's
+        entries, `placed_inputs` the same from entries already at
+        their assignments (`entry_assignments`), and `task_inputs` a
+        task's inputs alone."""
         wanted = list(dict.fromkeys(cases))
         if not self._shares(solver):
             return outcomes_on(self.engine, solver, wanted, inputs,
