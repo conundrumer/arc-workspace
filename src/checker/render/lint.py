@@ -223,8 +223,12 @@ CODE_TEXT: dict[LintSentence, Callable[[Engine, LintCode], str]] = {
         "`{code}` ⇒ `{parts}`").format(
         code=_codes(e, p.code), parts=_codes(e, p.rewritten)),
     LintSentence.CHOICE_TAG: lambda e, p: mctx(
-        "same body under `{one}` and `{other}`; one clause ranges over the "
-        "tags").format(one=e.text(p.code[0]), other=e.text(p.code[1])),
+        "same body under `{one}` and `{other}`; one clause takes the tag as a "
+        "variable that a relation holding both tags binds, with each other "
+        "tag it holds excluded; see "
+        "[Choice grounding via `impl_choice`]"
+        "(docs/handbook/patterns.md#choice-grounding-via-impl_choice)"
+        ).format(one=e.text(p.code[0]), other=e.text(p.code[1])),
     LintSentence.CROSS_CHOICE: lambda e, p: mctx(
         "branches bind {tags}; see "
         "[Disjunction](docs/handbook/style.md#disjunction)").format(

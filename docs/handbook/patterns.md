@@ -32,7 +32,7 @@
     ```
 - A clause for one branch of a field writes that field's constructor and a variable for each other field.
 - When only some combinations are cases, the record remains, and `impl_choice` excludes the others, as [Cases](docs/handbook/solver-file.md#cases) states.
-- A flat sum duplicates the shared clauses and causes the linter's `choice-tag` finding.
+- The linter's `choice-tag` finding names two clauses identical but for one head argument, a constructor with no arguments in each, that facts of one relation hold: write the shared clause once, with that argument a variable that relation binds, and each other constructor it holds excluded.
 
 ## Choice grounding via `impl_choice`
 - If the case column otherwise appears only under negation, a clause shared by all cases needs a positive atom to bind its case variable. An enumeration relation that holds each case provides it.
