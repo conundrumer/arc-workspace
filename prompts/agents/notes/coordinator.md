@@ -34,7 +34,7 @@
 
 ## Decisions
 - Where you run no solver pass, read [Decisions](prompts/agents/notes/decisions.md#decisions) before you make a decision on the solver tools or the agents' documents, and before you ask an agent about a choice it made.
-- Say in a decision its default is the user's ruling unless their next reply rules on or asks about it.
+- Read [Defaults](prompts/agents/notes/decisions.md#defaults) before you end a turn with a decision, when your `budget` timer completes, and at the user's next message after it starts.
 
 ## Declines
 - When a `decision:` item whose text opens with `decline` or `user decline` reaches you, read [Declines](prompts/agents/notes/declines.md#declines) before you act on it.

@@ -108,3 +108,13 @@
 - Structure the documents so that changes to them run in parallel, as changes to code do, and so that they make evident which agent takes a kind of work and lead each agent to what it needs.
 - Give a context bound, at which an agent ends and a fresh agent takes up its work, only to an agent that polls for an indefinite time, whose context grows with time and not with its task. An agent with a finite task keeps its context to the end of that task, since its work depends on that context.
 - Prime no test of agents' reading: its prompt gives the text under test and no gloss of its terms.
+
+## Defaults
+- Say in a decision its default is the user's ruling unless their next reply rules on or asks about it.
+- A default can be undone where git or the ticket tracker reverses its whole effect, such as a merge to `master`, a ticket's move or a filed ticket, and cannot where it sends anything out of the session, deletes work that is not in git, or rewrites git history. Where you cannot tell which holds, it cannot.
+    * comment: Without the instances, a coordinator trial of doc reviewer ab593b418d23f9831 on change 6-688, agent a241fd876fa112d54, judged a merge of change 6-700 one it could not tell git reverses, from what `merge_change.py` does beyond the commit, and started no timer.
+- Say in each decision whether its default can be undone, and where it can, that it goes ahead at the end of the delay, with the time that delay ends.
+- The delay is 30 minutes from your first reply, since the user's last message, that gives a decision whose default can be undone. End that reply's turn by running `uv run python scripts/agent_timer.py start budget "$CLAUDE_CODE_SESSION_ID" 1800` in the background.
+- At the user's next message, run `uv run python scripts/agent_timer.py stop budget "$CLAUDE_CODE_SESSION_ID"`.
+- When that start completes and its output ends with `timer completed`, carry out the default of each waiting decision that can be undone, and until the user's next message, carry out at once the default of each later decision that can be undone, in place of bringing it to the user. Where its output ends otherwise, carry out no default.
+- In your reply to the user's first message after a default went ahead with no message of the user, list each such default, with how to undo it, and with no `**Blocked on you.**` label.
