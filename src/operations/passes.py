@@ -91,13 +91,20 @@ def latest(state: State, role: Role, subject: str, since: float) -> Agent | None
     return found[-1] if found else None
 
 
-def review_tickets(state: State, task: str, review: Agent, after: Agent | None) -> list[str]:
+def review_tickets(state: State, task: str, review: Agent) -> list[str]:
     """The tickets `review` filed on `task`: those of the transcript review
-    filed from its launch up to the launch of `after`, the review that
-    follows it."""
+    filed from its launch up to the launch of the first transcript review
+    launched after it on any pass of `task`. The review of a pass launches
+    only once the review before it returned, so that bound holds each
+    review's tickets apart whatever passes have ended."""
+    passes = {a.agent_id for role in PASSES for a in state.agents_of(role, task)
+              if a.agent_id is not None}
+    nexts = [r.launched for r in state.agents_of(Role.TRANSCRIPT_REVIEW)
+             if r.subject in passes and r.launched > review.launched]
+    bound = min(nexts, default=None)
     return [t.number for t in state.tickets.values() if t.domain is Domain.TASK
             and t.subject == task and t.filer == Role.TRANSCRIPT_REVIEW.value
-            and t.filed >= review.launched and (after is None or t.filed < after.launched)
+            and t.filed >= review.launched and (bound is None or t.filed < bound)
             and t.status is not Status.WATCHING]
 
 
@@ -120,7 +127,7 @@ def reviews(state: State, task: str, ended: list[Ended]) -> Outcome | None:
     has returned."""
     found = [latest(state, Role.TRANSCRIPT_REVIEW, i, a.launched) for i, a, _ in ended]
     waits = False
-    for (i, _, filed), review, after in zip(ended, found, [*found[1:], None][:len(found)], strict=True):
+    for (i, _, filed), review in zip(ended, found, strict=True):
         if review is None:
             return Outcome(Launch(Role.TRANSCRIPT_REVIEW, i, briefs.transcript_review(
                 i, Domain.TASK.value, task, True)))
@@ -129,7 +136,7 @@ def reviews(state: State, task: str, ended: list[Ended]) -> Outcome | None:
         reviewer = agent_ids([review])
         if isinstance(reviewer, Undecided):
             return Outcome(reviewer)
-        numbers = [*filed, *review_tickets(state, task, review, after)]
+        numbers = [*filed, *review_tickets(state, task, review)]
         analyst = [x for x, purpose, nums in state.analysts()
                    if purpose is Purpose.PASS and nums[0] == task and settles(x, nums, reviewer[0])]
         if numbers and not analyst:
