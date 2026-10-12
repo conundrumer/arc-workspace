@@ -1,6 +1,6 @@
 """Who a message an agent's run receives is from: its parent, an agent it did
-not launch, another sender, or one that is unknown, as the
-HELP of `profile_runs` gives them."""
+not launch, another sender, or one that is unknown, as
+`profile_runs.py --help messages` gives them."""
 
 from enum import Enum
 from pathlib import Path
@@ -41,7 +41,7 @@ def origin(entry: Entry) -> tuple[str | None, Origin | None]:
 
 
 class Sender(Enum):
-    """Who a message after a run's brief is from, as HELP gives it."""
+    """Who a message after a run's brief is from, as `profile_runs.py --help messages` gives it."""
     PARENT = "parent"
     AGENT = "agent"
     OTHER = "other"

@@ -1,5 +1,5 @@
-"""The turns of an agent's run, read from its transcripts, as the HELP of
-`profile_runs` gives them."""
+"""The turns of an agent's run, read from its transcripts, as
+`profile_runs.py --help runs` gives them."""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -56,8 +56,8 @@ def idle_after(idle: bool, i: int, entry: Entry, starts: set[int],
 
 def turn_ended(entries: list[Entry]) -> bool:
     """Whether the run whose entries are `entries`, or those from one of its
-    timestamped assistant entries on, has ended its turn, as the HELP of
-    `profile_runs` gives when a turn ended. An entry with no timestamp moves
+    timestamped assistant entries on, has ended its turn, as
+    `profile_runs.py --help runs` gives when a turn ended. An entry with no timestamp moves
     no turn."""
     starts, ends = turns(entries)
     idle = False
@@ -69,7 +69,7 @@ def turn_ended(entries: list[Entry]) -> bool:
 
 def turn_end(entries: list[Entry]) -> float | None:
     """The time of the last timestamped entry of `entries` that ends a turn
-    (`turns`), as the HELP of `profile_runs` gives when a turn ended."""
+    (`turns`), as `profile_runs.py --help runs` gives when a turn ended."""
     _, ends = turns(entries)
     times = [epoch(entries[i]["timestamp"]) for i in sorted(ends)
              if entries[i].get("timestamp")]

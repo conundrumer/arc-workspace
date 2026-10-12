@@ -39,7 +39,7 @@ def items(brief: str) -> int | None:
 
 BUDGET_LINE = re.compile(r"Budget: (?P<minutes>\d+(?:\.\d+)?) minutes(?:[.,;:].*)?")
 """A line that states a budget, past its list marker, in the form
-`profile_runs.py --help` gives, which `BUDGET` renders."""
+`profile_runs.py --help messages` gives, which `BUDGET` renders."""
 
 MARKED_OPENING = re.compile(rf"^\s*{LIST_MARKER}?\s*")
 

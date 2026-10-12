@@ -49,8 +49,8 @@ def backgrounds(entries: Iterable[Entry], agent_calls: set[str],
 
 def background_ends(found: dict[str, Background],
                     entries: Iterable[Entry]) -> dict[str, float | None]:
-    """When each call of `found` ended, as the HELP of `profile_runs` gives
-    it, from the notifications among `entries`, or None where it still runs
+    """When each call of `found` ended, as `profile_runs.py --help runs`
+    gives it, from the notifications among `entries`, or None where it still runs
     or whether it runs is unknown."""
     told: dict[str, float] = {}
     for e in entries:

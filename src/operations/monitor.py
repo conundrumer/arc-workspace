@@ -1,7 +1,7 @@
 """The monitor's steps, which the operator's command gives among its own
 (`plan`): the alerts that go to a watched agent itself (`alerts.to_agent`),
-once per occurrence of what fired, as `ALERTS`, in the `--help` of
-`scripts/operate.py`, gives them.
+once per occurrence of what fired, as `ALERTS`, which
+`scripts/operate.py --help alerts` prints, gives them.
 
 The watched agents are the agents whose work is open that an operator of
 the session or the coordinator launched, other than an operator. `scripts/operator_state.py` reads each reading of a watched
@@ -58,11 +58,14 @@ ALERTS = mctx("""
         - `budget`: {budget}.
         - `hung`: {hung}.
         - `repeated`: {repeated}, other than a command led by `: 'unattended-wait:`.
-        - `stall`: {stall} since its parent's latest message to it, with no `user` entry in its transcript timestamped after that turn ended, and no agent it launched and no command it backgrounded still running or ended after that turn ended, though the parent's transcripts hold an `assistant` entry timestamped after that turn ended, before which the harness delivers each report that waits for the parent. That turn ended at the last timestamped entry of its transcripts that ends a turn, as the HELP of `scripts/profile_runs.py` gives one. An agent whose transcript holds, after the latest message to it, a `SubagentHandback` result that says the harness delivered its report to its caller is not stalled.
+        - `stall`: {stall} since its parent's latest message to it, with no `user` entry in its transcript timestamped after that turn ended, and no agent it launched and no command it backgrounded still running or ended after that turn ended, though the parent's transcripts hold an `assistant` entry timestamped after that turn ended, before which the harness delivers each report that waits for the parent.
+            - That turn ended at the last timestamped entry of its transcripts that ends a turn, as `scripts/profile_runs.py --help runs` gives one.
+            - An agent whose transcript holds, after the latest message to it, a `SubagentHandback` result that says the harness delivered its report to its caller is not stalled.
     - The operator takes the final reply of a stalled agent as its report, sends the final reply of a stalled agent the coordinator launched to the coordinator once, and files a `bug` ticket on it.
-    - The operator files a `bug` ticket on each resume of an operator of the session after the next operator of the session made its first entry, or writes a line in it: a prompt in that operator's transcript after an entry with `toolEndsTurn`, such as the result of its `SubagentHandback`, with no `assistant` entry between them, other than a prompt whose agent messages and task notifications, at least one of them, are all from agents whose last launch or resume before that prompt was a call of that operator.
+    - The operator files a `bug` ticket on each resume of an operator of the session after the next operator of the session made its first entry, or writes a line in it.
+        - A resume of an operator is a prompt in that operator's transcript after an entry with `toolEndsTurn`, such as the result of its `SubagentHandback`, with no `assistant` entry between them, other than a prompt whose agent messages and task notifications, at least one of them, are all from agents whose last launch or resume before that prompt was a call of that operator.
     """).format(**{k.value: READING[k] for k in AlertKind})
-"""The alerts of `step`, which the `--help` of `scripts/operate.py` gives."""
+"""The alerts of `step`, which `scripts/operate.py --help alerts` gives."""
 
 
 def alert(kind: AlertKind, w: Watched, since: float | None = None) -> Send:

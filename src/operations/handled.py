@@ -1,7 +1,7 @@
 """Whether an operator already made or handled a step, read from the
 operators' calls in the state.
 
-Which call makes a step the command printed is as the HELP of `operate.py`
+Which call makes a step the command printed is as `operate.py --help next`
 gives it, and `made` reads the call made right after `next`. A message
 counts as made as well by each SendMessage call that holds the printed
 message. `next_call` tells a call of `next` by an operator."""

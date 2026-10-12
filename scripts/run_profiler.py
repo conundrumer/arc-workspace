@@ -1,5 +1,5 @@
 """The profile of where an agent run's wall time goes, from its Claude
-Code transcripts, as the HELP of `profile_runs` gives it.
+Code transcripts, as `profile_runs.py --help runs` gives it.
 
 A profile also reads files past those transcripts, and the state of running
 processes: `noted_reads` states those reads."""

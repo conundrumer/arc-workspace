@@ -70,14 +70,14 @@
 ### An operator's brief
 - An operator's brief gives only lines in these forms, each on a line of its own:
     - `Solve: <task id> ...`: a solver pipeline on each task, from Analyze, or from the pass that `from create` or `from refine` after its task id gives.
-    - `Run: <path>`: the solver pipelines that the run script at that path starts, as `uv run python scripts/operate.py --help` gives the script.
+    - `Run: <path>`: the solver pipelines that the run script at that path starts, as `uv run python scripts/operate.py --help run` gives the script.
     - `Drafts to review: <number>, ...`: the draft `change` tickets to review.
     - `Tickets named: <number>, ...`: tickets of another session that the operator releases, takes and settles as it does its session's.
     - `Merged: <number>, ...`: the changes the coordinator merged itself.
     - `Merge: <number>`: a `change` under `tickets/blocked/` that waits on the user, which the user's ruling has the operator merge.
     - `Tickets are open.`
     - `Override: <task id> <pass> <override>`: an override that the brief of the next launch of that pass on that task gives.
-    - `Override: pass over <step key>`: passes over the solver pass whose step key it gives: that pass's task id and its pass, in the form `uv run python scripts/operate.py --help` gives.
+    - `Override: pass over <step key>`: passes over the solver pass whose step key it gives: that pass's task id and its pass, in the form `uv run python scripts/operate.py --help rulings` gives.
     - `Decision: <decision key> <choice>`: rules the held step that gives that decision key with one of the choices that step gives, as the whole rest of the line.
 - The operator gives each line of its brief or of a later message from the coordinator in no other form back to the coordinator as undecided.
 

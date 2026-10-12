@@ -1,5 +1,5 @@
 """A run: the solver pipelines that the script a `Run: <path>` line of the
-coordinator's gives starts, as `scripts/operate.py --help` gives the
+coordinator's gives starts, as `scripts/operate.py --help run` gives the
 script's form. `scripts/operator_state.py` loads and calls the script at
 each read of the state, with the `Run` this module gives, and the state
 holds what it gave (`state.State.run_starts`).

@@ -198,7 +198,7 @@ def runs_sleep(cmd: str) -> bool:
 
 
 def call_command(block: dict[str, Any], undecided: list[str], run: str) -> str:
-    """The command of a call, as the HELP of `profile_runs` gives it. A
+    """The command of a call, as `profile_runs.py --help commands` gives it. A
     transcript records a call whose input fails the tool's schema, so a
     field the command reads that the input lacks is left out, and an
     `undecided` line names it."""

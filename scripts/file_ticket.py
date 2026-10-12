@@ -58,22 +58,39 @@ HELP = mctx("""
         # <target>: <what is wrong in it>{defect_sections}
         EOF
         ```
-    - A `change` takes `kind: change` and `editors: <editor>, <editor>`, with each editor the change needs among {editors}, may add `depends-on: <number>, <number>`, `priority: <0 to 100>` (`{default_priority}` where it gives none), `after-merge: <the checks its Scope places after the merge>` and `mechanical: {mechanical}` to the front matter, gives `mechanical` only where its Intent gives each edit under `src/` and `scripts/` outright, so that its code editors make no design choice, has `# <title>` as its title, and has the sections {change_sections} in place of {defect_headings}, with, where it adds a mechanism to code or adds or changes a rule or a fact in the agent-facing documents, a `{design}` section after `## Intent`. For code, that section gives the existing operations the change uses or extends and each new operation with its module. For the documents, it gives, for each line the change adds or changes, each reader that loads the line and the part of its work for which it loads it, the existing line or the general term the line extends or is an instance of, or that it found none, and how the line goes in: as a change to that existing line, as a new line in a section its reader loads for that part of its work, or not at all.
-    - A `request` has `# <target>: <what the user asks for>` as its title, and the sections {request_sections} in place of {defect_headings}, and no `{request_retired}` section. `uv run python scripts/spans.py file` writes and files a `request`.
-    - The rules of `<domain>`, `<subject>` and `<agent>` follow.
-    - `<domain>` is one of {domains}, and `<subject>` is the id of the thing it names: a task id for `task`, a ticket's number for `change` and `ticket`, a commit hash for `commit`, an agent id for `agent`. A ticket that asks for a change, a `change` or a `request`, takes `change` as `<domain>` and `<namespace>-<short-title>` as `<subject>`, and each `_` in that `<subject>`, as in a namespace name such as `run_dl`, becomes `-`.
-    - `<agent>` is your agent's name, which may end in `-<suffix>`. The command refuses a kind your agent may not file, and names the kinds it may.
+    - The items below give the form of a `change` and of a `request`, and of each argument.
+    - A `change` takes `kind: change` and `editors: <editor>, <editor>`, with each editor the change needs among {editors}.
+        - It may add `depends-on: <number>, <number>`, `priority: <0 to 100>` (`{default_priority}` where it gives none), `after-merge: <the checks its Scope places after the merge>` and `mechanical: {mechanical}` to the front matter.
+        - It gives `mechanical` only where its Intent gives each edit under `src/` and `scripts/` outright, so that its code editors make no design choice.
+        - It has `# <title>` as its title, and has the sections {change_sections} in place of {defect_headings}, with, where it adds a mechanism to code or adds or changes a rule or a fact in the agent-facing documents, a `{design}` section after `## Intent`.
+        - For code, that section gives the existing operations the change uses or extends and each new operation with its module.
+        - For the documents, it gives, for each line the change adds or changes:
+            - each reader that loads the line and the part of its work for which it loads it;
+            - the existing line or the general term the line extends or is an instance of, or that it found none;
+            - how the line goes in: as a change to that existing line, as a new line in a section its reader loads for that part of its work, or not at all.
+    - A `request` has `# <target>: <what the user asks for>` as its title, and the sections {request_sections} in place of {defect_headings}, and no `{request_retired}` section.
+        - `uv run python scripts/spans.py file` writes and files a `request`.
+    - `<domain>` is one of {domains}, and `<subject>` is the id of the thing it names: a task id for `task`, a ticket's number for `change` and `ticket`, a commit hash for `commit`, an agent id for `agent`.
+        - A ticket that asks for a change, a `change` or a `request`, takes `change` as `<domain>` and `<namespace>-<short-title>` as `<subject>`, and each `_` in that `<subject>`, as in a namespace name such as `run_dl`, becomes `-`.
+    - `<agent>` is your agent's name, which may end in `-<suffix>`.
+        - The command refuses a kind your agent may not file, and names the kinds it may.
     - A `{delay}` may give one case, `--case <agent id> <start> <end>` after `<agent>`, and then gives `fix: <editor>` in its front matter: `{invocation} case --help` gives the case's form, and `{invocation} case {full_flag}` how the command prices it and where the ticket files.
     {further}
     """)
 """The help of filing, which `--help` with no subcommand prints."""
 
 RULES = mctx("""
-    - A ticket's number is `<session>-<n>`: `<session>` is the index of the session that filed it, and `<n>` counts that session's tickets from 1. A ticket filed before a number gave the filing session's index has a bare number, and the command takes either form wherever it takes a number.
-    - Numbers order with every bare number before every `<session>-<n>` number. Bare numbers compare as integers, and `<session>-<n>` numbers compare by `<session>`, then by `<n>`, each as an integer.
-    - The session that files is the one whose id the filing agent's shell holds in `{session_var}`, in a subagent as in the main session. The command refuses a filing where the shell holds none.
-    - A session's index has a file under `tickets/{sessions}/`, named by the index, that holds the session's id. A session forked from another takes the index of the session it was forked from, and the file then holds both ids, one per line.
-    - The command reserves the ticket's number, names the ticket `{name_form}`, writes it under `tickets/draft/` for a `change`, where `case {full_flag}` gives for a `{delay}` that gives a case, and under `tickets/open/` for any other in the main tree, with the filing time in the first line of its `## Log`, and prints the path it wrote.
+    - A ticket's number is `<session>-<n>`: `<session>` is the index of the session that filed it, and `<n>` counts that session's tickets from 1.
+        - A ticket filed before a number gave the filing session's index has a bare number, and the command takes either form wherever it takes a number.
+    - Numbers order with every bare number before every `<session>-<n>` number.
+        - Bare numbers compare as integers, and `<session>-<n>` numbers compare by `<session>`, then by `<n>`, each as an integer.
+    - The session that files is the one whose id the filing agent's shell holds in `{session_var}`, in a subagent as in the main session.
+        - The command refuses a filing where the shell holds none.
+    - A session's index has a file under `tickets/{sessions}/`, named by the index, that holds the session's id.
+        - A session forked from another takes the index of the session it was forked from, and the file then holds both ids, one per line.
+    - The command reserves the ticket's number and names the ticket `{name_form}`.
+        - It writes the ticket in the main tree, under `tickets/draft/` for a `change`, where `case {full_flag}` gives for a `{delay}` that gives a case, and under `tickets/open/` for any other, with the filing time in the first line of its `## Log`.
+        - It then prints the path it wrote.
     - Run from a worktree, the command files with the main tree's copy of `scripts/file_ticket.py`, and refuses where the main tree has none.
     - Each `<number>` in `depends-on` is the number of a ticket the ticket tracker holds.
     - The command refuses, and writes nothing, where the text on stdin does not have the form above.
@@ -102,9 +119,11 @@ PATH_HELP = mctx("""
     """)
 
 LOG_HELP = mctx("""
-    - `<status>` and `<current status>` are each one of {statuses}. `<current status>` is the status you saw the ticket in.
+    - `<status>` and `<current status>` are each one of {statuses}.
+        - `<current status>` is the status you saw the ticket in.
     - An `assigned` line that moves a ticket into `assigned` takes, in `--id`, the agent id of the agent that writes it, or the session id of a session that writes it for itself.
-    - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}`, `{validation}`, or `{change} <number>`, with `<number>` the number of a `change` ticket the ticket tracker holds. `{validation}` is the wait of a `{request}` whose need a change met, until the coordinator reads a run that exercises that change.
+    - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}`, `{validation}`, or `{change} <number>`, with `<number>` the number of a `change` ticket the ticket tracker holds.
+        - `{validation}` is the wait of a `{request}` whose need a change met, until the coordinator reads a run that exercises that change.
     - A ticket waits on the change that the last line of its log whose note opens with what a ticket waits on gives as `{change} <number>`.
     - The note of a line that moves a ticket into `closed` opens with its resolution, one of {resolutions}.
     """)
@@ -112,14 +131,23 @@ LOG_HELP = mctx("""
 LOG_RULES = mctx("""
     - The ticket is the one with that number, and the command prints its path.
     - The command refuses, and neither moves nor writes, where the ticket stands in another status than `<current status>`, or where its file moves before the command moves it.
-    - Where `<status>` differs from `<current status>`, the command moves the ticket's file to the directory of `<status>`. Where they are the same, the log line moves nothing.
-    - The command appends `<time> <status> [<agent>]: <note>` to the file's `{log}`, with the time in UTC in the form `{time_form}`, and with `<agent> <id>` in the bracket where `--id` gives an id. `--id` takes an agent id, or a session id, the form `$CLAUDE_CODE_SESSION_ID` holds, for a session that holds a ticket itself. A line with no `<note>` ends at the bracket.
-    - On a ticket that already stands in `assigned`, the command refuses an `assigned` line whose `--id` does not hold the ticket, and accepts one with no `--id`. The holder is the agent id or the session id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines. Where none of them gives one, the ticket has no holder.
-    - Where a line would move a `{request}` into `closed` with `{fixed}`, other than from `{blocked}` where the request waits on `{validation}`, the command leaves the request under `{blocked}`, or moves it there, with the note `{validating}`, and prints the path it went to. This holds whichever agent writes the line, and for the lines below that close tickets that wait on a change.
+    - Where `<status>` differs from `<current status>`, the command moves the ticket's file to the directory of `<status>`.
+        - Where they are the same, the log line moves nothing.
+    - The command appends `<time> <status> [<agent>]: <note>` to the file's `{log}`, with the time in UTC in the form `{time_form}`, and with `<agent> <id>` in the bracket where `--id` gives an id.
+        - `--id` takes an agent id, or a session id, the form `$CLAUDE_CODE_SESSION_ID` holds, for a session that holds a ticket itself.
+        - A line with no `<note>` ends at the bracket.
+    - On a ticket that already stands in `assigned`, the command refuses an `assigned` line whose `--id` does not hold the ticket, and accepts one with no `--id`.
+        - The holder is the agent id or the session id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines.
+            - Where none of them gives one, the ticket has no holder.
+    - Where a line would move a `{request}` into `closed` with `{fixed}`, other than from `{blocked}` where the request waits on `{validation}`, the command leaves the request under `{blocked}`, or moves it there, with the note `{validating}`, and prints the path it went to.
+        - This holds whichever agent writes the line, and for the lines below that close tickets that wait on a change.
     - Where the line moves a `{change}` ticket into `closed`, the command also moves each ticket under `{blocked}` that waits on that change, and prints the path of each one it moved, one per line, after the change's own path.
-    - A `{change}` ticket that waits on it moves into `open`, with the note `{unblocked_by}`, whatever the change's resolution. Each other ticket that waits on it moves into `closed`, with the note `{closed_by}`, where the change's resolution is `{fixed}`, and into `open`, with the note `{unblocked_by}`, where it is another. Each such line takes the `<agent>` and the `--id` of the call.
+    - A `{change}` ticket that waits on it moves into `open`, with the note `{unblocked_by}`, whatever the change's resolution.
+    - Each other ticket that waits on it moves into `closed`, with the note `{closed_by}`, where the change's resolution is `{fixed}`, and into `open`, with the note `{unblocked_by}`, where it is another.
+    - Each line that moves a ticket that waits on the change takes the `<agent>` and the `--id` of the call.
     - A ticket that waits on the change and that another call moves first, the command skips.
-    - The command moves those tickets in the order of their file names. Where the move of one is refused for another reason, the command moves the others, prints the path of each ticket it moved, and then refuses, with the change's path and the path of each ticket it did not move, with the reason.
+    - The command moves those tickets in the order of their file names.
+        - Where the move of one is refused for another reason, the command moves the others, prints the path of each ticket it moved, and then refuses, with the change's path and the path of each ticket it did not move, with the reason.
     - The command refuses, and neither moves nor writes, where `{log}` is not the file's last section or the note spans more than one line.
     """)
 
@@ -140,16 +168,22 @@ TO_SETTLE_RULES = mctx("""
 CASE_HELP = mctx("""
     - In both forms below, `<agent id>` is the run the case was lost in, and `<start>` and `<end>` are the span of its extra calls, each in the form `{time_form}`.
     - Filing a `{delay}` with a case: `{invocation} <domain> <subject> <agent> --case <agent id> <start> <end>`.
-        - The text on stdin gives `fix: <editor>` in its front matter, with the editor its fix would need among {editors}. The command refuses a case with no `fix`, and a `fix` with no case.
-    - Appending a case: the usage line above. `<number>` is the number of a ticket that stands under `tickets/{watching}/`.
+        - The text on stdin gives `fix: <editor>` in its front matter, with the editor its fix would need among {editors}.
+        - The command refuses a case with no `fix`, and a `fix` with no case.
+    - Appending a case: the usage line above.
+        - `<number>` is the number of a ticket that stands under `tickets/{watching}/`.
     """)
 
 CASE_RULES = mctx("""
-    - The command prices a case: its dollars are the token cost of the run's requests in the span, plus the growth of the run's context across the span at the cache-read price of the run's model once for each later request of the run, and its seconds are the span's wall time. It records them in a log line of the ticket.
-    - The threshold of an editor is the median cost of the most recent {changes} `{change_kind}` tickets closed `{fixed}` with a known cost whose `editors` give that editor. A change's cost is the token cost of the runs the line that closes it gives and of the runs under them.
+    - The command prices a case: its dollars are the token cost of the run's requests in the span, plus the growth of the run's context across the span at the cache-read price of the run's model once for each later request of the run, and its seconds are the span's wall time.
+        - It records them in a log line of the ticket.
+    - The threshold of an editor is the median cost of the most recent {changes} `{change_kind}` tickets closed `{fixed}` with a known cost whose `editors` give that editor.
+        - A change's cost is the token cost of the runs the line that closes it gives and of the runs under them.
     - Filing a `{delay}` with a case:
-        - The ticket files under `tickets/{watching}/` where the case's dollars are below the threshold of its `fix`, and under `tickets/{open}/` otherwise. Where the case's cost or the threshold is unknown, it files under `tickets/{open}/`, with an `undecided` line on stderr.
-        - `tickets/{watching}/` holds at most {cap} tickets. A filing that would put one more there first closes `{wontfix}` the watching ticket with the lowest loss rate, its summed dollars over the days since its first case, with its summed dollars and seconds in the note.
+        - The ticket files under `tickets/{watching}/` where the case's dollars are below the threshold of its `fix`, and under `tickets/{open}/` otherwise.
+            - Where the case's cost or the threshold is unknown, it files under `tickets/{open}/`, with an `undecided` line on stderr.
+        - `tickets/{watching}/` holds at most {cap} tickets.
+            - A filing that would put one more there first closes `{wontfix}` the watching ticket with the lowest loss rate, its summed dollars over the days since its first case, with its summed dollars and seconds in the note.
     - Appending a case:
         - The command adds the text on stdin to the end of the ticket's `## Evidence`, and appends the case's log line, whatever the case's own loss.
         - Where the summed dollars of the ticket's cases reach the threshold of its `fix` or pass it, the command moves the ticket to `tickets/{open}/` with a log line that gives the sum and the threshold, and prints the path it went to.
@@ -157,7 +191,8 @@ CASE_RULES = mctx("""
     """)
 
 SHOW_HELP = mctx("""
-    - The command prints the ticket's path and its title line, and then each named section, from its heading to the next heading, in the order the call names them. Where the call names no section, it prints the path and then the whole ticket.
+    - The command prints the ticket's path and its title line, and then each named section, from its heading to the next heading, in the order the call names them.
+        - Where the call names no section, it prints the path and then the whole ticket.
     - A `<section>` is the text of a heading after its mark, as `{log_section}` for `{log}`.
     - The command refuses, and names the sections the ticket has, where a named section is not in the ticket.
     """)
@@ -168,7 +203,8 @@ EDITORS_HELP = mctx("""
     """)
 
 EDITORS_RULES = mctx("""
-    - The budget is the one a take of the change would give at the time of the call. The change's agent-running time still counts from its take.
+    - The budget is the one a take of the change would give at the time of the call.
+        - The change's agent-running time still counts from its take.
     - The command refuses, and writes nothing, where no change closed `{fixed}` before the call has a known spend, and prints an `undecided` line on stderr.
     """)
 

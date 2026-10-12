@@ -78,10 +78,10 @@ def editor(role: Role, number: str, part: bool, worktree: Path, scratch: Path,
     return "\n".join(lines)
 
 
-FRAGMENTS = mctx("Each `mctx` fragment below holds text a code editor drafted for you to "
-                 "write. First judge whether its text belongs in its program, by [What goes "
-                 "where](docs/handbook/editing.md#what-goes-where), and move what does not to "
-                 "where it belongs; then write the text that stays.")
+FRAGMENTS = mctx("Judge whether the text of each `mctx` fragment below, which a code editor "
+                 "drafted for you to write, belongs in its program, by [What goes "
+                 "where](docs/handbook/editing.md#what-goes-where), move what does not to "
+                 "where it belongs, then write the text that stays.")
 
 FRAGMENT = mctx("- `{file}`, line {line}")
 
@@ -116,7 +116,8 @@ def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], 
 
 
 AFTER_MERGE = mctx("""
-    - Change {number} is merged into `master` at {head}. Run each check its ticket places after the merge, which `{command}` prints: {checks}.
+    - Change {number} is merged into `master` at {head}.
+    - Run each check its ticket places after the merge, which `{command}` prints: {checks}.
     - File each check that fails as a `bug` ticket, by the lines of the section `Ticket files` of `prompts/agents/notes/tickets.md`, with `change` and {number} as `<domain>` and `<subject>`, and `operator` as `<agent>`.
     - Give each check whose subject is an event that has not happened yet in your reply as unfinished, with that reason.
     - Run a check of what a running Claude Code session reads only at its start, such as its hooks, in a `claude -p` session you start in the main worktree.
@@ -134,8 +135,8 @@ SETTLE = mctx("Settle the tickets under `tickets/open/` {numbers}.")
 REVISE = mctx("Revise each draft `change` ticket {numbers}, whose log holds findings or "
               "suggestions.")
 PASS_SETTLE = mctx("Settle the tickets under `tickets/open/` {numbers}, which the solver pass on "
-                   "task {task} and the review of its transcript filed. That review is agent "
-                   "{review}: read its report with `python3 ~/.claude/skills/retrieve/"
+                   "task {task} and the review of its transcript, agent {review}, filed, and "
+                   "read that review's report by `python3 ~/.claude/skills/retrieve/"
                    "transcripts.py --help`.")
 ITEM_LINES = (REVIEW_DRAFTS, SETTLE, REVISE, PASS_SETTLE)
 """The first lines of the briefs that give several items of the same
@@ -229,10 +230,10 @@ def item_check(number: str, worktree: Path, reports: list[tuple[str, str]],
     lines.extend(editor_reports(reports))
     if decisions:
         lines.append(mctx(
-            "Ticket analysts on the change, {analysts}, already decided the items their "
-            "reports below give. Leave out of your `{heading}` part each finding, item or "
-            "standing place one of those decisions settles, where the editor's report gives "
-            "no reason for it that the decision did not judge.").format(
+            "Leave out of your `{heading}` part each finding, item or standing place that a "
+            "decision of a ticket analyst on the change, {analysts}, settles in its report "
+            "below, where the editor's report gives no reason for it that the decision did "
+            "not judge.").format(
                 analysts=", ".join(i for i, _ in decisions), heading=LEFT_FOR_DECISION))
     for analyst_id, report in decisions:
         lines.append(mctx("The latest report of ticket analyst {analyst}:").format(analyst=analyst_id))
@@ -277,8 +278,7 @@ HELD_STEP = mctx("Rule the step below, which the operator that launches you hold
 
 
 UNPLACED_STEP = mctx("Make the act the step below needs, which the operator that launches you "
-                     "holds and its command cannot place. The step gives no decision key, so "
-                     "give no ruling line.")
+                     "holds and its command cannot place, and give no ruling line.")
 
 
 def held_step(what: str, operator: str, rulable: bool) -> str:
@@ -291,7 +291,8 @@ def held_step(what: str, operator: str, rulable: bool) -> str:
 TRANSCRIPT_REVIEW = mctx("""
     - Review the transcript of run {run}, which `python3 ~/.claude/skills/retrieve/transcripts.py --help` reads.
     - File each ticket by the lines of the section `Ticket files` of `prompts/agents/notes/tickets.md`, with `{domain}` as `<domain>`, `{subject}` as `<subject>`, and `transcript-review` as `<agent>`.
-    - Find each place where the run explored to find what a docstring or a document line could have led it to. For each such place, list the titles under `tickets/watching/` in one `grep -m1 -H '^# '` call, and read no ticket's body to match.
+    - Find each place where the run explored to find what a docstring or a document line could have led it to.
+    - For each such place, list the titles under `tickets/watching/` in one `grep -m1 -H '^# '` call, and read no ticket's body to match.
         - Where a title states the same place, append the place as a case to that ticket, by `uv run python scripts/file_ticket.py case --help`.
         - Otherwise file a ticket of kind `delay` on the place, with its case and its `fix`, by `uv run python scripts/file_ticket.py case --help`.
     """)
@@ -316,8 +317,8 @@ def solver_pass(task: str, overrides: list[str]) -> str:
 
 
 def code_review(baseline: int, scratch: Path) -> str:
-    return mctx("The earlier code review's baseline: the tag `code-review/{baseline}`. This "
-                "code review's number: {number}.").format(
+    return mctx("The earlier code review's baseline is the tag `code-review/{baseline}`, and "
+                "this code review's number is {number}.").format(
         baseline=baseline, number=baseline + 1) + "\n" + SCRATCH.format(scratch=scratch)
 
 
@@ -334,15 +335,20 @@ def standing_doc_review(reader: str, tag: str, commit: str, operator: str) -> st
 
 
 BATCH_PROFILE = mctx("""
-    - Run `uv run python scripts/profile_runs.py --each <id> ...` once, with the agent ids of all these runs as `<id> ...`: {runs}. You may write its output to a file and read it there.
-    - File one `performance` ticket, with `commit` and `{commit}` as `<domain>` and `<subject>` and `operator` as `<agent>`, for each cause across these runs that you judge worth fixing, by the test that a change to a tool or a document could cut the time or the token cost it made, and give in it the time and the token cost that cause made in these runs. File none on a cause that a ticket outside `tickets/closed/` already records.
+    - Run `uv run python scripts/profile_runs.py --each <id> ...` once, with the agent ids of all these runs as `<id> ...`: {runs}.
+        - You may write its output to a file and read it there.
+    - File one `performance` ticket, with `commit` and `{commit}` as `<domain>` and `<subject>` and `operator` as `<agent>`, for each cause across these runs that you judge worth fixing, by the test that a change to a tool or a document could cut the time or the token cost it made, and give in it the time and the token cost that cause made in these runs.
+        - File none on a cause that a ticket outside `tickets/closed/` already records.
     {review}
     - Reply only once each transcript review you launched has replied, with the tickets you filed and the reviews you launched.
     """)
 
 
 REVIEW = mctx("""
-    - Launch a transcript review of each of these runs that is no solver work and of which the output of that `--each` call marks a message `past budget`, and of no other run: {reviewable}. That mark is the only test of a run's budget. Once a ticket filing of yours, or the reply of a review you launched, gives that a command the brief of a transcript review has it run failed, launch no further review. A transcript review is a `general-purpose` agent, with `{model}` as the Agent call's `model`, and with the brief that {review_brief} gives, with the run's agent id in place of `{run}`.
+    - Launch a transcript review of each of these runs that is no solver work and of which the output of that `--each` call marks a message `past budget`, and of no other run: {reviewable}.
+        - That mark is the only test of a run's budget.
+    - Once a ticket filing of yours, or the reply of a review you launched, gives that a command the brief of a transcript review has it run failed, launch no further review.
+    - A transcript review is a `general-purpose` agent, with `{model}` as the Agent call's `model`, and with the brief that {review_brief} gives, with the run's agent id in place of `{run}`.
     """)
 
 NO_REVIEW = mctx("- Launch no transcript review.")
@@ -362,10 +368,15 @@ def batch_profile(runs: list[str], reviewable: list[str], commit: str) -> str:
 
 
 BATCH_GATE = mctx("""
-    - Add a worktree with `git worktree add --detach <dir> master`, with a new directory under {scratch} as `<dir>`. Run `uv run python scripts/gate.py --accept --since-timed <out>` in that worktree, and file a `performance` ticket for each `SLOW` line it prints, and no ticket for a `LOADED` line. A run that prints that it skips timing is no fault, and you file no ticket on it.
+    - Add a worktree with `git worktree add --detach <dir> master`, with a new directory under {scratch} as `<dir>`.
+    - Run `uv run python scripts/gate.py --accept --since-timed <out>` in that worktree, and file a `performance` ticket for each `SLOW` line it prints, and no ticket for a `LOADED` line.
+        - A run that prints that it skips timing is no fault, and you file no ticket on it.
     - Then run `uv run python scripts/gate.py --outputs-only --record-deps <out>` there, with a new `<out>`, and remove that worktree.
-    - For each `DIFF` line these runs print that the `Evidence` of no ticket outside `tickets/draft/` and `tickets/closed/` holds, bisect the commits of `master` from the commit that the `affected:` line of the run that printed it gives after `the change from` to `master`, each step in a worktree you add at the commit with `git worktree add --detach` and remove after, and file a ticket of kind `bug` that names the commit the bisection stops at.
-        - A step for a `DIFF` line ending in `warm` is `uv run python scripts/gate.py <out> <cmd ...>`, with the commands of that commit's gate in the order its `--help` lists them, up to and including that line's command, and you pass over each line it prints on a command's time. Each other step is `uv run python scripts/gate.py --outputs-only <out> <cmd>`, with that line's command. A step at a commit whose gate has no such command counts as before the change.
+    - For each `DIFF` line these runs print that the `Evidence` of no ticket outside `tickets/draft/` and `tickets/closed/` holds, bisect the commits of `master` from the commit that the `affected:` line of the run that printed it gives after `the change from` to `master`, and file a ticket of kind `bug` that names the commit the bisection stops at.
+        - Run each step in a worktree you add at the commit with `git worktree add --detach` and remove after.
+        - A step for a `DIFF` line ending in `warm` is `uv run python scripts/gate.py <out> <cmd ...>`, with the commands of that commit's gate in the order its `--help` lists them, up to and including that line's command, and you pass over each line it prints on a command's time.
+        - Each other step is `uv run python scripts/gate.py --outputs-only <out> <cmd>`, with that line's command.
+        - A step at a commit whose gate has no such command counts as before the change.
         - File a `DIFF` line unbisected where it stands at that commit, where no `affected:` line of that run gives one, or where it ends in `warm` and its step at `master` does not print it, and say which in the ticket.
     - File each ticket with `commit` and the hash `master` stands at as `<domain>` and `<subject>`, and `operator` as `<agent>`.
     - Reply with the tickets you filed.
@@ -392,4 +403,4 @@ AT_BUDGET = mctx("Where your documents give what you do at your budget, do that 
 
 BUDGET = "Budget: {minutes} minutes. " + AT_BUDGET
 """The line of a brief that gives the agent its budget and what it does at
-its budget, in the form `profile_runs.py --help` reads."""
+its budget, in the form `profile_runs.py --help messages` reads."""

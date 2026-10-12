@@ -69,25 +69,33 @@ HELP = mctx("""
     - `{invocation} file <route> [{inferred}] <subject> <title> <goal> <start words> <end words>` files a `request` whose span runs from the message `<start words>` gives to the one `<end words>` gives, with the Grounds lines on its stdin, and prints its path.
     - `{invocation} brief [--route <route>] <number>` prints the brief of the request `<number>`.
     - `{invocation} brief --route <route> <start words> <end words> <goal>` prints the brief of that span and `<goal>`, with the Grounds lines on its stdin.
-    - `{invocation} append [{inferred}] [{goal_flag} <goal>] <number> <start words> <end words>` appends that span to the request `<number>`, with a log line, and prints its path. `{goal_flag}` gives `<goal>` as the request's `{goal}`, in place of the one it holds, or before its `{transcript}` where it holds none. Its route is `{follow_up}`, for a follow-up on that request and for a ruling the user gives on it.
+    - `{invocation} append [{inferred}] [{goal_flag} <goal>] <number> <start words> <end words>` appends that span to the request `<number>`, with a log line, and prints its path.
+        - `{goal_flag}` gives `<goal>` as the request's `{goal}`, in place of the one it holds, or before its `{transcript}` where it holds none.
+        - Its route is `{follow_up}`, for a follow-up on that request and for a ruling the user gives on it.
     - Usage:
         ```
         {invocation} file send <namespace>-<short-title> '<target>: <what the user asks for>' '<the outcome the user wants>' '<start words>' '<end words>' <<'EOF'
         - <one addition to what the span gives, with its source>
         EOF
         ```
-    - `<route>` is one of {routes}. `{inferred}` marks a route the coordinator inferred, which waits on the user's reply.
+    - `<route>` is one of {routes}.
+        - `{inferred}` marks a route the coordinator inferred, which waits on the user's reply.
     - `<subject>` and `<title>` are a `request`'s, as `uv run python scripts/file_ticket.py --help` gives them.
     - `<goal>` is the outcome the user wants from the work, in one or two sentences.
     - A message is a message of the user, or the text of one of the coordinator's replies, in the session whose id the shell holds in `CLAUDE_CODE_SESSION_ID`.
     - A words argument matches a message whose words hold its words in a row, where a word is a run of letters and digits, compared in lower case, and each other character only separates words.
     - A words argument that is a time in the form `{time_form}` names the one message of the session at that time, in place of a match of words.
-    - The command refuses, and prints each match, where a words argument matches no message or more than one, and ends the refusal on a words argument that matches more than one message with a line that says the argument may give one of the printed times in its place, and refuses where the end comes before the start.
+    - The command refuses, and prints each match, where a words argument matches no message or more than one.
+        - A refusal on a words argument that matches more than one message ends with a line that says the argument may give one of the printed times in its place.
+    - The command refuses where the end comes before the start.
     - A span is the line `<session id> <start> <end>` under the request's `{transcript}`, with each time in UTC to the second, and holds each message from its start to its end, inclusive.
-    - `file` writes the request with `{goal}`, `{transcript}` and `{grounds}`, and files it as `uv run python scripts/file_ticket.py` files. On `draft`, and on a route given with `{inferred}`, it then moves the request to `tickets/draft/`. On each of {held} with no `{inferred}`, it then moves the request to `tickets/assigned/`, with an `assigned` line whose holder is the session id the shell holds in `CLAUDE_CODE_SESSION_ID`.
+    - `file` writes the request with `{goal}`, `{transcript}` and `{grounds}`, and files it as `uv run python scripts/file_ticket.py` files.
+        - On `draft`, and on a route given with `{inferred}`, it then moves the request to `tickets/draft/`.
+        - On each of {held} with no `{inferred}`, it then moves the request to `tickets/assigned/`, with an `assigned` line whose holder is the session id the shell holds in `CLAUDE_CODE_SESSION_ID`.
     - A brief gives its goal under `{goal}`, where it has one, then each message of each span of the request, in full and in time order, each with its time and its sender, and then its Grounds.
     - `append` adds the span line under the request's `{transcript}`, and writes a log line in the status the request stands in.
-    - `file`, `append`, and `brief` with `--route` end with a readback prompt, which gives the route and the goal as the request or the command line gives it, or says that the request holds no goal, and has the coordinator restate that goal word for word and the work in its own words. `brief` prints that prompt on stderr, so that its stdout is the brief alone.
+    - `file`, `append`, and `brief` with `--route` end with a readback prompt, which gives the route and the goal as the request or the command line gives it, or says that the request holds no goal, and has the coordinator restate that goal word for word and the work in its own words.
+        - `brief` prints that prompt on stderr, so that its stdout is the brief alone.
     """)
 
 READBACK = mctx("""

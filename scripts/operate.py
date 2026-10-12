@@ -2,7 +2,8 @@
 `operator_state` assembles it from the ticket tracker, git, the worktrees
 and the transcripts of the session's operators, and prints the next step
 of the operator's procedures, which the package `operations` computes.
-`HELP`, which `--help` prints, gives its usage forms.
+`USAGE`, which `--help` prints, gives its usage forms, and `PARTS` the
+rest of its help, a part at a time.
 
 Each fact the command reads is in the tracker, in git, under `work/`, in
 a transcript, or in a file it wrote for a call it printed (`operations.filing.filed`),
@@ -34,6 +35,7 @@ from profile_runs import budget_of  # noqa: E402
 from run_reads import parent_id  # noqa: E402
 from transcripts import Refused, find  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
+from help_parts import print_help  # noqa: E402
 
 from operations import briefs, changes, plan, relay, runs  # noqa: E402
 from operations.decisions import WRITE_SECONDS  # noqa: E402
@@ -48,7 +50,18 @@ from operations.steps import (BLOCK_SECONDS, Bash, EndTurn, Launch, Poll, Send, 
 from collections.abc import Callable  # noqa: E402
 from operations.task_work import CLAIM_HELD, claim, restore, set_aside  # noqa: E402
 
-HELP = mctx("""
+class HelpPart(StrEnum):
+    """Each part of the help, by the word `--help` takes to print it, in the
+    order the bare `--help` lists them."""
+    NEXT = "next"
+    RULINGS = "rulings"
+    RUN = "run"
+    RELAY = "relay"
+    REVIEW = "review"
+    ALERTS = "alerts"
+
+
+USAGE = mctx("""
     - Usage:
         ```
         uv run python scripts/operate.py next <agent id>
@@ -58,22 +71,104 @@ HELP = mctx("""
         uv run python scripts/operate.py set-aside <task id> analyze|create
         uv run python scripts/operate.py restore <task id>
         ```
-    - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters, or the final reply. Before the final reply, it prints a SendMessage call that sends the operator's parent, the coordinator or the operator launcher that launched it, the reply's text, and it then prints the SubagentHandback call whose message is the line that says so. It writes the brief of a launch, and a message to an agent other than the coordinator, to a file under the session's scratchpad, and the call's prompt or message gives that file's path. The value of a prompt or a message parameter it prints stands between two lines of three backticks, and the value to pass is the text between those lines, without them. A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items. The brief of a launch other than a solver pass's gives the file the agent writes its final reply to, and ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where the budget `profile_runs.py --help` gives the brief, over every run under the project directories, is N minutes rounded up. A brief that gives items, as `profile_runs.py --help` gives them, takes that budget per item times the number of items it gives, and any other brief takes that budget for a run. Where there is no such budget, the brief has no such line. Where its last call of a launch failed with a result whose first line is `Agent type '<agent type>' not found`, or starts with that text followed by `.`, less than {load} seconds after the last write of its rendered definition `.claude/agents/<agent type>.md`, it gives the launch again once {retry} seconds have passed since that call, in place of a step on that failure; where that call came {load} seconds or more after that write, that failure is undecided, as that of any other failed call is. An agent whose latest notification has the status `failed` and a summary that gives `error type rate_limit` was stopped by the usage limit: `next` counts it as running, and takes nothing from that notification as its report. Once the usage file of the Claude config directory (`$CLAUDE_CONFIG_DIR/usage.json`, or `~/.claude/usage.json` where that is unset) was written after that stop, less than {stale} seconds ago, with a `used_pct` under 100 in each window, `next` prints, ahead of every other step, a SendMessage call that asks the agent to carry on its work, once for each such stop. Where no step is ready, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again. The block ends too, and it prints that the operator runs it again, once a message to the operator waits that the harness accepted after the latest `user` entry of the operator's transcript before the call: a SubagentHandback of an agent the operator launched or last resumed, or a SendMessage call, in any transcript of the session, to the operator's agent id or name, each with a result that gives success, and for SendMessage that it queued the message or resumed the operator. Each such message thus ends at most one call early, since the result of that call is a later `user` entry.
-    - Before each call it prints, `next` prints that step's key, on a line that gives the command to run after the call, so the text it prints ends with the call's last field. The key is the same at each read of the state that gives the same step.
+    {parts}
+    - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass, as the section `Passes on a task` of `prompts/agents/notes/launching.md` gives.
+    - `restore` puts that work back and removes the task's claim, as that section gives.
+    - The session is the one `CLAUDE_CODE_SESSION_ID` gives.
+        - The command refuses where the shell gives none.
+    """)
+"""The help the bare `--help` prints."""
+
+PURPOSES = {
+    HelpPart.NEXT: mctx("what `next` prints, and when a step counts as made"),
+    HelpPart.RULINGS: mctx("the forms of the rulings `next` applies"),
+    HelpPart.RUN: mctx("the `Run:` line and the run script `next` reads"),
+    HelpPart.RELAY: mctx("what `relay` prints"),
+    HelpPart.REVIEW: mctx("what `review` prints"),
+    HelpPart.ALERTS: mctx("the alerts `next` sends"),
+}
+"""What each part of the help gives."""
+
+PARTS = {
+    HelpPart.NEXT: mctx("""
+    - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters, or the final reply.
+        - Before the final reply, it prints a SendMessage call that sends the operator's parent, the coordinator or the operator launcher that launched it, the reply's text.
+        - It then prints the SubagentHandback call whose message is the line that says so.
+        - It writes the brief of a launch, and a message to an agent other than the coordinator, to a file under the session's scratchpad, and the call's prompt or message gives that file's path.
+        - The value of a prompt or a message parameter it prints stands between two lines of three backticks, and the value to pass is the text between those lines, without them.
+        - A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items.
+        - The brief of a launch other than a solver pass's gives the file the agent writes its final reply to.
+        - The brief of a launch other than a solver pass's ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where the budget `profile_runs.py --help budget` gives the brief, over every run under the project directories, is N minutes rounded up.
+            - A brief that gives items, as `profile_runs.py --help budget` gives them, takes that budget per item times the number of items it gives.
+            - Any other brief takes that budget for a run.
+            - Where there is no such budget, the brief has no such line.
+        - Where its last call of a launch failed with a result whose first line is `Agent type '<agent type>' not found`, or starts with that text followed by `.`, less than {load} seconds after the last write of its rendered definition `.claude/agents/<agent type>.md`, it gives the launch again once {retry} seconds have passed since that call, in place of a step on that failure.
+            - Where that call came {load} seconds or more after that write, that failure is undecided, as that of any other failed call is.
+        - An agent whose latest notification has the status `failed` and a summary that gives `error type rate_limit` was stopped by the usage limit.
+            - `next` counts such an agent as running, and takes nothing from that notification as its report.
+            - Once the usage file of the Claude config directory (`$CLAUDE_CONFIG_DIR/usage.json`, or `~/.claude/usage.json` where that is unset) was written after that stop, less than {stale} seconds ago, with a `used_pct` under 100 in each window, `next` prints, ahead of every other step, a SendMessage call that asks the agent to carry on its work, once for each such stop.
+        - Where no step is ready, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again.
+            - The block also ends, and it prints that the operator runs it again, once a message to the operator waits that the harness accepted after the latest `user` entry of the operator's transcript before the call.
+                - Such a message is a SubagentHandback of an agent the operator launched or last resumed, or a SendMessage call, in any transcript of the session, to the operator's agent id or name, each with a result that gives success, and for SendMessage that it queued the message or resumed the operator.
+    - Before each call it prints, `next` prints that step's key, on a line that gives the command to run after the call, so the text it prints ends with the call's last field.
+        - The key is the same at each read of the state that gives the same step.
+    - A ticket file whose read refuses or fails, other than a file that moved during the read, leaves its ticket out of every procedure.
+        - A ticket that depends on it waits.
+        - `next` gives that file, once for each content it has and once its last write is {write} seconds old, to a ticket analyst it launches, as a step it cannot place, with the read's failure, and goes on with every other procedure.
+        - Where the file still does not read once that analyst returned, the final reply gives it.
+    - A step `next` printed counts as made by the call the operator made: a Bash call whose command runs the printed command among others, or the call the operator made right after the call of `next` that printed the step, other than a call of `next` alone.
+    """),
+    HelpPart.RULINGS: mctx("""
     - `next` applies the rulings that the coordinator gives an operator of the session, and that the reply of a ticket analyst on a held step gives, each a line in one of these forms, matched whole, past a list marker:
         - `Decision: <decision key> <choice>` rules a held step, with one of the choices that step gives.
         - `Override: <task id> <pass> <override>` gives the override, labelled as an override, in the brief of the next launch of that pass on that task.
-        - `Override: pass over <step key>` passes over the step whose key it gives, for each operator: `next` gives that step, once, as one its procedure waits on, to a ticket analyst it launches to rule it, other than a launch of a ticket analyst to rule a step, and goes on with the other procedures. A pipeline whose next pass is passed over stops instead. A ruling on a solver pass holds for each pipeline on its task, unless the work set aside for an earlier pipeline on that task went back (`restore`) after the ruling and before that pipeline's line or `start` call. A solver pass's key is `<task id>-<pass>`, its task id and its pass (`analyze`, `create` or `refine`), so a ruling can name a pass that was never printed, and the ruling holds whatever overrides the pass's brief gains.
-    - A coordinator's line that opens with `Override:` or `Decision:` in none of these forms goes back to the coordinator once, as undecided. A ticket analyst's reply on a step that gives its decision key, with no ruling in these forms, goes back to it once, and where its answer gives none either, the step stays held. A step `next` cannot place gives no decision key: its ticket analyst makes the act it needs and gives no ruling.
-    - `next` reads a coordinator's line `Run: <path>` as a run: the solver pipelines that the Python script at `<path>`, absolute or relative to the main tree, starts. Write a run script under `work/runs/` in the main tree, which git ignores. It defines `starts(run: Run) -> Iterable[Start]`, with `Run` and `Start(task, passes)` from the module `operations.runs`, each `passes` a non-empty sequence whose every item is `analyze`, `create` or `refine`. `run.queue` gives the task ids of the queue, in the order of their names, less each task a claim file gives and each task of the run's pipelines; `run.running` and `run.ended` give the run's pipelines, each with `task`, `passes` and `stopped`, which gives, for an ended one, the reason it stopped, or None where it ran to its end. At each read of the state, `next` loads the script again and calls `starts`, so an edit of the script changes the run. `next` gives as a step the `start` of the first item `starts` gives whose task no pipeline of the session runs and that matches no pipeline of the run by task and passes, with as `<run>` the time of the line's message and its path, which tell the run's pipelines from another run's, and passes over each other item. A `start` on a task whose claim file stands ends that pipeline, with the failure's text as its reason. Where the script fails to load, `starts` raises, the load and the call of `starts` run past {script} seconds, or `starts` gives a result in no form above, the run starts nothing while that fault stands, and the coordinator gets the fault's text, once for each distinct text. The line is done once no pipeline of the run runs, no fault of the script stands, and `starts` gives nothing to start.
-    - A ticket file whose read refuses or fails, other than a file that moved during the read, leaves its ticket out of every procedure, and a ticket that depends on it waits. `next` gives that file, once for each content it has and once its last write is {write} seconds old, to a ticket analyst it launches, as a step it cannot place, with the read's failure, and goes on with every other procedure. Where the file still does not read once that analyst returned, the final reply gives it.
-    - A step `next` printed counts as made by the call the operator made: a Bash call whose command runs the printed command among others, or the call the operator made right after the call of `next` that printed the step, other than a call of `next` alone.
-    - `relay` prints the next step of the operator launcher whose agent id it is given, in the forms of `next`. Where an operator of the launcher's runs and no line of the coordinator's waits for it, it prints at once, with no block, that the launcher ends its turn with no call, or, where a message to the launcher waits that the harness accepted during the call, as the block of `next` reads one, that the launcher runs the command again. Its first step launches an operator whose brief is the launcher's brief. Each later message of the coordinator's to the launcher goes, unchanged, to the operator of the launcher's that runs, or, where none runs or the one that runs sent the launcher its final reply, into the brief of the next operator it launches. Where an operator's final reply ends it for its context, it launches a fresh operator, or, where the launcher's context is past the bound `context_bound_hook.py` gives, sends the coordinator the launcher's final reply, which asks for a fresh operator launcher whose brief is the lines that wait for a next operator, and gives them. Any other final reply of an operator, and an operator's end with no final reply, it sends the coordinator after a line that gives that operator's agent id, and then, unless a line of the coordinator's waits for a next operator, prints the launcher's final reply.
-    - `review` prints, to the doc editor whose agent id it is given, which an operator of the session launched, the launch of its change's doc reviewer, in the form of `next`'s, with the brief `next` gives a doc reviewer, the doc editor as its launcher, and each editor of the change in its worktree. Where the change already has a doc reviewer, whoever launched it, it prints that reviewer's agent id and that the doc editor launches no other. Where an editor the change's ticket gives has no agent in the worktree, or another editor of the change there has not reported, it prints instead that the operator launches the review, and that the doc editor gives its final reply. Where the agent is no doc editor that an operator of the session launched, it prints that no launch is printed, and that the agent gives its final reply. It reads the state as the doc editor's operator's `next` reads it.
-    - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass, and `restore` puts it back and removes the task's claim, as the section `Passes on a task` of `prompts/agents/notes/launching.md` gives.
-    - The session is the one `CLAUDE_CODE_SESSION_ID` gives, and the command refuses where the shell gives none.
-    {alerts}
-    """)
+        - `Override: pass over <step key>` passes over the step whose key it gives, for each operator.
+            - `next` gives that step, once, as one its procedure waits on, to a ticket analyst it launches to rule it, other than a launch of a ticket analyst to rule a step, and goes on with the other procedures.
+            - A pipeline whose next pass is passed over stops instead.
+            - A ruling on a solver pass holds for each pipeline on its task, unless the work set aside for an earlier pipeline on that task went back (`restore`) after the ruling and before that pipeline's line or `start` call.
+            - A solver pass's key is `<task id>-<pass>`, its task id and its pass (`analyze`, `create` or `refine`).
+                - A ruling can name a pass that was never printed.
+                - The ruling holds whatever overrides the pass's brief gains.
+    - A coordinator's line that opens with `Override:` or `Decision:` in none of these forms goes back to the coordinator once, as undecided.
+    - A ticket analyst's reply on a step that gives its decision key, with no ruling in these forms, goes back to it once.
+        - Where its answer gives none either, the step stays held.
+    - A step `next` cannot place gives no decision key: its ticket analyst makes the act it needs and gives no ruling.
+    """),
+    HelpPart.RUN: mctx("""
+    - `next` reads a coordinator's line `Run: <path>` as a run: the solver pipelines that the Python script at `<path>`, absolute or relative to the main tree, starts.
+        - Write a run script under `work/runs/` in the main tree, which git ignores.
+        - It defines `starts(run: Run) -> Iterable[Start]`, with `Run` and `Start(task, passes)` from the module `operations.runs`, each `passes` a non-empty sequence whose every item is `analyze`, `create` or `refine`.
+        - `run.queue` gives the task ids of the queue, in the order of their names, less each task a claim file gives and each task of the run's pipelines.
+        - `run.running` and `run.ended` give the run's pipelines, each with `task`, `passes` and `stopped`, which gives, for an ended one, the reason it stopped, or None where it ran to its end.
+        - At each read of the state, `next` loads the script again and calls `starts`, so an edit of the script changes the run.
+        - `next` gives as a step the `start` of the first item `starts` gives whose task no pipeline of the session runs and that matches no pipeline of the run by task and passes, and passes over each other item.
+            - That `start` has as `<run>` the time of the line's message and its path, which tell the run's pipelines from another run's.
+        - A `start` on a task whose claim file stands ends that pipeline, with the failure's text as its reason.
+        - Where the script fails to load, `starts` raises, the load and the call of `starts` run past {script} seconds, or `starts` gives a result in no form above, the run starts nothing while that fault stands.
+            - The coordinator gets the fault's text, once for each distinct text.
+        - The line is done once no pipeline of the run runs, no fault of the script stands, and `starts` gives nothing to start.
+    """),
+    HelpPart.RELAY: mctx("""
+    - `relay` prints the next step of the operator launcher whose agent id it is given, in the forms of `next`.
+        - Where an operator of the launcher's runs and no line of the coordinator's waits for it, it prints at once, with no block, that the launcher ends its turn with no call.
+            - Where a message to the launcher waits that the harness accepted during the call, as the block of `next` reads one, it prints instead that the launcher runs the command again.
+        - Its first step launches an operator whose brief is the launcher's brief.
+        - Each later message of the coordinator's to the launcher goes, unchanged, to the operator of the launcher's that runs, or, where none runs or the one that runs sent the launcher its final reply, into the brief of the next operator it launches.
+        - Where an operator's final reply ends it for its context, it launches a fresh operator.
+            - Where the launcher's context is past the bound `context_bound_hook.py` gives, it sends the coordinator instead the launcher's final reply, which asks for a fresh operator launcher whose brief is the lines that wait for a next operator, and gives them.
+        - It sends the coordinator any other final reply of an operator, and an operator's end with no final reply, after a line that gives that operator's agent id.
+            - It then prints the launcher's final reply, unless a line of the coordinator's waits for a next operator.
+    """),
+    HelpPart.REVIEW: mctx("""
+    - `review` prints, to the doc editor whose agent id it is given, which an operator of the session launched, the launch of its change's doc reviewer, in the form of `next`'s, with the brief `next` gives a doc reviewer, the doc editor as its launcher, and each editor of the change in its worktree.
+        - Where the change already has a doc reviewer, whoever launched it, it prints that reviewer's agent id and that the doc editor launches no other.
+        - Where an editor the change's ticket gives has no agent in the worktree, or another editor of the change there has not reported, it prints instead that the operator launches the review, and that the doc editor gives its final reply.
+        - Where the agent is no doc editor that an operator of the session launched, it prints that no launch is printed, and that the agent gives its final reply.
+        - It reads the state as the doc editor's operator's `next` reads it.
+    """),
+    HelpPart.ALERTS: ALERTS,
+}
+"""The text of each part of the help."""
 
 POLL_SECONDS = 15
 CALLS = (Launch, Send, Bash)
@@ -92,7 +187,7 @@ class OperateAction(StrEnum):
 
 
 def with_budget(step: Launch) -> Launch:
-    """`step` with the budget line HELP gives."""
+    """`step` with the budget line `--help next` gives."""
     if step.role in BARE_BRIEFS:
         return step
     seconds = budget_of(step.role, step.items, [])
@@ -119,8 +214,8 @@ def reloading(step: Launch, state: State) -> float:
 
 def block(me: str, action: Action, step_at: Callable[[float], tuple[Step, Path]]) -> int:
     """Print the step `step_at` gives, with the scratchpad its files go
-    under, by the deadline it is given, as HELP gives the block of `next`
-    and the end of the turn of `relay`."""
+    under, by the deadline it is given, as `--help next` gives the block of `next`
+    and `--help relay` the end of the turn of `relay`."""
     deadline = time.monotonic() + BLOCK_SECONDS
     path = find(me)
     since = last_delivered(path)
@@ -155,7 +250,7 @@ def operator_step(me: str, deadline: float) -> tuple[Step, Path]:
 
 def review(editor: str) -> int:
     """Print the step `changes.editor_review` gives the doc editor
-    `editor`, as HELP gives `review`."""
+    `editor`, as `--help review` gives it."""
     path = find(editor)
     parent = parent_id(path)
     kind = parent_type(path)
@@ -183,8 +278,11 @@ def relay_step(me: str, deadline: float) -> tuple[Step, Path]:
 
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("--help", "-h"):
-        print(HELP.format(block=BLOCK_SECONDS, load=plan.LOAD_SECONDS, retry=plan.RETRY_SECONDS, write=round(WRITE_SECONDS), alerts=ALERTS, stale=USAGE_STALE, script=runs.SCRIPT_SECONDS))
-        return 0
+        return print_help(argv[1:], HelpPart, lambda parts: USAGE.format(parts=parts), PURPOSES,
+                          lambda part: PARTS[part].format(
+                              block=BLOCK_SECONDS, load=plan.LOAD_SECONDS, retry=plan.RETRY_SECONDS,
+                              write=round(WRITE_SECONDS), stale=USAGE_STALE,
+                              script=runs.SCRIPT_SECONDS))
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
     parser.add_argument("action", choices=list(OperateAction))
     parser.add_argument("ident")

@@ -168,7 +168,7 @@ def assessment(state: State) -> Step | None:
 
 def under_command(operator: str) -> str:
     """Step 1 of After a batch, which an operator runs itself: the
-    previous call of `--under` that `profile_runs.py --help` defines is an
+    previous call of `--under` that `profile_runs.py --help under` defines is an
     operator's, and `read_under` gives whether a call of it stands."""
     return f"uv run python scripts/profile_runs.py --under {operator}"
 
@@ -205,7 +205,7 @@ class Under:
 
 def read_under(output: str) -> Under | None:
     """What the call of `--under` whose output is `output` gives, where the
-    call stands as `profile_runs.py --help` has it: one `LEFT_OPEN` line and
+    call stands as `profile_runs.py --help under` has it: one `LEFT_OPEN` line and
     one `RUNS_TAKEN` line, each ended by a line break, the count on the
     `RUNS_TAKEN` line followed by as many agent ids. None otherwise."""
     left, took = lines(output, LEFT_OPEN), lines(output, RUNS_TAKEN)

@@ -1,7 +1,8 @@
 """The budget of each agent type, and of each role of
 `roles.GENERAL_ROLES`, for a run and for one item of a brief that gives
 items, the runs its budget cut, and the budget in force for each message
-from a run's parent, as the HELP of `profile_runs` gives them."""
+from a run's parent, as `profile_runs.py --help budget`
+and `profile_runs.py --help messages` give them."""
 
 import re
 from dataclasses import dataclass
@@ -21,7 +22,7 @@ from run_records import Message, Part, Run
 from run_reads import parent_id
 from transcripts import Refused, is_subagent
 
-# The terms of the budget of a type or a role, which HELP states.
+# The terms of the budget of a type or a role, which `profile_runs.py --help budget` states.
 BUDGET_FACTOR = 2
 MEDIAN_RUNS = 5
 LOW_WAIT_PCT = 10
@@ -36,7 +37,7 @@ def low_wait(r: Run) -> bool:
 
 
 def budget_group(r: Run) -> str | None:
-    """The budget `r` joins, as HELP gives it: the role its description
+    """The budget `r` joins, as `--help budget` gives it: the role its description
     gives where its agent type is `general-purpose`, None where that
     description gives no role of `roles.GENERAL_ROLES`, and otherwise its
     agent type."""
@@ -59,7 +60,7 @@ def role_group(role: Role) -> str:
 
 
 def type_window(kind: str, undecided: list[str]) -> float | None:
-    """The start of the window of the budget `kind`, as HELP gives it: the
+    """The start of the window of the budget `kind`, as `--help budget` gives it: the
     time of the last commit that changed its paths, or None where it has
     no paths or no commit changed them."""
     if kind in GENERAL_ROLES:
@@ -98,7 +99,7 @@ def measured(r: Run, per_item: bool) -> float | None:
 
 def type_budget(kind: str, runs: list[Run], since_date: float | None, per_item: bool,
                 undecided: list[str]) -> Budget | None:
-    """The budget `kind`, an agent type or a role, over `runs`, its runs, as HELP
+    """The budget `kind`, an agent type or a role, over `runs`, its runs, as `--help budget`
     gives it, for a run, or where `per_item`, for one item of a brief that
     gives items, or None where it gets none. `since_date` is the start of
     the window `--since` sets, where it is given."""
@@ -173,7 +174,7 @@ def message_name(r: Run, m: Message) -> str:
 
 def budgets_in_force(r: Run, undecided: list[str]) -> list[float | None]:
     """The budget in minutes in force for each message from the parent of
-    `r`, which the latest message up to it states, as HELP gives it, or
+    `r`, which the latest message up to it states, as `--help messages` gives it, or
     None."""
     for text in r.unknown:
         undecided.append(mctx("{run}: the sender of the message `{text}` is "
@@ -204,7 +205,7 @@ def budgets_in_force(r: Run, undecided: list[str]) -> list[float | None]:
 
 
 def operator_launched(r: Run, undecided: list[str]) -> bool:
-    """Whether an operator launched `r`, as HELP gives it. A run whose
+    """Whether an operator launched `r`, as `--help budget` gives it. A run whose
     parent's type is unknown is left out, and an `undecided` line names
     it."""
     if not is_subagent(r.path):
@@ -224,13 +225,13 @@ def operator_launched(r: Run, undecided: list[str]) -> bool:
 @cache
 def acts_at_budget(kind: str) -> bool:
     """Whether the documents of the agent type `kind` give what it does at
-    its budget, as HELP gives it."""
+    its budget, as `--help budget` gives it."""
     return kind in agent_names() and f"`{BUDGET_PASSED}`" in agent_prompt_text(kind)
 
 
 def censored(r: Run, undecided: list[str]) -> bool | None:
-    """Whether `r` is censored, cut by its budget as HELP gives it, or None
-    where HELP gives that unknown."""
+    """Whether `r` is censored, cut by its budget as `--help budget` gives it,
+    or None where it gives that unknown."""
     if not acts_at_budget(r.agent_type):
         return False
     unknown = False

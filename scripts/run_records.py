@@ -1,6 +1,6 @@
 """The records of a run's profile: its parts, its call groups and spans,
-the messages to the run, and the run itself, as the HELP of
-`profile_runs` gives them."""
+the messages to the run, and the run itself, as
+`profile_runs.py --help runs`, `--help one` and `--help messages` give them."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -67,7 +67,7 @@ class Run:
     request_contexts: list[int]
     cost: float | None
     said: str | None
-    # The run's waits on agents it launched, as `profile_runs.py` HELP
+    # The run's waits on agents it launched, as `profile_runs.py --help one`
     # gives them.
     waits: float
     # Whether the run waits on agents at its last entry.
@@ -132,7 +132,7 @@ class Run:
 
     def self_at(self, now: float) -> float | None:
         """`active_at`, less the run's waits on agents over that period, as
-        `HELP` of `scripts/profile_runs.py` gives the time since the run's
+        `scripts/profile_runs.py --help messages` gives the time since the run's
         last entry."""
         return self.latest_at(now, self.self_from, not self.waiting)
 

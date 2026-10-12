@@ -1,6 +1,6 @@
 """The prints of the agents whose work is open under a run, of the messages
-from a run's parent, and of the run's report to that parent, as the HELP of
-`profile_runs` gives them."""
+from a run's parent, and of the run's report to that parent, as
+`profile_runs.py --help running` and `profile_runs.py --help one` give them."""
 
 from collections.abc import Callable
 
@@ -93,7 +93,7 @@ def print_ended(r: Run, end: float | None, now: float,
                 undecided: list[str]) -> None:
     if end is None:
         undecided.append(mctx("{run}: no timestamped entry of its transcripts "
-                              "ends a turn, as the HELP of `scripts/profile_runs.py` "
+                              "ends a turn, as `scripts/profile_runs.py --help runs` "
                               "gives one, so when its turn ended is unknown").format(
             run=r.label))
         print("  " + mctx("turn ended: ?"))
@@ -133,6 +133,6 @@ def print_report_line(r: Run, found: list[Report] | None) -> None:
 
 def print_report(r: Run, undecided: list[str]) -> None:
     """Print the latest report of the subagent of `r` that reached its
-    parent after the parent's latest message to it, as HELP gives it."""
+    parent after the parent's latest message to it, as `profile_runs.py --help one` gives it."""
     if r.agent_type != MAIN:
         print_report_line(r, parent_reports(r, undecided))

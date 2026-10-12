@@ -1,8 +1,8 @@
-"""The reports of an agent that reached its parent, as the HELP of
-`profile_runs` gives them, and the signs in its parent's transcripts that
+"""The reports of an agent that reached its parent, as
+`profile_runs.py --help one` gives them, and the signs in its parent's transcripts that
 its turn ended.
 
-The forms of the harness that HELP rests on are `HAND_BACK` and
+The forms of the harness that `profile_runs.py --help one` rests on are `HAND_BACK` and
 `HAND_BACK_INDENT`, of a message that delivers a SubagentHandback report,
 `POINTER`, of a notification that points to such a message, and
 `SENT_BY_MESSAGE`, of the line an agent gives after it sent its final reply
@@ -53,7 +53,7 @@ def gives_text(text: str) -> bool:
 
 class ReportKind(Enum):
     """The entries of a parent's transcript that give a report of an agent,
-    as HELP gives them."""
+    as `profile_runs.py --help one` gives them."""
     NOTIFICATION = "notification"
     RESULT = "result"
     MESSAGE = "message"
@@ -284,8 +284,8 @@ def still_running(n: Notification) -> bool:
 def entry_reports(e: Entry, aid: str | None, call: str | None,
                   undecided: list[str]) -> list[Report]:
     """The reports of the agent `aid`, launched by call `call`, that the
-    timestamped entry `e` of its parent's transcripts gives, as HELP gives
-    them."""
+    timestamped entry `e` of its parent's transcripts gives, as
+    `profile_runs.py --help one` gives them."""
     t = epoch(e["timestamp"])
     out = [Report(ReportKind.NOTIFICATION, t, n.result.strip())
            for n in agent_notifications(e, aid, call, undecided)

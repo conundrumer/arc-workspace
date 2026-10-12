@@ -1,6 +1,6 @@
 """The agents a run launched, the calls that resumed them, the agents
-pending to it, and the runs under it, as the HELP of `profile_runs` gives
-them, the agents its SendMessage calls went to, and whether a message to
+pending to it, and the runs under it, as `profile_runs.py --help running`
+and `profile_runs.py --help under` give them, the agents its SendMessage calls went to, and whether a message to
 it that the harness accepted waits for delivery."""
 
 from collections.abc import Iterable
@@ -326,8 +326,8 @@ def last_delivered(path: Path) -> float:
 
 def accepted_after(path: Path, since: float, undecided: list[str]) -> bool:
     """Whether a transcript of the sessions of the run at `path` holds a
-    message to that run that the harness accepted after `since`, as the
-    HELP of `operate.py` gives one."""
+    message to that run that the harness accepted after `since`, as
+    `operate.py --help next` gives one."""
     names = {agent_id(path)}
     if (name := (read_meta(path) or {}).get("name")):
         names.add(str(name))
@@ -359,7 +359,7 @@ def accepted_after(path: Path, since: float, undecided: list[str]) -> bool:
 
 def pending_agents(path: Path, undecided: list[str]) -> list[str]:
     """The agent ids of the agents pending to the run at `path`, in the
-    order of their launch, as HELP gives them."""
+    order of their launch, as `profile_runs.py --help running` gives them."""
     own = [a for a in launched(path, undecided) if a.pending and a.agent]
     if not own:
         return []

@@ -66,7 +66,7 @@ RESTATE = mctx("What you sent {reader} at {time} is in no form its command reads
 PASS_FORM = mctx("a reply that is the path of your report file alone, on one line, where that "
                  "report has a `{heading}` section.").format(heading=TICKETS_FILED)
 DECISION_FORM = mctx("a reply that gives, on a line of its own, the ruling on the step, in a "
-                     "form that `uv run python scripts/operate.py --help` gives; or, where the "
+                     "form that `uv run python scripts/operate.py --help rulings` gives; or, where the "
                      "decision goes to the user, a `decision:` item under `{heading}`.").format(
                          heading=FOR_COORDINATOR)
 ALERT_FORM = mctx("where it is an alert, a message that opens with the line `alert: <kind> "

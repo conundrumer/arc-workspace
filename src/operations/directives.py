@@ -11,7 +11,7 @@ word of its kind and a colon, past a list marker:
 - `Merge: <number>`, a change under `tickets/blocked/` whose merge that line rules;
 - `Tickets are open.`;
 - the rulings, `Decision:` and `Override:` lines in the forms that
-  `scripts/operate.py --help` gives, which the command applies (`decided`,
+  `scripts/operate.py --help rulings` gives, which the command applies (`decided`,
   `passed_over`, `overrides`).
 
 A line of the coordinator's in no such form, a ruling among them, goes

@@ -40,8 +40,8 @@ class Listed:
 
 
 def usual(run: Run, runs: list[Run], call: Span) -> float:
-    """The usual time of `call` of `run`, among the runs `runs`, as the
-    HELP of `profile_runs` gives it."""
+    """The usual time of `call` of `run`, among the runs `runs`, as
+    `profile_runs.py --help one` gives it."""
     def ended(among: list[Run]) -> list[float]:
         return [s.end - s.start for r in among for s in r.spans
                 if s.label == call.label and s.end is not None and s.call != call.call]
@@ -66,7 +66,7 @@ def reported_since(a: Launch, since: float | None,
 def parent_reports(r: Run, undecided: list[str],
                    launch: Launch | None = None) -> list[Report] | None:
     """The reports of the subagent of `r` that reached its parent after the
-    parent's latest message to it, as HELP gives them, or None where that
+    parent's latest message to it, as `profile_runs.py --help one` gives them, or None where that
     message or the parent's transcripts are unknown. With `launch`, its
     launch, they are read from the transcripts of the run that launched
     it."""
@@ -141,8 +141,8 @@ def settle_turns(nodes: list[Node], undecided: list[str]) -> None:
 
 
 def listing(n: Node, parent_open: bool, undecided: list[str]) -> Listed | None:
-    """The agent of `n` where its work is open, by the rule the `--running`
-    item of `profile_runs.py --help` gives, with the work of its parent open
+    """The agent of `n` where its work is open, by the rule
+    `profile_runs.py --help running` gives, with the work of its parent open
     where `parent_open` holds: by `by_rule`, or where that gives it as not
     open, by `unknown_work`."""
     return by_rule(n, parent_open, undecided) or unknown_work(n, undecided)
@@ -172,7 +172,7 @@ def by_rule(n: Node, parent_open: bool, undecided: list[str]) -> Listed | None:
 
 def unknown_work(n: Node, undecided: list[str]) -> Listed | None:
     """The agent of `n` where its turn has ended and work of its own still
-    runs, as the `--running` item of `profile_runs.py --help` gives that
+    runs, as `profile_runs.py --help running` gives that
     work, with the `undecided` line that names it with that work: the
     agents under it that `is_busy` gives, and `own_work`."""
     below = [agent_id(m.path) for m in every_node(nodes_under(n, undecided), undecided)
@@ -196,7 +196,7 @@ def turn_ended(n: Node, undecided: list[str]) -> Listed:
 
 def is_busy(n: Node, undecided: list[str]) -> bool:
     """Whether the agent of `n` is work of its own of each run above it, as
-    the `--running` item of `profile_runs.py --help` gives that work."""
+    `profile_runs.py --help running` gives that work."""
     if n.busy is None:
         n.busy = (n.in_progress or bool(own_work(n, undecided))
                   or any(is_busy(m, undecided) for m in nodes_under(n, undecided)))
@@ -204,8 +204,8 @@ def is_busy(n: Node, undecided: list[str]) -> bool:
 
 
 def own_work(n: Node, undecided: list[str]) -> list[str]:
-    """The work of its own of the run of `n`, as the `--running` item of
-    `profile_runs.py --help` gives it, other than an agent `nodes_under`
+    """The work of its own of the run of `n`, as
+    `profile_runs.py --help running` gives it, other than an agent `nodes_under`
     gives."""
     if n.own is None:
         n.own = []
@@ -320,8 +320,8 @@ def listed_under(nodes: list[Node], parent_open: bool,
                  undecided: list[str]) -> list[Listed]:
     """`listing` of each of `nodes`, whose parent's work is open where
     `parent_open` holds, each followed by those of the agents under it,
-    with each listed agent's `running` as `--running` in
-    `profile_runs.py --help` gives it. Of the `undecided` lines that rule
+    with each listed agent's `running` as
+    `profile_runs.py --help running` gives it. Of the `undecided` lines that rule
     asks for, `launches` writes the one of an agent whose launch no
     transcript gives, and `unreached` the others."""
     out: list[Listed] = []
@@ -344,7 +344,7 @@ def listed_under(nodes: list[Node], parent_open: bool,
 def unreached(listed: Listed, undecided: list[str]) -> None:
     """The `undecided` line of each agent the run of `listed` launched
     whose transcript is known, where `launched_under` read no launch of that
-    run, as `--running` in `profile_runs.py --help` gives it."""
+    run, as `profile_runs.py --help running` gives it."""
     running = {m.call for m in listed.run.backgrounded}
     for a in launches(listed.path, undecided):
         if a.call in running and a.path is not None:

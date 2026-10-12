@@ -1,5 +1,5 @@
-"""The print of agent run profiles, as the HELP of `profile_runs` gives
-it."""
+"""The print of agent run profiles, as `profile_runs.py --help one`
+and `profile_runs.py --help many` give it."""
 
 import math
 import time
@@ -70,7 +70,7 @@ def print_costs(by_type: dict[str, list[Run]], order: list[str]) -> None:
 
 
 def print_split(runs: list[Run], split: float, undecided: list[str]) -> None:
-    """The print of `--split`, as the HELP of `profile_runs` gives it."""
+    """The print of `--split`, as `profile_runs.py --help many` gives it."""
     sides: dict[str, tuple[list[Run], list[Run]]] = {}
     for r in runs:
         if r.start is None:
