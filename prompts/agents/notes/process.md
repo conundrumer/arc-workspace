@@ -12,8 +12,6 @@
     - These notes give one owner for each process.
     - These notes give, for each kind of work product, the agent that acts on it and the reviews it gets.
     - Work that two processes duplicate, an outcome that no owner meets, rules that conflict, a step whose cost is out of proportion to what it finds, and a step or a rule that serves no outcome reach the user before the user asks.
-    - Each rule of the notes and of the agent definitions maps to an outcome of these notes.
-        - [Traceability matrix](prompts/agents/notes/traceability.md) holds that map.
     - The context each run of an agent loads holds only the lines each of its runs needs, and each other line loads by a stated condition before the work that needs it.
 - Owner: a ticket analyst with a process assessment brief, which an operator launches after a set count of merged changes to the agents' processes.
 - Takes from: quality assurance, the fault families, and measurement, the cost of each step. Gives to: every process, as `change` tickets, and the user, as decisions.
@@ -21,8 +19,7 @@
     - It runs too often: the count of merged changes that launches it bounds its runs.
     - It cuts a check whose value shows only in rare runs: it cuts nothing itself, and brings each cut to the user with the check's cost.
     - It does the root-cause work of quality assurance again: that work looks at one fault family, and the assessment at the processes as a whole.
-    - A rule that maps to no outcome guards a case these notes do not give: the assessment judges that rule, and that finding alone cuts no rule.
-    - The map of rules to outcomes costs a pass over every rule on each run: the map is made once, and checked again only for a rule or an outcome a change has altered since.
+    - A rule that serves no outcome may guard a case these notes do not give: the assessment judges that rule, and that finding alone cuts no rule.
 
 ## Requirements (stakeholder needs and requirements definition, system/software requirements definition)
 - Purpose: turn the user's words into requirements that a check can confirm, each traced to those words.
