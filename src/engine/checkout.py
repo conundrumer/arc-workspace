@@ -151,6 +151,14 @@ class Changed:
     change: Change
 
 
+def untracked(tree: Path, *pathspec: str) -> list[str]:
+    """The untracked paths of `tree` that git does not ignore and that
+    `pathspec` matches, in git's order; every one with no `pathspec`."""
+    spec = ["--", *pathspec] if pathspec else []
+    return [p for p in git_out(tree, "ls-files", "--others", "--exclude-standard", "-z",
+                               *spec).split("\0") if p]
+
+
 def changed_paths(tree: Path, base: str, *pathspec: str) -> list[Changed]:
     """Each path that `pathspec` matches whose content in `tree` differs
     from the commit `base`: first the tracked ones, each side of a rename,
@@ -170,10 +178,8 @@ def changed_paths(tree: Path, base: str, *pathspec: str) -> list[Changed]:
     for path in marked:
         tracked.pop(path, None)
     tracked |= _marked_changes(tree, base, marked)
-    untracked = git_out(tree, "ls-files", "--others", "--exclude-standard", "-z",
-                        *spec).split("\0")
     return ([Changed(p, tracked[p]) for p in sorted(tracked, key=os.fsencode)]
-            + [Changed(p, Change.UNTRACKED) for p in untracked if p])
+            + [Changed(p, Change.UNTRACKED) for p in untracked(tree, *pathspec)])
 
 
 class Mode(StrEnum):

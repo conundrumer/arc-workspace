@@ -12,6 +12,7 @@ from controlled_markdown.prose import text_fragments
 from engine import checkout
 from operations.state import DOC_REVIEW, Commit, Place
 from operations.task_work import CLAIM, tasks_work
+from operations.tracker import BASE
 
 COMMITS = 300
 """The commits of `master` read for After a batch, newest first."""
@@ -35,7 +36,7 @@ def worktrees(main: Path) -> dict[Path, str | None]:
 
 def commits(main: Path) -> tuple[Commit, ...]:
     out: list[Commit] = []
-    for chunk in git(main, "log", "master", f"-n{COMMITS}", "--format=%x00%H %ct %s",
+    for chunk in git(main, "log", BASE, f"-n{COMMITS}", "--format=%x00%H %ct %s",
                      "--name-only").split("\0")[1:]:
         head, _, names = chunk.partition("\n")
         sha, ct, subject = (head.split(" ", 2) + [""])[:3]
@@ -69,7 +70,7 @@ def claims(main: Path) -> dict[str, str]:
 def gate_outputs(tree: Path) -> tuple[str, ...]:
     """The accepted gate outputs the change in the worktree `tree` writes,
     against `master`."""
-    return tuple(sorted({c.path for c in checkout.changed_paths(tree, "master", ACCEPTED)}))
+    return tuple(sorted({c.path for c in checkout.changed_paths(tree, BASE, ACCEPTED)}))
 
 
 def fragments(tree: Path) -> tuple[Place, ...]:
@@ -81,7 +82,7 @@ def fragments(tree: Path) -> tuple[Place, ...]:
     as a Python file that does not parse or an `mctx` call with no literal,
     is one place in their stead, at the line of the error, or line 1 where
     the error gives none."""
-    base = git(tree, "merge-base", "HEAD", "master").strip()
+    base = git(tree, "merge-base", "HEAD", BASE).strip()
     names = {c.path for c in checkout.changed_paths(tree, base, "*.py", "*.js")}
     out: list[Place] = []
     for name in sorted(names):

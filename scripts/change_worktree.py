@@ -125,11 +125,10 @@ def copy_scope_untracked(main: Path, path: Path, t: Ticket) -> None:
     scope = sorted(scope_paths(t, main))
     if not scope:
         return
-    listed = checkout.git_out(main, "ls-files", "-z", "--others", "--exclude-standard",
-                              "--", *(f":(literal){p}" for p in scope))
+    listed = checkout.untracked(main, *(f":(literal){p}" for p in scope))
     hashes = carried(path)
     new = False
-    for rel in sorted(set(filter(None, listed.split("\0"))) & set(scope)):
+    for rel in sorted(set(listed) & set(scope)):
         if (path / rel).exists():
             continue
         new = True

@@ -31,11 +31,10 @@ from controlled_markdown import mctx
 from operations import briefs, messages
 from operations.directives import Decision, decided
 from operations.handled import sent
-from operations.reports import NO_FINDING, no_finding, reviewed_state
+from operations.reports import NO_FINDING, no_finding, shows_current
 from operations.roles import Role
 from operations.state import Agent, State, Ticket
 from operations.steps import Launch, Send, Step, Undecided, agent_ids
-from operations.tracker import fingerprint
 
 
 def latest_reviewer(agents: list[Agent]) -> Agent | None:
@@ -81,7 +80,7 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
     opens so and gives the change's worktree `w` in the state it is in,
     and otherwise the message that asks `r` to review the change again."""
     if no_finding(r):
-        if (seen := reviewed_state(r)) is not None and seen == fingerprint(w):
+        if shows_current(r, w):
             return False
         if r.messaged is None:
             return Undecided(mctx("the transcript of doc reviewer {agent} of change {number} "

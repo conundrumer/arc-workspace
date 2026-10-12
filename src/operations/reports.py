@@ -6,9 +6,11 @@ absence: a review that does not pass and no module split."""
 import re
 from collections.abc import Iterable
 from enum import StrEnum
+from pathlib import Path
 
 from operations.roles import AGENT_ID, Role
 from operations.state import Agent
+from operations.tracker import fingerprint
 
 BUDGET_PASSED = "budget passed"
 """The opening, in any case, of the reply of a code editor that ended its
@@ -121,6 +123,13 @@ def reviewed_state(a: Agent) -> str | None:
         return None
     lines = [ln.strip() for ln in r.text.splitlines() if ln.strip().startswith(WORKTREE)]
     return lines[-1].removeprefix(WORKTREE).strip() or None if lines else None
+
+
+def shows_current(a: Agent, w: Path) -> bool:
+    """Whether `reviewed_state(a)` is not None and equals the `fingerprint`
+    of the worktree `w`."""
+    seen = reviewed_state(a)
+    return seen is not None and seen == fingerprint(w)
 
 
 def splits(a: Agent) -> dict[str, str | None]:

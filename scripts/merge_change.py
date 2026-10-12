@@ -171,9 +171,7 @@ from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
                                  submodules, update)
 
 from operations.merging import PATHS_SEP, split_paths  # noqa: E402
-
-MASTER = "master"
-"""The branch a change merges into."""
+from operations.tracker import BASE  # noqa: E402
 
 PREFIX = "merge_change: "
 """The opening of each line the script prints, on stdout and on stderr."""
@@ -221,7 +219,7 @@ def conflict_paths(output: str) -> tuple[str, ...] | None:
 def left_edits(output: str) -> bool:
     """Whether `output` gives that `master` is fast-forwarded and a
     worktree stays for changes made after its change's commit."""
-    text = STAYS.format(master=MASTER, why=LEFT_AFTER, worktree="{worktree}", branch="{branch}")
+    text = STAYS.format(master=BASE, why=LEFT_AFTER, worktree="{worktree}", branch="{branch}")
     return re.search(form(text, {"left": r".+?", "worktree": r"\S+", "branch": r"\S+"}),
                      output) is not None
 
@@ -450,12 +448,12 @@ def commit(worktree: Path, message: str, main: Path, backup: Path) -> Change:
     if worktree == main.resolve():
         raise Refused(f"{worktree} is the main tree")
     branch = branch_of(worktree)
-    if branch == MASTER:
-        raise Refused(f"{worktree} stands on {MASTER}")
-    base = checkout.git_out(worktree, "merge-base", MASTER, "HEAD").strip()
+    if branch == BASE:
+        raise Refused(f"{worktree} stands on {BASE}")
+    base = checkout.git_out(worktree, "merge-base", BASE, "HEAD").strip()
     touched = set(changed_outside_work(worktree, base))
     if not touched:
-        raise Refused(f"{branch} holds no change against {MASTER}")
+        raise Refused(f"{branch} holds no change against {BASE}")
     refuse_main_touched(main, {worktree: frozenset(touched)})
 
     set_up_submodules(worktree, main)
@@ -477,11 +475,11 @@ def touched_by(changes: Sequence[Change]) -> set[str]:
 
 
 def stack(main: Path, changes: Sequence[Change]) -> Path:
-    """Rebase the branches of `changes`, in order, onto `MASTER` as one
+    """Rebase the branches of `changes`, in order, onto `master` as one
     stack, and run the checks on its top, or refuse; the gate's out-dir. A
     refusal leaves each branch at `committed`."""
-    base = onto = checkout.git_out(main, "rev-parse", MASTER).strip()
-    names = [MASTER, *(c.branch for c in changes[:-1])]
+    base = onto = checkout.git_out(main, "rev-parse", BASE).strip()
+    names = [BASE, *(c.branch for c in changes[:-1])]
     try:
         for c, onto_name in zip(changes, names, strict=True):
             rebase(c, onto, onto_name, restore=False)
@@ -510,16 +508,16 @@ def unstack(change: Change) -> None:
 
 
 def merge_alone(main: Path, change: Change) -> None:
-    """Rebase the change's branch onto `MASTER`, run the checks on it, and
+    """Rebase the change's branch onto `master`, run the checks on it, and
     land it, or refuse."""
-    onto = checkout.git_out(main, "rev-parse", MASTER).strip()
-    rebase(change, onto, MASTER, restore=True)
+    onto = checkout.git_out(main, "rev-parse", BASE).strip()
+    rebase(change, onto, BASE, restore=True)
     try:
         set_up_submodules(change.worktree, main)
         gate_out = check(change.worktree, main, onto, set(change.touched))
     except Refused as exc:
         checkout.git_out(change.worktree, "reset", "-q", "--mixed", onto)
-        raise Refused(f"{exc}\n{change.branch} is moved back to {MASTER}'s commit "
+        raise Refused(f"{exc}\n{change.branch} is moved back to {BASE}'s commit "
                       f"{onto[:12]}, and the change stands uncommitted in "
                       f"{change.worktree}") from exc
     land(main, [change], gate_out)
@@ -583,7 +581,7 @@ def remove(main: Path, change: Change) -> None:
         worktree=worktree, branch=branch), flush=True)
 
     def stays(why: str) -> Failed:
-        return Failed(STAYS.format(master=MASTER, why=why, worktree=worktree, branch=branch))
+        return Failed(STAYS.format(master=BASE, why=why, worktree=worktree, branch=branch))
 
     left = changed_outside_work(worktree, "HEAD")
     left += submodule_changes(worktree)
@@ -612,7 +610,7 @@ def remove(main: Path, change: Change) -> None:
 
 
 def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
-    """Fast-forward `MASTER` to the top of `changes`, write the context in
+    """Fast-forward `master` to the top of `changes`, write the context in
     the main tree, adopt the dependency record the gate wrote into
     `gate_out`, and remove each change's worktree and branch."""
     replaced = refuse_main_touched(main, {c.worktree: c.touched for c in changes})
@@ -620,14 +618,14 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
     for p in sorted(replaced):
         (main / p).unlink()
     top = changes[-1].branch
-    say(f"fast-forwarding {MASTER} to {top}", flush=True)
+    say(f"fast-forwarding {BASE} to {top}", flush=True)
     done = checkout.git(main, "merge", "--ff-only", "-q", top)
     if done.returncode != 0:
         for p, blob in sorted(replaced.items()):
             (main / p).write_bytes(subprocess.run(["git", "cat-file", "blob", blob], cwd=main,
                                                   capture_output=True, check=True).stdout)
             os.chmod(main / p, modes[p])
-        raise Failed(f"fast-forwarding {MASTER} failed; {top} is committed and "
+        raise Failed(f"fast-forwarding {BASE} failed; {top} is committed and "
                      f"rebased in {changes[-1].worktree}:\n{said(done)}")
 
     for argv in (CONTEXT_WRITE,
@@ -640,7 +638,7 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
         if done.returncode != 0:
             raise Failed(mctx("{master} is fast-forwarded, and {shown} failed in {main}; the "
                               "worktrees and branches of {branches} stay:").format(
-                master=MASTER, shown=shown, main=main,
+                master=BASE, shown=shown, main=main,
                 branches=", ".join(c.branch for c in changes)) + "\n" + said(done))
         print(done.stdout, end="", flush=True)
 
@@ -652,7 +650,7 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
         except (Failed, checkout.GitFailed) as exc:
             failed.append(str(exc))
         else:
-            say(f"merged {c.branch} into {MASTER}", flush=True)
+            say(f"merged {c.branch} into {BASE}", flush=True)
     if failed:
         raise Failed("\n".join(failed))
 
@@ -662,7 +660,7 @@ def print_refusal(exc: Refused) -> None:
 
 
 def merge(pairs: Sequence[tuple[Path, str]]) -> bool:
-    """Merge each worktree's change into `MASTER`, committed with its
+    """Merge each worktree's change into `master`, committed with its
     message, under the merge lock (`land_all`). Whether every change
     merged."""
     try:
@@ -675,8 +673,8 @@ def merge(pairs: Sequence[tuple[Path, str]]) -> bool:
         raise Refused(mctx("the worktrees belong to more than one repository: {main}, "
                            "{others}").format(main=main, others=", ".join(others)))
     main_branch = branch_of(main)
-    if main_branch != MASTER:
-        raise Refused(f"the main tree {main} stands on {main_branch}, not {MASTER}")
+    if main_branch != BASE:
+        raise Refused(f"the main tree {main} stands on {main_branch}, not {BASE}")
     every = True
     with tempfile.TemporaryDirectory(prefix="merge-change-") as tmp:
         changes: list[Change] = []
@@ -704,7 +702,7 @@ def merge(pairs: Sequence[tuple[Path, str]]) -> bool:
 
 
 def land_all(main: Path, changes: Sequence[Change]) -> bool:
-    """Merge the committed `changes` into `MASTER`: as one stack, or, where
+    """Merge the committed `changes` into `master`: as one stack, or, where
     the stack is refused, one at a time. Whether every change merged."""
     if len(changes) > 1:
         try:

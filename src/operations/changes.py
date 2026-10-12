@@ -109,7 +109,7 @@ from operations.change_budget import (OVERRUN_FINDING, TAKE_NOTE, TIME_NOTE, TIM
 from operations.doc_review import doc_review, latest_reviewer, review_launch
 from operations.directives import Decision, Directive, decided, held_on, named, NUMBER, numbers
 from operations.reports import (OPEN_LABELS, Label, budget_passed, items_of,
-                                left_for_decision, reviewed_state)
+                                left_for_decision, shows_current)
 from operations.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
 from operations.state import Agent, State, Ticket
 from operations.filing import editor_scratch
@@ -117,7 +117,7 @@ from operations.final_reply import live_holder
 from operations.handled import answered, repeated, sends_to, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids, key
 from operations.tracker import (AGENT, add_editor, blocked_on_user, closed,
-                                final_run, fingerprint, last_index, log, wait_line, worktree,
+                                final_run, last_index, log, wait_line, worktree,
                                 WORKTREE)
 from ticketing.vocabulary import Domain, Kind, Note, Status
 
@@ -598,8 +598,7 @@ def unchanged_since(checkers: list[Agent], w: Path) -> bool:
     message and its reply gives the worktree `w` in the state it is in."""
     if not checkers or checkers[-1].messaged != frozenset():
         return False
-    seen = reviewed_state(checkers[-1])
-    return seen is not None and seen == fingerprint(w)
+    return shows_current(checkers[-1], w)
 
 
 def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],

@@ -63,8 +63,7 @@ def fingerprint(w: Path) -> str:
     `--help` gives it."""
     digest = hashlib.sha256(checkout.git_out(w, "diff", "--merge-base", BASE,
                                              "--binary").encode())
-    untracked = checkout.git_out(w, "ls-files", "--others", "--exclude-standard", "-z")
-    for rel in sorted(filter(None, untracked.split("\0"))):
+    for rel in sorted(checkout.untracked(w)):
         digest.update(rel.encode() + b"\0")
         digest.update((w / rel).read_bytes() + b"\0")
     return digest.hexdigest()
