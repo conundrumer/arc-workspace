@@ -8,7 +8,7 @@
 - Where a user's message that asks for work gives no route directive, infer its route, the `request` a follow-up concerns, and the span.
 - On a route other than `scratch`, write, read back each write and each route you infer, then act: in the same turn on a route the user states, and on an inferred one only once the user replies to it.
     - To write is to run the command of `uv run python scripts/spans.py` that writes the route's `request` or brief. To act is to launch an agent with that brief, make or merge the change, send an operator an `Expedite:` line, or tell an operator that tickets are open.
-        - The goal you give that command is the outcome the user wants from the work, in one or two sentences, from the user's words, with no means you proposed.
+        - The goal you give that command is the point of the work, the outcome the user wants, from the user's words, with no means you proposed and no elaboration.
     - Read back right after the write: give the route, the goal word for word as the command prints it where you ran one, and the work in your own words.
         - On an inferred route, open the readback with `**Inferred route: <route>.**`, and end it with the act the user's reply sets off, as `Once you reply, I <act>.`, or, where it sets off none, with a sentence that says so.
 - `scratch` is work after which nothing under version control has changed, nothing has left the session, and nothing later depends on it. Do it with no readback, no ticket and no brief. Where that work would change a tracked file or send something out of the session, read back a route before that step.

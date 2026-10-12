@@ -73,6 +73,7 @@ HELP = mctx("""
     - `{invocation} brief --route <route> <start words> <end words> <goal>` prints the brief of that span and `<goal>`, with the Grounds lines on its stdin.
     - `{invocation} append [{inferred}] [{goal_flag} <goal>] <number> <start words> <end words>` appends that span to the request `<number>`, with a log line, and prints its path.
         - `{goal_flag}` gives `<goal>` as the request's `{goal}`, in place of the one it holds, or before its `{transcript}` where it holds none.
+    - `<goal>` holds at most {goal_words} words.
     - `<route>` is one of {routes}, and `{inferred}` marks a route the coordinator inferred.
     - `<subject>` and `<title>` are a `request`'s, as `uv run python scripts/file_ticket.py --help` gives them.
     - A message is a message of the user, or the text of one of the coordinator's replies, in the session whose id the shell holds in `CLAUDE_CODE_SESSION_ID`.
@@ -210,6 +211,7 @@ def grounds_lines() -> str:
 
 def file_request(route: Route, inferred: bool, subject: str, title: str, goal: str, start_words: str,
                  end_words: str) -> str:
+    check_goal(goal)
     span = resolve_span(start_words, end_words)
     text = ticket_text(Kind.REQUEST, title, {GOAL: goal, TRANSCRIPT: span.line(), GROUNDS: grounds_lines()})
     tickets = main_tickets()
@@ -269,7 +271,8 @@ def brief(*args: str) -> str:
         text = ticket_path(main_tickets(), ticket_number(rest[0])).read_text()
         goal, spans, grounds = request_goal(text), spans_of(text), section(text, GROUNDS)
     elif len(rest) == 3 and route is not None:
-        goal, spans, grounds = rest[2], [resolve_span(rest[0], rest[1])], grounds_lines()
+        goal = check_goal(rest[2])
+        spans, grounds = [resolve_span(rest[0], rest[1])], grounds_lines()
     else:
         raise no_form()
     if route is not None:
@@ -278,6 +281,8 @@ def brief(*args: str) -> str:
 
 
 def append(inferred: bool, goal: str | None, number: str, start_words: str, end_words: str) -> str:
+    if goal is not None:
+        check_goal(goal)
     span = resolve_span(start_words, end_words)
     tickets = main_tickets()
     ref = ticket_number(number)
@@ -313,6 +318,21 @@ def file_command(*args: str) -> str:
 
 GOAL_FLAG = "--goal"
 
+GOAL_WORDS = 10
+"""The most words a goal given on the command line may hold. It was
+set above the word counts of the goals of the 40 latest requests, each
+rewritten to the point of its work alone, with no elaboration: each of
+them fits but one outlier. Measure it again the same way to change
+it."""
+
+
+def check_goal(goal: str) -> str:
+    count = len(goal.split())
+    if count > GOAL_WORDS:
+        raise Refused(mctx("the goal holds {count} words, over the limit of {bound}: give the point of the work in place of its means").format(
+            count=count, bound=GOAL_WORDS))
+    return goal
+
 
 def append_command(*args: str) -> str:
     inferred, rest = marked(args, None)
@@ -339,7 +359,7 @@ def unknown(word: str) -> str:
 def main(args: list[str]) -> int:
     text = HELP.format(invocation=INVOCATION, inferred=INFERRED, routes=ROUTES,
                        held=ticked(r.value for r in HELD), time_form=TIME_FORM,
-                       goal=heading(GOAL), goal_flag=GOAL_FLAG, transcript=heading(TRANSCRIPT), follow_up=FOLLOW_UP.format(number="<number>"), grounds=heading(GROUNDS))
+                       goal=heading(GOAL), goal_flag=GOAL_FLAG, goal_words=GOAL_WORDS, transcript=heading(TRANSCRIPT), follow_up=FOLLOW_UP.format(number="<number>"), grounds=heading(GROUNDS))
     act = SUBCOMMANDS.get(args[0]) if args else None
     if act is None:
         return run(args, text, 1, unknown, False, args)
