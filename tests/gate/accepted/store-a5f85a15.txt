@@ -2,9 +2,9 @@ heading: one value on every input: DIAG_BR
   stored already: the value reads back the stored rows of `line_dir`
 marked[d]: one value on every input: DIAG_BR
   stored already: the value reads back the stored rows of `line_dir`
-parse.touch.item: one value on every input: DAXIS_DG
+touch.item: one value on every input: DAXIS_DG
   `@ignore: store` stands in place of its `@store` line
-parse.touch.value: one value on every input: DAXIS_DG
+touch.value: one value on every input: DAXIS_DG
   `@ignore: store` stands in place of its `@store` line
 pos[d]: one value on every input: DIAG_BR
   stored already: the value reads back the stored rows of `line_dir`

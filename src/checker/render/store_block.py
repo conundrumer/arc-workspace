@@ -136,7 +136,7 @@ def under_text(names: Sequence[str]) -> str:
 
 
 def _value_name(f: Found) -> str:
-    rel = f.relation.text
+    rel = f.name.spelled
     return f"{rel}[{', '.join(f.columns)}]" if f.sub else rel
 
 
