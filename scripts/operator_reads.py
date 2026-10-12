@@ -212,6 +212,10 @@ def from_parent(aid: str, e: dict[str, Any], parent: str, undecided: list[str]) 
                    undecided)
 
 
+MESSAGING = frozenset({Role.DOC_REVIEWER, Role.ITEM_CHECKER})
+"""The roles whose `Agent.messaged` the command reads."""
+
+
 def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
                   agents: list[Agent], calls: list[Call], messages: list[Message],
                   passes: dict[str, tuple[str, ...] | None],
@@ -288,7 +292,7 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
                   use[0], still or limited is not None or (launch.pending and sign not in ENDED),
                   reports, still_running=still, limited=limited,
                   notifies=launch.since <= max(use[0], own.get(launch.agent or "", 0.0)),
-                  messaged=sent_to(launch.path) if d.role is Role.DOC_REVIEWER and launch.path
+                  messaged=sent_to(launch.path) if d.role in MESSAGING and launch.path
                   else None)
         if launch.pending and not a.pending and launch.agent:
             a = ended_with(a, None if any(r.time > launch.since for r in reports)

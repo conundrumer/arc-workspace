@@ -133,8 +133,8 @@ class Agent:
     file, then ends its `reports`. `notifies` holds where that
     operator launched or last resumed it itself, so the notification of
     its end and its final reply reach that operator. `messaged` holds, for
-    a doc reviewer whose transcript is known, the agent ids its SendMessage
-    calls went to, and is None for any other agent."""
+    a doc reviewer or an item checker whose transcript is known, the agent
+    ids its SendMessage calls went to, and is None for any other agent."""
     agent_id: str | None
     operator: str
     role: Role

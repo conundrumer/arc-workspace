@@ -18,6 +18,11 @@ NO_FINDING = "no finding stands"
 """The opening, in any case, of a doc reviewer's reply where no finding
 stands and none is held back."""
 
+WORKTREE = "Worktree:"
+"""The opening of the line that ends a doc reviewer's or an item
+checker's reply, before the `tracker.fingerprint` of the change's
+worktree it read."""
+
 TICKETS_FILED = "## Tickets filed"
 """The heading of a solver pass's report over the numbers of the tickets
 the pass filed."""
@@ -106,6 +111,16 @@ def budget_passed(a: Agent) -> bool:
 def no_finding(a: Agent) -> bool:
     return opens(a, NO_FINDING)
 
+
+def reviewed_state(a: Agent) -> str | None:
+    """The fingerprint the last line of `a`'s latest reply that opens with
+    `WORKTREE` gives, or None where no line does or that line gives
+    nothing after `WORKTREE`."""
+    r = a.last_report
+    if r is None:
+        return None
+    lines = [ln.strip() for ln in r.text.splitlines() if ln.strip().startswith(WORKTREE)]
+    return lines[-1].removeprefix(WORKTREE).strip() or None if lines else None
 
 
 def splits(a: Agent) -> dict[str, str | None]:

@@ -1,9 +1,13 @@
 """What the procedures read from a ticket's log, and the `file_ticket.py
-log` calls they print, in the form `file_ticket.py log --help` gives."""
+log` calls they print, in the form `file_ticket.py log --help` gives;
+`fingerprint` gives the state of the worktree that log gives a change."""
 
+import hashlib
 import re
 import shlex
 from pathlib import Path
+
+from engine import checkout
 
 from operations.roles import Role
 from operations.state import LogLine, State, Ticket
@@ -13,6 +17,9 @@ AGENT = "operator"
 """The `<agent>` of each log line the operator writes."""
 
 FILE_TICKET = ("uv", "run", "python", "scripts/file_ticket.py")
+
+BASE = "master"
+"""The branch a change's worktree branches from and merges into."""
 
 WORKTREES = ".claude/worktrees"
 """The directory, under the main tree, of the worktrees of changes."""
@@ -49,6 +56,18 @@ def logged_worktree(t: Ticket) -> Path | None:
         if m is not None:
             return Path(m[1])
     return None
+
+
+def fingerprint(w: Path) -> str:
+    """What `scripts/change_worktree.py --fingerprint w` prints, as its
+    `--help` gives it."""
+    digest = hashlib.sha256(checkout.git_out(w, "diff", "--merge-base", BASE,
+                                             "--binary").encode())
+    untracked = checkout.git_out(w, "ls-files", "--others", "--exclude-standard", "-z")
+    for rel in sorted(filter(None, untracked.split("\0"))):
+        digest.update(rel.encode() + b"\0")
+        digest.update((w / rel).read_bytes() + b"\0")
+    return digest.hexdigest()
 
 
 def worktree(t: Ticket, state: State) -> Path | None:

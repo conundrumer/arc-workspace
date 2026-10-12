@@ -65,7 +65,7 @@
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 
 ### An item checker's brief
-- An item checker's brief gives the number of a change's ticket, or, where the change has none, the transcript brief its editors' briefs give, its worktree, where the change is past its cost budget, that it is, the latest report of each editor of the change that has reported since the last item checker launched on the change, with that editor's agent id, where ticket analysts already decided items on the change, their agent ids and latest reports, the agent id of each other editor of the change, the accepted gate outputs the change writes, where it writes any, and the agent id of the agent that launches it, where that is not the coordinator.
+- An item checker's brief gives the number of a change's ticket, or, where the change has none, the transcript brief its editors' briefs give, its worktree, where the change is past its cost budget, that it is, the latest report of each editor of the change that has reported since the last item checker launched on the change, with that editor's agent id, where ticket analysts already decided items on the change, their agent ids and latest reports, the agent id of each other editor of the change, the accepted gate outputs the change writes, where it writes any, where the operator launches it, the command whose output its final reply ends with, and the agent id of the agent that launches it, where that is not the coordinator.
 
 ### An operator's brief
 - An operator's brief gives only lines in these forms, each on a line of its own:
@@ -86,7 +86,7 @@
 
 ### A doc reviewer's brief
 - A doc reviewer's brief gives a change to the agent-facing documents, as the files or a diff, and the number of its ticket, or, where it has none, what is already settled about it.
-- It gives the change's worktree, the agent id of the change's doc editor, and of each of its code editors with the files that editor's brief gives, and the agent id of the agent that launches it, where that is not the coordinator.
+- It gives the change's worktree, the agent id of the change's doc editor, and of each of its code editors with the files that editor's brief gives, where the operator launches it, the command whose output its final reply ends with, and the agent id of the agent that launches it, where that is not the coordinator.
 - A doc reviewer's brief on a commit of `master` that the coordinator merged with no `change` ticket gives that commit's hash in place of a worktree and editors.
 - A doc reviewer's brief on a standing doc review gives the reader with its arguments, the commit of `master` it reviews, and the tag `doc-review/<reader>` that records that review in git, in place of a change, a worktree and editors.
 

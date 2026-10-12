@@ -29,7 +29,10 @@ each editor that has reported since the last item checker was launched on
 the change, and the accepted gate outputs the change writes, go to one
 item checker. That checker checks the items of each such editor's part,
 and an editor it sends a message reports again. So the change merges only
-once an item checker was launched after each editor's last report. The
+once an item checker was launched after each editor's last report, or
+the latest checker sent no editor a message and its `reports.WORKTREE`
+line gives the `tracker.fingerprint` the worktree has now, as then the
+worktree is in the state that checker read. The
 checker gives under `reports.LEFT_FOR_DECISION` what those reports leave
 for a decision.
 Where no item checker is due, that part of the latest checker's reply,
@@ -62,8 +65,9 @@ report, or precedes the last report only of editors that reviewer sent a
 message, since such an editor sends that reviewer its fixes before each
 reply. A reply that precedes the last report of any other editor is read
 for no finding, and that reviewer is asked once to review the change
-again, and the review is held where it has not replied since. A reply in
-any other form holds the review. The command launches no editor for a
+again, and the review is held where it has not replied since, apart from
+the reply `doc_review` passes on the worktree's state. A reply in any
+other form holds the review. The command launches no editor for a
 reviewer's findings: that reviewer sends them to the editors of its
 brief.
 
@@ -105,7 +109,7 @@ from operations.change_budget import (OVERRUN_FINDING, TAKE_NOTE, TIME_NOTE, TIM
 from operations.doc_review import doc_review, latest_reviewer, review_launch
 from operations.directives import Decision, Directive, decided, held_on, named, NUMBER, numbers
 from operations.reports import (OPEN_LABELS, Label, budget_passed, items_of,
-                                left_for_decision)
+                                left_for_decision, reviewed_state)
 from operations.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
 from operations.state import Agent, State, Ticket
 from operations.filing import editor_scratch
@@ -113,7 +117,8 @@ from operations.final_reply import live_holder
 from operations.handled import answered, repeated, sends_to, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids, key
 from operations.tracker import (AGENT, add_editor, blocked_on_user, closed,
-                                final_run, last_index, log, wait_line, worktree, WORKTREE)
+                                final_run, fingerprint, last_index, log, wait_line, worktree,
+                                WORKTREE)
 from ticketing.vocabulary import Domain, Kind, Note, Status
 
 
@@ -588,6 +593,15 @@ def left_decision(a: Agent, number: str) -> str | None:
     return None if hold is None else held_on(hold, LEFT_CHOICES).what
 
 
+def unchanged_since(checkers: list[Agent], w: Path) -> bool:
+    """Whether the latest of a change's item `checkers` sent no editor a
+    message and its reply gives the worktree `w` in the state it is in."""
+    if not checkers or checkers[-1].messaged != frozenset():
+        return False
+    seen = reviewed_state(checkers[-1])
+    return seen is not None and seen == fingerprint(w)
+
+
 def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
              agents: list[Agent]) -> Step | None | Literal[False]:
     """The step on what the editors leave, or False where they leave
@@ -601,7 +615,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
         return editors
     checked = max((a.launched for a in checkers), default=0.0)
     needing = [a for a in latest if (r := a.last_report) is not None and r.time > checked]
-    if needing:
+    if needing and not unchanged_since(checkers, w):
         return check_items(state, t, w, needing, editors)
     questions = [q for q in state.tickets.values() if q.kind is Kind.QUESTION
                  and q.domain is Domain.CHANGE and q.subject == t.number

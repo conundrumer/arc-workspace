@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from controlled_markdown import mctx
-from operations.reports import LEFT_FOR_DECISION
+from operations.reports import LEFT_FOR_DECISION, WORKTREE
 from operations.roles import Role
 from operations.state import Place
 from operations.tracker import FILE_TICKET
@@ -93,6 +93,15 @@ CODE_EDITORS = mctx("Where a move needs the code to change, send that code chang
                     "SendMessage to the code editor of the change: {ids}.")
 
 
+FINGERPRINT = mctx("Before you write each final reply, run `uv run python "
+                   "scripts/change_worktree.py --fingerprint {worktree}`, and end that reply with "
+                   "the line `{opening} <what it printed>`.")
+
+
+def fingerprint_line(worktree: Path) -> str:
+    return FINGERPRINT.format(worktree=worktree, opening=WORKTREE)
+
+
 def doc_review(number: str, worktree: Path, editors: list[tuple[Role, str]],
                operator: str) -> str:
     lines = [mctx("Review the change to the documents of change {number}: the diff that "
@@ -101,6 +110,7 @@ def doc_review(number: str, worktree: Path, editors: list[tuple[Role, str]],
     for role, aid in editors:
         lines.append(mctx("Its {role}: {aid}, whose files are {part}.").format(
             role=role, aid=aid, part=PARTS[role]))
+    lines.append(fingerprint_line(worktree))
     lines.append(LAUNCHER.format(operator=operator))
     return "\n".join(lines)
 
@@ -249,6 +259,7 @@ def item_check(number: str, worktree: Path, reports: list[tuple[str, str]],
             "each difference there that the change's items do not ask for to its editors, "
             "{editors}, as a finding of its checks.").format(
                 gate=", ".join(gate), editors=", ".join(editors)))
+    lines.append(fingerprint_line(worktree))
     lines.append(LAUNCHER.format(operator=operator))
     return "\n".join(lines)
 

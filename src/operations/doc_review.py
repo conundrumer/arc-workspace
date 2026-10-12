@@ -12,9 +12,12 @@ editor of the change is pending, and stays in its run until that
 reviewer has replied; otherwise the command launches the reviewer. A
 reply that precedes the last report of any other editor is read for no
 finding, and that reviewer is asked once to review the change again, and
-the review is held where it has not replied since. A reply in any other
-form holds the review. The command launches no editor for a reviewer's
-findings: that reviewer sends them to the editors of its brief.
+the review is held where it has not replied since, unless that reply
+opens with `no finding stands` and its `reports.WORKTREE` line gives the
+`tracker.fingerprint` the worktree has now, as then the worktree is in
+the state that reply read. A reply in any other form holds the
+review. The command launches no editor for a reviewer's findings: that
+reviewer sends them to the editors of its brief.
 
 A doc editor that `changes` launches on a change's `mctx` fragments after
 the reviewer replied neither launched that reviewer nor got a message from
@@ -28,10 +31,11 @@ from controlled_markdown import mctx
 from operations import briefs, messages
 from operations.directives import Decision, decided
 from operations.handled import sent
-from operations.reports import NO_FINDING, no_finding
+from operations.reports import NO_FINDING, no_finding, reviewed_state
 from operations.roles import Role
 from operations.state import Agent, State, Ticket
 from operations.steps import Launch, Send, Step, Undecided, agent_ids
+from operations.tracker import fingerprint
 
 
 def latest_reviewer(agents: list[Agent]) -> Agent | None:
@@ -73,9 +77,12 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
     """The step on the reply at `since` of the doc reviewer `r`, which
     precedes the last report of the editors `late`: False where it opens
     with `no finding stands` and `r` sent each of them a message or is a
-    launch of theirs, since its reply reaches its launcher, and otherwise
-    the message that asks `r` to review the change again."""
+    launch of theirs, since its reply reaches its launcher, or where it
+    opens so and gives the change's worktree `w` in the state it is in,
+    and otherwise the message that asks `r` to review the change again."""
     if no_finding(r):
+        if (seen := reviewed_state(r)) is not None and seen == fingerprint(w):
+            return False
         if r.messaged is None:
             return Undecided(mctx("the transcript of doc reviewer {agent} of change {number} "
                                   "is unknown, so the command cannot read whom it sent a "

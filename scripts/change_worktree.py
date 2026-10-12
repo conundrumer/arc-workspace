@@ -25,7 +25,7 @@ from transcripts import Refused  # noqa: E402
 from tree_reads import main_tree, worktrees  # noqa: E402
 
 from operations.state import Ticket  # noqa: E402
-from operations.tracker import WORKTREES, logged_worktree  # noqa: E402
+from operations.tracker import BASE, WORKTREES, fingerprint, logged_worktree  # noqa: E402
 from ticketing.vocabulary import Note  # noqa: E402
 
 HELP = mctx("""
@@ -33,12 +33,14 @@ HELP = mctx("""
         ```
         uv run python scripts/change_worktree.py <number> <agent> [--id <agent id>]
         uv run python scripts/change_worktree.py --name <name>
+        uv run python scripts/change_worktree.py --fingerprint <worktree>
         ```
     - The first form makes the worktree of the change whose ticket has the number `<number>`.
         - `<agent>` and `--id` are the agent and the agent id of the log line it writes, as `file_ticket.py log` takes them.
     - The second form makes the worktree of a change that has no ticket, such as solver work, and writes no log line.
         - `<name>` is the name of its worktree and its branch, a branch name with no `/`.
-    - The command prints the path of the worktree, alone on one line.
+    - The third form prints a digest of the diff of `<worktree>` from its merge base with `master` and of each untracked file there that git does not ignore, and makes or changes nothing.
+    - The first two forms print the path of the worktree, alone on one line.
     - In the first form, where the change has a worktree, the command adds no worktree, carries into it each file the Scope line below gives that it does not hold, writes the `worktree <path>` line, and prints its path.
         - The change's worktree is the path that the latest line of its log that gives a path under `{worktrees}/` gives, where no line whose note opens with `{rerun}` is that line or follows it, and where that path stands in `git worktree list`.
         - Otherwise `<name>` is `change-<number>`, and after `k` lines whose note opens with `{rerun}`, `change-<number>-run-<k + 1>`.
@@ -52,7 +54,6 @@ HELP = mctx("""
     - The command refuses, adds nothing and writes no line, where a worktree stands at that path on another branch, or where that path or that branch exists with no worktree of that branch at that path.
     """)
 
-BASE = "master"
 INCLUDE = ".worktreeinclude"
 CARRIED = "carried-untracked.json"
 WORKTREE_NOTE = "worktree"
@@ -174,7 +175,14 @@ def main() -> int:
     parser.add_argument("agent", nargs="?")
     parser.add_argument("--id", dest="agent_id")
     parser.add_argument("--name")
+    parser.add_argument("--fingerprint", metavar="<worktree>")
     args = parser.parse_args()
+    if args.fingerprint is not None:
+        if args.number or args.agent or args.agent_id or args.name is not None:
+            parser.error(mctx("`--fingerprint` takes no ticket number, agent, agent id or "
+                              "`--name`"))
+        print(fingerprint(Path(args.fingerprint)))
+        return 0
     if args.name is not None and (args.number or args.agent or args.agent_id):
         parser.error(mctx("`--name` takes no ticket number, agent or agent id"))
     if args.name is None and not (args.number and args.agent):
