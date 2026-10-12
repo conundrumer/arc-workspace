@@ -2,18 +2,20 @@
 case, the threshold of an editor, and the moves of
 a ticket into and out of `tickets/watching/`. `file_ticket.py
 case --help-all` states the rules. It also gives the spend of a change by
-role, and the budget of a change taken over the changes like it."""
+role, recorded under `tickets/spends/` once its runs have stopped, and the budget of a change taken over the changes like it."""
 
+import json
 import re
 import statistics
 import time
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from agent_launches import runs_under
-from agent_turns import first_time, last_time
+from agent_turns import first_time, has_ended, last_time
 from controlled_markdown import mctx
+from engine.memo import write_whole
 from operations.roles import Role
 from operations.state import Budget, Spend
 from run_reads import agent_type, run_entries
@@ -25,7 +27,7 @@ from ticket_reads import editors_field
 from ticketing.times import TIME_FORM, stamp_time
 from ticketing.vocabulary import Kind, Resolution, Status
 from token_prices import run_cost, span_cost
-from transcripts import Refused, find
+from transcripts import Refused, chain, entries_back, find
 
 CHANGES = 10
 """The count of the most recent fixed changes an editor's threshold is the
@@ -99,12 +101,19 @@ def union_seconds(spans: list[tuple[float, float]]) -> float:
     return total
 
 
-def spend(runs: list[str], undecided: list[str]) -> Spend | None:
-    """The spend of the runs `runs` and of the runs under them, or None
-    where a run has no transcript, no price, no time or no agent type.
-    Each transcript counts once, under the agent type of the nearest run
-    of `runs` at or above it, so a run of `runs` launched under another
-    keeps its own type."""
+SPENDS = "spends"
+"""The directory under `tickets/` that holds, for each change closed
+`fixed` whose runs have all stopped, its spend as `change_spend` read it,
+one JSON file per ticket number. It is no status directory, so no reader
+of tickets takes a record for a ticket."""
+
+
+def owners(runs: list[str]) -> dict[Path, str] | None:
+    """The transcript of each of the runs `runs` and of the runs under them,
+    with the agent type it counts under, or None where a run has no
+    transcript or no agent type. Each transcript counts once, under the
+    agent type of the nearest run of `runs` at or above it, so a run of
+    `runs` launched under another keeps its own type."""
     trees: list[tuple[str, list[Path]]] = []
     for run in runs:
         try:
@@ -120,10 +129,16 @@ def spend(runs: list[str], undecided: list[str]) -> Spend | None:
         for p in tree:
             if p not in owner or len(tree) < owner[p][0]:
                 owner[p] = (len(tree), role)
+    return {p: role for p, (_, role) in owner.items()}
+
+
+def priced(owner: dict[Path, str], undecided: list[str]) -> Spend | None:
+    """The spend of the transcripts `owner` gives, each under its agent
+    type, or None where one has no price or no time."""
     total = 0.0
     spans: list[tuple[float, float]] = []
     by_role: dict[str, float] = {}
-    for p, (_, role) in owner.items():
+    for p, role in owner.items():
         cost = run_cost(run_entries(p), undecided)
         start, end = first_time(p), last_time(p)
         if cost is None or start is None or end is None:
@@ -134,14 +149,47 @@ def spend(runs: list[str], undecided: list[str]) -> Spend | None:
     return Spend(total, union_seconds(spans), by_role)
 
 
+def spend(runs: list[str], undecided: list[str]) -> Spend | None:
+    """The spend of the runs `runs` and of the runs under them, as `owners`
+    and `priced` give it."""
+    owner = owners(runs)
+    return None if owner is None else priced(owner, undecided)
+
+
+def stopped(path: Path) -> bool:
+    """Whether the run at `path` does nothing until a message resumes it:
+    it has ended its turn, or its last entry is an API error entry."""
+    if has_ended(path):
+        return True
+    for p in reversed(chain(path)):
+        for e in entries_back(p):
+            return e.get("isApiErrorMessage") is True
+    return False
+
+
 def change_spend(path: Path, undecided: list[str]) -> Spend | None:
     """The spend of the `change` at `path`, closed `fixed`: that of the
     runs its closing line gives, or None where that line gives no run or
-    `spend` gives none."""
+    `spend` gives none. It is read from the change's record under `SPENDS`
+    where one stands. Otherwise the spend is recorded where it is not None,
+    its reading added no line to `undecided`, and each transcript it read
+    has `stopped`, since the spend of a run that goes on still grows."""
+    record = path.parent.parent / SPENDS / f"{ticket_name(path).number}.json"
+    if record.exists():
+        held = json.loads(record.read_text())
+        return Spend(held["dollars"], held["seconds"], held["by_role"])
     closing = [m for m in log_lines(read_ticket(path)) if m["status"] == Status.CLOSED
                and resolution_of(m["note"]) is Resolution.FIXED]
     runs = (closing[-1]["note"] or "").split()[3:] if closing else []
-    return spend(runs, undecided) if runs else None
+    owner = owners(runs) if runs else None
+    if owner is None:
+        return None
+    lines = len(undecided)
+    s = priced(owner, undecided)
+    if s is not None and len(undecided) == lines and all(stopped(p) for p in owner):
+        record.parent.mkdir(exist_ok=True)
+        write_whole(record, (json.dumps(asdict(s), sort_keys=True) + "\n").encode())
+    return s
 
 
 def closed_at(path: Path) -> float:
