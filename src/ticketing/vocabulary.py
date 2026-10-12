@@ -58,6 +58,14 @@ DEFECT_SECTIONS = ("Impact", "Evidence")
 COORDINATOR = "coordinator"
 """The `<agent>` of the coordinator's tickets and log lines."""
 
+class Wait(StrEnum):
+    """What a ticket under `blocked` waits on, the word the note of the line
+    into `blocked` opens with."""
+    USER = "user"
+    CHANGE = "change"
+    VALIDATION = "validation"
+
+
 class Note(StrEnum):
     """The words the note of a log line opens with, which the procedures
     read it by."""

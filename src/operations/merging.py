@@ -9,9 +9,11 @@ script's own forms and by `master` (`state.Merge`,
 - a call that left edits in the worktree after its commit leaves the
   change unmerged, and once no editor of the change runs, the merge call
   on that worktree is given again;
-- a call that never ran, as where the harness denied it, is written on the
-  ticket in a line whose note opens with `coordinator`, which takes the
-  change out of the operator's hands;
+- a call that never ran, as where the harness denied it, moves the change
+  to `tickets/blocked/` with a line whose note opens with the wait on the
+  user and gives the call, the first line of its result and the worktree;
+  once a line moves the change from `tickets/blocked/` back to
+  `tickets/assigned/` after that call, the merge call is given again;
 - a conflict in the rebase runs the change again with a new first editor:
   the command writes the old worktree and its branch on the ticket in a
   line whose note opens with `rerun`, which no read of the change's worktree
@@ -31,6 +33,7 @@ change, then the change's own ticket."""
 import shlex
 from pathlib import Path
 
+from controlled_markdown import mctx
 from controlled_markdown.nodes import Rule, finding_lines
 from operations import briefs, messages
 from operations.reports import splits
@@ -39,8 +42,8 @@ from operations.state import Agent, Call, Merge, State, Ticket, Tool
 from operations.command_words import simple_commands
 from operations.handled import bash_calls
 from operations.steps import Bash, Launch, Send, Step
-from operations.tracker import COORDINATOR, WORKTREE, log
-from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Note, Resolution, Status
+from operations.tracker import WORKTREE, log
+from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Note, Resolution, Status, Wait
 
 MERGE_SCRIPT = "scripts/merge_change.py"
 FINDING_TAIL = 40
@@ -53,6 +56,10 @@ what it quotes."""
 QUOTE_LINE = finding_lines(BROKEN_QUOTES)
 """A line of the `controlled_markdown` check that reports such a call."""
 
+
+NOT_RUN = mctx("{wait}: the merge call `{command}` did not run: {first}; worktree {worktree}")
+"""The note of the line that moves a change whose merge call did not run
+to `tickets/blocked/`."""
 
 MESSAGE = "-m"
 """The option of `merge_change.py` that gives a change's commit message."""
@@ -110,17 +117,18 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
     calls = [c for c in merge_calls(state, t) if str(w) in str(c.input.get("command", ""))]
     last = calls[-1] if calls else None
     reported = [r.time for a in latest if (r := a.last_report) is not None]
-    if last is None or (reported and max(reported) > last.time):
+    if (last is None or (reported and max(reported) > last.time)
+            or any(prev.status is Status.BLOCKED and ln.status is Status.ASSIGNED
+                   and ln.time > last.time for prev, ln in zip(t.log, t.log[1:]))):
         return Bash(command)
     match last.merge:
         case None:
             return None
         case Merge.NOT_RUN:
             first = (last.result or "").strip().splitlines()
-            return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED,
-                            f"{COORDINATOR}: the merge call `{command}` did not run: "
-                            f"{first[0] if first else 'no result text'}; worktree {w}",
-                            state.me))
+            return Bash(log(t.number, Status.BLOCKED, Status.ASSIGNED, NOT_RUN.format(
+                wait=Wait.USER, command=command, first=first[0] if first else "no result text",
+                worktree=w), state.me))
         case Merge.CONFLICT:
             branch = state.branches[w]
             return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED,

@@ -73,21 +73,29 @@ A next step of a change that is a message an operator already sent,
 whose recipient answered it, leaves the change where it was, and the
 command cannot place it.
 
+A change that waits for a ticket under `tickets/blocked/` whose last
+wait is on the user moves to `tickets/draft/` with a line whose note is
+`STALL_FINDING` on that ticket, which `drafts` reads as findings, once
+after each move of that ticket into `tickets/blocked/` (`stall`). A
+change under `tickets/blocked/` is taken back on a `Merge:` line that
+came after its last move there.
+
 A step of a change that the command cannot place holds that change alone,
 until a `Decision:` line rules it with one of the choices the step gives
 (`directives.decided`)."""
 
+import re
 import shlex
 from pathlib import Path
 from typing import Literal
 
-from controlled_markdown import mctx
+from controlled_markdown import form, mctx
 from operations import brief_reading, briefs, merging, messages
 from operations.change_budget import (OVERRUN_FINDING, TAKE_NOTE, TIME_NOTE, TIME_OPENING,
                                       by_role, file_overrun, left_draft, overrun_ticket,
                                       past_budget, taken)
 from operations.doc_review import doc_review, review_launch
-from operations.directives import Decision, Directive, decided, held_on, named, numbers
+from operations.directives import Decision, Directive, decided, held_on, named, NUMBER, numbers
 from operations.reports import (OPEN_LABELS, Label, budget_passed, items_of,
                                 left_for_decision)
 from operations.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
@@ -95,7 +103,8 @@ from operations.state import Agent, State, Ticket
 from operations.final_reply import live_holder
 from operations.handled import answered, repeated, sends_to, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids, key
-from operations.tracker import AGENT, COORDINATOR, add_editor, closed, log, worktree
+from operations.tracker import (AGENT, add_editor, blocked_on_user, closed,
+                                final_run, log, worktree)
 from ticketing.vocabulary import Domain, Kind, Status
 
 
@@ -118,12 +127,10 @@ def scope(state: State) -> set[str]:
 
 def release(state: State) -> Step | None:
     """The move back to `tickets/open/` of a ticket of `scope` under
-    `tickets/assigned/` whose holder is not live (`live_holder`), where its last
-    line's note does not open with `coordinator`."""
+    `tickets/assigned/` whose holder is not live (`live_holder`)."""
     for n in sorted(scope(state)):
         t = state.tickets.get(n)
-        if (t is None or t.status is not Status.ASSIGNED
-                or (t.log and t.log[-1].note.startswith(COORDINATOR))):
+        if t is None or t.status is not Status.ASSIGNED:
             continue
         if t.holder is None or not live_holder(state, t.holder):
             return Bash(log(n, Status.OPEN, Status.ASSIGNED,
@@ -158,6 +165,38 @@ def waiting(state: State) -> list[tuple[str, list[str]]]:
             and t.status is Status.OPEN and not all(closed(state, d) for d in t.depends_on)]
 
 
+STALL_FINDING = mctx("finding: {number} waits on the user")
+"""The note of the line that moves to `tickets/draft/` a change that waits
+for the ticket `number`, which waits on the user."""
+
+STALLED = re.compile(form(STALL_FINDING, {"number": rf"(?P<number>{NUMBER.pattern})"}))
+
+
+def blocked_since(t: Ticket) -> float:
+    """The time of the last move of `t`, which stands under
+    `tickets/blocked/`, into `tickets/blocked/`."""
+    return t.log[final_run(t)[0]].time if t.log else t.filed
+
+
+def stall(state: State) -> Step | None:
+    """The move to `tickets/draft/` of a change of `waiting` that waits for
+    a ticket that waits on the user (`blocked_on_user`), where no line of
+    its log since that ticket's last move into `tickets/blocked/` gives
+    `STALL_FINDING` on it."""
+    for n, deps in waiting(state):
+        t = state.tickets[n]
+        for d in deps:
+            u = state.tickets.get(d)
+            if u is None or blocked_on_user(u) is None:
+                continue
+            since = blocked_since(u)
+            if not any(ln.time >= since and (m := STALLED.match(ln.note)) is not None
+                       and m["number"] == d for ln in t.log):
+                return Bash(log(n, Status.DRAFT, Status.OPEN, STALL_FINDING.format(number=d),
+                                state.me))
+    return None
+
+
 def next_take(state: State) -> Ticket | None:
     """The first ticket of `takeable`, or None where it gives none."""
     return next(iter(takeable(state)), None)
@@ -173,9 +212,10 @@ def take(state: State) -> Step | None:
         return Bash(log(t.number, Status.ASSIGNED, Status.OPEN,
                         TAKE_NOTE.format(dollars=f"{b.dollars:.2f}", seconds=f"{b.seconds:.0f}"),
                         state.me))
-    for n, _ in numbers(state, Directive.MERGE):
+    for n, time in numbers(state, Directive.MERGE):
         t = state.tickets.get(n)
-        if t is not None and t.status is Status.BLOCKED and t.kind is Kind.CHANGE:
+        if (t is not None and t.status is Status.BLOCKED and t.kind is Kind.CHANGE
+                and time > blocked_since(t)):
             return Bash(log(n, Status.ASSIGNED, Status.BLOCKED,
                             "taking: the coordinator's Merge line rules the merge", state.me))
     return None
@@ -184,8 +224,7 @@ def take(state: State) -> Step | None:
 def held(state: State) -> list[Ticket]:
     return sorted((t for t in state.tickets.values()
                    if t.kind is Kind.CHANGE and t.status is Status.ASSIGNED
-                   and t.holder == state.me
-                   and not (t.log and t.log[-1].note.startswith(COORDINATOR))),
+                   and t.holder == state.me),
                   key=lambda t: t.order)
 
 

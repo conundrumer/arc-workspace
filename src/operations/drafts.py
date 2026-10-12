@@ -18,7 +18,9 @@ a line of its log runs.
 A draft waits for a ticket analyst where its log holds findings after its
 last `filed` or `revised` line, and no ticket reviewer or ticket analyst
 runs on it; a line of the operator's that moves a change past its cost
-budget to `tickets/draft/` (`change_budget.OVERRUN_FINDING`) counts as findings,
+budget to `tickets/draft/` (`change_budget.OVERRUN_FINDING`), or that moves
+there a change that waits on a ticket that waits on the user
+(`changes.STALL_FINDING`), counts as findings,
 and the analyst's brief gives that line and what the item checker it names leaves
 for a decision; one ticket analyst takes each such draft with the others a
 chain of `depends-on` links to it. Where the log holds only suggestions
@@ -39,9 +41,12 @@ returned with no revision written, the review of that draft holds until a
 `Decision:` line rules it with one of the choices the command gives it
 (`directives.decided`)."""
 
+from collections.abc import Callable
+
 from controlled_markdown import mctx
 from operations import briefs, messages
 from operations.change_budget import OVERRUN_FINDING
+from operations.changes import STALLED
 from operations.directives import Decision, Directive, decided, named, numbers
 from operations.roles import Purpose, Role, analyst_subject, joined, subjects
 from operations.reports import left_for_decision
@@ -64,7 +69,7 @@ def drafts(state: State) -> list[Ticket]:
     return sorted((t for t in state.tickets.values()
                    if t.status is Status.DRAFT and t.kind is Kind.CHANGE
                    and (state.mine(t) or t.number in names or t.number in analysed
-                        or ((ln := overrun_line(t, base(t))) is not None
+                        or ((ln := operator_finding(t, base(t))) is not None
                             and ln.agent_id in state.operators))),
                   key=lambda t: t.order)
 
@@ -110,11 +115,29 @@ def review_lines_after(t: Ticket, since: float, opening: str) -> list[str]:
             if ln.time >= since and by_reviewer(ln, opening)]
 
 
+def operator_line(t: Ticket, since: float, kept: Callable[[str], bool]) -> LogLine | None:
+    """The last line of the operator's in `t`'s log after `since` whose
+    note `kept` keeps."""
+    return next((ln for ln in reversed(t.log)
+                 if ln.time >= since and ln.agent == AGENT and kept(ln.note)), None)
+
+
 def overrun_line(t: Ticket, since: float) -> LogLine | None:
     """The last line of the operator's in `t`'s log after `since` that
     moves the change past its cost budget to `tickets/draft/`."""
-    return next((ln for ln in reversed(t.log) if ln.time >= since and ln.agent == AGENT
-                 and ln.note.startswith(OVERRUN_FINDING)), None)
+    return operator_line(t, since, overran)
+
+
+def overran(note: str) -> bool:
+    return note.startswith(OVERRUN_FINDING)
+
+
+def operator_finding(t: Ticket, since: float) -> LogLine | None:
+    """The last line of the operator's in `t`'s log after `since` that
+    counts as findings: `overrun_line`, or one that moves the change to
+    `tickets/draft/` with `changes.STALL_FINDING`."""
+    return operator_line(t, since, lambda note: overran(note)
+                         or STALLED.match(note) is not None)
 
 
 def overrun(state: State, t: Ticket) -> tuple[str, str, str | None] | None:
@@ -196,7 +219,7 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
         return None
     since = base(t)
     found = review_lines_after(t, since, Note.FINDING)
-    overran = overrun_line(t, since) is not None
+    overran = operator_finding(t, since) is not None
     suggested = review_lines_after(t, since, Note.SUGGESTION)
     last_i = last_index(t, FILED_OR_REVISED)
     if found or suggested or overran:

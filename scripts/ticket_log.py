@@ -5,7 +5,6 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
-from enum import StrEnum
 from pathlib import Path
 
 from controlled_markdown import mctx
@@ -15,7 +14,7 @@ from ticket_numbers import TICKET_NUMBER, TicketNumber, matched_number
 from ticket_vocabulary import ticked
 from operations.roles import AGENT_ID as AGENT_ID_FORM
 from ticketing.times import utc_stamp
-from ticketing.vocabulary import Kind, Note, Resolution, Status
+from ticketing.vocabulary import Kind, Note, Resolution, Status, Wait
 from transcripts import Refused
 
 AGENT_ID = re.compile(AGENT_ID_FORM)
@@ -42,14 +41,6 @@ resolution."""
 
 class Moved(Refused):
     """A refusal of a call whose ticket another call moved first."""
-
-
-class Wait(StrEnum):
-    """What a ticket under `blocked` waits on, the word the note of the line
-    into `blocked` opens with."""
-    USER = "user"
-    CHANGE = "change"
-    VALIDATION = "validation"
 
 
 VALIDATING = f"{Wait.VALIDATION} {{note}}"
