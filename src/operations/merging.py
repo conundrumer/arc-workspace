@@ -15,9 +15,10 @@ script's own forms and by `master` (`state.Merge`,
   once a line moves the change from `tickets/blocked/` back to
   `tickets/assigned/` after that call, the merge call is given again;
 - a conflict in the rebase runs the change again with a new first editor:
-  the command writes the old worktree and its branch on the ticket in a
-  line whose note opens with `rerun`, which no read of the change's worktree
-  takes, and the final reply gives that line;
+  the command writes the paths the rebase conflicts in, the old worktree
+  and its branch on the ticket in a line whose note opens with `rerun`,
+  which no read of the change's worktree takes, and the final reply gives
+  that line;
 - a refusal whose output reports a `quotes` call a change to the documents
   broke goes to a new code editor in the change's worktree, with those
   calls as its items and their files as the files it may edit;
@@ -30,10 +31,11 @@ on a module a code editor of the change reports it split, or logs the part
 the report gives as left unsplit, then each `question` ticket filed on the
 change, then the change's own ticket."""
 
+import re
 import shlex
 from pathlib import Path
 
-from controlled_markdown import mctx
+from controlled_markdown import form, mctx
 from controlled_markdown.nodes import Rule, finding_lines
 from operations import briefs, messages
 from operations.reports import splits
@@ -60,6 +62,29 @@ QUOTE_LINE = finding_lines(BROKEN_QUOTES)
 NOT_RUN = mctx("{wait}: the merge call `{command}` did not run: {first}; worktree {worktree}")
 """The note of the line that moves a change whose merge call did not run
 to `tickets/blocked/`."""
+
+RERUN_CONFLICT = mctx("{rerun}: the rebase conflicts in {paths}; the old worktree is {worktree} "
+                      "on branch {branch}")
+"""The note of the line that runs a change again after a conflict in its
+rebase. A note of that line written before the note gave the paths opens
+with `RERUN_OPENING` and gives none."""
+
+RERUN_OPENING = mctx("{rerun}: the rebase conflicts").format(rerun=Note.RERUN)
+
+PATHS_SEP = ", "
+"""What stands between two paths of `RERUN_CONFLICT`."""
+
+
+def rerun_paths(note: str) -> tuple[str, ...] | None:
+    """The paths a note that opens with `RERUN_OPENING` gives the rebase
+    conflicts in, empty where it gives none, or None for any other note."""
+    if not note.startswith(RERUN_OPENING):
+        return None
+    m = re.match(form(RERUN_CONFLICT.format(rerun=Note.RERUN, paths="{paths}",
+                                            worktree="{worktree}", branch="{branch}"),
+                      {"paths": r"(?P<paths>.*?)", "worktree": r".*", "branch": r".*"}), note)
+    return () if m is None else tuple(p for p in m["paths"].split(PATHS_SEP) if p)
+
 
 MESSAGE = "-m"
 """The option of `merge_change.py` that gives a change's commit message."""
@@ -131,9 +156,9 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
                 worktree=w), state.me))
         case Merge.CONFLICT:
             branch = state.branches[w]
-            return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED,
-                            f"{Note.RERUN}: the rebase conflicts; the old worktree is {w} on "
-                            f"branch {branch}", state.me))
+            return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED, RERUN_CONFLICT.format(
+                rerun=Note.RERUN, paths=PATHS_SEP.join(last.conflicts), worktree=w,
+                branch=branch), state.me))
         case Merge.REFUSED:
             return refused(state, t, w, last, latest)
         case Merge.LEFT_EDITS:

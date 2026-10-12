@@ -154,7 +154,7 @@ class Merge(Enum):
     leaves the change unmerged; merged, where `master` otherwise holds a
     commit made at or after the call with the message it gives, whatever
     its exit status; and otherwise, by the forms of its output that
-    script gives (`merge_change.ran`, `merge_change.conflicted`), never
+    script gives (`merge_change.ran`, `merge_change.conflict_paths`), never
     ran, as where the harness denied the call, refused for a conflict in
     its rebase, or refused otherwise."""
     LEFT_EDITS = "left edits"
@@ -171,7 +171,9 @@ class Call:
     the command wrote for a call it printed in place of the line that gives
     that file (`filing.FILED_LINE`), with whether the harness gave the
     result as an error, and for a call of `scripts/merge_change.py` that
-    has its result, what it did. The result of a Bash call the harness ran
+    has its result, what it did, and for one refused for a conflict in its
+    rebase, the paths it conflicts in, which are empty for every other
+    call. The result of a Bash call the harness ran
     or moved to the background is the output its command wrote, once a
     notification of its end reached the operator, and it is an error
     where that notification gives a status other than `completed`."""
@@ -182,6 +184,7 @@ class Call:
     result: str | None
     error: bool
     merge: Merge | None = None
+    conflicts: tuple[str, ...] = ()
 
     @property
     def message(self) -> str:

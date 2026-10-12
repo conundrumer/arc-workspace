@@ -105,8 +105,10 @@ The script refuses a change, and says why, where:
   that submodule's repository lacks. The removal of the worktree deletes
   the worktree's own copies of the submodules' repositories, so the commit
   would then exist nowhere. The refusal puts the index back as it was.
-- the rebase onto `master` conflicts, in which case it aborts the rebase
-  and leaves the worktree as it was before the commit;
+- the rebase onto `master` conflicts, or fails where git leaves no path
+  unmerged, in which case it aborts the rebase and leaves the worktree as
+  it was before the commit, and names the paths it conflicts in, where git
+  leaves any;
 - another merge holds the merge lock, and the script runs under a hold of
   the heavy commands' lock it inherited, under which it does not wait
   (`engine.rwlock.MergeHeld`), in which case every change is refused, and
@@ -170,9 +172,14 @@ REFUSED = PREFIX + "refused: "
 def say(text: str, file: TextIO | None = None, flush: bool = False) -> None:
     print(PREFIX + text, file=file, flush=flush)
 
-CONFLICT = mctx("rebasing {branch} onto {onto} conflicts; the rebase is aborted and the "
-                "worktree is as it was:")
+CONFLICT = mctx("rebasing {branch} onto {onto} conflicts in {paths}; the rebase is aborted "
+                "and the worktree is as it was:")
 """The refusal of a change whose rebase onto `master` conflicts."""
+
+UNMERGED_NONE = mctx("the rebase of {branch} onto {onto} fails with no unmerged path; the "
+                     "rebase is aborted and the worktree is as it was:")
+"""The refusal of a change whose rebase onto `master` fails where git
+leaves no path unmerged, which is no conflict."""
 
 
 def ran(output: str) -> bool:
@@ -190,10 +197,16 @@ LEFT_AFTER = mctx("the worktree holds changes made after the commit, in {left}")
 change's commit."""
 
 
-def conflicted(output: str) -> bool:
-    """Whether `output` refuses a change for a conflict in its rebase."""
-    return re.search(form(REFUSED + CONFLICT, {"branch": r"\S+", "onto": r"\S+"}),
-                     output) is not None
+PATHS_SEP = ", "
+"""What stands between two paths of `CONFLICT`."""
+
+
+def conflict_paths(output: str) -> tuple[str, ...] | None:
+    """The paths in which `output` gives that a change's rebase conflicts,
+    or None where it refuses no change for a conflict."""
+    m = re.search(form(REFUSED + CONFLICT, {"branch": r"\S+", "onto": r"\S+",
+                                            "paths": r"(?P<paths>.*?)"}), output)
+    return None if m is None else tuple(p for p in m["paths"].split(PATHS_SEP) if p)
 
 
 def left_edits(output: str) -> bool:
@@ -382,19 +395,23 @@ def rebase(change: Change, onto: str, onto_name: str, restore: bool) -> None:
     """Rebase the change's branch onto the commit `onto`, which `onto_name`
     names. On a conflict, abort the rebase, which leaves the branch at
     `committed`; with `restore`, move it back to `before` and put back the
-    index at `backup`; and refuse."""
+    index at `backup`; and refuse, with the paths git leaves unmerged, or,
+    where it leaves none, as a failure that is no conflict."""
     say(mctx("rebasing {branch} onto {onto}").format(
         branch=change.branch, onto=onto_name), flush=True)
     with timed(mctx("the rebase of {branch}").format(branch=change.branch)):
         done = checkout.git(change.worktree, "rebase", onto)
     if done.returncode == 0:
         return
+    unmerged = checkout.git_out(change.worktree, "diff", "--name-only",
+                                "--diff-filter=U").splitlines()
     checkout.git_out(change.worktree, "rebase", "--abort")
     if restore and change.backup is not None:
         checkout.git_out(change.worktree, "reset", "-q", "--soft", change.before)
         shutil.copy2(change.backup, index_file(change.worktree))
-    raise Refused(CONFLICT.format(
-        branch=change.branch, onto=onto_name) + "\n" + said(done))
+    refusal = (CONFLICT.format(branch=change.branch, onto=onto_name, paths=PATHS_SEP.join(unmerged))
+               if unmerged else UNMERGED_NONE.format(branch=change.branch, onto=onto_name))
+    raise Refused(refusal + "\n" + said(done))
 
 
 def commit(worktree: Path, message: str, main: Path, backup: Path) -> Change:

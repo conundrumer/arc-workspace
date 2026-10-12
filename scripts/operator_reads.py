@@ -17,7 +17,7 @@ from agent_turns import first_time, has_ended, turns
 from context_bound_hook import OPERATOR
 from controlled_markdown import mctx
 from filed_texts import report_file, report_text, unfiled
-from merge_change import conflicted, left_edits, ran
+from merge_change import conflict_paths, left_edits, ran
 from open_agents import work_open
 from pending_wait_hook import bound_denied
 from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks, is_prompt,
@@ -77,7 +77,7 @@ def merge_outcome(aid: str, command: str, time: float, result: str | None, error
         return Merge.MERGED
     if not ran(result):
         return Merge.NOT_RUN
-    return Merge.CONFLICT if conflicted(result) else Merge.REFUSED
+    return Merge.REFUSED if conflict_paths(result) is None else Merge.CONFLICT
 
 
 def pass_tickets(report: str, main: Path) -> tuple[str, ...] | None:
@@ -251,9 +251,10 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
             text, error = background_output(aid, call, *moved[call], tasks, undecided)
         inp, text = unfiled_call(aid, tool, inp, text, undecided)
         uses[call] = (t, inp, tool)
-        calls.append(Call(aid, t, tool, inp, text, error, merge_outcome(
-            aid, str(inp.get("command", "")) if tool == Tool.BASH else "", t, text, error,
-            subjects, denied, undecided)))
+        merge = merge_outcome(aid, str(inp.get("command", "")) if tool == Tool.BASH else "",
+                              t, text, error, subjects, denied, undecided)
+        conflicts = conflict_paths(text or "") if merge is Merge.CONFLICT else None
+        calls.append(Call(aid, t, tool, inp, text, error, merge, conflicts or ()))
     if not any(tool == Tool.AGENT and described(str(inp.get("description", "")))
                for _, inp, tool in uses.values()):
         return
