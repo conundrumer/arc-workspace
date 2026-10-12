@@ -1,0 +1,386 @@
+// b2bc3ffd
+// @draft
+// @keywords: objects count move
+// @scene floor: a full line of floor_color lies along the floor_side edge of
+//  the grid
+// @scene background: every cell that is neither floor nor object is
+//  background
+// @scene objects: the objects are 4-connected single-color components of the
+//  cells that are neither background nor floor_color, and each object has a
+//  different color
+// @scene grounded: each object touches the line next to the floor
+// @scene fits: each object, moved away from the floor by its cell count,
+//  stays inside the grid
+// @rule jump: each object moves away from the floor by a distance equal to
+//  its cell count, and keeps its shape and color; the cells moved past the
+//  far edge are lost; undefined where two moved objects of different colors
+//  land on one cell, or a moved object lands on a floor cell
+// @rule clear: the cells an object left, and that no moved object covers,
+//  become background
+// @rule keep-floor: the floor stays as it is
+
+// where floor_side and floor_color come from
+.type FloorSource =
+    // @claim floor
+    FloorStored {}
+    // @scene floor: the floor is the one edge line that is all one color
+    //  other than background; floor_side and floor_color are read from it;
+    //  undefined where no edge line, or more than one, is like that
+    // @witness rotated-floor: variant $FloorDerived
+    //     @relaxed floor
+  | FloorDerived {}
+
+// which cells are floor, which stay and are not ink
+.type FloorExtent =
+    // @claim objects
+    FloorColor {}
+    // @scene objects: the objects are 4-connected single-color components of
+    //  the cells that are neither background nor on the floor line; the
+    //  floor is the floor line alone
+    // @witness floor-colored-object: borderline concept
+  | FloorLineOnly {}
+    // @scene objects: the objects are 4-connected single-color components of
+    //  the cells that are not background, the floor line included
+    // @rule keep-floor: no cell is floor
+    // @witness floor-colored-object: borderline concept
+  | FloorMoves {}
+
+// which ink cells join one component
+.type ComponentColor =
+    // @claim objects
+    OneColor {}
+    // @scene objects: the objects are 4-connected components of the ink
+    //  cells, of any colors, and an object jumps by its whole cell count
+    // @witness touching-colors: variant concept
+  | MultiColor {}
+
+// which cells count as touching
+.type Adjacency =
+    // @claim objects
+    Adj4 {}
+    // @scene objects: the components are 8-connected
+    // @witness diagonal-contact: borderline $Adj8
+    //     @relaxed objects
+  | Adj8 {}
+
+// what an object is
+.type Object =
+    // @claim objects
+    Component {color: ComponentColor, adj: Adjacency}
+    // @scene objects: all ink cells of one color form one object, wherever
+    //  they lie
+    // @witness same-color-pieces: variant concept
+    //     @relaxed objects
+  | ColorClass {}
+
+// how an object that does not touch the line next to the floor moves
+.type Floating =
+    // @claim jump
+    FromPlace {}
+    // @rule jump: an object that does not touch the line next to the floor
+    //  lands with its cell nearest the floor its cell count past that line
+    // @witness floating-object: borderline concept
+    //     @relaxed grounded
+  | FromFloor {}
+    // @rule jump: an object that does not touch the line next to the floor
+    //  stays
+    // @witness floating-object: borderline concept
+  | GroundedOnly {}
+
+// what happens to cells that a jump takes past the far edge
+.type Overflow =
+    // @claim jump
+    Lost {}
+    // @rule jump: an object that would leave the grid moves only until it
+    //  reaches the far edge
+    // @witness overflow: borderline any
+    //     @relaxed fits
+  | Clamp {}
+    // @rule jump: a cell moved past the far edge comes back in at the floor
+    //  edge of its line and goes on from there
+    // @witness wrap: borderline any
+    //     @relaxed fits
+  | Wrap {}
+
+// which color a cell takes when two moved objects land on it
+.type Collision =
+    // @claim jump
+    Clash {}
+    // @rule larger-on-top: where two moved objects land on one cell, the
+    //  object with more cells paints over the other
+    // @witness collision: borderline any
+  | LargerOnTop {}
+    // @rule smaller-on-top: where two moved objects land on one cell, the
+    //  object with fewer cells paints over the other
+    // @witness collision: borderline any
+  | SmallerOnTop {}
+
+.type Choice = [s: FloorSource, e: FloorExtent, o: Object, f: Floating, ov: Overflow, co: Collision]
+
+// A floor reading, the ink of one color under it, and an object under a
+// floor reading and an object reading.
+.type FloorKey = [s: FloorSource, e: FloorExtent]
+.type InkKey = [s: FloorSource, e: FloorExtent, c: Color]
+.type Obj = [s: FloorSource, e: FloorExtent, o: Object, id: Ident]
+// A cell under a case without its collision reading.
+.type Spot = [s: FloorSource, e: FloorExtent, o: Object, f: Floating, ov: Overflow, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed fits
+    // @ignore: derive $Clash — undefined where objects collide, and elsewhere
+    //  it gives the output of the $LargerOnTop case
+    .decl background(c: Color) background(7).
+
+    // --- $FloorStored ---
+    .decl floor_side(d: Dir) floor_side(DIR_B).
+
+    // --- $FloorStored & $FloorColor ---
+    .decl floor_color(c: Color) floor_color(8).
+}
+
+.init params = Params
+
+.decl floor_source_choice(s: FloorSource)
+floor_source_choice($FloorStored()). floor_source_choice($FloorDerived()).
+
+.decl floor_extent_choice(e: FloorExtent)
+floor_extent_choice($FloorColor()). floor_extent_choice($FloorLineOnly()). floor_extent_choice($FloorMoves()).
+
+.decl component_color_choice(c: ComponentColor)
+component_color_choice($OneColor()). component_color_choice($MultiColor()).
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($Adj4()). adjacency_choice($Adj8()).
+
+.decl object_choice(o: Object)
+object_choice($Component(C, A)) :- component_color_choice(C), adjacency_choice(A).
+object_choice($ColorClass()).
+
+.decl floating_choice(f: Floating)
+floating_choice($FromPlace()). floating_choice($FromFloor()). floating_choice($GroundedOnly()).
+
+.decl overflow_choice(ov: Overflow)
+overflow_choice($Lost()). overflow_choice($Clamp()). overflow_choice($Wrap()).
+
+.decl collision_choice(co: Collision)
+collision_choice($Clash()). collision_choice($LargerOnTop()). collision_choice($SmallerOnTop()).
+
+// A reading undefined where objects collide gives, wherever it is defined,
+// the grid the same reading gives with either collision rule; of those
+// readings only the concept case is a case.
+.decl impl_choice(ch: Choice)
+impl_choice([$FloorStored(), $FloorColor(), $Component($OneColor(), $Adj4()), $FromPlace(), $Lost(), $Clash()]).
+impl_choice([S, E, O, F, Ov, Co]) :-
+    floor_source_choice(S), floor_extent_choice(E), E != $FloorMoves(), object_choice(O),
+    floating_choice(F), overflow_choice(Ov), collision_choice(Co), Co != $Clash().
+// Under $FloorMoves the floor line is a one-color object that does not touch
+// the line next to the floor: it fits where it stays, or where it wraps round
+// to its own place.
+impl_choice([S, $FloorMoves(), O, $GroundedOnly(), Ov, Co]) :-
+    floor_source_choice(S), object_choice(O), O != $Component($MultiColor(), $Adj4()),
+    O != $Component($MultiColor(), $Adj8()), overflow_choice(Ov), collision_choice(Co),
+    Co != $Clash().
+impl_choice([S, $FloorMoves(), O, $FromPlace(), $Wrap(), Co]) :-
+    floor_source_choice(S), object_choice(O), O != $Component($MultiColor(), $Adj4()),
+    O != $Component($MultiColor(), $Adj8()), collision_choice(Co), Co != $Clash().
+
+// The edge the floor lies along, and the floor's color.
+.decl floor_side(s: FloorSource, d: Dir)
+.decl floor_color(s: FloorSource, c: Color)
+
+// --- $FloorStored ---
+floor_side($FloorStored(), D) :- params.floor_side(D).
+
+// --- $FloorStored & $FloorColor ---
+floor_color($FloorStored(), Col) :- params.floor_color(Col).
+
+// --- $FloorDerived ---
+// An edge line that holds two colors.
+.decl mixed_edge(d: Dir)
+mixed_edge(D) :- dir_elem(D), in(P, Col), dist(P, D, 0), in(Q, Col2), dist(Q, D, 0), Col != Col2.
+
+// An edge line all of one color other than background.
+.decl uniform_edge(d: Dir, col: Color)
+uniform_edge(D, Col) :-
+    dir_elem(D), in(P, Col), dist(P, D, 0), !mixed_edge(D), !params.background(Col).
+
+// Another edge line is uniform too.
+.decl rival_edge(d: Dir)
+rival_edge(D) :- uniform_edge(D, _), uniform_edge(D2, _), D != D2.
+
+floor_side($FloorDerived(), D) :- uniform_edge(D, _), !rival_edge(D).
+
+// --- $FloorDerived & $FloorColor ---
+floor_color($FloorDerived(), Col) :- floor_side($FloorDerived(), D), uniform_edge(D, Col).
+
+// --- shared ---
+// The edge the objects move toward.
+.decl heading(s: FloorSource, d: Dir)
+heading(S, H) :- floor_side(S, D), opposite(D, H).
+
+// The cells that stay as floor.
+// @store: variant $FloorDerived
+//     @relaxed floor
+// @ignore: store $Clash — undefined where objects collide, and elsewhere it
+//  gives the output of the $LargerOnTop case
+// @ignore: store $FloorLineOnly — the stored cells fix the floor, so these
+//  cases are equivalent to those that take $FloorColor
+// @ignore: store $FloorMoves — the stored cells fix the floor, so these cases
+//  are equivalent to those that take $FloorColor
+.decl floor_cell(k: FloorKey, p: Position)
+
+// --- $FloorColor ---
+floor_cell([S, $FloorColor()], P) :- floor_color(S, Col), in(P, Col).
+
+// --- $FloorLineOnly ---
+floor_cell([S, $FloorLineOnly()], P) :- floor_side(S, D), in(P, _), dist(P, D, 0).
+
+// --- shared ---
+// The cells objects are made of.
+.decl ink(k: FloorKey, p: Position, col: Color)
+ink([S, E], P, Col) :-
+    floor_side(S, _), floor_extent_choice(E), in(P, Col),
+    !params.background(Col), !floor_cell([S, E], P).
+
+// An object's cells.
+.decl obj_cell(o: Obj, p: Position, col: Color)
+
+// --- $OneColor & $Adj4 ---
+// @claim objects
+.init one4 = Components<InkKey>
+one4.node([S, E, Col], P) :- ink([S, E], P, Col).
+obj_cell([S, E, $Component($OneColor(), $Adj4()), Id], P, Col) :- one4.label([S, E, Col], P, Id).
+
+// --- $OneColor & $Adj8 ---
+// @claim objects
+.init one8 = Components8<InkKey>
+one8.node([S, E, Col], P) :- ink([S, E], P, Col).
+obj_cell([S, E, $Component($OneColor(), $Adj8()), Id], P, Col) :- one8.label([S, E, Col], P, Id).
+
+// --- $MultiColor & $Adj4 ---
+// @claim objects
+.init any4 = Components<FloorKey>
+any4.node(K, P) :- ink(K, P, _).
+obj_cell([S, E, $Component($MultiColor(), $Adj4()), Id], P, Col) :-
+    any4.label([S, E], P, Id), ink([S, E], P, Col).
+
+// --- $MultiColor & $Adj8 ---
+// @claim objects
+.init any8 = Components8<FloorKey>
+any8.node(K, P) :- ink(K, P, _).
+obj_cell([S, E, $Component($MultiColor(), $Adj8()), Id], P, Col) :-
+    any8.label([S, E], P, Id), ink([S, E], P, Col).
+
+// --- $ColorClass ---
+// @claim objects
+.init color_id = IdentOf<Color>
+color_id.value(Col) :- ink(_, _, Col).
+obj_cell([S, E, $ColorClass(), Id], P, Col) :- ink([S, E], P, Col), color_id.id(Col, Id).
+
+// --- shared ---
+// @claim jump
+.init size = Tally<Obj, Position>
+size.item(O, P) :- obj_cell(O, P, _).
+
+// An object with a cell on the line next to the floor.
+.decl grounded(o: Obj)
+grounded([S, E, Ob, Id]) :-
+    obj_cell([S, E, Ob, Id], P, _), floor_side(S, D), neighbor(P, D, Q), dist(Q, D, 0).
+
+// Where an object starts its jump, as a move from where it is, and how many
+// cells it jumps from there.
+.decl lift(o: Obj, f: Floating, v: Offset, n: number)
+lift(O, F, ZERO, N) :- floating_choice(F), grounded(O), size.tally(O, N).
+
+// A cell an object lands on, with its color.
+.decl landing(k: Spot, id: Ident, col: Color)
+
+// --- $FromFloor, $Clamp ---
+// @claim jump
+.init box = Bbox<Obj>
+box.cell(O, P) :- obj_cell(O, P, _).
+
+// --- $FromPlace ---
+lift(O, $FromPlace(), ZERO, N) :- size.tally(O, N), !grounded(O).
+
+// --- $FromFloor ---
+lift([S, E, Ob, Id], $FromFloor(), V, N) :-
+    size.tally([S, E, Ob, Id], N), !grounded([S, E, Ob, Id]),
+    box.box([S, E, Ob, Id], B), floor_side(S, D), dist(B, D, M),
+    obj_cell([S, E, Ob, Id], P, _), dist(P, D, M),                  // a cell nearest the floor
+    in(Q0, _), dist(Q0, D, 0), axis_of(D, A), same_line(A, P, Q0),  // its line's floor cell
+    heading(S, H), neighbor(Q0, H, Q), relative(P, Q, V).           // and the cell next to it
+
+// --- $GroundedOnly ---
+lift(O, $GroundedOnly(), ZERO, 0) :- size.tally(O, _), !grounded(O).
+
+// --- $Lost, $Clamp ---
+// The move of a whole jump.
+.decl shift(o: Obj, f: Floating, v: Offset)
+shift([S, E, Ob, Id], F, V) :-
+    lift([S, E, Ob, Id], F, V0, N), heading(S, H), jump(V0, H, N, V).
+
+// The move an object makes.
+.decl drift(o: Obj, f: Floating, ov: Overflow, v: Offset)
+
+landing([S, E, Ob, F, Ov, Q], Id, Col) :-
+    drift([S, E, Ob, Id], F, Ov, V), obj_cell([S, E, Ob, Id], P, Col), compose(P, V, Q), in(Q, _).
+
+// --- $Lost ---
+drift(O, F, $Lost(), V) :- shift(O, F, V).
+
+// --- $Clamp ---
+// The jump takes some cell of the object past the far edge.
+.decl escapes(o: Obj, f: Floating)
+escapes([S, E, Ob, Id], F) :-
+    shift([S, E, Ob, Id], F, V), box.box([S, E, Ob, Id], B), compose(B, V, B2),
+    heading(S, H), dist(B2, H, K), K < 0.
+
+drift(O, F, $Clamp(), V) :- shift(O, F, V), !escapes(O, F).
+drift([S, E, Ob, Id], F, $Clamp(), V) :-
+    escapes([S, E, Ob, Id], F), box.box([S, E, Ob, Id], B), heading(S, H),
+    dist(B, H, K), jump_offset(H, K, V).                            // up to the far edge
+
+// --- $Wrap ---
+// Each line along the heading as a cycle that runs from the floor edge to
+// the far edge and back in at the floor edge.
+// @claim jump
+.init cycle = CycleWalk<FloorSource, Position>
+cycle.succ(S, P, Q) :-
+    heading(S, H), in(P, _),
+    ( neighbor(P, H, Q), in(Q, _)
+    ; dist(P, H, 0), floor_side(S, D), in(Q, _), dist(Q, D, 0), axis_of(D, A), same_line(A, P, Q)
+    ).
+cycle.step(S, N) :- size.tally([S, _, _, _], N).
+
+landing([S, E, Ob, F, $Wrap(), Q], Id, Col) :-
+    lift([S, E, Ob, Id], F, V, N), obj_cell([S, E, Ob, Id], P, Col), compose(P, V, P2),
+    cycle.walk(S, P2, N, Q).
+
+// --- shared ---
+out(P, Col, [S, E, Ob, F, Ov, Co]) :-
+    impl_choice([S, E, Ob, F, Ov, Co]), floor_side(S, _), in(P, Col0),
+    ( floor_cell([S, E], P), Col = Col0                                         // the floor stays
+    ; !floor_cell([S, E], P), !landing([S, E, Ob, F, Ov, P], _, _), params.background(Col)
+    ).
+
+// --- $Clash ---
+out(P, Col, [S, E, Ob, F, Ov, $Clash()]) :-
+    impl_choice([S, E, Ob, F, Ov, $Clash()]), landing([S, E, Ob, F, Ov, P], _, Col).
+
+// --- $LargerOnTop, $SmallerOnTop ---
+// @claim larger-on-top smaller-on-top
+.init top = ArgExtremes<Spot, Color>
+top.cand([S, E, Ob, F, Ov, P], Col, N) :-
+    landing([S, E, Ob, F, Ov, P], Id, Col), size.tally([S, E, Ob, Id], N).
+
+// --- $LargerOnTop ---
+out(P, Col, [S, E, Ob, F, Ov, $LargerOnTop()]) :-
+    impl_choice([S, E, Ob, F, Ov, $LargerOnTop()]), top.high([S, E, Ob, F, Ov, P], Col, _).
+
+// --- $SmallerOnTop ---
+out(P, Col, [S, E, Ob, F, Ov, $SmallerOnTop()]) :-
+    impl_choice([S, E, Ob, F, Ov, $SmallerOnTop()]), top.low([S, E, Ob, F, Ov, P], Col, _).
