@@ -209,7 +209,8 @@ def of_change(state: State, number: str) -> list[Agent]:
 def give_up(state: State) -> Step | None:
     """A message that tells an agent at work on a change that no operator
     carries any more, or that another live holder (`live_holder`) carries,
-    to end."""
+    to end. A live holder among the session's operators carries the same
+    agents, so their work goes on."""
     for a in state.agents:
         if not a.pending or a.agent_id is None:
             continue
@@ -225,7 +226,8 @@ def give_up(state: State) -> Step | None:
             continue
         lost = t.status in (Status.DRAFT, Status.CLOSED) or (
             t.status is Status.ASSIGNED and t.holder not in (state.me, None)
-            and live_holder(state, t.holder))
+            and live_holder(state, t.holder)
+            and t.holder not in state.operators)
         message = messages.stop_work(number)
         if lost and not sent(state, a.agent_id, message):
             return Send(a.agent_id, message)
