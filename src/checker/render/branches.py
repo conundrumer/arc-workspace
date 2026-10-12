@@ -379,12 +379,19 @@ COUNTERPART = mctx("the case that differs from it by this branch alone")
 """The counterpart of a case that takes a branch, as a block names it."""
 
 
-def no_fit_text(taken: str) -> str:
-    """The sentence of `checker.branches.witnesses.NoFit.NO_FIT`, with
+def unfit_text(taken: str) -> str:
+    """That no case that takes a branch or a value fits the pairs, with
     `taken` the word for what the search is of: the branch or the
     value."""
-    return mctx("no case that takes the {taken} fits the pairs along with "
-                "{counterpart}").format(taken=taken, counterpart=COUNTERPART)
+    return mctx("no case that takes the {taken} fits the pairs"
+                ).format(taken=taken)
+
+
+def no_fit_text(taken: str) -> str:
+    """The sentence of `checker.branches.witnesses.NoFit.NO_FIT`, with
+    `taken` as `unfit_text` takes it."""
+    return mctx("{unfit} along with {counterpart}").format(
+        unfit=unfit_text(taken), counterpart=COUNTERPART)
 
 
 def filed_witness(name: str) -> str:
