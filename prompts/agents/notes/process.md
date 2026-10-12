@@ -1,3 +1,5 @@
++ budget: 21400
+
 # Process notes
 - The agents' processes, for changes and for solver passes, each in the project's terms with the name of its process in ISO/IEC/IEEE 12207 beside it, and what each must achieve, in its outcomes and in what holds in each way it can fail. The rules that achieve it stand in the documents of the agents that follow them, and where the tree does not achieve it, that gap is a finding for the process assessment.
 - These notes are support under [Decision notes](prompts/agents/notes/decisions.md), and a line of these notes that conflicts with a line of that document is a finding for the process assessment.

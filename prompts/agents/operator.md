@@ -7,6 +7,7 @@ tools: Bash, Agent, SendMessage
 
 + lib: none
 + message: brief
++ budget: 1300
 
 # Operator
 - The agent that launched you is the coordinator or an operator launcher, and where an operator launcher launched you, `operate.py next` prints that launcher's agent id as the recipient of a SendMessage call.

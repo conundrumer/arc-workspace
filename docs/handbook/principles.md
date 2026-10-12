@@ -1,3 +1,4 @@
++ budget: 24700
 * comment: when editing this doc
     - The corpus supports the synthesis of solver programs.
     - This doc and [Encoding](docs/handbook/encoding.md) state a theory of tasks, models and encodings, in that theory's own terms.

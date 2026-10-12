@@ -1,3 +1,5 @@
++ budget: 3900
+
 # arc-workspace
 - ARC-AGI-2 work for the 2026 Kaggle competition.
 - Python 3.12, `uv`.

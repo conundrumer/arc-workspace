@@ -7,6 +7,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 
 + lib: none
 + message: brief
++ budget: 18700
 
 # Code reviewer
 * inline: notes/launching.md#a-part-a-brief-leaves-out

@@ -1,3 +1,5 @@
++ budget: 800
+
 # Checking a draft
 - Check the draft by each check of [Checks](prompts/agents/ticket-reviewer.md#checks) on these, and fix each fault a check shows, before you file the draft or log its revision:
     - `depends-on`.

@@ -1,3 +1,5 @@
++ budget: 1000
+
 # A split
 - Split the module into one module for each subject of the `refactor` ticket's `Impact` that the module still holds, with each module's docstring saying what that module holds, and the docstring of their package saying what the package holds as a whole and the rules its modules keep.
 - The modules of the split, and each file whose imports the split changes, count among the files your brief gives.

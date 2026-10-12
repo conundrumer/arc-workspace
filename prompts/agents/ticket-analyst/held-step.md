@@ -1,3 +1,5 @@
++ budget: 1100
+
 # A held step
 - Decide each step an operator holds that your brief gives, as [How a decision is made](prompts/agents/notes/decisions.md#how-a-decision-is-made) gives. Where the step gives a decision key, give the line that rules it in your reply, on a line of its own, in the form [An operator's brief](prompts/agents/notes/launching.md#an-operators-brief) gives a `Decision:` line.
 - Where the decision needs an act that no choice of the step gives, make that act yourself, before you give the line that rules the step where it takes one.

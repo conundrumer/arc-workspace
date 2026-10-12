@@ -1,3 +1,5 @@
++ budget: 3300
+
 # Revising a draft
 - Read the draft's `Grounds` before you explore, and read again only each source of them that has changed since: each file that `git diff <hash>` in the main tree lists, with the hash they give, each ticket they quote whose log has a line later than the draft's last `filed` or `revised` line, and each source a later line of the draft's log gives as changed.
 - Then settle, from the need of the tickets its Motivation gives and with the findings its log gives as evidence, whether a change is needed at all, and which is the least change that meets that need, with the draft's design as a default, each finding as a reason against it, and each suggestion its log gives as an option against it, which you take or leave. Then revise the draft, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives, or close each ticket it settles, `wontfix` with the loss of its need left unmet, and then the draft, `wontfix`, or bring the user a decision, as [Resolving](prompts/agents/ticket-analyst.md#resolving) gives, with the draft as its ticket.

@@ -1,3 +1,5 @@
++ budget: 9800
+
 # Command notes
 - The statements on commands, and on sending a final reply, that more than one entry point inlines.
 

@@ -8,6 +8,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
 
 + lib: interface
 + message: brief
++ budget: 2300
 
 # Create agent
 - Your brief gives one task, whose Analyze files stand under `work/task/<task_id>/`.

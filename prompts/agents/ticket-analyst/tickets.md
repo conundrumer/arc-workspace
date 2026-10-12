@@ -1,3 +1,5 @@
++ budget: 4300
+
 # Settling tickets
 - For each ticket your brief gives to settle:
     1. Take it, as [Tracking](prompts/agents/notes/tickets.md#tracking) gives.

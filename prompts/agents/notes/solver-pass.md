@@ -1,3 +1,5 @@
++ budget: 1500
+
 # Solver pass notes
 - The statements on a solver pass's brief and report that more than one entry point inlines.
 

@@ -7,6 +7,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 + lib: none
 + message: brief
++ budget: 47500
 
 - Read [Prose in code](src/controlled_markdown/writing.md#prose-in-code) before you edit or review text in a code file.
 

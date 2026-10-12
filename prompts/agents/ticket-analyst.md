@@ -7,6 +7,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 
 + lib: none
 + message: brief
++ budget: 35100
 
 # Ticket analyst
 * inline: notes/launching.md#a-part-a-brief-leaves-out

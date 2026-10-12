@@ -7,6 +7,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 + lib: none
 + message: brief
++ budget: 21100
 
 # Ticket reviewer
 * inline: notes/launching.md#a-ticket-reviewers-brief

@@ -1,3 +1,5 @@
++ budget: 21600
+
 # Launching notes
 - The statements on launching an agent, that more than one entry point inlines or links.
 

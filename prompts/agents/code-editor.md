@@ -7,6 +7,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 + lib: none
 + message: brief
++ budget: 26300
 
 # Code editor
 * inline: notes/worktree.md#editor-messages

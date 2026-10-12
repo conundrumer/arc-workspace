@@ -1,3 +1,5 @@
++ budget: 5900
+
 # Worktree notes
 - The statements on working in a worktree, that more than one entry point inlines or links.
 

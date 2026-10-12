@@ -7,6 +7,7 @@ tools: Bash, Agent, SendMessage
 
 + lib: none
 + message: brief
++ budget: 1400
 
 # Operator launcher
 - Run `uv run python scripts/operate.py relay <agent id>`, with your own agent id, in the foreground with a timeout of 240000 ms on the Bash call, and make the one call it prints, with each parameter as it prints it, and a value it prints between two lines of three backticks as the text between them.

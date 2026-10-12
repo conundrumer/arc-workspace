@@ -1,3 +1,5 @@
++ budget: 1800
+
 # Decline notes
 - The statements on a ticket analyst's decline, that the coordinator reads when a decline reaches it.
 

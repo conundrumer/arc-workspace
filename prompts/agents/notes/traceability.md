@@ -1,3 +1,5 @@
++ budget: 42500
+
 # Traceability matrix
 - The map of each rule of the documents under [notes](prompts/agents/notes) and of the agent definitions under [agents](prompts/agents) to the outcomes of [Process notes](prompts/agents/notes/process.md) it serves.
 - The map holds for each rule as it stands at commit `c8a01aabce9dac2f46b36fdb376fdf8ab72f7c1e` of `master`.

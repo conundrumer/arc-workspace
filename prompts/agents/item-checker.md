@@ -7,6 +7,7 @@ tools: Read, Grep, Glob, Bash, Write, SendMessage, TaskStop
 
 + lib: none
 + message: brief
++ budget: 9600
 
 # Item checker
 * inline: notes/launching.md#a-part-a-brief-leaves-out

@@ -16,14 +16,13 @@ process, `CLAUDE_PID`, was started with `-p` or `--print`. The hook's text
 reaches the session whole only up to `HOOK_TEXT_CAP` characters, so a
 longer rendering is a fault.
 
-The rendering has a budget below that cap, `BUDGET`, and a band below the
-budget that starts at `BUDGET_BAND`. Each command that renders the document
-for an editor or a reviewer, as `scripts/context.py --write` and
-`context coordinator` do, goes through `budgeted_text`; what it does
-past the budget and within the band is as
-`uv run python scripts/context.py --help` gives it. The session-start
-hook checks its rendering against `HOOK_TEXT_CAP` alone, so a session
-starts with its document where an older rendering passes the budget.
+The rendering's source gives its budget below that cap (`handbook.budget`).
+Each command that renders the document for an editor or a reviewer checks
+that budget: `context coordinator` and `context user-session` go through
+`budgeted_text`, and `scripts/context.py --write` checks each budget
+(`handbook.budgeted`). The session-start hook checks its rendering against
+`HOOK_TEXT_CAP` alone, so a session starts with its document where an
+older rendering passes the budget.
 
 Where the user starts the coordinator with `claude`, its reader is
 `coordinator`, and it reads the session-start hook's text alone
@@ -38,14 +37,13 @@ the session by `--append-system-prompt-file` and not by the hook, so
 from __future__ import annotations
 
 import subprocess
-import sys
 from collections.abc import Mapping
 from enum import StrEnum
 from pathlib import Path
 
-from controlled_markdown import mctx
 from engine import checkout
 from handbook.agents import agent_dir
+from handbook.budget import checked
 from handbook.context import USER_SESSION_DOC, entry_text
 from handbook.contexts import APPENDIX, marked_section
 from handbook.generated import Rendering, write_generated
@@ -58,13 +56,6 @@ HOOK_TEXT_CAP = 10_000
 """The most characters of a hook's text that Claude Code puts in the
 session's context. Past it, the session gets a preview and the path of a
 file that holds the text."""
-
-BUDGET = 7_000
-"""The most characters of the coordinator's rendered document that a command
-which renders it for an editor or a reviewer accepts."""
-
-BUDGET_BAND = 6_300
-"""The fewest characters of the rendering at which such a command warns."""
 
 ENTRY_POINT_ENV = "CLAUDE_CODE_ENTRYPOINT"
 SESSION_PID_ENV = "CLAUDE_PID"
@@ -112,20 +103,8 @@ def coordinator_text(doc: Path = COORDINATOR_DOC) -> str:
 
 
 def budgeted_text(doc: Path = COORDINATOR_DOC) -> str:
-    """`coordinator_text`, checked against `BUDGET` and `BUDGET_BAND`."""
-    text = coordinator_text(doc)
-    size = len(text)
-    if size > BUDGET:
-        raise SystemExit(mctx(
-            "The coordinator's document, rendered from {path}, holds {size} "
-            "characters, past its budget of {budget}.").format(
-                path=repo_label(doc), size=size, budget=BUDGET))
-    if size >= BUDGET_BAND:
-        print(mctx("Warning: the coordinator's document, rendered from {path}, "
-                   "holds {size} characters, near its budget of {budget}.").format(
-                       path=repo_label(doc), size=size, budget=BUDGET),
-              file=sys.stderr)
-    return text
+    """`coordinator_text`, checked against the budget `doc` gives."""
+    return checked(doc, coordinator_text(doc), COORDINATOR_PATH)
 
 
 def coordinator_appendix() -> str:
@@ -150,7 +129,7 @@ def user_session_context() -> str:
 
 def coordinator_rendering(path: Path = COORDINATOR_PATH,
                           doc: Path = COORDINATOR_DOC) -> Rendering:
-    return Rendering(path, budgeted_text(doc))
+    return Rendering(path, coordinator_text(doc))
 
 
 def _claude_code_value(env: Mapping[str, str], name: str) -> str:

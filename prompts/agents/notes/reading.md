@@ -1,3 +1,5 @@
++ budget: 1200
+
 # Reading notes
 - The statements on reading the handbook and the lib that more than one entry point inlines.
 

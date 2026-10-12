@@ -1,3 +1,5 @@
++ budget: 2500
+
 # Code notes
 - The statements on editing and reviewing the code that more than one entry point inlines.
 

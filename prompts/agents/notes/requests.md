@@ -1,3 +1,5 @@
++ budget: 7200
+
 # Request notes
 - The statements on the user's requests for work and on the tickets the coordinator files and tracks, that the coordinator reads at the triggers its document gives.
 

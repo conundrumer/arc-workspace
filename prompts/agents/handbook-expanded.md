@@ -6,6 +6,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 ---
 
 + lib: interface
++ budget: 2600
 
 * inline: notes/reading.md#abridgement
 

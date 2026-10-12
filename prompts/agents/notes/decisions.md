@@ -1,3 +1,5 @@
++ budget: 22200
+
 # Decision notes
 - The user's goals, how a decision on the solver tools or the agents' documents is made, and which decisions reach the user.
 

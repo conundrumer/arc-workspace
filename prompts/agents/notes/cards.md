@@ -1,3 +1,5 @@
++ budget: 1400
+
 # Card notes
 - The statements on cards, that the coordinator reads before it launches or resumes an agent on cards.
 

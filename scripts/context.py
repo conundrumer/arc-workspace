@@ -7,6 +7,8 @@ import signal
 import sys
 
 from controlled_markdown import mctx
+from handbook import budgeted
+from handbook.budget import report
 from handbook.agents import (agent_renderings, next_renderings,
                              unlisted_agents)
 from handbook.context import (codex_renderings, role_text, section_text,
@@ -48,9 +50,11 @@ HELP = mctx("""
             - `.claude/<agent>-next.md`, rendered from each `prompts/agents/<agent>-next.md` with no front matter: the steps that agent reads once it has done those of its prompt.
             - `.claude/coordinator.md`, the coordinator's document, rendered from `prompts/agents/notes/coordinator.md`.
             - The files a codex session on the repo reads: `AGENTS.md`, [Codex on arc-workspace](prompts/codex.md) rendered, and `.codex/config.toml`, with the main tree's `docs/codex-style.md` as its developer instructions.
-    - Each form that renders the coordinator's document, other than `session-start`, checks that rendering against its budget and the band below it, as `src/handbook/coordinator_document.py` gives them.
-        - Past the budget, the form prints the document's path, its size and the budget, and exits 1.
-        - Within the band, it prints that size and the budget on stderr, and goes on.
+    - Before it writes, `--write` checks `CLAUDE.md` and each `.md` file under `docs/handbook/` and `prompts/agents/` against the budget its `+ budget:` line gives.
+        - The budget bounds the rendering `--write` writes from the file, where the file is the coordinator's document, a `<name>-next.md`, or an agent's prompt whose `+ lib:` is `none`, and otherwise the file's own text.
+        - For each file whose bounded text holds between 90 % of its budget and its budget, it prints a warning on stderr and goes on.
+        - For each file whose bounded text holds more than its budget, and each file with no `+ budget:` line, it prints the failure, writes nothing and exits 1.
+    - Each other form that renders the coordinator's document, other than `session-start`, checks that rendering the same way.
     - Each form that writes a generated file in the checkout, other than `session-start`, first checks that git ignores each one it writes there.
         - Where git does not ignore one, the form writes none, prints each such file and `.gitignore`, and exits 1.
     - `--write` then removes each file that manifest lists and no source renders any more, where git ignores it and it has not changed since it was written, and prints it after `removed`.
@@ -121,6 +125,7 @@ if __name__ == "__main__":
         if findings := check():
             print("\n".join(findings))
             sys.exit(1)
+        report(budgeted.sizes())
         rest = [*agent_renderings(), *next_renderings(),
                 coordinator_rendering(), *codex_renderings()]
         unlisted = unlisted_agents()

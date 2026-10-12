@@ -6,6 +6,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Artifact, TaskStop
 ---
 
 + lib: index
++ budget: 800
 
 * inline: notes/reading.md#abridgement
 

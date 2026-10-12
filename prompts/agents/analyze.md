@@ -8,6 +8,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 
 + lib: index
 + message: brief
++ budget: 1600
 
 # Analyze agent
 - Your brief gives one task.
