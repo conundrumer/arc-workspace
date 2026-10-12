@@ -11,7 +11,7 @@ from checker.render.built import GROUP_WIDTH
 from checker.render.commands import SLOWEST
 from checker.store.survey import ROW_CAP
 from checker.sweep import MAX_CANDIDATES, TIME_LIMIT_SECONDS
-from cli import audit, grid, record, run, survey
+from cli import audit, grid, record, run, survey, text
 from controlled_markdown import mctx
 
 SWEEP_LIMIT_HELP = mctx("wall-clock limit in seconds on the sweep's solver "
@@ -130,15 +130,17 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
         "grid",
         lambda a: grid.cmd_grid(a.stem, a.file, a.every, a.cases, a.assign),
         help=mctx("run one solver on a grid you write, printing what each "
-                  "case the runner holds emits"),
+                  "witnessed case emits"),
         description=mctx("""
-            - Prints the output of the concept case, of each branch's model, and of each other case the runner holds, by the names `record` writes.
-                - When `impl_choice` does not contain the case of a branch's model or of a `--case` name, the cases `impl_choice` contains that take its branches and differ from the concept case at the fewest choice points are printed in its place.
+            - Prints the output of the concept case, of each branch's model, and of each other witnessed case, by the names `record` writes.
+                - When the case of a branch's model or of a `--case` name is no witnessed case, the witnessed cases that take its branches and differ from the concept case at the fewest choice points are printed in its place.
+                - When no witnessed case takes the branches of a `--case` name, the command prints `` {refusal} `` and nothing else.
             - Cases that emit the same output are listed together above that output: on one line, joined by `, ` and ending in `:`, or, when that line would pass {width} characters, one per indented line and then a line of `:`.
             - After them come `<case>: emits nothing` for each case that emits no grid, and `<case>: undefined` for each case that takes a `@derive` or `@store` branch and emits none.
             - After the count line comes `no case takes $<Ctor>` for each constructor of `Choice`, at any depth, that no case of the solver takes.
             {follows}
-            """).format(width=GROUP_WIDTH, follows=GRID_FOLLOWS),
+            """).format(width=GROUP_WIDTH, follows=GRID_FOLLOWS,
+                 refusal=text.NO_WITNESSED_TAKES.format(name="<name>")),
         epilog=GRID_HELP,
     )
     grid_p.add_argument("stem", help=STEM_HELP)

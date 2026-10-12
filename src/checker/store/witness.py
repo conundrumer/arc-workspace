@@ -15,6 +15,7 @@ from checker.branches.cases import (
 from checker.branches.witnesses import (
     BuiltBy,
     NoFit,
+    fitting,
     fitting_both,
     looked_with,
     swap_entry,
@@ -194,7 +195,8 @@ def find_witness(runs: Runs, solver: Solver, f: Found,
         models = witness_targets(runs, lined, taking, branch)
         swap_from = taking
         if not models:
-            f.ended = NoFit.NO_FIT
+            f.ended = NoFit.NO_FIT if fitting(runs, lined, taking) \
+                else SearchEnd.UNFIT
             return None
     model = models[0]
     other = counterpart(model, branch)

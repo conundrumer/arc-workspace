@@ -203,6 +203,8 @@ def _no_witness_why(solver: Solver, f: Found) -> str:
     match f.ended, f.failed, f.unseparated:
         case NoFit.NO_FIT, _, _:
             return no_fit_text(mctx("value"))
+        case SearchEnd.UNFIT, _, _:
+            return mctx("no case that takes the value fits the pairs")
         case SearchEnd.FAILED, failed, _ if failed is not None:
             return mctx("the run fails on {grid}: {error}").format(
                 grid=f"{train_text(failed.index)} "
@@ -256,10 +258,11 @@ def store_lines(solver: Solver, survey: StoreSurvey) -> list[str]:
     fails, each `@store` line on a relation with an `Ident` column, one
     block per value some case reads, the relations over the row cap, then
     each witness the command built, as `record` prints it. A value with no
-    `@store` line whose witness search found no witness
-    (`Found.no_witness`), so that the survey asks for no `@store` line on
-    it (`Found.asks_line`), takes one line, which names the value and says
-    why no witness was found, with no drawn value and no hint."""
+    `@store` line whose witness search found no witness, or where no case
+    that takes it fits the pairs (`Found.no_witness`), so that the survey
+    asks for no `@store` line on it (`Found.asks_line`), takes one line,
+    which names the value and says why no witness was found, with no drawn
+    value and no hint."""
 
     keyed = [f for f in survey.findings if f.kind == Kind.STORE_IDENT_KEY]
     if not survey.between:

@@ -226,11 +226,15 @@ def member_key(member: Member) -> tuple[object, ...]:
 
 class SearchEnd(StrEnum):
     """How the witness search of a value ended (`find_witness`), but where
-    no case that takes it fits the pairs (`NoFit`)."""
+    some case that takes it fits the pairs and none fits the pairs with its
+    counterpart (`NoFit`)."""
 
     CASES_FAILED = "cases failed"
     """The run that enumerates the cases failed, so the search looked
     with no case and ran on no grid."""
+    UNFIT = "unfit"
+    """No case that takes the value fits the pairs, so the search ran on
+    no grid."""
     UNTAKEN = "untaken"
     """No judged case of the solver with the value's line standing, of
     the bases the value stands for where its rows hold a case column
@@ -331,8 +335,10 @@ class Found:
     def no_witness(self) -> bool:
         """The witness search ran on every grid, no run failed, and no
         grid gave a witness (`SearchEnd.UNSEPARATED`,
-        `SearchEnd.UNCHANGED`)."""
-        return self.ended in (SearchEnd.UNSEPARATED, SearchEnd.UNCHANGED)
+        `SearchEnd.UNCHANGED`), or no case that takes the value fits the
+        pairs (`SearchEnd.UNFIT`)."""
+        return self.ended in (SearchEnd.UNSEPARATED, SearchEnd.UNCHANGED,
+                              SearchEnd.UNFIT)
 
     @property
     def asks_line(self) -> bool:
