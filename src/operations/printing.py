@@ -1,6 +1,7 @@
 """The text the command prints for a step, with the key line before it
-(`key_line`), the lines of the operator's final reply, and the message
-that sends a final reply's text (`final_message`).
+(`key_line`), the SubagentHandback call that gives the agent's final reply
+(`REPLY_TEXT`), and the message that sends a final reply's text
+(`final_message`).
 
 Each printed prompt or message is fenced (`fenced`): the value to pass is
 the text inside the fence, and its readers read a value given with or
@@ -30,11 +31,6 @@ SendMessage to the agent `to`."""
 def final_message(text: str) -> str:
     """The message that sends the final reply whose text is `text`."""
     return f"{FINAL_REPLY}\n{text}"
-
-
-REPLY_TEXT = final_message(SENT)
-"""The text the command prints for the final reply of an agent that sent
-its text to the agent `to`."""
 
 
 def printed_line(pattern: str, text: str) -> bool:
@@ -98,6 +94,14 @@ def unfenced(value: str) -> str:
 
 SEND = "\n".join([mctx("call SendMessage"), mctx("to: {to}"), mctx("message:"), "{message}"])
 BASH = "\n".join([mctx("call Bash"), mctx("timeout: {timeout}"), mctx("command:"), "{command}"])
+
+
+REPLY_TEXT = "\n".join([
+    FINAL_REPLY, mctx("call SubagentHandback"), mctx("message:"), fenced(SENT),
+    mctx("Where the harness says SubagentHandback is not available, give the message as plain text.")])
+"""The text the command prints for the final reply of an agent that sent
+its text to the agent `to`: the SubagentHandback call whose message is the
+line that says so."""
 
 
 def send_text(to: str, message: str) -> str:
