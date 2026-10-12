@@ -79,9 +79,8 @@ def report_path(step: Launch, scratch: Path) -> Path:
 
 
 def scratch_dir(name: str, scratch: Path) -> Path:
-    """The scratch directory a brief gives: the first of `<name>`,
-    `<name>-2`, `<name>-3`, ... under the session's scratchpad `scratch`
-    that does not exist. The path stays the same at each print of the step
+    """The scratch directory a brief gives: the first free name
+    (`first_free`) under the session's scratchpad `scratch`. The path stays the same at each print of the step
     until the launched agent creates the directory, so no brief gives a
     directory an earlier run used."""
     return first_free(lambda suffix: scratch / f"{name}{suffix}")

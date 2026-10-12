@@ -120,7 +120,7 @@ def step(state: State) -> Step | None:
     n = len(state.agents_of(Role.BATCH_PROFILE)) + 1
     head = state.commits[0].hash
     if merges and not any(a.launched > since for a in state.agents_of(Role.BATCH_GATE)):
-        return Launch(Role.BATCH_GATE, str(n), briefs.batch_gate(state.scratch / f"batch-{n}"))
+        return Launch(Role.BATCH_GATE, str(n), briefs.batch_gate(scratch_dir(f"batch-{n}", state.scratch)))
     runs: list[str] = []
     for op in sorted({a.operator for a in batch} or {state.me}):
         command = under_command(op)

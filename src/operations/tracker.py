@@ -94,15 +94,20 @@ def final_run(t: Ticket) -> tuple[int, int | None]:
     return run, waits[-1] if waits else None
 
 
-def blocked_on_user(t: Ticket) -> LogLine | None:
-    """The line that moved `t` into `tickets/blocked/` waiting on the user,
-    where `t` stands there for it: the last line of the log's final run of
-    `blocked` lines whose note opens with a wait, where that wait is on
-    the user."""
+def wait_line(t: Ticket) -> LogLine | None:
+    """The line of `t`'s log that `t` waits on, where `t` stands under
+    `tickets/blocked/`: the line `final_run(t)` gives as its last wait
+    line."""
     if t.status is not Status.BLOCKED:
         return None
     _, wait = final_run(t)
-    return t.log[wait] if wait is not None and t.log[wait].on_user else None
+    return t.log[wait] if wait is not None else None
+
+
+def blocked_on_user(t: Ticket) -> LogLine | None:
+    """The line `wait_line(t)` gives, where that wait is on the user."""
+    line = wait_line(t)
+    return line if line is not None and line.on_user else None
 
 
 def closed(state: State, number: str) -> bool:

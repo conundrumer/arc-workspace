@@ -105,7 +105,7 @@ from operations.final_reply import live_holder
 from operations.handled import answered, repeated, sends_to, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids, key
 from operations.tracker import (AGENT, add_editor, blocked_on_user, closed,
-                                final_run, log, worktree)
+                                final_run, log, wait_line, worktree)
 from ticketing.vocabulary import Domain, Kind, Status
 
 
@@ -135,8 +135,8 @@ def reached(state: State, start: set[str]) -> set[str]:
 
 
 def links(t: Ticket) -> list[str]:
-    _, wait = final_run(t)
-    on = t.log[wait].on_change if t.status is Status.BLOCKED and wait is not None else None
+    line = wait_line(t)
+    on = line.on_change if line is not None else None
     return [*t.depends_on, *([on] if on is not None else [])]
 
 
@@ -165,9 +165,9 @@ def boosted(state: State) -> set[str]:
     operator takes ahead of the others."""
     out: set[str] = set()
     for t in state.tickets.values():
-        if (t.kind is Kind.INTERFERENCE and t.status is Status.BLOCKED and t.log
-                and (change := t.log[-1].on_change) is not None):
-            out.add(change)
+        line = wait_line(t) if t.kind is Kind.INTERFERENCE else None
+        if line is not None and line.on_change is not None:
+            out.add(line.on_change)
     return out
 
 
