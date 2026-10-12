@@ -17,7 +17,6 @@ from types import FrameType, ModuleType
 from dataclasses import replace
 from pathlib import Path
 
-from agent_launches import handed_back
 from agent_reports import parent_transcripts
 from agent_turns import first_time, last_time
 from budgets import budgets_in_force, past_budget
@@ -420,8 +419,6 @@ def stalled_at(listed: Listed, listing: list[Listed], undecided: list[str]) -> f
         return None
     if any(e.get("type") == "user" and e.get("timestamp") and epoch(e["timestamp"]) > end
            for e in run_entries(listed.path)):
-        return None
-    if handed_back(listed.path):
         return None
     answered = [t for p in parent_transcripts(listed.path)
                 if (t := last_time(p, lambda e: e.get("type") == "assistant")) is not None]

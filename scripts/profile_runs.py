@@ -244,6 +244,7 @@ PARTS = {
         - Where no transcript of the parent of the run ID, or of a parent above it, gives its launch, whether its work is open is unknown, it counts as open, and an `undecided` line on stderr names it.
         - An agent's turn counts as ended where it has ended, as `--help runs` gives when a turn ends, or where its parent has its result, or a transcript of the sessions of its run or of its parent's run holds a notification of it, and its transcript holds no `user` or `assistant` entry timestamped after the latest of those.
         - A report after the latest message the agent received from anyone closes its work, whether or not the parent's latest message to it is known.
+        - A result of the agent's own SubagentHandback call after that message, which says the harness delivered its report, closes its work too.
         - A notification of it after that message, of any status but `running`, closes its work too, other than one whose note says the agent stopped with background work of its own still running.
         - Otherwise, an agent whose turn has ended is listed where the parent's latest message to it is unknown.
         - Where these rules give the work of an agent, of the run ID or of a run above it as not open, and its turn has ended while work of its own still runs, whether its work is open is unknown: it counts as open, and an `undecided` line on stderr names it with that work.

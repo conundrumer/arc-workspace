@@ -5,7 +5,7 @@ import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from agent_launches import Launch, launches, notified_after, run_launches
+from agent_launches import Launch, handed_back, launches, notified_after, run_launches
 from agent_reports import (TURN_ENDED, Report, ReportKind, parent_transcripts, reports,
                            stopped_after)
 from agent_turns import has_ended, is_turn_entry, last_time, turn_after, turn_end
@@ -176,6 +176,8 @@ def by_rule(n: Node, parent_open: bool, undecided: list[str]) -> Listed | None:
     if received is not None and (
             reported_since(a, received, frozenset(ReportKind))
             or stopped_after(a.entries, received, a.agent, a.call, undecided)):
+        return None
+    if handed_back(child):
         return None
     listed = turn_ended(n, undecided)
     return None if listed.found else listed
