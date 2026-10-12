@@ -66,9 +66,8 @@ def editor(role: Role, number: str, part: bool, worktree: Path, scratch: Path,
            code_editors: tuple[str, ...] = (), of_fragments: bool = False) -> str:
     """The brief of an editor of the change `number`, with its part where
     `part`, or `FRAGMENTS_PART` where `of_fragments`, in the change's
-    worktree `worktree`. A doc editor's brief gives the `fragments` whose
-    text the change adds or changes, and the agent ids of the change's
-    `code_editors`."""
+    worktree `worktree`. A doc editor's brief gives the `fragments`, and
+    the agent ids of the change's `code_editors`."""
     lines = [read_ticket(number)]
     if of_fragments:
         lines.append(FRAGMENTS_PART)
