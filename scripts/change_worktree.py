@@ -39,14 +39,14 @@ HELP = mctx("""
     - The second form makes the worktree of a change that has no ticket, such as solver work, and writes no log line.
         - `<name>` is the name of its worktree and its branch, a branch name with no `/`.
     - The command prints the path of the worktree, alone on one line.
-    - In the first form, where the change has a worktree, the command adds none, writes no line, and prints its path.
+    - In the first form, where the change has a worktree, the command adds no worktree, carries into it each file the Scope line below gives that it does not hold, writes the `worktree <path>` line, and prints its path.
         - The change's worktree is the path that the latest line of its log that gives a path under `{worktrees}/` gives, where no line whose note opens with `{rerun}` is that line or follows it, and where that path stands in `git worktree list`.
         - Otherwise `<name>` is `change-<number>`, and after `k` lines whose note opens with `{rerun}`, `change-<number>-run-<k + 1>`.
     - The worktree is `<main tree>/{worktrees}/<name>`, on the branch `<name>`.
         - Where no worktree stands at that path, the command adds it with `git worktree add` on a new branch of that name from `master`.
         - Where one stands there on that branch, as an earlier run left it, it adds none.
     - It then copies in from the main tree each untracked file that the patterns of the main tree's `.worktreeinclude` match.
-    - In the first form, it then copies in from the main tree each untracked file that git does not ignore, at a path that the ticket's `## Scope` gives.
+    - In the first form, it then copies in from the main tree each untracked file that git does not ignore, at a path that the ticket's `## Scope` gives, where the worktree holds no file at that path.
         - `merge_change.py` lands a change that touches such a path where the main tree's file there still has the content it had when copied, and its `--help` gives how.
     - In the first form, it then writes on the ticket the line `worktree <path>` in the status the ticket stands in.
     - The command refuses, adds nothing and writes no line, where a worktree stands at that path on another branch, or where that path or that branch exists with no worktree of that branch at that path.
@@ -118,19 +118,23 @@ def carried(worktree: Path) -> dict[str, str]:
 
 def copy_scope_untracked(main: Path, path: Path, t: Ticket) -> None:
     """Copy into the worktree `path` each file the `Scope` of `t` names that
-    `main` holds untracked, as `HELP` gives, and record it in
-    `carried_record` with the hash of its blob, which it writes into the
-    object store, so that the blob outlives the main tree's file."""
+    `main` holds untracked, as `HELP` gives, and add it to `carried_record`
+    with the hash of its blob, which it writes into the object store, so
+    that the blob outlives the main tree's file."""
     scope = sorted(scope_paths(t, main))
     if not scope:
         return
     listed = checkout.git_out(main, "ls-files", "-z", "--others", "--exclude-standard",
                               "--", *(f":(literal){p}" for p in scope))
-    hashes: dict[str, str] = {}
+    hashes = carried(path)
+    new = False
     for rel in sorted(set(filter(None, listed.split("\0"))) & set(scope)):
+        if (path / rel).exists():
+            continue
+        new = True
         copy_in(main, path, rel)
         hashes[rel] = checkout.git_out(main, "hash-object", "-w", "--", rel).strip()
-    if hashes:
+    if new:
         carried_record(path).write_text(json.dumps(hashes, indent=1, sort_keys=True) + "\n")
 
 
@@ -149,9 +153,7 @@ def of_change(number: str, agent: str, agent_id: str | None) -> Path:
     ref = ticket_number(number)
     t = read_ticket(ticket_path(tickets, ref))
     logged = logged_worktree(t)
-    if logged is not None and logged in worktrees(main):
-        return logged
-    path = made(main, name(t))
+    path = logged if logged is not None and logged in worktrees(main) else made(main, name(t))
     copy_scope_untracked(main, path, t)
     log_moves(tickets, ref, t.status, agent, t.status, agent_id, f"{WORKTREE_NOTE} {path}")
     return path

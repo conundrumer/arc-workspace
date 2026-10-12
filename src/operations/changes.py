@@ -14,7 +14,10 @@ The editors a change needs are those the `editors` field of its ticket
 gives, which the ticket analyst that files it writes, and a change whose
 ticket gives none is undecided. A change with no worktree gets one from
 `scripts/change_worktree.py`, which logs its path on the ticket, so a
-later operator continues the change there. Every editor and reviewer is
+later operator continues the change there. Where a change's ticket is
+revised after the log line that gives its worktree, the operator runs
+`scripts/change_worktree.py` again, which carries in the untracked Scope
+files that worktree lacks. Every editor and reviewer is
 launched with no isolation, and its brief gives that worktree.
 
 What the editors' and the doc reviewer's replies give is read by the fixed
@@ -110,8 +113,8 @@ from operations.final_reply import live_holder
 from operations.handled import answered, repeated, sends_to, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids, key
 from operations.tracker import (AGENT, add_editor, blocked_on_user, closed,
-                                final_run, log, wait_line, worktree)
-from ticketing.vocabulary import Domain, Kind, Status
+                                final_run, last_index, log, wait_line, worktree, WORKTREE)
+from ticketing.vocabulary import Domain, Kind, Note, Status
 
 
 def scope(state: State) -> set[str]:
@@ -387,6 +390,11 @@ def fragments_step(state: State, t: Ticket, w: Path,
         places, tuple(drafters), of_fragments=True), model=t.model(Role.DOC_EDITOR))
 
 
+def revised_since_worktree(t: Ticket) -> bool:
+    given = max((i for i, line in enumerate(t.log) if WORKTREE.search(line.note)), default=-1)
+    return last_index(t, (Note.FILED, Note.REVISED)) > given
+
+
 def carry(state: State, t: Ticket) -> Step | None:
     """The next step on the change `t` the operator holds, or None where it
     waits on an agent."""
@@ -397,7 +405,7 @@ def carry(state: State, t: Ticket) -> Step | None:
         return editors
     agents = of_change(state, t.number)
     w = worktree(t, state)
-    if w is None:
+    if w is None or revised_since_worktree(t):
         return Bash(make_worktree(t.number, state.me))
     if (step := over_budget(state, t, w, agents)) is not False:
         return step
