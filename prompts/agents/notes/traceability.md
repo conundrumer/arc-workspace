@@ -1,6 +1,6 @@
 # Traceability matrix
 - The map of each rule of the documents under [notes](prompts/agents/notes) and of the agent definitions under [agents](prompts/agents) to the outcomes of [Process notes](prompts/agents/notes/process.md) it serves.
-- The map holds for each rule as it stands at commit `68974b86cc1be1dacd0ff5de10263475aeb6fe84` of `master`.
+- The map holds for each rule as it stands at commit `36f665180d1a020ac99fef0506b09f1a636928dd` of `master`.
 - Each entry is a section, with the outcomes its rules serve, each as its process and a phrase of its words. Under the entry stands each rule of that section that serves another outcome or none, by its opening words.
 - An entry or a rule that serves no outcome gives the judgment that keeps it.
 - An entry on a document's title heading covers the lines above its first section. A section with no rule of its own, only lines that inline or include another document, has no entry.
@@ -127,6 +127,7 @@
     - "`Merge: <number>`": Merge: a failed or denied merge reaches an agent.
     - "`Decision: <decision key> <choice>`": Decisions: a departing decision reaches the user.
     - "`Solve: <task id> ...`", "`Run: <path>`", "`Override: <task id> <pass> <override>`", "`Override: pass over <step key>`": Solver passes: a pass runs its operations on its task.
+    - "`Expedite: <number>, ...`": none. Kept: it lets the user have a ticket's chain taken first.
 - [A code reviewer's brief](prompts/agents/notes/launching.md#a-code-reviewers-brief): Verification: a standing review of the lines in force.
 - [A doc reviewer's brief](prompts/agents/notes/launching.md#a-doc-reviewers-brief): Verification: another agent checks the built change; a standing review of the lines in force.
     - "A doc reviewer's brief on a commit of `master`": Merge: a hotfix reviewed after it merges.
@@ -180,6 +181,7 @@
     - "A ticket under `tickets/watching/`": none. Kept: the principle of Quality assurance, the fault options: a loss below its fix's cost is accepted until its cases' summed loss reaches that cost.
 - [Change tickets](prompts/agents/notes/tickets.md#change-tickets): Configuration management: a change built after the changes whose result it reads.
     - "A ticket that asks for a change", "Give each `change` you file or revise the `mechanical` field": none. Kept: they give the fields a `change` ticket's handling reads.
+    - "A part of a file is": none. Kept: it gives the part whose instructions a draft orders, which the ticket analyst's draft check and the ticket reviewer's check read.
 
 ## Worktree notes
 - [editor-messages](prompts/agents/notes/worktree.md#editor-messages): Implementation: each item not done reaches the agent that decides it.
