@@ -14,6 +14,7 @@ from handbook.contexts import (agent_context, codex_context, console_context,
                                console_stages, role_context, session_context,
                                survey_context, workflow_context)
 from handbook.coordinator_document import coordinator_context, user_session_context
+from handbook.fragments import fragment_parts, fragments_context
 from handbook.paths import DOCUMENTS_ROOT
 from handbook.reader_names import ReaderName
 
@@ -24,6 +25,7 @@ class ArgumentForm(StrEnum):
 
     NAME = "<name>"
     STAGE = "<stage>"
+    PART = "<part>"
 
 
 @dataclass(frozen=True)
@@ -69,6 +71,8 @@ CONTEXT_READERS = {
     ReaderName.WORKFLOW: Reader(ArgumentForm.NAME,
                                 lambda r: workflow_names(workflow_dir(r)),
                                 lambda a: workflow_context(a[0])),
+    ReaderName.FRAGMENTS: Reader(ArgumentForm.PART, fragment_parts,
+                                 lambda a: fragments_context(a[0])),
 }
 """Each reader the `context` command knows, by name."""
 
@@ -102,7 +106,7 @@ def contexts_text() -> str:
     for name, reader in CONTEXT_READERS.items():
         head = _usage(name, reader.form)
         names = reader.values(DOCUMENTS_ROOT)
-        out.append(f"{head:<24}{', '.join(names)}".rstrip())
+        out.append(f"{f"{head} ":<24}{', '.join(names)}".rstrip())
     return "\n".join(out) + "\n"
 
 

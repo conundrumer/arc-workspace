@@ -49,11 +49,11 @@ ALERTS = mctx("""
     - `next` sends an agent that an operator of the session or the coordinator launched, whose work is open and that is no operator, an alert that gives it its step, then holds the line `alert: <kind> <agent id>` on a line of its own, once for each time one of these fires:
         - `budget`: {budget}.
         - `repeated`: {repeated}, other than a command led by `: 'unattended-wait:`.
-        - `stall`: {stall} since its parent's latest message to it, with no `user` entry in its transcript timestamped after that turn ended, and no agent it launched and no command it backgrounded still running or ended after that turn ended, though the parent's transcripts hold an `assistant` entry timestamped after that turn ended, before which the harness delivers each report that waits for the parent.
+        - `stall`: {stall} since its parent's latest message to it, with no `user` entry in its transcript timestamped after that turn ended, and no agent it launched and no command it backgrounded still running or ended after that turn ended, though the parent's transcripts hold an `assistant` entry timestamped after that turn ended.
             - That turn ended at the last timestamped entry of its transcripts that ends a turn, as `scripts/profile_runs.py --help runs` gives one.
     - The operator takes the final reply of a stalled agent as its report, sends the final reply of a stalled agent the coordinator launched to the coordinator once, and files a `bug` ticket on it.
     - The operator files a `bug` ticket on each resume of an operator of the session after the next operator of the session made its first entry, or writes a line in it.
-        - A resume of an operator is a prompt in that operator's transcript after an entry with `toolEndsTurn`, such as the result of its `SubagentHandback`, with no `assistant` entry between them, other than a prompt whose agent messages and task notifications, at least one of them, are all from agents that operator launched, or resumed by its own SendMessage call, before that prompt.
+        - A resume of an operator is a prompt in that operator's transcript after an entry with `toolEndsTurn`, with no `assistant` entry between them, that holds no agent message or task notification, or one of an agent other than those that operator launched, or resumed by its own SendMessage call, before that prompt.
     """).format(**{k.value: READING[k] for k in AlertKind})
 """The alerts of `step`, which `scripts/operate.py --help alerts` gives."""
 

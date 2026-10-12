@@ -28,8 +28,8 @@ from solver.problems import Fault, InWitnessFile
 
 # Files and the stamp
 
-NO_WITNESS_FILE = mctx("no witness file at {path}: the first witness that "
-                       "`record`, `derive` or `store` writes creates it")
+NO_WITNESS_FILE = mctx("no witness file at {path}: the first witness a "
+                       "command writes creates it")
 CORPUS_READ_ONLY = mctx("read-only over every solver: a run on this stem "
                         "alone records the witnesses below")
 STAMP = mctx("runner and lib: {stamp}")

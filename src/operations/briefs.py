@@ -135,12 +135,16 @@ def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], 
         LAUNCHER.format(operator=operator)])
 
 
+# The lines on a check whose event has not happened and on a check of what
+# a session reads at its start: ticket 2-354 records checks closed at the
+# merge with no one holding them (2-334, 4-29), and a running session's
+# launches checking hooks it had not reloaded.
 AFTER_MERGE = mctx("""
     - Change {number} is merged into `master` at {head}.
     - Run each check its ticket places after the merge, which `{command}` prints: {checks}.
     - File each check that fails as a `bug` ticket, by the lines of the section `Ticket files` of `prompts/agents/notes/tickets.md`, {filing}.
     - Give each check whose subject is an event that has not happened yet in your reply as unfinished, with that reason.
-    - Run a check of what a running Claude Code session reads only at its start, such as its hooks, in a `claude -p` session you start in the main worktree.
+    - Run a check of what a running Claude Code session reads only at its start in a `claude -p` session you start in the main worktree.
     - Reply with each check as passed, failed with its ticket, or unfinished with its reason.
     """)
 
@@ -312,6 +316,9 @@ def held_step(what: str, operator: str, rulable: bool) -> str:
     return "\n".join([head, "", what, "", LAUNCHER.format(operator=operator)])
 
 
+# "read no ticket's body to match": the user's words, "if there's a brief
+# description then they can browse over those instead of the contents"
+# (ticket 6-440, 21:44:14Z).
 TRANSCRIPT_REVIEW = mctx("""
     - Review the transcript of run {run}, which `python3 ~/.claude/skills/retrieve/transcripts.py --help` reads.
     - File each ticket by the lines of the section `Ticket files` of `prompts/agents/notes/tickets.md`, {filing}.
@@ -362,9 +369,10 @@ def standing_doc_review(reader: str, tag: str, commit: str, operator: str) -> st
             + LAUNCHER.format(operator=operator))
 
 
+# "File none on a cause ... already records": the user's words on change
+# 6-313's filing rule, "will it cause a flood of won't fix" (ticket 10-212).
 BATCH_PROFILE = mctx("""
     - Run `uv run python scripts/profile_runs.py --each <id> ...` once, with the agent ids of all these runs as `<id> ...`: {runs}.
-        - You may write its output to a file and read it there.
     - File one `performance` ticket, {filing}, for each cause across these runs that you judge worth fixing, by the test that a change to a tool or a document could cut the time or the token cost it made, and give in it the time and the token cost that cause made in these runs.
         - File none on a cause that a ticket outside `tickets/closed/` already records.
     {review}
@@ -372,9 +380,10 @@ BATCH_PROFILE = mctx("""
     """)
 
 
+# "launch no further review": ticket 6-584 records a batch profile that
+# launched 14 transcript reviews after the filing crash was known.
 REVIEW = mctx("""
     - Launch a transcript review of each of these runs that is no solver work and of which the output of that `--each` call marks a message `past budget`, and of no other run: {reviewable}.
-        - That mark is the only test of a run's budget.
     - Once a ticket filing of yours, or the reply of a review you launched, gives that a command the brief of a transcript review has it run failed, launch no further review.
     - A transcript review is a `general-purpose` agent, with `{model}` as the Agent call's `model`, and with the brief that {review_brief} gives, with the run's agent id in place of `{run}`.
     """)
@@ -397,10 +406,11 @@ def batch_profile(runs: list[str], reviewable: list[str], commit: str) -> str:
     return f"{text}\n\n```\n{brief}\n```"
 
 
+# "no ticket for a `LOADED` line": the user's ruling, option 1, in ticket
+# 1791213581-gate-slow-load-triage-1.
 BATCH_GATE = mctx("""
     - Add a worktree with `git worktree add --detach <dir> master`, with a new directory under {scratch} as `<dir>`.
     - Run `uv run python scripts/gate.py --accept --since-timed <out>` in that worktree, and file a `performance` ticket for each `SLOW` line it prints, and no ticket for a `LOADED` line.
-        - A run that prints that it skips timing is no fault, and you file no ticket on it.
     - Then run `uv run python scripts/gate.py --outputs-only --record-deps <out>` there, with a new `<out>`, and remove that worktree.
     - For each `DIFF` line these runs print that the `Evidence` of no ticket outside `tickets/draft/` and `tickets/closed/` holds, bisect the commits of `master` from the commit that the `affected:` line of the run that printed it gives after `the change from` to `master`, and file a ticket of kind `bug` that names the commit the bisection stops at.
         - Run each step in a worktree you add at the commit with `git worktree add --detach` and remove after.

@@ -235,10 +235,6 @@ def rows_list(rows: Iterable[Row], types: Sequence[str], solver: Solver
 # Drop-one
 
 
-SWEEP_NOTE = mctx("an enumerable parameter, so `sweep` can report the same "
-                  "drop")
-
-
 def _fact_text(solver: Solver, f: Fact) -> str:
     return f"{f.parameter}{row_text(f.row, f.types, solver)}"
 
@@ -268,9 +264,7 @@ def render_drop_one(solver: Solver, result: DropOneResult) -> list[str]:
                      "fact").format(solver=solver_name(solver))]
 
     def entries(group: list[DroppedFact]) -> list[str]:
-        return [f"  {_fact_text(solver, d.fact)}"
-                + (f"  — {SWEEP_NOTE}" if d.enumerable else "")
-                for d in group]
+        return [f"  {_fact_text(solver, d.fact)}" for d in group]
 
     parameters = noun(result.parameters, "parameter")
     lines = [mctx("{tested} stored facts across {params} multi-fact "
@@ -556,14 +550,6 @@ def render_determination_plan(solver: Solver, result: PlanResult,
                      "under the limit").format(
             joint=product, limit=ENUMERATION_LIMIT),
             _over_lines(settle))
-        if any(isinstance(v, Enumerable) and v.position for _, v in settle):
-            lines.append("  " + mctx(
-                "A Position parameter's candidates are the cells of the "
-                "frame its stored value implies, so its count follows the "
-                "frame the parse produces."))
-            lines.append("  " + mctx(
-                "A Box or Offset parameter's count follows the largest "
-                "height or width of the task's grids."))
     section(mctx("determined"), list(by_parameter(classes.done)))
     if not isinstance(differing, frozenset):
         section(mctx("the determination run gives no result, so whether "

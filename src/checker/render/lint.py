@@ -70,8 +70,7 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
         "`{0}` enumerates the `Choice` field type `{1}`; name it "
         "`{2}`").format(*n),
     LintSentence.SHADOWED_TYPE: lambda n, _: mctx(
-        "`{0}` is also a type name inside `{1}`, so the instance takes that "
-        "name for its own type; rename it").format(*n),
+        "`{0}` is also a type name inside `{1}`; rename it").format(*n),
     LintSentence.LIB_NAME: lambda n, _: mctx(
         "`{0}` is a lib {1}; rename it").format(*n),
     LintSentence.LIB_PRIVATE: lambda n, _: mctx(
@@ -424,8 +423,7 @@ def _ignore_text(p: LintIgnore) -> str:
                                                    site=site)
         case LintSentence.IGNORE_ON_LINT:
             return mctx("`{category}` gives a lint finding, which an "
-                        "`@ignore` line does not dismiss; it dismisses a "
-                        "hint alone").format(category=category)
+                        "`@ignore` line does not dismiss").format(category=category)
         case LintSentence.IGNORE_ON_DECL | LintSentence.IGNORE_UNPLACED:
             directive = ignore_text(ig.relation, ig.category)
             if p.sentence == LintSentence.IGNORE_ON_DECL:

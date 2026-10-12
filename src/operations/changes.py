@@ -474,8 +474,8 @@ def carry(state: State, t: Ticket) -> Step | None:
     return merge(state, t, w, latest)
 
 
-NO_OPERATOR = mctx("{agent} is no doc editor that an operator of the session launched, so no "
-                   "launch is printed: give your final reply.")
+NO_OPERATOR = mctx("{agent} is no doc editor that an operator of the session launched: give "
+                   "your final reply.")
 """The line `editor_review` gives an agent that is no doc editor an operator
 launched."""
 

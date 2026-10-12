@@ -76,8 +76,7 @@ DECISION_FORM = mctx("a reply that gives, on a line of its own, the ruling on th
                      "decision goes to the user, a `decision:` item under `{heading}`.").format(
                          heading=FOR_COORDINATOR)
 ALERT_FORM = mctx("where it is an alert, a message that opens with the line `alert: <kind> "
-                  "<agent id>`, with the kind of the alert and the agent it is on; where it is "
-                  "no alert, a reply that says so.")
+                  "<agent id>`; where it is no alert, a reply that says so.")
 
 
 OPERATOR = mctx("the operator")

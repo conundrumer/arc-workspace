@@ -37,12 +37,10 @@ RERUN_COST = 2.20
 
 HELP = mctx("""
     - Usage: `uv run python scripts/bottlenecks.py`
-    - The command reads the ticket tracker of the main tree and prints one row per file, with the hours changes waited on it, the number of changes that waited on it, the number of reruns charged to it and their cost in dollars. The rows are sorted by wait hours plus rerun count, the largest first.
-    - A file is a path a `change` ticket's `## Scope` gives that contains a `/` or names a file or a directory at the root of the main tree. A path with a `/` that is not the whole path of its file, and the old and the new path of a renamed file, count toward separate rows.
-    - Waits: for each `change` ticket and each number its `depends-on` gives, the spans in which the waiting ticket stood under `tickets/open/` and the ticket it depends on stood outside `tickets/closed/`, by the status of each log line, up to now. The spans are charged to each file both tickets' Scopes give, and for each file and each waiting change, overlapping spans count once. A link whose two Scopes name no common file is charged to the row `{no_shared}`.
-        - The wait hours of a file are change-hours: the waits of different changes that overlap in time add up.
-    - Reruns: each log line of a `change` ticket whose note opens with `{opening}`, charged to each path it gives. A line that gives no path is charged to the row `{not_recorded}`. Each rerun costs ${cost}, an estimate of the cost of one build of a change.
-    - Each number a `depends-on` gives that is the number of no ticket the read finds, and each ticket file the read fails on, is printed to stderr on a line that opens with `undecided:`.
+    - The command reads the ticket tracker of the main tree and prints one row per path that a `change` ticket's `## Scope` gives with a `/` or at the root of the main tree: the hours changes waited on it, the number of changes that waited on it, and the reruns charged to it with their cost.
+    - Waits: for each `change` ticket and each number its `depends-on` gives, the spans in which the waiting ticket stood under `tickets/open/` and the ticket it depends on stood outside `tickets/closed/`, up to now, charged to each path both Scopes give, or to the row `{no_shared}` where they give none in common.
+        - The wait hours of a path are change-hours: the overlapping spans of one change count once, and those of different changes add up.
+    - Reruns: each log line of a `change` ticket whose note opens with `{opening}`, charged to each path it gives, or to the row `{not_recorded}` where it gives none, at ${cost} each, an estimate of the cost of one build of a change.
     """)
 
 ROW = mctx("{hours} h  {waiting} waiting  {reruns} reruns  ${cost}  {path}")

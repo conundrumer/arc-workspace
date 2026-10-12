@@ -119,8 +119,7 @@ def agent_ids(agents: Iterable[Agent]) -> list[str] | Undecided:
     out: list[str] = []
     for a in agents:
         if a.agent_id is None:
-            return Undecided(mctx("the {role} on {subject} has no known agent id, which a "
-                                  "brief or a message names it by").format(
+            return Undecided(mctx("the {role} on {subject} has no known agent id").format(
                 role=a.role, subject=a.subject))
         out.append(a.agent_id)
     return out

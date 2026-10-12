@@ -62,11 +62,11 @@ operator's previous call of it."""
 ISO_TIME = mctx("an ISO date or datetime, in UTC where it gives no offset")
 """The times `utc_time` reads."""
 
+# Kept: ticket 6-145, the coordinator estimated by hand the cost of a switch
+# of auditors to Sonnet from repriced figures, and was wrong.
 REPRICED = mctx("each token cost is of the same requests at the same token "
                 "counts, priced at {model}; it is not what these runs would "
-                "cost had they run on {model}, since runs on another model "
-                "make their own requests, with their own output lengths and "
-                "their own tokenizer's counts")
+                "cost had they run on {model}")
 """What a token cost repriced at `--price-at MODEL` is."""
 
 
@@ -122,17 +122,16 @@ PARTS = {
         - A DATE or TIME it reads is {iso_time}.
     - A run's wall time, from its first entry to its last, is cut at each entry's time, and each interval goes to one part:
         - `tools`: a tool call is pending.
-            - A Bash call is labelled by the known commands it runs, joined by ` + `: `gate`, `merge_change.py`, `materialize.py`, `pytest`, `pyright`, and `run_dl.py` with its subcommand.
-            - A Bash call that runs none is labelled by the first program it runs past setup, and any other call by its tool.
+            - A Bash call is labelled by the known commands it runs, joined by ` + `: `gate`, `merge_change.py`, `materialize.py`, `pytest`, `pyright`, and `run_dl.py` with its subcommand; or, where it runs none, by the first program it runs past setup, and any other call by its tool.
         - `waits`: a foreground Agent, Monitor or TaskOutput call or a poll is pending, or the turn has ended while an agent or command the run backgrounded is running.
             - These are labelled `agent TYPE`, `poll` and `bg LABEL`.
         - `model`: no call is pending and the turn has not ended.
-        - `idle`: the turn has ended and nothing the run launched is running, so the run waits on the user or on a message.
-    - A turn starts at a message the model answers, so a local command such as `/compact` starts none.
+        - `idle`: the turn has ended and nothing the run launched is running.
+    - A turn starts at a message the model answers.
     - A turn ends at the model's last entry, at the result of a call that ends it, such as SubagentHandback, or at the harness's note that the user interrupted the run, unless the next `user` or `assistant` entry after that note is the model's.
     - Calls that are pending at once share an interval in equal parts.
     - While the model works, backgrounded work that runs goes to `model`.
-    - A poll is a Bash call that runs `sleep` and none of the known commands, in a loop or not.
+    - A poll is a Bash call that runs `sleep` and none of the known commands.
     - A command the harness moves to the background on its timeout counts under its own label up to then, and under `bg LABEL` after.
     - A command the run backgrounded runs until a notification of it in the run's transcripts, other than in an assistant entry.
         - Where none follows, it runs while a process holds open the output file its result names, and where no process holds that file, it ended when the file was last written.
@@ -147,7 +146,7 @@ PARTS = {
     HelpPart.ONE: mctx("""
     - One run, and each run `--runs` prints, prints its wall time and its token cost, then its burn readings:
         - after `repeated:`, each Bash command it ran more than once, with the number of times, or `none`;
-        - after `refused:`, the number of its calls whose result gives a refusal by the harness, the permission classifier, the user or a hook;
+        - after `refused:`, the number of its calls whose result gives a refusal;
         - after `hung:`, the number of its calls that ran, or are in flight and have run, past {hung} times the usual time of their label;
             - the usual time of a label is the median duration of the run's own other ended calls with that label, or where it has none, of the other ended calls with that label of the runs profiled, or where none has one, {block} seconds;
         - after `alerts:`, each kind of monitor's alert on it that a message to it holds on a line of its own, with the number of such messages, or `none`.
@@ -156,7 +155,7 @@ PARTS = {
         - A message's active time is the run's wall time less `idle` over that message's period.
         - Its self time is its active time less the run's waits on agents over that period.
         - The budget in force for it is the budget `--help messages` gives from the messages up to it.
-        - A wait on agents is an interval in which an Agent call of the run is in flight, in the foreground or the background, and the run is not generating and blocks on no `tools` call, whatever else runs in the background.
+        - A wait on agents is an interval in which an Agent call of the run is in flight, in the foreground or the background, and the run is not generating and blocks on no `tools` call.
         - A message whose self time is past its budget is marked `past budget`.
         - A message with no budget in force prints none, and a run with an unknown message prints no active time, no self time and no budget.
     - One run of a subagent also prints, after `report to the parent:`, the latest entry of its parent's transcripts after the parent's latest message to it that gives a report of it, with the entry's time, its kind and the start of its text.
@@ -177,7 +176,7 @@ PARTS = {
     - An `undecided` line on stderr names each of these, and each distinct line is printed once.
     """),
     HelpPart.MANY: mctx("""
-    - `--each` prints, for each run the IDs bring, in their order, what one run prints, with its burn readings taken among all the runs profiled, as `--runs` takes them in `--help one`, and then, where it profiles more than one run, what more than one run prints.
+    - `--each` prints, for each run the IDs bring, in their order, what one run prints, and then, where it profiles more than one run, what more than one run prints.
     - More than one run prints, in order:
         - per agent type, the number of runs, the minimum, median, P-th percentile and maximum of wall time, the total, the median and P-th percentile of active time, which is wall time less `idle`, and each part's share of the total;
         - per agent type, the total token cost of its runs of known cost, its share of that total over all types, the median cost of such a run, and the number of runs of unknown cost it leaves out;
@@ -187,8 +186,7 @@ PARTS = {
         - A type with no run on one side prints `-` for that side.
         - A median over no value prints `?`.
         - A run whose start is unknown joins neither side, and an `undecided` line on stderr names it.
-        - To judge a cut of an agent type's context, run `--split` with the merge time of the change that cut it as TIME, and as IDs the sessions that ran that type both before and after that time.
-            - The cut held where that type's median context per request and median cost per run are both lower after than before.
+        - A cut of an agent type's context held where `--split`, with the merge time of the change that cut it as TIME and as IDs the sessions that ran that type on both sides, gives that type's median context per request and median cost per run both lower after than before.
     """),
     HelpPart.BUDGET: mctx("""
     - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over.
@@ -236,16 +234,12 @@ PARTS = {
     - `--running ID` lists the agents under the run ID whose work is open, where ID is a session id or an agent id.
         - A run that goes on under a later session is listed under that session's id.
         - The agents are listed in launch order, each parent's agents after it.
-        - In an agent's shell, `$CLAUDE_CODE_SESSION_ID` holds the id of the top-level session, in a subagent as well, so `--running $CLAUDE_CODE_SESSION_ID` lists the agents of the whole session whose work is open.
-    - The lines below give when an agent's work is open, what `--running` prints for each agent, and then `--calls-since`, `--pending` and `--open`.
     - Of the agents the run launched, the agents those launched, and so on, an agent's work is open where its turn is in progress, whether or not its parent's work is open, or where its turn has ended, its parent's work is open, and no report of it reached its parent after the parent's latest message to it.
         - A report is one as `--help one` gives it, read here from each transcript of the parent's run.
         - A parent's work is open where the parent is `main` or listed, and the run ID's work is open where it is `main` or would be listed under `main`.
         - Where no transcript of the parent of the run ID, or of a parent above it, gives its launch, whether its work is open is unknown, it counts as open, and an `undecided` line on stderr names it.
         - An agent's turn counts as ended where it has ended, as `--help runs` gives when a turn ends, or where its parent has its result, or a transcript of the sessions of its run or of its parent's run holds a notification of it, and its transcript holds no `user` or `assistant` entry timestamped after the latest of those.
-        - A report after the latest message the agent received from anyone closes its work, whether or not the parent's latest message to it is known.
-        - A result of the agent's own SubagentHandback call after that message, which says the harness delivered its report, closes its work too.
-        - A notification of it after that message, of any status but `running`, closes its work too, other than one whose note says the agent stopped with background work of its own still running.
+        - Each of these after the latest message the agent received from anyone closes its work, whether or not the parent's latest message to it is known: a report; a result of the agent's own SubagentHandback call that says the harness delivered its report; a notification of it of any status but `running`, other than one whose note says the agent stopped with background work of its own still running.
         - Otherwise, an agent whose turn has ended is listed where the parent's latest message to it is unknown.
         - Where these rules give the work of an agent, of the run ID or of a run above it as not open, and its turn has ended while work of its own still runs, whether its work is open is unknown: it counts as open, and an `undecided` line on stderr names it with that work.
         - An agent's work of its own is:

@@ -261,25 +261,21 @@ def run_gate(argv: Sequence[str]) -> int:
     if a.adopt_record:
         if a.cmds or a.accept or a.replace or a.outputs_only or a.affected is not None \
                 or a.since_timed or a.record_deps or a.coverage or a.accepted != ACCEPTED:
-            ap.error(mctx("--adopt-record runs no command, so it takes no command and "
-                          "no other option"))
+            ap.error(mctx("--adopt-record takes no command and no other option"))
         return adopt_record(a.out)
     if a.replace and not a.accept:
         ap.error("--replace is given without --accept")
     if a.accept and a.outputs_only:
         ap.error("--accept writes the cold times, which --outputs-only does not judge")
     if (a.record_deps or a.coverage) and not a.outputs_only:
-        ap.error(mctx("--record-deps and --coverage each run a trace of the sequence, whose "
-                      "times do not compare, so each needs --outputs-only"))
+        ap.error(mctx("--record-deps and --coverage each need --outputs-only"))
     unknown = [c for c in a.cmds if c not in COMMANDS]
     if unknown:
         ap.error(f"no gate command named {', '.join(unknown)}")
     if a.since_timed and (a.outputs_only or a.cmds):
-        ap.error(mctx("--since-timed judges the times of every command a change since the "
-                      "last such run can affect, so it takes no command and no "
-                      "--outputs-only"))
+        ap.error(mctx("--since-timed takes no command and no --outputs-only"))
     if a.record_deps and a.cmds:
-        ap.error(mctx("--record-deps records every command, so it takes no command"))
+        ap.error(mctx("--record-deps takes no command"))
     if a.record_deps and not head_clean():
         ap.error(mctx("--record-deps records the lines of HEAD, and the checkout changes "
                       "a tracked file against it"))

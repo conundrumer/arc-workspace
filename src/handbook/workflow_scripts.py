@@ -8,10 +8,9 @@ import re
 from enum import Enum
 from pathlib import Path
 
-import controlled_markdown as nm
 from controlled_markdown import mctx
 from handbook.context import ROLE_DIR, WORKFLOW_DIR, role_stems, workflow_file
-from handbook.paths import repo_label
+from handbook.fragments import file_fragments_text
 from handbook.role_briefs import role_columns, word_at
 
 
@@ -209,7 +208,4 @@ def workflow_fragments(name: str, workflows: Path = WORKFLOW_DIR) -> str:
     """The script's briefs and schema descriptions: every `mctx` fragment the
     file holds, in file order, each under a line giving the script and the
     line the fragment starts on. The holes stand as the source writes them."""
-    path = workflow_file(name, workflows)
-    script = repo_label(path)
-    return "\n\n".join(f"{script}:{fragment.line}\n\n{fragment.text.rstrip()}"
-                       for fragment in nm.fragments(path, script))
+    return file_fragments_text(workflow_file(name, workflows))

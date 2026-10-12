@@ -1,10 +1,8 @@
 """The drop-one survey: which stored facts of a parameter that holds more
 than one at a case no train pair needs."""
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 
-from checker.domains import enumerable
 from checker.finding import Finding
 from checker.payloads.open_values import Fact, TrainFails
 from checker.runs import Runs
@@ -31,12 +29,10 @@ from solver.per_case import PerCase, by_base, parameter_reading
 @dataclass(frozen=True)
 class DroppedFact:
     """A fact whose removal keeps the train pairs' profile, with what the
-    test pairs say of its removal, and whether `sweep` enumerates its
-    parameter's values (`sweeps_values`)."""
+    test pairs say of its removal."""
 
     fact: Fact
     on_test: OnTest
-    enumerable: bool
 
 
 @dataclass(frozen=True)
@@ -53,13 +49,6 @@ class DropOneReport:
 type DropOneResult = DropOneReport | TrainFails | TimedOut
 
 
-def sweeps_values(solver: Solver, value_types: Sequence[str]) -> bool:
-    """Whether the sweep enumerates a parameter's values: each column of
-    its value (`solver.per_case.PerCase.value_types`) has a candidate
-    domain."""
-    return enumerable(value_types, solver.lib)
-
-
 @quotes("principles.md", "Cases",
         "**Unseen key.** When a test uses a key that no train pair contains, "
         "a lookup table fails Fit.")
@@ -71,7 +60,7 @@ def survey_drop_one(solver: Solver, runs: Runs) -> DropOneResult:
     check; a run that reached a limit is no result."""
     engine, limits = runs.engine, runs.limits
     work: list[Fact] = []
-    many: dict[str, bool] = {}
+    tried: list[str] = []
     for p in solver.params.parameters:
         reading = parameter_reading(solver, p.name)
         rows = _tried(solver, runs, reading, stored_facts(runs.engine, solver, p))
@@ -79,7 +68,7 @@ def survey_drop_one(solver: Solver, runs: Runs) -> DropOneResult:
             failed = runs.train_profile
             return failed if isinstance(failed, TimedOut) else TrainFails()
         if rows:
-            many[p.name] = sweeps_values(solver, reading.value_types)
+            tried.append(p.name)
             work += [Fact(p.name, reading.types, r) for r in rows]
     if not work:
         return DropOneReport((), 0, 0, ())
@@ -109,8 +98,8 @@ def survey_drop_one(solver: Solver, runs: Runs) -> DropOneResult:
         if isinstance(v, TimedOut):
             timed.append((f, v.finding))
             continue
-        dropped.append(DroppedFact(f, v, many[f.parameter]))
-    return DropOneReport(tuple(dropped), len(work), len(many), tuple(timed))
+        dropped.append(DroppedFact(f, v))
+    return DropOneReport(tuple(dropped), len(work), len(tried), tuple(timed))
 
 
 def removal(engine: Engine, solver: Solver, fact: Fact) -> Program:

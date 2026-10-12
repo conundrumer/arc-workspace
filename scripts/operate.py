@@ -82,7 +82,6 @@ USAGE = mctx("""
     - `restore` puts that work back and removes the task's claim, as that section gives.
         - `<reason>` is the reason the task's pipeline stopped, or empty where that pipeline ran to its end, and `next` then takes that pipeline as ended with that reason.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives.
-        - The command refuses where the shell gives none.
     """)
 """The help the bare `--help` prints."""
 
@@ -99,25 +98,21 @@ PURPOSES = {
 PARTS = {
     HelpPart.NEXT: mctx("""
     - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters, or the final reply.
-        - Before the final reply, it prints a SendMessage call that sends the operator's parent, the coordinator or the operator launcher that launched it, the reply's text.
+        - Before the final reply, it prints a SendMessage call that sends the reply's text to the agent that launched the operator.
         - It then prints the SubagentHandback call whose message is the line that says so.
         - It writes the brief of a launch, and a message to an agent other than the coordinator, to a file under the session's scratchpad, and the call's prompt or message gives that file's path.
         - The value of a prompt or a message parameter it prints stands between two lines of three backticks, and the value to pass is the text between those lines, without them.
         - A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items.
         - The brief of a launch other than a solver pass's gives the file the agent writes its final reply to.
-        - The brief of a launch other than a solver pass's ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where the budget `profile_runs.py --help budget` gives the brief, over every run under the project directories, is N minutes rounded up.
-            - A brief that gives items, as `profile_runs.py --help budget` gives them, takes that budget per item times the number of items it gives.
-            - Any other brief takes that budget for a run.
-            - Where there is no such budget, the brief has no such line.
+        - The brief of a launch other than a solver pass's ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where `profile_runs.py --help budget` gives a budget for the brief over every run under the project directories.
+            - N is that budget in minutes, rounded up: the budget per item times the number of items for a brief that gives items, as that help gives them, and the budget per run for any other brief.
         - Where its last call of a launch failed with a result whose first line is `Agent type '<agent type>' not found`, or starts with that text followed by `.`, less than {load} seconds after the last write of its rendered definition `.claude/agents/<agent type>.md`, it gives the launch again once {retry} seconds have passed since that call, in place of a step on that failure.
-            - Where that call came {load} seconds or more after that write, that failure is undecided, as that of any other failed call is.
         - An agent whose latest notification has the status `failed` and a summary that gives `{rate_limit}` was stopped by the usage limit.
             - `next` counts such an agent as running, and takes nothing from that notification as its report.
             - Once the usage file of the Claude config directory (`$CLAUDE_CONFIG_DIR/usage.json`, or `~/.claude/usage.json` where that is unset) was written after that stop, less than {stale} seconds ago, with a `used_pct` under 100 in each window, `next` prints, ahead of every other step, a SendMessage call that asks the agent to carry on its work, once for each such stop.
         - Where no step is ready, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again.
             - The block also ends, and it prints that the operator runs it again, once a message to the operator waits that the harness accepted after the latest `user` entry of the operator's transcript before the call.
-                - Such a message is a SubagentHandback of an agent the operator launched or last resumed, or a SendMessage call, in any transcript of the session, to the operator's agent id or name, each with a result that gives success, and for SendMessage that it queued the message or resumed the operator.
-    - Before each call it prints, `next` prints that step's key, on a line that gives the command to run after the call, so the text it prints ends with the call's last field.
+    - Before each call it prints, `next` prints that step's key, on a line that gives the command to run after the call.
         - The key is the same at each read of the state that gives the same step.
     - A ticket file whose read refuses or fails, other than a file that moved during the read, leaves its ticket out of every procedure.
         - A ticket that depends on it waits.
@@ -135,7 +130,6 @@ PARTS = {
             - A ruling on a solver pass holds for each pipeline on its task, unless the work set aside for an earlier pipeline on that task went back (`restore`) after the ruling and before that pipeline's line or `start` call.
             - A solver pass's key is `<task id>-<pass>`, its task id and its pass (`analyze`, `create` or `refine`).
                 - A ruling can name a pass that was never printed.
-                - The ruling holds whatever overrides the pass's brief gains.
     - A coordinator's line that opens with `Override:` or `Decision:` in none of these forms goes back to the coordinator once, as undecided.
     - A ticket analyst's reply on a step that gives its decision key, with no ruling in these forms, goes back to it once.
         - Where its answer gives none either, the step stays held.
@@ -143,13 +137,13 @@ PARTS = {
     """),
     HelpPart.RUN: mctx("""
     - `next` reads a coordinator's line `Run: <path>` as a run: the solver pipelines that the Python script at `<path>`, absolute or relative to the main tree, starts.
-        - Write a run script under `work/runs/` in the main tree, which git ignores.
+        - Write a run script under `work/runs/` in the main tree.
         - It defines `starts(run: Run) -> Iterable[Start]`, with `Run` and `Start(task, passes)` from the module `operations.runs`, each `passes` a non-empty sequence whose every item is `analyze`, `create` or `refine`.
         - `run.queue` gives the task ids of the queue, in the order of their names, less each task a claim file gives and each task of the run's pipelines.
         - `run.running` and `run.ended` give the run's pipelines, each with `task`, `passes` and `stopped`, which gives, for an ended one, the reason it stopped, or None where it ran to its end.
-        - At each read of the state, `next` loads the script again and calls `starts`, so an edit of the script changes the run.
+        - At each read of the state, `next` loads the script again and calls `starts`.
         - `next` gives as a step the `start` of the first item `starts` gives whose task no pipeline of the session runs and that matches no pipeline of the run by task and passes, and passes over each other item.
-            - That `start` has as `<run>` the time of the line's message and its path, which tell the run's pipelines from another run's.
+            - That `start` has as `<run>` the time of the line's message and its path.
         - A `start` on a task whose claim file stands ends that pipeline, with the failure's text as its reason.
         - Where the script fails to load, `starts` raises, the load and the call of `starts` run past {script} seconds, or `starts` gives a result in no form above, the run starts nothing while that fault stands.
             - The coordinator gets the fault's text, once for each distinct text.

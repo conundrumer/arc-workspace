@@ -151,7 +151,7 @@ def operator_runs(session: str, me: str) -> list[tuple[str, Path]]:
 def resumed_at(aid: str, path: Path, undecided: list[str]) -> list[float]:
     """The time of each resume of the agent `aid` whose transcript is at
     `path`, as `monitor.ALERTS` gives one, of the first prompt alone after
-    each entry that ended a run, other than a prompt `by_callees` gives. A
+    each entry that ended a run: a prompt `by_callees` gives is no resume. A
     resume whose entry gives no time is left out, and an `undecided` line
     names it."""
     out: list[float] = []

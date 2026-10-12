@@ -35,9 +35,8 @@ def pending_reason(agents: list[str], caller: str | None) -> str:
 
     blocked = mctx(
         "Blocked: this call waits on {agents}, which you launched and which "
-        "has not reported since its launch or its last resume, by you or by "
-        "another agent, so end your turn now, and the harness re-invokes you "
-        "when it reports."
+        "has not reported since its launch or its last resume, so end your "
+        "turn now: the harness re-invokes you when it reports."
     ).format(agents=", ".join(agents))
     if caller is None:
         return blocked
@@ -78,10 +77,8 @@ def bound_reason(timeout: str) -> str:
 
     return "\n".join([
         mctx("Blocked: this foreground Bash call has a timeout of {timeout} ms, over the "
-             "bound of {bound} ms, whatever timeout your documents give."),
+             "bound of {bound} ms."),
         mctx("Run the same call again with a timeout of at most {bound} ms."),
-        mctx("Where the command outlasts that timeout, the harness moves the command to "
-             "the background, and you wait on it as your documents give."),
     ]).format(timeout=timeout, bound=FOREGROUND_MS)
 
 

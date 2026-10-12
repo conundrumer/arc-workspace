@@ -258,12 +258,12 @@ def _run_update(tree: Path, argv: list[str], fields: dict[str, Any],
     text = "\n".join([opening, head]).format(**fields) + "\n" + mctx("""
         - From now on, act by your context and `CLAUDE.md` as the diff leaves them: by its `+` lines, and no longer by its `-` lines.
         - After those two, the diff gives each section that links from them reach, each under a line that gives its path, then one line `<target> via <source>` for each link on the way.
-            - A section that lies within another section or document the diff gives stands only within that one's diff.
             - In a line `<target> via <source>`, a line of `<source>` links to `<target>`, and `<source>` is `context` or `CLAUDE.md` where the link stands there.
-        - Each `@@` line ends in the headings that hold the first line of its hunk, outermost first.
         - Act by a section's `+` lines only where a path of those links, each of which has you read its target, runs from your context or `CLAUDE.md` to it, and not where a link only mentions it.
         """)
     if len(text) + len(done.stdout) > HOOK_TEXT_CAP:
+        # Ticket 2-482: an agent took the harness's preview of a long output
+        # for the whole output.
         text += "\n" + mctx(
             "This text is longer than Claude Code puts in your context whole, "
             "so you see a preview of it and the path of a file that holds it: "
@@ -309,8 +309,7 @@ def update_text(tree: Path, after: str, context: str, instructions: str,
         "\n".join([
             mctx("The diff below, which `{command}` prints, runs from the oldest commit "
                  "you may hold each of them at: your own context from commit {context}, "
-                 "and the project instructions, `CLAUDE.md`, from commit {instructions}."),
-            mctx("So you may already hold some of its changes.")]))
+                 "and the project instructions, `CLAUDE.md`, from commit {instructions}.")]))
 
 
 SNAPSHOT = "prompt_snapshot"
@@ -378,9 +377,9 @@ def held_update_text(tree: Path, after: str, launch: str,
                 mctx("The diff of your documents since then could not be computed: "
                      "`{command}` exited {code} and wrote what follows.")]),
             mctx("The diff below, which `{command}` prints, runs from the texts you were "
-                 "given at your launch: your own context and the project instructions, "
-                 "`CLAUDE.md`, from those texts, and each section that links from them "
-                 "reach from commit {launch}, your tree's `HEAD` at your launch."))
+                 "given at your launch for your own context and the project instructions, "
+                 "`CLAUDE.md`, and from commit {launch}, your tree's `HEAD` at your launch, "
+                 "for each section that links from them reach."))
 
 
 @contextmanager

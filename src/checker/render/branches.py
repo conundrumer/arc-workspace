@@ -302,9 +302,8 @@ def finding_text(solver: Solver, f: Finding) -> str:
             return untaken_text()
         case Kind.STORE_IDENT_KEY, RelationPayload(relation=r):
             return mctx("`{r}` has an `Ident` column, whose ids each run "
-                        "assigns anew, so a stored value of it names no "
-                        "object on another input, and no case of "
-                        "`{r}=stored` runs").format(r=r.text)
+                        "assigns anew, so no case of `{r}=stored` runs"
+                        ).format(r=r.text)
         case Kind.STORE_HOMONYMS, HomonymsPayload() as h:
             return homonyms_text(h)
         case Kind.STORE_PARAMS_ASK, ColorAskPayload(

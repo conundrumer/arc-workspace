@@ -35,22 +35,14 @@ HELP = mctx("""
         uv run python scripts/change_worktree.py --name <name>
         uv run python scripts/change_worktree.py --fingerprint <worktree>
         ```
-    - The first form makes the worktree of the change whose ticket has the number `<number>`.
-        - `<agent>` and `--id` are the agent and the agent id of the log line it writes, as `file_ticket.py log` takes them.
-    - The second form makes the worktree of a change that has no ticket, such as solver work, and writes no log line.
-        - `<name>` is the name of its worktree and its branch, a branch name with no `/`.
-    - The third form prints a digest of the diff of `<worktree>` from its merge base with `master` and of each untracked file there that git does not ignore, and makes or changes nothing.
-    - The first two forms print the path of the worktree, alone on one line.
-    - In the first form, where the change has a worktree, the command adds no worktree, carries into it each file the Scope line below gives that it does not hold, writes the `worktree <path>` line, and prints its path.
-        - The change's worktree is the path that the latest line of its log that gives a path under `{worktrees}/` gives, where no line whose note opens with `{rerun}` is that line or follows it, and where that path stands in `git worktree list`.
+    - The first form makes the worktree of the change whose ticket has the number `<number>`, writes on the ticket the line `worktree <path>` in the status the ticket stands in, and prints its path.
+        - `<agent>` and `--id` are the agent and the agent id of that log line, as `file_ticket.py log` takes them.
+        - Where the latest line of the ticket's log that gives a path under `{worktrees}/` gives a worktree that `git worktree list` lists, and no line whose note opens with `{rerun}` is that line or follows it, that worktree is the change's, and the command adds none.
         - Otherwise `<name>` is `change-<number>`, and after `k` lines whose note opens with `{rerun}`, `change-<number>-run-<k + 1>`.
-    - The worktree is `<main tree>/{worktrees}/<name>`, on the branch `<name>`.
-        - Where no worktree stands at that path, the command adds it with `git worktree add` on a new branch of that name from `master`.
-        - Where one stands there on that branch, as an earlier run left it, it adds none.
-    - It then copies in from the main tree each untracked file that the patterns of the main tree's `.worktreeinclude` match.
-    - In the first form, it then copies in from the main tree each untracked file that git does not ignore, at a path that the ticket's `## Scope` gives, where the worktree holds no file at that path.
-        - `merge_change.py`'s `--help` gives how a change that touches such a path lands.
-    - In the first form, it then writes on the ticket the line `worktree <path>` in the status the ticket stands in.
+    - The second form makes the worktree of a change that has no ticket, writes no log line, and prints its path. `<name>` is a branch name with no `/`.
+    - The third form prints a digest of the diff of `<worktree>` from its merge base with `master` and of each untracked file there that git does not ignore, and makes or changes nothing.
+    - The worktree `<name>` is `<main tree>/{worktrees}/<name>`, on the branch `<name>` from `master`, and the command adds it where it does not stand there.
+    - The command copies into the worktree from the main tree each untracked file that the patterns of the main tree's `.worktreeinclude` match, and, in the first form, each untracked file that git does not ignore at a path that the ticket's `## Scope` gives, where the worktree holds no file at that path.
     - The command refuses, adds nothing and writes no line, where a worktree stands at that path on another branch, or where that path or that branch exists with no worktree of that branch at that path.
     """)
 

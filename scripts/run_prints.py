@@ -93,8 +93,7 @@ def print_ended(r: Run, end: float | None, now: float,
                 undecided: list[str]) -> None:
     if end is None:
         undecided.append(mctx("{run}: no timestamped entry of its transcripts "
-                              "ends a turn, as `scripts/profile_runs.py --help runs` "
-                              "gives one, so when its turn ended is unknown").format(
+                              "ends a turn, so when its turn ended is unknown").format(
             run=r.label))
         print("  " + mctx("turn ended: ?"))
         return

@@ -91,8 +91,7 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
             return False
         if r.messaged is None:
             return Undecided(mctx("the transcript of doc reviewer {agent} of change {number} "
-                                  "is unknown, so the command cannot read whom it sent a "
-                                  "message").format(agent=r.agent_id, number=t.number))
+                                  "is unknown").format(agent=r.agent_id, number=t.number))
         ids = agent_ids(late)
         if isinstance(ids, Undecided):
             return ids

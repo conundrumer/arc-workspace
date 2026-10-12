@@ -18,3 +18,4 @@ class ReaderName(StrEnum):
     CONSOLE = "console"
     SURVEY = "survey"
     WORKFLOW = "workflow"
+    FRAGMENTS = "fragments"

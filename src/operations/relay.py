@@ -58,8 +58,7 @@ class Relay:
 FRESH_LAUNCHER = mctx("I ended for my context: launch a fresh operator launcher with no lines, "
                       "which takes up from the state.")
 WITH_HELD = mctx("I ended for my context: launch a fresh operator launcher whose brief is the "
-                 "lines below, which reached me after operator {operator} ended and reached no "
-                 "operator.")
+                 "lines below, which reached no operator.")
 CARRIED = mctx("Operator {operator} ended with the final reply below.")
 NO_REPLY = mctx("Operator {operator} ended with no final reply.")
 

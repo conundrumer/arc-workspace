@@ -15,9 +15,7 @@ from cli import audit, grid, record, run, survey, text
 from controlled_markdown import mctx
 
 SWEEP_LIMIT_HELP = mctx("wall-clock limit in seconds on the sweep's solver "
-                       "runs, past which the parameter in progress reports "
-                       "as cut, and each parameter not yet started as not "
-                       "swept")
+                       "runs")
 
 GRID_HELP = mctx("""
     - Grid format: one line per row, one digit 0-9 per cell.
@@ -26,11 +24,8 @@ GRID_HELP = mctx("""
         - Text starting with `[` is read as JSON.
     """)
 
-GRID_FOLLOWS = mctx("- The arguments and options follow, then the grid format.")
-
 STEM_HELP = mctx("a task id, or the path, in any directory, to a solver file "
-                 "whose name starts with the task id, which the command runs "
-                 "with the lib, as it runs a solver")
+                 "whose name starts with the task id")
 
 ASSIGN_HELP = mctx("an `assign` object, in the witness file's shape")
 
@@ -57,7 +52,6 @@ RUN_HELP = mctx("""
         souffle -D- -w -L programs -lfunctors programs/solvers/.tmp.dl
         ```
     - Souffle reads one fact line per cell on stdin: `[top, bottom, left, right]` edge distances, a tab, then the color.
-        - In a 3x3 grid the top-left cell, in color 7, is `[0, 2, 0, 2]<TAB>7`.
     - For a solver with GRID calls or RIGID blocks, put the `expand` command's output in place of the `cat` line.
     - Add `-p <file>` for a profile that souffleprof reads.
     """)
@@ -89,8 +83,6 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
         "run", run.dispatch,
         help=mctx("pairs, lint and determination checks, the command run when "
                   "the first argument is not a command"),
-        description=mctx("The arguments and options follow, then how to "
-                         "profile one grid by hand."),
         epilog=RUN_HELP,
     )
     lint = command(
@@ -100,11 +92,10 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                          "code."),
     )
     run_p.add_argument("stems", nargs="*",
-                       help=mctx("the solvers to run, each {stem}: one solver "
-                                 "runs its pairs, lint and determination "
-                                 "check, several give the report of a run "
-                                 "over every solver, over those solvers, and "
-                                 "none runs every solver").format(stem=STEM_HELP))
+                       help=mctx("the solvers to run, each {stem}, or every "
+                                 "solver when omitted; more than one gives "
+                                 "the report of a run over every solver, "
+                                 "for those solvers alone").format(stem=STEM_HELP))
     lint.add_argument("stems", nargs="*",
                       help=mctx("the solvers to lint, each {stem}, or every "
                                 "solver when omitted").format(stem=STEM_HELP))
@@ -138,8 +129,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
             - Cases that emit the same output are listed together above that output: on one line, joined by `, ` and ending in `:`, or, when that line would pass {width} characters, one per indented line and then a line of `:`.
             - After them come `<case>: emits nothing` for each case that emits no grid, and `<case>: undefined` for each case that takes a `@derive` or `@store` branch and emits none.
             - After the count line comes `no case takes $<Ctor>` for each constructor of `Choice`, at any depth, that no case of the solver takes.
-            {follows}
-            """).format(width=GROUP_WIDTH, follows=GRID_FOLLOWS,
+            """).format(width=GROUP_WIDTH,
                  refusal=text.NO_WITNESSED_TAKES.format(name="<name>")),
         epilog=GRID_HELP,
     )
@@ -164,9 +154,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                   "each relation the arguments give"),
         description=mctx("""
             - Prints each relation's rows as Souffle writes them, one fact per line, under the relation's attribute names.
-                - A column of type `Choice` holds each case by its shortest name, and a column of a lib orientation type, such as `D4` or `Dir8`, each value by the lib constant that names it.
             - The last argument is the grid file when it is `-` or the path of a file, and otherwise the grid is read from stdin.
-            - The command writes nothing but the run cache.
             """),
         epilog=GRID_HELP,
     )
@@ -186,14 +174,10 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
             - The witness replaces a witness with the same id.
             - For an `other` verdict, put the judged output after a `---` line of the grid text.
             - Without `--separates` or `--assign`, record runs the witness of that id again on the input and `assign` the file holds for it, and writes only its groups.
-                - `--all` does this for every witness of the file.
                 - A witness keeps its judged output where each line that records its verdict gives `other`, and its groups replace the judged output where each gives another verdict or no line records one.
                 - Where its lines give `other` and another verdict both, the run fails.
-            - Where `file` is omitted, an id the witness file holds keeps its input, and a new id reads the grid from stdin.
-            - Where a witness keeps its input, `--separates` alone keeps its groups and takes the new text.
-            - Where a witness keeps its input, `--assign` runs it again at the new `assign`.
-            {follows}
-            """).format(follows=GRID_FOLLOWS),
+            - Where `file` is omitted, a new id reads the grid from stdin, and an id the witness file holds keeps its input: `--separates` alone then keeps its groups and takes the new text, and `--assign` runs it again at the new `assign`.
+            """),
         epilog=GRID_HELP,
     )
     record_p.add_argument("stem", help=STEM_HELP)
@@ -253,8 +237,6 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
         help=mctx("witness report + dropped case report + derive report + "
                   "store report + open values report, writing no "
                   "witness"),
-        description=mctx("Each section prints when it completes, with the "
-                         "seconds it took on its header line."),
     )
     audit_p.add_argument("stem", help=STEM_HELP)
     audit_p.add_argument("--witness-file", metavar="PATH",
@@ -314,28 +296,23 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
     file_or_every.add_argument(
         "--every-case", action="store_true",
         help=mctx("run with `impl_choice` holding every case of `Choice`, "
-                  "and for each case the solver drops, or, with "
-                  "`--dropped-from`, each case that file drops in place of "
-                  "those, print the first of these "
+                  "and for each dropped case print the first of these "
                   "the runs show: it fails Fit, no witness "
                   "separates it from another case, it fails Subsumption, "
                   "or it fails none of them"))
     witness.add_argument(
         "--dropped-from", metavar="PATH", dest="dropped_from",
-        help=mctx("with `--every-case`, a solver file of the same task, "
-                  "whose dropped cases are the cases of the solver's "
-                  "`Choice` it does not hold"))
+        help=mctx("with `--every-case`, a solver file of the same task "
+                  "whose dropped cases, the cases of the solver's `Choice` "
+                  "it does not hold, take the place of the solver's own"))
     derive = command(
         "derive", partial(audit.derive_or_store, audit.cmd_derive),
         help=mctx("the built-in derivations of stored parameters that fit, "
                   "each a branch, with each witness it builds, which it "
                   "writes into the task's witness file"),
         description=mctx("""
-            - Each built-in derivation of a stored parameter, a proposer of `programs/proposers.dl`, for which some case of the solver that takes its branch fits the task.
-            - With each, the witness that separates the cases that take the branch from the cases that take the stored value there and the same branches elsewhere.
-                - A derivation whose `@ignore: derive <Proposer> — <reason>` line, or whose parameter's `@ignore: derive — <reason>` line, stands gets none.
-            - A derivation whose branch no case takes is listed, with no witness, where the concept case fits.
-            - A derivation is listed, with no witness, where the `@ignore: derive <name>` lines exclude every case that takes its branch.
+            - Each built-in derivation of a stored parameter, a proposer of `programs/proposers.dl`, for which some case of the solver that takes its branch fits the task, with the witness that separates the cases that take the branch from the cases that take the stored value there and the same branches elsewhere.
+            - A derivation is listed with no witness where its `@ignore: derive <Proposer> — <reason>` line or its parameter's `@ignore: derive — <reason>` line stands, where the `@ignore: derive <name>` lines exclude every case that takes its branch, and, where the concept case fits, where no case takes its branch.
             - The command writes each witness it builds into the task's witness file, as `record` writes one, with the `@derive` line standing, and keeps a witness the file already holds for the branch.
             """)
         + "\n" + unwritten(Section.DERIVE),
@@ -351,7 +328,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
             """)
         + "\n" + unwritten(Section.STORE) + "\n" + mctx(
             "- A relation with more than {cap} rows on some input is not "
-            "checked, since that is too many rows to be a stored value."
+            "checked."
         ).format(cap=ROW_CAP),
     )
     for p in (derive, store):

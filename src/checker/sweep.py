@@ -9,8 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import Enum, auto
 
-from checker.domains import candidate_rows, param_domains
-from checker.drop_one import sweeps_values
+from checker.domains import candidate_rows, enumerable, param_domains
 from checker.runs import NoCases, Runs
 from checker.variants import (
     Entry,
@@ -733,7 +732,7 @@ def survey_sweep(solver: Solver, runs: Runs,
                 entries.append((rank, 0, order, Skipped(
                     p.name, columns.written, NotSwept.NO_FACTS, case)))
                 continue
-            if not sweeps_values(solver, columns.types):
+            if not enumerable(columns.types, solver.lib):
                 entries.append((rank, 0, order, Skipped(
                     p.name, columns.written, NotSwept.NON_ENUMERABLE, case)))
                 continue

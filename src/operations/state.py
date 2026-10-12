@@ -343,9 +343,9 @@ class State:
     of each worktree that stands on one, and `stalled` the final reply in
     the transcript of each agent a stall alert names that reached no
     operator as a report. `late_resumes` gives, for each operator of
-    `operators`, its resumes after the next operator of `operators` made its
-    first entry, other than those by a prompt `monitor.ALERTS` exempts, in
-    the order of their time. `made` holds each step the command printed to an operator
+    `operators`, its resumes, as `monitor.ALERTS` gives them, after the
+    next operator of `operators` made its first entry, in the order of
+    their time. `made` holds each step the command printed to an operator
     with the call that operator made next (`handled.made`). `messages` holds
     the messages that reached any operator of the session, and `received`
     those that reached `me` or an operator it takes up the lines of
