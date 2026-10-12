@@ -213,7 +213,7 @@ def elsewhere(state: State) -> list[str]:
 
 
 EARLY: tuple[Callable[[State], Step | None], ...] = (
-    limit_resume.step, unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.late_resumes, decisions.asks, triage.decisions, triage.for_coordinator,
+    limit_resume.step, unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.late_resumes, decisions.asks, triage.decisions, triage.main_wanted, triage.for_coordinator,
     triage.unfinished)
 LATE: tuple[Callable[[State], Step | None], ...] = (
     launching, triage.reopen, triage.later_lines, triage.settle, changes.stall, drafts.step,

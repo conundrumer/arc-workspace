@@ -5,6 +5,10 @@ review of the documents. The steps carry out
 [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change);
 `merging` gives the merge and what follows it.
 
+The operators act on the tickets of the session and, where the session
+is the one whose id `tickets/main` holds, on those of each other session in which
+no agent runs (`State.adopted`), as `State.mine` gives them.
+
 The editors a change needs are those the `editors` field of its ticket
 gives, which the ticket analyst that files it writes, and a change whose
 ticket gives none is undecided. A change with no worktree gets one from
@@ -110,8 +114,8 @@ from ticketing.vocabulary import Domain, Kind, Status
 
 
 def scope(state: State) -> set[str]:
-    """The tickets the operators release and take changes among: the
-    session's, those the coordinator gives in a line to the operator `me`,
+    """The tickets the operators release and take changes among: those
+    `State.mine` gives, those the coordinator gives in a line to the operator `me`,
     and each ticket a chain of links reaches from one of those."""
     return reached(state, {n for n, t in state.tickets.items() if state.mine(t)} | named(state))
 

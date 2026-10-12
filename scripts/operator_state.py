@@ -28,7 +28,8 @@ from operator_reads import (ended_elsewhere, ended_with, operator_runs, read_ope
                             resumed_at, stalled_reports)
 from run_prints import self_of
 from run_reads import bash_spans, context_size, parent_id, repeated_runs, run_entries
-from ticket_numbers import indexes, session_index, ticket_number
+from idle_sessions import main_wanted, read_sessions, want_main
+from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
 from ticket_settle import to_settle
 from ticket_watch import budget, spend
@@ -46,7 +47,7 @@ from operations.relay import Relay, Run
 from operations.roles import Role
 from operations.directives import lines, named
 from operations.plan import taken_up, unknown_line
-from operations import change_budget, changes, drafts, monitor, passes, runs
+from operations import change_budget, changes, monitor, passes, runs
 from operations.monitor import MonitorState, Watched
 from operations.state import (Agent, Budget, Call, LateResume, Message, Reader, Report, Spend, Starts,
                               State, Ticket)
@@ -272,12 +273,12 @@ def read_state(me: str) -> tuple[State, MonitorState]:
         branches={w: b for w, b in trees.items() if b is not None},
         limit_lifted=limit_lifted(now, watching))
     state = replace(state, taken_up=taken_up(state))
-    state = replace(state, idle_indexes=idle_indexes(state, tickets_dir))
+    state = sessions(state, tickets_dir)
     given = [ticket_number(n) for n in named(state) if n in tickets]
     held = {w for t in tickets.values() if t.status is Status.ASSIGNED and t.holder == me
             and (w := worktree(t, state)) is not None}
     state = replace(state,
-                    to_settle=tuple(str(n) for n in to_settle(tickets_dir, index, given)
+                    to_settle=tuple(str(n) for n in to_settle(tickets_dir, index, state.adopted, given)
                                     if str(n) in tickets),
                     gate_outputs={w: gate_outputs(w) for w in held},
                     fragments={w: fragments(w) for w in held})
@@ -290,33 +291,16 @@ def read_state(me: str) -> tuple[State, MonitorState]:
                                undecided=tuple(watching))
 
 
-def idle_indexes(state: State, tickets: Path) -> frozenset[int]:
-    """The indexes `State.idle_indexes` defines. An index whose session ids
-    no file of `tickets/sessions/` gives, and a session id with no
-    transcript, count as running no operator, since no session of them runs
-    in this project. A session id that names more than one transcript, and
-    they differ, counts as running no operator too, as `session_agents`
-    gives it. The lines `running_agents` writes on another session's
-    agents are dropped: no reader of the operator's reply has an operation
-    on them."""
-    ids = indexes(tickets)
-    out: set[int] = set()
-    for index in sorted({t.session for t in drafts.elsewhere(state) if t.session is not None}):
-        if not any(x.run.agent_type == Role.OPERATOR
-                   for sid in ids.get(index, []) for x in session_agents(sid)):
-            out.add(index)
-    return frozenset(out)
-
-
-def session_agents(session: str) -> list[Listed]:
-    """The agents with open work under the session `session`, or none where
-    `transcripts.find` refuses it: where it has no transcript, or names
-    more than one, and they differ."""
-    try:
-        path = find(session)
-    except Refused:
-        return []
-    return running_agents(path, [])
+def sessions(state: State, tickets: Path) -> State:
+    """`state` with the read of `idle_sessions`. Where an index is idle and
+    no main is live, the read first creates `tickets/main-wanted` with the
+    session's id where no file holds that name, so that one session asks
+    the user to pick a main (`triage.main_wanted`)."""
+    read = read_sessions(tickets, state.index, state.now)
+    if read.idle and not read.main and not read.main_live:
+        want_main(tickets, state.session)
+    return replace(state, idle_indexes=read.idle, adopted=read.adopted, main_live=read.main_live,
+                   main_wanted=main_wanted(tickets))
 
 
 def editor_reviewers(agents: list[Agent], main: Path, undecided: list[str]) -> list[Agent]:

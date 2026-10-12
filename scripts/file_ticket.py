@@ -36,6 +36,7 @@ from ticket_log import (AGENT_ID, CLOSED_BY, SESSION_ID, UNBLOCKED_BY, VALIDATIN
 from ticket_numbers import (SESSION_VAR, SESSIONS, reserve, session_id,  # noqa: E402
                             session_index, ticket_number, write_new)
 from ticket_settle import to_settle  # noqa: E402
+from idle_sessions import MAIN, name_main, read_sessions  # noqa: E402
 from ticket_reads import editors_field  # noqa: E402
 from ticket_watch import (CAP, CHANGES, Case, add_evidence, budget, case_loss, evict,  # noqa: E402
                           fix_field, front, route, threshold)  # noqa: E402
@@ -150,6 +151,7 @@ LOG_RULES = mctx("""
 
 TO_SETTLE_HELP = mctx("""
     - The list holds each ticket under `tickets/open/` that your session filed or whose number the call gives.
+        - Where your session is the main session, as `{invocation} main --help` defines it, the list also holds each ticket under `tickets/open/` that a session in which no agent runs filed.
     - The command prints the number of each ticket the list holds, one per line, in the order of numbers, or `{empty}` where it holds none.
     """)
 
@@ -160,6 +162,15 @@ TO_SETTLE_RULES = mctx("""
         - each `{refactor}` whose title ends in `{many_ideas}`, which the editor that next edits its module carries out first.
     - A `{question}` with the `<domain>` `{change_domain}` is filed on the change its `<subject>` gives.
     - The command refuses where a number the call gives names no ticket, where the front matter of a ticket the list would hold gives no kind, where a `{refactor}` it would hold has no title, or where a `{question}` filed on a change names no ticket the ticket tracker holds.
+    """)
+
+MAIN_HELP = mctx("""
+    - The main session is the one whose operators act on the tickets of each other session in which no agent runs as on its own.
+    - `<session id>` is the id of the session the user picks.
+    """)
+
+MAIN_RULES = mctx("""
+    - The command writes `<session id>` to `tickets/main`, in place of what it holds, and removes `tickets/main-wanted`, the mark that a session has asked the user to pick a main session.
     """)
 
 CASE_HELP = mctx("""
@@ -376,7 +387,9 @@ def log_args(args: list[str]) -> list[str | None]:
 
 def settle_command(*given: str) -> str:
     tickets = main_tickets()
-    numbers = to_settle(tickets, session_index(tickets, session_id()), map(ticket_number, given))
+    index = session_index(tickets, session_id())
+    adopted = read_sessions(tickets, index, time.time()).adopted
+    numbers = to_settle(tickets, index, adopted, map(ticket_number, given))
     return "\n".join(map(str, numbers)) if numbers else EMPTY
 
 
@@ -442,6 +455,12 @@ def show_command(*given: str) -> str:
                         *(f"{heading(name)}\n{section(text, name)}" for name in given[1:])])
 
 
+def main_command(session: str) -> Path:
+    tickets = main_tickets()
+    name_main(tickets, session)
+    return tickets / MAIN
+
+
 @dataclass(frozen=True)
 class Subcommand:
     """A subcommand: what it does, which its line in `HELP` and its own help
@@ -474,6 +493,8 @@ SUBCOMMANDS = {
                                "change's budget for its new `editors` set"),
                           " <number> <editor> <agent> <agent id>", EDITORS_HELP, EDITORS_RULES, 4,
                           editors_command, True),
+    "main": Subcommand(mctx("sets the main session"), " <session id>", MAIN_HELP, MAIN_RULES, 1,
+                       main_command, True),
     "show": Subcommand(mctx("prints a ticket, or only the sections the call names"),
                        " <number> [<section> ...]", SHOW_HELP, "", None, show_command, False),
 }

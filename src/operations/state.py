@@ -349,10 +349,15 @@ class State:
     `operator_state.limit_lifted` gives it. `queue` is the queue's full
     listing, read only while a `Run:` line stands, and `run_starts` what
     the script of each `Run:` line gave at this read, by its run
-    (`runs.run_id`). `idle_indexes` holds the index of each session of
-    the drafts `drafts.elsewhere` gives whose session ids
-    `tickets/sessions/<index>` gives run no agent of type `operator` with
-    open work, as `open_agents.running_agents` gives it."""
+    (`runs.run_id`). `idle_indexes` holds each index other than the
+    session's that holds a ticket outside `tickets/closed/` and
+    `tickets/watching/` and in whose sessions no agent runs, `adopted`
+    those of them the operators act on as on the session's own, which are
+    all of them where the session is the one whose id `tickets/main`
+    holds, and none otherwise, `main_live` whether a session whose id
+    `tickets/main` holds runs an agent, and `main_wanted` the
+    session id `tickets/main-wanted` holds with the time of its write, as
+    `idle_sessions` gives them."""
     me: str
     now: float
     session: str
@@ -393,6 +398,9 @@ class State:
     queue: tuple[str, ...] = ()
     run_starts: Mapping[str, Starts] = field(default_factory=dict)
     idle_indexes: frozenset[int] = frozenset()
+    adopted: frozenset[int] = frozenset()
+    main_live: bool = False
+    main_wanted: tuple[str, float] | None = None
 
     @property
     def arrived(self) -> list[Message]:
@@ -423,5 +431,5 @@ class State:
         return self.tickets.get(number)
 
     def mine(self, t: Ticket) -> bool:
-        """Whether `t` is of the session."""
-        return t.session == self.index
+        """Whether the operators act on `t` as on a ticket of the session."""
+        return t.session == self.index or t.session in self.adopted

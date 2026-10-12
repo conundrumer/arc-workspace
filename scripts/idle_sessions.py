@@ -1,0 +1,103 @@
+"""The sessions in which no agent runs, and the main session, whose
+operators act on the tickets of those sessions as on its own.
+
+A session id is live where its main transcript, or a subagent transcript
+under its `subagents/` directory, was modified within `constants.FOREGROUND_MS`, the
+bound on each agent's foreground call, so an agent that runs writes its
+transcript within it. An index is idle where none of the session ids
+`tickets/sessions/<index>` gives is live. `file_ticket.py main --help-all`
+gives the files `tickets/main` and `tickets/main-wanted`."""
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+from operations.constants import FOREGROUND_MS
+from ticket_files import ticket_files, ticket_name
+from controlled_markdown import mctx
+from ticket_numbers import SESSIONS, indexes, link_new, staged
+from ticketing.vocabulary import SETTLED, Status
+from transcripts import Refused, project_dirs, session_directory, subagent_transcripts
+
+MAIN = "main"
+
+MAIN_WANTED = "main-wanted"
+
+
+@dataclass(frozen=True)
+class Sessions:
+    """The read: `idle` holds each idle index, other than the reading
+    session's, that holds a ticket outside `vocabulary.SETTLED`; `main` is whether the
+    reading session is the main, and `main_live` whether a main is named
+    and live."""
+    idle: frozenset[int]
+    main: bool
+    main_live: bool
+
+    @property
+    def adopted(self) -> frozenset[int]:
+        """The indexes of other sessions whose tickets the reading session's
+        operators act on as on its own: the idle ones, where it is the
+        main."""
+        return self.idle if self.main else frozenset()
+
+
+def modified(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except FileNotFoundError:
+        return 0.0
+
+
+def live(session: str, now: float) -> bool:
+    since = now - FOREGROUND_MS / 1000
+    for d in project_dirs():
+        for transcript in d.glob(f"*/{session}.jsonl"):
+            if modified(transcript) >= since:
+                return True
+            if any(modified(p) >= since for p in subagent_transcripts(session_directory(transcript))):
+                return True
+    return False
+
+
+def named_main(tickets: Path) -> str | None:
+    path = tickets / MAIN
+    if not path.is_file():
+        return None
+    return path.read_text().strip() or None
+
+
+def read_sessions(tickets: Path, index: int, now: float) -> Sessions:
+    ids = indexes(tickets)
+    held = {ticket_name(p).number.session for s in Status if s not in SETTLED
+            for p in ticket_files(tickets, s)}
+    idle = frozenset(i for i in held if i is not None and i != index
+                     and not any(live(sid, now) for sid in ids.get(i, [])))
+    main = named_main(tickets)
+    return Sessions(idle=idle, main=main is not None and main in ids.get(index, []),
+                    main_live=main is not None and live(main, now))
+
+
+def want_main(tickets: Path, session: str) -> None:
+    """Creates `MAIN_WANTED` with `session`, where no file holds that name."""
+    with staged(tickets, f"{session}\n") as tmp:
+        link_new(tmp, tickets / MAIN_WANTED)
+
+
+def main_wanted(tickets: Path) -> tuple[str, float] | None:
+    """The session id `MAIN_WANTED` holds, with the time of its write, or
+    None where there is no such file."""
+    path = tickets / MAIN_WANTED
+    try:
+        return path.read_text().strip(), path.stat().st_mtime
+    except FileNotFoundError:
+        return None
+
+
+def name_main(tickets: Path, session: str) -> None:
+    if not any(session in ids for ids in indexes(tickets).values()):
+        raise Refused(mctx("no file under `tickets/{sessions}/` holds the session id `{session}`").format(
+            sessions=SESSIONS, session=session))
+    with staged(tickets, f"{session}\n") as tmp:
+        os.replace(tmp, tickets / MAIN)
+    (tickets / MAIN_WANTED).unlink(missing_ok=True)

@@ -17,6 +17,11 @@ class Status(StrEnum):
     """A `delay` ticket whose summed loss is below the threshold of its fix."""
 
 
+SETTLED = (Status.CLOSED, Status.WATCHING)
+"""The statuses of a ticket that leaves its session's index out of the
+indexes in which no agent runs that the main session's operators read."""
+
+
 class Resolution(StrEnum):
     """The words the note of a line into `closed` opens with."""
     FIXED = "fixed"

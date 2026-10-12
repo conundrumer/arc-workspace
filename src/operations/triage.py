@@ -2,7 +2,9 @@
 labeled items of their replies for the coordinator.
 
 The operator takes each `request` and `bug` from its first ticket analyst
-on: once a ticket stands in the list `file_ticket.py to-settle` prints,
+on: once a ticket stands in the list `file_ticket.py to-settle` prints, which
+holds the tickets of each other session in which no agent runs where the
+session is the one whose id `tickets/main` holds,
 the command launches a ticket analyst with it, leaving out each ticket on a
 task whose solver pipeline has yet to launch its own ticket analyst, which
 `passes` gives that ticket. A ticket goes to no second analyst while one
@@ -46,7 +48,13 @@ into `tickets/blocked/` waiting on the user: the command sends it as a
 or a ticket analyst an operator launched that has replied with no such
 item, and reads back that it was sent by the ticket's number and that
 line's time in the message. So a decision is sent by a later operator
-where the one before it ended before it sent it."""
+where the one before it ended before it sent it.
+
+Where a session in which no agent runs holds a ticket outside
+`tickets/closed/` and `tickets/watching/`, and no session whose id `tickets/main` holds
+runs an agent, the session whose id `tickets/main-wanted` holds
+sends the coordinator once a `decision:` item that asks the user to pick
+a main (`main_wanted`)."""
 
 from controlled_markdown import mctx
 from operations import briefs, changes, messages
@@ -54,7 +62,7 @@ from operations.reports import Label, items_of, mislabeled
 from operations.passes import awaits_analyst
 from operations.roles import Purpose, Role, analyst_subject, joined
 from operations.state import Agent, LogLine, State, Ticket
-from ticketing.vocabulary import Kind, Status
+from ticketing.vocabulary import SETTLED, Kind, Status
 from operations.constants import COORDINATOR
 from operations.final_reply import carrier, nested
 from operations.handled import repeated, sent
@@ -167,6 +175,23 @@ def decisions(state: State) -> Step | None:
         if by_ours and not carried(state, t, line) and not sent(state, step.to, step.message, key):
             return step
     return None
+
+
+MAIN_WANTED = mctx("""
+    - decision: no session in which an agent runs is the main session, so no agent acts on these tickets: {tickets}. Option: `uv run python scripts/file_ticket.py main <session id>`, with the id of the session the user picks.
+    """)
+
+
+def main_wanted(state: State) -> Step | None:
+    """The message that asks the coordinator, once, to have the user pick a
+    main session, where `tickets/main-wanted` holds the session's id."""
+    if state.main_wanted is None or state.main_wanted[0] != state.session:
+        return None
+    stuck = [t.number for t in sorted(state.tickets.values(), key=lambda t: t.order)
+             if t.session in state.idle_indexes and t.status not in SETTLED]
+    key = f"main session, asked at {state.main_wanted[1]:.0f}"
+    step = Send(COORDINATOR, labeled(key, MAIN_WANTED.format(tickets=", ".join(stuck))))
+    return None if sent(state, step.to, step.message, key) else step
 
 
 def labeled(key: str, body: str) -> str:

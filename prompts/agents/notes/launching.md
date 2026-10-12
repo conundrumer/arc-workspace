@@ -60,7 +60,7 @@
 - A ticket analyst's brief gives the tickets under `tickets/open/` to settle, a draft `change` ticket whose log holds findings or a suggestion, or the findings an editor left on a review of its change, the items an editor left unfinished for a decision and the places a code editor's report gives as standing, with the editor's reasons, or a step that an operator's command cannot decide, which the operator holds, or the process assessment.
     - With each of those findings and items, it gives the agent id of the change's editor, the change's worktree, and the number of the change's ticket, or, where the change has none, its intent and what is already settled about it.
     - With a draft whose next revision opens at its operator's cap of ticket reviews, it gives that this revision is the last: once it is written, the operator moves the draft to `tickets/open/` with no further ticket review, and the change's own review checks what the change writes.
-- With the tickets a solver pass filed, it gives the review of that pass's transcript.
+- With the tickets a solver pass filed, it gives the review of that pass's transcript, where one was made.
 - With a `request` that the coordinator filed on `send`, it gives that request's transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it.
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 

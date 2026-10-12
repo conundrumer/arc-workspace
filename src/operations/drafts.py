@@ -5,7 +5,7 @@ ticket reviewer wrote whose note opens with `finding` or `suggestion`; a
 line of an analyst or the coordinator that opens so is none.
 
 The drafts given to the operator are the `change` tickets under
-`tickets/draft/` of the session, those the coordinator names, those a
+`tickets/draft/` that `State.mine` gives, those the coordinator names, those a
 ticket analyst an operator launched files, and those of `changes.scope`
 of another session whose index `State.idle_indexes` holds. A draft is
 ready for a ticket reviewer once its log holds a `filed` or a `revised`
@@ -69,7 +69,7 @@ def draft_change(t: Ticket) -> bool:
 
 
 def elsewhere(state: State) -> list[Ticket]:
-    """The drafts of `changes.scope` of another session."""
+    """The drafts of `changes.scope` that `State.mine` leaves out."""
     return [t for n in sorted(scope(state)) if (t := state.tickets.get(n)) is not None
             and draft_change(t) and t.session is not None and not state.mine(t)]
 
