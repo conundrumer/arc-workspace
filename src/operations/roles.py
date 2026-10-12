@@ -62,7 +62,8 @@ GENERAL_ROLES = frozenset({Role.TRANSCRIPT_REVIEW, Role.BATCH_PROFILE, Role.BATC
                            Role.VALIDATION_REVIEW, Role.AFTER_MERGE})
 """The roles no agent document gives, whose brief gives their work."""
 
-GENERAL_MODELS: dict[Role, Model] = {Role.TRANSCRIPT_REVIEW: Model.SONNET,
+GENERAL_MODELS: dict[Role, Model] = {Role.BATCH_GATE: Model.SONNET,
+                                     Role.TRANSCRIPT_REVIEW: Model.SONNET,
                                      Role.VALIDATION_REVIEW: Model.SONNET}
 """The model a launch of a role in `GENERAL_ROLES` gives, where the model it
 inherits is not the one its work needs."""
