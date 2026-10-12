@@ -101,6 +101,5 @@ than one subject."""
 
 
 def note_opening(*alternatives: str) -> re.Pattern[str]:
-    """The opening of a log note from a closed vocabulary: one of
-    `alternatives`, not followed by a word character or a hyphen."""
+    """The opening of a log note from the closed vocabulary `alternatives`."""
     return re.compile(rf"(?:{'|'.join(alternatives)})(?![\w-])")

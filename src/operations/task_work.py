@@ -20,7 +20,6 @@ each Refine report (`refine_report`)."""
 
 
 def refine_report(name: str) -> bool:
-    """Whether `name` is `refine-<n>.md` with `<n>` all digits."""
     return re.fullmatch(r"refine-\d+\.md", name) is not None
 
 CLAIM = "claim"

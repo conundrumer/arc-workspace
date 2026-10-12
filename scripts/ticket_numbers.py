@@ -80,6 +80,11 @@ def reserve(tickets: Path, session: int) -> TicketNumber:
     return ticket_number(write_after(ids, "", taken, lambda n: str(TicketNumber(session, n))).name)
 
 
+def session_line(session: str) -> str:
+    """The text a session-id file holds."""
+    return f"{session}\n"
+
+
 @contextmanager
 def staged(directory: Path, text: str) -> Iterator[Path]:
     """A file under `directory` that holds `text` whole, for `link_new` to
@@ -159,7 +164,7 @@ def session_index(tickets: Path, session: str) -> int:
         add_session(tickets / SESSIONS / str(index), session)
         return index
     directory = tickets / SESSIONS
-    with staged(directory, f"{session}\n") as tmp:
+    with staged(directory, session_line(session)) as tmp:
         while True:
             reserved = indexes(tickets)
             found = indexed(reserved, session)
@@ -174,7 +179,7 @@ def add_session(path: Path, session: str) -> None:
     with path.open("a") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         if session not in path.read_text().split():
-            f.write(f"{session}\n")
+            f.write(session_line(session))
 
 
 def is_reserved(tickets: Path, number: TicketNumber) -> bool:

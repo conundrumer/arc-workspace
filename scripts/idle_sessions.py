@@ -15,7 +15,7 @@ from pathlib import Path
 from operations.constants import FOREGROUND_MS
 from ticket_files import ticket_files, ticket_name
 from controlled_markdown import mctx
-from ticket_numbers import SESSIONS, indexes, link_new, staged
+from ticket_numbers import SESSIONS, indexes, link_new, session_line, staged
 from ticketing.vocabulary import SETTLED, Status
 from transcripts import Refused, project_dirs, session_directory, subagent_transcripts
 
@@ -61,18 +61,11 @@ def live(session: str, now: float) -> bool:
 
 
 def read_session(path: Path) -> tuple[str, float] | None:
-    """The stripped text of the session-id file at `path` with the time of
-    its write, None where the file is missing or holds no text."""
     try:
         text, written = path.read_text().strip(), path.stat().st_mtime
     except FileNotFoundError:
         return None
     return (text, written) if text else None
-
-
-def session_line(session: str) -> str:
-    """The text a session-id file holds."""
-    return f"{session}\n"
 
 
 def named_main(tickets: Path) -> str | None:
@@ -98,8 +91,7 @@ def want_main(tickets: Path, session: str) -> None:
 
 
 def main_wanted(tickets: Path) -> tuple[str, float] | None:
-    """The session id `MAIN_WANTED` holds, with the time of its write, or
-    None where there is no such file."""
+    """The session id `MAIN_WANTED` holds, with the time of its write, as `read_session` reads it."""
     return read_session(tickets / MAIN_WANTED)
 
 

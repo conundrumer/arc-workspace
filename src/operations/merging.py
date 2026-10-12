@@ -4,9 +4,7 @@
 The merge is `scripts/merge_change.py`, whose checks cover the
 `controlled_markdown` check. What a merge call did is read by that
 script's own forms and by `master` (`state.Merge`,
-`operator_reads.merge_outcome`), and a commit of `master` whose subject is
-the change's title, made since it left `tickets/draft/`, counts as its
-merge whichever session's operator made it:
+`operator_reads.merge_outcome`, `merged`):
 
 - a call that left edits in the worktree after its commit leaves the
   change unmerged, and once no editor of the change runs, the merge call

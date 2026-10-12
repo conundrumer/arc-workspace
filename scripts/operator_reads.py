@@ -88,10 +88,9 @@ def pass_report(task: str, role: Role, launched: float, main: Path) -> Path | No
     work = tasks_work(main) / task
     if not work.is_dir():
         return None
-    files = (sorted(work.glob(f"{role.value}-*.md")) if role is Role.REFINE
+    files = (sorted(p for p in work.iterdir() if refine_report(p.name)) if role is Role.REFINE
              else [work / f"{role.value}.md"])
-    written = [(p.stat().st_mtime, p) for p in files if p.is_file()
-               and (role is not Role.REFINE or refine_report(p.name))]
+    written = [(p.stat().st_mtime, p) for p in files if p.is_file()]
     return min(((t, p) for t, p in written if t > launched), default=(0.0, None))[1]
 
 
