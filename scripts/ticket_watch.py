@@ -31,7 +31,7 @@ CHANGES = 10
 """The count of the most recent fixed changes an editor's threshold is the
 median cost of."""
 
-CAP = 30
+CAP = 100
 """The most tickets `tickets/watching/` holds."""
 
 CASE = "case {run} {start} {end}: {dollars:.4f} dollars, {seconds:.0f} s"
