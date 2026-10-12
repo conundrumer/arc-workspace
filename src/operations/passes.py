@@ -28,7 +28,6 @@ pipeline started.
 Once it ends or stops, the work set aside goes back, as
 `scripts/operate.py restore` does."""
 
-import shlex
 from dataclasses import dataclass
 
 from controlled_markdown import mctx
@@ -41,7 +40,7 @@ from ticketing.vocabulary import Domain, Kind, Status
 from operations.command_words import RUN_COMMAND
 from operations.handled import ask_again, bash_calls, repeated
 from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids
-from operations.task_work import CLAIM, CLAIM_HELD, tasks_work
+from operations.task_work import CLAIM_HELD
 from operations.tracker import blocked_on_user
 
 SETS_ASIDE = (Role.ANALYZE, Role.CREATE)
@@ -57,10 +56,8 @@ class Outcome:
     stopped: str | None = None
 
 
-def claim_command(state: State, task: str) -> str:
-    d = tasks_work(state.main_tree) / task
-    return (f"mkdir -p {shlex.quote(str(d))} && (set -C; echo \"$CLAUDE_CODE_SESSION_ID\" > "
-            f"{shlex.quote(str(d / CLAIM))})")
+def claim_command(task: str) -> str:
+    return f"{RUN_COMMAND} claim {task}"
 
 
 def aside_command(task: str, role: Role) -> str:
@@ -184,7 +181,7 @@ def run(state: State, p: Pipeline) -> Outcome:
             if holder is not None and holder != state.session:
                 return stop(CLAIM_HELD.format(task=p.task, holder=holder))
             if holder is None:
-                claim = claim_command(state, p.task)
+                claim = claim_command(p.task)
                 tries = ran(state, claim, since)
                 if any(tries):
                     return stop(mctx("the claim on task {task} fails").format(task=p.task))

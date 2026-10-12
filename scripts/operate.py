@@ -41,7 +41,7 @@ from operations import briefs, changes, plan, relay, runs  # noqa: E402
 from operations.decisions import WRITE_SECONDS  # noqa: E402
 from operations.monitor import ALERTS  # noqa: E402
 from operations.command_words import Action  # noqa: E402
-from operations.roles import BARE_BRIEFS, PASSES, Role  # noqa: E402
+from operations.roles import BARE_BRIEFS, Role  # noqa: E402
 from operations.filing import filed, with_report  # noqa: E402
 from operations.printing import key_line, printed  # noqa: E402
 from operations.state import State  # noqa: E402
@@ -68,10 +68,12 @@ USAGE = mctx("""
         uv run python scripts/operate.py relay <agent id>
         uv run python scripts/operate.py review <agent id>
         uv run python scripts/operate.py start --run <run> <task id> <pass> ...
+        uv run python scripts/operate.py claim <task id>
         uv run python scripts/operate.py set-aside <task id> analyze|create
         uv run python scripts/operate.py restore <task id>
         ```
     {parts}
+    - `claim` claims a task for the session, and, where a claim on the task stands, fails and prints the session that holds it.
     - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass, as the section `Passes on a task` of `prompts/agents/notes/launching.md` gives.
     - `restore` puts that work back and removes the task's claim, as that section gives.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives.
@@ -181,9 +183,20 @@ class OperateAction(StrEnum):
     NEXT = Action.NEXT
     RELAY = Action.RELAY
     START = runs.START
+    CLAIM = "claim"
     SET_ASIDE = "set-aside"
     RESTORE = "restore"
     REVIEW = Action.REVIEW
+
+
+def claim_task(task_id: str) -> int:
+    """Claim the task for the session, or print the session that holds
+    its claim and fail."""
+    holder = claim(main_tree(), task_id, session_id())
+    if holder is not None:
+        print(CLAIM_HELD.format(task=task_id, holder=holder), file=sys.stderr)
+        return 1
+    return 0
 
 
 def with_budget(step: Launch) -> Launch:
@@ -285,9 +298,7 @@ def main(argv: list[str]) -> int:
                               script=runs.SCRIPT_SECONDS))
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
     parser.add_argument("action", choices=list(OperateAction))
-    parser.add_argument("ident")
-    parser.add_argument("rest", nargs="*")
-    parser.add_argument(runs.RUN_OPTION)
+    runs.add_arguments(parser)
     args = parser.parse_args(argv)
     try:
         match OperateAction(args.action):
@@ -300,15 +311,14 @@ def main(argv: list[str]) -> int:
                     parser.error("review takes an agent id alone")
                 return review(args.ident)
             case OperateAction.START:
-                if (args.run is None or not args.rest or not all(p in PASSES for p in args.rest)
-                        or not TASK_ID.fullmatch(args.ident)):
+                if args.run is None or runs.start_of(args.ident, args.rest) is None:
                     parser.error(f"start takes {runs.RUN_OPTION} with its run, a task id, and "
-                                 "one or more of `analyze`, `create` and `refine`")
-                holder = claim(main_tree(), args.ident, session_id())
-                if holder is not None:
-                    print(CLAIM_HELD.format(task=args.ident, holder=holder), file=sys.stderr)
-                    return 1
-                return 0
+                                 f"one or more of {runs.PASS_LIST}")
+                return claim_task(args.ident)
+            case OperateAction.CLAIM:
+                if args.rest or not TASK_ID.fullmatch(args.ident):
+                    parser.error("claim takes a task id alone")
+                return claim_task(args.ident)
             case OperateAction.SET_ASIDE:
                 if (len(args.rest) != 1 or args.rest[0] not in (Role.ANALYZE, Role.CREATE)
                         or not TASK_ID.fullmatch(args.ident)):

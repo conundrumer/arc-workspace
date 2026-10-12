@@ -143,7 +143,7 @@ def run_index(runs: list[tuple[str, Path]], me: str) -> int:
     return [a for a, _ in runs].index(me)
 
 
-QUEUE_COMMAND = ("bash", "scripts/queue.sh", "--order", "name", "--all")
+QUEUE_COMMAND = ("bash", "scripts/queue.sh", "--order", "name", "--all", "--json")
 
 
 def with_runs(state: State) -> State:
@@ -158,8 +158,7 @@ def with_runs(state: State) -> State:
         fault = mctx("the queue's listing `{command}` exited {code}: {stderr}").format(
             command=" ".join(QUEUE_COMMAND), code=listed.returncode, stderr=listed.stderr.strip())
         return replace(state, run_starts={runs.run_id(ln): fault for ln in given})
-    state = replace(state, queue=tuple(line.split()[-1] for line in listed.stdout.splitlines()
-                                       if line.strip()))
+    state = replace(state, queue=tuple(e["id"] for e in json.loads(listed.stdout)))
     ended = {p: (o.ended, o.stopped) for p, o in passes.outcomes(state)}
     return replace(state, run_starts={
         runs.run_id(ln): script_starts(runs.script_path(state.main_tree, ln),

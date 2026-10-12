@@ -107,7 +107,7 @@
 - An editor's report on a change gives, for each item of its brief, and of each request a later message adds, that it gives as done, what shows it holds: a command it ran with the output that shows it, the line of a rendered context that states it, the check its ticket's Scope places after the merge where only that check can show it, or, where none of these can, the reason it holds.
 
 ## Passes on a task
-- Before you launch a pass on a task whose claim you do not hold, claim the task: run `mkdir -p work/task/<task_id> && (set -C; echo "$CLAUDE_CODE_SESSION_ID" > work/task/<task_id>/claim)` in the main worktree. Where it fails, launch no pass on that task.
+- Before you launch a pass on a task whose claim you do not hold, claim the task: run `uv run python scripts/operate.py claim <task_id>`. Where it fails, launch no pass on that task.
 - Where that pass is an Analyze or a Create pass, set aside the task's earlier work in the main worktree:
     1. Make a new directory `work/task/<task_id>/<n>/`, with `n` one more than the highest numbered directory there, and 1 where there is none.
     2. Write the output of `git diff HEAD -- programs/solvers/<task_id>.dl programs/witnesses/<task_id>.wit.json` to `uncommitted.diff` in it.
@@ -116,7 +116,7 @@
 - Once each pass you launch on the task for one request or one procedure has ended, or the harness or the permission classifier has refused the launch of such a pass while no other such pass runs:
     1. Move the solver and the witness file you set aside back to their paths, each where nothing stands at its path.
     2. Run `git update-index --no-skip-worktree <path>` on each path you marked.
-    3. Remove the claim file.
+    3. Remove the claim file, `work/task/<task_id>/claim` in the main worktree.
 
 ## Operators
 - Send each line you give an operator to your running operator launcher, and where none runs, launch a new operator launcher with it. Give it in a form [An operator's brief](#an-operators-brief) gives, with nothing else in that message.

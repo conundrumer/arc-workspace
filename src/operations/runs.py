@@ -9,6 +9,7 @@ the session made with the run's `RUN_OPTION`, which its step gives, each
 with that call's time as its start; a failed call is a pipeline that
 stopped on its failure's text."""
 
+import argparse
 import re
 import shlex
 from collections.abc import Iterable, Mapping
@@ -24,7 +25,7 @@ from operations.roles import PASSES, Role
 from operations.state import Call, Start, Starts, State, Tool
 from operations.steps import Bash, Send, Step
 
-__all__ = ["Begun", "Run", "Start", "fault_message", "read_starts", "start_command"]
+__all__ = ["Begun", "Run", "Start", "fault_message", "read_starts", "start_command", "start_of"]
 
 START = "start"
 """The action of `operate.py` that starts a run's pipeline."""
@@ -37,6 +38,10 @@ TASK_ID_FORM = re.compile(TASK_ID)
 
 PASS_NAMES = frozenset(r.value for r in PASSES)
 
+PASS_LIST = ", ".join(f"`{r.value}`" for r in PASSES)
+"""The passes a start takes, as the error text of `operate.py start`
+lists them."""
+
 SCRIPT_SECONDS = 10
 """How long the load and the call of a run script may take at one read."""
 
@@ -47,7 +52,7 @@ class Begun:
     and for one that ended, the reason it stopped, or None where it ran to
     its end."""
     task: str
-    passes: tuple[str, ...]
+    passes: tuple[Role, ...]
     stopped: str | None = None
 
 
@@ -96,7 +101,15 @@ def run_lines(lines: Iterable[Line]) -> list[Line]:
     return [ln for ln in lines if ln.kind is Directive.RUN and ln.rest]
 
 
-def start_words(c: Call) -> tuple[str, str, tuple[Role, ...]] | None:
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add to `parser`, after its action, the arguments of `operate.py`
+    that `start` reads: its task id, its passes and its run."""
+    parser.add_argument("ident")
+    parser.add_argument("rest", nargs="*")
+    parser.add_argument(RUN_OPTION)
+
+
+def start_words(c: Call) -> tuple[str, Start] | None:
     """The run, the task and the passes of the call `c`, where it is a Bash
     call of `operate.py start`, or None."""
     if c.tool != Tool.BASH:
@@ -104,11 +117,17 @@ def start_words(c: Call) -> tuple[str, str, tuple[Role, ...]] | None:
     lead = RUN_COMMAND.split()
     script = lead.index(COMMAND)
     for words in simple_commands(str(c.input.get("command", ""))):
-        if (len(words) > script + 5 and words[:script] == lead[:script]
-                and words[script].endswith(COMMAND) and words[script + 1] == START
-                and words[script + 2] == RUN_OPTION
-                and all(p in PASS_NAMES for p in words[script + 5:])):
-            return words[script + 3], words[script + 4], tuple(Role(p) for p in words[script + 5:])
+        if len(words) > script and words[:script] == lead[:script] and words[script].endswith(COMMAND):
+            parser = argparse.ArgumentParser(add_help=False, exit_on_error=False)
+            parser.add_argument("action")
+            add_arguments(parser)
+            try:
+                args = parser.parse_args(words[script + 1:])
+            except argparse.ArgumentError:
+                continue
+            start = start_of(args.ident, args.rest)
+            if args.action == START and args.run is not None and start is not None:
+                return args.run, start
     return None
 
 
@@ -119,7 +138,7 @@ def started(state: State, ln: Line) -> list[Started]:
         words = start_words(c)
         if words is None or words[0] != run_id(ln):
             continue
-        p = Pipeline(words[1], words[2], c.time, c.operator)
+        p = Pipeline(words[1].task, words[1].passes, c.time, c.operator)
         failed = (c.result or "").strip() if c.result is not None and c.error else None
         out.append(Started(p, failed))
     return out
@@ -141,6 +160,19 @@ def view(state: State, ln: Line, ended: Mapping[Pipeline, tuple[bool, str | None
     return Run(queue, tuple(running), tuple(over))
 
 
+def start_of(task: object, passes: object) -> Start | None:
+    """The start of the task id `task` and the non-empty sequence of
+    passes `passes`, or None where they are in no such form."""
+    if not isinstance(task, str) or TASK_ID_FORM.fullmatch(task) is None:
+        return None
+    if isinstance(passes, str) or not isinstance(passes, Iterable):
+        return None
+    listed = list(passes)
+    if not listed or not all(p in PASS_NAMES for p in listed):
+        return None
+    return Start(task, tuple(Role(p) for p in listed))
+
+
 def read_starts(result: object) -> Starts:
     """The starts of a script's result, or the text of the way it is in no
     form the command reads: an iterable of objects with a task id as
@@ -153,11 +185,11 @@ def read_starts(result: object) -> Starts:
         passes = getattr(item, "passes", None)
         if not isinstance(task, str) or TASK_ID_FORM.fullmatch(task) is None:
             return mctx("the start {item} gives no task id as `task`").format(item=repr(item))
-        if (isinstance(passes, str) or not isinstance(passes, Iterable)
-                or not (listed := list(passes)) or not all(p in PASS_NAMES for p in listed)):
+        start = start_of(task, passes)
+        if start is None:
             return mctx("the start {item} gives no non-empty sequence of passes as "
                         "`passes`").format(item=repr(item))
-        out.append(Start(task, tuple(Role(p) for p in listed)))
+        out.append(start)
     return tuple(out)
 
 

@@ -5,7 +5,9 @@
 // identifier names, and type annotations don't affect rank. Sizes are
 // cached in scripts/.queue-cache keyed by mtime; only changed files are
 // re-minified.
-// Usage: queue.ts [-n COUNT | --all] [--order name|size]
+// With --json, prints the list as one JSON array of {id, size} objects in
+// place of one row per task.
+// Usage: queue.ts [-n COUNT | --all] [--order name|size] [--json]
 
 import fs from "node:fs";
 import path from "node:path";
@@ -16,16 +18,18 @@ const src = path.join(root, "..", "arc-synth-bun", "programs", "solvers");
 const dl = path.join(root, "programs", "solvers");
 const cachePath = path.join(import.meta.dir, ".queue-cache");
 
-const usage = "usage: queue.sh [-n COUNT | --all] [--order name|size]";
+const usage = "usage: queue.sh [-n COUNT | --all] [--order name|size] [--json]";
 let count = 1;
 let all = false;
 let order = "size";
+let json = false;
 const args = process.argv.slice(2);
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "-n") count = Number(args[++i]);
   else if (args[i].startsWith("-n")) count = Number(args[i].slice(2));
   else if (args[i] === "--all") all = true;
   else if (args[i] === "--order") order = args[++i];
+  else if (args[i] === "--json") json = true;
   else {
     console.error(usage);
     process.exit(2);
@@ -93,7 +97,7 @@ if (staleMtime.size > 0) {
   );
 }
 
-ids
+const listed = ids
   .map((id) => ({ id, ...fresh.get(id)! }))
   .filter((e) => !e.incorrect && !fs.existsSync(path.join(dl, e.id + ".dl")))
   .sort((a, b) =>
@@ -101,5 +105,6 @@ ids
       ? a.id.localeCompare(b.id)
       : a.size - b.size || a.id.localeCompare(b.id),
   )
-  .slice(0, all ? undefined : count)
-  .forEach((e) => console.log(String(e.size).padStart(5) + "  " + e.id));
+  .slice(0, all ? undefined : count);
+if (json) console.log(JSON.stringify(listed.map((e) => ({ id: e.id, size: e.size }))));
+else listed.forEach((e) => console.log(String(e.size).padStart(5) + "  " + e.id));
