@@ -170,14 +170,11 @@ def stopped(path: Path) -> bool:
 def change_spend(path: Path, undecided: list[str]) -> Spend | None:
     """The spend of the `change` at `path`, closed `fixed`: that of the
     runs its closing line gives, or None where that line gives no run or
-    `spend` gives none. It is read from the change's record under `SPENDS`
-    where one stands. Otherwise the spend is recorded where it is not None,
-    its reading added no line to `undecided`, and each transcript it read
-    has `stopped`, since the spend of a run that goes on still grows."""
+    `spend` gives none. A spend is recorded under `SPENDS` only once each
+    run it read has stopped, since the spend of a run that goes on still grows."""
     record = path.parent.parent / SPENDS / f"{ticket_name(path).number}.json"
     if record.exists():
-        held = json.loads(record.read_text())
-        return Spend(held["dollars"], held["seconds"], held["by_role"])
+        return Spend(**json.loads(record.read_text()))
     closing = [m for m in log_lines(read_ticket(path)) if m["status"] == Status.CLOSED
                and resolution_of(m["note"]) is Resolution.FIXED]
     runs = (closing[-1]["note"] or "").split()[3:] if closing else []
