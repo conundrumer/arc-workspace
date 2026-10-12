@@ -94,6 +94,7 @@ from solver.model import (
     other_branches,
 )
 from solver.names import (
+    cases_of,
     denote,
     denoted_cases,
     model_of,
@@ -109,7 +110,7 @@ from solver.problems import (
     ProblemKind,
     WitnessFileRole,
 )
-from solver.witnessed_cases import branch_model, constructor_denoted
+from solver.witnessed_cases import constructor_denoted
 from solver.witness import (
     AssignRows,
     Entry,
@@ -228,10 +229,13 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
     names denote the solver's cases still, those the solver's own
     `impl_choice` holds (`is_shown`): a dropped case is judged by
     `check_case_conditions` alone (solver-file.md, under "Witness file"). A
-    given file's name is read as the case that stands for the model of the
-    branches it names (`_model_set`):
-    the file gives each branch's output, and no other case is compared
-    with it (procedure.md, under "Analyze after the concept" and "Witness").
+    given file's name is read as the model of the branches it names, where
+    that model is one of `solver_cases` (`_model_set`), and a name whose
+    model is not one of them, while some case takes its branches, is
+    compared with no case and names none: the file gives each branch's
+    output, the output of its model alone, and no other case is compared
+    with it (procedure.md, under "Analyze after the concept" and "Witness";
+    solver-file.md, under "Witness file").
     The names denote cases of the solver, and the `drift` and `unlisted`
     findings are on `solver_cases`, the witnessed cases, alone."""
     assert isinstance(entry.output, Groups)
@@ -250,6 +254,8 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
             task_file = runs.file_role is WitnessFileRole.TASK
             cases = denoted_cases(solver, n, solver_cases) \
                 if task_file else _model_set(solver, n, solver_cases)
+            if cases is None:
+                continue
             if isinstance(cases, NameFault):
                 # The task's file's names are read with the model; a given
                 # file's are read here.
@@ -295,17 +301,20 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
 
 
 def _model_set(solver: Solver, text: str, solver_cases: Sequence[Case]
-               ) -> frozenset[Case] | NameFault:
+               ) -> frozenset[Case] | NameFault | None:
     """A given file's group name read as a branch's model
-    (procedure.md, under "Analyze after the concept" and "Witness"): the one
-    case of the solver's cases that stands for that model
-    (`solver.witnessed_cases.branch_model`; solver-file.md, under "Cases"), none where
+    (procedure.md, under "Analyze after the concept" and "Witness"): that
+    model where it is one of `solver_cases` (`solver.names.model_of`;
+    solver-file.md, under "Witness file"); None, nothing to compare, where
+    it is not and some case of `solver_cases` takes the branch; none where
     no case takes the branch; the problem where the name denotes nothing."""
     d = denote(solver, text)
     if isinstance(d, NameFault):
         return d
-    model = branch_model(solver, solver_cases, d)
-    return frozenset() if model is None else frozenset({model})
+    model = model_of(solver, d, solver_cases)
+    if model is not None and model in solver_cases:
+        return frozenset({model})
+    return None if cases_of(solver, d, solver_cases) else frozenset()
 
 
 def _own(solver: Solver, entry: Entry, solver_cases: Sequence[Case]
