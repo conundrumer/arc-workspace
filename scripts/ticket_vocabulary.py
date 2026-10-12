@@ -15,6 +15,7 @@ class Filer(StrEnum):
     CREATE = "create"
     REFINE = "refine"
     TRANSCRIPT_REVIEW = "transcript-review"
+    VALIDATION_REVIEW = "validation-review"
     HANDBOOK = "handbook"
     HANDBOOK_EXPANDED = "handbook-expanded"
     CODE_EDITOR = "code-editor"
@@ -32,6 +33,7 @@ FILER_KINDS: dict[Filer, frozenset[Kind]] = {
     Filer.CREATE: PASS_KINDS,
     Filer.REFINE: PASS_KINDS,
     Filer.TRANSCRIPT_REVIEW: PASS_KINDS,
+    Filer.VALIDATION_REVIEW: frozenset({Kind.BUG, Kind.QUESTION}),
     Filer.HANDBOOK: frozenset({Kind.BUG, Kind.DELAY}),
     Filer.HANDBOOK_EXPANDED: frozenset({Kind.BUG, Kind.DELAY}),
     Filer.CODE_EDITOR: EDITOR_KINDS,

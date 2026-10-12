@@ -11,7 +11,7 @@ from typing import Any
 
 from handbook.reader_names import ReaderName
 from operations.roles import Model, Purpose, Role, analyst_of, subjects
-from ticketing.vocabulary import Domain, Kind, Status
+from ticketing.vocabulary import Domain, Kind, Resolution, Status
 
 
 @dataclass(frozen=True)
@@ -19,9 +19,11 @@ class LogLine:
     """A line of a ticket's log: its time, the status it leaves the ticket
     in, the agent name and the agent id its bracket gives, and its note.
     `on_user` is whether the note opens with the wait on the user, and
-    `on_change` the number of the change the note opens with a wait on. A
-    note that opens with the wait on validation gives neither. `waits` is
-    whether the note opens with a wait of any kind."""
+    `on_change` the number of the change the note opens with a wait on.
+    `waits` is whether the note opens with a wait of any kind.
+    `resolution` is the resolution the note opens with, and `closed_by`
+    the number of the change a note of the form `ticket_log.CLOSED_BY`
+    gives."""
     time: float
     status: Status
     agent: str
@@ -30,6 +32,8 @@ class LogLine:
     on_user: bool
     on_change: str | None
     waits: bool
+    resolution: Resolution | None
+    closed_by: str | None
 
 
 @dataclass(frozen=True)
@@ -50,8 +54,9 @@ class Unread:
 class Ticket:
     """A ticket of the tracker. `editors` is None where a `change` gives no
     `editors` field, `mechanical` is whether a `change` gives the
-    `mechanical` field, and `holder` is the holder `file_ticket.py log
-    --help-all` defines."""
+    `mechanical` field, `holder` is the holder `file_ticket.py log
+    --help-all` defines, and `validation` is whether a `request` holds the
+    section `ticketing.text.VALIDATION`."""
     number: str
     order: tuple[int, int]
     session: int | None
@@ -70,6 +75,7 @@ class Ticket:
     log: tuple[LogLine, ...]
     holder: str | None
     path: Path
+    validation: bool
 
     def model(self, role: Role) -> Model | None:
         """The model a launch of `role` on this ticket gives: Sonnet for a

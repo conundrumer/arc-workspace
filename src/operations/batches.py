@@ -11,6 +11,15 @@ changes merged since: those an operator's merge call merged, as
 `state.Merge` reads it, and those the coordinator gives as merged. The
 launch of the profile agent opens the next batch.
 
+A validation review launches once a profile launch closes a batch, where
+a `request` of the session closed `fixed` holds a pending check, and no
+validation review launched since that profile launch, nor runs. A check is
+pending where the request holds a `ticketing.text.VALIDATION` section and
+no line of its log after its close opens with a `Verdict`. The review
+judges each pending check against the runs of the batch that profile
+launch closed, the runs the profile's brief gives. No batch holds it, so
+no profile launch waits on its run.
+
 A process assessment, a ticket analyst, launches at the end of a batch
 once `ASSESS_AFTER` commits of `master` that change the agents' processes
 stand since the launch of the last one an operator of the session
@@ -37,11 +46,12 @@ from operations.changes import release
 from operations.filing import scratch_dir
 from operations.directives import Directive, numbers
 from operations.roles import AGENT_ID, Purpose, Role, analyst_of, analyst_subject
-from operations.state import DOC_REVIEW, Agent, Merge, State
+from operations.state import DOC_REVIEW, Agent, Merge, State, Ticket
 from operations.handled import bash_calls
 from operations.steps import Bash, Launch, Step, Undecided
+from ticketing.vocabulary import Kind, Resolution, Status, Verdict
 
-OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER})
+OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER, Role.VALIDATION_REVIEW})
 """The roles of After a batch, which no batch holds."""
 
 
@@ -93,6 +103,8 @@ def merged(state: State, since: float) -> bool:
 
 
 def step(state: State) -> Step | None:
+    if (s := validation(state)) is not None:
+        return s
     since = start(state)
     batch = members(state, since)
     merges = merged(state, since)
@@ -121,21 +133,80 @@ def step(state: State) -> Step | None:
     head = state.commits[0].hash
     if merges and not any(a.launched > since for a in state.agents_of(Role.BATCH_GATE)):
         return Launch(Role.BATCH_GATE, str(n), briefs.batch_gate(scratch_dir(f"batch-{n}", state.scratch)))
+    runs = batch_runs(state, batch, since, None)
+    if not isinstance(runs, list):
+        return runs
+    if (s := assessment(state)) is not None:
+        return s
+    ids = {a.agent_id for a in batch}
+    return Launch(Role.BATCH_PROFILE, str(n),
+                  briefs.batch_profile(runs, [r for r in runs if r in ids], head))
+
+
+def batch_runs(state: State, batch: list[Agent], since: float,
+               until: float | None) -> list[str] | Step:
+    """The runs the last call of `--under` of each operator of `batch`, or
+    of this operator where `batch` is empty, made after `since`, and
+    before `until` where it is given, takes, or the step that stands in
+    their place."""
     runs: list[str] = []
     for op in sorted({a.operator for a in batch} or {state.me}):
         command = under_command(op)
-        calls = [(c, u) for c in bash_calls(state, command) if c.time > since
+        calls = [(c, u) for c in bash_calls(state, command)
+                 if c.time > since and (until is None or c.time < until)
                  and c.result is not None and (u := read_under(c.result)) is not None]
         if not calls:
             return Bash(command)
         if calls[-1][0].error:
             return Undecided(mctx("`{command}` failed").format(command=command))
         runs += calls[-1][1].taken
-    if (s := assessment(state)) is not None:
-        return s
-    ids = {a.agent_id for a in batch}
-    return Launch(Role.BATCH_PROFILE, str(n),
-                  briefs.batch_profile(runs, [r for r in runs if r in ids], head))
+    return runs
+
+
+VERDICT = re.compile(rf"(?:{'|'.join(Verdict)})(?![\w-])")
+"""The opening of the note of a line a validation review writes."""
+
+
+def validation(state: State) -> Step | None:
+    """The launch of a validation review on the batch the last profile
+    launch closed, where one is due."""
+    profiles = state.agents_of(Role.BATCH_PROFILE)
+    if not profiles:
+        return None
+    closing = profiles[-1].launched
+    reviews = state.agents_of(Role.VALIDATION_REVIEW)
+    if reviews and (reviews[-1].pending or reviews[-1].launched > closing):
+        return None
+    checks: list[briefs.Check] = []
+    for t in sorted(state.tickets.values(), key=lambda t: t.order):
+        if t.kind is Kind.REQUEST and t.status is Status.CLOSED and t.validation and state.mine(t):
+            check = pending(t)
+            if check is not None:
+                checks.append(check)
+    if not checks:
+        return None
+    since = start(state, closing)
+    runs = batch_runs(state, followed(state, closing), since, closing)
+    # No batch waits on the review: where the runs do not read, its checks
+    # stay pending for the next profile launch.
+    if not isinstance(runs, list):
+        return None
+    return Launch(Role.VALIDATION_REVIEW, str(len(profiles)), briefs.validation_review(runs, checks))
+
+
+def pending(t: Ticket) -> briefs.Check | None:
+    """The check of the closed request `t` where it is pending, and None
+    where it is not, as where no line of its log moves it into `closed`."""
+    log = t.log
+    at = max((i for i, line in enumerate(log)
+              if line.status is Status.CLOSED and (i == 0 or log[i - 1].status is not Status.CLOSED)),
+             default=None)
+    if at is None:
+        return None
+    close = log[at]
+    if close.resolution is not Resolution.FIXED or any(VERDICT.match(line.note) for line in log[at + 1:]):
+        return None
+    return briefs.Check(t.number, close.closed_by, close.time)
 
 
 def doc_review(state: State) -> Step:

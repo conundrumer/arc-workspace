@@ -12,6 +12,12 @@ SECTIONS = {Kind.CHANGE: ("Intent", "Motivation", "Scope", "Grounds"),
 `DEFECT_SECTIONS`."""
 
 
+VALIDATION = "Validation"
+"""The section of a `request` that a `change` serves that gives what a
+later run must show for its need to count as met. `ticket_form.body_form`
+admits it as it admits any line after the sections it requires."""
+
+
 def kind_sections(kind: Kind) -> tuple[str, ...]:
     return SECTIONS.get(kind, DEFECT_SECTIONS)
 

@@ -9,7 +9,7 @@
 - Before you act on a user's message that asks for work or gives a route directive, read [Routes](prompts/agents/notes/requests.md#routes).
 
 ## Tickets
-- Read [Tickets](prompts/agents/notes/requests.md#tickets) before you file, append to, move or close a ticket, when the user's words bear on a `request` you filed or rule on a ticket under `tickets/blocked/`, when a run or an output you read bears on a `request` under `tickets/blocked/` that waits on `validation`, and, where you run no solver pass, when you notice a fault or an agent's report gives one.
+- Read [Tickets](prompts/agents/notes/requests.md#tickets) before you file, append to, move or close a ticket, when the user's words bear on a `request` you filed or rule on a ticket under `tickets/blocked/`, and, where you run no solver pass, when you notice a fault or an agent's report gives one.
 
 ## Decisions
 - Where you run no solver pass, read [Decisions](prompts/agents/notes/decisions.md#decisions) before you make a decision on the solver tools or the agents' documents, and before you ask an agent about a choice it made.

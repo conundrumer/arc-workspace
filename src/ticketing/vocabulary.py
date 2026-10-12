@@ -31,6 +31,15 @@ class Resolution(StrEnum):
     INVALID = "invalid"
 
 
+class Verdict(StrEnum):
+    """The words the note of a line a validation review writes on a closed
+    `request` opens with: what the runs since its close show of the check
+    its `Validation` section gives."""
+    VALIDATED = "validated"
+    FAILED = "failed"
+    UNEXERCISED = "unexercised"
+
+
 class Domain(StrEnum):
     """What a ticket's subject is."""
     TASK = "task"
@@ -68,7 +77,6 @@ class Wait(StrEnum):
     into `blocked` opens with."""
     USER = "user"
     CHANGE = "change"
-    VALIDATION = "validation"
 
 
 class Note(StrEnum):

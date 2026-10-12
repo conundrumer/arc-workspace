@@ -4,6 +4,7 @@ brief gives the agent id of the operator that launches the agent, which
 the agent replies to."""
 
 import shlex
+from dataclasses import dataclass
 from pathlib import Path
 
 from controlled_markdown import mctx
@@ -11,6 +12,9 @@ from operations.reports import LEFT_FOR_DECISION
 from operations.roles import Role
 from operations.state import Place
 from operations.tracker import FILE_TICKET
+from ticketing.text import VALIDATION
+from ticketing.times import utc_stamp
+from ticketing.vocabulary import Domain, Status, Verdict
 
 TICKET_PATH = shlex.join([*FILE_TICKET, "path"]) + " {number}"
 WORK_IN = mctx("Work in the worktree {worktree}.")
@@ -387,6 +391,57 @@ BATCH_GATE = mctx("""
 
 def batch_gate(scratch: Path) -> str:
     return BATCH_GATE.format(scratch=scratch)
+
+
+VALIDATION_REVIEW = mctx("""
+    - Judge the check of each request below against these runs: {runs}.
+        - `{show} <number> {section_name}` prints a request's check.
+        - `python3 ~/.claude/skills/retrieve/transcripts.py --help` lists the subcommands that read a run's transcript.
+    - The requests:
+        {checks}
+    - Where a check gives a command, run it once, and judge its output in place of the runs.
+    - Write each line on a request as `{log} <number> {closed} {agent} --from {closed} "<note>"`.
+    - File each ticket by the lines of the section `Ticket files` of `prompts/agents/notes/tickets.md`, with `{agent}` as `<agent>`, and with `{change}` and the change's number as `<domain>` and `<subject>`, or `{ticket}` and the request's number where its close gives no change.
+    - Where the command's output or a run shows that the check holds, write a line whose note opens with `{validated}`, then gives that run's agent id or the command.
+    - Where it shows that the check fails, write a line whose note opens with `{failed}`, then gives that run's agent id or the command, then file a `bug` ticket with the request's number and that run's agent id or the command's output in its `Evidence`.
+    - Where the check gives no command, none of those runs exercises what it checks, and the request closed {days} days ago or more, write a line whose note opens with `{unexercised}`, then file a `question` ticket that gives the request's number.
+    - Otherwise write nothing on the request.
+    - Reply with the lines you wrote and the tickets you filed.
+    """)
+
+CHECK = mctx("- `{number}`: change `{change}`, closed at {time}.")
+
+CHECK_NO_CHANGE = mctx("- `{number}`: no change, closed at {time}.")
+
+UNEXERCISED_DAYS = 7
+"""The age of a close past which a check no run exercised gets its
+`unexercised` line."""
+
+
+@dataclass(frozen=True)
+class Check:
+    """A pending check: its request's number, the change that closed it,
+    None where the note of its close gives none, and the time of that
+    close."""
+    request: str
+    change: str | None
+    closed: float
+
+
+def validation_review(runs: list[str], checks: list[Check]) -> str:
+    return VALIDATION_REVIEW.format(
+        runs=", ".join(runs), section_name=VALIDATION,
+        show=shlex.join([*FILE_TICKET, "show"]),
+        log=shlex.join([*FILE_TICKET, "log"]), closed=Status.CLOSED, agent=Role.VALIDATION_REVIEW,
+        validated=Verdict.VALIDATED, failed=Verdict.FAILED, unexercised=Verdict.UNEXERCISED,
+        change=Domain.CHANGE, ticket=Domain.TICKET, days=UNEXERCISED_DAYS,
+        checks="\n    ".join(check_line(c) for c in checks))
+
+
+def check_line(c: Check) -> str:
+    if c.change is None:
+        return CHECK_NO_CHANGE.format(number=c.request, time=utc_stamp(c.closed))
+    return CHECK.format(number=c.request, change=c.change, time=utc_stamp(c.closed))
 
 
 PROCESS_ASSESSMENT = mctx("Make the process assessment of the agents' processes.")

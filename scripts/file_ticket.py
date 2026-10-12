@@ -30,8 +30,7 @@ importable(checkout.scripts())
 from ticket_files import FIELD, NAME_FORM, TicketName, ticket_path, ticket_status  # noqa: E402
 from ticket_form import (DEFAULT_PRIORITY, DESIGN, LOG, LOG_SECTION, MECHANICAL,  # noqa: E402
                          RETIRED, checked_kind, section, sections_example, ticket_kind, title_line)
-from ticket_log import (AGENT_ID, CLOSED_BY, SESSION_ID, UNBLOCKED_BY, VALIDATING,  # noqa: E402
-                        Wait,
+from ticket_log import (AGENT_ID, CLOSED_BY, SESSION_ID, UNBLOCKED_BY, Wait,  # noqa: E402
                         log_moves, logged, read_ticket, status_of)
 from ticket_numbers import (SESSION_VAR, SESSIONS, reserve, session_id,  # noqa: E402
                             session_index, ticket_number, write_new)
@@ -40,7 +39,7 @@ from idle_sessions import MAIN, name_main, read_sessions  # noqa: E402
 from ticket_reads import editors_field  # noqa: E402
 from ticket_watch import (CAP, CHANGES, Case, add_evidence, budget, case_loss, evict,  # noqa: E402
                           fix_field, front, route, threshold)  # noqa: E402
-from ticketing.text import SECTIONS, heading  # noqa: E402
+from ticketing.text import SECTIONS, VALIDATION, heading  # noqa: E402
 from ticketing.times import TIME_FORM  # noqa: E402
 from ticket_vocabulary import ticked  # noqa: E402
 from ticketing.vocabulary import (DEFECT_SECTIONS, MANY_IDEAS, Domain, Kind,  # noqa: E402
@@ -67,6 +66,7 @@ HELP = mctx("""
         - For code, that section gives the existing operations the change uses or extends and each new operation with its module.
         - For the documents, it gives the plan that [Tracking](prompts/agents/ticket-analyst.md#tracking) gives.
     - A `request` has `# <target>: <what the user asks for>` as its title, and the sections {request_sections} in place of {defect_headings}, and no `{request_retired}` section.
+        - A `request` that a `change` serves also has, before `## Log`, a `{validation}` section: what a later run must show for its need to count as met, as a command whose output shows it where one exists, and otherwise as a statement that an agent judges against a run.
         - `uv run python scripts/spans.py file` writes and files a `request`.
     - `<domain>` is one of {domains}, and `<subject>` is the id of the thing it names: a task id for `task`, a ticket's number for `change` and `ticket`, a commit hash for `commit`, an agent id for `agent`.
         - A ticket that asks for a change, a `change` or a `request`, takes `change` as `<domain>` and `<namespace>-<short-title>` as `<subject>`, and each `_` in that `<subject>`, as in a namespace name such as `run_dl`, becomes `-`.
@@ -120,8 +120,7 @@ LOG_HELP = mctx("""
     - `<status>` and `<current status>` are each one of {statuses}.
         - `<current status>` is the status you saw the ticket in.
     - An `assigned` line that moves a ticket into `assigned` takes, in `--id`, the agent id of the agent that writes it, or the session id of a session that writes it for itself.
-    - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}`, `{validation}`, or `{change} <number>`, with `<number>` the number of a `change` ticket the ticket tracker holds.
-        - `{validation}` is the wait of a `{request}` whose need a change met, until the coordinator reads a run that exercises that change.
+    - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}` or `{change} <number>`, with `<number>` the number of a `change` ticket the ticket tracker holds.
     - A ticket waits on the change that the last line of its log whose note opens with what a ticket waits on gives as `{change} <number>`.
     - The note of a line that moves a ticket into `closed` opens with its resolution, one of {resolutions}.
     """)
@@ -137,8 +136,6 @@ LOG_RULES = mctx("""
     - On a ticket that already stands in `assigned`, the command refuses an `assigned` line whose `--id` does not hold the ticket, and accepts one with no `--id`.
         - The holder is the agent id or the session id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines.
             - Where none of them gives one, the ticket has no holder.
-    - Where a line would move a `{request}` into `closed` with `{fixed}`, other than from `{blocked}` where the request waits on `{validation}`, the command leaves the request under `{blocked}`, or moves it there, with the note `{validating}`, and prints the path it went to.
-        - This holds whichever agent writes the line, and for the lines below that close tickets that wait on a change.
     - Where the line moves a `{change}` ticket into `closed`, the command also moves each ticket under `{blocked}` that waits on that change, and prints the path of each one it moved, one per line, after the change's own path.
     - A `{change}` ticket that waits on it moves into `open`, with the note `{unblocked_by}`, whatever the change's resolution.
     - Each other ticket that waits on it moves into `closed`, with the note `{closed_by}`, where the change's resolution is `{fixed}`, and into `open`, with the note `{unblocked_by}`, where it is another.
@@ -513,9 +510,7 @@ def help_values() -> dict[str, str]:
                 request_retired=heading(RETIRED[Kind.REQUEST]),
                 statuses=ticked(Status), log=LOG, time_form=TIME_FORM,
                 resolutions=ticked(Resolution), fixed=Resolution.FIXED, blocked=Status.BLOCKED,
-                user=Wait.USER, change=Wait.CHANGE, validation=Wait.VALIDATION,
-                request=Kind.REQUEST,
-                validating=VALIDATING.format(note="<note>"),
+                user=Wait.USER, change=Wait.CHANGE, validation=heading(VALIDATION),
                 session_var=SESSION_VAR,
                 closed_by=CLOSED_BY.format(fixed=Resolution.FIXED, change=Wait.CHANGE,
                                            number="<number>", note="<note>"),

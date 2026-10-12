@@ -90,7 +90,6 @@
     - "Where you run no solver pass, file each fault": none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
     - "Tell the user what each ticket": none. Kept: the principle of Requirements, the user's part.
     - "Where the user's later words bear on a `request`": Requirements: requirements checked against added words.
-    - "Where a `request` under `tickets/blocked/` waits on `validation`": Validation: a run shows the need met.
     - "Where the user rules on a ticket under `tickets/blocked/`": Decisions: a departing decision reaches the user.
 
 ## Decline notes
@@ -222,6 +221,7 @@
     - "Where a ticket, or your own reading of a fault, gives as the cause": none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
 - [Resolving](prompts/agents/ticket-analyst.md#resolving): Decisions: a departing decision reaches the user; a decline carries its defense; each decision recorded with what it was made from.
     - "Carry out every other resolution": Work control: one live holder per ticket.
+    - "Where that `change` serves a `request`": Validation: a run shows the need met.
     - "In a `change` for speed": Measurement: each figure cites its command.
     - "Give rote work to an agent": none. Kept: the principle of Process assessment, spend no run the work does not need.
     - "At the end of your reply, under a `## For the coordinator`": Work control: stopped work reaches an agent.

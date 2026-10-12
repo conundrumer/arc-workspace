@@ -8,12 +8,15 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from ticket_files import ticket_files, ticket_name
-from ticket_form import DEFAULT_PRIORITY, FRONT, front_fields, list_items, title
-from ticket_log import WAIT, Wait, holder, log_lines, waited, waited_change
+from ticket_form import DEFAULT_PRIORITY, FRONT, front_fields, list_items, section_head, title
+from ticket_log import (CLOSED_BY_LINE, WAIT, Wait, holder, log_lines, resolution_of, waited,
+                        waited_change)
+from ticket_numbers import matched_number
 from transcripts import Refused
 
 from operations.roles import Role, editors_of
 from operations.state import LogLine, Ticket, Unread
+from ticketing.text import VALIDATION
 from ticketing.times import stamp_time
 from ticketing.vocabulary import Domain, Kind, Status
 
@@ -30,9 +33,11 @@ def log_line(m: re.Match[str]) -> LogLine:
     note = m["note"] or ""
     wait = WAIT.match(note)
     change = None if wait is None else waited_change(wait)
+    closed = CLOSED_BY_LINE.match(note)
     return LogLine(log_time(m.group().split(" ", 1)[0]), Status(m["status"]), m["agent"],
                    m["id"], note, wait is not None and waited(wait) is Wait.USER,
-                   None if change is None else str(change), wait is not None)
+                   None if change is None else str(change), wait is not None, resolution_of(note),
+                   None if closed is None else str(matched_number(closed)))
 
 
 def editors_field(fields: Mapping[str, str]) -> tuple[Role, ...] | None:
@@ -61,7 +66,8 @@ def read_ticket(path: Path) -> Ticket:
         depends_on=tuple(list_items(fields["depends-on"])) if "depends-on" in fields else (),
         priority=int(fields["priority"]) if "priority" in fields else DEFAULT_PRIORITY,
         editors=editors_field(fields),
-        after_merge=fields.get("after-merge"), mechanical="mechanical" in fields, log=lines, holder=holder(text), path=path)
+        after_merge=fields.get("after-merge"), mechanical="mechanical" in fields, log=lines, holder=holder(text), path=path,
+        validation=section_head(text, VALIDATION) is not None)
 
 
 def read_tickets(tickets: Path) -> tuple[dict[str, Ticket], tuple[Unread, ...]]:

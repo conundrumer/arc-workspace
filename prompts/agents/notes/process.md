@@ -96,11 +96,11 @@
 - Outcomes:
     - For each change that serves a need the user stated, a run that exercises it shows the need met, or the need goes back to a ticket analyst.
     - A fault found in use is traced to the change, and to the requirement or the design that missed it.
-- Owner: the coordinator, which reads the next run that exercises the change.
+- Owner: the validation review, which an operator launches after a batch, and which judges each closed `request`'s check against the batch's runs.
 - Takes from: merge. Gives to: requirements, for a need not met.
 - How it can fail:
     - A check is placed on each change, and most never run: only a change that serves a need the user stated gets one.
-    - The check is lost before it runs: the `request` waits under `tickets/blocked/` until the check runs.
+    - The check is lost before it runs: it stands in the closed `request` until a batch's runs show it, and a change no run exercises reaches an agent as a `question` ticket.
 
 ## Merge (integration, transition)
 - Purpose: merge a verified change into `master` and make it live, with no change that skips verification.
