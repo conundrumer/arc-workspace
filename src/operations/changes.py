@@ -16,8 +16,8 @@ ticket gives none is undecided. A change with no worktree gets one from
 `scripts/change_worktree.py`, which logs its path on the ticket, so a
 later operator continues the change there. Where a change's ticket is
 revised after the log line that gives its worktree, the operator runs
-`scripts/change_worktree.py` again, which carries in the untracked Scope
-files that worktree lacks. Every editor and reviewer is
+`scripts/change_worktree.py` again, whose `--help` gives what it carries in.
+Every editor and reviewer is
 launched with no isolation, and its brief gives that worktree.
 
 What the editors' and the doc reviewer's replies give is read by the fixed
@@ -594,8 +594,6 @@ def left_decision(a: Agent, number: str) -> str | None:
 
 
 def unchanged_since(checkers: list[Agent], w: Path) -> bool:
-    """Whether the latest of a change's item `checkers` sent no editor a
-    message and its reply gives the worktree `w` in the state it is in."""
     if not checkers or checkers[-1].messaged != frozenset():
         return False
     return shows_current(checkers[-1], w)

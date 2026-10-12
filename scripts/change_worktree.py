@@ -49,7 +49,7 @@ HELP = mctx("""
         - Where one stands there on that branch, as an earlier run left it, it adds none.
     - It then copies in from the main tree each untracked file that the patterns of the main tree's `.worktreeinclude` match.
     - In the first form, it then copies in from the main tree each untracked file that git does not ignore, at a path that the ticket's `## Scope` gives, where the worktree holds no file at that path.
-        - `merge_change.py` lands a change that touches such a path where the main tree's file there still has the content it had when copied, and its `--help` gives how.
+        - `merge_change.py`'s `--help` gives how a change that touches such a path lands.
     - In the first form, it then writes on the ticket the line `worktree <path>` in the status the ticket stands in.
     - The command refuses, adds nothing and writes no line, where a worktree stands at that path on another branch, or where that path or that branch exists with no worktree of that branch at that path.
     """)
@@ -111,8 +111,6 @@ def carried_record(worktree: Path) -> Path:
 
 
 def carried(worktree: Path) -> dict[str, str]:
-    """Each path `copy_scope_untracked` carried into `worktree`, with the
-    hash of the blob it recorded; none where it carried none."""
     record = carried_record(worktree)
     return json.loads(record.read_text()) if record.is_file() else {}
 

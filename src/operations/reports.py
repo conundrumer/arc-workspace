@@ -58,14 +58,16 @@ def left_for_decision(a: Agent) -> str | None:
     """The part of an item checker's latest reply under
     `LEFT_FOR_DECISION`, or None where it has no such part or no line of
     that part is a list item that holds an agent id: a part such as
-    `None.` or `- None.` leaves nothing for a decision."""
+    `None.` or `- None.` leaves nothing for a decision. The reply's
+    closing `Worktree:` line is not an item left for a decision."""
     r = a.last_report
     if a.role is not Role.ITEM_CHECKER or r is None:
         return None
     part = heading_part(r.text, LEFT_FOR_DECISION)
     if part is None or not ITEM_WITH_AGENT.search(part):
         return None
-    return part.strip("\n")
+    kept = [ln for ln in part.splitlines() if not ln.strip().startswith(WORKTREE)]
+    return "\n".join(kept).strip("\n")
 
 
 class Label(StrEnum):
@@ -115,9 +117,6 @@ def no_finding(a: Agent) -> bool:
 
 
 def reviewed_state(a: Agent) -> str | None:
-    """The fingerprint the last line of `a`'s latest reply that opens with
-    `WORKTREE` gives, or None where no line does or that line gives
-    nothing after `WORKTREE`."""
     r = a.last_report
     if r is None:
         return None

@@ -292,8 +292,6 @@ def restored(state: State, task: str, start: float, stop: float) -> bool:
 
 
 def restores(state: State, task: str, start: float, stop: float) -> list[Call]:
-    """The `restore` calls on `task` that did not fail and came at or
-    after `start` and before `stop`, in the order they were made."""
     return [c for c in bash_calls(state, restore_command(task))
             if start <= c.time < stop and not c.error]
 
