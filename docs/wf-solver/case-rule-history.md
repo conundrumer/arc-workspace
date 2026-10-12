@@ -879,3 +879,11 @@ The third Create pass on ac0c5833 wrote the branch `$NearestCentroid`, "the mark
 > "approve"
 
 This settled that a claim that refers to a number that counts nothing the task has, such as a mean or a centroid, has no relational form, as the Relational form section of the principles now states. A branch whose claim refers to such a number fails Relational form and leaves the solver. A rule of the concept that refers to one runs under `@approximated:`. A count arranged to equal such a number is that number under another name, and it changes nothing. Picks and counts count things, and they stand: the largest, the fewest, the middle by rank, a size, a distance, a tile count, a half, a parity.
+
+## 2026-10-12 — a case that misses a pair of the task is witnessed
+
+Under the 2026-09-30 entry, "the cases the tool runs are the witnessed ones", a case that takes two rejected branches gets no run and no finding. With the exclusion `( Cp = $ShapeColors() ; Cc != $ColorBoxArea() )` removed from the `impl_choice` of ad3b40cf, the case `$ColorBoxArea & $LineCompetes` returns the input on train 2, and the pair run, `witness --every-case` and `grid --case` show nothing, since that case takes two rejected branches and is not witnessed. The user's ruling, as the log of ticket 10-98 records it:
+
+> "the checks also report a Fit failure of any case on the task's pairs, from the runs witnessed() already makes; this replaces the part of the 2026-09-30 ruling that gives cases not witnessed no finding."
+
+This settled that a case whose output on a pair's input of the task is no candidate of that pair is witnessed, whatever branches it takes, so the pair run fails the pair at that case, and `witness --every-case` reports such a dropped case as failing Fit.

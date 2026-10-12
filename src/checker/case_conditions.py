@@ -359,9 +359,10 @@ def check_case_conditions(solver: Solver, runs: Runs) -> list[Finding]:
     the cases no witness separates it from. Those come first. The check
     reads the witnessed cases of the solver with every case restored
     (`Runs.cases` of `Runs.restored`), kept on disk as the solver's own are:
-    a restored case that is not witnessed gives a witnessed case's output on
-    every recorded input, so its Fit is shown there, and it gets no finding
-    of its own. The cases a dropped case is compared with, for Equivalence
+    a restored case whose result on a pair's input of the task is no
+    candidate of that pair is witnessed (`solver.witnessed_cases.witnessed`),
+    so its Fit failure on the task's pairs is shown, and a restored case
+    that is not witnessed gets no finding of its own. The cases a dropped case is compared with, for Equivalence
     and Subsumption, are every case with every case restored, whose runs on
     the recorded inputs the witnessed-case computation made. A dropped base
     is judged from the run with every case restored; where that run gives it

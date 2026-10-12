@@ -30,7 +30,7 @@ from solver.model import (
     path_constructors,
 )
 from solver.outcome import Assignment, Outcome, is_result
-from solver.pair_runs import RunOn, examples
+from solver.pair_runs import Candidate, RunOn, candidates, examples, matching
 from solver.problems import WitnessFileRole
 from solver.solve import assignment, outcomes_on
 from solver.witness import Entry, same_output
@@ -66,6 +66,23 @@ def task_inputs(task: Task) -> list[tuple[Grid, Assignment]]:
     """The task's inputs, train then test (`examples`), each at the stored
     assignment."""
     return [(as_grid(ex.input), Assignment(())) for _pair, ex in examples(task)]
+
+
+type Candidates = tuple[tuple[Candidate, frozenset[Grid]], ...]
+"""A pair's candidates (`candidates`)."""
+
+
+def pairs_at(task: Task | None) -> dict[tuple[Grid, Assignment],
+                                        tuple[Candidates, ...]]:
+    """The candidates of each pair of `task` (`examples`) whose input is
+    each of its inputs at the stored assignment, keyed as `task_inputs`
+    keys a pair's input; none where there is no task."""
+    out: dict[tuple[Grid, Assignment], tuple[Candidates, ...]] = {}
+    if task is None:
+        return out
+    for (_pair, ex), at in zip(examples(task), task_inputs(task), strict=True):
+        out[at] = (*out.get(at, ()), candidates(ex))
+    return out
 
 
 def entry_assignments(engine: Engine, solver: Solver, entries: Sequence[Entry],
@@ -178,23 +195,29 @@ def stand_ins(solver: Solver, cases: Sequence[Case], d: "Denoted"
 @dataclass(frozen=True)
 class Shown:
     """What one recorded input shows of the solver's cases (`witnessed`):
-    the cases whose run on it fails, and the cases whose output on it no
-    case they extend gives."""
+    the cases whose run on it fails, the cases whose output on it no
+    case they extend gives, and the cases whose run gives a result that
+    is no candidate of a pair of the task whose input it is."""
 
     failed: frozenset[Case]
     differing: frozenset[Case]
+    missed: frozenset[Case]
 
 
 def shown_on(cases: Sequence[Case],
              extends: Mapping[Case, Sequence[Case]],
-             got: Mapping[Case, Outcome]) -> Shown:
+             got: Mapping[Case, Outcome],
+             pairs: Sequence[Candidates]) -> Shown:
     """What one recorded input shows of `cases` (`Shown`), from `got`,
     what each of them gives on it, `extends` giving the cases each
-    extends."""
+    extends, and `pairs` the candidates of each pair of the task whose
+    input it is."""
     failed = frozenset(c for c in cases if not is_result(got[c]))
     return Shown(failed, frozenset(
         c for c in cases if c not in failed
-        and all(not same_output(got[d], got[c]) for d in extends[c])))
+        and all(not same_output(got[d], got[c]) for d in extends[c])),
+        frozenset(c for c in cases if c not in failed
+                  and any(not matching(p, got[c]) for p in pairs)))
 
 
 def extended(took: Mapping[Case, frozenset[Taken]]
@@ -232,7 +255,7 @@ def witnessed_by(solver: Solver, cases: Sequence[Case],
     failed: set[Case] = set()
     differing: set[Case] = set()
     for one in shown:
-        failed |= one.failed
+        failed |= one.failed | one.missed
         differing |= one.differing
     return tuple(c for c in cases if c in failed or c in kept or (
         not stacked(took[c]) and c in differing))
@@ -246,6 +269,12 @@ what it shows of the solver's cases (`witnessed`)."""
 SHOWN_FIELD = "differing"
 """The field of a kept record (`hold_shown`) that names the cases whose
 output on the input no case they extend gives (`Shown.differing`)."""
+
+
+MISSED_FIELD = "missed"
+"""The field of a kept record (`hold_shown`) that names the cases whose
+result on the input is no candidate of a pair whose input it is
+(`Shown.missed`)."""
 
 
 def witnessed_base(solver: Solver, limits: Limits) -> "hashlib._Hash":
@@ -306,12 +335,17 @@ def held_shown(key: str, by_name: Mapping[str, Case]) -> Shown | None:
         got = json.loads(_shown_path(key).read_text())
     except (OSError, ValueError):
         return None
-    picked = got.get(SHOWN_FIELD) if isinstance(got, dict) else None
-    if not isinstance(picked, list):
+    if not isinstance(got, dict):
         return None
-    if not all(isinstance(n, str) and n in by_name for n in picked):
-        return None
-    return Shown(frozenset(), frozenset(by_name[n] for n in picked))
+    named: list[frozenset[Case]] = []
+    for field in (SHOWN_FIELD, MISSED_FIELD):
+        picked = got.get(field)
+        if not isinstance(picked, list):
+            return None
+        if not all(isinstance(n, str) and n in by_name for n in picked):
+            return None
+        named.append(frozenset(by_name[n] for n in picked))
+    return Shown(frozenset(), *named)
 
 
 def hold_shown(key: str, by_name: Mapping[str, Case], shown: Shown) -> None:
@@ -324,8 +358,10 @@ def hold_shown(key: str, by_name: Mapping[str, Case], shown: Shown) -> None:
         return
     path = _shown_path(key)
     path.parent.mkdir(parents=True, exist_ok=True)
-    write_whole(path, json.dumps({SHOWN_FIELD: [
-        n for n, c in by_name.items() if c in shown.differing]}).encode())
+    write_whole(path, json.dumps({
+        field: [n for n, c in by_name.items() if c in held]
+        for field, held in ((SHOWN_FIELD, shown.differing),
+                            (MISSED_FIELD, shown.missed))}).encode())
 
 
 def witnessed(engine: Engine, solver: Solver, limits: Limits,
@@ -343,11 +379,16 @@ def witnessed(engine: Engine, solver: Solver, limits: Limits,
     reason and cells, that no case it extends gives, so that a case
     undefined where a case it extends gives a grid is witnessed and its
     Fit failure shown. A case other than the concept case and the
-    branch models is not witnessed on what an input shows when it takes
-    two rejected branches (`rejected`) of which neither requires the
-    other, a branch requiring another when every case of the solver that
-    takes it takes the other. A case whose run on some recorded input
-    fails or reaches a limit is witnessed, so that the failure is shown.
+    branch models is not witnessed on the output an input shows when it
+    takes two rejected branches (`rejected`) of which neither requires
+    the other, a branch requiring another when every case of the solver
+    that takes it takes the other. A case whose run on some recorded
+    input fails or reaches a limit is witnessed, so that the failure is
+    shown, and so is a case whose run on a recorded input that is a
+    pair's input of the task gives a result that is no candidate of that
+    pair (`matching`), whatever branches it takes, so that its Fit
+    failure on the pair is shown. A recorded input that is the input of
+    several pairs is judged against each of them.
     What each recorded input shows (`Shown`) is kept on disk under its
     key (`shown_key`) where no run on it failed, so that a command on an
     unchanged solver runs nothing, and one with an entry added runs the
@@ -383,8 +424,9 @@ def witnessed(engine: Engine, solver: Solver, limits: Limits,
         got = run(every, on) if run is not None \
             else outcomes_on(engine, solver, every, on, limits)
         extends = extended(took)
+        at = pairs_at(solver.task)
         for i, here in zip(lacking, got, strict=True):
-            found[i] = shown_on(every, extends, here)
+            found[i] = shown_on(every, extends, here, at.get(inputs[i], ()))
             hold_shown(keys[i], by_name, found[i])
     out = witnessed_by(solver, every, took, [
         s if s is not None else found[i] for i, s in enumerate(shown)])
