@@ -27,8 +27,7 @@ in_scope: one cell set on every input; case `$Interior`
   # #
   # #
   no witness: with a `@store` line on the value, no witnessed case that holds the value takes the branch that line adds
-  add: // @store: <plausibility> <verdict>
-  or:  // @ignore: store — <reason>
+  add: // @ignore: store — <reason>
 border.item: one color on every input: 0; under `$DerivedSeparator`
   stored already: the value reads back the stored rows of `separator`
 border.value: one color on every input: 0; under `$DerivedSeparator`

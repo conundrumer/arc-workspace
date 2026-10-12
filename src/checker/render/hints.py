@@ -30,8 +30,8 @@ class Hint:
     or `@ignore: derive <Proposer>` line, the relation a line on an instance names, and the site it goes
     above: the instance of an `.init`, or the block of a `RIGID` call;
     None for the relation's own `.decl`. `alone` says no `@derive` or
-    `@store` line stands above it in the report, so it states the
-    site."""
+    `@store` line, and no other ask, stands above it in the report, so it
+    leads with `add:`, and with the site where it has one."""
 
     kind: HintKind
     proposer: str | None = None
@@ -61,7 +61,7 @@ def hint_line(engine: Engine, h: Hint) -> str:
     if h.kind == HintKind.STORE:
         return f"{add} " + comment_text(engine, store_text(
             named, Slot.PLAUSIBILITY, Slot.VERDICT))
-    lead = f"{add} " if h.alone and h.site is not None else "or:  "
+    lead = f"{add} " if h.alone else "or:  "
     if h.kind == HintKind.IGNORE_DERIVE:
         return lead + comment_text(engine, ignore_text(
             named, IgnoreForm.DERIVE, Slot.REASON, h.proposer))

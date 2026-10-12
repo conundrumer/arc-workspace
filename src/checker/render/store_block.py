@@ -222,13 +222,14 @@ def _no_witness_why(solver: Solver, f: Found) -> str:
                              f"{f.ended!r} with no reason it found no witness")
 
 
-def _store_hints(engine: Engine, f: Found, alone: bool = False
-                 ) -> list[str]:
-
+def _store_hints(engine: Engine, f: Found, alone: bool = False,
+                 asked: bool = False) -> list[str]:
+    """`asked` says an ask stands above the `@ignore: store` line, so it
+    leads with `or:`."""
     named, site = f.named, f.site
     if alone:
         return [hint_line(engine, Hint(HintKind.IGNORE_STORE, relation=named,
-                               site=site, alone=True))]
+                               site=site, alone=not asked))]
     return [hint_line(engine, Hint(HintKind.STORE, relation=named, site=site)),
             hint_line(engine, Hint(HintKind.IGNORE_STORE, relation=named,
                            site=site))]
@@ -284,12 +285,15 @@ def store_lines(solver: Solver, survey: StoreSurvey) -> list[str]:
         elif f.asks_line:
             lines += ["  " + ln for ln in drawn(f)]
             lines.append("  " + _witness_line(solver, f))
-            lines += ["  " + ln for ln in _store_hints(solver.engine, f)]
+            lines += ["  " + ln for ln in _store_hints(
+                solver.engine, f, alone=f.ended is SearchEnd.UNTAKEN)]
         elif f.store_branch:
             lines.append("  " + _witness_line(solver, f))
         elif f.asks_params:
-            lines += ["  " + ln
-                      for ln in _store_hints(solver.engine, f, alone=True)]
+            # At the relation's own `.decl` the headline's ask to make the
+            # value a parameter stands above the hint.
+            lines += ["  " + ln for ln in _store_hints(
+                solver.engine, f, alone=True, asked=f.site is None)]
         elif f.kind is not ValueKind.OWNED:
             lines += ["  " + ln for ln in drawn(f)]
             lines.append("  " + mctx("no case: the value {why}").format(
