@@ -33,6 +33,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
             * comment: The user asked for this rule in request 10-107, at span 2026-10-12T03:43:14Z of session 19c17548-121b-49de-ace6-47afeca14408: "File a request to reject requests or bugs that blame a missing rule". The coordinator filed ticket 10-100 with a rule that decisions.md lacks as its cause, and that ticket reached the user, who answered "of course the decision doc doesn't say extremely specific things, there was a common sense failure somewhere and some doc led to that".
     2. Read the title and the last log line of each ticket under `tickets/closed/` whose title refers to the target the root cause lies in by its current name or a name it had before, and judge whether the fault is one more instance of a fault whose earlier instances those tickets fixed. Where it is and the line on a fault in [Decisions](#decisions) has the tree changed for it, reframe the problem from the target's purpose, as the documents and its docstrings state it, and the user's stated preferences on it, and make its resolution one that removes the fault those tickets share, in place of a fix for this instance alone. Where that resolution changes the tree, its `change` states that fault in its Motivation and gives in its Scope each of their fixes it makes redundant.
     3. Resolve it as [How a decision is made](#how-a-decision-is-made) and [Resolving](#resolving) give.
+        - Where a resolution writes words in the agent-facing documents, or keeps words that a ticket you settle gives, judge those words by [What a file holds](docs/handbook/editing.md#what-a-file-holds) before you choose that resolution.
+            * comment: The user's "File", session 7fd429fb-e3be-4173-9b0e-df52f507d6a2, 2026-10-12T16:36:16Z, which chose the coordinator's option of 16:36:02Z, "This stage holds the observed-failure test and "tool first"". Draft 10-200 failed that test at a ticket reviewer's finding and closed `wontfix`.
 
 ## Resolving
 - Where [The user's part](#the-users-part) brings a decision to the user, act on none of its options, and move the ticket to `tickets/blocked/` with a note that opens with `user` and gives the decision.
@@ -49,7 +51,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 * inline: notes/tickets.md#ticket-files
 * inline: notes/tickets.md#ticket-fields
 * inline: notes/tickets.md#tracking
-- Where you file or revise a `change`, read [Writing a change](prompts/agents/ticket-analyst/change.md) and [Change tickets](prompts/agents/notes/tickets.md#change-tickets) before you write its text.
+- Where your resolution files a `change` or you revise one, read [Requirements](prompts/agents/ticket-analyst/requirements.md) before you write its text.
 - Settle by [Settling](#settling) each step of your work that takes time far out of proportion to the work it does, and each fault you notice in a tool, a document or an agent's run, whether or not it lies within your brief, that no ticket your brief gives or other line of your documents covers, and that no ticket outside `tickets/closed/` records.
     - Where the root cause is a choice of yours that no line of your documents led you to, the resolution changes nothing.
         * comment: With the rung 6 line of [Decision notes](prompts/agents/notes/decisions.md) in its context, assignee a02e649e2dcf5de95 filed 2-109 on its own slow binary grep, which no line led it to: ticket 2-358.

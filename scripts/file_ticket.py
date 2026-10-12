@@ -63,7 +63,7 @@ HELP = mctx("""
         - It gives `mechanical` only where its Intent gives each edit under `src/` and `scripts/` outright.
         - It has `# <title>` as its title, and the sections {change_sections} in place of {defect_headings}.
         - Where it adds a mechanism to code, it has a `{design}` section after `## Intent` that gives the existing operations the change uses or extends and each new operation with its module.
-        - Where it adds or changes a rule or a fact in the agent-facing documents, it has that section, and that section gives the plan that [Tracking](prompts/agents/ticket-analyst.md#tracking) gives.
+        - Where it adds or changes a rule or a fact in the agent-facing documents, it has that section.
     - A `request` has `# <target>: <what the user asks for>` as its title, and the sections {request_sections} in place of {defect_headings}.
         - A `request` that a `change` serves also has, before `## Log`, a `{validation}` section: what a later run must show for its need to count as met, as a command whose output shows it where one exists, and otherwise as a statement that an agent judges against a run.
     - `<domain>` is one of {domains}, and `<subject>` is the id of the thing it names: a task id for `task`, a ticket's number for `change` and `ticket`, a commit hash for `commit`, an agent id for `agent`.
