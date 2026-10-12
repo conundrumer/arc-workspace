@@ -7,8 +7,10 @@ COORDINATOR = "main"
 """The address SendMessage reaches the coordinator at, and the sender of
 the main session's messages."""
 
-WAIT_SECONDS = 240
-"""The interval of the keep-alive timer."""
+WAIT_SECONDS = 272
+"""The interval of the keep-alive timer: the 5-minute cache lifetime of an
+agent's previous request, less the longest measured time past the interval
+from that request to the agent's next one, 27.6 s."""
 
 FOREGROUND_MS = 240000
 """The bound `scripts/pending_wait_hook.py` holds a subagent's foreground
