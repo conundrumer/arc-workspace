@@ -59,7 +59,6 @@ from ticketing.vocabulary import DEFECT_SECTIONS, Domain, Kind, Status
 class AlertKind(Enum):
     """The kinds of alert, one per reading of the monitor (`monitor`)."""
     BUDGET = "budget"
-    HUNG = "hung"
     REPEATED = "repeated"
     STALL = "stall"
 
@@ -104,15 +103,8 @@ REPEATS = 3
 result before it gets a `repeated` alert."""
 
 
-HUNG_FACTOR = 10
-"""How many times a call's usual time a call in flight runs before it
-counts as hung, once. A call whose usual time no run gives takes
-`steps.BLOCK_SECONDS` as its usual time."""
-
-
-READING = {k: v.format(factor=HUNG_FACTOR, repeats=REPEATS) for k, v in {
+READING = {k: v.format(repeats=REPEATS) for k, v in {
     AlertKind.BUDGET: mctx("Its self time is past its budget"),
-    AlertKind.HUNG: mctx("A call of it in flight has run {factor} times its usual time"),
     AlertKind.REPEATED: mctx("It ran the same Bash command with the same result at least "
                              "{repeats} times in a row"),
     AlertKind.STALL: mctx("Its turn ended while its work is open, and no report of it reached "
@@ -123,11 +115,6 @@ READING = {k: v.format(factor=HUNG_FACTOR, repeats=REPEATS) for k, v in {
 
 LEAD = mctx("A monitor's alert:")
 BUDGET_MESSAGE = briefs.AT_BUDGET
-HUNG_MESSAGE = mctx("""
-    - That call may have ended by the time you read this.
-    - Where it still runs, check whether it makes progress, and end it where it does not.
-    - Do not run it again unchanged.
-    """)
 REPEATED_MESSAGE = mctx("Run that command again only once something has changed that can "
                         "change its result.")
 STALL_MESSAGE = mctx("""
@@ -142,8 +129,6 @@ def to_agent(kind: AlertKind, agent: str) -> str:
     match kind:
         case AlertKind.BUDGET:
             step = BUDGET_MESSAGE
-        case AlertKind.HUNG:
-            step = HUNG_MESSAGE
         case AlertKind.REPEATED:
             step = REPEATED_MESSAGE
         case AlertKind.STALL:

@@ -23,7 +23,7 @@ from agent_turns import first_time, last_time
 from budgets import budgets_in_force, past_budget
 from context_bound_hook import OPERATORS, past_bound
 from controlled_markdown import mctx
-from open_agents import Listed, hung_time, running_agents, work_open
+from open_agents import Listed, running_agents, work_open
 from operator_reads import (ended_elsewhere, ended_with, operator_runs, read_operator,
                             resumed_at, stalled_reports)
 from run_prints import self_of
@@ -409,14 +409,6 @@ UNWATCHED = OPERATORS
 """The agent types the monitor's steps do not watch."""
 
 
-def hung_at(listed: Listed, listing: list[Listed], opened: float) -> float | None:
-    """The earliest time a call of `listed` in flight counted as hung, or
-    None where none had by `opened`, the time the state opened."""
-    times = [at for s in listed.run.in_flight
-             if (at := hung_time(listed.run, [x.run for x in listing], s)) <= opened]
-    return min(times, default=None)
-
-
 def stalled_at(listed: Listed, listing: list[Listed], undecided: list[str]) -> float | None:
     """The end of the turn of `listed` where it stalled, as
     `monitor.ALERTS` gives a stall, or None. A run whose turn end
@@ -468,7 +460,7 @@ def watched(listing: list[Listed], launched: set[str],
         budget = next(reversed(budgets_in_force(r, undecided)), None)
         self_time = self_of(listed, now)
         out.append(Watched(
-            agent_id=aid, hung=hung_at(listed, listing, opened),
+            agent_id=aid,
             over_budget=past_budget(self_time, budget),
             stalled=stalled_at(listed, listing, undecided), repeated=repeated(listed)))
     return out

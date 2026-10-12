@@ -14,20 +14,18 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from controlled_markdown import mctx
-from operations.alerts import HUNG_FACTOR, READING, REPEATS, AlertKind, to_agent
+from operations.alerts import READING, REPEATS, AlertKind, to_agent
 from operations.steps import Send, Step
 
 
 @dataclass(frozen=True)
 class Watched:
-    """A watched agent at the time of the read. `hung` is the time its oldest
-    call in flight counted as hung (`hung_from`), or None where none has.
+    """A watched agent at the time of the read.
     `over_budget` is whether its self time is past its budget. `stalled`
     is the time its turn ended where it stalled, as `ALERTS` gives a
     stall, or None. `repeated` gives the time of the last call of each run
     of `REPEATS` or more identical Bash calls with identical results."""
     agent_id: str
-    hung: float | None
     over_budget: bool
     stalled: float | None
     repeated: tuple[float, ...]
@@ -47,16 +45,9 @@ def undecided(state: MonitorState) -> list[str]:
     return list(state.undecided)
 
 
-def hung_from(start: float, usual: float) -> float:
-    """The time at which a call that began at `start`, with `usual` as its
-    label's usual time, counts as hung."""
-    return start + HUNG_FACTOR * usual
-
-
 ALERTS = mctx("""
     - `next` sends an agent that an operator of the session or the coordinator launched, whose work is open and that is no operator, an alert that gives it its step, then holds the line `alert: <kind> <agent id>` on a line of its own, once for each time one of these fires:
         - `budget`: {budget}.
-        - `hung`: {hung}.
         - `repeated`: {repeated}, other than a command led by `: 'unattended-wait:`.
         - `stall`: {stall} since its parent's latest message to it, with no `user` entry in its transcript timestamped after that turn ended, and no agent it launched and no command it backgrounded still running or ended after that turn ended, though the parent's transcripts hold an `assistant` entry timestamped after that turn ended, before which the harness delivers each report that waits for the parent.
             - That turn ended at the last timestamped entry of its transcripts that ends a turn, as `scripts/profile_runs.py --help runs` gives one.
@@ -83,8 +74,6 @@ def alerts(state: MonitorState, w: Watched) -> list[Send]:
     out: list[Send] = []
     if w.over_budget:
         out.append(budget_alert(w))
-    if w.hung is not None:
-        out.append(alert(AlertKind.HUNG, w, w.hung))
     out.extend(alert(AlertKind.REPEATED, w, t) for t in w.repeated)
     if w.stalled is not None and w.agent_id not in state.stalled:
         out.append(alert(AlertKind.STALL, w, w.stalled))

@@ -31,7 +31,7 @@ from budgets import (BUDGET_FACTOR, LOW_WAIT_PCT, MEDIAN_RUNS,  # noqa: E402
                      type_budget)
 from command_labels import programs  # noqa: E402
 from context_bound_hook import CONTEXT_BOUND, OPERATOR  # noqa: E402
-from open_agents import Listed, hung_time, running_agents, work_open  # noqa: E402
+from open_agents import HUNG_FACTOR, Listed, hung_time, running_agents, work_open  # noqa: E402
 from run_prints import (RECENT_CALLS, print_messages,  # noqa: E402
                         print_report, print_running)
 from run_profile import (COMMAND_WIDTH, clock, dollars, minutes,  # noqa: E402
@@ -44,7 +44,6 @@ from run_reads import (BACKGROUND_TASK, agent_type, bash_spans, blocks, refused_
 from run_store import RunStore  # noqa: E402
 from help_parts import print_help  # noqa: E402
 from operations.alerts import AlertKind, opening  # noqa: E402
-from operations.monitor import HUNG_FACTOR  # noqa: E402
 from operations.steps import BLOCK_SECONDS  # noqa: E402
 from operations.reports import BUDGET_PASSED  # noqa: E402
 from operations.roles import GENERAL, Role  # noqa: E402

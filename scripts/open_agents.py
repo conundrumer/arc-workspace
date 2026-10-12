@@ -18,7 +18,6 @@ from run_reads import (BACKGROUND_TASK, LaunchStatus, blocks, is_prompt, parent_
                        run_entries, tool_calls)
 from transcripts import agent_id, is_subagent
 
-from operations.monitor import hung_from
 from operations.steps import BLOCK_SECONDS
 
 
@@ -49,8 +48,20 @@ def usual(run: Run, runs: list[Run], call: Span) -> float:
     return statistics.median(durations) if durations else BLOCK_SECONDS
 
 
+HUNG_FACTOR = 10
+"""How many times a call's usual time a call in flight runs before it
+counts as hung, once. A call whose usual time no run gives takes
+`steps.BLOCK_SECONDS` as its usual time."""
+
+
+def hung_from(start: float, usual: float) -> float:
+    """The time at which a call that began at `start`, with `usual` as its
+    label's usual time, counts as hung."""
+    return start + HUNG_FACTOR * usual
+
+
 def hung_time(run: Run, runs: list[Run], s: Span) -> float:
-    """The time the call `s` of `run` counts as hung (`monitor.hung_from`)."""
+    """The time the call `s` of `run` counts as hung (`hung_from`)."""
     return hung_from(s.start, usual(run, runs, s))
 
 
