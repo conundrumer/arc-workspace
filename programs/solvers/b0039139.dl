@@ -1,0 +1,399 @@
+// b0039139
+// @draft
+// @keywords: decompose tile-arrangement crop bbox objects count mapping
+// @scene panels: full lines of params.divider_color, one cell wide, cut the
+//  input into four panels in a row along one axis, and each panel spans the
+//  whole input across that axis
+// @scene shape-panel: one end panel holds one connected shape of
+//  params.shape_color on background 0, with background between the shape
+//  and the panel's sides
+// @scene count-panel: the panel next to the shape panel holds marks of
+//  params.mark_color on background 0, each mark a domino of two cells, with
+//  background between any two marks
+// @scene solid-panels: each of the other two panels is solid in one color,
+//  and the two colors differ from each other, from params.divider_color and
+//  from background 0
+// @rule count: N is the number of marks in the count panel
+// @rule tile-shape: the output is the shape's bounding box, copied N times in
+//  a line along the panel axis, with params.gap_width lines between neighbor
+//  copies
+// @rule recolor: a shape cell takes the color of the solid panel next to the
+//  count panel, and every other cell of the output, in a box or in a gap,
+//  takes the color of the solid panel at the far end
+
+// how the marks give the number of copies
+.type MarkCount =
+    // @claim count
+    Marks4 {}
+    // @rule count: N is the number of params.mark_color cells in the count
+    //  panel divided by params.mark_size; undefined where that number is not
+    //  a multiple of params.mark_size
+    // @witness mixed-mark-sizes: borderline concept
+    //     @relaxed count-panel
+  | MarkCells {}
+    // @rule count: the marks are the 8-connected components of
+    //  params.mark_color in the count panel
+    // @witness marks-touch-at-corner: borderline concept
+    //     @relaxed count-panel
+  | Marks8 {}
+
+// the box each copy takes
+.type ShapeSource =
+    // @claim tile-shape
+    ShapeBox {}
+    // @rule tile-shape: the box is the shape panel inset by params.margin on
+    //  every side; undefined where the panel is no wider than twice the
+    //  margin on an axis
+    // @witness wide-margin: variant concept
+  | PanelInset {}
+
+// how the panels take their roles
+.type PanelRoles =
+    // @claim shape-panel count-panel recolor
+    RolesByContent {}
+    // @scene shape-panel: the shape panel is the first panel from corner
+    //  params.start_corner along the panel axis, whatever it holds
+    // @scene count-panel: the count panel is the second panel from that
+    //  corner
+    // @rule recolor: the fill panel is the third panel from that corner and
+    //  the field panel the last; undefined where either is not solid
+    // @witness solid-shape-panel: foreign $PanelOrder
+    //     @relaxed shape-panel
+    // @witness shape-panel-right: variant concept
+  | PanelOrder {}
+
+// the lines between neighbor copies
+.type Gap =
+    // @claim tile-shape
+    StoredGap {}
+    // @rule tile-shape: the gap is the shortest run of background between
+    //  two different marks along a row or column of the count panel;
+    //  undefined where no two marks face each other along a row or column
+    // @witness marks-two-apart: variant concept
+  | GapFromMarkSpacing {}
+    // @rule tile-shape: the gap is the thickness of the divider lines;
+    //  undefined where the dividers differ in thickness
+    // @witness thick-dividers: borderline concept
+    //     @relaxed panels
+  | GapFromDivider {}
+    // @rule tile-shape: the gap is the shape's distance from the sides of its
+    //  panel; undefined where its distances from the four sides differ
+    // @witness shape-margin-two: variant concept
+  | GapFromShapeMargin {}
+
+.type Choice = [m: MarkCount, s: ShapeSource, r: PanelRoles, g: Gap]
+
+// The cases that count marks under one panel reading.
+.type MarkKey = [m: MarkCount, r: PanelRoles]
+
+// A cast between marks, from cell src toward d.
+.type Cast = [m: MarkCount, r: PanelRoles, src: Position, d: Dir]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl divider_color(c: Color) divider_color(1).
+    .decl shape_color(c: Color) shape_color(4).
+    .decl mark_color(c: Color) mark_color(3).
+
+    // --- $MarkCells ---
+    // The cells of one mark.
+    .decl mark_size(n: number) mark_size(2).
+
+    // --- $PanelInset ---
+    // How far the copied box lies in from each side of the shape panel.
+    .decl margin(k: number) margin(1).
+
+    // --- $PanelOrder ---
+    // The corner whose end of the panel row holds the shape panel.
+    .decl start_corner(d: DiagDir) start_corner(DIAG_TL).
+
+    // --- $StoredGap ---
+    .decl gap_width(k: number) gap_width(1).
+
+    // --- $GapFromMarkSpacing ---
+    // @derive DominantColor: variant derived
+    //     @relaxed shape-panel
+    //     @relaxed count-panel
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+.decl mark_count_choice(m: MarkCount)
+mark_count_choice($Marks4()). mark_count_choice($MarkCells()). mark_count_choice($Marks8()).
+
+.decl panel_roles_choice(r: PanelRoles)
+panel_roles_choice($RolesByContent()). panel_roles_choice($PanelOrder()).
+
+.comp Parse<Key> {
+    .decl grid(key: Key, p: Position, col: Color)
+
+    .type KeyTile = [key: Key, t: Position]
+    .type KeyDir = [key: Key, d: Dir]
+    .type KeyRoles = [key: Key, r: PanelRoles]
+
+    // A line on axis a with a cell off the divider color.
+    .decl broken(key: Key, a: Axis, l: Position)
+    broken(Ky, A, L) :-
+        grid(Ky, P, Col), !params.divider_color(Col), axis_elem(A), split(P, A, L, _).
+
+    // The divider lines, axis-only on the panel axis.
+    .decl divider(key: Key, a: Axis, l: Position)
+    divider(Ky, A, L) :- grid(Ky, P, _), axis_elem(A), split(P, A, L, _), !broken(Ky, A, L).
+
+    .decl panel_axis(key: Key, a: Axis)
+    panel_axis(Ky, A) :- divider(Ky, A, _).
+
+    // The panels the divider lines cut, each named by its tile position.
+    // @claim panels
+    .init panels = DividerTiles<Key>
+    panels.cell(Ky, P) :- grid(Ky, P, _).
+    panels.divider(Ky, A, L) :- divider(Ky, A, L).
+
+    // A solid panel's color; a panel of two colors clashes.
+    // @claim solid-panels
+    .init solid = Unanimous<KeyTile, Color>
+    solid.item([Ky, T], Col) :- panels.tile_of(Ky, P, T), grid(Ky, P, Col).
+
+    // The panels in order toward each end of the row, nearest that end first.
+    // @claim panels
+    .init row = Order<KeyDir, Position>
+    row.elem([Ky, D], T) :- panels.tile_of(Ky, _, T), panel_axis(Ky, A), axis_of(D, A).
+    row.before([Ky, D], T1, T2) :-
+        row.elem([Ky, D], T1), row.elem([Ky, D], T2), nearer(D, T1, T2).
+
+    // The shape panel, at the end of the row toward d.
+    .decl shape_end(key: Key, r: PanelRoles, d: Dir, t: Position)
+
+    // --- $RolesByContent ---
+    shape_end(Ky, $RolesByContent(), D, T) :- row.first([Ky, D], T), solid.clash([Ky, T]).
+
+    // --- $PanelOrder ---
+    shape_end(Ky, $PanelOrder(), D, T) :-
+        row.first([Ky, D], T), params.start_corner(C), dir_of(C, _, D).
+
+    // --- $RolesByContent, $PanelOrder ---
+    // The color of the solid panel at the far end.
+    .decl field_color(key: Key, r: PanelRoles, col: Color)
+    field_color(Ky, R, Col) :-
+        shape_end(Ky, R, D, _), row.last([Ky, D], T), solid.value([Ky, T], Col).
+
+    // --- $ShapeBox, $GapFromShapeMargin ---
+    // @claim tile-shape
+    .init shape = Bbox<KeyRoles>
+    shape.cell([Ky, R], P) :-
+        shape_end(Ky, R, _, T), panels.tile_of(Ky, P, T),
+        grid(Ky, P, Col), params.shape_color(Col).
+
+    // --- $PanelInset, $GapFromShapeMargin ---
+    // @claim tile-shape
+    .init shape_panel = Bbox<KeyRoles>
+    shape_panel.cell([Ky, R], P) :- shape_end(Ky, R, _, T), panels.tile_of(Ky, P, T).
+
+    // --- $GapFromShapeMargin ---
+    // The shape's distance from each side of its panel.
+    // @claim tile-shape
+    .init shape_margin = Unanimous<KeyRoles, number>
+    shape_margin.item(K, N) :-
+        shape_panel.box(K, B0), shape.box(K, B), relative(B0, B, B_rel),
+        dir_elem(D), dist(B_rel, D, N).
+}
+
+.init parse = Parse<Unit>
+parse.grid($U(), P, Col) :- in(P, Col).
+
+// --- $RolesByContent, $PanelOrder ---
+// The color of the solid panel next to the count panel.
+.decl fill_color(r: PanelRoles, col: Color)
+fill_color(R, Col) :-
+    parse.shape_end($U(), R, D, T), parse.row.next([$U(), D], T, T2),
+    parse.row.next([$U(), D], T2, T3), parse.solid.value([$U(), T3], Col).
+
+// A mark cell of the count panel, the panel next to the shape panel.
+.decl mark_cell(r: PanelRoles, p: Position)
+mark_cell(R, P) :-
+    parse.shape_end($U(), R, D, T), parse.row.next([$U(), D], T, T2),
+    parse.panels.tile_of($U(), P, T2), in(P, Col), params.mark_color(Col).
+
+// The box each copy takes.
+.decl shape_box(s: ShapeSource, r: PanelRoles, b: Box)
+
+// --- $ShapeBox ---
+shape_box($ShapeBox(), R, B) :- parse.shape.box([$U(), R], B).
+
+// --- $PanelInset ---
+shape_box($PanelInset(), R, B) :-
+    parse.shape_panel.box([$U(), R], B0), params.margin(K), uniform_inset(K, I),
+    compose(B0, I, B).
+
+// --- $Marks4, $MarkCells & $GapFromMarkSpacing ---
+// The marks, 4-connected.
+// @claim count
+.init marks4 = Components<PanelRoles>
+marks4.node(R, P) :- mark_cell(R, P).
+
+// --- $Marks8 ---
+// The marks, 8-connected.
+// @claim count
+.init marks8 = Components8<PanelRoles>
+marks8.node(R, P) :- mark_cell(R, P).
+
+// --- $Marks4, $MarkCells, $Marks8 ---
+// The index of each copy, axis-only on the panel axis.
+.init copies = AxisFrame<MarkKey>
+
+// --- $Marks4, $Marks8 ---
+// @claim count
+.init marks = Tally<MarkKey, Ident>
+marks.item([$Marks4(), R], Id) :- marks4.label(R, _, Id).
+marks.item([$Marks8(), R], Id) :- marks8.label(R, _, Id).
+
+copies.extent(K, A, N) :- marks.tally(K, N), parse.panel_axis($U(), A).
+
+// --- $MarkCells ---
+// @claim count
+.init cells = Tally<PanelRoles, Position>
+cells.item(R, P) :- mark_cell(R, P).
+
+// One place per mark cell.
+.init cell_row = AxisFrame<PanelRoles>
+cell_row.extent(R, A, N) :- cells.tally(R, N), parse.panel_axis($U(), A).
+
+// One copy per mark_size mark cells.
+copies.extent([$MarkCells(), R], A, N) :-
+    cell_row.cell(R, A, P), params.mark_size(K), divide_by_size(P, A, K, 0, P_outer, _),
+    axis_dim(P_outer, A, N).
+
+// The lines between neighbor copies.
+.decl spacing(g: Gap, m: MarkCount, r: PanelRoles, k: number)
+
+// --- $StoredGap ---
+spacing($StoredGap(), M, R, K) :-
+    mark_count_choice(M), panel_roles_choice(R), params.gap_width(K).
+
+// --- $GapFromMarkSpacing ---
+// Each mark's cells, under the reading of a mark that each case takes.
+.decl mark(m: MarkCount, r: PanelRoles, p: Position, id: Ident)
+
+// --- $GapFromMarkSpacing & $Marks4, $GapFromMarkSpacing & $MarkCells ---
+mark(M, R, P, Id) :- marks4.label(R, P, Id), mark_count_choice(M), M != $Marks8().
+
+// --- $GapFromMarkSpacing & $Marks8 ---
+mark($Marks8(), R, P, Id) :- marks8.label(R, P, Id).
+
+// --- $GapFromMarkSpacing ---
+// Casts from each mark cell along rows and columns, stopped by any cell off
+// the background.
+// @claim tile-shape
+.init facing = Ray<MarkKey>
+facing.dir([M, R], D) :- mark_count_choice(M), panel_roles_choice(R), dir_elem(D).
+facing.mark([M, R], P) :- mark(M, R, P, _).
+facing.blocked([M, R], P) :-
+    mark_count_choice(M), panel_roles_choice(R), in(P, Col), !params.background(Col).
+
+// The background run of a cast that ends on another mark.
+// @claim tile-shape
+.init run = Tally<Cast, Position>
+run.item([M, R, Src, D], P) :-
+    facing.stop([M, R], Q, D, _, Src), mark(M, R, Q, Id2), mark(M, R, Src, Id1), Id1 != Id2,
+    facing.clear_cast([M, R], P, D, _, Src), in(P, Col), params.background(Col).
+
+// @claim tile-shape
+.init shortest = Extremes<MarkKey>
+shortest.cand([M, R], N) :- run.tally([M, R, _, _], N).
+
+spacing($GapFromMarkSpacing(), M, R, K) :- shortest.low([M, R], K).
+
+// --- $GapFromDivider ---
+// The divider bands, each one or more adjacent divider lines.
+// @claim tile-shape
+.init divider_band = Components<Unit>
+divider_band.node($U(), P) :- parse.divider($U(), A, L), in(P, _), split(P, A, L, _).
+
+// @claim tile-shape
+.init thickness = Tally<Ident, Position>
+thickness.item(Id, L) :-
+    divider_band.label($U(), P, Id), parse.divider($U(), A, L), split(P, A, L, _).
+
+// @claim tile-shape
+.init same_thickness = Unanimous<Unit, number>
+same_thickness.item($U(), N) :- thickness.tally(_, N).
+
+spacing($GapFromDivider(), M, R, K) :-
+    mark_count_choice(M), panel_roles_choice(R), same_thickness.value($U(), K).
+
+// --- $GapFromShapeMargin ---
+spacing($GapFromShapeMargin(), M, R, K) :-
+    mark_count_choice(M), parse.shape_margin.value([$U(), R], K).
+
+// --- $StoredGap, $GapFromMarkSpacing, $GapFromDivider, $GapFromShapeMargin ---
+// A cell of a copy and the input cell it copies: the copies lie in a line
+// along the panel axis, spacing lines apart.
+.decl copy(ch: Choice, p: Position, q: Position)
+copy([M, S, R, G], P, Q) :-
+    copies.cell([M, R], A, P_idx), shape_box(S, R, B), spacing(G, M, R, K),
+    in(Q, _), crop(Q, B, Q_rel), concat_slab(P_idx, Q_rel, A, K, P).
+
+// The output frame.
+.init frame = Frame2D<Choice>
+frame.extent(Ch, A, N) :- copy(Ch, P, _), axis_elem(A), axis_dim(P, A, N).
+
+// A copy of a shape cell.
+.decl shape_copy(ch: Choice, p: Position)
+shape_copy(Ch, P) :- copy(Ch, P, Q), in(Q, Col), params.shape_color(Col).
+
+out(P, Col, Ch) :- shape_copy(Ch, P), Ch = [_, _, R, _], fill_color(R, Col).
+out(P, Col, Ch) :-
+    frame.cell(Ch, P), !shape_copy(Ch, P), Ch = [_, _, R, _], parse.field_color($U(), R, Col).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.grid(E, P, Col) :- ex_in(E, P, Col).
+
+    .type Line = [e: Example, a: Axis, l: Position]
+    .type Run = [e: Example, id: Ident]
+
+    // An input cell on line l of axis a.
+    .decl line_cell(e: Example, a: Axis, l: Position, p: Position, col: Color)
+    line_cell(E, A, L, P, Col) :- ex_in(E, P, Col), axis_elem(A), split(P, A, L, _).
+
+    // The color of each one-colored line of an input.
+    .init line = Unanimous<Line, Color>
+    line.item([E, A, L], Col) :- line_cell(E, A, L, _, Col).
+
+    // A cell on a line of its own color.
+    .decl on_line(e: Example, p: Position)
+    on_line(E, P) :- line_cell(E, A, L, P, Col), line.value([E, A, L], Col).
+
+    // The color of a one-colored line of an input.
+    .decl line_color(e: Example, col: Color)
+    line_color(E, Col) :- line.value([E, _, _], Col).
+
+    // A train input in which col does not lie on lines of its own color alone.
+    .decl lacks(e: Example, col: Color)
+    lacks(E, Col) :- ex_out(E, _, _), line_color(_, Col), !line_color(E, Col).
+    lacks(E, Col) :- ex_out(E, _, _), ex_in(E, P, Col), !on_line(E, P).
+
+    .decl divider_color(c: Color)
+    divider_color(Col) :- line_color(_, Col), !lacks(_, Col).
+
+    // An output line along the panel axis with a cell off the field color.
+    .decl off_field(e: Example, l: Position)
+    off_field(E, L) :-
+        ex_out(E, P, Col), ex.panel_axis(E, A), split(P, A, L, _),
+        !ex.field_color(E, $RolesByContent(), Col).
+
+    // The gaps between copies: runs of output lines all in the field color.
+    .init gap = Components<Example>
+    gap.node(E, P) :- ex_out(E, P, _), ex.panel_axis(E, A), split(P, A, L, _), !off_field(E, L).
+
+    .init gap_lines = Tally<Run, Position>
+    gap_lines.item([E, Id], L) :- gap.label(E, P, Id), ex.panel_axis(E, A), split(P, A, L, _).
+
+    .decl gap_width(k: number)
+    gap_width(K) :- gap_lines.tally(_, K).
+
+    .decl margin(k: number)
+    margin(K) :- ex_out(E, _, _), ex.shape_margin.value([E, $RolesByContent()], K).
+}

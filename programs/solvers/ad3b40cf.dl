@@ -1,0 +1,337 @@
+// ad3b40cf
+// @draft
+// @keywords: d4 markers color-class rank objects bbox
+// @scene mirror-line: a straight line of params.line (1) runs edge to edge
+//  along one of the grid's own symmetry axes: the middle row, the middle
+//  column, or a corner-to-corner diagonal
+// @scene one-side: every cell that is neither params.background (8) nor
+//  params.line lies on one side of the line, and the other side is all
+//  params.background
+// @scene two-colors: those cells, the shapes, take exactly two colors, and
+//  the two colors have different cell counts
+// @rule mirror-rarer: each cell of the shape color with the fewest cells is
+//  copied to its mirror image across the line, over whatever that image cell
+//  holds; every other cell keeps its input color
+
+// what picks the color that is mirrored
+.type CopiedColor =
+    // @claim mirror-rarer
+    CellCount {}
+    // @rule mirror-rarer: the color mirrored is the one whose 4-connected
+    //  objects have the least sum of box areas; undefined where two colors
+    //  tie for the least sum
+    // @witness object-box-order: ordinary concept
+  | ObjectBoxArea {adj: Adjacency}
+    // @rule mirror-rarer: the color mirrored is the one whose cells have the
+    //  box of least area; undefined where two colors tie for the least area
+    // @witness scattered-color: ordinary concept
+  | ColorBoxArea {}
+
+// which cells join into one object
+.type Adjacency =
+    // @claim mirror-rarer
+    Adjacency4 {}
+    // @rule mirror-rarer: objects also join at a corner
+    // @witness corner-touch: ordinary concept
+  | Adjacency8 {}
+
+// which colors the count ranges over
+.type Competitors =
+    // @claim mirror-rarer
+    ShapeColors {}
+    // @rule mirror-rarer: the count ranges over every color other than
+    //  params.background, the line included; where the line is the rarest,
+    //  its image is the line itself
+    // @witness line-rarest: ordinary concept
+  | LineCompetes {}
+    // @rule mirror-rarer: the count ranges over every color other than
+    //  params.line, params.background included
+    // @witness background-rarest: foreign concept
+    //     @relaxed one-side
+    // @witness no-shapes: foreign $BackgroundCompetes
+    //     @relaxed two-colors
+  | BackgroundCompetes {}
+
+// what a tie for the least does
+.type Ties =
+    // @claim mirror-rarer
+    TieUndefined {}
+    // @rule mirror-rarer: every color tied for the least is mirrored
+    // @witness tie: borderline any
+    //     @relaxed two-colors
+  | CopyAllLeast {}
+
+// where the mirror stands
+.type MirrorPlace =
+    // @claim mirror-rarer
+    DrawnLine {}
+    // @rule mirror-rarer: the mirror is the grid's own flip whose fixed line
+    //  has the drawn line's orientation, through the grid's center
+    // @witness off-center-line: variant concept
+    //     @relaxed mirror-line
+  | FrameFlip {}
+
+// what an image does to a cell that holds the other shape color
+.type ImageOnInk =
+    // @claim mirror-rarer
+    PaintOver {}
+    // @rule mirror-rarer: the image paints only params.background cells
+    // @witness ink-both-sides: borderline any
+    //     @relaxed one-side
+  | PaintBackgroundOnly {}
+
+// the color of the mirror line
+.type LineColor =
+    // @claim mirror-line
+    StoredLine {}
+    // @scene mirror-line: the line's color is the one color other than
+    //  params.background whose cells fill one whole row, column or diagonal
+    //  line of the grid; undefined where no color or several colors do
+    // @witness line-recolored: variant $LineByShape
+    //     @relaxed mirror-line
+  | LineByShape {}
+
+.type Choice = [cc: CopiedColor, cp: Competitors, t: Ties, pl: MirrorPlace,
+                pt: ImageOnInk, lc: LineColor]
+
+// The ranking of the competing colors under one measure.
+.type Rank = [cc: CopiedColor, cp: Competitors, lc: LineColor]
+
+// An object of one adjacency.
+.type ObjectKey = [adj: Adjacency, id: Ident]
+
+// The objects of one color under one adjacency.
+.type ColorObjects = [adj: Adjacency, col: Color]
+
+// A cell of an object's box.
+.type BoxCell = [id: Ident, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $ShapeColors, $LineCompetes, $PaintBackgroundOnly, $LineByShape ---
+    // @derive DominantColor: variant derived
+    //     @relaxed one-side
+    // @ignore: derive $ShapeColors & $CellCount & $PaintOver — subsumed by
+    //  $BackgroundCompetes: the most common color is never the rarest, so
+    //  leaving it out of the count changes no defined output
+    .decl background(c: Color) background(8).
+
+    // --- $StoredLine ---
+    .decl line(c: Color) line(1).
+}
+
+.init params = Params
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($Adjacency4()). adjacency_choice($Adjacency8()).
+
+// @ignore: case section — the enumerator lists every value of its field
+.decl copied_color_choice(c: CopiedColor)
+copied_color_choice($CellCount()). copied_color_choice($ColorBoxArea()).
+copied_color_choice($ObjectBoxArea(A)) :- adjacency_choice(A).
+
+.decl competitors_choice(c: Competitors)
+competitors_choice($ShapeColors()). competitors_choice($LineCompetes()).
+competitors_choice($BackgroundCompetes()).
+
+.decl ties_choice(t: Ties)
+ties_choice($TieUndefined()). ties_choice($CopyAllLeast()).
+
+.decl mirror_place_choice(p: MirrorPlace)
+mirror_place_choice($DrawnLine()). mirror_place_choice($FrameFlip()).
+
+.decl image_on_ink_choice(i: ImageOnInk)
+image_on_ink_choice($PaintOver()). image_on_ink_choice($PaintBackgroundOnly()).
+
+.decl line_color_choice(l: LineColor)
+line_color_choice($StoredLine()). line_color_choice($LineByShape()).
+
+// Train 2 rejects $ColorBoxArea & $LineCompetes: the line's box is the least.
+.decl impl_choice(ch: Choice)
+impl_choice([Cc, Cp, T, Pl, Pt, Lc]) :-
+    copied_color_choice(Cc), competitors_choice(Cp), ties_choice(T),
+    mirror_place_choice(Pl), image_on_ink_choice(Pt), line_color_choice(Lc),
+    ( Cp = $ShapeColors() ; Cc != $ColorBoxArea() ).
+
+// The colors the line may be drawn in.
+.decl line_candidate(lc: LineColor, col: Color)
+
+// Cells p and q of color col lie on one line of family a.
+.decl aligned(lc: LineColor, col: Color, a: Axis4, p: Position, q: Position)
+aligned(Lc, Col, A, P, Q) :-
+    line_candidate(Lc, Col), in(P, Col), in(Q, Col), axis4_elem(A), same_line(A, P, Q).
+
+// Color col's cells do not all lie on one line of family a.
+.decl off_line(lc: LineColor, col: Color, a: Axis4)
+off_line(Lc, Col, A) :-
+    line_candidate(Lc, Col), in(P, Col), in(Q, Col), axis4_elem(A), !aligned(Lc, Col, A, P, Q).
+
+// Color col's cells all lie on one line of family a.
+.decl straight(lc: LineColor, col: Color, a: Axis4)
+straight(Lc, Col, A) :-
+    line_candidate(Lc, Col), in(_, Col), axis4_elem(A), !off_line(Lc, Col, A).
+
+// The color the line is drawn in.
+.decl line_color(lc: LineColor, col: Color)
+
+// The reflection that fixes the line: across the axis perpendicular to a
+// row or column, or across the diagonal the line lies on.
+.decl line_flip(lc: LineColor, f: D4)
+line_flip(Lc, F) :-
+    line_color(Lc, Col), straight(Lc, Col, A),
+    ( axis_elem(A), perp(A, A2), flip_of(A2, F)
+    ; diag_axis_elem(A), diag_flip_of(A, F)
+    ).
+
+// The colors the count ranges over.
+.decl competitor(cp: Competitors, lc: LineColor, col: Color)
+
+// The measure that ranks a color, least first.
+.decl measure(cc: CopiedColor, col: Color, n: number)
+
+// @claim mirror-rarer
+.init least = ArgExtremes<Rank, Color>
+least.cand([Cc, Cp, Lc], Col, N) :- measure(Cc, Col, N), competitor(Cp, Lc, Col).
+
+// The colors mirrored.
+.decl copied_color(r: Rank, t: Ties, col: Color)
+
+// q is the image of cell p in the mirror.
+.decl image(pl: MirrorPlace, lc: LineColor, p: Position, q: Position)
+
+// Cell q takes color col from the image of a mirrored cell.
+.decl painted(ch: Choice, q: Position, col: Color)
+
+// The mirror stands and some color is mirrored.
+.decl defined(ch: Choice)
+
+out(Q, Col, Ch) :- defined(Ch), painted(Ch, Q, Col).
+out(P, Col, Ch) :- defined(Ch), in(P, Col), !painted(Ch, P, _).
+
+defined([Cc, Cp, T, Pl, Pt, Lc]) :-
+    impl_choice([Cc, Cp, T, Pl, Pt, Lc]), copied_color([Cc, Cp, Lc], T, _), line_flip(Lc, _).
+
+// --- $StoredLine ---
+
+line_candidate($StoredLine(), Col) :- params.line(Col).
+
+line_color($StoredLine(), Col) :- params.line(Col).
+
+// --- $LineByShape ---
+
+line_candidate($LineByShape(), Col) :- in(_, Col), !params.background(Col).
+
+// A cell on color col's line of family a that holds another color.
+.decl line_gap(col: Color, a: Axis4)
+line_gap(Col, A) :-
+    straight($LineByShape(), Col, A), in(P, Col),
+    in(Q, _), same_line(A, P, Q), !in(Q, Col).
+
+// The one color whose cells fill a whole line of the grid.
+// @claim mirror-line
+.init edge_line = Unanimous<Unit, Color>
+edge_line.item($U(), Col) :- straight($LineByShape(), Col, A), !line_gap(Col, A).
+
+line_color($LineByShape(), Col) :- edge_line.value($U(), Col).
+
+// --- $ShapeColors ---
+
+competitor($ShapeColors(), Lc, Col) :-
+    line_color(Lc, L), in(_, Col), !params.background(Col), Col != L.
+
+// --- $LineCompetes ---
+
+competitor($LineCompetes(), Lc, Col) :-
+    line_color_choice(Lc), in(_, Col), !params.background(Col).
+
+// --- $BackgroundCompetes ---
+
+competitor($BackgroundCompetes(), Lc, Col) :- line_color(Lc, L), in(_, Col), Col != L.
+
+// --- $CellCount ---
+
+// @claim mirror-rarer
+.init cells = Tally<Color, Position>
+cells.item(Col, P) :- in(P, Col).
+
+measure($CellCount(), Col, N) :- cells.tally(Col, N).
+
+// --- $ObjectBoxArea ---
+
+// The objects of each color, by the adjacency that joins their cells.
+.decl object(adj: Adjacency, col: Color, id: Ident, p: Position)
+
+// @claim mirror-rarer
+.init object_box = Bbox<ObjectKey>
+object_box.cell([Adj, Id], P) :- object(Adj, _, Id, P).
+
+// A color's sum of box areas counts the cells of each of its objects' boxes.
+// @claim mirror-rarer
+.init object_area = Tally<ColorObjects, BoxCell>
+object_area.item([Adj, Col], [Id, P]) :-
+    object(Adj, Col, Id, _), object_box.box([Adj, Id], B), in(P, _), inside(P, B).
+
+measure($ObjectBoxArea(Adj), Col, N) :- object_area.tally([Adj, Col], N).
+
+// --- $Adjacency4 ---
+
+// @claim mirror-rarer
+.init objects4 = Components<Color>
+objects4.node(Col, P) :- in(P, Col).
+
+object($Adjacency4(), Col, Id, P) :- objects4.label(Col, P, Id).
+
+// --- $Adjacency8 ---
+
+// @claim mirror-rarer
+.init objects8 = Components8<Color>
+objects8.node(Col, P) :- in(P, Col).
+
+object($Adjacency8(), Col, Id, P) :- objects8.label(Col, P, Id).
+
+// --- $ColorBoxArea ---
+
+// @claim mirror-rarer
+.init color_box = Bbox<Color>
+color_box.cell(Col, P) :- in(P, Col).
+
+// @claim mirror-rarer
+.init color_area = Tally<Color, Position>
+color_area.item(Col, P) :- color_box.box(Col, B), in(P, _), inside(P, B).
+
+measure($ColorBoxArea(), Col, N) :- color_area.tally(Col, N).
+
+// --- $TieUndefined ---
+
+// @claim mirror-rarer
+.init sole = Unanimous<Rank, Color>
+sole.item(R, Col) :- least.low(R, Col, _).
+
+copied_color(R, $TieUndefined(), Col) :- sole.value(R, Col).
+
+// --- $CopyAllLeast ---
+
+copied_color(R, $CopyAllLeast(), Col) :- least.low(R, Col, _).
+
+// --- $DrawnLine ---
+
+// p's offset from a line cell, reflected, taken from that cell.
+image($DrawnLine(), Lc, P, Q) :-
+    line_flip(Lc, F), line_color(Lc, L_col), in(L, L_col),     // a line cell
+    in(P, _), relative(L, P, V), apply(F, V, V2), compose(L, V2, Q).
+
+// --- $FrameFlip ---
+
+image($FrameFlip(), Lc, P, Q) :- line_flip(Lc, F), in(P, _), apply(F, P, Q).
+
+// --- $PaintOver ---
+
+painted([Cc, Cp, T, Pl, $PaintOver(), Lc], Q, Col) :-
+    copied_color([Cc, Cp, Lc], T, Col), in(P, Col), image(Pl, Lc, P, Q), in(Q, _).
+
+// --- $PaintBackgroundOnly ---
+
+painted([Cc, Cp, T, Pl, $PaintBackgroundOnly(), Lc], Q, Col) :-
+    copied_color([Cc, Cp, Lc], T, Col), in(P, Col), image(Pl, Lc, P, Q),
+    in(Q, Old), params.background(Old).

@@ -1,0 +1,219 @@
+// ad173014
+// @draft
+// @keywords: objects chain permutation
+// @scene loop: a closed rectangular loop of line_color (1), one cell wide, on
+//  a field of background (0)
+// @scene boxes-on-loop: three or more boxes, each a square outline of
+//  frame_color (2), that the loop passes through; no two boxes touch
+// @scene one-shape-per-box: each box's interior holds one shape of a single
+//  color on background, and the shapes of different boxes have different
+//  colors
+// @rule color-turn: each shape keeps its cells and takes the color of the
+//  shape in the box that comes next along the loop in sense
+// @rule rest-kept: every other cell keeps its input color
+
+// how the boxes are ordered into the cycle
+.type CycleOrder =
+    // @claim color-turn
+    LoopWalk {}
+    // @rule color-turn: the boxes follow one another in sense around the
+    //  ring of the bounding box of the line_color cells, in place of along
+    //  the loop; undefined where a box has no cell on that ring
+    // @witness broken-loop: borderline $BboxRingOrder
+    //     @relaxed loop
+  | BboxRingOrder {}
+
+// how far along the cycle the source box is
+.type Step =
+    // @claim color-turn
+    NextBox {}
+    // @rule color-turn: each shape takes the color of the shape in the box
+    //  that lies step boxes on along the loop in sense
+    // @witness two-steps: variant $StepCount
+    //     @reassigned step
+  | StepCount {}
+
+// whether a box with no shape is a member of the cycle
+.type Membership =
+    // @claim color-turn
+    EveryBoxMember {hand: EmptyHand}
+    // @rule color-turn: a box with no shape is not a member of the cycle,
+    //  and it stays empty
+    // @witness empty-box: borderline $SkipEmptyBoxes
+    //     @relaxed one-shape-per-box
+  | SkipEmptyBoxes {}
+
+// what a member box with no shape hands on
+.type EmptyHand =
+    // @claim color-turn
+    HandsNothing {}
+    // @rule color-turn: a box with no shape hands on background, so the
+    //  shape that takes its color is erased
+    // @witness empty-box: borderline $SkipEmptyBoxes
+  | EmptyBoxErases {}
+
+.type Choice = [o: CycleOrder, s: Step, m: Membership]
+
+// The cycle of boxes under one order and one membership.
+.type Cycle = [o: CycleOrder, m: Membership]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: foreign concept
+    //     @relaxed loop
+    .decl background(c: Color) background(0).
+    .decl line_color(c: Color) line_color(1).
+    .decl frame_color(c: Color) frame_color(2).
+
+    // The direction around the loop in which a box finds the box whose color
+    // it takes.
+    .decl sense(s: Sense) sense(SENSE_CW).
+
+    // --- $StepCount ---
+    .decl step(n: number) step(1).
+}
+
+.init params = Params
+
+.decl cycle_order_choice(o: CycleOrder)
+cycle_order_choice($LoopWalk()). cycle_order_choice($BboxRingOrder()).
+
+.decl step_choice(s: Step)
+step_choice($NextBox()). step_choice($StepCount()).
+
+.decl empty_hand_choice(h: EmptyHand)
+empty_hand_choice($HandsNothing()). empty_hand_choice($EmptyBoxErases()).
+
+.decl membership_choice(m: Membership)
+membership_choice($EveryBoxMember(H)) :- empty_hand_choice(H).
+membership_choice($SkipEmptyBoxes()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([O, S, M]) :- cycle_order_choice(O), step_choice(S), membership_choice(M).
+
+// @claim boxes-on-loop
+.init outlines = Outlines<Unit>
+outlines.node($U(), P) :- in(P, Col), params.frame_color(Col).
+
+.decl frame(b: Box, p: Position)
+frame(B, P) :- outlines.box($U(), B), in(P, _), box_edge(P, B, _).
+
+// A shape cell of box B.
+.decl shape(b: Box, p: Position)
+shape(B, P) :- outlines.box($U(), B), in(P, Col), interior(P, B), !params.background(Col).
+
+// @claim one-shape-per-box
+.init shape_color = Unanimous<Box, Color>
+shape_color.item(B, Col) :- shape(B, P), in(P, Col).
+
+// The boxes that are nodes of the cycle.
+.decl member(m: Membership, b: Box)
+
+// The cells that join one member box to the next.
+.decl track(k: Cycle, p: Position)
+
+// The cells on the inner side of the track.
+.decl enclosed(o: CycleOrder, p: Position)
+
+// The cells on the outer side of the track.
+.decl outside(o: CycleOrder, p: Position)
+
+// The runs of track between member boxes.
+// @claim color-turn
+.init segments = Components<Cycle>
+segments.node(K, P) :- track(K, P).
+
+// Cell P of segment S lies one step toward D from a frame cell of member box B.
+.decl touch(k: Cycle, s: Ident, b: Box, p: Position, d: Dir)
+touch([O, M], S, B, P, D) :-
+    segments.label([O, M], P, S), dir_elem(D), neighbor(P, D, Q), frame(B, Q), member(M, B).
+
+// From the end cell P of a segment, the enclosed side lies toward D: an
+// enclosed cell is next to P that way, or an outside cell is next to P the
+// other way, as at a loop corner.
+.decl inward(o: CycleOrder, p: Position, d: Dir)
+inward(O, P, D) :-
+    touch([O, _], _, _, P, _), opposite(D, D_out),
+    ( neighbor(P, D, R), enclosed(O, R)
+    ; neighbor(P, D_out, R), outside(O, R)
+    ).
+
+// B follows A in sense: segment S joins them, and stepping into B the
+// enclosed side lies a quarter turn in sense, while stepping into A it lies
+// a quarter turn against it.
+.decl next(k: Cycle, a: Box, b: Box)
+next([O, M], A, B) :-
+    params.sense(Sn),
+    touch([O, M], S, A, P, D), turn(Sn, D_in, D), inward(O, P, D_in),
+    touch([O, M], S, B, P2, D2), turn(Sn, D2, D2_in), inward(O, P2, D2_in).
+
+// The color box B hands on.
+.decl handed(m: Membership, b: Box, col: Color)
+handed(M, B, Col) :- membership_choice(M), shape_color.value(B, Col).
+
+// Box A's shape takes the color box B hands on.
+.decl source(ch: Choice, a: Box, b: Box)
+
+out(P, Col, [O, S, M]) :- source([O, S, M], A, B), shape(A, P), handed(M, B, Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !shape(_, P).
+
+// --- $LoopWalk ---
+
+// A cell of some box, frame or interior.
+.decl boxed(p: Position)
+boxed(P) :- outlines.box($U(), B), in(P, _), inside(P, B).
+
+// The regions the loop and the boxes close off from the grid edge.
+// @claim loop
+.init closed = Closed<Unit>
+closed.cell($U(), P) :- in(P, Col), !params.line_color(Col), !boxed(P).
+
+enclosed($LoopWalk(), P) :- closed.region($U(), P, _).
+outside($LoopWalk(), P) :- closed.cell($U(), P), !closed.region($U(), P, _).
+
+// The loop runs on through a box that is not a member.
+track([$LoopWalk(), M], P) :- membership_choice(M), in(P, Col), params.line_color(Col).
+track([$LoopWalk(), M], P) :- membership_choice(M), frame(B, P), !member(M, B).
+
+// --- $BboxRingOrder ---
+
+// @claim color-turn
+.init line_box = Bbox<Unit>
+line_box.cell($U(), P) :- in(P, Col), params.line_color(Col).
+
+enclosed($BboxRingOrder(), P) :- line_box.box($U(), B), in(P, _), interior(P, B).
+outside($BboxRingOrder(), P) :- line_box.box($U(), B), in(P, _), !inside(P, B).
+
+.decl in_member(m: Membership, p: Position)
+in_member(M, P) :- member(M, B), in(P, _), inside(P, B).
+
+// A ring cell outside every member box.
+track([$BboxRingOrder(), M], P) :-
+    line_box.box($U(), B), in(P, _), box_edge(P, B, _), membership_choice(M), !in_member(M, P).
+
+// --- $NextBox ---
+
+source([O, $NextBox(), M], A, B) :- next([O, M], A, B).
+
+// --- $StepCount ---
+
+// @claim color-turn
+.init cycle = CycleWalk<Cycle, Box>
+cycle.succ(K, A, B) :- next(K, A, B).
+cycle.step(K, N) :- next(K, _, _), params.step(N).
+
+source([O, $StepCount(), M], A, B) :- cycle.walk([O, M], A, N, B), params.step(N).
+
+// --- $EveryBoxMember ---
+
+member($EveryBoxMember(H), B) :- outlines.box($U(), B), empty_hand_choice(H).
+
+// --- $SkipEmptyBoxes ---
+
+member($SkipEmptyBoxes(), B) :- shape(B, _).
+
+// --- $EmptyBoxErases ---
+
+handed($EveryBoxMember($EmptyBoxErases()), B, Col) :-
+    outlines.box($U(), B), !shape(B, _), params.background(Col).

@@ -1,0 +1,394 @@
+// afe3afe9
+// @draft
+// @keywords: objects markers lines move rank scale
+// @scene edge-line: one full edge of the grid is a line of color
+//  params.line_color; every other cell outside the squares is
+//  params.bg_color
+// @scene ring-lattice: hollow squares of side params.ring_side sit on a
+//  square lattice of 7 by 7 slots, with a gap of params.ring_gap between
+//  neighboring slots; each square has one color
+// @scene pack-gap-empty: on the pack axis, the middle lattice line holds no
+//  square
+// @rule pack-side: the pack side is the line's side turned a quarter turn in
+//  sense params.turn_sense
+// @rule ring-cell: each square stands for one cell of its color at its
+//  lattice slot
+// @rule pack-lines: along each lattice line on the pack axis, the cells keep
+//  their order and slide to the pack side with no gaps between them
+// @rule output-extent: the output has one row or column per lattice line
+//  across the pack axis, from the first line that holds a square to the
+//  last, and along the pack axis it holds the lattice lines that hold a
+//  square; the rest is params.bg_color
+
+// how the pack side is found
+.type Side =
+    // @claim pack-side
+    TurnFromLine {}
+    // @rule pack-side: on each axis, the middle lattice line of the squares'
+    //  span cuts the lattice into two halves; the pack side is the side of
+    //  the only half whose squares share one color; undefined where an axis
+    //  spans an even number of lattice lines, or where the one-colored halves
+    //  are not exactly one
+    // @witness band-opposite-turn: variant $PackTowardUniformHalf
+    // @witness quadrants-one-color: ordinary concept
+  | PackTowardUniformHalf {}
+    // @rule pack-side: on each axis, the middle lattice line of the squares'
+    //  span cuts the lattice into two halves; the pack side is the side of
+    //  the only half whose squares are all params.band_color; undefined where
+    //  an axis spans an even number of lattice lines, or where such halves
+    //  are not exactly one
+    // @witness band-opposite-turn: variant $PackTowardUniformHalf
+    // @witness band-recolored: variant concept
+  | PackTowardColorHalf {}
+
+// what one cell of the output stands for
+.type Piece =
+    // @claim ring-cell
+    HollowSquare {}
+    // @rule ring-cell: each 4-connected piece of cells off params.bg_color
+    //  that fits in a params.ring_side box stands for one cell, at the slot
+    //  of its box; undefined where a piece holds two colors, or where the
+    //  pieces are off one lattice
+    // @witness filled-square: borderline $ComponentUnit
+    //     @relaxed ring-lattice
+  | ComponentUnit {}
+
+// which lattice lines across the pack axis the output holds
+.type CrossLines =
+    // @claim output-extent
+    LatticeSpan {}
+    // @rule output-extent: across the pack axis, one output line per
+    //  lattice line that holds a square
+    // @witness middle-cross-line-empty: ordinary concept
+  | RankedLines {}
+    // @rule output-extent: across the pack axis, one output line per
+    //  lattice line whose slot fits inside the frame
+    // @witness first-cross-line-empty: borderline $FrameLattice
+    //     @relaxed ring-lattice
+  | FrameLattice {}
+
+// how long the output is along the pack axis
+.type AlongExtent =
+    // @claim output-extent
+    OccupiedLines {}
+    // @rule output-extent: along the pack axis, the output is as long as the
+    //  most squares that any line holds
+    // @witness no-full-line: ordinary concept
+  | MostRingsExtent {}
+    // @rule output-extent: along the pack axis, the output is
+    //  params.along_count long; undefined where a line holds more squares
+    //  than that
+    // @witness pack-line-empty: borderline $StoredAlongExtent
+    // @witness along-line-overfull: borderline concept
+    //     @relaxed pack-gap-empty
+  | StoredAlongExtent {}
+
+.type Choice = [side: Side, piece: Piece, cross: CrossLines, along: AlongExtent]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed edge-line
+    .decl bg_color(c: Color) bg_color(0).
+    .decl ring_side(k: number) ring_side(3).
+    .decl ring_gap(k: number) ring_gap(1).
+
+    // --- $TurnFromLine ---
+    // @derive RarestColor: variant derived
+    //     @relaxed edge-line
+    .decl line_color(c: Color) line_color(1).
+    // The sense of the quarter turn from the line's side to the pack side.
+    .decl turn_sense(s: Sense) turn_sense(SENSE_CW).
+
+    // --- $PackTowardColorHalf ---
+    .decl band_color(c: Color) band_color(8).
+
+    // --- $StoredAlongExtent ---
+    .decl along_count(n: number) along_count(6).
+}
+
+.init params = Params
+
+.decl side_choice(s: Side)
+side_choice($TurnFromLine()). side_choice($PackTowardUniformHalf()).
+side_choice($PackTowardColorHalf()).
+
+.decl piece_choice(p: Piece)
+piece_choice($HollowSquare()). piece_choice($ComponentUnit()).
+
+.decl cross_lines_choice(c: CrossLines)
+cross_lines_choice($LatticeSpan()). cross_lines_choice($RankedLines()).
+cross_lines_choice($FrameLattice()).
+
+.decl along_extent_choice(a: AlongExtent)
+along_extent_choice($OccupiedLines()). along_extent_choice($MostRingsExtent()).
+along_extent_choice($StoredAlongExtent()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, P, C, A]) :-
+    side_choice(S), piece_choice(P), cross_lines_choice(C), along_extent_choice(A).
+
+.type SidePiece = [sd: Side, pc: Piece]
+.type CrossKey = [sd: Side, pc: Piece, cr: CrossLines]
+.type AlongKey = [sd: Side, pc: Piece, al: AlongExtent]
+.type LineKey = [sd: Side, pc: Piece, s: Box]
+.type SlotKey = [pc: Piece, e: Dir, n: number]
+.type HalfKey = [pc: Piece, d: Dir]
+
+.comp Parse<Key> {
+    .decl grid(key: Key, p: Position, col: Color)
+
+    // The grid's lines on each axis.
+    .decl line(key: Key, a: Axis, l: Position)
+    line(Ky, A, L) :- grid(Ky, P, _), axis_elem(A), split(P, A, L, _).
+
+    // --- $TurnFromLine ---
+    // An edge with a cell off the line color.
+    .decl line_defect(key: Key, d: Dir)
+    line_defect(Ky, D) :-
+        dir_elem(D), grid(Ky, P, Col), dist(P, D, 0), !params.line_color(Col).
+
+    // --- $HollowSquare ---
+    .type KeyColor = [key: Key, col: Color]
+
+    // The rectangle outlines of each color.
+    // @claim ring-lattice ring-cell
+    .init outline = Outlines<KeyColor>
+    outline.node([Ky, Col], P) :- grid(Ky, P, Col), !params.bg_color(Col).
+
+    // An outline with a cell off the background inside it.
+    .decl filled(key: Key, b: Box)
+    filled(Ky, B) :-
+        outline.box([Ky, _], B), grid(Ky, P, Col), interior(P, B), !params.bg_color(Col).
+
+    // The squares: outlines of side ring_side with a background inside.
+    .decl square(key: Key, b: Box, col: Color)
+    square(Ky, B, Col) :-
+        outline.box([Ky, Col], B), !filled(Ky, B),
+        outline.node([Ky, Col], P), crop(P, B, P_rel),                  // a cell of the outline
+        params.ring_side(W), axis_elem(A), axis_dims(P_rel, A, W, W).  // side W on both axes
+}
+
+.init parse = Parse<Unit>
+parse.grid($U(), P, Col) :- in(P, Col).
+
+// The units the output's cells stand for: each unit's box and color.
+.decl unit(pc: Piece, b: Box, col: Color)
+
+// --- $HollowSquare ---
+unit($HollowSquare(), B, Col) :- parse.square($U(), B, Col).
+
+// --- $ComponentUnit ---
+// The 4-connected pieces off the background.
+// @claim ring-cell
+.init piece = Components<Unit>
+piece.node($U(), P) :- in(P, Col), !params.bg_color(Col).
+
+// @claim ring-cell
+.init piece_box = Bbox<Ident>
+piece_box.cell(Id, P) :- piece.label($U(), P, Id).
+
+// A piece that does not fit in a square's box.
+.decl wide(id: Ident)
+wide(Id) :-
+    piece_box.box(Id, B), piece.label($U(), P, Id), crop(P, B, P_rel),
+    axis_elem(A), axis_dim(P_rel, A, N), params.ring_side(W), N > W.
+
+unit($ComponentUnit(), B, Col) :-
+    piece_box.box(Id, B), !wide(Id), piece.label($U(), P, Id), in(P, Col).
+
+// --- $HollowSquare, $ComponentUnit ---
+// The units' span.
+// @claim ring-lattice
+.init span = Bbox<Piece>
+span.cell(Pc, B) :- unit(Pc, B, _).
+
+// The lines of each lattice slot, the slot counted by its place from the
+// span's edge e: slots of ring_side lines, ring_gap lines apart.
+// @claim ring-lattice
+.init slot = Bbox<SlotKey>
+slot.cell([Pc, E, N], L) :-
+    span.box(Pc, B), parse.line($U(), A, L), axis_of(E, A),
+    relative(B, L, L_rel), dist(L_rel, E, T),                    // T lines past the span's edge e
+    params.ring_side(W), params.ring_gap(G), stride(T, W, G, N, _).
+
+// The lattice lines on axis a whose slot fits inside the frame, each as the
+// slab of its ring_side lines.
+.decl lattice(pc: Piece, a: Axis, s: Box)
+lattice(Pc, A, S) :-
+    slot.box([Pc, E, N], S), axis_of(E, A),
+    slot.cell([Pc, E, N], L), params.ring_side(W), box_extent(S, L, A, W).
+
+// The lattice lines inside the units' span.
+.decl span_line(pc: Piece, a: Axis, s: Box)
+span_line(Pc, A, S) :-
+    lattice(Pc, A, S), span.box(Pc, B), split(B, A, B_a, _), inside(S, B_a).
+
+// The lattice line on axis a that holds unit b.
+.decl unit_line(pc: Piece, b: Box, a: Axis, s: Box)
+unit_line(Pc, B, A, S) :-
+    unit(Pc, B, _), span_line(Pc, A, S), split(B, A, B_a, _), inside(B_a, S).
+
+// The side the cells pack toward.
+.decl pack(sd: Side, pc: Piece, d: Dir)
+
+// --- $TurnFromLine ---
+pack($TurnFromLine(), Pc, D) :-
+    span.box(Pc, _), dir_elem(D0), !parse.line_defect($U(), D0),
+    params.turn_sense(Sn), turn(Sn, D0, D).
+
+// --- $PackTowardUniformHalf, $PackTowardColorHalf ---
+// The middle lattice line of the span on axis a.
+.decl middle(pc: Piece, a: Axis, s: Box)
+middle(Pc, A, S) :-
+    span_line(Pc, A, S), span.box(Pc, B), relative(B, S, S_rel),
+    axis_of(D, A), dist_pair(S_rel, D, K, K).
+
+// A span with no middle lattice line on some axis.
+.decl even(pc: Piece)
+even(Pc) :- span.box(Pc, _), axis_elem(A), !middle(Pc, A, _).
+
+// The color of a unit in the half toward d: nearer d than the middle line.
+.decl half(pc: Piece, d: Dir, col: Color)
+half(Pc, D, Col) :-
+    unit(Pc, B, Col), middle(Pc, A, S), axis_of(D, A), nearer(D, B, S).
+
+// The sides of the halves that qualify.
+.decl toward(sd: Side, pc: Piece, d: Dir)
+
+// The only qualifying side.
+// @claim pack-side
+.init toward_one = Unanimous<SidePiece, Dir>
+toward_one.item([Sd, Pc], D) :- toward(Sd, Pc, D).
+
+pack(Sd, Pc, D) :- toward_one.value([Sd, Pc], D), !even(Pc).
+
+// --- $PackTowardUniformHalf ---
+// @claim pack-side
+.init half_color = Unanimous<HalfKey, Color>
+half_color.item([Pc, D], Col) :- half(Pc, D, Col).
+
+toward($PackTowardUniformHalf(), Pc, D) :- half_color.value([Pc, D], _).
+
+// --- $PackTowardColorHalf ---
+// A half with a unit of another color than the band's.
+.decl off_band(pc: Piece, d: Dir)
+off_band(Pc, D) :- half(Pc, D, Col), !params.band_color(Col).
+
+toward($PackTowardColorHalf(), Pc, D) :- half(Pc, D, _), !off_band(Pc, D).
+
+// --- $TurnFromLine, $PackTowardUniformHalf, $PackTowardColorHalf ---
+// The pack axis and the axis across it.
+.decl axes(sd: Side, pc: Piece, a_pack: Axis, a_cross: Axis)
+axes(Sd, Pc, Ap, Ac) :- pack(Sd, Pc, D), axis_of(D, Ap), perp(Ap, Ac).
+
+// The units of each lattice line across the pack axis, in order from the
+// pack side.
+// @claim pack-lines
+.init along_order = Order<LineKey, Box>
+along_order.elem([Sd, Pc, S], B) :- axes(Sd, Pc, _, Ac), unit_line(Pc, B, Ac, S).
+along_order.before(K, B1, B2) :-
+    along_order.elem(K, B1), along_order.elem(K, B2), K = [Sd, Pc, _],
+    pack(Sd, Pc, D), nearer(D, B1, B2).
+
+// The lattice lines across the pack axis that the output holds.
+.decl cross(k: CrossKey, s: Box)
+
+// --- $LatticeSpan ---
+cross([Sd, Pc, $LatticeSpan()], S) :- axes(Sd, Pc, _, Ac), span_line(Pc, Ac, S).
+
+// --- $RankedLines ---
+cross([Sd, Pc, $RankedLines()], S) :- axes(Sd, Pc, _, Ac), unit_line(Pc, _, Ac, S).
+
+// --- $FrameLattice ---
+cross([Sd, Pc, $FrameLattice()], S) :- axes(Sd, Pc, _, Ac), lattice(Pc, Ac, S).
+
+// --- $LatticeSpan, $RankedLines, $FrameLattice ---
+// Each output line's place across the pack axis.
+// @claim output-extent
+.init cross_frame = OrderFrame<CrossKey, Box>
+cross_frame.axis([Sd, Pc, Cr], Ac) :- cross([Sd, Pc, Cr], _), axes(Sd, Pc, _, Ac).
+cross_frame.member(K, S, S) :- cross(K, S).
+
+// The output's extent along the pack axis.
+.decl along_extent(k: AlongKey, n: number)
+
+// --- $OccupiedLines ---
+// The lattice lines on the pack axis that hold a unit.
+// @claim output-extent
+.init occupied = Tally<SidePiece, Box>
+occupied.item([Sd, Pc], S) :- axes(Sd, Pc, Ap, _), unit_line(Pc, _, Ap, S).
+
+along_extent([Sd, Pc, $OccupiedLines()], N) :- occupied.tally([Sd, Pc], N).
+
+// --- $MostRingsExtent ---
+// The units of each line across the pack axis.
+// @claim output-extent
+.init line_count = Tally<LineKey, Box>
+line_count.item(K, B) :- along_order.elem(K, B).
+
+// @claim output-extent
+.init fullest = Extremes<SidePiece>
+fullest.cand([Sd, Pc], N) :- line_count.tally([Sd, Pc, _], N).
+
+along_extent([Sd, Pc, $MostRingsExtent()], N) :- fullest.high([Sd, Pc], N).
+
+// --- $StoredAlongExtent ---
+along_extent([Sd, Pc, $StoredAlongExtent()], N) :- pack(Sd, Pc, _), params.along_count(N).
+
+// --- $OccupiedLines, $MostRingsExtent, $StoredAlongExtent ---
+.init along_axis = AxisFrame<AlongKey>
+along_axis.extent([Sd, Pc, Al], Ap, N) :- along_extent([Sd, Pc, Al], N), axes(Sd, Pc, Ap, _).
+
+// The output frame: a place across the pack axis composed with a place
+// along it.
+.decl frame(ch: Choice, p: Position)
+frame([Sd, Pc, Cr, Al], P) :-
+    cross_frame.pos([Sd, Pc, Cr], _, P1), along_axis.cell([Sd, Pc, Al], _, P2),
+    compose(P1, P2, P).
+
+// Each unit's output cell: its line's place across, and as many cells from
+// the pack side as its line holds units nearer that side.
+.decl placed(ch: Choice, b: Box, p: Position)
+placed([Sd, Pc, Cr, Al], B, P) :-
+    along_order.rank([Sd, Pc, S], B, R), cross_frame.pos([Sd, Pc, Cr], S, P1),
+    along_axis.cell([Sd, Pc, Al], _, P2), pack(Sd, Pc, D), dist(P2, D, R),
+    compose(P1, P2, P).
+
+// A unit with no output cell.
+.decl lost(ch: Choice)
+lost([Sd, Pc, Cr, Al]) :-
+    impl_choice([Sd, Pc, Cr, Al]), unit(Pc, B, _), !placed([Sd, Pc, Cr, Al], B, _).
+
+out(P, Col, Ch) :-
+    placed(Ch, B, P), Ch = [_, Pc, _, _], unit(Pc, B, Col), !lost(Ch).
+out(P, Col, Ch) :-
+    frame(Ch, P), !placed(Ch, _, P), params.bg_color(Col), !lost(Ch).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.grid(E, P, Col) :- ex_in(E, P, Col).
+
+    .type Gap = [e: Example, b1: Box, b2: Box, d: Dir]
+
+    // The lines between two squares, the second toward d from the first.
+    .init between = Tally<Gap, Position>
+    between.item([E, B1, B2, D], L) :-
+        ex.square(E, B1, _), ex.square(E, B2, _), dir_elem(D), opposite(D, O),
+        axis_of(D, A), ex.line(E, A, L), nearer(D, L, B1), nearer(O, L, B2).
+
+    // The fewest lines between two squares.
+    .init gaps = Extremes<Unit>
+    gaps.cand($U(), N) :- between.tally(_, N).
+
+    .decl ring_gap(k: number)
+    ring_gap(K) :- gaps.low($U(), K).
+
+    // A train pair's output extent along the edge line, which the pack axis
+    // runs along.
+    .decl along_count(n: number)
+    along_count(N) :-
+        ex_out(E, P, _), dir_elem(D), !ex.line_defect(E, D),
+        axis_of(D, A), perp(A, A2), axis_dim(P, A2, N).
+}

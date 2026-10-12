@@ -1,0 +1,339 @@
+// ac605cbb
+// @draft
+// @keywords: stamp lookup cross cast
+// @scene seed-colors-keyed: each seed's color is a key of the stamp, and no
+//  color occurs on more than one seed
+// @scene stamps-fit: each seed's stamp lies inside the grid
+// @scene stamps-meet-at-lines: two stamps share no cell other than a cell
+//  that is a line cell of both, and no line cell of a stamp lands on a seed
+// @rule keep-input: each input cell keeps its color unless a rule below
+//  paints it
+// @rule stamp-path: at each seed, the stamp of the seed's color is drawn
+//  from the seed: its line cells in line_color and its end cell in the
+//  seed's color
+// @rule cross-cell: a cell that is a line cell of two stamps is cross_color
+// @rule cross-ray: from each crossing cell, the cells toward cross_dir up to
+//  the grid edge are cross_color
+
+// what the ray does at a cell that a seed or a stamp occupies
+.type RayOverInk =
+    // @claim cross-ray
+    RayPaintsInk {}
+    // @rule cross-ray: the ray goes on to the grid edge and paints only the
+    //  cells that no seed or stamp occupies
+    // @witness ray-meets-line: ordinary concept
+  | RayUnderInk {}
+    // @rule cross-ray: the ray ends before the first cell that a seed or a
+    //  stamp occupies
+    // @witness ray-meets-line: ordinary concept
+  | RayStopsAtInk {}
+
+// the diagonal direction of the ray from a crossing
+.type RayDirection =
+    // @claim cross-ray
+    RayStoredDir {}
+    // @rule cross-ray: on the axis across ray_fixed_dir, the ray takes the
+    //  step direction of the stamp line that runs along that axis through the
+    //  crossing, and on the other axis it takes ray_fixed_dir; undefined
+    //  where no stamp, or two stamps, run along that axis through a crossing
+    // @witness one-line-crosses-three: ordinary concept
+  | RayAlongHorizontalLine {}
+
+// what a cell gets where one stamp's end cell meets another stamp's line cell
+.type EndMeetsLine =
+    // @claim stamps-meet-at-lines
+    EndLineClash {}
+    // @rule end-over-line: where a stamp's end cell meets another stamp's
+    //  line cell, the end cell's color shows and the cell is no crossing
+    // @witness end-on-line: borderline $EndOverLine
+    //     @relaxed stamps-meet-at-lines
+  | EndOverLine {}
+    // @rule line-over-end: where a stamp's end cell meets another stamp's
+    //  line cell, line_color shows, and the cell is a crossing only where it
+    //  is a line cell of two stamps
+    // @witness end-on-line: borderline $EndOverLine
+  | LineOverEnd {}
+    // @rule cross-cell: a cell that two stamps reach, at a line cell or at
+    //  the end cell, is cross_color and casts the ray
+    // @witness end-on-line: borderline $EndOverLine
+  | CrossAtEndCell {}
+
+// what a seed's cell gets where another stamp's cell lands on it
+.type StampMeetsSeed =
+    // @claim keep-input
+    StampOverSeed {}
+    // @rule keep-input: a seed keeps its color over any stamp
+    // @witness line-on-seed: borderline $SeedOverStamp
+    //     @relaxed stamps-meet-at-lines
+  | SeedOverStamp {}
+
+// what is drawn of a stamp that reaches past the grid edge
+.type StampOffGrid =
+    // @claim stamp-path
+    ClipStampToGrid {}
+    // @rule stamp-path: a stamp whose end cell lies outside the grid is not
+    //  drawn
+    // @witness stamp-off-grid: borderline concept
+    //     @relaxed stamps-fit
+  | DropStampOffGrid {}
+
+.type Choice = [ink: RayOverInk, heading: RayDirection, end: EndMeetsLine,
+                seed: StampMeetsSeed, grid: StampOffGrid]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // The stamp of each seed color, as offsets from the seed, `@` on the
+    // seed: its line cells and its end cell.
+    .decl stamp_line(c: Color, v: Offset)
+    .decl stamp_end(c: Color, v: Offset)
+    GRID_STAMP_2x3(stamp_line, 1,
+        _, _, _,
+        @_, 1, 1)
+    GRID_STAMP_2x3(stamp_end, 1,
+        _, _, 1,
+        @_, _, _)
+    GRID_STAMP_1x5(stamp_line, 2,
+        _, 1, 1, 1, @_)
+    GRID_STAMP_1x5(stamp_end, 2,
+        1, _, _, _, @_)
+    GRID_STAMP_4x1(stamp_line, 3,
+        @_,
+        1,
+        1,
+        _)
+    GRID_STAMP_4x1(stamp_end, 3,
+        @_,
+        _,
+        _,
+        1)
+    GRID_STAMP_7x1(stamp_line, 6,
+        _,
+        1,
+        1,
+        1,
+        1,
+        1,
+        @_)
+    GRID_STAMP_7x1(stamp_end, 6,
+        1,
+        _,
+        _,
+        _,
+        _,
+        _,
+        @_)
+
+    .decl line_color(c: Color) line_color(5).
+    .decl cross_color(c: Color) cross_color(4).
+
+    // --- $RayStoredDir ---
+    .decl cross_dir(d: DiagDir) cross_dir(DIAG_BL).
+
+    // --- $RayAlongHorizontalLine ---
+    // The ray's direction on the axis that no crossing stamp sets.
+    .decl ray_fixed_dir(d: Dir) ray_fixed_dir(DIR_B).
+}
+
+.init params = Params
+
+.decl ray_over_ink_choice(i: RayOverInk)
+ray_over_ink_choice($RayPaintsInk()). ray_over_ink_choice($RayUnderInk()).
+ray_over_ink_choice($RayStopsAtInk()).
+
+.decl ray_direction_choice(h: RayDirection)
+ray_direction_choice($RayStoredDir()). ray_direction_choice($RayAlongHorizontalLine()).
+
+.decl end_meets_line_choice(e: EndMeetsLine)
+end_meets_line_choice($EndLineClash()). end_meets_line_choice($EndOverLine()).
+end_meets_line_choice($LineOverEnd()). end_meets_line_choice($CrossAtEndCell()).
+
+.decl stamp_meets_seed_choice(s: StampMeetsSeed)
+stamp_meets_seed_choice($StampOverSeed()). stamp_meets_seed_choice($SeedOverStamp()).
+
+.decl stamp_off_grid_choice(g: StampOffGrid)
+stamp_off_grid_choice($ClipStampToGrid()). stamp_off_grid_choice($DropStampOffGrid()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([I, H, E, S, G]) :-
+    ray_over_ink_choice(I), ray_direction_choice(H), end_meets_line_choice(E),
+    stamp_meets_seed_choice(S), stamp_off_grid_choice(G).
+
+.decl seed(p: Position, c: Color)
+seed(P, C) :- in(P, C), params.stamp_end(C, _).
+
+// The stamp of the seed at S placed at S, its cells off the grid included.
+.decl placed_line(s: Position, p: Position)
+placed_line(S, P) :- seed(S, C), params.stamp_line(C, V), compose(S, V, P).
+
+.decl placed_end(s: Position, p: Position, c: Color)
+placed_end(S, P, C) :- seed(S, C), params.stamp_end(C, V), compose(S, V, P).
+
+// The seeds whose stamps are drawn.
+.decl drawn(s: Position, g: StampOffGrid)
+
+// The drawn stamps' cells inside the grid.
+.decl line_cell(p: Position, s: Position, g: StampOffGrid)
+line_cell(P, S, G) :- drawn(S, G), placed_line(S, P), in(P, _).
+
+.decl end_cell(p: Position, s: Position, c: Color, g: StampOffGrid)
+end_cell(P, S, C, G) :- drawn(S, G), placed_end(S, P, C), in(P, _).
+
+// A cell that a seed or a drawn stamp occupies.
+.decl occupied(p: Position, g: StampOffGrid)
+occupied(P, G) :- seed(P, _), stamp_off_grid_choice(G).
+occupied(P, G) :- line_cell(P, _, G).
+occupied(P, G) :- end_cell(P, _, _, G).
+
+.decl two_lines(p: Position, g: StampOffGrid)
+two_lines(P, G) :- line_cell(P, S1, G), line_cell(P, S2, G), S1 != S2.
+
+// A cell that takes cross_color and casts the ray.
+.decl crossing(p: Position, e: EndMeetsLine, g: StampOffGrid)
+
+// A drawn cell whose line color does not show, and one whose end color
+// does not show.
+.decl line_hidden(p: Position, e: EndMeetsLine, g: StampOffGrid)
+line_hidden(P, E, G) :- crossing(P, E, G).
+
+.decl end_hidden(p: Position, e: EndMeetsLine, g: StampOffGrid)
+
+.decl stamp_paint(p: Position, col: Color, e: EndMeetsLine, g: StampOffGrid)
+stamp_paint(P, Col, E, G) :- crossing(P, E, G), params.cross_color(Col).
+stamp_paint(P, Col, E, G) :-
+    line_cell(P, _, G), end_meets_line_choice(E), !line_hidden(P, E, G),
+    params.line_color(Col).
+stamp_paint(P, Col, E, G) :-
+    end_cell(P, _, Col, G), end_meets_line_choice(E), !end_hidden(P, E, G).
+
+// The diagonal the ray from crossing P takes.
+.decl ray_dir(p: Position, dg: DiagDir, h: RayDirection, e: EndMeetsLine, g: StampOffGrid)
+
+// Some crossing has no ray direction.
+.decl heading_void(h: RayDirection, e: EndMeetsLine, g: StampOffGrid)
+
+.type RayKey = [h: RayDirection, e: EndMeetsLine, g: StampOffGrid, dg: DiagDir]
+
+// @claim cross-ray
+.init cross_ray = Ray<RayKey>
+cross_ray.dir([H, E, G, Dg], Dg) :- ray_dir(_, Dg, H, E, G).
+cross_ray.mark([H, E, G, Dg], P) :- ray_dir(P, Dg, H, E, G).
+cross_ray.cell([H, E, G, Dg], P) :- ray_dir(_, Dg, H, E, G), in(P, _).
+cross_ray.blocked([H, E, G, Dg], P) :- ray_dir(_, Dg, H, E, G), occupied(P, G).
+
+// The cells the rays paint, past each crossing.
+.decl ray_paint(p: Position, i: RayOverInk, h: RayDirection, e: EndMeetsLine, g: StampOffGrid)
+
+// A cell whose stamp color shows over its input color.
+.decl covered(p: Position, s: StampMeetsSeed, e: EndMeetsLine, g: StampOffGrid)
+covered(P, $StampOverSeed(), E, G) :- stamp_paint(P, _, E, G).
+
+// The cases whose ray direction is defined at every crossing.
+.decl live(ch: Choice)
+live([I, H, E, S, G]) :- impl_choice([I, H, E, S, G]), !heading_void(H, E, G).
+
+out(P, Col, [I, H, E, S, G]) :-
+    live([I, H, E, S, G]), ray_paint(P, I, H, E, G), params.cross_color(Col).
+out(P, Col, [I, H, E, S, G]) :-
+    live([I, H, E, S, G]), !ray_paint(P, I, H, E, G),
+    covered(P, S, E, G), stamp_paint(P, Col, E, G).
+out(P, Col, [I, H, E, S, G]) :-
+    live([I, H, E, S, G]), in(P, Col), !ray_paint(P, I, H, E, G), !covered(P, S, E, G).
+
+// --- $ClipStampToGrid ---
+drawn(S, $ClipStampToGrid()) :- seed(S, _).
+
+// --- $DropStampOffGrid ---
+drawn(S, $DropStampOffGrid()) :- placed_end(S, P, _), in(P, _).
+
+// --- $EndLineClash ---
+crossing(P, $EndLineClash(), G) :- two_lines(P, G).
+
+// --- $EndOverLine ---
+crossing(P, $EndOverLine(), G) :- two_lines(P, G), !end_cell(P, _, _, G).
+line_hidden(P, $EndOverLine(), G) :- end_cell(P, _, _, G).
+
+// --- $LineOverEnd ---
+crossing(P, $LineOverEnd(), G) :- two_lines(P, G).
+end_hidden(P, $LineOverEnd(), G) :- end_cell(P, _, _, G), line_cell(P, _, G).
+
+// --- $CrossAtEndCell ---
+crossing(P, $CrossAtEndCell(), G) :-
+    ( line_cell(P, S1, G) ; end_cell(P, S1, _, G) ),
+    ( line_cell(P, S2, G) ; end_cell(P, S2, _, G) ),
+    S1 != S2.
+end_hidden(P, $CrossAtEndCell(), G) :- crossing(P, $CrossAtEndCell(), G), end_cell(P, _, _, G).
+
+// --- $RayStoredDir ---
+ray_dir(P, Dg, $RayStoredDir(), E, G) :- crossing(P, E, G), params.cross_dir(Dg).
+
+// --- $RayAlongHorizontalLine ---
+// The stamp of the seed at S runs toward D through its line cell P: the
+// cell behind P, on the seed's side, is the seed or a line cell of the
+// same stamp.
+.decl runs(s: Position, p: Position, d: Dir, g: StampOffGrid)
+runs(S, P, D, G) :-
+    line_cell(P, S, G), dir_elem(D), opposite(D, D_back), nearer(D_back, S, P),
+    neighbor(P, D_back, Q), ( Q = S ; placed_line(S, Q) ).
+
+// The stamp of the seed at S runs along the axis across ray_fixed_dir
+// through P.
+.decl follow_run(s: Position, p: Position, d: Dir, g: StampOffGrid)
+follow_run(S, P, D, G) :-
+    runs(S, P, D, G), axis_of(D, A),
+    params.ray_fixed_dir(D_fixed), axis_of(D_fixed, A_fixed), perp(A_fixed, A).
+
+.decl two_follow_runs(p: Position, g: StampOffGrid)
+two_follow_runs(P, G) :- follow_run(S1, P, _, G), follow_run(S2, P, _, G), S1 != S2.
+
+ray_dir(P, Dg, $RayAlongHorizontalLine(), E, G) :-
+    crossing(P, E, G), follow_run(_, P, D, G), !two_follow_runs(P, G),
+    params.ray_fixed_dir(D_fixed), diag_dirs(Dg, A, D, D_fixed).
+
+heading_void($RayAlongHorizontalLine(), E, G) :-
+    crossing(P, E, G), ( !follow_run(_, P, _, G) ; two_follow_runs(P, G) ).
+
+// --- $RayPaintsInk ---
+ray_paint(P, $RayPaintsInk(), H, E, G) :- cross_ray.ray([H, E, G, _], P, _, K, _), K != 0.
+
+// --- $RayUnderInk ---
+ray_paint(P, $RayUnderInk(), H, E, G) :-
+    cross_ray.ray([H, E, G, _], P, _, K, _), K != 0, !occupied(P, G).
+
+// --- $RayStopsAtInk ---
+ray_paint(P, $RayStopsAtInk(), H, E, G) :- cross_ray.clear([H, E, G, _], P, _, K, _), K != 0.
+
+// --- $SeedOverStamp ---
+covered(P, $SeedOverStamp(), E, G) :- stamp_paint(P, _, E, G), !seed(P, _).
+
+.type Cell = [e: Example, p: Position]
+
+.comp Determine {
+    // The grids' ground color; the seeds are the exception to it.
+    .init ground = Mode<Unit, Color, Cell>
+    ground.item($U(), Col, [E, P]) :- ex_in(E, P, Col).
+
+    // A seed of an example with an output.
+    .decl seed(e: Example, s: Position, c: Color)
+    seed(E, S, C) :- ex_in(E, S, C), !ground.mode($U(), C), ex_out(E, _, _).
+
+    // An output cell that differs from the input, as an offset from seed S.
+    .decl changed(e: Example, s: Position, v: Offset, col: Color)
+    changed(E, S, V, Col) :-
+        seed(E, S, _), ex_out(E, P, Col), ex_in(E, P, Col_in), Col != Col_in,
+        relative(S, P, V).
+
+    .decl stamp_end(c: Color, v: Offset)
+    stamp_end(C, V) :- seed(E, S, C), changed(E, S, V, C).
+
+    // A changed cell in another color than seed S's.
+    .decl line_mark(e: Example, s: Position, v: Offset)
+    line_mark(E, S, V) :- seed(E, S, C), changed(E, S, V, Col), Col != C.
+
+    // An offset that some seed of color C does not mark.
+    .decl line_defect(c: Color, v: Offset)
+    line_defect(C, V) :- line_mark(_, _, V), seed(E, S, C), !line_mark(E, S, V).
+
+    .decl stamp_line(c: Color, v: Offset)
+    stamp_line(C, V) :- seed(E, S, C), line_mark(E, S, V), !line_defect(C, V).
+}

@@ -1,0 +1,360 @@
+// b0c4d837
+// @draft
+// @keywords: count rank walk lookup
+// @scene cup: one cup drawn in params.wall_color: two walls of equal height
+//  joined at their far ends from params.open_dir by a floor, open toward
+//  params.open_dir, with params.background outside it
+// @scene liquid: a solid block of params.fluid_color fills the cup's inside
+//  from the floor up, across the full width between the walls, to some level
+//  below the top of the walls
+// @rule count-empty-rows: the count is the number of rows inside the cup that
+//  hold no liquid: the rows from the row nearest params.open_dir that holds
+//  params.wall_color down to the nearest row that holds the liquid's color,
+//  that row left out
+// @rule output-frame: the output is the frame that the cells of
+//  params.fill_order cover, all params.background
+// @rule lay-marks: the first count cells of the output, in params.fill_order,
+//  take the liquid's color; every other cell stays params.background
+
+// how the count becomes the output grid
+.type Render =
+    // @claim output-frame lay-marks
+    Laid {order: CellOrder, mark: Mark}
+    // @rule output-frame: the output is the grid params.count_table stores
+    //  for the count; undefined on a count with no entry
+    // @rule lay-marks: the stored grid gives every cell's color
+    // @witness table-entry: ordinary concept
+    //     @reassigned count_table
+  | CountTable {}
+
+// the order of the frame's cells
+.type CellOrder =
+    // @claim output-frame lay-marks
+    FillOrder {}
+    // @rule output-frame: the output is a params.out_dim square frame, all
+    //  params.background
+    // @rule lay-marks: the first count cells of a walk that starts at
+    //  params.order_corner, runs along a line on params.line_axis, and at the
+    //  frame's edge steps one line on and runs back, take the liquid's color;
+    //  undefined where the count exceeds the frame's cells
+    // @witness count-past-four: ordinary $SnakeOrder
+  | SnakeOrder {}
+    // @rule output-frame: the output is a params.out_dim square frame, all
+    //  params.background
+    // @rule lay-marks: the first count cells of a walk that starts at
+    //  params.order_corner, runs along a line on params.line_axis, and turns
+    //  inward where the frame's edge or a cell it has passed stops it, take
+    //  the liquid's color; undefined where the count exceeds the frame's cells
+    // @witness count-past-four: ordinary $SnakeOrder
+  | SpiralOrder {}
+
+// the color of the marks
+.type Mark =
+    // @claim lay-marks
+    LiquidMark {}
+    // @rule lay-marks: the marks take params.mark_color
+    // @witness mark-color: ordinary concept
+    //     @reassigned mark_color
+  | MarkColor {}
+
+// the row the count starts from
+.type RimRow =
+    // @claim count-empty-rows
+    TopRim {}
+    // @rule count-empty-rows: the count starts from the row nearest
+    //  params.open_dir that holds params.wall_color in both outer wall
+    //  columns, the top of the shorter wall
+    // @witness uneven-rim: foreign concept
+    //     @relaxed cup
+  | LowerRim {}
+
+// how the liquid is found
+.type Liquid =
+    // @claim liquid
+    StoredLiquid {}
+    // @scene liquid: a solid block of one color fills the cup's inside from
+    //  the floor up, across the full width between the walls, to some level
+    //  below the top of the walls
+    // @rule liquid-color: the liquid's color is the color of the cells
+    //  directly above the floor between the walls; undefined where those
+    //  cells differ in color
+    // @witness liquid-color: variant $LiquidAnyColor
+    //     @relaxed liquid
+    // @witness liquid-debris: borderline concept
+    //     @relaxed liquid
+  | LiquidAnyColor {}
+
+.type Choice = [render: Render, rim: RimRow, liquid: Liquid]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl wall_color(c: Color) wall_color(5).
+
+    // The side the cup opens toward.
+    .decl open_dir(d: Dir) open_dir(DIR_T).
+
+    // --- $StoredLiquid ---
+    // @derive RarestColor: ordinary concept
+    .decl fluid_color(c: Color) fluid_color(8).
+
+    // --- $Laid ---
+    // @derive DominantColor: ordinary concept
+    .decl background(c: Color) background(0).
+
+    // --- $FillOrder ---
+    // Each cell's rank in the order the marks fill, under each open value:
+    // 0 the snake, 1 the clockwise spiral.
+    .decl fill_order(v: Ident, p: Position, r: number)
+    GRID_3x3(fill_order, 0,
+        0, 1, 2,
+        5, 4, 3,
+        6, 7, 8)
+    GRID_3x3(fill_order, 1,
+        0, 1, 2,
+        7, 8, 3,
+        6, 5, 4)
+
+    // --- $SnakeOrder, $SpiralOrder ---
+    .decl out_dim(n: number) out_dim(3).
+
+    // The corner the walk starts from.
+    .decl order_corner(d: DiagDir) order_corner(DIAG_TL).
+
+    // The axis of the walk's first line.
+    .decl line_axis(a: Axis) line_axis(AXIS_H).
+
+    // --- $MarkColor ---
+    // @derive RarestColor: ordinary concept
+    .decl mark_color(c: Color) mark_color(8).
+
+    // --- $CountTable ---
+    // count -> output grid, for the counts the pairs give
+    .decl count_table(n: number, p: Position, col: Color)
+    GRID_3x3(count_table, 1,
+        8, 0, 0,
+        0, 0, 0,
+        0, 0, 0)
+    GRID_3x3(count_table, 2,
+        8, 8, 0,
+        0, 0, 0,
+        0, 0, 0)
+    GRID_3x3(count_table, 3,
+        8, 8, 8,
+        0, 0, 0,
+        0, 0, 0)
+    GRID_3x3(count_table, 4,
+        8, 8, 8,
+        0, 0, 8,
+        0, 0, 0)
+}
+
+.init params = Params
+
+.decl cell_order_choice(o: CellOrder)
+cell_order_choice($FillOrder()). cell_order_choice($SnakeOrder()). cell_order_choice($SpiralOrder()).
+
+// A state of a walk: the cell it stands on and its heading.
+.type Step = [p: Position, d: Dir]
+
+.comp Parse<Key> {
+    .type KeyLiquid = [key: Key, li: Liquid]
+    .type KeyOrder = [key: Key, o: CellOrder]
+
+    .decl grid(key: Key, p: Position, col: Color)
+
+    // The side of the frame a walk fills, the corner it starts from, and the
+    // axis of its first line.
+    .decl side(key: Key, n: number)
+    .decl corner(key: Key, c: DiagDir)
+    .decl axis(key: Key, a: Axis)
+
+    .decl wall(key: Key, p: Position)
+    wall(Ky, P) :- grid(Ky, P, Col), params.wall_color(Col).
+
+    // @claim cup
+    .init cup = Bbox<Key>
+    cup.cell(Ky, P) :- wall(Ky, P).
+
+    // The liquid's color.
+    .decl liquid(key: Key, li: Liquid, col: Color)
+
+    // --- $StoredLiquid ---
+    liquid(Ky, $StoredLiquid(), Col) :- grid(Ky, _, _), params.fluid_color(Col).
+
+    // --- $LiquidAnyColor ---
+    // The color of the cells directly above the floor between the walls.
+    // @claim liquid-color
+    .init floor_top = Unanimous<Key, Color>
+    floor_top.item(Ky, Col) :-
+        cup.box(Ky, B), params.open_dir(U),
+        grid(Ky, P, _), box_edge(P, B, _),                          // a cell of the cup's edge
+        neighbor(P, U, Q), interior(Q, B), grid(Ky, Q, Col).        // with the cell above it inside
+
+    liquid(Ky, $LiquidAnyColor(), Col) :- floor_top.value(Ky, Col).
+
+    // --- $StoredLiquid, $LiquidAnyColor ---
+    // @claim count-empty-rows
+    .init fluid = Bbox<KeyLiquid>
+    fluid.cell([Ky, Li], P) :- liquid(Ky, Li, Col), grid(Ky, P, Col).
+
+    // The box whose edge toward open_dir is the row the count starts from.
+    .decl rim(key: Key, ri: RimRow, b: Box)
+
+    // --- $TopRim ---
+    rim(Ky, $TopRim(), B) :- cup.box(Ky, B).
+
+    // --- $LowerRim ---
+    // A wall cell on a row where an outer wall column lacks params.wall_color.
+    .decl uneven(key: Key, p: Position)
+    uneven(Ky, P) :-
+        wall(Ky, P), cup.box(Ky, B), params.open_dir(U), perp_dir(U, S),
+        grid(Ky, Q, Col), !params.wall_color(Col), box_edge(Q, B, S), same_dist(U, P, Q).
+
+    // @claim count-empty-rows
+    .init level = Bbox<Key>
+    level.cell(Ky, P) :- wall(Ky, P), !uneven(Ky, P).
+
+    rim(Ky, $LowerRim(), B) :- level.box(Ky, B).
+
+    // --- $TopRim, $LowerRim ---
+    // The rows from the rim down to the liquid's top, that row left out.
+    .decl empty_rows(key: Key, ri: RimRow, li: Liquid, k: number)
+    empty_rows(Ky, Ri, Li, K) :-
+        rim(Ky, Ri, B), fluid.box([Ky, Li], B2), relative(B, B2, B_rel),
+        params.open_dir(U), dist(B_rel, U, K).
+
+    // --- $SnakeOrder, $SpiralOrder ---
+    .init frame = Frame2D<Key>
+    frame.extent(Ky, A, N) :- side(Ky, N), axis_elem(A).
+
+    // The walk's first heading, and the direction it advances between lines.
+    .decl heading(key: Key, h: Dir, adv: Dir)
+    heading(Ky, H, Adv) :-
+        corner(Ky, C), axis(Ky, A), diag_dirs(C, A, D1, D2), opposite(D1, H), opposite(D2, Adv).
+
+    // @claim lay-marks
+    .init walk = GraphDistance<KeyOrder, Step>
+    walk.seed([Ky, O], [P, H]) :-
+        cell_order_choice(O), O != $FillOrder(),
+        corner(Ky, C), frame.cell(Ky, P), box_corner(P, ZERO, C), heading(Ky, H, _).
+
+    // --- $SnakeOrder ---
+    // Along the line, and at the frame's edge one line on and back.
+    walk.edge([Ky, $SnakeOrder()], [P, H], [Q, H2]) :-
+        frame.cell(Ky, P), dir_elem(H),
+        ( neighbor(P, H, Q), H2 = H
+        ; dist(P, H, 0), heading(Ky, _, Adv), neighbor(P, Adv, Q), opposite(H, H2)
+        ),
+        frame.cell(Ky, Q).
+
+    // --- $SpiralOrder ---
+    // @claim lay-marks
+    .init ring = Rim<Key>
+    ring.cell(Ky, P) :- frame.cell(Ky, P).
+
+    // The cell where the walk enters a ring.
+    .decl ring_start(key: Key, p: Position)
+    ring_start(Ky, P) :- ring.depth(Ky, P, K), corner(Ky, C), diag_dist(P, C, _, K, K).
+
+    // A step the spiral may take: to a deeper ring, or along its own ring
+    // short of the ring's start.
+    .decl spiral_open(key: Key, p: Position, d: Dir, q: Position)
+    spiral_open(Ky, P, D, Q) :-
+        ring.depth(Ky, P, K), dir_elem(D), neighbor(P, D, Q), ring.depth(Ky, Q, K2),
+        ( K2 > K
+        ; K2 = K, !ring_start(Ky, Q)
+        ).
+
+    // Straight on where it may, and otherwise a quarter turn to where it may.
+    walk.edge([Ky, $SpiralOrder()], [P, H], [Q, H2]) :-
+        dir_elem(H),
+        ( spiral_open(Ky, P, H, Q), H2 = H
+        ; !spiral_open(Ky, P, H, _), perp_dir(H, H2), spiral_open(Ky, P, H2, Q)
+        ).
+
+    // --- $SnakeOrder, $SpiralOrder ---
+    // Each cell's rank along the walk.
+    .decl walk_rank(key: Key, o: CellOrder, p: Position, r: number)
+    walk_rank(Ky, O, P, R) :- walk.distance([Ky, O], [P, _], R).
+}
+
+.init parse = Parse<Unit>
+parse.grid($U(), P, Col) :- in(P, Col).
+parse.side($U(), N) :- params.out_dim(N).
+parse.corner($U(), C) :- params.order_corner(C).
+parse.axis($U(), A) :- params.line_axis(A).
+
+// --- $CountTable ---
+out(P, Col, [$CountTable(), Ri, Li]) :-
+    parse.empty_rows($U(), Ri, Li, K), params.count_table(K, P, Col).
+
+// --- $Laid ---
+// Each cell's rank in the order, under every open value.
+.decl rank(o: CellOrder, p: Position, r: number)
+
+// Some open value leaves a cell unranked that another ranks.
+.decl partial(o: CellOrder)
+
+// --- $FillOrder ---
+rank($FillOrder(), P, R) :- params.fill_order(_, P, R).
+
+partial($FillOrder()) :-
+    params.fill_order(_, P, _), params.fill_order(V, _, _), !params.fill_order(V, P, _).
+
+// --- $SnakeOrder, $SpiralOrder ---
+rank(O, P, R) :- parse.walk_rank($U(), O, P, R).
+
+// --- $Laid ---
+// @claim output-frame
+.init cells = Tally<CellOrder, Position>
+cells.item(O, P) :- rank(O, P, _).
+
+.decl mark(m: Mark, li: Liquid, col: Color)
+
+// --- $LiquidMark ---
+mark($LiquidMark(), Li, Col) :- parse.liquid($U(), Li, Col).
+
+// --- $MarkColor ---
+mark($MarkColor(), Li, Col) :- parse.liquid($U(), Li, _), params.mark_color(Col).
+
+// --- $Laid ---
+// A cell that two open values rank on either side of the count gets both
+// colors, so the grid is undefined there.
+out(P, Col, [$Laid(O, M), Ri, Li]) :-
+    parse.empty_rows($U(), Ri, Li, K), cells.tally(O, N), K <= N,      // the count fits the frame
+    rank(O, P, R), !partial(O), mark(M, Li, C),
+    ( R < K, Col = C
+    ; R >= K, params.background(Col)
+    ).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.grid(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl count_table(n: number, p: Position, col: Color)
+    count_table(K, P, Col) :- ex_out(E, P, Col), ex.empty_rows(E, $TopRim(), $StoredLiquid(), K).
+
+    .decl marked(e: Example, p: Position)
+    marked(E, P) :- ex_out(E, P, Col), !params.background(Col).
+
+    // The marked cells in the order the outputs show: p comes before q where
+    // an output marks p and not q.
+    .init shown = Order<Unit, Position>
+    shown.elem($U(), P) :- marked(_, P).
+    shown.before($U(), P, Q) :- marked(E, P), marked(_, Q), !marked(E, Q).
+
+    // The snake and the spiral from the corner and along the axis the outputs
+    // show.
+    .init walks = Parse<Unit>
+    walks.side($U(), N) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, N).
+    walks.corner($U(), C) :- shown.first($U(), P), box_corner(P, ZERO, C).
+    walks.axis($U(), A) :-
+        shown.first($U(), P), shown.next($U(), P, Q), dir_elem(D), neighbor(P, D, Q), axis_of(D, A).
+
+    .init value = IdentOf<CellOrder>
+    value.value(O) :- walks.walk_rank($U(), O, _, _).
+
+    .decl fill_order(v: Ident, p: Position, r: number)
+    fill_order(V, P, R) :- walks.walk_rank($U(), O, P, R), value.id(O, V).
+}

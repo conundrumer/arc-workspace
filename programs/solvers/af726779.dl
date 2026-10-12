@@ -1,0 +1,247 @@
+// af726779
+// @draft
+// @keywords: lines walk parity
+// @scene background: every cell off the base line is params.background
+// @scene base-line: one full line across params.growth_dir holds marks of 7
+//  and cells of params.background, and no other color
+// @rule keep-input: every input cell keeps its color
+// @rule gap-mark: where a level has a mark on each of the two cells beside a
+//  cell along the level, and no mark on that cell, the cell
+//  params.level_step lines from it toward params.growth_dir becomes a mark of
+//  the next level
+// @rule levels: the base line's marks are level 0, and the marks that
+//  gap-mark makes from level k are level k+1
+// @rule level-color: a level's marks take the color params.level_colors gives
+//  for the parity of its index
+// @rule stop: a level whose line is off the grid, or that has no mark, makes
+//  no further level
+
+// how a level's color is chosen
+.type LevelColor =
+    // @claim level-color
+    Parity {}
+    // @rule level-color: the even levels take the color of the base line's
+    //  marks, and the odd levels the color params.level_colors gives for
+    //  parity 1
+    // @witness base-color-2: variant $EvenColorOfBase
+    //     @relaxed base-line
+    // @witness mixed-base: borderline concept
+    //     @relaxed base-line
+  | EvenColorOfBase {}
+    // @rule level-color: the even levels take the input's rarest color, and
+    //  the odd levels the color params.level_colors gives for parity 1
+    // @witness base-color-2: variant $EvenColorOfBase
+    // @witness mixed-base: borderline concept
+  | EvenColorRarest {}
+    // @rule level-color: each level takes the color params.level_succ gives
+    //  after the color of the level before it, the base line's level having
+    //  the color of its marks; a level with no such color is not drawn, and
+    //  no level past it either
+    // @witness base-color-2: variant $EvenColorOfBase
+  | ColorBySuccession {}
+
+// which marks grow one stack
+.type Scope =
+    // @claim gap-mark
+    PerLine {}
+    // @rule gap-mark: the marks of every marked line and every mark that
+    //  gap-mark makes form one stack: where a cell has a mark of the stack on
+    //  each of the two cells beside it along its line, and no input mark on
+    //  it, the cell params.level_step lines from it toward params.growth_dir
+    //  becomes a mark
+    // @rule levels: a mark's level is its fewest gap-mark steps from an input
+    //  mark
+    // @witness two-lines: borderline $Pooled
+    //     @relaxed background
+    //     @relaxed base-line
+  | Pooled {}
+
+.type Choice = [color: LevelColor, scope: Scope]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl background(c: Color) background(3).
+    // The side of the base line that the levels grow toward.
+    .decl growth_dir(d: Dir) growth_dir(DIR_B).
+    // The number of lines from one level to the next.
+    .decl level_step(k: number) level_step(2).
+
+    // --- $Parity, $EvenColorOfBase, $EvenColorRarest ---
+    // The color of a level's marks, by the parity of its index.
+    .decl level_colors(parity: number, col: Color)
+    level_colors(0, 7).
+    level_colors(1, 6).
+
+    // --- $ColorBySuccession ---
+    // The color of a level, after the color of the level before it.
+    .decl level_succ(c: Color, c_next: Color)
+    level_succ(7, 6).
+    level_succ(6, 7).
+}
+
+.init params = Params
+
+.decl level_color_choice(c: LevelColor)
+level_color_choice($Parity()). level_color_choice($EvenColorOfBase()).
+level_color_choice($EvenColorRarest()). level_color_choice($ColorBySuccession()).
+
+.decl scope_choice(s: Scope)
+scope_choice($PerLine()). scope_choice($Pooled()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([C, Sc]) :- level_color_choice(C), scope_choice(Sc).
+
+// The box whose marks grow one stack, under scope choice sc.
+.type Stack = [s: Box, sc: Scope]
+
+.comp Parse<Key> {
+    .decl grid(key: Key, p: Position, col: Color)
+
+    .type KeyedStack = [key: Key, st: Stack]
+
+    .decl stack(key: Key, st: Stack)
+
+    // --- $PerLine ---
+    // Each line across the growth direction.
+    stack(Ky, [L, $PerLine()]) :-
+        grid(Ky, P, _), params.growth_dir(D), axis_of(D, A), split(P, A, L, _).
+
+    // --- $Pooled ---
+    // The whole frame.
+    stack(Ky, [ZERO, $Pooled()]) :- grid(Ky, _, _).
+
+    // --- $PerLine, $Pooled ---
+    // An input mark of a stack: a cell off the background inside its box.
+    .decl base_mark(key: Key, st: Stack, p: Position)
+    base_mark(Ky, [S, Sc], P) :-
+        stack(Ky, [S, Sc]), grid(Ky, P, Col), !params.background(Col), inside(P, S).
+
+    // The marks of each stack: a mark on each cell beside G along its line
+    // makes a mark level_step lines past G. A level that gap-mark makes has
+    // no two adjacent marks, so only an input mark can stand on G.
+    .init marks = Propagation<KeyedStack, Position>
+    marks.source([Ky, St], P) :- base_mark(Ky, St, P).
+    marks.join([Ky, St], A, B, Q) :-
+        stack(Ky, St), grid(Ky, G, _), !base_mark(Ky, St, G),
+        params.growth_dir(D), perp_dir(D, D1), opposite(D1, D2),
+        neighbor(G, D1, A), neighbor(G, D2, B),                     // the cells beside G
+        params.level_step(K), jump(G, D, K, Q), grid(Ky, Q, _).
+
+    // The level of each mark: its fewest gap-mark steps from an input mark.
+    // @claim levels
+    .init levels = GraphDistance<KeyedStack, Position>
+    levels.seed(Kst, P) :- marks.source(Kst, P).
+    levels.edge(Kst, A, Q) :-
+        marks.join(Kst, A, B, Q), marks.reached(Kst, A), marks.reached(Kst, B).
+
+    // A mark that gap-mark makes, with its level.
+    .decl new_mark(key: Key, st: Stack, p: Position, k: number)
+    new_mark(Ky, St, P, K) :- levels.distance([Ky, St], P, K), !marks.source([Ky, St], P).
+}
+
+.init parse = Parse<Unit>
+parse.grid($U(), P, Col) :- in(P, Col).
+
+.decl drawn(p: Position, col: Color, ch: Choice)
+
+// --- $Parity, $EvenColorOfBase, $EvenColorRarest ---
+// The parity of each level: its index walked around the cycle of parities.
+// @claim level-color
+.init parities = IndexCycle<Unit>
+parities.idx($U(), R) :- params.level_colors(R, _).
+
+// @claim level-color
+.init parity = CycleWalk<Unit, number>
+parity.succ($U(), R, R2) :- parities.succ($U(), R, R2).
+parity.step($U(), K) :- parse.new_mark($U(), _, _, K).
+
+// A new mark of a stack, with the parity of its level.
+.decl mark_parity(st: Stack, p: Position, r: number)
+mark_parity(St, P, R) :- parse.new_mark($U(), St, P, K), parity.walk($U(), 0, K, R).
+
+// --- $Parity ---
+drawn(P, Col, [$Parity(), Sc]) :-
+    mark_parity([_, Sc], P, R), params.level_colors(R, Col).
+
+// --- $EvenColorOfBase, $ColorBySuccession ---
+// The one color of each stack's input marks.
+// @claim level-color
+// @ignore: store — with this color stored, $EvenColorOfBase and
+//  $ColorBySuccession give $Parity's output on every input, so their models
+//  are equivalent to its model
+.init base_color = Unanimous<Stack, Color>
+base_color.item(St, Col) :- parse.base_mark($U(), St, P), in(P, Col).
+
+// --- $EvenColorOfBase ---
+drawn(P, Col, [$EvenColorOfBase(), Sc]) :-
+    mark_parity([S, Sc], P, R),
+    ( R = 0, base_color.value([S, Sc], Col)        // even level
+    ; R != 0, params.level_colors(R, Col) ).      // odd level
+
+// --- $EvenColorRarest ---
+// The input's rarest color.
+// @claim level-color
+.init color_count = Tally<Color, Position>
+color_count.item(Col, P) :- in(P, Col).
+
+// @claim level-color
+.init rarest = ArgExtremes<Unit, Color>
+rarest.cand($U(), Col, N) :- color_count.tally(Col, N).
+
+drawn(P, Col, [$EvenColorRarest(), Sc]) :-
+    mark_parity([_, Sc], P, R),
+    ( R = 0, rarest.low($U(), Col, _)              // even level
+    ; R != 0, params.level_colors(R, Col) ).      // odd level
+
+// --- $ColorBySuccession ---
+// @claim level-color
+.init succession = CycleWalk<Unit, Color>
+succession.succ($U(), C, C2) :- params.level_succ(C, C2).
+succession.step($U(), K) :- parse.new_mark($U(), _, _, K).
+
+drawn(P, Col, [$ColorBySuccession(), Sc]) :-
+    parse.new_mark($U(), [S, Sc], P, K), base_color.value([S, Sc], C0),
+    succession.walk($U(), C0, K, Col).
+
+// --- $Parity, $EvenColorOfBase, $EvenColorRarest, $ColorBySuccession ---
+out(P, Col, Ch) :- drawn(P, Col, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !drawn(P, _, Ch).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.grid(E, P, Col) :- ex_in(E, P, Col).
+
+    .type Phase = [w: number, r: number]
+
+    // The color a train pair gives the marks of each level; the ex_out atom
+    // excludes the test inputs.
+    .decl level_col(e: Example, k: number, col: Color)
+    level_col(E, K, Col) :- ex.new_mark(E, [_, $PerLine()], P, K), ex_out(E, P, Col).
+
+    // Candidate periods: the levels the pairs reach.
+    .decl cand(w: number)
+    cand(W) :- level_col(_, W, _).
+
+    // The colors the levels carry at each phase of a candidate period.
+    .init phase_color = Unanimous<Phase, Color>
+    phase_color.item([W, R], Col) :- cand(W), level_col(_, K, Col), stride(K, W, 0, _, R).
+
+    // A period that folds two levels of differing colors onto one phase.
+    .decl mismatch(w: number)
+    mismatch(W) :- phase_color.clash([W, _]).
+
+    // The shortest period no level breaks.
+    .init unbroken = Extremes<Unit>
+    unbroken.cand($U(), W) :- cand(W), !mismatch(W).
+
+    .decl level_colors(parity: number, col: Color)
+    level_colors(R, Col) :- unbroken.low($U(), W), phase_color.value([W, R], Col).
+
+    // The colors of a mark and of a mark it makes, in a train pair's output.
+    .decl level_succ(c: Color, c_next: Color)
+    level_succ(C, C2) :-
+        ex.levels.edge([E, [_, $PerLine()]], A, Q), ex_out(E, A, C), ex_out(E, Q, C2).
+}

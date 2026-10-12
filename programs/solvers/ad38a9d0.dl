@@ -1,0 +1,321 @@
+// ad38a9d0
+// @draft
+// @keywords: objects lookup classify congruent
+// @scene field: a field of 7 holds separate pieces of fg, each a 4-connected
+//  component of fg
+// @scene known-shapes: each piece's shape, read up to translation and an
+//  element of shape_sym, is a key of shape_color
+// @rule recolor-by-shape: each fg cell takes the color shape_color gives the
+//  key its piece's shape matches under shape_sym; every other cell keeps its
+//  color
+
+// which cells make up a piece
+.type Cells =
+    // @claim field
+    FgPieces {}
+    // @scene field: a field of bg holds separate pieces, each a 4-connected
+    //  component of the cells other than bg, whatever their color
+    // @rule recolor-by-shape: each cell other than bg takes the color
+    //  shape_color gives the key its piece's shape matches under shape_sym;
+    //  every bg cell keeps its color
+    // @witness other-color-piece: borderline $NonBgCells
+    //     @relaxed field
+  | NonBgCells {split: Split}
+
+// whether a piece may hold cells of several colors
+.type Split =
+    // @claim field
+    MixedPieces {}
+    // @scene field: a field of bg holds separate pieces, each a 4-connected
+    //  component of one color other than bg
+    // @witness two-color-piece: borderline $PerColorPieces
+    //     @relaxed field
+  | PerColorPieces {}
+
+// what a piece's key is
+.type KeyForm =
+    // @claim known-shapes
+    ShapeKey {}
+    // @scene known-shapes: each piece's cell count and bounding-box extents,
+    //  read up to an element of shape_sym, are a key of box_key
+    // @rule recolor-by-shape: each piece's cells take the color box_key_color
+    //  gives the key its count and extents match under shape_sym
+    // @witness t-tetromino: borderline concept
+    //     @relaxed known-shapes
+  | SizeBoxKey {}
+
+// what a piece that matches no key does
+.type Unknown =
+    // @claim known-shapes
+    KeyedOnly {}
+    // @scene known-shapes: dropped; a piece may match no key
+    // @rule recolor-by-shape: a piece that matches no key keeps its color;
+    //  undefined where keys of two colors match one piece
+    // @witness t-tetromino: borderline concept
+  | KeepUnknown {}
+
+.type Choice = [cells: Cells, key: KeyForm, unknown: Unknown]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // The subgroup of D4 under which a piece's shape matches a key. The pairs
+    // separate none of these values.
+    .decl shape_sym(s: Sym)
+    shape_sym(SYM_1). shape_sym(SYM_C4). shape_sym(SYM_D4).
+
+    // --- $FgPieces ---
+    // @derive RarestColor: variant derived
+    //     @relaxed field
+    // @ignore: derive $KeyedOnly — subsumed by its $KeepUnknown copy, which
+    //  gives the same grid wherever every piece has a key
+    .decl fg(c: Color) fg(6).
+
+    // --- $NonBgCells ---
+    // @derive DominantColor: variant derived
+    //     @relaxed field
+    .decl bg(c: Color) bg(7).
+
+    // --- $ShapeKey ---
+    // The keyed shapes, each in its own box, and the color each one paints.
+    .decl shape(id: Ident, p: Position)
+    .decl shape_color(id: Ident, col: Color)
+
+    GRID_MASK_3x3(shape, 0,
+        _, 1, _,
+        1, 1, 1,
+        _, 1, _)
+    shape_color(0, 3).
+
+    GRID_MASK_3x1(shape, 1,
+        1,
+        1,
+        1)
+    shape_color(1, 2).
+
+    GRID_MASK_2x1(shape, 2,
+        1,
+        1)
+    shape_color(2, 9).
+
+    GRID_MASK_2x2(shape, 3,
+        1, 1,
+        _, 1)
+    shape_color(3, 4).
+
+    GRID_MASK_2x3(shape, 4,
+        1, 1, _,
+        _, 1, 1)
+    shape_color(4, 8).
+
+    GRID_MASK_2x3(shape, 5,
+        1, 1, 1,
+        1, 1, 1)
+    shape_color(5, 5).
+
+    // --- $SizeBoxKey ---
+    // The keys as a cell count and a bounding-box extent on each axis, and
+    // the color each one paints.
+    .decl box_key_size(id: Ident, n: number)
+    .decl box_key_extent(id: Ident, a: Axis, k: number)
+    .decl box_key_color(id: Ident, col: Color)
+    box_key_size(0, 5). box_key_extent(0, AXIS_V, 3). box_key_extent(0, AXIS_H, 3). box_key_color(0, 3).
+    box_key_size(1, 3). box_key_extent(1, AXIS_V, 3). box_key_extent(1, AXIS_H, 1). box_key_color(1, 2).
+    box_key_size(2, 2). box_key_extent(2, AXIS_V, 2). box_key_extent(2, AXIS_H, 1). box_key_color(2, 9).
+    box_key_size(3, 3). box_key_extent(3, AXIS_V, 2). box_key_extent(3, AXIS_H, 2). box_key_color(3, 4).
+    box_key_size(4, 4). box_key_extent(4, AXIS_V, 2). box_key_extent(4, AXIS_H, 3). box_key_color(4, 8).
+    box_key_size(5, 6). box_key_extent(5, AXIS_V, 2). box_key_extent(5, AXIS_H, 3). box_key_color(5, 5).
+}
+
+.init params = Params
+
+.decl cells_choice(s: Cells)
+cells_choice($FgPieces()).
+cells_choice($NonBgCells($MixedPieces())). cells_choice($NonBgCells($PerColorPieces())).
+
+.decl key_form_choice(k: KeyForm)
+key_form_choice($ShapeKey()). key_form_choice($SizeBoxKey()).
+
+.decl split_choice(sp: Split)
+split_choice($MixedPieces()). split_choice($PerColorPieces()).
+
+// A case other than the concept that leaves a piece with no key undefined
+// gives the grid of its $KeepUnknown copy wherever it is defined.
+.decl impl_choice(ch: Choice)
+impl_choice([$FgPieces(), $ShapeKey(), $KeyedOnly()]).
+impl_choice([S, K, $KeepUnknown()]) :- cells_choice(S), key_form_choice(K).
+
+// The pieces of each key's cells, each with its cells in its own box.
+.comp Parse<Key> {
+    .type Pc = [k: Key, id: Ident]
+    .type Part = [k: Key, col: Color]
+
+    // The cells the pieces are made of.
+    .decl cell(k: Key, p: Position, col: Color)
+
+    // The key's pieces hold one color each.
+    .decl one_color(k: Key)
+
+    // @claim field
+    .init part = Components<Key>
+    part.node(K, P) :- cell(K, P, _), !one_color(K).
+
+    // @claim field
+    .init color_part = Components<Part>
+    color_part.node([K, Col], P) :- cell(K, P, Col), one_color(K).
+
+    .decl piece(k: Key, id: Ident, p: Position)
+    piece(K, Id, P) :- part.label(K, P, Id).
+    piece(K, Id, P) :- color_part.label([K, _], P, Id).
+
+    // @claim known-shapes
+    .init box = Bbox<Pc>
+    box.cell([K, Id], P) :- piece(K, Id, P).
+
+    .decl shape_cell(k: Key, id: Ident, p_inner: Position)
+    shape_cell(K, Id, P_inner) :- piece(K, Id, P), box.box([K, Id], B), crop(P, B, P_inner).
+
+    // @claim known-shapes
+    .init cell_count = Tally<Pc, Position>
+    cell_count.item([K, Id], P) :- piece(K, Id, P).
+}
+
+.init parse = Parse<Cells>
+
+// The color each key paints a piece with, under each value of shape_sym.
+.decl keyed(sym: Sym, s: Cells, id: Ident, col: Color, k: KeyForm)
+
+// The color a piece cell takes under each value of shape_sym.
+.decl paint(sym: Sym, p: Position, col: Color, ch: Choice)
+paint(Sym, P, Col, [S, K, U]) :-
+    parse.piece(S, Id, P), keyed(Sym, S, Id, Col, K), impl_choice([S, K, U]).
+
+// A piece cell that some value of shape_sym leaves unpainted.
+.decl unpainted(p: Position, ch: Choice)
+unpainted(P, [S, K, U]) :-
+    parse.piece(S, _, P), params.shape_sym(Sym), impl_choice([S, K, U]),
+    !paint(Sym, P, _, [S, K, U]).
+
+// A piece cell takes the color every value of shape_sym paints it.
+out(P, Col, Ch) :- paint(_, P, Col, Ch), !unpainted(P, Ch).
+
+// Every other cell keeps its color.
+out(P, Col, [S, K, U]) :- in(P, Col), impl_choice([S, K, U]), !parse.piece(S, _, P).
+
+// --- $FgPieces ---
+
+parse.cell($FgPieces(), P, Col) :- in(P, Col), params.fg(Col).
+
+// --- $NonBgCells ---
+
+parse.cell($NonBgCells(Sp), P, Col) :- in(P, Col), !params.bg(Col), split_choice(Sp).
+
+// --- $PerColorPieces ---
+
+parse.one_color($NonBgCells($PerColorPieces())).
+
+// --- $ShapeKey ---
+
+// A piece under one reading of the cells.
+.type Piece = [s: Cells, id: Ident]
+
+// A keyed shape under one transform.
+.type Pose = [id: Ident, d: D4]
+
+// @claim known-shapes recolor-by-shape
+.init shape_match = KeyedSetCompare<Piece, Pose, Position>
+shape_match.pattern_member([Id, D], Q) :- params.shape(Id, S), d4_elem(D), apply(D, S, Q).
+shape_match.observed_member([S, Id], P) :- parse.shape_cell(S, Id, P).
+
+keyed(Sym, S, Id, Col, $ShapeKey()) :-
+    params.shape_sym(Sym), sym_member(Sym, D),
+    shape_match.equals([S, Id], [Key, D]), params.shape_color(Key, Col).
+
+// --- $SizeBoxKey ---
+
+// The piece turned by D has an extent other than the key's on some axis.
+.decl box_mismatch(s: Cells, id: Ident, key: Ident, d: D4)
+box_mismatch(S, Id, Key, D) :-
+    parse.shape_cell(S, Id, P), d4_elem(D), apply(D, P, Q),
+    params.box_key_extent(Key, A, K), axis_dim(Q, A, K2), K != K2.
+
+keyed(Sym, S, Id, Col, $SizeBoxKey()) :-
+    parse.cell_count.tally([S, Id], N), params.box_key_size(Key, N),
+    params.shape_sym(Sym), sym_member(Sym, D), !box_mismatch(S, Id, Key, D),
+    params.box_key_color(Key, Col).
+
+// --- $KeepUnknown ---
+
+// A piece with no key keeps its color.
+paint(Sym, P, Col, [S, K, $KeepUnknown()]) :-
+    parse.piece(S, Id, P), params.shape_sym(Sym), impl_choice([S, K, $KeepUnknown()]),
+    !keyed(Sym, S, Id, _, K), in(P, Col).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col), params.fg(Col), ex_out(E, _, _).
+
+    // A piece of one example.
+    .type ExPiece = [e: Example, id: Ident]
+
+    // --- shape, shape_color: one key per shape a piece shows in its box ---
+
+    .init same = KeyedSetCompare<ExPiece, ExPiece, Position>
+    same.pattern_member([E, Id], P) :- parse.shape_cell(E, Id, P).
+    same.observed_member([E, Id], P) :- parse.shape_cell(E, Id, P).
+
+    .init shape_class = Canon<ExPiece>
+    shape_class.equiv(A, B) :- same.equals(A, B).
+
+    .decl shape(id: Ident, p: Position)
+    shape(Key, P) :- shape_class.id([E, Id], Key), parse.shape_cell(E, Id, P).
+
+    .decl shape_color(id: Ident, col: Color)
+    shape_color(Key, Col) :- shape_class.id([E, Id], Key), parse.piece(E, Id, P), ex_out(E, P, Col).
+
+    // --- box_key_*: one key per cell count and box extents ---
+
+    .decl extent(pc: ExPiece, a: Axis, k: number)
+    extent([E, Id], A, K) :- parse.shape_cell(E, Id, P), axis_elem(A), axis_dim(P, A, K).
+
+    // Two pieces differ in cell count or in extent on some axis.
+    .decl box_differs(pc: ExPiece, pc2: ExPiece)
+    box_differs(A, B) :- extent(A, X, K1), extent(B, X, K2), K1 != K2.
+    box_differs([E1, Id1], [E2, Id2]) :-
+        parse.cell_count.tally([E1, Id1], N1), parse.cell_count.tally([E2, Id2], N2), N1 != N2.
+
+    .init box_class = Canon<ExPiece>
+    box_class.equiv(A, B) :- extent(A, _, _), extent(B, _, _), !box_differs(A, B).
+
+    .decl box_key_size(id: Ident, n: number)
+    box_key_size(Key, N) :- box_class.id([E, Id], Key), parse.cell_count.tally([E, Id], N).
+
+    .decl box_key_extent(id: Ident, a: Axis, k: number)
+    box_key_extent(Key, A, K) :- box_class.id(Pc, Key), extent(Pc, A, K).
+
+    .decl box_key_color(id: Ident, col: Color)
+    box_key_color(Key, Col) :- box_class.id([E, Id], Key), parse.piece(E, Id, P), ex_out(E, P, Col).
+
+    // --- shape_sym: the groups no two keys of different colors contradict ---
+
+    .decl quarter_turn(s: Sym)
+    quarter_turn(S) :- sym_member(S, D), rotation(_, D).
+
+    // A group that moves something without a quarter turn: a matching that
+    // admits a mirror or a half turn and not every rotation.
+    .decl partial(s: Sym)
+    partial(S) :- sym_member(S, D), apply_dir(D, Dir, Dir2), Dir != Dir2, !quarter_turn(S).
+
+    .init congruent = KeyedSetCompare<Pose, Ident, Position>
+    congruent.pattern_member(Key, P) :- shape(Key, P).
+    congruent.observed_member([Key, D], Q) :- shape(Key, P), d4_elem(D), apply(D, P, Q).
+
+    // A transform of the group carries a key onto a key of another color.
+    .decl clash(s: Sym)
+    clash(S) :-
+        congruent.equals([Key, D], Key2), sym_member(S, D),
+        shape_color(Key, Col), shape_color(Key2, Col2), Col != Col2.
+
+    .decl shape_sym(s: Sym)
+    shape_sym(S) :- sym_elem(S), !partial(S), !clash(S).
+}

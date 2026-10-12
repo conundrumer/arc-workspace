@@ -1,0 +1,339 @@
+{
+  "id": "b0c4d837",
+  "witnesses": [{
+    "id": "count-past-four",
+    "separates": "A cup with five empty rows above the liquid. The stored fill order, read at its open values, is undefined there; the derived snake order lays the fifth mark at the middle cell; the derived clockwise spiral lays it at the bottom-right cell; the count table has no entry for five.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0],
+      [0,0,5,0,0,0,5,0,0],
+      [0,0,5,0,0,0,5,0,0],
+      [0,0,5,0,0,0,5,0,0],
+      [0,0,5,0,0,0,5,0,0],
+      [0,0,5,0,0,0,5,0,0],
+      [0,0,5,8,8,8,5,0,0],
+      [0,0,5,8,8,8,5,0,0],
+      [0,0,5,5,5,5,5,0,0]
+    ],
+    "output": [{
+      "cases": ["$FillOrder"],
+      "grid": null
+    }, {
+      "cases": ["$SnakeOrder"],
+      "grid": [
+        [8,8,8],
+        [0,8,8],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$SpiralOrder"],
+      "grid": [
+        [8,8,8],
+        [0,0,8],
+        [0,0,8]
+      ]
+    }, {
+      "cases": ["$CountTable"],
+      "grid": null
+    }]
+  }, {
+    "id": "table-entry",
+    "separates": "A cup with two empty rows, with the count table holding for two a grid that no fill order lays: the concept gives two marks along the top row; the count table gives a mark at the top-left cell and one at the middle cell.",
+    "input": [
+      [0,0,0,0,0,0,0,0],
+      [0,5,0,0,0,0,5,0],
+      [0,5,0,0,0,0,5,0],
+      [0,5,8,8,8,8,5,0],
+      [0,5,8,8,8,8,5,0],
+      [0,5,5,5,5,5,5,0]
+    ],
+    "assign": {
+      "count_table": [
+        [1,[0,2,0,2],8],
+        [1,[0,2,1,1],0],
+        [1,[0,2,2,0],0],
+        [1,[1,1,0,2],0],
+        [1,[1,1,1,1],0],
+        [1,[1,1,2,0],0],
+        [1,[2,0,0,2],0],
+        [1,[2,0,1,1],0],
+        [1,[2,0,2,0],0],
+        [2,[0,2,0,2],8],
+        [2,[0,2,1,1],0],
+        [2,[0,2,2,0],0],
+        [2,[1,1,0,2],0],
+        [2,[1,1,1,1],8],
+        [2,[1,1,2,0],0],
+        [2,[2,0,0,2],0],
+        [2,[2,0,1,1],0],
+        [2,[2,0,2,0],0],
+        [3,[0,2,0,2],8],
+        [3,[0,2,1,1],8],
+        [3,[0,2,2,0],8],
+        [3,[1,1,0,2],0],
+        [3,[1,1,1,1],0],
+        [3,[1,1,2,0],0],
+        [3,[2,0,0,2],0],
+        [3,[2,0,1,1],0],
+        [3,[2,0,2,0],0],
+        [4,[0,2,0,2],8],
+        [4,[0,2,1,1],8],
+        [4,[0,2,2,0],8],
+        [4,[1,1,0,2],0],
+        [4,[1,1,1,1],0],
+        [4,[1,1,2,0],8],
+        [4,[2,0,0,2],0],
+        [4,[2,0,1,1],0],
+        [4,[2,0,2,0],0]
+      ]
+    },
+    "output": [{
+      "cases": ["$Laid"],
+      "grid": [
+        [8,8,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$CountTable"],
+      "grid": [
+        [8,0,0],
+        [0,8,0],
+        [0,0,0]
+      ]
+    }]
+  }, {
+    "id": "uneven-rim",
+    "separates": "A cup whose left wall rises two rows above its right wall: the concept counts the empty rows from the top of the taller wall and gives four marks; the lower-rim reading counts from the top of the shorter wall and gives two.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0],
+      [0,0,5,0,0,0,0,0,0],
+      [0,0,5,0,0,0,0,0,0],
+      [0,0,5,0,0,0,5,0,0],
+      [0,0,5,0,0,0,5,0,0],
+      [0,0,5,8,8,8,5,0,0],
+      [0,0,5,8,8,8,5,0,0],
+      [0,0,5,5,5,5,5,0,0]
+    ],
+    "output": [{
+      "cases": ["$TopRim"],
+      "grid": [
+        [8,8,8],
+        [0,0,8],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$LowerRim"],
+      "grid": [
+        [8,8,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }]
+  }, {
+    "id": "mark-color",
+    "separates": "A cup with three empty rows, with the mark color reassigned to a color other than the liquid color: the concept lays the marks in the liquid color; the stored mark color lays them in that other color.",
+    "input": [
+      [0,0,0,0,0,0,0,0],
+      [0,5,0,0,0,0,5,0],
+      [0,5,0,0,0,0,5,0],
+      [0,5,0,0,0,0,5,0],
+      [0,5,8,8,8,8,5,0],
+      [0,5,8,8,8,8,5,0],
+      [0,5,5,5,5,5,5,0]
+    ],
+    "assign": {
+      "mark_color": [
+        [2]
+      ]
+    },
+    "output": [{
+      "cases": ["$LiquidMark","mark_color=RarestColor","$CountTable"],
+      "grid": [
+        [8,8,8],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$MarkColor & mark_color=stored"],
+      "grid": [
+        [2,2,2],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }]
+  }, {
+    "id": "liquid-color",
+    "separates": "A cup whose liquid has a color other than the stored liquid color: the concept and every reading that finds the liquid by the stored color find no liquid and are undefined; the reading that takes the liquid as the color above the floor, and the rarest-color derivation, lay two marks in the liquid color.",
+    "input": [
+      [0,0,0,0,0,0,0,0],
+      [0,5,0,0,0,0,5,0],
+      [0,5,0,0,0,0,5,0],
+      [0,5,2,2,2,2,5,0],
+      [0,5,2,2,2,2,5,0],
+      [0,5,5,5,5,5,5,0]
+    ],
+    "output": [{
+      "cases": ["$StoredLiquid & fluid_color=stored"],
+      "grid": null
+    }, {
+      "cases": ["fluid_color=RarestColor","$LiquidMark & $LiquidAnyColor"],
+      "grid": [
+        [2,2,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$MarkColor & $LiquidAnyColor","$CountTable & $LiquidAnyColor"],
+      "grid": [
+        [8,8,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }]
+  }, {
+    "id": "fluid_color=RarestColor",
+    "separates": "A wide cup holding more liquid cells than wall cells: the concept gives one mark; the rarest color is the wall color, so the derived liquid color reads the liquid top at the wall top and gives no mark.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,5,0,0,0,0,0,0,5,0,0],
+      [0,0,5,8,8,8,8,8,8,5,0,0],
+      [0,0,5,8,8,8,8,8,8,5,0,0],
+      [0,0,5,8,8,8,8,8,8,5,0,0],
+      [0,0,5,5,5,5,5,5,5,5,0,0]
+    ],
+    "output": [{
+      "cases": ["fluid_color=stored & mark_color=stored"],
+      "grid": [
+        [8,0,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["fluid_color=RarestColor"],
+      "grid": [
+        [0,0,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["mark_color=RarestColor"],
+      "grid": [
+        [5,0,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "A cup whose liquid outnumbers the background: the concept gives one mark on a background grid; the commonest color is the liquid color, so the derived background fills the whole output with it; the rarest color is the wall color, so the derived liquid color gives no mark.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,5,0,0,0,0,0,0,5,0],
+      [0,5,8,8,8,8,8,8,5,0],
+      [0,5,8,8,8,8,8,8,5,0],
+      [0,5,8,8,8,8,8,8,5,0],
+      [0,5,8,8,8,8,8,8,5,0],
+      [0,5,8,8,8,8,8,8,5,0],
+      [0,5,8,8,8,8,8,8,5,0],
+      [0,5,5,5,5,5,5,5,5,0]
+    ],
+    "output": [{
+      "cases": ["fluid_color=stored & background=stored & mark_color=stored"],
+      "grid": [
+        [8,0,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": [
+        [8,8,8],
+        [8,8,8],
+        [8,8,8]
+      ]
+    }, {
+      "cases": ["fluid_color=RarestColor"],
+      "grid": [
+        [0,0,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["mark_color=RarestColor"],
+      "grid": [
+        [5,0,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }]
+  }, {
+    "id": "mark_color=RarestColor",
+    "separates": "`mark_color=RarestColor` from the stored value: the input of `mark-color` at its assignment",
+    "input": [
+      [0,0,0,0,0,0,0,0],
+      [0,5,0,0,0,0,5,0],
+      [0,5,0,0,0,0,5,0],
+      [0,5,0,0,0,0,5,0],
+      [0,5,8,8,8,8,5,0],
+      [0,5,8,8,8,8,5,0],
+      [0,5,5,5,5,5,5,0]
+    ],
+    "assign": {
+      "mark_color": [
+        [2]
+      ]
+    },
+    "output": [{
+      "cases": ["$LiquidMark","mark_color=RarestColor","$CountTable"],
+      "grid": [
+        [8,8,8],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$MarkColor & mark_color=stored"],
+      "grid": [
+        [2,2,2],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }]
+  }, {
+    "id": "liquid-debris",
+    "separates": "A cup whose liquid holds one cell of another color directly above the floor: the stored liquid color finds the liquid's top and gives three marks; the reading of the liquid's color from the cells above the floor finds two colors there and is undefined; the rarest color is the stray color, so the derived liquid color counts from the stray cell and gives four marks, and the derived mark color lays the three marks in the stray color.",
+    "input": [
+      [0,0,0,0,0,0,0],
+      [0,5,0,0,0,5,0],
+      [0,5,0,0,0,5,0],
+      [0,5,0,0,0,5,0],
+      [0,5,8,8,8,5,0],
+      [0,5,8,2,8,5,0],
+      [0,5,5,5,5,5,0]
+    ],
+    "output": [{
+      "cases": ["$StoredLiquid & fluid_color=stored & mark_color=stored"],
+      "grid": [
+        [8,8,8],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["fluid_color=RarestColor"],
+      "grid": [
+        [2,2,2],
+        [0,0,2],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$LiquidAnyColor"],
+      "grid": null
+    }, {
+      "cases": ["mark_color=RarestColor"],
+      "grid": [
+        [2,2,2],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }]
+  }]
+}

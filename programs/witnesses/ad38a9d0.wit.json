@@ -1,0 +1,657 @@
+{
+  "id": "ad38a9d0",
+  "witnesses": [{
+    "id": "fg=RarestColor",
+    "separates": "colors of field and pieces swapped: the pieces are 7 on a field of 6. The concept reads the 6 field as one piece with no key and is undefined; fg=RarestColor and bg=DominantColor recolor the 7 pieces; $KeepUnknown returns the input.",
+    "input": [
+      [6,7,6,6,7,7,6,6,6],
+      [7,7,7,6,6,7,7,6,6],
+      [6,7,6,6,6,6,6,6,7],
+      [6,6,6,7,7,7,6,6,7],
+      [6,6,6,7,7,7,6,6,7],
+      [6,6,6,6,6,6,6,6,6],
+      [7,7,6,6,6,6,6,7,7],
+      [6,7,6,6,6,7,6,6,7],
+      [6,6,6,6,6,7,6,6,6]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$KeepUnknown & fg=stored & bg=stored"],
+      "grid": [
+        [6,7,6,6,7,7,6,6,6],
+        [7,7,7,6,6,7,7,6,6],
+        [6,7,6,6,6,6,6,6,7],
+        [6,6,6,7,7,7,6,6,7],
+        [6,6,6,7,7,7,6,6,7],
+        [6,6,6,6,6,6,6,6,6],
+        [7,7,6,6,6,6,6,7,7],
+        [6,7,6,6,6,7,6,6,7],
+        [6,6,6,6,6,7,6,6,6]
+      ]
+    }, {
+      "cases": ["fg=RarestColor","bg=DominantColor"],
+      "grid": [
+        [6,3,6,6,8,8,6,6,6],
+        [3,3,3,6,6,8,8,6,6],
+        [6,3,6,6,6,6,6,6,2],
+        [6,6,6,5,5,5,6,6,2],
+        [6,6,6,5,5,5,6,6,2],
+        [6,6,6,6,6,6,6,6,6],
+        [4,4,6,6,6,6,6,4,4],
+        [6,4,6,6,6,9,6,6,4],
+        [6,6,6,6,6,9,6,6,6]
+      ]
+    }]
+  }, {
+    "id": "bg=DominantColor",
+    "separates": "colors of field and pieces swapped: the pieces are 7 on a field of 6. $NonBgCells reads the 6 field as one piece with no key and is undefined; bg=DominantColor takes 6 as the field and recolors the 7 pieces.",
+    "input": [
+      [6,7,6,6,7,7,6,6,6],
+      [7,7,7,6,6,7,7,6,6],
+      [6,7,6,6,6,6,6,6,7],
+      [6,6,6,7,7,7,6,6,7],
+      [6,6,6,7,7,7,6,6,7],
+      [6,6,6,6,6,6,6,6,6],
+      [7,7,6,6,6,6,6,7,7],
+      [6,7,6,6,6,7,6,6,7],
+      [6,6,6,6,6,7,6,6,6]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$KeepUnknown & fg=stored & bg=stored"],
+      "grid": [
+        [6,7,6,6,7,7,6,6,6],
+        [7,7,7,6,6,7,7,6,6],
+        [6,7,6,6,6,6,6,6,7],
+        [6,6,6,7,7,7,6,6,7],
+        [6,6,6,7,7,7,6,6,7],
+        [6,6,6,6,6,6,6,6,6],
+        [7,7,6,6,6,6,6,7,7],
+        [6,7,6,6,6,7,6,6,7],
+        [6,6,6,6,6,7,6,6,6]
+      ]
+    }, {
+      "cases": ["fg=RarestColor","bg=DominantColor"],
+      "grid": [
+        [6,3,6,6,8,8,6,6,6],
+        [3,3,3,6,6,8,8,6,6],
+        [6,3,6,6,6,6,6,6,2],
+        [6,6,6,5,5,5,6,6,2],
+        [6,6,6,5,5,5,6,6,2],
+        [6,6,6,6,6,6,6,6,6],
+        [4,4,6,6,6,6,6,4,4],
+        [6,4,6,6,6,9,6,6,4],
+        [6,6,6,6,6,9,6,6,6]
+      ]
+    }]
+  }, {
+    "id": "other-color-piece",
+    "separates": "the plus is drawn in 1. The concept and $KeepUnknown leave it 1; $NonBgCells, $PerColorPieces and bg=DominantColor paint it 3.",
+    "input": [
+      [7,1,7,7,6,6,7,7,7],
+      [1,1,1,7,7,6,6,7,7],
+      [7,1,7,7,7,7,7,7,6],
+      [7,7,7,6,6,6,7,7,6],
+      [7,7,7,6,6,6,7,7,6],
+      [7,7,7,7,7,7,7,7,7],
+      [6,6,7,7,7,7,7,6,6],
+      [7,6,7,7,7,6,7,7,6],
+      [7,7,7,7,7,6,7,7,7]
+    ],
+    "output": [{
+      "cases": ["$FgPieces & fg=stored"],
+      "grid": [
+        [7,1,7,7,8,8,7,7,7],
+        [1,1,1,7,7,8,8,7,7],
+        [7,1,7,7,7,7,7,7,2],
+        [7,7,7,5,5,5,7,7,2],
+        [7,7,7,5,5,5,7,7,2],
+        [7,7,7,7,7,7,7,7,7],
+        [4,4,7,7,7,7,7,4,4],
+        [7,4,7,7,7,9,7,7,4],
+        [7,7,7,7,7,9,7,7,7]
+      ]
+    }, {
+      "cases": ["fg=RarestColor"],
+      "grid": [
+        [7,3,7,7,6,6,7,7,7],
+        [3,3,3,7,7,6,6,7,7],
+        [7,3,7,7,7,7,7,7,6],
+        [7,7,7,6,6,6,7,7,6],
+        [7,7,7,6,6,6,7,7,6],
+        [7,7,7,7,7,7,7,7,7],
+        [6,6,7,7,7,7,7,6,6],
+        [7,6,7,7,7,6,7,7,6],
+        [7,7,7,7,7,6,7,7,7]
+      ]
+    }, {
+      "cases": ["$NonBgCells"],
+      "grid": [
+        [7,3,7,7,8,8,7,7,7],
+        [3,3,3,7,7,8,8,7,7],
+        [7,3,7,7,7,7,7,7,2],
+        [7,7,7,5,5,5,7,7,2],
+        [7,7,7,5,5,5,7,7,2],
+        [7,7,7,7,7,7,7,7,7],
+        [4,4,7,7,7,7,7,4,4],
+        [7,4,7,7,7,9,7,7,4],
+        [7,7,7,7,7,9,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "two-color-piece",
+    "separates": "a vertical domino of 1 touches the vertical domino of 6 side by side. The concept paints the 6 domino 9 and leaves the 1 domino; $PerColorPieces paints both 9; $NonBgCells reads one 2x2 piece with no key and is undefined.",
+    "input": [
+      [7,6,7,7,6,6,7,7,7],
+      [6,6,6,7,7,6,6,7,7],
+      [7,6,7,7,7,7,7,7,6],
+      [7,7,7,6,6,6,7,7,6],
+      [7,7,7,6,6,6,7,7,6],
+      [7,7,7,7,7,7,7,7,7],
+      [6,6,7,7,7,7,7,6,6],
+      [7,6,7,7,7,6,1,7,6],
+      [7,7,7,7,7,6,1,7,7]
+    ],
+    "output": [{
+      "cases": ["$FgPieces & fg=stored"],
+      "grid": [
+        [7,3,7,7,8,8,7,7,7],
+        [3,3,3,7,7,8,8,7,7],
+        [7,3,7,7,7,7,7,7,2],
+        [7,7,7,5,5,5,7,7,2],
+        [7,7,7,5,5,5,7,7,2],
+        [7,7,7,7,7,7,7,7,7],
+        [4,4,7,7,7,7,7,4,4],
+        [7,4,7,7,7,9,1,7,4],
+        [7,7,7,7,7,9,1,7,7]
+      ]
+    }, {
+      "cases": ["fg=RarestColor"],
+      "grid": [
+        [7,6,7,7,6,6,7,7,7],
+        [6,6,6,7,7,6,6,7,7],
+        [7,6,7,7,7,7,7,7,6],
+        [7,7,7,6,6,6,7,7,6],
+        [7,7,7,6,6,6,7,7,6],
+        [7,7,7,7,7,7,7,7,7],
+        [6,6,7,7,7,7,7,6,6],
+        [7,6,7,7,7,6,9,7,6],
+        [7,7,7,7,7,6,9,7,7]
+      ]
+    }, {
+      "cases": ["$MixedPieces"],
+      "grid": [
+        [7,3,7,7,8,8,7,7,7],
+        [3,3,3,7,7,8,8,7,7],
+        [7,3,7,7,7,7,7,7,2],
+        [7,7,7,5,5,5,7,7,2],
+        [7,7,7,5,5,5,7,7,2],
+        [7,7,7,7,7,7,7,7,7],
+        [4,4,7,7,7,7,7,4,4],
+        [7,4,7,7,7,6,1,7,4],
+        [7,7,7,7,7,6,1,7,7]
+      ]
+    }, {
+      "cases": ["$PerColorPieces"],
+      "grid": [
+        [7,3,7,7,8,8,7,7,7],
+        [3,3,3,7,7,8,8,7,7],
+        [7,3,7,7,7,7,7,7,2],
+        [7,7,7,5,5,5,7,7,2],
+        [7,7,7,5,5,5,7,7,2],
+        [7,7,7,7,7,7,7,7,7],
+        [4,4,7,7,7,7,7,4,4],
+        [7,4,7,7,7,9,9,7,4],
+        [7,7,7,7,7,9,9,7,7]
+      ]
+    }]
+  }, {
+    "id": "t-tetromino",
+    "separates": "a T-tetromino stands where the Z was. The concept has no key for it under any open value of shape_sym and is undefined; $SizeBoxKey matches it to the Z by its 4 cells and 2x3 box and paints it 8; $KeepUnknown leaves it 6.",
+    "input": [
+      [7,6,7,7,7,6,7,7,7],
+      [6,6,6,7,6,6,6,7,7],
+      [7,6,7,7,7,7,7,7,6],
+      [7,7,7,6,6,6,7,7,6],
+      [7,7,7,6,6,6,7,7,6],
+      [7,7,7,7,7,7,7,7,7],
+      [6,6,7,7,7,7,7,6,6],
+      [7,6,7,7,7,6,7,7,6],
+      [7,7,7,7,7,6,7,7,7]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$ShapeKey & $KeepUnknown"],
+      "grid": [
+        [7,3,7,7,7,6,7,7,7],
+        [3,3,3,7,6,6,6,7,7],
+        [7,3,7,7,7,7,7,7,2],
+        [7,7,7,5,5,5,7,7,2],
+        [7,7,7,5,5,5,7,7,2],
+        [7,7,7,7,7,7,7,7,7],
+        [4,4,7,7,7,7,7,4,4],
+        [7,4,7,7,7,9,7,7,4],
+        [7,7,7,7,7,9,7,7,7]
+      ]
+    }, {
+      "cases": ["$SizeBoxKey"],
+      "grid": [
+        [7,3,7,7,7,8,7,7,7],
+        [3,3,3,7,8,8,8,7,7],
+        [7,3,7,7,7,7,7,7,2],
+        [7,7,7,5,5,5,7,7,2],
+        [7,7,7,5,5,5,7,7,2],
+        [7,7,7,7,7,7,7,7,7],
+        [4,4,7,7,7,7,7,4,4],
+        [7,4,7,7,7,9,7,7,4],
+        [7,7,7,7,7,9,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "plus-majority",
+    "separates": "a plus of 6 covers more cells than the field of 7. bg=DominantColor takes 6 as the field, reads the four 7 corners as pieces with no key and is undefined; $NonBgCells paints the plus 3.",
+    "input": [
+      [7,6,7],
+      [6,6,6],
+      [7,6,7]
+    ],
+    "output": [{
+      "cases": ["fg=stored & bg=stored"],
+      "grid": [
+        [7,3,7],
+        [3,3,3],
+        [7,3,7]
+      ]
+    }, {
+      "cases": ["fg=RarestColor","bg=DominantColor"],
+      "grid": [
+        [7,6,7],
+        [6,6,6],
+        [7,6,7]
+      ]
+    }]
+  }, {
+    "id": "horizontal-domino",
+    "separates": "the vertical domino lies flat. At shape_sym SYM_1 no key matches it, and the cases that keep only keyed pieces are undefined; at SYM_C4 and SYM_D4 it matches the domino and takes 9.",
+    "input": [
+      [7,6,7,7,6,6,7,7,7],
+      [6,6,6,7,7,6,6,7,7],
+      [7,6,7,7,7,7,7,7,6],
+      [7,7,7,6,6,6,7,7,6],
+      [7,7,7,6,6,6,7,7,6],
+      [7,7,7,7,7,7,7,7,7],
+      [6,6,7,7,7,7,7,6,6],
+      [7,6,7,7,7,7,7,7,6],
+      [7,7,7,7,7,6,6,7,7]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$KeepUnknown"],
+      "grid": null
+    }]
+  }, {
+    "id": "s-tetromino",
+    "separates": "the Z is mirrored into an S. Only SYM_D4 matches it to the Z and paints it 8; at SYM_1 and SYM_C4 no key matches it.",
+    "input": [
+      [7,6,7,7,7,6,6,7,7],
+      [6,6,6,7,6,6,7,7,7],
+      [7,6,7,7,7,7,7,7,6],
+      [7,7,7,6,6,6,7,7,6],
+      [7,7,7,6,6,6,7,7,6],
+      [7,7,7,7,7,7,7,7,7],
+      [6,6,7,7,7,7,7,6,6],
+      [7,6,7,7,7,6,7,7,6],
+      [7,7,7,7,7,6,7,7,7]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$ShapeKey & $KeepUnknown"],
+      "grid": null
+    }, {
+      "cases": ["$SizeBoxKey"],
+      "grid": [
+        [7,3,7,7,7,8,8,7,7],
+        [3,3,3,7,8,8,7,7,7],
+        [7,3,7,7,7,7,7,7,2],
+        [7,7,7,5,5,5,7,7,2],
+        [7,7,7,5,5,5,7,7,2],
+        [7,7,7,7,7,7,7,7,7],
+        [4,4,7,7,7,7,7,4,4],
+        [7,4,7,7,7,9,7,7,4],
+        [7,7,7,7,7,9,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "box-0-v",
+    "separates": "a piece of 5 cells in a 2x3 box. It has key 0's count and horizontal extent and not its vertical one, so no key matches it; key 0 without its vertical extent paints it 3.",
+    "input": [
+      [7,7,7,7,7],
+      [7,6,6,6,7],
+      [7,6,6,7,7],
+      [7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$KeepUnknown"],
+      "grid": [
+        [7,7,7,7,7],
+        [7,6,6,6,7],
+        [7,6,6,7,7],
+        [7,7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "box-0-h",
+    "separates": "a piece of 5 cells in a 3x2 box. It has key 0's count and vertical extent and not its horizontal one, so no key matches it; key 0 without its horizontal extent paints it 3.",
+    "input": [
+      [7,7,7,7],
+      [7,6,6,7],
+      [7,6,6,7],
+      [7,6,7,7],
+      [7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$KeepUnknown"],
+      "grid": [
+        [7,7,7,7],
+        [7,6,6,7],
+        [7,6,6,7],
+        [7,6,7,7],
+        [7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "box-4-h",
+    "separates": "a 2x2 square of 4 cells. It has key 4's count and vertical extent and not its horizontal one, so no key matches it; key 4 without its horizontal extent paints it 8.",
+    "input": [
+      [7,7,7,7],
+      [7,6,6,7],
+      [7,6,6,7],
+      [7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$KeepUnknown"],
+      "grid": [
+        [7,7,7,7],
+        [7,6,6,7],
+        [7,6,6,7],
+        [7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "box-5-v",
+    "separates": "a piece of 6 cells in a 3x3 box. It has key 5's count and horizontal extent and not its vertical one, so no key matches it; key 5 without its vertical extent paints it 5.",
+    "input": [
+      [7,7,7,7,7],
+      [7,6,6,6,7],
+      [7,6,7,7,7],
+      [7,6,6,7,7],
+      [7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$KeepUnknown"],
+      "grid": [
+        [7,7,7,7,7],
+        [7,6,6,6,7],
+        [7,6,7,7,7],
+        [7,6,6,7,7],
+        [7,7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "box-5-h",
+    "separates": "a piece of 6 cells in a 2x4 box. It has key 5's count and vertical extent and not its horizontal one, so no key matches it; key 5 without its horizontal extent paints it 5.",
+    "input": [
+      [7,7,7,7,7,7],
+      [7,6,6,6,6,7],
+      [7,6,6,7,7,7],
+      [7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$KeepUnknown"],
+      "grid": [
+        [7,7,7,7,7,7],
+        [7,6,6,6,6,7],
+        [7,6,6,7,7,7],
+        [7,7,7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "box-1-v",
+    "separates": "with key 1 alone, at a count of 4, a vertical line of 4 has its count and horizontal extent and not its vertical one, so no key matches it; key 1 without its vertical extent paints it 2.",
+    "input": [
+      [7,7,7],
+      [7,6,7],
+      [7,6,7],
+      [7,6,7],
+      [7,6,7],
+      [7,7,7]
+    ],
+    "assign": {
+      "box_key_size": [
+        [1,4]
+      ]
+    },
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$KeepUnknown"],
+      "grid": [
+        [7,7,7],
+        [7,6,7],
+        [7,6,7],
+        [7,6,7],
+        [7,6,7],
+        [7,7,7]
+      ]
+    }]
+  }, {
+    "id": "box-1-h",
+    "separates": "with key 1 alone, at a count of 4, an L of 4 cells in a 3x2 box has its count and vertical extent and not its horizontal one, so no key matches it; key 1 without its horizontal extent paints it 2.",
+    "input": [
+      [7,7,7,7],
+      [7,6,7,7],
+      [7,6,7,7],
+      [7,6,6,7],
+      [7,7,7,7]
+    ],
+    "assign": {
+      "box_key_size": [
+        [1,4]
+      ]
+    },
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$KeepUnknown"],
+      "grid": [
+        [7,7,7,7],
+        [7,6,7,7],
+        [7,6,7,7],
+        [7,6,6,7],
+        [7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "box-2-v",
+    "separates": "with key 2 alone, at a count of 3, a vertical line of 3 has its count and horizontal extent and not its vertical one, so no key matches it; key 2 without its vertical extent paints it 9.",
+    "input": [
+      [7,7,7],
+      [7,6,7],
+      [7,6,7],
+      [7,6,7],
+      [7,7,7]
+    ],
+    "assign": {
+      "box_key_size": [
+        [2,3]
+      ]
+    },
+    "output": [{
+      "cases": ["$ShapeKey"],
+      "grid": [
+        [7,7,7],
+        [7,2,7],
+        [7,2,7],
+        [7,2,7],
+        [7,7,7]
+      ]
+    }, {
+      "cases": ["$SizeBoxKey"],
+      "grid": [
+        [7,7,7],
+        [7,6,7],
+        [7,6,7],
+        [7,6,7],
+        [7,7,7]
+      ]
+    }]
+  }, {
+    "id": "box-2-h",
+    "separates": "with key 2 alone, at a count of 3, an L of 3 cells has its count and vertical extent and not its horizontal one, so no key matches it; key 2 without its horizontal extent paints it 9.",
+    "input": [
+      [7,7,7,7],
+      [7,6,6,7],
+      [7,7,6,7],
+      [7,7,7,7]
+    ],
+    "assign": {
+      "box_key_size": [
+        [2,3]
+      ]
+    },
+    "output": [{
+      "cases": ["$ShapeKey"],
+      "grid": [
+        [7,7,7,7],
+        [7,4,4,7],
+        [7,7,4,7],
+        [7,7,7,7]
+      ]
+    }, {
+      "cases": ["$SizeBoxKey"],
+      "grid": [
+        [7,7,7,7],
+        [7,6,6,7],
+        [7,7,6,7],
+        [7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "box-3-v",
+    "separates": "with key 3 alone, at a count of 7, a piece of 7 cells in a 4x2 box has its count and horizontal extent and not its vertical one, so no key matches it; key 3 without its vertical extent paints it 4.",
+    "input": [
+      [7,7,7,7],
+      [7,6,6,7],
+      [7,6,6,7],
+      [7,6,6,7],
+      [7,6,7,7],
+      [7,7,7,7]
+    ],
+    "assign": {
+      "box_key_size": [
+        [3,7]
+      ]
+    },
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$KeepUnknown"],
+      "grid": [
+        [7,7,7,7],
+        [7,6,6,7],
+        [7,6,6,7],
+        [7,6,6,7],
+        [7,6,7,7],
+        [7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "box-3-h",
+    "separates": "with key 3 alone, at a count of 7, a piece of 7 cells in a 2x4 box has its count and vertical extent and not its horizontal one, so no key matches it; key 3 without its horizontal extent paints it 4.",
+    "input": [
+      [7,7,7,7,7,7],
+      [7,6,6,6,6,7],
+      [7,6,6,6,7,7],
+      [7,7,7,7,7,7]
+    ],
+    "assign": {
+      "box_key_size": [
+        [3,7]
+      ]
+    },
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$KeepUnknown"],
+      "grid": [
+        [7,7,7,7,7,7],
+        [7,6,6,6,6,7],
+        [7,6,6,6,7,7],
+        [7,7,7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "box-4-v",
+    "separates": "with key 4 alone, at a count of 5, a plus has its count and horizontal extent and not its vertical one, so no key matches it; key 4 without its vertical extent paints it 8.",
+    "input": [
+      [7,7,7,7,7],
+      [7,7,6,7,7],
+      [7,6,6,6,7],
+      [7,7,6,7,7],
+      [7,7,7,7,7]
+    ],
+    "assign": {
+      "box_key_size": [
+        [4,5]
+      ]
+    },
+    "output": [{
+      "cases": ["$ShapeKey"],
+      "grid": [
+        [7,7,7,7,7],
+        [7,7,3,7,7],
+        [7,3,3,3,7],
+        [7,7,3,7,7],
+        [7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["$SizeBoxKey"],
+      "grid": [
+        [7,7,7,7,7],
+        [7,7,6,7,7],
+        [7,6,6,6,7],
+        [7,7,6,7,7],
+        [7,7,7,7,7]
+      ]
+    }]
+  }]
+}

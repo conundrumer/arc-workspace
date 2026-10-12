@@ -1,0 +1,327 @@
+// ac3e2b04
+// @draft
+// @keywords: lines markers cast cross stamp
+// @scene parallel-lines: the input holds one or more straight lines of
+//  params.line_color on a field of params.background, each running the full
+//  length or width of the grid, all on one axis, with at least one
+//  background row or column between two lines
+// @scene marks: at least one line carries a mark: a 3×3 frame of
+//  params.mark_color around one cell of that line, the center cell keeping
+//  params.line_color, the whole frame inside the grid and touching no other
+//  line
+// @scene one-mark-per-line: a line carries at most one mark, and no two
+//  marks lie on one perpendicular line
+// @rule cross-line: through the center of each mark, a line of
+//  params.draw_color runs across the whole grid at right angles to the
+//  marked line, painting the params.background cells on it
+// @rule cross-frame: where that new line crosses another line at a cell no
+//  mark surrounds, the eight cells around the crossing take
+//  params.draw_color, the crossing cell keeping params.line_color
+// @rule keep: every other cell keeps its input color, the marks included
+
+// the cells a frame at a crossing covers
+.type FrameShape =
+    // @claim cross-frame
+    EightAround {}
+    // @rule cross-frame: where that new line crosses another line at a cell
+    //  no mark surrounds, params.draw_color goes on the cells at the
+    //  offsets, from the mark's center, of the params.mark_color cells
+    //  joined to the mark's ring, the crossing cell keeping
+    //  params.line_color
+    // @witness copy-mark: borderline $CopyMark
+    //     @relaxed marks
+  | CopyMark {}
+
+// what a crossing that a mark surrounds takes
+.type MarkedCrossing =
+    // @claim cross-frame
+    KeepMarks {}
+    // @rule cross-frame: where that new line crosses another line, the
+    //  eight cells around the crossing take params.draw_color, over a mark
+    //  that surrounds the crossing, the crossing cell keeping
+    //  params.line_color
+    // @rule keep: every other cell keeps its input color
+    // @witness aligned-marks: variant concept
+    //     @relaxed one-mark-per-line
+  | RepaintMarks {}
+
+// the cells the new line frames
+.type CrossedLine =
+    // @claim cross-frame
+    FullLine {}
+    // @rule cross-frame: at each params.line_color cell that new line meets,
+    //  other than the mark's own center, where no mark surrounds that cell,
+    //  the eight cells around it take params.draw_color, the cell keeping
+    //  params.line_color, whether or not a full-length line holds it
+    // @witness partial-line: borderline $AnyLineCell
+    //     @relaxed parallel-lines
+  | AnyLineCell {}
+
+// the axis of the new line through a mark on no line
+.type OffLine =
+    // @claim marks
+    AcrossLines {}
+    // @scene marks: a mark on no line sends new lines along both axes
+    // @witness ring-off-line: borderline concept
+    //     @relaxed marks
+  | BothAxes {}
+
+// the cell a mark surrounds
+.type MarkCenter =
+    // @claim marks
+    LineCenter {}
+    // @scene marks: a mark is a 3×3 frame of params.mark_color around a
+    //  cell of any other color; a mark on no line sends its new line across
+    //  the axis of the input's lines; undefined on an input with a mark on
+    //  no line whose lines lie on no axis or on both
+    // @witness ring-off-line: borderline concept
+  | AnyCenterMark {off: OffLine}
+
+// the size of a mark and of a frame
+.type MarkSize =
+    // @claim marks
+    ThreeByThree {}
+    // @scene marks: a mark is a square frame of params.mark_color that
+    //  reaches params.mark_radius cells from its center on each side
+    // @rule cross-frame: where that new line crosses another line at a cell
+    //  no mark surrounds, the square that reaches params.mark_radius cells
+    //  from the crossing takes params.draw_color, the crossing cell keeping
+    //  params.line_color
+    // @witness mark-radius: borderline $MarkRadius
+    //     @relaxed marks
+    //     @reassigned mark_radius
+  | MarkRadius {}
+
+// where the line color comes from
+.type LineColor =
+    // @claim parallel-lines
+    StoredLineColor {}
+    // @scene parallel-lines: the line color is the color of each cell whose
+    //  eight neighbors are all the mark color; undefined on an input where
+    //  those cells hold no color or more than one
+    // @witness derived-line-color: variant $DerivedLineColor
+    //     @relaxed parallel-lines
+    //     @relaxed marks
+    // @witness two-lines-in-4: variant $DerivedLineColor
+    //     @relaxed parallel-lines
+    //     @relaxed marks
+  | DerivedLineColor {}
+
+// where the mark color comes from
+.type MarkColor =
+    // @claim marks
+    StoredMarkColor {}
+    // @scene marks: the mark color is the one color, other than the line
+    //  color and params.background, of all eight neighbors of a line-color
+    //  cell; undefined on an input where that gives no color or more than
+    //  one
+    // @witness derived-mark-color: variant $DerivedMarkColor
+    //     @relaxed marks
+  | DerivedMarkColor {}
+
+.type Choice = [shape: FrameShape, marked: MarkedCrossing, crossed: CrossedLine,
+                center: MarkCenter, size: MarkSize, line: LineColor, mark: MarkColor]
+
+// the readings that find the marks and their colors
+.type MarkKey = [size: MarkSize, line: LineColor, mark: MarkColor]
+
+.type ColorPair = [line: Color, mark: Color]
+
+// a cell and the square a mark centered on it would fill
+.type MarkSite = [size: MarkSize, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl draw_color(c: Color) draw_color(1).
+    // @derive DominantColor: variant derived
+    //     @relaxed parallel-lines
+    .decl background(c: Color) background(0).
+
+    // --- $StoredLineColor ---
+    .decl line_color(c: Color) line_color(2).
+
+    // --- $StoredMarkColor ---
+    // @derive RarestColor: ordinary concept
+    .decl mark_color(c: Color) mark_color(3).
+
+    // --- $MarkRadius ---
+    .decl mark_radius(k: number) mark_radius(1).
+}
+
+.init params = Params
+
+.decl frame_shape_choice(s: FrameShape)
+frame_shape_choice($EightAround()). frame_shape_choice($CopyMark()).
+
+.decl marked_crossing_choice(m: MarkedCrossing)
+marked_crossing_choice($KeepMarks()). marked_crossing_choice($RepaintMarks()).
+
+.decl crossed_line_choice(c: CrossedLine)
+crossed_line_choice($FullLine()). crossed_line_choice($AnyLineCell()).
+
+.decl mark_center_choice(c: MarkCenter)
+mark_center_choice($LineCenter()).
+mark_center_choice($AnyCenterMark($AcrossLines())). mark_center_choice($AnyCenterMark($BothAxes())).
+
+.decl mark_size_choice(s: MarkSize)
+mark_size_choice($ThreeByThree()). mark_size_choice($MarkRadius()).
+
+.decl line_color_choice(l: LineColor)
+line_color_choice($StoredLineColor()). line_color_choice($DerivedLineColor()).
+
+.decl mark_color_choice(m: MarkColor)
+mark_color_choice($StoredMarkColor()). mark_color_choice($DerivedMarkColor()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Sh, Mk, Cr, Ce, Sz, Ls, Ms]) :-
+    frame_shape_choice(Sh), marked_crossing_choice(Mk), crossed_line_choice(Cr),
+    mark_center_choice(Ce), mark_size_choice(Sz), line_color_choice(Ls), mark_color_choice(Ms).
+
+// q is a cell, other than p, of the square a mark centered on p fills.
+.decl around(sz: MarkSize, p: Position, q: Position)
+
+// The square a mark centered on p fills lies inside the grid.
+.decl whole(sz: MarkSize, p: Position)
+
+// @claim marks
+.init ring_color = Unanimous<MarkSite, Color>
+ring_color.item([Sz, P], Col) :- around(Sz, P, Q), in(Q, Col).
+
+// The square around p, inside the grid, is all col.
+.decl ring(sz: MarkSize, p: Position, col: Color)
+ring(Sz, P, Col) :- whole(Sz, P), ring_color.value([Sz, P], Col).
+
+// The line color and the mark color of each reading.
+.decl roles(k: MarkKey, c_line: Color, c_mark: Color)
+
+// A mark's center.
+.decl mark(ce: MarkCenter, k: MarkKey, p: Position)
+
+// The line through q along a holds a cell of neither the line nor the mark
+// color.
+.decl line_gap(k: MarkKey, a: Axis, q: Position)
+line_gap(K, A, Q) :-
+    roles(K, L, M), in(Q, _), axis_elem(A),
+    same_line(A, Q, R), in(R, Col), Col != L, Col != M.
+
+// q lies on a full-length line along a.
+.decl line_cell(k: MarkKey, a: Axis, q: Position)
+line_cell(K, A, Q) :- roles(K, _, _), in(Q, _), axis_elem(A), !line_gap(K, A, Q).
+
+// The axis of the new line through each mark.
+.decl cross_axis(ce: MarkCenter, k: MarkKey, p: Position, a: Axis)
+cross_axis(Ce, K, P, A_cross) :- mark(Ce, K, P), line_cell(K, A, P), perp(A, A_cross).
+
+// A mark with no new line, or on lines of both axes.
+.decl undefined(ce: MarkCenter, k: MarkKey)
+undefined(Ce, K) :- mark(Ce, K, P), !cross_axis(Ce, K, P, _).
+undefined(Ce, K) :- mark(Ce, K, P), line_cell(K, A1, P), line_cell(K, A2, P), perp(A1, A2).
+
+// q on the new line through mark p.
+.decl new_line(ce: MarkCenter, k: MarkKey, p: Position, q: Position)
+new_line(Ce, K, P, Q) :- cross_axis(Ce, K, P, A), in(Q, _), same_line(A, P, Q).
+
+// q is a crossing of the new line through mark p.
+.decl crossing(cr: CrossedLine, ce: MarkCenter, k: MarkKey, p: Position, q: Position)
+
+// q is a crossing that takes a frame.
+.decl framed(mk: MarkedCrossing, cr: CrossedLine, ce: MarkCenter, k: MarkKey,
+             p: Position, q: Position)
+
+.decl paint(ch: Choice, p: Position)
+paint([Sh, Mk, Cr, Ce, Sz, Ls, Ms], R) :-
+    impl_choice([Sh, Mk, Cr, Ce, Sz, Ls, Ms]),
+    new_line(Ce, [Sz, Ls, Ms], _, R), in(R, Col), params.background(Col).
+
+out(R, Col, [Sh, Mk, Cr, Ce, Sz, Ls, Ms]) :-
+    paint([Sh, Mk, Cr, Ce, Sz, Ls, Ms], R), params.draw_color(Col),
+    !undefined(Ce, [Sz, Ls, Ms]).
+out(R, Col, [Sh, Mk, Cr, Ce, Sz, Ls, Ms]) :-
+    impl_choice([Sh, Mk, Cr, Ce, Sz, Ls, Ms]),
+    roles([Sz, Ls, Ms], _, _), !undefined(Ce, [Sz, Ls, Ms]),
+    in(R, Col), !paint([Sh, Mk, Cr, Ce, Sz, Ls, Ms], R).
+
+// --- $ThreeByThree ---
+around($ThreeByThree(), P, Q) :- in(P, _), neighbor(P, _, Q), in(Q, _).
+whole($ThreeByThree(), P) :- in(P, _), interior(P, ZERO).
+
+// --- $MarkRadius ---
+// The square that reaches mark_radius cells from p on each side.
+.decl square(p: Position, b: Box)
+square(P, B) :- in(P, _), params.mark_radius(K), uniform_outset(K, B_out), compose(P, B_out, B).
+
+around($MarkRadius(), P, Q) :- square(P, B), in(Q, _), inside(Q, B), Q != P.
+whole($MarkRadius(), P) :- square(P, B), inside(B, ZERO).
+
+// --- $StoredLineColor & $StoredMarkColor ---
+roles([Sz, $StoredLineColor(), $StoredMarkColor()], L, M) :-
+    mark_size_choice(Sz), params.line_color(L), params.mark_color(M).
+
+// --- $DerivedLineColor, $DerivedMarkColor ---
+// @claim parallel-lines marks
+.init role_vote = Unanimous<MarkKey, ColorPair>
+
+roles(K, L, M) :- role_vote.value(K, [L, M]).
+
+// --- $DerivedLineColor & $StoredMarkColor ---
+role_vote.item([Sz, $DerivedLineColor(), $StoredMarkColor()], [L, M]) :-
+    params.mark_color(M), ring(Sz, P, M), in(P, L).
+
+// --- $StoredLineColor & $DerivedMarkColor ---
+role_vote.item([Sz, $StoredLineColor(), $DerivedMarkColor()], [L, M]) :-
+    params.line_color(L), in(P, L), ring(Sz, P, M), M != L, !params.background(M).
+
+// --- $DerivedLineColor & $DerivedMarkColor ---
+// Each reading reads the other's color, so the two are read together: a
+// ring of one color other than the field around a cell of another color.
+role_vote.item([Sz, $DerivedLineColor(), $DerivedMarkColor()], [L, M]) :-
+    ring(Sz, P, M), in(P, L), L != M, !params.background(M).
+
+// --- $LineCenter ---
+mark($LineCenter(), [Sz, Ls, Ms], P) :- roles([Sz, Ls, Ms], L, M), ring(Sz, P, M), in(P, L).
+
+// --- $AnyCenterMark ---
+mark($AnyCenterMark(O), [Sz, Ls, Ms], P) :-
+    mark_center_choice($AnyCenterMark(O)),
+    roles([Sz, Ls, Ms], _, M), ring(Sz, P, M), in(P, Col), Col != M.
+
+// --- $AcrossLines ---
+// @claim parallel-lines
+.init line_axis = Unanimous<MarkKey, Axis>
+line_axis.item(K, A) :- line_cell(K, A, _).
+
+// A mark on no line crosses the input's lines.
+cross_axis($AnyCenterMark($AcrossLines()), K, P, A_cross) :-
+    mark($AnyCenterMark($AcrossLines()), K, P), !line_cell(K, _, P),
+    line_axis.value(K, A), perp(A, A_cross).
+
+// --- $BothAxes ---
+cross_axis($AnyCenterMark($BothAxes()), K, P, A) :-
+    mark($AnyCenterMark($BothAxes()), K, P), !line_cell(K, _, P), axis_elem(A).
+
+// --- $FullLine ---
+crossing($FullLine(), Ce, K, P, Q) :- new_line(Ce, K, P, Q), Q != P, line_cell(K, _, Q).
+
+// --- $AnyLineCell ---
+crossing($AnyLineCell(), Ce, K, P, Q) :- new_line(Ce, K, P, Q), Q != P, roles(K, L, _), in(Q, L).
+
+// --- $KeepMarks ---
+framed($KeepMarks(), Cr, Ce, K, P, Q) :- crossing(Cr, Ce, K, P, Q), !mark(Ce, K, Q).
+
+// --- $RepaintMarks ---
+framed($RepaintMarks(), Cr, Ce, K, P, Q) :- crossing(Cr, Ce, K, P, Q).
+
+// --- $EightAround ---
+paint([$EightAround(), Mk, Cr, Ce, Sz, Ls, Ms], R) :-
+    framed(Mk, Cr, Ce, [Sz, Ls, Ms], _, Q), around(Sz, Q, R).
+
+// --- $CopyMark ---
+// @claim cross-frame
+.init mark_ink = Components<MarkKey>
+mark_ink.node(K, S) :- roles(K, _, M), in(S, M).
+
+paint([$CopyMark(), Mk, Cr, Ce, Sz, Ls, Ms], R) :-
+    framed(Mk, Cr, Ce, [Sz, Ls, Ms], P, Q),
+    around(Sz, P, S_ring), mark_ink.conn([Sz, Ls, Ms], S_ring, S),   // a cell joined to the mark's ring
+    relative(P, S, V), compose(Q, V, R), in(R, _).                    // at its offset from the crossing

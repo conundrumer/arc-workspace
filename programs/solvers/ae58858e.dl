@@ -1,0 +1,194 @@
+// ae58858e
+// @draft
+// @keywords: objects count
+// @scene scattered-shapes: the grid holds shapes of one color
+//  params.shape_color on a field of 0, each shape a 4-connected group of
+//  cells, and some shapes have fewer than params.min_size cells while others
+//  have at least params.min_size cells
+// @rule recolor-large: each shape of at least params.min_size cells takes the
+//  color params.new_color in the output
+// @rule keep-rest: every other cell keeps its input color
+
+// how the cells of a shape join
+.type Adjacency =
+    // @claim scattered-shapes
+    Orthogonal {}
+    // @scene scattered-shapes: shape cells also join at a corner (8-adjacency)
+    // @witness diagonal-contact: ordinary concept
+  | Diagonal {}
+
+// which cells make up the shapes
+.type Cells =
+    // @claim scattered-shapes
+    StoredColor {}
+    // @scene scattered-shapes: the shapes are the same-color 4-connected groups
+    //  of every color other than params.bg
+    // @witness other-color-shape: variant $Foreground
+    //     @relaxed scattered-shapes
+  | Foreground {m: Mixing}
+
+// whether one shape may hold several colors
+.type Mixing =
+    // @claim scattered-shapes
+    SameColor {}
+    // @scene scattered-shapes: the shapes are the 4-connected groups of the
+    //  cells of any colors other than params.bg
+    // @witness two-color-contact: borderline concept
+    //     @relaxed scattered-shapes
+  | Multicolor {}
+
+// what decides that a shape recolors
+.type Test =
+    // @claim recolor-large
+    Threshold {}
+    // @rule recolor-large: a shape whose cell count params.size_recolor holds
+    //  takes params.new_color, and a shape whose cell count params.size_keep
+    //  holds keeps its colors; undefined on an input with a shape whose count
+    //  neither holds
+    // @witness unseen-size: ordinary concept
+    //     @reassigned size_keep
+  | SizeTable {}
+
+.type Choice = [a: Adjacency, s: Cells, t: Test]
+
+// One shape under a reading of adjacency and shape cells.
+.type Shape = [a: Adjacency, s: Cells, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl new_color(col: Color) new_color(6).
+
+    // --- $StoredColor ---
+    // @derive RarestColor: borderline concept
+    .decl shape_color(col: Color) shape_color(2).
+
+    // --- $Foreground ---
+    // @derive DominantColor: variant derived
+    //     @relaxed scattered-shapes
+    .decl bg(col: Color) bg(0).
+
+    // --- $Threshold ---
+    // The fewest cells a shape has when it is recolored.
+    .decl min_size(n: number) min_size(4).
+
+    // --- $SizeTable ---
+    .decl size_recolor(n: number)
+    size_recolor(4). size_recolor(5). size_recolor(6). size_recolor(7). size_recolor(8).
+    .decl size_keep(n: number)
+    size_keep(1). size_keep(2). size_keep(3).
+}
+
+.init params = Params
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($Orthogonal()). adjacency_choice($Diagonal()).
+
+.decl cells_choice(s: Cells)
+cells_choice($StoredColor()).
+cells_choice($Foreground($SameColor())). cells_choice($Foreground($Multicolor())).
+
+.decl test_choice(t: Test)
+test_choice($Threshold()). test_choice($SizeTable()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([A, S, T]) :- adjacency_choice(A), cells_choice(S), test_choice(T).
+
+// The cells that make up shapes, under each reading of shape cells.
+.decl shape_cell(s: Cells, p: Position)
+
+// The shape cells of a reading under which a shape holds one color.
+.decl color_cell(s: Cells, p: Position)
+
+// The cells of each shape.
+.decl member(x: Shape, p: Position)
+
+// @claim recolor-large
+.init size = Tally<Shape, Position>
+size.item(X, P) :- member(X, P).
+
+// The shapes that take params.new_color, and the shapes that keep their
+// colors, under each test.
+.decl recolor(t: Test, x: Shape)
+.decl keep(t: Test, x: Shape)
+
+out(P, Col, [A, S, T]) :-
+    member([A, S, Id], P),
+    ( recolor(T, [A, S, Id]), params.new_color(Col)
+    ; keep(T, [A, S, Id]), in(P, Col)
+    ).
+out(P, Col, [A, S, T]) :- impl_choice([A, S, T]), in(P, Col), !shape_cell(S, P).
+
+// --- $StoredColor, $SameColor ---
+shape_cell(S, P) :- color_cell(S, P).
+
+// --- $StoredColor ---
+color_cell($StoredColor(), P) :- in(P, Col), params.shape_color(Col).
+
+// --- $SameColor ---
+color_cell($Foreground($SameColor()), P) :- in(P, Col), !params.bg(Col).
+
+// --- $Multicolor ---
+shape_cell($Foreground($Multicolor()), P) :- in(P, Col), !params.bg(Col).
+
+// --- $Orthogonal & $StoredColor, $Orthogonal & $SameColor ---
+// @claim scattered-shapes
+.init color_shapes = Components<Color>
+color_shapes.node(Col, P) :- in(P, Col).
+
+member([$Orthogonal(), S, Id], P) :- color_cell(S, P), color_shapes.label(_, P, Id).
+
+// --- $Diagonal & $StoredColor, $Diagonal & $SameColor ---
+// @claim scattered-shapes
+.init color_shapes8 = Components8<Color>
+color_shapes8.node(Col, P) :- in(P, Col).
+
+member([$Diagonal(), S, Id], P) :- color_cell(S, P), color_shapes8.label(_, P, Id).
+
+// --- $Orthogonal & $Multicolor ---
+// @claim scattered-shapes
+.init ink_shapes = Components<Cells>
+ink_shapes.node($Foreground($Multicolor()), P) :- shape_cell($Foreground($Multicolor()), P).
+
+member([$Orthogonal(), S, Id], P) :- ink_shapes.label(S, P, Id).
+
+// --- $Diagonal & $Multicolor ---
+// @claim scattered-shapes
+.init ink_shapes8 = Components8<Cells>
+ink_shapes8.node($Foreground($Multicolor()), P) :- shape_cell($Foreground($Multicolor()), P).
+
+member([$Diagonal(), S, Id], P) :- ink_shapes8.label(S, P, Id).
+
+// --- $Threshold ---
+recolor($Threshold(), X) :- size.tally(X, N), params.min_size(K), N >= K.
+keep($Threshold(), X) :- size.tally(X, N), params.min_size(K), N < K.
+
+// --- $SizeTable ---
+recolor($SizeTable(), X) :- size.tally(X, N), params.size_recolor(N).
+keep($SizeTable(), X) :- size.tally(X, N), params.size_keep(N).
+
+.comp Determine {
+    .type Patch = [e: Example, id: Ident]   // a shape of one train pair
+
+    // The cells the output recolors.
+    .decl changed(e: Example, p: Position)
+    changed(E, P) :- ex_in(E, P, C_in), ex_out(E, P, Col), Col != C_in.
+
+    .decl shape_color(col: Color)
+    shape_color(Col) :- changed(E, P), ex_in(E, P, Col).
+
+    .init shapes = Components<Example>
+    shapes.node(E, P) :- ex_in(E, P, Col), shape_color(Col), ex_out(E, P, _).
+
+    .init shape_size = Tally<Patch, Position>
+    shape_size.item([E, Id], P) :- shapes.label(E, P, Id).
+
+    .decl recolored(x: Patch)
+    recolored([E, Id]) :- shapes.label(E, P, Id), changed(E, P).
+
+    .decl size_recolor(n: number)
+    size_recolor(N) :- recolored(X), shape_size.tally(X, N).
+
+    .decl size_keep(n: number)
+    size_keep(N) :- shape_size.tally(X, N), !recolored(X).
+}

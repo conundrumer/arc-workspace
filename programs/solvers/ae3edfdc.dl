@@ -1,0 +1,346 @@
+// ae3edfdc
+// @draft
+// @keywords: markers move lookup rank
+// @scene single-cells: on a params.background field, every non-background
+//  cell stands alone, with no other non-background cell next to it
+// @scene one-center-per-color: each center color of params.pair has exactly
+//  one cell
+// @scene satellites-in-line: each cell of a satellite color of params.pair
+//  lies in the row or the column of the center its color is paired with
+// @scene one-per-side: each center has at most one satellite on each of its
+//  four sides
+// @rule pull-in: each satellite moves along its line to the cell next to its
+//  center on the satellite's side. Undefined where two cells of different
+//  colors land on one cell.
+// @rule centers-stay: each center stays where it is
+// @rule rest-background: every other cell of the output is params.background
+
+// which non-center cells a center pulls
+.type SatelliteColor =
+    // @claim satellites-in-line
+    PartnerColor {source: PairSource}
+    // @scene satellites-in-line: a center is a cell of a color in
+    //  params.centers. Each cell that is not params.background, whose color
+    //  is not in params.centers, and that lies in a line with a center is
+    //  its satellite.
+    // @rule pull-in: each satellite moves to the cell next to each center it
+    //  lies in line with, on its side
+    // @witness cross-aligned-satellite: ordinary concept
+  | AnyColorSatellite {}
+
+// where the pairing of center colors with satellite colors comes from
+.type PairSource =
+    // @claim one-center-per-color
+    StoredPair {}
+    // @scene one-center-per-color: a center color is a color with exactly one
+    //  cell that some other color is paired with
+    // @scene satellites-in-line: a color is paired with that center color
+    //  when it is not params.background and each of its cells lies in a line
+    //  through the center, in the directions the case reads
+    // @witness pair-by-alignment: ordinary concept
+  | PairFromAlignment {}
+
+// the directions in which a satellite lies in line with its center
+.type LineDirections =
+    // @claim satellites-in-line
+    FourDirections {}
+    // @scene satellites-in-line: each satellite lies in the row, the column
+    //  or a diagonal of its center
+    // @rule pull-in: a satellite on a diagonal of its center moves to the
+    //  diagonal neighbor of the center on its side
+    // @witness eight-directions: variant $EightDirections
+    //     @relaxed satellites-in-line
+  | EightDirections {}
+
+// which centers pull a satellite that lies in line with several centers it
+// is paired with
+.type SeveralCenters =
+    // @claim pull-in
+    EveryCenter {}
+    // @rule pull-in: only the nearest of those centers pulls it, ties keeping
+    //  all
+    // @witness nearest-center: variant $NearestCenter
+    //     @relaxed one-center-per-color
+  | NearestCenter {}
+
+// where several satellites on one side of a center land
+.type Landing =
+    // @claim pull-in
+    SameCell {}
+    // @rule pull-in: the k-th nearest satellite on a side of a center lands
+    //  k cells from the center
+    // @witness stack: variant $Stack
+    //     @relaxed one-per-side
+  | Stack {}
+
+// how far from the cell it rests against a satellite stops
+.type LandingGap =
+    // @claim pull-in
+    NoGap {}
+    // @rule pull-in: each satellite stops with params.gap empty cells between
+    //  it and the cell it rests against
+    // @witness gap: variant $StoredGap
+    //     @reassigned gap
+  | StoredGap {}
+
+// whether cells between a satellite and its center stop it
+.type PathBlocking =
+    // @claim pull-in
+    PassOver {}
+    // @rule pull-in: each satellite slides toward its center and stops next
+    //  to the first non-background input cell in its path. With $Stack, a
+    //  satellite of the same center and side stops it at its resting place.
+    // @witness slide-blocked: ordinary concept
+  | SlideBlocked {}
+
+// what becomes of a non-center cell that no center pulls
+.type UnmatchedCells =
+    // @claim rest-background
+    ClearUnmatched {}
+    // @rule rest-background: a non-center cell that no center pulls stays in
+    //  place. Undefined where a pulled cell lands on a kept cell of another
+    //  color.
+    // @witness keep-unmatched: borderline $KeepUnmatched
+    //     @relaxed satellites-in-line
+  | KeepUnmatched {}
+
+.type Choice = [s: SatelliteColor, l: LineDirections, c: SeveralCenters,
+                ld: Landing, g: LandingGap, b: PathBlocking, u: UnmatchedCells]
+
+// A satellite under one case.
+.type Satellite = [ch: Choice, q: Position]
+
+// The pull of satellite q by center p under one case.
+.type Path = [ch: Choice, p: Position, q: Position]
+
+// The satellites center p pulls from side d that come to rest against f.
+.type Pile = [ch: Choice, p: Position, d: Dir8, f: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed single-cells
+    .decl background(c: Color) background(0).
+
+    // --- $StoredPair ---
+    // The center color, mapped to the color of its satellites.
+    .decl pair(c_center: Color, c_satellite: Color)
+    pair(2, 3). pair(1, 7).
+
+    // --- $AnyColorSatellite ---
+    // @derive RarestColor: ordinary concept
+    .decl centers(c: Color) centers(1). centers(2).
+
+    // --- $StoredGap ---
+    .decl gap(k: number) gap(0).
+}
+
+.init params = Params
+
+.decl pair_source_choice(ps: PairSource)
+pair_source_choice($StoredPair()). pair_source_choice($PairFromAlignment()).
+
+.decl satellite_color_choice(s: SatelliteColor)
+satellite_color_choice($PartnerColor(Ps)) :- pair_source_choice(Ps).
+satellite_color_choice($AnyColorSatellite()).
+
+.decl line_directions_choice(l: LineDirections)
+line_directions_choice($FourDirections()). line_directions_choice($EightDirections()).
+
+.decl several_centers_choice(c: SeveralCenters)
+several_centers_choice($EveryCenter()). several_centers_choice($NearestCenter()).
+
+.decl landing_choice(ld: Landing)
+landing_choice($SameCell()). landing_choice($Stack()).
+
+.decl landing_gap_choice(g: LandingGap)
+landing_gap_choice($NoGap()). landing_gap_choice($StoredGap()).
+
+.decl path_blocking_choice(b: PathBlocking)
+path_blocking_choice($PassOver()). path_blocking_choice($SlideBlocked()).
+
+.decl unmatched_cells_choice(u: UnmatchedCells)
+unmatched_cells_choice($ClearUnmatched()). unmatched_cells_choice($KeepUnmatched()).
+
+// The eight directions fit with the stored pairing alone.
+// @ignore: case section — the enumerator lists the combinations of two fields that fit
+.decl satellite_line_choice(s: SatelliteColor, l: LineDirections)
+satellite_line_choice(S, $FourDirections()) :- satellite_color_choice(S).
+satellite_line_choice($PartnerColor($StoredPair()), $EightDirections()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, L, C, Ld, G, B, U]) :-
+    satellite_line_choice(S, L), several_centers_choice(C), landing_choice(Ld),
+    landing_gap_choice(G), path_blocking_choice(B), unmatched_cells_choice(U).
+
+// The lines through each non-background cell, in the case's directions.
+// @claim satellites-in-line pull-in
+.init line = Ray<LineDirections>
+line.cell(L, P) :- line_directions_choice(L), in(P, _).
+line.mark(L, P) :- line_directions_choice(L), in(P, Col), !params.background(Col).
+
+// Col2 is a satellite color of center color Col.
+// @store: ordinary concept
+// @ignore: store $PartnerColor — the stored rows are the rows of params.pair,
+//  so these cases are equivalent to those that take $StoredPair and the
+//  derived value
+.decl partner(s: SatelliteColor, l: LineDirections, col: Color, col2: Color)
+
+.decl center_color(s: SatelliteColor, l: LineDirections, col: Color)
+
+.decl center(s: SatelliteColor, l: LineDirections, p: Position, col: Color)
+center(S, L, P, Col) :- center_color(S, L, Col), in(P, Col).
+
+// Satellite Q lies K cells from center P toward D.
+.decl in_line(s: SatelliteColor, l: LineDirections, p: Position, q: Position, d: Dir8, k: number)
+in_line(S, L, P, Q, D, K) :-
+    center(S, L, P, Col), partner(S, L, Col, Col2), in(Q, Col2), line.ray(L, Q, D, K, P).
+
+// Center P pulls satellite Q, which lies K cells from it toward D.
+.decl pull(ch: Choice, p: Position, q: Position, d: Dir8, k: number)
+
+// A cell that stops Q on its way to P, K cells from P.
+.decl obstacle(ch: Choice, p: Position, q: Position, r: Position, k: number)
+
+// The obstacle nearest Q, which Q comes to rest against.
+// @claim pull-in
+.init stop = ArgExtremes<Path, Position>
+stop.cand([Ch, P, Q], R, K) :- obstacle(Ch, P, Q, R, K).
+
+// Q rests against F, which lies toward P from it on side D.
+.decl rest_on(ch: Choice, p: Position, d: Dir8, f: Position, q: Position)
+rest_on(Ch, P, D, F, Q) :- stop.high([Ch, P, Q], F, _), pull(Ch, P, Q, D, _).
+
+// The satellites that rest against F from side D land beyond G.
+.decl pile_base(ch: Choice, d: Dir8, f: Position, g: Position)
+
+// Satellite Q lands at X.
+.decl lands_at(ch: Choice, q: Position, x: Position)
+
+.decl paint(ch: Choice, p: Position, col: Color)
+paint([S, L, C, Ld, G, B, U], P, Col) :- impl_choice([S, L, C, Ld, G, B, U]), center(S, L, P, Col).
+paint(Ch, X, Col) :- lands_at(Ch, Q, X), in(Q, Col).
+
+out(P, Col, Ch) :- paint(Ch, P, Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !paint(Ch, P, _), params.background(Col).
+
+// --- $PartnerColor ---
+center_color($PartnerColor(Ps), L, Col) :- partner($PartnerColor(Ps), L, Col, _).
+
+// --- $StoredPair ---
+partner($PartnerColor($StoredPair()), L, Col, Col2) :-
+    line_directions_choice(L), params.pair(Col, Col2).
+
+// --- $PairFromAlignment ---
+// A color with more than one cell.
+// @store: ordinary concept
+.decl repeated(col: Color)
+repeated(Col) :- in(P, Col), in(Q, Col), P != Q.
+
+// The one cell of a non-background color, and another non-background color.
+.decl lone(p: Position, col: Color, col2: Color)
+lone(P, Col, Col2) :-
+    in(P, Col), !params.background(Col), !repeated(Col),
+    in(_, Col2), !params.background(Col2), Col != Col2.
+
+// A cell of Col2 lies on no line through the one cell of Col.
+// @store: ordinary concept
+.decl off_line(l: LineDirections, col: Color, col2: Color)
+off_line(L, Col, Col2) :-
+    lone(P, Col, Col2), line_directions_choice(L), in(Q, Col2), !line.ray(L, Q, _, _, P).
+
+partner($PartnerColor($PairFromAlignment()), L, Col, Col2) :-
+    lone(_, Col, Col2), line_directions_choice(L), !off_line(L, Col, Col2).
+
+// --- $AnyColorSatellite ---
+center_color($AnyColorSatellite(), L, Col) :- line_directions_choice(L), params.centers(Col).
+
+partner($AnyColorSatellite(), L, Col, Col2) :-
+    line_directions_choice(L), params.centers(Col),
+    in(_, Col2), !params.background(Col2), !params.centers(Col2).
+
+// --- $FourDirections ---
+line.dir($FourDirections(), D) :- dir_elem(D).
+
+// --- $EightDirections ---
+line.dir($EightDirections(), D) :- dir8_elem(D).
+
+// --- $EveryCenter ---
+pull([S, L, $EveryCenter(), Ld, G, B, U], P, Q, D, K) :-
+    impl_choice([S, L, $EveryCenter(), Ld, G, B, U]), in_line(S, L, P, Q, D, K).
+
+// --- $NearestCenter ---
+// The centers nearest each satellite.
+// @claim pull-in
+.init nearest = ArgExtremes<Satellite, Position>
+nearest.cand([[S, L, $NearestCenter(), Ld, G, B, U], Q], P, K) :-
+    impl_choice([S, L, $NearestCenter(), Ld, G, B, U]), in_line(S, L, P, Q, _, K).
+
+pull([S, L, C, Ld, G, B, U], P, Q, D, K) :-
+    nearest.low([[S, L, C, Ld, G, B, U], Q], P, K), in_line(S, L, P, Q, D, K).
+
+// --- $PassOver ---
+obstacle([S, L, C, Ld, G, $PassOver(), U], P, Q, P, 0) :-
+    pull([S, L, C, Ld, G, $PassOver(), U], P, Q, _, _).
+
+// --- $SlideBlocked ---
+// Non-background cell R lies between P and Q, K cells from P, P included.
+.decl in_path(ch: Choice, p: Position, q: Position, r: Position, k: number)
+in_path([S, L, C, Ld, G, $SlideBlocked(), U], P, Q, R, K) :-
+    pull([S, L, C, Ld, G, $SlideBlocked(), U], P, Q, D, K_q),
+    line.ray(L, R, D, K, P), K < K_q, in(R, Col), !params.background(Col).
+
+// --- $SameCell & $SlideBlocked ---
+obstacle([S, L, C, $SameCell(), G, B, U], P, Q, R, K) :-
+    in_path([S, L, C, $SameCell(), G, B, U], P, Q, R, K).
+
+// --- $Stack & $SlideBlocked ---
+// Each satellite falls against the cell before it at that cell's resting
+// place, so only the cells P does not pull stay where they are and stop it.
+obstacle([S, L, C, $Stack(), G, B, U], P, Q, R, K) :-
+    in_path([S, L, C, $Stack(), G, B, U], P, Q, R, K),
+    !pull([S, L, C, $Stack(), G, B, U], P, R, _, _).
+
+// --- $NoGap ---
+pile_base([S, L, C, Ld, $NoGap(), B, U], D, F, F) :-
+    rest_on([S, L, C, Ld, $NoGap(), B, U], _, D, F, _).
+
+// --- $StoredGap ---
+pile_base([S, L, C, Ld, $StoredGap(), B, U], D, F, G) :-
+    rest_on([S, L, C, Ld, $StoredGap(), B, U], _, D, F, _), params.gap(K), jump(F, D, K, G).
+
+// --- $SameCell ---
+lands_at([S, L, C, $SameCell(), G, B, U], Q, X) :-
+    rest_on([S, L, C, $SameCell(), G, B, U], P, D, F, Q),
+    pile_base([S, L, C, $SameCell(), G, B, U], D, F, F_base), neighbor(F_base, D, X).
+
+// --- $Stack ---
+// The satellites that rest against F, in order from F: F ranks 0, and the
+// satellite of rank N lands N cells beyond the pile's base.
+// @claim pull-in
+.init pile = Order<Pile, Position>
+pile.elem([Ch, P, D, F], F) :- rest_on(Ch, P, D, F, _).
+pile.elem([Ch, P, D, F], Q) :- rest_on(Ch, P, D, F, Q).
+pile.before([Ch, P, D, F], F, Q) :- rest_on(Ch, P, D, F, Q).
+pile.before([Ch, P, D, F], Q1, Q2) :-
+    rest_on(Ch, P, D, F, Q1), pull(Ch, P, Q1, D, K1),
+    rest_on(Ch, P, D, F, Q2), pull(Ch, P, Q2, D, K2), K1 < K2.
+
+lands_at([S, L, C, $Stack(), G, B, U], Q, X) :-
+    rest_on([S, L, C, $Stack(), G, B, U], P, D, F, Q),
+    pile.rank([[S, L, C, $Stack(), G, B, U], P, D, F], Q, N),
+    pile_base([S, L, C, $Stack(), G, B, U], D, F, F_base), jump(F_base, D, N, X).
+
+// --- $KeepUnmatched ---
+paint([S, L, C, Ld, G, B, $KeepUnmatched()], Q, Col) :-
+    impl_choice([S, L, C, Ld, G, B, $KeepUnmatched()]), in(Q, Col), !params.background(Col),
+    !pull([S, L, C, Ld, G, B, $KeepUnmatched()], _, Q, _, _).
+
+.comp Determine {
+    // A center keeps its cell, and its satellites land next to it.
+    .decl pair(c_center: Color, c_satellite: Color)
+    pair(Col, Col2) :-
+        ex_in(E, P, Col), !params.background(Col), ex_out(E, P, Col),
+        dir_elem(D), neighbor(P, D, Q), ex_out(E, Q, Col2), !params.background(Col2).
+}

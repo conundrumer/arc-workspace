@@ -1,0 +1,266 @@
+{
+  "id": "b0039139",
+  "witnesses": [{
+    "id": "mixed-mark-sizes",
+    "separates": "a count panel holding one domino and one 2x2 block of marks: two marks hold six mark cells, so counting marks gives two copies and counting cell pairs gives three",
+    "input": [
+      [0,0,0,0,0,1,0,0,0,0,0,0,1,2,2,2,2,2,1,8,8,8,8],
+      [0,4,4,4,0,1,0,3,0,3,3,0,1,2,2,2,2,2,1,8,8,8,8],
+      [0,4,0,4,0,1,0,3,0,3,3,0,1,2,2,2,2,2,1,8,8,8,8],
+      [0,0,0,0,0,1,0,0,0,0,0,0,1,2,2,2,2,2,1,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$Marks4","$Marks8"],
+      "grid": [
+        [2,2,2,8,2,2,2],
+        [2,8,2,8,2,8,2]
+      ]
+    }, {
+      "cases": ["$MarkCells"],
+      "grid": [
+        [2,2,2,8,2,2,2,8,2,2,2],
+        [2,8,2,8,2,8,2,8,2,8,2]
+      ]
+    }]
+  }, {
+    "id": "marks-touch-at-corner",
+    "separates": "two dominoes that touch only at a corner: 4-adjacency counts two marks and gives two copies, 8-adjacency counts one mark and gives one copy",
+    "input": [
+      [0,0,0,0,0,1,0,0,0,0,0,0,1,2,2,2,2,2,1,8,8,8,8],
+      [0,4,4,4,0,1,0,3,0,0,0,0,1,2,2,2,2,2,1,8,8,8,8],
+      [0,4,0,4,0,1,0,3,0,0,0,0,1,2,2,2,2,2,1,8,8,8,8],
+      [0,0,0,0,0,1,0,0,3,3,0,0,1,2,2,2,2,2,1,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$Marks4 & $StoredGap","$GapFromDivider","$GapFromShapeMargin","$MarkCells"],
+      "grid": [
+        [2,2,2,8,2,2,2],
+        [2,8,2,8,2,8,2]
+      ]
+    }, {
+      "cases": ["$GapFromMarkSpacing"],
+      "grid": null
+    }, {
+      "cases": ["$Marks8"],
+      "grid": [
+        [2,2,2],
+        [2,8,2]
+      ]
+    }]
+  }, {
+    "id": "wide-margin",
+    "separates": "a shape panel with two background columns right of the shape: the shape's bounding box gives 3-wide copies, the panel inset by one gives 4-wide copies with a field column",
+    "input": [
+      [0,0,0,0,0,0,1,0,0,0,0,0,0,1,2,2,2,2,2,1,8,8,8,8],
+      [0,4,4,4,0,0,1,0,3,0,3,0,0,1,2,2,2,2,2,1,8,8,8,8],
+      [0,4,0,4,0,0,1,0,3,0,3,0,0,1,2,2,2,2,2,1,8,8,8,8],
+      [0,0,0,0,0,0,1,0,0,0,0,0,0,1,2,2,2,2,2,1,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$ShapeBox & $StoredGap","$GapFromMarkSpacing","$GapFromDivider"],
+      "grid": [
+        [2,2,2,8,2,2,2],
+        [2,8,2,8,2,8,2]
+      ]
+    }, {
+      "cases": ["$GapFromShapeMargin"],
+      "grid": null
+    }, {
+      "cases": ["$PanelInset"],
+      "grid": [
+        [2,2,2,8,8,2,2,2,8],
+        [2,8,2,8,8,2,8,2,8]
+      ]
+    }]
+  }, {
+    "id": "solid-shape-panel",
+    "separates": "a solid panel of the shape color at the left end, where the shape panel stands: reading roles by position takes it as the shape panel and stamps its whole box, reading roles by content finds no end panel holding a shape on background and is undefined",
+    "input": [
+      [4,4,4,4,4,1,0,0,0,0,0,0,1,2,2,2,2,2,1,8,8,8,8],
+      [4,4,4,4,4,1,0,3,0,3,0,0,1,2,2,2,2,2,1,8,8,8,8],
+      [4,4,4,4,4,1,0,3,0,3,0,0,1,2,2,2,2,2,1,8,8,8,8],
+      [4,4,4,4,4,1,0,0,0,0,0,0,1,2,2,2,2,2,1,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$RolesByContent"],
+      "grid": null
+    }, {
+      "cases": ["$ShapeBox & $PanelOrder & $StoredGap"],
+      "grid": [
+        [2,2,2,2,2,8,2,2,2,2,2],
+        [2,2,2,2,2,8,2,2,2,2,2],
+        [2,2,2,2,2,8,2,2,2,2,2],
+        [2,2,2,2,2,8,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$PanelOrder & $GapFromShapeMargin"],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$PanelInset & $PanelOrder"],
+      "grid": [
+        [2,2,2,8,2,2,2],
+        [2,2,2,8,2,2,2]
+      ]
+    }]
+  }, {
+    "id": "marks-two-apart",
+    "separates": "two marks two cells apart: the stored gap gives copies one line apart, the gap read from the mark spacing gives copies two lines apart",
+    "input": [
+      [0,0,0,0,0,1,0,0,0,0,0,0,1,2,2,2,2,2,1,8,8,8,8],
+      [0,4,4,4,0,1,0,3,0,0,3,0,1,2,2,2,2,2,1,8,8,8,8],
+      [0,4,0,4,0,1,0,3,0,0,3,0,1,2,2,2,2,2,1,8,8,8,8],
+      [0,0,0,0,0,1,0,0,0,0,0,0,1,2,2,2,2,2,1,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$StoredGap","$GapFromDivider","$GapFromShapeMargin"],
+      "grid": [
+        [2,2,2,8,2,2,2],
+        [2,8,2,8,2,8,2]
+      ]
+    }, {
+      "cases": ["$GapFromMarkSpacing"],
+      "grid": [
+        [2,2,2,8,8,2,2,2],
+        [2,8,2,8,8,2,8,2]
+      ]
+    }]
+  }, {
+    "id": "thick-dividers",
+    "separates": "divider lines two cells wide: the stored gap gives copies one line apart, the gap read from the divider thickness gives copies two lines apart",
+    "input": [
+      [0,0,0,0,0,1,1,0,0,0,0,0,0,1,1,2,2,2,2,2,1,1,8,8,8,8],
+      [0,4,4,4,0,1,1,0,3,0,3,0,0,1,1,2,2,2,2,2,1,1,8,8,8,8],
+      [0,4,0,4,0,1,1,0,3,0,3,0,0,1,1,2,2,2,2,2,1,1,8,8,8,8],
+      [0,0,0,0,0,1,1,0,0,0,0,0,0,1,1,2,2,2,2,2,1,1,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$StoredGap","$GapFromMarkSpacing","$GapFromShapeMargin"],
+      "grid": [
+        [2,2,2,8,2,2,2],
+        [2,8,2,8,2,8,2]
+      ]
+    }, {
+      "cases": ["$GapFromDivider"],
+      "grid": [
+        [2,2,2,8,8,2,2,2],
+        [2,8,2,8,8,2,8,2]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "`background=DominantColor` from the stored value: train 0 with 0 and 5 swapped",
+    "input": [
+      [5,5,5,5],
+      [5,4,4,5],
+      [5,4,5,5],
+      [5,5,5,5],
+      [1,1,1,1],
+      [5,5,5,5],
+      [5,3,5,3],
+      [5,3,5,3],
+      [5,5,5,5],
+      [1,1,1,1],
+      [2,2,2,2],
+      [2,2,2,2],
+      [2,2,2,2],
+      [2,2,2,2],
+      [1,1,1,1],
+      [9,9,9,9],
+      [9,9,9,9],
+      [9,9,9,9]
+    ],
+    "output": [{
+      "cases": [
+        "$StoredGap",
+        "background=DominantColor",
+        "$GapFromDivider",
+        "$GapFromShapeMargin"
+      ],
+      "grid": [
+        [2,2],
+        [2,9],
+        [9,9],
+        [2,2],
+        [2,9]
+      ]
+    }, {
+      "cases": ["$GapFromMarkSpacing & background=stored"],
+      "grid": null
+    }]
+  }, {
+    "id": "shape-margin-two",
+    "separates": "a shape two cells in from every side of its panel: the stored gap gives copies one line apart, the gap read from the shape's margin gives copies two lines apart",
+    "input": [
+      [0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,2,2,2,2,2,1,8,8,8,8],
+      [0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,2,2,2,2,2,1,8,8,8,8],
+      [0,0,4,4,4,0,0,1,0,3,0,3,0,0,1,2,2,2,2,2,1,8,8,8,8],
+      [0,0,4,0,4,0,0,1,0,3,0,3,0,0,1,2,2,2,2,2,1,8,8,8,8],
+      [0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,2,2,2,2,2,1,8,8,8,8],
+      [0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,2,2,2,2,2,1,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$ShapeBox & $StoredGap","$GapFromMarkSpacing","$GapFromDivider"],
+      "grid": [
+        [2,2,2,8,2,2,2],
+        [2,8,2,8,2,8,2]
+      ]
+    }, {
+      "cases": ["$GapFromShapeMargin"],
+      "grid": [
+        [2,2,2,8,8,2,2,2],
+        [2,8,2,8,8,2,8,2]
+      ]
+    }, {
+      "cases": ["$PanelInset"],
+      "grid": [
+        [8,8,8,8,8,8,8,8,8,8,8],
+        [8,2,2,2,8,8,8,2,2,2,8],
+        [8,2,8,2,8,8,8,2,8,2,8],
+        [8,8,8,8,8,8,8,8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "shape-panel-right",
+    "separates": "the shape panel at the right end of the row: reading roles by content finds it and gives two copies, reading roles from the top-left corner takes the solid left panel as the shape panel and the solid panel next to it as the count panel, finds no mark and is undefined",
+    "input": [
+      [8,8,8,8,1,2,2,2,2,2,1,0,0,0,0,0,0,1,0,0,0,0,0],
+      [8,8,8,8,1,2,2,2,2,2,1,0,0,3,0,3,0,1,0,4,4,4,0],
+      [8,8,8,8,1,2,2,2,2,2,1,0,0,3,0,3,0,1,0,4,0,4,0],
+      [8,8,8,8,1,2,2,2,2,2,1,0,0,0,0,0,0,1,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$RolesByContent"],
+      "grid": [
+        [2,2,2,8,2,2,2],
+        [2,8,2,8,2,8,2]
+      ]
+    }, {
+      "cases": ["$PanelOrder"],
+      "grid": null
+    }]
+  }, {
+    "id": "field-panel-dominant",
+    "separates": "a field panel wide enough that its color is the commonest: the stored background 0 finds the marks one cell apart and gives copies one line apart, a background derived as the commonest color takes the field color, finds no background run between the marks and is undefined",
+    "input": [
+      [0,0,0,0,0,1,0,0,0,0,0,0,1,2,2,2,2,2,1,8,8,8,8,8,8,8,8,8,8],
+      [0,4,4,4,0,1,0,3,0,3,0,0,1,2,2,2,2,2,1,8,8,8,8,8,8,8,8,8,8],
+      [0,4,0,4,0,1,0,3,0,3,0,0,1,2,2,2,2,2,1,8,8,8,8,8,8,8,8,8,8],
+      [0,0,0,0,0,1,0,0,0,0,0,0,1,2,2,2,2,2,1,8,8,8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["background=stored"],
+      "grid": [
+        [2,2,2,8,2,2,2],
+        [2,8,2,8,2,8,2]
+      ]
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": null
+    }]
+  }]
+}

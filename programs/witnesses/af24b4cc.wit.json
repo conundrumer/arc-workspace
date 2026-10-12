@@ -1,0 +1,1327 @@
+{
+  "id": "af24b4cc",
+  "witnesses": [{
+    "id": "bg=DominantColor",
+    "separates": "input: blocks of 5 by 5 cells, three of them solid 5, so 5 outnumbers 0; derived bg: 5, so no line divides the input and the output is one cell of 5 in a border of 5; stored bg: 0, the 2 by 2 block picture in a border of 0",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,5,5,5,5,5,0,5,5,5,5,5,0],
+      [0,5,5,5,5,5,0,5,5,5,5,5,0],
+      [0,5,5,5,5,5,0,5,5,5,5,5,0],
+      [0,5,5,5,5,5,0,5,5,5,5,5,0],
+      [0,5,5,5,5,5,0,5,5,5,5,5,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,3,3,3,3,3,0,5,5,5,5,5,0],
+      [0,3,3,3,3,3,0,5,5,5,5,5,0],
+      [0,3,3,3,3,3,0,5,5,5,5,5,0],
+      [0,3,3,3,3,3,0,5,5,5,5,5,0],
+      [0,3,3,3,3,3,0,5,5,5,5,5,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Dividers & bg=stored & inked_line=derived & lattice.divider=derived & canvas.extent=derived",
+        "$Components & bg=stored & canvas.extent=derived"
+      ],
+      "grid": [
+        [0,0,0,0],
+        [0,5,5,0],
+        [0,3,5,0],
+        [0,0,0,0]
+      ]
+    }, {
+      "cases": ["canvas.extent=stored"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["lattice.divider=stored","$StoredTileSize"],
+      "grid": null
+    }, {
+      "cases": ["inked_line=stored"],
+      "grid": null
+    }, {
+      "cases": ["$AllCells & bg=DominantColor"],
+      "grid": [
+        [5,5,5],
+        [5,5,5],
+        [5,5,5]
+      ]
+    }, {
+      "cases": ["$NonBgMode & bg=DominantColor","$Cardinal & bg=DominantColor"],
+      "grid": [
+        [5,5,5],
+        [5,0,5],
+        [5,5,5]
+      ]
+    }, {
+      "cases": ["$StoredTileCount"],
+      "grid": null
+    }]
+  }, {
+    "id": "wide-blocks",
+    "separates": "input: blocks of 3 by 5 cells; stored tile size: tiles 2 wide at a 3-cell stride, four columns of tiles that cut the blocks; dividers: two columns of blocks",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,3,3,3,8,3,0,6,6,2,6,6,0],
+      [0,3,8,3,3,3,0,6,6,6,6,6,0],
+      [0,3,3,3,3,8,0,2,6,6,2,6,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,1,1,7,7,7,0,4,4,4,4,4,0],
+      [0,7,7,7,1,7,0,4,9,9,4,4,0],
+      [0,7,7,7,7,7,0,4,4,4,9,4,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Dividers & inked_line=derived & lattice.divider=derived & canvas.extent=derived",
+        "$Components & canvas.extent=derived"
+      ],
+      "grid": [
+        [0,0,0,0],
+        [0,3,6,0],
+        [0,7,4,0],
+        [0,0,0,0]
+      ]
+    }, {
+      "cases": ["canvas.extent=stored"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["lattice.divider=stored","$StoredTileSize"],
+      "grid": [
+        [0,0,0,0,0,0],
+        [0,3,3,6,6,0],
+        [0,7,7,4,4,0],
+        [0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["inked_line=stored"],
+      "grid": null
+    }, {
+      "cases": ["$StoredTileCount & $AllCells"],
+      "grid": null
+    }, {
+      "cases": ["$StoredTileCount & $NonBgMode"],
+      "grid": null
+    }]
+  }, {
+    "id": "three-block-rows",
+    "separates": "input: three rows of blocks; stored tile count: two rows of tiles 5 high that cut across a divider; dividers: three rows of blocks",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,3,3,0,6,6,0,9,7,0],
+      [0,8,3,0,6,3,0,9,7,0],
+      [0,3,8,0,3,6,0,7,7,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,2,2,0,6,1,0,4,4,0],
+      [0,5,5,0,1,1,0,4,4,0],
+      [0,5,5,0,1,6,0,8,4,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,6,6,0,4,4,0,3,3,0],
+      [0,6,3,0,4,4,0,8,3,0],
+      [0,3,6,0,8,4,0,3,8,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Dividers & margin=stored & inked_line=derived & canvas.extent=derived",
+        "$StoredTileSize",
+        "$Components & canvas.extent=derived"
+      ],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,6,7,0],
+        [0,5,1,4,0],
+        [0,6,4,3,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["canvas.extent=stored"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["inked_line=stored"],
+      "grid": null
+    }, {
+      "cases": ["margin=SepThickness"],
+      "grid": null
+    }, {
+      "cases": [
+        "$StoredTileCount & tile_edge=stored & tile_gap=stored",
+        "tile_gap=TileDim",
+        "tile_edge=TileDim"
+      ],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,6,7,0],
+        [0,6,4,3,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["tile_gap=SepThickness"],
+      "grid": null
+    }, {
+      "cases": ["tile_edge=SepThickness"],
+      "grid": null
+    }]
+  }, {
+    "id": "two-block-columns",
+    "separates": "input: two columns of blocks; derived size: a 4 by 4 output; stored size: a 4 by 5 frame, in which no cell of the 2 by 2 picture lands, so every cell is bg",
+    "input": [
+      [0,0,0,0,0,0,0],
+      [0,3,3,0,6,6,0],
+      [0,8,3,0,6,3,0],
+      [0,3,8,0,3,6,0],
+      [0,0,0,0,0,0,0],
+      [0,2,2,0,6,1,0],
+      [0,5,5,0,1,1,0],
+      [0,5,5,0,1,6,0],
+      [0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Dividers & inked_line=derived & canvas.extent=derived",
+        "$StoredTileSize",
+        "$Components & canvas.extent=derived"
+      ],
+      "grid": [
+        [0,0,0,0],
+        [0,3,6,0],
+        [0,5,1,0],
+        [0,0,0,0]
+      ]
+    }, {
+      "cases": ["canvas.extent=stored"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["inked_line=stored"],
+      "grid": null
+    }, {
+      "cases": ["$StoredTileCount & $AllCells"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,0,6,0],
+        [0,5,0,1,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$StoredTileCount & $NonBgMode"],
+      "grid": null
+    }]
+  }, {
+    "id": "sparse-block",
+    "separates": "block (0,0) holds one cell of 3 and five cells of 0; counting every cell: the block gives 0; counting non-bg cells: 3; pieces: the 1-cell piece's distances to the edges rank it apart from the blocks, so undefined",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,3,0,0,6,6,0,9,7,0],
+      [0,0,0,0,6,3,0,9,7,0],
+      [0,0,0,0,3,6,0,7,7,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,3,3,0,2,2,0,6,1,0],
+      [0,2,3,0,5,5,0,1,1,0],
+      [0,2,3,0,5,5,0,1,6,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$AllCells","canvas.extent=stored"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,6,7,0],
+        [0,3,5,1,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$NonBgMode"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,6,7,0],
+        [0,3,5,1,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$Components & canvas.extent=derived"],
+      "grid": null
+    }]
+  }, {
+    "id": "split-block",
+    "separates": "block (0,0) holds two cells of 3 that touch at a corner; pieces under either adjacency: the 3s' distances to the edges rank them apart from the blocks, so undefined; dividers: block (0,0) gives 0 counting every cell and 3 counting non-bg cells",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,3,0,0,6,6,0,9,7,0],
+      [0,0,3,0,6,3,0,9,7,0],
+      [0,0,0,0,3,6,0,7,7,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,3,3,0,2,2,0,6,1,0],
+      [0,2,3,0,5,5,0,1,1,0],
+      [0,2,3,0,5,5,0,1,6,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$AllCells"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,6,7,0],
+        [0,3,5,1,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$NonBgMode"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,6,7,0],
+        [0,3,5,1,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$Cardinal & canvas.extent=derived"],
+      "grid": null
+    }, {
+      "cases": ["$Cardinal & canvas.extent=stored"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$DiagonalJoin"],
+      "grid": null
+    }]
+  }, {
+    "id": "wide-border",
+    "separates": "input: a 2-wide border of 0; stored margin: a 1-wide output border; input margin: a 2-wide output border",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,3,3,0,6,6,0,9,7,0,0],
+      [0,0,8,3,0,6,3,0,9,7,0,0],
+      [0,0,3,8,0,3,6,0,7,7,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,3,3,0,2,2,0,6,1,0,0],
+      [0,0,2,3,0,5,5,0,1,1,0,0],
+      [0,0,2,3,0,5,5,0,1,6,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Dividers & $StoredMargin & inked_line=derived & lattice.divider=derived",
+        "region.box=stored",
+        "tile_edge=TileDim",
+        "$Components"
+      ],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,6,7,0],
+        [0,3,5,1,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$AllCells & lattice.divider=stored"],
+      "grid": [
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "inked_line=stored",
+        "$StoredTileSize",
+        "$StoredTileCount & tile_edge=stored",
+        "tile_edge=SepThickness"
+      ],
+      "grid": null
+    }, {
+      "cases": ["$InputMargin & region.box=derived"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,3,6,7,0,0],
+        [0,0,3,5,1,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$NonBgMode & lattice.divider=stored"],
+      "grid": null
+    }]
+  }, {
+    "id": "margin=SepThickness",
+    "separates": "input: lines 2 wide along every edge and between the blocks; derived margin: 2, a 2-wide output border; stored margin: a 1-wide output border",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,3,3,0,0,6,6,0,0,9,7,7,0,0],
+      [0,0,8,3,0,0,6,3,0,0,9,7,7,0,0],
+      [0,0,3,8,0,0,3,6,0,0,7,7,7,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,3,3,0,0,2,2,0,0,6,1,1,0,0],
+      [0,0,2,3,0,0,5,5,0,0,1,1,1,0,0],
+      [0,0,2,3,0,0,5,5,0,0,1,6,1,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Dividers & $StoredMargin & margin=stored & inked_line=derived & lattice.divider=derived",
+        "region.box=stored",
+        "$Components"
+      ],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,6,7,0],
+        [0,3,5,1,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$AllCells & lattice.divider=stored"],
+      "grid": null
+    }, {
+      "cases": ["inked_line=stored","$StoredTileSize","$StoredTileCount & tile_gap=stored"],
+      "grid": null
+    }, {
+      "cases": ["margin=SepThickness","$InputMargin & region.box=derived"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,3,6,7,0,0],
+        [0,0,3,5,1,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$NonBgMode & lattice.divider=stored"],
+      "grid": null
+    }, {
+      "cases": ["tile_gap=SepThickness","tile_gap=TileDim"],
+      "grid": null
+    }]
+  }, {
+    "id": "inked_line=stored",
+    "separates": "input: the stored frame, with blocks 1, 2 and 3 columns wide; derived lines: the dividers bound the blocks; stored lines: the stored dividers cut across the blocks, so blocks (0,0), (0,1) and (1,0) take 0",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,3,0,6,6,0,9,7,7,0],
+      [0,3,0,6,3,0,9,7,7,0],
+      [0,8,0,3,6,0,7,7,7,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,3,0,5,5,0,6,1,1,0],
+      [0,2,0,5,2,0,1,1,1,0],
+      [0,2,0,2,5,0,1,6,1,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Dividers & inked_line=derived & lattice.divider=derived",
+        "$NonBgMode",
+        "$Components"
+      ],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,6,7,0],
+        [0,2,5,1,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$AllCells & lattice.divider=stored",
+        "inked_line=stored",
+        "$StoredTileSize & $AllCells",
+        "$StoredTileCount & $AllCells"
+      ],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,7,0],
+        [0,0,0,1,0],
+        [0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "lattice.divider=stored",
+    "separates": "input: blocks of 3 by 5 cells; derived dividers: two columns of blocks; stored dividers, read by their distances to the edges: a line every 3 columns, so four columns of tiles that cut the blocks",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,3,3,3,8,3,0,6,6,2,6,6,0],
+      [0,3,8,3,3,3,0,6,6,6,6,6,0],
+      [0,3,3,3,3,8,0,2,6,6,2,6,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,1,1,7,7,7,0,4,4,4,4,4,0],
+      [0,7,7,7,1,7,0,4,9,9,4,4,0],
+      [0,7,7,7,7,7,0,4,4,4,9,4,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Dividers & inked_line=derived & lattice.divider=derived & canvas.extent=derived",
+        "$Components & canvas.extent=derived"
+      ],
+      "grid": [
+        [0,0,0,0],
+        [0,3,6,0],
+        [0,7,4,0],
+        [0,0,0,0]
+      ]
+    }, {
+      "cases": ["canvas.extent=stored"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["lattice.divider=stored","$StoredTileSize"],
+      "grid": [
+        [0,0,0,0,0,0],
+        [0,3,3,6,6,0],
+        [0,7,7,4,4,0],
+        [0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["inked_line=stored"],
+      "grid": null
+    }, {
+      "cases": ["$StoredTileCount & $AllCells"],
+      "grid": null
+    }, {
+      "cases": ["$StoredTileCount & $NonBgMode"],
+      "grid": null
+    }]
+  }, {
+    "id": "region.box=stored",
+    "separates": "input: a 2-wide border of 0; derived box: margins of 2, a 2-wide output border; stored box: margins of 1, a 1-wide output border",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,3,3,0,6,6,0,9,7,0,0],
+      [0,0,8,3,0,6,3,0,9,7,0,0],
+      [0,0,3,8,0,3,6,0,7,7,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,3,3,0,2,2,0,6,1,0,0],
+      [0,0,2,3,0,5,5,0,1,1,0,0],
+      [0,0,2,3,0,5,5,0,1,6,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Dividers & $StoredMargin & inked_line=derived & lattice.divider=derived",
+        "region.box=stored",
+        "tile_edge=TileDim",
+        "$Components"
+      ],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,6,7,0],
+        [0,3,5,1,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$AllCells & lattice.divider=stored"],
+      "grid": [
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "inked_line=stored",
+        "$StoredTileSize",
+        "$StoredTileCount & tile_edge=stored",
+        "tile_edge=SepThickness"
+      ],
+      "grid": null
+    }, {
+      "cases": ["$InputMargin & region.box=derived"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,3,6,7,0,0],
+        [0,0,3,5,1,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$NonBgMode & lattice.divider=stored"],
+      "grid": null
+    }]
+  }, {
+    "id": "canvas.extent=stored",
+    "separates": "`canvas.extent=stored` from the derived value: train 0 turned a quarter turn clockwise",
+    "input": [
+      [0,0,0,0,0,0,0,0,0],
+      [0,2,2,3,0,3,8,3,0],
+      [0,3,3,3,0,8,3,3,0],
+      [0,0,0,0,0,0,0,0,0],
+      [0,5,5,2,0,3,6,6,0],
+      [0,5,5,2,0,6,3,6,0],
+      [0,0,0,0,0,0,0,0,0],
+      [0,1,1,6,0,7,9,9,0],
+      [0,6,1,1,0,7,7,7,0],
+      [0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Dividers & inked_line=derived & lattice.divider=derived & canvas.extent=derived",
+        "$Components & canvas.extent=derived"
+      ],
+      "grid": [
+        [0,0,0,0],
+        [0,3,3,0],
+        [0,5,6,0],
+        [0,1,7,0],
+        [0,0,0,0]
+      ]
+    }, {
+      "cases": ["canvas.extent=stored"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$AllCells & lattice.divider=stored"],
+      "grid": null
+    }, {
+      "cases": [
+        "inked_line=stored",
+        "$StoredTileSize",
+        "$StoredTileCount & tile_gap=stored",
+        "tile_gap=SepThickness"
+      ],
+      "grid": null
+    }, {
+      "cases": ["$NonBgMode & lattice.divider=stored"],
+      "grid": null
+    }, {
+      "cases": ["tile_gap=TileDim"],
+      "grid": null
+    }]
+  }, {
+    "id": "uneven-margin",
+    "separates": "train0, with the stored box reassigned to margins of 1, 2, 1 and 1; stored box: an output border 2 wide at the bottom and 1 wide elsewhere; stored margin: a 1-wide output border",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,3,3,0,6,6,0,9,7,0],
+      [0,8,3,0,6,3,0,9,7,0],
+      [0,3,8,0,3,6,0,7,7,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,3,3,0,2,2,0,6,1,0],
+      [0,2,3,0,5,5,0,1,1,0],
+      [0,2,3,0,5,5,0,1,6,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "assign": {
+      "region.box": [
+        ["$U",[1,2,1,1]]
+      ]
+    },
+    "output": [{
+      "cases": ["region.box=derived"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,6,7,0],
+        [0,3,5,1,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["region.box=stored"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,6,7,0],
+        [0,3,5,1,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "far-pieces",
+    "separates": "block (0,0) holds two cells of 3 that touch neither at a side nor at a corner; pieces under either adjacency: the 3s' distances to the edges rank them apart from the blocks, so undefined; dividers: block (0,0) gives 0 counting every cell and 3 counting non-bg cells",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,3,0,0,6,6,0,9,7,0],
+      [0,0,0,0,6,3,0,9,7,0],
+      [0,0,3,0,3,6,0,7,7,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,3,3,0,2,2,0,6,1,0],
+      [0,2,3,0,5,5,0,1,1,0],
+      [0,2,3,0,5,5,0,1,6,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$AllCells"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,6,7,0],
+        [0,3,5,1,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$NonBgMode"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,6,7,0],
+        [0,3,5,1,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$Components & canvas.extent=derived"],
+      "grid": null
+    }, {
+      "cases": ["$Cardinal & canvas.extent=stored"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "irregular-lines",
+    "separates": "the stored frame with blocks 1, 2 and 3 columns wide, and the stored inked lines reassigned to this input's; stored lines and derived lines: the dividers bound the blocks; stored tile size: tiles 2 wide that cut across the blocks, so blocks (0,0), (0,1) and (1,0) take 0",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,3,0,6,6,0,9,7,7,0],
+      [0,3,0,6,3,0,9,7,7,0],
+      [0,8,0,3,6,0,7,7,7,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,3,0,5,5,0,6,1,1,0],
+      [0,2,0,5,2,0,1,1,1,0],
+      [0,2,0,2,5,0,1,6,1,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "assign": {
+      "inked_line": [
+        ["$U",[1,7,0,0]],
+        ["$U",[2,6,0,0]],
+        ["$U",[3,5,0,0]],
+        ["$U",[5,3,0,0]],
+        ["$U",[6,2,0,0]],
+        ["$U",[7,1,0,0]],
+        ["$U",[0,0,1,8]],
+        ["$U",[0,0,3,6]],
+        ["$U",[0,0,4,5]],
+        ["$U",[0,0,6,3]],
+        ["$U",[0,0,7,2]],
+        ["$U",[0,0,8,1]]
+      ]
+    },
+    "output": [{
+      "cases": ["$Dividers & lattice.divider=derived","$NonBgMode","$Components"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,6,7,0],
+        [0,2,5,1,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$AllCells & lattice.divider=stored",
+        "$StoredTileSize & $AllCells",
+        "$StoredTileCount & $AllCells"
+      ],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,7,0],
+        [0,0,0,1,0],
+        [0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "eight-block-columns",
+    "separates": "input: eight columns of 3 by 2 blocks; stored tile size and derived dividers: eight columns of tiles; stored dividers, read by their distances to the edges: no divider at column 12, so blocks (0,3) and (0,4) fall in one 5-wide tile and the picture has seven columns",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,3,3,0,6,6,0,9,7,0,4,4,0,4,4,0,2,2,0,5,5,0,8,8,0],
+      [0,8,3,0,6,3,0,9,7,0,4,2,0,4,5,0,2,8,0,9,5,0,8,6,0],
+      [0,3,8,0,3,6,0,7,7,0,2,4,0,5,4,0,8,2,0,5,9,0,6,8,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,3,3,0,2,2,0,6,1,0,7,7,0,7,7,0,4,4,0,1,1,0,6,6,0],
+      [0,2,3,0,5,5,0,1,1,0,7,4,0,3,7,0,6,4,0,1,7,0,6,9,0],
+      [0,2,3,0,5,5,0,1,6,0,4,7,0,7,3,0,4,6,0,7,1,0,9,6,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Dividers & inked_line=derived & lattice.divider=derived & canvas.extent=derived",
+        "$StoredTileSize",
+        "$Components & canvas.extent=derived"
+      ],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,3,6,7,4,4,2,5,8,0],
+        [0,3,5,1,7,7,4,1,6,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["canvas.extent=stored"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["lattice.divider=stored"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0],
+        [0,3,6,7,4,2,5,8,0],
+        [0,3,5,1,7,4,1,6,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["inked_line=stored"],
+      "grid": null
+    }, {
+      "cases": ["$StoredTileCount & $AllCells"],
+      "grid": null
+    }, {
+      "cases": ["$StoredTileCount & $NonBgMode"],
+      "grid": null
+    }]
+  }, {
+    "id": "corner-touch",
+    "separates": "block (0,0) holds a cell of 3 that touches the block's other cells of 3 only at a corner; 8-adjacent pieces: one piece the size of the block, which takes 3; 4-adjacent pieces: a 1-cell piece whose distances to the edges rank it apart from the blocks, so undefined",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,3,0,0,6,6,0,9,7,0],
+      [0,0,3,0,6,3,0,9,7,0],
+      [0,3,3,0,3,6,0,7,7,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,3,3,0,2,2,0,6,1,0],
+      [0,2,3,0,5,5,0,1,1,0],
+      [0,2,3,0,5,5,0,1,6,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$Lattice","$DiagonalJoin"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,6,7,0],
+        [0,3,5,1,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$Cardinal & canvas.extent=derived"],
+      "grid": null
+    }, {
+      "cases": ["$Cardinal & canvas.extent=stored"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,6,7,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "offset-pieces",
+    "separates": "input: two pieces of 3 on top, and a piece of 5 below that overlaps both of their columns, so no full column of bg falls between them; pieces: ranked toward each edge, a 2 by 3 picture with the 5 in the middle column; dividers: one tile column, so the picture is 2 by 1, the bottom tile taking 0 counting every cell and 5 counting non-bg cells",
+    "input": [
+      [0,0,0,0,0,0,0],
+      [0,3,3,0,3,3,0],
+      [0,3,3,0,3,3,0],
+      [0,3,3,0,3,3,0],
+      [0,0,0,0,0,0,0],
+      [0,0,5,5,0,0,0],
+      [0,0,5,5,0,0,0],
+      [0,0,5,5,0,0,0],
+      [0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Dividers & $AllCells & inked_line=derived & lattice.divider=derived & canvas.extent=derived"
+      ],
+      "grid": [
+        [0,0,0],
+        [0,3,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$AllCells & canvas.extent=stored"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$AllCells & lattice.divider=stored","$StoredTileSize & $AllCells"],
+      "grid": null
+    }, {
+      "cases": ["inked_line=stored"],
+      "grid": null
+    }, {
+      "cases": ["$Dividers & $NonBgMode & lattice.divider=derived"],
+      "grid": [
+        [0,0,0],
+        [0,3,0],
+        [0,5,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$NonBgMode & lattice.divider=stored","$StoredTileSize & $NonBgMode"],
+      "grid": null
+    }, {
+      "cases": ["$StoredTileCount & $AllCells","$Components"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,0,3,0],
+        [0,0,5,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$StoredTileCount & $NonBgMode"],
+      "grid": null
+    }]
+  }, {
+    "id": "diagonal-blocks",
+    "separates": "input: a block of 3 and a block mostly of 5 that touch only at a corner; 4-adjacent pieces: two pieces on a 2 by 2 picture's diagonal; 8-adjacent pieces: one piece, a 1 by 1 picture of 3",
+    "input": [
+      [0,0,0,0,0,0],
+      [0,3,3,0,0,0],
+      [0,3,3,0,0,0],
+      [0,3,3,0,0,0],
+      [0,0,0,5,5,0],
+      [0,0,0,5,3,0],
+      [0,0,0,3,5,0],
+      [0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Dividers & $AllCells & margin=stored & inked_line=derived & lattice.divider=derived & canvas.extent=derived"
+      ],
+      "grid": [
+        [0,0,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["canvas.extent=stored"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["lattice.divider=stored"],
+      "grid": null
+    }, {
+      "cases": [
+        "inked_line=stored",
+        "$StoredTileSize",
+        "$StoredTileCount & tile_edge=stored & tile_gap=stored",
+        "tile_gap=TileDim",
+        "tile_edge=TileDim"
+      ],
+      "grid": null
+    }, {
+      "cases": ["margin=SepThickness"],
+      "grid": null
+    }, {
+      "cases": ["$Dividers & $NonBgMode & lattice.divider=derived","$DiagonalJoin"],
+      "grid": [
+        [0,0,0],
+        [0,3,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["tile_gap=SepThickness"],
+      "grid": null
+    }, {
+      "cases": ["tile_edge=SepThickness"],
+      "grid": null
+    }, {
+      "cases": ["$Cardinal & canvas.extent=derived"],
+      "grid": [
+        [0,0,0,0],
+        [0,3,0,0],
+        [0,0,5,0],
+        [0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "tile_edge=TileDim",
+    "separates": "input: a 2-wide border of 0, with 1-wide lines between the blocks; tile-size edge widths: the stored tile count, inside the edge widths that leave whole tiles, cuts the blocks, the 2 by 3 block picture; stored edge width: 1, which leaves no whole tiles, so undefined",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,3,3,0,6,6,0,9,7,0,0],
+      [0,0,8,3,0,6,3,0,9,7,0,0],
+      [0,0,3,8,0,3,6,0,7,7,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,3,3,0,2,2,0,6,1,0,0],
+      [0,0,2,3,0,5,5,0,1,1,0,0],
+      [0,0,2,3,0,5,5,0,1,6,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Dividers & $StoredMargin & inked_line=derived & lattice.divider=derived",
+        "region.box=stored",
+        "tile_edge=TileDim",
+        "$Components"
+      ],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,6,7,0],
+        [0,3,5,1,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$AllCells & lattice.divider=stored"],
+      "grid": [
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "inked_line=stored",
+        "$StoredTileSize",
+        "$StoredTileCount & tile_edge=stored",
+        "tile_edge=SepThickness"
+      ],
+      "grid": null
+    }, {
+      "cases": ["$InputMargin & region.box=derived"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,3,6,7,0,0],
+        [0,0,3,5,1,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$NonBgMode & lattice.divider=stored"],
+      "grid": null
+    }]
+  }, {
+    "id": "tile_edge=SepThickness",
+    "separates": "input: three rows and two columns of 3 by 3 blocks, with lines 2 wide along every edge and between the blocks; derived edge width: 2, so the stored tile count cuts tiles 6 high and 2 wide that straddle the dividers, and the middle tile column falls on a divider; stored edge width: 1, which leaves no whole tiles, so undefined; dividers: the 3 by 2 block picture",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,3,8,3,0,0,6,2,6,0,0],
+      [0,0,3,3,3,0,0,6,6,6,0,0],
+      [0,0,3,3,3,0,0,6,6,6,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,2,5,2,0,0,5,1,5,0,0],
+      [0,0,2,2,2,0,0,5,5,5,0,0],
+      [0,0,2,2,2,0,0,5,5,5,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,1,4,1,0,0,9,7,9,0,0],
+      [0,0,1,1,1,0,0,9,9,9,0,0],
+      [0,0,1,1,1,0,0,9,9,9,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Dividers & $StoredMargin & margin=stored & inked_line=derived & lattice.divider=derived & canvas.extent=derived",
+        "region.box=stored",
+        "$Components & canvas.extent=derived"
+      ],
+      "grid": [
+        [0,0,0,0],
+        [0,3,6,0],
+        [0,2,5,0],
+        [0,1,9,0],
+        [0,0,0,0]
+      ]
+    }, {
+      "cases": ["canvas.extent=stored"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$AllCells & lattice.divider=stored"],
+      "grid": [
+        [0,0,0,0,0,0],
+        [0,0,3,6,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,1,9,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["inked_line=stored","$StoredTileSize","$StoredTileCount & tile_edge=stored"],
+      "grid": null
+    }, {
+      "cases": ["margin=SepThickness"],
+      "grid": null
+    }, {
+      "cases": ["$InputMargin & region.box=derived"],
+      "grid": [
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,3,6,0,0],
+        [0,0,2,5,0,0],
+        [0,0,1,9,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$NonBgMode & lattice.divider=stored"],
+      "grid": null
+    }, {
+      "cases": ["tile_edge=SepThickness","tile_edge=TileDim"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,0,6,0],
+        [0,1,0,9,0],
+        [0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "tile_gap=SepThickness",
+    "separates": "input: two rows and two columns of 3 by 3 blocks, with lines 2 wide along every edge and between the blocks; derived gap width: 2, so the stored tile count cuts tiles that hold more 0 than block cells, and every output cell is 0; stored gap width: 1, which leaves no whole tiles, so undefined; dividers: the 2 by 2 block picture",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,3,8,3,0,0,6,2,6,0,0],
+      [0,0,3,3,3,0,0,6,6,6,0,0],
+      [0,0,3,3,3,0,0,6,6,6,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,2,5,2,0,0,5,1,5,0,0],
+      [0,0,2,2,2,0,0,5,5,5,0,0],
+      [0,0,2,2,2,0,0,5,5,5,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Dividers & $StoredMargin & margin=stored & inked_line=derived & lattice.divider=derived & canvas.extent=derived",
+        "region.box=stored",
+        "$Components & canvas.extent=derived"
+      ],
+      "grid": [
+        [0,0,0,0],
+        [0,3,6,0],
+        [0,2,5,0],
+        [0,0,0,0]
+      ]
+    }, {
+      "cases": ["canvas.extent=stored","tile_gap=SepThickness","tile_gap=TileDim"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$AllCells & lattice.divider=stored"],
+      "grid": null
+    }, {
+      "cases": ["inked_line=stored","$StoredTileSize","$StoredTileCount & tile_gap=stored"],
+      "grid": null
+    }, {
+      "cases": ["margin=SepThickness","$InputMargin & region.box=derived"],
+      "grid": [
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,3,6,0,0],
+        [0,0,2,5,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$NonBgMode & lattice.divider=stored"],
+      "grid": null
+    }]
+  }, {
+    "id": "tile_gap=TileDim",
+    "separates": "input: the 2 by 3 layout of 3 by 2 blocks, with lines 4 wide along every edge and between the blocks; tile-size gap widths: the stored tile count cuts tiles that hold more 0 than block cells, and every output cell is 0; stored gap width: 1, which leaves no whole tiles, so undefined; dividers: the 2 by 3 block picture",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,3,8,0,0,0,0,6,2,0,0,0,0,9,7,0,0,0,0],
+      [0,0,0,0,3,3,0,0,0,0,6,6,0,0,0,0,9,9,0,0,0,0],
+      [0,0,0,0,3,8,0,0,0,0,6,2,0,0,0,0,9,7,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,2,5,0,0,0,0,5,1,0,0,0,0,1,4,0,0,0,0],
+      [0,0,0,0,2,2,0,0,0,0,5,5,0,0,0,0,1,1,0,0,0,0],
+      [0,0,0,0,2,5,0,0,0,0,5,1,0,0,0,0,1,4,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Dividers & $StoredMargin & margin=stored & inked_line=derived & lattice.divider=derived",
+        "region.box=stored",
+        "$Components"
+      ],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,6,9,0],
+        [0,2,5,1,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$AllCells & lattice.divider=stored"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,3,0,6,0,9,0,0],
+        [0,0,2,0,5,0,1,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "inked_line=stored",
+        "$StoredTileSize",
+        "$StoredTileCount & tile_gap=stored",
+        "tile_gap=SepThickness"
+      ],
+      "grid": null
+    }, {
+      "cases": ["margin=SepThickness"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,3,6,9,0,0],
+        [0,0,2,5,1,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$InputMargin & region.box=derived"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,3,6,9,0,0,0,0],
+        [0,0,0,0,2,5,1,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$NonBgMode & lattice.divider=stored"],
+      "grid": null
+    }, {
+      "cases": ["tile_gap=TileDim"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "large-two-color-blocks",
+    "separates": "input: the 2 by 3 layout of 10 by 8 blocks, block (0,0) holding a 7 by 4 patch of 3 in its top left corner and block (1,2) a 7 by 5 patch of 4 in its top left corner; stored line widths and separator thicknesses: lines 1 wide, so the tiles are the blocks, which take 8 and 1; tile-size gap widths: 7, whose tiles are the top left corners of the blocks, so block (0,0) takes 3; tile-size edge widths: 4 and 7, whose tiles cover the patch of 4 and few other cells of block (1,2), so it takes 4",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,3,3,3,3,8,8,8,8,0,6,6,6,6,6,6,6,6,0,9,9,9,9,9,9,9,9,0],
+      [0,3,3,3,3,8,8,8,8,0,6,6,6,6,6,6,6,6,0,9,9,9,9,9,9,9,9,0],
+      [0,3,3,3,3,8,8,8,8,0,6,6,6,6,6,6,6,6,0,9,9,9,9,9,9,9,9,0],
+      [0,3,3,3,3,8,8,8,8,0,6,6,6,6,6,6,6,6,0,9,9,9,9,9,9,9,9,0],
+      [0,3,3,3,3,8,8,8,8,0,6,6,6,6,6,6,6,6,0,9,9,9,9,9,9,9,9,0],
+      [0,3,3,3,3,8,8,8,8,0,6,6,6,6,6,6,6,6,0,9,9,9,9,9,9,9,9,0],
+      [0,3,3,3,3,8,8,8,8,0,6,6,6,6,6,6,6,6,0,9,9,9,9,9,9,9,9,0],
+      [0,8,8,8,8,8,8,8,8,0,6,6,6,6,6,6,6,6,0,9,9,9,9,9,9,9,9,0],
+      [0,8,8,8,8,8,8,8,8,0,6,6,6,6,6,6,6,6,0,9,9,9,9,9,9,9,9,0],
+      [0,8,8,8,8,8,8,8,8,0,6,6,6,6,6,6,6,6,0,9,9,9,9,9,9,9,9,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,2,2,2,2,2,2,2,2,0,5,5,5,5,5,5,5,5,0,4,4,4,4,4,1,1,1,0],
+      [0,2,2,2,2,2,2,2,2,0,5,5,5,5,5,5,5,5,0,4,4,4,4,4,1,1,1,0],
+      [0,2,2,2,2,2,2,2,2,0,5,5,5,5,5,5,5,5,0,4,4,4,4,4,1,1,1,0],
+      [0,2,2,2,2,2,2,2,2,0,5,5,5,5,5,5,5,5,0,4,4,4,4,4,1,1,1,0],
+      [0,2,2,2,2,2,2,2,2,0,5,5,5,5,5,5,5,5,0,4,4,4,4,4,1,1,1,0],
+      [0,2,2,2,2,2,2,2,2,0,5,5,5,5,5,5,5,5,0,4,4,4,4,4,1,1,1,0],
+      [0,2,2,2,2,2,2,2,2,0,5,5,5,5,5,5,5,5,0,4,4,4,4,4,1,1,1,0],
+      [0,2,2,2,2,2,2,2,2,0,5,5,5,5,5,5,5,5,0,1,1,1,1,1,1,1,1,0],
+      [0,2,2,2,2,2,2,2,2,0,5,5,5,5,5,5,5,5,0,1,1,1,1,1,1,1,1,0],
+      [0,2,2,2,2,2,2,2,2,0,5,5,5,5,5,5,5,5,0,1,1,1,1,1,1,1,1,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Dividers & inked_line=derived & lattice.divider=derived",
+        "$StoredTileCount & tile_edge=stored & tile_gap=stored",
+        "tile_gap=SepThickness",
+        "tile_edge=SepThickness",
+        "$Components"
+      ],
+      "grid": [
+        [0,0,0,0,0],
+        [0,8,6,9,0],
+        [0,2,5,1,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["lattice.divider=stored"],
+      "grid": null
+    }, {
+      "cases": ["inked_line=stored","$StoredTileSize"],
+      "grid": null
+    }, {
+      "cases": ["tile_gap=TileDim"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,3,6,9,0],
+        [0,2,5,1,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["tile_edge=TileDim"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,8,6,9,0],
+        [0,2,5,4,0],
+        [0,0,0,0,0]
+      ]
+    }]
+  }]
+}

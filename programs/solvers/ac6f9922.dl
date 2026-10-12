@@ -1,0 +1,250 @@
+// ac6f9922
+// @draft
+// @keywords: decompose enclose rank
+// @scene framed-lattice: every input is a field of the background color with
+//  a lattice of one other color on it; the background shows outside the
+//  lattice, at least along the grid edge
+// @scene window-grid: the lattice encloses rectangular windows of the
+//  background color; the windows fall into rows that share their top and
+//  bottom rows of cells, and into columns that share their left and right
+//  columns of cells, so each window is at one row and one column of a full
+//  grid of windows; the lattice bars between windows can be wider than one
+//  cell, and differ in width
+// @scene one-mark: a window holds no mark or one mark: a solid rectangle of
+//  one color that is neither the background nor the lattice color, which
+//  touches no edge of the window; marks differ in size and shape, and two
+//  windows can hold marks of one color
+// @rule window-picture: the output has one row per row of windows and one
+//  column per column of windows, in the order of the windows in the input
+// @rule mark-color: each output cell takes the color of the mark in its
+//  window, and the background color where the window holds no mark
+
+// how the background color is found
+.type Background =
+    // @claim framed-lattice
+    EdgeColor {}
+    // @scene framed-lattice: the background is the commonest color of the
+    //  input; undefined where two colors tie for commonest
+    // @witness edge-lattice: variant $CommonestBackground
+    //     @relaxed framed-lattice
+  | CommonestBackground {}
+
+// which cells make up a window
+.type WindowRegion =
+    // @claim window-grid
+    ClosedRegion {}
+    // @scene window-grid: a window is a connected region of background cells
+    //  closed off from the grid edge, and its marks are the non-lattice cells
+    //  inside its bounding box
+    // @witness split-window: borderline concept
+    //     @relaxed one-mark
+  | BgRegionWindows {}
+
+// how windows group into rows and columns
+.type WindowGrouping =
+    // @claim window-grid
+    SameExtent {}
+    // @scene window-grid: windows whose row extents overlap merge into one
+    //  band, and the same holds for columns
+    // @witness staggered-window: borderline $WindowBands
+    //     @relaxed window-grid
+    // @witness uneven-bars: borderline $WindowBands
+    //     @relaxed window-grid
+  | WindowBands {}
+
+// what one output cell stands for
+.type CellUnit =
+    // @claim window-grid
+    Window {region: WindowRegion, grouping: WindowGrouping}
+    // @scene window-grid: the lattice's full lines cut its bounding box into
+    //  tiles, one per place of the grid
+    // @rule window-picture: the output has one row per row of tiles and one
+    //  column per column of tiles; a tile takes its one color that is neither
+    //  the background nor the lattice color, or the background; undefined
+    //  where a tile holds two such colors
+    // @witness missing-window: borderline $DividerTiles
+    //     @relaxed window-grid
+  | DividerTiles {}
+
+// the color of an empty window's cell
+.type EmptyColor =
+    // @claim mark-color
+    BackgroundEmpty {}
+    // @scene window-grid: a window may be filled with any non-lattice color
+    // @rule mark-color: an empty window gives its own fill, the one color its
+    //  cells take where they touch the lattice; undefined where they take two
+    // @witness window-fill: borderline $WindowFill
+    //     @relaxed window-grid
+  | WindowFill {}
+
+.type Choice = [bg: Background, unit: CellUnit, empty: EmptyColor]
+
+// The closed regions of one reading of the background and the window.
+.type RegionKey = [bg: Background, r: WindowRegion]
+.type Region = [k: RegionKey, id: Ident]
+
+// A tile of the lattice under one background.
+.type Tile = [bg: Background, p_tile: Position]
+
+// The units of one reading, each named by its bounding box.
+.type UnitKey = [bg: Background, unit: CellUnit]
+.type UnitOf = [k: UnitKey, b: Box]
+.type ChoiceUnit = [ch: Choice, b: Box]
+.type UnitAxis = [k: UnitKey, a: Axis, b: Box]
+.type BandKey = [k: UnitKey, a: Axis]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {}
+
+.init params = Params
+
+.decl window_grouping_choice(g: WindowGrouping)
+window_grouping_choice($SameExtent()). window_grouping_choice($WindowBands()).
+
+// The background color.
+.decl bg(b: Background, col: Color)
+
+// The lattice: the commonest color other than the background.
+// @claim framed-lattice
+.init lattice_mode = Mode<Background, Color, Position>
+lattice_mode.item(B, Col, P) :- bg(B, C), in(P, Col), Col != C.
+
+// @claim framed-lattice
+.init lattice = Unanimous<Background, Color>
+lattice.item(B, Col) :- lattice_mode.mode(B, Col).
+
+// A unit's cells: the cells one output cell reads.
+.decl unit_cell(k: UnitKey, b: Box, p: Position)
+
+// The color that fills a unit with no mark.
+.decl fill(ch: Choice, b: Box, col: Color)
+
+// The colors of a unit that are neither its fill nor the lattice.
+// @claim mark-color one-mark
+.init mark = Unanimous<ChoiceUnit, Color>
+mark.item([[B, U, E], Bx], Col) :-
+    fill([B, U, E], Bx, F), unit_cell([B, U], Bx, P), in(P, Col), Col != F,
+    lattice.value(B, L), Col != L.
+
+.decl unit_line(k: UnitKey, a: Axis, b: Box, l: Position)
+unit_line(K, A, Bx, L) :- unit_cell(K, Bx, P), axis_elem(A), split(P, A, L, _).
+
+// The units that form one row or one column.
+.init same_band = Canon<UnitAxis>
+
+// Two rows, or two columns, share a line.
+.decl mixed(k: UnitKey)
+mixed(K) :-
+    same_band.id([K, A, Bx], I1), same_band.id([K, A, Bx2], I2), I1 != I2,
+    unit_line(K, A, Bx, L), unit_line(K, A, Bx2, L).
+
+// @claim window-picture
+.init layout = OrderFrame<BandKey, Ident>
+layout.axis([K, A], A) :- same_band.id([K, A, _], _).
+layout.member([K, A], I, L) :- same_band.id([K, A, Bx], I), unit_line(K, A, Bx, L).
+
+out(P, Col, Ch) :-
+    Ch = [B, U, _], fill(Ch, Bx, F), !mixed([B, U]),
+    ( mark.value([Ch, Bx], Col)                                           // its mark
+    ; !mark.item([Ch, Bx], _), Col = F ),                                 // or its fill
+    same_band.id([[B, U], A, Bx], I1), layout.pos([[B, U], A], I1, P1),   // its band on one axis
+    perp(A, A2), same_band.id([[B, U], A2, Bx], I2),
+    layout.pos([[B, U], A2], I2, P2),                                     // and on the other
+    compose(P1, P2, P).
+
+// --- $EdgeColor ---
+// @claim framed-lattice
+.init edge = Unanimous<Unit, Color>
+edge.item($U(), Col) :- in(P, Col), dir_elem(D), dist(P, D, 0).
+
+bg($EdgeColor(), Col) :- edge.value($U(), Col).
+
+// --- $CommonestBackground ---
+// @claim framed-lattice
+.init commonest = Mode<Unit, Color, Position>
+commonest.item($U(), Col, P) :- in(P, Col).
+
+// @claim framed-lattice
+.init sole_commonest = Unanimous<Unit, Color>
+sole_commonest.item($U(), Col) :- commonest.mode($U(), Col).
+
+bg($CommonestBackground(), Col) :- sole_commonest.value($U(), Col).
+
+// --- $Window ---
+// @claim window-grid
+.init closed = Closed<RegionKey>
+
+// @claim window-grid
+.init region_box = Bbox<Region>
+region_box.cell([K, Id], P) :- closed.region(K, P, Id).
+
+// A window's cells under each region reading.
+.decl window_cell(k: RegionKey, b: Box, p: Position)
+
+unit_cell([B, $Window(R, G)], Bx, P) :- window_cell([B, R], Bx, P), window_grouping_choice(G).
+
+// --- $ClosedRegion ---
+closed.cell([B, $ClosedRegion()], P) :- lattice.value(B, L), in(P, Col), Col != L.
+
+window_cell([B, $ClosedRegion()], Bx, P) :-
+    closed.region([B, $ClosedRegion()], P, Id), region_box.box([[B, $ClosedRegion()], Id], Bx).
+
+// --- $BgRegionWindows ---
+closed.cell([B, $BgRegionWindows()], P) :- bg(B, Col), in(P, Col).
+
+window_cell([B, $BgRegionWindows()], Bx, P) :-
+    region_box.box([[B, $BgRegionWindows()], _], Bx),             // a closed region of background
+    lattice.value(B, L), in(P, Col), Col != L, inside(P, Bx).    // its box's non-lattice cells
+
+// --- $SameExtent, $DividerTiles ---
+// Units with the same extent along the axis.
+same_band.equiv([K, A, Bx], [K, A, Bx2]) :-
+    K = [B, $Window(R, $SameExtent())],
+    unit_line(K, A, Bx, _), unit_line(K, A, Bx2, _), split(Bx, A, E, _), split(Bx2, A, E, _).
+same_band.equiv([K, A, Bx], [K, A, Bx2]) :-
+    K = [B, $DividerTiles()],
+    unit_line(K, A, Bx, _), unit_line(K, A, Bx2, _), split(Bx, A, E, _), split(Bx2, A, E, _).
+
+// --- $WindowBands ---
+// Units whose extents along the axis share a line.
+same_band.edge([K, A, Bx], [K, A, Bx2]) :-
+    K = [B, $Window(R, $WindowBands())], unit_line(K, A, Bx, L), unit_line(K, A, Bx2, L).
+
+// --- $DividerTiles ---
+// @claim window-grid
+.init lattice_box = Bbox<Background>
+lattice_box.cell(B, P) :- lattice.value(B, L), in(P, L).
+
+.decl lattice_area(b: Background, p: Position)
+lattice_area(B, P) :- lattice_box.box(B, Bx), in(P, _), inside(P, Bx).
+
+// A line of the lattice's box that holds a cell of another color.
+.decl broken_line(b: Background, a: Axis, l: Position)
+broken_line(B, A, L) :-
+    lattice_area(B, P), lattice.value(B, C), in(P, Col), Col != C, axis_elem(A), split(P, A, L, _).
+
+// @claim window-grid window-picture
+.init tiles = DividerTiles<Background>
+tiles.cell(B, P) :- lattice_area(B, P).
+tiles.divider(B, A, L) :-
+    lattice_area(B, P), axis_elem(A), split(P, A, L, _), !broken_line(B, A, L).
+
+// @claim window-grid
+.init tile_box = Bbox<Tile>
+tile_box.cell([B, T], P) :- tiles.tile_of(B, P, T).
+
+unit_cell([B, $DividerTiles()], Bx, P) :- tiles.tile_of(B, P, T), tile_box.box([B, T], Bx).
+
+// --- $BackgroundEmpty ---
+fill([B, U, $BackgroundEmpty()], Bx, Col) :- unit_cell([B, U], Bx, _), bg(B, Col).
+
+// --- $WindowFill ---
+// The colors of a unit's cells beside the lattice.
+// @claim mark-color
+.init rim = Unanimous<UnitOf, Color>
+rim.item([[B, U], Bx], Col) :-
+    unit_cell([B, U], Bx, P), in(P, Col),
+    lattice.value(B, L), dir_elem(D), neighbor(P, D, Q), in(Q, L).    // a lattice cell beside it
+
+fill([B, U, $WindowFill()], Bx, Col) :- rim.value([[B, U], Bx], Col).

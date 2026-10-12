@@ -1,0 +1,367 @@
+// af24b4cc
+// @draft
+// @keywords: decompose scale rank objects
+// @scene block-grid: the input is a grid of equal blocks laid out in rows and
+//  columns, with a 1-wide line of bg (0) along every edge of the input and
+//  between each two adjacent blocks
+// @scene block-size: each block is block_h (3) rows by block_w (2) columns
+// @scene block-layout: the blocks stand in block_rows (2) rows and block_cols
+//  (3) columns
+// @scene no-bg-in-block: no cell of a block is bg (0)
+// @scene unique-mode: in each block, one color occurs more often than every
+//  other color
+// @rule output-frame: the output has one row per block row and one column per
+//  block column, inside a border of bg that is margin (1) cells wide
+// @rule block-mode: the output cell of a block takes that block's commonest
+//  color
+
+// how the blocks are found
+.type BlockParse =
+    // @claim block-grid
+    Lattice {source: LatticeSource, domain: ModeDomain}
+    // @scene block-grid: the blocks are the 4-adjacent pieces of cells other
+    //  than bg
+    // @rule output-frame: a piece's output cell stands, toward each edge, at
+    //  the rank of its distance to that edge among the pieces' distances to
+    //  it, and a cell with no piece takes bg; undefined where the ranks
+    //  toward two opposite edges disagree, or two pieces of different colors
+    //  share a cell
+    // @witness split-block: variant $NonBgMode
+    //     @relaxed no-bg-in-block
+    // @witness offset-pieces: borderline $Components
+    //     @relaxed block-grid
+  | Components {adjacency: Adjacency}
+
+// what cuts the lattice
+.type LatticeSource =
+    // @claim block-grid
+    Dividers {}
+    // @scene block-grid: the blocks are tiles of tile_size (3 by 2), with
+    //  lines tile_edge (1) wide along each edge and tile_gap (1) wide between
+    //  them; undefined where an input extent does not fit whole tiles
+    // @witness wide-blocks: variant concept
+    //     @relaxed block-size
+  | StoredTileSize {}
+    // @scene block-grid: the blocks are tile_count (2 by 3) equal tiles, with
+    //  lines tile_edge (1) wide along each edge and tile_gap (1) wide between
+    //  them; undefined where an input extent does not fit them
+    // @witness three-block-rows: variant concept
+    //     @relaxed block-layout
+  | StoredTileCount {}
+
+// which cells of a block count toward its color
+.type ModeDomain =
+    // @claim block-mode
+    AllCells {}
+    // @rule block-mode: the output cell of a block takes the commonest color
+    //  among its cells other than bg; undefined on a block with no such cell
+    // @witness sparse-block: variant $NonBgMode
+    //     @relaxed no-bg-in-block
+  | NonBgMode {}
+
+// which cells join one piece
+.type Adjacency =
+    // @claim block-grid
+    Cardinal {}
+    // @scene block-grid: the blocks are the 8-adjacent pieces of cells other
+    //  than bg
+    // @witness corner-touch: variant concept
+    //     @relaxed no-bg-in-block
+    // @witness diagonal-blocks: borderline $Cardinal
+    //     @relaxed block-grid
+  | DiagonalJoin {}
+
+// how wide the output border is
+.type OutputMargin =
+    // @claim output-frame
+    StoredMargin {}
+    // @rule output-frame: each side of the output border is as wide as the
+    //  input's run of full bg lines on that side
+    // @witness wide-border: variant concept
+    //     @relaxed block-grid
+  | InputMargin {}
+
+.type Choice = [parse: BlockParse, margin: OutputMargin]
+
+// A block under one way of finding blocks.
+.type Block = [parse: BlockParse, id: Ident]
+
+// A tile under one way of finding blocks.
+.type Tile = [parse: BlockParse, p: Position]
+
+// One edge under one way of finding blocks.
+.type Ranking = [parse: BlockParse, d: Dir]
+
+// The output frame under one way of finding blocks and one border.
+.type Framing = [parse: BlockParse, margin: OutputMargin]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant concept
+    //     @relaxed block-size
+    .decl bg(c: Color) bg(0).
+
+    // --- $StoredTileSize, $StoredTileCount ---
+    // The width of the lines along the edges.
+    // @derive SepThickness: variant concept
+    //     @relaxed block-grid
+    //     @relaxed block-size
+    //     @relaxed block-layout
+    // @derive TileDim: variant concept
+    //     @relaxed block-grid
+    .decl tile_edge(k: number) tile_edge(1).
+
+    // The width of the lines between the tiles.
+    // @derive SepThickness: variant concept
+    //     @relaxed block-grid
+    //     @relaxed block-size
+    //     @relaxed block-layout
+    // @derive TileDim: variant concept
+    //     @relaxed block-grid
+    .decl tile_gap(g: number) tile_gap(1).
+
+    // --- $StoredTileSize ---
+    .decl tile_size(a: Axis, k: number)
+    tile_size(AXIS_V, 3). tile_size(AXIS_H, 2).
+
+    // --- $StoredTileCount ---
+    .decl tile_count(a: Axis, n: number)
+    tile_count(AXIS_V, 2). tile_count(AXIS_H, 3).
+
+    // --- $StoredMargin ---
+    // @derive SepThickness: variant concept
+    //     @relaxed block-grid
+    .decl margin(k: number) margin(1).
+}
+
+.init params = Params
+
+.decl mode_domain_choice(d: ModeDomain)
+mode_domain_choice($AllCells()). mode_domain_choice($NonBgMode()).
+
+// The lattice the full lines of bg cut.
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)
+
+    // A line that holds a cell other than bg.
+    // @store: variant concept
+    //     @relaxed block-size
+    .decl inked_line(key: Key, l: Position)
+    inked_line(Ky, L) :- cell(Ky, P, Col), !params.bg(Col), axis_elem(A), split(P, A, L, _).
+
+    // @store divider: variant concept
+    //     @relaxed block-size
+    // @ignore part_of: store — the stored parts are those of the stored input,
+    //  and they name no cell of an input of another frame, so these cases are
+    //  equivalent to $Dividers & inked_line=stored
+    // @claim block-grid
+    .init lattice = DividerTiles<Key>
+    lattice.cell(Ky, P) :- cell(Ky, P, _).
+    lattice.divider(Ky, A, L) :-
+        cell(Ky, P, _), axis_elem(A), split(P, A, L, _), !inked_line(Ky, L).
+}
+
+// The cells each block counts toward its color.
+.decl member(b: Block, p: Position, col: Color)
+
+// The cell of the picture a block stands at.
+.decl slot(b: Block, p_pic: Position)
+
+// The color each block's output cell takes.
+// @claim block-mode
+.init commonest = Mode<Block, Color, Position>
+commonest.item(Bl, Col, P) :- member(Bl, P, Col).
+
+// The output frame as a box in the picture's frame.
+.decl border(m: OutputMargin, b: Box)
+
+// @store extent: variant concept
+//     @relaxed block-size
+//     @relaxed block-layout
+// @ignore cell: store — the cells are the frame of the extent, so storing them
+//  is storing canvas.extent
+.init canvas = Frame2D<Framing>
+canvas.extent([Parse, M], A, N) :-
+    slot([Parse, _], P), border(M, B), axis_elem(A), box_extent(B, P, A, N).
+
+// Output cell q shows block b.
+.decl placed(b: Block, m: OutputMargin, q: Position)
+placed([Parse, Id], M, Q) :- slot([Parse, Id], P), border(M, B), crop(P, B, Q).
+
+// Some block shows at output cell q.
+.decl occupied(parse: BlockParse, m: OutputMargin, q: Position)
+occupied(Parse, M, Q) :- placed([Parse, _], M, Q).
+
+out(Q, Col, [Parse, M]) :-
+    canvas.cell([Parse, M], Q),
+    ( placed(Bl, M, Q), Bl = [Parse, _], commonest.mode(Bl, Col)  // a block's cell
+    ; !occupied(Parse, M, Q), params.bg(Col)                      // border or empty cell
+    ).
+
+// --- $Lattice ---
+
+// Input cell p lies in the tile at p_pic of the picture.
+// @ignore: store — the stored tiles are the blocks of the stored input, and
+//  they name no cell of an input of another frame, so every case that stores
+//  them is equivalent to $Dividers & inked_line=stored
+.decl tile(parse: BlockParse, p: Position, p_pic: Position)
+
+// @claim block-grid
+.init tile_id = IdentOf<Tile>
+tile_id.value([Parse, P_pic]) :- tile(Parse, _, P_pic).
+
+slot([Parse, Id], P_pic) :- tile_id.id([Parse, P_pic], Id).
+
+// Input cell p lies in block b.
+.decl tile_cell(b: Block, p: Position)
+tile_cell([Parse, Id], P) :- tile(Parse, P, P_pic), tile_id.id([Parse, P_pic], Id).
+
+// --- $AllCells ---
+
+member(Bl, P, Col) :- tile_cell(Bl, P), Bl = [$Lattice(_, $AllCells()), _], in(P, Col).
+
+// --- $NonBgMode ---
+
+member(Bl, P, Col) :-
+    tile_cell(Bl, P), Bl = [$Lattice(_, $NonBgMode()), _], in(P, Col), !params.bg(Col).
+
+// --- $Dividers ---
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// One picture line per run of lines between dividers.
+// @claim output-frame
+.init stripe = OrderFrame<Axis, Position>
+stripe.axis(A, A) :- axis_elem(A).
+stripe.member(A, P_part, L) :- parse.lattice.part_of($U(), P, A, P_part), split(P, A, L, _).
+
+tile($Lattice($Dividers(), D), P, P_pic) :-
+    mode_domain_choice(D),
+    parse.lattice.part_of($U(), P, A, P_part1), stripe.pos(A, P_part1, P1),     // its band on one axis
+    perp(A, A2), parse.lattice.part_of($U(), P, A2, P_part2), stripe.pos(A2, P_part2, P2),  // and on the other
+    compose(P1, P2, P_pic).
+
+// --- $StoredTileSize, $StoredTileCount ---
+
+// Input cell p_grid at p_inner in the frame inside the edge lines.
+.decl inset_cell(p_inner: Position, p_grid: Position)
+inset_cell(P_inner, P_grid) :-
+    in(P_grid, _), params.tile_edge(K), uniform_inset(K, B), crop(P_grid, B, P_inner).
+
+// --- $StoredTileSize ---
+
+// @claim block-grid
+.init sized = Tile2D<Unit>
+sized.cell(P) :- inset_cell(P, _).
+sized.dim($U(), A, K) :- params.tile_size(A, K).
+sized.gap(G) :- params.tile_gap(G).
+
+tile($Lattice($StoredTileSize(), D), P_grid, P_pic) :-
+    mode_domain_choice(D), sized.tile($U(), P_inner, P_pic, _), inset_cell(P_inner, P_grid).
+
+// --- $StoredTileCount ---
+
+// @claim block-grid
+.init counted = Divide2D<Unit>
+counted.cell(P) :- inset_cell(P, _).
+counted.dim($U(), A, N) :- params.tile_count(A, N).
+counted.gap(G) :- params.tile_gap(G).
+
+tile($Lattice($StoredTileCount(), D), P_grid, P_pic) :-
+    mode_domain_choice(D), counted.tile($U(), P_inner, P_pic, _), inset_cell(P_inner, P_grid).
+
+// --- $Components ---
+
+// @claim output-frame
+.init piece_box = Bbox<Block>
+piece_box.cell([$Components(Adj), Id], P) :- member([$Components(Adj), Id], P, _).
+
+// A piece's distance to edge d.
+.decl piece_dist(b: Block, d: Dir, k: number)
+piece_dist(Bl, D, K) :- piece_box.box(Bl, B), dir_elem(D), dist(B, D, K).
+
+// @claim output-frame
+.init rank = Ordinal<Ranking>
+rank.idx_set([Parse, D], K) :- piece_dist([Parse, _], D, K).
+
+// The piece's cell in the picture: toward each edge, the rank of its distance
+// to that edge.
+.init piece_slot = DirPack<Block>
+piece_slot.edge([Parse, Id], D, R) :- piece_dist([Parse, Id], D, K), rank.rank([Parse, D], K, R).
+
+slot(Bl, P_pic) :- piece_slot.box(Bl, P_pic).
+
+// --- $Cardinal ---
+
+// @ignore node: store — the stored pieces are the blocks of the stored input,
+//  so these cases are equivalent to $Dividers & inked_line=stored, with one
+//  more branch
+// @claim block-grid
+.init piece = Components<Unit>
+piece.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+member([$Components($Cardinal()), Id], P, Col) :- piece.label($U(), P, Id), in(P, Col).
+
+// --- $DiagonalJoin ---
+
+// @ignore node: store — the stored pieces are the blocks of the stored input,
+//  so these cases are equivalent to $Dividers & inked_line=stored, with one
+//  more branch
+// @claim block-grid
+.init piece8 = Components8<Unit>
+piece8.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+member([$Components($DiagonalJoin()), Id], P, Col) :- piece8.label($U(), P, Id), in(P, Col).
+
+// --- $StoredMargin ---
+
+border($StoredMargin(), B) :- params.margin(M), uniform_outset(M, B).
+
+// --- $InputMargin ---
+
+// The bounding box of the cells other than bg.
+// @store box: variant concept
+//     @relaxed block-grid
+// @ignore cell: store — the box is the bounding box of the cells, so storing
+//  them is storing region.box
+// @claim output-frame
+.init region = Bbox<Unit>
+region.cell($U(), P) :- in(P, Col), !params.bg(Col).
+
+border($InputMargin(), B) :- region.box($U(), R), relative(R, ZERO, B).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl train(e: Example)
+    train(E) :- ex_out(E, _, _).
+
+    // One band of blocks along an axis of an example.
+    .type Band = [e: Example, a: Axis, part: Position]
+
+    // The lines each band holds.
+    .init band_lines = Tally<Band, Position>
+    band_lines.item([E, A, P_part], L) :- ex.lattice.part_of(E, P, A, P_part), split(P, A, L, _).
+
+    .init band_size = Unanimous<Axis, number>
+    band_size.item(A, K) :- band_lines.tally([E, A, _], K), train(E).
+
+    .decl tile_size(a: Axis, k: number)
+    tile_size(A, K) :- band_size.value(A, K).
+
+    // One axis of an example.
+    .type ExampleAxis = [e: Example, a: Axis]
+
+    // The bands along each axis.
+    .init bands = Tally<ExampleAxis, Position>
+    bands.item([E, A], P_part) :- ex.lattice.part_of(E, _, A, P_part).
+
+    .init band_count = Unanimous<Axis, number>
+    band_count.item(A, N) :- bands.tally([E, A], N), train(E).
+
+    .decl tile_count(a: Axis, n: number)
+    tile_count(A, N) :- band_count.value(A, N).
+}

@@ -1,0 +1,186 @@
+// aee291af
+// @draft
+// @keywords: crop objects select count rank
+// @scene field: a field of background (1), with stray cells of frame_color
+//  (8) scattered over it, some of them touching a box
+// @scene boxes: several disjoint square boxes of one size, each with a
+//  1-wide border of frame_color and an interior of frame_color and
+//  mark_color cells, where the marks span the whole interior
+// @scene one-odd: every box but one has the same interior pattern, and the
+//  one left has another pattern
+// @rule odd-box: the output is the box whose pattern no other box shares,
+//  border included
+
+// how a box is found
+.type BoxFinding =
+    // @claim boxes
+    FramedSquare {}
+    // @scene boxes: a box is the bounding box of the marks of one 8-connected
+    //  group of non-background cells, grown by one cell on each side;
+    //  undefined where a grown box reaches past the grid edge
+    // @witness odd-pattern-off-interior-edge: variant concept
+    //     @relaxed boxes
+  | MarkBbox {}
+    // @scene boxes: a box is the bounding box of one 8-connected group of
+    //  marks, grown by one cell on each side; undefined where a grown box
+    //  reaches past the grid edge
+    // @witness split-marks: ordinary concept
+  | MarkGroupBbox {}
+
+// which box is the odd one
+.type OddSelection =
+    // @claim odd-box
+    UniquePattern {}
+    // @scene one-odd: the boxes show several patterns
+    // @rule odd-box: the output is the pattern the fewest boxes show;
+    //  undefined where that fewest count is tied
+    // @witness odd-pattern-twice: borderline $RarestPattern
+    //     @relaxed one-odd
+  | RarestPattern {}
+
+.type Choice = [f: BoxFinding, s: OddSelection]
+
+// A box under one way of finding boxes.
+.type Found = [f: BoxFinding, b: Box]
+
+// A cell of a box's own frame and its color.
+.type Cell = [p: Position, col: Color]
+
+// A group of marks under one way of finding boxes.
+.type Group = [f: BoxFinding, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @ignore: derive VanishedColor — on one input with no train output it
+    //  gives every color of the input, as SharedColor does
+    // @derive RarestColor: borderline concept
+    //     @relaxed field
+    // @derive SharedColor: variant derived
+    //     @relaxed boxes
+    // @ignore: derive $MarkBbox — fails Fit on every pair: the frame and
+    //  background colors count as marks, so no grown box is a box
+    // @ignore: derive $MarkGroupBbox — fails Fit on every pair: the frame and
+    //  background colors count as marks, so no grown box is a box
+    .decl mark_color(col: Color) mark_color(2).
+
+    // --- $FramedSquare ---
+    .decl frame_color(col: Color) frame_color(8).
+
+    // --- $MarkBbox ---
+    // @derive DominantColor: variant derived
+    //     @relaxed field
+    .decl background(col: Color) background(1).
+}
+
+.init params = Params
+
+// The boxes under each way of finding them.
+.decl box(f: BoxFinding, b: Box)
+
+// Cell p_rel of box b holds col.
+.decl box_cell(f: BoxFinding, b: Box, p_rel: Position, col: Color)
+box_cell(F, B, P_rel, Col) :- box(F, B), in(P, Col), crop(P, B, P_rel).
+
+// Two boxes show the same pattern when their cells match, each read in its
+// box's own frame.
+// @claim odd-box
+.init pattern = KeyedSetCompare<Found, Found, Cell>
+pattern.pattern_member([F, B], [P, Col]) :- box_cell(F, B, P, Col).
+pattern.observed_member([F, B], [P, Col]) :- box_cell(F, B, P, Col).
+
+// The box each case outputs.
+.decl picked(f: BoxFinding, s: OddSelection, b: Box)
+
+out(P_inner, Col, [F, S]) :- picked(F, S, B), in(P, Col), crop(P, B, P_inner).
+
+// --- $FramedSquare ---
+
+// @claim boxes
+.init outline = Outlines<Unit>
+outline.node($U(), P) :- in(P, Col), params.frame_color(Col).
+
+// An interior cell of outline b that is neither frame nor mark.
+.decl foreign_cell(b: Box)
+foreign_cell(B) :-
+    outline.box($U(), B), in(P, Col), interior(P, B),
+    !params.frame_color(Col), !params.mark_color(Col).
+
+// A square outline whose interior holds a mark and only frame and mark cells.
+.decl candidate(b: Box)
+candidate(B) :-
+    outline.box($U(), B), in(P, Col), interior(P, B), params.mark_color(Col),
+    crop(P, B, P_rel), axis_elem(A), axis_dims(P_rel, A, N, N),   // square
+    !foreign_cell(B).
+
+// A candidate inside a larger candidate.
+.decl nested(b: Box)
+nested(B) :- candidate(B), candidate(B2), B != B2, inside(B, B2).
+
+box($FramedSquare(), B) :- candidate(B), !nested(B).
+
+// --- $MarkBbox, $MarkGroupBbox ---
+
+// Mark p lies in group id.
+.decl mark_group(f: BoxFinding, p: Position, id: Ident)
+
+// The bounding box of each group's marks together with the cells around them.
+// @claim boxes
+.init grown = Bbox<Group>
+grown.cell([F, Id], Q) :- mark_group(F, P, Id), dir8_elem(D), neighbor(P, D, Q).
+
+// Some grown box reaches past the grid edge.
+.decl spill(f: BoxFinding)
+spill(F) :- grown.box([F, _], B), !inside(B, ZERO).
+
+box(F, B) :- grown.box([F, _], B), !spill(F).
+
+// --- $MarkBbox ---
+
+// @claim boxes
+.init blobs = Components8<Unit>
+blobs.node($U(), P) :- in(P, Col), !params.background(Col).
+
+mark_group($MarkBbox(), P, Id) :-
+    blobs.label($U(), P, Id), in(P, Col), params.mark_color(Col).
+
+// --- $MarkGroupBbox ---
+
+// @claim boxes
+.init marks = Components8<Unit>
+marks.node($U(), P) :- in(P, Col), params.mark_color(Col).
+
+mark_group($MarkGroupBbox(), P, Id) :- marks.label($U(), P, Id).
+
+// --- $UniquePattern ---
+
+// Another box shows box b's pattern.
+.decl shared(f: BoxFinding, b: Box)
+shared(F, B) :- pattern.equals([F, B], [F, B2]), B != B2.
+
+.decl unique(f: BoxFinding, b: Box)
+unique(F, B) :- box(F, B), !shared(F, B).
+
+// More than one box shows a pattern no other box shows.
+.decl many_unique(f: BoxFinding)
+many_unique(F) :- unique(F, B), unique(F, B2), B != B2.
+
+picked(F, $UniquePattern(), B) :- unique(F, B), !many_unique(F).
+
+// --- $RarestPattern ---
+
+// How many boxes show each box's pattern.
+// @claim odd-box
+.init copies = Tally<Found, Box>
+copies.item([F, B], B2) :- pattern.equals([F, B], [F, B2]).
+
+// @claim odd-box
+.init extremes = ArgExtremes<BoxFinding, Box>
+extremes.cand(F, B, N) :- copies.tally([F, B], N).
+
+// Two patterns tie at the fewest boxes.
+.decl rare_tie(f: BoxFinding)
+rare_tie(F) :-
+    extremes.low(F, B, _), extremes.low(F, B2, _), !pattern.equals([F, B], [F, B2]).
+
+picked(F, $RarestPattern(), B) :- extremes.low(F, B, _), !rare_tie(F).
