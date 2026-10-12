@@ -26,7 +26,7 @@ tile_cell[p_intile]: 16 values, one per `p_tile`, `p_grid`, `col`
 in_scope: one cell set on every input; case `$Interior`
   # #
   # #
-  no witness: the relation has the value at no case that reads it
+  no witness: with a `@store` line on the value, no witnessed case that holds the value takes the branch that line adds
   add: // @store: <plausibility> <verdict>
   or:  // @ignore: store — <reason>
 border.item: one color on every input: 0; under `$DerivedSeparator`

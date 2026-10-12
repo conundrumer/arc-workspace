@@ -232,7 +232,10 @@ class SearchEnd(StrEnum):
     """The run that enumerates the cases failed, so the search looked
     with no case and ran on no grid."""
     UNTAKEN = "untaken"
-    """No case takes the value, so the search ran on no grid."""
+    """No judged case of the solver with the value's line standing, of
+    the bases the value stands for where its rows hold a case column
+    (`Found.bases`), takes the value's branch, so the search ran on no
+    grid."""
     FOUND = "found"
     """A grid gave a witness (`Found.move`)."""
     FAILED = "failed"

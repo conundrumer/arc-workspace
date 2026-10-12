@@ -339,8 +339,9 @@ def unplaced_text(b: BranchName) -> str:
 
 
 def untaken_text() -> str:
-    return mctx("no witness: the relation has the value at no case that "
-                "reads it")
+    return mctx("no witness: with a `@store` line on the value, no "
+                "witnessed case that holds the value takes the branch that "
+                "line adds")
 
 
 def row_cap_text(cap: int, rels: Sequence[str]) -> str:
