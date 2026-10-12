@@ -268,7 +268,7 @@
 - [Checks](prompts/agents/ticket-reviewer.md#checks): Verification: each `change` ticket checked before the build.
     - "Report nothing on a draft's wording": none. Kept: it keeps the review on what a requirement states, a way Verification can fail.
     - "A `change`, other than one under `tickets/blocked/`", "A `change` ticket's `depends-on` gives": Configuration management: a change built after the changes whose result it reads.
-    - "Instructions that edit the same part of a file": none. Kept: two instructions of one change that edit one part conflict where they stand out of order.
+    - "Instructions of the draft that edit the same part of a file": none. Kept: two instructions of one change that edit one part conflict where they stand out of order.
     - "A `change` to the agents' processes": Process assessment: each rule maps to an outcome.
     - "In a `change` that serves a `request`, each item of the Intent": Requirements: requirements traced to the spans.
     - "A `change` that adds a mechanism to code has a `Design`", "A `change` that adds or changes a rule or a fact", "A `Design` lists each state": Design: the design checked before the build.
