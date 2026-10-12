@@ -21,7 +21,10 @@ with a request to send it again in that form. The pipeline stops where
 the pass's answer is still in no such form, once a ticket analyst on
 that answer, quoted, as an undecided step was launched; where an `interference`
 ticket waits on the user; where one stands open once the ticket analyst
-returned; or where a ruling passed over the launch of its next pass.
+returned; or where a ruling passes over its next pass. A ruling on a pass
+holds for each pipeline on its task unless the work set aside for an
+earlier pipeline on that task went back after the ruling and before the
+pipeline started.
 Once it ends or stops, the work set aside goes back, as
 `scripts/operate.py restore` does."""
 
@@ -189,8 +192,9 @@ def run(state: State, p: Pipeline) -> Outcome:
             if role in SETS_ASIDE and not ran(state, aside, since):
                 return Outcome(Bash(aside))
             launch = Launch(role, p.task, briefs.solver_pass(p.task, overrides(state, p.task, role, since)))
-            if (line := passed(launch, state)) is not None:
-                return stop(f"the line `{line}` passed over its {role} pass")
+            ruling = passed(launch, state)
+            if ruling is not None and not restored(state, p.task, ruling.message.time, p.since):
+                return stop(f"the line `{ruling.text}` passed over its {role} pass")
             return Outcome(launch)
         since = a.launched
         if a.pending:
@@ -240,9 +244,14 @@ def runs_at(state: State, p: Pipeline, time: float) -> bool:
     """Whether the pipeline `p` runs at `time`, so that a line given then
     gives it again: its line came before or with that time, and its work
     set aside had not gone back by then."""
-    return p.since <= time and not any(
-        p.since <= c.time < time and not c.error
-        for c in bash_calls(state, restore_command(p.task)))
+    return p.since <= time and not restored(state, p.task, p.since, time)
+
+
+def restored(state: State, task: str, start: float, stop: float) -> bool:
+    """Whether a `restore` call on `task` that did not fail came at or
+    after `start` and before `stop`."""
+    return any(start <= c.time < stop and not c.error
+               for c in bash_calls(state, restore_command(task)))
 
 
 def started(state: State, given: list[Line]) -> list[Pipeline]:

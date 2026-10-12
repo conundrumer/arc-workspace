@@ -37,7 +37,6 @@ from controlled_markdown import mctx
 from operations.reports import LIST_MARKER
 from operations.roles import PASSES, Purpose, Role
 from operations.state import Agent, Message, Report, State
-from operations.final_reply import final_replies
 from operations.steps import STEP_KEY, Launch, Step, Undecided, decision_key, held, key
 
 
@@ -182,20 +181,10 @@ def passed_over(state: State) -> dict[str, Line]:
             if ln.kind is Directive.OVERRIDE and (m := PASS_OVER.fullmatch(ln.rest))}
 
 
-def passed(step: Step, state: State) -> str | None:
-    """The line of the ruling that passed `step` over, or None. A ruling on
-    a solver pass is spent once a solver pass on its task launched after
-    it, or once an operator of the session sent the coordinator the text of
-    its final reply after it, so that a later pipeline on that task is not passed over."""
-    ln = passed_over(state).get(key(step))
-    if ln is None:
-        return None
-    since = ln.message.time
-    if isinstance(step, Launch) and step.role in PASSES and (
-            any(a.launched > since for role in PASSES for a in state.agents_of(role, step.subject))
-            or any(t > since for o in state.operators for t in final_replies(state, o))):
-        return None
-    return ln.text
+def passed(step: Step, state: State) -> Line | None:
+    """The ruling that passes `step` over, or None. Whether a ruling on a
+    solver pass holds for a pipeline is `passes.run`'s to decide."""
+    return passed_over(state).get(key(step))
 
 
 def overrides(state: State, task: str, role: Role, since: float) -> list[str]:

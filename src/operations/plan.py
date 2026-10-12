@@ -35,7 +35,8 @@ analysts on open tickets; the review
 of drafts; the changes; the solver pipelines; After a batch. A step that
 is a message an operator already sent is passed over, and so are an
 undecided step an operator already handled (`handled.repeated`) and a step
-an `Override: pass over` ruling passed over (`directives.passed`). A
+an `Override: pass over` ruling passed over (`directives.passed`), other
+than a solver pass, whose pipeline stops on it (`passes.run`). A
 launch a procedure gives, other than that of a ticket analyst on a held
 step, is held where its chain of causes runs `lineage.DEPTH` launches of
 its kind deep (`lineage`).
@@ -63,7 +64,7 @@ from operations.directives import (
     passed,
     unread,
 )
-from operations.roles import Role, description
+from operations.roles import PASSES, Role, description
 from operations.state import Call, State, Ticket, Tool
 from ticketing.vocabulary import Status
 from operations.final_reply import (FOR_CONTEXT, ending_step, failure, final_sends,
@@ -105,10 +106,11 @@ def placed(state: State, procedure: Callable[[State], Step | None]
         on_step = isinstance(s, Undecided)
         if isinstance(s, Undecided):
             s = decisions.launch(state, s)
-        if (line := passed(s, state)) is not None:
+        if not (isinstance(s, Launch) and s.role in PASSES) and (
+                ruling := passed(s, state)) is not None:
             s = None if on_step else Undecided(mctx(
                 "step {key}, which the line `{line}` passed over, holds up its "
-                "procedure").format(key=key(s), line=line))
+                "procedure").format(key=key(s), line=ruling.text))
             continue
         if (failed := refused(state, s)) is None:
             return s, None
