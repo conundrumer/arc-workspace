@@ -94,7 +94,7 @@ def pass_tickets(report: str, main: Path) -> tuple[str, ...] | None:
         return None
     section = body.split("\n## ", 1)[0]
     return tuple(m.group(0).rstrip("_") for m in re.finditer(
-        rf"{TICKET_NUMBER.pattern}_", section))
+        rf"(?<![\w-]){TICKET_NUMBER.pattern}_", section))
 
 
 FILED_FIELDS: dict[str, str] = {Tool.AGENT: "prompt", Tool.SEND_MESSAGE: "message"}
