@@ -71,8 +71,13 @@ def fingerprint(w: Path) -> str:
 
 def worktree(t: Ticket, state: State) -> Path | None:
     """`logged_worktree` of `t`, where it stands."""
+    return worktree_in(t, state.git.worktrees)
+
+
+def worktree_in(t: Ticket, worktrees: frozenset[Path]) -> Path | None:
+    """`logged_worktree` of `t`, where it is among `worktrees`."""
     path = logged_worktree(t)
-    return path if path in state.worktrees else None
+    return path if path in worktrees else None
 
 
 def last_index(t: Ticket, words: tuple[str, ...]) -> int:
@@ -130,7 +135,7 @@ def blocked_on_user(t: Ticket) -> LogLine | None:
 
 def closed(state: State, number: str) -> bool:
     """Whether ticket `number` stands under `tickets/closed/`. A ticket the
-    read of the tracker left out (`State.unread`) is not known to be
+    read of the tracker left out (`TrackerRead.unread`) is not known to be
     closed, so what waits on it waits."""
-    t = state.tickets.get(number)
+    t = state.tracker.tickets.get(number)
     return t is not None and t.status is Status.CLOSED

@@ -19,7 +19,7 @@ def step(state: State) -> Step | None:
     lifted = state.limit_lifted
     if lifted is None:
         return None
-    for a in state.agents:
+    for a in state.transcripts.agents:
         if a.agent_id is not None and a.limited is not None and lifted > a.limited:
             return Send(a.agent_id, RESUME, since=a.limited)
     return None

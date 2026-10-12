@@ -2,7 +2,7 @@
 coordinator's gives starts, as `scripts/operate.py --help run` gives the
 script's form. `scripts/operator_state.py` loads and calls the script at
 each read of the state, with the `Run` this module gives, and the state
-holds what it gave (`state.State.run_starts`).
+holds what it gave (`state.Computed.run_starts`).
 
 A run's pipelines are the calls of `operate.py start` that an operator of
 the session made with the run's `RUN_OPTION`, which its step gives, each
@@ -93,7 +93,7 @@ def script_path(main: Path, ln: Line) -> Path:
 
 def given(state: State, ln: Line) -> Starts:
     """What the script of the `Run:` line `ln` gave at this read."""
-    return state.run_starts[run_id(ln)]
+    return state.computed.run_starts[run_id(ln)]
 
 
 def run_lines(lines: Iterable[Line]) -> list[Line]:
@@ -135,7 +135,7 @@ def start_words(c: Call) -> tuple[str, Start] | None:
 def started(state: State, ln: Line) -> list[Started]:
     """The pipelines of the run of `ln`, in the order of their calls."""
     out: list[Started] = []
-    for c in state.calls:
+    for c in state.transcripts.calls:
         words = start_words(c)
         if words is None or words[0] != run_id(ln):
             continue
@@ -145,13 +145,14 @@ def started(state: State, ln: Line) -> list[Started]:
     return out
 
 
-def view(state: State, ln: Line, ended: Mapping[Pipeline, tuple[bool, str | None]]) -> Run:
-    """The `Run` the script of `ln` reads, where `ended` gives for each
-    pipeline of the run whether it ended, and the reason it stopped or
-    None."""
+def view(state: State, listed: tuple[str, ...], ln: Line,
+         ended: Mapping[Pipeline, tuple[bool, str | None]]) -> Run:
+    """The `Run` the script of `ln` reads, where `listed` is the queue's
+    full listing and `ended` gives for each pipeline of the run whether it
+    ended, and the reason it stopped or None."""
     pipelines = started(state, ln)
     taken = {s.pipeline.task for s in pipelines}
-    queue = tuple(t for t in state.queue if t not in state.claims and t not in taken)
+    queue = tuple(t for t in listed if t not in state.git.claims and t not in taken)
     running: list[Begun] = []
     over: list[Begun] = []
     for s in pipelines:

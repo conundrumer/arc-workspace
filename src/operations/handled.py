@@ -58,7 +58,7 @@ def answered(step: Send, state: State) -> bool:
     times = sendings(step, state)
     if not times:
         return False
-    of = [a for a in state.agents if a.agent_id == step.to]
+    of = [a for a in state.transcripts.agents if a.agent_id == step.to]
     return not any(a.pending for a in of) and any(
         r.time > max(times) for a in of for r in a.reports)
 
@@ -80,7 +80,7 @@ def sent(state: State, to: str, message: str, mark: str | None = None) -> bool:
 def sends_to(state: State, to: str) -> list[Call]:
     """The operators' SendMessage calls to `to` that the harness gave no
     error, in the order they were made."""
-    return sends_in(state.calls, to)
+    return sends_in(state.transcripts.calls, to)
 
 
 def sends_in(calls: Iterable[Call], to: str) -> list[Call]:
@@ -105,11 +105,11 @@ def sent_at(state: State, to: str, message: str, mark: str | None = None) -> lis
 
 
 def made_calls(state: State, tool: Tool, step: Step, printed: Callable[[Made], bool]) -> list[Call]:
-    """The calls of `tool` that `state.made` gives as made after the
+    """The calls of `tool` that `state.transcripts.made` gives as made after the
     printing of `step`, a step of `tool`: by its key, or where the result
     cut the key, where `printed` holds of the printed step."""
     step_key = key(step)
-    return [m.call for m in state.made if m.tool == tool and m.call.tool == tool.value
+    return [m.call for m in state.transcripts.made if m.tool == tool and m.call.tool == tool.value
             and (m.key == step_key if m.key is not None else printed(m))]
 
 
@@ -147,7 +147,7 @@ def asked_again(sent_times: Callable[[str, str], list[float]], to: str, replies:
 def bash_calls(state: State, command: str) -> list[Call]:
     """The operators' Bash calls that made the Bash step `command`, in the
     order they were made."""
-    out = [c for c in state.calls
+    out = [c for c in state.transcripts.calls
            if c.tool == Tool.BASH and command in str(c.input.get("command", ""))]
     out += made_calls(state, Tool.BASH, Bash(command), lambda m: m.text == command)
     return sorted({id(c): c for c in out}.values(), key=lambda c: c.time)

@@ -74,7 +74,7 @@ GIVEN = (Purpose.TRIAGE, Purpose.PASS)
 def given(state: State, number: str) -> bool:
     """Whether a ticket analyst runs on `number`, or one was launched with
     it, or sent it, after the coordinator's last line on it."""
-    t = state.tickets[number]
+    t = state.tracker.tickets[number]
     last = coordinator_lines(t.log)[-1:]
     return any(number in nums and (
         a.pending or a.launched > coordinator_line(t) or (
@@ -96,7 +96,7 @@ def reopen(state: State) -> Step | None:
     `change` the user rules on comes back by a `Merge:` or a `Drafts to
     review:` line instead, and one under `tickets/open/` is taken as a
     fresh change."""
-    for t in sorted(state.tickets.values(), key=lambda t: t.order):
+    for t in sorted(state.tracker.tickets.values(), key=lambda t: t.order):
         if t.status not in REOPENED or t.kind is Kind.CHANGE:
             continue
         run, wait = final_run(t)
@@ -117,7 +117,7 @@ def later_lines(state: State) -> Step | None:
         if not a.pending or a.agent_id is None or purpose not in GIVEN:
             continue
         for n in nums:
-            t = state.tickets.get(n)
+            t = state.tracker.tickets.get(n)
             if t is None or t.status is Status.DRAFT:
                 continue
             for ln in coordinator_lines(t.log):
@@ -128,7 +128,7 @@ def later_lines(state: State) -> Step | None:
 
 
 def settle(state: State) -> Step | None:
-    numbers = [n for n in state.to_settle
+    numbers = [n for n in state.computed.to_settle
                if not given(state, n) and not awaits_analyst(state, n)]
     if not numbers:
         return None
@@ -139,7 +139,7 @@ def settle(state: State) -> Step | None:
 def unsettled(state: State) -> list[str]:
     """The tickets the list holds that an analyst returned on and left
     open, for the final reply."""
-    return [n for n in state.to_settle if given(state, n)
+    return [n for n in state.computed.to_settle if given(state, n)
             and not any(n in nums and a.pending for a, _, nums in state.analysts())]
 
 
@@ -159,9 +159,9 @@ def carried(state: State, t: Ticket, line: LogLine) -> bool:
 
 
 def decisions(state: State) -> Step | None:
-    known = {a.agent_id for a in state.agents if a.agent_id} | set(state.operators)
+    known = {a.agent_id for a in state.transcripts.agents if a.agent_id} | set(state.operators)
     briefed = {n for _, _, nums in state.analysts() for n in nums}
-    for t in sorted(state.tickets.values(), key=lambda t: t.order):
+    for t in sorted(state.tracker.tickets.values(), key=lambda t: t.order):
         line = blocked_on_user(t)
         if line is None:
             continue
@@ -182,11 +182,11 @@ MAIN_WANTED = mctx("""
 def main_wanted(state: State) -> Step | None:
     """The message that asks the coordinator, once, to have the user pick a
     main session, where `tickets/main-wanted` holds the session's id."""
-    if state.main_wanted is None or state.main_wanted[0] != state.session:
+    if state.sessions.main_wanted is None or state.sessions.main_wanted[0] != state.session:
         return None
-    stuck = [t.number for t in sorted(state.tickets.values(), key=lambda t: t.order)
-             if t.session in state.idle_indexes and t.status not in SETTLED]
-    key = f"main session, asked at {state.main_wanted[1]:.0f}"
+    stuck = [t.number for t in sorted(state.tracker.tickets.values(), key=lambda t: t.order)
+             if t.session in state.sessions.idle_indexes and t.status not in SETTLED]
+    key = f"main session, asked at {state.sessions.main_wanted[1]:.0f}"
     step = Send(COORDINATOR, labeled(key, MAIN_WANTED.format(tickets=", ".join(stuck))))
     return None if sent(state, step.to, step.message, key) else step
 

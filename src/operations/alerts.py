@@ -24,7 +24,7 @@ on, whichever operator of the session it reached, other than where it is
 undecided. Every other alert and message gives a step only to the
 operator `me` where it reached `me`.
 
-An agent of `State.stalled`, whose final reply the operator took as its
+An agent of `TranscriptsRead.stalled`, whose final reply the operator took as its
 report on its `stall` reading (`monitor`), or sends the coordinator once
 where the coordinator launched it, is recorded in one `bug` ticket
 of that kind, which records that its report reached no operator (`stalls`):
@@ -32,7 +32,7 @@ the first such agent's step files it, and each further one's writes a line
 in it while it stands outside `tickets/closed/`.
 
 A resume of an operator of the session after the next operator of the
-session made its first entry (`State.late_resumes`), as `monitor.ALERTS`
+session made its first entry (`TranscriptsRead.late_resumes`), as `monitor.ALERTS`
 gives a resume, is recorded the same
 way, in one `bug` ticket of its own kind (`late_resumes`): each line is on
 one operator, and gives each of its resumes that no earlier line on it
@@ -138,7 +138,7 @@ def to_agent(kind: AlertKind, agent: str) -> str:
 
 
 def latest(state: State, agent: str) -> Agent | None:
-    found = [a for a in state.agents if a.agent_id == agent]
+    found = [a for a in state.transcripts.agents if a.agent_id == agent]
     return found[-1] if found else None
 
 
@@ -177,7 +177,7 @@ def instance(agent: str) -> str:
 def kind_tickets(state: State, kind: BugKind) -> list[Ticket]:
     """The tickets of `kind` an operator filed, in the tracker's order."""
     title = TICKETS[kind][0]
-    return sorted((t for t in state.tickets.values()
+    return sorted((t for t in state.tracker.tickets.values()
                    if t.filer == AGENT and t.kind is Kind.BUG and t.title == title),
                   key=lambda t: t.order)
 
@@ -213,7 +213,7 @@ def ticket_step(state: State, kind: BugKind, agent: str, since: float, line: str
 
 
 def stall_step(state: State, agent: str, since: float, reply: Report) -> Step | None:
-    """`ticket_step` on `agent`, an agent of `State.stalled` whose final
+    """`ticket_step` on `agent`, an agent of `TranscriptsRead.stalled` whose final
     reply in its transcript is `reply`."""
     time = utc_stamp(reply.time)
     return ticket_step(
@@ -224,12 +224,12 @@ def stall_step(state: State, agent: str, since: float, reply: Report) -> Step | 
 
 
 def stalls(state: State) -> Step | None:
-    """The first step on an agent of `State.stalled`: for an agent no
+    """The first step on an agent of `TranscriptsRead.stalled`: for an agent no
     operator launched, which the coordinator launched, the message that
     gives the coordinator its final reply, once after that reply, and then
     for each, the step `ticket_step` gives, from its launch, or for an
     agent the coordinator launched, from that reply."""
-    for agent, reply in sorted(state.stalled.items()):
+    for agent, reply in sorted(state.transcripts.stalled.items()):
         a = latest(state, agent)
         if a is not None:
             since = a.launched
@@ -249,12 +249,12 @@ def resume_text(r: LateResume) -> str:
 
 
 def late_resumes(state: State) -> Step | None:
-    """The first step on an operator of `State.late_resumes`, in the order
+    """The first step on an operator of `TranscriptsRead.late_resumes`, in the order
     of `State.operators`: `ticket_step` from its earliest resume that
     `handled` leaves out, with each of its resumes from that one on."""
     tickets = kind_tickets(state, BugKind.LATE_RESUME)
     for agent in state.operators:
-        left = [r for r in state.late_resumes.get(agent, ())
+        left = [r for r in state.transcripts.late_resumes.get(agent, ())
                 if not handled(tickets, agent, r.time)]
         if not left:
             continue
@@ -280,7 +280,7 @@ def on(state: State, alert: Alert, a: Agent) -> Step | None:
 def step(state: State) -> Step | None:
     """The first step the alerts and the other agents' messages give the
     operator `me`."""
-    launched = {a.agent_id for a in state.agents if a.agent_id}
+    launched = {a.agent_id for a in state.transcripts.agents if a.agent_id}
     for m in state.arrived:
         if m.sender is None or m.sender in launched:
             continue

@@ -48,10 +48,11 @@ from operations.directives import lines, named
 from operations.plan import taken_up, unknown_line
 from operations import change_budget, changes, monitor, passes, runs
 from operations.monitor import MonitorState, Watched
-from operations.state import (Agent, Budget, Call, LateResume, Message, Reader, Report, Spend, Starts,
-                              State, Ticket)
+from operations.state import (Agent, Budget, Call, Computed, GitRead, HeldRead, LateResume, Message,
+                              Reader, Report, SessionsRead, Spend, Starts, State,
+                              Ticket, TrackerRead, TranscriptsRead)
 from operations.handled import made
-from operations.tracker import worktree
+from operations.tracker import worktree, worktree_in
 from ticketing.vocabulary import Status
 
 
@@ -116,24 +117,20 @@ def read_relay(me: str) -> tuple[Relay, Path]:
     main = main_tree()
     undecided: list[str] = []
     path = find(me)
-    agents: list[Agent] = []
-    calls: list[Call] = []
-    messages: list[Message] = []
-    read_operator(me, path, main, undecided, agents, calls, messages, {}, {})
+    own = read_operator(me, path, main, undecided, {})
     runs: list[Run] = []
-    for a in sorted(agents, key=lambda a: a.launched):
+    for a in sorted(own.agents, key=lambda a: a.launched):
         if a.role is not Role.OPERATOR:
             continue
         final = None
         if a.agent_id is not None:
-            theirs: list[Call] = []
-            read_operator(a.agent_id, find(a.agent_id), main, undecided, [], theirs, [], {}, {})
+            theirs = read_operator(a.agent_id, find(a.agent_id), main, undecided, {}).calls
             sends = [c for c in final_sends_in(theirs, a.agent_id, me) if c.time > a.launched]
             final = sent_final_text(sends[0]) if sends else None
         runs.append(Run(a.agent_id, a.launched, a.pending, final))
-    relay = Relay(me, tuple(sorted((m for m in messages if m.sender is None),
+    relay = Relay(me, tuple(sorted((m for m in own.messages if m.sender is None),
                                    key=lambda m: m.time)),
-                  tuple(runs), tuple(sorted(calls, key=lambda c: c.time)),
+                  tuple(runs), tuple(sorted(own.calls, key=lambda c: c.time)),
                   past_bound(context_size(entries_back(path))))
     return relay, scratch(session)
 
@@ -146,24 +143,23 @@ def run_index(runs: list[tuple[str, Path]], me: str) -> int:
 QUEUE_COMMAND = ("bash", "scripts/queue.sh", "--order", "name", "--all", "--json")
 
 
-def with_runs(state: State) -> State:
-    """`state` with the queue's full listing and what the script of each
-    `Run:` line the operator received gave, where it received one. Where
+def read_runs(state: State) -> dict[str, Starts]:
+    """What the script of each `Run:` line the operator received gave, by
+    its run, where it received one, with the queue's full listing. Where
     the listing fails, its failure is the fault of each such line."""
     given = runs.run_lines(lines(state))
     if not given:
-        return state
+        return {}
     listed = subprocess.run(QUEUE_COMMAND, cwd=state.main_tree, capture_output=True, text=True)
     if listed.returncode != 0:
         fault = mctx("the queue's listing `{command}` exited {code}: {stderr}").format(
             command=" ".join(QUEUE_COMMAND), code=listed.returncode, stderr=listed.stderr.strip())
-        return replace(state, run_starts={runs.run_id(ln): fault for ln in given})
-    state = replace(state, queue=tuple(e["id"] for e in json.loads(listed.stdout)))
+        return {runs.run_id(ln): fault for ln in given}
+    queue = tuple(e["id"] for e in json.loads(listed.stdout))
     ended = {p: (o.ended, o.stopped) for p, o in passes.outcomes(state)}
-    return replace(state, run_starts={
-        runs.run_id(ln): script_starts(runs.script_path(state.main_tree, ln),
-                                    runs.view(state, ln, ended))
-        for ln in given})
+    return {runs.run_id(ln): script_starts(runs.script_path(state.main_tree, ln),
+                                           runs.view(state, queue, ln, ended))
+            for ln in given}
 
 
 class ScriptTimeout(Exception):
@@ -223,14 +219,18 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     calls: list[Call] = []
     messages: list[Message] = []
     passes: dict[str, tuple[str, ...] | None] = {}
-    history = commits(main)
+    tree = read_git(main)
     subjects: dict[str, float] = {}
-    for c in history:
+    for c in tree.commits:
         subjects[c.subject] = max(subjects.get(c.subject, c.time), c.time)
     read = [(aid, path) for aid, path in runs
             if since is None or aid == me or (t := last_time(path)) is not None and t >= since]
     for aid, path in read:
-        read_operator(aid, path, main, undecided, agents, calls, messages, passes, subjects)
+        one = read_operator(aid, path, main, undecided, subjects)
+        agents += one.agents
+        calls += one.calls
+        messages += one.messages
+        passes.update(one.passes)
     agents += editor_reviewers(agents, main, undecided)
     late = late_resumes(read, undecided)
     launched = {a.agent_id for a in agents if a.agent_id}
@@ -253,61 +253,60 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     index = session_index(tickets_dir, session)
     holders = {t.holder for t in tickets.values() if t.status is Status.ASSIGNED and t.holder}
     my_path = dict(runs)[me]
-    trees = worktrees(main)
+    holding = {t.number: w for t in tickets.values() if t.status is Status.ASSIGNED
+               and t.holder == me and (w := worktree_in(t, tree.worktrees)) is not None}
+    sorted_calls = tuple(sorted(calls, key=lambda c: c.time))
+    parents = {aid: parent_id(p) for aid, p in runs}
+    operators = tuple(aid for aid, _ in runs)
     now = time.time()
     state = State(
         me=me, now=now, session=session, started=started(session),
-        transcripts=find(session).parent, index=index, main_tree=main,
-        scratch=scratch(session), operators=tuple(aid for aid, _ in runs),
-        parents={aid: parent_id(p) for aid, p in runs},
+        transcripts_dir=find(session).parent, main_tree=main,
+        scratch=scratch(session), operators=operators, parents=parents,
         open_operators=frozenset(aid for aid, p in runs[run_index(runs, me) + 1:]
                                  if work_open(p, [])),
         past_bound=past_bound(context_size(entries_back(my_path))),
         open_holders=frozenset(h for h in holders if work_open(find(h, recheck=True), [])),
-        tickets=tickets, agents=tuple(sorted(agents, key=lambda a: a.launched)),
-        calls=tuple(sorted(calls, key=lambda c: c.time)), messages=tuple(messages),
-        to_settle=(), worktrees=frozenset(trees), claims=claims(main),
-        commits=history, code_review=code_review(main),
+        tracker=TrackerRead(tickets, unread, index),
+        transcripts=TranscriptsRead(
+            agents=tuple(sorted(agents, key=lambda a: a.launched)),
+            calls=sorted_calls, messages=tuple(messages),
+            made=made(calls), late_resumes=late, stalled=stalled, pass_tickets=passes),
+        git=tree, taken_up=taken_up(me, operators, sorted_calls, parents),
+        held=read_held(holding, scratch(session)),
         readers=tuple(Reader(name, tuple(args)) for name, args in reader_calls()
                       if name not in DEPRECATED),
-        doc_reviews=doc_reviews(main),
-        pass_tickets=passes, stalled=stalled, late_resumes=late,
-        made=made(calls), unread=unread,
-        definitions={d.stem: d.stat().st_mtime
-                     for d in sorted(agents_of(main).glob("*.md"))},
-        branches={w: b for w, b in trees.items() if b is not None},
-        limit_lifted=limit_lifted(now, watching))
-    state = replace(state, taken_up=taken_up(state))
-    state = sessions(state, tickets_dir)
+        limit_lifted=limit_lifted(now, watching),
+        sessions=sessions(tickets_dir, index, session, now))
     given = [ticket_number(n) for n in named(state) if n in tickets]
-    holding = {t.number: w for t in tickets.values() if t.status is Status.ASSIGNED
-               and t.holder == me and (w := worktree(t, state)) is not None}
-    held = set(holding.values())
-    state = replace(state,
-                    to_settle=tuple(str(n) for n in to_settle(tickets_dir, index, state.adopted, given)
-                                    if str(n) in tickets),
-                    gate_outputs={w: gate_outputs(w) for w in held},
-                    fragments={w: fragments(w) for w in held},
-                    seen={n: read_seen(changes.seen_dir(n, state.scratch)) for n in holding})
     spent = change_spend(state, undecided)
-    state = replace(state, spent=spent,
-                    budgets=change_budgets(state, spent, tickets_dir, undecided),
-                    doc_budgets=doc_budgets(state, tickets_dir, undecided))
-    state = with_runs(state)
-    return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(state.stalled),
+    state = replace(state, computed=Computed(
+        to_settle=tuple(str(n) for n in to_settle(tickets_dir, index, state.sessions.adopted, given)
+                        if str(n) in tickets),
+        spent=spent, budgets=change_budgets(state, spent, tickets_dir, undecided),
+        doc_budgets=doc_budgets(state, tickets_dir, undecided), run_starts=read_runs(state)))
+    return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(stalled),
                                undecided=tuple(watching))
 
 
-def sessions(state: State, tickets: Path) -> State:
-    """`state` with the read of `idle_sessions`. Where an index is idle and
-    no main is live, the read first creates `tickets/main-wanted` with the
-    session's id where no file holds that name, so that one session asks
-    the user to pick a main (`triage.main_wanted`)."""
-    read = read_sessions(tickets, state.index, state.now)
+def read_git(main: Path) -> GitRead:
+    """The read of git and of the main tree `main`."""
+    trees = worktrees(main)
+    return GitRead(commits(main), frozenset(trees),
+                   {w: b for w, b in trees.items() if b is not None}, claims(main),
+                   code_review(main), doc_reviews(main),
+                   {d.stem: d.stat().st_mtime for d in sorted(agents_of(main).glob("*.md"))})
+
+
+def sessions(tickets: Path, index: int, session: str, now: float) -> SessionsRead:
+    """The read of `idle_sessions`. Where an index is idle and no main is
+    live, the read first creates `tickets/main-wanted` with the session's
+    id where no file holds that name, so that one session asks the user to
+    pick a main (`triage.main_wanted`)."""
+    read = read_sessions(tickets, index, now)
     if read.idle and not read.main and not read.main_live:
-        want_main(tickets, state.session)
-    return replace(state, idle_indexes=read.idle, adopted=read.adopted, main_live=read.main_live,
-                   main_wanted=main_wanted(tickets))
+        want_main(tickets, session)
+    return SessionsRead(read.idle, read.adopted, read.main_live, main_wanted(tickets))
 
 
 def editor_reviewers(agents: list[Agent], main: Path, undecided: list[str]) -> list[Agent]:
@@ -318,10 +317,19 @@ def editor_reviewers(agents: list[Agent], main: Path, undecided: list[str]) -> l
     for a in agents:
         if a.role is not Role.DOC_EDITOR or a.agent_id is None:
             continue
-        theirs: list[Agent] = []
-        read_operator(a.agent_id, find(a.agent_id), main, undecided, theirs, [], [], {}, {})
+        theirs = read_operator(a.agent_id, find(a.agent_id), main, undecided, {}).agents
         out += [r for r in theirs if r.role is Role.DOC_REVIEWER]
     return out
+
+
+def read_held(holding: dict[str, Path], scratch: Path) -> HeldRead:
+    """The read of the changes `me` holds, where `holding` gives the
+    worktree of each by its number, and `scratch` is the session's
+    scratchpad."""
+    trees = set(holding.values())
+    return HeldRead(gate_outputs={w: gate_outputs(w) for w in trees},
+                    fragments={w: fragments(w) for w in trees},
+                    seen={n: read_seen(changes.seen_dir(n, scratch)) for n in holding})
 
 
 def change_spend(state: State, undecided: list[str]) -> dict[str, Spend]:
@@ -336,7 +344,7 @@ def change_spend(state: State, undecided: list[str]) -> dict[str, Spend]:
 
 def change_budgets(state: State, spent: dict[str, Spend], tickets: Path,
                    undecided: list[str]) -> dict[str, Budget]:
-    """The budgets `State.budgets` gives."""
+    """The budgets `Computed.budgets` gives."""
     def of(t: Ticket, before: float) -> Budget | None:
         if t.editors is None:
             return None
@@ -355,7 +363,7 @@ def change_budgets(state: State, spent: dict[str, Spend], tickets: Path,
 
 
 def doc_budgets(state: State, tickets: Path, undecided: list[str]) -> dict[str, Budget]:
-    """The budgets `State.doc_budgets` gives."""
+    """The budgets `Computed.doc_budgets` gives."""
     out: dict[str, Budget] = {}
     for t in changes.held(state):
         editors = changes.lacking_doc_editor(t, worktree(t, state), state)
@@ -382,7 +390,7 @@ def given_lines(runs: list[tuple[str, Path]], me: str, calls: list[Call]) -> set
 
 def late_resumes(runs: list[tuple[str, Path]],
                  undecided: list[str]) -> dict[str, tuple[LateResume, ...]]:
-    """`State.late_resumes` of the operators `runs` gives, in the order of
+    """`TranscriptsRead.late_resumes` of the operators `runs` gives, in the order of
     their first entry."""
     out: dict[str, tuple[LateResume, ...]] = {}
     for (aid, path), (later, later_path) in zip(runs, runs[1:]):

@@ -93,7 +93,7 @@ def past_budget(take: Take, spent: Spend) -> bool:
 def overrun_ticket(state: State, t: Ticket, since: float) -> Ticket | None:
     """The `performance` ticket an operator filed on the change `t` at or
     after `since`."""
-    return next((p for p in sorted(state.tickets.values(), key=lambda p: p.order)
+    return next((p for p in sorted(state.tracker.tickets.values(), key=lambda p: p.order)
                  if p.kind is Kind.PERFORMANCE and p.domain is Domain.CHANGE
                  and p.subject == t.number and p.filer == AGENT and p.filed >= since), None)
 

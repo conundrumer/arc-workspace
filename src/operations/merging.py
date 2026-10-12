@@ -126,7 +126,7 @@ def merge_calls(state: State, t: Ticket) -> list[Call]:
     pending, and those with an outcome (`state.Merge`), which a call that
     merges no change, as a call of the script's `--help`, has not."""
     paths = log_worktrees(t)
-    return [c for c in state.calls if c.tool == Tool.BASH and MERGE_SCRIPT in str(
+    return [c for c in state.transcripts.calls if c.tool == Tool.BASH and MERGE_SCRIPT in str(
         c.input.get("command", "")) and any(p in str(c.input.get("command", "")) for p in paths)
         and (c.result is None or c.merge is not None)]
 
@@ -140,12 +140,12 @@ def merged(state: State, t: Ticket) -> bool:
     `tickets/draft/`, counts as landed too, since the merge call gives
     that title as the commit message and an operator of another session
     may have made it, whose calls this session does not read."""
-    gone = {p for p in log_worktrees(t) if Path(p) not in state.worktrees}
+    gone = {p for p in log_worktrees(t) if Path(p) not in state.git.worktrees}
     if any(c.merge is Merge.MERGED or (c.result is None and any(
             p in str(c.input.get("command", "")) for p in gone)) for c in merge_calls(state, t)):
         return True
     since = left_draft(t)
-    return any(c.subject == t.title and c.time >= since for c in state.commits)
+    return any(c.subject == t.title and c.time >= since for c in state.git.commits)
 
 
 def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
@@ -169,7 +169,7 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
                 wait=Wait.USER, command=command, first=first[0] if first else "no result text",
                 worktree=w), state.me))
         case Merge.CONFLICT:
-            branch = state.branches[w]
+            branch = state.git.branches[w]
             return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED, RERUN_CONFLICT.format(
                 rerun=Note.RERUN, paths=PATHS_SEP.join(last.conflicts), worktree=w,
                 branch=branch), state.me))
@@ -202,7 +202,7 @@ def refused(state: State, t: Ticket, w: Path, last: Call, latest: list[Agent]) -
 def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
     """The steps after a change's merge, or None while its checks after
     the merge run."""
-    head = state.commits[0].hash
+    head = state.git.commits[0].hash
     if t.after_merge is not None:
         checks = state.agents_of(Role.AFTER_MERGE, t.number)
         if not checks:
@@ -214,7 +214,7 @@ def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
     split: dict[str, str | None] = {}
     for a in agents:
         split.update(splits(a))
-    for r in sorted(state.tickets.values(), key=lambda r: r.order):
+    for r in sorted(state.tracker.tickets.values(), key=lambda r: r.order):
         target = r.title.split(":", 1)[0].strip(" `")
         if (r.kind is not Kind.REFACTOR or r.status is Status.CLOSED
                 or not r.title.endswith(MANY_IDEAS) or target not in split):
@@ -225,7 +225,7 @@ def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
                        f"left unsplit by change {t.number}: {part}", None))
         if not any(not c.error for c in bash_calls(state, command)):
             return Bash(command)
-    for q in sorted(state.tickets.values(), key=lambda q: q.order):
+    for q in sorted(state.tracker.tickets.values(), key=lambda q: q.order):
         if (q.kind is Kind.QUESTION and q.domain is Domain.CHANGE and q.subject == t.number
                 and q.status is not Status.CLOSED):
             return Bash(log(q.number, Status.CLOSED, q.status, note, None))

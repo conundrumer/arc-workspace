@@ -48,7 +48,7 @@ from operations.command_words import Action  # noqa: E402
 from operations.roles import BARE_BRIEFS, Role  # noqa: E402
 from operations.filing import filed, with_report  # noqa: E402
 from operations.printing import key_line, printed  # noqa: E402
-from operations.state import Agent, State  # noqa: E402
+from operations.state import State  # noqa: E402
 from operations.steps import (BLOCK_SECONDS, Bash, EndTurn, Launch, Poll, Send, Step,  # noqa: E402
                               Undecided)
 from collections.abc import Callable  # noqa: E402
@@ -292,8 +292,7 @@ def change_filed(operator: str, editor: str) -> float | None:
     """The time of the first log line of the change of the doc editor
     `editor`, as the launches of `operator` give that change, or None where
     they give no such launch or that ticket is not read."""
-    agents: list[Agent] = []
-    read_operator(operator, find(operator), main_tree(), [], agents, [], [], {}, {})
+    agents = read_operator(operator, find(operator), main_tree(), [], {}).agents
     mine = [a for a in agents if a.agent_id == editor and a.role is Role.DOC_EDITOR]
     number = parsed_number(mine[-1].subject) if mine else None
     if number is None:

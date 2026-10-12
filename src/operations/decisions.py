@@ -33,7 +33,7 @@ itself given to another analyst: its step stays held, and the final reply
 of the operator that made that call gives the step, with the call and the
 text of its failure (`failed`).
 
-A ticket file the read of the tracker left out (`State.unread`) is a step
+A ticket file the read of the tracker left out (`TrackerRead.unread`) is a step
 the command cannot place, one for each content the file has
 (`unread_steps`), once its last write is `WRITE_SECONDS` old, so that a
 file read while an agent writes it goes to no analyst."""
@@ -63,7 +63,7 @@ def unread_steps(state: State) -> list[Undecided]:
     return [Undecided(mctx("the ticket file {path} does not read as the operator reads a ticket, "
                            "so every procedure passes over its ticket: {why} (its content's "
                            "digest: {digest})").format(path=u.path, why=u.why, digest=u.digest))
-            for u in sorted(state.unread, key=lambda u: u.path) if not writing(state, u)]
+            for u in sorted(state.tracker.unread, key=lambda u: u.path) if not writing(state, u)]
 
 
 def unread_files(state: State) -> Step | None:
@@ -144,7 +144,7 @@ def failed(state: State) -> list[str]:
     whose analyst's launch, the last call `me` made of it, failed, with no
     analyst on that step launched since."""
     last: dict[str, tuple[float, str, str, str]] = {}
-    for c in sorted(state.calls, key=lambda c: c.time):
+    for c in sorted(state.transcripts.calls, key=lambda c: c.time):
         what = str(c.input.get("description", ""))
         d = described(what) if c.operator == state.me and c.tool == Tool.AGENT else None
         if d is None or d.role is not Role.TICKET_ANALYST:

@@ -71,7 +71,7 @@ def start(state: State, before: float | None = None) -> float:
 
 
 def members(state: State, since: float) -> list[Agent]:
-    return [a for a in state.agents if a.launched > since and not follows(a.role, a.subject)]
+    return [a for a in state.transcripts.agents if a.launched > since and not follows(a.role, a.subject)]
 
 
 def followed(state: State, at: float) -> list[Agent]:
@@ -104,7 +104,7 @@ def analysis(role: Role, subject: str) -> tuple[Purpose, str] | None:
 
 
 def merged(state: State, since: float) -> bool:
-    return (any(c.time > since and c.merge is Merge.MERGED for c in state.calls)
+    return (any(c.time > since and c.merge is Merge.MERGED for c in state.transcripts.calls)
             or any(t > since for _, t in numbers(state, Directive.MERGED)))
 
 
@@ -120,23 +120,23 @@ def step(state: State) -> Step | None:
         return None
     if (s := release(state)) is not None:
         return s
-    if merges and any(c.code and c.time > since for c in state.commits):
+    if merges and any(c.code and c.time > since for c in state.git.commits):
         reviewers = [a for a in state.agents_of(Role.CODE_REVIEWER) if a.launched > since]
         if not reviewers:
-            if state.code_review is None:
+            if state.git.code_review is None:
                 return Undecided("no `code-review/<n>` tag gives the last code review's baseline")
-            return Launch(Role.CODE_REVIEWER, f"code-review/{state.code_review + 1}",
-                          briefs.code_review(state.code_review, scratch_dir("code-review", state.scratch)))
+            return Launch(Role.CODE_REVIEWER, f"code-review/{state.git.code_review + 1}",
+                          briefs.code_review(state.git.code_review, scratch_dir("code-review", state.scratch)))
         if reviewers[-1].pending:
             return None
     if merges:
-        reviews = [a for a in state.agents if standing(a.role, a.subject) and a.launched > since]
+        reviews = [a for a in state.transcripts.agents if standing(a.role, a.subject) and a.launched > since]
         if not reviews:
             return doc_review(state)
         if reviews[-1].pending:
             return None
     n = len(state.agents_of(Role.BATCH_PROFILE)) + 1
-    head = state.commits[0].hash
+    head = state.git.commits[0].hash
     if merges and not any(a.launched > since for a in state.agents_of(Role.BATCH_GATE)):
         return Launch(Role.BATCH_GATE, str(n), briefs.batch_gate(scratch_dir(f"batch-{n}", state.scratch)))
     runs = batch_runs(state, batch, since, None)
@@ -186,7 +186,7 @@ def validation(state: State) -> Step | None:
     if reviews and (reviews[-1].pending or reviews[-1].launched > closing):
         return None
     checks: list[briefs.Check] = []
-    for t in sorted(state.tickets.values(), key=lambda t: t.order):
+    for t in sorted(state.tracker.tickets.values(), key=lambda t: t.order):
         if t.kind is Kind.REQUEST and t.status is Status.CLOSED and t.validation and state.mine(t):
             check = pending(t)
             if check is not None:
@@ -221,14 +221,14 @@ def doc_review(state: State) -> Step:
     """The launch of a standing doc review, on the reader it is due on."""
     if not state.readers:
         return Undecided(mctx("no reader is listed for a standing doc review"))
-    if state.doc_reviews is None:
+    if state.git.doc_reviews is None:
         return Undecided(mctx("a `doc-review/<reader>` tag does not read as a commit"))
-    times = state.doc_reviews
+    times = state.git.doc_reviews
     unreviewed = [r for r in state.readers if r.tag not in times]
     reader = unreviewed[0] if unreviewed else min(state.readers, key=lambda r: times[r.tag])
     return Launch(Role.DOC_REVIEWER, reader.tag,
                   briefs.standing_doc_review(" ".join((reader.name, *reader.args)), reader.tag,
-                                             state.commits[0].hash, state.me))
+                                             state.git.commits[0].hash, state.me))
 
 
 ASSESS_AFTER = 20
@@ -236,9 +236,9 @@ ASSESS_AFTER = 20
 
 def assessment(state: State) -> Step | None:
     """The launch of a process assessment, where one is due."""
-    past = [a for a in state.agents if assesses(a.role, a.subject)]
+    past = [a for a in state.transcripts.agents if assesses(a.role, a.subject)]
     since = opened(state, past)
-    if since is None or len({c.hash for c in state.commits if c.process and c.time > since}) < ASSESS_AFTER:
+    if since is None or len({c.hash for c in state.git.commits if c.process and c.time > since}) < ASSESS_AFTER:
         return None
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.ASSESS, str(len(past) + 1)),
                   briefs.process_assessment(state.me))
@@ -258,9 +258,9 @@ def audit(state: State) -> Step | None:
     """The launch of a cost audit, where one is due."""
     past = state.agents_of(Role.COST_AUDIT)
     since = opened(state, past)
-    if since is None or not any(assesses(a.role, a.subject) and a.launched > since for a in state.agents):
+    if since is None or not any(assesses(a.role, a.subject) and a.launched > since for a in state.transcripts.agents):
         return None
-    return Launch(Role.COST_AUDIT, str(len(past) + 1), briefs.cost_audit(since, state.transcripts, state.me))
+    return Launch(Role.COST_AUDIT, str(len(past) + 1), briefs.cost_audit(since, state.transcripts_dir, state.me))
 
 
 def under_command(operator: str) -> str:

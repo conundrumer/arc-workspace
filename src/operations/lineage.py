@@ -45,8 +45,8 @@ def causes(state: State, role: Role, subject: str, at: float) -> list[Agent]:
         found = batches.followed(state, at)
     else:
         found = [a for n in tickets(role, subject)
-                 if (t := state.tickets.get(n)) is not None and t.domain is Domain.AGENT
-                 for a in state.agents if a.agent_id == t.subject]
+                 if (t := state.tracker.tickets.get(n)) is not None and t.domain is Domain.AGENT
+                 for a in state.transcripts.agents if a.agent_id == t.subject]
     return [a for a in found if a.agent_id is not None]
 
 

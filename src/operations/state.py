@@ -126,7 +126,7 @@ class Agent:
     its launch or its last resume, the final reply in its transcript, where
     it gives one after them and it went to that operator or is the path of
     a report file alone, read from that file, ends its `reports`.
-    `pending` does not hold either for an agent in `State.stalled`, nor
+    `pending` does not hold either for an agent in `TranscriptsRead.stalled`, nor
     for an agent of another operator whose work is no longer open, and
     the final reply in its transcript, where it gives one and it went to
     that operator or is the path of a report file alone, read from that
@@ -317,115 +317,159 @@ type Starts = tuple[Start, ...] | str
 
 
 @dataclass(frozen=True)
+class TranscriptsRead:
+    """What the operator reads of the transcripts of the session's
+    operators. `agents` holds their launches, in the order of their launch,
+    `calls` their calls, in the order of their time, and `messages` the
+    messages that reached any of them. `made` holds each step the command
+    printed to an operator with the call that operator made next
+    (`handled.made`). `late_resumes` gives, for each operator of
+    `State.operators`, its resumes, as `monitor.ALERTS` gives them, after
+    the next operator of `State.operators` made its first entry, in the
+    order of their time. `stalled` gives the final reply in the transcript
+    of each agent a stall alert names that reached no operator as a
+    report. `pass_tickets` gives, for each
+    solver pass with an agent id, the numbers of the tickets the report
+    file it wrote under the task's work directory since its launch lists
+    under `## Tickets filed`, or None where it wrote no such file with
+    that section, whatever its reply."""
+    agents: tuple[Agent, ...]
+    calls: tuple[Call, ...]
+    messages: tuple[Message, ...]
+    made: tuple[Made, ...]
+    late_resumes: Mapping[str, tuple[LateResume, ...]]
+    stalled: Mapping[str, Report]
+    pass_tickets: Mapping[str, tuple[str, ...] | None]
+
+
+@dataclass(frozen=True)
+class TrackerRead:
+    """What the operator reads of the ticket tracker: its `tickets` by
+    number, the ticket files the read left out of `tickets` (`unread`),
+    and the session's `index`."""
+    tickets: Mapping[str, Ticket]
+    unread: tuple[Unread, ...]
+    index: int
+
+
+@dataclass(frozen=True)
+class GitRead:
+    """What the operator reads of git and the main tree. `commits` holds the
+    commits `tree_reads.COMMITS` gives, `worktrees` the worktrees of the repo, and
+    `branches` the branch of each worktree that stands on one. `claims`
+    gives the session id each claimed task's claim file holds.
+    `code_review` is the highest number of a `code-review/<n>` tag.
+    `doc_reviews` gives the time of the commit each `Reader.tag` points
+    at, by that tag, or is None where the tags do not read. `definitions` gives the
+    `st_mtime` of each rendered definition `.claude/agents/<agent
+    type>.md` of the main tree, by agent type."""
+    commits: tuple[Commit, ...]
+    worktrees: frozenset[Path]
+    branches: Mapping[Path, str]
+    claims: Mapping[str, str]
+    code_review: int | None
+    doc_reviews: Mapping[str, float] | None
+    definitions: Mapping[str, float]
+
+
+@dataclass(frozen=True)
+class HeldRead:
+    """What the operator reads of the changes `me` holds. `gate_outputs`
+    gives, for the worktree of each, the accepted gate outputs under
+    `tests/gate/accepted/` its change writes, and `fragments` the
+    fragments whose text that change adds or changes, as
+    `tree_reads.fragments` gives them, and `seen` the files
+    `tree_reads.py seen` wrote for each change, by its number, in the
+    order of their time."""
+    gate_outputs: Mapping[Path, tuple[str, ...]]
+    fragments: Mapping[Path, tuple[Place, ...]]
+    seen: Mapping[str, tuple[Seen, ...]]
+
+
+@dataclass(frozen=True)
+class Computed:
+    """The values `operator_state.read_state` computes over the `State` of
+    the reads. `to_settle` is the list `file_ticket.py to-settle` prints
+    for the session, with the numbers the coordinator names, keeping only
+    the tickets that `tracker.tickets` holds. `spent` gives, for each
+    change `me` holds, the spend of the agents `changes.of_change` gives
+    for it. `budgets` gives the budget of the change `changes.take` takes
+    next, taken at `State.now`, and of each held change whose spend passes
+    the budget its take gives, taken at the line that gives that budget
+    (`change_budget.Take`). `doc_budgets` gives, for each held change that
+    `changes.lacking_doc_editor` gives an `editors` field for, the budget,
+    taken at `State.now`, of that field's set with the doc editor.
+    `run_starts` gives what the script of each `Run:` line gave at this
+    read, by its run (`runs.run_id`)."""
+    to_settle: tuple[str, ...] = ()
+    spent: Mapping[str, Spend] = field(default_factory=dict)
+    budgets: Mapping[str, Budget] = field(default_factory=dict)
+    doc_budgets: Mapping[str, Budget] = field(default_factory=dict)
+    run_starts: Mapping[str, Starts] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class SessionsRead:
+    """What the operator reads of the tracker's sessions. `idle_indexes`
+    holds the idle indexes `idle_sessions.read_sessions` gives, `adopted`
+    those of them the operators act on as on the session's own
+    (`file_ticket.py main --help`), `main_live` whether the main session
+    runs an agent, and `main_wanted` the session id `tickets/main-wanted`
+    holds with the time of its write, as `idle_sessions` gives them."""
+    idle_indexes: frozenset[int]
+    adopted: frozenset[int]
+    main_live: bool
+    main_wanted: tuple[str, float] | None
+
+
+@dataclass(frozen=True)
 class State:
     """What the procedures read. `operators` holds the agent ids of the
     session's operators in the order of their launch, `parents` the parent
     of each, `main` or the agent id of the operator launcher that launched
     it, and `open_operators` those after `me` whose work is open, the only
-    ones a procedure asks after. `pass_tickets` gives, for each solver pass
-    with an agent id, the numbers of the tickets the report file it wrote
-    under the task's work directory since its launch lists under
-    `## Tickets filed`, or None where it wrote no such file with that
-    section, whatever its reply.
-    `to_settle` is the list `file_ticket.py to-settle` prints for the
-    session, with the numbers the coordinator names, keeping only the
-    tickets that `tickets` holds. `claims` gives the
-    session id each claimed task's claim file holds, and `open_holders`
+    ones a procedure asks after. `transcripts` is the read of the
+    operators' transcripts. `open_holders` gives
     the holders of tickets under `tickets/assigned/` whose work is open, as
-    `profile_runs.py --open` gives it. `index` is the session's index.
-    `gate_outputs` gives, for the worktree of each
-    change `me` holds, the accepted gate outputs under
-    `tests/gate/accepted/` its change writes, and `fragments` the
-    fragments whose text that change adds or changes, as
-    `tree_reads.fragments` gives them, and `seen` the files
-    `tree_reads.py seen` wrote for each change `me` holds, by its number,
-    in the order of their time. `branches` gives the branch
-    of each worktree that stands on one, and `stalled` the final reply in
-    the transcript of each agent a stall alert names that reached no
-    operator as a report. `late_resumes` gives, for each operator of
-    `operators`, its resumes, as `monitor.ALERTS` gives them, after the
-    next operator of `operators` made its first entry, in the order of
-    their time. `made` holds each step the command printed to an operator
-    with the call that operator made next (`handled.made`). `messages` holds
-    the messages that reached any operator of the session, and `received`
-    those that reached `me` or an operator it takes up the lines of
-    (`taken_up`, as `plan.taken_up` gives it). `unread` holds the ticket
-    files the read of the tracker left out of `tickets`. `started` is the
-    time of the session's start, and `transcripts` the directory that holds
-    the session's transcript. `readers` holds the readers a standing doc
-    review rotates over, in the order `context.py contexts` lists them, and
-    `doc_reviews` the time of the commit each `Reader.tag` points at, by
-    that tag, or is None where the tags do not read. `definitions` gives
-    the `st_mtime` of each rendered definition
-    `.claude/agents/<agent type>.md` of the main tree, by agent type.
-    `spent` gives, for each change `me` holds, the spend of the agents
-    `changes.of_change` gives for it. `budgets` gives the budget of the
-    change `changes.take` takes next, taken at `now`, and of each change
-    `me` holds whose spend passes the budget its take gives, taken at the
-    line that gives that budget (`change_budget.Take`). `doc_budgets`
-    gives, for each change `me` holds that `changes.lacking_doc_editor`
-    gives an `editors` field for, the budget, taken at `now`, of that
-    field's set with the doc editor. `limit_lifted` is the time of the reading of the usage limit that
+    `profile_runs.py --open` gives it. `tracker` is the read of the
+    ticket tracker, `held` is the read of the changes `me` holds, and `git` the read of
+    git and the main tree. `received` holds the messages that reached `me`
+    or an operator it takes up the lines of (`taken_up`, as
+    `plan.taken_up` gives it). `started` is the time of the session's
+    start, and `transcripts_dir` the directory that holds the session's
+    transcript. `readers` holds the readers a standing doc
+    review rotates over, in the order `context.py contexts` lists them.
+    `limit_lifted` is the time of the reading of the usage limit that
     gives it as lifted, or None where the reading gives it in force, as
-    `operator_state.limit_lifted` gives it. `queue` is the queue's full
-    listing, read only while a `Run:` line stands, and `run_starts` what
-    the script of each `Run:` line gave at this read, by its run
-    (`runs.run_id`). `idle_indexes` holds the idle indexes
-    `idle_sessions.read_sessions` gives, `adopted` those of them the
-    operators act on as on the session's own (`file_ticket.py main
-    --help`), `main_live` whether the main session runs an agent, and
-    `main_wanted` the session id `tickets/main-wanted` holds with the
-    time of its write, as `idle_sessions` gives them."""
+    `operator_state.limit_lifted` gives it. `sessions` is the read of the
+    tracker's sessions, and `computed` the values computed over the
+    reads."""
     me: str
     now: float
     session: str
     started: float
-    transcripts: Path
-    index: int
+    transcripts_dir: Path
     main_tree: Path
     scratch: Path
     operators: tuple[str, ...]
     open_operators: frozenset[str]
     past_bound: bool
     open_holders: frozenset[str]
-    tickets: Mapping[str, Ticket]
-    agents: tuple[Agent, ...]
-    calls: tuple[Call, ...]
-    messages: tuple[Message, ...]
-    to_settle: tuple[str, ...]
-    worktrees: frozenset[Path]
-    claims: Mapping[str, str]
-    commits: tuple[Commit, ...]
-    code_review: int | None
+    tracker: TrackerRead
+    transcripts: TranscriptsRead
+    git: GitRead
+    taken_up: frozenset[str]
+    held: HeldRead
+    sessions: SessionsRead
     readers: tuple[Reader, ...] = ()
-    doc_reviews: Mapping[str, float] | None = field(default_factory=dict)
-    gate_outputs: Mapping[Path, tuple[str, ...]] = field(default_factory=dict)
-    fragments: Mapping[Path, tuple[Place, ...]] = field(default_factory=dict)
-    seen: Mapping[str, tuple[Seen, ...]] = field(default_factory=dict)
-    branches: Mapping[Path, str] = field(default_factory=dict)
-    stalled: Mapping[str, Report] = field(default_factory=dict)
-    late_resumes: Mapping[str, tuple[LateResume, ...]] = field(default_factory=dict)
-    pass_tickets: Mapping[str, tuple[str, ...] | None] = field(default_factory=dict)
-    made: tuple[Made, ...] = ()
-    taken_up: frozenset[str] = frozenset()
-    unread: tuple[Unread, ...] = ()
-    definitions: Mapping[str, float] = field(default_factory=dict)
     limit_lifted: float | None = None
     parents: Mapping[str, str] = field(default_factory=dict)
-    spent: Mapping[str, Spend] = field(default_factory=dict)
-    budgets: Mapping[str, Budget] = field(default_factory=dict)
-    doc_budgets: Mapping[str, Budget] = field(default_factory=dict)
-    queue: tuple[str, ...] = ()
-    run_starts: Mapping[str, Starts] = field(default_factory=dict)
-    idle_indexes: frozenset[int] = frozenset()
-    adopted: frozenset[int] = frozenset()
-    main_live: bool = False
-    main_wanted: tuple[str, float] | None = None
+    computed: Computed = field(default_factory=lambda: Computed())
 
     @property
     def arrived(self) -> list[Message]:
-        """`messages`, in the order they arrived."""
-        return sorted(self.messages, key=lambda m: m.time)
+        """`transcripts.messages`, in the order they arrived."""
+        return sorted(self.transcripts.messages, key=lambda m: m.time)
 
     @property
     def received(self) -> list[Message]:
@@ -434,7 +478,7 @@ class State:
         return [m for m in self.arrived if m.operator == self.me or m.operator in self.taken_up]
 
     def agents_of(self, role: Role | None = None, subject: str | None = None) -> list[Agent]:
-        return [a for a in self.agents
+        return [a for a in self.transcripts.agents
                 if (role is None or a.role is role) and (subject is None or a.subject == subject)]
 
     def analysts(self) -> list[tuple[Agent, Purpose, list[str]]]:
@@ -448,8 +492,8 @@ class State:
         return out
 
     def ticket(self, number: str) -> Ticket | None:
-        return self.tickets.get(number)
+        return self.tracker.tickets.get(number)
 
     def mine(self, t: Ticket) -> bool:
         """Whether the operators act on `t` as on a ticket of the session."""
-        return t.session == self.index or t.session in self.adopted
+        return t.session == self.tracker.index or t.session in self.sessions.adopted

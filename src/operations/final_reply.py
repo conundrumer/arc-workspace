@@ -53,7 +53,7 @@ def final_sends(state: State, operator: str) -> list[Call]:
     """The SendMessage calls by which `operator` sent its parent
     (`State.parents`) the text of its final reply, in the order they were
     made."""
-    return final_sends_in(state.calls, operator, state.parents[operator])
+    return final_sends_in(state.transcripts.calls, operator, state.parents[operator])
 
 
 def final_sends_in(calls: Iterable[Call], operator: str, to: str) -> list[Call]:
@@ -80,14 +80,14 @@ def live_holder(state: State, holder: str) -> bool:
     if not sends:
         return True
     last = sends[-1].time
-    return not all(next_call(c, holder) for c in state.calls
+    return not all(next_call(c, holder) for c in state.transcripts.calls
                    if c.operator == holder and c.time > last)
 
 
 def final_replies(state: State, operator: str) -> list[float]:
     """The times of the calls of `next` that printed `operator` the
     messages of `final_sends`: for each, the last call of `next` before it."""
-    nexts = [c.time for c in state.calls if next_call(c, operator)]
+    nexts = [c.time for c in state.transcripts.calls if next_call(c, operator)]
     return [max((t for t in nexts if t < c.time), default=c.time)
             for c in final_sends(state, operator)]
 

@@ -6,7 +6,7 @@ review of the documents. The steps carry out
 `merging` gives the merge and what follows it.
 
 The operators act on the tickets of the session and on those of the
-sessions `State.adopted` gives, as `State.mine` gives them. Which session
+sessions `SessionsRead.adopted` gives, as `State.mine` gives them. Which session
 is the main one, `file_ticket.py main --help` states; which sessions are
 idle, `idle_sessions.read_sessions` gives.
 
@@ -50,7 +50,7 @@ which gets those items with the line that rules the step
 
 Once a code editor or a `handbook-expanded` editor of a change has
 reported, where the change adds or changes the text of an `mctx` fragment
-(`State.fragments`) and no doc editor was launched since that report, the
+(`HeldRead.fragments`) and no doc editor was launched since that report, the
 fragments whose text no earlier doc editor of the fragments was launched on
 (`unseen`) go to a doc editor launched for them: a change whose `editors`
 field gives no doc editor first gets one in that field, with the budget of
@@ -127,7 +127,7 @@ def scope(state: State) -> set[str]:
     """The tickets the operators release and take changes among: those
     `State.mine` gives, those the coordinator gives in a line to the operator `me`,
     and each ticket a chain of links reaches from one of those."""
-    return reached(state, {n for n, t in state.tickets.items() if state.mine(t)} | named(state))
+    return reached(state, {n for n, t in state.tracker.tickets.items() if state.mine(t)} | named(state))
 
 
 def reached(state: State, start: set[str]) -> set[str]:
@@ -138,7 +138,7 @@ def reached(state: State, start: set[str]) -> set[str]:
     out = set(start)
     todo = sorted(out)
     while todo:
-        t = state.tickets.get(todo.pop())
+        t = state.tracker.tickets.get(todo.pop())
         if t is None:
             continue
         for d in links(t):
@@ -165,7 +165,7 @@ def release(state: State) -> Step | None:
     """The move back to `tickets/open/` of a ticket of `scope` under
     `tickets/assigned/` whose holder is not live (`live_holder`)."""
     for n in sorted(scope(state)):
-        t = state.tickets.get(n)
+        t = state.tracker.tickets.get(n)
         if t is None or t.status is not Status.ASSIGNED:
             continue
         if t.holder is None or not live_holder(state, t.holder):
@@ -178,7 +178,7 @@ def boosted(state: State) -> set[str]:
     """The changes that settle an `interference` ticket, which the
     operator takes ahead of the others."""
     out: set[str] = set()
-    for t in state.tickets.values():
+    for t in state.tracker.tickets.values():
         line = wait_line(t) if t.kind is Kind.INTERFERENCE else None
         if line is not None and line.on_change is not None:
             out.add(line.on_change)
@@ -187,7 +187,7 @@ def boosted(state: State) -> set[str]:
 
 def takeable(state: State) -> list[Ticket]:
     lead = boosted(state) | expedited(state)
-    ts = [t for n in scope(state) if (t := state.tickets.get(n)) is not None
+    ts = [t for n in scope(state) if (t := state.tracker.tickets.get(n)) is not None
           and t.kind is Kind.CHANGE and t.status is Status.OPEN
           and all(closed(state, d) for d in t.depends_on)]
     return sorted(ts, key=lambda t: (t.number not in lead, -t.priority, t.order))
@@ -197,7 +197,7 @@ def waiting(state: State) -> list[tuple[str, list[str]]]:
     """Each open `change` of `scope` not taken for its `depends-on`, with
     the tickets it waits for."""
     return [(n, [d for d in t.depends_on if not closed(state, d)]) for n in sorted(scope(state))
-            if (t := state.tickets.get(n)) is not None and t.kind is Kind.CHANGE
+            if (t := state.tracker.tickets.get(n)) is not None and t.kind is Kind.CHANGE
             and t.status is Status.OPEN and not all(closed(state, d) for d in t.depends_on)]
 
 
@@ -220,9 +220,9 @@ def stall(state: State) -> Step | None:
     its log since that ticket's last move into `tickets/blocked/` gives
     `STALL_FINDING` on it."""
     for n, deps in waiting(state):
-        t = state.tickets[n]
+        t = state.tracker.tickets[n]
         for d in deps:
-            u = state.tickets.get(d)
+            u = state.tracker.tickets.get(d)
             if u is None or blocked_on_user(u) is None:
                 continue
             since = blocked_since(u)
@@ -241,7 +241,7 @@ def next_take(state: State) -> Ticket | None:
 def take(state: State) -> Step | None:
     t = next_take(state)
     if t is not None:
-        b = state.budgets.get(t.number)
+        b = state.computed.budgets.get(t.number)
         if b is None:
             return Undecided(mctx("the budget of change {number} is unknown").format(
                 number=t.number))
@@ -249,7 +249,7 @@ def take(state: State) -> Step | None:
                         TAKE_NOTE.format(dollars=f"{b.dollars:.2f}", seconds=f"{b.seconds:.0f}"),
                         state.me))
     for n, time in numbers(state, Directive.MERGE):
-        t = state.tickets.get(n)
+        t = state.tracker.tickets.get(n)
         if (t is not None and t.status is Status.BLOCKED and t.kind is Kind.CHANGE
                 and time > blocked_since(t)):
             return Bash(log(n, Status.ASSIGNED, Status.BLOCKED,
@@ -258,7 +258,7 @@ def take(state: State) -> Step | None:
 
 
 def held(state: State) -> list[Ticket]:
-    return sorted((t for t in state.tickets.values()
+    return sorted((t for t in state.tracker.tickets.values()
                    if t.kind is Kind.CHANGE and t.status is Status.ASSIGNED
                    and t.holder == state.me),
                   key=lambda t: t.order)
@@ -268,7 +268,7 @@ def launched_on(state: State, number: str) -> list[Agent]:
     """The editors, doc reviewers, item checkers and ticket analysts
     launched on the change `number`."""
     roles = (*EDITORS, Role.DOC_REVIEWER, Role.ITEM_CHECKER)
-    out = [a for a in state.agents if a.role in roles and a.subject == number]
+    out = [a for a in state.transcripts.agents if a.role in roles and a.subject == number]
     out += [a for a, p, nums in state.analysts() if p is Purpose.CHANGE and number in nums]
     return sorted(out, key=lambda a: a.launched)
 
@@ -276,7 +276,7 @@ def launched_on(state: State, number: str) -> list[Agent]:
 def of_change(state: State, number: str) -> list[Agent]:
     """The agents `launched_on` gives for the change `number` since its
     last move out of `tickets/draft/`."""
-    t = state.tickets.get(number)
+    t = state.tracker.tickets.get(number)
     since = 0.0 if t is None else left_draft(t)
     return [a for a in launched_on(state, number) if a.launched > since]
 
@@ -286,7 +286,7 @@ def give_up(state: State) -> Step | None:
     carries any more, or that another live holder (`live_holder`) carries,
     to end. A live holder among the session's operators carries the same
     agents, so their work goes on."""
-    for a in state.agents:
+    for a in state.transcripts.agents:
         if not a.pending or a.agent_id is None:
             continue
         if a.role is Role.TICKET_ANALYST:
@@ -296,7 +296,7 @@ def give_up(state: State) -> Step | None:
             number = parsed[1]
         else:
             number = a.subject
-        t = state.tickets.get(number)
+        t = state.tracker.tickets.get(number)
         if t is None or t.kind is not Kind.CHANGE or a not in launched_on(state, number):
             continue
         lost = t.status in (Status.DRAFT, Status.CLOSED) or (
@@ -364,7 +364,7 @@ def lacking_doc_editor(t: Ticket, w: Path | None,
     editor while the `fragments` of `t`'s worktree `w` are not empty, and
     otherwise None."""
     if (t.editors is None or Role.DOC_EDITOR in t.editors or w is None
-            or not state.fragments.get(w)):
+            or not state.held.fragments.get(w)):
         return None
     return t.editors
 
@@ -383,16 +383,16 @@ def write_seen(number: str, w: Path, scratch: Path) -> str:
 
 
 def unseen(state: State, t: Ticket, w: Path, here: list[Agent]) -> tuple[Place, ...]:
-    """The places of `state.fragments[w]` that `fragments_step` gives the
+    """The places of `state.held.fragments[w]` that `fragments_step` gives the
     next doc editor of the fragments. A place with no text is always given:
-    its file does not read as fragments, so no file of `state.seen` can show
+    its file does not read as fragments, so no file of `state.held.seen` can show
     that its fragments are unchanged."""
-    places = state.fragments.get(w, ())
+    places = state.held.fragments.get(w, ())
     judged = [a.launched for a in here if a.role is Role.DOC_EDITOR
               and briefs.FRAGMENTS_PART in a.brief and a.last_report is not None]
     if not judged:
         return places
-    before = [s for s in state.seen.get(t.number, ()) if s.time < max(judged)]
+    before = [s for s in state.held.seen.get(t.number, ()) if s.time < max(judged)]
     if not before or (seen := before[-1].places) is None:
         return places
     return tuple(p for p in places if p.text is None or (p.file, p.text) not in seen)
@@ -404,7 +404,7 @@ def fragments_step(state: State, t: Ticket, w: Path,
     launched for them, once a drafter of the change has reported and no doc
     editor was launched since its latest report: the addition of
     `doc-editor` to the `editors` field of a change that gives none, then,
-    where no file of `state.seen` was written since that report, the
+    where no file of `state.held.seen` was written since that report, the
     command that writes one (`write_seen`), and otherwise the launch of a
     doc editor on those fragments."""
     reported = [r.time for a in here if a.role in DRAFTERS and (r := a.last_report) is not None]
@@ -415,11 +415,11 @@ def fragments_step(state: State, t: Ticket, w: Path,
     if not places:
         return None
     if lacking_doc_editor(t, w, state) is not None:
-        if t.number not in state.doc_budgets:
+        if t.number not in state.computed.doc_budgets:
             return Undecided(mctx("the budget of change {number} with a doc editor is "
                                   "unknown").format(number=t.number))
         return Bash(add_editor(t.number, Role.DOC_EDITOR, state.me))
-    if not any(s.time > max(reported) for s in state.seen.get(t.number, ())):
+    if not any(s.time > max(reported) for s in state.held.seen.get(t.number, ())):
         return Bash(write_seen(t.number, w, state.scratch))
     drafters = drafter_ids(here)
     if isinstance(drafters, Undecided):
@@ -458,7 +458,7 @@ def carry(state: State, t: Ticket) -> Step | None:
         return Launch(role, t.number, briefs.editor(
             role, t.number, len(editors) > 1, w,
             editor_scratch(t.number, role, state.scratch), state.me,
-            state.fragments.get(w, ()), tuple(drafters)), model=t.model(role))
+            state.held.fragments.get(w, ()), tuple(drafters)), model=t.model(role))
     if any(a.pending for a in here):
         return None
     if (step := fragments_step(state, t, w, here)) is not None:
@@ -488,10 +488,10 @@ def editor_review(state: State, editor: str) -> Step | str:
     the editor launches no other; and where an editor role of the change
     has no agent in its worktree or another editor there is pending, the
     line that says the operator launches the review."""
-    mine = [a for a in state.agents if a.agent_id == editor and a.role is Role.DOC_EDITOR]
+    mine = [a for a in state.transcripts.agents if a.agent_id == editor and a.role is Role.DOC_EDITOR]
     if not mine:
         return NO_OPERATOR.format(agent=editor)
-    t = state.tickets.get(mine[-1].subject)
+    t = state.tracker.tickets.get(mine[-1].subject)
     if t is None:
         return Undecided(mctx("the ticket of change {number} of doc editor {agent} is not "
                               "read").format(number=mine[-1].subject, agent=editor))
@@ -522,7 +522,7 @@ def merge(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
     where none follows that take and that time reads, and then the merge."""
     take_line = taken(t)
     start = take_line.time if take_line is not None else left_draft(t)
-    spent = state.spent.get(t.number)
+    spent = state.computed.spent.get(t.number)
     if spent is not None and not any(ln.time >= start and ln.note.startswith(TIME_OPENING)
                                      for ln in t.log):
         return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED,
@@ -538,7 +538,7 @@ def over_budget(state: State, t: Ticket, w: Path,
     if take_line is None:
         return False
     since, limit, _ = take_line
-    spent = state.spent.get(t.number)
+    spent = state.computed.spent.get(t.number)
     if spent is None:
         return Undecided(mctx("the spend of change {number} since its take is unknown").format(
             number=t.number))
@@ -546,7 +546,7 @@ def over_budget(state: State, t: Ticket, w: Path,
         return False
     trip = overrun_ticket(state, t, since)
     if trip is None:
-        budget = state.budgets.get(t.number)
+        budget = state.computed.budgets.get(t.number)
         if budget is None:
             return Undecided(mctx("the median spend by role of the changes the budget of "
                                   "change {number} is taken over is unknown").format(
@@ -649,7 +649,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     needing = [a for a in latest if (r := a.last_report) is not None and r.time > checked]
     if needing and not unchanged_since(checkers, w):
         return check_items(state, t, w, needing, editors)
-    questions = [q for q in state.tickets.values() if q.kind is Kind.QUESTION
+    questions = [q for q in state.tracker.tickets.values() if q.kind is Kind.QUESTION
                  and q.domain is Domain.CHANGE and q.subject == t.number
                  and q.status in (Status.OPEN, Status.ASSIGNED)]
     judged = max((a.launched for a in analysts), default=0.0)
@@ -705,7 +705,7 @@ def check_items(state: State, t: Ticket, w: Path, needing: list[Agent],
                  if a.role is Role.TICKET_ANALYST and a.agent_id is not None
                  and (r := a.last_report) is not None]
     return Launch(Role.ITEM_CHECKER, t.number, briefs.item_check(
-        t.number, w, reports, decisions, list(state.gate_outputs.get(w, ())), editors, state.me,
+        t.number, w, reports, decisions, list(state.held.gate_outputs.get(w, ())), editors, state.me,
         past))
 
 

@@ -7,7 +7,8 @@ calls, and the tickets its solver passes filed."""
 
 import math
 import re
-from dataclasses import replace
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +39,7 @@ from operations.printing import unfenced
 
 
 def merge_outcome(aid: str, command: str, time: float, result: str | None, error: bool,
-                  subjects: dict[str, float], denied: set[str],
+                  subjects: Mapping[str, float], denied: set[str],
                   undecided: list[str]) -> Merge | None:
     """What a Bash call of the operator `aid` of `command` at `time` that
     `merge_change.py` runs did, or None for any other call, one that
@@ -216,14 +217,27 @@ MESSAGING = frozenset({Role.DOC_REVIEWER, Role.ITEM_CHECKER})
 """The roles whose `Agent.messaged` the command reads."""
 
 
+@dataclass(frozen=True)
+class OperatorRead:
+    """What the transcript of one operator gives: its launches, its calls,
+    the messages that reached it, and `passes`, for each solver pass it
+    launched with an agent id, the tickets that pass filed
+    (`TranscriptsRead.pass_tickets`)."""
+    agents: tuple[Agent, ...]
+    calls: tuple[Call, ...]
+    messages: tuple[Message, ...]
+    passes: Mapping[str, tuple[str, ...] | None]
+
+
 def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
-                  agents: list[Agent], calls: list[Call], messages: list[Message],
-                  passes: dict[str, tuple[str, ...] | None],
-                  subjects: dict[str, float]) -> None:
-    """Read the transcript at `path` of the operator `aid` into `agents`,
-    `calls`, `messages` and `passes`. A message from the operator's parent,
-    the coordinator or the operator launcher that launched it, is read as
-    a message of the coordinator's."""
+                  subjects: Mapping[str, float]) -> OperatorRead:
+    """What the transcript at `path` of the operator `aid` gives. A message
+    from the operator's parent, the coordinator or the operator launcher
+    that launched it, is read as a message of the coordinator's."""
+    agents: list[Agent] = []
+    calls: list[Call] = []
+    messages: list[Message] = []
+    passes: dict[str, tuple[str, ...] | None] = {}
     entries = run_entries(path)
     uses: dict[str, tuple[float, dict[str, Any], str]] = {}
     results: dict[str, tuple[str | None, bool]] = {}
@@ -271,7 +285,7 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
         calls.append(Call(aid, t, tool, inp, text, error, merge, conflicts or ()))
     if not any(tool == Tool.AGENT and described(str(inp.get("description", "")))
                for _, inp, tool in uses.values()):
-        return
+        return OperatorRead((), tuple(calls), tuple(messages), {})
     found = launched(path, undecided)
     signs = turn_signs(path, [launch for launch in found if launch.pending])
     own = resumes(timed_entries(path), path.stem, None, undecided)
@@ -300,6 +314,7 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
         agents.append(a)
         if d.role in PASSES and launch.agent:
             passes[launch.agent] = pass_tickets(d.subject, d.role, use[0], main)
+    return OperatorRead(tuple(agents), tuple(calls), tuple(messages), passes)
 
 
 def background_output(aid: str, call: str, task: str, output: Path | None,

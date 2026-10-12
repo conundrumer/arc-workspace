@@ -8,7 +8,7 @@ the session or the coordinator launched, other than an operator. `scripts/operat
 agent from the running agents' listing and its transcript. The command
 keeps no state of its own: an alert counts as sent where an operator sent
 it after the occurrence it is on. A stall alert goes only to an agent that
-`State.stalled` leaves out."""
+`TranscriptsRead.stalled` leaves out."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -33,7 +33,7 @@ class Watched:
 
 @dataclass(frozen=True)
 class MonitorState:
-    """`stalled` gives the agents of `State.stalled`."""
+    """`stalled` gives the agents of `TranscriptsRead.stalled`."""
     watched: tuple[Watched, ...]
     stalled: frozenset[str]
     undecided: tuple[str, ...]

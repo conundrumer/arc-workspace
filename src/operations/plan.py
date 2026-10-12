@@ -50,7 +50,7 @@ the command again, which blocks in the foreground first. Otherwise the
 agent gives its final reply, after the message that sends its parent
 its text (`ending`)."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 
 from controlled_markdown import mctx
 from operations import (alerts, batches, changes, decisions, drafts, limit_resume, lineage,
@@ -68,7 +68,7 @@ from operations.directives import (
 from operations.roles import PASSES, Role, description
 from operations.state import Call, State, Ticket, Tool
 from ticketing.vocabulary import Status
-from operations.final_reply import (FOR_CONTEXT, ending_step, failure, final_sends,
+from operations.final_reply import (FOR_CONTEXT, ending_step, failure, final_sends, final_sends_in,
                                    for_context, live_holder, nested, sent_final_text)
 from operations.handled import bash_calls, repeated
 from operations.steps import (Bash, Launch, Poll, Reply, Send, Step, Undecided, decision_key, key,
@@ -133,7 +133,7 @@ as the section `Launching` of `prompts/agents/notes/launching.md` gives."""
 def launch_calls(state: State, step: Launch) -> list[Call]:
     """The Agent calls of `step` by `state.me`."""
     what = description(step.role, step.subject)
-    return [c for c in state.calls if c.operator == state.me
+    return [c for c in state.transcripts.calls if c.operator == state.me
             and c.tool == Tool.AGENT and c.input.get("description") == what]
 
 
@@ -146,11 +146,11 @@ def unloaded(state: State, step: Launch) -> Call | None:
     first line of its result is `Agent type '<agent type>' not found` or
     starts with that text followed by `.`, and it came less than
     `LOAD_SECONDS` after the last write of that type's rendered definition
-    (`State.definitions`)."""
+    (`GitRead.definitions`)."""
     if (last := failed_last(launch_calls(state, step))) is None:
         return None
     agent_type = step.role.agent_type
-    written = state.definitions.get(agent_type)
+    written = state.git.definitions.get(agent_type)
     if written is None or last.time - written >= LOAD_SECONDS:
         return None
     why = failure(last)
@@ -180,7 +180,7 @@ def refused(state: State, step: Step) -> Undecided | None:
             return None
     if (last := failed_last(same)) is None:
         return None
-    if any(r.time > last.time for a in state.agents for r in a.reports):
+    if any(r.time > last.time for a in state.transcripts.agents for r in a.reports):
         return None
     return Undecided(mctx("the call `{what}` failed: {why}").format(what=what,
                                                                      why=failure(last)))
@@ -195,7 +195,7 @@ def unread_lines(state: State) -> Step | None:
 
 def launching(state: State) -> Step | None:
     """The release of tickets, before the operator's first launch."""
-    if any(c.operator == state.me and c.tool == Tool.AGENT for c in state.calls):
+    if any(c.operator == state.me and c.tool == Tool.AGENT for c in state.transcripts.calls):
         return None
     return changes.release(state)
 
@@ -208,7 +208,7 @@ def elsewhere(state: State) -> list[str]:
     """The tickets of the operators' scope that another live holder
     (`live_holder`) holds."""
     return [n for n in sorted(changes.scope(state))
-            if (t := state.tickets.get(n)) is not None and t.status is Status.ASSIGNED
+            if (t := state.tracker.tickets.get(n)) is not None and t.status is Status.ASSIGNED
             and t.holder not in (None, state.me) and live_holder(state, t.holder)]
 
 
@@ -249,8 +249,8 @@ def next_step(state: State, watch: monitor.MonitorState) -> Step:
     s = first(state, lambda st: monitor_step(st, watch), *LATE)
     if s is not None:
         return s
-    if (any(a.pending for a in state.agents) or elsewhere(state)
-            or any(decisions.writing(state, u) for u in state.unread)):
+    if (any(a.pending for a in state.transcripts.agents) or elsewhere(state)
+            or any(decisions.writing(state, u) for u in state.tracker.unread)):
         return Poll()
     return ending(state, "\n".join([final(state), *unknown]))
 
@@ -269,14 +269,16 @@ def ending(state: State, text: str) -> Step:
                        any(c.time > since for c in final_sends(state, state.me)))
 
 
-def taken_up(state: State) -> frozenset[str]:
-    """The operators launched right before `me`, in a row, each of which
-    `next` printed the final reply `FOR_CONTEXT`."""
-    mine = state.operators.index(state.me) if state.me in state.operators else 0
+def taken_up(me: str, operators: Sequence[str], calls: Sequence[Call],
+             parents: Mapping[str, str]) -> frozenset[str]:
+    """The operators of `operators` launched right before `me`, in a row,
+    each of which `next` printed the final reply `FOR_CONTEXT`, as their
+    `calls` to their `parents` give it."""
+    mine = operators.index(me) if me in operators else 0
     out: set[str] = set()
-    for o in reversed(state.operators[:mine]):
+    for o in reversed(operators[:mine]):
         if not any(for_context(sent_final_text(c) or "")
-                   for c in final_sends(state, o)):
+                   for c in final_sends_in(calls, o, parents[o])):
             break
         out.add(o)
     return frozenset(out)
@@ -316,14 +318,14 @@ def line_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Out
         case Directive.EXPEDITE:
             reasons = [mctx("ticket {n} {stands}").format(n=n, stands=stands_under(t))
                        for n in sorted(changes.reached(state, set(numbers)))
-                       if (t := state.tickets.get(n)) is not None and t.status is not Status.CLOSED]
+                       if (t := state.tracker.tickets.get(n)) is not None and t.status is not Status.CLOSED]
         case Directive.MERGED:
             if not any(a.launched > ln.message.time for a in state.agents_of(Role.BATCH_PROFILE)):
                 reasons = [mctx("After a batch has not run since it was given")]
         case Directive.MERGE:
             reasons = [mctx("change {n} {stands}").format(n=n, stands=stands_under(t))
                        for n in numbers
-                       if (t := state.tickets.get(n)) is not None and t.status is not Status.CLOSED]
+                       if (t := state.tracker.tickets.get(n)) is not None and t.status is not Status.CLOSED]
         case Directive.OPEN:
             reasons = [settled_open(n) for n in triage.unsettled(state)]
         case None:

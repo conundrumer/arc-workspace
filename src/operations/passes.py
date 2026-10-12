@@ -118,7 +118,7 @@ def review_tickets(state: State, task: str, review: Agent) -> list[str]:
     nexts = [r.launched for r in state.agents_of(Role.TRANSCRIPT_REVIEW)
              if r.subject in passes and r.launched > review.launched]
     bound = min(nexts, default=None)
-    return [t.number for t in state.tickets.values() if t.domain is Domain.TASK
+    return [t.number for t in state.tracker.tickets.values() if t.domain is Domain.TASK
             and t.subject == task and t.filer == Role.TRANSCRIPT_REVIEW.value
             and t.filed >= review.launched and (bound is None or t.filed < bound)
             and t.status is not Status.WATCHING]
@@ -167,7 +167,7 @@ def interference(state: State, p: Pipeline) -> Outcome | str | None:
     """The `interference` check before a pass: the reason the pipeline
     stops, Outcome(None) where a ticket holds the next pass, or None where
     none does."""
-    found = [t for t in state.tickets.values() if t.kind is Kind.INTERFERENCE
+    found = [t for t in state.tracker.tickets.values() if t.kind is Kind.INTERFERENCE
              and t.domain is Domain.TASK and t.subject == p.task
              and t.filed >= p.since and t.status is not Status.CLOSED]
     for t in found:
@@ -210,7 +210,7 @@ def run(state: State, p: Pipeline) -> Outcome:
                 return stop(held)
             if held is not None:
                 return held
-            holder = state.claims.get(p.task)
+            holder = state.git.claims.get(p.task)
             if holder is not None and holder != state.session:
                 return stop(CLAIM_HELD.format(task=p.task, holder=holder))
             if holder is None:
@@ -233,7 +233,7 @@ def run(state: State, p: Pipeline) -> Outcome:
             return Outcome(None)
         if a.agent_id is None:
             return stop(mctx("the {role} pass on {task} has no agent id").format(role=role, task=p.task))
-        filed = state.pass_tickets.get(a.agent_id)
+        filed = state.transcripts.pass_tickets.get(a.agent_id)
         if filed is None:
             if a.reports:
                 asked = send_again(state, a.agent_id, [r.time for r in a.reports],
@@ -366,7 +366,7 @@ def awaits_analyst(state: State, number: str) -> bool:
     pipeline will give it one: a transcript review filed it since the
     pipeline started, or a solver pass did, while a pass of the pipeline is
     pending or the report of one that ended lists it."""
-    t = state.tickets[number]
+    t = state.tracker.tickets[number]
     if t.domain is not Domain.TASK or any(
             purpose is Purpose.PASS and number in nums for _, purpose, nums in state.analysts()):
         return False
@@ -379,7 +379,7 @@ def awaits_analyst(state: State, number: str) -> bool:
             continue
         passes = [a for r in PASSES for a in state.agents_of(r, t.subject) if a.launched >= p.since]
         if any(a.pending or a.agent_id is not None
-               and number in (state.pass_tickets.get(a.agent_id) or ()) for a in passes):
+               and number in (state.transcripts.pass_tickets.get(a.agent_id) or ()) for a in passes):
             return True
     return False
 
@@ -389,7 +389,7 @@ def reviewed(state: State) -> frozenset[str]:
     on after its own launch, and each whose review launch a pipeline's next
     step gives on this read. The monitor reads this before the pipelines
     take their step, so a review about to launch counts too."""
-    out = {a.agent_id for a in state.agents if a.agent_id is not None
+    out = {a.agent_id for a in state.transcripts.agents if a.agent_id is not None
            and latest(state, Role.TRANSCRIPT_REVIEW, a.agent_id, a.launched) is not None}
     _, outcomes = step(state)
     out |= {o.step.subject for _, o in outcomes

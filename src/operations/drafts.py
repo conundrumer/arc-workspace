@@ -7,7 +7,7 @@ line of an analyst or the coordinator that opens so is none.
 The drafts given to the operator are the `change` tickets under
 `tickets/draft/` that `State.mine` gives, those the coordinator names, those a
 ticket analyst an operator launched files, and those of `changes.scope`
-of another session whose index `State.idle_indexes` holds. A draft is
+of another session whose index `SessionsRead.idle_indexes` holds. A draft is
 ready for a ticket reviewer once its log holds a `filed` or a `revised`
 line and no line after the last of them is the coordinator's or moves it
 out of `tickets/draft/`, as where the agent that filed or revised it
@@ -70,15 +70,15 @@ def draft_change(t: Ticket) -> bool:
 
 def elsewhere(state: State) -> list[Ticket]:
     """The drafts of `changes.scope` that `State.mine` leaves out."""
-    return [t for n in sorted(scope(state)) if (t := state.tickets.get(n)) is not None
+    return [t for n in sorted(scope(state)) if (t := state.tracker.tickets.get(n)) is not None
             and draft_change(t) and t.session is not None and not state.mine(t)]
 
 
 def drafts(state: State) -> list[Ticket]:
     names = named(state)
     analysed = {n for _, p, nums in state.analysts() if p is not Purpose.TRIAGE for n in nums}
-    idle = {t.number for t in elsewhere(state) if t.session in state.idle_indexes}
-    return sorted((t for t in state.tickets.values()
+    idle = {t.number for t in elsewhere(state) if t.session in state.sessions.idle_indexes}
+    return sorted((t for t in state.tracker.tickets.values()
                    if draft_change(t)
                    and (state.mine(t) or t.number in names or t.number in analysed
                         or t.number in idle
@@ -228,7 +228,7 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
                 return Send(a.agent_id, message)
     writers = {ln.agent_id for ln in t.log if ln.agent_id}
     if any(a.pending for a in agents) or any(a.pending and a.agent_id in writers
-                                             for a in state.agents):
+                                             for a in state.transcripts.agents):
         return None
     since = base(t)
     found = review_lines_after(t, since, Note.FINDING)
