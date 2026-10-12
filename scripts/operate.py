@@ -29,12 +29,16 @@ console_importable()
 importable(checkout.scripts())
 
 from agent_launches import accepted_after, last_delivered  # noqa: E402
+from operator_reads import read_operator  # noqa: E402
 from operator_state import USAGE_STALE, read_relay, read_state, session_id  # noqa: E402
 from agent_reports import RATE_LIMIT, parent_type  # noqa: E402
 from profile_runs import budget_of  # noqa: E402
 from run_reads import parent_id  # noqa: E402
 from transcripts import Refused, find  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
+from ticket_files import ticket_path  # noqa: E402
+from ticket_numbers import parsed_number  # noqa: E402
+from ticket_reads import read_ticket  # noqa: E402
 from help_parts import print_help  # noqa: E402
 
 from operations import briefs, changes, plan, relay, runs  # noqa: E402
@@ -44,7 +48,7 @@ from operations.command_words import Action  # noqa: E402
 from operations.roles import BARE_BRIEFS, Role  # noqa: E402
 from operations.filing import filed, with_report  # noqa: E402
 from operations.printing import key_line, printed  # noqa: E402
-from operations.state import State  # noqa: E402
+from operations.state import Agent, State  # noqa: E402
 from operations.steps import (BLOCK_SECONDS, Bash, EndTurn, Launch, Poll, Send, Step,  # noqa: E402
                               Undecided)
 from collections.abc import Callable  # noqa: E402
@@ -271,7 +275,7 @@ def review(editor: str) -> int:
     if kind != Role.OPERATOR.agent_type:
         print(changes.NO_OPERATOR.format(agent=editor))
         return 0
-    state, _ = read_state(parent)
+    state, _ = read_state(parent, change_filed(parent, editor))
     step = changes.editor_review(state, editor)
     if isinstance(step, str):
         print(step)
@@ -283,6 +287,22 @@ def review(editor: str) -> int:
         raise TypeError(f"review step {step!r} is no launch")
     print_step(with_budget(with_report(step, state.scratch)), state.scratch, editor)
     return 0
+
+
+def change_filed(operator: str, editor: str) -> float | None:
+    """The time of the first log line of the change of the doc editor
+    `editor`, as the launches of `operator` give that change, or None where
+    they give no such launch or that ticket is not read."""
+    agents: list[Agent] = []
+    read_operator(operator, find(operator), main_tree(), [], agents, [], [], {}, {})
+    mine = [a for a in agents if a.agent_id == editor and a.role is Role.DOC_EDITOR]
+    number = parsed_number(mine[-1].subject) if mine else None
+    if number is None:
+        return None
+    try:
+        return read_ticket(ticket_path(main_tree() / "tickets", number)).filed
+    except (Refused, ValueError, OSError):
+        return None
 
 
 def relay_step(me: str, deadline: float) -> tuple[Step, Path]:

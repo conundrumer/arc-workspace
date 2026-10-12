@@ -206,9 +206,12 @@ def script_starts(path: Path, run: runs.Run) -> Starts:
         sys.modules.pop(name, None)
 
 
-def read_state(me: str) -> tuple[State, MonitorState]:
+def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState]:
     """The state the operator's procedures read, and the state the
-    monitor's steps read."""
+    monitor's steps read. Where `since` is given, the transcripts read for
+    launches, calls, messages and late resumes are only those of `me` and
+    of the operators whose last entry is at or after `since`: an agent
+    launched since then is launched by one of those."""
     opened = new_state()
     session = session_id()
     main = main_tree()
@@ -225,10 +228,12 @@ def read_state(me: str) -> tuple[State, MonitorState]:
     subjects: dict[str, float] = {}
     for c in history:
         subjects[c.subject] = max(subjects.get(c.subject, c.time), c.time)
-    for aid, path in runs:
+    read = [(aid, path) for aid, path in runs
+            if since is None or aid == me or (t := last_time(path)) is not None and t >= since]
+    for aid, path in read:
         read_operator(aid, path, main, undecided, agents, calls, messages, passes, subjects)
     agents += editor_reviewers(agents, main, undecided)
-    late = late_resumes(runs, undecided)
+    late = late_resumes(read, undecided)
     launched = {a.agent_id for a in agents if a.agent_id}
     watching: list[str] = []
     listing = running_agents(find(session), watching)
