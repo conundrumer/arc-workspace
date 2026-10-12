@@ -16,7 +16,7 @@ from run_reads import (blocks, in_background, is_prompt, meta_parent, meta_path,
                        parent_label, read_meta, results_by_call, run_entries,
                        run_sessions, session_agents, session_transcripts)
 from transcripts import (Entry, agent_id, agent_transcripts, chain, entries_back, epoch, find,
-                         read_entries, stat_of, state_cache)
+                         read_entries, snapshot, stat_of, state_cache)
 
 
 class Delivery(Enum):
@@ -149,6 +149,11 @@ class Launch:
         return self.done is None or self.since > self.done
 
 
+def pin_id(result: dict[str, Any]) -> str | None:
+    """The agent id of the `pin` of `result`, a SendMessage result."""
+    return (result.get("pin") or {}).get("id")
+
+
 def resumed(result: dict[str, Any], run: str, call: str,
             undecided: list[str]) -> str | None:
     """The agent id of the agent a SendMessage call resumed, as its result
@@ -158,7 +163,7 @@ def resumed(result: dict[str, Any], run: str, call: str,
         return str(result["resumedAgentId"])
     done = delivery(result)
     if done is Delivery.RESUMED:
-        return (result.get("pin") or {}).get("id")
+        return pin_id(result)
     if result.get("pin") and done is None:
         undecided.append(mctx("{run}: the result of SendMessage call {call} "
                               "says neither that it resumed an agent nor "
@@ -172,26 +177,66 @@ def note_latest(times: dict[str, float], agent: str, t: float) -> None:
     times[agent] = max(times.get(agent, t), t)
 
 
-def resumes(entries: list[Entry], run: str, agents: set[str] | None,
-            undecided: list[str], before: float | None = None) -> dict[str, float]:
-    """The time of the last SendMessage call among `entries` that resumed
-    each agent, or with `agents` each of those agents, and with `before`
-    only of the calls earlier than it."""
+@dataclass(frozen=True)
+class Send:
+    """A SendMessage call: its time, the agent id `resumed` gives for its
+    result, and, where `resumed` gives a note for it, the `pin` id of its
+    result and that note."""
+    time: float
+    agent: str | None
+    pin: str | None
+    note: str | None
+
+
+def sends(entries: list[Entry], run: str) -> list[Send]:
+    """The SendMessage calls among `entries` that have a time, in their
+    order."""
     results = results_by_call(entries)
-    out: dict[str, float] = {}
+    out: list[Send] = []
     for e in entries:
         if e.get("type") != "assistant" or not e.get("timestamp"):
-            continue
-        if before is not None and epoch(e["timestamp"]) >= before:
             continue
         for b in blocks(e, "tool_use"):
             if b.get("name") != "SendMessage":
                 continue
-            aid = resumed(results.get(b.get("id", "")) or {}, run,
-                          b.get("id", ""), undecided)
-            if aid and (agents is None or aid in agents):
-                note_latest(out, aid, epoch(e["timestamp"]))
+            result = results.get(b.get("id", "")) or {}
+            notes: list[str] = []
+            aid = resumed(result, run, b.get("id", ""), notes)
+            pin = pin_id(result) if notes else None
+            out.append(Send(epoch(e["timestamp"]), aid, pin, notes[0] if notes else None))
     return out
+
+
+def picked(calls: list[Send], agents: set[str] | None, undecided: list[str],
+           before: float | None) -> dict[str, float]:
+    """The time of the last of `calls` that resumed each agent, or with
+    `agents` each of those agents, and with `before` only of the calls
+    earlier than it. The note of each call it takes goes to `undecided`,
+    with `agents` only where its `pin` id is one of them."""
+    out: dict[str, float] = {}
+    for c in calls:
+        if before is not None and c.time >= before:
+            continue
+        if c.note and (agents is None or c.pin in agents):
+            undecided.append(c.note)
+        if c.agent and (agents is None or c.agent in agents):
+            note_latest(out, c.agent, c.time)
+    return out
+
+
+def resumes(entries: list[Entry], run: str, agents: set[str] | None,
+            undecided: list[str], before: float | None = None) -> dict[str, float]:
+    """`picked` of the SendMessage calls among `entries`."""
+    return picked(sends(entries, run), agents, undecided, before)
+
+
+@state_cache(lambda path: snapshot(path))
+def transcript_resumes(path: Path) -> list[Send]:
+    """`sends` of the transcript at `path`, from the lines that hold
+    `SendMessage`, which the line of each call holds, or a word of each
+    result `resumed` gives an agent id or a note for."""
+    return sends(read_entries(path, naming={"SendMessage", "resumedAgentId", '"pin":'}),
+                 parent_label(path))
 
 
 def session_resumes(path: Path, agents: set[str], since: float,
@@ -205,9 +250,7 @@ def session_resumes(path: Path, agents: set[str], since: float,
     for p in changed_since(run_sessions(path), since):
         if p in own:
             continue
-        entries = read_entries(p, naming=agents | {"SendMessage"})
-        for aid, t in resumes(entries, parent_label(p), agents,
-                              undecided, before).items():
+        for aid, t in picked(transcript_resumes(p), agents, undecided, before).items():
             note_latest(out, aid, t)
     return out
 
