@@ -287,9 +287,21 @@ class Budget:
 
 @dataclass(frozen=True)
 class Place:
-    """A fragment by its file, relative to the worktree, and its line."""
+    """A fragment by its file, relative to the worktree, and its line, with
+    its text, or None for the place of a file that does not read as
+    fragments."""
     file: str
     line: int
+    text: str | None
+
+
+@dataclass(frozen=True)
+class Seen:
+    """A file `tree_reads.py seen` wrote for a change: the time of its
+    write, and the file and text of each place it holds, or None where the
+    file does not read."""
+    time: float
+    places: frozenset[tuple[str, str]] | None
 
 
 @dataclass(frozen=True)
@@ -325,7 +337,9 @@ class State:
     change `me` holds, the accepted gate outputs under
     `tests/gate/accepted/` its change writes, and `fragments` the
     fragments whose text that change adds or changes, as
-    `tree_reads.fragments` gives them. `branches` gives the branch
+    `tree_reads.fragments` gives them, and `seen` the files
+    `tree_reads.py seen` wrote for each change `me` holds, by its number,
+    in the order of their time. `branches` gives the branch
     of each worktree that stands on one, and `stalled` the final reply in
     the transcript of each agent a stall alert names that reached no
     operator as a report. `late_resumes` gives, for each operator of
@@ -387,6 +401,7 @@ class State:
     doc_reviews: Mapping[str, float] | None = field(default_factory=dict)
     gate_outputs: Mapping[Path, tuple[str, ...]] = field(default_factory=dict)
     fragments: Mapping[Path, tuple[Place, ...]] = field(default_factory=dict)
+    seen: Mapping[str, tuple[Seen, ...]] = field(default_factory=dict)
     branches: Mapping[Path, str] = field(default_factory=dict)
     stalled: Mapping[str, Report] = field(default_factory=dict)
     late_resumes: Mapping[str, tuple[LateResume, ...]] = field(default_factory=dict)

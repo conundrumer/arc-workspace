@@ -35,7 +35,7 @@ from ticket_settle import to_settle
 from ticket_watch import budget, spend
 from transcripts import Refused, entries_back, epoch, find, new_state
 from tree_reads import (claims, code_review, commits, doc_reviews, fragments, gate_outputs, main_tree,
-                        scratch, worktrees)
+                        read_seen, scratch, worktrees)
 
 from engine.checkout import agents_of
 from handbook.reader_names import ReaderName
@@ -281,13 +281,15 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     state = replace(state, taken_up=taken_up(state))
     state = sessions(state, tickets_dir)
     given = [ticket_number(n) for n in named(state) if n in tickets]
-    held = {w for t in tickets.values() if t.status is Status.ASSIGNED and t.holder == me
-            and (w := worktree(t, state)) is not None}
+    holding = {t.number: w for t in tickets.values() if t.status is Status.ASSIGNED
+               and t.holder == me and (w := worktree(t, state)) is not None}
+    held = set(holding.values())
     state = replace(state,
                     to_settle=tuple(str(n) for n in to_settle(tickets_dir, index, state.adopted, given)
                                     if str(n) in tickets),
                     gate_outputs={w: gate_outputs(w) for w in held},
-                    fragments={w: fragments(w) for w in held})
+                    fragments={w: fragments(w) for w in held},
+                    seen={n: read_seen(changes.seen_dir(n, state.scratch)) for n in holding})
     spent = change_spend(state, undecided)
     state = replace(state, spent=spent,
                     budgets=change_budgets(state, spent, tickets_dir, undecided),

@@ -51,7 +51,8 @@ which gets those items with the line that rules the step
 Once a code editor or a `handbook-expanded` editor of a change has
 reported, where the change adds or changes the text of an `mctx` fragment
 (`State.fragments`) and no doc editor was launched since that report, the
-fragments go to a doc editor launched for them: a change whose `editors`
+fragments whose text no earlier doc editor of the fragments was launched on
+(`unseen`) go to a doc editor launched for them: a change whose `editors`
 field gives no doc editor first gets one in that field, with the budget of
 its new `editors` set, and the doc editor the field then gives is
 launched with the fragments; a change that gives one gets a doc editor
@@ -111,7 +112,7 @@ from operations.directives import Decision, Directive, decided, held_on, named, 
 from operations.reports import (OPEN_LABELS, Label, budget_passed, items_of,
                                 left_for_decision, shows_current)
 from operations.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
-from operations.state import Agent, State, Ticket
+from operations.state import Agent, Place, State, Ticket
 from operations.filing import editor_scratch
 from operations.final_reply import live_holder
 from operations.handled import answered, repeated, sends_to, sent
@@ -368,24 +369,60 @@ def lacking_doc_editor(t: Ticket, w: Path | None,
     return t.editors
 
 
+def seen_dir(number: str, scratch: Path) -> Path:
+    """The directory under the session's scratchpad `scratch` of the files
+    `tree_reads.py seen` writes for the change `number`."""
+    return scratch / f"{number}-fragments-seen"
+
+
+def write_seen(number: str, w: Path, scratch: Path) -> str:
+    """The Bash command that writes the places of the worktree `w` of the
+    change `number` to a file of `seen_dir`."""
+    return shlex.join(["uv", "run", "python", "scripts/tree_reads.py", "seen", str(w),
+                       str(seen_dir(number, scratch))])
+
+
+def unseen(state: State, t: Ticket, w: Path, here: list[Agent]) -> tuple[Place, ...]:
+    """The places of `state.fragments` for the worktree `w` of the change `t` whose file and
+    text are not among those of the latest file of `state.seen` written
+    before the launch of the latest doc editor of the fragments
+    (`briefs.FRAGMENTS_PART`) of `here` that has reported, with each place
+    that has no text: all of them where no such doc editor or no such file
+    exists, or that file does not read."""
+    places = state.fragments.get(w, ())
+    judged = [a.launched for a in here if a.role is Role.DOC_EDITOR
+              and briefs.FRAGMENTS_PART in a.brief and a.last_report is not None]
+    if not judged:
+        return places
+    before = [s for s in state.seen.get(t.number, ()) if s.time < max(judged)]
+    if not before or (seen := before[-1].places) is None:
+        return places
+    return tuple(p for p in places if p.text is None or (p.file, p.text) not in seen)
+
+
 def fragments_step(state: State, t: Ticket, w: Path,
                    here: list[Agent]) -> Step | None:
-    """The step that gives the fragments whose text the change adds or
-    changes to a doc editor launched for them, once a drafter of the change
-    has reported and no doc editor was launched since its latest report:
-    the addition of `doc-editor` to the `editors` field of a change that
-    gives none, and otherwise the launch of a doc editor on the
-    fragments."""
-    places = state.fragments.get(w, ())
+    """The step that gives the fragments of `unseen` to a doc editor
+    launched for them, once a drafter of the change has reported and no doc
+    editor was launched since its latest report: the addition of
+    `doc-editor` to the `editors` field of a change that gives none, then,
+    where no file of `state.seen` was written since that report, the
+    command that writes one (`write_seen`), and otherwise the launch of a
+    doc editor on those fragments."""
     reported = [r.time for a in here if a.role in DRAFTERS and (r := a.last_report) is not None]
-    if not places or not reported or any(
+    if not reported or any(
             a.role is Role.DOC_EDITOR and a.launched > max(reported) for a in here):
+        return None
+    places = unseen(state, t, w, here)
+    if not places:
         return None
     if lacking_doc_editor(t, w, state) is not None:
         if t.number not in state.doc_budgets:
             return Undecided(mctx("the budget of change {number} with a doc editor is "
                                   "unknown").format(number=t.number))
         return Bash(add_editor(t.number, Role.DOC_EDITOR, state.me))
+    if not any(s.time > max(reported) for s in state.seen.get(t.number, ())):
+        return Bash(write_seen(t.number, w, state.scratch))
     drafters = drafter_ids(here)
     if isinstance(drafters, Undecided):
         return drafters
