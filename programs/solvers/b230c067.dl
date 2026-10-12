@@ -1,0 +1,338 @@
+// b230c067
+// @draft
+// @keywords: objects match classify congruent count rank
+// @scene objects-of-one-color: on a field of background (0), every other cell
+//  has object_color (8), and those cells form objects, each an 8-connected
+//  component of object_color cells
+// @scene copies-and-one-odd: copy_count (2) objects are translates of one
+//  shape, and one other object has a different shape
+// @rule copies-take-copy-color: each cell of an object whose shape, up to
+//  translation, another object has turns copy_color
+// @rule odd-takes-odd-color: each cell of an object whose shape, up to
+//  translation, no other object has turns odd_color
+// @rule rest-kept: each cell that is in no object keeps its color
+
+// which cells join into one object
+.type Adjacency =
+    // @claim objects-of-one-color
+    EightAdjacent {}
+    // @scene objects-of-one-color: the objects are 4-connected components
+    // @witness diagonal-odd: ordinary concept
+  | FourAdjacent {}
+
+// what makes an object the odd one
+.type OddObject =
+    // @claim copies-take-copy-color odd-takes-odd-color
+    UniqueShape {}
+    // @rule copies-take-copy-color: each cell of an object whose cell count
+    //  another object has turns copy_color
+    // @rule odd-takes-odd-color: each cell of an object whose cell count no
+    //  other object has turns odd_color
+    // @witness same-size-odd: ordinary concept
+  | UniqueCount {}
+    // @rule copies-take-copy-color: each cell of an object whose bbox extent
+    //  another object has turns copy_color
+    // @rule odd-takes-odd-color: each cell of an object whose bbox extent no
+    //  other object has turns odd_color
+    // @witness same-size-odd: ordinary concept
+  | UniqueBbox {}
+    // @rule copies-take-copy-color: each cell of an object whose shape, up to
+    //  a D4 transform and translation, another object has turns copy_color
+    // @rule odd-takes-odd-color: each cell of an object whose shape, up to a
+    //  D4 transform and translation, no other object has turns odd_color
+    // @witness rotated-odd: ordinary concept
+  | UniqueCongruent {}
+    // @rule copies-take-copy-color: each cell of an object with more cells
+    //  than the fewest turns copy_color
+    // @rule odd-takes-odd-color: each cell of an object with the fewest cells,
+    //  ties included, turns odd_color
+    // @witness larger-odd: ordinary concept
+  | FewestCells {}
+    // @rule copies-take-copy-color: each cell of an object whose bbox area is
+    //  more than the smallest turns copy_color
+    // @rule odd-takes-odd-color: each cell of an object with the smallest bbox
+    //  area, ties included, turns odd_color
+    // @witness larger-odd: ordinary concept
+    // @witness fewer-cells-larger-box: ordinary concept
+  | SmallestBbox {}
+    // @rule copies-take-copy-color: each cell of an object of the commonest
+    //  shape, up to translation, turns copy_color
+    // @rule odd-takes-odd-color: each cell of every other object turns
+    //  odd_color
+    // @witness two-odd: borderline $OutsideMajority
+    //     @relaxed copies-and-one-odd
+  | OutsideMajority {}
+    // @rule copies-take-copy-color: each cell of an object whose shape, up to
+    //  translation, exactly copy_count objects have turns copy_color
+    // @rule odd-takes-odd-color: each cell of every other object turns
+    //  odd_color
+    // @witness three-copies: variant concept
+    //     @relaxed copies-and-one-odd
+    // @witness six-copies: variant concept
+    //     @relaxed copies-and-one-odd
+  | CopyCountClass {}
+
+// which cells make up the objects
+.type ObjectCells =
+    // @claim objects-of-one-color rest-kept
+    ColorCells {}
+    // @scene objects-of-one-color: on a field of background (0), the objects
+    //  are the components of the cells that are not background
+    // @rule rest-kept: each background cell keeps its color
+    // @witness stray-cell: borderline concept
+    //     @relaxed objects-of-one-color
+    // @witness recolored-copy-cell: borderline $NonBackgroundObjects
+    //     @relaxed objects-of-one-color
+  | NonBackgroundObjects {s: ShapeColors}
+
+// whether a shape carries the color of each cell
+.type ShapeColors =
+    // @claim copies-take-copy-color odd-takes-odd-color
+    CellShapes {}
+    // @rule copies-take-copy-color: shapes compare by cell set and the color
+    //  of each cell
+    // @rule odd-takes-odd-color: shapes compare by cell set and the color of
+    //  each cell
+    // @witness recolored-copy-cell: borderline $NonBackgroundObjects
+  | ColoredShapes {}
+
+.type Choice = [a: Adjacency, o: OddObject, c: ObjectCells]
+
+// The objects of one reading of adjacency and object cells.
+.type Objects = [a: Adjacency, c: ObjectCells]
+.type Object = [k: Objects, id: Ident]
+// An object's shape under transform d.
+.type Pose = [o: Object, d: D4]
+.type ShapeCell = [p: Position, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl copy_color(c: Color) copy_color(1).
+    .decl odd_color(c: Color) odd_color(2).
+
+    // --- $ColorCells ---
+    // @derive RarestColor: borderline concept
+    .decl object_color(c: Color) object_color(8).
+
+    // --- $NonBackgroundObjects ---
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(0).
+
+    // --- $CopyCountClass ---
+    // The number of objects in the copies' shape class.
+    // @derive TileCount: variant concept
+    //     @relaxed copies-and-one-odd
+    .decl copy_count(n: number) copy_count(2).
+}
+
+.init params = Params
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($EightAdjacent()). adjacency_choice($FourAdjacent()).
+
+.decl odd_object_choice(o: OddObject)
+odd_object_choice($UniqueShape()). odd_object_choice($UniqueCount()).
+odd_object_choice($UniqueBbox()). odd_object_choice($UniqueCongruent()).
+odd_object_choice($FewestCells()). odd_object_choice($SmallestBbox()).
+odd_object_choice($OutsideMajority()). odd_object_choice($CopyCountClass()).
+
+.decl shape_colors_choice(s: ShapeColors)
+shape_colors_choice($CellShapes()). shape_colors_choice($ColoredShapes()).
+
+.decl object_cells_choice(c: ObjectCells)
+object_cells_choice($ColorCells()).
+object_cells_choice($NonBackgroundObjects(S)) :- shape_colors_choice(S).
+
+.decl impl_choice(ch: Choice)
+impl_choice([$EightAdjacent(), O, $ColorCells()]) :- odd_object_choice(O).
+impl_choice([$EightAdjacent(), O, $NonBackgroundObjects($CellShapes())]) :- odd_object_choice(O).
+impl_choice([$EightAdjacent(), $UniqueShape(), $NonBackgroundObjects($ColoredShapes())]).
+impl_choice([$EightAdjacent(), $UniqueCongruent(), $NonBackgroundObjects($ColoredShapes())]).
+impl_choice([$EightAdjacent(), $OutsideMajority(), $NonBackgroundObjects($ColoredShapes())]).
+impl_choice([$EightAdjacent(), $CopyCountClass(), $NonBackgroundObjects($ColoredShapes())]).
+impl_choice([$FourAdjacent(), $UniqueShape(), C]) :- object_cells_choice(C).
+impl_choice([$FourAdjacent(), $OutsideMajority(), C]) :- object_cells_choice(C).
+impl_choice([$FourAdjacent(), $CopyCountClass(), C]) :- object_cells_choice(C).
+
+// The cells the objects are made of.
+.decl node(c: ObjectCells, p: Position)
+
+// Cell P belongs to object Id.
+.decl label(k: Objects, p: Position, id: Ident)
+
+.decl obj(k: Objects, id: Ident)
+obj(K, Id) :- label(K, _, Id).
+
+// @claim copies-take-copy-color odd-takes-odd-color
+.init obox = Bbox<Object>
+obox.cell([K, Id], P) :- label(K, P, Id).
+
+// The object's cells in its own box: its shape, free of placement.
+.decl shape_cell(o: Object, p_inner: Position)
+shape_cell([K, Id], P_inner) :- obox.box([K, Id], B), label(K, P, Id), crop(P, B, P_inner).
+
+// The objects whose shapes carry the color of each cell.
+.decl colored(k: Objects)
+
+// The object's cells take the odd color.
+.decl odd(ch: Choice, id: Ident)
+
+out(P, Col, [A, O, C]) :-
+    impl_choice([A, O, C]), label([A, C], P, Id),
+    ( odd([A, O, C], Id), params.odd_color(Col)
+    ; !odd([A, O, C], Id), params.copy_color(Col)
+    ).
+out(P, Col, [A, O, C]) :- impl_choice([A, O, C]), in(P, Col), !label([A, C], P, _).
+
+// --- $EightAdjacent ---
+
+// @claim objects-of-one-color
+.init comps8 = Components8<ObjectCells>
+comps8.node(C, P) :- node(C, P).
+
+label([$EightAdjacent(), C], P, Id) :- comps8.label(C, P, Id).
+
+// --- $FourAdjacent ---
+
+// @claim objects-of-one-color
+.init comps4 = Components<ObjectCells>
+comps4.node(C, P) :- node(C, P).
+
+label([$FourAdjacent(), C], P, Id) :- comps4.label(C, P, Id).
+
+// --- $ColorCells ---
+
+node($ColorCells(), P) :- in(P, Col), params.object_color(Col).
+
+// --- $NonBackgroundObjects ---
+
+node($NonBackgroundObjects(S), P) :- shape_colors_choice(S), in(P, Col), !params.background(Col).
+
+// --- $ColoredShapes ---
+
+colored([A, $NonBackgroundObjects($ColoredShapes())]) :- adjacency_choice(A).
+
+// The object's cells in its own box, each with its color.
+.decl colored_cell(o: Object, c: ShapeCell)
+colored_cell([K, Id], [P_inner, Col]) :-
+    colored(K), obox.box([K, Id], B), label(K, P, Id), crop(P, B, P_inner), in(P, Col).
+
+// --- $UniqueShape, $OutsideMajority, $CopyCountClass ---
+
+// @claim copies-take-copy-color odd-takes-odd-color
+.init shapes = KeyedSetCompare<Object, Object, Position>
+shapes.pattern_member(O, P_inner) :- shape_cell(O, P_inner).
+shapes.observed_member(O, P_inner) :- shape_cell(O, P_inner).
+
+// Two objects of one shape up to translation, each object with itself
+// included.
+.decl same_shape(k: Objects, id: Ident, id2: Ident)
+same_shape(K, Id, Id2) :- shapes.equals([K, Id], [K, Id2]), !colored(K).
+
+// --- $ColoredShapes & $UniqueShape, $ColoredShapes & $OutsideMajority, $ColoredShapes & $CopyCountClass ---
+
+// @claim copies-take-copy-color odd-takes-odd-color
+.init colored_shapes = KeyedSetCompare<Object, Object, ShapeCell>
+colored_shapes.pattern_member(O, M) :- colored_cell(O, M).
+colored_shapes.observed_member(O, M) :- colored_cell(O, M).
+
+same_shape(K, Id, Id2) :- colored_shapes.equals([K, Id], [K, Id2]).
+
+// --- $UniqueShape ---
+
+.decl has_copy(k: Objects, id: Ident)
+has_copy(K, Id) :- same_shape(K, Id, Id2), Id != Id2.
+
+odd([A, $UniqueShape(), C], Id) :- obj([A, C], Id), !has_copy([A, C], Id).
+
+// --- $UniqueCount, $FewestCells ---
+
+// @claim copies-take-copy-color odd-takes-odd-color
+.init cell_count = Tally<Object, Position>
+cell_count.item([K, Id], P) :- label(K, P, Id).
+
+// --- $UniqueCount ---
+
+.decl count_twin(k: Objects, id: Ident)
+count_twin(K, Id) :- cell_count.tally([K, Id], N), cell_count.tally([K, Id2], N), Id != Id2.
+
+odd([A, $UniqueCount(), C], Id) :- obj([A, C], Id), !count_twin([A, C], Id).
+
+// --- $UniqueBbox ---
+
+.decl extent(o: Object, a: Axis, n: number)
+extent(O, Ax, N) :- shape_cell(O, P_inner), axis_elem(Ax), axis_dim(P_inner, Ax, N).
+
+// The two objects' boxes differ in extent on some axis.
+.decl extent_differs(k: Objects, id: Ident, id2: Ident)
+extent_differs(K, Id, Id2) :- extent([K, Id], Ax, N), extent([K, Id2], Ax, N2), N != N2.
+
+.decl extent_twin(k: Objects, id: Ident)
+extent_twin(K, Id) :- obj(K, Id), obj(K, Id2), Id != Id2, !extent_differs(K, Id, Id2).
+
+odd([A, $UniqueBbox(), C], Id) :- obj([A, C], Id), !extent_twin([A, C], Id).
+
+// --- $UniqueCongruent ---
+
+// @claim copies-take-copy-color odd-takes-odd-color
+.init turned = KeyedSetCompare<Pose, Object, Position>
+turned.pattern_member(O, P_inner) :- shape_cell(O, P_inner).
+turned.observed_member([O, D], P_out) :-
+    shape_cell(O, P_inner), d4_elem(D), apply(D, P_inner, P_out).
+
+// Two objects of one shape up to a D4 transform and translation.
+.decl congruent(k: Objects, id: Ident, id2: Ident)
+congruent(K, Id, Id2) :- turned.equals([[K, Id], _], [K, Id2]), !colored(K).
+
+.decl congruent_twin(k: Objects, id: Ident)
+congruent_twin(K, Id) :- congruent(K, Id, Id2), Id != Id2.
+
+odd([A, $UniqueCongruent(), C], Id) :- obj([A, C], Id), !congruent_twin([A, C], Id).
+
+// --- $UniqueCongruent & $ColoredShapes ---
+
+// @claim copies-take-copy-color odd-takes-odd-color
+.init turned_colored = KeyedSetCompare<Pose, Object, ShapeCell>
+turned_colored.pattern_member(O, M) :- colored_cell(O, M).
+turned_colored.observed_member([O, D], [P_out, Col]) :-
+    colored_cell(O, [P_inner, Col]), d4_elem(D), apply(D, P_inner, P_out).
+
+congruent(K, Id, Id2) :- turned_colored.equals([[K, Id], _], [K, Id2]).
+
+// --- $FewestCells ---
+
+// @claim copies-take-copy-color odd-takes-odd-color
+.init fewest = ArgExtremes<Objects, Ident>
+fewest.cand(K, Id, N) :- cell_count.tally([K, Id], N).
+
+odd([A, $FewestCells(), C], Id) :- fewest.low([A, C], Id, _).
+
+// --- $SmallestBbox ---
+
+// @claim copies-take-copy-color odd-takes-odd-color
+.init box_area = Tally<Object, Position>
+box_area.item(O, P) :- obox.box(O, B), in(P, _), inside(P, B).
+
+// @claim copies-take-copy-color odd-takes-odd-color
+.init smallest = ArgExtremes<Objects, Ident>
+smallest.cand(K, Id, N) :- box_area.tally([K, Id], N).
+
+odd([A, $SmallestBbox(), C], Id) :- smallest.low([A, C], Id, _).
+
+// --- $OutsideMajority ---
+
+// @claim copies-take-copy-color odd-takes-odd-color
+.init commonest = Mode<Objects, Ident, Ident>
+commonest.item(K, Id, Id2) :- same_shape(K, Id, Id2).
+
+odd([A, $OutsideMajority(), C], Id) :- obj([A, C], Id), !commonest.mode([A, C], Id).
+
+// --- $CopyCountClass ---
+
+// @claim copies-take-copy-color odd-takes-odd-color
+.init class_size = Tally<Object, Ident>
+class_size.item([K, Id], Id2) :- same_shape(K, Id, Id2).
+
+odd([A, $CopyCountClass(), C], Id) :-
+    class_size.tally([[A, C], Id], N), !params.copy_count(N).

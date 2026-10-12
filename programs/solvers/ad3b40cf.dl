@@ -126,7 +126,6 @@
 .decl adjacency_choice(a: Adjacency)
 adjacency_choice($Adjacency4()). adjacency_choice($Adjacency8()).
 
-// @ignore: case section — the enumerator lists every value of its field
 .decl copied_color_choice(c: CopiedColor)
 copied_color_choice($CellCount()). copied_color_choice($ColorBoxArea()).
 copied_color_choice($ObjectBoxArea(A)) :- adjacency_choice(A).

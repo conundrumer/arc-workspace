@@ -1,0 +1,387 @@
+// b25e450b
+// @draft
+// @keywords: objects lines move cast bbox d4
+// @scene speckled-field: the background is a mix of the two field colors, 5
+//  and 7, with no pattern in where each color falls
+// @scene edge-blocks: the cells of block_color form solid rectangles, each one
+//  touching exactly one edge of the grid and not reaching the opposite edge
+// @scene blocks-apart: no two blocks touch, not even at a corner
+// @rule cross-to-opposite: each block moves to the opposite edge on the axis
+//  normal to the edge it touches, and it keeps its place on the other axis
+// @rule wipe-track: each cell in the band the block's rows (for a block on a
+//  side edge) or columns (for a block on the top or bottom edge) span, from
+//  edge to edge, takes trail_color
+// @rule block-on-top: a cell where a moved block lands takes block_color, also
+//  where it lies in the track of another block
+// @rule rest-kept: every other cell keeps its input color
+
+// how block cells join
+.type Connectivity =
+    // @claim edge-blocks blocks-apart
+    FourConnected {}
+    // @scene edge-blocks: the 8-connected groups of block_color cells are the
+    //  blocks; undefined where such a group touches two edges or none
+    // @scene blocks-apart: blocks that touch at a corner are one block
+    // @witness corner-touch: borderline concept
+    //     @relaxed blocks-apart
+    //     @relaxed edge-blocks
+  | EightConnected {}
+
+// where the block's cells land
+.type Landing =
+    // @claim cross-to-opposite
+    Translate {}
+    // @rule cross-to-opposite: the block lands at the opposite edge flipped
+    //  along the axis of travel
+    // @witness shaped-block: borderline concept
+    //     @relaxed edge-blocks
+  | Mirror {}
+
+// where a block goes whose heading is read from two adjacent edges
+.type Corner =
+    // @claim edge-blocks
+    CornerUndefined {}
+    // @rule cross-to-opposite: a block whose heading is read from two adjacent
+    //  edges moves away from both to the opposite corner, with a track along
+    //  each axis
+    // @witness corner-block: borderline $Diagonal
+    //     @relaxed edge-blocks
+  | Diagonal {}
+
+// where a block goes whose heading is read from two opposite edges
+.type Span =
+    // @claim edge-blocks
+    SpanUndefined {}
+    // @rule cross-to-opposite: a block whose heading is read from two opposite
+    //  edges stays where it is, with no track
+    // @witness span-block: foreign $SpanStays
+    //     @relaxed edge-blocks
+  | SpanStays {}
+
+// what moves
+.type Mover =
+    // @claim edge-blocks cross-to-opposite wipe-track
+    Block {c: Connectivity, l: Landing, k: Corner, s: Span}
+    // @scene edge-blocks: block cells lie in runs along rows and columns
+    // @rule cross-to-opposite: in each row and each column, a run of block
+    //  cells that touches exactly one end of the line moves to the other end;
+    //  other runs stay
+    // @rule wipe-track: each line in which a run moves takes trail_color
+    // @witness shaped-block: borderline concept
+  | PerLine {}
+
+// which cells take trail_color
+.type Extent =
+    // @claim wipe-track
+    Band {}
+    // @rule wipe-track: only the cells of the band between the block's place
+    //  and its landing take trail_color
+    // @witness floating-block: borderline $AwayFromNearestEdge & $SweptOnly
+    //     @relaxed edge-blocks
+  | SweptOnly {}
+
+// what sets a block's axis and heading
+.type Heading =
+    // @claim edge-blocks cross-to-opposite
+    TouchedEdge {}
+    // @scene edge-blocks: each block has one nearest edge; undefined where a
+    //  block has two
+    // @rule cross-to-opposite: each block moves to the edge opposite its
+    //  nearest edge
+    // @witness floating-block: borderline $AwayFromNearestEdge & $SweptOnly
+  | AwayFromNearestEdge {e: Extent}
+
+// what a track does to its cells
+.type Paint =
+    // @claim wipe-track
+    PaintAll {}
+    // @rule wipe-track: in the track, the cells of a field color and the block
+    //  cells take trail_color, and cells of other colors keep their color
+    // @witness stray-color: borderline concept
+    //     @relaxed speckled-field
+  | RecolorTrack {}
+
+// which cells are block cells
+.type BlockCells =
+    // @claim edge-blocks block-on-top
+    OfBlockColor {t: Paint}
+    // @scene edge-blocks: the cells of neither field color are the block cells
+    // @rule block-on-top: each block cell lands in its own color; undefined
+    //  where landings of two colors meet
+    // @witness second-hole-color: borderline $NonFieldColor
+    //     @relaxed speckled-field
+  | NonFieldColor {}
+
+.type Choice = [u: Mover, h: Heading, b: BlockCells]
+
+// One block, found under a connectivity among one set of block cells.
+.type Piece = [c: Connectivity, b: BlockCells, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl trail_color(col: Color) trail_color(7).
+
+    // --- $OfBlockColor ---
+    .decl block_color(col: Color) block_color(0).
+
+    // --- $RecolorTrack, $NonFieldColor ---
+    .decl field_color(col: Color) field_color(5). field_color(7).
+}
+
+.init params = Params
+
+.decl connectivity_choice(c: Connectivity)
+connectivity_choice($FourConnected()). connectivity_choice($EightConnected()).
+
+.decl landing_choice(l: Landing)
+landing_choice($Translate()). landing_choice($Mirror()).
+
+.decl corner_choice(k: Corner)
+corner_choice($CornerUndefined()). corner_choice($Diagonal()).
+
+.decl span_choice(s: Span)
+span_choice($SpanUndefined()). span_choice($SpanStays()).
+
+.decl mover_choice(u: Mover)
+mover_choice($Block(C, L, W, S)) :-
+    connectivity_choice(C), landing_choice(L), corner_choice(W), span_choice(S).
+mover_choice($PerLine()).
+
+.decl extent_choice(e: Extent)
+extent_choice($Band()). extent_choice($SweptOnly()).
+
+.decl heading_choice(h: Heading)
+heading_choice($TouchedEdge()).
+heading_choice($AwayFromNearestEdge(E)) :- extent_choice(E).
+
+.decl paint_choice(t: Paint)
+paint_choice($PaintAll()). paint_choice($RecolorTrack()).
+
+.decl block_cells_choice(b: BlockCells)
+block_cells_choice($OfBlockColor(T)) :- paint_choice(T).
+block_cells_choice($NonFieldColor()).
+
+// A case of $Block other than the concept case that takes $TouchedEdge,
+// $CornerUndefined or $SpanUndefined is subsumed by the case that takes
+// $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those
+// branches only widen where the model is defined. $PerLine with
+// $AwayFromNearestEdge fails Fit.
+.decl impl_choice(ch: Choice)
+impl_choice([U, H, B]) :-
+    mover_choice(U), heading_choice(H), block_cells_choice(B),
+    ( U = $Block($FourConnected(), $Translate(), $CornerUndefined(), $SpanUndefined()),
+      H = $TouchedEdge(), B = $OfBlockColor($PaintAll())
+    ; U = $Block(_, _, $Diagonal(), $SpanStays()), H != $TouchedEdge()
+    ; U = $PerLine(), H = $TouchedEdge()
+    ).
+
+// The cells a case reads as block cells.
+.decl block_cell(b: BlockCells, p: Position)
+
+// A cell where a moved block cell lands, in that cell's color.
+.decl landed(ch: Choice, p: Position, col: Color)
+
+// A cell of a track.
+.decl wiped(ch: Choice, p: Position)
+
+// A track cell that takes trail_color.
+.decl painted(ch: Choice, p: Position)
+
+// Some block has no place to go.
+.decl undefined(ch: Choice)
+
+out(P, Col, Ch) :- landed(Ch, P, Col), !undefined(Ch).
+out(P, Col, Ch) :-
+    impl_choice(Ch), !undefined(Ch), in(P, Col_in), !landed(Ch, P, _),
+    ( painted(Ch, P), params.trail_color(Col)
+    ; !painted(Ch, P), Col = Col_in
+    ).
+
+// --- $OfBlockColor ---
+block_cell($OfBlockColor(T), P) :- paint_choice(T), in(P, Col), params.block_color(Col).
+
+// --- $NonFieldColor ---
+block_cell($NonFieldColor(), P) :- in(P, Col), !params.field_color(Col).
+
+// --- $PaintAll, $NonFieldColor ---
+painted([U, H, B], P) :- wiped([U, H, B], P), B != $OfBlockColor($RecolorTrack()).
+
+// --- $RecolorTrack ---
+painted([U, H, B], P) :-
+    wiped([U, H, B], P), B = $OfBlockColor($RecolorTrack()),
+    ( in(P, Col), params.field_color(Col) ; block_cell(B, P) ).
+
+// --- $Block ---
+// The cells of each block.
+.decl piece(k: Piece, p: Position)
+
+// @claim edge-blocks
+.init box = Bbox<Piece>
+box.cell(K, P) :- piece(K, P).
+
+// The edges a block's heading is read from.
+.decl source(h: Heading, k: Piece, d: Dir)
+
+// Two source edges of one block.
+.decl pair(h: Heading, k: Piece, d: Dir, d2: Dir)
+pair(H, K, D, D2) :- source(H, K, D), source(H, K, D2), D != D2.
+
+// A third source edge.
+.decl crowded(h: Heading, k: Piece)
+crowded(H, K) :- pair(H, K, D, D2), source(H, K, D3), D3 != D, D3 != D2.
+
+// The block's one source edge.
+.decl lone(h: Heading, k: Piece, d: Dir)
+lone(H, K, D) :- source(H, K, D), !pair(H, K, D, _).
+
+// The block's two source edges, which are adjacent.
+.decl corner(h: Heading, k: Piece, d: Dir, d2: Dir)
+corner(H, K, D, D2) :- pair(H, K, D, D2), perp_dir(D, D2), !crowded(H, K).
+
+// The block's two source edges, which are opposite.
+.decl span(h: Heading, k: Piece)
+span(H, K) :- pair(H, K, D, D2), opposite(D, D2), !crowded(H, K).
+
+// A block that has a place to go.
+.decl settled(h: Heading, w: Corner, s: Span, k: Piece)
+settled(H, W, S, K) :- lone(H, K, _), corner_choice(W), span_choice(S).
+
+// A block that has no place to go.
+.decl stuck(h: Heading, w: Corner, s: Span, k: Piece)
+stuck(H, W, S, K) :-
+    piece(K, _), heading_choice(H), corner_choice(W), span_choice(S), !settled(H, W, S, K).
+
+// A direction a block travels, and how far.
+.decl heading(h: Heading, w: Corner, k: Piece, d: Dir, n: number)
+heading(H, W, K, D, N) :-
+    lone(H, K, E), corner_choice(W), opposite(E, D), box.box(K, B), dist(B, D, N).
+
+// A block travels along axis a.
+.decl travels(h: Heading, w: Corner, k: Piece, a: Axis)
+travels(H, W, K, A) :- heading(H, W, K, D, _), axis_of(D, A).
+
+// The block's move along axis a.
+// @ignore: common-subexpr — the move of every block under each reading, which
+//  `stuck` restricts to the same blocks
+.decl shift(h: Heading, w: Corner, k: Piece, a: Axis, v: Offset)
+shift(H, W, K, A, V) :- heading(H, W, K, D, N), axis_of(D, A), jump_offset(D, N, V).
+shift(H, W, K, A, ZERO) :-
+    piece(K, _), heading_choice(H), corner_choice(W), axis_elem(A), !travels(H, W, K, A).
+
+// The block's move.
+.decl move(h: Heading, w: Corner, k: Piece, v: Offset)
+move(H, W, K, V) :-
+    shift(H, W, K, A, V1), perp(A, A2), shift(H, W, K, A2, V2), compose(V1, V2, V).
+
+// A cell where a block cell lands, in that cell's color.
+.decl landing(l: Landing, h: Heading, w: Corner, k: Piece, q: Position, col: Color)
+
+// A cell of a block's track.
+.decl track(h: Heading, w: Corner, k: Piece, p: Position)
+
+landed([$Block(C, L, W, S), H, B], Q, Col) :-
+    impl_choice([$Block(C, L, W, S), H, B]), landing(L, H, W, [C, B, _], Q, Col).
+
+wiped([$Block(C, L, W, S), H, B], P) :-
+    impl_choice([$Block(C, L, W, S), H, B]), track(H, W, [C, B, _], P).
+
+undefined([$Block(C, L, W, S), H, B]) :-
+    impl_choice([$Block(C, L, W, S), H, B]), stuck(H, W, S, [C, B, _]).
+
+// --- $FourConnected ---
+// @claim edge-blocks
+.init four = Components<BlockCells>
+four.node(B, P) :- block_cell(B, P).
+
+piece([$FourConnected(), B, Id], P) :- four.label(B, P, Id).
+
+// --- $EightConnected ---
+// @claim edge-blocks
+.init eight = Components8<BlockCells>
+eight.node(B, P) :- block_cell(B, P).
+
+piece([$EightConnected(), B, Id], P) :- eight.label(B, P, Id).
+
+// --- $TouchedEdge ---
+source($TouchedEdge(), K, D) :- box.box(K, B), dir_elem(D), dist(B, D, 0).
+
+// --- $AwayFromNearestEdge ---
+// @claim cross-to-opposite
+.init nearest = ArgExtremes<Piece, Dir>
+nearest.cand(K, D, N) :- box.box(K, B), dir_elem(D), dist(B, D, N).
+
+source($AwayFromNearestEdge(E), K, D) :- extent_choice(E), nearest.low(K, D, _).
+
+// --- $Diagonal ---
+settled(H, $Diagonal(), S, K) :- corner(H, K, _, _), span_choice(S).
+
+heading(H, $Diagonal(), K, D, N) :-
+    corner(H, K, E, _), opposite(E, D), box.box(K, B), dist(B, D, N).
+
+// --- $SpanStays ---
+settled(H, W, $SpanStays(), K) :- span(H, K), corner_choice(W).
+
+// --- $Translate ---
+landing($Translate(), H, W, K, Q, Col) :-
+    move(H, W, K, V), piece(K, P), in(P, Col), compose(P, V, Q).
+
+// --- $Mirror ---
+landing($Mirror(), H, W, K, Q, Col) :-
+    move(H, W, K, V), box.box(K, B), piece(K, P), in(P, Col), crop(P, B, P_rel),
+    perp(A, A2),
+    ( travels(H, W, K, A), flip_of(A, F), apply(F, P_rel, P_rel1)   // flipped in the block's box
+    ; !travels(H, W, K, A), P_rel1 = P_rel
+    ),
+    ( travels(H, W, K, A2), flip_of(A2, F2), apply(F2, P_rel1, P_rel2)
+    ; !travels(H, W, K, A2), P_rel2 = P_rel1
+    ),
+    compose(B, P_rel2, P2), compose(P2, V, Q).
+
+// --- $TouchedEdge, $Band ---
+track(H, W, K, P) :-
+    heading(H, W, K, D, _), H != $AwayFromNearestEdge($SweptOnly()),
+    box.box(K, B), axis_of(D, A), split(B, A, _, Band), in(P, _), inside(P, Band).
+
+// --- $SweptOnly ---
+track($AwayFromNearestEdge($SweptOnly()), W, K, P) :-
+    heading($AwayFromNearestEdge($SweptOnly()), W, K, D, _),
+    box.box(K, B), axis_of(D, A), split(B, A, _, Band),
+    opposite(D, E), dist(B, E, M), edge_inset(E, M, Ahead),   // the block's place onward
+    in(P, _), inside(P, Band), inside(P, Ahead).
+
+// --- $PerLine ---
+// The runs of block cells cast from each block cell along its line.
+// @claim edge-blocks cross-to-opposite
+.init run = Ray<BlockCells>
+run.dir(B, D) :- impl_choice([$PerLine(), _, B]), dir_elem(D).
+run.mark(B, P) :- block_cell(B, P).
+run.blocked(B, P) :- impl_choice([$PerLine(), _, B]), in(P, _), !block_cell(B, P).
+
+// A run that starts at the edge cell src and ends short of the far edge,
+// moving toward d by n.
+.decl moving(b: BlockCells, src: Position, d: Dir, n: number)
+moving(B, Src, D, N) :-
+    run.stop(B, S, D, _, Src), dir_elem(D), opposite(D, E), dist(Src, E, 0),
+    run.clear_cast(B, Last, D, _, Src), neighbor(Last, D, S), dist(Last, D, N).
+
+landed([$PerLine(), H, B], Q, Col) :-
+    impl_choice([$PerLine(), H, B]), moving(B, Src, D, N),
+    run.clear_cast(B, P, D, _, Src), in(P, Col), jump(P, D, N, Q).
+
+wiped([$PerLine(), H, B], P) :-
+    impl_choice([$PerLine(), H, B]), moving(B, Src, D, _), run.cast(B, P, D, _, Src).
+
+.comp Determine {
+    // Some cell of example e keeps color col from input to output.
+    .decl kept(e: Example, col: Color)
+    kept(E, Col) :- ex_in(E, P, Col), ex_out(E, P, Col).
+
+    // An example that keeps no cell of color col.
+    .decl lapse(col: Color)
+    lapse(Col) :- kept(_, Col), ex_out(E, _, _), !kept(E, Col).
+
+    // A color some cell of every example keeps.
+    .decl field_color(col: Color)
+    field_color(Col) :- kept(_, Col), !lapse(Col).
+}

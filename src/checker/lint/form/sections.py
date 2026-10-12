@@ -186,7 +186,7 @@ def check_case_section(solver: Solver, runs: Runs) -> list[Finding]:
     (`constructors_fixed`); where those constructors denote no case of the
     solver, the clause is a clause of no case and is not judged, above the
     first marker as under one. A constructor under a negation or a
-    `!=` does not count; a clause of an enumerator, and a fact of one constructor or
+    `!=` does not count; a clause of an enumerator (`View.enumerators`), and a fact of one constructor or
     record, belong to no case. A fact of a parameter with a case column is
     judged by the `shared-read` lint (`case_column_facts`).
     The clauses on one line that give one hint give it once. Where the run that enumerates the solver's cases gives no

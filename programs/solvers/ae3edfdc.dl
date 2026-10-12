@@ -164,7 +164,6 @@ path_blocking_choice($PassOver()). path_blocking_choice($SlideBlocked()).
 unmatched_cells_choice($ClearUnmatched()). unmatched_cells_choice($KeepUnmatched()).
 
 // The eight directions fit with the stored pairing alone.
-// @ignore: case section — the enumerator lists the combinations of two fields that fit
 .decl satellite_line_choice(s: SatelliteColor, l: LineDirections)
 satellite_line_choice(S, $FourDirections()) :- satellite_color_choice(S).
 satellite_line_choice($PartnerColor($StoredPair()), $EightDirections()).

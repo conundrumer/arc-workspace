@@ -366,57 +366,76 @@ class View:
                                 and scope.components[0] in STOCK_COMPS)
 
     @cached_property
+    def top_heads(self) -> dict[str, list[Unit]]:
+        """The own clauses of each top-level relation other than an
+        instance's, by its name."""
+        heads: dict[str, list[Unit]] = {}
+        for u in self.own_units:
+            if u.scope == TOP and not u.head.relation.instances:
+                heads.setdefault(u.head.relation.name, []).append(u)
+        return heads
+
+    def reach(self, start: set[str], among: set[str]) -> set[str]:
+        """The relations of `among` that the clauses of `start` read,
+        directly or through relations of `among`."""
+        heads = self.top_heads
+        found: set[str] = set()
+        work = set(start)
+        while work:
+            work = {a.relation.name for n in work
+                    for u in heads.get(n, []) for a in atoms_read(u)
+                    if not a.relation.instances
+                    and a.relation.name in among} - found
+            found |= work
+        return found
+
+    @cached_property
     def enumeration(self) -> frozenset[str]:
         """The top-level relations whose clauses the program-style checks
         skip: `impl_choice`, its enumerators, and the relations only they
         read, transitively (history 1111)."""
-        heads: dict[str, list[Unit]] = {}
+        heads = self.top_heads
         read_by: dict[str, set[str | None]] = {}
         for u in self.own_units:
             top = u.scope == TOP and not u.head.relation.instances
             head = u.head.relation.name if top else None
-            if head is not None:
-                heads.setdefault(head, []).append(u)
             for a in atoms_read(u):
                 if not a.relation.instances:
                     read_by.setdefault(a.relation.name, set()).add(head)
         if ENUMERATOR not in heads:
             return frozenset()
         enums = self.enumerators
-
-        def reads(names: set[str]) -> set[str]:
-            return {a.relation.name for n in names
-                    for u in heads.get(n, [])
-                    for a in atoms_read(u)
-                    if not a.relation.instances}
-
-        found = {ENUMERATOR} | (reads({ENUMERATOR}) & enums)
+        found = {ENUMERATOR} | self.reach({ENUMERATOR}, enums)
         group = set(heads) - found
         while True:
             cut = {n for n in group
                    if not read_by.get(n) or not read_by[n] <= found | group}
             group -= cut
-            reached: set[str] = set()
-            work = set(found)
-            while work:
-                work = (reads(work) & group) - reached
-                reached |= work
+            reached = self.reach(found, group)
             if not cut and reached == group:
                 return frozenset(found | group)
             group = reached
 
     @cached_property
     def enumerators(self) -> set[str]:
-        """`impl_choice`, and each top-level relation whose every clause is
-        a fact of one argument, a constructor or a record."""
-        shape: dict[str, bool] = {}
-        for u in self.own_units:
-            if u.scope != TOP or u.head.relation.instances:
-                continue
-            one = tag_fact(u)
-            name = u.head.relation.name
-            shape[name] = shape.get(name, True) and one
-        return {n for n, one in shape.items() if one} | {ENUMERATOR}
+        """`impl_choice`, each top-level relation whose every clause is a
+        fact of one argument, a constructor or a record (`tag_fact`), and
+        the greatest set of other top-level relations that `impl_choice`
+        reads, directly or through members, whose every clause reads only
+        members and those relations, a fact of any arity among them."""
+        heads = self.top_heads
+        tags = {n for n, us in heads.items() if all(map(tag_fact, us))}
+        tags.add(ENUMERATOR)
+        group = self.reach({ENUMERATOR}, set(heads)) - tags
+        while True:
+            keep = {n for n in group
+                    if all(not a.relation.instances
+                           and a.relation.name in group | tags
+                           for u in heads[n] for a in atoms_read(u))}
+            keep &= self.reach({ENUMERATOR}, keep | tags)
+            if keep == group:
+                return group | tags
+            group = keep
 
     def in_enumeration(self, unit: Unit) -> bool:
         return (unit.scope == TOP and not unit.head.relation.instances

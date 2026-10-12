@@ -6,8 +6,7 @@ test 0: PASS (76 witnessed cases)
 --- 1 finding(s) ---
   a934301b.dl:137: proposal comp: `MeanSplit` is a proposal comp, and the concept case reads none of its relations; the cases that read them: `$BelowMean` ([In the pass](docs/handbook/lib-protocol.md#in-the-pass))
 
---- 2 hint(s) ---
-  a934301b.dl:245: case section: the clause contains the case value `$BodyMarkOnly(O)` and stands before the first marker; an `@ignore` directive can keep the relation it fires on
+--- 1 hint(s) ---
   a934301b.dl:380: case section: by the program's rules, not by a run, `$MarkCells` read `parse.marks`, which the clause feeds, and the marker `// --- $MarkPieces ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases); an `@ignore` directive can keep the relation it fires on
 
 determination: ok (dropped_count, kept_count)
