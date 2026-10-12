@@ -373,7 +373,12 @@ def check_case_conditions(solver: Solver, runs: Runs) -> list[Finding]:
     gave no result is reported with that failure at the case, a timeout or a
     failed run, and no condition is judged of it. One with an entry whose
     assignment the model cannot place, a fault `fault_findings` reports, is
-    reported as not run on that entry, and no condition is judged of it."""
+    reported as not run on that entry, and no condition is judged of it.
+    The bases the solver drops are those outside `kept` of the runs it is
+    given, where they have one: the solver's own cases (`Runs.restored`),
+    or the cases of the file `witness --dropped-from` names
+    (`Runs.restored_against`); otherwise those outside `kept` of
+    `Runs.restored`."""
     every = runs if runs.kept is not None else runs.restored
     if every is None:
         return []

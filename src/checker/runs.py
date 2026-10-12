@@ -1,6 +1,6 @@
 """The runs a check reads."""
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import cached_property
 from typing import TYPE_CHECKING, NamedTuple
@@ -101,8 +101,9 @@ class Runs:
     Each run stops at `limits`, which the command passes from its option.
     Every check and survey reads its cases from `judged`.
 
-    `kept` is set on the runs of the `witness --every-case` form
-    (`restored`): the cases the solver's own `impl_choice` holds, whose
+    `kept` is set on the runs of the `witness --every-case` form: the
+    cases the solver's own `impl_choice` holds (`restored`), or those the
+    solver file `--dropped-from` names holds (`restored_against`), whose
     findings the form shows. `given` is a witness file the command reads in
     place of the task's (`witness --file`)."""
 
@@ -566,11 +567,23 @@ class Runs:
     def _restricted(self, bases: Sequence[Base | None],
                     kept: tuple[Case, ...] | None = None) -> "Runs":
         """The runs of the solver with `impl_choice` holding `bases`
-        alone (`solver.variations.Restrict`)."""
-        program = variation(self.engine, self.solver,
-                            Restrict(tuple(base_case(b) for b in bases)))
-        return Runs(self.engine, replace(self.solver, program=program),
-                    self.limits, kept=kept, given=self.given)
+        alone (`solver.variations.Restrict`). Where the solver declares no
+        `impl_choice`, no clause reads it (solver-file.md, under "Cases"),
+        so these are the runs of the solver as it stands."""
+        solver = self.solver
+        if enumerates(solver.program):
+            program = variation(self.engine, solver,
+                                Restrict(tuple(base_case(b) for b in bases)))
+            solver = replace(solver, program=program)
+        return Runs(self.engine, solver, self.limits, kept=kept,
+                    given=self.given)
+
+    def _every_base(self) -> tuple[Base, ...] | None:
+        """Every case of `Choice` (`solver.model.every_base`); None for a
+        solver with no `Choice`, or a `Choice` whose cases no enumeration
+        gives."""
+        choice = self.solver.choice
+        return None if choice is None else every_base(choice)
 
     @cached_property
     def restored(self) -> "Runs | RunFailure | None":
@@ -580,13 +593,35 @@ class Runs:
         `impl_choice`, which holds every case already, and for a `Choice`
         whose cases no enumeration gives; the failure of the run that
         enumerates the solver's cases where it fails."""
-        choice = self.solver.choice
-        if choice is None or not enumerates(self.solver.program):
+        if not enumerates(self.solver.program):
             return None
-        bases = every_base(choice)
+        bases = self._every_base()
         if bases is None:
             return None
         kept = self.solver_cases
         if not isinstance(kept, tuple):
             return kept
         return self._restricted(bases, kept)
+
+    def restored_against(self, held: Collection[str]
+                         ) -> "Runs | RunFailure | None":
+        """The runs of the `witness --every-case --dropped-from` form: the
+        solver with `impl_choice` holding every case of `Choice`, with
+        `kept` each of its cases whose name (`solver.names.name`) is among
+        `held`, the names of the cases of the solver file the option
+        names, so that each other case is judged as a case that file drops.
+        Also for a solver with no `impl_choice`, where `held` lacks a case
+        of `Choice`; None where it lacks none, and for a `Choice` whose
+        cases no enumeration gives; the failure of the run that enumerates
+        the cases where it fails."""
+        bases = self._every_base()
+        if bases is None:
+            return None
+        every = self._restricted(bases)
+        cases = every.solver_cases
+        if not isinstance(cases, tuple):
+            return cases
+        kept = tuple(c for c in cases if case_name(self.solver, c) in held)
+        if len(kept) == len(cases) and not enumerates(self.solver.program):
+            return None
+        return every.sharing(every.solver, kept=kept)

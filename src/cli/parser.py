@@ -283,7 +283,8 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
     witness = command(
         "witness",
         lambda a: audit.cmd_witness(a.stem, a.file, a.every_case,
-                                    a.witness_file, a.try_path),
+                                    a.witness_file, a.try_path,
+                                    a.dropped_from),
         help=mctx("run the task's witness grids and report where the solver "
                   "and the witness file disagree"),
         description=mctx("""
@@ -318,10 +319,17 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
     file_or_every.add_argument(
         "--every-case", action="store_true",
         help=mctx("run with `impl_choice` holding every case of `Choice`, "
-                  "and for each case the solver drops, print the first of these "
-                  "the runs show: it fails Fit, no witness separates it from "
-                  "another case, it fails Subsumption, or it fails none of "
-                  "them"))
+                  "and for each case the solver drops, or, with "
+                  "`--dropped-from`, each case that file drops in place of "
+                  "those, print the first of these "
+                  "the runs show: it fails Fit, no witness "
+                  "separates it from another case, it fails Subsumption, "
+                  "or it fails none of them"))
+    witness.add_argument(
+        "--dropped-from", metavar="PATH", dest="dropped_from",
+        help=mctx("with `--every-case`, a solver file of the same task, "
+                  "whose dropped cases are the cases of the solver's "
+                  "`Choice` it does not hold"))
     derive = command(
         "derive", partial(audit.derive_or_store, audit.cmd_derive),
         help=mctx("the built-in derivations of stored parameters that fit, "

@@ -3,7 +3,7 @@ and its witness file disagree, and the branches of its stored values."""
 
 import sys
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Sequence
 from pathlib import Path
 
 from checker import Finding, Kind, Runs, fault_findings
@@ -45,6 +45,7 @@ from cli.witness_file import absent, lined_solver, read_file, target, with_file
 from engine import RunFailure, checkout
 from solver import witness
 from solver.model import DeriveBranch
+from solver.names import name as case_name
 from solver.form_checks import RecordedForm, recorded_form
 from solver.aggregate import Solver
 from solver.readers import declaration_of
@@ -55,25 +56,30 @@ from souffle import SouffleEngine
 # `witness`
 
 
-def _every_case(runs: Runs) -> Runs | RunFailure:
-    """The runs of the `witness --every-case` form (`Runs.restored`): the
-    runs themselves where the solver holds every case already, and the
-    failure of the run that enumerates the solver's cases where it
-    fails."""
-    restored = runs.restored
+def _every_case(runs: Runs, held: Collection[str] | None = None
+                ) -> Runs | RunFailure:
+    """The runs of the `witness --every-case` form (`Runs.restored`), or,
+    with `held`, the names of the cases of the file `--dropped-from`
+    names, of its `--dropped-from` form (`Runs.restored_against`): the
+    runs themselves where no case is dropped, and the failure of the run
+    that enumerates the solver's cases where it fails."""
+    restored = runs.restored if held is None \
+        else runs.restored_against(held)
     return runs if restored is None else restored
 
 
-def witness_findings(solver: Solver, runs: Runs, every_case: bool
+def witness_findings(solver: Solver, runs: Runs, every_case: bool,
+                     held: Collection[str] | None = None
                      ) -> list[Finding] | RunFailure:
     """The witness report's findings, for procedure.md under "Witness"
     ("`witness <task_id>` reads the solver against" its witness file): the
     faults, then each witness check, over the runs with `impl_choice` holding every case
-    under `every_case` (`_every_case`), which adds the case conditions.
+    under `every_case` (`_every_case`, with `held`), which adds the case
+    conditions.
     Under `every_case`, the failure of the run that enumerates the
     solver's cases, where it fails."""
     if every_case:
-        got = _every_case(runs)
+        got = _every_case(runs, held)
         if not isinstance(got, Runs):
             return got
         runs = got
@@ -87,7 +93,8 @@ def witness_findings(solver: Solver, runs: Runs, every_case: bool
 
 def _witness_report(eng: SouffleEngine, solver: Solver,
                     given: WitnessFile | None, every_case: bool,
-                    runs: Runs | None = None
+                    runs: Runs | None = None,
+                    held: Collection[str] | None = None
                     ) -> tuple[list[str], list[Finding]] | RunFailure:
     """The `@witness` lines, the count of witness grids, and the
     report; the failure of `witness_findings` where it gives one. `runs`
@@ -98,20 +105,48 @@ def _witness_report(eng: SouffleEngine, solver: Solver,
     lines = commands.witness_head(
         solver, None if file is None else len(file.entries),
         checkout.shown(witness.path(solver.task_id)))
-    findings = witness_findings(solver, runs, every_case)
+    findings = witness_findings(solver, runs, every_case, held)
     if not isinstance(findings, list):
         return findings
     return lines + commands.judgment_first(
         commands.indented(solver, Section.WITNESS, findings)), findings
 
 
+def _held(eng: SouffleEngine, solver: Solver, path: str
+          ) -> frozenset[str] | int:
+    """The names of the cases of the solver file at `path`
+    (`solver.names.name`), as a witness file names them; the exit code,
+    with its line, where no solver file of `solver`'s task stands there or
+    the run that enumerates its cases fails."""
+    other = command_solver(path, eng, task=False)
+    if other is None:
+        return 2
+    if other.task_id != solver.task_id:
+        print(text.DROPPED_FROM_TASK.format(task=solver.task_id),
+              file=sys.stderr)
+        return 2
+    if not compiles(eng, other):
+        return 1
+    got = Runs(eng, other, LIMITS).solver_cases
+    if not isinstance(got, tuple):
+        print("\n".join(failure_lines(other, got)))
+        return 1
+    return frozenset(case_name(other, c) for c in got)
+
+
 def cmd_witness(arg: str | None, file: str | None = None,
                 every_case: bool = False,
                 witness_file: str | None = None,
-                try_path: str | None = None) -> int:
+                try_path: str | None = None,
+                dropped_from: str | None = None) -> int:
     """The witness report of a solver, against the task's witness file,
     `file` in place of it, or `witness_file` read as the task's own; with
-    `try_path`, what the grid there would change as a witness."""
+    `try_path`, what the grid there would change as a witness; with
+    `dropped_from`, the `--every-case` form judging each case the solver
+    file there does not hold (`_held`)."""
+    if dropped_from is not None and not every_case:
+        print(text.DROPPED_FROM_EVERY, file=sys.stderr)
+        return 2
     if file is not None and witness_file is not None:
         print(text.BOTH_FILES, file=sys.stderr)
         return 2
@@ -150,7 +185,13 @@ def cmd_witness(arg: str | None, file: str | None = None,
         return 1
     if try_path is not None:
         return _try(eng, solver, try_path)
-    got = _witness_report(eng, solver, given, every_case)
+    held: Collection[str] | None = None
+    if dropped_from is not None:
+        named = _held(eng, solver, dropped_from)
+        if not isinstance(named, frozenset):
+            return named
+        held = named
+    got = _witness_report(eng, solver, given, every_case, held=held)
     if not isinstance(got, tuple):
         print("\n".join(failure_lines(solver, got)))
         return 1

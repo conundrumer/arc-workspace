@@ -55,6 +55,9 @@ WITNESS_FILE_NEEDS_STEM = mctx("`--witness-file` takes a stem")
 TRY_ALONE = mctx("witness: `--try` takes a task id and no `--file` or "
                  "`--every-case`")
 TRY_ONE_GRID = mctx("witness: `--try` takes one grid")
+DROPPED_FROM_EVERY = mctx("witness: `--dropped-from` takes `--every-case`")
+DROPPED_FROM_TASK = mctx("witness: `--dropped-from` takes a solver file of "
+                         "task {task}")
 
 # `since`
 
