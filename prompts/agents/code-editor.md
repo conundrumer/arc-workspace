@@ -44,8 +44,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     * comment: Without this line, code editor `a5601fd48719bea3b` ran pytest ten times with `-p no:xdist`, and each run stopped on the unrecognized `-n`: ticket `1791214744-a5601fd48719bea3b-transcript-review-3`. Without its condition for one process, code editors `a2f38cb4539af9799` and `af7175a5f8bbe70e8` ran the whole suite with `-n 0`, at about 2.5 times the time of the default workers: tickets 10-22 and 9-111.
 - End your turn only at one of these points:
     - Blocked: each item that is not done contradicts docstring text that no item changes, has no operation for what it implements, or is stopped by a tool or a document you find no way around. Give the concrete case, and meet each other condition of Done over the items that are done.
-    - Cost, as [Working rules](#working-rules) gives it.
-    - Where [Working rules](#working-rules) has you end it in another agent's worktree.
+    - Budget passed: the notification that your budget timer completed reaches you, as [Working rules](#working-rules) gives it.
+    - Where an environment update gives as your primary working directory a linked worktree other than the one you run your commands in, as [Working rules](#working-rules) gives it.
     - Done: every item is done, your tests directory passes, pyright is clean over the repo, every defect place your `Review` section gives is fixed or stands with its reason, and each case the spec does not cover is filed.
 
 ## Working rules
@@ -70,7 +70,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 ## Tickets
 - As you meet a case the spec does not cover, note it in `progress.md`, under a `Questions` heading.
-- Before you end your turn, other than where [Working rules](#working-rules) has you end it in another agent's worktree, file each case noted under that heading, and each place your diff holds that poses a question, as a ticket of kind `question`, with `code-editor` as `<agent>`.
+- Before you end your turn, other than where an environment update gives as your primary working directory a linked worktree other than the one you run your commands in and [Working rules](#working-rules) has you end it, file each case noted under that heading, and each place your diff holds that poses a question, as a ticket of kind `question`, with `code-editor` as `<agent>`.
     - Cite a case's target as the code site where the case arises, write under `Impact` what your code does there or cannot do, and quote under `Evidence` the docstring lines that describe the code at that site.
     - Cite a place as below.
         * inline: notes/code.md#place-tickets
