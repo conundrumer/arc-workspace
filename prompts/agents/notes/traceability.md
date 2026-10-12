@@ -66,14 +66,7 @@
 
 ## Coordinator
 - [Coordinator](prompts/agents/notes/coordinator.md#coordinator): none. Kept: it gives the coordinator its part and how it reads the documents.
-- [Routes](prompts/agents/notes/coordinator.md#routes): Requirements: requirements traced to the spans; Merge: a hotfix reviewed after it merges.
-    - "`scratch` is work after which": none. Kept: the principle of Process assessment, spend no run the work does not need.
-- [Tickets](prompts/agents/notes/coordinator.md#tickets): Requirements: requirements traced to the spans; Work control: stopped work reaches an agent.
-    - "Where you run no solver pass, file each fault": none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
-    - "Tell the user what each ticket": none. Kept: the principle of Requirements, the user's part.
-    - "Where the user's later words bear on a `request`": Requirements: requirements checked against added words.
-    - "Where a `request` under `tickets/blocked/` waits on `validation`": Validation: a run shows the need met.
-    - "Where the user rules on a ticket under `tickets/blocked/`": Decisions: a departing decision reaches the user.
+- [Routes](prompts/agents/notes/coordinator.md#routes), [Tickets](prompts/agents/notes/coordinator.md#tickets): none. Kept: they lead the coordinator to the notes its work there needs.
 - [Decisions](prompts/agents/notes/coordinator.md#decisions): Decisions: each decision recorded with what it was made from.
 - [Declines](prompts/agents/notes/coordinator.md#declines): none. Kept: it leads the coordinator to the notes on a decline when one reaches it.
 - [Changes](prompts/agents/notes/coordinator.md#changes): Process assessment: the agent and the reviews of each work product.
@@ -85,6 +78,16 @@
 - [Cards](prompts/agents/notes/coordinator.md#cards): Decisions: a departing decision reaches the user.
 - [Codex](prompts/agents/notes/coordinator.md#codex): Decisions: a departing decision reaches the user.
     - "When specifying an issue in prose to fix": Requirements: requirements traced to the spans.
+
+## Request notes
+- [Routes](prompts/agents/notes/requests.md#routes): Requirements: requirements traced to the spans; Merge: a hotfix reviewed after it merges.
+    - "`scratch` is work after which": none. Kept: the principle of Process assessment, spend no run the work does not need.
+- [Tickets](prompts/agents/notes/requests.md#tickets): Requirements: requirements traced to the spans; Work control: stopped work reaches an agent.
+    - "Where you run no solver pass, file each fault": none. Kept: it serves the purpose of Quality assurance, the cause of each fault.
+    - "Tell the user what each ticket": none. Kept: the principle of Requirements, the user's part.
+    - "Where the user's later words bear on a `request`": Requirements: requirements checked against added words.
+    - "Where a `request` under `tickets/blocked/` waits on `validation`": Validation: a run shows the need met.
+    - "Where the user rules on a ticket under `tickets/blocked/`": Decisions: a departing decision reaches the user.
 
 ## Decline notes
 - [Declines](prompts/agents/notes/declines.md#declines): Decisions: a decline carries its defense.

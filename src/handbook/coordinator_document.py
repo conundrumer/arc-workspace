@@ -16,6 +16,15 @@ process, `CLAUDE_PID`, was started with `-p` or `--print`. The hook's text
 reaches the session whole only up to `HOOK_TEXT_CAP` characters, so a
 longer rendering is a fault.
 
+The rendering has a budget below that cap, `BUDGET`, and a band below the
+budget that starts at `BUDGET_BAND`. Each command that renders the document
+for an editor or a reviewer, as `scripts/context.py --write` and
+`context coordinator` do, goes through `budgeted_text`: a rendering past the
+budget is a fault, and one within the band prints its size and the budget
+on stderr and fails nothing. The session-start hook checks its rendering
+against `HOOK_TEXT_CAP` alone, so a session starts with its document where
+an older rendering passes the budget.
+
 Where the user starts the coordinator with `claude`, its reader is
 `coordinator`, and it reads the session-start hook's text alone
 (`coordinator_context`). Where the user starts it with `scripts/claude.py`,
@@ -29,10 +38,12 @@ the session by `--append-system-prompt-file` and not by the hook, so
 from __future__ import annotations
 
 import subprocess
+import sys
 from collections.abc import Mapping
 from enum import StrEnum
 from pathlib import Path
 
+from controlled_markdown import mctx
 from engine import checkout
 from handbook.agents import agent_dir
 from handbook.context import USER_SESSION_DOC, entry_text
@@ -47,6 +58,13 @@ HOOK_TEXT_CAP = 10_000
 """The most characters of a hook's text that Claude Code puts in the
 session's context. Past it, the session gets a preview and the path of a
 file that holds the text."""
+
+BUDGET = 7_000
+"""The most characters of the coordinator's rendered document that a command
+which renders it for an editor or a reviewer accepts."""
+
+BUDGET_BAND = 6_300
+"""The fewest characters of the rendering at which such a command warns."""
 
 ENTRY_POINT_ENV = "CLAUDE_CODE_ENTRYPOINT"
 SESSION_PID_ENV = "CLAUDE_PID"
@@ -93,6 +111,23 @@ def coordinator_text(doc: Path = COORDINATOR_DOC) -> str:
     return text
 
 
+def budgeted_text(doc: Path = COORDINATOR_DOC) -> str:
+    """`coordinator_text`, checked against `BUDGET` and `BUDGET_BAND`."""
+    text = coordinator_text(doc)
+    size = len(text)
+    if size > BUDGET:
+        raise SystemExit(mctx(
+            "The coordinator's document, rendered from {path}, holds {size} "
+            "characters, past its budget of {budget}.").format(
+                path=repo_label(doc), size=size, budget=BUDGET))
+    if size >= BUDGET_BAND:
+        print(mctx("Warning: the coordinator's document, rendered from {path}, "
+                   "holds {size} characters, near its budget of {budget}.").format(
+                       path=repo_label(doc), size=size, budget=BUDGET),
+              file=sys.stderr)
+    return text
+
+
 def coordinator_appendix() -> str:
     """The text `scripts/claude.py` appends to the coordinator's system
     prompt."""
@@ -102,7 +137,7 @@ def coordinator_appendix() -> str:
 def coordinator_context() -> str:
     """What reaches the coordinator the user starts with `claude`: the
     session-start hook's text, as `session-start` gives it."""
-    return marked_section(repo_label(COORDINATOR_PATH), coordinator_text())
+    return marked_section(repo_label(COORDINATOR_PATH), budgeted_text())
 
 
 def user_session_context() -> str:
@@ -115,7 +150,7 @@ def user_session_context() -> str:
 
 def coordinator_rendering(path: Path = COORDINATOR_PATH,
                           doc: Path = COORDINATOR_DOC) -> Rendering:
-    return Rendering(path, coordinator_text(doc))
+    return Rendering(path, budgeted_text(doc))
 
 
 def _claude_code_value(env: Mapping[str, str], name: str) -> str:
@@ -172,7 +207,7 @@ def session_start_text(env: Mapping[str, str], path: Path = COORDINATOR_PATH,
     if point not in USER_ENTRY_POINTS or (point in KEPT_ENTRY_POINTS
                                           and print_session(env)):
         return ""
-    rendering = coordinator_rendering(path, doc)
+    rendering = Rendering(path, coordinator_text(doc))
     try:
         write_generated([rendering])
     except (SystemExit, checkout.GitFailed) as e:

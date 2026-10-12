@@ -1,0 +1,29 @@
+# Request notes
+- The statements on the user's requests for work and on the tickets the coordinator files and tracks, that the coordinator reads at the triggers its document gives.
+
+## Routes
+- A user's message may open or end with a route directive: `direct`, `send`, `hotfix`, `file`, `draft`, `scratch`, or `re <number>`, a follow-up on that `request`.
+- Where a user's message that asks for work gives no route directive, infer its route, the `request` a follow-up concerns, and the span.
+- On a route other than `scratch`, write, read back, then act: in the same turn on a route the user states, and on an inferred one only once the user replies to it.
+    - To write is to run the command of `uv run python scripts/spans.py` that writes the route's `request` or brief. To act is to launch an agent with that brief, make or merge the change, or tell an operator that tickets are open.
+        - The goal you give that command is the outcome the user wants from the work, in one or two sentences, from the user's words, with no means you proposed.
+    - Read back right after that command: give the route, the goal word for word as the command prints it, and the work in your own words.
+        - On an inferred route, open the readback with `**Inferred route: <route>.**`, and end it with the act the user's reply sets off, as `Once you reply, I <act>.`, or, where it sets off none, with a sentence that says so.
+- `scratch` is work after which nothing under version control has changed, nothing has left the session, and nothing later depends on it. Do it with no readback, no ticket and no brief. Where that work would change a tracked file or send something out of the session, read back a route before that step.
+- `direct`: file the change's `request`, write its brief, and carry the change as [Changes](prompts/agents/notes/coordinator.md#changes) gives.
+- `send`: file the `request` and, in that turn, tell an operator that tickets are open where an operator launcher of yours runs, and otherwise launch a ticket analyst on it, with its transcript brief.
+- `hotfix`: file the change's `request`, write its brief, launch at once on a worktree the editors it needs, each with that brief, and merge the change as [Changes](prompts/agents/notes/coordinator.md#changes) gives.
+
+## Tickets
+- File and track a ticket by [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Tracking](prompts/agents/notes/tickets.md#tracking) and [Change tickets](prompts/agents/notes/tickets.md#change-tickets).
+- Where you run no solver pass, file each fault you notice, and each fault an agent's report gives, by [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults), where no ticket analyst has found its cause, in place of a change that fixes it.
+- Where you run no solver pass, the route is `file`, `draft` or `send`, and no `request` of the change stands under `tickets/draft/`, file that change as a `request` with `uv run python scripts/spans.py file`.
+- Where you run no solver pass, the route is `file`, or the user replies to your readback of another inferred route than `draft`, and a `request` of the change stands under `tickets/draft/`, append to it the span from the message after its last span to that message, and move it to `tickets/open/`, or on `direct` and `hotfix` take it.
+- Tell the user what each ticket the lines above have you file does, in your own words, without quoting its text, and the number of each `request` you move to `tickets/draft/`.
+- A `request`'s first span runs from the user's first message on the change to the user's message that gives its route, or on an inferred route to the user's last one on it, or to an earlier message where the user asks for one.
+- Write each line under `Grounds` of a `request` or of a brief as one addition of yours to what the spans give, with its source: a line of a file quoted with its path, a command with its output, or a ticket's log line. Write no other line there.
+- Where the user's later words bear on a `request` you filed, append their span to it with `uv run python scripts/spans.py append`, with the new goal where those words change the goal or state one. Send that span to each agent that holds the `request` or the `change` it waits on, and move the `request` to `tickets/open/` where it waits on a `change` that has not merged.
+    - Where the `change` of that `request` has merged, file those words as a new `request` in place of the append, with a line under `Grounds` that gives the earlier one, and where those words withdraw the earlier `request`'s need, close it `wontfix` with the new `request`'s number.
+- Where the user rules on a ticket under `tickets/blocked/` that waits on the user and is no `change`, move it to `tickets/open/`, and record the ruling on it: as a span where it is a `request`, and otherwise in the note of the line that moves it.
+- Where a `request` under `tickets/blocked/` waits on `validation`, and you read a run that exercises the change its log gives, or, for a change that cuts agents' context, the output of `uv run python scripts/profile_runs.py --split` run as `uv run python scripts/profile_runs.py --help many` gives, close the request `fixed` where that run or output shows its need met, and otherwise move it to `tickets/open/` with the unmet part of its need in the note.
+- Launch no ticket analyst for a ticket you file, other than a `request` on `send` while no operator launcher of yours runs. Once a line above writes on a ticket outside `tickets/draft/`, other than such a `request` or one you hold, and before you end your turn with no other work, tell an operator that tickets are open.

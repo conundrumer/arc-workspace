@@ -49,10 +49,13 @@ HELP = mctx("""
             - `.claude/coordinator.md`, the document of the coordinator, the session the user talks with, rendered from `prompts/agents/notes/coordinator.md`.
             - The files a codex session on the repo reads: `AGENTS.md`, [Codex on arc-workspace](prompts/codex.md) rendered, and `.codex/config.toml`, with the main tree's `docs/codex-style.md` as its developer instructions.
         - A session reads those files only when they were written before it started.
+    - Each form that renders the coordinator's document, other than `session-start`, checks that rendering against its budget and the band below it, as `src/handbook/coordinator_document.py` gives them.
+        - Past the budget, the form prints the document's path, its size and the budget, and exits 1.
+        - Within the band, it prints that size and the budget on stderr, and goes on.
     - Each form that writes a generated file in the checkout, other than `session-start`, first checks that git ignores each one it writes there.
-        - Where git does not ignore one, the form writes none, names each such file and `.gitignore`, and exits 1.
+        - Where git does not ignore one, the form writes none, prints each such file and `.gitignore`, and exits 1.
     - `--write` then removes each file that manifest lists and no source renders any more, where git ignores it and it has not changed since it was written, and prints it after `removed`.
-        - It names on stderr each listed file it leaves in place, with the reason, and each agent file that has no document and that the manifest does not list.
+        - It prints on stderr each listed file it leaves in place, with the reason, and each agent file that has no document and that the manifest does not list.
     - `session-start` is the command the session-start hook in `.claude/settings.json` runs.
         - Where Claude Code started the session for the user to talk with, it writes `.claude/coordinator.md` and prints it, and in a `claude -p` session it prints nothing.
         - Where that write fails, as where git does not ignore that file, it prints the failure and then the document, and exits 0.
