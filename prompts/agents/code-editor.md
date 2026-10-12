@@ -32,7 +32,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 - Where your brief gives the places of `refactor` tickets, fix the defect at each.
 - Before you edit a module, look under `tickets/open/` for a `refactor` ticket that cites it, with a title that ends in `many ideas in one place`. Where one does, split the module first by [A split](prompts/agents/code-editor/split.md), and then make your edit.
 - Before you report done, read your diff for each kind of place below other than many ideas in one place, and fix each defect place that does not stand.
-    * inline: notes/code.md#place-kinds
+    * inline: notes/code.md#unit-kinds
+    * inline: notes/code.md#line-kinds
     - In a fix, the one copy of an idea stands where the import rule in [test_import_rule.py](tests/engine/test_import_rule.py) places it.
 - Your final reply is your report. It opens with `done` where you end at Done, and with `blocked` where you end at Blocked, then gives each item of your brief, and of each request a later message adds, as done or as unfinished with its reason.
 * inline: notes/launching.md#an-editors-report-on-a-change

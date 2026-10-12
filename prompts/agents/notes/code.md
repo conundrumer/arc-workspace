@@ -1,4 +1,4 @@
-+ budget: 2500
++ budget: 2900
 
 # Code notes
 - The statements on editing and reviewing the code that more than one entry point inlines.
@@ -8,11 +8,15 @@
 - Launch no agent other than the ones your documents give.
 - Keep `progress.md` in your scratch directory, with what is done and what is next. After your context is compacted, read it before anything else.
 
-## place-kinds
-- Defects:
+## unit-kinds
+- Defects of a whole unit:
     - One idea in two places: a computation, selection, rule, rendering or sentence written twice, in one module or across modules.
         - A place of this kind stands where a package boundary forces the second copy.
     - Many ideas in one place: a module whose docstring has to describe more than one subject.
+    - A unit grown by accretion: a function, a record or a class that has taken a branch, a flag, a field or a parameter for each case it was extended to cover, where a restructure into units of one subject each, or one general rule over those cases, would hold them.
+
+## line-kinds
+- Defects of a line:
     - Solver text read or written outside the `souffle` package.
     - A lookup that defaults where the value could be unknown, or a closed vocabulary held as `str`.
         - A lookup that defaults stands where the absent value has a known meaning.

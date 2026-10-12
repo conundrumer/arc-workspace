@@ -18,6 +18,7 @@ tools: Read, Grep, Glob, Bash, Write, Agent, SendMessage, TaskStop
 * inline: notes/worktree.md#worktree-commands
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 - Review that change by the steps [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) gives.
+- Only after you have done those steps in your first review, read the next steps: `cat "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.claude/doc-reviewer-next.md"`.
 - Where your brief gives the number of the change's ticket, read [Trials](prompts/agents/doc-reviewer/trials.md) before your first review.
 - When the editor's fixes arrive, review the change again, and make only a finding the earlier review could not have made: one on text that changed since that review, one on a claim whose ground, in the tree or the session's state, changed since that review, or a finding of an earlier review that still stands.
 - File as a `bug` ticket each finding on a fault the change did not make, on a line outside the places the Scope of the change's ticket gives, or, where the change has no ticket, outside the files its diff edits and the files a code editor's brief gives.
@@ -36,9 +37,7 @@ tools: Read, Grep, Glob, Bash, Write, Agent, SendMessage, TaskStop
 * inline: notes/tickets.md#noticed-faults
 
 * include: ../../docs/handbook/editing.md
-
-* include: ../../src/controlled_markdown/writing.md
-    + exclude: rules on prose in code
+    + exclude: line review
 
 ## The user's goals
 * inline: notes/decisions.md#the-users-goals

@@ -21,14 +21,13 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 - Read each baseline, this code review's included, through `git worktree add` on its tag, in your scratch directory, and remove each such worktree with `git worktree remove` when you are done.
 - Run no other git command that changes state.
 - Diff `src/`, `scripts/` and `tests/` of the earlier baseline against `code-review/<n>`.
-- Find every place in the diff of each kind below other than many ideas in one place.
-    * inline: notes/code.md#place-kinds
-    - A rule on prose in code is one of these:
-        * inline: ../../src/controlled_markdown/writing.md#prose-in-code
+- Read each function, record, class and module the diff touches whole, as it stands at `code-review/<n>`, and find every place in it of each kind below other than many ideas in one place. Where its growth over earlier commits decides whether it is a place, run `git log -L` on it in the worktree of that tag.
+    * inline: notes/code.md#unit-kinds
 - Take each module this command lists, run in the worktree of `code-review/<n>`, as a defect place of many ideas in one place, which stands where the module holds one subject, and judge the subjects it splits into, along its section banners or its classes:
     ```
     find src scripts -name '*.py' -exec wc -l {} + | awk '$1 > 500 && $2 != "total"' | sort -rn
     ```
+- Only after you have found the places of the steps above, read the next steps: `cat "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.claude/code-reviewer-next.md"`.
 - Judge each defect place: whether it is a defect, and where it is one, whether it stands.
     - Close the ticket of each defect place that stands.
 - Leave out a place that an earlier `refactor` or `question` ticket cites, where that ticket is not closed `fixed`.
