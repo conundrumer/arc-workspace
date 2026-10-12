@@ -13,7 +13,7 @@ from context_bound_hook import OPERATOR
 from controlled_markdown import mctx
 from engine import checkout
 from handbook.agents import agent_names, agent_prompt_text, agent_sources
-from operations import briefs
+from operations import brief_reading, briefs
 from operations.reports import BUDGET_PASSED
 from operations.roles import GENERAL, GENERAL_ROLES, Role, described
 from run_profile import clock, minutes, one_line, percentile
@@ -92,7 +92,7 @@ def measured(r: Run, per_item: bool) -> float | None:
     its brief, or None where its brief gives no items."""
     if not per_item:
         return r.wall
-    count = briefs.items(r.messages[0].text) if r.messages else None
+    count = brief_reading.items(r.messages[0].text) if r.messages else None
     return None if count is None else r.wall / count
 
 
@@ -160,7 +160,7 @@ def print_budgets(runs: list[Run], since_date: float | None,
 
 def budget_openings(text: str) -> list[str]:
     """The lines of `text` that open with `Budget:`, past a list marker."""
-    lines = (briefs.unmarked(line) for line in text.splitlines())
+    lines = (brief_reading.unmarked(line) for line in text.splitlines())
     return [line for line in lines if BUDGET_OPENING.match(line)]
 
 
@@ -184,7 +184,7 @@ def budgets_in_force(r: Run, undecided: list[str]) -> list[float | None]:
     for m in r.messages:
         stated: set[float] = set()
         for line in budget_openings(m.text):
-            match = briefs.BUDGET_LINE.fullmatch(line)
+            match = brief_reading.BUDGET_LINE.fullmatch(line)
             if match:
                 stated.add(float(match.group(1)))
             else:

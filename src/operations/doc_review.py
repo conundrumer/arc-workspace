@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Literal
 
 from controlled_markdown import mctx
-from operations import briefs
+from operations import briefs, messages
 from operations.directives import Decision, decided
 from operations.handled import sent
 from operations.reports import NO_FINDING, no_finding
@@ -79,7 +79,7 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
             return ids
         if all(i in r.messaged or i == r.operator for i in ids):
             return False
-    message = briefs.review_again(since)
+    message = messages.review_again(since)
     if r.agent_id is not None and not sent(state, r.agent_id, message):
         return Send(r.agent_id, message)
     return review_decided(state, t, w, here, unreplied(r, t))

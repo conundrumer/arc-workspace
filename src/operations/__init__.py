@@ -37,6 +37,8 @@ call), `printing` (the text that prints a step), `handled` (whether an
 operator already made or handled a step), `final_reply` (the operator's
 final reply and its carrier), `constants` (the values the command shares
 with the scripts an agent runs), `briefs` (the briefs the launches give),
+`messages` (the messages to agents at work), `brief_reading` (the
+reading of a brief's or a message's text back),
 `triage` (ticket analysts on open tickets, and the labeled items of their
 replies for the coordinator), `decisions` (ticket analysts on undecided
 steps), `drafts` (the review of draft changes), `changes` (a change from

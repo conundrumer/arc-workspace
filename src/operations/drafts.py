@@ -40,7 +40,7 @@ returned with no revision written, the review of that draft holds until a
 (`directives.decided`)."""
 
 from controlled_markdown import mctx
-from operations import briefs
+from operations import briefs, messages
 from operations.change_budget import OVERRUN_FINDING
 from operations.directives import Decision, Directive, decided, named, numbers
 from operations.roles import Purpose, Role, analyst_subject, joined, subjects
@@ -187,7 +187,7 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
     for a in agents:
         if (a.pending and a.agent_id and last_line.time > a.launched
                 and last_line.agent == COORDINATOR):
-            message = briefs.stop_work(t.number)
+            message = messages.stop_work(t.number)
             if not sent(state, a.agent_id, message):
                 return Send(a.agent_id, message)
     writers = {ln.agent_id for ln in t.log if ln.agent_id}

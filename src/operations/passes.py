@@ -32,7 +32,7 @@ import shlex
 from dataclasses import dataclass
 
 from controlled_markdown import mctx
-from operations import briefs, runs
+from operations import briefs, messages, runs
 from operations.directives import Line, Pipeline, lines, overrides, passed, pipelines, session_lines
 from operations.reports import TICKETS_FILED
 from operations.roles import PASSES, Purpose, Role, analyst_subject, joined
@@ -205,7 +205,7 @@ def run(state: State, p: Pipeline) -> Outcome:
         if filed is None:
             if a.reports:
                 asked = ask_again(state, a.agent_id, [r.time for r in a.reports],
-                                  briefs.PASS_FORM)
+                                  messages.PASS_FORM)
                 if isinstance(asked, Send):
                     return Outcome(asked)
             told = no_report(role, a)

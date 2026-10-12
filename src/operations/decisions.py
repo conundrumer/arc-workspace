@@ -26,7 +26,7 @@ the final reply of its applier gives it (`undecided`).
 
 On a step `steps.held` made, a reply that gives neither a ruling in a fixed form nor a `decision:` item goes back
 to the analyst once, from its applier, with a request to send it again in
-that form (`briefs.DECISION_FORM`). Where the answer is still in neither
+that form (`messages.DECISION_FORM`). Where the answer is still in neither
 form, the step stays held, and the final reply of its applier gives it
 (`undecided`). A launch of an analyst on a held step that failed is not
 itself given to another analyst: its step stays held, and the final reply
@@ -39,7 +39,7 @@ the command cannot place, one for each content the file has
 file read while an agent writes it goes to no analyst."""
 
 from controlled_markdown import mctx
-from operations import briefs
+from operations import briefs, messages
 from operations.directives import reply_decisions
 from operations.reports import Label, items_of
 from operations.roles import Purpose, Role, analyst_of, analyst_subject, described
@@ -113,7 +113,7 @@ def asks(state: State) -> Step | None:
     for a in returned(state):
         if a.agent_id is None or not rulable(a.brief) or decides(a):
             continue
-        asked = ask_again(state, a.agent_id, [r.time for r in a.reports], briefs.DECISION_FORM)
+        asked = ask_again(state, a.agent_id, [r.time for r in a.reports], messages.DECISION_FORM)
         if isinstance(asked, Send):
             return asked
     return None

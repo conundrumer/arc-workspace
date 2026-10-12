@@ -1,20 +1,16 @@
 """The briefs of the agents the operator launches, each in the form
-[Briefs](prompts/agents/notes/launching.md#briefs) gives for its work, and
-the messages the operator sends them, and the number of items a brief
-that gives several items of the same work gives. A brief gives the agent
-id of the operator that launches the agent, which the agent replies to."""
+[Briefs](prompts/agents/notes/launching.md#briefs) gives for its work. A
+brief gives the agent id of the operator that launches the agent, which
+the agent replies to."""
 
-import re
 import shlex
 from pathlib import Path
-from string import Formatter
 
 from controlled_markdown import mctx
-from operations.reports import FOR_COORDINATOR, LEFT_FOR_DECISION, LIST_MARKER, TICKETS_FILED
+from operations.reports import LEFT_FOR_DECISION
 from operations.roles import Role
 from operations.state import Place
 from operations.tracker import FILE_TICKET
-from ticketing.times import utc_stamp
 
 TICKET_PATH = shlex.join([*FILE_TICKET, "path"]) + " {number}"
 WORK_IN = mctx("Work in the worktree {worktree}.")
@@ -105,16 +101,6 @@ def doc_review(number: str, worktree: Path, editors: list[tuple[Role, str]],
     return "\n".join(lines)
 
 
-REVIEW_AGAIN = mctx("Your reply at {time} came before the last report of an editor of the "
-                    "change. Review the change again.")
-
-
-def review_again(time: float) -> str:
-    """The message that asks a doc reviewer whose reply at `time` came
-    before an editor's last report to review the change again."""
-    return REVIEW_AGAIN.format(time=utc_stamp(time))
-
-
 def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], scratch: Path,
                operator: str) -> str:
     """The brief of a code editor on the `quotes` calls a change to the
@@ -127,11 +113,6 @@ def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], 
         *calls,
         MAY_EDIT.format(files=", ".join(files)), TESTS, SCRATCH.format(scratch=scratch),
         LAUNCHER.format(operator=operator)])
-
-
-def merge_finding(number: str, output: str) -> str:
-    return mctx("A finding of your checks on change {number}: the merge refused it, as "
-                "below.").format(number=number) + f"\n{output}"
 
 
 AFTER_MERGE = mctx("""
@@ -148,15 +129,6 @@ def after_merge(number: str, checks: str, head: str) -> str:
                               command=TICKET_PATH.format(number=number))
 
 
-def later_line(number: str, time: float, note: str) -> str:
-    """The message that gives a running ticket analyst a line the
-    coordinator wrote on ticket `number` after its launch."""
-    return "\n".join([
-        mctx("The coordinator wrote on ticket {number}, in its log at {time:.0f}, after your "
-             "launch: {note}").format(number=number, time=time, note=note),
-        mctx("Take it into your work on that ticket.")])
-
-
 REVIEW_DRAFTS = mctx("Review the drafts {numbers}.")
 SETTLE = mctx("Settle the tickets under `tickets/open/` {numbers}.")
 REVISE = mctx("Revise each draft `change` ticket {numbers}, whose log holds findings or "
@@ -171,37 +143,10 @@ work, each item a ticket number in the slot `numbers`."""
 
 
 ITEM_SEPARATOR = ", "
-ITEM = r"[^\s,]+"
 
 
 def item_list(numbers: list[str]) -> str:
     return ITEM_SEPARATOR.join(numbers)
-
-
-def item_pattern(template: str) -> re.Pattern[str]:
-    """The lines `template` renders, with the item list in the group
-    `numbers`."""
-    parts = []
-    for literal, slot, _, _ in Formatter().parse(template):
-        parts.append(re.escape(literal))
-        if slot == "numbers":
-            parts.append(rf"(?P<numbers>{ITEM}(?:{ITEM_SEPARATOR}{ITEM})*)")
-        elif slot is not None:
-            parts.append(".*?")
-    return re.compile("".join(parts))
-
-
-ITEM_PATTERNS = tuple(item_pattern(t) for t in ITEM_LINES)
-
-
-def items(brief: str) -> int | None:
-    """The number of items a brief gives, where its first line is one of
-    `ITEM_LINES`, or None where it is none of them."""
-    first = brief.split("\n", 1)[0]
-    for pattern in ITEM_PATTERNS:
-        if (m := pattern.fullmatch(first)) is not None:
-            return len(m["numbers"].split(ITEM_SEPARATOR))
-    return None
 
 
 def ticket_review(numbers: list[str], operator: str) -> str:
@@ -258,6 +203,15 @@ def change_lines(number: str, worktree: Path) -> list[str]:
     return [read_ticket(number), mctx("Its worktree: {worktree}.").format(worktree=worktree)]
 
 
+def editor_reports(reports: list[tuple[str, str]]) -> list[str]:
+    """The lines that give each editor's agent id and latest report."""
+    lines: list[str] = []
+    for editor_id, report in reports:
+        lines.append(mctx("The latest report of editor {editor}:").format(editor=editor_id))
+        lines.append(f"\n{report}\n")
+    return lines
+
+
 def item_check(number: str, worktree: Path, reports: list[tuple[str, str]],
                decisions: list[tuple[str, str]], gate: list[str], editors: list[str],
                operator: str, past: bool = False) -> str:
@@ -272,9 +226,7 @@ def item_check(number: str, worktree: Path, reports: list[tuple[str, str]],
     lines = change_lines(number, worktree)
     if past:
         lines.append(OVER_BUDGET.format(number=number))
-    for editor_id, report in reports:
-        lines.append(mctx("The latest report of editor {editor}:").format(editor=editor_id))
-        lines.append(f"\n{report}\n")
+    lines.extend(editor_reports(reports))
     if decisions:
         lines.append(mctx(
             "Ticket analysts on the change, {analysts}, already decided the items their "
@@ -296,15 +248,17 @@ def item_check(number: str, worktree: Path, reports: list[tuple[str, str]],
 
 
 def findings(number: str, worktree: Path, left: str | None, questions: list[str],
-             editors: list[str], operator: str) -> str:
+             editors: list[str], reports: list[tuple[str, str]], operator: str) -> str:
     """The brief of a ticket analyst that judges what a change's editors
     leave for a decision, by the part of the latest item checker's reply
     that gives it, and the `question` tickets filed on the change, with
-    the agent ids of its editors."""
+    the agent ids of its editors and each editor's agent id and latest
+    report in `reports`, which that part refers to."""
     lines = [*change_lines(number, worktree), mctx("Its editors: {editors}.").format(editors=", ".join(editors))]
     if left is not None:
         lines.append(mctx("What the item checker on the change leaves for a decision:"))
         lines.append(f"\n{left}\n")
+    lines.extend(editor_reports(reports))
     if questions:
         lines.append(mctx("Decide, as items left for a decision, the `question` tickets filed "
                           "on the change, {questions}, and send each decision to its "
@@ -429,27 +383,7 @@ def process_assessment(operator: str) -> str:
     return PROCESS_ASSESSMENT + "\n" + LAUNCHER.format(operator=operator)
 
 
-def stop_work(number: str) -> str:
-    """The message that tells an agent at work on a change or a draft whose
-    ticket the operator no longer carries to end."""
-    return mctx("Write nothing further on {number}, and end with your open work in your "
-                "reply.").format(number=number)
-
-
 OVER_BUDGET = mctx("Change {number} is past its cost budget.")
-
-
-def over_budget(number: str, reviewer: bool) -> str:
-    """The message to an agent at work on the change `number` once the
-    change passes its budget; `reviewer` gives the form of its doc
-    reviewer."""
-    lines = [OVER_BUDGET.format(number=number), mctx(
-        "Launch nothing more on it, end the work at hand, and reply with what stands.")]
-    if reviewer:
-        lines.append(mctx("Before you reply, file each finding of yours that stands as a `bug` "
-                          "ticket, with `change` as its domain and {number} as its "
-                          "subject.").format(number=number))
-    return "\n".join(lines)
 
 
 AT_BUDGET = mctx("Where your documents give what you do at your budget, do that at it, and "
@@ -459,53 +393,3 @@ AT_BUDGET = mctx("Where your documents give what you do at your budget, do that 
 BUDGET = "Budget: {minutes} minutes. " + AT_BUDGET
 """The line of a brief that gives the agent its budget and what it does at
 its budget, in the form `profile_runs.py --help` reads."""
-
-BUDGET_LINE = re.compile(r"Budget: (?P<minutes>\d+(?:\.\d+)?) minutes(?:[.,;:].*)?")
-"""A line that states a budget, past its list marker, in the form
-`profile_runs.py --help` gives, which `BUDGET` renders."""
-
-MARKED_OPENING = re.compile(rf"^\s*{LIST_MARKER}?\s*")
-
-
-def unmarked(line: str) -> str:
-    return MARKED_OPENING.sub("", line).strip()
-
-
-def budgets(text: str) -> set[float]:
-    """The minutes each `BUDGET_LINE` of `text` states."""
-    return {float(m["minutes"]) for line in text.splitlines()
-            if (m := BUDGET_LINE.fullmatch(unmarked(line))) is not None}
-
-
-GO_ON = mctx("Go on with the work your reply at {time} leaves.")
-
-
-def go_on(time: float, minutes: float) -> str:
-    """The message to an editor whose reply at `time` says its budget is
-    passed, which gives it again the budget of `minutes` it had."""
-    return "\n".join([GO_ON.format(time=utc_stamp(time)), BUDGET.format(minutes=f"{minutes:g}")])
-
-
-RESTATE = mctx("What you sent {reader} at {time} is in no form its command reads, so the "
-               "command cannot place it. Send it again, in full, in this form: {form}")
-
-PASS_FORM = mctx("a reply that is the path of your report file alone, on one line, where that "
-                 "report has a `{heading}` section.").format(heading=TICKETS_FILED)
-DECISION_FORM = mctx("a reply that gives, on a line of its own, the ruling on the step, in a "
-                     "form that `uv run python scripts/operate.py --help` gives; or, where the "
-                     "decision goes to the user, a `decision:` item under `{heading}`.").format(
-                         heading=FOR_COORDINATOR)
-ALERT_FORM = mctx("where it is an alert, a message that opens with the line `alert: <kind> "
-                  "<agent id>`, with the kind of the alert and the agent it is on; where it is "
-                  "no alert, a reply that says so.")
-
-
-OPERATOR = mctx("the operator")
-"""The reader `restate` names, in the operator's command and in the
-monitor's steps."""
-
-
-def restate(time: float, form: str, reader: str) -> str:
-    """The message that asks an agent to send again, in `form`, what it
-    sent `reader` at `time` in no form the command of `reader` reads."""
-    return RESTATE.format(reader=reader, time=utc_stamp(time), form=form)

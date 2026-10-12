@@ -11,7 +11,7 @@ from collections.abc import Callable, Iterable
 from functools import cache
 
 from controlled_markdown import form
-from operations import briefs
+from operations import messages
 from operations.command_words import is_next, only_command
 from operations.constants import COORDINATOR
 from operations.printing import KEY_LINE, bash_text, opening, send_opening, unfenced
@@ -117,7 +117,7 @@ def ask_again(state: State, to: str, replies: list[float], form: str) -> Send | 
     """`asked_again` for the operator, over the operators' SendMessage
     calls."""
     return asked_again(lambda who, message: sent_at(state, who, message), to, replies, form,
-                       briefs.OPERATOR)
+                       messages.OPERATOR)
 
 
 def asked_again(sent_times: Callable[[str, str], list[float]], to: str, replies: list[float],
@@ -125,7 +125,7 @@ def asked_again(sent_times: Callable[[str, str], list[float]], to: str, replies:
     """The step on the latest of `replies`, the times of the replies of the
     agent `to` to `reader`, in order, where that reply is in no form the
     command reads: the message that asks `to` to give it again in `form`
-    (`briefs.restate`), where `sent_times`, the times of the calls that
+    (`messages.restate`), where `sent_times`, the times of the calls that
     sent a message to an agent, gives none. True where the reply before it
     had that request, sent before it: the reply that answers the request
     is still in no such form, and the step is undecided. False where the
@@ -133,9 +133,9 @@ def asked_again(sent_times: Callable[[str, str], list[float]], to: str, replies:
     latest = replies[-1]
     before = [t for t in replies if t < latest]
     if before and any(at < latest
-                      for at in sent_times(to, briefs.restate(before[-1], form, reader))):
+                      for at in sent_times(to, messages.restate(before[-1], form, reader))):
         return True
-    message = briefs.restate(latest, form, reader)
+    message = messages.restate(latest, form, reader)
     return False if sent_times(to, message) else Send(to, message)
 
 

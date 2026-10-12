@@ -32,7 +32,7 @@ import shlex
 from pathlib import Path
 
 from controlled_markdown.nodes import Rule, finding_lines
-from operations import briefs
+from operations import briefs, messages
 from operations.reports import splits
 from operations.roles import Role
 from operations.state import Agent, Call, Merge, State, Ticket, Tool
@@ -148,7 +148,7 @@ def refused(state: State, t: Ticket, w: Path, last: Call, latest: list[Agent]) -
     if first is None or first.agent_id is None:
         return None
     tail = "\n".join(text.splitlines()[-FINDING_TAIL:])
-    return Send(first.agent_id, briefs.merge_finding(t.number, tail))
+    return Send(first.agent_id, messages.merge_finding(t.number, tail))
 
 
 def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:

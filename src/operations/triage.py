@@ -49,7 +49,7 @@ line's time in the message. So a decision is sent by a later operator
 where the one before it ended before it sent it."""
 
 from controlled_markdown import mctx
-from operations import briefs, changes
+from operations import briefs, changes, messages
 from operations.reports import Label, items_of, mislabeled
 from operations.passes import awaits_analyst
 from operations.roles import Purpose, Role, analyst_subject, joined
@@ -74,7 +74,7 @@ def given(state: State, number: str) -> bool:
     return any(number in nums and (
         a.pending or a.launched > coordinator_line(t) or (
             a.agent_id is not None and bool(last)
-            and sent(state, a.agent_id, briefs.later_line(number, last[0].time, last[0].note))))
+            and sent(state, a.agent_id, messages.later_line(number, last[0].time, last[0].note))))
         for a, purpose, nums in state.analysts() if purpose in GIVEN)
 
 
@@ -122,7 +122,7 @@ def later_lines(state: State) -> Step | None:
             if t is None or t.status is Status.DRAFT:
                 continue
             for ln in coordinator_lines(t.log):
-                message = briefs.later_line(n, ln.time, ln.note)
+                message = messages.later_line(n, ln.time, ln.note)
                 if ln.time > a.launched and not sent(state, a.agent_id, message):
                     return Send(a.agent_id, message)
     return None

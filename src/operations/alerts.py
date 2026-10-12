@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from controlled_markdown import mctx
-from operations import briefs
+from operations import briefs, messages
 from operations.constants import COORDINATOR
 from operations.roles import AGENT_ID
 from operations.state import Agent, LateResume, Message, Report, State, Ticket
@@ -300,7 +300,7 @@ def step(state: State) -> Step | None:
             if m.operator != state.me:
                 continue
             replies = [x.time for x in state.received if x.sender == m.sender and x.time <= m.time]
-            asked = ask_again(state, m.sender, replies, briefs.ALERT_FORM)
+            asked = ask_again(state, m.sender, replies, messages.ALERT_FORM)
             if asked is False:
                 continue
             s: Step | None = asked if isinstance(asked, Send) else Undecided(

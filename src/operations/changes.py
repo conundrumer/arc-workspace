@@ -63,7 +63,7 @@ brief.
 that budget, at the command's next call, whether or not an agent of the
 change is at work, the command files the `performance` ticket on the
 change that `change_budget` gives. Each agent of the change at work
-before that ticket is told once to end (`briefs.over_budget`), and none
+before that ticket is told once to end (`messages.over_budget`), and none
 other is launched but one item checker on each editor's latest report,
 once none is at work. Where that checker leaves nothing for a decision,
 the change merges; otherwise it moves to `tickets/draft/` with a line
@@ -82,7 +82,7 @@ from pathlib import Path
 from typing import Literal
 
 from controlled_markdown import mctx
-from operations import briefs, merging
+from operations import brief_reading, briefs, merging, messages
 from operations.change_budget import (OVERRUN_FINDING, TAKE_NOTE, TIME_NOTE, TIME_OPENING,
                                       by_role, file_overrun, left_draft, overrun_ticket,
                                       past_budget, taken)
@@ -226,7 +226,7 @@ def give_up(state: State) -> Step | None:
         lost = t.status in (Status.DRAFT, Status.CLOSED) or (
             t.status is Status.ASSIGNED and t.holder not in (state.me, None)
             and live_holder(state, t.holder))
-        message = briefs.stop_work(number)
+        message = messages.stop_work(number)
         if lost and not sent(state, a.agent_id, message):
             return Send(a.agent_id, message)
     return None
@@ -430,7 +430,7 @@ def over_budget(state: State, t: Ticket, w: Path,
         return file_overrun(t, spent, budget, limit, agents)
     for a in agents:
         if a.pending and a.agent_id is not None and a.launched < trip.filed:
-            message = briefs.over_budget(t.number, a.role is Role.DOC_REVIEWER)
+            message = messages.over_budget(t.number, a.role is Role.DOC_REVIEWER)
             if not sent(state, a.agent_id, message):
                 return Send(a.agent_id, message)
     if any(a.pending for a in agents):
@@ -466,13 +466,13 @@ def over_budget_step(state: State, t: Ticket, latest: list[Agent]) -> Step | Non
         if r is None or a.agent_id is None or not budget_passed(a):
             continue
         given = [a.brief] + [c.message for c in sends_to(state, a.agent_id)]
-        stated = next((s for text in reversed(given) if (s := briefs.budgets(text))), set[float]())
+        stated = next((s for text in reversed(given) if (s := brief_reading.budgets(text))), set[float]())
         if len(stated) != 1:
             return Undecided(mctx("editor {agent} of change {number} says its budget is "
                                   "passed, and the latest brief or operator's message to it "
                                   "that states a budget states {count}").format(
                 agent=a.agent_id, number=t.number, count=len(stated)))
-        return Send(a.agent_id, briefs.go_on(r.time, stated.pop()))
+        return Send(a.agent_id, messages.go_on(r.time, stated.pop()))
     return None
 
 
@@ -543,8 +543,21 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
             return None if on_user else choice
         if choice is Decision.MERGE:
             return False
+    reports = latest_reports(latest)
+    if isinstance(reports, Undecided):
+        return reports
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
-        t.number, w, parts, [q.number for q in questions], editors, state.me))
+        t.number, w, parts, [q.number for q in questions], editors, reports, state.me))
+
+
+def latest_reports(agents: list[Agent]) -> list[tuple[str, str]] | Undecided:
+    """The agent id and latest report text of each of `agents` that has a
+    report."""
+    reporting = [(a, r) for a in agents if (r := a.last_report) is not None]
+    reporters = agent_ids(a for a, _ in reporting)
+    if isinstance(reporters, Undecided):
+        return reporters
+    return [(i, r.text) for i, (_, r) in zip(reporters, reporting, strict=True)]
 
 
 def check_items(state: State, t: Ticket, w: Path, needing: list[Agent],
@@ -555,11 +568,9 @@ def check_items(state: State, t: Ticket, w: Path, needing: list[Agent],
     with the latest report of each ticket analyst launched on `t` that has
     reported, in launch order, so the checker leaves out what they already
     decided. `past` gives that the change is past its cost budget."""
-    reporting = [(a, r) for a in needing if (r := a.last_report) is not None]
-    reporters = agent_ids(a for a, _ in reporting)
-    if isinstance(reporters, Undecided):
-        return reporters
-    reports = [(i, r.text) for i, (_, r) in zip(reporters, reporting, strict=True)]
+    reports = latest_reports(needing)
+    if isinstance(reports, Undecided):
+        return reports
     decisions = [(a.agent_id, r.text) for a in of_change(state, t.number)
                  if a.role is Role.TICKET_ANALYST and a.agent_id is not None
                  and (r := a.last_report) is not None]
