@@ -90,10 +90,12 @@ def assignment(eng: Engine, solver: Solver,
 
 def assign_of(eng: Engine, solver: Solver, written: str | None
                ) -> tuple[tuple[str, AssignValue], ...] | None:
-    """The `--assign` object as an entry's `assign` (`assign_arg`); None,
-    with the problem on stderr, where it is off its shape or names what
-    the solver lacks (`assignment`)."""
+    """The `--assign` object as an entry's `assign` (`assign_arg`), with
+    each value of a parameter stored by a GRID call read as a grid where
+    it has a grid's shape, as the witness file's reader reads an entry's
+    `assign`; None, with the problem on stderr, where it is off its shape
+    or names what the solver lacks (`assignment`)."""
     assign = assign_arg(written)
     if assign is None or assignment(eng, solver, assign) is None:
         return None
-    return assign
+    return assign_with_grids(assign, grid_stored(solver.params))
