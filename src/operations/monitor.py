@@ -54,7 +54,7 @@ ALERTS = mctx("""
             - An agent whose transcript holds, after the latest message to it, a `SubagentHandback` result that says the harness delivered its report to its caller is not stalled.
     - The operator takes the final reply of a stalled agent as its report, sends the final reply of a stalled agent the coordinator launched to the coordinator once, and files a `bug` ticket on it.
     - The operator files a `bug` ticket on each resume of an operator of the session after the next operator of the session made its first entry, or writes a line in it.
-        - A resume of an operator is a prompt in that operator's transcript after an entry with `toolEndsTurn`, such as the result of its `SubagentHandback`, with no `assistant` entry between them, other than a prompt whose agent messages and task notifications, at least one of them, are all from agents whose last launch or resume before that prompt was a call of that operator.
+        - A resume of an operator is a prompt in that operator's transcript after an entry with `toolEndsTurn`, such as the result of its `SubagentHandback`, with no `assistant` entry between them, other than a prompt whose agent messages and task notifications, at least one of them, are all from agents that operator launched, or resumed by its own SendMessage call, before that prompt.
     """).format(**{k.value: READING[k] for k in AlertKind})
 """The alerts of `step`, which `scripts/operate.py --help alerts` gives."""
 

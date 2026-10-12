@@ -11,7 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from agent_launches import callees, launched, resumes, run_launches, sent_to, timed_entries, turn_signs
+from agent_launches import launched, launches, resumes, run_launches, sent_to, timed_entries, turn_signs
 from agent_reports import ENDED, Sign, last_sign
 from agent_turns import first_time, has_ended, turns
 from context_bound_hook import OPERATOR
@@ -176,14 +176,12 @@ def resumed_at(aid: str, path: Path, undecided: list[str]) -> list[float]:
 
 
 def by_callees(path: Path, e: dict[str, Any], t: float, undecided: list[str]) -> bool:
-    """Whether the prompt `e` at time `t` gives at least one agent message
-    or task notification, each from an agent of `callees` of the run at
-    `path` at `t`. A notification counts where any of its ids lies there."""
     senders = [s for s, _ in agent_messages(e)]
     notes = notifications(e)
     if not senders and not notes:
         return False
-    mine = callees(path, undecided, before=t)
+    mine = {a.agent for a in launches(path, undecided) if a.agent and a.since < t}
+    mine |= resumes(timed_entries(path), path.stem, None, undecided, before=t).keys()
     return (all(s in mine for s in senders)
             and all(any(i in mine for i in n.ids) for n in notes))
 
