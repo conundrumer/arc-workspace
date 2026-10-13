@@ -1,5 +1,6 @@
 """The review of a change's documents by its doc reviewer, from that
-reviewer's launch to the pass of its review.
+reviewer's launch to the pass of its review. The change's doc reviewer is
+the latest one launched on its current worktree.
 
 A change with a doc editor passes its review once the latest reply of its
 doc reviewer opens with `no finding stands` and follows each editor's last
@@ -40,10 +41,13 @@ from operations.steps import Launch, Send, Step, Undecided, agent_ids
 from operations.tracker import worktree
 
 
-def latest_reviewer(agents: list[Agent]) -> Agent | None:
-    """The latest doc reviewer among a change's `agents`, which is the
-    change's doc reviewer, or None where it has none."""
-    reviewers = [a for a in agents if a.role is Role.DOC_REVIEWER]
+def latest_reviewer(agents: list[Agent], w: Path) -> Agent | None:
+    """The latest doc reviewer among a change's `agents` whose brief gives
+    the change's worktree `w`, which is the change's doc reviewer, or None
+    where it has none. A reviewer of an earlier run of the change reviewed
+    that run's worktree, so it is none of the change's now."""
+    line = briefs.fingerprint_line(w)
+    reviewers = [a for a in agents if a.role is Role.DOC_REVIEWER and line in a.brief]
     return reviewers[-1] if reviewers else None
 
 
@@ -51,7 +55,7 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
                agents: list[Agent]) -> Step | None | Literal[False]:
     """The step of the review of the change's documents, or False where it
     has passed."""
-    r = latest_reviewer(agents)
+    r = latest_reviewer(agents, w)
     if r is None:
         return review_launch(t, w, here, state.me)
     if r.pending:
@@ -147,7 +151,7 @@ def editor_review(state: State, editor: str) -> Step | str:
     """The launch of the doc reviewer of the change of the doc editor
     `editor`, launched by it. In its place it gives a line: where
     `editor` is no doc editor an operator launched, `NO_OPERATOR`; where the change has a doc
-    reviewer, whoever launched it, the line that names the latest one, so
+    reviewer on its current worktree, whoever launched it, the line that names the latest one, so
     the editor launches no other; and where an editor role of the change
     has no agent in its worktree or another editor there is pending, the
     line that says the operator launches the review."""
@@ -165,7 +169,7 @@ def editor_review(state: State, editor: str) -> Step | str:
     if w is None:
         return Undecided(mctx("change {number} gives no worktree").format(number=t.number))
     agents = of_change(state, t.number)
-    if (reviewer := latest_reviewer(agents)) is not None:
+    if (reviewer := latest_reviewer(agents, w)) is not None:
         ids = agent_ids([reviewer])
         if isinstance(ids, Undecided):
             return ids
