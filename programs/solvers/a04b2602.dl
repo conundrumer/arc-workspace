@@ -120,6 +120,12 @@ ink_mode.item($U(), Col, P) :- ink(P, Col).
 .init block_ink = Unanimous<Unit, Color>
 block_ink.item($U(), Col) :- ink_mode.mode($U(), Col).
 
+// @ignore item: store — a stored item set gives mark_ink.value its one
+//  color, or no color where the set holds two, as a stored value of that
+//  color or of no color does: mark_ink.item=stored is subsumed by
+//  mark_ink.value=stored
+// @store value: variant concept
+//     @relaxed field
 // @claim blocks
 .init mark_ink = Unanimous<Unit, Color>
 mark_ink.item($U(), Col) :- ink(_, Col), !block_ink.value($U(), Col).

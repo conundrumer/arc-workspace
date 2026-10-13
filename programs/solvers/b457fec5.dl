@@ -1,0 +1,325 @@
+// b457fec5
+// @draft
+// @keywords: objects markers chain walk bbox
+// @scene background: every cell outside the key and the trails is
+//  params.background
+// @scene key-line: a key: a straight line of cells, one cell thick, along the
+//  axis of params.key_start, each cell a different color, none of them
+//  params.background or params.shape_color. It lies one line in from the
+//  DIR_T edge, and stands apart from every trail.
+// @scene diagonal-trail: one or more trails of params.shape_color, each the
+//  union of the positions of an n×n square that starts at a corner and moves
+//  one step along a diagonal for each of T steps (n ≥ 3, T ≥ 1). Trails do
+//  not touch each other or the key.
+// @scene whole-cycles: the number of positions the square takes in each
+//  trail, T + 1, is a multiple of the key's length K
+// @scene head-end: the start of each trail is its end toward params.head_dir
+// @rule keep-rest: every cell that is not a trail cell keeps its input color,
+//  the key included
+// @rule key-order: the key colors, in order from the key's end toward
+//  params.key_start, are c0, c1, …, cK-1
+// @rule step-paint: in each trail, the square at step t (t = 0 at the head,
+//  t = T at the far end) paints its n×n cells with color c(t mod K); a cell
+//  takes the color of the last step that covers it. So a cell whose distances
+//  from the head square's two outer edges are u and v takes
+//  c(min(u, v, T) mod K).
+
+// which end of a trail the slide starts at
+.type Head =
+    // @claim head-end
+    HeadDir {}
+    // @scene head-end: the start of each trail is the end whose square lies
+    //  nearer the key's line, measured across the key's axis; undefined where
+    //  the two end squares lie equally near that line, or where the key is no
+    //  line
+    // @witness key-below: variant $HeadNearKeyLine
+    //     @relaxed key-line
+  | HeadNearKeyLine {}
+
+// the order of the key colors
+.type KeyOrder =
+    // @claim key-order
+    KeyFromStart {}
+    // @scene key-line: the key lies along either axis
+    // @rule key-order: the key colors, in reading order from the
+    //  params.lex_corner corner with params.lex_axis primary, are c0, c1, …,
+    //  cK-1
+    // @witness vertical-key: variant $KeyLexOrder
+    //     @relaxed key-line
+  | KeyLexOrder {}
+
+// where the color cycle is anchored along a trail
+.type CyclePhase =
+    // @claim step-paint
+    PhaseFromHead {}
+    // @rule step-paint: step t takes c((t + K − 1 − T) mod K), so the far
+    //  square takes c(K−1)
+    // @witness partial-cycle: borderline concept
+    //     @relaxed whole-cycles
+  | CycleFromTail {}
+
+// how the square at the far end is painted
+.type FarSquare =
+    // @claim step-paint
+    FarStep {}
+    // @rule step-paint: the far square is solid c(K−1), and every other step
+    //  is as in the concept
+    // @witness partial-cycle: borderline concept
+  | TailLastColor {}
+
+// the color of the trails
+.type ShapeColor =
+    // @claim diagonal-trail
+    ShapeStored {}
+    // @scene diagonal-trail: the trails are as in the concept, of the one
+    //  color other than params.background with more than one cell; undefined
+    //  where there is not exactly one
+    // @witness trail-recolored: variant $ShapeColorBulk
+    //     @relaxed diagonal-trail
+  | ShapeColorBulk {}
+
+.type Choice = [h: Head, k: KeyOrder, c: CyclePhase, f: FarSquare, s: ShapeColor]
+
+.type KeySeq = [k: KeyOrder, s: ShapeColor]
+.type EndKey = [s: ShapeColor, i: Ident, d: DiagDir]
+.type TrailKey = [h: Head, s: ShapeColor, i: Ident]
+.type CellKey = [h: Head, s: ShapeColor, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl background(col: Color) background(0).
+
+    // --- $ShapeStored ---
+    .decl shape_color(col: Color) shape_color(5).
+
+    // --- $HeadDir ---
+    // the direction toward the end of a trail where the slide starts
+    .decl head_dir(d: Dir) head_dir(DIR_T).
+
+    // --- $KeyFromStart ---
+    // the direction toward the key's end that holds its first color
+    .decl key_start(d: Dir) key_start(DIR_L).
+
+    // --- $KeyLexOrder ---
+    .decl lex_corner(d: DiagDir) lex_corner(DIAG_TL).
+    .decl lex_axis(a: Axis) lex_axis(AXIS_V).
+}
+
+.init params = Params
+
+.decl head_choice(h: Head)
+head_choice($HeadDir()). head_choice($HeadNearKeyLine()).
+
+.decl key_order_choice(k: KeyOrder)
+key_order_choice($KeyFromStart()). key_order_choice($KeyLexOrder()).
+
+.decl cycle_phase_choice(c: CyclePhase)
+cycle_phase_choice($PhaseFromHead()). cycle_phase_choice($CycleFromTail()).
+
+.decl far_square_choice(f: FarSquare)
+far_square_choice($FarStep()). far_square_choice($TailLastColor()).
+
+.decl shape_color_choice(s: ShapeColor)
+shape_color_choice($ShapeStored()). shape_color_choice($ShapeColorBulk()).
+
+// Under $CycleFromTail the far square's own step already takes c(K−1), so
+// $TailLastColor adds nothing to it.
+.decl impl_choice(ch: Choice)
+impl_choice([H, K, C, F, S]) :-
+    head_choice(H), key_order_choice(K), cycle_phase_choice(C),
+    far_square_choice(F), shape_color_choice(S),
+    ( C = $PhaseFromHead() ; F = $FarStep() ).
+
+// The trails, each with its box and its two ends: the corners of that box
+// it covers.
+.comp Parse<Key> {
+    // The trail cells.
+    .decl cell(key: Key, p: Position)
+
+    // @claim diagonal-trail
+    .init trail = Components<Key>
+    trail.node(K, P) :- cell(K, P).
+
+    .type Trail = [key: Key, i: Ident]
+
+    // @claim step-paint
+    .init trail_box = Bbox<Trail>
+    trail_box.cell([K, I], P) :- trail.label(K, P, I).
+
+    .decl end_corner(key: Key, i: Ident, d: DiagDir, p: Position)
+    end_corner(K, I, D, P) :- trail.label(K, P, I), trail_box.box([K, I], B), box_corner(P, B, D).
+}
+
+// The color of the trail cells.
+.decl trail_color(s: ShapeColor, col: Color)
+
+.init parse = Parse<ShapeColor>
+parse.cell(S, P) :- trail_color(S, Col), in(P, Col).
+
+.decl key_cell(s: ShapeColor, p: Position)
+key_cell(S, P) :- trail_color(S, Col2), in(P, Col), !params.background(Col), Col != Col2.
+
+// An axis on which some two key cells lie on different lines.
+// @ignore: store — key_axis reads key_off_axis alone, and each reader of
+//  key_axis joins key_cell, so a stored key_off_axis gives the model of the
+//  stored key_axis that is its complement: it fails Equivalence beside
+//  key_axis=stored
+.decl key_off_axis(s: ShapeColor, a: Axis)
+key_off_axis(S, A) :-
+    key_cell(S, P), key_cell(S, Q), perp(A, A_x), axis_of(D, A_x), !same_dist(D, P, Q).
+
+// The axis the key lies along.
+// @store: variant background=DominantColor
+//     @relaxed background
+.decl key_axis(s: ShapeColor, a: Axis)
+key_axis(S, A) :- key_cell(S, _), axis_elem(A), !key_off_axis(S, A).
+
+.decl head_corner(h: Head, s: ShapeColor, i: Ident, d: DiagDir)
+
+// A trail cell, in its box's frame, with its trail's head corner.
+.decl trail_cell(h: Head, s: ShapeColor, i: Ident, p: Position, p_rel: Position, d: DiagDir)
+trail_cell(H, S, I, P, P_rel, D) :-
+    head_corner(H, S, I, D), parse.trail.label(S, P, I),
+    parse.trail_box.box([S, I], B), crop(P, B, P_rel).
+
+// A trail cell's distance from each outer edge of the head square.
+.decl head_dist(h: Head, s: ShapeColor, i: Ident, p: Position, k: number)
+head_dist(H, S, I, P, K) :-
+    trail_cell(H, S, I, P, P_rel, D), dir_of(D, _, D_edge), dist(P_rel, D_edge, K).
+
+// T, the slide's step count: the least distance from one outer edge of the
+// head square among the trail's cells on the box's edge opposite the other.
+// @claim step-paint
+.init slide = Extremes<TrailKey>
+slide.cand([H, S, I], K) :-
+    trail_cell(H, S, I, _, P_rel, D),
+    diag_dirs(D, _, D1, D2), opposite(D1, D_far), dist(P_rel, D_far, 0), dist(P_rel, D2, K).
+
+// The last step whose square covers the cell: min(u, v, T).
+// @claim step-paint
+.init last_step = Extremes<CellKey>
+last_step.cand([H, S, P], K) :- head_dist(H, S, _, P, K).
+last_step.cand([H, S, P], T) :- head_dist(H, S, I, P, _), slide.low([H, S, I], T).
+
+.decl key_first(k: KeyOrder, s: ShapeColor, p: Position)
+.decl key_last(k: KeyOrder, s: ShapeColor, p: Position)
+
+// The key read as a cycle: each color to the next, the last back to the first.
+// @claim step-paint
+.init cycle = CycleWalk<KeySeq, Position>
+cycle.succ([K, S], P, Q) :- key_last(K, S, P), key_first(K, S, Q).
+cycle.step([K, S], N) :- key_order_choice(K), last_step.low([_, S, _], N).
+
+// The key cell whose color the head step takes.
+.decl head_key(c: CyclePhase, k: KeyOrder, h: Head, s: ShapeColor, i: Ident, q: Position)
+
+// A trail cell takes the color of key cell q.
+.decl paint(p: Position, q: Position, ch: Choice)
+
+out(P, Col, Ch) :- paint(P, Q, Ch), in(Q, Col).
+out(P, Col, [H, K, C, F, S]) :-
+    impl_choice([H, K, C, F, S]), in(P, Col), trail_color(S, Col2), Col != Col2.
+
+// --- $ShapeStored ---
+trail_color($ShapeStored(), Col) :- params.shape_color(Col).
+
+// --- $ShapeColorBulk ---
+// A color other than the background with more than one cell.
+.decl bulk(col: Color)
+bulk(Col) :- in(P, Col), in(Q, Col), P != Q, !params.background(Col).
+
+.decl bulk_clash(col: Color)
+bulk_clash(Col) :- bulk(Col), bulk(Col2), Col != Col2.
+
+trail_color($ShapeColorBulk(), Col) :- bulk(Col), !bulk_clash(Col).
+
+// --- $HeadDir ---
+head_corner($HeadDir(), S, I, D) :-
+    parse.end_corner(S, I, D, _), params.head_dir(D_head), dir_of(D, _, D_head).
+
+// --- $HeadNearKeyLine ---
+// How far each end square lies from the key's line, across the key's axis.
+// The trail's cells on its box's side at that end, along the key's axis, are
+// the end square's cells on that side.
+// @claim head-end
+.init end_gap = Extremes<EndKey>
+end_gap.cand([S, I, D], K) :-
+    parse.end_corner(S, I, D, _), parse.trail_box.box([S, I], B), key_axis(S, A),
+    dir_of(D, A, D_side), parse.trail.label(S, P, I),
+    box_edge(P, B, D_side),                                    // end square's outer side
+    key_cell(S, Q), relative(Q, P, V),                         // offset from a key cell
+    perp(A, A_x), axis_of(D_x, A_x), dist(V, D_x, K), K >= 0.  // across the key's axis
+
+head_corner($HeadNearKeyLine(), S, I, D) :-
+    end_gap.low([S, I, D], K), end_gap.low([S, I, D2], K2), K < K2.   // nearer than the other end
+
+// --- $KeyFromStart ---
+// @claim key-order
+.init key_seq = Order<ShapeColor, Position>
+key_seq.elem(S, P) :-
+    key_cell(S, P), key_axis(S, A), params.key_start(D), axis_of(D, A).
+key_seq.before(S, P, Q) :- key_cell(S, P), key_cell(S, Q), params.key_start(D), nearer(D, P, Q).
+
+key_first($KeyFromStart(), S, P) :- key_seq.first(S, P).
+key_last($KeyFromStart(), S, P) :- key_seq.last(S, P).
+cycle.succ([$KeyFromStart(), S], P, Q) :- key_seq.next(S, P, Q).
+
+// --- $KeyLexOrder ---
+// @claim key-order
+.init key_lex = LexOrder<ShapeColor>
+key_lex.cell(S, P) :- key_cell(S, P).
+key_lex.corner(S, D) :- trail_color(S, _), params.lex_corner(D).
+key_lex.axis(S, A) :- trail_color(S, _), params.lex_axis(A).
+
+key_first($KeyLexOrder(), S, P) :- key_lex.first(S, P).
+key_last($KeyLexOrder(), S, P) :- key_lex.last(S, P).
+cycle.succ([$KeyLexOrder(), S], P, Q) :- key_lex.next(S, P, Q).
+
+// --- $PhaseFromHead ---
+head_key($PhaseFromHead(), K, H, S, I, Q) :- slide.low([H, S, I], _), key_first(K, S, Q).
+
+// --- $CycleFromTail ---
+// The key cycle walked backward.
+// @claim step-paint
+.init cycle_back = CycleWalk<KeySeq, Position>
+cycle_back.succ(Ky, Q, P) :- cycle.succ(Ky, P, Q).
+cycle_back.step([K, S], T) :- key_order_choice(K), slide.low([_, S, _], T).
+
+// The head takes the color T steps back from the last, so the far square
+// takes the last.
+head_key($CycleFromTail(), K, H, S, I, Q) :-
+    slide.low([H, S, I], T), key_last(K, S, Q_last), cycle_back.walk([K, S], Q_last, T, Q).
+
+// --- $FarStep ---
+paint(P, Q, [H, K, C, $FarStep(), S]) :-
+    parse.trail.label(S, P, I), last_step.low([H, S, P], N),
+    head_key(C, K, H, S, I, Q_head), cycle.walk([K, S], Q_head, N, Q).
+
+// --- $TailLastColor ---
+paint(P, Q, [H, K, C, $TailLastColor(), S]) :-
+    impl_choice([H, K, C, $TailLastColor(), S]), parse.trail.label(S, P, I),
+    last_step.low([H, S, P], N), slide.low([H, S, I], T),
+    ( N < T, head_key(C, K, H, S, I, Q_head), cycle.walk([K, S], Q_head, N, Q)  // before the far square
+    ; N = T, key_last(K, S, Q)                                                 // the far square
+    ).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P) :- ex_in(E, P, Col), params.shape_color(Col).
+
+    // A head corner: the output color changes one step in along the diagonal,
+    // where the far square is solid.
+    .decl head(e: Example, d: DiagDir)
+    head(E, D) :-
+        parse.end_corner(E, _, D, P), diag_opposite(D, D_in), neighbor(P, D_in, Q),
+        ex_out(E, P, Col), ex_out(E, Q, Col2), Col != Col2.
+
+    .decl refuted(d: Dir)
+    refuted(D_head) :- head(_, D), dir_elem(D_head), !dir_of(D, _, D_head).
+
+    .decl head_dir(d: Dir)
+    head_dir(D_head) :- head(_, _), dir_elem(D_head), !refuted(D_head).
+}

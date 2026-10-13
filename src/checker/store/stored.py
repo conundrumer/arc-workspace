@@ -38,7 +38,7 @@ from solver.case_types import (
     joined,
     known,
 )
-from solver.dependence import Dependence, dependent_bases
+from solver.dependence import Dependence, ParameterReads, dependent_bases
 from solver.graph import Graph, InstancePath
 from solver.model import Base, choice_values
 from solver.names import marker_lists
@@ -257,16 +257,18 @@ class StoredAlready:
         return Qualifier.INLINE in self.program.declared_relation(place[1]).qualifiers
 
 
-def read_back(solver: Solver, f: Found) -> tuple[tuple[str, ...], ...]:
+def read_back(solver: Solver, reads: ParameterReads, f: Found
+              ) -> tuple[tuple[str, ...], ...]:
     """The stored parameters whose value the found value is on every
     input: the same rows as one parameter's, or as the product of several
     parameters' rows, under a renaming of columns, each column of the
     value of a parameter column's type (principles.md, under "Stored or
     derived"); a parameter that stores a value per case gives its value at
     the found value's bases (`_stored_reading`). Each set of the fewest
-    parameters that gives it, each set and the sets in `Params` order;
-    empty where none do. The value equals those rows; whether a parameter
-    feeds it is not read."""
+    parameters that gives it, each set and the sets in `Params` order,
+    where each parameter of the set feeds the value: the derivation of the
+    value's relation depends on it at some base that holds the value
+    (`ParameterReads`). Empty where no set does."""
     if len(f.family) != 1:
         return ()
     (value,) = f.family
@@ -284,6 +286,7 @@ def read_back(solver: Solver, f: Found) -> tuple[tuple[str, ...], ...]:
     params = [n for n, (t, _r) in stored.items() if 0 < len(t) <= width]
     want = f.types
     found: list[tuple[str, ...]] = []
+    fed: frozenset[str] | None = None
     for k in range(1, width + 1):
         for chosen in combinations(params, k):
             if sum(len(stored[n][0]) for n in chosen) != width:
@@ -298,7 +301,10 @@ def read_back(solver: Solver, f: Found) -> tuple[tuple[str, ...], ...]:
                     continue
                 if frozenset(tuple(r[order[i]] for i in range(width))
                              for r in product) == value:
-                    found.append(tuple(chosen))
+                    if fed is None:
+                        fed = reads.of(f.relation, f.bases)
+                    if fed.issuperset(chosen):
+                        found.append(tuple(chosen))
                     break
         if found:
             break

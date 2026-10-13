@@ -43,7 +43,7 @@ from engine import RelationName, Row
 from engine.quotes import quotes
 from solver.aggregate import Solver, is_concept
 from solver.annotations import IgnoreForm
-from solver.dependence import dependence
+from solver.dependence import ParameterReads, dependence
 from solver.graph import Graph
 from solver.model import Base, Case, StoreBranch, bases_of, every_base
 from engine.program import as_grid
@@ -115,6 +115,7 @@ def survey_store(runs: Runs) -> StoreSurvey:
              if isinstance(b, StoreBranch)}
     ignored = {t for t, _p in bare_ignored(solver, IgnoreForm.STORE)}
     stored = StoredAlready(solver, runs.index)
+    reads = ParameterReads(solver.engine, solver)
     graph = Graph(solver.program, solver.engine)
     among = bases_of(solver_cases)
     for f in found:
@@ -129,7 +130,7 @@ def survey_store(runs: Runs) -> StoreSurvey:
             b for b in by if not is_concept(solver, b)], bases)
         f.stored = stored_already(solver, runs, stored, f)
         if not f.stored and f.kind is ValueKind.OWNED:
-            f.reads_back = read_back(solver, f)
+            f.reads_back = read_back(solver, reads, f)
             f.stored = bool(f.reads_back)
         if f.case_values:
             f.concept = concept in f.bases

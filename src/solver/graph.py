@@ -25,7 +25,7 @@ from engine.program import (
     enclosing,
     own,
 )
-from solver.vocabulary import INPUT, OUTPUT
+from solver.vocabulary import INPUT
 
 
 def followed(links: Mapping[str, str], name: str) -> list[str]:
@@ -531,18 +531,18 @@ class Graph:
                             else self.top_name(read, atom.relation.name)))
         return got
 
-    def read[D](self, admits: Callable[[Placed, D], bool], start: D,
-                demand: Callable[[Placed, Atom, D], D],
+    def read[D](self, root: Node, admits: Callable[[Placed, D], bool],
+                start: D, demand: Callable[[Placed, Atom, D], D],
                 unlisted: Callable[[Placed], bool] | None = None
                 ) -> tuple[list[UnitId], list[Node], set[RelationName],
                            list[tuple[UnitId, Node]]]:
-        """What one base's derivation depends on
-        (`solver.dependence.dependence`): the units, the relations as
+        """What one base's derivation of the relation `root` depends on
+        (`solver.dependence`): the units, the relations as
         nodes, and the relations a unit of the solver's own text reads or
         heads by the names a top-level clause reads them by. The walk reads
         every unit of the program but those an operation wrote, the lib's
         among them, each at the instance paths it runs at. A read asks for
-        rows of what it demands, `start` at `out`: `demand` gives what a
+        rows of what it demands, `start` at `root`: `demand` gives what a
         unit's read of an atom asks for, from what the unit was reached
         for, and `admits` tells the placed units whose head can hold such a
         row. Last, each admitted unit that `unlisted` names, with the node
@@ -577,7 +577,7 @@ class Graph:
                 if unlisted is not None and unlisted((u, at)):
                     stranded[(u.id, self._fed[(u.id, at)])] = None
 
-        reach(Node(NodeKind.RELATION, (), OUTPUT.name), start)
+        reach(root, start)
         while front:
             u, at, wanted = front.pop()
             for atom, node, name in self.body((u, at)):

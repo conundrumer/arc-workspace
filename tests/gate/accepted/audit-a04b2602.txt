@@ -19,7 +19,8 @@ dropped cases: ok
 derive: ok
 
 --- store ---
-store: ok
+  mark_ink.item: one value on every input and no `@store` or `@ignore: store` line
+  mark_ink.value: one value on every input and no `@store` or `@ignore: store` line
 
 --- open values ---
 open values: ok

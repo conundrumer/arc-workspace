@@ -1,8 +1,9 @@
 """Which of a solver's bases have a derivation of `out` that depends on
-each part of the solver's own text, by a walk over the program's rules
+each part of the solver's own text, and of a relation that depends on
+each parameter (`ParameterReads`), by a walk over the program's rules
 (`solver.graph.Graph.read`)."""
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from engine import Engine, Program, RelationName, UnitId
@@ -21,7 +22,7 @@ from solver.annotations import CaseMarker
 from solver.model import Base, UnderMarker
 from solver.aggregate import Solver
 from solver.readers import marker_listing, section_at
-from solver.vocabulary import CHOICE, PARAMS, PARAMS_SCOPE
+from solver.vocabulary import CHOICE, OUTPUT, PARAMS, PARAMS_SCOPE
 
 
 
@@ -167,18 +168,74 @@ value bounds them, where the read is at every value at some other place
 (`CasePlaces.bounded`); None where it is at every value at none."""
 
 
+class _Walk:
+    """The reads of `dependence`'s walk over a program with its GRID and
+    RIGID calls expanded: what a read asks for, and the placed units that
+    admit it, as `dependence` gives them."""
+
+    def __init__(self, engine: Engine, expanded: Program, solver: Solver
+                 ) -> None:
+        self.graph = Graph(expanded, engine)
+        self.cases = CasePlaces(self.graph, solver.choice)
+        self.checked: dict[tuple[UnitId, InstancePath],
+                           tuple[dict[int, tuple[str, Term]], list[Term]]] = {}
+        self.held: dict[tuple[int, tuple[CasePlace, ...] | None], _Wanted] = {}
+
+    def wanted(self, base: Base | None,
+               bounded: tuple[CasePlace, ...] | None) -> _Wanted:
+        """What a read asks for, one object per base and bounded places,
+        as `Graph.read` keys a request by its identity."""
+        got = self.held.get((id(base), bounded))
+        if got is None or got[0] is not base:
+            got = self.held[(id(base), bounded)] = (base, bounded)
+        return got
+
+    def demand(self, placed: Placed, atom: Atom, asked: _Wanted) -> _Wanted:
+        return self.wanted(self.cases.demand(placed, atom, asked[0]),
+                           self.cases.bounded(placed, atom))
+
+    def admits(self, placed: Placed, wanted: _Wanted) -> bool:
+        base, bounded = wanted
+        key = (placed[0].id, placed[1])
+        got = self.checked.get(key)
+        if got is None:
+            got = self.checked[key] = self.cases.checks(*placed)
+        columns, impl = got
+        cases = self.cases
+        return all(cases.admits(placed, CHOICE, term, (), base)
+                   for term in impl) and (
+            all(cases.admits(placed, t, term, (), base)
+                for t, term in columns.values())
+            if bounded is None else
+            all(cases.admits(placed, t, columns[i][1], path, base)
+                for i, path, t in bounded))
+
+    def read(self, root: Node, base: Base | None,
+             unlisted: Callable[[Placed], bool] | None = None
+             ) -> tuple[list[UnitId], list[Node], set[RelationName],
+                        list[tuple[UnitId, Node]]]:
+        """What `base`'s derivation of `root` depends on (`Graph.read`)."""
+        return self.graph.read(root, self.admits, self.wanted(base, None),
+                               self.demand, unlisted)
+
+    def parameters(self, nodes: Iterable[Node]) -> Iterator[str]:
+        """The relations of `Params` among `nodes`, by name."""
+        for n in nodes:
+            if n.kind is NodeKind.RELATION \
+                    and self.graph.component_at(n.path) == PARAMS:
+                yield n.name
+
+
 def _dependence(engine: Engine, expanded: Program, solver: Solver,
                 bases: Sequence[Base | None]) -> Dependence:
     """`dependence`, computed over `expanded`, the solver's program with
     its GRID and RIGID calls expanded."""
     from solver.names import marker_lists
 
-    graph = Graph(expanded, engine)
-    cases = CasePlaces(graph, solver.choice)
+    walk = _Walk(engine, expanded, solver)
+    graph = walk.graph
     listing = marker_listing(solver)
     marker_of: dict[UnitId, CaseMarker | None] = {}
-    checked: dict[tuple[UnitId, InstancePath],
-                  tuple[dict[int, tuple[str, Term]], list[Term]]] = {}
     for u in graph.units:
         assert u.span is not None, "a unit of the solver's own text"
         section = section_at(solver, u.scope, u.span.first)
@@ -190,54 +247,23 @@ def _dependence(engine: Engine, expanded: Program, solver: Solver,
     by_param: dict[str, list[Base | None]] = {}
     by_relation: dict[RelationName, list[Base | None]] = {}
     by_stranded: dict[tuple[UnitId, Node], list[Base | None]] = {}
-    held: dict[tuple[int, tuple[CasePlace, ...] | None], _Wanted] = {}
-
-    def wanted(base: Base | None, bounded: tuple[CasePlace, ...] | None
-               ) -> _Wanted:
-        """What a read asks for, one object per base and bounded places,
-        as `Graph.read` keys a request by its identity."""
-        got = held.get((id(base), bounded))
-        if got is None or got[0] is not base:
-            got = held[(id(base), bounded)] = (base, bounded)
-        return got
-
-    def demand(placed: Placed, atom: Atom, asked: _Wanted) -> _Wanted:
-        return wanted(cases.demand(placed, atom, asked[0]),
-                      cases.bounded(placed, atom))
+    out = Node(NodeKind.RELATION, (), OUTPUT.name)
 
     for base in bases:
         listed = {m.line: marker_lists(solver, m, base) for m in markers}
-
-        def admits(placed: Placed, wanted: _Wanted) -> bool:
-            base, bounded = wanted
-            key = (placed[0].id, placed[1])
-            got = checked.get(key)
-            if got is None:
-                got = checked[key] = cases.checks(*placed)
-            columns, impl = got
-            return all(cases.admits(placed, CHOICE, term, (), base)
-                       for term in impl) and (
-                all(cases.admits(placed, t, term, (), base)
-                    for t, term in columns.values())
-                if bounded is None else
-                all(cases.admits(placed, t, columns[i][1], path, base)
-                    for i, path, t in bounded))
 
         def unlisted(placed: Placed,
                      listed: Mapping[int, bool] = listed) -> bool:
             m = marker_of.get(placed[0].id)
             return m is not None and not listed[m.line]
 
-        units, nodes, names, stranded = graph.read(
-            admits, wanted(base, None), demand, unlisted)
+        units, nodes, names, stranded = walk.read(out, base, unlisted)
         for key in stranded:
             by_stranded.setdefault(key, []).append(base)
         for uid in units:
             by_unit.setdefault(uid, []).append(base)
-        for n in nodes:
-            if n.kind is NodeKind.RELATION \
-                    and graph.component_at(n.path) == PARAMS:
-                by_param.setdefault(n.name, []).append(base)
+        for name in walk.parameters(nodes):
+            by_param.setdefault(name, []).append(base)
         for rel in names:
             by_relation.setdefault(rel, []).append(base)
     params = [r.name for r in solver.program.relations
@@ -252,3 +278,34 @@ def _dependence(engine: Engine, expanded: Program, solver: Solver,
         {k: tuple(by_stranded[k]) for k in sorted(
             by_stranded, key=lambda k: (k[0].index, k[1].path, k[1].name))
          if k[0] in written})
+
+
+class ParameterReads:
+    """Which relations of `Params` a base's derivation of a relation
+    depends on, by the walk of `dependence` started at that relation in
+    place of `out`. The program is expanded at the first question, so a
+    survey that asks none pays nothing."""
+
+    def __init__(self, engine: Engine, solver: Solver) -> None:
+        self.engine = engine
+        self.solver = solver
+        self._walk: _Walk | None = None
+
+    @property
+    def walk(self) -> _Walk:
+        if self._walk is None:
+            self._walk = _Walk(self.engine,
+                               self.engine.expand(self.solver.program),
+                               self.solver)
+        return self._walk
+
+    def of(self, relation: RelationName, bases: Iterable[Base | None]
+           ) -> frozenset[str]:
+        """The relations of `Params`, by name, that the derivation of the
+        relation a top-level clause names by `relation` depends on at some
+        base of `bases`."""
+        root = self.walk.graph.node((), relation)
+        assert root is not None, "a relation a declaration gives"
+        return frozenset(name for base in bases
+                         for name in self.walk.parameters(
+                             self.walk.read(root, base)[1]))
