@@ -28,6 +28,8 @@ from ticket_watch import union_seconds  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 
 from operations.merging import RERUN_OPENING, rerun_paths  # noqa: E402
+from operations.task_work import task_paths  # noqa: E402
+from solver.vocabulary import SOLVER_SUFFIX  # noqa: E402
 from operations.state import LogLine, Ticket  # noqa: E402
 from operations.tracker import BASE  # noqa: E402
 from ticketing.times import TIME_FORM, stamp_time, utc_stamp  # noqa: E402
@@ -69,16 +71,20 @@ CHURN = mctx("churn {commits}")
 
 
 def scope_paths(t: Ticket, root: Path) -> frozenset[str]:
-    """The paths the `Scope` of `t` names, in backticks or as link targets:
-    each that holds a `/` or stands at the root of the tree `root`. A
-    ticket with no `Scope` names none."""
+    """The paths the `Scope` of `t` gives, in backticks or as link targets:
+    each that holds a `/` or stands at the root of the tree `root`, and,
+    for each solver it gives, that solver's witness file, since a solver
+    and its witness file are edited together. A ticket with no `Scope`
+    gives none."""
     text = t.path.read_text()
     if section_head(text, "Scope") is None:
         return frozenset()
     body = section(text, "Scope")
     words = re.findall(r"`([^`\s]+)`", body) + re.findall(r"\]\(([^)\s]+)\)", body)
     paths = {w.split("#", 1)[0].rstrip(":") for w in words}
-    return frozenset(p for p in paths if p and ("/" in p or (root / p).exists()))
+    given = {p for p in paths if p and ("/" in p or (root / p).exists())}
+    pairs = (task_paths(Path(p).name.removesuffix(SOLVER_SUFFIX)) for p in given)
+    return frozenset(given | {str(w) for s, w in pairs if str(s) in given})
 
 
 type Span = tuple[float, float]
