@@ -15,7 +15,7 @@ class Status(StrEnum):
     BLOCKED = "blocked"
     CLOSED = "closed"
     WATCHING = "watching"
-    """A `delay` ticket whose summed loss is below the threshold of its fix."""
+    """A `delay` ticket whose group's summed loss is below the threshold of its fix."""
 
 
 SETTLED = (Status.CLOSED, Status.WATCHING)

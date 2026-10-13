@@ -1,6 +1,6 @@
 """The routing of a `delay` ticket that gives a case: the priced loss of a
-case, the threshold of an editor, and the moves of
-a ticket into and out of `tickets/watching/`. `file_ticket.py
+case, the threshold of an editor, the groups of the watching tickets, and
+the moves of their tickets into and out of `tickets/watching/`. `file_ticket.py
 case --help-all` states the rules. It also gives the spend of a change by
 role, recorded under `tickets/spends/` once its runs have stopped, and the budget of a change taken over the changes like it."""
 
@@ -20,7 +20,7 @@ from operations.roles import Role
 from operations.state import Budget, Spend
 from run_reads import agent_type, run_entries
 from ticket_files import ticket_files, ticket_name
-from ticket_form import FRONT, check_fix, front_fields, ticket_kind
+from ticket_form import FRONT, check_fix, front_fields, ticket_kind, title
 from ticket_log import log_lines, log_moves, read_ticket, resolution_of
 from ticket_numbers import TicketNumber
 from ticket_reads import editors_field
@@ -286,54 +286,122 @@ def cases(text: str) -> list[tuple[float, float, float]]:
     return out
 
 
-def summed(path: Path) -> tuple[float, float]:
-    """The summed dollars and seconds of the cases of the ticket at `path`."""
-    found = cases(read_ticket(path))
-    return sum(d for _, d, _ in found), sum(s for _, _, s in found)
+TARGET_PATH = re.compile(r"[\w.-]+(?:/[\w.-]+)+\.\w+")
+"""A repository path in a title's target: slash-joined parts that end in
+a file suffix."""
 
 
-def route(tickets: Path, number: TicketNumber, path: Path, agent: str,
-          undecided: list[str]) -> Path:
-    """Moves the watching ticket at `path` to `open` where its summed
-    loss reaches the threshold of its `fix`, or where that threshold is
-    unknown, and returns its path."""
-    fix = fix_field(read_ticket(path))
+@dataclass(frozen=True)
+class Group:
+    """The key the watching tickets that one change of one file by one
+    editor would fix share: their `fix`, with the first repository path of
+    their title's target, or the whole target where it gives none."""
+    fix: Role
+    target: str
+
+
+def group_of(path: Path, text: str) -> Group:
+    """The group of the watching ticket at `path` with text `text`."""
+    fix = fix_field(text)
     if fix is None:
         raise Refused(mctx("{path} gives no `fix`").format(path=path))
-    limit = threshold(tickets, fix, undecided)
-    total = loss(*summed(path))
-    if limit is None:
-        note = mctx("summed loss {total:.4f} dollars, the threshold of `{fix}` unknown").format(
-            total=total, fix=fix)
-        return log_moves(tickets, number, Status.OPEN, agent, Status.WATCHING, None, note).moved[0]
-    if total < limit:
-        return path
-    note = mctx("summed loss {total:.4f} dollars reaches the threshold {limit:.4f} dollars "
-                "of `{fix}`").format(total=total, limit=limit, fix=fix)
-    return log_moves(tickets, number, Status.OPEN, agent, Status.WATCHING, None, note).moved[0]
+    head = title(path, text)
+    if ": " not in head:
+        raise Refused(mctx("the title of {path} is not of the form `<target>: <what is wrong "
+                           "in it>`").format(path=path))
+    target = head.split(": ", 1)[0]
+    found = TARGET_PATH.search(target)
+    return Group(fix, target if found is None else found.group())
+
+
+@dataclass(frozen=True)
+class Watched:
+    """The tickets of a group under `tickets/watching/`, with the time,
+    the dollars and the seconds of each of their cases."""
+    group: Group
+    numbers: list[TicketNumber]
+    found: list[tuple[float, float, float]]
+
+    @property
+    def loss(self) -> float:
+        return sum(loss(d, s) for _, d, s in self.found)
+
+    @property
+    def named(self) -> str:
+        return mctx("the group {target} of `{fix}`, tickets {numbers}").format(
+            target=self.group.target, fix=self.group.fix,
+            numbers=", ".join(str(n) for n in self.numbers))
+
+
+def watched(tickets: Path) -> list[Watched]:
+    """The groups of the tickets under `tickets/watching/`, ordered by
+    their `fix` and their target."""
+    by: dict[Group, Watched] = {}
+    for path in ticket_files(tickets, Status.WATCHING):
+        text = read_ticket(path)
+        group = group_of(path, text)
+        w = by.setdefault(group, Watched(group, [], []))
+        w.numbers.append(ticket_name(path).number)
+        w.found.extend(cases(text))
+    return [by[g] for g in sorted(by, key=lambda g: (g.fix.value, g.target))]
+
+
+class Thresholds:
+    """The threshold of each editor, taken once per call of the
+    command."""
+
+    def __init__(self, tickets: Path, undecided: list[str]) -> None:
+        self.tickets = tickets
+        self.undecided = undecided
+        self.taken: dict[Role, float | None] = {}
+
+    def __call__(self, editor: Role) -> float | None:
+        if editor not in self.taken:
+            self.taken[editor] = threshold(self.tickets, editor, self.undecided)
+        return self.taken[editor]
+
+
+def route(tickets: Path, agent: str, limits: Thresholds) -> dict[TicketNumber, Path]:
+    """Moves to `open` each ticket of each watching group whose summed
+    loss reaches the threshold of its `fix`, or whose threshold is
+    unknown, and returns the path each moved ticket went to."""
+    moved: dict[TicketNumber, Path] = {}
+    for w in watched(tickets):
+        total, limit = w.loss, limits(w.group.fix)
+        if limit is None:
+            note = mctx("{group}: summed loss {total:.4f} dollars, the threshold of `{fix}` "
+                        "unknown").format(group=w.named, total=total, fix=w.group.fix)
+        elif total < limit:
+            continue
+        else:
+            note = mctx("{group}: summed loss {total:.4f} dollars reaches the threshold "
+                        "{limit:.4f} dollars of `{fix}`").format(
+                            group=w.named, total=total, limit=limit, fix=w.group.fix)
+        for number in w.numbers:
+            moved[number] = log_moves(tickets, number, Status.OPEN, agent, Status.WATCHING,
+                                      None, note).moved[0]
+    return moved
 
 
 def evict(tickets: Path, agent: str) -> None:
-    """Closes `wontfix` the watching ticket with the lowest loss rate,
-    where `tickets/watching/` holds `CAP` tickets."""
-    watching = ticket_files(tickets, Status.WATCHING)
-    if len(watching) < CAP:
+    """Closes `wontfix` each ticket of the watching group with the lowest
+    loss rate, where `tickets/watching/` holds `CAP` tickets."""
+    if len(ticket_files(tickets, Status.WATCHING)) < CAP:
         return
     now = time.time()
 
-    def rate(path: Path) -> float:
-        times = cases(read_ticket(path))
-        if not times:
-            raise Refused(mctx("{path} stands under `watching` with no case").format(path=path))
-        return sum(loss(d, s) for _, d, s in times) / ((now - times[0][0]) / 86400)
+    def rate(w: Watched) -> float:
+        if not w.found:
+            raise Refused(mctx("{group} stands under `watching` with no case").format(
+                group=w.named))
+        return w.loss / ((now - min(t for t, _, _ in w.found)) / 86400)
 
-    lowest = min(watching, key=rate)
-    dollars, seconds = summed(lowest)
-    number = ticket_name(lowest).number
-    note = mctx("{wontfix}: the lowest loss rate under `watching` at its cap of {cap}, its cases "
-                "summing {dollars:.4f} dollars and {seconds:.0f} s").format(
-                    wontfix=Resolution.WONTFIX, cap=CAP, dollars=dollars, seconds=seconds)
-    log_moves(tickets, number, Status.CLOSED, agent, Status.WATCHING, None, note)
+    lowest = min(watched(tickets), key=rate)
+    note = mctx("{wontfix}: {group} has the lowest loss rate under `watching` at its cap of "
+                "{cap}, its cases summing {total:.4f} dollars of loss").format(
+                    wontfix=Resolution.WONTFIX, cap=CAP, group=lowest.named, total=lowest.loss)
+    for number in lowest.numbers:
+        log_moves(tickets, number, Status.CLOSED, agent, Status.WATCHING, None, note)
 
 
 def add_evidence(text: str, evidence: str) -> str:

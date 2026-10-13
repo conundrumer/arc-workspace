@@ -33,14 +33,14 @@ from ticket_form import (DEFAULT_PRIORITY, DESIGN, LOG, LOG_SECTION, MECHANICAL,
                          RETIRED, checked_kind, section, sections_example, ticket_kind, title_line)
 from ticket_log import (AGENT_ID, CLOSED_BY, SESSION_ID, UNBLOCKED_BY, Wait,  # noqa: E402
                         log_lines, log_moves, logged, read_ticket, resolution_of, status_of)
-from ticket_numbers import (SESSION_VAR, SESSIONS, reserve, session_id,  # noqa: E402
+from ticket_numbers import (SESSION_VAR, SESSIONS, TicketNumber, reserve, session_id,  # noqa: E402
                             session_index, ticket_number, write_new)
 from ticket_settle import to_settle  # noqa: E402
 from idle_sessions import MAIN, name_main, read_sessions  # noqa: E402
 from ticket_reads import editors_field  # noqa: E402
 from ticket_watch import (CAP, CHANGES, SECOND_PRICE, Case, add_evidence, budget,  # noqa: E402
-                          case_loss, evict, fix_field, front, loss, route,  # noqa: E402
-                          threshold)  # noqa: E402
+                          Thresholds, case_loss, evict, fix_field, front, loss,  # noqa: E402
+                          route)  # noqa: E402
 from ticketing.text import SECTIONS, VALIDATION, heading  # noqa: E402
 from ticketing.times import TIME_FORM  # noqa: E402
 from ticket_vocabulary import ticked  # noqa: E402
@@ -178,15 +178,17 @@ CASE_RULES = mctx("""
     - The loss of a case or of a change is its dollars plus its seconds at {hour_price} dollars an hour.
     - The threshold of an editor is the median loss of the most recent {changes} `{change_kind}` tickets closed `{fixed}` with a known cost whose `editors` give that editor.
         - A change's dollars are the token cost of the runs the line that closes it gives and of the runs under them, and its seconds are the wall time those runs cover.
+    - A group is the tickets under `tickets/{watching}/` with one `fix` and one key: the first file path in the target of the ticket's title, the text before its first `: `, or, where the target holds none, the whole target.
     - Filing a `{delay}` with a case:
         - The ticket files under `tickets/{watching}/` where the case's loss is below the threshold of its `fix`, and under `tickets/{open}/` otherwise.
             - Where the case's cost or the threshold is unknown, it files under `tickets/{open}/`, with an `undecided` line on stderr.
         - `tickets/{watching}/` holds at most {cap} tickets.
-            - A filing that would put one more there first closes `{wontfix}` the watching ticket with the lowest loss rate, its summed loss over the days since its first case, with its summed dollars and seconds in the note.
+            - A filing that would put one more there first closes `{wontfix}` each ticket of the group with the lowest loss rate, its summed loss over the days since its first case, with the group's summed loss in each note.
     - Appending a case:
         - The command adds the text on stdin to the end of the ticket's `## Evidence`, and appends the case's log line, whatever the case's own loss.
-        - Where the summed loss of the ticket's cases reaches the threshold of its `fix` or passes it, the command moves the ticket to `tickets/{open}/` with a log line that gives the sum and the threshold, and prints the path it went to.
-        - Where a request of the run has no price, or the threshold of the ticket's `fix` is unknown, the command moves the ticket to `tickets/{open}/`, and prints an `undecided` line on stderr.
+        - Where a request of the run has no price, the command moves the ticket to `tickets/{open}/`, and prints an `undecided` line on stderr.
+    - After each filing of a `{delay}` with a case and each appended case, the command moves each ticket of each group whose summed loss reaches the threshold of its `fix` or passes it to `tickets/{open}/`, with a log line that gives the group's key, its summed loss, the threshold and the numbers of its tickets, and prints each path it went to.
+        - Where the threshold of a group's `fix` is unknown, it moves the group's tickets there too, and prints an `undecided` line on stderr.
     """)
 
 SHOW_HELP = mctx("""
@@ -273,12 +275,12 @@ def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str,
             delay=Kind.DELAY))
     status = Status.DRAFT if kind is Kind.CHANGE else Status.OPEN
     found: Case | None = None
+    undecided: list[str] = []
+    limits = Thresholds(tickets, undecided)
     if case is not None and fix is not None:
-        undecided: list[str] = []
         run_id, start, end = case
         found = case_loss(run_id, start, end, undecided)
-        limit = None if found.dollars is None else threshold(tickets, fix, undecided)
-        print_undecided(undecided)
+        limit = None if found.dollars is None else limits(fix)
         if (found.dollars is not None and limit is not None
                 and loss(found.dollars, found.seconds) < limit):
             status = Status.WATCHING
@@ -288,7 +290,22 @@ def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str,
     path = write_new(tickets / status, logged(text, status, agent), [name])
     if found is not None and found.dollars is not None:
         path = log_moves(tickets, number, status, agent, status, None, found.note).moved[0]
+    if found is not None:
+        path = routed(tickets, agent, limits, number, path)
+    print_undecided(undecided)
     return path
+
+
+def routed(tickets: Path, agent: str, limits: Thresholds, number: TicketNumber,
+           path: Path) -> Path:
+    """Routes each watching group as `route` does, prints the path each
+    moved ticket other than `number` went to, and returns the path of
+    `number`, which stays `path` where the routing leaves it in place."""
+    moved = route(tickets, agent, limits)
+    for other, to in moved.items():
+        if other != number:
+            print(to)
+    return moved.get(number, path)
 
 
 def print_undecided(lines: list[str]) -> None:
@@ -298,7 +315,7 @@ def print_undecided(lines: list[str]) -> None:
 
 def case_command(ref: str, agent: str, run: str, start: str, end: str) -> Path:
     """Appends the case and the evidence on stdin to the watching ticket
-    `ref`, and moves it to `open` where its loss reaches the threshold."""
+    `ref`, and routes each watching group as `route` does."""
     tickets = main_tickets()
     number = ticket_number(ref)
     path = ticket_path(tickets, number)
@@ -309,12 +326,13 @@ def case_command(ref: str, agent: str, run: str, start: str, end: str) -> Path:
     found = case_loss(run, start, end, undecided)
     path.write_text(add_evidence(read_ticket(path), sys.stdin.read()))
     if found.dollars is None:
-        print_undecided(undecided)
         note = mctx("case {run} {start} {end}: cost unknown").format(run=run, start=start, end=end)
-        return log_moves(tickets, number, Status.OPEN, agent, Status.WATCHING, None, note).moved[0]
-    path = log_moves(tickets, number, Status.WATCHING, agent, Status.WATCHING, None,
-                     found.note).moved[0]
-    path = route(tickets, number, path, agent, undecided)
+        path = log_moves(tickets, number, Status.OPEN, agent, Status.WATCHING, None,
+                         note).moved[0]
+    else:
+        path = log_moves(tickets, number, Status.WATCHING, agent, Status.WATCHING, None,
+                         found.note).moved[0]
+    path = routed(tickets, agent, Thresholds(tickets, undecided), number, path)
     print_undecided(undecided)
     return path
 
