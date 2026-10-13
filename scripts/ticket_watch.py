@@ -361,14 +361,17 @@ class Thresholds:
         return self.taken[editor]
 
 
-def route(tickets: Path, agent: str, limits: Thresholds) -> dict[TicketNumber, Path]:
-    """Moves to `open` each ticket of each watching group whose summed
-    loss reaches the threshold of its `fix`, or whose threshold is
-    unknown, and returns the path each moved ticket went to."""
+def route(tickets: Path, agent: str, limits: Thresholds,
+          own: TicketNumber | None) -> dict[TicketNumber, Path]:
+    """Moves to `open` the tickets of the watching groups as `file_ticket.py
+    case --help-all` states, with `own` the ticket the call appends to, and
+    returns the path each moved ticket went to."""
     moved: dict[TicketNumber, Path] = {}
     for w in watched(tickets):
         total, limit = w.loss, limits(w.group.fix)
         if limit is None:
+            if own not in w.numbers:
+                continue
             note = mctx("{group}: summed loss {total:.4f} dollars, the threshold of `{fix}` "
                         "unknown").format(group=w.named, total=total, fix=w.group.fix)
         elif total < limit:

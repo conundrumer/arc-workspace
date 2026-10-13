@@ -187,8 +187,8 @@ CASE_RULES = mctx("""
     - Appending a case:
         - The command adds the text on stdin to the end of the ticket's `## Evidence`, and appends the case's log line, whatever the case's own loss.
         - Where a request of the run has no price, the command moves the ticket to `tickets/{open}/`, and prints an `undecided` line on stderr.
-    - After each filing of a `{delay}` with a case and each appended case, the command moves each ticket of each group whose summed loss reaches the threshold of its `fix` or passes it to `tickets/{open}/`, with a log line that gives the group's key, its summed loss, the threshold and the numbers of its tickets, and prints each path it went to.
-        - Where the threshold of a group's `fix` is unknown, it moves the group's tickets there too, and prints an `undecided` line on stderr.
+    - After each filing of a `{delay}` with a case and each appended case, and before a filing closes a group `{wontfix}`, the command moves each ticket of each group whose summed loss reaches the threshold of its `fix` or passes it to `tickets/{open}/`, with a log line that gives the group's key, its summed loss, the threshold and the numbers of its tickets, and prints each path it went to.
+        - Where the threshold of a group's `fix` is unknown, the command prints an `undecided` line on stderr, and moves the group's tickets there only where the group holds the ticket the call appends to.
     """)
 
 SHOW_HELP = mctx("""
@@ -284,6 +284,7 @@ def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str,
         if (found.dollars is not None and limit is not None
                 and loss(found.dollars, found.seconds) < limit):
             status = Status.WATCHING
+            routed(tickets, agent, limits, None)
             evict(tickets, agent)
     number = reserve(tickets, session_index(tickets, session_id()))
     name = TicketName(number, dom, subject, agent).file_name
@@ -291,21 +292,21 @@ def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str,
     if found is not None and found.dollars is not None:
         path = log_moves(tickets, number, status, agent, status, None, found.note).moved[0]
     if found is not None:
-        path = routed(tickets, agent, limits, number, path)
+        path = routed(tickets, agent, limits, number) or path
     print_undecided(undecided)
     return path
 
 
-def routed(tickets: Path, agent: str, limits: Thresholds, number: TicketNumber,
-           path: Path) -> Path:
+def routed(tickets: Path, agent: str, limits: Thresholds,
+           own: TicketNumber | None) -> Path | None:
     """Routes each watching group as `route` does, prints the path each
-    moved ticket other than `number` went to, and returns the path of
-    `number`, which stays `path` where the routing leaves it in place."""
-    moved = route(tickets, agent, limits)
+    moved ticket other than `own` went to, and returns the path `own` went
+    to, or None where the routing leaves it in place."""
+    moved = route(tickets, agent, limits, own)
     for other, to in moved.items():
-        if other != number:
+        if other != own:
             print(to)
-    return moved.get(number, path)
+    return None if own is None else moved.get(own)
 
 
 def print_undecided(lines: list[str]) -> None:
@@ -332,7 +333,7 @@ def case_command(ref: str, agent: str, run: str, start: str, end: str) -> Path:
     else:
         path = log_moves(tickets, number, Status.WATCHING, agent, Status.WATCHING, None,
                          found.note).moved[0]
-    path = routed(tickets, agent, Thresholds(tickets, undecided), number, path)
+    path = routed(tickets, agent, Thresholds(tickets, undecided), number) or path
     print_undecided(undecided)
     return path
 
