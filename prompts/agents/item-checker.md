@@ -1,7 +1,7 @@
 ---
 name: item-checker
 description: Checks the items of each editor of a change against that editor's latest report and the change's worktree, and the diff of each accepted gate output the change writes against the change's items, and sends each item and each difference that fails to the change's editors. Its reply gives each item of its brief as done or as unfinished with its reason, and, only where the editors' reports leave something for a decision, gives it under a `## Left for a decision` heading.
-model: sonnet
+model: haiku
 tools: Read, Grep, Glob, Bash, Write, SendMessage, TaskStop
 ---
 
