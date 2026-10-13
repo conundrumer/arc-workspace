@@ -15,12 +15,17 @@ from typing import Any
 
 from controlled_markdown import mctx
 from handbook.paths import console_importable
+from operations.roles import AGENT_ID as AGENT_ID_FORM
 
 console_importable()
 
 from solver_console import config  # noqa: E402
 
 type Entry = dict[str, Any]
+
+AGENT_ID_IN_TEXT = re.compile(rf"(?=({AGENT_ID_FORM}))".encode())
+"""Each substring of the form of an agent id, overlapping ones too, as a
+substring search finds it."""
 
 _state = 0
 """The count of the states this process has opened (`new_state`)."""
@@ -256,15 +261,25 @@ def chain(path: Path) -> list[Path]:
 class Snapshot:
     """The lines of a transcript as they stood when it was read, with the
     lines that hold each word asked about, and the entries of the lines
-    parsed for such a word."""
+    parsed for such a word.
+
+    At the first word of the form of an agent id asked about, one pass over
+    the lines indexes every substring of that form, overlapping ones too,
+    by the lines that hold it, so a search for many agent ids reads the text
+    once."""
 
     def __init__(self, path: Path) -> None:
         self.text = path.read_bytes()
         self.lines = self.text.splitlines()
         self.found: dict[str, frozenset[int]] = {}
+        self.agent_ids: dict[str, frozenset[int]] | None = None
         self.parsed: dict[int, list[Entry]] = {}
 
     def holding(self, word: str) -> frozenset[int]:
+        if re.fullmatch(AGENT_ID_FORM, word):
+            if self.agent_ids is None:
+                self.agent_ids = self.index_agent_ids()
+            return self.agent_ids.get(word, frozenset())
         if word not in self.found:
             w = word.encode()
             # One search of the whole text spares the scan of each line
@@ -273,6 +288,13 @@ class Snapshot:
                 i for i, line in enumerate(self.lines) if w in line
             ) if w in self.text else frozenset()
         return self.found[word]
+
+    def index_agent_ids(self) -> dict[str, frozenset[int]]:
+        index: dict[bytes, set[int]] = {}
+        for i, line in enumerate(self.lines):
+            for aid in AGENT_ID_IN_TEXT.findall(line):
+                index.setdefault(aid, set()).add(i)
+        return {aid.decode(): frozenset(found) for aid, found in index.items()}
 
     def entry(self, i: int) -> list[Entry]:
         if i not in self.parsed:
