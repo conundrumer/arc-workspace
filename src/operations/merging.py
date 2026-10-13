@@ -38,7 +38,7 @@ from pathlib import Path
 from controlled_markdown import form, mctx
 from controlled_markdown.nodes import Rule, finding_lines
 from operations import briefs, messages
-from operations.change_budget import left_draft
+from operations.change_budget import TIME_NOTE, TIME_OPENING, left_draft, taken
 from operations.filing import editor_scratch
 from operations.reports import splits
 from operations.roles import Role
@@ -146,6 +146,19 @@ def merged(state: State, t: Ticket) -> bool:
         return True
     since = left_draft(t)
     return any(c.subject == t.title and c.time >= since for c in state.git.commits)
+
+
+def merge(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
+    """The line that gives the change's agent-running time since its take,
+    where none follows that take and that time reads, and then the merge."""
+    take_line = taken(t)
+    start = take_line.time if take_line is not None else left_draft(t)
+    spent = state.computed.spent.get(t.number)
+    if spent is not None and not any(ln.time >= start and ln.note.startswith(TIME_OPENING)
+                                     for ln in t.log):
+        return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED,
+                        TIME_NOTE.format(seconds=spent.seconds), state.me))
+    return merge_steps(state, t, w, latest)
 
 
 def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:

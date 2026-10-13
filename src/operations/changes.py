@@ -3,16 +3,18 @@ open changes, the editors, the review of the documents, the item checker
 and the ticket analyst on what the editors leave; `doc_review` gives the
 review of the documents. The steps carry out
 [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change);
-`merging` gives the merge and what follows it.
+`merging` gives the merge and what follows it. `change_agents` gives the
+agents of a change and the editors it needs, `item_check` the launch of
+its item checker, `change_fragments` the doc editor of its `mctx`
+fragments, and `change_overrun` a change past its cost budget and an
+editor whose budget is passed.
 
 The operators act on the tickets of the session and on those of the
 sessions `SessionsRead.adopted` gives, as `State.mine` gives them. Which session
 is the main one, `file_ticket.py main --help` states; which sessions are
 idle, `idle_sessions.read_sessions` gives.
 
-The editors a change needs are those the `editors` field of its ticket
-gives, which the ticket analyst that files it writes, and a change whose
-ticket gives none is undecided. A change with no worktree gets one from
+A change with no worktree gets one from
 `scripts/change_worktree.py`, which logs its path on the ticket, so a
 later operator continues the change there. Where a change's ticket is
 revised after the log line that gives its worktree, the operator runs
@@ -21,10 +23,7 @@ Every editor and reviewer is
 launched with no isolation, and its brief gives that worktree.
 
 What the editors' and the doc reviewer's replies give is read by the fixed
-forms of `reports`. An editor whose latest reply says its budget is passed
-is sent a message to go on with the work that reply leaves, with the
-budget the operators last gave it, and that reply goes to no ticket
-analyst. Once each editor of a change has reported, the latest report of
+forms of `reports`. Once each editor of a change has reported, the latest report of
 each editor that has reported since the last item checker was launched on
 the change, and the accepted gate outputs the change writes, go to one
 item checker. That checker checks the items of each such editor's part,
@@ -48,39 +47,9 @@ which gets those items with the line that rules the step
 (`triage.for_coordinator`), and otherwise it goes to a ticket analyst
 (`decisions`).
 
-Once a code editor or a `handbook-expanded` editor of a change has
-reported, where the change adds or changes the text of an `mctx` fragment
-(`HeldRead.fragments`) and no doc editor was launched since that report, the
-fragments whose text no earlier doc editor of the fragments was launched on
-(`unseen`) go to a doc editor launched for them: a change whose `editors`
-field gives no doc editor first gets one in that field, with the budget of
-its new `editors` set, and the doc editor the field then gives is
-launched with the fragments; a change that gives one gets a doc editor
-of the fragments alone (`briefs.FRAGMENTS_PART`), which is the latest
-editor of its part beside the doc editor of the documents.
-
-A change whose `editors` field gives a doc editor, the one that step adds
-included, passes its review once the latest reply of its
-doc reviewer opens with `no finding stands` and follows each editor's last
-report, or precedes the last report only of editors that reviewer sent a
-message, since such an editor sends that reviewer its fixes before each
-reply. A reply that precedes the last report of any other editor is read
-for no finding, and that reviewer is asked once to review the change
-again, and the review is held where it has not replied since, apart from
-the reply `doc_review` passes on the worktree's state. A reply in any
-other form holds the review. The command launches no editor for a
-reviewer's findings: that reviewer sends them to the editors of its
-brief.
-
-`change_budget` gives a change's cost budget. Once its spend passes
-that budget, at the command's next call, whether or not an agent of the
-change is at work, the command files the `performance` ticket on the
-change that `change_budget` gives. Each agent of the change at work
-before that ticket is told once to end (`messages.over_budget`), and none
-other is launched but one item checker on each editor's latest report,
-once none is at work. Where that checker leaves nothing for a decision,
-the change merges; otherwise it moves to `tickets/draft/` with a line
-that opens with `OVERRUN_FINDING`, which `drafts` reads as findings.
+A change whose `editors` field gives a doc editor, the one
+`change_fragments` adds included, merges once its review passes as
+`doc_review` gives.
 
 A next step of a change that is a message an operator already sent,
 whose recipient answered it, leaves the change where it was, and the
@@ -88,8 +57,9 @@ command cannot place it.
 
 While a `Hold intake.` line holds intake (`directives.held_intake`), the
 operator takes, of the changes it would take with no hold, only those of
-`held_work`, so the work already held reaches its end, and each other
-change waits for a `Resume intake.` line.
+`held_work`, so the work already held reaches its end, and those of
+`through_hold`, the tickets an `Admit:` or an `Expedite:` line gives, and
+each other change waits for a `Resume intake.` line.
 
 A change that waits for a ticket under `tickets/blocked/` whose last
 wait is on the user moves to `tickets/draft/` with a line whose note is
@@ -109,24 +79,25 @@ from pathlib import Path
 from typing import Literal
 
 from controlled_markdown import form, mctx
-from operations import brief_reading, briefs, merging, messages
-from operations.change_budget import (OVERRUN_FINDING, TAKE_NOTE, TIME_NOTE, TIME_OPENING,
-                                      by_role, file_overrun, left_draft, overrun_ticket,
-                                      past_budget, taken)
-from operations.doc_review import doc_review, latest_reviewer, review_launch, with_ids
-from operations.directives import (Decision, Directive, decided, held_intake, held_on, named,
-                                   NUMBER, numbers)
-from operations.reports import (OPEN_LABELS, Label, budget_passed, items_of,
-                                left_for_decision, shows_current)
-from operations.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
-from operations.state import Agent, Place, State, Ticket
+from operations import briefs, merging, messages
+from operations.change_agents import (change_editors, editors_in, latest_editors, launched_on,
+                                      of_change, unstaffed)
+from operations.change_budget import TAKE_NOTE
+from operations.change_fragments import drafter_ids, fragments_step
+from operations.change_overrun import over_budget, over_budget_step
+from operations.doc_review import doc_review, with_ids
+from operations.directives import (Decision, Directive, admit_named, decided, held_intake, held_on,
+                                   named, NUMBER, numbers)
+from operations.item_check import check_items, latest_reports
+from operations.reports import OPEN_LABELS, Label, items_of, left_for_decision, shows_current
+from operations.roles import Purpose, Role, analyst_of, analyst_subject
+from operations.state import Agent, State, Ticket
 from operations.filing import editor_scratch
 from operations.final_reply import live_holder
-from operations.handled import answered, repeated, sends_to, sent
-from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids, key
-from operations.tracker import (AGENT, add_editor, blocked_on_user, closed,
-                                final_run, last_index, log, wait_line, worktree,
-                                WORKTREE)
+from operations.handled import answered, repeated, sent
+from operations.steps import Bash, Launch, Send, Step, Undecided, key
+from operations.tracker import (AGENT, blocked_on_user, closed, final_run, last_index, log,
+                                wait_line, worktree, WORKTREE)
 from ticketing.vocabulary import Domain, Kind, Note, Status
 
 
@@ -172,10 +143,10 @@ def admits(state: State) -> Callable[[str], bool]:
     """Whether the operator may take an open ticket: one the `takes` of
     the run scripts admit (`Computed.admitted`), or one of `expedited`,
     or any where no script defines `takes`; under a hold, only such a
-    ticket that is also one of `held_work`."""
+    ticket that is also one of `held_work` or of `through_hold`."""
     admitted = state.computed.admitted()
     passing = None if admitted is None else admitted | expedited(state)
-    held = held_work(state) if held_intake(state) else None
+    held = held_work(state) | through_hold(state) if held_intake(state) else None
     return lambda n: ((passing is None or n in passing)
                       and (held is None or n in held))
 
@@ -192,6 +163,12 @@ def held_work(state: State) -> set[str]:
     return reached(state, {n for n, t in state.tracker.tickets.items()
                            if (t.kind is Kind.CHANGE and taken_before(t))
                            or (t.kind is Kind.INTERFERENCE and t.status is not Status.CLOSED)})
+
+
+def through_hold(state: State) -> set[str]:
+    """The tickets that pass a hold: each ticket a chain of links reaches
+    from a ticket of `directives.admit_named`, and those of `expedited`."""
+    return reached(state, admit_named(state)) | expedited(state)
 
 
 RELEASED = mctx("released: holder {holder} is not live")
@@ -311,23 +288,6 @@ def held(state: State) -> list[Ticket]:
                   key=lambda t: t.order)
 
 
-def launched_on(state: State, number: str) -> list[Agent]:
-    """The editors, doc reviewers, item checkers and ticket analysts
-    launched on the change `number`."""
-    roles = (*EDITORS, Role.DOC_REVIEWER, Role.ITEM_CHECKER)
-    out = [a for a in state.transcripts.agents if a.role in roles and a.subject == number]
-    out += [a for a, p, nums in state.analysts() if p is Purpose.CHANGE and number in nums]
-    return sorted(out, key=lambda a: a.launched)
-
-
-def of_change(state: State, number: str) -> list[Agent]:
-    """The agents `launched_on` gives for the change `number` since its
-    last move out of `tickets/draft/`."""
-    t = state.tracker.tickets.get(number)
-    since = 0.0 if t is None else left_draft(t)
-    return [a for a in launched_on(state, number) if a.launched > since]
-
-
 def give_up(state: State) -> Step | None:
     """A message that tells an agent at work on a change that no operator
     carries any more, or that another live holder (`live_holder`) carries,
@@ -362,119 +322,6 @@ WORKTREE_SCRIPT = "scripts/change_worktree.py"
 def make_worktree(number: str, agent_id: str) -> str:
     """The Bash command that makes the worktree of the change `number`."""
     return shlex.join(["uv", "run", "python", WORKTREE_SCRIPT, number, AGENT, "--id", agent_id])
-
-
-def in_worktree(a: Agent, w: Path) -> bool:
-    return briefs.WORK_IN.format(worktree=w) in a.brief
-
-
-def editors_in(agents: list[Agent], w: Path) -> list[Agent]:
-    """The editors among `agents` launched in the worktree `w`."""
-    return [a for a in agents if a.role in EDITORS and in_worktree(a, w)]
-
-
-def change_editors(t: Ticket) -> tuple[Role, ...] | Undecided:
-    """The editors of the change `t`, those its `editors` field gives; a
-    change whose ticket gives none is undecided."""
-    if t.editors is None:
-        return Undecided(mctx("change {number} gives no `editors` field").format(
-            number=t.number))
-    return t.editors
-
-def unstaffed(editors: tuple[Role, ...], here: list[Agent]) -> list[Role]:
-    """The editor roles of `editors` with no agent among `here`, the
-    editors in the change's worktree, in the order of `EDITORS`."""
-    return [r for r in EDITORS if r in editors and not any(a.role is r for a in here)]
-
-
-DRAFTERS = (Role.CODE_EDITOR, Role.HANDBOOK_EXPANDED)
-"""The editors that draft the text of the fragments their code needs."""
-
-
-def latest_editors(here: list[Agent]) -> list[Agent]:
-    """The latest editor of `here` of each role, with the doc editor of
-    the fragments (`briefs.FRAGMENTS_PART`) apart from the doc editor of
-    the documents."""
-    return list({(a.role, briefs.FRAGMENTS_PART in a.brief): a for a in here}.values())
-
-
-def drafter_ids(here: list[Agent]) -> list[str] | Undecided:
-    """The agent ids of the latest drafters of `here`, which the brief of a
-    doc editor gives for the code changes a move of a fragment's text
-    needs."""
-    return agent_ids([a for a in latest_editors(here) if a.role in DRAFTERS])
-
-
-def lacking_doc_editor(t: Ticket, w: Path | None,
-                       state: State) -> tuple[Role, ...] | None:
-    """The `editors` field of the held change `t`, where it gives no doc
-    editor while the `fragments` of `t`'s worktree `w` are not empty, and
-    otherwise None."""
-    if (t.editors is None or Role.DOC_EDITOR in t.editors or w is None
-            or not state.held.fragments.get(w)):
-        return None
-    return t.editors
-
-
-def seen_dir(number: str, scratch: Path) -> Path:
-    """The directory under the session's scratchpad `scratch` of the files
-    `tree_reads.py seen` writes for the change `number`."""
-    return scratch / f"{number}-fragments-seen"
-
-
-def write_seen(number: str, w: Path, scratch: Path) -> str:
-    """The Bash command that writes the places of the worktree `w` of the
-    change `number` to a file of `seen_dir`."""
-    return shlex.join(["uv", "run", "python", "scripts/tree_reads.py", "seen", str(w),
-                       str(seen_dir(number, scratch))])
-
-
-def unseen(state: State, t: Ticket, w: Path, here: list[Agent]) -> tuple[Place, ...]:
-    """The places of `state.held.fragments[w]` that `fragments_step` gives the
-    next doc editor of the fragments. A place with no text is always given:
-    its file does not read as fragments, so no file of `state.held.seen` can show
-    that its fragments are unchanged."""
-    places = state.held.fragments.get(w, ())
-    judged = [a.launched for a in here if a.role is Role.DOC_EDITOR
-              and briefs.FRAGMENTS_PART in a.brief and a.last_report is not None]
-    if not judged:
-        return places
-    before = [s for s in state.held.seen.get(t.number, ()) if s.time < max(judged)]
-    if not before or (seen := before[-1].places) is None:
-        return places
-    return tuple(p for p in places if p.text is None or (p.file, p.text) not in seen)
-
-
-def fragments_step(state: State, t: Ticket, w: Path,
-                   here: list[Agent]) -> Step | None:
-    """The step that gives the fragments of `unseen` to a doc editor
-    launched for them, once a drafter of the change has reported and no doc
-    editor was launched since its latest report: the addition of
-    `doc-editor` to the `editors` field of a change that gives none, then,
-    where no file of `state.held.seen` was written since that report, the
-    command that writes one (`write_seen`), and otherwise the launch of a
-    doc editor on those fragments."""
-    reported = [r.time for a in here if a.role in DRAFTERS and (r := a.last_report) is not None]
-    if not reported or any(
-            a.role is Role.DOC_EDITOR and a.launched > max(reported) for a in here):
-        return None
-    places = unseen(state, t, w, here)
-    if not places:
-        return None
-    if lacking_doc_editor(t, w, state) is not None:
-        if t.number not in state.computed.doc_budgets:
-            return Undecided(mctx("the budget of change {number} with a doc editor is "
-                                  "unknown").format(number=t.number))
-        return Bash(add_editor(t.number, Role.DOC_EDITOR, state.me))
-    if not any(s.time > max(reported) for s in state.held.seen.get(t.number, ())):
-        return Bash(write_seen(t.number, w, state.scratch))
-    drafters = drafter_ids(here)
-    if isinstance(drafters, Undecided):
-        return drafters
-    return Launch(Role.DOC_EDITOR, t.number, briefs.editor(
-        Role.DOC_EDITOR, t.number, True, w,
-        editor_scratch(t.number, Role.DOC_EDITOR, state.scratch), state.me,
-        places, tuple(drafters), of_fragments=True), model=t.model(Role.DOC_EDITOR))
 
 
 def revised_since_worktree(t: Ticket) -> bool:
@@ -518,133 +365,7 @@ def carry(state: State, t: Ticket) -> Step | None:
     if Role.DOC_EDITOR in editors and (
             step := doc_review(state, t, w, here, agents)) is not False:
         return step
-    return merge(state, t, w, latest)
-
-
-NO_OPERATOR = mctx("{agent} is no doc editor that an operator of the session launched: give "
-                   "your final reply.")
-"""The line `editor_review` gives an agent that is no doc editor an operator
-launched."""
-
-
-def editor_review(state: State, editor: str) -> Step | str:
-    """The launch of the doc reviewer of the change of the doc editor
-    `editor`, launched by it. In its place it gives a line: where
-    `editor` is no doc editor an operator launched, `NO_OPERATOR`; where the change has a doc
-    reviewer, whoever launched it, the line that names the latest one, so
-    the editor launches no other; and where an editor role of the change
-    has no agent in its worktree or another editor there is pending, the
-    line that says the operator launches the review."""
-    mine = [a for a in state.transcripts.agents if a.agent_id == editor and a.role is Role.DOC_EDITOR]
-    if not mine:
-        return NO_OPERATOR.format(agent=editor)
-    t = state.tracker.tickets.get(mine[-1].subject)
-    if t is None:
-        return Undecided(mctx("the ticket of change {number} of doc editor {agent} is not "
-                              "read").format(number=mine[-1].subject, agent=editor))
-    editors = change_editors(t)
-    if not isinstance(editors, tuple):
-        return editors
-    w = worktree(t, state)
-    if w is None:
-        return Undecided(mctx("change {number} gives no worktree").format(number=t.number))
-    agents = of_change(state, t.number)
-    if (reviewer := latest_reviewer(agents)) is not None:
-        ids = agent_ids([reviewer])
-        if isinstance(ids, Undecided):
-            return ids
-        return mctx("Change {number} already has doc reviewer {agent}, so launch no other "
-                    "doc reviewer.").format(number=t.number, agent=ids[0])
-    here = editors_in(agents, w)
-    if (unstaffed(editors, here)
-            or any(a.pending for a in here if a.agent_id != editor)):
-        return mctx("Another editor of change {number} has not reported, so the operator "
-                    "launches the review: give your final reply.").format(number=t.number)
-    return review_launch(t, w, here, editor)
-
-
-
-def merge(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
-    """The line that gives the change's agent-running time since its take,
-    where none follows that take and that time reads, and then the merge."""
-    take_line = taken(t)
-    start = take_line.time if take_line is not None else left_draft(t)
-    spent = state.computed.spent.get(t.number)
-    if spent is not None and not any(ln.time >= start and ln.note.startswith(TIME_OPENING)
-                                     for ln in t.log):
-        return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED,
-                        TIME_NOTE.format(seconds=spent.seconds), state.me))
-    return merging.merge_steps(state, t, w, latest)
-
-
-def over_budget(state: State, t: Ticket, w: Path,
-                agents: list[Agent]) -> Step | None | Literal[False]:
-    """The step on the change `t` past the budget its take gives, or False
-    where it is not past it or no take gives a budget."""
-    take_line = taken(t)
-    if take_line is None:
-        return False
-    since, limit, _ = take_line
-    spent = state.computed.spent.get(t.number)
-    if spent is None:
-        return Undecided(mctx("the spend of change {number} since its take is unknown").format(
-            number=t.number))
-    if not past_budget(take_line, spent):
-        return False
-    trip = overrun_ticket(state, t, since)
-    if trip is None:
-        budget = state.computed.budgets.get(t.number)
-        if budget is None:
-            return Undecided(mctx("the median spend by role of the changes the budget of "
-                                  "change {number} is taken over is unknown").format(
-                                      number=t.number))
-        return file_overrun(t, spent, budget, limit, agents)
-    for a in agents:
-        if a.pending and a.agent_id is not None and a.launched < trip.filed:
-            message = messages.over_budget(t.number, a.role is Role.DOC_REVIEWER)
-            if not sent(state, a.agent_id, message):
-                return Send(a.agent_id, message)
-    if any(a.pending for a in agents):
-        return None
-    latest = latest_editors(editors_in(agents, w))
-    reported = max((r.time for a in latest if (r := a.last_report) is not None), default=0.0)
-    checkers = [a for a in agents if a.role is Role.ITEM_CHECKER
-                and a.launched > trip.filed and a.launched > reported]
-    if not checkers:
-        editors = with_ids(latest)
-        if isinstance(editors, Undecided):
-            return editors
-        return check_items(state, t, w, latest, editors, past=True)
-    checker = checkers[-1]
-    if checker.last_report is None:
-        return Undecided(mctx("item checker {agent} on change {number}, past its cost budget, "
-                              "returned no report").format(agent=checker.agent_id,
-                                                          number=t.number))
-    if left_for_decision(checker) is None:
-        return merge(state, t, w, latest)
-    return Bash(log(t.number, Status.DRAFT, Status.ASSIGNED, mctx(
-        "{opening} of {limit} dollars: spent {spent} dollars, {roles}; item checker {agent} "
-        "leaves items for a decision").format(
-            opening=OVERRUN_FINDING, limit=f"{limit:.2f}", spent=f"{spent.dollars:.2f}",
-            roles=by_role(spent.by_role), agent=checker.agent_id), state.me))
-
-
-def over_budget_step(state: State, t: Ticket, latest: list[Agent]) -> Step | None:
-    """The message to the first editor of `latest` whose latest reply says
-    its budget is passed, or None where no such reply is."""
-    for a in latest:
-        r = a.last_report
-        if r is None or a.agent_id is None or not budget_passed(a):
-            continue
-        given = [a.brief] + [c.message for c in sends_to(state, a.agent_id)]
-        stated = next((s for text in reversed(given) if (s := brief_reading.budgets(text))), set[float]())
-        if len(stated) != 1:
-            return Undecided(mctx("editor {agent} of change {number} says its budget is "
-                                  "passed, and the latest brief or operator's message to it "
-                                  "that states a budget states {count}").format(
-                agent=a.agent_id, number=t.number, count=len(stated)))
-        return Send(a.agent_id, messages.go_on(r.time, stated.pop()))
-    return None
+    return merging.merge(state, t, w, latest)
 
 
 LEFT_CHOICES = {
@@ -726,35 +447,6 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
         t.number, w, parts, [q.number for q in questions], editors, reports,
         state.me))
-
-
-def latest_reports(agents: list[Agent]) -> list[tuple[str, str]] | Undecided:
-    """The agent id and latest report text of each of `agents` that has a
-    report."""
-    reporting = [(a, r) for a in agents if (r := a.last_report) is not None]
-    reporters = agent_ids(a for a, _ in reporting)
-    if isinstance(reporters, Undecided):
-        return reporters
-    return [(i, r.text) for i, (_, r) in zip(reporters, reporting, strict=True)]
-
-
-def check_items(state: State, t: Ticket, w: Path, needing: list[Agent],
-                editors: list[tuple[Agent, str]], past: bool = False) -> Step:
-    """The launch of an item checker on the latest reports of the editors
-    `needing`, which have reported since the last item checker was launched
-    on the change `t`, and on the accepted gate outputs the change writes,
-    with the latest report of each ticket analyst launched on `t` that has
-    reported, in launch order, so the checker leaves out what they already
-    decided. `past` gives that the change is past its cost budget."""
-    reports = latest_reports(needing)
-    if isinstance(reports, Undecided):
-        return reports
-    decisions = [(a.agent_id, r.text) for a in of_change(state, t.number)
-                 if a.role is Role.TICKET_ANALYST and a.agent_id is not None
-                 and (r := a.last_report) is not None]
-    return Launch(Role.ITEM_CHECKER, t.number, briefs.item_check(
-        t.number, w, reports, decisions, list(state.held.gate_outputs.get(w, ())), editors, state.me,
-        past))
 
 
 def step(state: State) -> Step | None:

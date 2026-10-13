@@ -41,7 +41,7 @@ from ticket_numbers import parsed_number  # noqa: E402
 from ticket_reads import read_ticket  # noqa: E402
 from help_parts import print_help  # noqa: E402
 
-from operations import briefs, changes, plan, relay, runs  # noqa: E402
+from operations import briefs, doc_review, plan, relay, runs  # noqa: E402
 from operations.decisions import WRITE_SECONDS  # noqa: E402
 from operations.monitor import ALERTS  # noqa: E402
 from operations.command_words import Action  # noqa: E402
@@ -276,16 +276,16 @@ def operator_step(me: str, deadline: float) -> tuple[Step, Path]:
 
 
 def review(editor: str) -> int:
-    """Print the step `changes.editor_review` gives the doc editor
+    """Print the step `doc_review.editor_review` gives the doc editor
     `editor`, as `--help review` gives it."""
     path = find(editor)
     parent = parent_id(path)
     kind = parent_type(path)
     if kind != Role.OPERATOR.agent_type:
-        print(changes.NO_OPERATOR.format(agent=editor))
+        print(doc_review.NO_OPERATOR.format(agent=editor))
         return 0
     state, _ = read_state(parent, change_filed(parent, editor))
-    step = changes.editor_review(state, editor)
+    step = doc_review.editor_review(state, editor)
     if isinstance(step, str):
         print(step)
         return 0

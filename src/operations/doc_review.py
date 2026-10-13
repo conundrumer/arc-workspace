@@ -19,7 +19,7 @@ the state that reply read. `steps.Undecided.reread` gives why the
 command reads the state again before it launches an analyst on that hold. A reply in any other form holds the review. The command launches no editor for a reviewer's findings: that
 reviewer sends them to the editors of its brief.
 
-A doc editor that `changes` launches on a change's `mctx` fragments after
+A doc editor that `change_fragments` launches on a change's `mctx` fragments after
 the reviewer replied neither launched that reviewer nor got a message from
 it, so its report after that reply is among those the review must
 follow."""
@@ -30,12 +30,14 @@ from typing import Literal
 
 from controlled_markdown import mctx
 from operations import briefs, messages
+from operations.change_agents import change_editors, editors_in, of_change, unstaffed
 from operations.directives import Decision, decided
 from operations.handled import sent
 from operations.reports import NO_FINDING, no_finding, shows_current
 from operations.roles import Role
 from operations.state import Agent, State, Ticket
 from operations.steps import Launch, Send, Step, Undecided, agent_ids
+from operations.tracker import worktree
 
 
 def latest_reviewer(agents: list[Agent]) -> Agent | None:
@@ -133,3 +135,45 @@ def review_launch(t: Ticket, w: Path, here: list[Agent], launcher: str) -> Step:
     if isinstance(editors, Undecided):
         return editors
     return Launch(Role.DOC_REVIEWER, t.number, briefs.doc_review(t.number, w, editors, launcher))
+
+
+NO_OPERATOR = mctx("{agent} is no doc editor that an operator of the session launched: give "
+                   "your final reply.")
+"""The line `editor_review` gives an agent that is no doc editor an operator
+launched."""
+
+
+def editor_review(state: State, editor: str) -> Step | str:
+    """The launch of the doc reviewer of the change of the doc editor
+    `editor`, launched by it. In its place it gives a line: where
+    `editor` is no doc editor an operator launched, `NO_OPERATOR`; where the change has a doc
+    reviewer, whoever launched it, the line that names the latest one, so
+    the editor launches no other; and where an editor role of the change
+    has no agent in its worktree or another editor there is pending, the
+    line that says the operator launches the review."""
+    mine = [a for a in state.transcripts.agents if a.agent_id == editor and a.role is Role.DOC_EDITOR]
+    if not mine:
+        return NO_OPERATOR.format(agent=editor)
+    t = state.tracker.tickets.get(mine[-1].subject)
+    if t is None:
+        return Undecided(mctx("the ticket of change {number} of doc editor {agent} is not "
+                              "read").format(number=mine[-1].subject, agent=editor))
+    editors = change_editors(t)
+    if not isinstance(editors, tuple):
+        return editors
+    w = worktree(t, state)
+    if w is None:
+        return Undecided(mctx("change {number} gives no worktree").format(number=t.number))
+    agents = of_change(state, t.number)
+    if (reviewer := latest_reviewer(agents)) is not None:
+        ids = agent_ids([reviewer])
+        if isinstance(ids, Undecided):
+            return ids
+        return mctx("Change {number} already has doc reviewer {agent}, so launch no other "
+                    "doc reviewer.").format(number=t.number, agent=ids[0])
+    here = editors_in(agents, w)
+    if (unstaffed(editors, here)
+            or any(a.pending for a in here if a.agent_id != editor)):
+        return mctx("Another editor of change {number} has not reported, so the operator "
+                    "launches the review: give your final reply.").format(number=t.number)
+    return review_launch(t, w, here, editor)

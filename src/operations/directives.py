@@ -7,11 +7,14 @@ word of its kind and a colon, past a list marker:
 - `Run: <path>`, a run script, as `runs` gives it;
 - `Drafts to review: <number>, ...`;
 - `Expedite: <number>, ...`;
+- `Admit: <number>, ...`, the tickets that pass a hold for every operator
+  of the session, and the changes a chain of links reaches from them;
 - `Merged: <number>, ...`, the changes the coordinator gives as merged;
 - `Merge: <number>`, a change under `tickets/blocked/` whose merge that line rules;
 - `Tickets are open.`, which ends no hold;
 - `Hold intake.`, after which no operator of the session settles an open
-  ticket or takes a change outside the work held (`held_intake`), and
+  ticket or takes a change outside the work held and the tickets an
+  `Admit:` or an `Expedite:` line gives (`held_intake`), and
   `Resume intake.`, which ends that hold;
 - the rulings, `Decision:` and `Override:` lines in the forms that
   `scripts/operate.py --help rulings` gives, which the command applies (`decided`,
@@ -57,6 +60,7 @@ class Directive(StrEnum):
     RUN = "Run"
     DRAFTS = "Drafts to review"
     EXPEDITE = "Expedite"
+    ADMIT = "Admit"
     MERGED = "Merged"
     MERGE = "Merge"
     OPEN = "Tickets are open"
@@ -137,10 +141,19 @@ def reply_decisions(a: Agent, r: Report) -> list[Line]:
 
 
 def numbers(state: State, kind: Directive) -> list[tuple[str, float]]:
-    """Each ticket number lines of `kind` give, with the time of the
-    message that gave it."""
-    return [(n, ln.message.time) for ln in lines(state) if ln.kind is kind
+    """Each ticket number lines of `kind` to the operator give, with the
+    time of the message that gave it."""
+    return numbers_in(lines(state), kind)
+
+
+def numbers_in(given: list[Line], kind: Directive) -> list[tuple[str, float]]:
+    return [(n, ln.message.time) for ln in given if ln.kind is kind
             for n in NUMBER.findall(ln.rest)]
+
+
+def admit_named(state: State) -> set[str]:
+    """The tickets an `Admit:` line to any operator of the session gives."""
+    return {n for n, _ in numbers_in(session_lines(state), Directive.ADMIT)}
 
 
 def decided(state: State, what: str, choices: dict[Decision, str]) -> Decision | Undecided:
@@ -214,9 +227,10 @@ def held_on(what: str, choices: dict[Decision, str]) -> Undecided:
 
 
 def named(state: State) -> set[str]:
-    """The tickets the coordinator gives the operator in a line."""
+    """The tickets the coordinator gives the operator in a line, and those
+    of `admit_named`."""
     return {n for k in (Directive.EXPEDITE, Directive.DRAFTS, Directive.MERGE, Directive.MERGED)
-            for n, _ in numbers(state, k)}
+            for n, _ in numbers(state, k)} | admit_named(state)
 
 
 @dataclass(frozen=True)

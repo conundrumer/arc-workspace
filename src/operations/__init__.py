@@ -42,7 +42,10 @@ reading of a brief's or a message's text back),
 `triage` (ticket analysts on open tickets, and the labeled items of their
 replies for the coordinator), `decisions` (ticket analysts on undecided
 steps), `drafts` (the review of draft changes), `changes` (a change from
-its take to its merge), `change_budget` (the cost budget of a change),
+its take to its merge), `change_agents` (the agents of a change),
+`item_check` (the launch of a change's item checker), `change_fragments`
+(the doc editor of a change's `mctx` fragments), `change_overrun` (a
+change past its cost budget), `change_budget` (the cost budget of a change),
 `doc_review` (the review of a change's documents), `merging` (the merge and
 what follows it), `alerts` (the alerts and the other agents' messages),
 `reports` (the fixed forms of the replies the command reads), `passes` (the

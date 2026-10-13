@@ -6,7 +6,8 @@ on: once a ticket stands in the list `file_ticket.py to-settle` prints,
 the command launches a ticket analyst with it, leaving out each ticket on a
 task whose solver pipeline has yet to launch its own ticket analyst, which
 `passes` gives that ticket. While a `Hold intake.` line holds intake
-(`directives.held_intake`), it launches none. A ticket goes to no second analyst while one
+(`directives.held_intake`), it launches one only with the tickets of
+`changes.through_hold`. A ticket goes to no second analyst while one
 runs on it, nor again once one returned, until the coordinator writes a line
 in its log after that analyst's launch, as where it records a decision of the
 user or the user's later words on it. A ticket analyst that runs on the
@@ -130,12 +131,11 @@ def later_lines(state: State) -> Step | None:
 
 
 def settle(state: State) -> Step | None:
-    if held_intake(state):
-        return None
     admitted = changes.admits(state)
+    passing = changes.through_hold(state) if held_intake(state) else None
     numbers = [n for n in state.computed.to_settle
                if not given(state, n) and not awaits_analyst(state, n)
-               and admitted(n)]
+               and admitted(n) and (passing is None or n in passing)]
     if not numbers:
         return None
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.TRIAGE, joined(numbers)),

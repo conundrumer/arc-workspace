@@ -46,7 +46,7 @@ from operations.relay import Relay, Run
 from operations.roles import Role
 from operations.directives import lines, named
 from operations.plan import taken_up, unknown_line
-from operations import change_budget, changes, monitor, passes, runs
+from operations import change_agents, change_budget, change_fragments, changes, monitor, passes, runs
 from operations.monitor import MonitorState, Watched
 from operations.state import (Agent, Budget, Call, Computed, GitRead, HeldRead, LateResume, Message,
                               Reader, Report, SessionsRead, Spend, Starts, State, Takes,
@@ -361,14 +361,14 @@ def read_held(holding: dict[str, Path], scratch: Path) -> HeldRead:
     trees = set(holding.values())
     return HeldRead(gate_outputs={w: gate_outputs(w) for w in trees},
                     fragments={w: fragments(w) for w in trees},
-                    seen={n: read_seen(changes.seen_dir(n, scratch)) for n in holding})
+                    seen={n: read_seen(change_fragments.seen_dir(n, scratch)) for n in holding})
 
 
 def change_spend(state: State, undecided: list[str]) -> dict[str, Spend]:
     """The spend of each change `state.me` holds whose spend reads."""
     out: dict[str, Spend] = {}
     for t in changes.held(state):
-        ids = [a.agent_id for a in changes.of_change(state, t.number) if a.agent_id is not None]
+        ids = [a.agent_id for a in change_agents.of_change(state, t.number) if a.agent_id is not None]
         if (s := spend(ids, undecided)) is not None:
             out[t.number] = s
     return out
@@ -404,7 +404,7 @@ def doc_budgets(state: State, tickets: Path, undecided: list[str]) -> dict[str, 
     """The budgets `Computed.doc_budgets` gives."""
     out: dict[str, Budget] = {}
     for t in changes.held(state):
-        editors = changes.lacking_doc_editor(t, worktree(t, state), state)
+        editors = change_fragments.lacking_doc_editor(t, worktree(t, state), state)
         if editors is None:
             continue
         b = budget(tickets, frozenset({*editors, Role.DOC_EDITOR}), state.now, undecided)
