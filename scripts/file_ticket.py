@@ -39,7 +39,7 @@ from ticket_settle import to_settle  # noqa: E402
 from idle_sessions import MAIN, name_main, read_sessions  # noqa: E402
 from ticket_reads import editors_field  # noqa: E402
 from ticket_watch import (CAP, CHANGES, COMMAND_FIELD, COMMAND_SECONDS, EXERCISED_FIELD,  # noqa: E402
-                          NO_RUN, SECOND_PRICE,
+                          SECOND_PRICE,
                           UNEXERCISED_DAYS, Case, add_evidence, budget, Thresholds,
                           case_loss, evict, fix_field, front, loss, route, sweep)
 from ticketing.text import SECTIONS, VALIDATION, heading  # noqa: E402
@@ -216,15 +216,17 @@ SWEEP_HELP = mctx("""
     """)
 
 SWEEP_RULES = mctx("""
-    - A request is exercised where its section holds no `{exercised_field}` line, or where the pattern of one of them matches, as Python's `re.search` does, a line of the transcript of a given run.
+    - The command checks a request only against the given runs that started at or after the last line of the request's log that moves it into `{deferred}`.
+        - Where no given run did, the request is not exercised, whether or not its section holds an `{exercised_field}` line.
+    - A request is exercised where its section holds no `{exercised_field}` line, or where the pattern of one of them matches, as Python's `re.search` does, a line of the transcript of one of those runs.
     - Where the request is exercised and its section holds a `{command_field}` line, the command runs that line's command from the main tree, for at most {seconds} seconds.
         - Where it exits 0, the request moves into `{closed}`, with the note `{validated} <command>`.
         - Where it exits with another code, the request moves into `{open}`, with the note `{failed}: <command> exited <code>`, and where it runs past the time, with the note `{failed}: <command> timed out`.
-    - Where the request is exercised and its section holds no `{command_field}` line, it moves into `{open}`, with the note `{exercised}: <agent id> ...`, with the runs that match, or each given run where the section holds no `{exercised_field}` line, and `{exercised}: {no_run}` where the call gives no run.
+    - Where the request is exercised and its section holds no `{command_field}` line, it moves into `{open}`, with the note `{exercised}: <agent id> ...`, with the runs that match, or each of those runs where the section holds no `{exercised_field}` line.
     - Where the request is not exercised, and the last line of its log that moves it into `{deferred}` is {days} days old or more, it moves into `{open}`, with the note `{unexercised}: no run matched since <time>`, with that line's time.
     - Where a request's section holds more than one `{command_field}` line or a pattern that does not compile, or where its log holds no line that moves it into `{deferred}`, it moves into `{open}`, with the note `{failed}: <reason>`.
     - Where running the command of a `{command_field}` line would take the sweep past the timeout of a foreground Bash call, the command does not start it, and the request stays in `{deferred}` until the next sweep, with an `undecided` line on stderr.
-    - The command refuses, and moves nothing, where a run it gives has no transcript.
+    - The command refuses, and moves nothing, where a run it gives has no transcript, or none with a timestamped entry.
     """)
 
 NONE_MOVED = mctx("no ticket moved")
@@ -613,7 +615,7 @@ def help_values() -> dict[str, str]:
                 many_ideas=MANY_IDEAS, empty=EMPTY, delay=Kind.DELAY, deferred=Status.DEFERRED, request=Kind.REQUEST,
                 validated=VALIDATED, failed=Verdict.FAILED, exercised=Verdict.EXERCISED,
                 unexercised=Verdict.UNEXERCISED, days=str(UNEXERCISED_DAYS),
-                seconds=str(COMMAND_SECONDS), exercised_field=EXERCISED_FIELD, no_run=NO_RUN,
+                seconds=str(COMMAND_SECONDS), exercised_field=EXERCISED_FIELD,
                 command_field=COMMAND_FIELD, none_moved=NONE_MOVED,
                 assigned=Status.ASSIGNED, open=Status.OPEN, closed=Status.CLOSED, wontfix=Resolution.WONTFIX, changes=str(CHANGES), cap=str(CAP),
                 hour_price=f"{SECOND_PRICE * 3600:g}",

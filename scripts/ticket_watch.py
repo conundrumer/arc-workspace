@@ -456,10 +456,6 @@ TIMED_OUT = mctx("{failed}: {command} timed out")
 
 UNREAD = mctx("{failed}: {reason}")
 
-NO_RUN = mctx("no run given")
-"""What the note of an `exercised` line gives in place of agent ids where
-the sweep was given no run."""
-
 SWEEP_MARGIN = 30
 """The seconds of a sweep's Bash call kept for its work other than the
 commands of checks."""
@@ -491,15 +487,30 @@ def check_of(path: Path, text: str) -> Check:
     return Check(patterns, commands[0] if commands else None)
 
 
-def run_lines(run: str) -> list[str]:
-    """The lines of the transcripts of the run `run`."""
-    return [line for p in chain(find(run)) for line in p.read_text().splitlines()]
+@dataclass(frozen=True)
+class GivenRun:
+    """A run given to the sweep: the time of its first timestamped entry,
+    and the lines of its transcripts."""
+    start: float
+    lines: list[str]
+
+
+def given_run(run: str) -> GivenRun:
+    """The run `run`, read once for the sweep. Refuses a run whose
+    transcripts hold no timestamped entry."""
+    path = find(run)
+    start = first_time(path)
+    if start is None:
+        raise Refused(mctx("{run} has no timestamped entry").format(run=run))
+    return GivenRun(start, [line for p in chain(path) for line in p.read_text().splitlines()])
 
 
 def exercisers(check: Check, runs: dict[str, list[str]]) -> list[str] | None:
     """The runs of `runs`, by agent id with the lines of their transcripts,
     that exercise `check`, each of them where it gives no pattern, or None
-    where it gives patterns and no run matches one."""
+    where `runs` is empty or no run matches a pattern it gives."""
+    if not runs:
+        return None
     if not check.patterns:
         return list(runs)
     by = [run for run, lines in runs.items()
@@ -544,22 +555,23 @@ class OutOfTime(Exception):
     Bash call."""
 
 
-def judged(path: Path, text: str, runs: dict[str, list[str]], now: float,
+def judged(path: Path, text: str, runs: dict[str, GivenRun], now: float,
            deadline: float) -> tuple[Status, str] | None:
     """The status the deferred request at `path` with text `text` moves
     into at a sweep at `now` of the runs `runs`, with the note of that
     line, or None where it stays. Raises `OutOfTime` where its command
     would run past `deadline`, a `time.monotonic` time."""
     check = check_of(path, text)
-    by = exercisers(check, runs)
+    since = deferred_since(path, text)
+    by = exercisers(check, {run: given.lines for run, given in runs.items()
+                            if given.start >= since})
     if by is not None and check.command is not None:
         if time.monotonic() + COMMAND_SECONDS > deadline:
             raise OutOfTime
         return run_command(check.command)
     if by is not None:
         return Status.OPEN, EXERCISED.format(exercised=Verdict.EXERCISED,
-                                             runs=" ".join(by) or NO_RUN)
-    since = deferred_since(path, text)
+                                             runs=" ".join(by))
     if now - since < UNEXERCISED_DAYS * 86400:
         return None
     return Status.OPEN, UNEXERCISED.format(unexercised=Verdict.UNEXERCISED, time=utc_stamp(since))
@@ -570,12 +582,12 @@ def sweep(tickets: Path, runs: list[str], undecided: list[str]) -> list[Path]:
     sweep --help-all` states, then routes the deferred groups as `route`
     does, and returns the path each moved ticket went to."""
     deadline = time.monotonic() + FOREGROUND_MS / 1000 - SWEEP_MARGIN
-    lines = {run: run_lines(run) for run in runs}
+    given = {run: given_run(run) for run in runs}
     now = time.time()
     moved: list[Path] = []
     for path, text in deferred(tickets, Kind.REQUEST):
         try:
-            move = judged(path, text, lines, now, deadline)
+            move = judged(path, text, given, now, deadline)
         except OutOfTime:
             undecided.append(mctx("{path}: the command of its `{field}` line did not run, with no time "
                                   "left in the sweep's Bash call, and the next sweep runs it").format(path=path, field=COMMAND_FIELD))
