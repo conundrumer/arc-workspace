@@ -9,7 +9,10 @@ word of its kind and a colon, past a list marker:
 - `Expedite: <number>, ...`;
 - `Merged: <number>, ...`, the changes the coordinator gives as merged;
 - `Merge: <number>`, a change under `tickets/blocked/` whose merge that line rules;
-- `Tickets are open.`;
+- `Tickets are open.`, which ends no hold;
+- `Hold intake.`, after which no operator of the session settles an open
+  ticket or takes a change outside the work held (`held_intake`), and
+  `Resume intake.`, which ends that hold;
 - the rulings, `Decision:` and `Override:` lines in the forms that
   `scripts/operate.py --help rulings` gives, which the command applies (`decided`,
   `passed_over`, `overrides`).
@@ -57,6 +60,8 @@ class Directive(StrEnum):
     MERGED = "Merged"
     MERGE = "Merge"
     OPEN = "Tickets are open"
+    HOLD = "Hold intake"
+    RESUME = "Resume intake"
     OVERRIDE = "Override"
     DECISION = "Decision"
 
@@ -165,6 +170,13 @@ def rulings(state: State) -> list[Line]:
     return sorted([ln for ln in session_lines(state)
                    if ln.kind in RULINGS and ruling_form(ln) is not None]
                   + step_decisions(state), key=lambda ln: ln.message.time)
+
+
+def held_intake(state: State) -> bool:
+    """The hold stands for every operator of the session, one that takes
+    over from an ended operator included."""
+    last = [ln.kind for ln in session_lines(state) if ln.kind in (Directive.HOLD, Directive.RESUME)]
+    return bool(last) and last[-1] is Directive.HOLD
 
 
 def ruling_form(ln: Line) -> re.Match[str] | None:

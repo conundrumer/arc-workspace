@@ -101,6 +101,8 @@
     - `Merged: <number>, ...`: the changes the coordinator merged itself.
     - `Merge: <number>`: a `change` under `tickets/blocked/` that waits on the user, which the user's ruling has the operator merge.
     - `Tickets are open.`
+    - `Hold intake.`: a hold, under which the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than the work an operator of the session took and each `change` that work waits on, which they carry to its end.
+    - `Resume intake.`: ends the hold.
     - `Override: <task id> <pass> <override>`: an override that the brief of the next launch of that pass on that task gives.
     - `Override: pass over <step key>`: passes over the solver pass whose step key it gives: that pass's task id and its pass, in the form `uv run python scripts/operate.py --help rulings` gives.
     - `Decision: <decision key> <choice>`: rules the held step that gives that decision key with one of the choices that step gives, as the whole rest of the line.

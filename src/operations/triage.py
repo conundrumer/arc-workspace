@@ -5,7 +5,8 @@ The operator takes each `request` and `bug` from its first ticket analyst
 on: once a ticket stands in the list `file_ticket.py to-settle` prints,
 the command launches a ticket analyst with it, leaving out each ticket on a
 task whose solver pipeline has yet to launch its own ticket analyst, which
-`passes` gives that ticket. A ticket goes to no second analyst while one
+`passes` gives that ticket. While a `Hold intake.` line holds intake
+(`directives.held_intake`), it launches none. A ticket goes to no second analyst while one
 runs on it, nor again once one returned, until the coordinator writes a line
 in its log after that analyst's launch, as where it records a decision of the
 user or the user's later words on it. A ticket analyst that runs on the
@@ -61,6 +62,7 @@ from operations.roles import Purpose, Role, analyst_subject, joined
 from operations.state import Agent, LogLine, State, Ticket
 from ticketing.vocabulary import SETTLED, Kind, Status
 from operations.constants import COORDINATOR
+from operations.directives import held_intake
 from operations.final_reply import carrier, nested
 from operations.handled import repeated, sent
 from operations.steps import DECISION, Bash, Launch, Send, Step, Undecided
@@ -128,6 +130,8 @@ def later_lines(state: State) -> Step | None:
 
 
 def settle(state: State) -> Step | None:
+    if held_intake(state):
+        return None
     admitted = changes.admits(state)
     numbers = [n for n in state.computed.to_settle
                if not given(state, n) and not awaits_analyst(state, n)

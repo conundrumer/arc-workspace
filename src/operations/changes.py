@@ -86,6 +86,11 @@ A next step of a change that is a message an operator already sent,
 whose recipient answered it, leaves the change where it was, and the
 command cannot place it.
 
+While a `Hold intake.` line holds intake (`directives.held_intake`), the
+operator takes, of the changes it would take with no hold, only those of
+`held_work`, so the work already held reaches its end, and each other
+change waits for a `Resume intake.` line.
+
 A change that waits for a ticket under `tickets/blocked/` whose last
 wait is on the user moves to `tickets/draft/` with a line whose note is
 `STALL_FINDING` on that ticket, which `drafts` reads as findings, once
@@ -109,7 +114,8 @@ from operations.change_budget import (OVERRUN_FINDING, TAKE_NOTE, TIME_NOTE, TIM
                                       by_role, file_overrun, left_draft, overrun_ticket,
                                       past_budget, taken)
 from operations.doc_review import doc_review, latest_reviewer, review_launch, with_ids
-from operations.directives import Decision, Directive, decided, held_on, named, NUMBER, numbers
+from operations.directives import (Decision, Directive, decided, held_intake, held_on, named,
+                                   NUMBER, numbers)
 from operations.reports import (OPEN_LABELS, Label, budget_passed, items_of,
                                 left_for_decision, shows_current)
 from operations.roles import EDITORS, Purpose, Role, analyst_of, analyst_subject
@@ -165,12 +171,13 @@ def expedited(state: State) -> set[str]:
 def admits(state: State) -> Callable[[str], bool]:
     """Whether the operator may take an open ticket: one the `takes` of
     the run scripts admit (`Computed.admitted`), or one of `expedited`,
-    or any where no script defines `takes`."""
+    or any where no script defines `takes`; under a hold, only such a
+    ticket that is also one of `held_work`."""
     admitted = state.computed.admitted()
-    if admitted is None:
-        return lambda _: True
-    passing = admitted | expedited(state)
-    return lambda n: n in passing
+    passing = None if admitted is None else admitted | expedited(state)
+    held = held_work(state) if held_intake(state) else None
+    return lambda n: ((passing is None or n in passing)
+                      and (held is None or n in held))
 
 
 def taken_before(t: Ticket) -> bool:
@@ -178,6 +185,13 @@ def taken_before(t: Ticket) -> bool:
     that taking it again is no new take: `release` moved it back to
     `tickets/open/` from a holder that is not live."""
     return any(ln.status is Status.ASSIGNED for ln in t.log)
+
+
+def held_work(state: State) -> set[str]:
+    """The work held, with each change it waits on."""
+    return reached(state, {n for n, t in state.tracker.tickets.items()
+                           if (t.kind is Kind.CHANGE and taken_before(t))
+                           or (t.kind is Kind.INTERFERENCE and t.status is not Status.CLOSED)})
 
 
 RELEASED = mctx("released: holder {holder} is not live")
