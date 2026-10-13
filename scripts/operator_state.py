@@ -289,14 +289,20 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     parents = {aid: parent_id(p) for aid, p in runs}
     operators = tuple(aid for aid, _ in runs)
     now = time.time()
+    main_path = find(session)
+    session_dir = main_path.parent / session
+    found = {h: find(h, recheck=True) for h in sorted(holders)}
+    open_paths = {h: p for h, p in found.items() if work_open(p, [])}
     state = State(
         me=me, now=now, session=session, started=started(session),
-        transcripts_dir=find(session).parent, main_tree=main,
+        transcripts_dir=main_path.parent, main_tree=main,
         scratch=scratch(session), operators=operators, parents=parents,
         open_operators=frozenset(aid for aid, p in runs[run_index(runs, me) + 1:]
                                  if work_open(p, [])),
         past_bound=past_bound(context_size(entries_back(my_path))),
-        open_holders=frozenset(h for h in holders if work_open(find(h, recheck=True), [])),
+        open_holders=frozenset(open_paths),
+        session_holders=frozenset(h for h, p in open_paths.items()
+                                  if p == main_path or p.is_relative_to(session_dir)),
         tracker=TrackerRead(tickets, unread, index),
         transcripts=TranscriptsRead(
             agents=tuple(sorted(agents, key=lambda a: a.launched)),

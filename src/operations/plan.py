@@ -209,10 +209,11 @@ def pipelines(state: State) -> Step | None:
 
 def elsewhere(state: State) -> list[str]:
     """The tickets of the operators' scope that another live holder
-    (`live_holder`) holds."""
+    (`live_holder`) of the session (`State.session_holders`) holds."""
     return [n for n in sorted(changes.scope(state))
             if (t := state.tracker.tickets.get(n)) is not None and t.status is Status.ASSIGNED
-            and t.holder not in (None, state.me) and live_holder(state, t.holder)]
+            and t.holder not in (None, state.me) and t.holder in state.session_holders
+            and live_holder(state, t.holder)]
 
 
 EARLY: tuple[Callable[[State], Step | None], ...] = (

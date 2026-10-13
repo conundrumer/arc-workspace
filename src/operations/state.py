@@ -449,7 +449,9 @@ class State:
     ones a procedure asks after. `transcripts` is the read of the
     operators' transcripts. `open_holders` gives
     the holders of tickets under `tickets/assigned/` whose work is open, as
-    `profile_runs.py --open` gives it. `tracker` is the read of the
+    `profile_runs.py --open` gives it, and `session_holders` those of
+    them whose run is of the session: its main transcript, or a run under
+    that transcript's session directory. `tracker` is the read of the
     ticket tracker, `held` is the read of the changes `me` holds, and `git` the read of
     git and the main tree. `received` holds the messages that reached `me`
     or an operator it takes up the lines of (`taken_up`, as
@@ -473,6 +475,7 @@ class State:
     open_operators: frozenset[str]
     past_bound: bool
     open_holders: frozenset[str]
+    session_holders: frozenset[str]
     tracker: TrackerRead
     transcripts: TranscriptsRead
     git: GitRead
