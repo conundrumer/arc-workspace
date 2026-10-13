@@ -9,12 +9,13 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from ticket_files import FIELD, ticket_files, ticket_name, ticket_path, ticket_status
-from ticket_form import HEADING, LOG, ticket_kind
+from ticket_form import HEADING, LOG, section_head, ticket_kind
 from ticket_numbers import TICKET_NUMBER, TicketNumber, matched_number
 from ticket_vocabulary import ticked
 from operations.roles import AGENT_ID as AGENT_ID_FORM
+from ticketing.text import VALIDATION
 from ticketing.times import utc_stamp
-from ticketing.vocabulary import Kind, Note, Resolution, Status, Wait, note_opening
+from ticketing.vocabulary import Kind, Note, Resolution, Status, Verdict, Wait, note_opening
 from transcripts import Refused
 
 AGENT_ID = re.compile(AGENT_ID_FORM)
@@ -43,6 +44,11 @@ UNBLOCKED_BY = "{change} {number} closed {resolution}"
 """The note of the line that moves into `open` a ticket that waits on a
 change closed with another resolution, with that change's number and
 resolution."""
+
+VALIDATED = f"{Resolution.FIXED}: {Verdict.VALIDATED}:"
+"""The opening of the note of a line into `closed` that states that the
+check of a `request`'s `Validation` section held."""
+
 
 class Moved(Refused):
     """A refusal of a call whose ticket another call moved first."""
@@ -248,8 +254,11 @@ def log_moves(tickets: Path, number: TicketNumber, status: Status, agent: str, s
               agent_id: str | None, note: str | None) -> Moves:
     """Writes the log line as `write_log` does, refused as it refuses, and
     returns the ticket's path, followed, where the line moves a `change`
-    into `closed`, by what `unblock` returns for it."""
+    into `closed`, by what `unblock` returns for it. A line that `defers`
+    moves the ticket into `deferred` in place of `closed`."""
     path = ticket_path(tickets, number)
+    if defers(path, status, source, note):
+        status = Status.DEFERRED
     closes = status is Status.CLOSED and source is not Status.CLOSED and is_change(path)
     moves = Moves([write_log(tickets, path, number, status, agent, source, agent_id, note)])
     if not closes:
@@ -259,6 +268,18 @@ def log_moves(tickets: Path, number: TicketNumber, status: Status, agent: str, s
     assert note is not None and resolution is not None
     moves.add(unblock(tickets, number, agent, agent_id, resolution, note))
     return moves
+
+
+def defers(path: Path, status: Status, source: Status, note: str | None) -> bool:
+    """Whether a line into `status` from `source` with `note` on the ticket
+    at `path` moves it into `deferred` in place of `closed`, as
+    `file_ticket.LOG_RULES` gives."""
+    if status is not Status.CLOSED or source is Status.CLOSED:
+        return False
+    if resolution_of(note) is not Resolution.FIXED or (note or "").startswith(VALIDATED):
+        return False
+    text = read_ticket(path)
+    return ticket_kind(text) is Kind.REQUEST and section_head(text, VALIDATION) is not None
 
 
 def unblock(tickets: Path, change: TicketNumber, agent: str, agent_id: str | None,

@@ -1,12 +1,19 @@
-"""The routing of a `delay` ticket that gives a case: the priced loss of a
-case, the threshold of an editor, the groups of the watching tickets, and
-the moves of their tickets into and out of `tickets/watching/`. `file_ticket.py
-case --help-all` states the rules. It also gives the spend of a change by
-role, recorded under `tickets/spends/` once its runs have stopped, and the budget of a change taken over the changes like it."""
+"""The tickets under `tickets/deferred/` and the conditions they wait on.
+The routing of a `delay` ticket that gives a case: the priced loss of a
+case, the threshold of an editor, the groups of the deferred `delay`
+tickets, and the moves of their tickets into and out of
+`tickets/deferred/`, whose rules `file_ticket.py case --help-all` states.
+The sweep of the deferred `request` tickets, whose rules `file_ticket.py
+sweep --help-all` states. It also gives the spend of a change by role,
+recorded under `tickets/spends/` once its runs have stopped, and the
+budget of a change taken over the changes like it."""
 
 import json
+import os
 import re
+import signal
 import statistics
+import subprocess
 import time
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass
@@ -15,17 +22,20 @@ from pathlib import Path
 from agent_launches import runs_under
 from agent_turns import first_time, has_ended, last_time
 from controlled_markdown import mctx
+from engine import checkout
 from engine.memo import write_whole
+from operations.constants import FOREGROUND_MS
 from operations.roles import Role
 from operations.state import Budget, Spend
 from run_reads import agent_type, run_entries
 from ticket_files import ticket_files, ticket_name
-from ticket_form import FRONT, check_fix, front_fields, ticket_kind, title
-from ticket_log import log_lines, log_moves, read_ticket, resolution_of
+from ticket_form import FRONT, check_fix, front_fields, section, ticket_kind, title
+from ticket_log import VALIDATED, Moved, log_lines, log_moves, read_ticket, resolution_of
 from ticket_numbers import TicketNumber
 from ticket_reads import editors_field
-from ticketing.times import TIME_FORM, stamp_time
-from ticketing.vocabulary import Kind, Resolution, Status
+from ticketing.text import VALIDATION
+from ticketing.times import TIME_FORM, stamp_time, utc_stamp
+from ticketing.vocabulary import Kind, Resolution, Status, Verdict
 from token_prices import run_cost, span_cost
 from transcripts import Refused, chain, entries_back, find
 
@@ -34,7 +44,7 @@ CHANGES = 10
 median loss of."""
 
 CAP = 100
-"""The most tickets `tickets/watching/` holds."""
+"""The most `delay` tickets `tickets/deferred/` holds."""
 
 SECOND_PRICE = 5 / 1800
 """The dollars a second of wall time is worth: the user's preference to
@@ -199,8 +209,13 @@ def change_spend(path: Path, undecided: list[str]) -> Spend | None:
     return s
 
 
+def line_time(line: re.Match[str]) -> float:
+    """The time of a match of `ticket_log.LOG_LINE`."""
+    return stamp_time(line.group().split(" ", 1)[0])
+
+
 def closed_at(path: Path) -> float:
-    return stamp_time(log_lines(read_ticket(path))[-1].group().split(" ", 1)[0])
+    return line_time(log_lines(read_ticket(path))[-1])
 
 
 def closed_changes(tickets: Path) -> Iterator[tuple[Path, str]]:
@@ -281,7 +296,7 @@ def cases(text: str) -> list[tuple[float, float, float]]:
     for m in log_lines(text):
         case = CASE_NOTE.fullmatch(m["note"] or "")
         if case:
-            out.append((stamp_time(m.group().split(" ", 1)[0]), float(case["dollars"]),
+            out.append((line_time(m), float(case["dollars"]),
                         float(case["seconds"])))
     return out
 
@@ -293,7 +308,7 @@ a file suffix."""
 
 @dataclass(frozen=True)
 class Group:
-    """The key the watching tickets that one change of one file by one
+    """The key the deferred `delay` tickets that one change of one file by one
     editor would fix share: their `fix`, with the first repository path of
     their title's target, or the whole target where it gives none."""
     fix: Role
@@ -301,7 +316,7 @@ class Group:
 
 
 def group_of(path: Path, text: str) -> Group:
-    """The group of the watching ticket at `path` with text `text`."""
+    """The group of the deferred `delay` ticket at `path` with text `text`."""
     fix = fix_field(text)
     if fix is None:
         raise Refused(mctx("{path} gives no `fix`").format(path=path))
@@ -316,7 +331,7 @@ def group_of(path: Path, text: str) -> Group:
 
 @dataclass(frozen=True)
 class Watched:
-    """The tickets of a group under `tickets/watching/`, with the time,
+    """The tickets of a group under `tickets/deferred/`, with the time,
     the dollars and the seconds of each of their cases."""
     group: Group
     numbers: list[TicketNumber]
@@ -333,12 +348,18 @@ class Watched:
             numbers=", ".join(str(n) for n in self.numbers))
 
 
+def deferred(tickets: Path, kind: Kind) -> list[tuple[Path, str]]:
+    """The path and text of each ticket of kind `kind` under
+    `tickets/deferred/`, in the tracker's order."""
+    texts = ((path, read_ticket(path)) for path in ticket_files(tickets, Status.DEFERRED))
+    return [(path, text) for path, text in texts if ticket_kind(text) is kind]
+
+
 def watched(tickets: Path) -> list[Watched]:
-    """The groups of the tickets under `tickets/watching/`, ordered by
-    their `fix` and their target."""
+    """The groups of the `delay` tickets under `tickets/deferred/`, ordered
+    by their `fix` and their target."""
     by: dict[Group, Watched] = {}
-    for path in ticket_files(tickets, Status.WATCHING):
-        text = read_ticket(path)
+    for path, text in deferred(tickets, Kind.DELAY):
         group = group_of(path, text)
         w = by.setdefault(group, Watched(group, [], []))
         w.numbers.append(ticket_name(path).number)
@@ -363,7 +384,7 @@ class Thresholds:
 
 def route(tickets: Path, agent: str, limits: Thresholds,
           own: TicketNumber | None) -> dict[TicketNumber, Path]:
-    """Moves to `open` the tickets of the watching groups as `file_ticket.py
+    """Moves to `open` the tickets of the deferred groups as `file_ticket.py
     case --help-all` states, with `own` the ticket the call appends to, and
     returns the path each moved ticket went to."""
     moved: dict[TicketNumber, Path] = {}
@@ -381,30 +402,196 @@ def route(tickets: Path, agent: str, limits: Thresholds,
                         "{limit:.4f} dollars of `{fix}`").format(
                             group=w.named, total=total, limit=limit, fix=w.group.fix)
         for number in w.numbers:
-            moved[number] = log_moves(tickets, number, Status.OPEN, agent, Status.WATCHING,
+            moved[number] = log_moves(tickets, number, Status.OPEN, agent, Status.DEFERRED,
                                       None, note).moved[0]
     return moved
 
 
 def evict(tickets: Path, agent: str) -> None:
-    """Closes `wontfix` each ticket of the watching group with the lowest
-    loss rate, where `tickets/watching/` holds `CAP` tickets."""
-    if len(ticket_files(tickets, Status.WATCHING)) < CAP:
+    """Closes `wontfix` each ticket of the deferred group with the lowest
+    loss rate, where `tickets/deferred/` holds `CAP` `delay` tickets."""
+    if len(deferred(tickets, Kind.DELAY)) < CAP:
         return
     now = time.time()
 
     def rate(w: Watched) -> float:
         if not w.found:
-            raise Refused(mctx("{group} stands under `watching` with no case").format(
-                group=w.named))
+            raise Refused(mctx("{group} stands under `{deferred}` with no case").format(
+                group=w.named, deferred=Status.DEFERRED))
         return w.loss / ((now - min(t for t, _, _ in w.found)) / 86400)
 
     lowest = min(watched(tickets), key=rate)
-    note = mctx("{wontfix}: {group} has the lowest loss rate under `watching` at its cap of "
+    note = mctx("{wontfix}: {group} has the lowest loss rate under `{deferred}` at its cap of "
                 "{cap}, its cases summing {total:.4f} dollars of loss").format(
-                    wontfix=Resolution.WONTFIX, cap=CAP, group=lowest.named, total=lowest.loss)
+                    wontfix=Resolution.WONTFIX, deferred=Status.DEFERRED, cap=CAP, group=lowest.named, total=lowest.loss)
     for number in lowest.numbers:
-        log_moves(tickets, number, Status.CLOSED, agent, Status.WATCHING, None, note)
+        log_moves(tickets, number, Status.CLOSED, agent, Status.DEFERRED, None, note)
+
+
+UNEXERCISED_DAYS = 7
+"""The days since its last move into `deferred` from which a `request`
+that no run exercised moves into `open`."""
+
+COMMAND_SECONDS = 60
+"""The seconds the sweep lets the command of a check run."""
+
+SWEEP = "sweep"
+"""The `<agent>` of the lines the sweep writes."""
+
+EXERCISED_FIELD = "Exercised:"
+
+COMMAND_FIELD = "Command:"
+
+EXERCISED_LINE = re.compile(rf"^- {EXERCISED_FIELD} (?P<pattern>.+)$", re.MULTILINE)
+
+COMMAND_LINE = re.compile(rf"^- {COMMAND_FIELD} `(?P<command>.+)`$", re.MULTILINE)
+
+EXERCISED = mctx("{exercised}: {runs}")
+
+UNEXERCISED = mctx("{unexercised}: no run matched since {time}")
+
+EXITED = mctx("{failed}: {command} exited {code}")
+
+TIMED_OUT = mctx("{failed}: {command} timed out")
+
+UNREAD = mctx("{failed}: {reason}")
+
+NO_RUN = mctx("no run given")
+"""What the note of an `exercised` line gives in place of agent ids where
+the sweep was given no run."""
+
+SWEEP_MARGIN = 30
+"""The seconds of a sweep's Bash call kept for its work other than the
+commands of checks."""
+
+
+@dataclass(frozen=True)
+class Check:
+    """The check a `request`'s `Validation` section gives: the patterns of
+    its `Exercised:` lines, and the command of its `Command:` line, None
+    where it gives none."""
+    patterns: tuple[re.Pattern[str], ...]
+    command: str | None
+
+
+def check_of(path: Path, text: str) -> Check:
+    """The check of the request at `path` with text `text`. Refuses a
+    section with more than one `Command:` line, or with a pattern that
+    does not compile."""
+    body = section(text, VALIDATION)
+    commands = [m["command"] for m in COMMAND_LINE.finditer(body)]
+    if len(commands) > 1:
+        raise Refused(mctx("{path} gives more than one `{field}` line").format(
+            path=path, field=COMMAND_FIELD))
+    try:
+        patterns = tuple(re.compile(m["pattern"]) for m in EXERCISED_LINE.finditer(body))
+    except re.error as e:
+        raise Refused(mctx("{path} gives an `{field}` pattern that does not compile: "
+                           "{error}").format(path=path, field=EXERCISED_FIELD, error=e))
+    return Check(patterns, commands[0] if commands else None)
+
+
+def run_lines(run: str) -> list[str]:
+    """The lines of the transcripts of the run `run`."""
+    return [line for p in chain(find(run)) for line in p.read_text().splitlines()]
+
+
+def exercisers(check: Check, runs: dict[str, list[str]]) -> list[str] | None:
+    """The runs of `runs`, by agent id with the lines of their transcripts,
+    that exercise `check`, each of them where it gives no pattern, or None
+    where it gives patterns and no run matches one."""
+    if not check.patterns:
+        return list(runs)
+    by = [run for run, lines in runs.items()
+          if any(p.search(line) for p in check.patterns for line in lines)]
+    return by or None
+
+
+def deferred_since(path: Path, text: str) -> float:
+    """The time of the last line of the log of the ticket at `path` with
+    text `text` that moves it into `deferred`."""
+    lines = log_lines(text)
+    moves = [m for i, m in enumerate(lines) if m["status"] == Status.DEFERRED
+             and (i == 0 or lines[i - 1]["status"] != Status.DEFERRED)]
+    if not moves:
+        raise Refused(mctx("{path} has no log line that moves it into `{deferred}`").format(
+            path=path, deferred=Status.DEFERRED))
+    return line_time(moves[-1])
+
+
+def run_command(command: str) -> tuple[Status, str]:
+    """Runs the command of a check from the main tree, and gives the status
+    its request moves into, with the note of that line. The command runs in
+    a session of its own, so that its whole process group ends at the
+    timeout."""
+    with subprocess.Popen(command, shell=True, cwd=checkout.main_worktree(checkout.ROOT),
+                          env=checkout.tree_env(), stdin=subprocess.DEVNULL,
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                          start_new_session=True) as process:
+        try:
+            code = process.wait(COMMAND_SECONDS)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+            return Status.OPEN, TIMED_OUT.format(failed=Verdict.FAILED, command=command)
+    if code == 0:
+        return Status.CLOSED, f"{VALIDATED} {command}"
+    return Status.OPEN, EXITED.format(failed=Verdict.FAILED, command=command, code=code)
+
+
+class OutOfTime(Exception):
+    """The sweep has no time left to run the command of a check within its
+    Bash call."""
+
+
+def judged(path: Path, text: str, runs: dict[str, list[str]], now: float,
+           deadline: float) -> tuple[Status, str] | None:
+    """The status the deferred request at `path` with text `text` moves
+    into at a sweep at `now` of the runs `runs`, with the note of that
+    line, or None where it stays. Raises `OutOfTime` where its command
+    would run past `deadline`, a `time.monotonic` time."""
+    check = check_of(path, text)
+    by = exercisers(check, runs)
+    if by is not None and check.command is not None:
+        if time.monotonic() + COMMAND_SECONDS > deadline:
+            raise OutOfTime
+        return run_command(check.command)
+    if by is not None:
+        return Status.OPEN, EXERCISED.format(exercised=Verdict.EXERCISED,
+                                             runs=" ".join(by) or NO_RUN)
+    since = deferred_since(path, text)
+    if now - since < UNEXERCISED_DAYS * 86400:
+        return None
+    return Status.OPEN, UNEXERCISED.format(unexercised=Verdict.UNEXERCISED, time=utc_stamp(since))
+
+
+def sweep(tickets: Path, runs: list[str], undecided: list[str]) -> list[Path]:
+    """Moves each `request` under `tickets/deferred/` as `file_ticket.py
+    sweep --help-all` states, then routes the deferred groups as `route`
+    does, and returns the path each moved ticket went to."""
+    deadline = time.monotonic() + FOREGROUND_MS / 1000 - SWEEP_MARGIN
+    lines = {run: run_lines(run) for run in runs}
+    now = time.time()
+    moved: list[Path] = []
+    for path, text in deferred(tickets, Kind.REQUEST):
+        try:
+            move = judged(path, text, lines, now, deadline)
+        except OutOfTime:
+            undecided.append(mctx("{path}: the command of its `{field}` line did not run, with no time "
+                                  "left in the sweep's Bash call, and the next sweep runs it").format(path=path, field=COMMAND_FIELD))
+            continue
+        except Moved:
+            continue
+        except Refused as e:
+            move = Status.OPEN, UNREAD.format(failed=Verdict.FAILED, reason=e)
+        if move is None:
+            continue
+        try:
+            moved += log_moves(tickets, ticket_name(path).number, move[0], SWEEP,
+                               Status.DEFERRED, None, move[1]).moved
+        except Moved:
+            continue
+    return moved + list(route(tickets, SWEEP, Thresholds(tickets, undecided), None).values())
 
 
 def add_evidence(text: str, evidence: str) -> str:

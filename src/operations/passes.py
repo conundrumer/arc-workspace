@@ -121,7 +121,7 @@ def review_tickets(state: State, task: str, review: Agent) -> list[str]:
     return [t.number for t in state.tracker.tickets.values() if t.domain is Domain.TASK
             and t.subject == task and t.filer == Role.TRANSCRIPT_REVIEW.value
             and t.filed >= review.launched and (bound is None or t.filed < bound)
-            and t.status is not Status.WATCHING]
+            and t.status is not Status.DEFERRED]
 
 
 def settles(analyst: Agent, review: str) -> bool:

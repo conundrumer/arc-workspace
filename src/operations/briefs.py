@@ -4,7 +4,6 @@ brief gives the agent id of the operator that launches the agent, which
 the agent replies to."""
 
 import shlex
-from dataclasses import dataclass
 from pathlib import Path
 
 from controlled_markdown import mctx
@@ -12,9 +11,7 @@ from operations.reports import LEFT_FOR_DECISION, WORKTREE
 from operations.roles import Role, description
 from operations.state import Agent, Place
 from operations.tracker import AGENT, FILE_TICKET
-from ticketing.text import VALIDATION
 from ticketing.times import utc_stamp
-from ticketing.vocabulary import Domain, Status, Verdict
 
 TICKET_PATH = shlex.join([*FILE_TICKET, "path"]) + " {number}"
 WORK_IN = mctx("Work in the worktree {worktree}.")
@@ -348,16 +345,16 @@ def held_step(what: str, operator: str, rulable: bool) -> str:
 # "read no ticket's body to match": the user's words, "if there's a brief
 # description then they can browse over those instead of the contents"
 # (ticket 6-440, 21:44:14Z).
-WATCHING_TITLES = mctx("list the titles under `tickets/watching/` in one `grep -m1 -H '^# '` call, "
+DEFERRED_TITLES = mctx("list the titles under `tickets/deferred/` in one `grep -m1 -H '^# '` call, "
                        "and read no ticket's body to match")
 
 TRANSCRIPT_REVIEW = mctx("""
     - Review the transcript of run {run}, which `python3 ~/.claude/skills/retrieve/transcripts.py --help` reads.
     - File each ticket by the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), {filing}.
     - Find each place where the run explored to find what a docstring or a document line could have led it to.
-    - At the first such place, {watching_titles}.
+    - At the first such place, {deferred_titles}.
     - At each such place:
-        - Where a title of that listing, or of a ticket you filed after it, states the same place and that ticket stands under `tickets/watching/`, append the place as a case to that ticket, by `uv run python scripts/file_ticket.py case --help`.
+        - Where a title of that listing, or of a ticket you filed after it, states the same place and that ticket is a `delay` under `tickets/deferred/`, append the place as a case to that ticket, by `uv run python scripts/file_ticket.py case --help`.
         - Otherwise file a ticket of kind `delay` on the place, with its case and its `fix`, by `uv run python scripts/file_ticket.py case --help`.
     """)
 
@@ -370,7 +367,7 @@ def transcript_review(run: str, domain: str, subject: str, solver_pass: bool) ->
     filing = FILE_AS.format(
         domain_subject=mctx("`{domain}` and `{subject}`").format(domain=domain, subject=subject),
         agent=CODE_WORD.format(word=Role.TRANSCRIPT_REVIEW))
-    text = TRANSCRIPT_REVIEW.format(run=run, filing=filing, watching_titles=WATCHING_TITLES)
+    text = TRANSCRIPT_REVIEW.format(run=run, filing=filing, deferred_titles=DEFERRED_TITLES)
     return f"{text}\n{PASS_REVIEW}" if solver_pass else text
 
 
@@ -405,10 +402,10 @@ def standing_doc_review(reader: str, tag: str, commit: str, operator: str) -> st
 # cause a flood of won't fix" (ticket 10-212).
 BATCH_PROFILE = mctx("""
     - Run `uv run python scripts/profile_runs.py --each <id> ...` once, with the agent ids of all these runs as `<id> ...`: {runs}.
-    - Before you give your first case, {watching_titles}.
+    - Before you give your first case, {deferred_titles}.
     - For each cause across these runs that you judge worth fixing, by the test that a change to a tool or a document could cut the time or the token cost it made, take each run the cause cost time or tokens in, in turn:
-        - Where a ticket outside `tickets/closed/` and `tickets/watching/` records the cause, file none.
-        - Otherwise give a case on that run, by `uv run python scripts/file_ticket.py case --help`: append it to the ticket under `tickets/watching/` whose title in that listing states the cause, or that you filed on it, and where the cause has none, file a ticket of kind `delay` on the cause with it, {filing}, and the `fix` the cause needs.
+        - Where a ticket outside `tickets/closed/` and `tickets/deferred/` records the cause, file none.
+        - Otherwise give a case on that run, by `uv run python scripts/file_ticket.py case --help`: append it to the `delay` ticket under `tickets/deferred/` whose title in that listing states the cause, or that you filed on it, and where the cause has none, file a ticket of kind `delay` on the cause with it, {filing}, and the `fix` the cause needs.
     {review}
     - Reply only once each transcript review you launched has replied, with the tickets you filed, the tickets you appended cases to, and the reviews you launched.
     """)
@@ -432,12 +429,12 @@ def batch_profile(runs: list[str], reviewable: list[str], commit: str) -> str:
                             agent=OPERATOR)
     if not reviewable:
         return BATCH_PROFILE.format(runs=", ".join(runs), filing=filing, review=NO_REVIEW,
-                                    watching_titles=WATCHING_TITLES)
+                                    deferred_titles=DEFERRED_TITLES)
     review = REVIEW.format(reviewable=", ".join(reviewable),
                            review_brief=mctx("the block below"), run=RUN,
                            model=Role.TRANSCRIPT_REVIEW.model)
     text = BATCH_PROFILE.format(runs=", ".join(runs), filing=filing, review=review,
-                                watching_titles=WATCHING_TITLES)
+                                deferred_titles=DEFERRED_TITLES)
     brief = transcript_review(RUN, "agent", RUN, False)
     return f"{text}\n\n```\n{brief}\n```"
 
@@ -461,62 +458,6 @@ BATCH_GATE = mctx("""
 
 def batch_gate(scratch: Path) -> str:
     return BATCH_GATE.format(scratch=scratch, filing=AT_MASTER)
-
-
-VALIDATION_REVIEW = mctx("""
-    - Judge the check of each request below against these runs: {runs}.
-        - `{show} <number> {section_name}` prints a request's check.
-        - `python3 ~/.claude/skills/retrieve/transcripts.py --help` lists the subcommands that read a run's transcript.
-    - The requests:
-        {checks}
-    - Where a check gives a command, run it once, and judge its output in place of the runs.
-    - Write each line on a request as `{log} <number> {closed} {agent} --from {closed} "<note>"`.
-    - File each ticket by the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), {filing}.
-    - Where the command's output or a run shows that the check holds, write a line whose note opens with `{validated}`, then gives that run's agent id or the command.
-    - Where it shows that the check fails, write a line whose note opens with `{failed}`, then gives that run's agent id or the command, then file a `bug` ticket with the request's number and that run's agent id or the command's output in its `Evidence`.
-    - Where the check gives no command, none of those runs exercises what it checks, and the request closed {days} days ago or more, write a line whose note opens with `{unexercised}`, then file a `question` ticket that gives the request's number.
-    - Otherwise write nothing on the request.
-    - Reply with the lines you wrote and the tickets you filed.
-    """)
-
-CHECK = mctx("- `{number}`: change `{change}`, closed at {time}.")
-
-CHECK_NO_CHANGE = mctx("- `{number}`: no change, closed at {time}.")
-
-UNEXERCISED_DAYS = 7
-"""The age of a close past which a check no run exercised gets its
-`unexercised` line."""
-
-
-@dataclass(frozen=True)
-class Check:
-    """A pending check: its request's number, the change that closed it,
-    None where the note of its close gives none, and the time of that
-    close."""
-    request: str
-    change: str | None
-    closed: float
-
-
-def validation_review(runs: list[str], checks: list[Check]) -> str:
-    return VALIDATION_REVIEW.format(
-        runs=", ".join(runs), section_name=VALIDATION,
-        show=shlex.join([*FILE_TICKET, "show"]),
-        log=shlex.join([*FILE_TICKET, "log"]), closed=Status.CLOSED, agent=Role.VALIDATION_REVIEW,
-        validated=Verdict.VALIDATED, failed=Verdict.FAILED, unexercised=Verdict.UNEXERCISED,
-        filing=FILE_AS.format(
-            domain_subject=mctx("`{change}` and the change's number, or `{ticket}` and the "
-                                "request's number where its close gives no change,").format(
-                change=Domain.CHANGE, ticket=Domain.TICKET),
-            agent=CODE_WORD.format(word=Role.VALIDATION_REVIEW)),
-        days=UNEXERCISED_DAYS,
-        checks="\n    ".join(check_line(c) for c in checks))
-
-
-def check_line(c: Check) -> str:
-    if c.change is None:
-        return CHECK_NO_CHANGE.format(number=c.request, time=utc_stamp(c.closed))
-    return CHECK.format(number=c.request, change=c.change, time=utc_stamp(c.closed))
 
 
 PROCESS_ASSESSMENT = mctx("Make the process assessment of the agents' processes.")

@@ -16,7 +16,6 @@ class Filer(StrEnum):
     CREATE = Role.CREATE.value
     REFINE = Role.REFINE.value
     TRANSCRIPT_REVIEW = Role.TRANSCRIPT_REVIEW.value
-    VALIDATION_REVIEW = Role.VALIDATION_REVIEW.value
     HANDBOOK = "handbook"
     HANDBOOK_EXPANDED = Role.HANDBOOK_EXPANDED.value
     CODE_EDITOR = Role.CODE_EDITOR.value
@@ -34,7 +33,6 @@ FILER_KINDS: dict[Filer, frozenset[Kind]] = {
     Filer.CREATE: PASS_KINDS,
     Filer.REFINE: PASS_KINDS,
     Filer.TRANSCRIPT_REVIEW: PASS_KINDS,
-    Filer.VALIDATION_REVIEW: frozenset({Kind.BUG, Kind.QUESTION}),
     Filer.HANDBOOK: frozenset({Kind.BUG, Kind.DELAY}),
     Filer.HANDBOOK_EXPANDED: frozenset({Kind.BUG, Kind.DELAY}),
     Filer.CODE_EDITOR: EDITOR_KINDS,

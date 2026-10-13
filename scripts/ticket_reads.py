@@ -8,7 +8,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from ticket_files import ticket_files, ticket_name
-from ticket_form import DEFAULT_PRIORITY, FRONT, front_fields, list_items, section_head, title
+from ticket_form import DEFAULT_PRIORITY, FRONT, front_fields, list_items, title
 from ticket_log import (CLOSED_BY_LINE, WAIT, Wait, holder, log_lines, resolution_of, waited,
                         waited_change)
 from ticket_numbers import matched_number
@@ -16,7 +16,6 @@ from transcripts import Refused
 
 from operations.roles import Role, editors_of
 from operations.state import LogLine, Ticket, Unread
-from ticketing.text import VALIDATION
 from ticketing.times import stamp_time
 from ticketing.vocabulary import Domain, Kind, Status
 
@@ -66,8 +65,7 @@ def read_ticket(path: Path) -> Ticket:
         depends_on=tuple(list_items(fields["depends-on"])) if "depends-on" in fields else (),
         priority=int(fields["priority"]) if "priority" in fields else DEFAULT_PRIORITY,
         editors=editors_field(fields),
-        after_merge=fields.get("after-merge"), mechanical="mechanical" in fields, log=lines, holder=holder(text), path=path,
-        validation=section_head(text, VALIDATION) is not None)
+        after_merge=fields.get("after-merge"), mechanical="mechanical" in fields, log=lines, holder=holder(text), path=path)
 
 
 def read_tickets(tickets: Path) -> tuple[dict[str, Ticket], tuple[Unread, ...]]:

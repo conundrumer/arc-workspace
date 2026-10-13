@@ -14,11 +14,13 @@ class Status(StrEnum):
     ASSIGNED = "assigned"
     BLOCKED = "blocked"
     CLOSED = "closed"
-    WATCHING = "watching"
-    """A `delay` ticket whose group's summed loss is below the threshold of its fix."""
+    DEFERRED = "deferred"
+    """A ticket that waits on a condition `file_ticket.py` checks: a `delay`
+    ticket on its group's summed loss, a `request` on its `Validation`
+    check."""
 
 
-SETTLED = (Status.CLOSED, Status.WATCHING)
+SETTLED = (Status.CLOSED, Status.DEFERRED)
 """The statuses of a ticket that leaves its session's index out of the
 indexes in which no agent runs that the main session's operators read."""
 
@@ -33,12 +35,14 @@ class Resolution(StrEnum):
 
 
 class Verdict(StrEnum):
-    """The words the note of a line a validation review writes on a closed
-    `request` opens with: what the runs since its close show of the check
-    its `Validation` section gives."""
+    """The words the notes of the lines the sweep (`file_ticket.py sweep`)
+    writes on a `request` it moves out of `deferred` open with, after the
+    resolution of a line into `closed`: what the check its `Validation`
+    section gives shows."""
     VALIDATED = "validated"
     FAILED = "failed"
     UNEXERCISED = "unexercised"
+    EXERCISED = "exercised"
 
 
 class Domain(StrEnum):

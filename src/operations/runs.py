@@ -98,7 +98,7 @@ class RunTicket:
 
 def run_tickets(state: State, run: Run) -> tuple[RunTicket, ...]:
     """The `RunTicket` of each ticket outside `tickets/closed/` and
-    `tickets/watching/`, in the tracker's order."""
+    `tickets/deferred/`, in the tracker's order."""
     tasks = {b.task for b in (*run.running, *run.ended)}
 
     def filed(t: Ticket) -> bool:

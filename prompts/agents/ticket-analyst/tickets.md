@@ -1,4 +1,4 @@
-+ budget: 4300
++ budget: 4700
 * comment: when editing this doc
     - The ticket analyst loads this document from [Jobs](prompts/agents/ticket-analyst.md#jobs), when its brief gives tickets under `tickets/open/` to settle.
     - Acts, each with its section:
@@ -12,6 +12,7 @@
         - While you work on a `request`, read no entry of its session's transcript after the end of its last span.
     4. Then settle it by [Settling](prompts/agents/ticket-analyst.md#settling).
 - Where the log of a `request` you take shows a `change` filed for it before, judge its resolution again with its spans and Grounds and the part of its need that a line of its log gives as unmet.
+    - Where the last line of its log that moves it out of `tickets/deferred/` gives `exercised:`, judge its `Validation` against the runs that line gives, and where the check holds, close it with a note that opens `fixed: validated:`. Otherwise settle it as this line gives, an `unexercised:` request as a fault whose root cause is why no run matched.
     - Where that `change` stands under `tickets/closed/`, resolve the part of the need it leaves unmet by [Settling](prompts/agents/ticket-analyst.md#settling).
     - Otherwise, where that changes its resolution, revise that `change` where it stands under `tickets/draft/` or `tickets/open/`, with its transition to `draft` from `open`, and where it stands in another status, give the new resolution in your reply as unfinished, with its reason. Then move the request back to `tickets/blocked/`, with a note that opens with `change` and that change's number.
 - Where the log of a `request` you take gives a commit of `master` that the coordinator merged for it with no `change` ticket, judge that commit as the design of a draft `change` for that request, as [Revising a draft](prompts/agents/ticket-analyst/drafts.md) gives for a draft, with the need that the request's spans and Grounds give, the tickets that log line gives the commit settles, the tickets step 2 of [Settling](prompts/agents/ticket-analyst.md#settling) reads, and the part of the need that a line of its log gives as unmet.

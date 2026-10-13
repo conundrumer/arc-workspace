@@ -11,14 +11,11 @@ audits, with the changes merged since: those an operator's merge call merged, as
 `state.Merge` reads it, and those the coordinator gives as merged. The
 launch of the profile agent opens the next batch.
 
-A validation review launches once a profile launch closes a batch, where
-a `request` of the session closed `fixed` holds a pending check, and no
-validation review launched since that profile launch, nor runs. A check is
-pending where the request holds a `ticketing.text.VALIDATION` section and
-no line of its log after its close opens with a `Verdict`. The review
-judges each pending check against the runs of the batch that profile
-launch closed, the runs the profile's brief gives. No batch holds it, so
-no profile launch waits on its run.
+The sweep (`file_ticket.py sweep`) runs once a profile launch closes a
+batch, where a `request` of the session stands under `tickets/deferred/`,
+and no call of it on the runs of the batch that profile launch closed, the
+runs the profile's brief gives, was made since that launch. No batch
+holds it, so no profile launch waits on it.
 
 A process assessment, a ticket analyst, launches at the end of a batch
 once `ASSESS_AFTER` commits of `master` that change the agents' processes
@@ -44,6 +41,7 @@ opens the next batch. The ticket analyst on the tickets the
 batch filed is the one `triage` launches on any open ticket."""
 
 import re
+import shlex
 from dataclasses import dataclass
 
 from controlled_markdown import mctx
@@ -52,13 +50,13 @@ from operations.changes import release
 from operations.filing import scratch_dir
 from operations.directives import Directive, numbers
 from operations.roles import AGENT_ID, Purpose, Role, analyst_of, analyst_subject
-from operations.state import DOC_REVIEW, Agent, Merge, State, Ticket
+from operations.state import DOC_REVIEW, Agent, Merge, State
 from operations.handled import bash_calls
 from operations.steps import Bash, Launch, Step, Undecided
-from ticketing.vocabulary import Kind, Resolution, Status, Verdict, note_opening
+from operations.tracker import FILE_TICKET
+from ticketing.vocabulary import Kind, Status
 
-OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER, Role.VALIDATION_REVIEW,
-                 Role.COST_AUDIT})
+OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER, Role.COST_AUDIT})
 """The roles of After a batch and the cost audit, which no batch holds."""
 
 
@@ -171,50 +169,29 @@ def batch_runs(state: State, batch: list[Agent], since: float,
     return runs
 
 
-VERDICT = note_opening(*Verdict)
-"""The opening of the note of a line a validation review writes."""
-
-
 def validation(state: State) -> Step | None:
-    """The launch of a validation review on the batch the last profile
-    launch closed, where one is due."""
+    """The sweep of the batch the last profile launch closed, where one is
+    due."""
     profiles = state.agents_of(Role.BATCH_PROFILE)
     if not profiles:
         return None
     closing = profiles[-1].launched
-    reviews = state.agents_of(Role.VALIDATION_REVIEW)
-    if reviews and (reviews[-1].pending or reviews[-1].launched > closing):
+    if not any(t.kind is Kind.REQUEST and t.status is Status.DEFERRED and state.mine(t)
+               for t in state.tracker.tickets.values()):
         return None
-    checks: list[briefs.Check] = []
-    for t in sorted(state.tracker.tickets.values(), key=lambda t: t.order):
-        if t.kind is Kind.REQUEST and t.status is Status.CLOSED and t.validation and state.mine(t):
-            check = pending(t)
-            if check is not None:
-                checks.append(check)
-    if not checks:
-        return None
-    since = start(state, closing)
-    runs = batch_runs(state, followed(state, closing), since, closing)
-    # No batch waits on the review: where the runs do not read, its checks
-    # stay pending for the next profile launch.
+    runs = batch_runs(state, followed(state, closing), start(state, closing), closing)
+    # No batch waits on the sweep: where the runs do not read, the requests
+    # stay under `deferred` for the next profile launch.
     if not isinstance(runs, list):
         return None
-    return Launch(Role.VALIDATION_REVIEW, str(len(profiles)), briefs.validation_review(runs, checks))
+    command = sweep_command(runs)
+    if any(c.time > closing for c in bash_calls(state, command)):
+        return None
+    return Bash(command)
 
 
-def pending(t: Ticket) -> briefs.Check | None:
-    """The check of the closed request `t` where it is pending, and None
-    where it is not, as where no line of its log moves it into `closed`."""
-    log = t.log
-    at = max((i for i, line in enumerate(log)
-              if line.status is Status.CLOSED and (i == 0 or log[i - 1].status is not Status.CLOSED)),
-             default=None)
-    if at is None:
-        return None
-    close = log[at]
-    if close.resolution is not Resolution.FIXED or any(VERDICT.match(line.note) for line in log[at + 1:]):
-        return None
-    return briefs.Check(t.number, close.closed_by, close.time)
+def sweep_command(runs: list[str]) -> str:
+    return shlex.join([*FILE_TICKET, "sweep", *runs])
 
 
 def doc_review(state: State) -> Step:

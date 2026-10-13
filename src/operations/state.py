@@ -54,9 +54,8 @@ class Unread:
 class Ticket:
     """A ticket of the tracker. `editors` is None where a `change` gives no
     `editors` field, `mechanical` is whether a `change` gives the
-    `mechanical` field, `holder` is the holder `file_ticket.py log
-    --help-all` defines, and `validation` is whether a `request` holds the
-    section `ticketing.text.VALIDATION`."""
+    `mechanical` field, and `holder` is the holder `file_ticket.py
+    log --help-all` defines."""
     number: str
     order: tuple[int, int]
     session: int | None
@@ -75,7 +74,6 @@ class Ticket:
     log: tuple[LogLine, ...]
     holder: str | None
     path: Path
-    validation: bool
 
     def model(self, role: Role) -> Model | None:
         """The model a launch of `role` on this ticket gives: Sonnet for a

@@ -147,7 +147,7 @@ PARTS = {
         - A `start` on a task whose claim file stands ends that pipeline, with the failure's text as its reason.
         - Where `starts` raises or gives a result in no form above, the run starts nothing while that fault stands.
         - The line is done once no pipeline of the run runs, no fault of the load or of `starts` stands, and `starts` gives nothing to start.
-        - The script may define `takes(ticket: RunTicket) -> bool`, with `RunTicket` from the module `operations.runs`, which the same load calls on each ticket outside `tickets/closed/` and `tickets/watching/`.
+        - The script may define `takes(ticket: RunTicket) -> bool`, with `RunTicket` from the module `operations.runs`, which the same load calls on each ticket outside `tickets/closed/` and `tickets/deferred/`.
             - A `RunTicket` gives:
                 - `number`, `kind`, `status`, `domain`, `subject`, `filer`, `priority` and `depends_on`: the ticket's.
                 - `waits_on`: the change it waits on, or None.
