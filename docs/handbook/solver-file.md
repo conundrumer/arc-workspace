@@ -118,7 +118,8 @@
 - A case is witnessed when it is the concept case or stands for a branch's model, when its output on a pair's input of the task is no candidate of that pair, or when an input of the task or of the witness file shows it giving an output that no case taking only part of its non-concept branches gives, where undefined counts as an output.
     - The case that stands for a branch's model is that model where the model is a case, and otherwise the case that takes the branch and differs from the concept case at the fewest points.
     - An output that no case taking only part of the case's non-concept branches gives witnesses no case that takes two branches on which every verdict is `concept`, unless every case that takes one of them also takes the other.
-    - Every check, survey and count of `scripts/run_dl.py` runs and reports the witnessed cases alone.
+    - Every check, survey and count of `scripts/run_dl.py` runs the witnessed cases alone, and a case name it prints denotes witnessed cases alone.
+        * comment: A Create pass on b2bc3ffd read a failure line's name `$ColorClass & $Clamp` as covering the case `$FloorColor & $ColorClass & $Clamp`, which was not witnessed, and spent a `grid` run to find the cases that fit: ticket 10-295.
 - A branch's clauses are the clauses shared by its cases and absent from the other cases.
 - A constructor stands for its branch alone, not for what another branch shares with it, and is named as the Analyze report names the branch.
 - `@claim` under the concept branch's constructor denotes the header claim the choice point turns on, which each other branch's `@scene` or `@rule` line changes.
