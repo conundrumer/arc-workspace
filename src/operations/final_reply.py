@@ -17,7 +17,7 @@ from operations.constants import COORDINATOR
 from operations.handled import next_call, sends_in
 from operations.printing import FINAL_REPLY, SENT, final_message, unfenced
 from operations.roles import AGENT_ID
-from operations.state import Call, State
+from operations.state import Call, State, Tool
 from operations.steps import Reply, Send
 
 
@@ -66,7 +66,9 @@ def final_sends_in(calls: Iterable[Call], operator: str, to: str) -> list[Call]:
 def live_holder(state: State, holder: str) -> bool:
     """Whether `holder` holds its changes live: it stands in
     `open_holders`, and it is not an operator launched before `me` that
-    has sent its final reply and made only calls of `next` since. The
+    has sent its final reply and made only calls of `next` and
+    SubagentHandback since; a SubagentHandback call ends the run and counts
+    as no work. The
     final send is itself a SendMessage call, so only the calls after it
     are read. An earlier operator whose step is in flight when `me`
     starts has made no final send yet, and holds its changes until its
@@ -80,7 +82,8 @@ def live_holder(state: State, holder: str) -> bool:
     if not sends:
         return True
     last = sends[-1].time
-    return not all(next_call(c, holder) for c in state.transcripts.calls
+    return not all(next_call(c, holder) or c.tool == Tool.SUBAGENT_HANDBACK
+                   for c in state.transcripts.calls
                    if c.operator == holder and c.time > last)
 
 

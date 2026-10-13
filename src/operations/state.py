@@ -204,6 +204,7 @@ class Tool(StrEnum):
     AGENT = "Agent"
     SEND_MESSAGE = "SendMessage"
     BASH = "Bash"
+    SUBAGENT_HANDBACK = "SubagentHandback"
 
 
 @dataclass(frozen=True)
