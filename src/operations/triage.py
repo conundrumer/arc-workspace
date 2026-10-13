@@ -128,8 +128,10 @@ def later_lines(state: State) -> Step | None:
 
 
 def settle(state: State) -> Step | None:
+    admitted = changes.admits(state)
     numbers = [n for n in state.computed.to_settle
-               if not given(state, n) and not awaits_analyst(state, n)]
+               if not given(state, n) and not awaits_analyst(state, n)
+               and admitted(n)]
     if not numbers:
         return None
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.TRIAGE, joined(numbers)),

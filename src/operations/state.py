@@ -317,6 +317,12 @@ type Starts = tuple[Start, ...] | str
 """What a run script gave at a read: its starts, or the text of its fault."""
 
 
+type Takes = frozenset[str] | str | None
+"""What a run script's `takes` gave at a read: the numbers of the tickets
+it admits, the text of its fault, or None where the script defines no
+`takes`."""
+
+
 @dataclass(frozen=True)
 class TranscriptsRead:
     """What the operator reads of the transcripts of the session's
@@ -401,12 +407,23 @@ class Computed:
     `changes.lacking_doc_editor` gives an `editors` field for, the budget,
     taken at `State.now`, of that field's set with the doc editor.
     `run_starts` gives what the script of each `Run:` line gave at this
-    read, by its run (`runs.run_id`)."""
+    read, by its run (`runs.run_id`), and `run_takes` what its `takes`
+    gave."""
     to_settle: tuple[str, ...] = ()
     spent: Mapping[str, Spend] = field(default_factory=dict)
     budgets: Mapping[str, Budget] = field(default_factory=dict)
     doc_budgets: Mapping[str, Budget] = field(default_factory=dict)
     run_starts: Mapping[str, Starts] = field(default_factory=dict)
+    run_takes: Mapping[str, Takes] = field(default_factory=dict)
+
+    def admitted(self) -> frozenset[str] | None:
+        """The tickets each run whose script defines `takes` admits, a run
+        with a fault admitting none, or None where no script defines
+        `takes`, so that every ticket is admitted."""
+        given = [t for t in self.run_takes.values() if t is not None]
+        if not given:
+            return None
+        return frozenset.intersection(*(frozenset() if isinstance(t, str) else t for t in given))
 
 
 @dataclass(frozen=True)

@@ -145,9 +145,19 @@ PARTS = {
         - `next` gives as a step the `start` of the first item `starts` gives whose task no pipeline of the session runs and that matches no pipeline of the run by task and passes, and passes over each other item.
             - That `start` has as `<run>` the time of the line's message and its path.
         - A `start` on a task whose claim file stands ends that pipeline, with the failure's text as its reason.
-        - Where the script fails to load, `starts` raises, the load and the call of `starts` run past {script} seconds, or `starts` gives a result in no form above, the run starts nothing while that fault stands.
-            - The coordinator gets the fault's text, once for each distinct text.
-        - The line is done once no pipeline of the run runs, no fault of the script stands, and `starts` gives nothing to start.
+        - Where `starts` raises or gives a result in no form above, the run starts nothing while that fault stands.
+        - The line is done once no pipeline of the run runs, no fault of the load or of `starts` stands, and `starts` gives nothing to start.
+        - The script may define `takes(ticket: RunTicket) -> bool`, with `RunTicket` from the module `operations.runs`, which the same load calls on each ticket outside `tickets/closed/` and `tickets/watching/`.
+            - A `RunTicket` gives:
+                - `number`, `kind`, `status`, `domain`, `subject`, `filer`, `priority` and `depends_on`: the ticket's.
+                - `waits_on`: the change it waits on, or None.
+                - `filed_by_run`: whether a pipeline of the run, running or ended, filed it.
+                - `reached_by_run`: whether a chain of `depends_on` and `waits_on` links reaches it from a ticket such a pipeline filed.
+            - From the line on, also once it is done, the operator launches a ticket analyst on an open ticket, and takes an open change, only where the `takes` of each run whose script defines one gives `True` for it.
+                - A ticket an `Expedite:` line gives passes, and so does a change that an operator took before and that went back to `tickets/open/`.
+            - Where `takes` raises or gives a result that is no `bool`, the run takes no ticket while that fault stands.
+        - Where the script fails to load, or the load and the calls of `starts` and `takes` run past {script} seconds, the run starts nothing, and takes no ticket unless the script loaded and defines no `takes`, while that fault stands.
+        - The coordinator gets the text of each fault, once for each distinct text.
     """),
     HelpPart.RELAY: mctx("""
     - `relay` prints the next step of the operator launcher whose agent id it is given, in the forms of `next`.

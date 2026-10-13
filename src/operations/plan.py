@@ -188,8 +188,11 @@ def refused(state: State, step: Step) -> Undecided | None:
 
 def unread_lines(state: State) -> Step | None:
     found = [unread_line(ln.text) for ln in unread(state)]
-    found += [runs.fault_message(ln, fault) for ln in runs.run_lines(lines(state))
-              if isinstance(fault := runs.given(state, ln), str)]
+    for ln in runs.run_lines(lines(state)):
+        if isinstance(fault := runs.given(state, ln), str):
+            found.append(runs.fault_message(ln, runs.STARTS_NOTHING, fault))
+        if isinstance(fault := runs.takes_given(state, ln), str):
+            found.append(runs.fault_message(ln, runs.TAKES_NOTHING, fault))
     return next((s for s in found if not repeated(s, state)), None)
 
 

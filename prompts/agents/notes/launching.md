@@ -95,7 +95,7 @@
 ### An operator's brief
 - An operator's brief gives only lines in these forms, each on a line of its own:
     - `Solve: <task id> ...`: a solver pipeline on each task, from Analyze, or from the pass that `from create` or `from refine` after its task id gives.
-    - `Run: <path>`: the solver pipelines that the run script at that path starts, as `uv run python scripts/operate.py --help run` gives the script.
+    - `Run: <path>`: the solver pipelines that the run script at that path starts, and the open tickets the operator takes from then on, as `uv run python scripts/operate.py --help run` gives the script.
     - `Drafts to review: <number>, ...`: the draft `change` tickets to review.
     - `Expedite: <number>, ...`: tickets of any session, and each `change` that a chain of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, reaches from them. The operator releases, takes and settles each of them as it does its session's, and takes each of those changes ahead of the other changes it may take.
     - `Merged: <number>, ...`: the changes the coordinator merged itself.

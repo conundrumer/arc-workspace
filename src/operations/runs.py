@@ -4,6 +4,10 @@ script's form. `scripts/operator_state.py` loads and calls the script at
 each read of the state, with the `Run` this module gives, and the state
 holds what it gave (`state.Computed.run_starts`).
 
+A run script's `takes`, which `scripts/operate.py --help run` gives,
+reads a `RunTicket`; the state holds what it gave
+(`state.Computed.run_takes`), and `changes.admits` applies it.
+
 A run's pipelines are the calls of `operate.py start` that an operator of
 the session made with the run's `RUN_OPTION`, which its step gives, each
 with that call's time as its start; a failed call is a pipeline that
@@ -12,7 +16,7 @@ stopped on its failure's text."""
 import argparse
 import re
 import shlex
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeGuard
@@ -23,10 +27,14 @@ from operations.command_words import COMMAND, RUN_COMMAND, simple_commands
 from operations.constants import COORDINATOR
 from operations.directives import Directive, Line, Pipeline
 from operations.roles import PASSES, Role
-from operations.state import Call, Start, Starts, State, Tool
+from operations import changes
+from operations.state import Call, Start, Starts, State, Takes, Ticket, Tool
+from operations.tracker import wait_line
+from ticketing.vocabulary import SETTLED, Domain, Kind, Status
 from operations.steps import Bash, Send, Step
 
-__all__ = ["Begun", "Run", "Start", "fault_message", "read_starts", "start_command", "start_of"]
+__all__ = ["Begun", "Run", "RunTicket", "Start", "fault_message", "read_starts", "read_takes",
+           "run_tickets", "start_command", "start_of"]
 
 START = "start"
 """The action of `operate.py` that starts a run's pipeline."""
@@ -65,6 +73,60 @@ class Run:
     queue: tuple[str, ...]
     running: tuple[Begun, ...]
     ended: tuple[Begun, ...]
+
+
+@dataclass(frozen=True)
+class RunTicket:
+    """A ticket, as a run script's `takes` reads it. `waits_on` is the
+    change it waits on, `filed_by_run` whether a pipeline of the run, that
+    runs or that ended, filed it (its domain is `task` and its subject is
+    that pipeline's task), and `reached_by_run` whether a chain of links
+    reaches it from a ticket a pipeline of the run filed
+    (`changes.reached`), as a change that settles such a ticket is."""
+    number: str
+    kind: Kind
+    status: Status
+    domain: Domain
+    subject: str
+    filer: str
+    priority: int
+    depends_on: tuple[str, ...]
+    waits_on: str | None
+    filed_by_run: bool
+    reached_by_run: bool
+
+
+def run_tickets(state: State, run: Run) -> tuple[RunTicket, ...]:
+    """The `RunTicket` of each ticket outside `tickets/closed/` and
+    `tickets/watching/`, in the tracker's order."""
+    tasks = {b.task for b in (*run.running, *run.ended)}
+
+    def filed(t: Ticket) -> bool:
+        return t.domain is Domain.TASK and t.subject in tasks
+    reached = changes.reached(state, {n for n, t in state.tracker.tickets.items() if filed(t)})
+    out: list[RunTicket] = []
+    for t in sorted(state.tracker.tickets.values(), key=lambda t: t.order):
+        if t.status in SETTLED:
+            continue
+        line = wait_line(t)
+        out.append(RunTicket(t.number, t.kind, t.status, t.domain, t.subject, t.filer, t.priority,
+                             t.depends_on, line.on_change if line is not None else None,
+                             filed(t), t.number in reached))
+    return tuple(out)
+
+
+def read_takes(takes: Callable[[RunTicket], object], tickets: Iterable[RunTicket]) -> Takes:
+    """The numbers of the tickets of `tickets` that `takes` admits, or the
+    text of the first result that is no `bool`."""
+    out: set[str] = set()
+    for t in tickets:
+        result = takes(t)
+        if not isinstance(result, bool):
+            return mctx("`takes` gave {result} for ticket {number}, which is no `bool`").format(
+                result=repr(result), number=t.number)
+        if result:
+            out.add(t.number)
+    return frozenset(out)
 
 
 @dataclass(frozen=True)
@@ -199,12 +261,23 @@ def read_starts(result: object) -> Starts:
     return tuple(out)
 
 
-def fault_message(ln: Line, fault: str) -> Send:
+STARTS_NOTHING = mctx("starts nothing")
+TAKES_NOTHING = mctx("takes no ticket")
+
+
+def fault_message(ln: Line, stopped: str, fault: str) -> Send:
     """The message that gives the coordinator the fault that stops the run
-    of its line `ln`."""
-    return Send(COORDINATOR, mctx("The run of the line `{line}` starts nothing: "
+    of its line `ln`, where `stopped` is `STARTS_NOTHING` or
+    `TAKES_NOTHING`."""
+    return Send(COORDINATOR, mctx("The run of the line `{line}` {stopped}: "
                                   "{fault}").format(
-        line=ln.text, fault=fault))
+        line=ln.text, stopped=stopped, fault=fault))
+
+
+def takes_given(state: State, ln: Line) -> Takes:
+    """What the `takes` of the script of the `Run:` line `ln` gave at this
+    read."""
+    return state.computed.run_takes[run_id(ln)]
 
 
 def next_start(state: State, ln: Line, running: Iterable[Pipeline]) -> Step | None:

@@ -11,7 +11,7 @@ import subprocess
 import sys
 import time
 import traceback
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from types import FrameType, ModuleType
 from dataclasses import replace
@@ -49,7 +49,7 @@ from operations.plan import taken_up, unknown_line
 from operations import change_budget, changes, monitor, passes, runs
 from operations.monitor import MonitorState, Watched
 from operations.state import (Agent, Budget, Call, Computed, GitRead, HeldRead, LateResume, Message,
-                              Reader, Report, SessionsRead, Spend, Starts, State,
+                              Reader, Report, SessionsRead, Spend, Starts, State, Takes,
                               Ticket, TrackerRead, TranscriptsRead)
 from operations.handled import made
 from operations.tracker import worktree, worktree_in
@@ -143,23 +143,28 @@ def run_index(runs: list[tuple[str, Path]], me: str) -> int:
 QUEUE_COMMAND = ("bash", "scripts/queue.sh", "--order", "name", "--all", "--json")
 
 
-def read_runs(state: State) -> dict[str, Starts]:
+def read_runs(state: State) -> tuple[dict[str, Starts], dict[str, Takes]]:
     """What the script of each `Run:` line the operator received gave, by
-    its run, where it received one, with the queue's full listing. Where
-    the listing fails, its failure is the fault of each such line."""
+    its run, where it received one, with the queue's full listing: from its
+    `starts`, and from its `takes`. Where the listing fails, its failure is
+    the fault of each such line, for both."""
     given = runs.run_lines(lines(state))
     if not given:
-        return {}
+        return {}, {}
     listed = subprocess.run(QUEUE_COMMAND, cwd=state.main_tree, capture_output=True, text=True)
     if listed.returncode != 0:
         fault = mctx("the queue's listing `{command}` exited {code}: {stderr}").format(
             command=" ".join(QUEUE_COMMAND), code=listed.returncode, stderr=listed.stderr.strip())
-        return {runs.run_id(ln): fault for ln in given}
+        return {runs.run_id(ln): fault for ln in given}, {runs.run_id(ln): fault for ln in given}
     queue = tuple(e["id"] for e in json.loads(listed.stdout))
     ended = {p: (o.ended, o.stopped) for p, o in passes.outcomes(state)}
-    return {runs.run_id(ln): script_starts(runs.script_path(state.main_tree, ln),
-                                           runs.view(state, queue, ln, ended))
-            for ln in given}
+    starts: dict[str, Starts] = {}
+    takes: dict[str, Takes] = {}
+    for ln in given:
+        run = runs.view(state, queue, ln, ended)
+        starts[runs.run_id(ln)], takes[runs.run_id(ln)] = script_reads(
+            runs.script_path(state.main_tree, ln), run, lambda: runs.run_tickets(state, run))
+    return starts, takes
 
 
 class ScriptTimeout(Exception):
@@ -170,8 +175,8 @@ class ScriptTimeout(Exception):
 def bounded(seconds: int) -> Iterator[None]:
     """Raise `ScriptTimeout` in the block once `seconds` have passed."""
     def expire(_signum: int, _frame: FrameType | None) -> None:
-        raise ScriptTimeout(mctx("the load and the call of `starts` ran past {seconds} "
-                                 "seconds").format(seconds=seconds))
+        raise ScriptTimeout(mctx("the load and the calls of `starts` and `takes` ran past "
+                                 "{seconds} seconds").format(seconds=seconds))
     before = signal.signal(signal.SIGALRM, expire)
     signal.alarm(seconds)
     try:
@@ -181,22 +186,47 @@ def bounded(seconds: int) -> Iterator[None]:
         signal.signal(signal.SIGALRM, before)
 
 
-def script_starts(path: Path, run: runs.Run) -> Starts:
+def fault_text(e: BaseException) -> str:
+    return "".join(traceback.format_exception_only(e)).strip()
+
+
+def script_reads(path: Path, run: runs.Run,
+                 tickets: Callable[[], tuple[runs.RunTicket, ...]]) -> tuple[Starts, Takes]:
     """What the run script at `path`, loaded afresh as a module, gives from
-    its `starts` called with `run`, or the text of its fault, within
-    `runs.SCRIPT_SECONDS`."""
+    its `starts` called with `run`, and from its `takes` called on each of
+    `tickets`, or None where it defines no `takes`, each as the text of its
+    fault where it has one, within `runs.SCRIPT_SECONDS`. A fault of the
+    load or of the bound is the fault of both, unless the loaded module
+    defines no `takes`."""
     name = f"run_script_{abs(hash((str(path), time.time())))}"
+    module: ModuleType | None = None
     try:
         with bounded(runs.SCRIPT_SECONDS):
             # Compiled from its text at each read: a cached bytecode file
             # hides an edit that keeps the file's size within one second.
-            module = ModuleType(name)
-            module.__file__ = str(path)
-            sys.modules[name] = module
-            exec(compile(path.read_text(), str(path), "exec"), module.__dict__)
-            return runs.read_starts(module.starts(run))
+            loading = ModuleType(name)
+            loading.__file__ = str(path)
+            sys.modules[name] = loading
+            exec(compile(path.read_text(), str(path), "exec"), loading.__dict__)
+            module = loading
+            try:
+                starts = runs.read_starts(module.starts(run))
+            except ScriptTimeout:
+                raise
+            except (Exception, SystemExit) as e:
+                starts = fault_text(e)
+            takes = getattr(module, "takes", None)
+            if takes is None:
+                return starts, None
+            try:
+                return starts, runs.read_takes(takes, tickets())
+            except ScriptTimeout:
+                raise
+            except (Exception, SystemExit) as e:
+                return starts, fault_text(e)
     except (Exception, SystemExit) as e:
-        return "".join(traceback.format_exception_only(e)).strip()
+        fault = fault_text(e)
+        return fault, (None if module is not None and not hasattr(module, "takes") else fault)
     finally:
         sys.modules.pop(name, None)
 
@@ -280,11 +310,13 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
         sessions=sessions(tickets_dir, index, session, now))
     given = [ticket_number(n) for n in named(state) if n in tickets]
     spent = change_spend(state, undecided)
+    run_starts, run_takes = read_runs(state)
     state = replace(state, computed=Computed(
         to_settle=tuple(str(n) for n in to_settle(tickets_dir, index, state.sessions.adopted, given)
                         if str(n) in tickets),
         spent=spent, budgets=change_budgets(state, spent, tickets_dir, undecided),
-        doc_budgets=doc_budgets(state, tickets_dir, undecided), run_starts=read_runs(state)))
+        doc_budgets=doc_budgets(state, tickets_dir, undecided),
+        run_starts=run_starts, run_takes=run_takes))
     return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(stalled),
                                undecided=tuple(watching))
 

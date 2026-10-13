@@ -99,6 +99,7 @@ until a `Decision:` line rules it with one of the choices the step gives
 
 import re
 import shlex
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
@@ -161,6 +162,24 @@ def expedited(state: State) -> set[str]:
     return reached(state, {n for n, _ in numbers(state, Directive.EXPEDITE)})
 
 
+def admits(state: State) -> Callable[[str], bool]:
+    """Whether the operator may take an open ticket: one the `takes` of
+    the run scripts admit (`Computed.admitted`), or one of `expedited`,
+    or any where no script defines `takes`."""
+    admitted = state.computed.admitted()
+    if admitted is None:
+        return lambda _: True
+    passing = admitted | expedited(state)
+    return lambda n: n in passing
+
+
+def taken_before(t: Ticket) -> bool:
+    """Whether a line of `t`'s log moves it into `tickets/assigned/`, so
+    that taking it again is no new take: `release` moved it back to
+    `tickets/open/` from a holder that is not live."""
+    return any(ln.status is Status.ASSIGNED for ln in t.log)
+
+
 RELEASED = mctx("released: holder {holder} is not live")
 
 
@@ -197,9 +216,11 @@ def boosted(state: State) -> set[str]:
 
 def takeable(state: State) -> list[Ticket]:
     lead = boosted(state) | expedited(state)
+    admitted = admits(state)
     ts = [t for n in scope(state) if (t := state.tracker.tickets.get(n)) is not None
           and t.kind is Kind.CHANGE and t.status is Status.OPEN
-          and all(closed(state, d) for d in t.depends_on)]
+          and all(closed(state, d) for d in t.depends_on)
+          and (admitted(n) or taken_before(t))]
     return sorted(ts, key=lambda t: (t.number not in lead, -t.priority, t.order))
 
 
