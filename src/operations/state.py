@@ -393,7 +393,7 @@ class Computed:
     for the session, with the numbers the coordinator names, keeping only
     the tickets that `tracker.tickets` holds. `spent` gives, for each
     change `me` holds, the spend of the agents `changes.of_change` gives
-    for it. `budgets` gives the budget of the change `changes.take` takes
+    for it. `budgets` gives the budget of each change `changes.take` takes
     next, taken at `State.now`, and of each held change whose spend passes
     the budget its take gives, taken at the line that gives that budget
     (`change_budget.Take`). `doc_budgets` gives, for each held change that

@@ -345,14 +345,20 @@ def change_spend(state: State, undecided: list[str]) -> dict[str, Spend]:
 def change_budgets(state: State, spent: dict[str, Spend], tickets: Path,
                    undecided: list[str]) -> dict[str, Budget]:
     """The budgets `Computed.budgets` gives."""
+    known: dict[tuple[frozenset[str], float], Budget | None] = {}
+
     def of(t: Ticket, before: float) -> Budget | None:
         if t.editors is None:
             return None
-        return budget(tickets, frozenset(t.editors), before, undecided)
+        key = (frozenset(t.editors), before)
+        if key not in known:
+            known[key] = budget(tickets, key[0], before, undecided)
+        return known[key]
 
     out: dict[str, Budget] = {}
-    if (t := changes.next_take(state)) is not None and (b := of(t, state.now)) is not None:
-        out[t.number] = b
+    for t in changes.takeable(state):
+        if (b := of(t, state.now)) is not None:
+            out[t.number] = b
     for t in changes.held(state):
         take = change_budget.taken(t)
         s = spent.get(t.number)

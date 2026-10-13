@@ -162,16 +162,23 @@ def expedited(state: State) -> set[str]:
 
 
 def release(state: State) -> Step | None:
-    """The move back to `tickets/open/` of a ticket of `scope` under
-    `tickets/assigned/` whose holder is not live (`live_holder`)."""
-    for n in sorted(scope(state)):
-        t = state.tracker.tickets.get(n)
-        if t is None or t.status is not Status.ASSIGNED:
-            continue
-        if t.holder is None or not live_holder(state, t.holder):
-            return Bash(log(n, Status.OPEN, Status.ASSIGNED,
-                            f"released: holder {t.holder or 'none'} is not live", None))
-    return None
+    """The move back to `tickets/open/` of each ticket of `scope` under
+    `tickets/assigned/` whose holder is not live (`live_holder`), in one
+    command whose moves run apart (`moves`)."""
+    return moves([log(n, Status.OPEN, Status.ASSIGNED,
+                      f"released: holder {t.holder or 'none'} is not live", None)
+                  for n in sorted(scope(state))
+                  if (t := state.tracker.tickets.get(n)) is not None
+                  and t.status is Status.ASSIGNED
+                  and (t.holder is None or not live_holder(state, t.holder))])
+
+
+def moves(commands: list[str]) -> Bash | None:
+    """One step that runs each of `commands`, or None where there is none.
+    The commands are joined with `;`, so a move that `file_ticket.py log`
+    refuses leaves the others to run, and the next step reads the tracker
+    as they left it."""
+    return Bash(" ; ".join(commands)) if commands else None
 
 
 def boosted(state: State) -> set[str]:
@@ -233,21 +240,23 @@ def stall(state: State) -> Step | None:
     return None
 
 
-def next_take(state: State) -> Ticket | None:
-    """The first ticket of `takeable`, or None where it gives none."""
-    return next(iter(takeable(state)), None)
-
-
 def take(state: State) -> Step | None:
-    t = next_take(state)
-    if t is not None:
+    """The take of each change of `takeable`, in its order, up to the first
+    whose budget `Computed.budgets` does not give."""
+    commands: list[str] = []
+    for t in takeable(state):
         b = state.computed.budgets.get(t.number)
         if b is None:
-            return Undecided(mctx("the budget of change {number} is unknown").format(
-                number=t.number))
-        return Bash(log(t.number, Status.ASSIGNED, Status.OPEN,
-                        TAKE_NOTE.format(dollars=f"{b.dollars:.2f}", seconds=f"{b.seconds:.0f}"),
-                        state.me))
+            if not commands:
+                return Undecided(mctx("the budget of change {number} is unknown").format(
+                    number=t.number))
+            break
+        commands.append(log(t.number, Status.ASSIGNED, Status.OPEN,
+                            TAKE_NOTE.format(dollars=f"{b.dollars:.2f}",
+                                             seconds=f"{b.seconds:.0f}"),
+                            state.me))
+    if commands:
+        return moves(commands)
     for n, time in numbers(state, Directive.MERGE):
         t = state.tracker.tickets.get(n)
         if (t is not None and t.status is Status.BLOCKED and t.kind is Kind.CHANGE
