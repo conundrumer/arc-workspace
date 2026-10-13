@@ -1,7 +1,8 @@
 """File a ticket under the main tree's `tickets/`, from the main tree or any
 worktree of it, print a ticket's path, make a ticket's transitions and
-write its log lines, list the open tickets a ticket analyst settles, and
-print a ticket or the sections of it a reader names. `HELP`, which
+write its log lines, list the open tickets a ticket analyst settles,
+print a ticket or the sections of it a reader names, and wait for a ticket
+to close. `HELP`, which
 `--help` prints, says how an agent files, and each subcommand's own help,
 which its `--help` prints, how an agent calls it. `--help-all` prints a
 help with the rules a well-formed call does not need, from `RULES` and
@@ -31,7 +32,7 @@ from ticket_files import FIELD, NAME_FORM, TicketName, ticket_path, ticket_statu
 from ticket_form import (DEFAULT_PRIORITY, DESIGN, LOG, LOG_SECTION, MECHANICAL,  # noqa: E402
                          RETIRED, checked_kind, section, sections_example, ticket_kind, title_line)
 from ticket_log import (AGENT_ID, CLOSED_BY, SESSION_ID, UNBLOCKED_BY, Wait,  # noqa: E402
-                        log_moves, logged, read_ticket, status_of)
+                        log_lines, log_moves, logged, read_ticket, resolution_of, status_of)
 from ticket_numbers import (SESSION_VAR, SESSIONS, reserve, session_id,  # noqa: E402
                             session_index, ticket_number, write_new)
 from ticket_settle import to_settle  # noqa: E402
@@ -191,6 +192,14 @@ SHOW_HELP = mctx("""
         - Where the call names no section, it prints the path and then the whole ticket.
     - A `<section>` is the text of a heading after its mark, as `{log_section}` for `{log}`.
     """)
+
+WAIT_HELP = mctx("""
+    - Run it in the background: its completion notification gives what it prints.
+    - The command ends once a ticket the call gives stands under `tickets/{closed}/`, and prints, for each ticket that stands there, its number and the log line that closed it.
+    """)
+
+WAIT_INTERVAL = 10
+"""The seconds between two reads of where the waited tickets stand."""
 
 EDITORS_HELP = mctx("""
     - `<number>` is the number of a `{change_kind}` ticket that stands under `tickets/{assigned}/`, `<editor>` one of {editors} that its `editors` field does not give, and `<agent id>` the holder of the ticket.
@@ -442,6 +451,34 @@ def show_command(*given: str) -> str:
                         *(f"{heading(name)}\n{section(text, name)}" for name in given[1:])])
 
 
+def wait_command(*given: str) -> str:
+    """Each ticket of `given` that stands under `closed`, with the line of
+    its log that closed it, once one does."""
+    if not given:
+        raise Refused(mctx("the call gives no ticket number"))
+    tickets = main_tickets()
+    numbers = [ticket_number(ref) for ref in given]
+    for number in numbers:
+        ticket_path(tickets, number)
+    while True:
+        closed = [(n, p) for n in numbers
+                  if ticket_status(p := ticket_path(tickets, n)) is Status.CLOSED]
+        if closed:
+            return "\n".join(f"{n}: {closing_line(p)}" for n, p in closed)
+        time.sleep(WAIT_INTERVAL)
+
+
+def closing_line(path: Path) -> str:
+    """The last log line of the ticket at `path` whose note opens with a
+    resolution: a line appended after the close, such as a correction,
+    gives none."""
+    lines = [m for m in log_lines(read_ticket(path))
+             if m["status"] == Status.CLOSED and resolution_of(m["note"]) is not None]
+    if not lines:
+        raise Refused(mctx("{path} has no log line that closes it with a resolution").format(path=path))
+    return lines[-1].group()
+
+
 def main_command(session: str) -> Path:
     tickets = main_tickets()
     name_main(tickets, session)
@@ -484,6 +521,8 @@ SUBCOMMANDS = {
                        main_command, True),
     "show": Subcommand(mctx("prints a ticket, or only the sections the call names"),
                        " <number> [<section> ...]", SHOW_HELP, "", None, show_command, False),
+    "wait": Subcommand(mctx("ends once a ticket closes, and prints how it closed"),
+                       " <number> [<number> ...]", WAIT_HELP, "", None, wait_command, False),
 }
 """Each subcommand, by the word that calls it, in the order `HELP` gives
 their lines."""
@@ -511,7 +550,7 @@ def help_values() -> dict[str, str]:
                 change_domain=Domain.CHANGE,
                 full_flag=FULL_FLAG, log_section=LOG_SECTION,
                 many_ideas=MANY_IDEAS, empty=EMPTY, delay=Kind.DELAY, watching=Status.WATCHING,
-                assigned=Status.ASSIGNED, open=Status.OPEN, wontfix=Resolution.WONTFIX, changes=str(CHANGES), cap=str(CAP),
+                assigned=Status.ASSIGNED, open=Status.OPEN, closed=Status.CLOSED, wontfix=Resolution.WONTFIX, changes=str(CHANGES), cap=str(CAP),
                 subcommands="\n".join(SUBCOMMAND_LINE.format(
                     invocation=INVOCATION, name=name, purpose=sub.purpose)
                     for name, sub in SUBCOMMANDS.items()))
