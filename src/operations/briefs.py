@@ -168,7 +168,7 @@ def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], 
 AFTER_MERGE = mctx("""
     - Change {number} is merged into `master` at {head}.
     - Run each check its ticket places after the merge, which `{command}` prints: {checks}.
-    - File each check that fails as a `bug` ticket, by the lines of the section `Ticket files` of `prompts/agents/notes/tickets.md`, {filing}.
+    - File each check that fails as a `bug` ticket, by the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), {filing}.
     - Give each check whose subject is an event that has not happened yet in your reply as unfinished, with that reason.
     - Run a check of what a running Claude Code session reads only at its start in a `claude -p` session you start in the main worktree.
     - Reply with each check as passed, failed with its ticket, or unfinished with its reason.
@@ -350,7 +350,7 @@ def held_step(what: str, operator: str, rulable: bool) -> str:
 # (ticket 6-440, 21:44:14Z).
 TRANSCRIPT_REVIEW = mctx("""
     - Review the transcript of run {run}, which `python3 ~/.claude/skills/retrieve/transcripts.py --help` reads.
-    - File each ticket by the lines of the section `Ticket files` of `prompts/agents/notes/tickets.md`, {filing}.
+    - File each ticket by the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), {filing}.
     - Find each place where the run explored to find what a docstring or a document line could have led it to.
     - At the first such place, list the titles under `tickets/watching/` in one `grep -m1 -H '^# '` call, and read no ticket's body to match.
     - At each such place:
@@ -464,7 +464,7 @@ VALIDATION_REVIEW = mctx("""
         {checks}
     - Where a check gives a command, run it once, and judge its output in place of the runs.
     - Write each line on a request as `{log} <number> {closed} {agent} --from {closed} "<note>"`.
-    - File each ticket by the lines of the section `Ticket files` of `prompts/agents/notes/tickets.md`, {filing}.
+    - File each ticket by the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), {filing}.
     - Where the command's output or a run shows that the check holds, write a line whose note opens with `{validated}`, then gives that run's agent id or the command.
     - Where it shows that the check fails, write a line whose note opens with `{failed}`, then gives that run's agent id or the command, then file a `bug` ticket with the request's number and that run's agent id or the command's output in its `Evidence`.
     - Where the check gives no command, none of those runs exercises what it checks, and the request closed {days} days ago or more, write a line whose note opens with `{unexercised}`, then file a `question` ticket that gives the request's number.
