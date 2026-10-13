@@ -293,7 +293,10 @@ def pipeline_state(o: passes.Outcome | None) -> str | None:
         return mctx("its pipeline has not started")
     if not o.ended:
         return mctx("its pipeline runs")
-    return mctx("its pipeline stopped: {why}").format(why=o.stopped) if o.stopped else None
+    return STOPPED.format(why=o.stopped) if o.stopped else None
+
+
+STOPPED = mctx("its pipeline stopped: {why}")
 
 
 def stands_under(t: Ticket) -> str:
@@ -360,7 +363,8 @@ def run_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Outc
         return []
     stopped = [REASON.format(of=s.pipeline.task, reason=r) for s in own
                if (r := s.failed if s.failed is not None
-                   else by_pipeline[s.pipeline].stopped) is not None]
+                   else None if (why := by_pipeline[s.pipeline].stopped) is None
+                   else STOPPED.format(why=why)) is not None]
     return [*going, *stopped]
 
 
@@ -399,7 +403,9 @@ def holding(state: State) -> set[str]:
     `placed` gives them."""
     return {decision_key(u.what) for procedure in PROCEDURES
             if (u := placed(state, procedure)[1]) is not None} | {
-        decision_key(u.what) for u in decisions.unread_steps(state)}
+        decision_key(u.what) for u in decisions.unread_steps(state)} | {
+        decision_key(u.what) for t in changes.held(state)
+        if isinstance(u := changes.next_step(state, t), Undecided) and repeated(u, state)}
 
 
 def stands(state: State, head: str, step: Step | None) -> tuple[str, bool]:
@@ -426,7 +432,7 @@ def final(state: State) -> str:
                  for n in triage.unsettled(state)]
     standing += [stands(state, "- " + mctx("Change {n} stays under `tickets/assigned/`").format(
                             n=t.number),
-                        changes.carry(state, t)) for t in changes.held(state)]
+                        changes.next_step(state, t)) for t in changes.held(state)]
     out += [line for line, _ in standing]
     head = (mctx("Done: no procedure has a step left other than those that wait on a "
                  "decision, as the lines below give.")

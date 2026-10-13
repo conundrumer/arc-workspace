@@ -10,13 +10,13 @@ import re
 from collections.abc import Callable, Iterable
 from functools import cache
 
-from controlled_markdown import form
+from controlled_markdown import form, mctx
 from operations import messages
 from operations.command_words import is_next, only_command
 from operations.constants import COORDINATOR
 from operations.printing import KEY_LINE, bash_text, opening, send_opening, unfenced
 from operations.roles import Purpose
-from operations.state import Agent, Call, Made, State, Tool
+from operations.state import Agent, Call, Made, State, Ticket, Tool
 from operations.steps import STEP_KEY, UNDECIDED, Bash, Send, Step, Undecided, decision_key, key
 
 
@@ -202,3 +202,12 @@ def printed_step(result: str) -> tuple[str | None, Tool, str | None, str] | None
     text = result[opening.end():].rstrip("\n")
     return (opening["key"], tool, opening["to"],
             unfenced(text) if tool is Tool.SEND_MESSAGE else text)
+
+
+def unmoved(t: Ticket, s: Send) -> Undecided:
+    """The step of the change `t` whose next step `s` is a message its
+    recipient already answered, with the change where it was."""
+    return Undecided(mctx("the next step of change {number} is the message {key} to {agent}, "
+                          "which an operator already sent and {agent} answered, and the "
+                          "change has not moved since").format(
+        number=t.number, key=key(s), agent=s.to))

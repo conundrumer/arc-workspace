@@ -94,8 +94,8 @@ from operations.roles import Purpose, Role, analyst_of, analyst_subject
 from operations.state import Agent, State, Ticket
 from operations.filing import editor_scratch
 from operations.final_reply import live_holder
-from operations.handled import answered, repeated, sent
-from operations.steps import Bash, Launch, Send, Step, Undecided, key
+from operations.handled import answered, repeated, sent, unmoved
+from operations.steps import Bash, Launch, Send, Step, Undecided
 from operations.tracker import (AGENT, blocked_on_user, closed, final_run, last_index, log,
                                 wait_line, worktree, WORKTREE)
 from ticketing.vocabulary import Domain, Kind, Note, Status
@@ -458,19 +458,17 @@ def step(state: State) -> Step | None:
     if (s := take(state)) is not None:
         return s
     for t in held(state):
-        if (s := carry(state, t)) is None:
-            continue
-        if not repeated(s, state):
+        if (s := next_step(state, t)) is not None and not repeated(s, state):
             return s
-        if isinstance(s, Send) and answered(s, state) and not repeated(u := unmoved(t, s), state):
-            return u
     return None
 
 
-def unmoved(t: Ticket, s: Send) -> Undecided:
-    """The step of the change `t` whose next step `s` is a message its
-    recipient already answered, with the change where it was."""
-    return Undecided(mctx("the next step of change {number} is the message {key} to {agent}, "
-                          "which an operator already sent and {agent} answered, and the "
-                          "change has not moved since").format(
-        number=t.number, key=key(s), agent=s.to))
+def next_step(state: State, t: Ticket) -> Step | None:
+    """The step of the change `t` the operator holds: the one `carry`
+    gives, or, where that is a message its recipient already answered,
+    the one `unmoved` gives."""
+    s = carry(state, t)
+    if isinstance(s, Send) and answered(s, state):
+        return unmoved(t, s)
+    return s
+

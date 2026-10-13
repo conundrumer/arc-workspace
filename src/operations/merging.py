@@ -25,6 +25,11 @@ script's own forms and by `master` (`state.Merge`,
 - any other refusal goes to the change's first editor as a finding of its
   checks.
 
+Once an agent launched on the change since its last move out of
+`tickets/draft/` (`change_agents.of_change`), or a ticket analyst launched
+on the step `handled.unmoved` gives for that finding, reports after the
+latest merge call, the merge call is given again.
+
 Once the change is merged, an agent runs the checks its ticket's
 `after-merge` field gives, then the command closes each `refactor` ticket
 on a module a code editor of the change reports it split, or logs the part
@@ -38,13 +43,14 @@ from pathlib import Path
 from controlled_markdown import form, mctx
 from controlled_markdown.nodes import Rule, finding_lines
 from operations import briefs, messages
+from operations.change_agents import of_change
 from operations.change_budget import TIME_NOTE, TIME_OPENING, left_draft, taken
 from operations.filing import editor_scratch
 from operations.reports import splits
 from operations.roles import Role
 from operations.state import Agent, Call, Merge, State, Ticket, Tool
 from operations.command_words import simple_commands
-from operations.handled import bash_calls
+from operations.handled import bash_calls, decided_by, unmoved
 from operations.steps import Bash, Launch, Send, Step
 from operations.tracker import WORKTREE, log
 from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Note, Resolution, Status, Wait
@@ -164,11 +170,15 @@ def merge(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
 def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
     """The merge of the change in `w`, once its editors and its review have
     passed, again after a call that left the worktree with changes made
-    after its commit, and the step on a failed merge call."""
+    after its commit or that a report of an agent on the change follows,
+    and the step on a failed merge call."""
     command = merge_command(t, w)
     calls = [c for c in merge_calls(state, t) if str(w) in str(c.input.get("command", ""))]
     last = calls[-1] if calls else None
-    reported = [r.time for a in latest if (r := a.last_report) is not None]
+    message = None if last is None else finding(t, last, latest)
+    on_step = [] if message is None else decided_by(state, unmoved(t, message))
+    reported = [r.time for a in [*of_change(state, t.number), *on_step]
+                if (r := a.last_report) is not None]
     if (last is None or (reported and max(reported) > last.time)
             or any(prev.status is Status.BLOCKED and ln.status is Status.ASSIGNED
                    and ln.time > last.time for prev, ln in zip(t.log, t.log[1:]))):
@@ -205,8 +215,16 @@ def refused(state: State, t: Ticket, w: Path, last: Call, latest: list[Agent]) -
             t.number, w, quotes, files,
             editor_scratch(t.number, Role.CODE_EDITOR, state.scratch), state.me),
             model=t.model(Role.CODE_EDITOR))
+    return finding(t, last, latest)
+
+
+def finding(t: Ticket, last: Call, latest: list[Agent]) -> Send | None:
+    """The message that gives the refusal of the merge call `last` to the
+    change's first editor, where `last` was refused on no `quotes` call."""
+    text = last.result or ""
     first = latest[0] if latest else None
-    if first is None or first.agent_id is None:
+    if (last.merge is not Merge.REFUSED or QUOTE_LINE.search(text) is not None
+            or first is None or first.agent_id is None):
         return None
     tail = "\n".join(text.splitlines()[-FINDING_TAIL:])
     return Send(first.agent_id, messages.merge_finding(t.number, tail))
