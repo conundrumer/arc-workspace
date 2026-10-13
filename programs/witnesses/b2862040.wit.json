@@ -1,0 +1,520 @@
+{
+  "id": "b2862040",
+  "witnesses": [{
+    "id": "nested-shape",
+    "separates": "a dot stands inside a ring's hole: the concept recolors the ring alone, $AllInk also recolors the dot, which bounds a region the ink closes off",
+    "input": [
+      [9,9,9,9,9,9,9],
+      [9,1,1,1,1,1,9],
+      [9,1,9,9,9,1,9],
+      [9,1,9,1,9,1,9],
+      [9,1,9,9,9,1,9],
+      [9,1,1,1,1,1,9],
+      [9,9,9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$OwnWalls"],
+      "grid": [
+        [9,9,9,9,9,9,9],
+        [9,8,8,8,8,8,9],
+        [9,8,9,9,9,8,9],
+        [9,8,9,1,9,8,9],
+        [9,8,9,9,9,8,9],
+        [9,8,8,8,8,8,9],
+        [9,9,9,9,9,9,9]
+      ]
+    }, {
+      "cases": ["$AllInk"],
+      "grid": [
+        [9,9,9,9,9,9,9],
+        [9,8,8,8,8,8,9],
+        [9,8,9,9,9,8,9],
+        [9,8,9,8,9,8,9],
+        [9,8,9,9,9,8,9],
+        [9,8,8,8,8,8,9],
+        [9,9,9,9,9,9,9]
+      ]
+    }]
+  }, {
+    "id": "corner-touch",
+    "separates": "a dot touches a ring at a corner: the concept recolors the ring alone, $Shapes8 joins the dot to the ring and recolors both",
+    "input": [
+      [9,9,9,9,9,9],
+      [9,1,1,1,9,9],
+      [9,1,9,1,9,9],
+      [9,1,1,1,9,9],
+      [9,9,9,9,1,9],
+      [9,9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$Shapes4"],
+      "grid": [
+        [9,9,9,9,9,9],
+        [9,8,8,8,9,9],
+        [9,8,9,8,9,9],
+        [9,8,8,8,9,9],
+        [9,9,9,9,1,9],
+        [9,9,9,9,9,9]
+      ]
+    }, {
+      "cases": ["$Shapes8"],
+      "grid": [
+        [9,9,9,9,9,9],
+        [9,8,8,8,9,9],
+        [9,8,9,8,9,9],
+        [9,8,8,8,9,9],
+        [9,9,9,9,8,9],
+        [9,9,9,9,9,9]
+      ]
+    }]
+  }, {
+    "id": "cut-corner-ring",
+    "separates": "a ring lacks one corner cell, so its hole meets the outside only at a corner: the concept recolors the ring, $DiagEscape lets the hole escape diagonally and keeps it",
+    "input": [
+      [9,9,9,9,9],
+      [9,1,1,1,9],
+      [9,1,9,1,9],
+      [9,1,1,9,9],
+      [9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$Escape4"],
+      "grid": [
+        [9,9,9,9,9],
+        [9,8,8,8,9],
+        [9,8,9,8,9],
+        [9,8,8,9,9],
+        [9,9,9,9,9]
+      ]
+    }, {
+      "cases": ["$DiagEscape"],
+      "grid": [
+        [9,9,9,9,9],
+        [9,1,1,1,9],
+        [9,1,9,1,9],
+        [9,1,1,9,9],
+        [9,9,9,9,9]
+      ]
+    }]
+  }, {
+    "id": "other-color-ring",
+    "separates": "a ring of a second ink color stands beside a ring of the shape color: the concept recolors the shape-color ring alone, $AnyInk recolors both, and shape_color=RarestColor finds a tie and is undefined",
+    "input": [
+      [9,9,9,9,9,9,9,9,9],
+      [9,1,1,1,9,2,2,2,9],
+      [9,1,9,1,9,2,9,2,9],
+      [9,1,1,1,9,2,2,2,9],
+      [9,9,9,9,9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$ShapeInk & shape_color=stored"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9],
+        [9,8,8,8,9,2,2,2,9],
+        [9,8,9,8,9,2,9,2,9],
+        [9,8,8,8,9,2,2,2,9],
+        [9,9,9,9,9,9,9,9,9]
+      ]
+    }, {
+      "cases": ["$AnyInk","shape_color=RarestColor"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9],
+        [9,8,8,8,9,8,8,8,9],
+        [9,8,9,8,9,8,9,8,9],
+        [9,8,8,8,9,8,8,8,9],
+        [9,9,9,9,9,9,9,9,9]
+      ]
+    }]
+  }, {
+    "id": "ink-outnumbers-background",
+    "separates": "a ring fills the grid, so the shape color is the commonest color: the concept recolors the ring, shape_color=RarestColor takes the background as the shape color and background=DominantColor takes the shape color as the background, and both keep the input",
+    "input": [
+      [1,1,1],
+      [1,9,1],
+      [1,1,1]
+    ],
+    "output": [{
+      "cases": ["shape_color=stored & background=stored"],
+      "grid": [
+        [8,8,8],
+        [8,9,8],
+        [8,8,8]
+      ]
+    }, {
+      "cases": ["background=DominantColor","$AnyHole & shape_color=RarestColor"],
+      "grid": [
+        [1,1,1],
+        [1,9,1],
+        [1,1,1]
+      ]
+    }, {
+      "cases": ["$HoleCountTable & shape_color=RarestColor"],
+      "grid": [
+        [1,1,1],
+        [1,1,1],
+        [1,1,1]
+      ]
+    }]
+  }, {
+    "id": "two-hole-shape",
+    "separates": "one shape closes off two regions: the concept recolors it, $OneHole keeps it since its count of regions is not the stored count, and $HoleCountTable has no entry for two and is undefined",
+    "input": [
+      [9,9,9,9,9,9,9],
+      [9,1,1,1,1,1,9],
+      [9,1,9,1,9,1,9],
+      [9,1,1,1,1,1,9],
+      [9,9,9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$AnyHole","$MinHoleSize","hole_count=TileDim"],
+      "grid": [
+        [9,9,9,9,9,9,9],
+        [9,8,8,8,8,8,9],
+        [9,8,9,8,9,8,9],
+        [9,8,8,8,8,8,9],
+        [9,9,9,9,9,9,9]
+      ]
+    }, {
+      "cases": ["$HoleCountTable"],
+      "grid": null
+    }, {
+      "cases": ["$OneHole & hole_count=stored"],
+      "grid": [
+        [9,9,9,9,9,9,9],
+        [9,1,1,1,1,1,9],
+        [9,1,9,1,9,1,9],
+        [9,1,1,1,1,1,9],
+        [9,9,9,9,9,9,9]
+      ]
+    }]
+  }, {
+    "id": "shape_color=RarestColor",
+    "separates": "`shape_color=RarestColor` from the stored value: train 0 with 1 and 0 swapped",
+    "input": [
+      [9,9,9,9,9,9,9,9,9,9,9],
+      [9,9,9,9,9,9,9,9,9,9,9],
+      [9,0,0,0,9,9,9,0,9,9,9],
+      [9,0,9,0,9,9,9,0,9,9,9],
+      [9,0,9,0,9,9,0,0,0,0,9],
+      [9,0,0,0,9,9,9,0,9,9,9],
+      [9,9,9,9,9,9,9,0,9,9,9],
+      [9,9,9,9,9,9,9,9,9,9,9],
+      [9,9,9,9,9,9,9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$ShapeInk & shape_color=stored"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9],
+        [9,0,0,0,9,9,9,0,9,9,9],
+        [9,0,9,0,9,9,9,0,9,9,9],
+        [9,0,9,0,9,9,0,0,0,0,9],
+        [9,0,0,0,9,9,9,0,9,9,9],
+        [9,9,9,9,9,9,9,0,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9]
+      ]
+    }, {
+      "cases": ["$AnyInk","$AnyHole & shape_color=RarestColor"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9],
+        [9,8,8,8,9,9,9,0,9,9,9],
+        [9,8,9,8,9,9,9,0,9,9,9],
+        [9,8,9,8,9,9,0,0,0,0,9],
+        [9,8,8,8,9,9,9,0,9,9,9],
+        [9,9,9,9,9,9,9,0,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9]
+      ]
+    }, {
+      "cases": ["$HoleCountTable & shape_color=RarestColor"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9],
+        [9,8,8,8,9,9,9,1,9,9,9],
+        [9,8,9,8,9,9,9,1,9,9,9],
+        [9,8,9,8,9,9,1,1,1,1,9],
+        [9,8,8,8,9,9,9,1,9,9,9],
+        [9,9,9,9,9,9,9,1,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "`background=DominantColor` from the stored value: train 0 with 9 and 0 swapped",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0],
+      [0,1,1,1,0,0,0,1,0,0,0],
+      [0,1,0,1,0,0,0,1,0,0,0],
+      [0,1,0,1,0,0,1,1,1,1,0],
+      [0,1,1,1,0,0,0,1,0,0,0],
+      [0,0,0,0,0,0,0,1,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$ShapeInk","background=DominantColor"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,8,8,8,0,0,0,1,0,0,0],
+        [0,8,0,8,0,0,0,1,0,0,0],
+        [0,8,0,8,0,0,1,1,1,1,0],
+        [0,8,8,8,0,0,0,1,0,0,0],
+        [0,0,0,0,0,0,0,1,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$AnyInk & background=stored"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,1,1,1,0,0,0,1,0,0,0],
+        [0,1,0,1,0,0,0,1,0,0,0],
+        [0,1,0,1,0,0,1,1,1,1,0],
+        [0,1,1,1,0,0,0,1,0,0,0],
+        [0,0,0,0,0,0,0,1,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "hole_count=TileDim",
+    "separates": "`hole_count=TileDim` from the stored value: the input of `two-hole-shape`",
+    "input": [
+      [9,9,9,9,9,9,9],
+      [9,1,1,1,1,1,9],
+      [9,1,9,1,9,1,9],
+      [9,1,1,1,1,1,9],
+      [9,9,9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$AnyHole","$MinHoleSize","hole_count=TileDim"],
+      "grid": [
+        [9,9,9,9,9,9,9],
+        [9,8,8,8,8,8,9],
+        [9,8,9,8,9,8,9],
+        [9,8,8,8,8,8,9],
+        [9,9,9,9,9,9,9]
+      ]
+    }, {
+      "cases": ["$HoleCountTable"],
+      "grid": null
+    }, {
+      "cases": ["$OneHole & hole_count=stored"],
+      "grid": [
+        [9,9,9,9,9,9,9],
+        [9,1,1,1,1,1,9],
+        [9,1,9,1,9,1,9],
+        [9,1,1,1,1,1,9],
+        [9,9,9,9,9,9,9]
+      ]
+    }]
+  }, {
+    "id": "one-cell-hole",
+    "separates": "a ring closes off a one-cell hole: the concept recolors the ring, and $MinHoleSize at a least hole size of 2 keeps it",
+    "input": [
+      [9,9,9,9,9],
+      [9,1,1,1,9],
+      [9,1,9,1,9],
+      [9,1,1,1,9],
+      [9,9,9,9,9]
+    ],
+    "assign": {
+      "min_hole_size": [
+        [2]
+      ]
+    },
+    "output": [{
+      "cases": ["$AnyHole","$HoleCountTable","min_hole_size=TileDim","$OneHole"],
+      "grid": [
+        [9,9,9,9,9],
+        [9,8,8,8,9],
+        [9,8,9,8,9],
+        [9,8,8,8,9],
+        [9,9,9,9,9]
+      ]
+    }, {
+      "cases": ["$MinHoleSize & min_hole_size=stored"],
+      "grid": [
+        [9,9,9,9,9],
+        [9,1,1,1,9],
+        [9,1,9,1,9],
+        [9,1,1,1,9],
+        [9,9,9,9,9]
+      ]
+    }]
+  }, {
+    "id": "rarer-ring",
+    "separates": "a ring of 1 and a larger ring of 2 stand on a field of 9: the $ShapeInk cases recolor the ring of 1 alone, whether shape_color is stored or the rarest color, and the $AnyInk cases recolor both rings, whether background is stored or the commonest color",
+    "input": [
+      [9,9,9,9,9,9,9,9,9,9],
+      [9,1,1,1,9,2,2,2,2,9],
+      [9,1,9,1,9,2,9,9,2,9],
+      [9,1,1,1,9,2,2,2,2,9],
+      [9,9,9,9,9,9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$ShapeInk"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9],
+        [9,8,8,8,9,2,2,2,2,9],
+        [9,8,9,8,9,2,9,9,2,9],
+        [9,8,8,8,9,2,2,2,2,9],
+        [9,9,9,9,9,9,9,9,9,9]
+      ]
+    }, {
+      "cases": ["$AnyInk"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9],
+        [9,8,8,8,9,8,8,8,8,9],
+        [9,8,9,8,9,8,9,9,8,9],
+        [9,8,8,8,9,8,8,8,8,9],
+        [9,9,9,9,9,9,9,9,9,9]
+      ]
+    }]
+  }, {
+    "id": "two-hole-square-grid",
+    "separates": "one shape closes off two regions in a 9x9 grid, whose tile dims do not include 2: the concept recolors it, and $OneHole with hole_count=TileDim keeps it",
+    "input": [
+      [9,9,9,9,9,9,9,9,9],
+      [9,9,9,9,9,9,9,9,9],
+      [9,9,9,9,9,9,9,9,9],
+      [9,1,1,1,1,1,9,9,9],
+      [9,1,9,1,9,1,9,9,9],
+      [9,1,1,1,1,1,9,9,9],
+      [9,9,9,9,9,9,9,9,9],
+      [9,9,9,9,9,9,9,9,9],
+      [9,9,9,9,9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$AnyHole","$MinHoleSize"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9],
+        [9,8,8,8,8,8,9,9,9],
+        [9,8,9,8,9,8,9,9,9],
+        [9,8,8,8,8,8,9,9,9],
+        [9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9]
+      ]
+    }, {
+      "cases": ["$HoleCountTable"],
+      "grid": null
+    }, {
+      "cases": ["$OneHole"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9],
+        [9,1,1,1,1,1,9,9,9],
+        [9,1,9,1,9,1,9,9,9],
+        [9,1,1,1,1,1,9,9,9],
+        [9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9]
+      ]
+    }]
+  }, {
+    "id": "two-hole-table",
+    "separates": "one shape closes off two regions, and the table maps a count of two to 3: the concept recolors the shape with 8, $OneHole keeps it, and $HoleCountTable recolors it with 3",
+    "input": [
+      [9,9,9,9,9,9,9],
+      [9,1,1,1,1,1,9],
+      [9,1,9,1,9,1,9],
+      [9,1,1,1,1,1,9],
+      [9,9,9,9,9,9,9]
+    ],
+    "assign": {
+      "count_color": [
+        [0,1],
+        [1,8],
+        [2,3]
+      ]
+    },
+    "output": [{
+      "cases": ["$AnyHole","$MinHoleSize","hole_count=TileDim"],
+      "grid": [
+        [9,9,9,9,9,9,9],
+        [9,8,8,8,8,8,9],
+        [9,8,9,8,9,8,9],
+        [9,8,8,8,8,8,9],
+        [9,9,9,9,9,9,9]
+      ]
+    }, {
+      "cases": ["$HoleCountTable"],
+      "grid": [
+        [9,9,9,9,9,9,9],
+        [9,3,3,3,3,3,9],
+        [9,3,9,3,9,3,9],
+        [9,3,3,3,3,3,9],
+        [9,9,9,9,9,9,9]
+      ]
+    }, {
+      "cases": ["$OneHole & hole_count=stored"],
+      "grid": [
+        [9,9,9,9,9,9,9],
+        [9,1,1,1,1,1,9],
+        [9,1,9,1,9,1,9],
+        [9,1,1,1,1,1,9],
+        [9,9,9,9,9,9,9]
+      ]
+    }]
+  }, {
+    "id": "min_hole_size=TileDim",
+    "separates": "a ring closes off a one-cell hole in a 12x12 grid, whose tile dims do not include 1: the concept recolors the ring, min_hole_size=TileDim takes 2 as the least hole size and keeps it, and hole_count=TileDim has no count of 1 and keeps it",
+    "input": [
+      [9,9,9,9,9,9,9,9,9,9,9,9],
+      [9,9,9,9,9,9,9,9,9,9,9,9],
+      [9,9,9,9,9,9,9,9,9,9,9,9],
+      [9,9,9,9,9,9,9,9,9,9,9,9],
+      [9,9,9,9,1,1,1,9,9,9,9,9],
+      [9,9,9,9,1,9,1,9,9,9,9,9],
+      [9,9,9,9,1,1,1,9,9,9,9,9],
+      [9,9,9,9,9,9,9,9,9,9,9,9],
+      [9,9,9,9,9,9,9,9,9,9,9,9],
+      [9,9,9,9,9,9,9,9,9,9,9,9],
+      [9,9,9,9,9,9,9,9,9,9,9,9],
+      [9,9,9,9,9,9,9,9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["hole_count=stored & min_hole_size=stored"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,8,8,8,9,9,9,9,9],
+        [9,9,9,9,8,9,8,9,9,9,9,9],
+        [9,9,9,9,8,8,8,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9,9]
+      ]
+    }, {
+      "cases": ["min_hole_size=TileDim","hole_count=TileDim"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,1,1,1,9,9,9,9,9],
+        [9,9,9,9,1,9,1,9,9,9,9,9],
+        [9,9,9,9,1,1,1,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9,9],
+        [9,9,9,9,9,9,9,9,9,9,9,9]
+      ]
+    }]
+  }]
+}

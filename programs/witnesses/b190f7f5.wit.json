@@ -1,0 +1,171 @@
+{
+  "id": "b190f7f5",
+  "witnesses": [{
+    "id": "template-in-other-color",
+    "separates": "The shape is drawn in 5, not 8. The concept finds no half that holds only 8 and background, and is undefined. The one-color and fewer-colors readings take the 5 half as the shape and stamp it in each pattern color.",
+    "input": [
+      [2,0,4,0,5,0],
+      [0,3,0,5,5,5],
+      [0,0,0,0,5,0]
+    ],
+    "output": [{
+      "cases": ["$OnlyTemplateColor"],
+      "grid": null
+    }, {
+      "cases": ["$FewerColorsTemplate","$MonoTemplate"],
+      "grid": [
+        [0,2,0,0,0,0,0,4,0],
+        [2,2,2,0,0,0,4,4,4],
+        [0,2,0,0,0,0,0,4,0],
+        [0,0,0,0,3,0,0,0,0],
+        [0,0,0,3,3,3,0,0,0],
+        [0,0,0,0,3,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "shape-short-of-square",
+    "separates": "The 8 shape fills only the top-left 2x2 of its 3x3 half. The concept stamps the whole 3x3 half, giving 9x9. The bounding-box reading stamps the 2x2 box of the shape, giving 6x6.",
+    "input": [
+      [2,0,4,8,8,0],
+      [0,3,0,8,0,0],
+      [0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$WholeHalf"],
+      "grid": [
+        [2,2,0,0,0,0,4,4,0],
+        [2,0,0,0,0,0,4,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,3,3,0,0,0,0],
+        [0,0,0,3,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$TemplateBbox"],
+      "grid": [
+        [2,2,0,0,4,4],
+        [2,0,0,0,4,0],
+        [0,0,3,3,0,0],
+        [0,0,3,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "rectangle-halves",
+    "separates": "The input is 3x8, so its halves are 3x4 and not squares. The square reading finds no squares that divide the input and is undefined. The equal-halves reading cuts it into two 3x4 halves and stamps the 3x4 shape at each pattern cell, giving 9x16.",
+    "input": [
+      [2,0,4,0,0,8,8,0],
+      [0,3,0,1,8,8,8,8],
+      [0,0,2,0,0,8,8,0]
+    ],
+    "output": [{
+      "cases": ["$SquareHalves"],
+      "grid": null
+    }, {
+      "cases": ["$EqualHalves"],
+      "grid": [
+        [0,2,2,0,0,0,0,0,0,4,4,0,0,0,0,0],
+        [2,2,2,2,0,0,0,0,4,4,4,4,0,0,0,0],
+        [0,2,2,0,0,0,0,0,0,4,4,0,0,0,0,0],
+        [0,0,0,0,0,3,3,0,0,0,0,0,0,1,1,0],
+        [0,0,0,0,3,3,3,3,0,0,0,0,1,1,1,1],
+        [0,0,0,0,0,3,3,0,0,0,0,0,0,1,1,0],
+        [0,0,0,0,0,0,0,0,0,2,2,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,2,2,2,2,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,2,2,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "two-color-shape",
+    "separates": "The shape is drawn in two colors, 5 and 6, and the pattern holds four. The one-color reading finds no half of one color and is undefined, and so is the concept, which finds no 8. The fewer-colors reading takes the two-color half as the shape and stamps its cells in each pattern color.",
+    "input": [
+      [2,0,4,0,5,0],
+      [0,3,0,6,5,6],
+      [1,0,0,0,5,0]
+    ],
+    "output": [{
+      "cases": ["$OnlyTemplateColor","$TemplateBbox"],
+      "grid": null
+    }, {
+      "cases": ["$FewerColorsTemplate"],
+      "grid": [
+        [0,2,0,0,0,0,0,4,0],
+        [2,2,2,0,0,0,4,4,4],
+        [0,2,0,0,0,0,0,4,0],
+        [0,0,0,0,3,0,0,0,0],
+        [0,0,0,3,3,3,0,0,0],
+        [0,0,0,0,3,0,0,0,0],
+        [0,1,0,0,0,0,0,0,0],
+        [1,1,1,0,0,0,0,0,0],
+        [0,1,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "one-color-pattern",
+    "separates": "The pattern is drawn in one color, 2. The concept takes the half of 8 as the shape and stamps it in 2. Both halves are of one color, so the one-color reading is undefined, and both hold one color, so the fewer-colors reading is undefined too.",
+    "input": [
+      [2,0,2,0,8,0],
+      [0,2,0,8,8,8],
+      [0,0,0,0,8,0]
+    ],
+    "output": [{
+      "cases": ["$OnlyTemplateColor"],
+      "grid": [
+        [0,2,0,0,0,0,0,2,0],
+        [2,2,2,0,0,0,2,2,2],
+        [0,2,0,0,0,0,0,2,0],
+        [0,0,0,0,2,0,0,0,0],
+        [0,0,0,2,2,2,0,0,0],
+        [0,0,0,0,2,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$FewerColorsTemplate","$MonoTemplate"],
+      "grid": null
+    }]
+  }, {
+    "id": "empty-pattern",
+    "separates": "The pattern half is empty and the shape, drawn in 5, fills only a 2x2 box of its half. The one-color reading with the bounding box takes the 5 half as the shape and gives a 6x6 grid of background. The fewer-colors reading takes the empty half as the shape: copied as its whole half, the shape stamps nothing and gives a 9x9 grid of background, and the shape has no bounding box, so with the bounding box the reading is undefined. The concept finds no 8 and is undefined.",
+    "input": [
+      [0,0,0,5,5,0],
+      [0,0,0,5,0,0],
+      [0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$OnlyTemplateColor"],
+      "grid": null
+    }, {
+      "cases": ["$FewerColorsTemplate"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$MonoTemplate"],
+      "grid": [
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }]
+  }]
+}

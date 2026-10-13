@@ -1,0 +1,206 @@
+// b1986d4b
+// @draft
+// @keywords: objects noise count rank overlay
+// @scene background: one color fills most of the grid.
+// @scene noise: scattered cells of one other color, alone or in small clumps,
+//  in more pieces than any other color.
+// @scene squares: every piece of each color other than the background and the
+//  noise is a solid square, apart from every other square.
+// @scene color-per-size: all squares of one size have one color, and different
+//  sizes have different colors.
+// @rule square-reading: the background is the commonest color, the noise color
+//  is the other color in the most pieces, and the squares are the pieces of the
+//  remaining colors.
+// @rule count-per-size: the number of squares of each size is read from the
+//  input, and every square counts.
+// @rule stacks: stack i, from 0, holds a square of each size whose count is
+//  greater than i, so the stacks hold fewer sizes from first to last.
+// @rule nesting: in a stack, each square sits in the `corner` of the stack, and
+//  a smaller square is drawn over a larger one, each in the color its size has
+//  in the input.
+// @rule layout: the stacks are laid in a line along `axis`, starting from the
+//  `corner` side, each as wide as its largest square, and each followed by a
+//  line of background `gap` wide, the last one included.
+// @rule extent: the output's extent across `axis` is the largest size plus
+//  `gap`, and every cell not in a square is background.
+
+.type Piece = [col: Color, id: Ident]
+
+// A line of the output along the axis: a stack, and a line of its slot.
+.type Column = [stack: Position, p: Position]
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    // the corner each square sits in within its stack, and the end of the line
+    // where the first stack stands
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+    // the axis the stacks are laid along
+    .decl axis(a: Axis) axis(AXIS_H).
+    // the width of background after each stack, and below the stacks
+    .decl gap(k: number) gap(1).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    // @claim square-reading
+    .init bg_mode = Mode<Key, Color, Position>
+    bg_mode.item(K, Col, P) :- cell(K, P, Col).
+
+    .decl bg(key: Key, col: Color)
+    bg(K, Col) :- bg_mode.mode(K, Col).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// --- the squares ---
+
+// @claim square-reading count-per-size
+.init piece = Components<Color>
+piece.node(Col, P) :- in(P, Col), !parse.bg($U(), Col).
+
+// The noise is the color in the most pieces.
+// @claim square-reading
+.init scattered = Mode<Unit, Color, Ident>
+scattered.item($U(), Col, Id) :- piece.label(Col, _, Id).
+
+.decl square(col: Color, id: Ident)
+square(Col, Id) :- piece.label(Col, _, Id), !scattered.mode($U(), Col).
+
+// @claim nesting layout extent
+.init bbox = Bbox<Piece>
+bbox.cell([Col, Id], P) :- square(Col, Id), piece.label(Col, P, Id).
+
+// The extent of each color's squares along each axis.
+.decl side(col: Color, a: Axis, n: number)
+side(Col, A, N) :-
+    bbox.box([Col, Id], B), piece.label(Col, P, Id),
+    axis_elem(A), box_extent(B, P, A, N).
+
+// The extent of each color's slot: its square's box extended by gap past the
+// corner opposite the stack's corner.
+.decl slot_side(col: Color, a: Axis, n: number)
+slot_side(Col, A, N) :-
+    bbox.box([Col, Id], B), piece.label(Col, P, Id),
+    params.corner(Diag), diag_opposite(Diag, Diag_far),
+    params.gap(G), edge_outset(Diag_far, G, O), compose(B, O, B_slot),
+    axis_elem(A), box_extent(B_slot, P, A, N).
+
+// @claim count-per-size
+.init squares = Tally<Color, Ident>
+squares.item(Col, Id) :- square(Col, Id).
+
+// --- the stacks ---
+
+// The edges of the corner: the line starts from d_along, and squares sit
+// against d_across.
+.decl corner_dirs(d_along: Dir, d_across: Dir)
+corner_dirs(D1, D2) :- params.corner(Diag), params.axis(A), diag_dirs(Diag, A, D1, D2).
+
+// @claim stacks
+.init most = Extremes<Unit>
+most.cand($U(), N) :- squares.tally(_, N).
+
+// One cell per stack.
+.init line = AxisFrame<Unit>
+line.extent($U(), A, N) :- params.axis(A), most.high($U(), N).
+
+// Stack i holds each color with more than i squares.
+.decl holds(s: Position, col: Color)
+holds(S, Col) :-
+    line.cell($U(), _, S), corner_dirs(D, _), dist(S, D, I),
+    squares.tally(Col, N), I < N.
+
+// A stack's slot is the slot of its largest square.
+// @claim layout
+.init widest = Extremes<Position>
+widest.cand(S, N) :- holds(S, Col), params.axis(A), slot_side(Col, A, N).
+
+.init slot = AxisFrame<Position>
+slot.extent(S, A, N) :- params.axis(A), widest.high(S, N).
+
+// --- the layout ---
+
+// The slots' lines, in order from the start of the line.
+// @claim layout
+.init columns = Order<Unit, Column>
+columns.elem($U(), [S, T]) :- slot.cell(S, _, T).
+columns.before($U(), [S1, T1], [S2, T2]) :-
+    slot.cell(S1, _, T1), slot.cell(S2, _, T2), corner_dirs(D, _),
+    ( nearer(D, S1, S2)              // an earlier stack
+    ; S1 = S2, nearer(D, T1, T2)     // an earlier line of one slot
+    ).
+
+.init lines = DirFrame<Unit>
+lines.dir(D) :- corner_dirs(D, _).
+lines.dist_set($U(), R) :- columns.rank($U(), _, R).
+
+// The lines across the axis: the largest slot's.
+// @claim extent
+.init deepest = Extremes<Unit>
+deepest.cand($U(), N) :- params.axis(A), perp(A, A2), slot_side(_, A2, N).
+
+.init across = AxisFrame<Unit>
+across.extent($U(), A2, N) :- params.axis(A), perp(A, A2), deepest.high($U(), N).
+
+// --- the nesting ---
+
+// Cell (t, q) of stack s lies in a square of col.
+.decl cover(s: Position, t: Position, q: Position, col: Color)
+cover(S, T, Q, Col) :-
+    slot.cell(S, A, T), across.cell($U(), A2, Q), holds(S, Col),
+    corner_dirs(D1, D2),
+    dist(T, D1, K1), side(Col, A, N1), K1 < N1,
+    dist(Q, D2, K2), side(Col, A2, N2), K2 < N2.
+
+// A smaller square covers the cell too.
+.decl hidden(s: Position, t: Position, q: Position, col: Color)
+hidden(S, T, Q, Col) :-
+    cover(S, T, Q, Col), cover(S, T, Q, Col2),
+    params.axis(A), side(Col, A, N), side(Col2, A, N2), N2 < N.
+
+out(P, Col) :-
+    columns.rank($U(), [S, T], R), lines.pos($U(), R, P_along),
+    across.cell($U(), _, Q), compose(P_along, Q, P),
+    ( cover(S, T, Q, Col), !hidden(S, T, Q, Col)        // the top square
+    ; !cover(S, T, Q, _), parse.bg($U(), Col)           // outside every square
+    ).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // An output corner cell that is background: the squares sit in another
+    // corner.
+    .decl blank_corner(diag: DiagDir)
+    blank_corner(Diag) :- ex_out(E, P, Col), ex.bg(E, Col), corner_dist(P, Diag, 0).
+
+    .decl corner(d: DiagDir)
+    corner(Diag) :- diag_dir_elem(Diag), !blank_corner(Diag).
+
+    // An output shorter along a than across it: the line runs along the other
+    // axis.
+    .decl short(a: Axis)
+    short(A) :- ex_out(_, P, _), axis_dims(P, A, N1, N2), N1 < N2.
+
+    .decl axis(a: Axis)
+    axis(A) :- axis_elem(A), !short(A).
+
+    // The lines across the axis that hold a square, by distance from the far
+    // edge; the nearest is gap lines from it.
+    .init inked = Extremes<Example>
+    inked.cand(E, K) :-
+        ex_out(E, P, Col), !ex.bg(E, Col),
+        params.corner(Diag), params.axis(A), diag_dirs(Diag, A, _, D),
+        opposite(D, D_far), dist(P, D_far, K).
+
+    .init gaps = Unanimous<Unit, number>
+    gaps.item($U(), K) :- inked.low(_, K).
+
+    .decl gap(k: number)
+    gap(K) :- gaps.value($U(), K).
+}

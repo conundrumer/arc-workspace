@@ -1,0 +1,304 @@
+// b15fca0b
+// @draft
+// @keywords: markers route
+// @scene two-endpoints: the input holds exactly two cells of endpoint_color
+// @scene walls: every other cell that is not background is a wall cell of
+//  color 1
+// @scene connected: the two endpoints are joined by a 4-adjacent walk whose
+//  inner cells are all background
+// @scene unique-shortest: exactly one such walk has the fewest steps
+// @rule copy: every cell keeps its input color unless a rule below paints it
+// @rule shortest-path: each inner cell of the shortest 4-adjacent walk from
+//  one endpoint to the other, through background cells only, takes path_color
+
+// what the route minimizes
+.type Cost =
+    // @claim shortest-path
+    Steps {}
+    // @rule shortest-path: each inner cell of the walk with the fewest
+    //  straight runs, and of those the fewest steps, takes path_color
+    // @scene unique-shortest: exactly one walk has the fewest straight runs
+    //  and, of those, the fewest steps
+    // @witness turns-vs-steps: variant concept
+  | FewestTurns {}
+
+// the cells the route can cross
+.type Passable =
+    // @claim shortest-path walls
+    Background {}
+    // @scene walls: the walls are the cells of wall_color
+    // @rule shortest-path: the walk crosses every cell that is neither a wall
+    //  nor an endpoint, and its inner cells take path_color
+    // @witness foreign-color-on-route: variant concept
+    //     @relaxed walls
+  | PassNonWall {}
+
+// what is painted when fewest-step walks tie
+.type Tie =
+    // @claim unique-shortest
+    Unique {}
+    // @scene unique-shortest: several walks may have the fewest steps, and
+    //  each of them gives one output
+    // @witness tied-routes: variant $TieAny
+    //     @relaxed unique-shortest
+  | TieAny {}
+    // @scene unique-shortest: several walks may have the fewest steps, and
+    //  the inner cells of all of them take path_color
+    // @witness tied-routes: variant $TieAny
+  | TieUnion {}
+
+// what is given when no walk joins the endpoints
+.type NoRoute =
+    // @claim connected
+    Joined {}
+    // @scene connected: the endpoints may have no walk joining them, and then
+    //  nothing is painted
+    // @witness no-route: foreign $NoRouteKeep
+    //     @relaxed connected
+  | NoRouteKeep {}
+
+// how many endpoints the scene holds
+.type Endpoints =
+    // @claim two-endpoints
+    TwoEnds {}
+    // @scene two-endpoints: the input holds two or more cells of
+    //  endpoint_color, and the walk between each two of them is painted
+    // @witness three-endpoints: variant $AllPairs
+    //     @relaxed two-endpoints
+  | AllPairs {}
+
+.type Choice = [cost: Cost, pass: Passable, tie: Tie, gap: NoRoute, ends: Endpoints]
+
+// The route search a case runs.
+.type Way = [cost: Cost, pass: Passable]
+
+// A route search from endpoint a.
+.type Seed = [w: Way, a: Position]
+
+// Two endpoints.
+.type Ends = [a: Position, b: Position]
+
+// A route search from endpoint a to endpoint b.
+.type Pair = [w: Way, a: Position, b: Position]
+
+// A cell a walk enters, with the direction it enters it in.
+.type Visit = [x: Position, d: Dir]
+
+// The k-th step of the walk from a to b.
+.type Level = [a: Position, b: Position, k: number]
+
+// A visit of the walk from a to b.
+.type Stop = [a: Position, b: Position, v: Visit]
+
+.type TiebreakResolution =
+    End {} | Sit {slot: Level, item: Stop, rest: TiebreakResolution}
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {
+    // @derive RarestColor: variant derived
+    //     @relaxed two-endpoints
+    // @ignore: derive concept — wherever it is defined, it gives the output of
+    //  the $TieAny & $NoRouteKeep & $AllPairs copy
+    .decl endpoint_color(col: Color) endpoint_color(2).
+    .decl path_color(col: Color) path_color(4).
+
+    // --- $Background ---
+    // @derive DominantColor: variant concept
+    // @ignore: derive concept — wherever it is defined, it gives the output of
+    //  the $TieAny & $NoRouteKeep & $AllPairs copy
+    .decl background(col: Color) background(0).
+
+    // --- $PassNonWall ---
+    .decl wall_color(col: Color) wall_color(1).
+}
+
+.init params = Params
+
+.decl cost_choice(c: Cost)
+cost_choice($Steps()). cost_choice($FewestTurns()).
+
+.decl passable_choice(pa: Passable)
+passable_choice($Background()). passable_choice($PassNonWall()).
+
+.decl tie_choice(t: Tie)
+tie_choice($Unique()). tie_choice($TieAny()). tie_choice($TieUnion()).
+
+// A case other than the concept case that takes $Unique, $Joined or $TwoEnds
+// is subsumed by the case that takes $TieAny, $NoRouteKeep or $AllPairs in
+// place of each of them: wherever the first is defined, the second gives its
+// output.
+.decl impl_choice(ch: Choice)
+impl_choice([C, Pa, T, G, E]) :-
+    cost_choice(C), passable_choice(Pa), tie_choice(T),
+    ( C = $Steps(), Pa = $Background(), T = $Unique(), G = $Joined(), E = $TwoEnds()
+    ; T != $Unique(), G = $NoRouteKeep(), E = $AllPairs()
+    ).
+
+.decl way(w: Way)
+way([C, Pa]) :- impl_choice([C, Pa, _, _, _]).
+
+.decl end(p: Position)
+end(P) :- in(P, Col), params.endpoint_color(Col).
+
+// The cells a walk may cross between its endpoints.
+.decl open(pa: Passable, p: Position)
+
+// Each two endpoints, in both orders.
+.init pairing = Canon<Ends>
+pairing.edge([A, B], [B, A]) :- end(A), end(B), A != B.
+
+// Each two endpoints, taken once.
+.decl pair(a: Position, b: Position)
+pair(A, B) :- pairing.rep([A, B], [A, B]).
+
+// A third endpoint.
+.decl crowded()
+crowded() :- pair(A, B), end(C), C != A, C != B.
+
+// The steps a walk from a may take, between visits.
+.decl link(k: Pair, v: Visit, v2: Visit)
+
+// The fewest steps from a to each visit.
+// @claim shortest-path
+.init steps = GraphDistance<Pair, Visit>
+steps.edge(K, V, V2) :- link(K, V, V2).
+steps.seed([W, A, B], [A, D]) :- way(W), pair(A, B), dir_elem(D).
+
+// The fewest steps from a to b.
+// @claim shortest-path
+.init arrival = Extremes<Pair>
+arrival.cand([W, A, B], N) :- steps.distance([W, A, B], [B, _], N).
+
+// The visits of every fewest-step walk from a to b, traced back from b.
+.init back = Propagation<Pair, Visit>
+back.source([W, A, B], [B, D]) :- arrival.low([W, A, B], N), steps.distance([W, A, B], [B, D], N).
+back.edge(K, V2, V) :- steps.pred(K, V2, V).
+
+// The inner visits of those walks, by step.
+.decl stop(k: Pair, v: Visit, n: number)
+stop(K, [X, D], N) :- back.reached(K, [X, D]), !end(X), steps.distance(K, [X, D], N).
+
+// Two walks tie.
+.decl tie(k: Pair)
+tie(K) :- stop(K, [X1, _], N), stop(K, [X2, _], N), X1 != X2.
+
+// The case is undefined on the input.
+.decl undefined(ch: Choice)
+undefined(Ch) :- impl_choice(Ch), !pair(_, _).   // fewer than two endpoints
+
+// The resolutions a case gives.
+.decl resolved(ch: Choice, res: TiebreakResolution)
+
+// The cells a case paints under a resolution.
+.decl paint(ch: Choice, res: TiebreakResolution, p: Position)
+
+out(P, Col, Ch, Res) :- paint(Ch, Res, P), params.path_color(Col).
+out(P, Col, Ch, Res) :- resolved(Ch, Res), in(P, Col), !paint(Ch, Res, P).
+
+// --- $Background ---
+open($Background(), P) :- in(P, Col), params.background(Col).
+
+// --- $PassNonWall ---
+open($PassNonWall(), P) :- in(P, Col), !params.wall_color(Col), !params.endpoint_color(Col).
+
+// --- $Steps ---
+// A step to a neighbor, from a cell the walk may cross or from a.
+link([[$Steps(), Pa], A, B], [X, D], [Y, D2]) :-
+    way([$Steps(), Pa]), pair(A, B),
+    ( open(Pa, X) ; X = A ), dir_elem(D), dir_elem(D2), neighbor(X, D2, Y),
+    ( open(Pa, Y) ; end(Y) ).
+
+// --- $FewestTurns ---
+// The straight runs a walk may take.
+// @claim shortest-path
+.init run = Ray<Passable>
+run.dir(Pa, D) :- way([$FewestTurns(), Pa]), dir_elem(D).
+run.mark(Pa, P) :- way([$FewestTurns(), Pa]), ( open(Pa, P) ; end(P) ).
+run.blocked(Pa, P) :- way([$FewestTurns(), Pa]), in(P, _), !open(Pa, P).
+
+// A straight run from p toward d that ends at q: on a cell the walk may
+// cross, or on an endpoint.
+.decl leg(pa: Passable, p: Position, d: Dir, q: Position)
+leg(Pa, P, D, Q) :- run.clear_cast(Pa, Q, D, _, P), dir_elem(D), Q != P.
+leg(Pa, P, D, Q) :- run.stop(Pa, Q, D, _, P), dir_elem(D), end(Q).
+
+// The fewest straight runs from a to each cell.
+// @claim shortest-path
+.init runs = GraphDistance<Seed, Position>
+runs.edge([W, A], P, Q) :-
+    W = [$FewestTurns(), Pa], pair(A, _),
+    leg(Pa, P, _, Q), ( open(Pa, P) ; P = A ).
+runs.seed([W, A], A) :- W = [$FewestTurns(), _], way(W), pair(A, _).
+
+// The cells of every fewest-run walk from a to b, traced back from b.
+.init run_back = Propagation<Pair, Position>
+run_back.source([W, A, B], B) :- runs.seed([W, A], A), pair(A, B).
+run_back.edge([W, A, B], Q, P) :- runs.pred([W, A], Q, P), pair(A, B).
+
+// A run of a fewest-run walk from a to b.
+.decl route_leg(k: Pair, p: Position, d: Dir, q: Position)
+route_leg([W, A, B], P, D, Q) :-
+    run_back.reached([W, A, B], Q), runs.pred([W, A], Q, P), W = [_, Pa], leg(Pa, P, D, Q).
+
+// A step from x to y toward d inside the run of a fewest-run walk that
+// starts at p.
+.decl leg_step(k: Pair, p: Position, x: Position, d: Dir, y: Position)
+leg_step(K, P, X, D, Y) :-
+    route_leg(K, P, D, Q), K = [[_, Pa], _, _],
+    ( X = P ; leg(Pa, P, D, X) ), neighbor(X, D, Y),
+    ( Y = Q ; leg(Pa, Y, D, Q) ).
+
+// A step goes on along its run, or starts the next run where one ends. The
+// walk's first run starts from the seed visit of its own direction.
+link([[$FewestTurns(), Pa], A, B], [X, D], [Y, D2]) :-
+    K = [[$FewestTurns(), Pa], A, B], leg_step(K, P, X, D2, Y),
+    ( D = D2
+    ; P = X, route_leg(K, _, D, X)     // a run of the walk ends at x toward d
+    ).
+
+// --- $Unique ---
+undefined([C, Pa, $Unique(), G, E]) :-
+    impl_choice([C, Pa, $Unique(), G, E]), tie([[C, Pa], _, _]).
+
+// --- $Unique, $TieUnion ---
+// One output, painting every fewest-step walk.
+resolved([C, Pa, T, G, E], $End()) :-
+    impl_choice([C, Pa, T, G, E]), T != $TieAny(), !undefined([C, Pa, T, G, E]).
+
+paint([C, Pa, T, G, E], $End(), X) :-
+    resolved([C, Pa, T, G, E], $End()), T != $TieAny(), stop([[C, Pa], _, _], [X, _], _).
+
+// --- $TieAny ---
+// One fewest-step walk per pair of endpoints, a step's visit to each slot.
+.init ties = TiebreakResolutions<Way, Level, Stop>
+ties.cand(W, [A, B, N], [A, B, V]) :- stop([W, A, B], V, N).
+
+// Two steps of a walk in a row.
+.decl next(k: Pair, n: number, n2: number)
+next(K, N, N2) :- stop(K, V, N), stop(K, V2, N2), steps.pred(K, V2, V).
+
+// A resolution whose visits of two steps in a row are not one step apart.
+.decl broken_walk(w: Way, res: TiebreakResolution)
+broken_walk(W, Res) :-
+    ties.assign(W, Res, [A, B, N], [A, B, V]), ties.assign(W, Res, [A, B, N2], [A, B, V2]),
+    next([W, A, B], N, N2), !steps.pred([W, A, B], V2, V).
+
+.decl walked(w: Way)
+walked(W) :- stop([W, _, _], _, _).
+
+resolved([C, Pa, $TieAny(), G, E], Res) :-
+    impl_choice([C, Pa, $TieAny(), G, E]), !undefined([C, Pa, $TieAny(), G, E]),
+    ( ties.resolution([C, Pa], Res), !broken_walk([C, Pa], Res)
+    ; !walked([C, Pa]), Res = $End()        // no walk has an inner cell
+    ).
+
+paint([C, Pa, $TieAny(), G, E], Res, X) :-
+    resolved([C, Pa, $TieAny(), G, E], Res), ties.assign([C, Pa], Res, _, [_, _, [X, _]]).
+
+// --- $Joined ---
+undefined([C, Pa, T, $Joined(), E]) :-
+    impl_choice([C, Pa, T, $Joined(), E]), pair(A, B), !arrival.low([[C, Pa], A, B], _).
+
+// --- $TwoEnds ---
+undefined([C, Pa, T, G, $TwoEnds()]) :- impl_choice([C, Pa, T, G, $TwoEnds()]), crowded().

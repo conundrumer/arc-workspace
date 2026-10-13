@@ -1,0 +1,211 @@
+// b27ca6d3
+// @draft
+// @keywords: objects count border bbox congruent lookup rank
+// @scene field: every cell that is not a mark has the params.background color
+// @scene marks: the marks are cells of params.mark, and each group of marks
+//  joined by shared sides is one cell or has params.pair_size cells
+// @rule pick-pairs: a group of marks joined by shared sides that has
+//  params.pair_size cells is a pair; a mark that touches others only at a
+//  corner does not join them
+// @rule frame: each background cell that touches a cell of a pair at a side
+//  or a corner takes params.frame
+// @rule keep: every other cell keeps its input color
+
+// which groups get a frame
+.type Selection =
+    // @claim pick-pairs
+    SizeEquals {}
+    // @rule pick-pairs: a group of at least params.pair_size cells is a pair
+    // @witness three-bar: variant concept
+    //     @relaxed marks
+  | SizeAtLeast {}
+    // @rule pick-pairs: the groups of the largest size in the input are the
+    //  pairs
+    // @witness three-bar: variant concept
+  | LargestSize {}
+    // @rule pick-pairs: a group whose shape is params.footprint up to a D4
+    //  transform is a pair
+    // @witness bar-and-l: variant concept
+    //     @reassigned pair_size
+    //     @reassigned footprint
+  | ShapeMatch {}
+
+// which cells form a pair's frame
+.type FrameCells =
+    // @claim frame
+    Halo {}
+    // @rule frame: the frame is the ring of cells just outside the pair's
+    //  bounding box
+    // @witness l-tromino: variant concept
+    //     @reassigned pair_size
+  | BoxRing {}
+
+// which cells of the frame take its color
+.type FrameTarget =
+    // @claim frame
+    OnBackground {}
+    // @rule frame: every frame cell that the pair does not hold takes
+    //  params.frame, a mark included
+    // @witness mark-in-frame: borderline concept
+  | FrameOverMarks {}
+
+.type Choice = [select: Selection, cells: FrameCells, target: FrameTarget]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive RarestColor: foreign concept
+    .decl mark(c: Color) mark(2).
+    .decl frame(c: Color) frame(3).
+
+    // --- $OnBackground ---
+    // @derive DominantColor: foreign concept
+    .decl background(c: Color) background(0).
+
+    // --- $SizeEquals, $SizeAtLeast ---
+    // the cell count of a group that gets a frame
+    // @derive TileCount: variant concept
+    //     @relaxed marks
+    .decl pair_size(n: number) pair_size(2).
+
+    // --- $ShapeMatch ---
+    // the shape of a group that gets a frame
+    .decl footprint(p: Position)
+    GRID_MASK_2x1(footprint,
+        1,
+        1)
+}
+
+.init params = Params
+
+.decl selection_choice(s: Selection)
+selection_choice($SizeEquals()). selection_choice($SizeAtLeast()).
+selection_choice($LargestSize()). selection_choice($ShapeMatch()).
+
+.decl frame_cells_choice(c: FrameCells)
+frame_cells_choice($Halo()). frame_cells_choice($BoxRing()).
+
+.decl frame_target_choice(t: FrameTarget)
+frame_target_choice($OnBackground()). frame_target_choice($FrameOverMarks()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, C, T]) :- selection_choice(S), frame_cells_choice(C), frame_target_choice(T).
+
+// The groups of marks, with their sizes, boxes, and shapes.
+.comp Parse<Key> {
+    .type KI = [k: Key, id: Ident]
+
+    .decl cell(k: Key, p: Position, col: Color)
+
+    // @claim marks pick-pairs
+    .init groups = Components<Key>
+    groups.node(K, P) :- cell(K, P, Col), params.mark(Col).
+
+    .decl group(g: KI, p: Position)
+    group([K, Id], P) :- groups.label(K, P, Id).
+
+    // @claim pick-pairs
+    .init size = Tally<KI, Position>
+    size.item(G, P) :- group(G, P).
+
+    // @claim pick-pairs frame
+    .init box = Bbox<KI>
+    box.cell(G, P) :- group(G, P).
+
+    // Each group's cells in its own box.
+    .decl shape(g: KI, p: Position)
+    shape(G, P_inner) :- box.cell(G, P), box.box(G, B), crop(P, B, P_inner).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The groups that get a frame.
+.decl pair(id: Ident, s: Selection)
+
+// The cells of a pair's frame.
+.decl reach(id: Ident, q: Position, c: FrameCells)
+
+// The cells that take params.frame.
+.decl frame_cell(p: Position, ch: Choice)
+
+out(P, Col, Ch) :- frame_cell(P, Ch), params.frame(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !frame_cell(P, Ch).
+
+// --- $SizeEquals ---
+pair(Id, $SizeEquals()) :- parse.size.tally([$U(), Id], N), params.pair_size(N).
+
+// --- $Halo ---
+// The cells that touch a cell of the group at a side or a corner.
+reach(Id, Q, $Halo()) :-
+    parse.group([$U(), Id], P), dir8_elem(D), neighbor(P, D, Q), in(Q, _).
+
+// --- $OnBackground ---
+frame_cell(Q, [S, C, $OnBackground()]) :-
+    pair(Id, S), reach(Id, Q, C), in(Q, Col), params.background(Col).
+
+// --- $SizeAtLeast ---
+pair(Id, $SizeAtLeast()) :-
+    parse.size.tally([$U(), Id], N), params.pair_size(K), N >= K.
+
+// --- $LargestSize ---
+// @claim pick-pairs
+.init largest = Extremes<Unit>
+largest.cand($U(), N) :- parse.size.tally(_, N).
+
+pair(Id, $LargestSize()) :- parse.size.tally([$U(), Id], N), largest.high($U(), N).
+
+// --- $ShapeMatch ---
+// A group turned by D.
+.type Turned = [id: Ident, d: D4]
+
+// @claim pick-pairs
+.init shape = KeyedSetCompare<Turned, Unit, Position>
+shape.pattern_member($U(), P) :- params.footprint(P).
+shape.observed_member([Id, D], P_turned) :-
+    parse.shape([$U(), Id], P), d4_elem(D), apply(D, P, P_turned).
+
+pair(Id, $ShapeMatch()) :- shape.equals([Id, _], $U()).
+
+// --- $BoxRing ---
+// The cells that touch the group's box at a side or a corner.
+reach(Id, Q, $BoxRing()) :-
+    parse.box.box([$U(), Id], B), in(P, _), inside(P, B),     // a cell of the box
+    dir8_elem(D), neighbor(P, D, Q), in(Q, _), !inside(Q, B).
+
+// --- $FrameOverMarks ---
+frame_cell(Q, [S, C, $FrameOverMarks()]) :-
+    pair(Id, S), reach(Id, Q, C), !parse.group([$U(), Id], Q).
+
+.comp Determine {
+    // Train pairs only — the ex_out atom holds the test inputs out.
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    .type EI = [e: Example, id: Ident]
+
+    // A cell that touches the group and is not in it keeps its color.
+    .decl kept_beside(g: EI)
+    kept_beside([E, Id]) :-
+        parse.group([E, Id], P), dir8_elem(D), neighbor(P, D, Q),
+        !parse.group([E, Id], Q), ex_in(E, Q, Col), ex_out(E, Q, Col).
+
+    // The shapes of the groups the output frames: every cell that touches
+    // such a group changes color.
+    .decl shape(g: EI, p: Position)
+    shape([E, Id], P) :- parse.shape([E, Id], P), !kept_beside([E, Id]).
+
+    // The framed groups whose shapes are one up to D4.
+    .type Turned = [g: EI, d: D4]
+
+    .init congruent = KeyedSetCompare<Turned, EI, Position>
+    congruent.pattern_member(G, P) :- shape(G, P).
+    congruent.observed_member([G, D], P_turned) :-
+        shape(G, P), d4_elem(D), apply(D, P, P_turned).
+
+    .init shape_class = Canon<EI>
+    shape_class.edge(G, G2) :- congruent.equals([G, _], G2).
+
+    .decl footprint(p: Position)
+    footprint(P) :- shape_class.rep(G, G), shape(G, P).
+}

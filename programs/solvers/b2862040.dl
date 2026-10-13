@@ -1,0 +1,275 @@
+// b2862040
+// @draft
+// @keywords: objects enclose count lookup
+// @scene background-field: the grid is a field of background (9)
+// @scene shapes: on that field stand shapes, each a 4-connected set of
+//  shape_color cells
+// @rule recolor-closed-shapes: each shape that by itself closes off a region
+//  from the frame edge, where a region escapes by 4-steps through cells
+//  outside the shape, takes closed_color on every one of its cells
+// @rule keep-rest: every other cell keeps its input color
+
+// how shape cells join into one shape
+.type ShapeConn =
+    // @claim shapes
+    Shapes4 {}
+    // @scene shapes: on that field stand shapes, each an 8-connected set of
+    //  shape_color cells
+    // @witness corner-touch: borderline concept
+  | Shapes8 {}
+
+// the steps by which a region escapes to the frame edge
+.type Escape =
+    // @claim recolor-closed-shapes
+    Escape4 {}
+    // @rule recolor-closed-shapes: a region escapes by 8-steps, so a hole
+    //  that meets the outside only at a corner is open
+    // @witness cut-corner-ring: borderline concept
+  | DiagEscape {}
+
+// what closes off a region
+.type Walls =
+    // @claim recolor-closed-shapes
+    OwnWalls {}
+    // @rule recolor-closed-shapes: the regions that all the ink together
+    //  closes off are found, and every cell of a shape with a cell 4-adjacent
+    //  to such a region takes closed_color
+    // @witness nested-shape: borderline concept
+  | AllInk {}
+
+// which cells the shapes are made of
+.type Ink =
+    // @claim shapes
+    ShapeInk {}
+    // @scene shapes: on that field stand shapes, each a 4-connected set of
+    //  cells that are not background, of any color
+    // @witness other-color-ring: borderline concept
+    //     @relaxed shapes
+  | AnyInk {}
+
+// which shapes recolor
+.type HoleCond =
+    // @claim recolor-closed-shapes
+    AnyHole {}
+    // @rule recolor-closed-shapes: a shape takes closed_color when the count
+    //  of regions it closes off is hole_count
+    // @witness two-hole-shape: ordinary concept
+  | OneHole {}
+    // @rule recolor-closed-shapes: every cell of a shape takes the color
+    //  count_color gives the count of regions the shape closes off; undefined
+    //  on an input with a shape whose count has no color
+    // @witness two-hole-shape: ordinary concept
+    // @witness two-hole-table: ordinary concept
+    //     @reassigned count_color
+  | HoleCountTable {}
+    // @rule recolor-closed-shapes: a shape takes closed_color when it closes
+    //  off a region of at least min_hole_size cells
+    // @witness one-cell-hole: ordinary concept
+    //     @reassigned min_hole_size
+  | MinHoleSize {}
+
+.type Choice = [conn: ShapeConn, escape: Escape, walls: Walls, ink: Ink, cond: HoleCond]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $ShapeInk ---
+    // @derive RarestColor: variant derived
+    //     @relaxed shapes
+    .decl shape_color(c: Color) shape_color(1).
+
+    // --- $AnyInk ---
+    // @derive DominantColor: variant derived
+    //     @relaxed background-field
+    .decl background(c: Color) background(9).
+
+    // --- $AnyHole, $OneHole, $MinHoleSize ---
+    .decl closed_color(c: Color) closed_color(8).
+
+    // --- $OneHole ---
+    // @derive TileDim: ordinary concept
+    .decl hole_count(n: number) hole_count(1).
+
+    // --- $HoleCountTable ---
+    // A shape's color, by the count of regions it closes off.
+    .decl count_color(n: number, c: Color)
+    count_color(0, 1). count_color(1, 8).
+
+    // --- $MinHoleSize ---
+    // @derive TileDim: ordinary concept
+    .decl min_hole_size(n: number) min_hole_size(1).
+}
+
+.init params = Params
+
+.decl shape_conn_choice(c: ShapeConn)
+shape_conn_choice($Shapes4()). shape_conn_choice($Shapes8()).
+
+.decl escape_choice(e: Escape)
+escape_choice($Escape4()). escape_choice($DiagEscape()).
+
+.decl walls_choice(wa: Walls)
+walls_choice($OwnWalls()). walls_choice($AllInk()).
+
+.decl ink_choice(i: Ink)
+ink_choice($ShapeInk()). ink_choice($AnyInk()).
+
+.decl hole_cond_choice(h: HoleCond)
+hole_cond_choice($AnyHole()). hole_cond_choice($OneHole()).
+hole_cond_choice($HoleCountTable()). hole_cond_choice($MinHoleSize()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([C, E, Wa, I, H]) :-
+    shape_conn_choice(C), escape_choice(E), walls_choice(Wa), ink_choice(I), hole_cond_choice(H).
+
+.comp Parse<Key> {
+    // The cells of one reading of ink.
+    .type KInk = [k: Key, i: Ink]
+    // A shape under one reading of connectivity and of ink.
+    .type KWall = [k: Key, c: ShapeConn, i: Ink, o: Ident]
+    // A shape's holes under one reading of escape and of walls.
+    .type KHoles = [k: Key, c: ShapeConn, e: Escape, wa: Walls, i: Ink, o: Ident]
+    // One hole of a shape.
+    .type KRegion = [k: Key, c: ShapeConn, e: Escape, wa: Walls, i: Ink, o: Ident, id: Ident]
+
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    // The cells the shapes are made of.
+    .decl ink(ki: KInk, p: Position)
+
+    // Each shape's cells.
+    .decl shape(w: KWall, p: Position)
+
+    // A cell of a region that counts as a hole of the shape.
+    .decl hole_cell(r: KRegion, p: Position)
+
+    // --- $ShapeInk ---
+    ink([K, $ShapeInk()], P) :- cell(K, P, Col), params.shape_color(Col).
+
+    // --- $AnyInk ---
+    ink([K, $AnyInk()], P) :- cell(K, P, Col), !params.background(Col).
+
+    // --- $Shapes4 ---
+    // @claim shapes
+    .init shapes4 = Components<KInk>
+    shapes4.node(KI, P) :- ink(KI, P).
+    shape([K, $Shapes4(), I, O], P) :- shapes4.label([K, I], P, O).
+
+    // --- $Shapes8 ---
+    // @claim shapes
+    .init shapes8 = Components8<KInk>
+    shapes8.node(KI, P) :- ink(KI, P).
+    shape([K, $Shapes8(), I, O], P) :- shapes8.label([K, I], P, O).
+
+    // --- $OwnWalls ---
+    // The cells outside the shape.
+    .decl off_wall(w: KWall, p: Position)
+    off_wall([K, C, I, O], P) :- shape([K, C, I, O], _), cell(K, P, _), !shape([K, C, I, O], P).
+
+    // --- $Escape4 & $OwnWalls ---
+    // @claim recolor-closed-shapes
+    .init own4 = Closed<KWall>
+    own4.cell(W, P) :- off_wall(W, P).
+    hole_cell([K, C, $Escape4(), $OwnWalls(), I, O, Id], P) :- own4.region([K, C, I, O], P, Id).
+
+    // --- $DiagEscape & $OwnWalls ---
+    // @claim recolor-closed-shapes
+    .init own_open8 = Reach<KWall>
+    own_open8.step(V) :- step_offset(_, V).    // a step to any of the eight neighbors
+    own_open8.node(W, P) :- off_wall(W, P).
+    own_open8.seed(W, P) :- off_wall(W, P), dir_elem(D), dist(P, D, 0).
+
+    // @claim recolor-closed-shapes
+    .init own8 = Components8<KWall>
+    own8.node(W, P) :- off_wall(W, P), !own_open8.reach(W, P).
+    hole_cell([K, C, $DiagEscape(), $OwnWalls(), I, O, Id], P) :- own8.label([K, C, I, O], P, Id).
+
+    // --- $AllInk ---
+    // The cells outside the ink.
+    .decl off_ink(ki: KInk, p: Position)
+    off_ink([K, I], P) :- ink_choice(I), cell(K, P, _), !ink([K, I], P).
+
+    // A region the ink closes off.
+    .decl ink_hole(ki: KInk, e: Escape, p: Position, id: Ident)
+
+    // A shape with a cell 4-adjacent to a region the ink closes off.
+    .decl ink_holed(w: KWall, e: Escape, id: Ident)
+    ink_holed([K, C, I, O], E, Id) :-
+        ink_hole([K, I], E, P, Id), dir_elem(D), neighbor(P, D, Q), shape([K, C, I, O], Q).
+    hole_cell([K, C, E, $AllInk(), I, O, Id], P) :-
+        ink_holed([K, C, I, O], E, Id), ink_hole([K, I], E, P, Id).
+
+    // --- $Escape4 & $AllInk ---
+    // @claim recolor-closed-shapes
+    .init ink4 = Closed<KInk>
+    ink4.cell(KI, P) :- off_ink(KI, P).
+    ink_hole(KI, $Escape4(), P, Id) :- ink4.region(KI, P, Id).
+
+    // --- $DiagEscape & $AllInk ---
+    // @claim recolor-closed-shapes
+    .init ink_open8 = Reach<KInk>
+    ink_open8.step(V) :- step_offset(_, V).    // a step to any of the eight neighbors
+    ink_open8.node(KI, P) :- off_ink(KI, P).
+    ink_open8.seed(KI, P) :- off_ink(KI, P), dir_elem(D), dist(P, D, 0).
+
+    // @claim recolor-closed-shapes
+    .init ink8 = Components8<KInk>
+    ink8.node(KI, P) :- off_ink(KI, P), !ink_open8.reach(KI, P).
+    ink_hole(KI, $DiagEscape(), P, Id) :- ink8.label(KI, P, Id).
+
+    // --- $OneHole, $HoleCountTable ---
+    // @claim recolor-closed-shapes
+    .init holes = Tally<KHoles, Ident>
+    holes.domain([K, C, E, Wa, I, O]) :- escape_choice(E), walls_choice(Wa), shape([K, C, I, O], _).
+    holes.item([K, C, E, Wa, I, O], Id) :- hole_cell([K, C, E, Wa, I, O, Id], _).
+
+    // --- $MinHoleSize ---
+    // @claim recolor-closed-shapes
+    .init hole_size = Tally<KRegion, Position>
+    hole_size.item(R, P) :- hole_cell(R, P).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The cells the case's rule recolors, and among them the cells that take
+// closed_color.
+.decl recolored(ch: Choice, p: Position)
+.decl closing(ch: Choice, p: Position)
+recolored(Ch, P) :- closing(Ch, P).
+
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !recolored(Ch, P).
+
+// --- $AnyHole, $OneHole, $MinHoleSize ---
+out(P, Col, Ch) :- closing(Ch, P), params.closed_color(Col).
+
+// --- $AnyHole ---
+closing([C, E, Wa, I, $AnyHole()], P) :-
+    parse.shape([$U(), C, I, O], P), parse.hole_cell([$U(), C, E, Wa, I, O, _], _).
+
+// --- $OneHole ---
+closing([C, E, Wa, I, $OneHole()], P) :-
+    parse.shape([$U(), C, I, O], P), parse.holes.tally([$U(), C, E, Wa, I, O], N),
+    params.hole_count(N).
+
+// --- $HoleCountTable ---
+recolored([C, E, Wa, I, $HoleCountTable()], P) :-
+    impl_choice([C, E, Wa, I, $HoleCountTable()]), parse.shape([$U(), C, I, _], P).
+out(P, Col, [C, E, Wa, I, $HoleCountTable()]) :-
+    parse.shape([$U(), C, I, O], P), parse.holes.tally([$U(), C, E, Wa, I, O], N),
+    params.count_color(N, Col).
+
+// --- $MinHoleSize ---
+closing([C, E, Wa, I, $MinHoleSize()], P) :-
+    parse.shape([$U(), C, I, O], P), parse.hole_size.tally([$U(), C, E, Wa, I, O, _], N),
+    params.min_hole_size(K), N >= K.
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl count_color(n: number, c: Color)
+    count_color(N, Col) :-
+        ex.shape([E, C, I, O], P), ex.holes.tally([E, C, _, _, I, O], N),    // a shape with its count of holes
+        ex_out(E, P, Col).                                                    // the color it takes
+}

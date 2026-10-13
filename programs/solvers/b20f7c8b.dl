@@ -1,0 +1,350 @@
+// b20f7c8b
+// @draft
+// @keywords: objects match congruent stamp
+// @scene legend-strip: a strip of params.panel_color, 6 cells wide, runs the
+//  full length of one side edge of the grid, and the rest of the grid is the
+//  board, of params.board_color
+// @scene legend-glyphs: the strip holds glyphs, each the cells of one color
+//  that fill a 3 × 3 box, with each glyph its own color, none of them
+//  params.panel_color, and no two glyphs the same under params.match_group
+// @scene board-boxes: the board holds 5 × 5 boxes, apart from one another on
+//  params.board_color, one box for each glyph of the legend
+// @scene box-forms: each box is either a glyph box, a 1-wide frame of
+//  params.frame_color whose interior is params.frame_color with
+//  params.ink_color cells that fill the interior and equal one legend glyph
+//  under params.match_group, or a solid box of one legend glyph's color, and
+//  no two boxes stand for the same glyph
+// @rule glyph-to-solid: a glyph box becomes a solid box, all of the color of
+//  the legend glyph that its params.ink_color cells equal under
+//  params.match_group
+// @rule solid-to-glyph: a solid box of a color becomes a glyph box: its
+//  1-wide frame and interior take params.frame_color, and the interior takes
+//  params.ink_color at the cells of that color's legend glyph, untransformed
+// @rule rest-unchanged: every cell outside the boxes keeps its color
+
+// which strip cells form one glyph
+.type GlyphParse =
+    // @claim legend-glyphs
+    ColorGlyph {}
+    // @scene legend-glyphs: the strip holds glyphs, each one 8-connected
+    //  piece of one color, none of them params.panel_color; undefined where a
+    //  solid box's color has several glyphs, and where a glyph box matches
+    //  glyphs of two colors
+    // @witness shared-glyph-color: borderline $GlyphByComponent
+    //     @relaxed legend-glyphs
+  | GlyphByComponent {}
+
+// where the strip's color comes from
+.type PanelSource =
+    // @claim legend-strip
+    StoredPanel {}
+    // @scene legend-strip: the strip's color is the commonest color of the
+    //  edge line of the grid that holds no params.board_color cell; undefined
+    //  where no such edge line exists, and where those lines give more than
+    //  one color
+    // @witness recolored-strip: variant $PanelColorRead
+    //     @relaxed legend-strip
+  | PanelColorRead {}
+
+// which legend color a glyph box takes
+.type GlyphMatch =
+    // @claim glyph-to-solid
+    AnyPose {}
+    // @rule glyph-to-solid: a glyph box takes the color of the legend glyph
+    //  that its ink cells equal untransformed, where there is one, and
+    //  otherwise of the glyph they equal under params.match_group; undefined
+    //  where none equals them untransformed and glyphs of two colors equal
+    //  them under params.match_group
+    // @witness congruent-legend-glyphs: borderline $ExactFirst
+    //     @relaxed legend-glyphs
+  | ExactFirst {}
+
+// where the frame and ink colors come from
+.type BoxColors =
+    // @claim box-forms
+    StoredBoxColors {}
+    // @scene box-forms: the frame color is the border color of the boxes of
+    //  several colors, and the ink color is their other color; undefined
+    //  where no box has several colors, and where those boxes give more than
+    //  one frame color or more than one ink color
+    // @witness recolored-glyph-boxes: variant $BoxColorsRead
+    //     @relaxed box-forms
+  | BoxColorsRead {}
+
+.type Choice = [parse: GlyphParse, panel: PanelSource, matching: GlyphMatch,
+                colors: BoxColors]
+
+// a box, or a glyph piece, under one strip reading
+.type Piece = [ps: PanelSource, id: Ident]
+
+// the strip cells of one color, under one strip reading
+.type ColorClass = [ps: PanelSource, col: Color]
+
+// a glyph: its color and its box in the grid
+.type Glyph = [col: Color, b: Box]
+
+// a glyph under one legend reading
+.type GlyphRef = [gp: GlyphParse, ps: PanelSource, g: Glyph]
+
+// a glyph turned by d
+.type Pose = [gr: GlyphRef, d: D4]
+
+// the ink of a box, under one frame and ink reading
+.type InkKey = [bc: BoxColors, bx: Piece]
+
+.type MatchKey = [gm: GlyphMatch, gp: GlyphParse, bc: BoxColors, bx: Piece]
+
+.type LegendColor = [gp: GlyphParse, ps: PanelSource, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed legend-strip
+    .decl board_color(c: Color) board_color(0).
+    .decl match_group(s: Sym) match_group(SYM_D4).
+
+    // --- $StoredPanel ---
+    .decl panel_color(c: Color) panel_color(8).
+
+    // --- $StoredBoxColors ---
+    .decl frame_color(c: Color) frame_color(2).
+    .decl ink_color(c: Color) ink_color(1).
+}
+
+.init params = Params
+
+.decl glyph_parse_choice(g: GlyphParse)
+glyph_parse_choice($ColorGlyph()). glyph_parse_choice($GlyphByComponent()).
+
+.decl panel_source_choice(p: PanelSource)
+panel_source_choice($StoredPanel()). panel_source_choice($PanelColorRead()).
+
+.decl glyph_match_choice(m: GlyphMatch)
+glyph_match_choice($AnyPose()). glyph_match_choice($ExactFirst()).
+
+.decl box_colors_choice(c: BoxColors)
+box_colors_choice($StoredBoxColors()). box_colors_choice($BoxColorsRead()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Gp, Ps, Gm, Bc]) :-
+    glyph_parse_choice(Gp), panel_source_choice(Ps), glyph_match_choice(Gm),
+    box_colors_choice(Bc).
+
+// --- the strip ---
+
+.decl panel(ps: PanelSource, col: Color)
+
+// p's line along a holds a board cell.
+.decl board_line(a: Axis, p: Position)
+board_line(A, P) :-
+    in(P, _), axis_elem(A), same_line(A, P, Q), in(Q, Col), params.board_color(Col).
+
+// The strip: the lines that hold the panel color and no board cell.
+.decl strip(ps: PanelSource, p: Position)
+strip(Ps, P) :-
+    panel(Ps, Col), in(Q, Col), axis_elem(A),
+    in(P, _), same_line(A, P, Q), !board_line(A, P).
+
+.decl legend_cell(ps: PanelSource, p: Position, col: Color)
+legend_cell(Ps, P, Col) :- strip(Ps, P), in(P, Col), !panel(Ps, Col).
+
+// A glyph's cells, in its own box's frame.
+.decl glyph_cell(gp: GlyphParse, ps: PanelSource, g: Glyph, p: Position)
+
+// --- the boxes ---
+
+// The cells of the boxes: off the strip and off the board.
+.decl boxed(ps: PanelSource, p: Position)
+boxed(Ps, P) :- panel(Ps, _), in(P, Col), !params.board_color(Col), !strip(Ps, P).
+
+// @claim board-boxes
+.init boxes = Components<PanelSource>
+boxes.node(Ps, P) :- boxed(Ps, P).
+
+.decl box_cell(bx: Piece, p: Position)
+box_cell([Ps, Id], P) :- boxes.label(Ps, P, Id).
+
+// @claim box-forms
+.init box_color = Unanimous<Piece, Color>
+box_color.item(Bx, Col) :- box_cell(Bx, P), in(P, Col).
+
+// @claim box-forms
+.init box_bbox = Bbox<Piece>
+box_bbox.cell(Bx, P) :- box_cell(Bx, P).
+
+// The interior of a box: its cells off the box's border.
+.decl box_inner(bx: Piece, p: Position)
+box_inner(Bx, P) :- box_cell(Bx, P), box_bbox.box(Bx, B), interior(P, B).
+
+// @claim box-forms
+.init inner_bbox = Bbox<Piece>
+inner_bbox.cell(Bx, P) :- box_inner(Bx, P).
+
+// The frame color and the ink color.
+.decl colors(bc: BoxColors, ps: PanelSource, c_frame: Color, c_ink: Color)
+
+// A box of one color is solid, and any other box is a glyph box.
+.decl solid_box(bc: BoxColors, bx: Piece, col: Color)
+solid_box(Bc, [Ps, Id], Col) :- colors(Bc, Ps, _, _), box_color.value([Ps, Id], Col).
+
+// --- matching ---
+
+// A glyph box's ink, in its interior's frame.
+.decl ink(bc: BoxColors, bx: Piece, p: Position)
+ink(Bc, [Ps, Id], P_inner) :-
+    colors(Bc, Ps, _, I), inner_bbox.box([Ps, Id], B), in(P, I), crop(P, B, P_inner).
+
+// @claim glyph-to-solid
+.init pose = KeyedSetCompare<InkKey, Pose, Position>
+pose.pattern_member([[Gp, Ps, G], D], P_turned) :-
+    glyph_cell(Gp, Ps, G, P), params.match_group(S), sym_member(S, D), apply(D, P, P_turned).
+pose.observed_member([Bc, Bx], P) :- ink(Bc, Bx, P).
+
+// The ink equals the glyph of col under the match group.
+.decl matched(gp: GlyphParse, bc: BoxColors, bx: Piece, col: Color)
+matched(Gp, Bc, [Ps, Id], Col) :- pose.equals([Bc, [Ps, Id]], [[Gp, Ps, [Col, _]], _]).
+
+// The one legend color a glyph box takes.
+// @claim glyph-to-solid
+.init match_color = Unanimous<MatchKey, Color>
+
+// The one glyph of each legend color.
+// @claim solid-to-glyph
+.init color_glyph = Unanimous<LegendColor, Glyph>
+color_glyph.item([Gp, Ps, Col], [Col, B]) :- glyph_cell(Gp, Ps, [Col, B], _).
+
+// The cells of a solid box that take the ink: its color's glyph, laid on its
+// interior.
+.decl drawn(gp: GlyphParse, bc: BoxColors, bx: Piece, p: Position)
+drawn(Gp, Bc, [Ps, Id], P) :-
+    solid_box(Bc, [Ps, Id], C_box), color_glyph.value([Gp, Ps, C_box], G),
+    glyph_cell(Gp, Ps, G, P_inner), inner_bbox.box([Ps, Id], B), compose(B, P_inner, P).
+
+// --- the output ---
+
+.decl paint(ch: Choice, p: Position, col: Color)
+
+// A glyph box turns solid.
+paint([Gp, Ps, Gm, Bc], P, Col) :-
+    box_color.clash([Ps, Id]),
+    match_color.value([Gm, Gp, Bc, [Ps, Id]], Col), box_cell([Ps, Id], P).
+
+// A solid box draws its glyph.
+paint([Gp, Ps, Gm, Bc], P, Col) :-
+    impl_choice([Gp, Ps, Gm, Bc]), solid_box(Bc, [Ps, Id], C_box),
+    color_glyph.value([Gp, Ps, C_box], _), colors(Bc, Ps, F, I), box_cell([Ps, Id], P),
+    ( drawn(Gp, Bc, [Ps, Id], P), Col = I
+    ; !drawn(Gp, Bc, [Ps, Id], P), Col = F
+    ).
+
+out(P, Col, Ch) :- paint(Ch, P, Col).
+out(P, Col, [Gp, Ps, Gm, Bc]) :-
+    impl_choice([Gp, Ps, Gm, Bc]), colors(Bc, Ps, _, _),
+    in(P, Col), !boxed(Ps, P).
+
+// --- $StoredPanel ---
+panel($StoredPanel(), Col) :- params.panel_color(Col).
+
+// --- $PanelColorRead ---
+// The edges whose line holds a board cell.
+.decl board_edge(d: Dir)
+board_edge(D) :- in(P, Col), params.board_color(Col), dir_elem(D), dist(P, D, 0).
+
+// @claim legend-strip
+.init edge_mode = Mode<Dir, Color, Position>
+edge_mode.item(D, Col, P) :- in(P, Col), dir_elem(D), dist(P, D, 0), !board_edge(D).
+
+// @claim legend-strip
+.init edge_panel = Unanimous<Unit, Color>
+edge_panel.item($U(), Col) :- edge_mode.mode(_, Col).
+
+panel($PanelColorRead(), Col) :- edge_panel.value($U(), Col).
+
+// --- $ColorGlyph ---
+// @claim legend-glyphs
+.init class_bbox = Bbox<ColorClass>
+class_bbox.cell([Ps, Col], P) :- legend_cell(Ps, P, Col).
+
+glyph_cell($ColorGlyph(), Ps, [Col, B], P_inner) :-
+    legend_cell(Ps, P, Col), class_bbox.box([Ps, Col], B), crop(P, B, P_inner).
+
+// --- $GlyphByComponent ---
+// @claim legend-glyphs
+.init part = Components8<ColorClass>
+part.node([Ps, Col], P) :- legend_cell(Ps, P, Col).
+
+// @claim legend-glyphs
+.init part_bbox = Bbox<Piece>
+part_bbox.cell([Ps, Id], P) :- part.label([Ps, _], P, Id).
+
+glyph_cell($GlyphByComponent(), Ps, [Col, B], P_inner) :-
+    part.label([Ps, Col], P, Id), part_bbox.box([Ps, Id], B), crop(P, B, P_inner).
+
+// --- $StoredBoxColors ---
+colors($StoredBoxColors(), Ps, F, I) :-
+    panel(Ps, _), params.frame_color(F), params.ink_color(I).
+
+// --- $BoxColorsRead ---
+// @claim box-forms
+.init frame_read = Unanimous<PanelSource, Color>
+frame_read.item(Ps, Col) :-
+    box_color.clash([Ps, Id]), box_cell([Ps, Id], P), !box_inner([Ps, Id], P), in(P, Col).
+
+// @claim box-forms
+.init ink_read = Unanimous<PanelSource, Color>
+ink_read.item(Ps, Col) :-
+    frame_read.value(Ps, F), box_color.clash([Ps, Id]),
+    box_cell([Ps, Id], P), in(P, Col), Col != F.
+
+colors($BoxColorsRead(), Ps, F, I) :- frame_read.value(Ps, F), ink_read.value(Ps, I).
+
+// --- $AnyPose ---
+match_color.item([$AnyPose(), Gp, Bc, Bx], Col) :- matched(Gp, Bc, Bx, Col).
+
+// --- $ExactFirst ---
+// @claim glyph-to-solid
+.init plain = KeyedSetCompare<InkKey, GlyphRef, Position>
+plain.pattern_member([Gp, Ps, G], P) :- glyph_cell(Gp, Ps, G, P).
+plain.observed_member([Bc, Bx], P) :- ink(Bc, Bx, P).
+
+// The ink equals the glyph of col untransformed.
+.decl exact(gp: GlyphParse, bc: BoxColors, bx: Piece, col: Color)
+exact(Gp, Bc, [Ps, Id], Col) :- plain.equals([Bc, [Ps, Id]], [Gp, Ps, [Col, _]]).
+
+match_color.item([$ExactFirst(), Gp, Bc, Bx], Col) :-
+    matched(Gp, Bc, Bx, Col),
+    ( exact(Gp, Bc, Bx, Col)
+    ; !exact(Gp, Bc, Bx, _)
+    ).
+
+.comp Determine {
+    // A cell that the output recolors.
+    .decl changed(e: Example, p: Position, c_in: Color, c_out: Color)
+    changed(E, P, C_in, C_out) :- ex_in(E, P, C_in), ex_out(E, P, C_out), C_in != C_out.
+
+    // A recolored cell beside a cell the output keeps: a box's border, or a
+    // cell beside ink that keeps its color.
+    .decl edge_change(e: Example, p: Position, c_in: Color, c_out: Color)
+    edge_change(E, P, C_in, C_out) :-
+        changed(E, P, C_in, C_out), neighbor(P, _, Q), ex_in(E, Q, C), ex_out(E, Q, C).
+
+    .decl cand(col: Color)
+    cand(Col) :- ex_out(_, _, Col).
+
+    // The frame color is on one side of every such change.
+    .decl frame_defect(col: Color)
+    frame_defect(Col) :- cand(Col), edge_change(_, _, C_in, C_out), C_in != Col, C_out != Col.
+
+    .decl frame_color(col: Color)
+    frame_color(Col) :- cand(Col), !frame_defect(Col).
+
+    // The frame color and the ink color are on one side of every change.
+    .decl ink_defect(col: Color)
+    ink_defect(Col) :-
+        cand(Col), frame_color(F), Col != F,
+        changed(_, _, C_in, C_out), C_in != Col, C_out != Col, C_in != F, C_out != F.
+
+    .decl ink_color(col: Color)
+    ink_color(Col) :- cand(Col), frame_color(F), Col != F, !ink_defect(Col).
+}

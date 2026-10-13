@@ -1,0 +1,181 @@
+// b190f7f5
+// @draft
+// @keywords: decompose tile-arrangement scale stamp
+// @scene two-square-halves: the input is two n×n squares joined along its
+//  long side, with no divider between them; the axis of the join and the
+//  order of the two squares vary
+// @scene template-half: one square holds only `template_color` and
+//  `background` cells; this is the shape
+// @scene pattern-half: the other square holds no `template_color` cell; its
+//  non-`background` cells are the pattern
+// @rule output-size: the output is n²×n², an n×n grid of n×n blocks, one
+//  block per pattern cell
+// @rule stamp-shape: the block at pattern cell (I,J) takes, at each cell
+//  (i,j), the color of pattern cell (I,J) where the shape has
+//  `template_color` at (i,j) and pattern cell (I,J) is not `background`;
+//  every other cell is `background`
+
+// how the input divides into the two halves
+.type Split =
+    // @claim two-square-halves
+    SquareHalves {}
+    // @scene two-square-halves: the input is two equal n×m halves joined
+    //  along its long side; undefined where the input is square or its long
+    //  side is odd
+    // @rule output-size: the output is an n×m grid of n×m blocks, one block
+    //  per pattern cell
+    // @witness rectangle-halves: borderline $EqualHalves
+    //     @relaxed two-square-halves
+  | EqualHalves {}
+
+// which half is the shape
+.type Template =
+    // @claim template-half
+    OnlyTemplateColor {}
+    // @scene template-half: the shape is the half whose non-`background`
+    //  cells are of one color, and those cells are the shape; undefined where
+    //  both halves, or neither, are of one color
+    // @witness template-in-other-color: variant $MonoTemplate
+    //     @relaxed template-half
+  | MonoTemplate {}
+    // @scene template-half: the shape is the half with fewer
+    //  non-`background` colors, and its non-`background` cells are the shape;
+    //  undefined where the two halves have equally many colors
+    // @witness template-in-other-color: variant $FewerColorsTemplate
+  | FewerColorsTemplate {}
+
+// the frame of the shape that each block copies
+.type Frame =
+    // @claim output-size stamp-shape
+    WholeHalf {}
+    // @rule output-size: the blocks have the size of the bounding box of the
+    //  shape's cells, and the output is n blocks of that size on each axis;
+    //  undefined where the shape has no cell
+    // @rule stamp-shape: a block copies the shape's bounding box in place of
+    //  the whole square
+    // @witness shape-short-of-square: ordinary concept
+  | TemplateBbox {}
+
+.type Choice = [s: Split, t: Template, f: Frame]
+
+// A half of the input, under one way of dividing it.
+.type Half = [s: Split, p_half: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+
+    // --- $EqualHalves ---
+    .decl half_count(n: number) half_count(2).
+
+    // --- $OnlyTemplateColor ---
+    .decl template_color(c: Color) template_color(8).
+}
+
+.init params = Params
+
+.decl split_choice(s: Split)
+split_choice($SquareHalves()). split_choice($EqualHalves()).
+
+.decl template_choice(t: Template)
+template_choice($OnlyTemplateColor()). template_choice($MonoTemplate()). template_choice($FewerColorsTemplate()).
+
+.decl frame_choice(f: Frame)
+frame_choice($WholeHalf()). frame_choice($TemplateBbox()).
+
+// Every combination but the one-color shape copied as its whole half, which
+// gives the fewer-colors shape's output wherever it is defined.
+.decl impl_choice(ch: Choice)
+impl_choice([S, T, F]) :-
+    split_choice(S), template_choice(T), frame_choice(F),
+    ( T != $MonoTemplate() ; F != $WholeHalf() ).
+
+// Each input cell, the half it lies in, and its place in that half.
+.decl half(s: Split, p: Position, p_half: Position, p_inner: Position)
+
+// The non-background colors of each half.
+.decl half_color(s: Split, p_half: Position, col: Color)
+half_color(S, P_half, Col) :- half(S, P, P_half, _), in(P, Col), !params.bg(Col).
+
+// The half that holds the shape, and the shape's cells in that half.
+.decl shape_half(s: Split, t: Template, p_half: Position)
+.decl shape_ink(s: Split, t: Template, p_inner: Position)
+shape_ink(S, T, P_inner) :-
+    shape_half(S, T, P_half), half(S, P, P_half, P_inner), in(P, Col), !params.bg(Col).
+
+// The other half: its cells and their colors.
+.decl pattern(s: Split, t: Template, p_inner: Position, col: Color)
+pattern(S, T, P_inner, Col) :-
+    shape_half(S, T, _), half(S, P, P_half, P_inner), !shape_half(S, T, P_half), in(P, Col).
+
+// The cells of the frame each block copies, and the shape's cells in it.
+.decl block(ch: Choice, p_block: Position)
+.decl block_ink(ch: Choice, p_block: Position)
+
+// Each output cell is a cell of a pattern cell's block.
+out(P_grid_out, Col, [S, T, F]) :-
+    impl_choice([S, T, F]), pattern(S, T, P_tile, C_pat), block([S, T, F], P_block),
+    concat_2d(P_tile, P_block, 0, P_grid_out),
+    ( block_ink([S, T, F], P_block), Col = C_pat         // on the shape: the pattern cell's color
+    ; !block_ink([S, T, F], P_block), params.bg(Col)     // off the shape: background
+    ).
+
+// --- $SquareHalves ---
+
+// Squares along an axis whose side is the extent across that axis.
+half($SquareHalves(), P, P_half, P_inner) :-
+    in(P, _), axis_elem(A), axis_dims(P, A, _, N),
+    divide_by_size_slab(P, A, N, 0, P_half, P_inner).
+
+// --- $EqualHalves ---
+
+half($EqualHalves(), P, P_half, P_inner) :-
+    in(P, _), axis_dims(P, A, N1, N2), N1 > N2,      // the long axis
+    params.half_count(K), divide_slab(P, A, K, 0, P_half, P_inner).
+
+// --- $OnlyTemplateColor ---
+
+// A half holds a color other than template_color and background.
+.decl off_template(s: Split, p_half: Position)
+off_template(S, P_half) :-
+    half_color(S, P_half, Col), !params.template_color(Col).
+
+shape_half(S, $OnlyTemplateColor(), P_half) :-
+    half(S, P, P_half, _), in(P, Col), params.template_color(Col), !off_template(S, P_half).
+
+// --- $MonoTemplate ---
+
+// The color of a half whose non-background cells all have one color.
+// @claim template-half
+.init sole_color = Unanimous<Half, Color>
+sole_color.item([S, P_half], Col) :- half_color(S, P_half, Col).
+
+shape_half(S, $MonoTemplate(), P_half) :- sole_color.value([S, P_half], _).
+
+// --- $FewerColorsTemplate ---
+
+// @claim template-half
+.init colors = Tally<Half, Color>
+colors.domain([S, P_half]) :- half(S, _, P_half, _).
+colors.item([S, P_half], Col) :- half_color(S, P_half, Col).
+
+shape_half(S, $FewerColorsTemplate(), P_half) :-
+    colors.tally([S, P_half], N), colors.tally([S, _], N2), N < N2.
+
+// --- $WholeHalf ---
+
+block([S, T, $WholeHalf()], P_inner) :- shape_half(S, T, P_half), half(S, _, P_half, P_inner).
+block_ink([S, T, $WholeHalf()], P_inner) :- shape_ink(S, T, P_inner).
+
+// --- $TemplateBbox ---
+
+// @claim output-size stamp-shape
+.init shape_box = Bbox<Choice>
+shape_box.cell([S, T, $TemplateBbox()], P_inner) :- shape_ink(S, T, P_inner).
+
+block([S, T, $TemplateBbox()], P_rel) :-
+    shape_box.box([S, T, $TemplateBbox()], B), shape_half(S, T, P_half),
+    half(S, _, P_half, P_inner), crop(P_inner, B, P_rel).
+block_ink([S, T, $TemplateBbox()], P_rel) :-
+    shape_box.box([S, T, $TemplateBbox()], B), shape_ink(S, T, P_inner), crop(P_inner, B, P_rel).

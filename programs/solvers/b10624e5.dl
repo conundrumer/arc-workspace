@@ -1,0 +1,279 @@
+// b10624e5
+// @draft
+// @keywords: decompose objects markers scale d4 stamp
+// @scene cross: one full row and one full column of params.divider_color cross
+//  at the center and cut the grid into four equal quadrants on a field of
+//  params.bg
+// @scene template-quadrant: the top-left quadrant holds one figure: a solid
+//  square of params.core_color with blocks of other colors attached around it
+// @scene lone-cores: each other quadrant holds one solid square of
+//  params.core_color and nothing else
+// @rule template: the template is the one quadrant that holds a color other
+//  than params.bg and params.core_color
+// @rule keep-input: each input cell stays in the output unless a rule below
+//  paints it
+// @rule mirror: the figure a lone core gets is the template quadrant reflected
+//  across each divider that lies between the template quadrant and that core's
+//  quadrant: one reflection for a side neighbor, both for the diagonal quadrant
+// @rule scale: on each axis, the template's blocks of side u, the largest side
+//  on whose lattice aligned to the template core the template quadrant is
+//  constant, number k = t / u across the template core. Each such block
+//  becomes a block of side s / k, where s is the lone core's extent on that
+//  axis, laid out so that the template core's blocks land on the lone core.
+//  The model is undefined where k does not divide s
+// @rule paint: each cell of a lone core's quadrant that the scaled figure
+//  covers with a block of a color other than params.bg takes that color. A
+//  block's part outside the quadrant is dropped
+
+// what happens to the part of a scaled figure that leaves the lone core's
+// quadrant
+.type Clip =
+    // @claim paint
+    QuadrantClip {}
+    // @rule paint: each grid cell that the scaled figure covers with a block of
+    //  a color other than params.bg takes that color, over the dividers and the
+    //  other quadrants too; a block's part off the grid is dropped; undefined
+    //  where two figures give one cell different colors
+    // @witness figure-crosses-divider: ordinary concept
+  | GridClip {}
+
+// how the core color is known
+.type CoreSource =
+    // @claim template
+    StoredCore {}
+    // @rule core-by-quadrants: the core color is the one color other than
+    //  params.bg that every quadrant holds, in place of params.core_color;
+    //  nothing is painted where no one color is
+    // @witness other-core-color: variant $CoreByQuadrants
+    //     @relaxed lone-cores
+    //     @relaxed template-quadrant
+  | CoreByQuadrants {}
+
+// which cells join the figure's piece
+.type Adjacency =
+    // @claim mirror
+    Adjacency8 {}
+    // @rule mirror: the piece joins cells that share a side
+    // @witness corner-touching-block: borderline concept
+    //     @relaxed template-quadrant
+  | Adjacency4 {}
+
+// what the template carries
+.type Extent =
+    // @claim mirror
+    WholeQuadrant {}
+    // @rule mirror: only the 8-connected piece of cells other than params.bg
+    //  that holds the template core is reflected, in place of the whole
+    //  template quadrant
+    // @witness detached-block: borderline concept
+    //     @relaxed template-quadrant
+  | FigureOnly {adj: Adjacency}
+
+.type Choice = [clip: Clip, core: CoreSource, extent: Extent]
+
+// A line of the grid, as an axis-only position on its axis.
+.type Line = [a: Axis, l: Position]
+
+// A quadrant's tile under a core source.
+.type CoreTile = [k: CoreSource, t: Position]
+
+// An axis under a core source.
+.type CoreAxis = [k: CoreSource, a: Axis]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed cross
+    .decl bg(c: Color) bg(4).
+    // @ignore: derive VanishedColor — equivalent to SharedColor: a run has no
+    //  train output, so each color of the input is one
+    // @derive SharedColor: variant derived
+    //     @relaxed cross
+    .decl divider_color(c: Color) divider_color(1).
+
+    // --- $StoredCore ---
+    .decl core_color(c: Color) core_color(2).
+}
+
+.init params = Params
+
+.decl clip_choice(x: Clip)
+clip_choice($QuadrantClip()). clip_choice($GridClip()).
+
+.decl core_source_choice(k: CoreSource)
+core_source_choice($StoredCore()). core_source_choice($CoreByQuadrants()).
+
+.decl extent_choice(f: Extent)
+extent_choice($WholeQuadrant()).
+extent_choice($FigureOnly($Adjacency8())). extent_choice($FigureOnly($Adjacency4())).
+
+.decl impl_choice(ch: Choice)
+impl_choice([X, K, F]) :- clip_choice(X), core_source_choice(K), extent_choice(F).
+
+// The color of each line of the grid that holds one color alone.
+// @claim cross
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- axis_elem(A), in(P, Col), split(P, A, L, _).
+
+// The quadrants the full lines of a divider color cut.
+// @store divider: variant stored
+//     @relaxed cross
+// @store tile_of: variant stored
+//     @relaxed cross
+// @claim cross
+.init quad = DividerTiles<Unit>
+quad.cell($U(), P) :- in(P, _).
+quad.divider($U(), A, L) :- line_color.value([A, L], Col), params.divider_color(Col).
+
+.decl quad_cell(t: Position, p: Position, col: Color)
+quad_cell(T, P, Col) :- quad.tile_of($U(), P, T), in(P, Col).
+
+.decl core_col(k: CoreSource, col: Color)
+
+// @store value: variant concept
+//     @relaxed template-quadrant
+// @ignore item: store — equivalent to template.value=stored: each stores the
+//  top-left quadrant as the template
+// @claim template
+.init template = Unanimous<CoreSource, Position>
+template.item(K, T) :- core_col(K, _), quad_cell(T, _, Col), !params.bg(Col), !core_col(K, Col).
+
+// Each quadrant's core.
+// @claim template-quadrant lone-cores
+.init core = Bbox<CoreTile>
+core.cell([K, T], P) :- core_col(K, Col), quad_cell(T, P, Col).
+
+.decl lone(k: CoreSource, t: Position, b: Box)
+lone(K, L, B) :- template.value(K, T), core.box([K, L], B), L != T.
+
+// A block side that divides the template core's extent on axis A, with the
+// count of blocks across the core.
+.decl side_cand(k: CoreSource, a: Axis, u: number, n: number)
+side_cand(K, A, U, N) :-
+    template.value(K, T), core.box([K, T], B), core.cell([K, T], P), crop(P, B, P_in),
+    axis_elem(A), ( sub_extent(P_in, A, U) ; axis_dim(P_in, A, U) ),
+    divide_by_size(P_in, A, U, 0, P_blk, _), axis_dim(P_blk, A, N).
+
+// A template quadrant cell's block from edge D of the template core, at block
+// side U.
+.decl tmpl_idx(k: CoreSource, u: number, p: Position, d: Dir, n: number)
+tmpl_idx(K, U, P, D, N) :-
+    side_cand(K, A, U, _), axis_of(D, A),
+    template.value(K, T), core.box([K, T], B), quad_cell(T, P, _),
+    relative(B, P, P_rel), dist(P_rel, D, X), stride(X, U, 0, N, _).
+
+// Two cells of one line along axis A share a block of side U and differ in
+// color.
+.decl mixed(k: CoreSource, a: Axis, u: number)
+mixed(K, A, U) :-
+    tmpl_idx(K, U, P1, D, N), tmpl_idx(K, U, P2, D, N), axis_of(D, A), same_line(A, P1, P2),
+    in(P1, Col1), in(P2, Col2), Col1 != Col2.
+
+// The template's block side on each axis: the largest that leaves the template
+// quadrant constant on its blocks.
+// @claim scale
+.init side = Extremes<CoreAxis>
+side.cand([K, A], U) :- side_cand(K, A, U, _), !mixed(K, A, U).
+
+.decl tmpl_block(k: CoreSource, p: Position, d: Dir, n: number)
+tmpl_block(K, P, D, N) :- side.high([K, A], U), axis_of(D, A), tmpl_idx(K, U, P, D, N).
+
+// The block side on a lone core: its extent cut into the template's block
+// count.
+.decl lone_side(k: CoreSource, t: Position, a: Axis, v: number)
+lone_side(K, L, A, V) :-
+    lone(K, L, B), core.cell([K, L], Q), crop(Q, B, Q_in),
+    side.high([K, A], U), side_cand(K, A, U, N),
+    divide(Q_in, A, N, 0, _, Q_blk), axis_dim(Q_blk, A, V).
+
+// A lone core whose extent the template's block count does not divide.
+.decl unscaled(k: CoreSource)
+unscaled(K) :- lone(K, L, _), side.high([K, A], _), !lone_side(K, L, A, _).
+
+// A grid cell's block from edge D of lone core L.
+// @ignore: common-subexpr — the template's cells take a block at every
+//  candidate side before the side is chosen, and a lone core's side follows
+//  from that choice, so one relation for both closes a cycle
+.decl lone_idx(k: CoreSource, t: Position, q: Position, d: Dir, n: number)
+lone_idx(K, L, Q, D, N) :-
+    lone(K, L, B), lone_side(K, L, A, V), axis_of(D, A),
+    in(Q, _), relative(B, Q, Q_rel), dist(Q_rel, D, X), stride(X, V, 0, N, _).
+
+// Direction D at lone quadrant L, as the template quadrant sees it: reversed
+// across each divider between the two.
+// @store: variant concept
+//     @relaxed template-quadrant
+.decl mirror(k: CoreSource, t: Position, d: Dir, e: Dir)
+mirror(K, L, D, E) :-
+    template.value(K, T), lone(K, L, _), dir_elem(D),
+    ( same_dist(D, T, L), E = D
+    ; !same_dist(D, T, L), opposite(D, E)
+    ).
+
+// Template cell P lands on grid cell Q at lone core L: on each axis, Q's block
+// from an edge of L's core is P's block from the mirrored edge.
+.decl scaled(k: CoreSource, t: Position, q: Position, p: Position)
+scaled(K, L, Q, P) :-
+    lone_idx(K, L, Q, D1, N1), mirror(K, L, D1, E1), tmpl_block(K, P, E1, N1),
+    perp_dir(D1, D2), lone_idx(K, L, Q, D2, N2), mirror(K, L, D2, E2), tmpl_block(K, P, E2, N2).
+
+// The template quadrant's cells of a color other than the background.
+.decl tmpl_ink(k: CoreSource, p: Position, col: Color)
+tmpl_ink(K, P, Col) :- template.value(K, T), quad_cell(T, P, Col), !params.bg(Col).
+
+// The cells the template carries, with their colors.
+.decl figure(k: CoreSource, f: Extent, p: Position, col: Color)
+
+.decl paint(k: CoreSource, x: Clip, f: Extent, q: Position, col: Color)
+
+out(Q, Col, [X, K, F]) :-
+    impl_choice([X, K, F]), !unscaled(K),
+    ( paint(K, X, F, Q, Col)
+    ; in(Q, Col), !paint(K, X, F, Q, _)
+    ).
+
+// --- $StoredCore ---
+core_col($StoredCore(), Col) :- params.core_color(Col).
+
+// --- $CoreByQuadrants ---
+// A color some quadrant lacks.
+.decl lacked(col: Color)
+lacked(Col) :- quad_cell(_, _, Col), quad_cell(T, _, _), !quad_cell(T, _, Col).
+
+// @claim core-by-quadrants
+.init shared = Unanimous<Unit, Color>
+shared.item($U(), Col) :- quad_cell(_, _, Col), !params.bg(Col), !lacked(Col).
+
+core_col($CoreByQuadrants(), Col) :- shared.value($U(), Col).
+
+// --- $QuadrantClip ---
+paint(K, $QuadrantClip(), F, Q, Col) :-
+    scaled(K, L, Q, P), quad.tile_of($U(), Q, L), figure(K, F, P, Col).  // in L's quadrant
+
+// --- $GridClip ---
+paint(K, $GridClip(), F, Q, Col) :- scaled(K, _, Q, P), figure(K, F, P, Col).
+
+// --- $WholeQuadrant ---
+figure(K, $WholeQuadrant(), P, Col) :- tmpl_ink(K, P, Col).
+
+// --- $FigureOnly ---
+// The template core's cells.
+.decl tmpl_core(k: CoreSource, p: Position)
+tmpl_core(K, P) :- template.value(K, T), core.cell([K, T], P).
+
+// --- $Adjacency8 ---
+// @claim mirror
+.init piece8 = Components8<CoreSource>
+piece8.node(K, P) :- tmpl_ink(K, P, _).
+
+figure(K, $FigureOnly($Adjacency8()), P, Col) :-
+    tmpl_core(K, P0), piece8.label(K, P0, Id), piece8.label(K, P, Id), in(P, Col).
+
+// --- $Adjacency4 ---
+// @claim mirror
+.init piece4 = Components<CoreSource>
+piece4.node(K, P) :- tmpl_ink(K, P, _).
+
+figure(K, $FigureOnly($Adjacency4()), P, Col) :-
+    tmpl_core(K, P0), piece4.label(K, P0, Id), piece4.label(K, P, Id), in(P, Col).
