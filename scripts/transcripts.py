@@ -303,9 +303,9 @@ def read_entries(path: Path, naming: set[str] | None = None) -> list[Entry]:
     """The entries of the transcript at `path` as it stands at the state this
     process is in, or with `naming` only those whose line holds one of its
     words, which spares parsing the rest."""
-    snap = snapshot(path)
     if naming is None:
-        return [e for i in range(len(snap.lines)) for e in snap.entry(i)]
+        return list(entries_forward(path))
+    snap = snapshot(path)
     lines = sorted(frozenset[int]().union(*(snap.holding(w) for w in naming)))
     return [e for i in lines for e in snap.entry(i)]
 
