@@ -18,13 +18,14 @@ from printed_launch_hook import operator_next
 HOOK = "printed_send_hook"
 
 
-def no_send_reason(command: str) -> str:
+def no_send_reason(command: str, action: str) -> str:
     from controlled_markdown import mctx
 
     return "\n".join([
         mctx("Blocked: the last result of `{command}` gives no whole SendMessage "
              "call.").format(command=command),
-        mctx("Send only the message that `next` prints, and run `next` with no pipe.")])
+        mctx("Send only the message that `{action}` prints, and run `{action}` with no "
+             "pipe.").format(action=action)])
 
 
 def differ_reason(command: str, to: str, message: str) -> str:
@@ -54,7 +55,7 @@ def check(hook: dict[str, Any]) -> str | None:
     command, found = caller.command, caller.found
     printed = None if found is None else printed_send(found[1])
     if printed is None:
-        return no_send_reason(command)
+        return no_send_reason(command, caller.action)
     to, message = printed
     if inp.get("to") == to and unfenced(str(inp.get("message", ""))).startswith(message):
         return None

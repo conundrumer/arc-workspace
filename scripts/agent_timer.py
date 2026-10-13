@@ -65,7 +65,7 @@ class StateFile(StrEnum):
 HELP = mctx("""
     - An agent has at most one timer of each kind.
         - A `keep-alive` timer sleeps {seconds} seconds, and a `budget` timer sleeps the seconds its start gives.
-    - `start` starts a timer of its kind where none of the agent's runs, records its pid, and completes when that timer ends.
+    - `start` starts a timer of its kind where the agent has no running timer of that kind, records its pid, and completes when that timer ends.
         - Where a keep-alive timer runs, a keep-alive start starts no second one, and waits until that one ends.
         - Where a budget timer runs, a budget start fails, and that timer runs on.
     - `stop` ends the running timer of its kind, and with it each start that waits on it, and completes once the timer has ended.

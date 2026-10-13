@@ -20,7 +20,7 @@ from operations.roles import Role
 from operations.state import Budget, Spend
 from run_reads import agent_type, run_entries
 from ticket_files import ticket_files, ticket_name
-from ticket_form import FRONT, front_fields, ticket_kind
+from ticket_form import FRONT, check_fix, front_fields, ticket_kind
 from ticket_log import log_lines, log_moves, read_ticket, resolution_of
 from ticket_numbers import TicketNumber
 from ticket_reads import editors_field
@@ -81,14 +81,12 @@ def front(text: str) -> dict[str, str]:
 def fix_field(text: str) -> Role | None:
     """The role the `fix` field of the front matter of the ticket text
     `text` gives, or None where it has none. Refuses a `fix` that is no
-    role."""
+    editor."""
     fix = front(text).get("fix")
     if fix is None:
         return None
-    try:
-        return Role(fix)
-    except ValueError:
-        raise Refused(mctx("`{fix}` is no role").format(fix=fix)) from None
+    check_fix(fix)
+    return Role(fix)
 
 
 def union_seconds(spans: list[tuple[float, float]]) -> float:

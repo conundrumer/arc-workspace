@@ -104,6 +104,13 @@ def editor_names() -> set[str]:
     return {str(r) for r in EDITORS}
 
 
+def check_fix(value: str) -> None:
+    """Refuses a `fix` value that is no editor."""
+    if value not in editor_names():
+        raise Refused(mctx("`fix` `{value}` is no editor among {known}").format(
+            value=value, known=ticked(map(str, EDITORS))))
+
+
 def check_editors(value: str) -> None:
     """Refuses an `editors` value that is not a list of distinct editors
     (`operations.roles.EDITORS`)."""
@@ -175,9 +182,8 @@ def checked_kind(tickets: Path, agent: str, text: str) -> Kind:
             check_depends_on(tickets, value)
         if key == "editors":
             check_editors(value)
-        if key == "fix" and value not in editor_names():
-            raise Refused(mctx("`fix` `{value}` is no editor among {known}").format(
-                value=value, known=ticked(map(str, EDITORS))))
+        if key == "fix":
+            check_fix(value)
         if key == "mechanical" and value != MECHANICAL:
             raise Refused(mctx("`mechanical` `{value}` is not `{yes}`").format(
                 value=value, yes=MECHANICAL))
