@@ -64,24 +64,29 @@ def checked_out(tree: Path, sub: Submodule) -> bool:
 
 
 class SetupFailed(RuntimeError):
-    """A setup by `set_up` that failed, with its cause."""
+    """A setup by `locked_update` that failed, with its cause."""
 
 
-def set_up(tree: Path) -> None:
-    """Set up the submodules of `tree` as `update` does, from the main
-    tree's copies, where one is not checked out, one setup at a time across
-    the repository's worktrees."""
+SETUP_FAILED = mctx("setting up the submodules of {tree} from {main} failed: {cause}")
+
+
+def locked_update(tree: Path, main: Path) -> None:
+    """Run `update` on `tree` from `main`, one setup at a time across the
+    repository's worktrees."""
     with open(checkout.git_common_dir(tree) / UPSTREAM_LOCK, "a") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)
-        if all(checked_out(tree, sub) for sub in submodules(tree)):
-            return
-        main = checkout.main_worktree(tree)
         try:
             update(tree, main)
         except checkout.GitFailed as exc:
-            raise SetupFailed(mctx(
-                "the submodules of {tree} are not checked out, and setting them up "
-                "from {main} failed: {cause}").format(tree=tree, main=main, cause=exc)) from exc
+            raise SetupFailed(SETUP_FAILED.format(tree=tree, main=main, cause=exc)) from exc
+
+
+def set_up(tree: Path) -> None:
+    """Set up the submodules of `tree` by `locked_update`, from the main
+    tree's copies, where one is not checked out."""
+    if all(checked_out(tree, sub) for sub in submodules(tree)):
+        return
+    locked_update(tree, checkout.main_worktree(tree))
 
 
 def set_up_in_script(tree: Path) -> bool:

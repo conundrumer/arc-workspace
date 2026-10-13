@@ -168,7 +168,7 @@ from change_checks import (MARKDOWN_CHECK, Check, code_paths,  # noqa: E402
                            failures, run_in, said, timed)
 from change_worktree import carried  # noqa: E402
 from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
-                                 submodules, update)
+                                 submodules, locked_update, SetupFailed)
 
 from operations.merging import PATHS_SEP, split_paths  # noqa: E402
 from operations.tracker import BASE  # noqa: E402
@@ -260,14 +260,14 @@ def branch_of(tree: Path) -> str:
 
 
 def set_up_submodules(worktree: Path, main: Path) -> None:
-    """Set up the worktree's submodules as `worktree_submodules.update`
-    does. A failure is a refusal."""
+    """Set up the worktree's submodules by
+    `worktree_submodules.locked_update`. A failure is a refusal."""
     say("setting up the submodules from the main tree", flush=True)
     try:
         with timed(mctx("the submodule setup of {worktree}").format(worktree=worktree)):
-            update(worktree, main)
-    except checkout.GitFailed as exc:
-        raise Refused(f"setting up the submodules from {main} failed: {exc}") from exc
+            locked_update(worktree, main)
+    except SetupFailed as exc:
+        raise Refused(str(exc)) from exc
 
 
 CONTEXT_WRITE = ("scripts/context.py", "--write")

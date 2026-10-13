@@ -77,6 +77,7 @@ PAST_BUDGET = mctx(
     "[What a file holds](docs/handbook/editing.md#what-a-file-holds) keeps "
     "the text the raise admits.")
 NO_BUDGET = mctx("{path} has no `+ budget:` line.")
+NOT_A_NUMBER = mctx("`{attr}: {value}` in {doc} is no number of characters")
 
 
 def budget_of(doc: Path) -> int | None:
@@ -88,8 +89,8 @@ def budget_of(doc: Path) -> int | None:
     try:
         return int(value.strip())
     except ValueError:
-        raise SystemExit(f"`{BUDGET_ATTR}: {value.strip()}` in "
-                         f"{repo_label(doc)} is no number of characters") from None
+        raise SystemExit(NOT_A_NUMBER.format(attr=BUDGET_ATTR, value=value.strip(),
+                                             doc=repo_label(doc))) from None
 
 
 def size(doc: Path, text: str, measured: Path | None = None) -> Size:

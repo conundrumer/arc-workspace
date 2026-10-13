@@ -31,7 +31,7 @@ from operations.merging import RERUN_OPENING, rerun_paths  # noqa: E402
 from operations.task_work import task_paths  # noqa: E402
 from solver.vocabulary import SOLVER_SUFFIX  # noqa: E402
 from operations.state import LogLine, Ticket  # noqa: E402
-from operations.tracker import BASE  # noqa: E402
+from operations.tracker import BASE, runs  # noqa: E402
 from ticketing.times import TIME_FORM, stamp_time, utc_stamp  # noqa: E402
 from ticketing.vocabulary import Kind, Status  # noqa: E402
 
@@ -46,7 +46,8 @@ HELP = mctx("""
     - Usage: `uv run python scripts/bottlenecks.py [--since <time>]`
     - The command reads the ticket tracker of the main tree and prints, for each cause below, a heading with the cause's sum and then its rows, the largest first.
     - `--since <time>`, with `<time>` in the form `{form}` in UTC, sets the window from that time to now: each span is cut to the window, and only the rerun lines in it count. With no `--since`, the window is the whole log.
-    - `depends-on` waits: one row per path that a `change` ticket's `## Scope` gives with a `/` or at the root of the main tree, with the hours changes waited on it and the number of changes that waited on it.
+    - `depends-on` waits: one row per path that a `change` ticket's `## Scope` gives, with the hours changes waited on it and the number of changes that waited on it.
+        - The paths a Scope gives are each path it gives with a `/` or at the root of the main tree, and the witness file of each solver it gives.
         - A wait is a span in which a `change` ticket stood under `tickets/open/` and a ticket its `depends-on` gives stood outside `tickets/closed/`, charged to each path both Scopes give, or to the row `{no_shared}` where they give none in common.
         - The wait hours of a path are change-hours: the overlapping spans of one change count once, and those of different changes add up.
     - Reruns: each log line of a `change` ticket whose note opens with `{opening}`, charged to each path it gives, or to the row `{not_recorded}` where it gives none, at ${cost} each, an estimate of the cost of one build of a change.
@@ -68,6 +69,11 @@ RERUN_ROW = mctx("{reruns} reruns  ${cost}  {churn}  {path}")
 TICKET_ROW = mctx("{hours} h  {number}")
 NO_TICKET = mctx("{number} {link} {d}, and no ticket the read finds has that number")
 CHURN = mctx("churn {commits}")
+RERUN_TOTAL = mctx("{count} reruns  ${cost}")
+WAITS_ON_CHANGE = mctx("waits on change")
+DEPENDS_ON_LINK = mctx("depends on")
+NO_WAIT = mctx("{number} moves into `blocked` at {time} with a note that opens with no wait")
+NEITHER = mctx("{number} waits at {time} on neither the user nor a change")
 
 
 def scope_paths(t: Ticket, root: Path) -> frozenset[str]:
@@ -109,21 +115,18 @@ def clip(spans: list[Span], start: float) -> list[Span]:
 
 def blocked_spans(t: Ticket, now: float) -> list[tuple[Span, LogLine]]:
     """The spans in which `t` stood blocked, each with the line that opens
-    it: a line that moves `t` into `blocked` or whose note opens with a
-    wait while `t` stands blocked. A span runs to the next line that moves
-    `t` out of `blocked` or whose note opens with a wait, or to `now`."""
+    it: the first line of each run of `blocked` lines (`runs`), and each
+    line of the run after it whose note opens with a wait. A span runs to
+    the next of those lines, or, after the last, to the time of the line
+    after the run, or to `now` where the run ends the log."""
     out: list[tuple[Span, LogLine]] = []
-    opened: LogLine | None = None
-    before: Status | None = None
-    for line in t.log:
-        if opened is not None and (line.status is not Status.BLOCKED or line.waits):
-            out.append(((opened.time, line.time), opened))
-            opened = None
-        if line.status is Status.BLOCKED and (before is not Status.BLOCKED or line.waits):
-            opened = line
-        before = line.status
-    if opened is not None:
-        out.append(((opened.time, now), opened))
+    for run in runs(t):
+        if run.status is not Status.BLOCKED:
+            continue
+        opens = [run.start] + [i for i in run.waits if i > run.start]
+        end = t.log[run.end].time if run.end < len(t.log) else now
+        ends = [t.log[i].time for i in opens[1:]] + [end]
+        out += [((t.log[i].time, e), t.log[i]) for i, e in zip(opens, ends)]
     return out
 
 
@@ -144,48 +147,73 @@ def hours(spans: list[Span]) -> float:
     return union_seconds(spans) / 3600
 
 
-def bottlenecks(tickets: dict[str, Ticket], root: Path, start: float, now: float,
-                undecided: list[str]) -> Costs:
-    """The costs of each cause over the window from `start` to `now`."""
-    scopes = {n: scope_paths(t, root) for n, t in sorted(tickets.items())}
-    waits: dict[str, dict[str, list[Span]]] = defaultdict(lambda: defaultdict(list))
-    reruns: dict[str, int] = defaultdict(int)
+type Window = tuple[float, float]
+"""The window from its start to `now`."""
+
+
+def by_number(spans: dict[str, list[Span]]) -> dict[str, float]:
+    return {n: hours(s) for n, s in sorted(spans.items()) if s}
+
+
+def blocked_waits(tickets: dict[str, Ticket], window: Window,
+                  undecided: list[str]) -> tuple[dict[str, float], dict[str, float]]:
+    """The hours each ticket waited on the user, and the hours `change`
+    tickets waited on each change number, in `window`."""
+    start, now = window
     on_user: dict[str, list[Span]] = defaultdict(list)
     on_change: dict[str, list[Span]] = defaultdict(list)
-    ready: dict[str, float] = {}
-    not_closed = frozenset(Status) - {Status.CLOSED}
     for n, t in sorted(tickets.items()):
         for span, line in blocked_spans(t, now):
             spans = clip([span], start)
             if not spans:
                 continue
             if not line.waits:
-                undecided.append(mctx("{number} moves into `blocked` at {time} with a note that "
-                                      "opens with no wait").format(number=n,
-                                                                    time=utc_stamp(line.time)))
+                undecided.append(NO_WAIT.format(number=n, time=utc_stamp(line.time)))
             elif line.on_user:
                 on_user[n] += spans
             elif line.on_change is None:
-                undecided.append(mctx("{number} waits at {time} on neither the user nor a "
-                                      "change").format(number=n, time=utc_stamp(line.time)))
+                undecided.append(NEITHER.format(number=n, time=utc_stamp(line.time)))
             elif t.kind is Kind.CHANGE:
                 if line.on_change not in tickets:
-                    undecided.append(NO_TICKET.format(number=n, link="waits on change",
+                    undecided.append(NO_TICKET.format(number=n, link=WAITS_ON_CHANGE,
                                                       d=line.on_change))
                 else:
                     on_change[line.on_change] += spans
-        if t.kind is not Kind.CHANGE:
-            continue
+    return by_number(on_user), by_number(on_change)
+
+
+def changes(tickets: dict[str, Ticket]) -> list[tuple[str, Ticket]]:
+    return [(n, t) for n, t in sorted(tickets.items()) if t.kind is Kind.CHANGE]
+
+
+def rerun_counts(tickets: dict[str, Ticket], start: float) -> dict[str, int]:
+    """The number of reruns of each path from `start` on."""
+    reruns: dict[str, int] = defaultdict(int)
+    for _, t in changes(tickets):
         for line in t.log:
             paths = rerun_paths(line.note)
             if paths is not None and line.time >= start:
                 for p in paths or (PATHS_NOT_RECORDED,):
                     reruns[p] += 1
+    return dict(sorted(reruns.items()))
+
+
+def dependency_waits(tickets: dict[str, Ticket], root: Path, window: Window,
+                     undecided: list[str]
+                     ) -> tuple[dict[str, tuple[float, int]], dict[str, float]]:
+    """Per file, the `depends-on` wait hours and the waiting changes, and
+    per change, the hours it stood open and ready, in `window`."""
+    start, now = window
+    scopes = {n: scope_paths(t, root) for n, t in sorted(tickets.items())}
+    waits: dict[str, dict[str, list[Span]]] = defaultdict(lambda: defaultdict(list))
+    ready: dict[str, float] = {}
+    not_closed = frozenset(Status) - {Status.CLOSED}
+    for n, t in changes(tickets):
         waiting = clip(spans_in(t, frozenset({Status.OPEN}), now), start)
         free = waiting
         for d in t.depends_on:
             if d not in tickets:
-                undecided.append(NO_TICKET.format(number=n, link="depends on", d=d))
+                undecided.append(NO_TICKET.format(number=n, link=DEPENDS_ON_LINK, d=d))
                 free = []
                 continue
             spans = overlap(waiting, spans_in(tickets[d], not_closed, now))
@@ -196,13 +224,19 @@ def bottlenecks(tickets: dict[str, Ticket], root: Path, start: float, now: float
                 waits[p][n] += spans
         if free:
             ready[n] = hours(free)
-    return Costs(
-        depends_on={p: (sum(hours(s) for s in waits[p].values()),
-                        sum(1 for s in waits[p].values() if s)) for p in sorted(waits)},
-        reruns=dict(sorted(reruns.items())),
-        on_user={n: hours(s) for n, s in sorted(on_user.items()) if s},
-        on_change={n: hours(s) for n, s in sorted(on_change.items()) if s},
-        ready=ready)
+    return ({p: (sum(hours(s) for s in waits[p].values()),
+                 sum(1 for s in waits[p].values() if s)) for p in sorted(waits)},
+            ready)
+
+
+def bottlenecks(tickets: dict[str, Ticket], root: Path, start: float, now: float,
+                undecided: list[str]) -> Costs:
+    """The costs of each cause over the window from `start` to `now`."""
+    on_user, on_change = blocked_waits(tickets, (start, now), undecided)
+    reruns = rerun_counts(tickets, start)
+    depends_on, ready = dependency_waits(tickets, root, (start, now), undecided)
+    return Costs(depends_on=depends_on, reruns=reruns, on_user=on_user,
+                 on_change=on_change, ready=ready)
 
 
 def churn(root: Path, start: float, now: float) -> list[frozenset[str]]:
@@ -248,7 +282,7 @@ def main() -> int:
         print(WAIT_ROW.format(hours=f"{h:8.1f}", waiting=f"{waiting:3}", churn=churn_of(path),
                               path=path))
     count = sum(costs.reruns.values())
-    print(HEADING.format(cause=RERUNS, total=f"{count} reruns  ${count * RERUN_COST:.2f}"))
+    print(HEADING.format(cause=RERUNS, total=RERUN_TOTAL.format(count=count, cost=f"{count * RERUN_COST:.2f}")))
     for path, n in sorted(costs.reruns.items(), key=lambda r: (-r[1], r[0])):
         print(RERUN_ROW.format(reruns=f"{n:3}", cost=f"{n * RERUN_COST:7.2f}",
                                churn=churn_of(path), path=path))

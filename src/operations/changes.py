@@ -161,12 +161,15 @@ def expedited(state: State) -> set[str]:
     return reached(state, {n for n, _ in numbers(state, Directive.EXPEDITE)})
 
 
+RELEASED = mctx("released: holder {holder} is not live")
+
+
 def release(state: State) -> Step | None:
     """The move back to `tickets/open/` of each ticket of `scope` under
     `tickets/assigned/` whose holder is not live (`live_holder`), in one
     command whose moves run apart (`moves`)."""
     return moves([log(n, Status.OPEN, Status.ASSIGNED,
-                      f"released: holder {t.holder or 'none'} is not live", None)
+                      RELEASED.format(holder=t.holder or 'none'), None)
                   for n in sorted(scope(state))
                   if (t := state.tracker.tickets.get(n)) is not None
                   and t.status is Status.ASSIGNED

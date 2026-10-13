@@ -5,6 +5,7 @@ log` calls they print, in the form `file_ticket.py log --help` gives;
 import hashlib
 import re
 import shlex
+from dataclasses import dataclass
 from pathlib import Path
 
 from engine import checkout
@@ -106,15 +107,37 @@ def coordinator_line(t: Ticket) -> float:
     return max((ln.time for ln in coordinator_lines(t.log)), default=t.filed)
 
 
+@dataclass(frozen=True)
+class Run:
+    """A longest stretch of lines of one status in a ticket's log: the
+    index of its first line, the index after its last, and the indices of
+    its lines whose note opens with a wait."""
+    status: Status
+    start: int
+    end: int
+    waits: tuple[int, ...]
+
+
+def runs(t: Ticket) -> list[Run]:
+    """The runs of `t`'s log, in log order."""
+    out: list[Run] = []
+    start = 0
+    for i in range(1, len(t.log) + 1):
+        if i == len(t.log) or t.log[i].status is not t.log[start].status:
+            out.append(Run(t.log[start].status, start, i,
+                           tuple(j for j in range(start, i) if t.log[j].waits)))
+            start = i
+    return out
+
+
 def final_run(t: Ticket) -> tuple[int, int | None]:
     """The index in `t`'s log where its final run of lines of `t`'s status
     starts, and the index of the last line of that run whose note opens
     with a wait, where one does."""
-    run = len(t.log)
-    while run > 0 and t.log[run - 1].status is t.status:
-        run -= 1
-    waits = [i for i in range(run, len(t.log)) if t.log[i].waits]
-    return run, waits[-1] if waits else None
+    last = runs(t)[-1:]
+    if not last or last[0].status is not t.status:
+        return len(t.log), None
+    return last[0].start, last[0].waits[-1] if last[0].waits else None
 
 
 def wait_line(t: Ticket) -> LogLine | None:

@@ -17,7 +17,7 @@ from pathlib import Path
 from engine import checkout
 from handbook.agents import (AGENT_DIR, agent_doc, agent_document,
                              agent_names, agent_renderings, next_name,
-                             next_file, next_readers, next_text)
+                             next_readers, next_renderings)
 from handbook.budget import Size, size
 from handbook.context import DOCS_DIR
 from handbook.coordinator_document import (COORDINATOR_DOC,
@@ -39,9 +39,8 @@ def rendered_texts() -> dict[Path, Rendering]:
     for name, rendering in zip(agent_names(), agent_renderings()):
         if lib_form(agent_document(name)) is LibForm.NONE:
             texts[agent_doc(name)] = rendering
-    for name in next_readers():
-        texts[agent_doc(next_name(name))] = Rendering(next_file(name),
-                                                      next_text(name))
+    for name, rendering in zip(next_readers(), next_renderings()):
+        texts[agent_doc(next_name(name))] = rendering
     return texts
 
 
