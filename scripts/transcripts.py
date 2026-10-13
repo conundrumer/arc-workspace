@@ -259,34 +259,19 @@ class Snapshot:
     parsed for such a word."""
 
     def __init__(self, path: Path) -> None:
-        self.lines = path.read_bytes().splitlines()
+        self.text = path.read_bytes()
+        self.lines = self.text.splitlines()
         self.found: dict[str, frozenset[int]] = {}
-        self.agents: dict[str, frozenset[int]] | None = None
         self.parsed: dict[int, list[Entry]] = {}
 
-    def by_agent(self, agent_id: re.Pattern[str]) -> dict[str, frozenset[int]]:
-        """The lines that hold each agent id, found in one pass."""
-        if self.agents is None:
-            # A lookahead finds each of two ids that overlap.
-            at = re.compile(rb"(?=(%s))" % agent_id.pattern.encode())
-            index: dict[str, set[int]] = {}
-            for i, line in enumerate(self.lines):
-                for aid in at.findall(line):
-                    index.setdefault(aid.decode(), set()).add(i)
-            self.agents = {aid: frozenset(v) for aid, v in index.items()}
-        return self.agents
-
     def holding(self, word: str) -> frozenset[int]:
-        #`ticket_log` imports this module.
-        from ticket_log import AGENT_ID
-
         if word not in self.found:
-            if AGENT_ID.fullmatch(word):
-                self.found[word] = self.by_agent(AGENT_ID).get(word, frozenset())
-            else:
-                w = word.encode()
-                self.found[word] = frozenset(
-                    i for i, line in enumerate(self.lines) if w in line)
+            w = word.encode()
+            # One search of the whole text spares the scan of each line
+            # for a word the transcript does not hold.
+            self.found[word] = frozenset(
+                i for i, line in enumerate(self.lines) if w in line
+            ) if w in self.text else frozenset()
         return self.found[word]
 
     def entry(self, i: int) -> list[Entry]:
@@ -320,7 +305,7 @@ def read_entries(path: Path, naming: set[str] | None = None) -> list[Entry]:
     words, which spares parsing the rest."""
     snap = snapshot(path)
     if naming is None:
-        return [e for line in snap.lines for e in parse(line)]
+        return [e for i in range(len(snap.lines)) for e in snap.entry(i)]
     lines = sorted(frozenset[int]().union(*(snap.holding(w) for w in naming)))
     return [e for i in lines for e in snap.entry(i)]
 
