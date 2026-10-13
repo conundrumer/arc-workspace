@@ -9,7 +9,6 @@ from collections import defaultdict
 from checker import Runs
 from checker.deletions import DeletionReport, survey_deletions
 from checker.derived_constant import survey_derived_constant
-from checker.determination_plan import survey_determination_plan
 from checker.drop_one import survey_drop_one
 from checker.judged import parse_failure
 from checker.lint.form.header import (
@@ -18,11 +17,11 @@ from checker.lint.form.header import (
     keywords_doc,
     known_keywords,
 )
+from checker.plan_cache import plan_lines
 from checker.render import header_line, keywords
 from checker.render.surveys import (
     render_deletions,
     render_derived_constant,
-    render_determination_plan,
     render_drop_one,
     render_sweep,
 )
@@ -35,6 +34,8 @@ from cli.common import (
     compiles,
     engine,
     missing,
+    solver_path,
+    stamp,
     stem_of,
 )
 from engine import Program, checkout
@@ -109,9 +110,7 @@ def cmd_determination_plan(arg: str, verdicts: bool = False) -> int:
     runs = _runs(arg, task=True)
     if runs is None:
         return 2
-    print("\n".join(render_determination_plan(
-        runs.solver, survey_determination_plan(runs.solver, runs),
-        verdicts)))
+    print("\n".join(plan_lines(runs, solver_path(arg), stamp(), verdicts)))
     return 0
 
 
