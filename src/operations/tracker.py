@@ -107,6 +107,19 @@ def coordinator_line(t: Ticket) -> float:
     return max((ln.time for ln in coordinator_lines(t.log)), default=t.filed)
 
 
+SET_ASIDE = (Status.DEFERRED, Status.BLOCKED)
+"""The statuses a move into `tickets/open/` from gives a ticket to a fresh
+ticket analyst."""
+
+
+def reopened_line(t: Ticket) -> float:
+    """The time of the last line of `t`'s log that leaves it `open` where
+    the line before it left it in one of `SET_ASIDE`, or of its filing
+    where no line does."""
+    return max((ln.time for before, ln in zip(t.log, t.log[1:])
+                if ln.status is Status.OPEN and before.status in SET_ASIDE), default=t.filed)
+
+
 @dataclass(frozen=True)
 class Run:
     """A longest stretch of lines of one status in a ticket's log: the

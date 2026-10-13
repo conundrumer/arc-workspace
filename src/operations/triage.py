@@ -10,10 +10,11 @@ task whose solver pipeline has yet to launch its own ticket analyst, which
 `changes.through_pause`. A ticket goes to no second analyst while one
 runs on it, nor again once one returned, until the coordinator writes a line
 in its log after that analyst's launch, as where it records a decision of the
-user or the user's later words on it. A ticket analyst that runs on the
-ticket gets that line by message, and then counts as given it. A ticket
-other than a `change` that stands under `tickets/blocked/` or
-`tickets/closed/` with such a line after the line that moved it there
+user or the user's later words on it, or the ticket moves from
+`tickets/deferred/` or `tickets/blocked/` into `tickets/open/` after it. A
+ticket analyst that runs on the ticket gets the coordinator's line by
+message, and then counts as given it. A ticket other than a `change` that
+stands under `tickets/blocked/` or `tickets/closed/` with such a line after the line that moved it there
 moves back to `tickets/open/` first.
 
 The coordinator gets from a ticket analyst's reply only what goes to the
@@ -67,7 +68,7 @@ from operations.directives import paused
 from operations.final_reply import carrier, nested
 from operations.handled import repeated, sent
 from operations.steps import DECISION, Bash, Launch, Send, Step, Undecided
-from operations.tracker import AGENT, blocked_on_user, coordinator_line, coordinator_lines, final_run, log
+from operations.tracker import AGENT, blocked_on_user, coordinator_line, coordinator_lines, final_run, log, reopened_line
 
 
 GIVEN = (Purpose.TRIAGE, Purpose.PASS)
@@ -76,12 +77,16 @@ GIVEN = (Purpose.TRIAGE, Purpose.PASS)
 
 def given(state: State, number: str) -> bool:
     """Whether a ticket analyst runs on `number`, or one was launched with
-    it, or sent it, after the coordinator's last line on it."""
+    it after the later of the coordinator's last line on it and its last
+    move into `tickets/open/` (`reopened_line`), or was sent that line of
+    the coordinator's where it is the later."""
     t = state.tracker.tickets[number]
     last = coordinator_lines(t.log)[-1:]
+    moved = reopened_line(t)
+    since = max(coordinator_line(t), moved)
     return any(number in nums and (
-        a.pending or a.launched > coordinator_line(t) or (
-            a.agent_id is not None and bool(last)
+        a.pending or a.launched > since or (
+            a.agent_id is not None and bool(last) and last[0].time >= moved
             and sent(state, a.agent_id, messages.later_line(number, last[0].time, last[0].note))))
         for a, purpose, nums in state.analysts() if purpose in GIVEN)
 
