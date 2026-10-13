@@ -38,8 +38,9 @@ from ticket_numbers import (SESSION_VAR, SESSIONS, reserve, session_id,  # noqa:
 from ticket_settle import to_settle  # noqa: E402
 from idle_sessions import MAIN, name_main, read_sessions  # noqa: E402
 from ticket_reads import editors_field  # noqa: E402
-from ticket_watch import (CAP, CHANGES, Case, add_evidence, budget, case_loss, evict,  # noqa: E402
-                          fix_field, front, route, threshold)  # noqa: E402
+from ticket_watch import (CAP, CHANGES, SECOND_PRICE, Case, add_evidence, budget,  # noqa: E402
+                          case_loss, evict, fix_field, front, loss, route,  # noqa: E402
+                          threshold)  # noqa: E402
 from ticketing.text import SECTIONS, VALIDATION, heading  # noqa: E402
 from ticketing.times import TIME_FORM  # noqa: E402
 from ticket_vocabulary import ticked  # noqa: E402
@@ -174,16 +175,17 @@ CASE_HELP = mctx("""
 CASE_RULES = mctx("""
     - The command prices a case: its dollars are the token cost of the run's requests in the span, plus the growth of the run's context across the span at the cache-read price of the run's model once for each later request of the run, and its seconds are the span's wall time.
         - It records them in a log line of the ticket.
-    - The threshold of an editor is the median cost of the most recent {changes} `{change_kind}` tickets closed `{fixed}` with a known cost whose `editors` give that editor.
-        - A change's cost is the token cost of the runs the line that closes it gives and of the runs under them.
+    - The loss of a case or of a change is its dollars plus its seconds at {hour_price} dollars an hour.
+    - The threshold of an editor is the median loss of the most recent {changes} `{change_kind}` tickets closed `{fixed}` with a known cost whose `editors` give that editor.
+        - A change's dollars are the token cost of the runs the line that closes it gives and of the runs under them, and its seconds are the wall time those runs cover.
     - Filing a `{delay}` with a case:
-        - The ticket files under `tickets/{watching}/` where the case's dollars are below the threshold of its `fix`, and under `tickets/{open}/` otherwise.
+        - The ticket files under `tickets/{watching}/` where the case's loss is below the threshold of its `fix`, and under `tickets/{open}/` otherwise.
             - Where the case's cost or the threshold is unknown, it files under `tickets/{open}/`, with an `undecided` line on stderr.
         - `tickets/{watching}/` holds at most {cap} tickets.
-            - A filing that would put one more there first closes `{wontfix}` the watching ticket with the lowest loss rate, its summed dollars over the days since its first case, with its summed dollars and seconds in the note.
+            - A filing that would put one more there first closes `{wontfix}` the watching ticket with the lowest loss rate, its summed loss over the days since its first case, with its summed dollars and seconds in the note.
     - Appending a case:
         - The command adds the text on stdin to the end of the ticket's `## Evidence`, and appends the case's log line, whatever the case's own loss.
-        - Where the summed dollars of the ticket's cases reach the threshold of its `fix` or pass it, the command moves the ticket to `tickets/{open}/` with a log line that gives the sum and the threshold, and prints the path it went to.
+        - Where the summed loss of the ticket's cases reaches the threshold of its `fix` or passes it, the command moves the ticket to `tickets/{open}/` with a log line that gives the sum and the threshold, and prints the path it went to.
         - Where a request of the run has no price, or the threshold of the ticket's `fix` is unknown, the command moves the ticket to `tickets/{open}/`, and prints an `undecided` line on stderr.
     """)
 
@@ -277,7 +279,8 @@ def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str,
         found = case_loss(run_id, start, end, undecided)
         limit = None if found.dollars is None else threshold(tickets, fix, undecided)
         print_undecided(undecided)
-        if found.dollars is not None and limit is not None and found.dollars < limit:
+        if (found.dollars is not None and limit is not None
+                and loss(found.dollars, found.seconds) < limit):
             status = Status.WATCHING
             evict(tickets, agent)
     number = reserve(tickets, session_index(tickets, session_id()))
@@ -551,6 +554,7 @@ def help_values() -> dict[str, str]:
                 full_flag=FULL_FLAG, log_section=LOG_SECTION,
                 many_ideas=MANY_IDEAS, empty=EMPTY, delay=Kind.DELAY, watching=Status.WATCHING,
                 assigned=Status.ASSIGNED, open=Status.OPEN, closed=Status.CLOSED, wontfix=Resolution.WONTFIX, changes=str(CHANGES), cap=str(CAP),
+                hour_price=f"{SECOND_PRICE * 3600:g}",
                 subcommands="\n".join(SUBCOMMAND_LINE.format(
                     invocation=INVOCATION, name=name, purpose=sub.purpose)
                     for name, sub in SUBCOMMANDS.items()))

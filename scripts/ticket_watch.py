@@ -31,10 +31,22 @@ from transcripts import Refused, chain, entries_back, find
 
 CHANGES = 10
 """The count of the most recent fixed changes an editor's threshold is the
-median cost of."""
+median loss of."""
 
 CAP = 100
 """The most tickets `tickets/watching/` holds."""
+
+SECOND_PRICE = 5 / 1800
+"""The dollars a second of wall time is worth: the user's preference to
+count about 30 minutes saved as worth about $5 of token cost
+(`prompts/agents/notes/decisions.md`, The user's preferences)."""
+
+
+def loss(dollars: float, seconds: float) -> float:
+    """The loss of a spend of `dollars` of tokens and `seconds` of wall
+    time, in dollars."""
+    return dollars + seconds * SECOND_PRICE
+
 
 CASE = "case {run} {start} {end}: {dollars:.4f} dollars, {seconds:.0f} s"
 """The note of the log line that records a case."""
@@ -201,22 +213,22 @@ def closed_changes(tickets: Path) -> Iterator[tuple[Path, str]]:
 
 
 def threshold(tickets: Path, editor: Role, undecided: list[str]) -> float | None:
-    """The median cost of the most recent `CHANGES` changes closed `fixed`
+    """The median loss of the most recent `CHANGES` changes closed `fixed`
     with a known cost whose `editors` give `editor`, or None, with an
     `undecided` line, where fewer exist."""
-    costs: list[float] = []
+    losses: list[float] = []
     for path, text in sorted(closed_changes(tickets), key=lambda c: closed_at(c[0]),
                              reverse=True):
         if editor not in (editors_field(front(text)) or ()):
             continue
         s = change_spend(path, undecided)
         if s is not None:
-            costs.append(s.dollars)
-        if len(costs) == CHANGES:
-            return statistics.median(costs)
+            losses.append(loss(s.dollars, s.seconds))
+        if len(losses) == CHANGES:
+            return statistics.median(losses)
     undecided.append(mctx("threshold of `{editor}` unknown: {count} fixed changes with a known "
                           "cost, of the {changes} it is taken over").format(
-                              editor=editor, count=len(costs), changes=CHANGES))
+                              editor=editor, count=len(losses), changes=CHANGES))
     return None
 
 
@@ -262,42 +274,42 @@ def budget(tickets: Path, editors: frozenset[Role], before: float,
                   {r: statistics.median(s.by_role.get(r, 0.0) for s in like) for r in roles})
 
 
-def cases(text: str) -> list[tuple[float, float]]:
-    """The time of each case line of a ticket's log, with its dollars."""
-    out: list[tuple[float, float]] = []
+def cases(text: str) -> list[tuple[float, float, float]]:
+    """The time of each case line of a ticket's log, with its dollars and
+    its seconds."""
+    out: list[tuple[float, float, float]] = []
     for m in log_lines(text):
         case = CASE_NOTE.fullmatch(m["note"] or "")
         if case:
-            out.append((stamp_time(m.group().split(" ", 1)[0]), float(case["dollars"])))
+            out.append((stamp_time(m.group().split(" ", 1)[0]), float(case["dollars"]),
+                        float(case["seconds"])))
     return out
 
 
 def summed(path: Path) -> tuple[float, float]:
     """The summed dollars and seconds of the cases of the ticket at `path`."""
-    text = read_ticket(path)
-    seconds = sum(float(m["seconds"]) for line in log_lines(text)
-                  if (m := CASE_NOTE.fullmatch(line["note"] or "")))
-    return sum(d for _, d in cases(text)), seconds
+    found = cases(read_ticket(path))
+    return sum(d for _, d, _ in found), sum(s for _, _, s in found)
 
 
 def route(tickets: Path, number: TicketNumber, path: Path, agent: str,
           undecided: list[str]) -> Path:
     """Moves the watching ticket at `path` to `open` where its summed
-    dollars reach the threshold of its `fix`, or where that threshold is
+    loss reaches the threshold of its `fix`, or where that threshold is
     unknown, and returns its path."""
     fix = fix_field(read_ticket(path))
     if fix is None:
         raise Refused(mctx("{path} gives no `fix`").format(path=path))
     limit = threshold(tickets, fix, undecided)
-    dollars, _ = summed(path)
+    total = loss(*summed(path))
     if limit is None:
-        note = mctx("summed loss {dollars:.4f} dollars, the threshold of `{fix}` unknown").format(
-            dollars=dollars, fix=fix)
+        note = mctx("summed loss {total:.4f} dollars, the threshold of `{fix}` unknown").format(
+            total=total, fix=fix)
         return log_moves(tickets, number, Status.OPEN, agent, Status.WATCHING, None, note).moved[0]
-    if dollars < limit:
+    if total < limit:
         return path
-    note = mctx("summed loss {dollars:.4f} dollars reaches the threshold {limit:.4f} dollars "
-                "of `{fix}`").format(dollars=dollars, limit=limit, fix=fix)
+    note = mctx("summed loss {total:.4f} dollars reaches the threshold {limit:.4f} dollars "
+                "of `{fix}`").format(total=total, limit=limit, fix=fix)
     return log_moves(tickets, number, Status.OPEN, agent, Status.WATCHING, None, note).moved[0]
 
 
@@ -313,13 +325,13 @@ def evict(tickets: Path, agent: str) -> None:
         times = cases(read_ticket(path))
         if not times:
             raise Refused(mctx("{path} stands under `watching` with no case").format(path=path))
-        return sum(d for _, d in times) / ((now - times[0][0]) / 86400)
+        return sum(loss(d, s) for _, d, s in times) / ((now - times[0][0]) / 86400)
 
     lowest = min(watching, key=rate)
     dollars, seconds = summed(lowest)
     number = ticket_name(lowest).number
-    note = mctx("{wontfix}: the lowest loss rate under `watching` at its cap of {cap}, summed "
-                "loss {dollars:.4f} dollars, {seconds:.0f} s").format(
+    note = mctx("{wontfix}: the lowest loss rate under `watching` at its cap of {cap}, its cases "
+                "summing {dollars:.4f} dollars and {seconds:.0f} s").format(
                     wontfix=Resolution.WONTFIX, cap=CAP, dollars=dollars, seconds=seconds)
     log_moves(tickets, number, Status.CLOSED, agent, Status.WATCHING, None, note)
 

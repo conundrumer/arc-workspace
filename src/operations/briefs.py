@@ -348,11 +348,14 @@ def held_step(what: str, operator: str, rulable: bool) -> str:
 # "read no ticket's body to match": the user's words, "if there's a brief
 # description then they can browse over those instead of the contents"
 # (ticket 6-440, 21:44:14Z).
+WATCHING_TITLES = mctx("list the titles under `tickets/watching/` in one `grep -m1 -H '^# '` call, "
+                       "and read no ticket's body to match")
+
 TRANSCRIPT_REVIEW = mctx("""
     - Review the transcript of run {run}, which `python3 ~/.claude/skills/retrieve/transcripts.py --help` reads.
     - File each ticket by the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), {filing}.
     - Find each place where the run explored to find what a docstring or a document line could have led it to.
-    - At the first such place, list the titles under `tickets/watching/` in one `grep -m1 -H '^# '` call, and read no ticket's body to match.
+    - At the first such place, {watching_titles}.
     - At each such place:
         - Where a title of that listing, or of a ticket you filed after it, states the same place and that ticket stands under `tickets/watching/`, append the place as a case to that ticket, by `uv run python scripts/file_ticket.py case --help`.
         - Otherwise file a ticket of kind `delay` on the place, with its case and its `fix`, by `uv run python scripts/file_ticket.py case --help`.
@@ -367,7 +370,7 @@ def transcript_review(run: str, domain: str, subject: str, solver_pass: bool) ->
     filing = FILE_AS.format(
         domain_subject=mctx("`{domain}` and `{subject}`").format(domain=domain, subject=subject),
         agent=CODE_WORD.format(word=Role.TRANSCRIPT_REVIEW))
-    text = TRANSCRIPT_REVIEW.format(run=run, filing=filing)
+    text = TRANSCRIPT_REVIEW.format(run=run, filing=filing, watching_titles=WATCHING_TITLES)
     return f"{text}\n{PASS_REVIEW}" if solver_pass else text
 
 
@@ -398,14 +401,16 @@ def standing_doc_review(reader: str, tag: str, commit: str, operator: str) -> st
             + LAUNCHER.format(operator=operator))
 
 
-# "File none on a cause ... already records": the user's words on change
-# 6-313's filing rule, "will it cause a flood of won't fix" (ticket 10-212).
+# "file none": the user's words on change 6-313's filing rule, "will it
+# cause a flood of won't fix" (ticket 10-212).
 BATCH_PROFILE = mctx("""
     - Run `uv run python scripts/profile_runs.py --each <id> ...` once, with the agent ids of all these runs as `<id> ...`: {runs}.
-    - File one `performance` ticket, {filing}, for each cause across these runs that you judge worth fixing, by the test that a change to a tool or a document could cut the time or the token cost it made, and give in it the time and the token cost that cause made in these runs.
-        - File none on a cause that a ticket outside `tickets/closed/` already records.
+    - Before you give your first case, {watching_titles}.
+    - For each cause across these runs that you judge worth fixing, by the test that a change to a tool or a document could cut the time or the token cost it made, take each run the cause cost time or tokens in, in turn:
+        - Where a ticket outside `tickets/closed/` and `tickets/watching/` records the cause, file none.
+        - Otherwise give a case on that run, by `uv run python scripts/file_ticket.py case --help`: append it to the ticket under `tickets/watching/` whose title in that listing states the cause, or that you filed on it, and where the cause has none, file a ticket of kind `delay` on the cause with it, {filing}, and the `fix` the cause needs.
     {review}
-    - Reply only once each transcript review you launched has replied, with the tickets you filed and the reviews you launched.
+    - Reply only once each transcript review you launched has replied, with the tickets you filed, the tickets you appended cases to, and the reviews you launched.
     """)
 
 
@@ -426,11 +431,13 @@ def batch_profile(runs: list[str], reviewable: list[str], commit: str) -> str:
     filing = FILE_AS.format(domain_subject=mctx("`commit` and `{commit}`").format(commit=commit),
                             agent=OPERATOR)
     if not reviewable:
-        return BATCH_PROFILE.format(runs=", ".join(runs), filing=filing, review=NO_REVIEW)
+        return BATCH_PROFILE.format(runs=", ".join(runs), filing=filing, review=NO_REVIEW,
+                                    watching_titles=WATCHING_TITLES)
     review = REVIEW.format(reviewable=", ".join(reviewable),
                            review_brief=mctx("the block below"), run=RUN,
                            model=Role.TRANSCRIPT_REVIEW.model)
-    text = BATCH_PROFILE.format(runs=", ".join(runs), filing=filing, review=review)
+    text = BATCH_PROFILE.format(runs=", ".join(runs), filing=filing, review=review,
+                                watching_titles=WATCHING_TITLES)
     brief = transcript_review(RUN, "agent", RUN, False)
     return f"{text}\n\n```\n{brief}\n```"
 
