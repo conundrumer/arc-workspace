@@ -97,7 +97,7 @@ def as_grid(value: object) -> Grid:
     if not isinstance(value, list) or not all(isinstance(row, list)
                                               for row in value):
         raise ValueError(mctx("not a list of rows"))
-    if not value or not value[0]:
+    if not any(value):
         raise ValueError(mctx("empty grid"))
     widths = {len(row) for row in value}
     if len(widths) != 1:
@@ -107,7 +107,7 @@ def as_grid(value: object) -> Grid:
         for cell in row:
             if isinstance(cell, bool) or not isinstance(cell, int) \
                     or cell not in COLORS:
-                raise ValueError(mctx("cell out of range: {cell}").format(
+                raise ValueError(mctx("cell is no color from 0 to 9: {cell}").format(
                     cell=repr(cell)))
     return value
 
