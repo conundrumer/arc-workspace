@@ -7,15 +7,15 @@ word of its kind and a colon, past a list marker:
 - `Run: <path>`, a run script, as `runs` gives it;
 - `Drafts to review: <number>, ...`;
 - `Expedite: <number>, ...`;
-- `Admit: <number>, ...`, the tickets that pass a hold for every operator
+- `Allow: <number>, ...`, the tickets that pass a pause for every operator
   of the session, and the changes a chain of links reaches from them;
 - `Merged: <number>, ...`, the changes the coordinator gives as merged;
 - `Merge: <number>`, a change under `tickets/blocked/` whose merge that line rules;
-- `Tickets are open.`, which ends no hold;
-- `Hold intake.`, after which no operator of the session settles an open
+- `Tickets are open.`, which ends no pause;
+- `Pause.`, after which no operator of the session settles an open
   ticket or takes a change outside the work held and the tickets an
-  `Admit:` or an `Expedite:` line gives (`held_intake`), and
-  `Resume intake.`, which ends that hold;
+  `Allow:` or an `Expedite:` line gives (`paused`), and
+  `Resume.`, which ends that pause;
 - the rulings, `Decision:` and `Override:` lines in the forms that
   `scripts/operate.py --help rulings` gives, which the command applies (`decided`,
   `passed_over`, `overrides`).
@@ -60,12 +60,12 @@ class Directive(StrEnum):
     RUN = "Run"
     DRAFTS = "Drafts to review"
     EXPEDITE = "Expedite"
-    ADMIT = "Admit"
+    ALLOW = "Allow"
     MERGED = "Merged"
     MERGE = "Merge"
     OPEN = "Tickets are open"
-    HOLD = "Hold intake"
-    RESUME = "Resume intake"
+    PAUSE = "Pause"
+    RESUME = "Resume"
     OVERRIDE = "Override"
     DECISION = "Decision"
 
@@ -151,9 +151,9 @@ def numbers_in(given: list[Line], kind: Directive) -> list[tuple[str, float]]:
             for n in NUMBER.findall(ln.rest)]
 
 
-def admit_named(state: State) -> set[str]:
-    """The tickets an `Admit:` line to any operator of the session gives."""
-    return {n for n, _ in numbers_in(session_lines(state), Directive.ADMIT)}
+def allow_named(state: State) -> set[str]:
+    """The tickets an `Allow:` line to any operator of the session gives."""
+    return {n for n, _ in numbers_in(session_lines(state), Directive.ALLOW)}
 
 
 def decided(state: State, what: str, choices: dict[Decision, str]) -> Decision | Undecided:
@@ -185,11 +185,11 @@ def rulings(state: State) -> list[Line]:
                   + step_decisions(state), key=lambda ln: ln.message.time)
 
 
-def held_intake(state: State) -> bool:
-    """The hold stands for every operator of the session, one that takes
+def paused(state: State) -> bool:
+    """The pause stands for every operator of the session, one that takes
     over from an ended operator included."""
-    last = [ln.kind for ln in session_lines(state) if ln.kind in (Directive.HOLD, Directive.RESUME)]
-    return bool(last) and last[-1] is Directive.HOLD
+    last = [ln.kind for ln in session_lines(state) if ln.kind in (Directive.PAUSE, Directive.RESUME)]
+    return bool(last) and last[-1] is Directive.PAUSE
 
 
 def ruling_form(ln: Line) -> re.Match[str] | None:
@@ -228,9 +228,9 @@ def held_on(what: str, choices: dict[Decision, str]) -> Undecided:
 
 def named(state: State) -> set[str]:
     """The tickets the coordinator gives the operator in a line, and those
-    of `admit_named`."""
+    of `allow_named`."""
     return {n for k in (Directive.EXPEDITE, Directive.DRAFTS, Directive.MERGE, Directive.MERGED)
-            for n, _ in numbers(state, k)} | admit_named(state)
+            for n, _ in numbers(state, k)} | allow_named(state)
 
 
 @dataclass(frozen=True)

@@ -197,12 +197,12 @@ SHOW_HELP = mctx("""
     - A `<section>` is the text of a heading after its mark, as `{log_section}` for `{log}`.
     """)
 
-WAIT_HELP = mctx("""
+AWAIT_CLOSE_HELP = mctx("""
     - Run it in the background: its completion notification gives what it prints.
     - The command ends once a ticket the call gives stands under `tickets/{closed}/`, and prints, for each ticket that stands there, its number and the log line that closed it.
     """)
 
-WAIT_INTERVAL = 10
+AWAIT_CLOSE_INTERVAL = 10
 """The seconds between two reads of where the waited tickets stand."""
 
 EDITORS_HELP = mctx("""
@@ -473,7 +473,7 @@ def show_command(*given: str) -> str:
                         *(f"{heading(name)}\n{section(text, name)}" for name in given[1:])])
 
 
-def wait_command(*given: str) -> str:
+def await_close_command(*given: str) -> str:
     """Each ticket of `given` that stands under `closed`, with the line of
     its log that closed it, once one does."""
     if not given:
@@ -487,7 +487,7 @@ def wait_command(*given: str) -> str:
                   if ticket_status(p := ticket_path(tickets, n)) is Status.CLOSED]
         if closed:
             return "\n".join(f"{n}: {closing_line(p)}" for n, p in closed)
-        time.sleep(WAIT_INTERVAL)
+        time.sleep(AWAIT_CLOSE_INTERVAL)
 
 
 def closing_line(path: Path) -> str:
@@ -543,8 +543,8 @@ SUBCOMMANDS = {
                        main_command, True),
     "show": Subcommand(mctx("prints a ticket, or only the sections the call names"),
                        " <number> [<section> ...]", SHOW_HELP, "", None, show_command, False),
-    "wait": Subcommand(mctx("ends once a ticket closes, and prints how it closed"),
-                       " <number> [<number> ...]", WAIT_HELP, "", None, wait_command, False),
+    "await-close": Subcommand(mctx("ends once a ticket closes, and prints how it closed"),
+                              " <number> [<number> ...]", AWAIT_CLOSE_HELP, "", None, await_close_command, False),
 }
 """Each subcommand, by the word that calls it, in the order `HELP` gives
 their lines."""

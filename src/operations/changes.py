@@ -55,11 +55,11 @@ A next step of a change that is a message an operator already sent,
 whose recipient answered it, leaves the change where it was, and the
 command cannot place it.
 
-While a `Hold intake.` line holds intake (`directives.held_intake`), the
-operator takes, of the changes it would take with no hold, only those of
-`held_work`, so the work already held reaches its end, and those of
-`through_hold`, the tickets an `Admit:` or an `Expedite:` line gives, and
-each other change waits for a `Resume intake.` line.
+While a `Pause.` line stands (`directives.paused`), the operator takes,
+of the changes it would take with no pause, only those of `held_work`, so
+the work already held reaches its end, and those of `through_pause`, the
+tickets an `Allow:` or an `Expedite:` line gives, and each other change
+waits for a `Resume.` line.
 
 A change that waits for a ticket under `tickets/blocked/` whose last
 wait is on the user moves to `tickets/draft/` with a line whose note is
@@ -86,7 +86,7 @@ from operations.change_budget import TAKE_NOTE
 from operations.change_fragments import drafter_ids, fragments_step
 from operations.change_overrun import over_budget, over_budget_step
 from operations.doc_review import doc_review, with_ids
-from operations.directives import (Decision, Directive, admit_named, decided, held_intake, held_on,
+from operations.directives import (Decision, Directive, allow_named, decided, held_on, paused,
                                    named, NUMBER, numbers)
 from operations.item_check import check_items, latest_reports
 from operations.reports import OPEN_LABELS, Label, items_of, left_for_decision, shows_current
@@ -142,11 +142,11 @@ def expedited(state: State) -> set[str]:
 def admits(state: State) -> Callable[[str], bool]:
     """Whether the operator may take an open ticket: one the `takes` of
     the run scripts admit (`Computed.admitted`), or one of `expedited`,
-    or any where no script defines `takes`; under a hold, only such a
-    ticket that is also one of `held_work` or of `through_hold`."""
+    or any where no script defines `takes`; under a pause, only such a
+    ticket that is also one of `held_work` or of `through_pause`."""
     admitted = state.computed.admitted()
     passing = None if admitted is None else admitted | expedited(state)
-    held = held_work(state) | through_hold(state) if held_intake(state) else None
+    held = held_work(state) | through_pause(state) if paused(state) else None
     return lambda n: ((passing is None or n in passing)
                       and (held is None or n in held))
 
@@ -165,10 +165,10 @@ def held_work(state: State) -> set[str]:
                            or (t.kind is Kind.INTERFERENCE and t.status is not Status.CLOSED)})
 
 
-def through_hold(state: State) -> set[str]:
-    """The tickets that pass a hold: each ticket a chain of links reaches
-    from a ticket of `directives.admit_named`, and those of `expedited`."""
-    return reached(state, admit_named(state)) | expedited(state)
+def through_pause(state: State) -> set[str]:
+    """The tickets that pass a pause: each ticket a chain of links reaches
+    from a ticket of `directives.allow_named`, and those of `expedited`."""
+    return reached(state, allow_named(state)) | expedited(state)
 
 
 RELEASED = mctx("released: holder {holder} is not live")

@@ -101,9 +101,9 @@
     - `Merged: <number>, ...`: the changes the coordinator merged itself.
     - `Merge: <number>`: a `change` under `tickets/blocked/` that waits on the user, which the user's ruling has the operator merge.
     - `Tickets are open.`
-    - `Admit: <number>, ...`: tickets of any session, and each `change` that a chain of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, reaches from them. The operators of the session settle and take each of them under a hold too, with no priority over other work.
-    - `Hold intake.`: a hold, under which the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than the tickets and changes an `Admit:` or an `Expedite:` line gives, and the work an operator of the session took and each `change` that work waits on, which they carry to its end.
-    - `Resume intake.`: ends the hold.
+    - `Allow: <number>, ...`: tickets of any session, and each `change` that a chain of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, reaches from them. The operators of the session settle and take each of them under a pause too, with no priority over other work.
+    - `Pause.`: a pause, under which the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than the tickets and changes an `Allow:` or an `Expedite:` line gives, and the work an operator of the session took and each `change` that work waits on, which they carry to its end.
+    - `Resume.`: ends the pause.
     - `Override: <task id> <pass> <override>`: an override that the brief of the next launch of that pass on that task gives.
     - `Override: pass over <step key>`: passes over the solver pass whose step key it gives: that pass's task id and its pass, in the form `uv run python scripts/operate.py --help rulings` gives.
     - `Decision: <decision key> <choice>`: rules the held step that gives that decision key with one of the choices that step gives, as the whole rest of the line.
