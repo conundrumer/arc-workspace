@@ -397,12 +397,12 @@ class Computed:
     the reads. `to_settle` is the list `file_ticket.py to-settle` prints
     for the session, with the numbers the coordinator names, keeping only
     the tickets that `tracker.tickets` holds. `spent` gives, for each
-    change `me` holds, the spend of the agents `changes.of_change` gives
-    for it. `budgets` gives the budget of each change `changes.take` takes
+    change `me` holds, the spend of the agents `change_agents.of_change` gives
+    for it. `budgets` gives the budget of each change `taking.take` takes
     next, taken at `State.now`, and of each held change whose spend passes
     the budget its take gives, taken at the line that gives that budget
     (`change_budget.Take`). `doc_budgets` gives, for each held change that
-    `changes.lacking_doc_editor` gives an `editors` field for, the budget,
+    `change_fragments.lacking_doc_editor` gives an `editors` field for, the budget,
     taken at `State.now`, of that field's set with the doc editor.
     `run_starts` gives what the script of each `Run:` line gave at this
     read, by its run (`runs.run_id`), and `run_takes` what its `takes`
@@ -447,7 +447,8 @@ class State:
     ones a procedure asks after. `transcripts` is the read of the
     operators' transcripts. `open_holders` gives
     the holders of tickets under `tickets/assigned/` whose work is open, as
-    `profile_runs.py --open` gives it, and `session_holders` those of
+    `profile_runs.py --open` gives it, or, for a holder whose run is a main
+    transcript, whose session runs (`idle_sessions.running`), and `session_holders` those of
     them whose run is of the session: its main transcript, or a run under
     that transcript's session directory. `tracker` is the read of the
     ticket tracker, `held` is the read of the changes `me` holds, and `git` the read of

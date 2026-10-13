@@ -8,7 +8,9 @@ transcript within it. An index is idle where none of the session ids
 `tickets/sessions/<index>` gives is live. `file_ticket.py main --help-all`
 gives the files `tickets/main` and `tickets/main-wanted`."""
 
+import json
 import os
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -58,6 +60,44 @@ def live(session: str, now: float) -> bool:
             if any(modified(p) >= since for p in subagent_transcripts(session_directory(transcript))):
                 return True
     return False
+
+
+HARNESS_SESSIONS = "sessions"
+"""The directory, beside `projects/` in the harness's config directory, in
+which the harness keeps a file `<pid>.json` for each running session, with
+its `sessionId`, its `pid`, and its `procStart`, the start of that process
+as `ps -o lstart=` prints it in UTC."""
+
+
+def running(reader: str) -> frozenset[str] | None:
+    """The ids of the sessions that run, by the process the harness's file
+    on each gives, which a session that waits on the user keeps. A process
+    counts only where it started when the file gives, so a `pid` another
+    process has taken since does not count. None where no such file gives
+    `reader`, which runs, or one of them is not readable or gives no
+    `procStart`, as then those files are not read."""
+    out: set[str] = set()
+    for d in project_dirs():
+        for path in (d.parent / HARNESS_SESSIONS).glob("*.json"):
+            try:
+                entry = json.loads(path.read_text())
+            except FileNotFoundError:
+                continue
+            except json.JSONDecodeError:
+                return None
+            if "procStart" not in entry:
+                return None
+            if process_started(entry["pid"]) == entry["procStart"].split():
+                out.add(entry["sessionId"])
+    return frozenset(out) if reader in out else None
+
+
+def process_started(pid: int) -> list[str] | None:
+    """The words of the start of process `pid`, or None where it does not
+    run."""
+    done = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True,
+                          text=True, env={**os.environ, "TZ": "UTC"})
+    return done.stdout.split() if done.returncode == 0 else None
 
 
 def read_session(path: Path) -> tuple[str, float] | None:

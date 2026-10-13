@@ -31,7 +31,7 @@ from operations.reports import budget_passed, left_for_decision
 from operations.roles import Role
 from operations.state import Agent, State, Ticket
 from operations.steps import Bash, Send, Step, Undecided
-from operations.tracker import log
+from operations.log_commands import log
 from ticketing.vocabulary import Status
 
 

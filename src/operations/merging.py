@@ -52,7 +52,8 @@ from operations.state import Agent, Call, Merge, State, Ticket, Tool
 from operations.command_words import simple_commands
 from operations.handled import bash_calls, decided_by, unmoved
 from operations.steps import Bash, Launch, Send, Step
-from operations.tracker import WORKTREE, log
+from operations.log_commands import log
+from operations.worktrees import WORKTREE
 from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Note, Resolution, Status, Wait
 
 MERGE_SCRIPT = "scripts/merge_change.py"

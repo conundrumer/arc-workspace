@@ -27,12 +27,12 @@ from operator_reads import (ended_elsewhere, ended_with, operator_runs, read_ope
                             resumed_at, stalled_reports)
 from run_prints import self_of
 from run_reads import bash_spans, context_size, parent_id, repeated_runs, run_entries
-from idle_sessions import main_wanted, read_sessions, want_main
+from idle_sessions import main_wanted, read_sessions, running, want_main
 from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
 from ticket_settle import to_settle
 from ticket_watch import budget, spend
-from transcripts import Refused, entries_back, epoch, find, new_state
+from transcripts import Refused, entries_back, epoch, find, is_subagent, new_state
 from tree_reads import (claims, code_review, commits, doc_reviews, fragments, gate_outputs, main_tree,
                         read_seen, scratch, worktrees)
 
@@ -46,13 +46,13 @@ from operations.relay import Relay, Run
 from operations.roles import Role
 from operations.directives import lines, named
 from operations.plan import taken_up, unknown_line
-from operations import change_agents, change_budget, change_fragments, changes, monitor, passes, runs
+from operations import change_agents, change_budget, change_fragments, changes, monitor, passes, runs, taking
 from operations.monitor import MonitorState, Watched
 from operations.state import (Agent, Budget, Call, Computed, GitRead, HeldRead, LateResume, Message,
                               Reader, Report, SessionsRead, Spend, Starts, State, Takes,
                               Ticket, TrackerRead, TranscriptsRead)
 from operations.handled import made
-from operations.tracker import worktree, worktree_in
+from operations.worktrees import worktree, worktree_in
 from ticketing.vocabulary import Status
 
 
@@ -292,7 +292,10 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     main_path = find(session)
     session_dir = main_path.parent / session
     found = {h: find(h, recheck=True) for h in sorted(holders)}
-    open_paths = {h: p for h, p in found.items() if work_open(p, [])}
+    sessions_running = running(session)
+    open_paths = {h: p for h, p in found.items()
+                  if (h in sessions_running if sessions_running is not None and not is_subagent(p)
+                      else work_open(p, []))}
     state = State(
         me=me, now=now, session=session, started=started(session),
         transcripts_dir=main_path.parent, main_tree=main,
@@ -394,7 +397,7 @@ def change_budgets(state: State, spent: dict[str, Spend], tickets: Path,
         return known[key]
 
     out: dict[str, Budget] = {}
-    for t in changes.takeable(state):
+    for t in taking.takeable(state):
         if (b := of(t, state.now)) is not None:
             out[t.number] = b
     for t in changes.held(state):

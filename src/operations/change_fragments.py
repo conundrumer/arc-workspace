@@ -21,7 +21,7 @@ from operations.filing import editor_scratch
 from operations.roles import Role
 from operations.state import Agent, Place, State, Ticket
 from operations.steps import Bash, Launch, Step, Undecided, agent_ids
-from operations.tracker import add_editor
+from operations.log_commands import add_editor
 
 DRAFTERS = (Role.CODE_EDITOR, Role.HANDBOOK_EXPANDED)
 """The editors that draft the text of the fragments their code needs."""

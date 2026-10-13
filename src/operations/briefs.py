@@ -10,7 +10,7 @@ from controlled_markdown import mctx
 from operations.reports import LEFT_FOR_DECISION, WORKTREE
 from operations.roles import Role, description
 from operations.state import Agent, Place
-from operations.tracker import AGENT, FILE_TICKET
+from operations.log_commands import AGENT, FILE_TICKET
 from ticketing.times import utc_stamp
 
 TICKET_PATH = shlex.join([*FILE_TICKET, "path"]) + " {number}"

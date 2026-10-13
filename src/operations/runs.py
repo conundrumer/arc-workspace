@@ -6,7 +6,7 @@ holds what it gave (`state.Computed.run_starts`).
 
 A run script's `takes`, which `scripts/operate.py --help run` gives,
 reads a `RunTicket`; the state holds what it gave
-(`state.Computed.run_takes`), and `changes.admits` applies it.
+(`state.Computed.run_takes`), and `taking.admits` applies it.
 
 A run's pipelines are the calls of `operate.py start` that an operator of
 the session made with the run's `RUN_OPTION`, which its step gives, each
@@ -27,7 +27,7 @@ from operations.command_words import COMMAND, RUN_COMMAND, simple_commands
 from operations.constants import COORDINATOR
 from operations.directives import Directive, Line, Pipeline
 from operations.roles import PASSES, Role
-from operations import changes
+from operations import taking
 from operations.state import Call, Start, Starts, State, Takes, Ticket, Tool
 from operations.tracker import wait_line
 from ticketing.vocabulary import SETTLED, Domain, Kind, Status
@@ -82,7 +82,7 @@ class RunTicket:
     runs or that ended, filed it (its domain is `task` and its subject is
     that pipeline's task), and `reached_by_run` whether a chain of links
     reaches it from a ticket a pipeline of the run filed
-    (`changes.reached`), as a change that settles such a ticket is."""
+    (`taking.reached`), as a change that settles such a ticket is."""
     number: str
     kind: Kind
     status: Status
@@ -103,7 +103,7 @@ def run_tickets(state: State, run: Run) -> tuple[RunTicket, ...]:
 
     def filed(t: Ticket) -> bool:
         return t.domain is Domain.TASK and t.subject in tasks
-    reached = changes.reached(state, {n for n, t in state.tracker.tickets.items() if filed(t)})
+    reached = taking.reached(state, {n for n, t in state.tracker.tickets.items() if filed(t)})
     out: list[RunTicket] = []
     for t in sorted(state.tracker.tickets.values(), key=lambda t: t.order):
         if t.status in SETTLED:

@@ -1,4 +1,4 @@
-+ budget: 21400
++ budget: 21800
 * comment: when editing this doc
     - The ticket analyst loads this document by the links of its step documents, before it writes the Intent of a `change` to the agents' processes and at the process assessment; the ticket reviewer loads it by a link of its Checks, for such a `change`. Each serves judging a change to the processes against what they must achieve.
     - Acts, each with its section, one process each, giving its outcomes and how it can fail:
@@ -57,7 +57,8 @@
 
 ## Design (design definition, architecture definition)
 - Purpose: decide the shape of a change's code and of its document lines before they are written: the existing code or lines it uses or extends, each new operation and its module, each new rule or fact, its section and the rules and facts on the same act it joins, replaces or retires, and how its parts fit.
-- Principles: "Keep the process, the code and their semantics in their best state, with maintainable code", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences), and one idea in one place.
+- Principles: "Keep the process, the code and their semantics in their best state, with maintainable code", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences), one idea in one place, and make illegal states unrepresentable.
+    * comment: The user's words, session 7fd429fb-e3be-4173-9b0e-df52f507d6a2, 2026-10-13T14:46:25Z: "im curious if this could be part of a planning principle"; 14:47:10Z: "what about just poitnting at the core idea", the core idea being "Make illegal states unrepresentable"; 14:47:43Z, on reading the bare name as license for big refactors: "i dont expect that to happen but if it did i would welcome it".
 - Outcomes:
     - Each `change` that adds a mechanism to code has a design, made from reading the code, that gives the existing operations it uses or extends, and each new operation with its module.
     - Each `change` that adds or changes a rule or a fact in the agent-facing documents has a design, made from reading those documents, that plans each rule or fact it adds or changes against the rules and facts on the same act that its reader loads for the part of its work that needs it, so that, for each of those, the new rule or fact joins it, replaces it, retires it, or stands beside it as no exception to it.

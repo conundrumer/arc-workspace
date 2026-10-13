@@ -25,7 +25,7 @@ from transcripts import Refused  # noqa: E402
 from tree_reads import main_tree, worktrees  # noqa: E402
 
 from operations.state import Ticket  # noqa: E402
-from operations.tracker import BASE, WORKTREES, fingerprint, logged_worktree  # noqa: E402
+from operations.worktrees import BASE, WORKTREES, fingerprint, logged_worktree  # noqa: E402
 from ticketing.vocabulary import Note  # noqa: E402
 
 HELP = mctx("""

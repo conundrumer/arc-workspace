@@ -10,7 +10,7 @@ from pathlib import Path
 
 from operations.roles import AGENT_ID, Role
 from operations.state import Agent
-from operations.tracker import fingerprint
+from operations.worktrees import fingerprint
 
 BUDGET_PASSED = "budget passed"
 """The opening, in any case, of the reply of a code editor that ended its
@@ -22,7 +22,7 @@ stands and none is held back."""
 
 WORKTREE = "Worktree:"
 """The opening of the line that ends a doc reviewer's or an item
-checker's reply, before the `tracker.fingerprint` of the change's
+checker's reply, before the `worktrees.fingerprint` of the change's
 worktree it read."""
 
 TICKETS_FILED = "## Tickets filed"

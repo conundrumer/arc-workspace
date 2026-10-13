@@ -15,7 +15,7 @@ reply that precedes the last report of any other editor is read for no
 finding, and that reviewer is asked once to review the change again, and
 the review is held where it has not replied since, unless that reply
 opens with `no finding stands` and its `reports.WORKTREE` line gives the
-`tracker.fingerprint` the worktree has now, as then the worktree is in
+`worktrees.fingerprint` the worktree has now, as then the worktree is in
 the state that reply read. `steps.Undecided.reread` gives why the
 command reads the state again before it launches an analyst on that hold. A reply in any other form holds the review. The command launches no editor for a reviewer's findings: that
 reviewer sends them to the editors of its brief.
@@ -38,7 +38,7 @@ from operations.reports import NO_FINDING, no_finding, shows_current
 from operations.roles import Role
 from operations.state import Agent, State, Ticket
 from operations.steps import Launch, Send, Step, Undecided, agent_ids
-from operations.tracker import worktree
+from operations.worktrees import worktree
 
 
 def latest_reviewer(agents: list[Agent], w: Path) -> Agent | None:

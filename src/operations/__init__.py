@@ -30,7 +30,8 @@ The modules keep these rules:
 
 Modules: `state` (what the command reads), `roles` (the agents launched
 and their descriptions), `directives` (the coordinator's lines), `tracker`
-(a ticket's log and the calls that write it), `steps` (the calls printed
+(the reads of a ticket's log), `log_commands` (the calls that write
+it), `worktrees` (the worktree of a change), `steps` (the calls printed
 and their keys), `command_words` (the words of a Bash command, and the
 call of the command), `filing` (the files the command writes for a printed
 call), `printing` (the text that prints a step), `handled` (whether an
@@ -41,8 +42,8 @@ with the scripts an agent runs), `briefs` (the briefs the launches give),
 reading of a brief's or a message's text back),
 `triage` (ticket analysts on open tickets, and the labeled items of their
 replies for the coordinator), `decisions` (ticket analysts on undecided
-steps), `drafts` (the review of draft changes), `changes` (a change from
-its take to its merge), `change_agents` (the agents of a change),
+steps), `drafts` (the review of draft changes), `taking` (the release of tickets and the take of open changes), `changes`
+(a change the operator holds, from its take to its merge), `change_agents` (the agents of a change),
 `item_check` (the launch of a change's item checker), `change_fragments`
 (the doc editor of a change's `mctx` fragments), `change_overrun` (a
 change past its cost budget), `change_budget` (the cost budget of a change),
@@ -52,4 +53,5 @@ what follows it), `alerts` (the alerts and the other agents' messages),
 solver pipelines), `runs` (the pipelines a run script starts),
 `task_work` (the work a pipeline sets aside), `batches` (After a batch),
 `plan` (the order of the procedures, the block and the final reply),
-and `monitor` (the monitor's steps: the alerts on the watched agents' runs)."""
+and `monitor` (the monitor's steps: the alerts on the watched agents' runs).
+`ticketing.exits` gives what takes a ticket out of each status."""

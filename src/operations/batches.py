@@ -46,14 +46,14 @@ from dataclasses import dataclass
 
 from controlled_markdown import mctx
 from operations import briefs
-from operations.changes import release
+from operations.taking import release
 from operations.filing import scratch_dir
 from operations.directives import Directive, numbers
 from operations.roles import AGENT_ID, Purpose, Role, analyst_of, analyst_subject
 from operations.state import DOC_REVIEW, Agent, Merge, State
 from operations.handled import bash_calls
 from operations.steps import Bash, Launch, Step, Undecided
-from operations.tracker import FILE_TICKET
+from operations.log_commands import FILE_TICKET
 from ticketing.vocabulary import Kind, Status
 
 OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER, Role.COST_AUDIT})

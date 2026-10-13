@@ -2,7 +2,8 @@
 operator's command (`operations`) share: the statuses a ticket moves
 between, the resolutions it closes with, the domains of its subject, its
 kinds, the note of the line that files it, and the end of the title of a
-`refactor` ticket on a module that holds more than one subject."""
+`refactor` ticket on a module that holds more than one subject. What
+takes a ticket out of each status, `exits` gives."""
 
 import re
 from enum import StrEnum
@@ -97,7 +98,7 @@ class Note(StrEnum):
     """The draft opens with no further ticket review."""
     RERUN = "rerun"
     """The line gives the worktree of a run of the change that the command
-    left, which `tracker.worktree` passes over."""
+    left, which `worktrees.logged_worktree` passes over."""
 
 MANY_IDEAS = "many ideas in one place"
 """The end of the title of a `refactor` ticket on a module that holds more

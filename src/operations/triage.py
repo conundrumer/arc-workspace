@@ -7,7 +7,7 @@ the command launches a ticket analyst with it, leaving out each ticket on a
 task whose solver pipeline has yet to launch its own ticket analyst, which
 `passes` gives that ticket. While a `Pause.` line stands
 (`directives.paused`), it launches one only with the tickets of
-`changes.through_pause`. A ticket goes to no second analyst while one
+`taking.through_pause`. A ticket goes to no second analyst while one
 runs on it, nor again once one returned, until the coordinator writes a line
 in its log after that analyst's launch, as where it records a decision of the
 user or the user's later words on it, or the ticket moves from
@@ -57,18 +57,20 @@ the session whose id `tickets/main-wanted` holds sends the coordinator once a `d
 a main (`main_wanted`)."""
 
 from controlled_markdown import mctx
-from operations import briefs, changes, messages
+from operations import briefs, changes, messages, taking
 from operations.reports import Label, items_of, mislabeled
 from operations.passes import awaits_analyst
 from operations.roles import Purpose, Role, analyst_subject, joined
 from operations.state import Agent, LogLine, State, Ticket
-from ticketing.vocabulary import SETTLED, Kind, Status
+from ticketing.vocabulary import SETTLED, Status
 from operations.constants import COORDINATOR
 from operations.directives import paused
 from operations.final_reply import carrier, nested
 from operations.handled import repeated, sent
 from operations.steps import DECISION, Bash, Launch, Send, Step, Undecided
-from operations.tracker import AGENT, blocked_on_user, coordinator_line, coordinator_lines, final_run, log, reopened_line
+from operations.log_commands import AGENT, log
+from operations.tracker import blocked_on_user, coordinator_lines, exits, final_run
+from ticketing.exits import Exit, freed
 
 
 GIVEN = (Purpose.TRIAGE, Purpose.PASS)
@@ -76,24 +78,16 @@ GIVEN = (Purpose.TRIAGE, Purpose.PASS)
 
 
 def given(state: State, number: str) -> bool:
-    """Whether a ticket analyst runs on `number`, or one was launched with
-    it after the later of the coordinator's last line on it and its last
-    move into `tickets/open/` (`reopened_line`), or was sent that line of
-    the coordinator's where it is the later."""
+    """An analyst launched before the event that freed `number`, and not
+    sent that event's line, judged the ticket as it stood before it."""
     t = state.tracker.tickets[number]
-    last = coordinator_lines(t.log)[-1:]
-    moved = reopened_line(t)
-    since = max(coordinator_line(t), moved)
+    event = freed(t.log, t.kind, t.filed)
+    line = event.line
     return any(number in nums and (
-        a.pending or a.launched > since or (
-            a.agent_id is not None and bool(last) and last[0].time >= moved
-            and sent(state, a.agent_id, messages.later_line(number, last[0].time, last[0].note))))
+        a.pending or a.launched > event.time or (
+            a.agent_id is not None and line is not None
+            and sent(state, a.agent_id, messages.later_line(number, line.time, line.note))))
         for a, purpose, nums in state.analysts() if purpose in GIVEN)
-
-
-REOPENED = (Status.BLOCKED, Status.CLOSED)
-"""The statuses a ticket moves back to `tickets/open/` from on a line of
-the coordinator's."""
 
 
 def reopen(state: State) -> Step | None:
@@ -105,7 +99,7 @@ def reopen(state: State) -> Step | None:
     review:` line instead, and one under `tickets/open/` is taken as a
     fresh change."""
     for t in sorted(state.tracker.tickets.values(), key=lambda t: t.order):
-        if t.status not in REOPENED or t.kind is Kind.CHANGE:
+        if Exit.COORDINATOR_LINE not in exits(state, t).by:
             continue
         run, wait = final_run(t)
         start = run if wait is None else wait
@@ -136,8 +130,8 @@ def later_lines(state: State) -> Step | None:
 
 
 def settle(state: State) -> Step | None:
-    admitted = changes.admits(state)
-    passing = changes.through_pause(state) if paused(state) else None
+    admitted = taking.admits(state)
+    passing = taking.through_pause(state) if paused(state) else None
     numbers = [n for n in state.computed.to_settle
                if not given(state, n) and not awaits_analyst(state, n)
                and admitted(n) and (passing is None or n in passing)]

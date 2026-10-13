@@ -171,7 +171,7 @@ from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
                                  submodules, locked_update, SetupFailed)
 
 from operations.merging import PATHS_SEP, split_paths  # noqa: E402
-from operations.tracker import BASE  # noqa: E402
+from operations.worktrees import BASE  # noqa: E402
 
 PREFIX = "merge_change: "
 """The opening of each line the script prints, on stdout and on stderr."""

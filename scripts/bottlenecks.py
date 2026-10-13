@@ -31,7 +31,8 @@ from operations.merging import RERUN_OPENING, rerun_paths  # noqa: E402
 from operations.task_work import task_paths  # noqa: E402
 from solver.vocabulary import SOLVER_SUFFIX  # noqa: E402
 from operations.state import LogLine, Ticket  # noqa: E402
-from operations.tracker import BASE, runs  # noqa: E402
+from operations.tracker import runs  # noqa: E402
+from operations.worktrees import BASE  # noqa: E402
 from ticketing.times import TIME_FORM, stamp_time, utc_stamp  # noqa: E402
 from ticketing.vocabulary import Kind, Status  # noqa: E402
 

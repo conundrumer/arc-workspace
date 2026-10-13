@@ -17,7 +17,7 @@ too, and asks its parent, the coordinator or an operator launcher, for a
 fresh operator with no lines; the operator launched next takes up from the state each line
 that the operators before it in a row that ended so received
 (`taken_up`), and, once their work is no longer open, through
-`changes.release`, the changes of the session and of the tickets the
+`taking.release`, the changes of the session and of the tickets the
 coordinator gives it in a line, and of each ticket a chain of links
 reaches from one of those.
 
@@ -54,7 +54,7 @@ from collections.abc import Callable, Mapping, Sequence
 
 from controlled_markdown import mctx
 from operations import (alerts, batches, changes, decisions, drafts, limit_resume, lineage,
-                        monitor, passes, runs, triage)
+                        monitor, passes, runs, triage, taking)
 from operations.directives import (
     NUMBER,
     TASK,
@@ -71,7 +71,7 @@ from ticketing.vocabulary import Status
 from operations.final_reply import (FOR_CONTEXT, ending_step, failure, final_sends, final_sends_in,
                                    for_context, live_holder, nested, sent_final_text)
 from operations.handled import bash_calls, repeated
-from operations.steps import (Bash, Launch, Poll, Reply, Send, Step, Undecided, decision_key, key,
+from operations.steps import (Bash, Launch, Poll, Step, Undecided, decision_key, key,
                               unread_line)
 
 GIVEN_AGAIN = mctx("a line below that stands unfinished reaches it only where it is given to it "
@@ -200,7 +200,7 @@ def launching(state: State) -> Step | None:
     """The release of tickets, before the operator's first launch."""
     if any(c.operator == state.me and c.tool == Tool.AGENT for c in state.transcripts.calls):
         return None
-    return changes.release(state)
+    return taking.release(state)
 
 
 def pipelines(state: State) -> Step | None:
@@ -210,7 +210,7 @@ def pipelines(state: State) -> Step | None:
 def elsewhere(state: State) -> list[str]:
     """The tickets of the operators' scope that another live holder
     (`live_holder`) of the session (`State.session_holders`) holds."""
-    return [n for n in sorted(changes.scope(state))
+    return [n for n in sorted(taking.scope(state))
             if (t := state.tracker.tickets.get(n)) is not None and t.status is Status.ASSIGNED
             and t.holder not in (None, state.me) and t.holder in state.session_holders
             and live_holder(state, t.holder)]
@@ -220,7 +220,7 @@ EARLY: tuple[Callable[[State], Step | None], ...] = (
     limit_resume.step, unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.late_resumes, decisions.asks, triage.decisions, triage.main_wanted, triage.for_coordinator,
     triage.unfinished)
 LATE: tuple[Callable[[State], Step | None], ...] = (
-    launching, triage.reopen, triage.later_lines, triage.settle, changes.stall, drafts.step,
+    launching, triage.reopen, triage.later_lines, triage.settle, taking.stall, drafts.step,
     changes.step,
     pipelines, batches.step)
 PROCEDURES = EARLY + LATE
@@ -324,7 +324,7 @@ def line_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Out
             reasons = [draft_stands(n) for n in numbers if n in under]
         case Directive.EXPEDITE:
             reasons = [mctx("ticket {n} {stands}").format(n=n, stands=stands_under(t))
-                       for n in sorted(changes.reached(state, set(numbers)))
+                       for n in sorted(taking.reached(state, set(numbers)))
                        if (t := state.tracker.tickets.get(n)) is not None and t.status is not Status.CLOSED]
         case Directive.MERGED:
             if not any(a.launched > ln.message.time for a in state.agents_of(Role.BATCH_PROFILE)):
@@ -423,7 +423,7 @@ def stands(state: State, head: str, step: Step | None) -> tuple[str, bool]:
 def final(state: State) -> str:
     """The operator's final reply: what stands at its end."""
     out = reply_lines(state)
-    for n, deps in changes.waiting(state):
+    for n, deps in taking.waiting(state):
         waited = ", ".join(deps)
         out.append("- " + mctx("Change {n} not taken: it waits for {waited}").format(
             n=n, waited=waited))

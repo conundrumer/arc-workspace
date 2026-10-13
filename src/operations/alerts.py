@@ -50,7 +50,7 @@ from operations.roles import AGENT_ID
 from operations.state import Agent, LateResume, Message, Report, State, Ticket
 from operations.handled import ask_again, repeated
 from operations.steps import Bash, Send, Step, Undecided
-from operations.tracker import AGENT, FILE_TICKET, log
+from operations.log_commands import AGENT, FILE_TICKET, log
 from ticketing.text import ticket_text
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import DEFECT_SECTIONS, Domain, Kind, Status

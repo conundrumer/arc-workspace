@@ -22,7 +22,7 @@ from typing import NamedTuple
 from controlled_markdown import form, mctx
 from operations.state import Agent, Budget, Spend, State, Ticket
 from operations.steps import Bash, Step
-from operations.tracker import AGENT, FILE_TICKET
+from operations.log_commands import AGENT, FILE_TICKET
 from ticketing.text import ticket_text
 from ticketing.vocabulary import DEFECT_SECTIONS, Domain, Kind, Note, Status
 

@@ -15,7 +15,7 @@ pass's report lists under `## Tickets filed` and those its review filed,
 and the review; a pass's analyst is the one whose brief gives that pass's
 review. The pipeline ends once each review and analyst has returned. For
 the `interference` tickets, the changes that settle them are taken first, as
-`changes.boosted` gives. A pass's tickets are read from the report file
+`taking.boosted` gives. A pass's tickets are read from the report file
 it wrote under the task's work directory since its launch, whatever its
 reply. Where it wrote no such file with a `## Tickets filed` section, the
 pass gets `messages.PASS_RESEND` on its reply once. The pipeline stops

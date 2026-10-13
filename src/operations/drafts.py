@@ -6,7 +6,7 @@ line of an analyst or the coordinator that opens so is none.
 
 The drafts given to the operator are the `change` tickets under
 `tickets/draft/` that `State.mine` gives, those the coordinator names, those a
-ticket analyst an operator launched files, and those of `changes.scope`
+ticket analyst an operator launched files, and those of `taking.scope`
 of another session whose index `SessionsRead.idle_indexes` holds. A draft is
 ready for a ticket reviewer once its log holds a `filed` or a `revised`
 line and no line after the last of them is the coordinator's or moves it
@@ -21,7 +21,7 @@ last `filed` or `revised` line, and no ticket reviewer or ticket analyst
 runs on it; a line of the operator's that moves a change past its cost
 budget to `tickets/draft/` (`change_budget.OVERRUN_FINDING`), or that moves
 there a change that waits on a ticket that waits on the user
-(`changes.STALL_FINDING`), counts as findings,
+(`taking.STALL_FINDING`), counts as findings,
 and the analyst's brief gives that line and what the item checker it names leaves
 for a decision; one ticket analyst takes each such draft with the others a
 chain of `depends-on` links to it. Where the log holds only suggestions
@@ -47,15 +47,18 @@ from collections.abc import Callable
 from controlled_markdown import mctx
 from operations import briefs, messages
 from operations.change_budget import OVERRUN_FINDING
-from operations.changes import STALLED, scope
+from operations.taking import STALLED, scope
 from operations.directives import Decision, Directive, decided, named, numbers
 from operations.roles import Purpose, Role, analyst_subject, joined, subjects
 from operations.reports import left_for_decision
 from operations.state import Agent, LogLine, State, Ticket
-from ticketing.vocabulary import Kind, Note, Status
+from ticketing.vocabulary import Note, Status
 from operations.handled import repeated, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, decision_key
-from operations.tracker import AGENT, COORDINATOR, after, last_index, log
+from operations.log_commands import AGENT, log
+from operations.tracker import after, exits, last_index
+from ticketing.exits import Exit
+from ticketing.vocabulary import COORDINATOR
 
 CAP = 3
 """The review rounds with findings or suggestions that close a draft's
@@ -64,14 +67,14 @@ review."""
 FILED_OR_REVISED = (Note.FILED, Note.REVISED)
 
 
-def draft_change(t: Ticket) -> bool:
-    return t.status is Status.DRAFT and t.kind is Kind.CHANGE
+def draft_change(state: State, t: Ticket) -> bool:
+    return Exit.TICKET_REVIEW in exits(state, t).by
 
 
 def elsewhere(state: State) -> list[Ticket]:
-    """The drafts of `changes.scope` that `State.mine` leaves out."""
+    """The drafts of `taking.scope` that `State.mine` leaves out."""
     return [t for n in sorted(scope(state)) if (t := state.tracker.tickets.get(n)) is not None
-            and draft_change(t) and t.session is not None and not state.mine(t)]
+            and draft_change(state, t) and t.session is not None and not state.mine(t)]
 
 
 def drafts(state: State) -> list[Ticket]:
@@ -79,7 +82,7 @@ def drafts(state: State) -> list[Ticket]:
     analysed = {n for _, p, nums in state.analysts() if p is not Purpose.TRIAGE for n in nums}
     idle = {t.number for t in elsewhere(state) if t.session in state.sessions.idle_indexes}
     return sorted((t for t in state.tracker.tickets.values()
-                   if draft_change(t)
+                   if draft_change(state, t)
                    and (state.mine(t) or t.number in names or t.number in analysed
                         or t.number in idle
                         or ((ln := operator_finding(t, base(t))) is not None
@@ -148,7 +151,7 @@ def overran(note: str) -> bool:
 def operator_finding(t: Ticket, since: float) -> LogLine | None:
     """The last line of the operator's in `t`'s log after `since` that
     counts as findings: `overrun_line`, or one that moves the change to
-    `tickets/draft/` with `changes.STALL_FINDING`."""
+    `tickets/draft/` with `taking.STALL_FINDING`."""
     return operator_line(t, since, lambda note: overran(note)
                          or STALLED.match(note) is not None)
 
