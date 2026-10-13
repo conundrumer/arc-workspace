@@ -124,12 +124,11 @@ def review_tickets(state: State, task: str, review: Agent) -> list[str]:
             and t.status is not Status.WATCHING]
 
 
-def settles(analyst: Agent, nums: list[str], review: str) -> bool:
-    """Whether the pass analyst `analyst`, whose subject gives `nums`, is
-    the one of the pass whose transcript review is the agent `review`."""
-    task, *numbers = nums
-    first = briefs.PASS_SETTLE.format(numbers=briefs.item_list(numbers), task=task, review=review)
-    return analyst.brief.startswith(first)
+def settles(analyst: Agent, review: str) -> bool:
+    """Whether the pass analyst `analyst` is the one of the pass whose
+    transcript review is the agent `review`. A pass analyst's brief gives
+    one review's agent id, its own, whatever the wording of the brief."""
+    return review in analyst.brief
 
 
 type Ended = tuple[str, Agent, tuple[str, ...]]
@@ -154,7 +153,7 @@ def reviews(state: State, task: str, ended: list[Ended]) -> Outcome | None:
             return Outcome(reviewer)
         numbers = [*filed, *review_tickets(state, task, review)]
         analyst = [x for x, purpose, nums in state.analysts()
-                   if purpose is Purpose.PASS and nums[0] == task and settles(x, nums, reviewer[0])]
+                   if purpose is Purpose.PASS and nums[0] == task and settles(x, reviewer[0])]
         if numbers and not analyst:
             subject = analyst_subject(Purpose.PASS, joined([task, *numbers]))
             return Outcome(Launch(Role.TICKET_ANALYST, subject, briefs.pass_settle(
