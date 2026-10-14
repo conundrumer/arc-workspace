@@ -77,12 +77,11 @@ perm(P_grid_in, P_grid_out, C) :-
     params.divide_axis(A), flip_of(A, F), apply(F, P_inner, P_inner_out),     // swap the pair
     params.divide_gap(G), concat(P_outer, P_inner_out, A, G, P_grid_out).     // recompose
 
-perm(P_grid_in, P_grid_in, C) :-
-    by_divide(C), in(P_grid_in, _), !part(P_grid_in, _, _, C).   // gap row passthrough
-
 out(P_grid_out, Col, Impl) :-
-    impl_choice(Impl), in(P_grid_in, Col),   // choice × input cell
-    perm(P_grid_in, P_grid_out, Impl).       // the cell's image
+    impl_choice(Impl), in(P_grid_in, Col),                          // choice × input cell
+    ( perm(P_grid_in, P_grid_out, Impl)                             // the cell's image
+    ; by_divide(Impl), !part(P_grid_in, _, _, Impl),                // a gap row cell
+      P_grid_out = P_grid_in ).                                     // keeps its place
 
 .comp Determine {
     .decl pair(p_in: Position, p_out: Position)

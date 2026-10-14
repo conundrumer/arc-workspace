@@ -63,8 +63,11 @@ shift(V) :- params.shift_dir(D), params.shift_dist(K), jump_offset(D, K, V).
 .decl shifted(p_line: Position, p_line2: Position)
 shifted(Line, Line2) :- cell_split(_, _, Line, _), shift(V), compose(Line, V, Line2).
 
-// Each line's place in the output: where it is, or shifted.
+// Each line's place in the output: where it is, or shifted. $Match gives the
+// shifted lines alone.
 .decl dest(ch: Choice, p_line: Position, p_dest: Position)
+
+.decl placed(ch: Choice, p: Position, col: Color)
 
 // --- $Match ---
 // A line whose cells differ from the anchor line's.
@@ -75,7 +78,9 @@ differs(Line) :-
     Col != Col2.
 
 dest($Match(), Line, Line2) :- differs(Line), shifted(Line, Line2).
-dest($Match(), Line, Line) :- inked_line(Line), !differs(Line).
+
+// A line whose cells match the anchor line's stays where it is.
+placed($Match(), P, Col) :- ink(P, Col), cell_split(P, _, Line, _), !differs(Line).
 
 // --- $Sequence, $Stripes ---
 
@@ -98,7 +103,6 @@ dest(Ch, L, L2) :- steps(Ch, L, N), alternation.walk(L, L, N, L2).
 
 // --- the shift ---
 
-.decl placed(ch: Choice, p: Position, col: Color)
 placed(Ch, P_out, Col) :-
     ink(P, Col), cell_split(P, _, Line, _),
     dest(Ch, Line, Line2), relative(Line, Line2, V), compose(P, V, P_out).   // the line's move

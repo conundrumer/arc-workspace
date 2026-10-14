@@ -22,11 +22,6 @@ out_along.extent($U(), A, N) :- params.header_dir(D), axis_of(D, A), params.out_
 .init bg = Mode<Unit, Color, Position>
 bg.item($U(), C, P) :- in(P, C).
 
-// Tail recolor: bg passes through; non-bg becomes params.marker.
-.decl tail_color(c_in: Color, c_out: Color)
-tail_color(C, C) :- bg.mode($U(), C).
-tail_color(C, M) :- in(_, C), !bg.mode($U(), C), params.marker(M).
-
 // Output cells: the out_h along-frame crossed with the input's across
 // positions. Grounds the output grid so both rules can join to it.
 .decl out_cell(p: Position)
@@ -47,5 +42,6 @@ out(P_out, Col_out) :-
     ; dist(P_out, H_opp, 0), axis_of(H_dir, A),                // tail row, along axis
       in(P_in, Col_in), dist(P_in, H_dir, 0),                  // input depth 0
       same_line(A, P_in, P_out),
-      tail_color(Col_in, Col_out)                              // recolor
+      ( bg.mode($U(), Col_in), Col_out = Col_in                // bg passes through
+      ; !bg.mode($U(), Col_in), params.marker(Col_out) )       // non-bg takes the marker
     ).

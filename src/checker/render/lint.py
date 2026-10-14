@@ -187,6 +187,13 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
     LintSentence.CONST_JOIN: lambda n, m: mctx(
         "{rels} join on `{vars}`; name the derived constant in Params"
     ).format(rels=_ticked(n), vars=", ".join(m)),
+    LintSentence.HEAD_ZERO: lambda n, m: mctx(
+        "`{rel}` states {zeros} in its head; derive each zero from the "
+        "relation that measures it, or drop its column").format(
+        rel=n[0], zeros=_ticked(m)),
+    LintSentence.HEAD_REPEAT: lambda n, m: mctx(
+        "`{rel}` states {vars} in two columns; drop one of them").format(
+        rel=n[0], vars=_ticked(m)),
     LintSentence.TYPED_ORDER_COMPARES: lambda n, _: TYPED_ORDER.format(
         *n, how=mctx("compares")),
     LintSentence.TYPED_ORDER_ORDERS: lambda n, _: TYPED_ORDER.format(

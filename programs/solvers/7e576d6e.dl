@@ -75,6 +75,7 @@ seq.before($U(), P, Q) :-
 
 // Where the path enters a stop's progress line: a marker itself, or the
 // cell one step before a gap.
+// @ignore: head-repeat — a marker stop is its own entry cell, and two clauses read the entry of every stop
 .decl entry(s: Position, p: Position)
 entry(S, S) :- marker(S, _).
 entry(S, P) :- gap_mid(S), progress(_, D), opposite(D, D_back), neighbor(S, D_back, P).

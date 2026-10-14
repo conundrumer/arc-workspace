@@ -108,21 +108,19 @@ mark_end([Ch, X, D], D2, L) :-
 
 // One mark clears the other toward d: its far end still leads the other's
 // near end.
-.decl mark_apart(m1: Mark, m2: Mark)
-mark_apart([Ch, X1, D1], [Ch, X2, D2]) :-
+.decl mark_apart(ch: Choice, x1: Ident, d1: Dir, x2: Ident, d2: Dir)
+mark_apart(Ch, X1, D1, X2, D2) :-
     opposite(D, O),
     mark_end([Ch, X1, D1], O, L1),                    // the first mark's far end
     mark_end([Ch, X2, D2], D, L2),                    // the second's near end
     nearer(D, L1, L2).
 
-.decl mark_same(m1: Mark, m2: Mark)
-mark_same([Ch, X1, D1], [Ch, X2, D2]) :-
-    mark_axis([Ch, X1, D1], A), mark_axis([Ch, X2, D2], A),
-    !mark_apart([Ch, X1, D1], [Ch, X2, D2]).
-
-// A group is what a run of overlaps links.
+// A group is what a run of overlaps links: two marks on one axis that
+// neither clears.
 .init grp = Canon<Mark>
-grp.edge(M1, M2) :- mark_same(M1, M2).
+grp.edge([Ch, X1, D1], [Ch, X2, D2]) :-
+    mark_axis([Ch, X1, D1], A), mark_axis([Ch, X2, D2], A),
+    !mark_apart(Ch, X1, D1, X2, D2).
 
 // --- layout ---
 

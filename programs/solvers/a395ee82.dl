@@ -221,6 +221,8 @@ dot(J, P, Col) :- parse.object($U(), J, Id, Col, P), !parse.multi($U(), J, Id).
 .decl shape(sh: Shape, j: Adjacency, id: Ident, s: Color)
 
 // The markers reading each shape reading takes.
+// @ignore: head-repeat — $LargestPiece holds its markers reading as a field,
+//  and the relation reads that field out, where $OnePiece takes $SingleDots
 .decl markers_of(sh: Shape, m: Markers)
 
 // --- $OnePiece ---

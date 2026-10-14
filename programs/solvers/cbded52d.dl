@@ -63,13 +63,13 @@ btw.axis(M, A) :- mark(M, _), axis_elem(A).
 btw.cell([Dc, Col, P_intile], P_tile) :- mark([Dc, Col, P_intile], _), tile(Dc, _, P_tile, _).
 btw.mark(M, P_tile) :- mark(M, P_tile).
 
-.decl fill(ch: Choice, p_tile: Position, m: Mark)
+.decl fill(ch: Choice, p_tile: Position, col: Color, p_intile: Position)
 
 // --- $Span ---
-fill([Dc, $Span()], P_tile, [Dc, Col, P_intile]) :- btw.between([Dc, Col, P_intile], P_tile).
+fill([Dc, $Span()], P_tile, Col, P_intile) :- btw.between([Dc, Col, P_intile], P_tile).
 
 // --- $Line ---
-fill([Dc, $Line()], P_tile, [Dc, Col, P_intile]) :-
+fill([Dc, $Line()], P_tile, Col, P_intile) :-
     tile(Dc, _, P_tile, _),
     mark([Dc, Col, P_intile], Q1), mark([Dc, Col, P_intile], Q2), Q1 != Q2,  // two distinct marks
     axis_elem(A), same_line(A, Q1, Q2), same_line(A, Q1, P_tile).            // P_tile on the marks' line
@@ -79,7 +79,7 @@ impl_choice([Dc, F]) :- dec_choice(Dc), fill_choice(F).
 
 .decl filled(ch: Choice, p_grid: Position, col: Color)
 filled([Dc, F], P_grid, Col) :-
-    fill([Dc, F], P_tile, [Dc, Col, P_intile]),
+    fill([Dc, F], P_tile, Col, P_intile),
     tile(Dc, P_grid, P_tile, P_intile).
 
 out(P, Col, Ch) :- filled(Ch, P, Col).

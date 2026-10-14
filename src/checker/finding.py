@@ -281,6 +281,8 @@ class LintSentence(StrEnum):
     CONST_JOIN = "const join"
     COMMON_SUBEXPR = "common subexpr"
     COMMON_SUBEXPR_MERGE = "common subexpr merge"
+    HEAD_ZERO = "head zero"
+    HEAD_REPEAT = "head repeat"
     TYPED_ORDER_COMPARES = "typed order compares"
     TYPED_ORDER_ORDERS = "typed order orders"
     TYPED_ORDER_RANKS = "typed order ranks"

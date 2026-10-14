@@ -27,6 +27,7 @@ from checker.judged import (
 from checker.lint import (
     bans,
     constants,
+    heads,
     idioms,
     names,
     recursion,
@@ -92,6 +93,7 @@ REWRITE_CHECKS: tuple[Check, ...] = (
     rewrites.check_comp_idiom, idioms.check_lib_idiom,
     idioms.check_domain_enumerator,
     rewrites.check_common_subexpr,
+    heads.check_head_zero, heads.check_head_repeat,
 )
 """The checks on shapes the corpus's edits rewrite away."""
 

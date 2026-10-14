@@ -1,1 +1,5 @@
-lint: ok
+
+--- hints: 2 across 1 solver(s) ---
+  a61ba2ce.dl:142: head-repeat: `quadrant` states `G` in two columns; drop one of them; an `@ignore` directive can keep the relation it fires on
+  a61ba2ce.dl:145: head-repeat: `quadrant` states `G` in two columns; drop one of them; an `@ignore` directive can keep the relation it fires on
+lint: ok, 2 hints

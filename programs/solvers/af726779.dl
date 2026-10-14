@@ -102,6 +102,8 @@ impl_choice([C, Sc]) :- level_color_choice(C), scope_choice(Sc).
 
     .type KeyedStack = [key: Key, st: Stack]
 
+    // @ignore: head-zero — the $Pooled stack is the whole frame, the box at
+    //  no margin from any edge, as $PerLine's stack is a line's box
     .decl stack(key: Key, st: Stack)
 
     // --- $PerLine ---

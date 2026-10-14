@@ -278,7 +278,7 @@ pull([S, L, C, Ld, G, B, U], P, Q, D, K) :-
 
 // --- $PassOver ---
 // P itself stops Q, at K = 0 on P's own ray.
-obstacle([S, L, C, Ld, G, $PassOver(), U], P, Q, P, K) :-
+stop.cand([[S, L, C, Ld, G, $PassOver(), U], P, Q], P, K) :-
     pull([S, L, C, Ld, G, $PassOver(), U], P, Q, D, _), line.ray(L, P, D, K, P).
 
 // --- $SlideBlocked ---

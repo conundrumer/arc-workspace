@@ -337,6 +337,9 @@ impl_choice([O, R, $HiddenFill(), Sel, $TieFirst()]) :-
         scan_order.first([[Ky, Sel, X], C, A], P), top([Ky, Sel, X], B), box_corner(P, B, C).
 }
 
+// @ignore: head-zero — the color readings bound no side, and a least side
+//  of 0 is the absence of that bound; Scope is the key record of Parse,
+//  which the solver can type only as a record
 .decl scope(s: Scope)
 
 .init parse = Parse<Scope>

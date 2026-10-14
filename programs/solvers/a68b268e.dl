@@ -61,6 +61,8 @@ dec_choice($Count()). dec_choice($Size()).
 // The division each case reads. Order takes no DecChoice field: params.prio
 // keys the 2×2 arrangement, so a Size pairing would be total only where the
 // grid holds two tiles per axis.
+// @ignore: head-repeat — $Scan and $Ink hold their division as a field, and
+//  the relation reads that field out, where $Order takes $Count
 .decl tiling(ch: Choice, dc: DecChoice)
 tiling($Scan(Dc), Dc) :- dec_choice(Dc).
 tiling($Order(), $Count()).

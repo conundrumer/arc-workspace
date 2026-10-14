@@ -156,17 +156,17 @@ place_choice($Corner()).
 place_choice($Across()).
 
 // Where a full-shape cell lands on a shape.
-.decl seat(pa: Parse, id: Ident, p: Position, ch: Choice)
+.decl seat(id: Ident, p: Position, ch: Choice)
 
 // --- $Corner ---
 
-seat(Pa, Id, P_out, [Pa, S, An, $Corner()]) :-
+seat(Id, P_out, [Pa, S, An, $Corner()]) :-
     shift(Pa, Id_full, Id, V, S, An), shape(Pa, Id_full, P_full),
     compose(P_full, V, P_out).
 
 // --- $Across ---
 
-seat(Pa, Id, P_out, [Pa, S, An, $Across()]) :-
+seat(Id, P_out, [Pa, S, An, $Across()]) :-
     shift(Pa, Id_full, Id, V, S, An), shape(Pa, Id_full, P_full),
     params.grow_dir(D), axis_of(D, A), split(V, A, _, V_across),   // the move across
     compose(P_full, V_across, P_out).
@@ -175,8 +175,8 @@ seat(Pa, Id, P_out, [Pa, S, An, $Across()]) :-
 
 // A landing past what the shape itself reaches.
 .decl restored(p: Position, ch: Choice)
-restored(P, Ch) :-
-    seat(Pa, Id, P, Ch), in(P, _),   // a landing on the grid
+restored(P, [Pa, S, An, Pl]) :-
+    seat(Id, P, [Pa, S, An, Pl]), in(P, _),   // a landing on the grid
     bb.box([Pa, Id], B), params.grow_dir(D), nearer(D, P, B).
 
 .decl impl_choice(ch: Choice)

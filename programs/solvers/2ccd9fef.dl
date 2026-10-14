@@ -730,6 +730,7 @@ growth_axis(A) :- axis_elem(A), !axis_defect(A).
 stage_turn.item(Col, Col2) :-
     succ_stage(Pan, Pan2), content(Pan, P, Col), content(Pan2, P, Col2).
 
+// @ignore: head-repeat — recolor is the stage turn made total over the content colors: a color the turn does not move keeps itself, and six clauses read that one map
 .decl recolor(col: Color, col2: Color)
 recolor(Col, Col2) :- stage_turn.value(Col, Col2).
 recolor(Col, Col) :- content(_, _, Col), !stage_turn.value(Col, _).

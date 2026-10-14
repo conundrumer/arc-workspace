@@ -197,24 +197,27 @@ landing([Hj, [Cn, Id, K, D], Sh, C], P, Col) :-
     filled([Hj, [Cn, Id, K, D], Sh, C], _), object(Cn, Id, Q, Col), apply(D, Q, Q_img),
     compose(Sh, Q_img, P).
 
-// The placements taken.
-.decl take(ch: Choice, s: Seat, b: Box)
+// The placements taken, under a transform, a host parse and a lone-shape
+// reading. The seat gives the host join and the piece connectivity.
+.decl take(t: Transform, h: HostParse, l: LoneShape, s: Seat, b: Box)
 
-.decl taken(ch: Choice, cn: Connect, id: Ident)
-taken(Ch, Cn, Id) :- take(Ch, [_, [Cn, Id, _, _], _, _], _).
+.decl taken(ch: Choice, id: Ident)
+taken([T, H, Hj, L, Cn], Id) :- take(T, H, L, [Hj, [Cn, Id, _, _], _, _], _).
 
 // Some piece fits a notch, and no placement of it is taken, or two of its
 // placements taken draw it differently.
 .decl unsettled(ch: Choice)
 unsettled([T, H, Hj, L, Cn]) :-
     piece_fit(L, H, [Hj, [Cn, Id, _, _], _, _], _), transform_choice(T),
-    !taken([T, H, Hj, L, Cn], Cn, Id).
-unsettled(Ch) :-
-    draw(Ch, [_, [Cn, Id, _, _], _, _], P, Col), take(Ch, [Hj, [Cn, Id, K, D], Sh, C], _),
-    !draw(Ch, [Hj, [Cn, Id, K, D], Sh, C], P, Col).
+    !taken([T, H, Hj, L, Cn], Id).
+unsettled([T, H, Hj, L, Cn]) :-
+    draw(T, H, L, [Hj, [Cn, Id, _, _], _, _], P, Col), take(T, H, L, [Hj, [Cn, Id, K, D], Sh, C], _),
+    !draw(T, H, L, [Hj, [Cn, Id, K, D], Sh, C], P, Col).
 
 // The color a cell takes: its own under a rotation, the piece's other color
 // under a reflection.
+// @ignore: head-repeat — recolor maps a cell's color to the color it is drawn
+//  in, and a color that the transform leaves as it is maps to itself
 .decl recolor(cn: Connect, id: Ident, d: D4, k: Color, k2: Color)
 recolor(Cn, Id, D, K, K2) :-
     object_color(Cn, Id, K), d4_elem(D),
@@ -223,20 +226,24 @@ recolor(Cn, Id, D, K, K2) :-
     ).
 
 // The cells a taken placement draws.
-.decl draw(ch: Choice, s: Seat, p: Position, col: Color)
-draw(Ch, [Hj, [Cn, Id, K, D], Sh, C], P, Col) :-
-    take(Ch, [Hj, [Cn, Id, K, D], Sh, C], B), landing([Hj, [Cn, Id, K, D], Sh, C], P, K0),
+.decl draw(t: Transform, h: HostParse, l: LoneShape, s: Seat, p: Position, col: Color)
+draw(T, H, L, [Hj, [Cn, Id, K, D], Sh, C], P, Col) :-
+    take(T, H, L, [Hj, [Cn, Id, K, D], Sh, C], B), landing([Hj, [Cn, Id, K, D], Sh, C], P, K0),
     ( K0 = K ; !inside(P, B) ),         // other-part cells on the host's rectangle drop
     recolor(Cn, Id, D, K0, Col).
 
 .decl lifted(ch: Choice, p: Position)
-lifted(Ch, P) :- taken(Ch, Cn, Id), object(Cn, Id, P, _).
+lifted([T, H, Hj, L, Cn], P) :- taken([T, H, Hj, L, Cn], Id), object(Cn, Id, P, _).
+
+// The cells a case draws.
+.decl drawn(ch: Choice, p: Position, col: Color)
+drawn([T, H, Hj, L, Cn], P, Col) :- draw(T, H, L, [Hj, [Cn, _, _, _], _, _], P, Col).
 
 out(P, Col, Ch) :-
     impl_choice(Ch), !unsettled(Ch), in(P, C_in),
-    ( draw(Ch, _, P, Col)
-    ; !draw(Ch, _, P, _), lifted(Ch, P), bg(Col)
-    ; !draw(Ch, _, P, _), !lifted(Ch, P), Col = C_in
+    ( drawn(Ch, P, Col)
+    ; !drawn(Ch, P, _), lifted(Ch, P), bg(Col)
+    ; !drawn(Ch, P, _), !lifted(Ch, P), Col = C_in
     ).
 
 // --- $RestOutside ---
@@ -254,14 +261,13 @@ misplaced([Hj, [Cn, Id, K, D], Sh, C]) :-
     ; in(P, C_in), !bg(C_in), !piece_cell(Cn, P)
     ).
 
-take([$RestOutside(), H, Hj, L, Cn], [Hj, [Cn, Id, K, D], Sh, C], B) :-
-    piece_fit(L, H, [Hj, [Cn, Id, K, D], Sh, C], B), !misplaced([Hj, [Cn, Id, K, D], Sh, C]).
+take($RestOutside(), H, L, S, B) :- piece_fit(L, H, S, B), !misplaced(S).
 
 // --- $PreferRotation ---
 .decl rotation_fits(l: LoneShape, h: HostParse, hj: HostJoin, cn: Connect, id: Ident)
 rotation_fits(L, H, Hj, Cn, Id) :- piece_fit(L, H, [Hj, [Cn, Id, _, D], _, _], _), c4_elem(D).
 
-take([$PreferRotation(), H, Hj, L, Cn], [Hj, [Cn, Id, K, D], Sh, C], B) :-
+take($PreferRotation(), H, L, [Hj, [Cn, Id, K, D], Sh, C], B) :-
     piece_fit(L, H, [Hj, [Cn, Id, K, D], Sh, C], B),
     ( c4_elem(D) ; !rotation_fits(L, H, Hj, Cn, Id) ).
 

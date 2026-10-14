@@ -51,6 +51,8 @@ tile_holds(Col, P_tile) :- lattice.tile_of($U(), P, P_tile), in(P, Col), !params
 
 // Where a block's other three tiles lie, seen from the fourth: across each of
 // the two cuts, and across the corner between them.
+// @ignore: head-repeat — the tile across the corner lies toward the corner
+//  itself, so the corner's DiagDir is one of its three directions
 .decl block_dir(diag: DiagDir, d: Dir8)
 block_dir(G, D) :- dir_of(G, _, D).
 block_dir(G, G) :- diag_dir_elem(G).

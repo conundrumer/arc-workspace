@@ -134,23 +134,23 @@ hue(Pc, Id, Col) :- cell(Pc, Id, P), in(P, Col).
 
 // Resolutions under two open values of a case that draw some line in
 // different colors.
-.decl differ(w: View, res: TiebreakResolution, w2: View, res2: TiebreakResolution)
-differ([[Pc, K], D8], Res, [[Pc, K], D8_2], Res2) :-
+.decl differ(ch: Choice, from: Dir8, res: TiebreakResolution, from2: Dir8, res2: TiebreakResolution)
+differ([Pc, K], D8, Res, D8_2, Res2) :-
     ties.assign([[Pc, K], D8], Res, P_line, Id), hue(Pc, Id, Col),
     ties.assign([[Pc, K], D8_2], Res2, P_line, Id2), hue(Pc, Id2, Col2),
     D8 != D8_2, Col != Col2.
 
 // Another open value of the case draws the resolution's grid.
-.decl drawn(w: View, res: TiebreakResolution, w2: View)
-drawn([Ch, D8], Res, [Ch, D8_2]) :-
+.decl drawn(ch: Choice, from: Dir8, res: TiebreakResolution, from2: Dir8)
+drawn(Ch, D8, Res, D8_2) :-
     ties.resolution([Ch, D8], Res), ties.resolution([Ch, D8_2], Res2), D8 != D8_2,
-    !differ([Ch, D8], Res, [Ch, D8_2], Res2).
+    !differ(Ch, D8, Res, D8_2, Res2).
 
 // A resolution whose grid some other open value of the case does not draw.
 .decl lacks(w: View, res: TiebreakResolution)
 lacks([Ch, D8], Res) :-
     ties.resolution([Ch, D8], Res), view([Ch, D8_2]), D8 != D8_2,
-    !drawn([Ch, D8], Res, [Ch, D8_2]).
+    !drawn(Ch, D8, Res, D8_2).
 
 out(P, Col, [Pc, K], Res) :-
     line_of(Pc, P, P_line), ties.assign([[Pc, K], D8], Res, P_line, Id),

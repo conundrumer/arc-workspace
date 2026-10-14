@@ -65,6 +65,8 @@ class Category(StrEnum):
     CONST_JOIN = "const-join"
     COMP_IDIOM = "comp-idiom"
     COMMON_SUBEXPR = "common-subexpr"
+    HEAD_ZERO = "head-zero"
+    HEAD_REPEAT = "head-repeat"
     IGNORE = "ignore"
 
 
@@ -73,6 +75,7 @@ HINTS = frozenset({
     Category.CASE_SECTION, Category.PASS_THROUGH, Category.CHAIN_JOIN,
     Category.SINGLE_CONSUMER, Category.DOMAIN_ENUMERATOR, Category.ARGMAX,
     Category.COMMON_SUBEXPR, Category.CONST_JOIN, Category.COMP_IDIOM,
+    Category.HEAD_ZERO, Category.HEAD_REPEAT,
 })
 """The categories whose findings are hints: a hint changes neither the
 verdict nor the exit code."""

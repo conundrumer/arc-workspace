@@ -151,6 +151,7 @@ face(B, Cd, P, D, Q, Col) :-
 
 // Two placements that cannot stand together: they overlap, they are one
 // piece placed twice, or they face each other with different cells.
+// @ignore: head-repeat — two placements of one piece clash because they share the piece, and the shared id states that
 .decl clash(b: Box, cd: Cand, cd2: Cand)
 clash(B, Cd, Cd2) :- covers(B, Cd, P, _), covers(B, Cd2, P, _), Cd != Cd2.
 clash(B, [Id, B_occ], [Id, B_occ2]) :- fit(B, Id, B_occ), fit(B, Id, B_occ2), B_occ != B_occ2.

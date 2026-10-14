@@ -296,6 +296,9 @@ box.cell(O, P) :- obj_cell(O, P, _).
 
 // Where an object starts its jump, as the box it starts from, and how many
 // cells it jumps from there.
+// @ignore: head-zero — under $GroundedOnly an object that stands on no
+//  floor jumps no cells: the count 0 is the absence of a jump, which keeps
+//  the object where it starts through every reader of the count
 .decl lift(o: Obj, f: Floating, b: Box, n: number)
 lift(O, F, B, N) :- floating_choice(F), grounded(O), size.tally(O, N), box.box(O, B).
 

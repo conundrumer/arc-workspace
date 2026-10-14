@@ -135,20 +135,21 @@ gap(S, [G, Id], D) :-
 .decl misfit(g: Grouping, s: BoxSize)
 misfit(G, S) :- side(G, S, _), piece([G, Id], _), !gap(S, [G, Id], _).
 
-// The output quadrant of each piece.
-.decl quadrant(ch: Choice, pc: Piece, q: DiagDir)
+// The output quadrant of each piece, by the piece's id under the case's
+// grouping.
+.decl quadrant(ch: Choice, id: Ident, q: DiagDir)
 
 // --- $OppositeCorner ---
-quadrant([G, $OppositeCorner(), S], [G, Id], Q) :- gap(S, [G, Id], D), diag_opposite(D, Q).
+quadrant([G, $OppositeCorner(), S], Id, Q) :- gap(S, [G, Id], D), diag_opposite(D, Q).
 
 // --- $StoredCornerMap ---
-quadrant([G, $StoredCornerMap(), S], [G, Id], Q) :-
+quadrant([G, $StoredCornerMap(), S], Id, Q) :-
     gap(S, [G, Id], D), params.corner_quadrant(D, Q).
 
 // --- shared ---
 
 out(P_grid_out, Col, Ch) :-
-    impl_choice(Ch), quadrant(Ch, [G, Id], Q), Ch = [G, _, S], !misfit(G, S), side(G, S, K),
+    impl_choice(Ch), quadrant(Ch, Id, Q), Ch = [G, _, S], !misfit(G, S), side(G, S, K),
     diag_opposite(Q, Q2), edge_inset(Q2, K, B_out),       // the box at corner q of the output
     piece_box.box([G, Id], B), in(P_grid_in, Col_in), crop(P_grid_in, B, P_inner),
     compose(B_out, P_inner, P_grid_out),

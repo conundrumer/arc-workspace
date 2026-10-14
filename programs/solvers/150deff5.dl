@@ -88,6 +88,9 @@ out(P, Col) :-
     piece_member(as(C, Ident), P_inner) :-
         bbox.cell([E, C, Id], P), bbox.box([E, C, Id], B), crop(P, B, P_inner).
 
+    // @ignore: head-repeat — Determine names each piece by the color it
+    //  paints, and the relation keeps the parameter's schema, its id and its
+    //  color
     .decl piece_color(id: Ident, col: Color)
     piece_color(as(C, Ident), C) :- changed(_, _, C).
 }

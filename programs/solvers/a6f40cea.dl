@@ -206,7 +206,6 @@ joined(B, $ByColor(), Id, Id2) :- piece_color(B, Id, Col), piece_color(B, Id2, C
 .decl mixed(b: Box, id: Ident)
 mixed(B, Id) :- piece_color(B, Id, Col), piece_color(B, Id, Col2), Col != Col2.
 
-joined(B, $MonoMerge(), Id, Id) :- piece_color(B, Id, _).
 joined(B, $MonoMerge(), Id, Id2) :-
     piece_color(B, Id, Col), !mixed(B, Id),
     piece_color(B, Id2, Col), !mixed(B, Id2).

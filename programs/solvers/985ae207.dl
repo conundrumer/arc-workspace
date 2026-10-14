@@ -47,6 +47,8 @@ mark(P, Cc) :-
     ring(P, Cr), !gap(P, Cr), Cr != Cc. // one other color all around it
 
 // The mark's footprint: its cell and the ring around it.
+// @ignore: head-repeat — the mark's own cell is a cell of its footprint, and
+//  the ring's cells are the others
 .decl mark_cell(p_mark: Position, p: Position)
 mark_cell(Pm, Pm) :- mark(Pm, _).
 mark_cell(Pm, P) :- mark(Pm, _), dir8_elem(D), neighbor(Pm, D, P).

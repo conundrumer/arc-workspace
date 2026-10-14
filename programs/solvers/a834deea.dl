@@ -172,15 +172,12 @@ keyed(P_grid, Col, [F, $Place()]) :-
 // --- $RingBySide ---
 .type CellIn = [p: Position, i: Box]
 
-// The sides of the interior a key names: a side names itself, a corner its
-// two sides.
-.decl key_side(k: Dir8, d: Dir)
-key_side(D, D) :- dir_elem(D).
-key_side(Dg, D) :- dir_of(Dg, _, D).
-
 // @claim keyed-fill
 .init touch = KeyedSetCompare<CellIn, Dir8, Dir>
-touch.pattern_member(K, D) :- key_side(K, D).
+// The sides of the interior a key names: a side names itself, a corner its
+// two sides.
+touch.pattern_member(D, D) :- dir_elem(D).
+touch.pattern_member(Dg, D) :- dir_of(Dg, _, D).
 touch.observed_member([P, I], D) :- parse.inner_cell($U(), P, I, _), box_edge(P, I, D).
 
 keyed(P, Col, [F, $RingBySide()]) :-

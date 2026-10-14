@@ -51,15 +51,15 @@ flight.cell(Id, $U(), P) :- arrow(Id, P).
 flight.dir(Id, D) :-
     fletching(Id, _), dir_elem(D), !stray(Id, D).   // the whole fletching trails a flight toward D
 
-// the cell whose color P takes after the head's half turn
-.decl source(id: Ident, p: Position, p_src: Position)
-source(Id, P, P_src) :- arm(Id, D, P), opposite(D, D2), arm(Id, D2, P_src).  // arms swap
-source(Id, P, P) :- arrow(Id, P), !arm(Id, _, P).                            // the rest stands
+// the color P takes after the head's half turn
+.decl turned(id: Ident, p: Position, col: Color)
+turned(Id, P, Col) :- arm(Id, D, P), opposite(D, D2), arm(Id, D2, P_src), in(P_src, Col).  // arms swap
+turned(Id, P, Col) :- arrow(Id, P), !arm(Id, _, P), in(P, Col).                            // the rest stands
 
 // where an arrow cell rests, and the color it carries there
 .decl landing(p: Position, col: Color)
 landing(Q, Col) :-
-    source(Id, P, P_src), in(P_src, Col),   // the color after the turn
+    turned(Id, P, Col),                             // the color after the turn
     flight.travel(Id, $U(), V), compose(P, V, Q).   // carried by the flight
 
 out(P, Col) :- landing(P, Col).

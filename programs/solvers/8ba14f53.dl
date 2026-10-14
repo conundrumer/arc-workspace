@@ -106,14 +106,12 @@ block_line(K, L) :- block(K, P), params.axis(A), split(P, A, L, _).
 .init bbox = Bbox<Key>
 bbox.cell(K, P) :- obj(K, P).
 
-.decl before(k1: Key, k2: Key)
-before([Ch, C1, I1], [Ch, C2, I2]) :-
-    params.order_dir(D),
-    bbox.box([Ch, C1, I1], B1), bbox.box([Ch, C2, I2], B2), nearer(D, B1, B2).
-
 // The lines the earlier shapes' blocks take: how far this block stacks.
 .init offset = Tally<Key, BlockLine>
-offset.item(K, [K2, L]) :- before(K2, K), block_line(K2, L).
+offset.item([Ch, C, I], [[Ch, C2, I2], L]) :-
+    params.order_dir(D),
+    bbox.box([Ch, C2, I2], B2), bbox.box([Ch, C, I], B), nearer(D, B2, B),   // an earlier shape
+    block_line([Ch, C2, I2], L).
 offset.domain(K) :- obj(K, _).
 
 .decl filled(p: Position, col: Color, ch: Choice)

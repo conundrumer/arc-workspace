@@ -255,6 +255,10 @@ block([$Last2x2(), R], Q) :- picked.value(R, B), in(Q, _), inside(Q, B).
 
 // --- $Walk ---
 // Marker M's walk reaches P after K steps.
+// @ignore: head-zero — a walk that takes no step is at its marker after 0
+//  steps, the count of steps it took
+// @ignore: head-repeat — the start of a walk that takes no step is the cell
+//  its marker stands on, and the walk is keyed by that marker
 .decl walk_cell(s: Scene, ps: PathShape, m: Position, p: Position, k: number)
 
 // The walk's step counts.

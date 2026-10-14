@@ -98,6 +98,7 @@ sight.blocked(Pan, P) :- dot(Pan, P).
 reach(Pan, P, D, Q, K) :- sight.stop(Pan, Q, D, K, P), dir_elem(D).
 
 // The ways an arrow heading D may go: straight on, or a quarter turn.
+// @ignore: head-repeat — straight on is one of the ways, the heading the arrow already has
 .decl way(d: Dir, d2: Dir)
 way(D, D) :- dir_elem(D).
 way(D, D2) :- perp_dir(D, D2).
@@ -112,6 +113,7 @@ steps.cand([Pan, P, D], K) :- way(D, D2), reach(Pan, P, D2, _, K).
 impl_choice($Momentum()). impl_choice($Nearest()).
 
 // A step of the journey: the dot taken, and the way it was taken.
+// @ignore: head-repeat — a hop straight on keeps the arrow's heading, which the next hop reads
 .decl hop(pan: Position, p: Position, d: Dir, q: Position, d2: Dir, ch: Choice)
 
 // The journey: from the tip, one hop after another.
