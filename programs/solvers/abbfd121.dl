@@ -112,10 +112,6 @@
 .type Choice = [occluder: Occluder, recovery: Recovery, orbit: HiddenOrbit,
                 selection: Selection, tie: AreaTie]
 
-// An occluder reading, with the least side it admits: params.min_side under
-// ComponentRect, and 0 under the color readings, which bound no side.
-.type Scope = [occ: Occluder, side: number]
-
 // A row or a column, by its axis.
 .type Line = [a: Axis, l: Position]
 
@@ -123,8 +119,8 @@
 
 .comp Params {
     // --- $ComponentRect ---
-    // The pairs fix neither value, so both stay open.
-    .decl min_side(k: number) min_side(2). min_side(3).
+    // The least side of an occluder.
+    .decl min_side(k: number) min_side(2).
 
     // --- $HiddenFill ---
     // The pairs hold no hidden cell without a source, so every color stays
@@ -337,52 +333,44 @@ impl_choice([O, R, $HiddenFill(), Sel, $TieFirst()]) :-
         scan_order.first([[Ky, Sel, X], C, A], P), top([Ky, Sel, X], B), box_corner(P, B, C).
 }
 
-// @ignore: head-zero — the color readings bound no side, and a least side
-//  of 0 is the absence of that bound; Scope is the key record of Parse,
-//  which the solver can type only as a record
-.decl scope(s: Scope)
-
-.init parse = Parse<Scope>
-parse.cell(S, P, Col) :- scope(S), in(P, Col).
+.init parse = Parse<Occluder>
+parse.cell(S, P, Col) :- occluder_choice(S), in(P, Col).
 
 // The axes each selection is read along.
 .decl reads_axis(sel: Selection, x: Axis)
 
 // The occluder each tie reading picks, per axis the selection is read along.
-.decl pick(s: Scope, sel: Selection, x: Axis, t: AreaTie, b: Box)
+.decl pick(s: Occluder, sel: Selection, x: Axis, t: AreaTie, b: Box)
 
 // Some axis the selection is read along leaves no pick.
-.decl unpicked(s: Scope, sel: Selection, t: AreaTie)
-unpicked(S, Sel, T) :- scope(S), reads_axis(Sel, X), area_tie_choice(T), !pick(S, Sel, X, T, _).
+.decl unpicked(s: Occluder, sel: Selection, t: AreaTie)
+unpicked(S, Sel, T) :-
+    occluder_choice(S), reads_axis(Sel, X), area_tie_choice(T), !pick(S, Sel, X, T, _).
 
 // The colors each hidden-orbit reading gives a cell.
-.decl shade(s: Scope, r: Recovery, f: HiddenOrbit, p: Position, col: Color)
+.decl shade(s: Occluder, r: Recovery, f: HiddenOrbit, p: Position, col: Color)
 shade(S, R, F, P, Col) :- hidden_orbit_choice(F), parse.color(S, R, P, Col).
 
 // Some open value leaves the case with no grid, or with a cell of its grid
 // uncolored.
 .decl broken(ch: Choice)
-broken([O, R, F, Sel, T]) :- impl_choice([O, R, F, Sel, T]), unpicked([O, _], Sel, T).
+broken([O, R, F, Sel, T]) :- impl_choice([O, R, F, Sel, T]), unpicked(O, Sel, T).
 broken([O, R, F, Sel, T]) :-
-    impl_choice([O, R, F, Sel, T]), pick([O, K], Sel, _, T, B),
-    parse.block_cell([O, K], B, P), !shade([O, K], R, F, P, _).
+    impl_choice([O, R, F, Sel, T]), pick(O, Sel, _, T, B),
+    parse.block_cell(O, B, P), !shade(O, R, F, P, _).
 
 out(P_inner, Col, [O, R, F, Sel, T]) :-
     impl_choice([O, R, F, Sel, T]), !broken([O, R, F, Sel, T]),
-    pick([O, K], Sel, _, T, B), shade([O, K], R, F, P, Col), crop(P, B, P_inner).
+    pick(O, Sel, _, T, B), shade(O, R, F, P, Col), crop(P, B, P_inner).
 
 // --- $ColorFill ---
-scope([$ColorFill(), 0]).
-parse.occluder(S, B) :- S = [$ColorFill(), 0], parse.color_fill(S, _, B).
+parse.occluder(S, B) :- S = $ColorFill(), parse.color_fill(S, _, B).
 
 // --- $MinTwoCells ---
-scope([$MinTwoCells(), 0]).
 parse.occluder(S, B) :-
-    S = [$MinTwoCells(), 0], parse.color_fill(S, Col, B), in(P, Col), in(Q, Col), P != Q.
+    S = $MinTwoCells(), parse.color_fill(S, Col, B), in(P, Col), in(Q, Col), P != Q.
 
 // --- $ComponentRect ---
-scope([$ComponentRect(), K]) :- params.min_side(K).
-
 // @claim occluders
 .init part = Components<Color>
 part.node(Col, P) :- in(P, Col).
@@ -401,13 +389,13 @@ narrow(Id, K) :-
     part_box.box(Id, B), part.label(_, P, Id), params.min_side(K),
     box_extent(B, P, A, N), N < K.
 
-parse.occluder([$ComponentRect(), K], B) :-
+parse.occluder($ComponentRect(), B) :-
     part_box.box(Id, B), !part_gap(Id), params.min_side(K), !narrow(Id, K).
 
 // --- $LatticePeriod ---
 // The translation carries a visible cell onto a visible cell of another color.
 // @ignore: comp-idiom — OffsetInvariance tests the axis-aligned translations alone, and these include oblique ones
-.decl clash(s: Scope, x: Offset)
+.decl clash(s: Occluder, x: Offset)
 clash(S, X) :-
     parse.carried(S, X), parse.visible(S, P, C1),
     compose(P, X, Q), parse.visible(S, Q, C2), C1 != C2.
@@ -418,7 +406,7 @@ parse.map_link(S, $LatticePeriod(), P, Q) :-
 // --- $IsometryOrbit ---
 // The isometries of the axis-period colors, over the whole frame.
 // @claim recover
-.init wp = Wallpaper<Scope, Color>
+.init wp = Wallpaper<Occluder, Color>
 wp.transform(D) :- d4_elem(D).
 wp.cell(S, P, Col) :- parse.axis_color(S, P, Col).
 wp.grid(S, P) :- parse.cell(S, P, _).

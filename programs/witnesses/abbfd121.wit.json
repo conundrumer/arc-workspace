@@ -142,7 +142,7 @@
       [5,1,3,6,2,5,1,3,6]
     ],
     "output": [{
-      "cases": ["$AxisPeriods & fill=stored","$ComponentRect"],
+      "cases": ["$AxisPeriods & fill=stored"],
       "grid": null
     }, {
       "cases": ["fill=DominantColor"],
@@ -163,7 +163,7 @@
         [1,3,6,2,5]
       ]
     }, {
-      "cases": ["$IsometryOrbit","$ColorFill & $LatticePeriod","$MinTwoCells & $LatticePeriod"],
+      "cases": ["$IsometryOrbit","$LatticePeriod"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
@@ -190,7 +190,11 @@
       [3,6,5,4,3,6,5,4]
     ],
     "output": [{
-      "cases": ["$AxisPeriods & fill=stored","$LatticePeriod"],
+      "cases": [
+        "$ColorFill & $AxisPeriods & fill=stored",
+        "$ColorFill & $LatticePeriod",
+        "$MinTwoCells"
+      ],
       "grid": null
     }, {
       "cases": ["fill=DominantColor"],
@@ -217,6 +221,19 @@
         [5,4],
         [3,3],
         [5,6]
+      ]
+    }, {
+      "cases": ["$ComponentRect"],
+      "grid": [
+        [5,2],
+        [3,2],
+        [5,2],
+        [3,2],
+        [5,2],
+        [3,2],
+        [5,2],
+        [3,2],
+        [5,2]
       ]
     }]
   }, {
@@ -287,7 +304,7 @@
     }]
   }, {
     "id": "wallpaper-block",
-    "separates": "Each period of the wallpaper holds a solid 2x2 block of 1. The component reading takes every such block as an occluder, so the phases of 1 have no visible cell and the output under the 6x6 block is undefined. The color class of 1 fills no rectangle, so the concept keeps the 1 cells as wallpaper.",
+    "separates": "Each period of the wallpaper holds a solid 2x2 block of 1. The component reading takes every such block as an occluder, so the phases of 1 have no visible cell, and its output holds no 1. The color class of 1 fills no rectangle, so the concept keeps the 1 cells as wallpaper.",
     "input": [
       [1,1,3,5,1,1,3,5,1,1,3,5,1,1,3,5],
       [1,1,5,3,1,1,5,3,1,1,5,3,1,1,5,3],
@@ -318,7 +335,14 @@
       ]
     }, {
       "cases": ["$ComponentRect"],
-      "grid": null
+      "grid": [
+        [3,5,3,5,3,5],
+        [5,3,5,3,5,3],
+        [3,5,3,5,3,5],
+        [5,3,5,3,5,3],
+        [3,5,3,5,3,5],
+        [5,3,5,3,5,3]
+      ]
     }]
   }, {
     "id": "lone-cell",
@@ -730,13 +754,10 @@
       ]
     },
     "output": [{
-      "cases": ["concept","$ComponentRect"],
+      "cases": ["concept"],
       "grid": null
     }, {
-      "cases": [
-        "$ColorFill & $AxisPeriods & $HiddenFill & fill=stored",
-        "$MinTwoCells & $AxisPeriods"
-      ],
+      "cases": ["$AxisPeriods & $HiddenFill & fill=stored"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
@@ -763,7 +784,7 @@
         [1,3,6,2,5]
       ]
     }, {
-      "cases": ["$IsometryOrbit","$ColorFill & $LatticePeriod","$MinTwoCells & $LatticePeriod"],
+      "cases": ["$IsometryOrbit","$LatticePeriod"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
@@ -880,7 +901,7 @@
       [5,1,3,6,2,5,1,3,6]
     ],
     "output": [{
-      "cases": ["$AxisPeriods & fill=stored","$ComponentRect"],
+      "cases": ["$AxisPeriods & fill=stored"],
       "grid": null
     }, {
       "cases": ["fill=DominantColor"],
@@ -901,7 +922,7 @@
         [1,3,6,2,5]
       ]
     }, {
-      "cases": ["$IsometryOrbit","$ColorFill & $LatticePeriod","$MinTwoCells & $LatticePeriod"],
+      "cases": ["$IsometryOrbit","$LatticePeriod"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
@@ -925,7 +946,7 @@
       [5,1,3,6,2,5,1,3,6]
     ],
     "output": [{
-      "cases": ["$AxisPeriods & fill=stored","$ComponentRect"],
+      "cases": ["$AxisPeriods & fill=stored"],
       "grid": null
     }, {
       "cases": ["fill=DominantColor"],
@@ -946,7 +967,7 @@
         [1,3,6,2,5]
       ]
     }, {
-      "cases": ["$IsometryOrbit","$ColorFill & $LatticePeriod","$MinTwoCells & $LatticePeriod"],
+      "cases": ["$IsometryOrbit","$LatticePeriod"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],

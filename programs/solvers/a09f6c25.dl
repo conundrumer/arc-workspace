@@ -115,10 +115,8 @@
     .decl figure_color(c: Color) figure_color(2).
 
     // --- $SizeBound ---
-    // The largest component size that is erased. Every pair's smallest shape
-    // has 6 cells, so every bound below 6 stays open.
-    .decl noise_size(k: number)
-    noise_size(1). noise_size(2). noise_size(3). noise_size(4). noise_size(5).
+    // The largest component size that is erased.
+    .decl noise_size(k: number) noise_size(1).
 
     // --- $NoAxisThird, $TwoAxisThird ---
     // A class with an axis mirror, and the color of the class with none.
@@ -281,14 +279,8 @@ figure([B, $StoredFigure()], P) :- background_choice(B), in(P, Col), params.figu
 figure([B, $NonbgFigure()], P) :- background.value(B, _), in(P, Col), !background.value(B, Col).
 
 // --- $SizeBound ---
-// At most some open bound, and above some open bound.
-.decl within(k: Figure, c: Connectivity, id: Ident)
-.decl beyond(k: Figure, c: Connectivity, id: Ident)
-within(K, C, Id) :- parse.size.tally([K, C, Id], N), params.noise_size(M), N <= M.
-beyond(K, C, Id) :- parse.size.tally([K, C, Id], N), params.noise_size(M), N > M.
-
-noise(K, C, Id, $SizeBound()) :- within(K, C, Id), !beyond(K, C, Id).
-shape(K, C, Id, $SizeBound()) :- beyond(K, C, Id), !within(K, C, Id).
+noise(K, C, Id, $SizeBound()) :- parse.size.tally([K, C, Id], N), params.noise_size(M), N <= M.
+shape(K, C, Id, $SizeBound()) :- parse.size.tally([K, C, Id], N), params.noise_size(M), N > M.
 
 // --- $MinSizeNoise ---
 // @claim erase-noise
@@ -348,8 +340,12 @@ two_axis_color([B, F], C, Id, $TwoAxisErased(), BG) :-
     .decl noise_cand(k: number)
     noise_cand(K) :- ex_in(_, P, _), axis_elem(A), sub_extent(P, A, K).
 
+    // The bounds no pair contradicts.
+    .init bound = Extremes<Unit>
+    bound.cand($U(), K) :- noise_cand(K), !size_contradicted(K).
+
     .decl noise_size(k: number)
-    noise_size(K) :- noise_cand(K), !size_contradicted(K).
+    noise_size(K) :- bound.low($U(), K).
 
     // A component in no class, mirrored across an axis.
     .decl two_axis(e: Example, id: Ident)

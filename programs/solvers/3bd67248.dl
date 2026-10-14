@@ -27,9 +27,7 @@
     .decl floor_dir(d: Dir) floor_dir(DIR_B).
 
     // --- $Anchored ---
-    // Square grids: both corners give the diagonal.
-    .decl corner(d: DiagDir)
-    corner(DIAG_BL). corner(DIAG_TR).
+    .decl corner(d: DiagDir) corner(DIAG_BL).
 
     // --- $WallEnd ---
     .decl sense(s: Sense) sense(SENSE_CW).
@@ -158,8 +156,9 @@ out(P, Col, $WallEnd()) :- in(P, Col), !paint_we(P, _).
     .decl diag_paint(diag: DiagDir, col: Color)
     diag_paint(Diag, Col) :- diag_dir_elem(Diag), paint_color(Col), !diag_mismatch(Diag, Col).
 
+    // The painted diagonal's corner on the floor edge.
     .decl corner(d: DiagDir)
-    corner(Diag) :- diag_paint(Diag, _).
+    corner(Diag) :- diag_paint(Diag, _), floor_dir(D), dir_of(Diag, _, D).
 
     .decl diag_color(c: Color)
     diag_color(Col) :- diag_paint(_, Col).
