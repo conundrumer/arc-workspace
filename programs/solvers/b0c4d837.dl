@@ -105,6 +105,7 @@
     // --- $FillOrder ---
     // Each cell's rank in the order the marks fill, under each open value:
     // 0 the snake, 1 the clockwise spiral.
+    // @open
     .decl fill_order(v: Ident, p: Position, r: number)
     GRID_3x3(fill_order, 0,
         0, 1, 2,

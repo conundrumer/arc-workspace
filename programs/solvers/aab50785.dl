@@ -166,6 +166,7 @@
     // one nearer edge D goes nearer the stack edge that a quarter turn in
     // sense S reaches from D. No pair has a band with two windows, so both
     // senses stay open.
+    // @open
     .decl band_sense(s: Sense) band_sense(SENSE_CW). band_sense(SENSE_CC).
 
     // --- $PairLeftRight ---
@@ -175,6 +176,7 @@
     // --- $PadWidest ---
     // The pair-axis edge a narrower window keeps flush with. No pair has
     // windows of unequal width, so both edges stay open.
+    // @open
     .decl flush(d: Dir) flush(DIR_L). flush(DIR_R).
 }
 

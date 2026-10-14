@@ -88,6 +88,7 @@
     // --- $DerivedAxis ---
     // A line's count starts at its end nearer this edge. The pairs leave the
     // top and the left edge open.
+    // @open
     .decl start_edge(d: Dir) start_edge(DIR_T). start_edge(DIR_L).
 
     // --- $ColumnParity ---

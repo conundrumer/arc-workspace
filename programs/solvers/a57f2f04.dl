@@ -132,6 +132,7 @@
 
     // --- $CornerAnchor ---
     // The pairs leave all four corners open.
+    // @open
     .decl anchor(d: DiagDir)
     anchor(DIAG_TL). anchor(DIAG_TR). anchor(DIAG_BL). anchor(DIAG_BR).
 }

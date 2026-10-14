@@ -140,6 +140,7 @@ impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
     // Time runs toward this corner's edge on the axis the panels stack along.
     // Every pair stacks its panels top to bottom, so the corner's side on the
     // other axis is open.
+    // @open
     .decl time_corner(d: DiagDir) time_corner(DIAG_BL). time_corner(DIAG_BR).
 
     // --- $StoredCount ---

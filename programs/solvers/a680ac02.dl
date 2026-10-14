@@ -125,6 +125,7 @@
     template_hole(P) :- square_side(K), helpers.frame_pos([K, K], P), interior(P, ZERO).
 
     // --- $AxisSpread ---
+    // @open
     .decl tie_axis(a: Axis) tie_axis(AXIS_V). tie_axis(AXIS_H).
 
     // --- $OrderColumnMajor ---

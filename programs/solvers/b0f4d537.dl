@@ -137,6 +137,7 @@
 
     // --- $LineByHeaderEdge ---
     // The corner whose edges hold the marker that reads a line.
+    // @open
     .decl header(d: DiagDir)
     header(DIAG_TL). header(DIAG_TR). header(DIAG_BL). header(DIAG_BR).
 

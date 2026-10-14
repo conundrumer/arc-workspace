@@ -106,6 +106,7 @@
     // The scan order that breaks a tie for the fewest cells: the corner it
     // starts from, and the axis it reads first. No pair holds a tie, so every
     // order stays open.
+    // @open
     .decl scan_order(d: DiagDir, a: Axis)
     scan_order(DIAG_TL, AXIS_V). scan_order(DIAG_TL, AXIS_H).
     scan_order(DIAG_TR, AXIS_V). scan_order(DIAG_TR, AXIS_H).

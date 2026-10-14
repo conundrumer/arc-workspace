@@ -156,8 +156,10 @@
     // The corner whose cells the probe reads, which the order starts from,
     // and toward which the fallback panel lies. No pair has two probed panels
     // or none, so every corner and axis stays open.
+    // @open
     .decl probe_corner(d: DiagDir)
     probe_corner(DIAG_TL). probe_corner(DIAG_TR). probe_corner(DIAG_BL). probe_corner(DIAG_BR).
+    // @open
     .decl order_axis(a: Axis) order_axis(AXIS_V). order_axis(AXIS_H).
 }
 

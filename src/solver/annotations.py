@@ -236,6 +236,15 @@ class StoreLine:
     relaxed: tuple[str, ...]
 
 
+@quotes("solver-file.md", "Params", "**`@open` directive.**")
+@dataclass(frozen=True)
+class OpenMark:
+    """`// @open` above a `.decl`."""
+
+    line: int
+    above: DeclId | None
+
+
 @quotes("solver-file.md", "Program",
         "**`@claim` directive.** At program scope or inside `Parse`, an "
         "instance of a component without an `@construction` mark has the "
@@ -374,6 +383,7 @@ class DirectiveWord(StrEnum):
     REASSIGNED = "reassigned"
     IGNORE = "ignore"
     WORKAROUND = "workaround"
+    OPEN = "open"
 
 
 NESTS_UNDER: Annotated[dict[DirectiveWord, tuple[DirectiveWord | ClaimKind, ...]],
@@ -467,6 +477,7 @@ class Annotations:
     stores: tuple[StoreLine, ...]
     claim_lines: tuple[ClaimLine, ...]
     ignores: tuple[IgnoreLine, ...]
+    opens: tuple[OpenMark, ...]
     markers: tuple[CaseMarker, ...]
     trailing: tuple[TrailingDirective, ...]
     workarounds: tuple[Workaround, ...]
@@ -817,6 +828,7 @@ def read(engine: Engine, program: Program
     stores: list[_OpenBranch] = []
     claim_lines: list[ClaimLine] = []
     ignores: list[IgnoreLine] = []
+    opens: list[OpenMark] = []
     markers: list[CaseMarker] = []
     trailing: list[TrailingDirective] = []
     workarounds: list[Workaround] = []
@@ -1052,6 +1064,14 @@ def read(engine: Engine, program: Program
             _ignore(tail, content, line, above, in_ignore_run[line],
                     ignores, problem, off)
             continue
+        if word == DirectiveWord.OPEN:
+            close()
+            if tail.strip():
+                off(line, content, DirectiveWord.OPEN,
+                    [OffPart(FormPart.TRAILING, tail.strip())])
+            else:
+                opens.append(OpenMark(line, above))
+            continue
         if word == DirectiveWord.WORKAROUND:
             value, parts = _colon(tail)
             if value is not None and not value.strip():
@@ -1107,6 +1127,7 @@ def read(engine: Engine, program: Program
             tuple(s.relaxed)) for s in stores),
         claim_lines=tuple(claim_lines),
         ignores=tuple(ignores),
+        opens=tuple(opens),
         markers=tuple(markers),
         trailing=tuple(trailing),
         workarounds=tuple(workarounds),

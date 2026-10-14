@@ -112,6 +112,7 @@
     // The reading order, from corner c along axis a, whose first key of a
     // shape forms the legend. No pair has two keys on one shape, so every
     // order stays open.
+    // @open
     .decl key_order(c: DiagDir, a: Axis)
     key_order(DIAG_TL, AXIS_V). key_order(DIAG_TL, AXIS_H). key_order(DIAG_TR, AXIS_V).
     key_order(DIAG_TR, AXIS_H). key_order(DIAG_BL, AXIS_V). key_order(DIAG_BL, AXIS_H).
@@ -120,6 +121,7 @@
     // --- $ScanOrder ---
     // The reading order of the legends, from corner c along axis a. No pair
     // has overlapping stamps, so every order stays open.
+    // @open
     .decl layer_order(c: DiagDir, a: Axis)
     layer_order(DIAG_TL, AXIS_V). layer_order(DIAG_TL, AXIS_H). layer_order(DIAG_TR, AXIS_V).
     layer_order(DIAG_TR, AXIS_H). layer_order(DIAG_BL, AXIS_V). layer_order(DIAG_BL, AXIS_H).

@@ -18,6 +18,7 @@
     .decl gravity(d: Dir) gravity(DIR_B).
 
     // The sense the water pours in. The pairs fix neither, so both stay open.
+    // @open
     .decl pour_sense(s: Sense)
     pour_sense(SENSE_CW).
     pour_sense(SENSE_CC).

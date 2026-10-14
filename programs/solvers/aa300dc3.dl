@@ -111,6 +111,7 @@
 
     // --- $TieDirection ---
     // The diagonal whose tied runs win a tie across the two diagonals.
+    // @open
     .decl tie_dir(da: DiagAxis) tie_dir(DAXIS_DG). tie_dir(DAXIS_AD).
 
     // --- $EdgeCorners ---
@@ -120,6 +121,7 @@
     // --- $AnchorFirst ---
     // The edges a reading starts from: the cell nearest that edge is the
     // first of the cells tied for an anchor corner.
+    // @open
     .decl pick_dir(d: Dir) pick_dir(DIR_T). pick_dir(DIR_B). pick_dir(DIR_L). pick_dir(DIR_R).
 }
 

@@ -129,6 +129,7 @@
     // --- $AxisPriority ---
     // The class a shape mirrored across both axes takes. No pair has such a
     // shape, so both axis classes stay open.
+    // @open
     .decl first_axis(s: Sym) first_axis(SYM_TB). first_axis(SYM_LR).
 
     .decl priority_color(c: Color)

@@ -127,6 +127,7 @@
     // --- $NearestBody ---
     // The order that breaks a tie among nearest body cells. The pairs hold
     // no tie, so every value stays open.
+    // @open
     .decl tie_order(c: DiagDir, a: Axis)
     tie_order(DIAG_TL, AXIS_V). tie_order(DIAG_TL, AXIS_H).
     tie_order(DIAG_TR, AXIS_V). tie_order(DIAG_TR, AXIS_H).
@@ -136,6 +137,7 @@
     // --- $ScanHead ---
     // The order whose first head cell casts. The pairs hold one head cell
     // each, so every value stays open.
+    // @open
     .decl head_order(c: DiagDir, a: Axis)
     head_order(DIAG_TL, AXIS_V). head_order(DIAG_TL, AXIS_H).
     head_order(DIAG_TR, AXIS_V). head_order(DIAG_TR, AXIS_H).

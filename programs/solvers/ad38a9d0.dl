@@ -61,6 +61,7 @@
 .comp Params {
     // The subgroup of D4 under which a piece's shape matches a key. The pairs
     // separate none of these values.
+    // @open
     .decl shape_sym(s: Sym)
     shape_sym(SYM_1). shape_sym(SYM_C4). shape_sym(SYM_D4).
 

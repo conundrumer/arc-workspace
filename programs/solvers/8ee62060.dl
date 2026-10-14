@@ -16,6 +16,7 @@
 
     // the elements that swap the two diagonals of the block-grid; the pairs
     // fix none
+    // @open
     .decl block_d4(d: D4)
     block_d4(D4_LR).
     block_d4(D4_TB).

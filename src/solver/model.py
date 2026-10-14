@@ -302,6 +302,9 @@ class Parameter:
                "`Determine` contains the determination as one relation per "
                "determined parameter, with the parameter's name and schema")]
     """A `Determine` relation mirrors it."""
+    open: Annotated[bool,
+        quotes("solver-file.md", "Params", "**`@open` directive.**")]
+    """An `@open` line stands above its declaration."""
     section: Section
 
 

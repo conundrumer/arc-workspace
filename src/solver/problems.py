@@ -32,8 +32,8 @@ class ProblemKind(StrEnum):
     UNKNOWN_IGNORE_CATEGORY = "unknown-ignore-category"
     """`@ignore: <text>` whose text is no `solver.category.Category`."""
     DIRECTIVE_UNPLACED = "directive-unplaced"
-    """A `@derive`, `@store` or `@ignore: derive|store` line that stands
-    above nothing it can stand on."""
+    """A `@derive`, `@store`, `@ignore: derive|store` or `@open` line that
+    stands above nothing it can stand on."""
     STORE_NAMES_NOTHING = "store-names-nothing"
     """`@store <rel>` above an `.init` whose instance has no such relation."""
     UNKNOWN_PROPOSER = "unknown-proposer"

@@ -51,6 +51,7 @@
 
     // --- $AxisFirst & $ThicknessTwo ---
     // The corner at which a strip across the first axis starts.
+    // @open
     .decl start_corner(d: DiagDir) start_corner(DIAG_TL). start_corner(DIAG_BL).
 }
 

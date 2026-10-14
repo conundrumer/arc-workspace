@@ -144,6 +144,7 @@
     // The order whose first block of a color the dot connects to: from corner
     // C, with axis A primary. The pairs hold one block of each color, so every
     // order is open.
+    // @open
     .decl block_order(c: DiagDir, a: Axis)
     block_order(DIAG_TL, AXIS_V). block_order(DIAG_TL, AXIS_H).
     block_order(DIAG_TR, AXIS_V). block_order(DIAG_TR, AXIS_H).
@@ -153,6 +154,7 @@
     // --- $ScanOrder ---
     // The order the dots draw in: from corner C, with axis A primary. The
     // pairs hold no clash, so every order is open.
+    // @open
     .decl scan_order(c: DiagDir, a: Axis)
     scan_order(DIAG_TL, AXIS_V). scan_order(DIAG_TL, AXIS_H).
     scan_order(DIAG_TR, AXIS_V). scan_order(DIAG_TR, AXIS_H).

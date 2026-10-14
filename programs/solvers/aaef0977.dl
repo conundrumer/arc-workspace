@@ -49,6 +49,7 @@
     // --- $LastSeed ---
     // The scan order whose last seed rings the grid. The pairs hold one seed
     // each, so every value stays open.
+    // @open
     .decl scan_order(d: DiagDir, a: Axis)
     scan_order(DIAG_TL, AXIS_V). scan_order(DIAG_TL, AXIS_H).
     scan_order(DIAG_TR, AXIS_V). scan_order(DIAG_TR, AXIS_H).

@@ -143,6 +143,7 @@
     // --- $TileParse ---
     // The corner a run is cut from. Every run in the pairs is a multiple of
     // params.piece_size long, so every corner stays open.
+    // @open
     .decl tile_origin(d: DiagDir)
     tile_origin(DIAG_TL). tile_origin(DIAG_TR). tile_origin(DIAG_BL). tile_origin(DIAG_BR).
 }

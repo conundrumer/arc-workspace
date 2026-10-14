@@ -126,6 +126,7 @@
     // --- $EmptyLineBands ---
     // The fewest lines that share a run width for that width to bound the
     // band. The pairs leave it open.
+    // @open
     .decl quorum(n: number)
     quorum(3). quorum(4). quorum(5). quorum(6). quorum(7). quorum(8).
 }

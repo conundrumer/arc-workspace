@@ -301,7 +301,8 @@ def read_params(program: Program, annotations: Annotations,
     (solver-file.md, under "Determination"). Every other relation is a
     parameter, with its stored facts or GRID calls, whether a `Determine`
     relation of its name mirrors it (solver-file.md, under "Determination");
-    each with the section it stands in (`section_at`)."""
+    each with the section it stands in (`section_at`) and whether an `@open`
+    line stands above it. An `@open` line above no parameter is unplaced."""
     comp = _component(program, PARAMS)
     if comp is None or comp.span is None:
         return Params(())
@@ -317,6 +318,7 @@ def read_params(program: Program, annotations: Annotations,
            and not u.head.relation.instances} - rigid
     out: list[Parameter] = []
     derived: list[DerivedRelation] = []
+    marked = {o.above for o in annotations.opens}
     for rel in program.relations:
         if rel.scope != scope or not own(rel.span):
             continue
@@ -358,8 +360,12 @@ def read_params(program: Program, annotations: Annotations,
                 rows.append(row)
             stored = tuple(rows)
         out.append(Parameter(rel.name, rel.id, rel.columns, stored,
-                             rel.name in determined,
+                             rel.name in determined, rel.id in marked,
                              _section(markers, rel.span.first, lists_case)))
+    params = {p.declaration for p in out}
+    for o in annotations.opens:
+        if o.above not in params:
+            _unplaced(problems, o.line, DirectiveWord.OPEN)
     return Params(tuple(out), tuple(derived))
 
 
@@ -528,6 +534,11 @@ def _instance_path(program: Program, decl: Instance
     return None if path is None else (*path, decl.name)
 
 
+def _unplaced(problems: list[Fault], line: int, word: DirectiveWord) -> None:
+    problems.append(Fault(ProblemKind.DIRECTIVE_UNPLACED, InSolver(line),
+                          Named(word)))
+
+
 def read_branches(program: Program, annotations: Annotations,
                   proposers: frozenset[str] | None,
                   problems: list[Fault]) -> tuple[Branch, ...]:
@@ -535,10 +546,6 @@ def read_branches(program: Program, annotations: Annotations,
     "Params" and "Program"), and `<param>=stored` at each `@derive` point
     (history 1103), in file order: a point's stored branch before its `@derive`
     branches. A second line of one branch's name holds no branch of its own."""
-    def unplaced(line: int, word: DirectiveWord) -> None:
-        problems.append(Fault(ProblemKind.DIRECTIVE_UNPLACED,
-                              InSolver(line), Named(word)))
-
     found: list[tuple[int, Branch]] = []
     stored_at: set[str] = set()
     derivations: set[tuple[str, str]] = set()
@@ -546,7 +553,7 @@ def read_branches(program: Program, annotations: Annotations,
     for d in annotations.derives:
         decl = None if d.above is None else _decl(program, d.above)
         if not isinstance(decl, RelationDecl) or decl.scope != PARAMS_SCOPE:
-            unplaced(d.line, DirectiveWord.DERIVE)
+            _unplaced(problems, d.line, DirectiveWord.DERIVE)
             continue
         if proposers is not None and d.proposer not in proposers:
             problems.append(Fault(ProblemKind.UNKNOWN_PROPOSER,
@@ -587,7 +594,7 @@ def read_branches(program: Program, annotations: Annotations,
             rel = RelationName(path, s.relation)
             spelled = RelationName((decl.name,), s.relation).text
         if rel is None:
-            unplaced(s.line, DirectiveWord.STORE)
+            _unplaced(problems, s.line, DirectiveWord.STORE)
             continue
         if rel not in stores:
             stores.add(rel)
@@ -599,7 +606,7 @@ def read_branches(program: Program, annotations: Annotations,
             continue
         targets = ignore_targets(program, i)
         if not targets:
-            unplaced(i.line, DirectiveWord.IGNORE)
+            _unplaced(problems, i.line, DirectiveWord.IGNORE)
         if i.proposer is None:
             continue
         if proposers is not None and i.proposer not in proposers:

@@ -108,6 +108,7 @@
     // --- $FirstWins ---
     // The scan order that picks among the figures of one anchor color: from a
     // corner, along an axis. The pairs fix no order, so every order is open.
+    // @open
     .decl scan(d: DiagDir, ax: Axis)
     scan(DIAG_TL, AXIS_V). scan(DIAG_TL, AXIS_H). scan(DIAG_TR, AXIS_V). scan(DIAG_TR, AXIS_H).
     scan(DIAG_BL, AXIS_V). scan(DIAG_BL, AXIS_H). scan(DIAG_BR, AXIS_V). scan(DIAG_BR, AXIS_H).

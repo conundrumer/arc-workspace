@@ -122,6 +122,7 @@
     // The side whose legend stamps first, so that the later stamp shows where
     // two stamps overlap. No pair has overlapping stamps, so both sides stay
     // open.
+    // @open
     .decl stamp_order(d: Dir)
     stamp_order(DIR_L). stamp_order(DIR_R).
 

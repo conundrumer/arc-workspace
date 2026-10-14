@@ -95,6 +95,7 @@
 
     // The role color a bar at both extremes takes. The pairs leave the
     // tallest role and the shortest role open.
+    // @open
     .decl role_priority(col: Color)
     role_priority(1).
     role_priority(2).

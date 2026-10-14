@@ -154,8 +154,8 @@ class FakeIndex:
 def annotations(**parts: object) -> Annotations:
     base: dict[str, object] = dict(
         header=(), reviews=(), representative=None, claims=(), witnesses=(),
-        derives=(), stores=(), claim_lines=(), ignores=(), markers=(),
-        trailing=(), workarounds=(), header_prose=(), task_id=None)
+        derives=(), stores=(), claim_lines=(), ignores=(), opens=(),
+        markers=(), trailing=(), workarounds=(), header_prose=(), task_id=None)
     base.update(parts)
     return Annotations(**base)  # type: ignore[arg-type]
 
