@@ -55,8 +55,7 @@ cycle_end(D) :- params.corner(C), diag_dirs(C, _, D, D2), params.sense(S), turn(
 
 // The turn boxes: the frame, and each box inset from it on every side.
 .decl turn_box(b: Box)
-turn_box(ZERO).
-turn_box(B) :- in(P, _), axis_elem(A), sub_extent(P, A, K), uniform_inset(K, B).
+turn_box(B) :- in(P, _), dir_elem(D), dist(P, D, K), uniform_inset(K, B).
 
 // The walk starts at the corner cell, on the frame.
 .init spiral = Propagation<Unit, Step>

@@ -290,38 +290,39 @@ size.item(O, P) :- obj_cell(O, P, _).
 grounded([S, E, Ob, Id]) :-
     obj_cell([S, E, Ob, Id], P, _), floor_side(S, D), neighbor(P, D, Q), dist(Q, D, 0).
 
-// Where an object starts its jump, as a move from where it is, and how many
-// cells it jumps from there.
-.decl lift(o: Obj, f: Floating, v: Offset, n: number)
-lift(O, F, ZERO, N) :- floating_choice(F), grounded(O), size.tally(O, N).
-
-// A cell an object lands on, with its color.
-.decl landing(k: Spot, id: Ident, col: Color)
-
-// --- $FromFloor, $Clamp ---
 // @claim jump
 .init box = Bbox<Obj>
 box.cell(O, P) :- obj_cell(O, P, _).
 
+// Where an object starts its jump, as the box it starts from, and how many
+// cells it jumps from there.
+.decl lift(o: Obj, f: Floating, b: Box, n: number)
+lift(O, F, B, N) :- floating_choice(F), grounded(O), size.tally(O, N), box.box(O, B).
+
+// A cell an object lands on, with its color.
+.decl landing(k: Spot, id: Ident, col: Color)
+
 // --- $FromPlace ---
-lift(O, $FromPlace(), ZERO, N) :- size.tally(O, N), !grounded(O).
+lift(O, $FromPlace(), B, N) :- size.tally(O, N), !grounded(O), box.box(O, B).
 
 // --- $FromFloor ---
-lift([S, E, Ob, Id], $FromFloor(), V, N) :-
+lift([S, E, Ob, Id], $FromFloor(), B0, N) :-
     size.tally([S, E, Ob, Id], N), !grounded([S, E, Ob, Id]),
     box.box([S, E, Ob, Id], B), floor_side(S, D), dist(B, D, M),
     obj_cell([S, E, Ob, Id], P, _), dist(P, D, M),                  // a cell nearest the floor
     in(Q0, _), dist(Q0, D, 0), axis_of(D, A), same_line(A, P, Q0),  // its line's floor cell
-    heading(S, H), neighbor(Q0, H, Q), relative(P, Q, V).           // and the cell next to it
+    heading(S, H), neighbor(Q0, H, Q), relative(P, Q, V),           // and the cell next to it
+    compose(B, V, B0).
 
 // --- $GroundedOnly ---
-lift(O, $GroundedOnly(), ZERO, 0) :- size.tally(O, _), !grounded(O).
+lift(O, $GroundedOnly(), B, 0) :- size.tally(O, _), !grounded(O), box.box(O, B).
 
 // --- $Lost, $Clamp ---
 // The move of a whole jump.
 .decl shift(o: Obj, f: Floating, v: Offset)
 shift([S, E, Ob, Id], F, V) :-
-    lift([S, E, Ob, Id], F, V0, N), heading(S, H), jump(V0, H, N, V).
+    lift([S, E, Ob, Id], F, B0, N), heading(S, H), jump(B0, H, N, B1),   // the box it ends at
+    box.box([S, E, Ob, Id], B), relative(B, B1, V).
 
 // The move an object makes.
 .decl drift(o: Obj, f: Floating, ov: Overflow, v: Offset)
@@ -357,7 +358,8 @@ cycle.succ(S, P, Q) :-
 cycle.step(S, N) :- size.tally([S, _, _, _], N).
 
 landing([S, E, Ob, F, $Wrap(), Q], Id, Col) :-
-    lift([S, E, Ob, Id], F, V, N), obj_cell([S, E, Ob, Id], P, Col), compose(P, V, P2),
+    lift([S, E, Ob, Id], F, B0, N), obj_cell([S, E, Ob, Id], P, Col),
+    box.box([S, E, Ob, Id], B), crop(P, B, P_rel), compose(B0, P_rel, P2),   // the cell in the start box
     cycle.walk(S, P2, N, Q).
 
 // --- shared ---

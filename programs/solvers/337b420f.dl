@@ -108,8 +108,7 @@ piece_cell(Dc, Id, P_frame) :-
 
 // A slide of K cells toward D; K = 0 stays put.
 .decl slide(dc: DecChoice, d: Dir, k: number)
-slide(Dc, D, 0) :- dec_choice(Dc), dir_elem(D).
-slide(Dc, D, K) :- axis_of(D, A), frame(Dc, P), sub_extent(P, A, K).
+slide(Dc, D, K) :- frame(Dc, P), dir_elem(D), dist(P, D, K).
 
 // The frame cells an arrangement covers: piece M slid, every other at rest.
 .decl covered(dc: DecChoice, m: Ident, d: Dir, k: number, id: Ident, p_frame: Position)

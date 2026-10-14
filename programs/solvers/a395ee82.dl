@@ -445,8 +445,7 @@ out(P, Col, Ch) :-
 
     // A candidate gap: none, or a length the grid holds.
     .decl gap(e: Example, g: number)
-    gap(E, 0) :- shape_cell(E, _, _).
-    gap(E, G) :- shape_cell(E, P, _), axis_elem(A), sub_extent(P, A, G).
+    gap(E, G) :- shape_cell(E, _, _), ex_in(E, P, _), dir_elem(D), dist(P, D, G).
 
     // A cell of the grid that a copy of the shape's cell p covers, with blocks
     // at gap g: q sits at p's place within its block on each axis.

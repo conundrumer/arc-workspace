@@ -93,9 +93,14 @@ ink(P_lat, Col) :- lat(P_grid, P_lat), in(P_grid, Col), !params.bg(Col).
 .init peel = Rim<Unit>
 peel.cell($U(), P_lat) :- lat(_, P_lat).
 
+// A lattice cell at a corner of its own ring.
+.decl corner(p_lat: Position)
+corner(P_lat) :-
+    peel.depth($U(), P_lat, K), uniform_inset(K, B), diag_dir_elem(Diag), box_corner(P_lat, B, Diag).
+
 // Distances from a lattice cell to the four corners of its own ring; the
 // lowest of them runs along that ring.
-// @claim corners sides
+// @claim sides
 .init reach = Extremes<Position>
 reach.cand(P_lat, J) :-
     peel.depth($U(), P_lat, K), uniform_inset(K, B), relative(B, P_lat, P_rel),
@@ -106,32 +111,34 @@ reach.cand(P_lat, J) :-
 .decl place(p_lat: Position, k: number, j: number)
 place(P_lat, K, J) :- peel.depth($U(), P_lat, K), reach.low(P_lat, J).
 
-// The places a ring has, each a distance from the ring's nearest corner.
-.decl ring_place(j: number)
-ring_place(J) :- place(_, _, J).
+// The places a ring has away from its corners, each a distance from the
+// ring's nearest corner.
+.decl side_place(j: number)
+side_place(J) :- place(P_lat, _, J), !corner(P_lat).
 
 // The rings whose ink the output draws.
 .decl source(src: Source, k: number)
 source($AnyInk(), K) :- ink(P_lat, _), place(P_lat, K, _).
-source($CornerInk(), K) :- ink(P_lat, _), place(P_lat, K, 0).
+source($CornerInk(), K) :- ink(P_lat, _), corner(P_lat), place(P_lat, K, _).
 
 // The ring a source ring's ink draws on.
 .decl seat(st: Seat, src: Source, k: number, k_out: number)
 
-// The place of a drawn ring that takes the ink at a place of the ring it
-// came from.
+// The side place of a drawn ring that takes the ink at a side place of the
+// ring it came from.
 // @ignore: store — the correspondence follows the ring's places, which
 // follow the lattice's extent; this task fixes the grid size, so the value
 // is constant here alone
 .decl copy(sp: Spread, j_out: number, j_src: number)
-copy(Sp, 0, 0) :- spread_choice(Sp).   // the corners pair off
 
 // A lattice cell of the drawing, and the ink it copies.
 .decl draw(ch: Choice, p_lat: Position, col: Color)
 draw([St, Src, Sp], P_lat, Col) :-
     seat(St, Src, K, K_out), place(P_lat, K_out, J_out),  // a place on the seated ring
     ink(Q_lat, Col), place(Q_lat, K, J_src),              // ink on the ring it draws
-    copy(Sp, J_out, J_src).
+    ( corner(P_lat), corner(Q_lat), spread_choice(Sp)     // the corners pair off
+    ; copy(Sp, J_out, J_src)
+    ).
 
 .decl drawn(ch: Choice, p_grid: Position)
 drawn(Ch, P_grid) :- lat(P_grid, P_lat), draw(Ch, P_lat, _).
@@ -154,9 +161,9 @@ seat($Nest(), Src, K, R) :- order.rank(Src, K, R).
 // --- $Full ---
 
 // The side ink reaches every place of the ring but its corners.
-copy($Full(), J_out, J_src) :- ring_place(J_out), J_out > 0, ring_place(J_src), J_src > 0.
+copy($Full(), J_out, J_src) :- side_place(J_out), side_place(J_src).
 
 // --- $Span ---
 
 // The side ink reaches the places no nearer a corner than the ink itself.
-copy($Span(), J_out, J_src) :- ring_place(J_out), ring_place(J_src), J_src > 0, J_out >= J_src.
+copy($Span(), J_out, J_src) :- side_place(J_out), side_place(J_src), J_out >= J_src.

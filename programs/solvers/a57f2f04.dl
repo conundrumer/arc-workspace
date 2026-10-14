@@ -157,8 +157,8 @@
     // first.
     .decl scan(k: Key, d: DiagDir, a: Axis)
 
-    // The tiles to lay: box b's cells moved by v.
-    .decl lay(k: Key, b: Box, v: Offset)
+    // The tiles to lay: box b's cells moved onto box b_laid.
+    .decl lay(k: Key, b: Box, b_laid: Box)
 
     // @claim tile-panel
     .init box = Bbox<Key>
@@ -183,20 +183,22 @@
     first_color.cell([K, D, A], Q) :-
         scan_order.first([K, D, A], P), color(K, P, Col), mark(K, Q), color(K, Q, Col).
 
-    // The translation that moves tile b into the panel box's corner d.
-    .decl corner_lay(k: Key, b: Box, d: DiagDir, v: Offset)
-    corner_lay(K, B, D, V) :-
+    // Tile b moved into the panel box's corner d.
+    .decl corner_lay(k: Key, b: Box, d: DiagDir, b_laid: Box)
+    corner_lay(K, B, D, B_laid) :-
         tile(K, B), box.box(K, B_p), relative(B_p, B, B_rel),   // the tile in the panel box's frame
         diag_dirs(D, _, D1, D2),
         dist(B_rel, D1, K1), jump_offset(D1, K1, V1),
-        dist(B_rel, D2, K2), jump_offset(D2, K2, V2), compose(V1, V2, V).
+        dist(B_rel, D2, K2), jump_offset(D2, K2, V2), compose(V1, V2, V),
+        compose(B, V, B_laid).
 
-    // The copies: the tile's cells moved by v, then repeated by the tile's
+    // The copies: the tile's cells moved onto the laid box, then repeated by the tile's
     // extent along both axes inside the panel's box. A cell q of the box
     // takes the tile cell at q's place within its copy on each axis.
-    .decl copy(k: Key, b: Box, v: Offset, p: Position, col: Color)
-    copy(K, B, V, Q, Col) :-
-        lay(K, B, V), color(K, Q, _), relative(V, Q, Q_v),        // q, moved back by v
+    .decl copy(k: Key, b: Box, b_laid: Box, p: Position, col: Color)
+    copy(K, B, B_laid, Q, Col) :-
+        lay(K, B, B_laid), relative(B, B_laid, V),                // the tile's move
+        color(K, Q, _), relative(V, Q, Q_v),                      // q, moved back by it
         diag_dirs(_, A, D1, D2), perp(A, A2), opposite(D1, O1), opposite(D2, O2),
         relative(B, Q_v, Q_rel), dist(Q_rel, O1, T1), dist(Q_rel, O2, T2),
         box_extent(B, Q, A, N1), box_extent(B, Q, A2, N2),
@@ -339,11 +341,11 @@ parse.tile(Pn, B) :-
 broken(Ch) :- gap([Ch, _], _, K, K).
 
 // --- $TileLattice ---
-parse.lay([Ch, X], B, ZERO) :- parse.tile([Ch, X], B), Ch = [_, _, _, _, _, $TileLattice(), _].
+parse.lay([Ch, X], B, B) :- parse.tile([Ch, X], B), Ch = [_, _, _, _, _, $TileLattice(), _].
 
 // --- $CornerAnchor ---
-parse.lay([Ch, X], B, V) :-
-    parse.corner_lay([Ch, X], B, D, V), Ch = [_, _, _, _, _, $CornerAnchor(), _],
+parse.lay([Ch, X], B, B_laid) :-
+    parse.corner_lay([Ch, X], B, D, B_laid), Ch = [_, _, _, _, _, $CornerAnchor(), _],
     params.anchor(D).
 
 // --- $PanelCells ---
@@ -366,23 +368,23 @@ fill([Ch, X], P) :-
     parse.tile(Pn, B) :- parse.marks_box.box(Pn, B).
     parse.scan(Pn, D, A) :- parse.box.box(Pn, _), diag_dir_elem(D), axis_elem(A).
 
-    parse.lay(Pn, B, V) :- parse.corner_lay(Pn, B, _, V).
-    parse.lay(Pn, B, ZERO) :- parse.first_color.box([Pn, _, _], B).
+    parse.lay(Pn, B, B_laid) :- parse.corner_lay(Pn, B, _, B_laid).
+    parse.lay(Pn, B, B) :- parse.first_color.box([Pn, _, _], B).
 
     // A laid tile whose copies a train output contradicts.
-    .decl wrong(pn: ExPanel, b: Box, v: Offset)
-    wrong([E, X], B, V) :-
-        parse.copy([E, X], B, V, P, Col), parse.panel([E, X], P), ex_out(E, P, Col2), Col != Col2.
+    .decl wrong(pn: ExPanel, b: Box, b_laid: Box)
+    wrong([E, X], B, B_laid) :-
+        parse.copy([E, X], B, B_laid, P, Col), parse.panel([E, X], P), ex_out(E, P, Col2), Col != Col2.
 
     .decl anchor(d: DiagDir)
     anchor(D) :- diag_dir_elem(D), !contradicted_anchor(D).
 
     .decl contradicted_anchor(d: DiagDir)
-    contradicted_anchor(D) :- parse.corner_lay(Pn, B, D, V), wrong(Pn, B, V).
+    contradicted_anchor(D) :- parse.corner_lay(Pn, B, D, B_laid), wrong(Pn, B, B_laid).
 
     .decl scan(d: DiagDir, a: Axis)
     scan(D, A) :- diag_dir_elem(D), axis_elem(A), !contradicted_scan(D, A).
 
     .decl contradicted_scan(d: DiagDir, a: Axis)
-    contradicted_scan(D, A) :- parse.first_color.box([Pn, D, A], B), wrong(Pn, B, ZERO).
+    contradicted_scan(D, A) :- parse.first_color.box([Pn, D, A], B), wrong(Pn, B, B).
 }

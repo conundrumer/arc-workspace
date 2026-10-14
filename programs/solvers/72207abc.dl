@@ -33,8 +33,7 @@ seed_next(P1, P2) :- order.last($U(), P1), order.first($U(), P2).
 
 // The jumps a walk can take: none, or some cells toward the grow edge.
 .decl jump_size(delta: Offset)
-jump_size(ZERO).
-jump_size(V) :- in(P, _), params.grow(D), axis_of(D, A), sub_extent(P, A, K), jump_offset(D, K, V).
+jump_size(V) :- in(P, _), params.grow(D), dist(P, D, K), jump_offset(D, K, V).
 
 // The first seed arrives with no jump; each step lengthens the jump by one
 // cell, and the walk stops where it leaves the grid.

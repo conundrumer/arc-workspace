@@ -280,8 +280,9 @@ pull([S, L, C, Ld, G, B, U], P, Q, D, K) :-
     nearest.low([[S, L, C, Ld, G, B, U], Q], P, K), in_line(S, L, P, Q, D, K).
 
 // --- $PassOver ---
-obstacle([S, L, C, Ld, G, $PassOver(), U], P, Q, P, 0) :-
-    pull([S, L, C, Ld, G, $PassOver(), U], P, Q, _, _).
+// P itself stops Q, at K = 0 on P's own ray.
+obstacle([S, L, C, Ld, G, $PassOver(), U], P, Q, P, K) :-
+    pull([S, L, C, Ld, G, $PassOver(), U], P, Q, D, _), line.ray(L, P, D, K, P).
 
 // --- $SlideBlocked ---
 // Non-background cell R lies between P and Q, K cells from P, P included.

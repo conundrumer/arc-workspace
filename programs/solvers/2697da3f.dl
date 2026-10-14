@@ -33,21 +33,16 @@ fig.cell($U(), P) :- ink(P, _).
 .decl fig_extent(a: Axis, n: number)
 fig_extent(A, N) :- fig.cell($U(), P), fig.box($U(), B), box_extent(B, P, A, N).
 
-.init arm_depth = DirPack<Unit>
-arm_depth.edge($U(), D2, K) :-
-    params.arm(D), axis_of(D, A), fig_extent(A, Depth),            // depth along the arm axis
-    dir_elem(D2),                                                  // each edge of the canvas
-    ( D2 = D, K = 0                                                // flush against the arm's edge
-    ; D2 != D, K = Depth                                           // one arm deep elsewhere
-    ).
-
 // How far the canvas reaches past the figure's box on each side.
 .decl arm_margin(b: Box)
 arm_margin(B) :-
     params.arm(D), opposite(D, D_far),                   // the arm's edge, and the one across
-    axis_of(D, A), perp(A, A2), fig_extent(A2, Span),    // span across the arm axis
+    axis_of(D, A), fig_extent(A, Depth),                 // depth along the arm axis
+    uniform_inset(Depth, Around),                        // one arm deep on every side
+    edge_outset(D, Depth, Back), compose(Around, Back, Depths),  // flush against the arm's edge
+    perp(A, A2), fig_extent(A2, Span),                   // span across the arm axis
     edge_inset(D_far, Span, Blank),                      // the blank square
-    arm_depth.box($U(), Depths), compose(Depths, Blank, B).
+    compose(Depths, Blank, B).
 
 .decl placed(p: Position, col: Color)
 placed(P_canvas, Col) :-

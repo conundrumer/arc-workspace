@@ -10,6 +10,13 @@
 .decl out(p: Position, col: Color)
 
 .comp Params {
+    .init helpers = ParamsHelpers
+
+    .decl out_dim(a: Axis, n: number)
+    out_dim(AXIS_V, 1). out_dim(AXIS_H, 1).
+
+    .decl out_pos(p: Position)
+    out_pos(P) :- out_dim(AXIS_V, V), out_dim(AXIS_H, H), helpers.frame_pos([V, H], P).
 }
 
 .init params = Params
@@ -17,4 +24,4 @@
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, P_across], Col) :- in(P, Col), axis_elem(A), split(P, A, _, P_across).
 
-out(ZERO, Col) :- line_color.value(_, Col).
+out(P, Col) :- line_color.value(_, Col), params.out_pos(P).

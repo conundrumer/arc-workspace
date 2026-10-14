@@ -15,8 +15,16 @@
 .decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
+    .init helpers = ParamsHelpers
+
     .decl bg(c: Color)
     bg(0).
+
+    .decl out_dim(a: Axis, n: number)
+    out_dim(AXIS_V, 1). out_dim(AXIS_H, 1).
+
+    .decl out_pos(p: Position)
+    out_pos(P) :- out_dim(AXIS_V, V), out_dim(AXIS_H, H), helpers.frame_pos([V, H], P).
 
     // --- $Box ---
     .decl dim(k: number)
@@ -40,11 +48,12 @@ outline.cell($U(), P) :- box.cell($U(), P).
 occ.cell(Col, P, $U())  :- in(P, Col), ink(Col).
 occ.shape(Col, S, $U()) :- ink(Col), outline.rim($U(), S).
 
-out(ZERO, Col_hole, $Box()) :-
+out(P_grid_out, Col_hole, $Box()) :-
     occ.occurrence(Col, M),                    // one ink's box
     box.cell($U(), P_ctr), centered(P_ctr),    // the frame's center cell
-    compose(M, P_ctr, P_grid),                 // its hole on the grid
-    in(P_grid, Col_hole), Col_hole != Col.     // the boxed cell's color
+    compose(M, P_ctr, P_grid_in),              // its hole on the grid
+    in(P_grid_in, Col_hole), Col_hole != Col,  // the boxed cell's color
+    params.out_pos(P_grid_out).
 
 // --- $Ring ---
 // Some surrounding cell of p does not carry ink a.
@@ -54,10 +63,11 @@ defect(P, A) :-
     dir8_elem(D), neighbor(P, D, P2),    // a surrounding cell
     !in(P2, A).                          // not that ink there
 
-out(ZERO, Col, $Ring()) :-
-    in(P, Col),                              // candidate cell
+out(P_grid_out, Col, $Ring()) :-
+    in(P_grid_in, Col),                      // candidate cell
     ink(A), A != Col,                        // an ink not its own
-    !defect(P, A).                           // surround solid in it
+    !defect(P_grid_in, A),                   // surround solid in it
+    params.out_pos(P_grid_out).
 
 // --- $Full ---
 .decl inked(p: Position)
@@ -70,5 +80,6 @@ gap(P) :-
     dir8_elem(D), neighbor(P, D, P2),    // a surrounding cell
     !inked(P2).                          // no ink there
 
-out(ZERO, Col, $Full()) :-
-    in(P, Col), !gap(P).                     // cell with surround all ink
+out(P_grid_out, Col, $Full()) :-
+    in(P_grid_in, Col), !gap(P_grid_in),     // cell with surround all ink
+    params.out_pos(P_grid_out).

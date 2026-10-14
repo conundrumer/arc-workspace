@@ -261,18 +261,21 @@ heading(H, W, K, D, N) :-
 .decl travels(h: Heading, w: Corner, k: Piece, a: Axis)
 travels(H, W, K, A) :- heading(H, W, K, D, _), axis_of(D, A).
 
-// The block's move along axis a.
-// @ignore: common-subexpr — the move of every block under each reading, which
-//  `stuck` restricts to the same blocks
-.decl shift(h: Heading, w: Corner, k: Piece, a: Axis, v: Offset)
-shift(H, W, K, A, V) :- heading(H, W, K, D, N), axis_of(D, A), jump_offset(D, N, V).
-shift(H, W, K, A, ZERO) :-
-    piece(K, _), heading_choice(H), corner_choice(W), axis_elem(A), !travels(H, W, K, A).
+// The block's place along axis a: the place it travels to on an axis it
+// travels along, and its own place on the other.
+.decl dest_part(h: Heading, w: Corner, k: Piece, a: Axis, b: Box)
+dest_part(H, W, K, A, B_axis) :-
+    heading(H, W, K, D, N), axis_of(D, A),
+    box.box(K, B), jump(B, D, N, B2), split(B2, A, B_axis, _).
+dest_part(H, W, K, A, B_axis) :-
+    box.box(K, B), heading_choice(H), corner_choice(W), axis_elem(A), !travels(H, W, K, A),
+    split(B, A, B_axis, _).
 
-// The block's move.
+// The block's move: from its box to its place on both axes.
 .decl move(h: Heading, w: Corner, k: Piece, v: Offset)
 move(H, W, K, V) :-
-    shift(H, W, K, A, V1), perp(A, A2), shift(H, W, K, A2, V2), compose(V1, V2, V).
+    dest_part(H, W, K, A, B1), perp(A, A2), dest_part(H, W, K, A2, B2), compose(B1, B2, B_dest),
+    box.box(K, B), relative(B, B_dest, V).
 
 // A cell where a block cell lands, in that cell's color.
 .decl landing(l: Landing, h: Heading, w: Corner, k: Piece, q: Position, col: Color)

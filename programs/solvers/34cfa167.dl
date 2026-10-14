@@ -60,17 +60,15 @@ template(Id) :- from_corner.high($U(), Id, _).
 .decl standalone(id: Ident)
 standalone(Id) :- from_corner.low($U(), Id, _).
 
-// The shift carrying the template block onto the standalone one.
-.decl shift(v: Offset)
-shift(V) :-
-    template(T), bbox.box(T, B),
-    standalone(S), bbox.box(S, B2), relative(B, B2, V).
+// The offset of each block from the template block: none for the template
+// itself, and the shift onto the standalone block for the other.
+.decl block_offset(id: Ident, v: Offset)
+block_offset(Id, V) :- template(T), bbox.box(T, B), bbox.box(Id, B2), relative(B, B2, V).
 
-// The shift's axis parts, each beside no shift at all: the four corner
-// blocks are the template block under every combination of the two.
+// The offsets' axis parts: the four corner blocks are the template block
+// under every combination of the two.
 .decl axis_offset(a: Axis, v: Offset)
-axis_offset(A, ZERO) :- axis_elem(A).
-axis_offset(A, V_axis) :- shift(V), axis_elem(A), split(V, A, V_axis, _).
+axis_offset(A, V_axis) :- block_offset(_, V), axis_elem(A), split(V, A, V_axis, _).
 
 .decl corner_delta(v: Offset)
 corner_delta(V) :- axis_offset(A, V1), perp(A, A2), axis_offset(A2, V2), compose(V1, V2, V).
@@ -125,8 +123,12 @@ rail(D, Q, Col, Ch) :-
 // The two rails on axis D: the template's side, and the standalone's side
 // across from it. Each faces its plain line outward.
 .decl side(d: Dir, v: Offset, d_out: Dir)
-side(D, ZERO, D_out) :- arm_perp(D, D2), opposite(D2, D_out).
-side(D, V_axis, D2) :- arm_perp(D, D2), axis_of(D2, A2), shift(V), split(V, A2, V_axis, _).
+side(D, V_axis, D_out) :-
+    arm_perp(D, D2), axis_of(D2, A2),
+    block_offset(Id, V), split(V, A2, V_axis, _),    // the block's rail
+    ( template(Id), opposite(D2, D_out)              // faces away from the arms' corner
+    ; standalone(Id), D_out = D2                     // faces toward it
+    ).
 
 .decl paint(p: Position, col: Color, ch: Choice)
 

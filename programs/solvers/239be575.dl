@@ -29,8 +29,16 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
+    .init helpers = ParamsHelpers
+
     .decl mark(c: Color) mark(2).
     .decl link(c: Color) link(8).
+
+    .decl out_dim(a: Axis, n: number)
+    out_dim(AXIS_V, 1). out_dim(AXIS_H, 1).
+
+    .decl out_pos(p: Position)
+    out_pos(P) :- out_dim(AXIS_V, V), out_dim(AXIS_H, H), helpers.frame_pos([V, H], P).
 
     // --- $Wire ---
     .decl bg(c: Color) bg(0).
@@ -74,9 +82,9 @@ diag.node($U(), P) :- node(P).
 apart($Diag()) :- mark_cell(P), mark_cell(Q), !diag.conn($U(), P, Q).
 
 // --- $Wire ---
-out(ZERO, Col, [A, $Wire()]) :- joined(A), params.link(Col).
-out(ZERO, Col, [A, $Wire()]) :- apart(A),  params.bg(Col).
+out(P, Col, [A, $Wire()]) :- joined(A), params.link(Col), params.out_pos(P).
+out(P, Col, [A, $Wire()]) :- apart(A),  params.bg(Col), params.out_pos(P).
 
 // --- $Table ---
-out(ZERO, Col, [A, $Table()]) :- joined(A), params.join_paint(Col).
-out(ZERO, Col, [A, $Table()]) :- apart(A),  params.apart_paint(Col).
+out(P, Col, [A, $Table()]) :- joined(A), params.join_paint(Col), params.out_pos(P).
+out(P, Col, [A, $Table()]) :- apart(A),  params.apart_paint(Col), params.out_pos(P).

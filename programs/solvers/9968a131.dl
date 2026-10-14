@@ -59,8 +59,12 @@ anchor_line(Line) :- lines.first($U(), Line).
 .decl shift(v: Offset)
 shift(V) :- params.shift_dir(D), params.shift_dist(K), jump_offset(D, K, V).
 
-// Each line's move: none, or the shift.
-.decl move(ch: Choice, p_line: Position, v: Offset)
+// A line, and the line its cells reach under the shift.
+.decl shifted(p_line: Position, p_line2: Position)
+shifted(Line, Line2) :- cell_split(_, _, Line, _), shift(V), compose(Line, V, Line2).
+
+// Each line's place in the output: where it is, or shifted.
+.decl dest(ch: Choice, p_line: Position, p_dest: Position)
 
 // --- $Match ---
 // A line whose cells differ from the anchor line's.
@@ -70,8 +74,8 @@ differs(Line) :-
     anchor_line(L_anc), cell_split(_, Col2, L_anc, Across),   // the anchor's cell across from it
     Col != Col2.
 
-move($Match(), Line, V) :- differs(Line), shift(V).
-move($Match(), Line, ZERO) :- inked_line(Line), !differs(Line).
+dest($Match(), Line, Line2) :- differs(Line), shifted(Line, Line2).
+dest($Match(), Line, Line) :- inked_line(Line), !differs(Line).
 
 // --- $Sequence, $Stripes ---
 
@@ -83,24 +87,21 @@ steps($Stripes(), L, N) :-
     anchor_line(L_anc), cell_split(_, _, L, _),
     relative(L_anc, L, V), anchor_dir(D), dist(V, D, N), N >= 0.   // from the anchor line on
 
-// The two moves a line makes.
-.decl line_move(v: Offset)
-line_move(ZERO).
-line_move(V) :- shift(V).
+// The alternation: the anchor line stays where it is, and each step from it
+// swaps a line between its own place and its shifted place.
+.init alternation = CycleWalk<Position, Position>
+alternation.succ(L, L, L2) :- shifted(L, L2).
+alternation.succ(L, L2, L) :- shifted(L, L2).
+alternation.step(L, N) :- steps(_, L, N).
 
-// The alternation: the anchor line makes no move, and each step from it swaps
-// the move.
-.init alternation = CycleWalk<Unit, Offset>
-alternation.succ($U(), V, V2) :- line_move(V), line_move(V2), V != V2.   // the other move
-alternation.step($U(), N) :- steps(_, _, N).
-
-move(Ch, L, V) :- steps(Ch, L, N), alternation.walk($U(), ZERO, N, V).
+dest(Ch, L, L2) :- steps(Ch, L, N), alternation.walk(L, L, N, L2).
 
 // --- the shift ---
 
 .decl placed(ch: Choice, p: Position, col: Color)
 placed(Ch, P_out, Col) :-
-    ink(P, Col), cell_split(P, _, Line, _), move(Ch, Line, V), compose(P, V, P_out).
+    ink(P, Col), cell_split(P, _, Line, _),
+    dest(Ch, Line, Line2), relative(Line, Line2, V), compose(P, V, P_out).   // the line's move
 
 out(P, Col, Ch) :- placed(Ch, P, Col).
 out(P, Col, Ch) :- in(P, _), impl_choice(Ch), params.bg(Col), !placed(Ch, P, _).

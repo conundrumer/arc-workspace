@@ -38,9 +38,8 @@ out(P, Col) :-
     .decl cand(a: Axis, v: Offset)
     cand(A, V) :-
         ex_out(_, P, _),
-        axis_of(D, A), sub_extent(P, A, K),   // each axis, each distance
+        axis_of(D, A), dist(P, D, K),   // each axis, each distance, the center line at 0
         jump_offset(D, K, V).
-    cand(A, ZERO) :- axis_elem(A).      // the grid center line itself
 
     // Where a candidate's mirror carries each cell.
     .decl mirrored(e: Example, a: Axis, v: Offset, p: Position, q: Position)

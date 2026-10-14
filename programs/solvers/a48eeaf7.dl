@@ -282,13 +282,18 @@ lines.dir([S, St], D) :- aim(S, _, D), stop_choice(St).
 lines.cell([S, St], P) :- bbox.box(S, _), stop_choice(St), in(P, _).
 lines.mark([S, St], M) :- aim(S, M, _), stop_choice(St).
 
-// Each walk starts at its marker.
-walk_cell(S, $Line(St), M, M, 0) :- bbox.box(S, _), S = [_, R], marker(R, M, _), stop_choice(St).
+// A walk starts at its marker on the marker's line. A marker with no line
+// stays where it is.
+walk_cell(S, $Line(St), M, M, 0) :-
+    bbox.box(S, _), S = [_, R], marker(R, M, _), !aim(S, M, _), stop_choice(St).
 
 // --- $Touch ---
 // The line goes on through the first cell that touches the block, and no
 // further.
 lines.blocked([S, $Touch()], P) :- touch(S, P).
+
+// A marker that touches the block at the start stays where it is.
+walk_cell(S, $Line($Touch()), M, M, 0) :- aim(S, M, _), touch(S, M).
 
 walk_cell(S, $Line($Touch()), M, P, K) :-
     aim(S, M, D), !touch(S, M),

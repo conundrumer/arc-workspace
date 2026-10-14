@@ -29,6 +29,14 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
+    .init helpers = ParamsHelpers
+
+    .decl out_dim(a: Axis, n: number)
+    out_dim(AXIS_V, 1). out_dim(AXIS_H, 1).
+
+    .decl out_pos(p: Position)
+    out_pos(P) :- out_dim(AXIS_V, V), out_dim(AXIS_H, H), helpers.frame_pos([V, H], P).
+
     // --- $Center ---
     .decl center(c: Color) center(4).
 
@@ -82,10 +90,11 @@ plus_count.item(Dt, Col, P) :- plus(Dt, P, Col).
 // winning arm color has exactly two pluses in every pair.
 
 // --- $Mode ---
-out(ZERO, Col, [Dt, $Mode()]) :- plus_count.mode(Dt, Col).
+out(P, Col, [Dt, $Mode()]) :- plus_count.mode(Dt, Col), params.out_pos(P).
 
 // --- $Count ---
-out(ZERO, Col, [Dt, $Count()]) :- plus_count.tally(Dt, Col, N), params.target(N).
+out(P, Col, [Dt, $Count()]) :-
+    plus_count.tally(Dt, Col, N), params.target(N), params.out_pos(P).
 
 .comp Determine {
     .decl center_at(e: Example, p: Position)
@@ -127,4 +136,7 @@ out(ZERO, Col, [Dt, $Count()]) :- plus_count.tally(Dt, Col, N), params.target(N)
 
     .decl target(n: number)
     target(N) :- win_count.tally(_, N).
+
+    .decl out_dim(a: Axis, n: number)
+    out_dim(A, N) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, N).
 }

@@ -51,12 +51,8 @@
 
 .type Choice = [rings: Rings, unmarked: Unmarked, shared: Shared]
 
-// A reading of the rings: the geometry, and the box the rings are measured
-// from, the center cell for CenterRings or the frame for DepthRings.
-.type Reading = [g: Rings, o: Box]
-
-// A ring under one reading.
-.type Ring = [r: Reading, k: number]
+// A ring under one geometry.
+.type Ring = [g: Rings, k: number]
 
 // A ring under one scan order.
 .type Scan = [ring: Ring, c: DiagDir, a: Axis]
@@ -103,48 +99,43 @@ shared_choice($OneMark()). shared_choice($ScanLast()).
 .decl mark(p: Position, col: Color)
 mark(P, Col) :- in(P, Col), !params.bg(Col).
 
-.decl reading(r: Reading)
-.decl ring(r: Reading, p: Position, k: number)
+.decl ring(g: Rings, p: Position, k: number)
 
 // --- $CenterRings ---
-reading([$CenterRings(), C]) :- in(C, _), centered(C).
 // P lies on ring K about center O: on the outline of the square that reaches
 // K cells past O on every side.
-ring(R, P, K) :-
-    reading(R), R = [$CenterRings(), O],
+ring($CenterRings(), P, K) :-
+    in(O, _), centered(O),
     in(P, _), relative(O, P, P_rel), dir_elem(D), dist(P_rel, D, K),
     uniform_outset(K, B_out), compose(O, B_out, B), box_edge(P, B, _).
 
 // --- $DepthRings ---
-reading([$DepthRings(), ZERO]).
-
 // P lies on ring K: on the outline of the frame inset by K on every side.
-ring(R, P, K) :-
-    reading(R), R = [$DepthRings(), _],
+ring($DepthRings(), P, K) :-
     in(P, _), dir_elem(D), dist(P, D, K), uniform_inset(K, B), box_edge(P, B, _).
 
 // --- shared ---
-.decl mark_ring(r: Reading, k: number, p: Position, col: Color)
-mark_ring(R, K, P, Col) :- mark(P, Col), ring(R, P, K).
+.decl mark_ring(g: Rings, k: number, p: Position, col: Color)
+mark_ring(G, K, P, Col) :- mark(P, Col), ring(G, P, K).
 
-.decl marked(r: Reading, k: number)
-marked(R, K) :- mark_ring(R, K, _, _).
+.decl marked(g: Rings, k: number)
+marked(G, K) :- mark_ring(G, K, _, _).
 
 // The color of ring K under shared reading S.
-.decl ring_color(r: Reading, s: Shared, k: number, col: Color)
+.decl ring_color(g: Rings, s: Shared, k: number, col: Color)
 
 // --- $OneMark ---
-.decl crowded(r: Reading, k: number)
-crowded(R, K) :- mark_ring(R, K, P, _), mark_ring(R, K, Q, _), P != Q.
+.decl crowded(g: Rings, k: number)
+crowded(G, K) :- mark_ring(G, K, P, _), mark_ring(G, K, Q, _), P != Q.
 
-ring_color(R, $OneMark(), K, Col) :- mark_ring(R, K, _, Col), !crowded(R, K).
+ring_color(G, $OneMark(), K, Col) :- mark_ring(G, K, _, Col), !crowded(G, K).
 
 // --- $ScanLast ---
 // @claim fill-ring
 // @ignore rank: store — the program reads only the last mark of the scan, not the ranks
 .init scan = LexOrder<Scan>
-scan.cell([[R, K], C, A], P) :-
-    mark_ring(R, K, P, _), params.scan_order(C, A).
+scan.cell([[G, K], C, A], P) :-
+    mark_ring(G, K, P, _), params.scan_order(C, A).
 scan.corner([Ri, C, A], C) :- scan.cell([Ri, C, A], _).
 scan.axis([Ri, C, A], A) :- scan.cell([Ri, C, A], _).
 
@@ -153,64 +144,62 @@ scan.axis([Ri, C, A], A) :- scan.cell([Ri, C, A], _).
 .init last = Unanimous<Ring, Color>
 last.item(Ri, Col) :- scan.last([Ri, _, _], P), mark(P, Col).
 
-ring_color(R, $ScanLast(), K, Col) :- last.value([R, K], Col).
+ring_color(G, $ScanLast(), K, Col) :- last.value([G, K], Col).
 
 // --- shared ---
-// The output under one reading, and the cells its frame holds.
-.decl draw(r: Reading, u: Unmarked, s: Shared, p: Position, col: Color)
-.decl frame(r: Reading, u: Unmarked, p: Position)
+// The output under one geometry, and the cells its frame holds.
+.decl draw(g: Rings, u: Unmarked, s: Shared, p: Position, col: Color)
+.decl frame(g: Rings, u: Unmarked, p: Position)
 
 // --- $NeedsMark ---
-draw(R, $NeedsMark(), S, P, Col) :- ring(R, P, K), ring_color(R, S, K, Col).
-frame(R, $NeedsMark(), P) :- ring(R, P, _).
+draw(G, $NeedsMark(), S, P, Col) :- ring(G, P, K), ring_color(G, S, K, Col).
+frame(G, $NeedsMark(), P) :- ring(G, P, _).
 
 // --- $EmptyBg ---
-draw(R, $EmptyBg(), S, P, Col) :-
-    ring(R, P, K), shared_choice(S),
-    ( ring_color(R, S, K, Col)
-    ; !marked(R, K), params.bg(Col) ).
-frame(R, $EmptyBg(), P) :- ring(R, P, _).
+draw(G, $EmptyBg(), S, P, Col) :-
+    ring(G, P, K), shared_choice(S),
+    ( ring_color(G, S, K, Col)
+    ; !marked(G, K), params.bg(Col) ).
+frame(G, $EmptyBg(), P) :- ring(G, P, _).
 
 // --- $RankRings ---
 // The marked rings, outermost first.
 // @ignore last: store — no case that stores it fits the pairs along with the
 //  case that differs from it by that branch alone, so no grid gives a witness
 // @claim fill-ring
-.init nest = Order<Reading, number>
-nest.elem(R, K) :- marked(R, K).
+.init nest = Order<Rings, number>
+nest.elem(G, K) :- marked(G, K).
 
 // --- $CenterRings & $RankRings ---
 // farther from the center lies outside
-nest.before(R, K, K2) :- marked(R, K), marked(R, K2), R = [$CenterRings(), _], K > K2.
+nest.before($CenterRings(), K, K2) :- marked($CenterRings(), K), marked($CenterRings(), K2), K > K2.
 
 // --- $DepthRings & $RankRings ---
 // nearer the edge lies outside
-nest.before(R, K, K2) :- marked(R, K), marked(R, K2), R = [$DepthRings(), _], K < K2.
+nest.before($DepthRings(), K, K2) :- marked($DepthRings(), K), marked($DepthRings(), K2), K < K2.
 
 // --- $RankRings ---
 // The output square: its center lies as deep as the innermost marked ring's
 // rank, and its cells lie up to that many cells from the center on each axis.
-.decl canvas(r: Reading, p: Position)
-canvas(R, P) :-
-    nest.last(R, K), nest.rank(R, K, N), uniform_inset(N, C),  // the center
-    nest.rank(R, _, K1), nest.rank(R, _, K2),
+.decl canvas(g: Rings, p: Position)
+canvas(G, P) :-
+    nest.last(G, K), nest.rank(G, K, N), uniform_inset(N, C),  // the center
+    nest.rank(G, _, K1), nest.rank(G, _, K2),
     axis_of(D1, A), perp(A, A2), axis_of(D2, A2),
     jump(C, D1, K1, Q), jump(Q, D2, K2, P).
 
-draw(R, $RankRings(), S, P, Col) :-
-    canvas(R, P),
-    nest.rank(R, K, J), uniform_inset(J, B), box_edge(P, B, _),  // on the Jth ring from outside
-    ring_color(R, S, K, Col).
-frame(R, $RankRings(), P) :- canvas(R, P).
+draw(G, $RankRings(), S, P, Col) :-
+    canvas(G, P),
+    nest.rank(G, K, J), uniform_inset(J, B), box_edge(P, B, _),  // on the Jth ring from outside
+    ring_color(G, S, K, Col).
+frame(G, $RankRings(), P) :- canvas(G, P).
 
 // --- shared ---
-// Some reading of G leaves a cell of its frame without a color.
+// The geometry leaves a cell of its frame without a color.
 .decl blank(g: Rings, u: Unmarked, s: Shared)
-blank(G, U, S) :- frame([G, O], U, P), shared_choice(S), !draw([G, O], U, S, P, _).
+blank(G, U, S) :- frame(G, U, P), shared_choice(S), !draw(G, U, S, P, _).
 
-// The readings of one geometry join: a cell they color differently gets
-// both colors, and a frame size they disagree on gives two frames.
-out(P, Col, [G, U, S]) :- impl_choice([G, U, S]), draw([G, _], U, S, P, Col), !blank(G, U, S).
+out(P, Col, [G, U, S]) :- impl_choice([G, U, S]), draw(G, U, S, P, Col), !blank(G, U, S).
 
 .comp Determine {
     // The marks of each example, in each scan order.

@@ -17,6 +17,12 @@
 
     .decl bg(c: Color) bg(0).
 
+    .decl out_dim(a: Axis, n: number)
+    out_dim(AXIS_V, 1). out_dim(AXIS_H, 1).
+
+    .decl out_pos(p: Position)
+    out_pos(P) :- out_dim(AXIS_V, V), out_dim(AXIS_H, H), helpers.frame_pos([V, H], P).
+
     // --- $Lookup ---
     .decl pattern_member(id: Ident, p: Position)
     .decl pattern_out(id: Ident, c: Color)
@@ -89,18 +95,19 @@ lookup_match.pattern_member(Id, P) :- params.pattern_member(Id, P).
 lookup_match.observed_member($U(), P) :- parse.silhouette($U(), P).
 
 // --- $Lookup ---
-out(ZERO, Col_out, $Lookup()) :-
+out(P, Col_out, $Lookup()) :-
     params.pattern_out(Id, Col_out),        // entry's output color
-    lookup_match.equals($U(), Id).          // silhouette == entry's shape
+    lookup_match.equals($U(), Id),          // silhouette == entry's shape
+    params.out_pos(P).
 
 // --- $Classify ---
-out(ZERO, Col, $Classify()) :-
+out(P, Col, $Classify()) :-
     !parse.center_on($U()),                 // center off
-    params.center_off_out(Col).
+    params.center_off_out(Col), params.out_pos(P).
 
-out(ZERO, Col, $Classify()) :-
+out(P, Col, $Classify()) :-
     parse.center_on($U()), parse.corners.tally($U(), N),    // center on, its corner count
-    params.center_on_out(N, Col).
+    params.center_on_out(N, Col), params.out_pos(P).
 
 .comp Determine {
     // Train pairs only: the ex_out atom holds the test inputs out.
@@ -131,4 +138,7 @@ out(ZERO, Col, $Classify()) :-
     center_on_out(N, Col) :-
         ex_out(E, _, Col),
         parse.center_on(E), parse.corners.tally(E, N).
+
+    .decl out_dim(a: Axis, n: number)
+    out_dim(A, N) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, N).
 }
