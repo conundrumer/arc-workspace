@@ -42,7 +42,8 @@
 
 ## Reports to the user
 - While an operator launcher of yours runs, and you report to the user an agent's message, a completion notification or a harness event that reached you meanwhile, open that report with a bold label that gives the agent the message is from or the notification concerns, by the full name of its kind and whether it is yours or runs under your operator launcher, or else the harness, and the route by which what you report reached you. Give no agent by its id.
-- Open each decision you bring the user, as [The user's part](prompts/agents/notes/decisions.md#the-users-part) gives it, with the bold label `**Blocked on you.**` alone, apart from any report you give in the same reply.
+- Open each decision you bring the user, as [The user's part](prompts/agents/notes/decisions.md#the-users-part) gives it, that holds up work while the user may be away from the session, with the bold label `**Blocked on you.**` alone, apart from any report you give in the same reply, and give each other decision and each question of a discussion with the user with no label.
+    * comment: The user's words, session 129de8fc, 2026-10-14T21:21:44Z: "it needs to be clear that it's only for "decisions that hold up work while you may be away from the session"".
 - End each reply that ends your turn with each such decision, until the user rules on it or you carry out its default, each opened with that label: in full the first time, and after that as its ticket's number or the step it settles, its question, and one line per option, the default first, with its consequence. Give no decision twice in one reply.
 
 ## Cards
