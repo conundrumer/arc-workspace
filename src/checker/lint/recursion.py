@@ -7,13 +7,15 @@ from dataclasses import dataclass
 from checker.finding import Finding, LintNamed, LintSentence
 from checker.lint.view import lint
 from checker.runs import Runs
-from engine import RelationName
+from engine import Program, RelationName, UnitId
 from engine.program import Atom, Unit, body_atoms, own
 from engine.quotes import quotes
-from solver.aggregate import Solver
+from solver.aggregate import Solver, has_determine
 from solver.category import Category
 from solver.cycles import cyclic_components
 from solver.graph import Graph, InstancePath
+from solver.readers import instance_of
+from solver.vocabulary import DETERMINE
 
 RECURSIVE_INPUTS: dict[str, frozenset[str]] = {
     "Take": frozenset({"step", "skip", "take"}),
@@ -35,6 +37,19 @@ class _Edge:
     head: RelationName
 
 
+def _as_run(solver: Solver) -> tuple[Program, InstancePath | None]:
+    """The solver's program as its runs run it, with the path of the
+    instance a run adds: an instance of the `Determine` comp where the
+    solver's text makes none, as the Determine run instantiates it
+    (`solver.determine.determine`), the one comp a run of a solver
+    instantiates that no `.init` does."""
+    program = solver.program
+    if not has_determine(solver) or instance_of(program, DETERMINE) is not None:
+        return program, None
+    name = "determine"
+    return solver.engine.instantiate(program, DETERMINE, name), (name,)
+
+
 def _permitted(solver: Solver, graph: Graph, e: _Edge) -> bool:
     """Whether the read heads an input of a lib component's instance that
     `RECURSIVE_INPUTS` permits, reads a relation of that same instance,
@@ -49,7 +64,7 @@ def _permitted(solver: Solver, graph: Graph, e: _Edge) -> bool:
             or e.head.name not in RECURSIVE_INPUTS.get(comp.name, frozenset()):
         return False
     try:
-        return solver.engine.grounded_without(solver.program, e.unit, e.atom)
+        return solver.engine.grounded_without(graph.program, e.unit, e.atom)
     except ValueError:
         return False
 
@@ -64,17 +79,21 @@ def _permitted(solver: Solver, graph: Graph, e: _Edge) -> bool:
         "`Take` instance may read that instance's relations through an atom "
         "whose every variable another atom of the clause grounds.")
 def check_recursion(solver: Solver, runs: Runs) -> list[Finding]:
-    """One finding per cycle of the program's relations, each at the
-    instance path that declares it, the lib's units read at each instance
-    they run at, that holds a read of a unit of the solver's own text
-    whose both relations stand in the cycle and which `_permitted` does
-    not permit: at the line of the first such unit, standing on each such
-    unit, naming the cycle's relations by their text, in the order of that
-    text."""
-    graph = Graph(solver.program, solver.engine)
+    """One finding per cycle of the relations of the program its runs run
+    (`_as_run`), each at the instance path that declares it, the lib's
+    units read at each instance they run at, that holds a read of a unit
+    of the solver's own text whose both relations stand in the cycle and
+    which `_permitted` does not permit: at the line of the first such
+    unit, standing on each such unit, naming the cycle's relations by
+    their text, in the order of that text. A cycle whose every such read
+    stands inside the instance a run adds gives no finding where a cycle
+    outside it stands on the same units, since the solver's text
+    instantiates those units there."""
+    program, added = _as_run(solver)
+    graph = Graph(program, solver.engine)
     succ: dict[RelationName, dict[RelationName, None]] = {}
     solver_edges: list[_Edge] = []
-    for u in solver.program.units:
+    for u in graph.program.units:
         for at in graph.paths_of(u):
             head = graph.place(at, u.head.relation)
             if head is None:
@@ -87,7 +106,7 @@ def check_recursion(solver: Solver, runs: Runs) -> list[Finding]:
                 succ.setdefault(read, {})[head] = None
                 if own(u.span):
                     solver_edges.append(_Edge(u, at, atom, read, head))
-    out: list[Finding] = []
+    found: list[tuple[bool, frozenset[UnitId], Finding]] = []
     for comp in cyclic_components(succ, lambda n: succ[n]):
         members = frozenset(comp)
         closing = [e for e in solver_edges
@@ -101,7 +120,11 @@ def check_recursion(solver: Solver, runs: Runs) -> list[Finding]:
         first = units[0].span
         assert first is not None
         names = tuple(sorted(r.text for r in comp))
-        out.append(lint(first.first, LintNamed(
-            Category.RECURSION, LintSentence.RECURSION, names),
-            tuple(u.id for u in units)))
-    return out
+        inside = added is not None \
+            and all(e.at[:len(added)] == added for e in closing)
+        found.append((inside, frozenset(u.id for u in units), lint(
+            first.first, LintNamed(
+                Category.RECURSION, LintSentence.RECURSION, names),
+            tuple(u.id for u in units))))
+    outside = {ids for inside, ids, _f in found if not inside}
+    return [f for inside, ids, f in found if not inside or ids not in outside]

@@ -94,16 +94,21 @@ out(P, Col, $Ink(Dc)) :- front_ink.low([Dc, P], Col, _).
         params.tiles(N),
         divide_2d(P_grid, N, 0, P_tile, P_intile).
 
-    // Closed transitively: a tile pair need not overlap directly.
+    // At a cell both ink, the output keeps T's ink over T2's.
     .decl beats(p_tile: Position, p_tile2: Position)
     beats(T, T2) :-
         tile_ink(E, T, P, Col), tile_ink(E, T2, P, Col2), Col != Col2,
         ex_out(E, P, Col).
-    beats(T, T3) :- beats(T, T2), beats(T2, T3).
+
+    // The tiles each tile beats, directly or through others: a tile pair
+    // need not overlap directly.
+    .init beaten = Propagation<Position, Position>
+    beaten.source(T, T2) :- beats(T, T2).
+    beaten.edge(T, T2, T3) :- beats(T, _), beats(T2, T3).
 
     .init order = Order<Unit, Position>
     order.elem($U(), T) :- tile_ink(_, T, _, _).
-    order.before($U(), T, T2) :- beats(T, T2).
+    order.before($U(), T, T2) :- beaten.reached(T, T2).
 
     .decl prio(p: Position, r: number)
     prio(T, R) :- order.rank($U(), T, R).
