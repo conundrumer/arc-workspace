@@ -242,20 +242,8 @@ exit(Ds, Hs, St, Fs, Ps, Hc, Ha, Tc, Ta, P) :-
     palette(Fs, Ps, F, Ptr), source(Hs, Ptr, Hc, Ha, Src), heading(Ds, Ptr, Tc, Ta, Src, D),
     ray.stop([St, F, Ptr], P, D, _, Src).
 
-// The color each paint reading gives the exit cell in field color f.
-// @ignore: store — StoredPaint is the stored reading of this color
-.decl paint(pt: Paint, f: Color, col: Color)
-
 // The field the stop reading needs exists.
 .decl framed(st: Stop, f: Color)
-
-// One grid per pair of orders; a cell that two pairs color differently gets
-// both colors.
-out(P, Col, [Ds, Hs, St, Pt, Fs, Ps]) :-
-    palette(Fs, Ps, F, Ptr), source(Hs, Ptr, Hc, Ha, _), tie_run(Ds, Tc, Ta),
-    !unaimed(Ds, Hs, Ptr), framed(St, F), paint(Pt, F, C),
-    ( exit(Ds, Hs, St, Fs, Ps, Hc, Ha, Tc, Ta, P), Col = C
-    ; in(P, Col), !exit(Ds, Hs, St, Fs, Ps, Hc, Ha, Tc, Ta, P) ).
 
 // --- $Adjacent ---
 // The step from each body cell next to a head cell.
@@ -309,10 +297,21 @@ framed($FirstNonfield(), F) :- palette(_, _, F, _).
 ray.blocked([$FirstNonfield(), F, Ptr], P) :- palette(_, _, F, Ptr), in(P, Col), Col != F.
 
 // --- $FieldPaint ---
-paint($FieldPaint(), F, F) :- palette(_, _, F, _).
+// One grid per pair of orders; a cell that two pairs color differently gets
+// both colors. The exit cells take the field's color.
+out(P, Col, [Ds, Hs, St, $FieldPaint(), Fs, Ps]) :-
+    palette(Fs, Ps, F, Ptr), source(Hs, Ptr, Hc, Ha, _), tie_run(Ds, Tc, Ta),
+    !unaimed(Ds, Hs, Ptr), framed(St, F),
+    ( exit(Ds, Hs, St, Fs, Ps, Hc, Ha, Tc, Ta, P), Col = F
+    ; in(P, Col), !exit(Ds, Hs, St, Fs, Ps, Hc, Ha, Tc, Ta, P) ).
 
 // --- $StoredPaint ---
-paint($StoredPaint(), F, Col) :- palette(_, _, F, _), params.paint_color(Col).
+// The exit cells take the stored paint color.
+out(P, Col, [Ds, Hs, St, $StoredPaint(), Fs, Ps]) :-
+    palette(Fs, Ps, F, Ptr), source(Hs, Ptr, Hc, Ha, _), tie_run(Ds, Tc, Ta),
+    !unaimed(Ds, Hs, Ptr), framed(St, F), params.paint_color(C),
+    ( exit(Ds, Hs, St, Fs, Ps, Hc, Ha, Tc, Ta, P), Col = C
+    ; in(P, Col), !exit(Ds, Hs, St, Fs, Ps, Hc, Ha, Tc, Ta, P) ).
 
 // --- $StoredField ---
 field_of($StoredField(), Ptr, F) :- pointer_of(_, Ptr), params.field_color(F).

@@ -68,13 +68,13 @@ block_band($Runs(), A, Id, B) :- block(Id), region_line(Id, A, P_line), runs.lab
 
 // Two rectangles align when their spans share a line; a band is a class
 // of the alignment's transitive closure.
-.decl overlap(x: RegionAxis, y: RegionAxis)
-overlap([Id, A], [Id2, A]) :-
+.decl overlap(a: Axis, id: Ident, id2: Ident)
+overlap(A, Id, Id2) :-
     block(Id), block(Id2), region_line(Id, A, P_line), region_line(Id2, A, P_line).
 
 // The classes a chain of alignments connects.
 .init cls = Canon<RegionAxis>
-cls.edge(X, Y) :- overlap(X, Y).
+cls.edge([Id, A], [Id2, A]) :- overlap(A, Id, Id2).
 
 block_band($Overlap(), A, Id, B) :- cls.id([Id, A], B).
 

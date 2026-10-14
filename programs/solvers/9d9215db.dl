@@ -121,9 +121,6 @@ side_place(J) :- place(P_lat, _, J), !corner(P_lat).
 source($AnyInk(), K) :- ink(P_lat, _), place(P_lat, K, _).
 source($CornerInk(), K) :- ink(P_lat, _), corner(P_lat), place(P_lat, K, _).
 
-// The ring a source ring's ink draws on.
-.decl seat(st: Seat, src: Source, k: number, k_out: number)
-
 // The side place of a drawn ring that takes the ink at a side place of the
 // ring it came from.
 // @ignore: store — the correspondence follows the ring's places, which
@@ -133,12 +130,6 @@ source($CornerInk(), K) :- ink(P_lat, _), corner(P_lat), place(P_lat, K, _).
 
 // A lattice cell of the drawing, and the ink it copies.
 .decl draw(ch: Choice, p_lat: Position, col: Color)
-draw([St, Src, Sp], P_lat, Col) :-
-    seat(St, Src, K, K_out), place(P_lat, K_out, J_out),  // a place on the seated ring
-    ink(Q_lat, Col), place(Q_lat, K, J_src),              // ink on the ring it draws
-    ( corner(P_lat), corner(Q_lat), spread_choice(Sp)     // the corners pair off
-    ; copy(Sp, J_out, J_src)
-    ).
 
 .decl drawn(ch: Choice, p_grid: Position)
 drawn(Ch, P_grid) :- lat(P_grid, P_lat), draw(Ch, P_lat, _).
@@ -148,7 +139,12 @@ out(P_grid, Col, Ch) :-
     in(P_grid, _), impl_choice(Ch), !drawn(Ch, P_grid), params.bg(Col).
 
 // --- $Own ---
-seat($Own(), Src, K, K) :- source(Src, K).
+draw([$Own(), Src, Sp], P_lat, Col) :-
+    source(Src, K), place(P_lat, K, J_out),           // a place on the ink's own ring
+    ink(Q_lat, Col), place(Q_lat, K, J_src),          // ink on that ring
+    ( corner(P_lat), corner(Q_lat), spread_choice(Sp) // the corners pair off
+    ; copy(Sp, J_out, J_src)
+    ).
 
 // --- $Nest ---
 
@@ -156,7 +152,12 @@ seat($Own(), Src, K, K) :- source(Src, K).
 .init order = Ordinal<Source>
 order.idx_set(Src, K) :- source(Src, K).
 
-seat($Nest(), Src, K, R) :- order.rank(Src, K, R).
+draw([$Nest(), Src, Sp], P_lat, Col) :-
+    order.rank(Src, K, K_out), place(P_lat, K_out, J_out),  // a place on the seated ring
+    ink(Q_lat, Col), place(Q_lat, K, J_src),                // ink on the ring it draws
+    ( corner(P_lat), corner(Q_lat), spread_choice(Sp)       // the corners pair off
+    ; copy(Sp, J_out, J_src)
+    ).
 
 // --- $Full ---
 

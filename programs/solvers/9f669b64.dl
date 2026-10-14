@@ -299,25 +299,9 @@ half_line(Id, D, K) :-
 .decl center_line(id: Ident, d: Dir)
 center_line(Id, D) :- lines.rank([Id, D], K, R), lines.rank_desc([Id, D], K, R).
 
-// The object whose center line cuts the target.
-.decl cut_owner(c: SplitLine, p: Ident, t: Ident, o: Ident)
-
-// --- $PathCenter ---
-cut_owner($PathCenter(), P, T, P) :- shot(_, _, P, T, _).
-
-// --- $SplitTargetCenter ---
-cut_owner($SplitTargetCenter(), P, T, T) :- shot(_, _, P, T, _).
-
-// The halves of target T, launched toward D, under the cut on O's center
-// line, toward E.
-.decl halves(p: Ident, t: Ident, o: Ident, d: Dir, e: Dir)
-halves(P, T, O, D, E) :- shot(_, _, P, T, D), cut_owner(_, P, T, O), perp_dir(D, E).
-
-// A target cell as near E as a line of O's half toward E. A cell on O's
-// middle line is in neither half.
-.decl half(o: Ident, t: Ident, d: Dir, p: Position, e: Dir)
-half(O, T, D, P, E) :-
-    halves(_, T, O, D, E), obj(T, P), dist(P, E, K_p), half_line(O, E, K), K_p <= K.
+// The halves of target T, launched toward D, toward E.
+.decl halves(p: Ident, t: Ident, d: Dir, e: Dir)
+halves(P, T, D, E) :- shot(_, _, P, T, D), perp_dir(D, E).
 
 // The count of the object's lines in its half toward D.
 // @claim target-split
@@ -325,38 +309,53 @@ half(O, T, D, P, E) :-
 half_width.item([Id, D], K) :- half_line(Id, D, K).
 half_width.domain([Id, D]) :- hull.box(Id, _), dir_elem(D).
 
+// A target cell of the half toward E: as near E as a line of the cutting
+// object's half toward E. A cell on that object's middle line is in neither
+// half.
+.decl half(c: SplitLine, p: Ident, t: Ident, d: Dir, q: Position, e: Dir)
+
+// --- $PathCenter ---
+// The projectile's center line cuts the target.
+half($PathCenter(), P, T, D, Q, E) :-
+    halves(P, T, D, E), obj(T, Q), dist(Q, E, K_q), half_line(P, E, K), K_q <= K.
+
+// --- $SplitTargetCenter ---
+half($SplitTargetCenter(), P, T, D, Q, E) :-
+    halves(P, T, D, E), obj(T, Q), dist(Q, E, K_q), half_line(T, E, K), K_q <= K.
+
 // How far each half of the target moves.
-.decl amount(sh: Shift, p: Ident, t: Ident, o: Ident, d: Dir, e: Dir, k: number)
+.decl amount(sh: Shift, c: SplitLine, p: Ident, t: Ident, d: Dir, e: Dir, k: number)
 
 // --- $HalfWidth ---
-amount($HalfWidth(), P, T, O, D, E, K) :-
-    halves(P, T, O, D, E), half_width.tally([P, E], K),
+amount($HalfWidth(), C, P, T, D, E, K) :-
+    halves(P, T, D, E), split_line_choice(C), half_width.tally([P, E], K),
     !center_line(P, E).                      // the projectile's width is even
 
 // --- $ShiftOne ---
-amount($ShiftOne(), P, T, O, D, E, K) :- halves(P, T, O, D, E), params.shift(K).
+amount($ShiftOne(), C, P, T, D, E, K) :-
+    halves(P, T, D, E), split_line_choice(C), params.shift(K).
 
 // --- $OddFloor ---
-amount($OddFloor(), P, T, O, D, E, K) :-
-    halves(P, T, O, D, E), half_width.tally([P, E], K).
+amount($OddFloor(), C, P, T, D, E, K) :-
+    halves(P, T, D, E), split_line_choice(C), half_width.tally([P, E], K).
 
 // --- $PushOut ---
-.type Half = [p: Ident, t: Ident, o: Ident, d: Dir, e: Dir]
+.type Half = [c: SplitLine, p: Ident, t: Ident, d: Dir, e: Dir]
 
 // The projectile's lines each half covers ahead of the projectile.
 // @claim target-split
 .init cover = Tally<Half, number>
-cover.item([P, T, O, D, E], K) :-
-    halves(P, T, O, D, E), half(O, T, D, Q, E), hull.box(P, B), nearer(D, Q, B),
+cover.item([C, P, T, D, E], K) :-
+    half(C, P, T, D, Q, E), hull.box(P, B), nearer(D, Q, B),
     dist(Q, E, K), obj(P, Q2), dist(Q2, E, K).
-cover.domain([P, T, O, D, E]) :- halves(P, T, O, D, E).
+cover.domain([C, P, T, D, E]) :- halves(P, T, D, E), split_line_choice(C).
 
-amount($PushOut(), P, T, O, D, E, K) :- cover.tally([P, T, O, D, E], K).
+amount($PushOut(), C, P, T, D, E, K) :- cover.tally([C, P, T, D, E], K).
 
 .decl lands(r: Roles, l: Launch, sh: Shift, c: SplitLine, p: Position, q: Position)
 lands(R, L, Sh, C, P_cell, Q) :-
-    shot(R, L, P, T, D), cut_owner(C, P, T, O),
-    half(O, T, D, P_cell, E), amount(Sh, P, T, O, D, E, K), jump(P_cell, E, K, Q).
+    shot(R, L, P, T, D), half(C, P, T, D, P_cell, E), amount(Sh, C, P, T, D, E, K),
+    jump(P_cell, E, K, Q).
 
 // Some target cell has no landing.
 .decl stranded(r: Roles, l: Launch, sh: Shift, c: SplitLine)

@@ -36,12 +36,12 @@ impl_choice($Contrast()).
 line_color([A, L], Col) :- in(P, Col), !params.bg(Col), axis_elem(A), split(P, A, L, _).
 
 // Two touching lines, both with content.
-.decl adjacent(l: Line, l2: Line)
-adjacent([A, L], [A, L2]) :-
+.decl adjacent(a: Axis, l: Position, l2: Position)
+adjacent(A, L, L2) :-
     line_color([A, L], _), line_color([A, L2], _), axis_of(D, A), neighbor(L, D, L2).
 
 // A boundary runs between the two lines.
-.decl separated(c: Choice, l: Line, l2: Line)
+.decl separated(c: Choice, a: Axis, l: Position, l2: Position)
 
 // --- $Content ---
 
@@ -49,11 +49,11 @@ adjacent([A, L], [A, L2]) :-
 content.pattern_member(L, Col) :- line_color(L, Col).
 content.observed_member(L, Col) :- line_color(L, Col).
 
-separated($Content(), L, L2) :- adjacent(L, L2), !content.equals(L, L2).
+separated($Content(), A, L, L2) :- adjacent(A, L, L2), !content.equals([A, L], [A, L2]).
 
 // --- $Contrast ---
 
-separated($Contrast(), [A, L], [A, L2]) :-
+separated($Contrast(), A, L, L2) :-
     in(P, Col), in(Q, Col2), !params.bg(Col), !params.bg(Col2), Col != Col2,  // two colors
     axis_of(D, A), neighbor(P, D, Q),                                        // touching across the axis
     split(P, A, L, _), split(Q, A, L2, _).                                   // one on each line
@@ -63,7 +63,8 @@ separated($Contrast(), [A, L], [A, L2]) :-
 // A block-line is a run of adjacent lines that no boundary separates.
 .init block_line = Canon<ChoiceLine>
 block_line.edge([C, L], [C, L]) :- impl_choice(C), line_color(L, _).
-block_line.edge([C, L2], [C, L3]) :- impl_choice(C), adjacent(L2, L3), !separated(C, L2, L3).
+block_line.edge([C, [A, L2]], [C, [A, L3]]) :-
+    impl_choice(C), adjacent(A, L2, L3), !separated(C, A, L2, L3).
 
 // The frame the block-lines induce on each axis.
 .init layout = OrderFrame<ChoiceAxis, Ident>

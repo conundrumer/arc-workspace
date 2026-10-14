@@ -118,18 +118,15 @@ line_of(Pc, P, P_line) :- chart.cell(Pc, P), layout_axis(A), split(P, A, P_line,
 .init obox = Bbox<Part>
 obox.cell([Pc, Id], P) :- cell(Pc, Id, P).
 
-.decl view(w: View, lead: Dir)
+.decl view(w: View)
 
 // @claim order
 .init order = Order<View, Ident>
-order.elem([[Pc, K], D8], Id) :- view([[Pc, K], D8], _), kept(Pc, Id).
+order.elem([[Pc, K], D8], Id) :- view([[Pc, K], D8]), kept(Pc, Id).
 
 // A unit sits no nearer the lead edge than the count of units before it;
 // seating them all leaves each the lines of its own tie.
 .init ties = TiebreakResolutions<View, Position, Ident>
-ties.cand([[Pc, K], D8], P_line, Id) :-
-    view([[Pc, K], D8], L), line_of(Pc, _, P_line), dist(P_line, L, N),
-    order.rank([[Pc, K], D8], Id, R), R <= N.
 
 // The color of a unit.
 .decl hue(pc: Piece, id: Ident, col: Color)
@@ -152,7 +149,7 @@ drawn([Ch, D8], Res, [Ch, D8_2]) :-
 // A resolution whose grid some other open value of the case does not draw.
 .decl lacks(w: View, res: TiebreakResolution)
 lacks([Ch, D8], Res) :-
-    ties.resolution([Ch, D8], Res), view([Ch, D8_2], _), D8 != D8_2,
+    ties.resolution([Ch, D8], Res), view([Ch, D8_2]), D8 != D8_2,
     !drawn([Ch, D8], Res, [Ch, D8_2]).
 
 out(P, Col, [Pc, K], Res) :-
@@ -184,7 +181,11 @@ cell($ColorClass(), Id, P) :- classes.id(P, Id).
 
 // --- $NearEdge ---
 
-view([[Pc, $NearEdge()], L], L) :- piece_choice(Pc), params.lead(L).
+view([[Pc, $NearEdge()], L]) :- piece_choice(Pc), params.lead(L).
+
+ties.cand([[Pc, $NearEdge()], L], P_line, Id) :-
+    view([[Pc, $NearEdge()], L]), params.lead(L), line_of(Pc, _, P_line), dist(P_line, L, N),
+    order.rank([[Pc, $NearEdge()], L], Id, R), R <= N.
 
 order.before([[Pc, $NearEdge()], L], A, B) :-
     params.lead(L),
@@ -197,7 +198,11 @@ order.before([[Pc, $NearEdge()], L], A, B) :-
 .decl scan_corner(c: DiagDir, l: Dir, s: Dir)
 scan_corner(C, L, S) :- params.lead(L), params.scan_from(S), diag_dirs(C, _, L, S).
 
-view([[Pc, $FirstScan()], C], L) :- piece_choice(Pc), scan_corner(C, L, _).
+view([[Pc, $FirstScan()], C]) :- piece_choice(Pc), scan_corner(C, _, _).
+
+ties.cand([[Pc, $FirstScan()], C], P_line, Id) :-
+    view([[Pc, $FirstScan()], C]), scan_corner(C, L, _), line_of(Pc, _, P_line), dist(P_line, L, N),
+    order.rank([[Pc, $FirstScan()], C], Id, R), R <= N.
 
 // A unit's line nearest the scan edge.
 // @claim order

@@ -46,8 +46,8 @@ line(A, L, Ch) :- line_cell(A, L, _, _, Ch).
 differ(A, L, L2, Ch) :- line_cell(A, L, X, Col, Ch), line_cell(A, L2, X, Col2, Ch), Col != Col2.
 
 // Neighboring lines that agree everywhere: no block boundary between them.
-.decl uncut(x: Line, y: Line)
-uncut([Ch, A, L], [Ch, A, L2]) :-
+.decl uncut(ch: Choice, a: Axis, l: Position, l2: Position)
+uncut(Ch, A, L, L2) :-
     line(A, L, Ch), line(A, L2, Ch),
     axis_of(D, A), neighbor(L, D, L2),
     !differ(A, L, L2, Ch).
@@ -55,7 +55,7 @@ uncut([Ch, A, L], [Ch, A, L2]) :-
 // A band is a run of lines that no boundary cuts.
 .init bands = Canon<Line>
 bands.edge([Ch, A, L], [Ch, A, L]) :- line(A, L, Ch).
-bands.edge(Y, Z) :- uncut(Y, Z).
+bands.edge([Ch, A, L], [Ch, A, L2]) :- uncut(Ch, A, L, L2).
 
 // One output line per band. Band line sets are disjoint runs, as OrderFrame
 // assumes.

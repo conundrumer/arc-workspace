@@ -211,9 +211,6 @@ stop.cand([Ch, P, Q], R, K) :- obstacle(Ch, P, Q, R, K).
 .decl rest_on(ch: Choice, p: Position, d: Dir8, f: Position, q: Position)
 rest_on(Ch, P, D, F, Q) :- stop.high([Ch, P, Q], F, _), pull(Ch, P, Q, D, _).
 
-// The satellites that rest against F from side D land beyond G.
-.decl pile_base(ch: Choice, d: Dir8, f: Position, g: Position)
-
 // Satellite Q lands at X.
 .decl lands_at(ch: Choice, q: Position, x: Position)
 
@@ -302,18 +299,16 @@ obstacle([S, L, C, $Stack(), G, B, U], P, Q, R, K) :-
     in_path([S, L, C, $Stack(), G, B, U], P, Q, R, K),
     !pull([S, L, C, $Stack(), G, B, U], P, R, _, _).
 
-// --- $NoGap ---
-pile_base([S, L, C, Ld, $NoGap(), B, U], D, F, F) :-
-    rest_on([S, L, C, Ld, $NoGap(), B, U], _, D, F, _).
+// --- $SameCell & $NoGap ---
+lands_at([S, L, C, $SameCell(), $NoGap(), B, U], Q, X) :-
+    rest_on([S, L, C, $SameCell(), $NoGap(), B, U], _, D, F, Q), neighbor(F, D, X).
 
-// --- $StoredGap ---
-pile_base([S, L, C, Ld, $StoredGap(), B, U], D, F, G) :-
-    rest_on([S, L, C, Ld, $StoredGap(), B, U], _, D, F, _), params.gap(K), jump(F, D, K, G).
-
-// --- $SameCell ---
-lands_at([S, L, C, $SameCell(), G, B, U], Q, X) :-
-    rest_on([S, L, C, $SameCell(), G, B, U], P, D, F, Q),
-    pile_base([S, L, C, $SameCell(), G, B, U], D, F, F_base), neighbor(F_base, D, X).
+// --- $SameCell & $StoredGap ---
+// The satellites that rest against F from side D land beyond F_base,
+// params.gap cells past F.
+lands_at([S, L, C, $SameCell(), $StoredGap(), B, U], Q, X) :-
+    rest_on([S, L, C, $SameCell(), $StoredGap(), B, U], _, D, F, Q),
+    params.gap(K), jump(F, D, K, F_base), neighbor(F_base, D, X).
 
 // --- $Stack ---
 // The satellites that rest against F, in order from F: F ranks 0, and the
@@ -327,10 +322,16 @@ pile.before([Ch, P, D, F], Q1, Q2) :-
     rest_on(Ch, P, D, F, Q1), pull(Ch, P, Q1, D, K1),
     rest_on(Ch, P, D, F, Q2), pull(Ch, P, Q2, D, K2), K1 < K2.
 
-lands_at([S, L, C, $Stack(), G, B, U], Q, X) :-
-    rest_on([S, L, C, $Stack(), G, B, U], P, D, F, Q),
-    pile.rank([[S, L, C, $Stack(), G, B, U], P, D, F], Q, N),
-    pile_base([S, L, C, $Stack(), G, B, U], D, F, F_base), jump(F_base, D, N, X).
+// --- $Stack & $NoGap ---
+lands_at([S, L, C, $Stack(), $NoGap(), B, U], Q, X) :-
+    rest_on([S, L, C, $Stack(), $NoGap(), B, U], P, D, F, Q),
+    pile.rank([[S, L, C, $Stack(), $NoGap(), B, U], P, D, F], Q, N), jump(F, D, N, X).
+
+// --- $Stack & $StoredGap ---
+lands_at([S, L, C, $Stack(), $StoredGap(), B, U], Q, X) :-
+    rest_on([S, L, C, $Stack(), $StoredGap(), B, U], P, D, F, Q),
+    pile.rank([[S, L, C, $Stack(), $StoredGap(), B, U], P, D, F], Q, N),
+    params.gap(K), jump(F, D, K, F_base), jump(F_base, D, N, X).
 
 // --- $KeepUnmatched ---
 paint([S, L, C, Ld, G, B, $KeepUnmatched()], Q, Col) :-

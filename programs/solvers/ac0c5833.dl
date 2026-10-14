@@ -134,6 +134,9 @@
     // The colors whose triples a family reads.
     .decl hue(key: Key, fam: Fam, col: Color)
 
+    // A family's triples at n are squares of side n.
+    .decl square(key: Key, fam: Fam, n: number)
+
     // A family's triples at n have sides K1 and K2.
     .decl admits(key: Key, fam: Fam, n: number, k1: number, k2: number)
 
@@ -154,6 +157,8 @@
 
     .decl box_triple(key: Key, fam: Fam, n: number, col: Color, e: Position, x: DiagDir,
                      c: Position, p: Position, q: Position)
+    box_triple(Ky, F, N, Col, E, X, C, P, Q) :-
+        square(Ky, F, N), hue(Ky, F, Col), triple(Ky, Col, E, X, C, P, Q, N, N).
     box_triple(Ky, F, N, Col, E, X, C, P, Q) :-
         admits(Ky, F, N, K1, K2), hue(Ky, F, Col), triple(Ky, Col, E, X, C, P, Q, K1, K2).
 
@@ -180,7 +185,7 @@
 }
 
 // @ignore hue: store — the rows copy hue_cand, whose stored reading has its own line
-// @ignore admits: store — a side the grid lacks forms no triple, so the stored rows read
+// @ignore square: store — a side the grid lacks forms no triple, so the stored rows read
 //  as the derived ones on every input
 .init parse = Parse<Unit, Reader>
 parse.cell($U(), P, Col) :- in(P, Col).
@@ -284,8 +289,7 @@ out(P, Col, [Ext, Mc, Tc, Tr, Sk]) :-
     ).
 
 // --- $StoredStride ---
-parse.admits($U(), [$StoredStride(), Mc], S, S, S) :-
-    params.marker_stride(S), marker_hue_choice(Mc).
+parse.square($U(), [$StoredStride(), Mc], S) :- params.marker_stride(S), marker_hue_choice(Mc).
 
 // --- $StoredStride & $StoredMarkerColor ---
 reading_cand($StoredStride(), $StoredMarkerColor(), N, Col) :-
@@ -296,7 +300,7 @@ reading_cand($StoredStride(), $DerivedMarkerColor(), N, Col) :-
     parse.exact_split($U(), [$StoredStride(), $DerivedMarkerColor()], N, Col).
 
 // --- $DerivedStride ---
-parse.admits($U(), [$DerivedStride(), Mc], K, K, K) :- parse.side($U(), K), marker_hue_choice(Mc).
+parse.square($U(), [$DerivedStride(), Mc], K) :- parse.side($U(), K), marker_hue_choice(Mc).
 
 reading_cand($DerivedStride(), Mc, N, Col) :-
     parse.exact_split($U(), [$DerivedStride(), Mc], N, Col).

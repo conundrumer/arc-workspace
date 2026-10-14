@@ -42,8 +42,6 @@
     //  moved shape are drawn on it
     // @witness two-color-shape: borderline $Carry
     //     @relaxed shape
-    // @witness stray-cell: borderline $PerObject
-    //     @relaxed shape
   | EraseRest {}
     // @rule place: the unit that moves is every cell that is neither
     //  params.background nor the marker color, and its cells keep their
@@ -73,6 +71,8 @@
     //     @relaxed shape
     // @witness two-copies: borderline $PerObject
     //     @relaxed shape
+    // @witness stray-cell: borderline $PerObject
+    //     @relaxed shape
   | PerObject {conn: Connectivity}
 
 // where the marker color comes from
@@ -92,14 +92,14 @@
 
 .type Choice = [anchor: Anchor, others: Others, grouping: Grouping, marker: MarkerSource]
 
-// The cells that move, read against one marker color.
-.type Load = [others: Others, k: Color]
+// The cells that move, read against the marker color of one source.
+.type Load = [others: Others, m: MarkerSource]
 
 // One connected piece of a load.
-.type Piece = [others: Others, k: Color, g: Grouping, id: Ident]
+.type Piece = [others: Others, m: MarkerSource, g: Grouping, id: Ident]
 
 // A cell of the output under one reading of the load and units.
-.type Spot = [a: Anchor, others: Others, k: Color, g: Grouping, q: Position]
+.type Spot = [a: Anchor, others: Others, m: MarkerSource, g: Grouping, q: Position]
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -155,53 +155,54 @@ color_box.cell(Col, P) :- in(P, Col), !params.background(Col).
 .decl stays(l: Load, p: Position, col: Color)
 
 // The cells of each unit that moves as one piece, named by its bounding box.
-.decl unit(o: Others, k: Color, g: Grouping, b: Box, p: Position, col: Color)
+.decl unit(o: Others, m: MarkerSource, g: Grouping, b: Box, p: Position, col: Color)
 
-.decl mover(o: Others, k: Color, g: Grouping, b: Box)
-mover(O, K, G, B) :- unit(O, K, G, B, _, _).
+.decl mover(o: Others, m: MarkerSource, g: Grouping, b: Box)
+mover(O, M, G, B) :- unit(O, M, G, B, _, _).
 
 // Every translation from one grid cell to another.
 .decl shift(v: Offset)
 shift(V) :- in(P, _), in(Q, _), relative(P, Q, V).
 
 // The translation each anchor gives a unit.
-.decl place(a: Anchor, o: Others, k: Color, g: Grouping, b: Box, v: Offset)
+.decl place(a: Anchor, o: Others, m: MarkerSource, g: Grouping, b: Box, v: Offset)
 
 // Where each unit's cells land.
 // @ignore: store — the stored readings of the marker color and the moved
 //  color are StoredMarker and the params.shape_color of KeepRest
-.decl landed(a: Anchor, o: Others, k: Color, g: Grouping, q: Position, col: Color)
-landed(A, O, K, G, Q, Col) :-
-    place(A, O, K, G, B, V), unit(O, K, G, B, P, Col), compose(P, V, Q).
+.decl landed(a: Anchor, o: Others, m: MarkerSource, g: Grouping, q: Position, col: Color)
+landed(A, O, M, G, Q, Col) :-
+    place(A, O, M, G, B, V), unit(O, M, G, B, P, Col), compose(P, V, Q).
 
 // The color each landed cell shows; two pieces that give one cell different
 // colors leave it none.
 // @claim place
 .init shows = Unanimous<Spot, Color>
-shows.item([A, O, K, G, Q], Col) :- landed(A, O, K, G, Q, Col), in(Q, C), C != K.
+shows.item([A, O, M, G, Q], Col) :-
+    landed(A, O, M, G, Q, Col), marker_color(M, K), in(Q, C), C != K.
 
 // A reading of the load and units, under an anchor, that has a unit to move.
-.decl plan(a: Anchor, o: Others, k: Color, g: Grouping)
-plan(A, O, K, G) :- anchor_choice(A), mover(O, K, G, _).
+.decl plan(a: Anchor, o: Others, m: MarkerSource, g: Grouping)
+plan(A, O, M, G) :- anchor_choice(A), mover(O, M, G, _).
 
 // Some unit has no translation.
-.decl stranded(a: Anchor, o: Others, k: Color, g: Grouping)
-stranded(A, O, K, G) :- plan(A, O, K, G), mover(O, K, G, B), !place(A, O, K, G, B, _).
+.decl stranded(a: Anchor, o: Others, m: MarkerSource, g: Grouping)
+stranded(A, O, M, G) :- plan(A, O, M, G), mover(O, M, G, B), !place(A, O, M, G, B, _).
 
 // Some moved cell falls off the grid.
-.decl strays(a: Anchor, o: Others, k: Color, g: Grouping)
-strays(A, O, K, G) :- landed(A, O, K, G, Q, _), !in(Q, _).
+.decl strays(a: Anchor, o: Others, m: MarkerSource, g: Grouping)
+strays(A, O, M, G) :- landed(A, O, M, G, Q, _), !in(Q, _).
 
-.decl painted(a: Anchor, o: Others, k: Color, g: Grouping, q: Position, col: Color)
-painted(A, O, K, G, Q, Col) :- shows.value([A, O, K, G, Q], Col).
-painted(A, O, K, G, Q, Col) :-
-    plan(A, O, K, G), in(Q, _), !landed(A, O, K, G, Q, _),
-    ( stays([O, K], Q, Col)
-    ; !stays([O, K], Q, _), params.background(Col) ).
+.decl painted(a: Anchor, o: Others, m: MarkerSource, g: Grouping, q: Position, col: Color)
+painted(A, O, M, G, Q, Col) :- shows.value([A, O, M, G, Q], Col).
+painted(A, O, M, G, Q, Col) :-
+    plan(A, O, M, G), in(Q, _), !landed(A, O, M, G, Q, _),
+    ( stays([O, M], Q, Col)
+    ; !stays([O, M], Q, _), params.background(Col) ).
 
 out(Q, Col, [A, O, G, M]) :-
-    impl_choice([A, O, G, M]), marker_color(M, K),
-    painted(A, O, K, G, Q, Col), !stranded(A, O, K, G), !strays(A, O, K, G).
+    impl_choice([A, O, G, M]),
+    painted(A, O, M, G, Q, Col), !stranded(A, O, M, G), !strays(A, O, M, G).
 
 // --- $StoredMarker ---
 marker_color($StoredMarker(), K) :- params.marker_color(K).
@@ -230,44 +231,44 @@ marker_color($DeriveMarker(), K) :- corner_color.value($U(), K).
 shape_cell(P, Col) :- in(P, Col), params.shape_color(Col).
 
 // --- $KeepRest ---
-cargo([$KeepRest(), K], P, Col) :- marker_color(_, K), shape_cell(P, Col).
-stays([$KeepRest(), K], P, Col) :- marker_color(_, K), in(P, Col), !shape_cell(P, _).
+cargo([$KeepRest(), M], P, Col) :- marker_color(M, _), shape_cell(P, Col).
+stays([$KeepRest(), M], P, Col) :- marker_color(M, _), in(P, Col), !shape_cell(P, _).
 
 // --- $EraseRest ---
-cargo([$EraseRest(), K], P, Col) :- marker_color(_, K), shape_cell(P, Col).
-stays([$EraseRest(), K], P, K) :- marker_color(_, K), in(P, K).
+cargo([$EraseRest(), M], P, Col) :- marker_color(M, _), shape_cell(P, Col).
+stays([$EraseRest(), M], P, K) :- marker_color(M, K), in(P, K).
 
 // --- $Carry ---
-cargo([$Carry(), K], P, Col) :- marker_color(_, K), in(P, Col), !params.background(Col), Col != K.
-stays([$Carry(), K], P, Col) :- marker_color(_, K), in(P, Col), !cargo([$Carry(), K], P, _).
+cargo([$Carry(), M], P, Col) :- marker_color(M, K), in(P, Col), !params.background(Col), Col != K.
+stays([$Carry(), M], P, Col) :- marker_color(M, _), in(P, Col), !cargo([$Carry(), M], P, _).
 
 // --- $ColorClass ---
 // @claim place
 .init joint = Bbox<Load>
 joint.cell(L, P) :- cargo(L, P, _).
 
-unit(O, K, $ColorClass(), B, P, Col) :- cargo([O, K], P, Col), joint.box([O, K], B).
+unit(O, M, $ColorClass(), B, P, Col) :- cargo([O, M], P, Col), joint.box([O, M], B).
 
 // --- $PerObject ---
 // @claim place
 .init piece_box = Bbox<Piece>
 
-unit(O, K, G, B, P, Col) :-
-    piece_box.cell([O, K, G, Id], P), piece_box.box([O, K, G, Id], B), cargo([O, K], P, Col).
+unit(O, M, G, B, P, Col) :-
+    piece_box.cell([O, M, G, Id], P), piece_box.box([O, M, G, Id], B), cargo([O, M], P, Col).
 
 // --- $Conn4 ---
 // @claim place
 .init piece4 = Components<Load>
 piece4.node(L, P) :- cargo(L, P, _).
 
-piece_box.cell([O, K, $PerObject($Conn4()), Id], P) :- piece4.label([O, K], P, Id).
+piece_box.cell([O, M, $PerObject($Conn4()), Id], P) :- piece4.label([O, M], P, Id).
 
 // --- $Conn8 ---
 // @claim place
 .init piece8 = Components8<Load>
 piece8.node(L, P) :- cargo(L, P, _).
 
-piece_box.cell([O, K, $PerObject($Conn8()), Id], P) :- piece8.label([O, K], P, Id).
+piece_box.cell([O, M, $PerObject($Conn8()), Id], P) :- piece8.label([O, M], P, Id).
 
 // --- $Fill ---
 // The interior of each marker rectangle.
@@ -276,26 +277,26 @@ piece_box.cell([O, K, $PerObject($Conn8()), Id], P) :- piece8.label([O, K], P, I
 inner.cell(K, P) :- marker_color(_, K), color_box.box(K, R), in(P, _), interior(P, R).
 
 // The unit's box is a translate of the interior.
-place($Fill(), O, K, G, B, V) :-
-    mover(O, K, G, B), inner.box(K, I), relative(B, I, V), shift(V).
+place($Fill(), O, M, G, B, V) :-
+    mover(O, M, G, B), marker_color(M, K), inner.box(K, I), relative(B, I, V), shift(V).
 
 // --- $Center ---
 // Where each translation puts a unit's box, in its marker rectangle's frame.
-.decl lands(o: Others, k: Color, g: Grouping, b: Box, v: Offset, t: Box)
-lands(O, K, G, B, V, T) :-
-    mover(O, K, G, B), color_box.box(K, R),
+.decl lands(o: Others, m: MarkerSource, g: Grouping, b: Box, v: Offset, t: Box)
+lands(O, M, G, B, V, T) :-
+    mover(O, M, G, B), marker_color(M, K), color_box.box(K, R),
     shift(V), compose(B, V, T_grid), relative(R, T_grid, T).
 
 // The box sits at equal margins from the rectangle on each axis.
-place($Center(L), O, K, G, B, V) :-
-    anchor_choice($Center(L)), lands(O, K, G, B, V, T), centered(T).
+place($Center(L), O, M, G, B, V) :-
+    anchor_choice($Center(L)), lands(O, M, G, B, V, T), centered(T).
 
 // --- $MarkerTop ---
-shows.item([$Center($MarkerTop()), O, K, G, Q], K) :-
-    landed($Center($MarkerTop()), O, K, G, Q, _), in(Q, K).
+shows.item([$Center($MarkerTop()), O, M, G, Q], K) :-
+    landed($Center($MarkerTop()), O, M, G, Q, _), marker_color(M, K), in(Q, K).
 
 // --- $ShapeTop ---
-shows.item([$Center($ShapeTop()), O, K, G, Q], Col) :-
-    landed($Center($ShapeTop()), O, K, G, Q, Col).
+shows.item([$Center($ShapeTop()), O, M, G, Q], Col) :-
+    landed($Center($ShapeTop()), O, M, G, Q, Col).
 
 .comp Determine {}
