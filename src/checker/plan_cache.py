@@ -44,12 +44,14 @@ def plan_lines(runs: Runs, source: Path, stamp: str, verdicts: bool
 
 
 def _key(runs: Runs, source: Path, stamp: str, verdicts: bool) -> str:
-    """The hash of what the plan's lines are made from. A file that does
-    not stand counts as its path alone."""
+    """The hash of what the plan's lines are made from, what runs the
+    programs among them (`engine.Engine.runtime_identity`). A file that
+    does not stand counts as its path alone."""
     task_id = runs.solver.task_id
     h = hashlib.sha256()
     h.update(f"{stamp}\0{runs.solver.stem}\0{runs.limits!r}\0{verdicts}"
              .encode())
+    h.update(b"\0" + runs.solver.engine.runtime_identity() + b"\0")
     for path in (source.resolve(), task_file(task_id),
                  witness.path(task_id)):
         h.update(b"\0" + str(path).encode() + b"\0")

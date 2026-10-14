@@ -7,15 +7,14 @@ from dataclasses import dataclass
 from checker.finding import Finding, LintNamed, LintSentence
 from checker.lint.view import lint
 from checker.runs import Runs
-from engine import Program, RelationName, UnitId
+from engine import RelationName, UnitId
 from engine.program import Atom, Unit, body_atoms, own
 from engine.quotes import quotes
-from solver.aggregate import Solver, has_determine
+from solver.aggregate import Solver
 from solver.category import Category
 from solver.cycles import cyclic_components
 from solver.graph import Graph, InstancePath
-from solver.readers import instance_of
-from solver.vocabulary import DETERMINE
+from solver.determine import run_program
 
 RECURSIVE_INPUTS: dict[str, frozenset[str]] = {
     "Take": frozenset({"step", "skip", "take"}),
@@ -35,19 +34,6 @@ class _Edge:
     atom: Atom
     read: RelationName
     head: RelationName
-
-
-def _as_run(solver: Solver) -> tuple[Program, InstancePath | None]:
-    """The solver's program as its runs run it, with the path of the
-    instance a run adds: an instance of the `Determine` comp where the
-    solver's text makes none, as the Determine run instantiates it
-    (`solver.determine.determine`), the one comp a run of a solver
-    instantiates that no `.init` does."""
-    program = solver.program
-    if not has_determine(solver) or instance_of(program, DETERMINE) is not None:
-        return program, None
-    name = "determine"
-    return solver.engine.instantiate(program, DETERMINE, name), (name,)
 
 
 def _permitted(solver: Solver, graph: Graph, e: _Edge) -> bool:
@@ -80,17 +66,21 @@ def _permitted(solver: Solver, graph: Graph, e: _Edge) -> bool:
         "whose every variable another atom of the clause grounds.")
 def check_recursion(solver: Solver, runs: Runs) -> list[Finding]:
     """One finding per cycle of the relations of the program its runs run
-    (`_as_run`), each at the instance path that declares it, the lib's
+    (`solver.determine.run_program`), each at the instance path that declares it, the lib's
     units read at each instance they run at, that holds a read of a unit
     of the solver's own text whose both relations stand in the cycle and
     which `_permitted` does not permit: at the line of the first such
     unit, standing on each such unit, naming the cycle's relations by
-    their text, in the order of that text. A cycle whose every such read
+    their text, in the order of that text, where a relation of the instance
+    a run adds is named by its text inside that instance, as the solver's
+    `.comp Determine` names it. A cycle whose every such read
     stands inside the instance a run adds gives no finding where a cycle
     outside it stands on the same units, since the solver's text
     instantiates those units there."""
-    program, added = _as_run(solver)
-    graph = Graph(program, solver.engine)
+    run = run_program(solver)
+    added = run.determine.path \
+        if run.determine is not None and run.determine.added else None
+    graph = Graph(run.program, solver.engine)
     succ: dict[RelationName, dict[RelationName, None]] = {}
     solver_edges: list[_Edge] = []
     for u in graph.program.units:
@@ -119,7 +109,7 @@ def check_recursion(solver: Solver, runs: Runs) -> list[Finding]:
                                       u.id.index))
         first = units[0].span
         assert first is not None
-        names = tuple(sorted(r.text for r in comp))
+        names = tuple(sorted(_text(r, added) for r in comp))
         inside = added is not None \
             and all(e.at[:len(added)] == added for e in closing)
         found.append((inside, frozenset(u.id for u in units), lint(
@@ -128,3 +118,9 @@ def check_recursion(solver: Solver, runs: Runs) -> list[Finding]:
             tuple(u.id for u in units))))
     outside = {ids for inside, ids, _f in found if not inside}
     return [f for inside, ids, f in found if not inside or ids not in outside]
+
+
+def _text(r: RelationName, added: InstancePath | None) -> str:
+    if added is not None and r.instances[:len(added)] == added:
+        return RelationName(r.instances[len(added):], r.name).text
+    return r.text

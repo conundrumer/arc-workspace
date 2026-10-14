@@ -399,6 +399,11 @@ class Engine(Protocol):
         `component`."""
         ...
 
+    def runtime_identity(self) -> bytes:
+        """The identity of what runs the programs, which changes where a
+        kept result of a run could change, made with no process."""
+        ...
+
     def run(self, program: Program, inputs: Mapping[RelationName, InputValue],
             outputs: Sequence[RelationName], limits: Limits,
             caps: Mapping[RelationName, int] | None = None) -> RunResult:

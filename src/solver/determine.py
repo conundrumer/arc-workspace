@@ -7,6 +7,7 @@ from engine import (
     Engine,
     InputValue,
     Limits,
+    Program,
     RelationName,
     Row,
     Rows,
@@ -19,6 +20,7 @@ from engine.program import POSE_COLUMN, Atom, RigidCall, Unit, body_atoms
 from engine.quotes import quotes
 from solver.aggregate import Solver, has_determine
 from solver.cycles import cyclic_components
+from solver.graph import InstancePath
 from solver.model import Parameter, StoredGrid
 from solver.probe import example_inputs
 from solver.readers import instance_of, parameter, row_value
@@ -86,6 +88,44 @@ class NoDetermine:
 type DetermineResult = Determined | NoDetermine | RunFailure
 
 
+@dataclass(frozen=True)
+class DetermineInstance:
+    """The instance of the `Determine` comp that a solver's runs run."""
+
+    name: str
+    added: bool
+    """No `.init` of the solver's text makes the instance, and a run adds
+    it."""
+
+    @property
+    def path(self) -> InstancePath:
+        return (self.name,)
+
+
+@dataclass(frozen=True)
+class RunProgram:
+    """The program a solver's runs run, and its `Determine` instance: None
+    where the solver has no `Determine` comp."""
+
+    program: Program
+    determine: DetermineInstance | None
+
+
+def run_program(solver: Solver) -> RunProgram:
+    """The solver's program with an instance of its `Determine` comp where
+    no `.init` instantiates it, the one comp a run of a solver
+    instantiates that no `.init` does."""
+    program = solver.program
+    if not has_determine(solver):
+        return RunProgram(program, None)
+    inst = instance_of(program, DETERMINE)
+    if inst is not None:
+        return RunProgram(program, DetermineInstance(inst.name, False))
+    name = "determine"
+    return RunProgram(solver.engine.instantiate(program, DETERMINE, name),
+                      DetermineInstance(name, True))
+
+
 def determine(engine: Engine, solver: Solver, limits: Limits,
               measured: float | None = None) -> DetermineResult:
     """The Determine comp over the examples, diffed against the stored values
@@ -105,18 +145,15 @@ def determine(engine: Engine, solver: Solver, limits: Limits,
     solver's own determination spent `measured` CPU seconds, take
     `variant_limits` of those. A solver whose task has no task file is a
     caller's error: `ValueError`."""
-    program = solver.program
-    if not has_determine(solver):
+    run = run_program(solver)
+    if run.determine is None:
         return NoDetermine()
+    program, det_name = run.program, run.determine.name
     task = solver.task
     if task is None:
         raise ValueError("a determination runs over the task's examples, "
                          "and the solver's task has no task file")
     params_inst = instance_of(program, PARAMS)
-    det_inst = instance_of(program, DETERMINE)
-    det_name = "determine" if det_inst is None else det_inst.name
-    if det_inst is None:
-        program = engine.instantiate(program, DETERMINE, det_name)
     determined = [p for p in solver.params.parameters if p.determined]
     if params_inst is None or not determined:
         return Determined((), (), (), 0.0)

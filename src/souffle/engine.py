@@ -23,7 +23,7 @@ from souffle import classify, expand, ops, parser, printer, render
 from souffle.grounding import grounded_without
 from souffle.text import TextMethods
 from souffle.index import index_of
-from souffle.run import Runner
+from souffle.run import Runner, binary_identity
 
 FUNCTOR_DIR = checkout.programs()
 """Where the functor library (`run.FUNCTOR_LIB`) and its source stand, in
@@ -76,6 +76,9 @@ class SouffleEngine(TextMethods):
 
     def instantiate(self, program: Program, component: str, name: str) -> Program:
         return ops.instantiate(program, component, name)
+
+    def runtime_identity(self) -> bytes:
+        return binary_identity()
 
     def run(self, program: Program, inputs: Mapping[RelationName, InputValue],
             outputs: Sequence[RelationName], limits: Limits,

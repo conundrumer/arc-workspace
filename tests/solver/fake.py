@@ -148,6 +148,9 @@ class FakeEngine(TextMethods):
                     name: str) -> Program:
         return program
 
+    def runtime_identity(self) -> bytes:
+        return b"fake"
+
     def run(self, program: Program, inputs: Mapping[RelationName, InputValue],
             outputs: Sequence[RelationName], limits: Limits,
             caps: Mapping[RelationName, int] | None = None) -> RunResult:
