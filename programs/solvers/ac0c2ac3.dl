@@ -220,6 +220,6 @@ out(P, Col, [G, U, S]) :- impl_choice([G, U, S]), draw(G, U, S, P, Col), !blank(
         order.cell([E, C, A], Q), ex_in(E, Q, Col_in), ex_out(E, Q, Col), Col != Col_in,
         !later(E, C, A, Q, Col).
 
-    .decl scan_order(c: DiagDir, a: Axis)
+    .decl scan_order(d: DiagDir, a: Axis)
     scan_order(C, A) :- diag_dir_elem(C), axis_elem(A), !scan_clash(C, A).
 }

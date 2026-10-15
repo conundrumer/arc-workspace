@@ -77,7 +77,7 @@
     - Lib relations read a Position.
 - **Arithmetic.** Arithmetic, raw aggregates, and `range` are banned.
     - **Bound comparisons.** A comparison of a distance against a bound is program style, is not arithmetic, and needs no lib relation.
-- **`ord`.** `ord` is banned.
+- **`ord` and `as`.** `ord` and the `as` cast are banned.
     - The lib comp `IdentOf` gives a value its `Ident`.
 - **Recursion.** Recursion is banned in every clause of the solver: a clause reads no relation of its own stratum.
     - A closure is an instance of a lib construction.

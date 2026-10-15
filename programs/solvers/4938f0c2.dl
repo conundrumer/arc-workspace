@@ -113,13 +113,13 @@ out(P, Col, Ch) :-
         compose(B, V2, P_out), ex_in(E, P_out, _).
 
     .type ExCell = [e: Example, p: Position, col: Color]
-    .init orbit = KeyedSetCompare<Sym, number, ExCell>
-    orbit.pattern_member(0, [E, P, Col]) :- out_ink(E, P, Col).
+    .init orbit = KeyedSetCompare<Sym, Unit, ExCell>
+    orbit.pattern_member($U(), [E, P, Col]) :- out_ink(E, P, Col).
     orbit.observed_member(S, [E, P, Col]) :-
         sym_member(S, D), img(E, D, P, Col),   // the cells the group's transforms reach
         ex_out(E, _, _).                       // in the examples with outputs
 
     // The group whose orbit is exactly the output's ink.
     .decl sym(s: Sym)
-    sym(S) :- orbit.equals(S, 0).
+    sym(S) :- orbit.equals(S, $U()).
 }

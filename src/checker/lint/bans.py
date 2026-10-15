@@ -1,6 +1,6 @@
 """The lint checks on what program style bans in the program's clauses:
-literals, lib constant macros, arithmetic, `range`, `ord`, raw aggregates,
-and an order taken over a type that has none."""
+literals, lib constant macros, arithmetic, `range`, `ord` and `as`, raw
+aggregates, and an order taken over a type that has none."""
 
 from collections.abc import Iterator
 
@@ -32,6 +32,7 @@ from engine.program import (
     Atom,
     BinaryTerm,
     BodyLiteral,
+    Cast,
     Comparison,
     ComparisonOperator,
     DefinedName,
@@ -57,6 +58,9 @@ from solver.vocabulary import (
     IDENT,
     PARAMS,
 )
+
+CAST = "as"
+"""The cast's keyword, the fragment its finding names."""
 
 ZERO_MACROS = frozenset({"ZERO"})
 """The zero box: a box, not an orientation."""
@@ -119,6 +123,8 @@ def _bans(solver: Solver, runs: Runs, category: Category) -> list[Finding]:
                 hit = (Category.RANGE, Intrinsic.RANGE.value)
             case IntrinsicCall(functor=Intrinsic.ORD):
                 hit = (Category.ORD, Intrinsic.ORD.value)
+            case Cast():
+                hit = (Category.ORD, CAST)
             case _:
                 pass
         if hit is not None and hit[0] == category:
@@ -169,12 +175,12 @@ def check_range(solver: Solver, runs: Runs) -> list[Finding]:
 
 
 @quotes("style.md", "Bans",
-        "**`ord`.** `ord` is banned.")
+        "**`ord` and `as`.** `ord` and the `as` cast are banned.")
 @quotes("style.md", "Bans",
         "The lib comp `IdentOf` gives a value its `Ident`.")
 def check_ord(solver: Solver, runs: Runs) -> list[Finding]:
-    """An `ord` call in a clause program style applies to. Serves the
-    purest form, as `check_arithmetic` does."""
+    """An `ord` call or an `as` cast in a clause program style applies to.
+    Serves the purest form, as `check_arithmetic` does."""
     return _bans(solver, runs, Category.ORD)
 
 

@@ -22,6 +22,7 @@ class Category(StrEnum):
     COMP_WITHOUT_ENTRY = "comp without entry"
     PROPOSAL_COMP = "proposal comp"
     PARSE_UNSHARED_WITH_DETERMINE = "parse unshared with determine"
+    DETERMINE_SCHEMA = "determine schema"
     FAMILY_CASE = "family case"
     HEADER = "header"
     CLAIM = "claim"

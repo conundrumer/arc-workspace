@@ -84,13 +84,15 @@ out(P, Col) :-
     .init bbox = Bbox<Region>
     bbox.cell(R, P) :- pick.rep(R, R), region_cell(R, P).
 
-    .decl piece_member(id: Ident, p: Position)
-    piece_member(as(C, Ident), P_inner) :-
-        bbox.cell([E, C, Id], P), bbox.box([E, C, Id], B), crop(P, B, P_inner).
+    // Each piece's id, from the color it paints.
+    .init color_id = IdentOf<Color>
+    color_id.value(C) :- changed(_, _, C).
 
-    // @ignore: head-repeat — Determine names each piece by the color it
-    //  paints, and the relation keeps the parameter's schema, its id and its
-    //  color
+    .decl piece_member(id: Ident, p: Position)
+    piece_member(I, P_inner) :-
+        bbox.cell([E, C, Id], P), bbox.box([E, C, Id], B), crop(P, B, P_inner),
+        color_id.id(C, I).
+
     .decl piece_color(id: Ident, col: Color)
-    piece_color(as(C, Ident), C) :- changed(_, _, C).
+    piece_color(I, C) :- color_id.id(C, I).
 }

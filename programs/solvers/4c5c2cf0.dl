@@ -59,11 +59,11 @@ pivot(Col, $Fixed()) :- sym.covers(Col, _).
 
 // --- $Known ---
 
-.init known = KeyedSetCompare<Color, number, Position>
-known.pattern_member(0, P) :- params.pivot_shape(P).
+.init known = KeyedSetCompare<Color, Unit, Position>
+known.pattern_member($U(), P) :- params.pivot_shape(P).
 known.observed_member(Col, P_inner) :- shape_inner(Col, P_inner).
 
-pivot(Col, $Known()) :- known.equals(Col, 0).
+pivot(Col, $Known()) :- known.equals(Col, $U()).
 
 // --- the copies ---
 
@@ -108,11 +108,11 @@ out(P, Col, Ch) :- in(P, _), pivot(_, Ch), !copy(P, _, Ch), params.bg(Col).
         compose(B, P_rel2, P_img), ex_in(E, P_img, _).          // seated back on the grid
 
     .type ExCell = [e: Example, p: Position, col: Color]
-    .init same = KeyedSetCompare<Sym, number, ExCell>
-    same.pattern_member(0, [E, P, Col]) :- ex_out(E, P, Col), !params.bg(Col).
+    .init same = KeyedSetCompare<Sym, Unit, ExCell>
+    same.pattern_member($U(), [E, P, Col]) :- ex_out(E, P, Col), !params.bg(Col).
     same.observed_member(S, [E, P, Col]) :- orbit(E, S, P, Col).
 
     // The group whose images are exactly the output's shape cells.
     .decl group(s: Sym)
-    group(S) :- same.equals(S, 0).
+    group(S) :- same.equals(S, $U()).
 }

@@ -95,6 +95,8 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
     LintSentence.PARSE_UNREAD: lambda n, _: mctx(
         "no Determine comp reads this Parse comp; read it in Determine, or "
         "fold it into the program"),
+    LintSentence.DETERMINE_SCHEMA: lambda n, _: mctx(
+        "declare the determination relation as `{0}`").format(*n),
     LintSentence.MARKER_SLASH: lambda n, _: mctx(
         "the marker separates its cases with `/`; see the case markers in "
         "[Cases](docs/handbook/solver-file.md#cases)"),

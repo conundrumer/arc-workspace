@@ -82,11 +82,11 @@ legend_tile($Edge(), P_tile) :-
 spread($Edge(), A) :- params.legend_dir(D), axis_of(D, A).
 
 // --- $Footprint ---
-.init glyph = KeyedSetCompare<Position, number, Position>
-glyph.pattern_member(0, P_intile) :- params.marker(P_intile).
+.init glyph = KeyedSetCompare<Position, Unit, Position>
+glyph.pattern_member($U(), P_intile) :- params.marker(P_intile).
 glyph.observed_member(P_tile, P_intile) :- parse.ink($U(), P_tile, P_intile, _).
 
-legend_tile($Footprint(), P_tile) :- glyph.equals(P_tile, 0).
+legend_tile($Footprint(), P_tile) :- glyph.equals(P_tile, $U()).
 
 spread($Footprint(), A) :- params.spread_axis(A).
 

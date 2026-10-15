@@ -303,6 +303,6 @@ out(P, Col, [$AxisFirst(), $ThicknessTwo()], [[D]]) :-
     start_contradicted(C) :- parse.strip_fill(E, C, P), ex_out(E, P, Col), !params.fill(Col).
     start_contradicted(C) :- changed(E, P), diag_dir_elem(C), !parse.strip_fill(E, C, P).
 
-    .decl start_corner(c: DiagDir)
+    .decl start_corner(d: DiagDir)
     start_corner(C) :- diag_dir_elem(C), !start_contradicted(C).
 }

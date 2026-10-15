@@ -446,6 +446,6 @@ out(P, Col, Ch, V) :-
     .decl order_defect(dp: Dir)
     order_defect(Dp) :- parse.order(E, Dp), !order_ok(E, Dp).
 
-    .decl pick_dir(dp: Dir)
+    .decl pick_dir(d: Dir)
     pick_dir(Dp) :- dir_elem(Dp), !order_defect(Dp).
 }

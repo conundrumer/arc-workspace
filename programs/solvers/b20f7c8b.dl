@@ -336,7 +336,7 @@ match_color.item([$ExactFirst(), Gp, Bc, Bx], Col) :-
     .decl frame_defect(col: Color)
     frame_defect(Col) :- cand(Col), edge_change(_, _, C_in, C_out), C_in != Col, C_out != Col.
 
-    .decl frame_color(col: Color)
+    .decl frame_color(c: Color)
     frame_color(Col) :- cand(Col), !frame_defect(Col).
 
     // The frame color and the ink color are on one side of every change.
@@ -345,6 +345,6 @@ match_color.item([$ExactFirst(), Gp, Bc, Bx], Col) :-
         cand(Col), frame_color(F), Col != F,
         changed(_, _, C_in, C_out), C_in != Col, C_out != Col, C_in != F, C_out != F.
 
-    .decl ink_color(col: Color)
+    .decl ink_color(c: Color)
     ink_color(Col) :- cand(Col), frame_color(F), Col != F, !ink_defect(Col).
 }

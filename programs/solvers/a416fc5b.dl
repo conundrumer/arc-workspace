@@ -464,7 +464,7 @@ drawn([G, Sc], St, $ClearTarget(), Dt, Q, P, Col) :-
     .decl corner_contradicted(c: DiagDir)
     corner_contradicted(Dc) :- other(E, Q, _), diag_dir_elem(Dc), !probed(E, Dc, Q).
 
-    .decl probe_corner(c: DiagDir)
+    .decl probe_corner(d: DiagDir)
     probe_corner(Dc) :- diag_dir_elem(Dc), !corner_contradicted(Dc).
 
     .init order = LexOrder<ProbeEx>

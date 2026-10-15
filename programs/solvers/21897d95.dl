@@ -334,10 +334,16 @@ out(P_out, Col, [A, B]) :-
         ex.arrow(E1, P1, _), ex_in(E1, P1, C1), params.arrow_color(C1),
         ex.arrow(E2, P2, _), ex_in(E2, P2, C2), params.arrow_color(C2).
 
-    .decl chosen(ep: EP, id: Ident)
-    chosen([E, P], as(Col, Ident)) :-
+    // Each chosen arrow's id, from its center color.
+    .init color_id = IdentOf<Color>
+    color_id.value(Col) :-
         ( payload_pick.rep([E, P], [E, P]) ; blank_pick.rep([E, P], [E, P]) ),
         ex_in(E, P, Col).
+
+    .decl chosen(ep: EP, id: Ident)
+    chosen([E, P], I) :-
+        ( payload_pick.rep([E, P], [E, P]) ; blank_pick.rep([E, P], [E, P]) ),
+        ex_in(E, P, Col), color_id.id(Col, I).
 
     .init abox = Bbox<EP>
     abox.cell([E, K], P) :- chosen([E, K], _), ( P = K ; ex.marked(E, K, _, P) ).

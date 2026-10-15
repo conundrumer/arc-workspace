@@ -80,8 +80,8 @@ out(P, Col, $PerCell()) :-
 
 // --- $SliceMap ---
 
-.init slice_match = KeyedSetCompare<Position, Ident, SliceMember>
-slice_match.pattern_member(0, [P, Col]) :- params.slice_in(P, Col).
+.init slice_match = KeyedSetCompare<Position, Unit, SliceMember>
+slice_match.pattern_member($U(), [P, Col]) :- params.slice_in(P, Col).
 slice_match.observed_member(P_across, [P_inner, Col]) :-
     parse.cell_split($U(), _, Col, P_inner, P_across).
 

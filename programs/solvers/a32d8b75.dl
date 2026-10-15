@@ -576,7 +576,7 @@ out(P, Col, Ch, [[D]]) :- params.stamp_order(D), parse.shown($U(), Ch, D, P, Col
     .decl box_side_missing(n: number)
     box_side_missing(N) :- square(_, N), trained(E), !square(E, N).
 
-    .decl box_side(n: number)
+    .decl box_side(k: number)
     box_side(N) :- square(_, N), !box_side_missing(N).
 
     .decl anchor_in(e: Example, col: Color)
@@ -585,7 +585,7 @@ out(P, Col, Ch, [[D]]) :- params.stamp_order(D), parse.shown($U(), Ch, D, P, Col
     .decl anchor_missing(col: Color)
     anchor_missing(Col) :- anchor_in(_, Col), trained(E), !anchor_in(E, Col).
 
-    .decl anchor(col: Color)
+    .decl anchor(c: Color)
     anchor(Col) :- anchor_in(_, Col), !anchor_missing(Col).
 
     .decl arrow_in(e: Example, col: Color)
@@ -594,7 +594,7 @@ out(P, Col, Ch, [[D]]) :- params.stamp_order(D), parse.shown($U(), Ch, D, P, Col
     .decl arrow_missing(col: Color)
     arrow_missing(Col) :- arrow_in(_, Col), trained(E), !arrow_in(E, Col).
 
-    .decl arrow(col: Color)
+    .decl arrow(c: Color)
     arrow(Col) :- arrow_in(_, Col), !arrow_missing(Col).
 
     // The end panel on side D of example E's input holds params.sep.

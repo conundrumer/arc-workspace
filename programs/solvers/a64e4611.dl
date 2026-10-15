@@ -729,6 +729,6 @@ out(P, Col, [Bd, An, Ex, Hd, Ln, Eg], V) :-
     misread(Q) :-
         ex.line_band(E, Q, B), ex_out(E, _, _), ex_in(E, P, _), inside(P, B), !near_fill(E, P).
 
-    .decl quorum(q: number)
+    .decl quorum(n: number)
     quorum(Q) :- ex.quorum(E, Q), ex_out(E, _, _), !misread(Q).
 }

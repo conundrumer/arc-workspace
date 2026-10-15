@@ -16,11 +16,11 @@ from engine import (
     UnitId,
     Value,
 )
-from engine.program import POSE_COLUMN, Atom, RigidCall, Unit, body_atoms
+from engine.program import POSE_COLUMN, RigidCall
 from engine.quotes import quotes
 from solver.aggregate import Solver, has_determine
 from solver.cycles import cyclic_components
-from solver.graph import InstancePath
+from solver.graph import Graph, InstancePath, Node, NodeKind
 from solver.model import Parameter, StoredGrid
 from solver.probe import example_inputs
 from solver.readers import instance_of, parameter, row_value
@@ -28,7 +28,6 @@ from solver.value_order import row_key
 from solver.variant_limits import over_examples, variant_limits
 from solver.vocabulary import (
     DETERMINE,
-    DETERMINE_SCOPE,
     IDENT,
     INPUT,
     PARAMS,
@@ -213,8 +212,8 @@ def determine(engine: Engine, solver: Solver, limits: Limits,
             tuple(r for r in derived[p.name] if r not in s),
             p.name in rigid))
     return Determined(tuple(diffs), tuple(reproduced),
-                      cycles(solver, params_inst.name,
-                             [p.name for p in determined]), spent)
+                      cycles(Graph(program, engine), params_inst.name,
+                             det_name, [p.name for p in determined]), spent)
 
 
 def stored_facts(engine: Engine, solver: Solver, p: Parameter) -> list[Row]:
@@ -339,45 +338,36 @@ def _signatures(rows_by_param: Mapping[str, Rows],
     return sorted(tuple(sorted(rows)) for rows in by_id.values())
 
 
-def cycles(solver: Solver, params_instance: str,
+def cycles(graph: Graph, params_instance: str, determine_instance: str,
            determined: Sequence[str]) -> tuple[tuple[CycleRead, ...], ...]:
     """The determined parameters whose determinations read each other's
-    stored values, through the `Determine` relations between: for each
-    group of them that reads around, a parameter that reads its own stored
-    value included, every read inside the group, each at the first atom by
-    line where it happens, in name order."""
-    scope = DETERMINE_SCOPE
-    feeds: dict[RelationName, list[tuple[Unit, Atom]]] = {}
-    for u in solver.program.units:
-        if u.scope != scope or u.body is None:
-            continue
-        reads = feeds.setdefault(u.head.relation, [])
-        reads += [(u, a) for a, _negated in body_atoms(u.body)]
-
-    def local(rel: RelationName) -> list[RelationName]:
-        if rel.instances and rel.instances[0] != params_instance:
-            return [h for h in feeds if h.instances[:1] == rel.instances[:1]]
-        return [rel] if rel in feeds else []
-
+    stored values: for each group of them that reads around, a parameter
+    that reads its own stored value included, every read inside the group,
+    each at the first atom by line where it happens, in name order. The walk
+    from a parameter's `Determine` relation follows each relation the units
+    that head it read, at the instance paths they run at, the relations
+    `Params` derives and those of the instances nested in `Determine`
+    among them, and stops at the stored value of a determined parameter."""
     wanted = set(determined)
     edges: dict[str, dict[str, tuple[UnitId, int]]] = {}
     for p in determined:
-        seen: set[RelationName] = set()
-        stack = [RelationName((), p)]
+        seen: set[Node] = set()
+        stack = [Node(NodeKind.RELATION, (determine_instance,), p)]
         found: dict[str, tuple[UnitId, int]] = {}
         while stack:
-            rel = stack.pop()
-            if rel in seen:
+            node = stack.pop()
+            if node in seen:
                 continue
-            seen.add(rel)
-            for u, atom in feeds.get(rel, ()):
-                read = atom.relation
-                if read.instances == (params_instance,) and read.name in wanted:
-                    if read.name not in found \
-                            or atom.line < found[read.name][1]:
-                        found[read.name] = (u.id, atom.line)
-                else:
-                    stack += local(read)
+            seen.add(node)
+            for placed in graph.heading(node):
+                for atom, read, _name in graph.body(placed):
+                    if read.path == (params_instance,) \
+                            and read.name in wanted:
+                        if read.name not in found \
+                                or atom.line < found[read.name][1]:
+                            found[read.name] = (placed[0].id, atom.line)
+                    else:
+                        stack.append(read)
         edges[p] = found
     groups = [sorted(c) for c in cyclic_components(
         sorted(determined), lambda v: sorted(edges.get(v, {})))]

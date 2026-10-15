@@ -217,6 +217,7 @@ class LintSentence(StrEnum):
     NO_PROPOSAL_ENTRY = "no proposal entry"
     PROPOSAL_UNREAD = "proposal unread"
     PARSE_UNREAD = "parse unread"
+    DETERMINE_SCHEMA = "determine schema"
     FAMILY_NOT_PARSED = "family not parsed"
     FAMILY_RECORD = "family record"
     FAMILY_NO_CASE = "family no case"

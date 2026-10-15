@@ -1,7 +1,9 @@
 """The lint checks on the components a solver holds: a component with
-no entry, and a `Parse` that `Determine` does not share."""
+no entry, a `Parse` that `Determine` does not share, and a `Determine`
+relation whose schema is not its parameter's."""
 
 from collections.abc import Sequence
+from dataclasses import replace
 
 from checker.finding import (
     Finding,
@@ -27,7 +29,10 @@ from engine import (
     checkout,
 )
 from engine.program import (
+    POSE_COLUMN,
     FunctorDecl,
+    RelationDecl,
+    own,
 )
 from engine.quotes import quotes
 from solver.category import Category
@@ -37,6 +42,7 @@ from solver.model import (
 from solver.aggregate import (
     Solver,
 )
+from solver.determine import rigid_parameters
 from solver.dependence import (
     dependence,
     dependent_bases,
@@ -145,3 +151,36 @@ def _reads_parse(v: View) -> bool:
                         and d.scope.components[:1] == (PARSE,):
                     return True
     return False
+
+
+@quotes("solver-file.md", "Determination",
+        "`Determine` contains the determination as one relation per "
+        "determined parameter, with the parameter's name and schema")
+def check_determine_schema(solver: Solver, runs: Runs) -> list[Finding]:
+    """A relation of `Determine` that takes a Params parameter's name and
+    whose columns differ from that parameter's in name or type, the pose
+    column of a parameter a RIGID call stores left out: the determination
+    writes such a parameter's chart in a pose of its own (patterns.md, under
+    "`RIGID` — parameter relations coupled as a rigid assembly"). Serves the
+    purest form."""
+    v = view(solver, runs)
+    params = {p.name: p for p in solver.params.parameters}
+    rigid = rigid_parameters(solver)
+    out: list[Finding] = []
+    for d in v.program.relations:
+        p = params.get(d.name)
+        if d.scope != DETERMINE_SCOPE or not own(d.span) or p is None:
+            continue
+        want = tuple(c for i, c in enumerate(p.columns)
+                     if p.name not in rigid or i != POSE_COLUMN)
+        if [(c.name, c.type.text) for c in d.columns] \
+                == [(c.name, c.type.text) for c in want]:
+            continue
+        stored = v.decls.get(p.declaration)
+        if not isinstance(stored, RelationDecl):
+            raise ValueError(f"the parameter `{p.name}` has no relation "
+                             "declaration")
+        out.append(lint(d.span.first, LintNamed(
+            Category.DETERMINE_SCHEMA, LintSentence.DETERMINE_SCHEMA,
+            (solver.engine.text(replace(stored, columns=want)),))))
+    return out

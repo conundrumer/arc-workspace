@@ -365,6 +365,6 @@ out(P, Col, [Bc, An, Cv, R, $NoBarIdentity()]) :-
     .decl untouched(a: Dir)
     untouched(A) :- dir_elem(A), ex_in(E, _, _), !touches(E, A).
 
-    .decl anchor_side(a: Dir)
+    .decl anchor_side(d: Dir)
     anchor_side(A) :- dir_elem(A), !untouched(A).
 }
