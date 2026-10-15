@@ -196,13 +196,14 @@ def sweep_command(runs: list[str]) -> str:
 
 def doc_review(state: State) -> Step:
     """The launch of a standing doc review, on the reader it is due on."""
-    if not state.readers:
+    readers = state.readers.value
+    if not readers:
         return Undecided(mctx("no reader is listed for a standing doc review"))
     if state.git.doc_reviews is None:
         return Undecided(mctx("a `doc-review/<reader>` tag does not read as a commit"))
     times = state.git.doc_reviews
-    unreviewed = [r for r in state.readers if r.tag not in times]
-    reader = unreviewed[0] if unreviewed else min(state.readers, key=lambda r: times[r.tag])
+    unreviewed = [r for r in readers if r.tag not in times]
+    reader = unreviewed[0] if unreviewed else min(readers, key=lambda r: times[r.tag])
     return Launch(Role.DOC_REVIEWER, reader.tag,
                   briefs.standing_doc_review(" ".join((reader.name, *reader.args)), reader.tag,
                                              state.git.commits[0].hash, state.me))

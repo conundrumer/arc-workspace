@@ -57,10 +57,12 @@ from operations.state import (
     Agent,
     Call,
     Computed,
+    Deferred,
     GitRead,
     HeldRead,
     Message,
     Reader,
+    ReadOnUse,
     Report,
     SessionsRead,
     State,
@@ -158,8 +160,8 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
             made=made(calls), late_resumes=late, stalled=stalled, pass_tickets=passes),
         git=tree, taken_up=taken_up(me, operators, sorted_calls, parents),
         held=read_held(holding, scratch(session)),
-        readers=tuple(Reader(name, tuple(args)) for name, args in reader_calls()
-                      if name not in DEPRECATED),
+        readers=Deferred(lambda: tuple(Reader(name, tuple(args)) for name, args in reader_calls()
+                                       if name not in DEPRECATED)),
         limit_lifted=limit_lifted(now, watching),
         sessions=sessions(tickets_dir, index, session, now))
     given = [ticket_number(n) for n in named(state) if n in tickets]
@@ -213,8 +215,8 @@ def read_held(holding: dict[str, Path], scratch: Path) -> HeldRead:
     worktree of each by its number, and `scratch` is the session's
     scratchpad."""
     trees = set(holding.values())
-    return HeldRead(gate_outputs={w: gate_outputs(w) for w in trees},
-                    fragments={w: fragments(w) for w in trees},
+    return HeldRead(gate_outputs=ReadOnUse(sorted(trees), gate_outputs),
+                    fragments=ReadOnUse(sorted(trees), fragments),
                     seen={n: read_seen(change_fragments.seen_dir(n, scratch)) for n in holding})
 
 

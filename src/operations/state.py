@@ -3,7 +3,7 @@ it from the ticket tracker, git, the worktrees and the transcripts of the
 session's operators.
 """
 
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
 from pathlib import Path
@@ -377,13 +377,47 @@ class GitRead:
     definitions: Mapping[str, float]
 
 
+class Deferred[T]:
+    """A read that runs at the first use of its `value`, which is held from
+    then on: the procedures of a state read it only where a step reaches
+    it."""
+
+    def __init__(self, read: Callable[[], T]) -> None:
+        self._read = read
+        self._value: tuple[T] | None = None
+
+    @property
+    def value(self) -> T:
+        if self._value is None:
+            self._value = (self._read(),)
+        return self._value[0]
+
+
+class ReadOnUse[K, V](Mapping[K, V]):
+    """A mapping of `keys`, whose value at a key is `read` of it as a
+    `Deferred` gives it."""
+
+    def __init__(self, keys: Iterable[K], read: Callable[[K], V]) -> None:
+        self._held = {k: Deferred(lambda k=k: read(k)) for k in keys}
+
+    def __getitem__(self, key: K) -> V:
+        return self._held[key].value
+
+    def __iter__(self) -> Iterator[K]:
+        return iter(self._held)
+
+    def __len__(self) -> int:
+        return len(self._held)
+
+
 @dataclass(frozen=True)
 class HeldRead:
     """What the operator reads of the changes `me` holds. `gate_outputs`
     gives, for the worktree of each, the accepted gate outputs under
     `tests/gate/accepted/` its change writes, and `fragments` the
     fragments whose text that change adds or changes, as
-    `tree_reads.fragments` gives them, and `seen` the files
+    `tree_reads.fragments` gives them, each read at its first use
+    (`ReadOnUse`), and `seen` the files
     `tree_reads.py seen` wrote for each change, by its number, in the
     order of their time."""
     gate_outputs: Mapping[Path, tuple[str, ...]]
@@ -401,7 +435,8 @@ class Computed:
     for it. `budgets` gives the budget of each change `taking.take` takes
     next, taken at `State.now`, and of each held change whose spend passes
     the budget its take gives, taken at the line that gives that budget
-    (`change_budget.Take`). `doc_budgets` gives, for each held change that
+    (`change_budget.Take`). `doc_budgets` gives, for each held change where
+    `change_fragments.fragments_due` holds and that
     `change_fragments.lacking_doc_editor` gives an `editors` field for, the budget,
     taken at `State.now`, of that field's set with the doc editor.
     `run_starts` gives what the script of each `Run:` line gave at this
@@ -457,7 +492,7 @@ class State:
     `plan.taken_up` gives it). `started` is the time of the session's
     start, and `transcripts_dir` the directory that holds the session's
     transcript. `readers` holds the readers a standing doc
-    review rotates over, in the order `context.py contexts` lists them.
+    review rotates over, read at its first use, in the order `context.py contexts` lists them.
     `limit_lifted` is the time of the reading of the usage limit that
     gives it as lifted, or None where the reading gives it in force, as
     `usage_limit.limit_lifted` gives it. `sessions` is the read of the
@@ -481,7 +516,7 @@ class State:
     taken_up: frozenset[str]
     held: HeldRead
     sessions: SessionsRead
-    readers: tuple[Reader, ...] = ()
+    readers: Deferred[tuple[Reader, ...]] = field(default_factory=lambda: Deferred(tuple))
     limit_lifted: float | None = None
     parents: Mapping[str, str] = field(default_factory=dict)
     computed: Computed = field(default_factory=lambda: Computed())

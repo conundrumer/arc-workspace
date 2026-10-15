@@ -48,10 +48,15 @@ def change_budgets(state: State, spent: dict[str, Spend], tickets: Path,
 
 
 def doc_budgets(state: State, tickets: Path, undecided: list[str]) -> dict[str, Budget]:
-    """The budgets `Computed.doc_budgets` gives."""
+    """The budgets `Computed.doc_budgets` gives, read for each held change
+    where `change_fragments.fragments_due` holds."""
     out: dict[str, Budget] = {}
     for t in changes.held(state):
-        editors = change_fragments.lacking_doc_editor(t, worktree(t, state), state)
+        w = worktree(t, state)
+        if w is None or not change_fragments.fragments_due(
+                change_agents.editors_in(change_agents.of_change(state, t.number), w)):
+            continue
+        editors = change_fragments.lacking_doc_editor(t, w, state)
         if editors is None:
             continue
         b = budget(tickets, frozenset({*editors, Role.DOC_EDITOR}), state.now, undecided)

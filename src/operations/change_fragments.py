@@ -74,19 +74,34 @@ def unseen(state: State, t: Ticket, w: Path, here: list[Agent]) -> tuple[Place, 
     return tuple(p for p in places if p.text is None or (p.file, p.text) not in seen)
 
 
+def drafter_reports(here: list[Agent]) -> list[float]:
+    """The times of the latest reports of the drafters of `here`."""
+    return [r.time for a in here if a.role in DRAFTERS and (r := a.last_report) is not None]
+
+
+def fragments_due(here: list[Agent]) -> bool:
+    """Whether the fragments of the change whose agents in its worktree are
+    `here` are due a doc editor: no agent of `here` is pending, a drafter
+    has reported, and no doc editor was launched since its latest report.
+    `held_budgets.doc_budgets` reads a change's doc budget only where this
+    holds, so it reads `HeldRead.fragments` only where `fragments_step` may
+    need the budget."""
+    reported = drafter_reports(here)
+    return (not any(a.pending for a in here) and bool(reported) and not any(
+        a.role is Role.DOC_EDITOR and a.launched > max(reported) for a in here))
+
+
 def fragments_step(state: State, t: Ticket, w: Path,
                    here: list[Agent]) -> Step | None:
     """The step that gives the fragments of `unseen` to a doc editor
-    launched for them, once a drafter of the change has reported and no doc
-    editor was launched since its latest report: the addition of
+    launched for them, where `fragments_due` holds: the addition of
     `doc-editor` to the `editors` field of a change that gives none, then,
     where no file of `state.held.seen` was written since that report, the
     command that writes one (`write_seen`), and otherwise the launch of a
     doc editor on those fragments."""
-    reported = [r.time for a in here if a.role in DRAFTERS and (r := a.last_report) is not None]
-    if not reported or any(
-            a.role is Role.DOC_EDITOR and a.launched > max(reported) for a in here):
+    if not fragments_due(here):
         return None
+    reported = drafter_reports(here)
     places = unseen(state, t, w, here)
     if not places:
         return None
