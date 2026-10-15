@@ -55,6 +55,13 @@ DEMONSTRATED_CHOICE: Annotated[str,
            "`DemonstrationConsistency` instance.")] = "DemonstratedChoice"
 """The type whose constructors are the rules a demonstration selects
 among."""
+DEMONSTRATED_RULE: Annotated[str,
+    quotes("solver-file.md", "Demonstrated choice",
+           "`out` takes a column of type `DemonstratedRule`, "
+           "`[task: Key, rule: DemonstratedChoice]` with the instance's "
+           "`Key`")] = "DemonstratedRule"
+"""The type of `out`'s column of the inner task and the rule each fact is
+derived at."""
 DEMONSTRATION_CONSISTENCY: Annotated[str,
     quotes("solver-file.md", "Demonstrated choice",
            "`DemonstratedChoice` is the `Demonstrated` type argument of a "

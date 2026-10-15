@@ -17,7 +17,7 @@
 //  panel's own color over what no image reaches.
 
 // The panel the demonstration leaves, read under the rule it demonstrates.
-.decl out(p: Position, col: Color, r: DemonstratedChoice)
+.decl out(p: Position, col: Color, r: DemonstratedRule)
 
 .comp Params {
     // The color of a panel's unfilled cells.
@@ -82,6 +82,9 @@ own(Pan, Col) :- mark(Pan, _, Col), content(Pan2), Pan != Pan2, !mark(Pan2, _, C
 .type DemonstratedChoice = Extend {} | Span {} | Reflect {}
 
 .type Slot = [answer: Box, shown: Box]
+
+// The inner task and the rule each fact of `out` is derived at.
+.type DemonstratedRule = [task: Slot, rule: DemonstratedChoice]
 
 // A reading of the input: the panel to complete, and the demonstration of
 // the other two, shown then completed.
@@ -152,6 +155,6 @@ predict($Reflect(), Pan, P_inner, Col) :-
 
 // --- output ---
 
-out(P_inner, Col, R) :-
+out(P_inner, Col, [[Pan, Pan1], R]) :-
     slot(Pan, Pan1, _), catalog.confirmed([Pan, Pan1], R),
     catalog.prediction([Pan, Pan1], R, Pan, P_inner, Col).

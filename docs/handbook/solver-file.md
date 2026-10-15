@@ -1,5 +1,5 @@
 + index: headings
-+ budget: 21000
++ budget: 21300
 * comment: when editing this doc
     - Write what File structure says by editing the template, and describe only what the template cannot explain.
 
@@ -115,7 +115,7 @@
     - Precise reading: a case's output is not the verdict's when its output on the grid differs from the output the verdict denotes: the output of the name's model for a name in one of the [Witness file](docs/handbook/solver-file.md#witness-file) forms, every case's for `other`, no case's for `any`.
 
 ### Cases
-- A case's model reads from `out` at that case one grid per combination of a value of each `out` column of type `DemonstratedChoice` or `TiebreakResolution` and one value of each `@open` relation of `OpenValue`, its output is the distinct grids it reads, and it is undefined on an input where some combination reads no grid, or facts that describe no total grid.
+- A case's model reads from `out` at that case one grid per combination of one rule for each inner task among those its facts hold with it in the `DemonstratedRule` column, a value of each `out` column of type `TiebreakResolution`, and one value of each `@open` relation of `OpenValue`, its output is the distinct grids it reads, and it is undefined on an input where some combination reads no grid, or facts that describe no total grid.
     - A relation's values there are those the case stores, or those that the `@derive` branch the case takes on it derives on that input.
     - Where the output of some case depends on an `@open` relation, `out` takes a column of type `OpenValue` before its `TiebreakResolution` column, or last where it has none, and each fact holds there the values of the `@open` relations it is derived at.
     - `OpenValue` is a record with one field per `@open` relation the output of some case depends on, each field with that relation's name and of a record type the solver names for that relation, whose fields are the relation's columns that tell one open value from another, under the same names.
@@ -169,6 +169,7 @@
     - `TiebreakResolution` for alt outputs
     - `OpenValue` for the open values the output depends on, per [Cases](docs/handbook/solver-file.md#cases), and the record type of each of its fields
     - `DemonstratedChoice`, per [Demonstrated choice](docs/handbook/solver-file.md#demonstrated-choice)
+    - `DemonstratedRule`, per [Demonstrated choice](docs/handbook/solver-file.md#demonstrated-choice)
     - a record used as a type argument of a generic comp
 
 ## Program
@@ -213,15 +214,16 @@
 
 ## Demonstrated choice
 - `DemonstratedChoice` is the `Demonstrated` type argument of a `DemonstrationConsistency` instance.
-- A nested task is a task whose every input holds an inner task: demonstrated pairs, and the answer that inner task asks for, in one of these forms.
+- A nested task is a task whose every input holds one or more inner tasks, each of them demonstrated pairs and the answer it asks for, in one of these forms.
     - A demonstrated pair beside an object left to complete, where the answer is that object's completion.
     - A sequence, where each consecutive pair, an element and the next, is a demonstrated pair, nothing is held out, and the answer is the element after the last.
-- A case that reads a `DemonstrationConsistency` instance solves the inner task of each input of a nested task.
-- That case's catalog, the constructors of `DemonstratedChoice`, holds the rules the task's inputs demonstrate, test inputs included, normally one per input.
+- A case that reads a `DemonstrationConsistency` instance solves each inner task of each input of a nested task, at a key of that instance that identifies the inner task.
+- That case's catalog, the constructors of `DemonstratedChoice`, holds the rules the task's inputs demonstrate, test inputs included, normally one per inner task.
     - Each rule is a general rule, with clauses of its own that read from the input what that rule needs.
-- The rules that apply to an input are those the instance's `confirmed` relation gives, and no parameter stores them.
-- `out` takes a column of type `DemonstratedChoice` with the rule that gives each grid, after any `Choice` column and before any `TiebreakResolution` column.
-- In a nested task, substantial code that detects and constructs each input's rule through one parameterized mechanism, general enough to produce every input's rule, is the sign that those rules belong in the catalog.
+- The rules that apply to an inner task are those the instance's `confirmed` relation gives at its key, and no parameter stores them.
+- `out` takes a column of type `DemonstratedRule`, `[task: Key, rule: DemonstratedChoice]` with the instance's `Key`, after any `Choice` column and before any `TiebreakResolution` column, holding the inner task and the rule each fact is derived at.
+    - A fact whose derivation reads no rule holds `nil` there, which reads as every rule of every inner task.
+- In a nested task, substantial code that detects and constructs each inner task's rule through one parameterized mechanism, general enough to produce every inner task's rule, is the sign that those rules belong in the catalog.
     * comment: The solver passes on 20a9e565, a nested task, built a parameterized construction of each input's rule in place of a catalog, as change ticket 4-38 records.
 - The solver of a task that is not a nested task defines no `DemonstratedChoice`.
 - An ADT whose constructors are joined to predictions with no demonstration selecting among them is a disjunction, and is written as one.

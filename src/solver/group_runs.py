@@ -96,6 +96,7 @@ from solver.out_grids import (
     FieldValues,
     OutColumns,
     Place,
+    RuleChoices,
     by_value,
     case_grids,
     open_grids,
@@ -424,7 +425,8 @@ class _Read:
                         Grids | Undefined] = {}
         self.lock = threading.Lock()
         self.opens: dict[Value | None, list[tuple[Value, Value]]] = {}
-        self.by_reps: dict[tuple[Value, ...], Grids | Undefined] = {}
+        self.by_reps: dict[tuple[tuple[Value, ...], RuleChoices],
+                           Grids | Undefined] = {}
         self.rep_rows: dict[Value, list[Row]] | None = None
         if classes is not None and out.open is not None:
             for k, rep in classes.items():
@@ -457,7 +459,7 @@ class _Read:
             return Undefined(NoOutput())
         if self.rep_rows is None:
             self.rep_rows = self._by_key()
-        return open_grids(self.out.resolution, reps, self._rows_of, fields,
+        return open_grids(self.out, reps, self._rows_of, fields,
                           self.margins, self.by_reps)
 
     def _rows_of(self, rep: Value) -> Sequence[Row]:

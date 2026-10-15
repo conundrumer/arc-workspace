@@ -25,8 +25,9 @@ class Assignment:
 
 @quotes("solver-file.md", "Cases",
         "A case's model reads from `out` at that case one grid per "
-        "combination of a value of each `out` column of type "
-        "`DemonstratedChoice` or `TiebreakResolution` and one value of each "
+        "combination of one rule for each inner task among those its facts "
+        "hold with it in the `DemonstratedRule` column, a value of each "
+        "`out` column of type `TiebreakResolution`, and one value of each "
         "`@open` relation of `OpenValue`, its output is the distinct grids "
         "it reads")
 @quotes("solver-file.md", "Alt outputs",
@@ -35,8 +36,9 @@ class Assignment:
 @dataclass(frozen=True)
 class Grids:
     """The grids a case gives (`solver.out_grids.case_grids`), and the
-    resolution value of each where `out` has resolution columns and no
-    open-value column, the grid's identity."""
+    resolution value of each where `out` has resolution columns and the
+    case has one combination of open values and rules
+    (`solver.out_grids.open_union`), the grid's identity."""
 
     grids: tuple[Grid, ...]
     resolutions: tuple[Resolution, ...] = field(default=(), compare=False)

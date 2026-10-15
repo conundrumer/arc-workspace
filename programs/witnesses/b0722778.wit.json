@@ -1,123 +1,6 @@
 {
   "id": "b0722778",
   "witnesses": [{
-    "id": "turn-or-swap",
-    "separates": "rows 3-4: the first tile is two lines, and the second tile is the first turned a half turn, also the first flipped top to bottom, and also the first with its two colors swapped; the concept turns the third tile (5 5 / 5 2), the cases of $FlipsBeforeTurns, $DiagonalFlipsLast and $NoDiagonalFlips flip it (5 5 / 2 5), $RecolorFirst swaps its colors (5 2 / 2 2)",
-    "input": [
-      [1,1,0,1,1,0,0,4,4],
-      [2,1,0,1,2,0,0,3,4],
-      [0,0,0,0,0,0,0,0,0],
-      [2,2,0,5,5,0,0,2,5],
-      [5,5,0,2,2,0,0,5,5],
-      [0,0,0,0,0,0,0,0,0],
-      [6,6,0,6,8,0,0,7,7],
-      [8,8,0,6,8,0,0,4,4]
-    ],
-    "output": [{
-      "cases": ["$MovesFirst & $MoveByShape"],
-      "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [5,5],
-        [5,2],
-        [0,0],
-        [7,4],
-        [7,4]
-      ]
-    }, {
-      "cases": ["$DiagonalFlipsLast","$FlipsBeforeTurns","$NoDiagonalFlips"],
-      "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [5,5],
-        [2,5],
-        [0,0],
-        [7,4],
-        [7,4]
-      ]
-    }, {
-      "cases": ["$RecolorFirst"],
-      "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [5,2],
-        [2,2],
-        [0,0],
-        [7,4],
-        [7,4]
-      ]
-    }]
-  }, {
-    "id": "turn-and-recolor",
-    "separates": "rows 3-4: the second tile is the first turned a quarter clockwise with 5 recolored 3; the concept finds no move and no recoloring and is undefined, $MovedRecolor turns the third tile and recolors it (2 3 / 2 3)",
-    "input": [
-      [1,1,0,1,1,0,0,4,4],
-      [2,1,0,1,2,0,0,3,4],
-      [0,0,0,0,0,0,0,0,0],
-      [2,2,0,3,2,0,0,5,5],
-      [5,5,0,3,2,0,0,2,2],
-      [0,0,0,0,0,0,0,0,0],
-      [6,6,0,6,8,0,0,7,7],
-      [8,8,0,6,8,0,0,4,4]
-    ],
-    "output": [{
-      "cases": ["$MoveOrRecolor"],
-      "grid": null
-    }, {
-      "cases": ["$MovedRecolor"],
-      "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [2,3],
-        [2,3],
-        [0,0],
-        [7,4],
-        [7,4]
-      ]
-    }]
-  }, {
-    "id": "recolor-or-flip-and-recolor",
-    "separates": "rows 3-4: the second tile is the first with 2 recolored 5 and 5 recolored 3, and also the first turned a half turn or flipped top to bottom with 2 recolored 3; the concept recolors the third tile (5 3 / 3 3), $MovedRecolor takes the flip, which recolors fewer colors (5 5 / 3 5)",
-    "input": [
-      [1,1,0,1,1,0,0,4,4],
-      [2,1,0,1,2,0,0,3,4],
-      [0,0,0,0,0,0,0,0,0],
-      [2,2,0,5,5,0,0,2,5],
-      [5,5,0,3,3,0,0,5,5],
-      [0,0,0,0,0,0,0,0,0],
-      [6,6,0,6,8,0,0,7,7],
-      [8,8,0,6,8,0,0,4,4]
-    ],
-    "output": [{
-      "cases": ["$MoveOrRecolor"],
-      "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [5,3],
-        [3,3],
-        [0,0],
-        [7,4],
-        [7,4]
-      ]
-    }, {
-      "cases": ["$MovedRecolor"],
-      "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [5,5],
-        [3,5],
-        [0,0],
-        [7,4],
-        [7,4]
-      ]
-    }]
-  }, {
     "id": "unmapped-color",
     "separates": "rows 3-4: a recoloring band whose third tile holds 4, a color the first tile lacks; the concept is undefined, $KeepUnmapped keeps 4 (3 4 / 4 4)",
     "input": [
@@ -134,7 +17,7 @@
       "cases": ["concept"],
       "grid": null
     }, {
-      "cases": ["$KeepUnmapped","$MovedRecolor"],
+      "cases": ["$KeepUnmapped"],
       "grid": [
         [4,4],
         [4,3],
@@ -163,7 +46,80 @@
       [1,2,6,2,1,6,6,7,9]
     ],
     "output": [{
-      "cases": ["bg=stored"],
+      "cases": ["$UnmappedUndefined & bg=stored & tile_column=derived"],
+      "grid": [
+        [
+          [4,2,6,6,8,5,6,4,2],
+          [4,2,6,6,8,8,6,4,4],
+          [6,6,6,6,6,6,6,6,6],
+          [3,3,6,6,5,9,6,5,5],
+          [2,2,6,6,5,9,6,9,9],
+          [6,6,6,6,6,6,6,6,6],
+          [3,8,6,6,4,4,6,4,2],
+          [3,8,6,6,2,2,6,4,2],
+          [6,6,6,6,6,6,6,6,6],
+          [9,9,6,6,1,1,6,1,1],
+          [9,7,6,6,1,2,6,2,1]
+        ],
+        [
+          [1,2,6,2,1,6,6,7,9],
+          [1,1,6,1,1,6,6,9,9],
+          [6,6,6,6,6,6,6,6,6],
+          [2,4,6,2,2,6,6,8,3],
+          [2,4,6,4,4,6,6,8,3],
+          [6,6,6,6,6,6,6,6,6],
+          [9,9,6,9,5,6,6,2,2],
+          [5,5,6,9,5,6,6,3,3],
+          [6,6,6,6,6,6,6,6,6],
+          [4,4,6,8,8,6,6,2,4],
+          [2,4,6,5,8,6,6,2,4]
+        ]
+      ]
+    }, {
+      "cases": ["$KeepUnmapped"],
+      "grid": [
+        [
+          [4,2,6,6,8,5,6,4,2],
+          [4,2,6,6,8,8,6,4,4],
+          [6,6,6,6,6,6,6,6,6],
+          [3,3,6,6,5,9,6,5,5],
+          [2,2,6,6,5,9,6,9,9],
+          [6,6,6,6,6,6,6,6,6],
+          [3,8,6,6,4,4,6,4,2],
+          [3,8,6,6,2,2,6,4,2],
+          [6,6,6,6,6,6,6,6,6],
+          [9,9,6,6,1,1,6,1,1],
+          [9,7,6,6,1,2,6,2,1]
+        ],
+        [
+          [1,2,6,2,1,6,6,7,9],
+          [1,1,6,1,1,6,6,9,9],
+          [6,6,6,6,6,6,6,6,6],
+          [2,4,6,2,2,6,6,8,3],
+          [2,4,6,4,4,6,6,8,3],
+          [6,6,6,6,6,6,6,6,6],
+          [9,9,6,9,5,6,6,2,2],
+          [5,5,6,9,5,6,6,3,3],
+          [6,6,6,6,6,6,6,6,6],
+          [4,4,6,8,8,6,6,2,4],
+          [2,4,6,5,8,6,6,2,4]
+        ],
+        [
+          [2,4,6,5,8,6,6,2,4],
+          [4,4,6,8,8,6,6,2,4],
+          [6,6,6,6,6,6,6,6,6],
+          [5,5,6,9,5,6,6,3,3],
+          [9,9,6,9,5,6,6,2,2],
+          [6,6,6,6,6,6,6,6,6],
+          [2,4,6,4,4,6,6,8,3],
+          [2,4,6,2,2,6,6,8,3],
+          [6,6,6,6,6,6,6,6,6],
+          [1,1,6,1,1,6,6,9,9],
+          [1,2,6,2,1,6,6,7,9]
+        ]
+      ]
+    }, {
+      "cases": ["tile_column=stored"],
       "grid": null
     }, {
       "cases": ["bg=DominantColor"],
@@ -183,7 +139,7 @@
     }]
   }, {
     "id": "swap-and-unmapped",
-    "separates": "rows 3-4: the first tile is two lines, and the second tile is the first turned a half turn, also the first flipped top to bottom, and also the first with its colors swapped; rows 6-7: a recoloring band whose third tile holds 4, a color the first tile lacks; $MovesFirst & $KeepUnmapped & $MoveByShape turns the first band's third tile and keeps 4 (5 5 / 5 2), the cases of $FlipsBeforeTurns, $DiagonalFlipsLast and $NoDiagonalFlips flip it and keep 4 (5 5 / 2 5), $RecolorFirst swaps its colors and keeps 4 (5 2 / 2 2), and the concept, which leaves 4 unmapped, is undefined",
+    "separates": "rows 3-4: the first tile is two lines, and the second tile is the first turned a half turn, and also the first with its colors swapped; rows 6-7: a recoloring band whose third tile holds 4, a color the first tile lacks; $KeepUnmapped gives one output per change of the first band, turning its third tile (5 5 / 5 2) or swapping its colors (5 2 / 2 2), and keeps 4, and the concept, which leaves 4 unmapped, is undefined",
     "input": [
       [1,1,0,1,1,0,0,4,4],
       [2,1,0,1,2,0,0,3,4],
@@ -198,127 +154,28 @@
       "cases": ["concept"],
       "grid": null
     }, {
-      "cases": ["$DiagonalFlipsLast","$FlipsBeforeTurns","$NoDiagonalFlips"],
+      "cases": ["$KeepUnmapped"],
       "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [5,5],
-        [2,5],
-        [0,0],
-        [3,4],
-        [4,4]
-      ]
-    }, {
-      "cases": ["$MovesFirst & $KeepUnmapped & $MoveByShape"],
-      "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [5,5],
-        [5,2],
-        [0,0],
-        [3,4],
-        [4,4]
-      ]
-    }, {
-      "cases": ["$RecolorFirst"],
-      "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [5,2],
-        [2,2],
-        [0,0],
-        [3,4],
-        [4,4]
-      ]
-    }]
-  }, {
-    "id": "swap-and-turn",
-    "separates": "rows 3-4: the first tile is two lines, and the second tile is the first turned a half turn, also the first flipped top to bottom, and also the first with its colors swapped; rows 6-7: the second tile is the first turned a quarter clockwise with 5 recolored 3; $MovedRecolor flips the first band's third tile (5 5 / 2 5) and turns and recolors the second band's (2 3 / 2 3), and the cases that recolor only with the pattern kept are undefined",
-    "input": [
-      [1,1,0,1,1,0,0,4,4],
-      [2,1,0,1,2,0,0,3,4],
-      [0,0,0,0,0,0,0,0,0],
-      [2,2,0,5,5,0,0,2,5],
-      [5,5,0,2,2,0,0,5,5],
-      [0,0,0,0,0,0,0,0,0],
-      [2,2,0,3,2,0,0,5,5],
-      [5,5,0,3,2,0,0,2,2]
-    ],
-    "output": [{
-      "cases": ["$MoveOrRecolor"],
-      "grid": null
-    }, {
-      "cases": ["$MovedRecolor"],
-      "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [5,5],
-        [2,5],
-        [0,0],
-        [2,3],
-        [2,3]
-      ]
-    }]
-  }, {
-    "id": "three-color-turn",
-    "separates": "rows 6-7: the first tile 2 3 / 4 4 is a dot, and the second tile is the first turned a quarter clockwise, and also the first flipped across the anti-diagonal with 2 and 3 swapped; the concept tries only the flips, finds no move and no recoloring, and is undefined, and the cases of $FlipsBeforeTurns, $DiagonalFlipsLast and $NoDiagonalFlips turn the third tile (3 2 / 4 2)",
-    "input": [
-      [1,1,0,1,1,0,0,4,4],
-      [2,1,0,1,2,0,0,3,4],
-      [0,0,0,0,0,0,0,0,0],
-      [2,2,0,5,2,0,0,3,3],
-      [5,5,0,5,2,0,0,1,1],
-      [0,0,0,0,0,0,0,0,0],
-      [2,3,0,4,2,0,0,2,2],
-      [4,4,0,4,3,0,0,3,4]
-    ],
-    "output": [{
-      "cases": ["$MoveByShape"],
-      "grid": null
-    }, {
-      "cases": ["$DiagonalFlipsLast","$FlipsBeforeTurns","$NoDiagonalFlips"],
-      "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [1,3],
-        [1,3],
-        [0,0],
-        [3,2],
-        [4,2]
-      ]
-    }]
-  }, {
-    "id": "three-color-turns",
-    "separates": "rows 3-4 and 6-7: each first tile, 1 2 / 3 3, is a dot; in rows 3-4 the second tile is the first turned a half turn, and also the first flipped top to bottom with 1 and 2 swapped; in rows 6-7 the second tile is the first turned a quarter counterclockwise, and also the first flipped across the main diagonal with 1 and 2 swapped; the concept tries only the flips, finds no move and no recoloring, and is undefined, and the cases of $FlipsBeforeTurns, $DiagonalFlipsLast and $NoDiagonalFlips turn each third tile (6 6 / 5 4 and 5 6 / 4 6)",
-    "input": [
-      [1,1,0,1,1,0,0,4,4],
-      [2,1,0,1,2,0,0,3,4],
-      [0,0,0,0,0,0,0,0,0],
-      [1,2,0,3,3,0,0,4,5],
-      [3,3,0,2,1,0,0,6,6],
-      [0,0,0,0,0,0,0,0,0],
-      [1,2,0,2,3,0,0,4,5],
-      [3,3,0,1,3,0,0,6,6]
-    ],
-    "output": [{
-      "cases": ["$MoveByShape"],
-      "grid": null
-    }, {
-      "cases": ["$DiagonalFlipsLast","$FlipsBeforeTurns","$NoDiagonalFlips"],
-      "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [6,6],
-        [5,4],
-        [0,0],
-        [5,6],
-        [4,6]
+        [
+          [4,4],
+          [4,3],
+          [0,0],
+          [5,5],
+          [5,2],
+          [0,0],
+          [3,4],
+          [4,4]
+        ],
+        [
+          [4,4],
+          [4,3],
+          [0,0],
+          [5,2],
+          [2,2],
+          [0,0],
+          [3,4],
+          [4,4]
+        ]
       ]
     }]
   }, {
@@ -357,149 +214,6 @@
         [0,0],
         [0,9],
         [0,9]
-      ]
-    }]
-  }, {
-    "id": "diagonal-or-turn",
-    "separates": "rows 3-4: the first tile is two lines, and the second tile is the first flipped across the main diagonal and also the first turned a quarter counterclockwise, and no flip across a midline or recoloring carries it; the concept, $DiagonalFlipsLast and $NoDiagonalFlips turn the third tile (5 5 / 2 2), $FlipsBeforeTurns flips it across the diagonal (2 2 / 5 5)",
-    "input": [
-      [1,1,0,1,1,0,0,4,4],
-      [2,1,0,1,2,0,0,3,4],
-      [0,0,0,0,0,0,0,0,0],
-      [2,2,0,2,5,0,0,2,5],
-      [5,5,0,2,5,0,0,2,5],
-      [0,0,0,0,0,0,0,0,0],
-      [6,6,0,6,8,0,0,7,7],
-      [8,8,0,6,8,0,0,4,4]
-    ],
-    "output": [{
-      "cases": ["$DiagonalFlipsLast","$MoveByShape","$NoDiagonalFlips"],
-      "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [5,5],
-        [2,2],
-        [0,0],
-        [7,4],
-        [7,4]
-      ]
-    }, {
-      "cases": ["$FlipsBeforeTurns"],
-      "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [2,2],
-        [5,5],
-        [0,0],
-        [7,4],
-        [7,4]
-      ]
-    }]
-  }, {
-    "id": "diagonal-only",
-    "separates": "rows 3-4: the first tile is a dot, only a flip across the main diagonal carries it onto the second, and no recoloring does; the concept, $FlipsBeforeTurns and $DiagonalFlipsLast flip the third tile (2 3 / 5 3), $NoDiagonalFlips finds no move and no recoloring and is undefined",
-    "input": [
-      [1,1,0,1,1,0,0,4,4],
-      [2,1,0,1,2,0,0,3,4],
-      [0,0,0,0,0,0,0,0,0],
-      [2,5,0,2,3,0,0,2,5],
-      [3,3,0,5,3,0,0,3,3],
-      [0,0,0,0,0,0,0,0,0],
-      [6,6,0,6,8,0,0,7,7],
-      [8,8,0,6,8,0,0,4,4]
-    ],
-    "output": [{
-      "cases": ["$DiagonalFlipsLast","$FlipsBeforeTurns","$MoveByShape","$MovedRecolor"],
-      "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [2,3],
-        [5,3],
-        [0,0],
-        [7,4],
-        [7,4]
-      ]
-    }, {
-      "cases": ["$KeepUnmapped & $NoDiagonalFlips"],
-      "grid": null
-    }]
-  }, {
-    "id": "diagonal-or-recolor",
-    "separates": "rows 3-4: the first tile is a dot, and the second tile is the first flipped across the main diagonal and also the first with 5 and 3 swapped, and no other move carries it; the concept, $FlipsBeforeTurns and $DiagonalFlipsLast flip the third tile (5 2 / 3 6), $NoDiagonalFlips and $RecolorFirst swap its colors (3 5 / 2 6)",
-    "input": [
-      [1,1,0,1,1,0,0,4,4],
-      [2,1,0,1,2,0,0,3,4],
-      [0,0,0,0,0,0,0,0,0],
-      [2,5,0,2,3,0,0,5,3],
-      [3,6,0,5,6,0,0,2,6],
-      [0,0,0,0,0,0,0,0,0],
-      [6,6,0,6,8,0,0,7,7],
-      [8,8,0,6,8,0,0,4,4]
-    ],
-    "output": [{
-      "cases": ["$DiagonalFlipsLast","$FlipsBeforeTurns","$MovesFirst & $MoveByShape"],
-      "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [5,2],
-        [3,6],
-        [0,0],
-        [7,4],
-        [7,4]
-      ]
-    }, {
-      "cases": ["$NoDiagonalFlips","$RecolorFirst"],
-      "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [3,5],
-        [2,6],
-        [0,0],
-        [7,4],
-        [7,4]
-      ]
-    }]
-  }, {
-    "id": "dot-diagonal-or-turn",
-    "separates": "rows 3-4: the first tile is a dot, and the second tile is the first flipped across the anti-diagonal and also the first turned a half turn, and no flip across a midline or recoloring carries it; the concept and $FlipsBeforeTurns flip the third tile across the anti-diagonal (6 4 / 5 3), $DiagonalFlipsLast and $NoDiagonalFlips turn it (6 5 / 4 3)",
-    "input": [
-      [1,1,0,1,1,0,0,4,4],
-      [2,1,0,1,2,0,0,3,4],
-      [0,0,0,0,0,0,0,0,0],
-      [1,1,0,2,1,0,0,3,4],
-      [1,2,0,1,1,0,0,5,6],
-      [0,0,0,0,0,0,0,0,0],
-      [6,6,0,6,8,0,0,7,7],
-      [8,8,0,6,8,0,0,4,4]
-    ],
-    "output": [{
-      "cases": ["$FlipsBeforeTurns","$MoveByShape"],
-      "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [6,4],
-        [5,3],
-        [0,0],
-        [7,4],
-        [7,4]
-      ]
-    }, {
-      "cases": ["$DiagonalFlipsLast","$NoDiagonalFlips"],
-      "grid": [
-        [4,4],
-        [4,3],
-        [0,0],
-        [6,5],
-        [4,3],
-        [0,0],
-        [7,4],
-        [7,4]
       ]
     }]
   }]

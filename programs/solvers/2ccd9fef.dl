@@ -20,7 +20,7 @@
 //  stage after the last one in the blank panel, over the frame.
 
 // The stage after the last one, as each confirmed rule draws it.
-.decl out(p: Position, col: Color, r: DemonstratedChoice)
+.decl out(p: Position, col: Color, r: DemonstratedRule)
 
 .comp Params {}
 
@@ -182,6 +182,9 @@ travel(Pan, F, D, Q, Col) :-
     // no other stage shows repeats the cell one step of its end back.
   | Stay {}
 
+// The inner task and the rule each fact of `out` is derived at.
+.type DemonstratedRule = [task: Unit, rule: DemonstratedChoice]
+
 // The cells a rule draws over the frame in the stage after a stage.
 .decl rule_paint(r: DemonstratedChoice, pan: Position, p: Position, col: Color)
 
@@ -243,7 +246,7 @@ catalog.prediction($U(), R, Pan, P_intile, Col) :-
     ( rule_paint(R, Pan, P_intile, Col)                         // drawn by the rule
     ; tpl(P_intile, Col), !rule_paint(R, Pan, P_intile, _) ).   // else the frame
 
-out(P_intile, Col, R) :-
+out(P_intile, Col, [$U(), R]) :-
     succ_stage(_, Pan), !succ_stage(Pan, _),                    // the last stage
     catalog.confirmed($U(), R),
     catalog.prediction($U(), R, Pan, P_intile, Col).

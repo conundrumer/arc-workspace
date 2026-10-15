@@ -91,15 +91,10 @@
 .type TimeCorner = [d: DiagDir]
 .type OpenValue = [time_corner: TimeCorner]
 
-.decl out(p: Position, col: Color, ch: Choice, c: DemonstratedChoice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice, c: DemonstratedRule, v: OpenValue)
 
 .decl reading_choice(r: Reading)
 reading_choice($ObjectMotion()). reading_choice($FirstChange()).
-
-// The motions of the catalog, which a reading that reads no motion gives each
-// grid at.
-.decl demonstrated_choice(c: DemonstratedChoice)
-demonstrated_choice($Translate()). demonstrated_choice($Extend()). demonstrated_choice($Advance()).
 
 .decl step_check_choice(ck: StepCheck)
 step_check_choice($EveryStep()). step_check_choice($StepFromFirstTwo()).
@@ -170,6 +165,9 @@ impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
 
 // The motions a step between frames may show.
 .type DemonstratedChoice = Translate {} | Extend {} | Advance {}
+
+// The inner task and the rule each fact of `out` is derived at.
+.type DemonstratedRule = [task: parse.Motion, rule: DemonstratedChoice]
 
 // The cuts a grid admits, the frames each cut gives, the motion the steps
 // between them show, and the first change moved by each step the frames
@@ -542,7 +540,9 @@ frames_of(Ab, Wb, Nb, [T, C, G, N]) :-
 .decl step_dir(r: Reading, ck: StepCheck, sc: StepScope, d: Dir)
 
 // Each reading's next frame.
-.decl result(r: Reading, ck: StepCheck, sc: StepScope, k: Frames, c: DemonstratedChoice,
+// @ignore: head-repeat — the rule column holds the inner task the motion is
+//  read in, which holds nil where a reading reads no motion
+.decl result(r: Reading, ck: StepCheck, sc: StepScope, k: Frames, c: DemonstratedRule,
               p_intile: Position, col: Color)
 
 // --- $StoredAxis ---
@@ -577,15 +577,14 @@ count_read($AnyPanelCount(), N) :- parse.admitted($U(), N).
 parse.side($U(), Ck, Sc, D) :- step_dir($ObjectMotion(), Ck, Sc, D).
 step_dir($ObjectMotion(), Ck, Sc, D) :- parse.front_step($U(), _, Ck, Sc, _, D, _).
 
-result($ObjectMotion(), Ck, Sc, K, C, P_intile, Col) :-
-    parse.motion_next($U(), [K, Ck, Sc, _], C, P_intile, Col).
+result($ObjectMotion(), Ck, Sc, K, [[$U(), [K, Ck, Sc, S]], C], P_intile, Col) :-
+    parse.motion_next($U(), [K, Ck, Sc, S], C, P_intile, Col).
 
 // --- $FirstChange ---
 step_dir($FirstChange(), Ck, Sc, D) :- parse.next_frame($U(), _, Ck, Sc, D, _, _).
 
-result($FirstChange(), Ck, Sc, K, C, P_intile, Col) :-
-    parse.next_frame($U(), K, Ck, Sc, D, P_intile, Col), step_dir($FirstChange(), Ck, Sc, D),
-    demonstrated_choice(C).
+result($FirstChange(), Ck, Sc, K, nil, P_intile, Col) :-
+    parse.next_frame($U(), K, Ck, Sc, D, P_intile, Col), step_dir($FirstChange(), Ck, Sc, D).
 
 .comp Determine {
     .init parse = Parse<Example>

@@ -9,28 +9,19 @@
 //  pattern kept
 // @scene recolor-domain: where a band's change is a recoloring, the third tile
 //  uses only colors of the first tile
-// @rule change: a band's change is the move that carries the first tile onto
-//  the second, from the first tile's shape: a flip where the first tile is a
-//  dot, one cell of a color the other three cells lack, and a turn where it is
-//  two lines, two cells of each color with each color on one row or one
-//  column; a first tile of another shape takes no move; where no move does,
-//  the change is the recoloring that carries the first tile onto the second,
-//  cell by cell
+// @rule change: a band's changes are each rule that carries the first tile
+//  onto the second: a move that the first tile's shape admits, a flip where
+//  the first tile is a dot, one cell of a color the other three cells lack,
+//  and a turn where it is two lines, two cells of each color with each color
+//  on one row or one column, a first tile of another shape admitting no move;
+//  or the recoloring that carries the first tile onto the second, cell by cell
 // @rule output: the output is the columns of the tile nearest the edge
 //  opposite params.read_from, with each band's tile changed by that band's
-//  change, and the params.bg rows kept
-
-// which kind of change a band tries first
-.type ChangeOrder =
-    // @claim change
-    MovesFirst {}
-    // @rule change: the recoloring is tried first, and the moves only where no
-    //  recoloring carries the first tile onto the second
-    // @witness turn-or-swap: ordinary concept
-  | RecolorFirst {}
+//  changes, one output per choice of one change in each band, and the params.bg
+//  rows kept
 
 // what a recoloring does with a third-tile color the first tile lacks
-.type Unmapped =
+.type Choice =
     // @claim change recolor-domain
     UnmappedUndefined {}
     // @scene recolor-domain: dropped
@@ -40,63 +31,21 @@
     //     @relaxed recolor-domain
   | KeepUnmapped {}
 
-// what a band's change may be
-.type ChangeKind =
-    // @claim change-kind change
-    MoveOrRecolor {unmapped: Unmapped}
-    // @scene change-kind: in each band, the second tile is the first tile
-    //  moved and then recolored color by color
-    // @rule change: the change is a move followed by a recoloring of the first
-    //  tile's colors: the pair that recolors the fewest colors, and then the
-    //  first in the move order; a third-tile color that the first tile
-    //  lacks keeps its color; undefined where no such pair carries the first
-    //  tile onto the second, or where tied pairs disagree on the third tile
-    // @witness turn-and-recolor: variant $MovedRecolor
-    //     @relaxed change-kind
-    // @witness recolor-or-flip-and-recolor: ordinary concept
-  | MovedRecolor {}
-
-// which moves a band tries, and in which order
-.type MoveOrder =
-    // @claim change
-    MoveByShape {}
-    // @rule change: every move is tried, whatever the first tile's shape, and
-    //  the change is the first that carries the first tile onto the second, in
-    //  the order: the identity, then the flips, then the half turn and the
-    //  quarter turns, with the moves of one place in that order applied
-    //  together
-    // @witness diagonal-or-turn: ordinary concept
-  | FlipsBeforeTurns {}
-    // @rule change: every move is tried, whatever the first tile's shape, in
-    //  the order: the identity, then the flips across the midlines, then the
-    //  half turn and the quarter turns, then the flips across the diagonals
-    // @witness dot-diagonal-or-turn: ordinary concept
-  | DiagonalFlipsLast {}
-    // @rule change: every move but the flips across the diagonals is tried,
-    //  whatever the first tile's shape, in the order: the identity, then the
-    //  flips across the midlines, then the half turn and the quarter turns
-    // @witness diagonal-only: ordinary concept
-    // @witness diagonal-or-recolor: ordinary concept
-  | NoDiagonalFlips {}
-
-.type Choice = [o: ChangeOrder, k: ChangeKind, m: MoveOrder]
-
 // The rules a band may demonstrate.
-.type DemonstratedChoice = Move {d: D4} | Recolor {} | MoveThenRecolor {d: D4}
+.type DemonstratedChoice = Move {d: D4} | Recolor {}
 
-// A band, read under one kind of change.
-.type BandKey = [kind: ChangeKind, bd: Position]
+// A band, read under one case.
+.type BandKey = [kind: Choice, bd: Position]
 
 // A first-tile color under one recoloring rule of a band.
 .type RuleColor = [k: BandKey, c: DemonstratedChoice, col: Color]
 
-// A rule of a band.
-.type BandRule = [k: BandKey, c: DemonstratedChoice]
+// The inner task and the rule each fact of `out` is derived at.
+.type DemonstratedRule = [task: BandKey, rule: DemonstratedChoice]
 
-// A cell under one case.
-.type CaseCell = [ch: Choice, p: Position]
-
-.decl out(p: Position, col: Color, ch: Choice)
+// @ignore: head-repeat — the inner task is the band read under the case, as
+//  the catalog's key gives it
+.decl out(p: Position, col: Color, ch: Choice, r: DemonstratedRule)
 
 .comp Params {
     // @derive DominantColor: variant derived
@@ -109,30 +58,8 @@
 
 .init params = Params
 
-.decl change_order_choice(o: ChangeOrder)
-change_order_choice($MovesFirst()). change_order_choice($RecolorFirst()).
-
-.decl change_kind_choice(k: ChangeKind)
-change_kind_choice($MoveOrRecolor($UnmappedUndefined())).
-change_kind_choice($MoveOrRecolor($KeepUnmapped())).
-change_kind_choice($MovedRecolor()).
-
-.decl move_order_choice(m: MoveOrder)
-move_order_choice($MoveByShape()). move_order_choice($FlipsBeforeTurns()).
-move_order_choice($DiagonalFlipsLast()). move_order_choice($NoDiagonalFlips()).
-
-// A case of $UnmappedUndefined other than the concept case is subsumed by the
-// case that takes $KeepUnmapped in its place: the two differ only where a
-// third-tile color is unmapped, and there the first is undefined.
-// $MovedRecolor & $MoveByShape fails Fit: in train 0's first band, the first
-// tile 2 4 / 4 4 is a dot, and the one flip that a recoloring then carries
-// onto the second tile, across the main diagonal, gives 5 5 / 8 8 on the
-// third tile, where the output holds 5 8 / 5 8.
 .decl impl_choice(ch: Choice)
-impl_choice([O, K, M]) :-
-    change_order_choice(O), change_kind_choice(K), move_order_choice(M),
-    ( K != $MoveOrRecolor($UnmappedUndefined()) ; O = $MovesFirst(), M = $MoveByShape() ),
-    ( K != $MovedRecolor() ; M != $MoveByShape() ).
+impl_choice($UnmappedUndefined()). impl_choice($KeepUnmapped()).
 
 // A line on axis a with a cell off the background.
 .decl broken(a: Axis, l: Position)
@@ -185,162 +112,14 @@ tile_cell(P, Bd, Pc, Q, Col) :-
 .init out_box = Bbox<Unit>
 out_box.cell($U(), P) :- in_column(P, Pc), order.last($U(), Pc).
 
-// The move that keeps every direction.
-.decl identity_move(d: D4)
-identity_move(D) :- c4_elem(D), dir_elem(X), apply_dir(D, X, X).
-
-// The half turn and the quarter turns.
-.decl turn_move(d: D4)
-turn_move(D) :- c4_elem(D), !identity_move(D).
+// The flips: across the midlines and across the diagonals.
+.decl flip_move(d: D4)
+flip_move(D) :- ( flip_of(_, D) ; diag_flip_of(_, D) ).
 
 // Cell q of the first tile of band bd holds col.
 .decl first_cell(bd: Position, q: Position, col: Color)
 first_cell(Bd, Q, Col) :- order.first($U(), Pc), tile_cell(_, Bd, Pc, Q, Col).
 
-// The moves move order m tries in band bd.
-.decl tried(m: MoveOrder, bd: Position, d: D4)
-
-// Under move order m, move d is tried before move d2.
-.decl tried_before(m: MoveOrder, d: D4, d2: D4)
-
-// Moves d and d2 share a place in move order m in band bd.
-.decl same_place(m: MoveOrder, bd: Position, d: D4, d2: D4)
-same_place(M, Bd, D, D2) :-
-    tried(M, Bd, D), tried(M, Bd, D2), !tried_before(M, D, D2), !tried_before(M, D2, D).
-
-// Each band is an inner task: the first tile and the second are a
-// demonstrated pair, and the third tile is left to complete.
-// @claim change
-// @ignore consistent: store — the stored rows carry the bands of the input
-//  they are read from, which the other inputs lack, so its cases fail Fit
-// @ignore demonstration: store — the stored rows carry the bands of the input
-//  they are read from, which the other inputs lack, so its cases fail Fit
-.init catalog = DemonstrationConsistency<BandKey, DemonstratedChoice, Position, Position, Color>
-catalog.value([K, Bd], Pc, Q, Col) :-
-    change_kind_choice(K), tile_cell(_, Bd, Pc, Q, Col).
-catalog.demonstration([K, Bd], Pc1, Pc2) :-
-    change_kind_choice(K), tile_cell(_, Bd, Pc1, _, _),
-    order.first($U(), Pc1), order.next($U(), Pc1, Pc2).
-
-// The color each recoloring rule takes a first-tile color to; a color taken
-// to two colors clashes.
-// @claim change
-.init recolor = Unanimous<RuleColor, Color>
-
-// The rule each case applies to band bd.
-.decl change(o: ChangeOrder, k: ChangeKind, m: MoveOrder, bd: Position, c: DemonstratedChoice)
-
-// Each case's color for a cell of the third tile.
-.decl applied(ch: Choice, p: Position, col: Color)
-applied([O, K, M], P, Col) :-
-    change(O, K, M, Bd, C), order.last($U(), Pc),
-    tile_cell(P, Bd, Pc, Q, _), catalog.prediction([K, Bd], C, Pc, Q, Col).
-
-// The color every rule a case applies gives a cell; two colors clash.
-// @claim output
-.init agree = Unanimous<CaseCell, Color>
-agree.item([Ch, P], Col) :- applied(Ch, P, Col).
-
-out(P_out, Col, Ch) :-
-    out_box.box($U(), B), crop(P, B, P_out),
-    ( agree.value([Ch, P], Col)                                         // a tile cell
-    ; impl_choice(Ch), tile_axis(A), perp(A, A2),                     // a background row
-      panels.on_divider($U(), P, A2), params.bg(Col)
-    ).
-
-// --- $MoveOrRecolor ---
-// The tile moved by d.
-catalog.prediction([$MoveOrRecolor(U), Bd], $Move(D), Pc, Q2, Col) :-
-    catalog.value([$MoveOrRecolor(U), Bd], Pc, Q, Col), d4_elem(D), apply(D, Q, Q2).
-
-recolor.item([[$MoveOrRecolor(U), Bd], $Recolor(), Col], Col2) :-
-    catalog.demonstration([$MoveOrRecolor(U), Bd], Pc1, Pc2),
-    catalog.value([$MoveOrRecolor(U), Bd], Pc1, Q, Col),
-    catalog.value([$MoveOrRecolor(U), Bd], Pc2, Q, Col2).
-
-// The tile recolored cell by cell.
-catalog.prediction([$MoveOrRecolor(U), Bd], $Recolor(), Pc, Q, Col2) :-
-    catalog.value([$MoveOrRecolor(U), Bd], Pc, Q, Col),
-    recolor.value([[$MoveOrRecolor(U), Bd], $Recolor(), Col], Col2).
-
-// A move the band shows under move order m.
-.decl shown_move(m: MoveOrder, k: ChangeKind, bd: Position, d: D4)
-shown_move(M, $MoveOrRecolor(U), Bd, D) :-
-    catalog.consistent([$MoveOrRecolor(U), Bd], $Move(D), _, _), tried(M, Bd, D).
-
-// A shown move that another shown move goes before.
-.decl later_move(m: MoveOrder, k: ChangeKind, bd: Position, d: D4)
-later_move(M, K, Bd, D) :-
-    shown_move(M, K, Bd, D), shown_move(M, K, Bd, D2), tried_before(M, D2, D).
-
-// The first shown moves.
-.decl first_move(m: MoveOrder, k: ChangeKind, bd: Position, d: D4)
-first_move(M, K, Bd, D) :- shown_move(M, K, Bd, D), !later_move(M, K, Bd, D).
-
-.decl recolored(k: ChangeKind, bd: Position)
-recolored($MoveOrRecolor(U), Bd) :-
-    catalog.consistent([$MoveOrRecolor(U), Bd], $Recolor(), _, _).
-
-// --- $KeepUnmapped ---
-catalog.prediction([$MoveOrRecolor($KeepUnmapped()), Bd], $Recolor(), Pc, Q, Col) :-
-    catalog.value([$MoveOrRecolor($KeepUnmapped()), Bd], Pc, Q, Col),
-    !recolor.item([[$MoveOrRecolor($KeepUnmapped()), Bd], $Recolor(), Col], _).
-
-// --- $MovesFirst & $MoveOrRecolor ---
-change($MovesFirst(), K, M, Bd, $Move(D)) :- first_move(M, K, Bd, D).
-change($MovesFirst(), K, M, Bd, $Recolor()) :-
-    recolored(K, Bd), move_order_choice(M), !shown_move(M, K, Bd, _).  // no move
-
-// --- $RecolorFirst & $MoveOrRecolor ---
-change($RecolorFirst(), K, M, Bd, $Recolor()) :- recolored(K, Bd), move_order_choice(M).
-change($RecolorFirst(), K, M, Bd, $Move(D)) :- first_move(M, K, Bd, D), !recolored(K, Bd).
-
-// --- $MovedRecolor ---
-recolor.item([[$MovedRecolor(), Bd], $MoveThenRecolor(D), Col], Col2) :-
-    catalog.demonstration([$MovedRecolor(), Bd], Pc1, Pc2),
-    catalog.value([$MovedRecolor(), Bd], Pc1, Q, Col), d4_elem(D), apply(D, Q, Q2),
-    catalog.value([$MovedRecolor(), Bd], Pc2, Q2, Col2).
-
-// The tile moved by d, then recolored; a color the first tile lacks keeps its
-// color.
-catalog.prediction(K, $MoveThenRecolor(D), Pc, Q2, Col) :-
-    recolor.item([K, $MoveThenRecolor(D), _], _), catalog.value(K, Pc, Q, Col0), apply(D, Q, Q2),
-    ( recolor.value([K, $MoveThenRecolor(D), Col0], Col)
-    ; !recolor.item([K, $MoveThenRecolor(D), Col0], _), Col = Col0
-    ).
-
-// The colors each rule the band shows recolors.
-// @claim change
-.init recolors = Tally<BandRule, Color>
-recolors.item([K, C], Col) :- recolor.value([K, C, Col], Col2), Col != Col2.
-recolors.domain([[$MovedRecolor(), Bd], C]) :- catalog.consistent([$MovedRecolor(), Bd], C, _, _).
-
-// A rule the band shows under move order m, with the count of colors it
-// recolors.
-.decl shown(m: MoveOrder, bd: Position, d: D4, n: number)
-shown(M, Bd, D, N) :-
-    catalog.consistent([$MovedRecolor(), Bd], $MoveThenRecolor(D), _, _),
-    recolors.tally([[$MovedRecolor(), Bd], $MoveThenRecolor(D)], N), tried(M, Bd, D).
-
-// A shown rule that another goes before.
-.decl beaten(o: ChangeOrder, m: MoveOrder, bd: Position, d: D4)
-
-change(O, $MovedRecolor(), M, Bd, $MoveThenRecolor(D)) :-
-    change_order_choice(O), shown(M, Bd, D, _), !beaten(O, M, Bd, D).
-
-// --- $MovesFirst & $MovedRecolor ---
-// The fewest recolored colors first, then the move order.
-beaten($MovesFirst(), M, Bd, D) :-
-    shown(M, Bd, D, N), shown(M, Bd, D2, N2),
-    ( N2 < N ; N2 = N, tried_before(M, D2, D) ).
-
-// --- $RecolorFirst & $MovedRecolor ---
-// The move order first, then the fewest recolored colors.
-beaten($RecolorFirst(), M, Bd, D) :-
-    shown(M, Bd, D, N), shown(M, Bd, D2, N2),
-    ( tried_before(M, D2, D) ; same_place(M, Bd, D, D2), N2 < N ).
-
-// --- $MoveByShape ---
 // Cells q and q2 of the first tile of band bd share a color.
 .decl twin(bd: Position, q: Position, q2: Position)
 twin(Bd, Q, Q2) :- first_cell(Bd, Q, Col), first_cell(Bd, Q2, Col), Q != Q2.
@@ -361,33 +140,56 @@ not_lines(Bd) :- dot(Bd).
 not_lines(Bd) :- twin(Bd, Q, Q2), !aligned(Bd, Q, Q2).
 not_lines(Bd) :- twin(Bd, Q, Q2), twin(Bd, Q, Q3), Q2 != Q3.
 
-// The flips: across the midlines and across the diagonals.
-.decl flip_move(d: D4)
-flip_move(D) :- ( flip_of(_, D) ; diag_flip_of(_, D) ).
+// Each band is an inner task: the first tile and the second are a
+// demonstrated pair, and the third tile is left to complete.
+// @claim change
+// @ignore consistent: store — the stored rows carry the bands of the input
+//  they are read from, which the other inputs lack, so its cases fail Fit
+// @ignore demonstration: store — the stored rows carry the bands of the input
+//  they are read from, which the other inputs lack, so its cases fail Fit
+.init catalog = DemonstrationConsistency<BandKey, DemonstratedChoice, Position, Position, Color>
+catalog.value([K, Bd], Pc, Q, Col) :-
+    impl_choice(K), tile_cell(_, Bd, Pc, Q, Col).
+catalog.demonstration([K, Bd], Pc1, Pc2) :-
+    impl_choice(K), tile_cell(_, Bd, Pc1, _, _),
+    order.first($U(), Pc1), order.next($U(), Pc1, Pc2).
 
-// A dot is flipped, and two lines are turned.
-tried($MoveByShape(), Bd, D) :-
-    first_cell(Bd, _, _),
+// Each band's third tile under each rule the band confirms.
+out(P_out, Col, K, [[K, Bd], C]) :-
+    out_box.box($U(), B), crop(P, B, P_out),
+    catalog.confirmed([K, Bd], C), order.last($U(), Pc),
+    tile_cell(P, Bd, Pc, Q, _), catalog.prediction([K, Bd], C, Pc, Q, Col).
+
+// The background rows.
+out(P_out, Col, K, nil) :-
+    out_box.box($U(), B), crop(P, B, P_out),
+    impl_choice(K), tile_axis(A), perp(A, A2), panels.on_divider($U(), P, A2), params.bg(Col).
+
+// The color each recoloring rule takes a first-tile color to; a color taken
+// to two colors clashes.
+// @claim change
+.init recolor = Unanimous<RuleColor, Color>
+
+// The tile moved by d, a move the shape of the band's first tile admits: a dot
+// is flipped, and two lines are turned.
+catalog.prediction([U, Bd], $Move(D), Pc, Q2, Col) :-
+    catalog.value([U, Bd], Pc, Q, Col), apply(D, Q, Q2),
     ( dot(Bd), flip_move(D)
-    ; !not_lines(Bd), turn_move(D)
+    ; !not_lines(Bd), first_cell(Bd, _, _),
+      c4_elem(D), dir_elem(X), apply_dir(D, X, X2), X2 != X   // a turn
     ).
 
-// --- $FlipsBeforeTurns, $DiagonalFlipsLast, $NoDiagonalFlips ---
-// The moves a move order tries in every band.
-.decl ordered(m: MoveOrder, d: D4)
+recolor.item([[U, Bd], $Recolor(), Col], Col2) :-
+    catalog.demonstration([U, Bd], Pc1, Pc2),
+    catalog.value([U, Bd], Pc1, Q, Col),
+    catalog.value([U, Bd], Pc2, Q, Col2).
 
-tried(M, Bd, D) :- ordered(M, D), first_cell(Bd, _, _).
-tried_before(M, D, D2) :- identity_move(D), ordered(M, D2), !identity_move(D2).
-tried_before(M, D, D2) :- ordered(M, D), flip_of(_, D), turn_move(D2).
+// The tile recolored cell by cell.
+catalog.prediction([U, Bd], $Recolor(), Pc, Q, Col2) :-
+    catalog.value([U, Bd], Pc, Q, Col),
+    recolor.value([[U, Bd], $Recolor(), Col], Col2).
 
-// --- $FlipsBeforeTurns ---
-ordered($FlipsBeforeTurns(), D) :- d4_elem(D).
-tried_before($FlipsBeforeTurns(), D, D2) :- diag_flip_of(_, D), turn_move(D2).
-
-// --- $DiagonalFlipsLast ---
-ordered($DiagonalFlipsLast(), D) :- d4_elem(D).
-tried_before($DiagonalFlipsLast(), D, D2) :-
-    d4_elem(D), !identity_move(D), !diag_flip_of(_, D), diag_flip_of(_, D2).
-
-// --- $NoDiagonalFlips ---
-ordered($NoDiagonalFlips(), D) :- d4_elem(D), !diag_flip_of(_, D).
+// --- $KeepUnmapped ---
+catalog.prediction([$KeepUnmapped(), Bd], $Recolor(), Pc, Q, Col) :-
+    catalog.value([$KeepUnmapped(), Bd], Pc, Q, Col),
+    !recolor.item([[$KeepUnmapped(), Bd], $Recolor(), Col], _).

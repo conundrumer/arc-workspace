@@ -44,7 +44,7 @@
 
 .type Choice = [drawn: Drawn, extent: Extent]
 
-.decl out(p: Position, col: Color, ch: Choice, r: DemonstratedChoice)
+.decl out(p: Position, col: Color, ch: Choice, r: DemonstratedRule)
 
 .comp Params {
     // @derive DominantColor: variant derived
@@ -83,7 +83,9 @@ drawn_choice($EveryTerm()). drawn_choice($NewTermsOnly()).
 .type TermEdge = [t: Ident, e: Dir]
 .type TermSide = [d: Dir, t: Ident, e: Dir]
 .type TermRule = [d: Dir, c: DemonstratedChoice, t: Ident]
-.type Rule = [d: Dir, c: DemonstratedChoice]
+// The inner task, a direction of the sequence, and the rule each fact of
+// `out` is derived at.
+.type DemonstratedRule = [task: Dir, rule: DemonstratedChoice]
 .type Grown = [d: Dir, c: DemonstratedChoice, i0: Position, i: Position]
 .type Seat = [i: Position, p: Position]
 
@@ -450,7 +452,7 @@ period_defect(D, C, K) :-
     Col != Col2.
 
 // @claim continue-sequence
-.init least_period = Extremes<Rule>
+.init least_period = Extremes<DemonstratedRule>
 least_period.cand([D, C], K) :-
     period_cand(D, K), shown_color(D, C, _, _), !uncolored(D, C), !period_defect(D, C, K).
 
@@ -502,15 +504,15 @@ advance(D, C, I1, L1, I2, V) :-
 // The line of each term's front edge where it stands, from the last shown
 // term on.
 // @claim continue-sequence
-.init front = Propagation<Rule, Seat>
+.init front = Propagation<DemonstratedRule, Seat>
 front.source([D, C], [I, L]) :-
     catalog.confirmed(D, C), last(D, I), term_at(D, I, T), term_edge(T, D, L).
 front.edge([D, C], [I1, L1], [I2, L]) :-
     advance(D, C, I1, L1, I2, V), grown_edge(D, C, I2, D, L0), compose(L0, V, L).
 
 // The cells the continued sequence draws.
-.decl drawn(dr: Drawn, c: DemonstratedChoice, p: Position, col: Color)
-drawn(Dr, C, Q, Col) :-
+.decl drawn(dr: Drawn, r: DemonstratedRule, p: Position, col: Color)
+drawn(Dr, [D, C], Q, Col) :-
     front.reached([D, C], [I1, L1]), advance(D, C, I1, L1, I, V), drawn_choice(Dr),
     ( paint(D, C, _, I, P, Col) ; fill(D, C, _, I, P, I_c), term_color_at(D, C, I_c, Col) ),
     compose(P, V, Q).
@@ -525,13 +527,18 @@ mark(P) :- in(P, Col), params.marker_color(Col).
 
 // --- output ---
 
-out(P_out, Col, [Dr, Ex], C) :-
-    catalog.confirmed(D, C), least_period.low([D, C], _), drawn_choice(Dr), window(Ex, B),
-    in(P, _), crop(P, B, P_out),
-    ( drawn(Dr, C, P, Col) ; !drawn(Dr, C, P, _), params.background(Col) ).
+// The rules the output is drawn under: confirmed, with a least period.
+.decl output_rule(r: DemonstratedRule)
+output_rule([D, C]) :- catalog.confirmed(D, C), least_period.low([D, C], _).
+
+out(P_out, Col, [Dr, Ex], R) :-
+    drawn_choice(Dr), window(Ex, B), in(P, _), crop(P, B, P_out),
+    ( drawn(Dr, R, P, Col), ( R = nil, output_rule(_) ; output_rule(R) )   // a drawn cell
+    ; output_rule(R), !drawn(Dr, R, P, _), !drawn(Dr, nil, P, _),           // the field
+      params.background(Col) ).
 
 // --- $EveryTerm ---
-drawn($EveryTerm(), C, P, Col) :- catalog.confirmed(_, C), term_cell(_, P, Col).
+drawn($EveryTerm(), nil, P, Col) :- term_cell(_, P, Col).
 
 // --- $MarkBox ---
 // @claim corner-marks crop-window

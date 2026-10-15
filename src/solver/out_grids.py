@@ -32,7 +32,7 @@ from solver.witness import Resolution
 from solver.value_order import value_key
 from solver.vocabulary import (
     CHOICE,
-    DEMONSTRATED_CHOICE,
+    DEMONSTRATED_RULE,
     OPEN_VALUE,
     OUTPUT,
     TIEBREAK_RESOLUTION,
@@ -60,7 +60,6 @@ class ResolutionType(StrEnum):
     """The types of the columns of `out` that split a case's rows into
     grids (solver-file.md, under "Cases")."""
 
-    DEMONSTRATED = DEMONSTRATED_CHOICE
     TIEBREAK = TIEBREAK_RESOLUTION
 
 
@@ -74,22 +73,23 @@ class ResolutionColumn:
 
 @dataclass(frozen=True)
 class OutColumns:
-    """The case column, the resolution columns and the open-value column of
-    `out`, by type (solver-file.md, under "Cases" and "Alt outputs"); None
-    where `out` has none. The resolution columns stand in `out`'s column
-    order, and a resolution value holds one value per column, in that
-    order."""
+    """The case column, the resolution columns, the open-value column and
+    the demonstrated-rule column of `out`, by type (solver-file.md, under
+    "Cases", "Alt outputs" and "Demonstrated choice"); None where `out` has
+    none. The resolution columns stand in `out`'s column order, and a
+    resolution value holds one value per column, in that order."""
 
     case: int | None
     resolution: tuple[ResolutionColumn, ...]
     open: int | None
+    rule: int | None
 
 
 def out_columns(program: Program) -> OutColumns:
     """`out`'s columns (`OutColumns`)."""
     decl = out_decl(program)
     if decl is None:
-        return OutColumns(None, (), None)
+        return OutColumns(None, (), None, None)
     types = [c.type.text for c in decl.columns]
 
     def at(name: str) -> int | None:
@@ -98,7 +98,8 @@ def out_columns(program: Program) -> OutColumns:
     resolving = tuple(ResolutionColumn(i, ResolutionType(t))
                       for i, t in enumerate(types)
                       if t in ResolutionType)
-    return OutColumns(at(CHOICE), resolving, at(OPEN_VALUE))
+    return OutColumns(at(CHOICE), resolving, at(OPEN_VALUE),
+                      at(DEMONSTRATED_RULE))
 
 
 @dataclass(frozen=True)
@@ -229,6 +230,14 @@ def by_value(rows: Sequence[Row], col: int) -> dict[Value, list[Row]]:
     return out
 
 
+type RuleChoice = tuple[tuple[Value, Value], ...]
+"""One rule for each inner task, as its pairs of an inner task and a rule,
+in the inner tasks' order (`solver.value_order.value_key`)."""
+
+type RuleChoices = tuple[RuleChoice, ...]
+"""A case's choices of one rule for each inner task (`rule_choices`)."""
+
+
 type FieldValues = tuple[tuple[Value, ...], ...]
 """A case's values at each field of `OpenValue` on a run, in field order:
 the values of the field's `@open` relation on the run
@@ -242,35 +251,40 @@ def case_grids(columns: OutColumns, mine: Sequence[Row],
     where it holds none (principles.md, under "Models and tasks"),
     `margins` as `_grid_of` reads it: where `out` has an open-value column,
     `open_grids` over the case's open values, `fields` its values at
-    each field, else `resolution_grids`."""
+    each field, else `rule_grids` at the case's `rule_choices`."""
     if not mine:
         return Undefined(NoOutput())
     if columns.open is None:
-        return resolution_grids(columns.resolution, mine, margins)
+        return rule_grids(columns, mine, margins,
+                          rule_choices(columns, mine))
     by_open = by_value(mine, columns.open)
-    return open_grids(columns.resolution, [(v, v) for v in by_open],
+    return open_grids(columns, [(v, v) for v in by_open],
                       by_open.__getitem__, fields, margins, {})
 
 
-def open_grids[K](res_cols: tuple[ResolutionColumn, ...], groups: Sequence[tuple[Value, K]],
+def open_grids[K](columns: OutColumns, groups: Sequence[tuple[Value, K]],
                   rows_of: Callable[[K], Sequence[Row]],
                   fields: FieldValues, margins: dict[int, Place | None],
-                  read: dict[tuple[K, ...], Grids | Undefined]
+                  read: dict[tuple[tuple[K, ...], RuleChoices],
+                             Grids | Undefined]
                   ) -> Grids | Undefined:
     """`open_union` of a case's grid at each of its combinations
     (`combinations` at `fields`), `groups` each open value of its rows with the key
     `rows_of` gives those rows by: the grid at a combination is
-    `resolution_grids` of the rows of the values that hold at it,
-    undefined where there is none. `read` holds the grids already read, by
-    the keys of their rows, so that combinations of the same rows are read
-    once."""
+    `rule_grids` of the rows of the values that hold at it, at the
+    `rule_choices` of all the case's rows, undefined where there is none.
+    `read` holds the grids already read, by the keys of their rows and the
+    rule choices, so that combinations of the same rows are read once."""
+    choices = rule_choices(
+        columns, [r for _v, k in groups for r in rows_of(k)])
+
     def at(held: tuple[int, ...]) -> Grids | Undefined:
         keys = tuple(groups[j][1] for j in held)
-        got = read.get(keys)
+        got = read.get((keys, choices))
         if got is None:
             rows = [r for k in keys for r in rows_of(k)]
-            got = read[keys] = Undefined(NoOutput()) if not rows \
-                else resolution_grids(res_cols, rows, margins)
+            got = read[(keys, choices)] = Undefined(NoOutput()) if not rows \
+                else rule_grids(columns, rows, margins, choices)
         return got
 
     return open_union(at(held) for held in
@@ -314,31 +328,98 @@ def combinations(values: Sequence[Value], fields: FieldValues
             for combo in product(*(vs for _i, vs in dims))]
 
 
+def _task_rule(value: Value) -> tuple[Value, Value] | None:
+    """The inner task and the rule of a `DemonstratedRule` value; None for
+    `nil`, which reads as every rule of every inner task. Raises ValueError
+    for a value that is no record of two fields, which `DemonstratedRule`
+    never holds (solver-file.md, under "Demonstrated choice")."""
+    if isinstance(value, NilValue):
+        return None
+    if not isinstance(value, RecordValue) or len(value.fields) != 2:
+        raise ValueError(f"a `DemonstratedRule` value is no record of an "
+                         f"inner task and a rule: {value!r}")
+    task, rule = value.fields
+    return task, rule
+
+
+def rule_choices(columns: OutColumns, rows: Sequence[Row]) -> RuleChoices:
+    """The choices of a case whose rows are `rows`: one per choice of one
+    rule for each inner task, the inner tasks the distinct tasks of the
+    rows' `DemonstratedRule` values that are not `nil`, and an inner
+    task's rules the distinct rules the rows hold with it, each in its
+    order (`solver.value_order.value_key`). A case with no such value, or
+    an `out` with no `DemonstratedRule` column, has one choice, of no
+    inner task."""
+    if columns.rule is None:
+        return ((),)
+    rules: dict[Value, dict[Value, None]] = {}
+    for v in by_value(rows, columns.rule):
+        got = _task_rule(v)
+        if got is not None:
+            rules.setdefault(got[0], {})[got[1]] = None
+    tasks = sorted(rules, key=value_key)
+    return tuple(tuple(zip(tasks, combo, strict=True)) for combo in product(
+        *(sorted(rules[t], key=value_key) for t in tasks)))
+
+
+def _holds(value: Value, choice: dict[Value, Value]) -> bool:
+    """Whether a row whose `DemonstratedRule` value is `value` holds at
+    `choice`: its value is `nil`, or its rule is the choice at its inner
+    task. `choice` holds every inner task of the case's rows."""
+    got = _task_rule(value)
+    return got is None or choice[got[0]] == got[1]
+
+
+def rule_grids(columns: OutColumns, rows: Sequence[Row],
+               margins: dict[int, Place | None],
+               choices: RuleChoices) -> Grids | Undefined:
+    """The grids of `rows`, the rows of one combination of open values:
+    `resolution_grids` of the rows that hold at each of `choices`, every
+    row where `out` has no `DemonstratedRule` column, undefined at a
+    choice where none does; their `open_union`."""
+    col = columns.rule
+    by_rule = {} if col is None else by_value(rows, col)
+
+    def at(choice: RuleChoice) -> Grids | Undefined:
+        mine = dict(choice)
+        held = rows if col is None else [
+            r for v, group in by_rule.items() if _holds(v, mine)
+            for r in group]
+        return resolution_grids(columns.resolution, held, margins) \
+            if held else Undefined(NoOutput())
+
+    return open_union(at(c) for c in choices)
+
+
 @quotes("principles.md", "Open parameters",
         "The output contains each grid some open value produces, and is "
         "undefined where the model is undefined at some open value.")
 def open_union(per_value: Iterable[Grids | Undefined]) -> Grids | Undefined:
     """A case's output from its grids at each of its combinations of open
-    values, in their order: undefined, as the first undefined combination
-    is, where one is, else the distinct grids, in the order they first
-    stand, with no resolution values, since a grid there may stand for
-    several."""
-    grids: dict[Grid, None] = {}
+    values or of rules (`rule_grids`), in their order: undefined, as the
+    first undefined combination is, where one is; the grids of the one
+    combination, with their resolution values, where there is one; else
+    the distinct grids, in the order they first stand, with no resolution
+    values, since a grid there may stand for several."""
+    read: list[Grids] = []
     for got in per_value:
         if isinstance(got, Undefined):
             return got
-        grids.update(dict.fromkeys(got.grids))
-    return Grids(tuple(grids))
+        read.append(got)
+    if len(read) == 1:
+        return read[0]
+    return Grids(tuple(dict.fromkeys(g for got in read for g in got.grids)))
 
 
 def resolution_grids(res_cols: tuple[ResolutionColumn, ...],
                      mine: Sequence[Row],
                      margins: dict[int, Place | None]) -> Grids | Undefined:
-    """The grids of `mine`, the rows of one combination of open values,
-    one per resolution in the order of the resolution values
-    (solver-file.md, under "Cases"), each with its resolution value where
-    `out` has resolution columns `res_cols`; or undefined, with the reason
-    of the first resolution that gives no total grid."""
+    """The grids of `mine`, the rows of one combination of open values and
+    rule choice (`rule_grids`), one per resolution in the order of the
+    resolution values (solver-file.md, under "Cases"), each with its
+    resolution value where `out` has resolution columns `res_cols`; or
+    undefined, with the reason of the first resolution that gives no total
+    grid."""
     by_res = by_values(mine, [c.index for c in res_cols])
     grids: list[Grid] = []
     keys = sorted(by_res, key=lambda k: tuple(value_key(v) for v in k))
