@@ -20,13 +20,10 @@ from pathlib import Path
 
 from arc import task
 from controlled_markdown import mctx
-from engine import checkout
-from handbook.paths import console_importable, importable
+from handbook.paths import console_importable, scripts_importable
 
 console_importable()
-# `scripts/` is no package: a test loads this module by its path, with
-# `scripts/` off `sys.path`, and the modules below import from there.
-importable(checkout.scripts())
+scripts_importable()
 
 from agent_launches import accepted_after, last_delivered  # noqa: E402
 from operator_reads import read_operator  # noqa: E402

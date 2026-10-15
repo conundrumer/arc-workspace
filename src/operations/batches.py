@@ -50,7 +50,7 @@ from operations.taking import release
 from operations.filing import scratch_dir
 from operations.directives import Directive, numbers
 from operations.roles import AGENT_ID, Purpose, Role, analyst_of, analyst_subject
-from operations.state import DOC_REVIEW, Agent, Merge, State
+from operations.state import DOC_REVIEW, Agent, Merge, State, code_review_tag
 from operations.handled import bash_calls
 from operations.steps import Bash, Launch, Step, Undecided
 from operations.log_commands import FILE_TICKET
@@ -123,7 +123,7 @@ def step(state: State) -> Step | None:
         if not reviewers:
             if state.git.code_review is None:
                 return Undecided("no `code-review/<n>` tag gives the last code review's baseline")
-            return Launch(Role.CODE_REVIEWER, f"code-review/{state.git.code_review + 1}",
+            return Launch(Role.CODE_REVIEWER, code_review_tag(state.git.code_review + 1),
                           briefs.code_review(state.git.code_review, scratch_dir("code-review", state.scratch)))
         if reviewers[-1].pending:
             return None

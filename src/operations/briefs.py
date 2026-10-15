@@ -9,7 +9,7 @@ from pathlib import Path
 from controlled_markdown import mctx
 from operations.reports import LEFT_FOR_DECISION, WORKTREE
 from operations.roles import Role, description
-from operations.state import Agent, Place
+from operations.state import Agent, Place, code_review_tag
 from operations.log_commands import AGENT, FILE_TICKET
 from ticketing.times import utc_stamp
 
@@ -396,9 +396,9 @@ def solver_pass(task: str, overrides: list[str]) -> str:
 
 
 def code_review(baseline: int, scratch: Path) -> str:
-    return mctx("The earlier code review's baseline is the tag `code-review/{baseline}`, and "
+    return mctx("The earlier code review's baseline is the tag `{tag}`, and "
                 "this code review's number is {number}.").format(
-        baseline=baseline, number=baseline + 1) + "\n" + SCRATCH.format(scratch=scratch)
+        tag=code_review_tag(baseline), number=baseline + 1) + "\n" + SCRATCH.format(scratch=scratch)
 
 
 STANDING_DOC_REVIEW = mctx("""

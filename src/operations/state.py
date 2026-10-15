@@ -250,6 +250,21 @@ DOC_REVIEW = "doc-review/"
 """What leads the tag of a reader's last standing doc review, and the
 subject of a standing doc review's launch."""
 
+CODE_REVIEW = "code-review/"
+"""What leads the tag of a code review's baseline, and the subject of a
+code review's launch."""
+
+
+def code_review_tag(n: int) -> str:
+    return f"{CODE_REVIEW}{n}"
+
+
+def code_review_number(tag: str) -> int | None:
+    """The `<n>` of a `code-review/<n>` tag, or None where `tag` is no such
+    tag."""
+    n = tag.removeprefix(CODE_REVIEW)
+    return int(n) if tag.startswith(CODE_REVIEW) and n.isdigit() else None
+
 
 @dataclass(frozen=True)
 class Reader:

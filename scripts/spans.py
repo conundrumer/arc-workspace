@@ -9,10 +9,9 @@ from enum import Enum
 from pathlib import Path
 
 from controlled_markdown import mctx
-from engine import checkout
-from handbook.paths import importable
+from handbook.paths import scripts_importable
 
-importable(checkout.scripts())
+scripts_importable()
 
 from file_ticket import file_ticket, main_tickets, run  # noqa: E402
 from run_reads import blocks, message_text  # noqa: E402

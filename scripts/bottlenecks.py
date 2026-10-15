@@ -16,10 +16,9 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from engine import checkout
-from handbook.paths import importable
+from handbook.paths import scripts_importable
 
-# `scripts/` is no package: the modules below import from there.
-importable(checkout.scripts())
+scripts_importable()
 
 from file_ticket import print_undecided  # noqa: E402
 from ticket_form import section, section_head  # noqa: E402

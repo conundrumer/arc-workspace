@@ -22,11 +22,9 @@ from controlled_markdown import mctx
 from operations.change_budget import EDITORS_NOTE
 from operations.roles import EDITORS, Role
 from engine import checkout
-from handbook.paths import importable
+from handbook.paths import scripts_importable
 
-# `scripts/` is no package: a test loads this module by its path, with
-# `scripts/` off `sys.path`, and the modules below import from there.
-importable(checkout.scripts())
+scripts_importable()
 
 from ticket_files import FIELD, NAME_FORM, TicketName, ticket_path, ticket_status  # noqa: E402
 from ticket_form import (DEFAULT_PRIORITY, DESIGN, LOG, LOG_SECTION, MECHANICAL,  # noqa: E402

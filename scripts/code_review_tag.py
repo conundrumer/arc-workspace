@@ -12,12 +12,11 @@ from pathlib import Path
 from controlled_markdown import mctx
 from engine import checkout
 from handbook.agents import next_file
-from handbook.paths import importable
+from handbook.paths import scripts_importable
 from operations.roles import AGENT_ID, Role
+from operations.state import code_review_tag as tag_name
 
-# `scripts/` is no package: a test loads this module by its path, with
-# `scripts/` off `sys.path`, and the modules below import from there.
-importable(checkout.scripts())
+scripts_importable()
 
 from run_reads import tool_results  # noqa: E402
 from transcripts import Entry, Refused, blocks, read_entries, transcripts_of  # noqa: E402
@@ -44,13 +43,11 @@ NO_READ = mctx("the transcripts of `{agent}` show no read of the second stage as
 
 
 def second_stage() -> Path:
-    """The rendered second stage of the code reviewer, in the main tree."""
     return next_file(Role.CODE_REVIEWER, checkout.claude_of(checkout.main_worktree(checkout.ROOT)))
 
 
 def read_whole(entries: Iterable[Entry], name: str, text: str) -> bool:
-    """Whether `entries` hold a Bash call whose command names `name` and
-    whose result holds `text`, both with trailing whitespace stripped."""
+    """The read `HELP` gives, of the file `name` with the text `text`."""
     entries = list(entries)
     calls = {str(b.get("id")) for e in entries if e.get("type") == "assistant"
              for b in blocks(e, "tool_use") if b.get("name") == "Bash"
@@ -61,12 +58,12 @@ def read_whole(entries: Iterable[Entry], name: str, text: str) -> bool:
 
 
 def tag(n: int, commit: str) -> str:
-    """Tag `commit` as `code-review/<m>` for the least `<m>` from `n` up
-    that git accepts; a failure other than a taken name is `GitFailed`."""
+    """The tag `HELP` gives; a failure other than a taken name is
+    `GitFailed`."""
     root = checkout.ROOT
     m = n
     while True:
-        name = f"code-review/{m}"
+        name = tag_name(m)
         done = checkout.git(root, "tag", name, commit)
         if done.returncode == 0:
             return name

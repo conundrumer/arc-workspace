@@ -16,13 +16,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from controlled_markdown import mctx
-from engine import checkout
-from handbook.paths import console_importable, importable
+from handbook.paths import console_importable, scripts_importable
 
 console_importable()
-# `scripts/` is no package: a test loads this module by its path, with
-# `scripts/` off `sys.path`, and the modules below import from there.
-importable(checkout.scripts())
+scripts_importable()
 
 from agent_launches import pending_agents, runs_under  # noqa: E402
 from agent_turns import first_time, last_time  # noqa: E402

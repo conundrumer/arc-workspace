@@ -157,12 +157,9 @@ from pathlib import Path
 from controlled_markdown import form, mctx
 from engine import checkout, rwlock
 from engine.duration import footer
-from handbook.paths import importable
+from handbook.paths import scripts_importable
 
-# `scripts/` is no package: a test loads this module by its path, with
-# `scripts/` off `sys.path`, and `change_checks` and `worktree_submodules`
-# import from there.
-importable(checkout.scripts())
+scripts_importable()
 
 from change_checks import (Check, code_paths,  # noqa: E402
                            failures, run_in, said, timed)

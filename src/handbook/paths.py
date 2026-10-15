@@ -43,6 +43,13 @@ def console_importable() -> None:
     importable(checkout.console())
 
 
+def scripts_importable() -> None:
+    """`scripts/` is no package, and a test or a script loads a script by
+    its path with `scripts/` off `sys.path`, so a script that imports from
+    `scripts/` calls this first."""
+    importable(checkout.scripts())
+
+
 def lib_src() -> Path:
     """The lib the runner reads."""
     return checkout.programs() / LIB_FILE

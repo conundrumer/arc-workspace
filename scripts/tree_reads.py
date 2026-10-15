@@ -13,7 +13,7 @@ from state_reads import file_text, listed, stat_of, stat_read, state_cache
 from controlled_markdown import ControlledMarkdownError
 from controlled_markdown.prose import Fragment, text_fragments
 from engine import checkout
-from operations.state import DOC_REVIEW, Commit, Place
+from operations.state import CODE_REVIEW, DOC_REVIEW, Commit, Place, code_review_number
 from operations.task_work import CLAIM, tasks_work
 from operations.worktrees import BASE
 
@@ -95,8 +95,8 @@ def commits(main: Path) -> tuple[Commit, ...]:
 
 @state_cache(lambda main: refs_stamp(main, "tags"))
 def code_review(main: Path) -> int | None:
-    tags = [int(t.rsplit("/", 1)[1]) for t in git(main, "tag", "-l", "code-review/*").split()
-            if t.rsplit("/", 1)[1].isdigit()]
+    tags = [n for t in git(main, "tag", "-l", f"{CODE_REVIEW}*").split()
+            if (n := code_review_number(t)) is not None]
     return max(tags) if tags else None
 
 
