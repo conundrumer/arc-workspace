@@ -1,8 +1,10 @@
 """Values computed once and kept: per object while the object lives, once
-per key however many threads ask, the most recently used under a cap, and
-a file written whole or not at all. Every package may import it."""
+per key however many threads ask, the most recently used under a cap, a
+file written whole or not at all, and a file's part in the hash a kept
+value is keyed on. Every package may import it."""
 
 import functools
+import hashlib
 import os
 import tempfile
 import threading
@@ -185,3 +187,10 @@ def write_whole(path: Path, data: bytes) -> None:
         os.replace(tmp, path)
     finally:
         Path(tmp).unlink(missing_ok=True)
+
+
+def hash_file(h: "hashlib._Hash", path: str, body: bytes | None) -> None:
+    """Adds the file at `path` to `h`: its path, then its bytes `body`, or
+    its path alone where `body` is None, as the file cannot be read."""
+    h.update(b"\0" + path.encode() + b"\0")
+    h.update(b"\0" if body is None else b"\1" + body)

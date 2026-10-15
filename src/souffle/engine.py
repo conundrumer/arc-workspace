@@ -23,7 +23,8 @@ from souffle import classify, expand, ops, parser, printer, render
 from souffle.grounding import grounded_without
 from souffle.text import TextMethods
 from souffle.index import index_of
-from souffle.run import Runner, binary_identity
+from souffle.install import binary_identity
+from souffle.run import Runner
 
 FUNCTOR_DIR = checkout.programs()
 """Where the functor library (`run.FUNCTOR_LIB`) and its source stand, in

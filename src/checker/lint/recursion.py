@@ -65,18 +65,19 @@ def _permitted(solver: Solver, graph: Graph, e: _Edge) -> bool:
         "`Take` instance may read that instance's relations through an atom "
         "whose every variable another atom of the clause grounds.")
 def check_recursion(solver: Solver, runs: Runs) -> list[Finding]:
-    """One finding per cycle of the relations of the program its runs run
-    (`solver.determine.run_program`), each at the instance path that declares it, the lib's
-    units read at each instance they run at, that holds a read of a unit
-    of the solver's own text whose both relations stand in the cycle and
-    which `_permitted` does not permit: at the line of the first such
-    unit, standing on each such unit, naming the cycle's relations by
+    """One finding per set of units of the solver's own text that close a
+    cycle of the relations of the program its runs run
+    (`solver.determine.run_program`), each relation at the instance path
+    that declares it, the lib's units read at each instance they run at.
+    A unit closes a cycle where it reads, at an instance it runs at, a
+    relation of the cycle to head a relation of the cycle, by a read
+    `_permitted` does not permit. The finding stands at the line of the
+    first such unit, on each such unit, and names the cycle's relations by
     their text, in the order of that text, where a relation of the instance
     a run adds is named by its text inside that instance, as the solver's
-    `.comp Determine` names it. A cycle whose every such read
-    stands inside the instance a run adds gives no finding where a cycle
-    outside it stands on the same units, since the solver's text
-    instantiates those units there."""
+    `.comp Determine` names it. Where cycles at several instances stand on
+    one set of units, the finding is that of the cycle whose names sort
+    first, since the solver's text gives those units once."""
     run = run_program(solver)
     added = run.determine.path \
         if run.determine is not None and run.determine.added else None
@@ -96,7 +97,7 @@ def check_recursion(solver: Solver, runs: Runs) -> list[Finding]:
                 succ.setdefault(read, {})[head] = None
                 if own(u.span):
                     solver_edges.append(_Edge(u, at, atom, read, head))
-    found: list[tuple[bool, frozenset[UnitId], Finding]] = []
+    by_units: dict[frozenset[UnitId], tuple[tuple[str, ...], Finding]] = {}
     for comp in cyclic_components(succ, lambda n: succ[n]):
         members = frozenset(comp)
         closing = [e for e in solver_edges
@@ -110,14 +111,15 @@ def check_recursion(solver: Solver, runs: Runs) -> list[Finding]:
         first = units[0].span
         assert first is not None
         names = tuple(sorted(_text(r, added) for r in comp))
-        inside = added is not None \
-            and all(e.at[:len(added)] == added for e in closing)
-        found.append((inside, frozenset(u.id for u in units), lint(
+        ids = frozenset(u.id for u in units)
+        kept = by_units.get(ids)
+        if kept is not None and kept[0] <= names:
+            continue
+        by_units[ids] = (names, lint(
             first.first, LintNamed(
                 Category.RECURSION, LintSentence.RECURSION, names),
-            tuple(u.id for u in units))))
-    outside = {ids for inside, ids, _f in found if not inside}
-    return [f for inside, ids, f in found if not inside or ids not in outside]
+            tuple(u.id for u in units)))
+    return [f for _names, f in by_units.values()]
 
 
 def _text(r: RelationName, added: InstancePath | None) -> str:

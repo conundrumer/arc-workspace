@@ -15,7 +15,7 @@ from checker.determination_plan import survey_determination_plan
 from checker.render.surveys import render_determination_plan
 from checker.runs import Runs
 from engine import WallLimit, checkout
-from engine.memo import write_whole
+from engine.memo import hash_file, write_whole
 from solver import witness
 
 PLAN_DIR = "determination-plan"
@@ -45,8 +45,7 @@ def plan_lines(runs: Runs, source: Path, stamp: str, verdicts: bool
 
 def _key(runs: Runs, source: Path, stamp: str, verdicts: bool) -> str:
     """The hash of what the plan's lines are made from, what runs the
-    programs among them (`engine.Engine.runtime_identity`). A file that
-    does not stand counts as its path alone."""
+    programs among them (`engine.Engine.runtime_identity`)."""
     task_id = runs.solver.task_id
     h = hashlib.sha256()
     h.update(f"{stamp}\0{runs.solver.stem}\0{runs.limits!r}\0{verdicts}"
@@ -54,11 +53,11 @@ def _key(runs: Runs, source: Path, stamp: str, verdicts: bool) -> str:
     h.update(b"\0" + runs.solver.engine.runtime_identity() + b"\0")
     for path in (source.resolve(), task_file(task_id),
                  witness.path(task_id)):
-        h.update(b"\0" + str(path).encode() + b"\0")
         try:
-            h.update(b"\1" + path.read_bytes())
-        except FileNotFoundError:
-            h.update(b"\0")
+            body = path.read_bytes()
+        except OSError:
+            body = None
+        hash_file(h, str(path), body)
     return h.hexdigest()
 
 

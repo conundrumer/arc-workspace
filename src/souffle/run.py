@@ -12,7 +12,6 @@ import math
 import os
 import random
 import re
-import shutil
 import signal
 import subprocess
 import sys
@@ -40,7 +39,7 @@ from engine.engine import (
     UngroundedVariable,
     WallLimit,
 )
-from engine.memo import ByIdentity, Once, Recent, kept_recent, write_whole
+from engine.memo import ByIdentity, Once, Recent, hash_file, kept_recent, write_whole
 from engine.program import (
     Primitive,
     Grid,
@@ -57,6 +56,7 @@ from engine.program import (
 from souffle.expand import expand
 from souffle.grounding import ungrounded
 from souffle.index import Hit, Tree, tree_of
+from souffle.install import binary_identity, preprocessor_flags, souffle_include
 from souffle.render import lines_text, rendered_for_run
 from souffle.runkey import included_files, reached
 from souffle.text import PREFIX, declared, fact_text
@@ -158,30 +158,6 @@ def _grid_file(grid: Grid) -> str:
     return lines_text(fact_lines(GridInput(grid)))
 
 
-@cache
-def souffle_version() -> str:
-    try:
-        out = subprocess.run(["souffle", "--version"], capture_output=True, text=True,
-                             timeout=30).stdout
-    except (OSError, subprocess.SubprocessError):
-        return ""
-    return next((ln for ln in out.splitlines() if "Version" in ln), out)
-
-
-@cache
-def preprocessor_flags() -> tuple[str, ...]:
-    """The preprocessor Souffle calls, by its full path, where xcrun finds
-    clang; Souffle's default otherwise."""
-    try:
-        clang = subprocess.run(["xcrun", "-f", "clang"], capture_output=True, text=True,
-                               timeout=10).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return ()
-    if not clang or not os.access(clang, os.X_OK):
-        return ()
-    return (f"--preprocessor={clang} -x c -E",)
-
-
 FUNCTOR_LIB_NAME = "functors"
 """The name Souffle links the functor library by, after `-l`."""
 FUNCTOR_LIB = f"lib{FUNCTOR_LIB_NAME}.dylib"
@@ -190,36 +166,6 @@ FUNCTOR_SOURCE = "lib_functors.cpp"
 """The functor library's source in the functor directory."""
 
 _BUILDING = threading.Lock()
-
-
-def souffle_binary() -> Path | None:
-    """The `souffle` binary `PATH` gives, with each link resolved; None
-    where `PATH` gives none."""
-    found = shutil.which("souffle")
-    return None if found is None else Path(os.path.realpath(found))
-
-
-def binary_identity() -> bytes:
-    """The `souffle` binary `PATH` gives, by its resolved path,
-    modification time and size, which a Homebrew upgrade changes, with no
-    Souffle process; a marker of its own where `PATH` gives none."""
-    binary = souffle_binary()
-    if binary is None:
-        return b"\1none"
-    st = binary.stat()
-    return f"{binary}\0{st.st_mtime_ns}\0{st.st_size}".encode()
-
-
-def souffle_include() -> Path:
-    """The header directory of the Souffle install that runs: `include/`
-    beside the `bin/` that holds the `souffle` binary."""
-    binary = souffle_binary()
-    if binary is None:
-        raise RuntimeError("no souffle binary on PATH")
-    include = binary.parent.parent / "include"
-    if not (include / "souffle" / "SouffleFunctor.h").is_file():
-        raise RuntimeError(f"no Souffle headers under {include}")
-    return include
 
 
 def build_functors(functor_dir: Path) -> None:
@@ -403,20 +349,13 @@ class Runner:
         after them, each included file's path and bytes,
         the functor library, the fact files and the flags."""
         h = hashlib.sha256()
-        h.update(souffle_version().encode())
+        h.update(binary_identity())
         h.update(b"\0" + text.encode())
         for path in included_files(program):
-            body = self._file(path)
-            if body is not None:
-                h.update(b"\0" + path.encode() + b"\0")
-                h.update(body)
-            else:
-                h.update(b"\0" + path.encode())
+            hash_file(h, path, self._file(path))
         if self.functor_dir is not None:
-            lib = self._file(str(self.functor_dir / FUNCTOR_LIB))
-            if lib is not None:
-                h.update(b"\0")
-                h.update(lib)
+            lib = str(self.functor_dir / FUNCTOR_LIB)
+            hash_file(h, lib, self._file(lib))
         for name in sorted(facts):
             h.update(b"\0" + name.encode() + b"\0" + facts[name].encode())
         h.update(b"\0" + " ".join(self.flags()).encode())
