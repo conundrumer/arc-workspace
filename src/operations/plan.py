@@ -442,7 +442,7 @@ def final(state: State) -> str:
     out.insert(0, head)
     for a in state.agents_of(Role.AFTER_MERGE):
         if a.operator == state.me and (r := a.last_report) is not None:
-            out.append("- " + mctx("The checks after the merge of change {number}, by "
+            out.append("- " + mctx("The report after the merge of change {number}, by "
                                    "{agent}:").format(number=a.subject, agent=a.agent_id))
             out += nested(r.text)
     return "\n".join(out)

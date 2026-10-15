@@ -164,18 +164,18 @@ def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], 
 # launches checking hooks it had not reloaded.
 AFTER_MERGE = mctx("""
     - Change {number} is merged into `master` at {head}.
-    - Run each check its ticket places after the merge, which `{command}` prints: {checks}.
-    - File each check that fails as a `bug` ticket, by the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), {filing}.
+    - Run each step and each check its ticket places after the merge, which `{command}` prints, in the order it gives them: {items}.
+    - File each step and each check that fails as a `bug` ticket, by the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), {filing}.
     - Give each check whose subject is an event that has not happened yet in your reply as unfinished, with that reason.
     - Run a check of what a running Claude Code session reads only at its start in a `claude -p` session you start in the main worktree.
-    - Reply with each check as passed, failed with its ticket, or unfinished with its reason.
+    - Reply with each step and each check as done or passed, failed with its ticket, or unfinished with its reason.
     """)
 
 
-def after_merge(number: str, checks: str, head: str) -> str:
+def after_merge(number: str, items: str, head: str) -> str:
     filing = FILE_AS.format(domain_subject=mctx("`change` and {number}").format(number=number),
                             agent=OPERATOR)
-    return AFTER_MERGE.format(number=number, head=head, checks=checks, filing=filing,
+    return AFTER_MERGE.format(number=number, head=head, items=items, filing=filing,
                               command=TICKET_PATH.format(number=number))
 
 

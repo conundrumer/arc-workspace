@@ -1,4 +1,4 @@
-+ budget: 8600
++ budget: 9100
 * comment: when editing this doc
     - Readers: each agent that files tickets inlines the sections for its work; the coordinator links them from [Tickets](prompts/agents/notes/requests.md#tickets); the ticket analyst and the ticket reviewer link Change tickets.
     - Acts, each with its section:
@@ -45,12 +45,14 @@
 ## Tracking
 - `tickets/` is in the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints, and in no other worktree. Git ignores it.
 - Every session on the repository shares the ticket tracker. A ticket belongs to the session whose index its number gives before the `-`, and a ticket with a bare number belongs to no session. `uv run python scripts/file_ticket.py index` prints the index of your session.
-- Take, release, move and settle only your session's tickets, those your brief or a message gives, and each `change` of another session that your documents have you take or release.
+- Take, release, move and settle only your session's tickets, those your brief or a message gives, each `change` of another session that your documents have you take or release, and each ticket a step that a merged change's ticket places after the merge moves.
+    * comment: Trial a7255e0c2ce99edd3, the `after-merge` agent of change 6-1020, ran none of the steps its Scope places after the merge, with this line as its reason.
 - Where you look for a ticket that already exists, look among every session's tickets.
 - Where you read the titles of tickets, print the path and title of each with one `grep -m1 -H '^# '` call whose arguments are all those ticket files.
 - The directories `tickets/draft/`, `tickets/open/`, `tickets/deferred/`, `tickets/assigned/`, `tickets/blocked/` and `tickets/closed/` are a ticket's statuses, and moving its file between them is its transition. `uv run python scripts/file_ticket.py path <number>` prints the path of the ticket with that number.
 - Read a ticket you do not edit with `uv run python scripts/file_ticket.py show <number> [<section> ...]`, with each section your step needs, and with none where it needs the whole ticket.
-- A ticket under `tickets/deferred/` waits on a condition that `uv run python scripts/file_ticket.py` checks and acts on: a `delay` ticket on its group's summed loss, as `uv run python scripts/file_ticket.py case --help-all` gives, and a `validation` ticket on the check of its `## Validation` section, as `uv run python scripts/file_ticket.py --help` gives. Move no ticket into `tickets/deferred/`, and move none out of it other than by closing a `validation` ticket whose need the user withdrew.
+- A ticket under `tickets/deferred/` waits on a condition that `uv run python scripts/file_ticket.py` checks and acts on: a `delay` ticket on its group's summed loss, as `uv run python scripts/file_ticket.py case --help-all` gives, and a `validation` ticket on the check of its `## Validation` section, as `uv run python scripts/file_ticket.py --help` gives. Move no ticket into `tickets/deferred/` other than by a step that a merged change's ticket places after the merge, and move none out of it other than by closing a `validation` ticket whose need the user withdrew.
+    * comment: Trial a7255e0c2ce99edd3, the `after-merge` agent of change 6-1020, ran none of the steps its Scope places after the merge, with this line as its reason.
 - A ticket under `tickets/blocked/` waits on what the last line of its log whose note opens with a wait gives, as `uv run python scripts/file_ticket.py log --help` defines that wait, and no agent holds it.
 - Make each transition, and write each other line of a ticket's log, with `uv run python scripts/file_ticket.py log`, in the form its `--help` gives, with your agent's name as `<agent>`.
 - Take a ticket with its transition to `assigned`, and leave alone each ticket whose transition the command refuses.

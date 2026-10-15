@@ -39,8 +39,8 @@ Once an agent launched on the change since its last move out of
 on the step `handled.unmoved` gives for that finding, reports after the
 latest merge call, the merge call is given again.
 
-Once the change is merged, an agent runs the checks its ticket's
-`after-merge` field gives, then the command closes each `refactor` ticket
+Once the change is merged, an agent runs the steps and checks its
+ticket's `after-merge` field gives, then the command closes each `refactor` ticket
 on a module a code editor of the change reports it split, or logs the part
 the report gives as left unsplit, then each `question` ticket filed on the
 change, then the change's own ticket."""
@@ -289,15 +289,15 @@ def finding(t: Ticket, last: Call, calls: list[Call], latest: list[Agent]) -> Se
 
 
 def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
-    """The steps after a change's merge, or None while its checks after
-    the merge run."""
+    """The steps after a change's merge, or None while its `after-merge`
+    agent runs."""
     head = state.git.commits[0].hash
     if t.after_merge is not None:
-        checks = state.agents_of(Role.AFTER_MERGE, t.number)
-        if not checks:
+        runs = state.agents_of(Role.AFTER_MERGE, t.number)
+        if not runs:
             return Launch(Role.AFTER_MERGE, t.number, briefs.after_merge(
                 t.number, t.after_merge, head))
-        if checks[-1].pending:
+        if runs[-1].pending:
             return None
     note = f"{Resolution.FIXED.value} {t.number} {head}"
     split: dict[str, str | None] = {}

@@ -64,7 +64,7 @@ HELP = mctx("""
         EOF
         ```
     - A `change` takes `kind: change` and `editors: <editor>, <editor>`, with each editor the change needs among {editors}.
-        - It may add `depends-on: <number>, <number>`, `priority: <0 to 100>` (`{default_priority}` where it gives none), `after-merge: <the checks its Scope places after the merge>` and `mechanical: {mechanical}` to the front matter.
+        - It may add `depends-on: <number>, <number>`, `priority: <0 to 100>` (`{default_priority}` where it gives none), `after-merge: <the steps and checks its Scope places after the merge>` and `mechanical: {mechanical}` to the front matter.
         - It gives `mechanical` only where its Intent gives each edit under `src/` and `scripts/` outright.
         - It has `# <title>` as its title, and the sections {change_sections} in place of {defect_headings}.
         - Where it adds a mechanism to code, it has a `{design}` section after `## Intent` that gives the existing operations the change uses or extends and each new operation with its module.
