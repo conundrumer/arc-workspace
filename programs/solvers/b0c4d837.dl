@@ -232,7 +232,7 @@ cell_order_choice($FillOrder()). cell_order_choice($SnakeOrder()). cell_order_ch
         rim(Ky, Ri, B), fluid.box([Ky, Li], B2), relative(B, B2, B_rel),
         params.open_dir(U), dist(B_rel, U, K).
 
-    // --- $SnakeOrder, $SpiralOrder ---
+    // --- $FillOrder, $SnakeOrder, $SpiralOrder ---
     .init frame = Frame2D<Key>
     frame.extent(Ky, A, N) :- side(Ky, N), axis_elem(A).
 
@@ -247,7 +247,7 @@ cell_order_choice($FillOrder()). cell_order_choice($SnakeOrder()). cell_order_ch
         cell_order_choice(O), O != $FillOrder(),
         corner(Ky, C), frame.cell(Ky, P), box_corner(P, ZERO, C), heading(Ky, H, _).
 
-    // --- $SnakeOrder ---
+    // --- $FillOrder, $SnakeOrder ---
     // Along the line, and at the frame's edge one line on and back.
     walk.edge([Ky, $SnakeOrder()], [P, H], [Q, H2]) :-
         frame.cell(Ky, P), dir_elem(H),
@@ -256,7 +256,7 @@ cell_order_choice($FillOrder()). cell_order_choice($SnakeOrder()). cell_order_ch
         ),
         frame.cell(Ky, Q).
 
-    // --- $SpiralOrder ---
+    // --- $FillOrder, $SpiralOrder ---
     // @claim lay-marks
     .init ring = Rim<Key>
     ring.cell(Ky, P) :- frame.cell(Ky, P).
@@ -281,7 +281,7 @@ cell_order_choice($FillOrder()). cell_order_choice($SnakeOrder()). cell_order_ch
         ; !spiral_open(Ky, P, H, _), perp_dir(H, H2), spiral_open(Ky, P, H2, Q)
         ).
 
-    // --- $SnakeOrder, $SpiralOrder ---
+    // --- $FillOrder, $SnakeOrder, $SpiralOrder ---
     // Each cell's rank along the walk.
     .decl walk_rank(key: Key, o: CellOrder, p: Position, r: number)
     walk_rank(Ky, O, P, R) :- walk.distance([Ky, O], [P, _], R).

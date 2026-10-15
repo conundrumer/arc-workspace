@@ -74,11 +74,30 @@ first.cand(G, P, K) :- dot(P, _), rings.distance(G, P, K).
 
 // --- $Nearer ---
 
+// The steps of the growth other than each growth.
+.decl other_step(g: Grow, d: Dir8)
+
+// --- $Square & $Nearer ---
+other_step($Square(), D) :- dir_elem(D).
+
+// --- $Diamond & $Nearer ---
+other_step($Diamond(), D) :- dir8_elem(D).
+
+// --- $Nearer ---
+
+// The other growth's rings around the shape, keyed by the growth whose first
+// ring they order.
+.init other_rings = GraphDistance<Grow, Position>
+other_rings.seed(G, P) :- grow_choice(G), shape(P).
+other_rings.edge(G, Q, P) :-
+    in(Q, _), in(P, _),                   // two grid cells
+    other_step(G, D), neighbor(Q, D, P).  // one step apart
+
 // The nearest of the first ring's dots, by the other growth's rings.
 .init nearest = ArgExtremes<Grow, Position>
 nearest.cand(G, P, K) :-
     first.low(G, P, _),                   // a first-ring dot
-    rings.distance(G2, P, K), G2 != G.       // its ring under the other growth
+    other_rings.distance(G, P, K).        // its ring under the other growth
 
 fill(Col, [G, $Nearer()]) :- nearest.low(G, P, _), dot(P, Col).
 
