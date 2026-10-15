@@ -112,7 +112,7 @@
 - Takes from: merge. Gives to: requirements, for a need not met.
 - How it can fail:
     - A check is placed on each change, and most never run: only a change that serves a need the user stated gets one.
-    - The check is lost before it runs: it stands in the `request` under `tickets/deferred/` until a batch's runs show it, and a change no run exercises opens for a ticket analyst.
+    - The check is lost before it runs: it stands in the `validation` ticket under `tickets/deferred/` until a batch's runs show it, and a change no run exercises opens for a ticket analyst.
 
 ## Merge (integration, transition)
 - Purpose: merge a verified change into `master` and make it live, with no change that skips verification.

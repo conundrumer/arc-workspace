@@ -30,7 +30,7 @@ importable(checkout.scripts())
 
 from ticket_files import FIELD, NAME_FORM, TicketName, ticket_path, ticket_status  # noqa: E402
 from ticket_form import (DEFAULT_PRIORITY, DESIGN, LOG, LOG_SECTION, MECHANICAL,  # noqa: E402
-                         RETIRED, checked_kind, section, sections_example, ticket_kind, title_line)
+                         RETIRED, VALIDATES, checked_kind, section, sections_example, ticket_kind, title_line)
 from ticket_log import (AGENT_ID, CLOSED_BY, SESSION_ID, UNBLOCKED_BY, VALIDATED, Wait,  # noqa: E402
                         log_lines, log_moves, logged, read_ticket, resolution_of, status_of)
 from ticket_numbers import (SESSION_VAR, SESSIONS, TicketNumber, reserve, session_id,  # noqa: E402
@@ -38,10 +38,10 @@ from ticket_numbers import (SESSION_VAR, SESSIONS, TicketNumber, reserve, sessio
 from ticket_settle import to_settle  # noqa: E402
 from idle_sessions import MAIN, name_main, read_sessions  # noqa: E402
 from ticket_reads import editors_field  # noqa: E402
-from ticket_watch import (CAP, CHANGES, COMMAND_FIELD, COMMAND_SECONDS, EXERCISED_FIELD,  # noqa: E402
-                          SECOND_PRICE,
-                          UNEXERCISED_DAYS, Case, add_evidence, budget, Thresholds,
-                          case_loss, evict, fix_field, front, loss, route, sweep)
+from ticket_watch import (CAP, CHANGES, SECOND_PRICE, Case, add_evidence, budget,  # noqa: E402
+                          Thresholds, case_loss, evict, fix_field, front, loss, route)
+from ticket_sweep import (COMMAND_FIELD, COMMAND_SECONDS, EXERCISED_FIELD,  # noqa: E402
+                          UNEXERCISED_DAYS, sweep)
 from ticketing.text import SECTIONS, VALIDATION, heading  # noqa: E402
 from ticketing.times import TIME_FORM  # noqa: E402
 from ticket_vocabulary import ticked  # noqa: E402
@@ -131,8 +131,9 @@ LOG_RULES = mctx("""
     - The ticket is the one with that number, and the command prints its path.
     - The command refuses, and neither moves nor writes, where the ticket stands in another status than `<current status>`, or where its file moves before the command moves it.
     - Where `<status>` differs from `<current status>`, the command moves the ticket's file to the directory of `<status>`.
-    - A line that moves a `{request}` that holds a `{validation}` section into `closed`, with a note that opens with `{fixed}` and not with `{validated}`, moves it into `{deferred}` in place of `closed`, with the same note: it waits there on its check, as `{invocation} sweep --help-all` gives.
-        - This holds too of each line below that moves a ticket that waits on a change.
+    - A line that moves a ticket into `closed`, with a note that opens with `{fixed}` and not with `{validated}`, acts on a ticket of these kinds as follows, and so does each line below that moves a ticket that waits on a change:
+        - A `{request}` that holds a `{validation}` section moves into `closed`, and the command moves that section into a new `{validation_kind}` ticket, whose `{validates}` field gives the request's number, which it writes under `tickets/{deferred}/`, and prints that ticket's path after the request's.
+        - A `{validation_kind}` ticket moves into `{deferred}` in place of `closed`, with the same note, and waits there on its check, as `{invocation} sweep --help-all` gives.
     - The command appends `<time> <status> [<agent>]: <note>` to the file's `{log}`, with the time in UTC in the form `{time_form}`, and with `<agent> <id>` in the bracket where `--id` gives an id.
         - `--id` takes an agent id, or the session id `$CLAUDE_CODE_SESSION_ID` holds.
         - A line with no `<note>` ends at the bracket.
@@ -210,22 +211,22 @@ AWAIT_CLOSE_HELP = mctx("""
 
 SWEEP_HELP = mctx("""
     - `<agent id> ...` are the runs of the batch the last profile launch closed, none where that batch has none.
-    - For each `{request}` under `tickets/{deferred}/`, in the order of numbers, the command checks its `{validation}` section against those runs, and moves it out of `{deferred}` where the check decides it.
+    - For each `{validation_kind}` ticket under `tickets/{deferred}/`, in the order of numbers, the command checks its `{validation}` section against those runs, and moves it out of `{deferred}` where the check decides it.
     - The command then routes the `{delay}` tickets under `tickets/{deferred}/` as `{invocation} case {full_flag}` gives.
     - It prints the path of each ticket it moved, one per line, or `{none_moved}` where it moved none.
     """)
 
 SWEEP_RULES = mctx("""
-    - The command checks a request only against the given runs that started at or after the last line of the request's log that moves it into `{deferred}`.
-        - Where no given run did, the request is not exercised, whether or not its section holds an `{exercised_field}` line.
-    - A request is exercised where its section holds no `{exercised_field}` line, or where the pattern of one of them matches, as Python's `re.search` does, a line of the transcript of one of those runs.
-    - Where the request is exercised and its section holds a `{command_field}` line, the command runs that line's command from the main tree, for at most {seconds} seconds.
-        - Where it exits 0, the request moves into `{closed}`, with the note `{validated} <command>`.
-        - Where it exits with another code, the request moves into `{open}`, with the note `{failed}: <command> exited <code>`, and where it runs past the time, with the note `{failed}: <command> timed out`.
-    - Where the request is exercised and its section holds no `{command_field}` line, it moves into `{open}`, with the note `{exercised}: <agent id> ...`, with the runs that match, or each of those runs where the section holds no `{exercised_field}` line.
-    - Where the request is not exercised, and the last line of its log that moves it into `{deferred}` is {days} days old or more, it moves into `{open}`, with the note `{unexercised}: no run matched since <time>`, with that line's time.
-    - Where a request's section holds more than one `{command_field}` line or a pattern that does not compile, or where its log holds no line that moves it into `{deferred}`, it moves into `{open}`, with the note `{failed}: <reason>`.
-    - Where running the command of a `{command_field}` line would take the sweep past the timeout of a foreground Bash call, the command does not start it, and the request stays in `{deferred}` until the next sweep, with an `undecided` line on stderr.
+    - The command checks a `{validation_kind}` ticket only against the given runs that started at or after the last line of the ticket's log that moves it into `{deferred}`.
+        - Where no given run did, the ticket is not exercised, whether or not its section holds an `{exercised_field}` line.
+    - A ticket is exercised where its section holds no `{exercised_field}` line, or where the pattern of one of them matches, as Python's `re.search` does, a line of the transcript of one of those runs.
+    - Where the ticket is exercised and its section holds a `{command_field}` line, the command runs that line's command from the main tree, for at most {seconds} seconds.
+        - Where it exits 0, the ticket moves into `{closed}`, with the note `{validated} <command>`.
+        - Where it exits with another code, the ticket moves into `{open}`, with the note `{failed}: <command> exited <code>`, and where it runs past the time, with the note `{failed}: <command> timed out`.
+    - Where the ticket is exercised and its section holds no `{command_field}` line, it moves into `{open}`, with the note `{exercised}: <agent id> ...`, with the runs that match, or each of those runs where the section holds no `{exercised_field}` line.
+    - Where the ticket is not exercised, and the last line of its log that moves it into `{deferred}` is {days} days old or more, it moves into `{open}`, with the note `{unexercised}: no run matched since <time>`, with that line's time.
+    - Where a ticket's section holds more than one `{command_field}` line or a pattern that does not compile, or where its log holds no line that moves it into `{deferred}`, it moves into `{open}`, with the note `{failed}: <reason>`.
+    - Where running the command of a `{command_field}` line would take the sweep past the timeout of a foreground Bash call, the command does not start it, and the ticket stays in `{deferred}` until the next sweep, with an `undecided` line on stderr.
     - The command refuses, and moves nothing, where a run it gives has no transcript, or none with a timestamped entry.
     """)
 
@@ -570,7 +571,7 @@ SUBCOMMANDS = {
                         lambda: session_index(main_tickets(), session_id()), True),
     "case": Subcommand(mctx("appends a case, with its evidence on stdin, to a deferred `delay` ticket"),
                        " <number> <agent> <agent id> <start> <end>", CASE_HELP, CASE_RULES, 5, case_command, True),
-    "sweep": Subcommand(mctx("moves each `request` under `tickets/deferred/` whose check decides it, "
+    "sweep": Subcommand(mctx("moves each `validation` ticket under `tickets/deferred/` whose check decides it, "
                              "and each `delay` there whose group reaches its threshold"),
                         " [<agent id> ...]", SWEEP_HELP, SWEEP_RULES, None, sweep_command, True),
     "to-settle": Subcommand(mctx("prints the open tickets an operator gives a ticket analyst to settle "
@@ -613,6 +614,7 @@ def help_values() -> dict[str, str]:
                 change_domain=Domain.CHANGE,
                 full_flag=FULL_FLAG, log_section=LOG_SECTION,
                 many_ideas=MANY_IDEAS, empty=EMPTY, delay=Kind.DELAY, deferred=Status.DEFERRED, request=Kind.REQUEST,
+                validation_kind=Kind.VALIDATION, validates=VALIDATES,
                 validated=VALIDATED, failed=Verdict.FAILED, exercised=Verdict.EXERCISED,
                 unexercised=Verdict.UNEXERCISED, days=str(UNEXERCISED_DAYS),
                 seconds=str(COMMAND_SECONDS), exercised_field=EXERCISED_FIELD,

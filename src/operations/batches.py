@@ -12,7 +12,7 @@ audits, with the changes merged since: those an operator's merge call merged, as
 launch of the profile agent opens the next batch.
 
 The sweep (`file_ticket.py sweep`) runs once a profile launch closes a
-batch, where a `request` of the session stands under `tickets/deferred/`,
+batch, where a `validation` ticket of the session stands under `tickets/deferred/`,
 and no call of it on the runs of the batch that profile launch closed, the
 runs the profile's brief gives, was made since that launch. No batch
 holds it, so no profile launch waits on it.
@@ -176,12 +176,12 @@ def validation(state: State) -> Step | None:
     if not profiles:
         return None
     closing = profiles[-1].launched
-    if not any(t.kind is Kind.REQUEST and t.status is Status.DEFERRED and state.mine(t)
+    if not any(t.kind is Kind.VALIDATION and t.status is Status.DEFERRED and state.mine(t)
                for t in state.tracker.tickets.values()):
         return None
     runs = batch_runs(state, followed(state, closing), start(state, closing), closing)
-    # No batch waits on the sweep: where the runs do not read, the requests
-    # stay under `deferred` for the next profile launch.
+    # No batch waits on the sweep: where the runs do not read, the `validation`
+    # tickets stay under `deferred` for the next profile launch.
     if not isinstance(runs, list):
         return None
     command = sweep_command(runs)

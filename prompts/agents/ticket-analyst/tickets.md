@@ -1,8 +1,8 @@
-+ budget: 4700
++ budget: 4900
 * comment: when editing this doc
     - The ticket analyst loads this document from [Jobs](prompts/agents/ticket-analyst.md#jobs), when its brief gives tickets under `tickets/open/` to settle.
     - Acts, each with its section:
-        - Taking a ticket, finding its duplicates, checking its evidence, and judging a `request`'s earlier `change` or merged commit, a solver pass's ticket and `refactor` tickets: [Settling tickets](#settling-tickets).
+        - Taking a ticket, finding its duplicates, checking its evidence, and judging a `request`'s earlier `change` or merged commit, or its `validation` ticket, a solver pass's ticket and `refactor` tickets: [Settling tickets](#settling-tickets).
 
 # Settling tickets
 - For each ticket your brief gives to settle:
@@ -12,9 +12,10 @@
         - While you work on a `request`, read no entry of its session's transcript after the end of its last span.
     4. Then settle it by [Settling](prompts/agents/ticket-analyst.md#settling).
 - Where the log of a `request` you take shows a `change` filed for it before, judge its resolution again with its spans and Grounds and the part of its need that a line of its log gives as unmet.
-    - Where the last line of its log that moves it out of `tickets/deferred/` gives `exercised:`, judge its `Validation` against the runs that line gives, and where the check holds, close it with a note that opens `fixed: validated:`. Otherwise settle it as this line gives, an `unexercised:` request as a fault whose root cause is why no run matched.
     - Where that `change` stands under `tickets/closed/`, resolve the part of the need it leaves unmet by [Settling](prompts/agents/ticket-analyst.md#settling).
     - Otherwise, where that changes its resolution, revise that `change` where it stands under `tickets/draft/` or `tickets/open/`, with its transition to `draft` from `open`, and where it stands in another status, give the new resolution in your reply as unfinished, with its reason. Then move the request back to `tickets/blocked/`, with a note that opens with `change` and that change's number.
+- Where the last line of a `validation` ticket's log that moves it out of `tickets/deferred/` gives `exercised:`, judge its `Validation` against the runs that line gives, and where the check holds, close it with a note that opens `fixed: validated:`.
+    - Otherwise settle the part of the need of the `request` its `validates` field gives that the check shows unmet, with that request's Goal, spans and Grounds read as step 3 gives, and an `unexercised:` ticket as a fault whose root cause is why no run matched. A `change` you file for it settles the `validation` ticket, and not the request.
 - Where the log of a `request` you take gives a commit of `master` that the coordinator merged for it with no `change` ticket, judge that commit as the design of a draft `change` for that request, as [Revising a draft](prompts/agents/ticket-analyst/drafts.md) gives for a draft, with the need that the request's spans and Grounds give, the tickets that log line gives the commit settles, the tickets step 2 of [Settling](prompts/agents/ticket-analyst.md#settling) reads, and the part of the need that a line of its log gives as unmet.
     - Where that commit's diff changes the agent-facing documents and no line of the request's log gives a doc reviewer's agent id for that commit, launch one `doc-reviewer` on that commit, whatever your judgment of it, and write a line in the request's log that gives the commit's hash and that doc reviewer's agent id, before you resolve the request.
     - Where that commit stands as the least change that meets that need, close the request `fixed` with the commit's hash. Otherwise move the request to `tickets/blocked/` with a note that opens with `change` and the number of the `change` that takes what the commit leaves: one among the tickets that log line gives, or else one you file for it as [Resolving](prompts/agents/ticket-analyst.md#resolving) gives.

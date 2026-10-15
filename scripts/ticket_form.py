@@ -73,9 +73,14 @@ def body_form(kind: Kind) -> re.Pattern[str]:
     return re.compile(title + r"\n" + middle + r"(?:.*\n)*" + heading(sections[-1]) + r"(?:\n|$)")
 
 
+VALIDATES = "validates"
+"""The field of a `validation` ticket that gives the number of the
+`request` it checks."""
+
 FIELDS = {Kind.CHANGE: frozenset({"depends-on", "priority", "editors", "after-merge",
                                        "mechanical"}),
-          Kind.DELAY: frozenset({"fix"})}
+          Kind.DELAY: frozenset({"fix"}),
+          Kind.VALIDATION: frozenset({VALIDATES})}
 """The front matter fields besides `kind` that each kind may give."""
 
 DEFAULT_PRIORITY = 50
@@ -85,7 +90,7 @@ MECHANICAL = "yes"
 """The one value of a `change`'s `mechanical` field, whose condition the
 `HELP` of `file_ticket` gives."""
 
-REQUIRED = {Kind.CHANGE: frozenset({"editors"})}
+REQUIRED = {Kind.CHANGE: frozenset({"editors"}), Kind.VALIDATION: frozenset({VALIDATES})}
 """The front matter fields besides `kind` that each kind must give."""
 
 
@@ -148,6 +153,14 @@ def bounds(text: str, name: str) -> tuple[int, int]:
 def section(text: str, name: str) -> str:
     start, end = bounds(text, name)
     return text[start:end].strip("\n")
+
+
+def without_section(text: str, name: str) -> str:
+    """A ticket's `text` with the section `name`, its heading with it, cut."""
+    _, end = bounds(text, name)
+    head = section_head(text, name)
+    assert head is not None  # `bounds` refuses a text with no such section.
+    return text[:head.start()] + text[end:]
 
 
 def check_depends_on(tickets: Path, value: str) -> None:

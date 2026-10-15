@@ -5,17 +5,20 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
+from enum import Enum, auto
 from pathlib import Path
 
 from controlled_markdown import mctx
-from ticket_files import FIELD, ticket_files, ticket_name, ticket_path, ticket_status
-from ticket_form import HEADING, LOG, section_head, ticket_kind
-from ticket_numbers import TICKET_NUMBER, TicketNumber, matched_number
+from engine.memo import write_whole
+from ticket_files import FIELD, TicketName, ticket_files, ticket_name, ticket_path, ticket_status
+from ticket_form import (HEADING, LOG, TITLE_MARK, VALIDATES, section, section_head, ticket_kind,
+                         title, without_section)
+from ticket_numbers import TICKET_NUMBER, TicketNumber, matched_number, reserve, write_new
 from ticket_vocabulary import ticked
 from operations.roles import AGENT_ID as AGENT_ID_FORM
-from ticketing.text import VALIDATION
+from ticketing.text import VALIDATION, heading
 from ticketing.times import utc_stamp
-from ticketing.vocabulary import Kind, Note, Resolution, Status, Verdict, Wait, note_opening
+from ticketing.vocabulary import Domain, Kind, Note, Resolution, Status, Verdict, Wait, note_opening
 from transcripts import Refused
 
 AGENT_ID = re.compile(AGENT_ID_FORM)
@@ -47,7 +50,15 @@ resolution."""
 
 VALIDATED = f"{Resolution.FIXED}: {Verdict.VALIDATED}:"
 """The opening of the note of a line into `closed` that states that the
-check of a `request`'s `Validation` section held."""
+check of a `validation` ticket's `Validation` section held."""
+
+VALIDATION_TITLE = "{request} {number}: {title}"
+"""The title of the `validation` ticket of the request `number`, with
+that request's title."""
+
+VALIDATES_NOTE = "{filed}: validates {request} {number}"
+"""The note of the line that files the `validation` ticket of the
+request `number`."""
 
 
 class Moved(Refused):
@@ -240,7 +251,8 @@ def write_log(tickets: Path, path: Path, number: TicketNumber, status: Status, a
 @dataclass
 class Moves:
     """What a call of `log_moves` did: the paths it moved tickets to, the
-    ticket the call names first, and each ticket that waits on a change it
+    ticket the call names first, with the path of each `validation` ticket
+    it filed after the path of its request, and each ticket that waits on a change it
     closed whose move was refused, with its path and the reason."""
     moved: list[Path] = field(default_factory=list[Path])
     refused: list[tuple[Path, str]] = field(default_factory=list[tuple[Path, str]])
@@ -250,36 +262,83 @@ class Moves:
         self.refused += other.refused
 
 
+class Close(Enum):
+    """What a line into `closed` does beyond the move, as
+    `file_ticket.LOG_RULES` gives."""
+    UNBLOCKS = auto()
+    """It closes a `change`, and `unblock` moves the tickets that wait on it."""
+    FILES_VALIDATION = auto()
+    """It closes `fixed` a `request` that holds a `Validation` section, and
+    `file_validation` moves that section into a new `validation` ticket."""
+    DEFERS = auto()
+    """It closes `fixed` a `validation` ticket, which moves into `deferred`
+    in place of `closed`."""
+
+
+def close_of(path: Path, status: Status, source: Status, note: str | None) -> Close | None:
+    """What a line into `status` from `source` with `note` on the ticket at
+    `path` does beyond the move, None where it does nothing more."""
+    if status is not Status.CLOSED or source is Status.CLOSED:
+        return None
+    text = read_ticket(path)
+    kind = ticket_kind(text)
+    if kind is Kind.CHANGE:
+        return Close.UNBLOCKS
+    if resolution_of(note) is not Resolution.FIXED or (note or "").startswith(VALIDATED):
+        return None
+    if kind is Kind.VALIDATION:
+        return Close.DEFERS
+    if kind is Kind.REQUEST and section_head(text, VALIDATION) is not None:
+        return Close.FILES_VALIDATION
+    return None
+
+
 def log_moves(tickets: Path, number: TicketNumber, status: Status, agent: str, source: Status,
               agent_id: str | None, note: str | None) -> Moves:
     """Writes the log line as `write_log` does, refused as it refuses, and
-    returns the ticket's path, followed, where the line moves a `change`
-    into `closed`, by what `unblock` returns for it. A line that `defers`
-    moves the ticket into `deferred` in place of `closed`."""
+    returns the ticket's path, followed by what the line does beyond the
+    move (`Close`): the path of the `validation` ticket `file_validation`
+    files, or what `unblock` returns."""
     path = ticket_path(tickets, number)
-    if defers(path, status, source, note):
+    close = close_of(path, status, source, note)
+    if close is Close.DEFERS:
         status = Status.DEFERRED
-    closes = status is Status.CLOSED and source is not Status.CLOSED and is_change(path)
+    if close is Close.FILES_VALIDATION and number.session is None:
+        raise Refused(mctx("request `{number}` has a bare number, so its `validation` ticket "
+                           "has no session to take its number from").format(number=number))
     moves = Moves([write_log(tickets, path, number, status, agent, source, agent_id, note)])
-    if not closes:
-        return moves
-    resolution = resolution_of(note)
-    # `check_line` refuses a move into `closed` whose note opens with no resolution.
-    assert note is not None and resolution is not None
-    moves.add(unblock(tickets, number, agent, agent_id, resolution, note))
+    match close:
+        case None | Close.DEFERS:
+            pass
+        case Close.FILES_VALIDATION:
+            moves.moved.append(file_validation(tickets, moves.moved[0], number, agent))
+        case Close.UNBLOCKS:
+            resolution = resolution_of(note)
+            # `check_line` refuses a move into `closed` whose note opens with no resolution.
+            assert note is not None and resolution is not None
+            moves.add(unblock(tickets, number, agent, agent_id, resolution, note))
     return moves
 
 
-def defers(path: Path, status: Status, source: Status, note: str | None) -> bool:
-    """Whether a line into `status` from `source` with `note` on the ticket
-    at `path` moves it into `deferred` in place of `closed`, as
-    `file_ticket.LOG_RULES` gives."""
-    if status is not Status.CLOSED or source is Status.CLOSED:
-        return False
-    if resolution_of(note) is not Resolution.FIXED or (note or "").startswith(VALIDATED):
-        return False
+def file_validation(tickets: Path, path: Path, request: TicketNumber, agent: str) -> Path:
+    """Moves the `Validation` section of the closed request `request`, at
+    `path`, into a new `validation` ticket under `tickets/deferred/`, filed
+    by `agent`, and returns that ticket's path. The ticket is written
+    before the section is cut, so a call that stops between them leaves
+    the check in both."""
+    # `close_of` gives `FILES_VALIDATION` only to a request with a session's number.
+    assert request.session is not None
     text = read_ticket(path)
-    return ticket_kind(text) is Kind.REQUEST and section_head(text, VALIDATION) is not None
+    named = VALIDATION_TITLE.format(request=Kind.REQUEST, number=request, title=title(path, text))
+    note = VALIDATES_NOTE.format(filed=Note.FILED, request=Kind.REQUEST, number=request)
+    validation = (f"---\nkind: {Kind.VALIDATION}\n{VALIDATES}: {request}\n---\n"
+                  f"{TITLE_MARK}{named}\n\n{heading(VALIDATION)}\n{section(text, VALIDATION)}\n\n"
+                  f"{LOG}\n{log_line(Status.DEFERRED, agent, None, note)}")
+    number = reserve(tickets, request.session)
+    name = TicketName(number, Domain.TICKET, str(request), agent).file_name
+    filed = write_new(tickets / Status.DEFERRED, validation, [name])
+    write_whole(path, without_section(text, VALIDATION).encode())
+    return filed
 
 
 def unblock(tickets: Path, change: TicketNumber, agent: str, agent_id: str | None,

@@ -17,7 +17,7 @@ class Status(StrEnum):
     CLOSED = "closed"
     DEFERRED = "deferred"
     """A ticket that waits on a condition `file_ticket.py` checks: a `delay`
-    ticket on its group's summed loss, a `request` on its `Validation`
+    ticket on its group's summed loss, a `validation` ticket on its
     check."""
 
 
@@ -37,9 +37,9 @@ class Resolution(StrEnum):
 
 class Verdict(StrEnum):
     """The words the notes of the lines the sweep (`file_ticket.py sweep`)
-    writes on a `request` it moves out of `deferred` open with, after the
-    resolution of a line into `closed`: what the check its `Validation`
-    section gives shows."""
+    writes on a `validation` ticket it moves out of `deferred` open with,
+    after the resolution of a line into `closed`: what the check its
+    `Validation` section gives shows."""
     VALIDATED = "validated"
     FAILED = "failed"
     UNEXERCISED = "unexercised"
@@ -65,6 +65,9 @@ class Kind(StrEnum):
     REFACTOR = "refactor"
     CHANGE = "change"
     REQUEST = "request"
+    VALIDATION = "validation"
+    """The check of a `request`'s need, which `file_ticket.py log` files
+    as the request closes."""
 
 
 PASS_KINDS = frozenset({Kind.INTERFERENCE, Kind.DELAY})
