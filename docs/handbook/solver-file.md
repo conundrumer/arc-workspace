@@ -1,5 +1,5 @@
 + index: headings
-+ budget: 21600
++ budget: 21900
 * comment: when editing this doc
     - Write what File structure says by editing the template, and describe only what the template cannot explain.
 
@@ -220,7 +220,8 @@
 - `DemonstratedChoice` is the `Demonstrated` type argument of a `DemonstrationConsistency` instance.
 - A nested task is a task whose every input holds one or more inner tasks, each of them demonstrated pairs and the answer it asks for, in one of these forms.
     - A demonstrated pair beside an object left to complete, where the answer is that object's completion.
-    - A sequence, where each consecutive pair, an element and the next, is a demonstrated pair, nothing is held out, and the answer is the element after the last.
+    - A sequence, where each consecutive pair, an element and the next, is a demonstrated pair, nothing is held out, and the answer is an element past the last, which may lie past the next one.
+        * comment: A `session` trial, ae981171ab363c9bb, on a pass that chooses the structure of 20a9e565's solver read "an element past the last" as the next element and planned `@rule next-element`, which fails train pair 2: ticket 9-513.
 - A case that reads a `DemonstrationConsistency` instance solves each inner task of each input of a nested task, at a key of that instance that identifies the inner task.
 - That case's catalog, the constructors of `DemonstratedChoice`, holds the rules the task's inputs demonstrate, test inputs included, normally one per inner task.
     - Each rule is a general rule, with clauses of its own that read from the input what that rule needs.

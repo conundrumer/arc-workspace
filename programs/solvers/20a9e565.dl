@@ -88,6 +88,8 @@ drawn_choice($EveryTerm()). drawn_choice($NewTermsOnly()).
 .type DemonstratedRule = [task: Dir, rule: DemonstratedChoice]
 .type Grown = [d: Dir, c: DemonstratedChoice, i0: Position, i: Position]
 .type Seat = [i: Position, p: Position]
+// The term at index i0 grown to index i.
+.type GrownTerm = [i0: Position, i: Position]
 
 // --- terms ---
 
@@ -473,33 +475,37 @@ grown_box.cell([D, C, I0, I], P) :- fill(D, C, I0, I, P, _).
 
 // Each term is read with its lines along the sequence measured from its own
 // box and its lines across the sequence from the grid, so that a growth
-// carries the alignment across the sequence and the gap does not enter.
+// carries the alignment across the sequence and the gap does not enter. A
+// shown term is the term at its own index grown to that index, and each rule
+// predicts the term at i0 grown to each index it grows to.
 // @claim continue-sequence
-.init catalog = DemonstrationConsistency<Dir, DemonstratedChoice, Position, Position, Color>
-catalog.value(D, I, P_h, Col) :-
+.init catalog = DemonstrationConsistency<Dir, DemonstratedChoice, GrownTerm, Position, Color>
+catalog.value(D, [I, I], P_h, Col) :-
     cell_at(D, I, P, Col), axis_of(D, A), term_band(D, I, A, B_al), relative(B_al, P, P_h).
-catalog.demonstration(D, I, I2) :- consecutive(D, I, I2).
-catalog.prediction(D, C, I, P_h, Col) :-
-    consecutive(D, I, I2), grown_box.box([D, C, I, I2], B), axis_of(D, A), split(B, A, B_al, _),
-    ( paint(D, C, I, I2, P, Col) ; fill(D, C, I, I2, P, I_c), shown_color(D, C, I_c, Col) ),
+catalog.demonstration(D, [I, I2], [I2, I2]) :- consecutive(D, I, I2).
+catalog.prediction(D, C, [I0, I], P_h, Col) :-
+    target(D, I0, I), grown_box.box([D, C, I0, I], B), axis_of(D, A), split(B, A, B_al, _),
+    ( paint(D, C, I0, I, P, Col)
+    ; fill(D, C, I0, I, P, I_c), ( shown_color(D, C, I_c, Col) ; term_color_at(D, C, I_c, Col) )
+    ),
     relative(B_al, P, P_h).
 
 // --- continuation ---
 
-// The line of the e edge of the term grown from the last by index i.
-.decl grown_edge(d: Dir, c: DemonstratedChoice, i: Position, e: Dir, l: Position)
-grown_edge(D, C, I, E, L) :-
-    last(D, I0), grown_box.box([D, C, I0, I], B), grown_box.cell([D, C, I0, I], P),
-    axis_of(D, A), axis_of(E, A), box_edge(P, B, E), split(P, A, L, _).
+// The count of lines from the back edge to the e edge of the term the last
+// shown term grows to by the new index i, as rule c predicts it.
+.decl grown_edge(d: Dir, c: DemonstratedChoice, i: Position, e: Dir, k: number)
+grown_edge(D, C, I, E, K) :-
+    last(D, I0), new_index(D, I), catalog.prediction(D, C, [I0, I], P_h, _),
+    axis_of(D, A), axis_of(E, A), opposite(D, Db), dist(P_h, E, 0), dist(P_h, Db, K).
 
-// The move that puts the new term at i2 a gap past the term at i1, when the
-// term at i1 has its front edge on line l1.
-.decl advance(d: Dir, c: DemonstratedChoice, i1: Position, l1: Position, i2: Position, v: Offset)
-advance(D, C, I1, L1, I2, V) :-
-    ( last(D, I1) ; new_index(D, I1) ), neighbor(I1, D, I2),
+// The line of the back edge of the new term at i2, a gap past the term at
+// i1, when the term at i1 has its front edge on line l1.
+.decl advance(d: Dir, i1: Position, l1: Position, i2: Position, l2: Position)
+advance(D, I1, L1, I2, L3) :-
+    ( last(D, I1) ; new_index(D, I1) ), neighbor(I1, D, I2), new_index(D, I2),
     axis_of(D, A), grid_line(A, L1),
-    term_gap(G), jump(L1, D, G, L2), neighbor(L2, D, L3),       // the line past the gap
-    opposite(D, Db), grown_edge(D, C, I2, Db, L4), relative(L4, L3, V).
+    term_gap(G), jump(L1, D, G, L2), neighbor(L2, D, L3).       // the line past the gap
 
 // The line of each term's front edge where it stands, from the last shown
 // term on.
@@ -508,14 +514,17 @@ advance(D, C, I1, L1, I2, V) :-
 front.source([D, C], [I, L]) :-
     catalog.confirmed(D, C), last(D, I), term_at(D, I, T), term_edge(T, D, L).
 front.edge([D, C], [I1, L1], [I2, L]) :-
-    advance(D, C, I1, L1, I2, V), grown_edge(D, C, I2, D, L0), compose(L0, V, L).
+    advance(D, I1, L1, I2, L3), grown_edge(D, C, I2, D, K), jump(L3, D, K, L).
 
-// The cells the continued sequence draws.
+// The cells the continued sequence draws: each new term the confirmed rule
+// predicts, its back edge on the line `advance` gives.
 .decl drawn(dr: Drawn, r: DemonstratedRule, p: Position, col: Color)
 drawn(Dr, [D, C], Q, Col) :-
-    front.reached([D, C], [I1, L1]), advance(D, C, I1, L1, I, V), drawn_choice(Dr),
-    ( paint(D, C, _, I, P, Col) ; fill(D, C, _, I, P, I_c), term_color_at(D, C, I_c, Col) ),
-    compose(P, V, Q).
+    catalog.confirmed(D, C), last(D, I0), new_index(D, I),
+    catalog.prediction(D, C, [I0, I], P_h, Col),
+    front.reached([D, C], [I1, L1]), advance(D, I1, L1, I, L_b), drawn_choice(Dr),
+    opposite(D, Db), dist(P_h, Db, K), jump(L_b, D, K, L),       // the cell's line
+    axis_of(D, A), split(P_h, A, _, P_across), compose(L, P_across, Q).
 
 // --- window ---
 
