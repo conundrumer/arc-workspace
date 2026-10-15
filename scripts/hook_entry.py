@@ -12,7 +12,10 @@ caller's documents, which gives the text the caller gets in its context or
 None (`reader_commits.reader_update`). Claude Code reads one output of a
 hook, and puts its `additionalContext` in the caller's context whether or
 not the output denies the call, so the entry prints one output that holds
-both parts. The update records the delivery only where its block ends
+both parts. Claude Code puts that text in the caller's context after the
+call has run, so a call that gets an update is denied, with the update's
+reason after the check's, and the caller makes it again by its updated
+documents. The update records the delivery only where its block ends
 without an error, after the output is printed.
 
 What the entry runs for every hook stands in this docstring alone, and in no
@@ -22,9 +25,17 @@ import json
 import sys
 from collections.abc import Callable
 from contextlib import AbstractContextManager
-from typing import Any
+from typing import Any, NamedTuple
 
 type Hook = dict[str, Any]
+
+
+class Update(NamedTuple):
+    """The text the caller of a PreToolUse hook gets in its context, and the
+    reason its call is denied for it."""
+
+    text: str
+    reason: str
 
 CHECK_FAILED = "allowed: the check failed"
 """The failure text of a PreToolUse or a SubagentStop hook, whose call or
@@ -69,12 +80,13 @@ def run_subagent_stop(hook: str, check: Callable[[Hook], str | None]) -> int:
     return 0
 
 
-def _give(reason: str | None, context: str | None) -> None:
+def _give(reason: str | None, update: Update | None) -> None:
     out: dict[str, str] = {}
+    if update is not None:
+        reason = update.reason if reason is None else f"{reason}\n{update.reason}"
+        out["additionalContext"] = update.text
     if reason is not None:
         out |= {"permissionDecision": "deny", "permissionDecisionReason": reason}
-    if context is not None:
-        out["additionalContext"] = context
     if out:
         print(json.dumps({"hookSpecificOutput": {
             "hookEventName": "PreToolUse", **out}}), flush=True)
@@ -82,19 +94,19 @@ def _give(reason: str | None, context: str | None) -> None:
 
 def run_pre_tool_use(
         hook: str, check: Callable[[Hook], str | None],
-        update: Callable[[Hook], AbstractContextManager[str | None]]) -> int:
+        update: Callable[[Hook], AbstractContextManager[Update | None]]) -> int:
     """Run the PreToolUse hook `hook` on the input on stdin: `check` gives
-    the reason to deny the call, and `update` the text the caller gets in
-    its context, inside a block that the printed output ends."""
+    the reason to deny the call, and `update` the caller's update, inside a
+    block that the printed output ends."""
     data = run_part(hook, CHECK_FAILED, lambda: json.loads(sys.stdin.read()))
     if data is None:
         return 0
     reason = run_part(hook, CHECK_FAILED, lambda: check(data))
     given = False
     try:
-        with update(data) as context:
+        with update(data) as given_update:
             given = True
-            _give(reason, context)
+            _give(reason, given_update)
     except Exception as e:
         _failed(hook, UPDATE_FAILED, e)
         if not given:

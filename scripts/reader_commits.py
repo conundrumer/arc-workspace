@@ -87,6 +87,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import IO, Any
 
+from hook_entry import Update
+
 RECORDS = "reader-commits"
 """The directory of the records, in a session directory or in the
 directory of the project's sessions."""
@@ -382,9 +384,20 @@ def held_update_text(tree: Path, after: str, launch: str,
                  "for each section that links from them reach."))
 
 
+def _update(text: str | None) -> Update | None:
+    from controlled_markdown import mctx
+
+    if text is None:
+        return None
+    return Update(text, mctx(
+        "This call was not run, since your documents may have changed: the hook "
+        "additional context of this call gives how. Make the call again only where "
+        "your documents, as that context leaves them, still give it."))
+
+
 @contextmanager
-def reader_update(hook: dict[str, Any]) -> Iterator[str | None]:
-    """The text that gives the caller of the hook input `hook` the diff of
+def reader_update(hook: dict[str, Any]) -> Iterator[Update | None]:
+    """The update that gives the caller of the hook input `hook` the diff of
     its documents since its record, as the module docstring gives it, or
     None, held under the lock of its record. Where the block ends without
     an error, the record moves to the tree's `HEAD`. A record that holds no
@@ -406,10 +419,10 @@ def reader_update(hook: dict[str, Any]) -> Iterator[str | None]:
             yield None
         elif len(commits) == 2:
             context, instructions = commits
-            yield update_text(tree, after, context, instructions, call)
+            yield _update(update_text(tree, after, context, instructions, call))
         else:
             from run_reads import caller_transcript
 
-            yield held_update_text(tree, after, commits[0], call,
-                                   held_texts(caller_transcript(hook)))
+            yield _update(held_update_text(tree, after, commits[0], call,
+                                           held_texts(caller_transcript(hook))))
         _write(f, after, after)
