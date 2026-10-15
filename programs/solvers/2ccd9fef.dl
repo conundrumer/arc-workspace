@@ -1,626 +1,46 @@
 // 2ccd9fef
 // @draft
-// @keywords: decompose crop objects lines wallpaper move mapping rank induce
-// @scene panel-strip: the input is a row or a column of equal panels butted
-//  with no divider between them, and every panel holds the same frame drawing
-//  (marks of one or two colors on a background).
-// @scene empty-last: the panel at the end of the strip toward the bottom-right
-//  corner holds only the frame, and every other panel holds one stage of the
-//  figure drawn over its frame.
-// @scene stage-figures: a stage is one or two figures, each a connected group
-//  of cells of one or more colors, inside the panel's frame.
-// @rule stage-order: the stages run along the strip toward the empty panel,
-//  one stage per panel, so the empty panel holds the stage after the last
-//  filled one. The empty panel is the end panel that holds one color at every
-//  cell where another panel differs from it, in the one split into equal
-//  panels that has such an end panel.
-// @rule slices: each figure is read as a sequence of slices, one per line
-//  along the axis across the strip, and its slices form a fixed lead, a block
-//  that repeats, and a fixed tail. The figures of consecutive stages
-//  correspond when every order of their boxes, from any corner along either
-//  axis first, ranks them alike. Undefined where a figure has no single
-//  counterpart in each stage, or where two readings of a figure draw
-//  different cells.
-// @rule growth: from each stage to the next, each edge of each figure's box
-//  moves by a step, so that the figure repeats its block more times and moves
-//  along the axis. Each step is the step before it times one factor, the same
-//  at every edge and every stage, and the next stage's step is the last step
-//  times that factor; with one step, the next step is that step.
-// @rule color-cycle: a figure color that changes from stage to stage keeps the
-//  cycle the filled stages show, so the next stage takes the colors of the
-//  stage one period back. A color in every stage keeps itself, and a color
-//  some stage lacks turns into the color some stage lacks that it overlaps in
-//  the next stage.
-// @rule draw: the output is the empty panel, its frame kept and the next stage
-//  of each figure drawn over it.
+// @keywords: decompose crop objects bbox move mapping induce
+// @scene panel-strip: the input is a row or a column of equal panels laid end
+//  to end with no divider, and every panel shows one frame drawing.
+// @scene blank-panel: one panel shows the frame alone. It is the panel of
+//  fewest colors, in the split into equal panels under which that panel
+//  leaves the fewest cells of the other panels unexplained, and it lies at
+//  one end of the strip.
+// @scene stages: every other panel holds a stage: figures, each a 4-connected
+//  group of the cells that differ from the frame.
+// @rule stage-order: the stages run along the strip toward the blank panel,
+//  which holds the stage after the last one.
+// @rule track: a figure continues the figure of the next stage that shares a
+//  cell with it, and its step is the change of its box's margins from one
+//  stage to the next, the same at every stage, and none across the growth
+//  axis, the axis across the strip.
+// @rule next-stage: each stage with the stage after it is a demonstration.
+//  The rules of the catalog that every demonstration confirms each draw the
+//  stage after the last one in the blank panel, over the frame.
 
-// how the empty panel is found
-.type EmptyPanel =
-    // @claim stage-order
-    ByContent {}
-    // @rule stage-order: the empty panel is the end panel toward
-    //  params.empty_corner, of the one split whose panel there holds one color
-    //  at every cell where another panel differs from it. Undefined where that
-    //  panel holds a figure.
-    // @witness empty-panel-first: variant concept
-    //     @relaxed empty-last
-    // @witness static-figure: borderline $StoredEnd
-  | StoredEnd {}
+// The stage after the last one, as each confirmed rule draws it.
+.decl out(p: Position, col: Color, r: DemonstratedChoice)
 
-// what one figure is
-.type FigureParse =
-    // @claim stage-figures
-    Connected {}
-    // @scene stage-figures: a figure is every cell of one color, and the
-    //  colors a cycle turns into one another count as one color
-    // @witness dotted-line: variant $ColorClassFigures
-  | ColorClassFigures {}
-
-// the axis the figures grow along
-.type GrowthAxis =
-    // @claim slices
-    AcrossStrip {}
-    // @rule slices: each figure grows along the axis on which a decomposition
-    //  fits its stages. Undefined where neither axis fits or the two disagree.
-    // @witness growth-along-strip: variant $GrowthAxisDerived
-  | GrowthAxisDerived {}
-
-// which stages give the step
-.type StepSource =
-    // @claim growth
-    EveryStep {}
-    // @rule growth: the next stage's step is the last step, read from the last
-    //  two filled stages alone
-    // @witness uneven-steps: borderline concept
-  | LastStep {}
-
-// the colors of the next stage
-.type ColorCycle =
-    // @claim color-cycle
-    ReadPeriod {}
-    // @rule color-cycle: the next stage takes the colors of the stage
-    //  params.color_period back. Undefined where fewer filled stages exist.
-    // @witness three-color-cycle: variant concept
-  | StoredColorPeriod {}
-
-// which run of the stage before a run of the last stage continues
-.type RunMatch =
-    // @claim growth
-    Rank {}
-    // @rule growth: a run of the last stage continues the run on its line in
-    //  the stage before whose colors, each turned into the color it turns
-    //  into, are the run's own colors
-    // @witness first-step-gap: ordinary concept
-  | Hue {}
-
-// how the runs give the next stage
-.type RunRule =
-    // @claim growth
-    Velocity {m: RunMatch}
-    // @rule growth: each stage with the stage after it is a demonstration. A
-    //  catalog of next-stage rules over the runs is checked against those
-    //  pairs. In each rule the two ends of a run step by the step they take at
-    //  every pair; the moving end carries the run's content, or the run's
-    //  cells keep their place and a gained cell takes the color the other
-    //  stages show there. The rule consistent on every pair gives the stage
-    //  after the last one. Undefined where no rule is.
-    // @witness first-step-gap: ordinary concept
-    // @witness fixed-lead-row: ordinary concept
-  | Demo {}
-
-// how the next stage is read from the filled stages
-.type Choice =
-    // @claim empty-last stage-figures slices growth color-cycle
-    Slices {end: EmptyPanel, parse: FigureParse, axis: GrowthAxis, step: StepSource,
-            color: ColorCycle}
-    // @scene empty-last: the empty panel is the plainest panel, the one with
-    //  the fewest colors, and the split is the one whose plainest panel leaves
-    //  the fewest cells of the other panels unexplained
-    // @scene stage-figures: the figures are runs: on each line along the
-    //  growth axis, each maximal run of cells that differ from the empty
-    //  panel. The growth axis is the axis whose every line holds the same
-    //  number of runs in every stage.
-    // @rule slices: a run is read as a whole, with no lead, block or tail
-    // @rule growth: each run of the last stage continues the run of equal rank
-    //  from the line's edge in the stage before, and each of its two ends
-    //  moves once more by the step it took over that last step. The moving end
-    //  carries the run's content, and a still end fills what the moving end
-    //  misses.
-    // @rule color-cycle: each color turns into the color it overlaps in the
-    //  next stage, where the steps agree; a color the steps disagree on keeps
-    //  itself
-    // @witness two-growing-parts: variant $Runs
-  | Runs {rule: RunRule}
-
-.decl out(p: Position, col: Color, ch: Choice, r: DemonstratedChoice)
-
-.comp Params {
-    // --- $StoredEnd ---
-    // The corner whose edge on the strip's axis ends the strip at the empty
-    // panel.
-    .decl empty_corner(d: DiagDir) empty_corner(DIAG_BR).
-
-    // --- $StoredColorPeriod ---
-    // How many stages back the next stage takes its colors from.
-    .decl color_period(k: number) color_period(2).
-}
+.comp Params {}
 
 .init params = Params
-
-.decl empty_panel_choice(e: EmptyPanel)
-empty_panel_choice($ByContent()). empty_panel_choice($StoredEnd()).
-
-.decl figure_parse_choice(pa: FigureParse)
-figure_parse_choice($Connected()). figure_parse_choice($ColorClassFigures()).
-
-.decl growth_axis_choice(ax: GrowthAxis)
-growth_axis_choice($AcrossStrip()). growth_axis_choice($GrowthAxisDerived()).
-
-.decl step_source_choice(st: StepSource)
-step_source_choice($EveryStep()). step_source_choice($LastStep()).
-
-.decl color_cycle_choice(co: ColorCycle)
-color_cycle_choice($ReadPeriod()). color_cycle_choice($StoredColorPeriod()).
-
-.decl run_match_choice(m: RunMatch)
-run_match_choice($Rank()). run_match_choice($Hue()).
-
-.decl impl_choice(ch: Choice)
-impl_choice($Slices(E, Pa, Ax, St, Co)) :-
-    empty_panel_choice(E), figure_parse_choice(Pa), growth_axis_choice(Ax),
-    step_source_choice(St), color_cycle_choice(Co).
-impl_choice($Runs($Velocity(M))) :- run_match_choice(M).
-impl_choice($Runs($Demo())).
-
-// The rules of the catalog, which a case that reads no rule gives each grid at.
-.decl demonstrated_choice(r: DemonstratedChoice)
-demonstrated_choice($Drag()). demonstrated_choice($Stay()).
-
-// --- shared ---
 
 // A candidate split: n equal panels along axis a.
 .decl cand_tile(a: Axis, n: number, p: Position, pan: Position, p_intile: Position)
 cand_tile(A, N, P, Pan, P_intile) :-
     in(P, _), axis_elem(A), sub_extent(P, A, N), divide_slab(P, A, N, 0, Pan, P_intile).
 
-// --- $Slices ---
-
-// A split, with its end panel e at the end toward d.
-.type Layout = [a: Axis, n: number, e: Position, d: Dir]
-
-// A cell where some panel of the split differs from the end panel.
-.decl spot(l: Layout, p_intile: Position)
-spot([A, N, E, D], P_intile) :-
-    cand_tile(A, N, P, E, P_intile), axis_of(D, A), dist(E, D, 0), in(P, Col),
-    cand_tile(A, N, P2, Pan, P_intile), Pan != E, in(P2, Col2), Col != Col2.
-
-// The end panel's one color at those cells.
-// @claim stage-order
-.init ground = Unanimous<Layout, Color>
-ground.item([A, N, E, D], Col) :-
-    spot([A, N, E, D], P_intile), cand_tile(A, N, P, E, P_intile), in(P, Col).
-
-// The split and empty panel of each case. The relations below take each
-// split a case reads, so that the cases share them.
-// @claim stage-order
-.init layout = Unanimous<EmptyPanel, Layout>
-
-// --- $ByContent ---
-
-layout.item($ByContent(), L) :- ground.value(L, _).
-
-// --- $StoredEnd ---
-
-layout.item($StoredEnd(), [A, N, E, D]) :-
-    ground.value([A, N, E, D], _), params.empty_corner(Dg), dir_of(Dg, A, D).
-
-// --- $Slices ---
-
-.decl panel(l: Layout, p: Position, pan: Position, p_intile: Position)
-panel([A, N, E, D], P, Pan, P_intile) :-
-    layout.value(_, [A, N, E, D]), cand_tile(A, N, P, Pan, P_intile).
-
-// The empty panel: the frame.
-.decl frame(l: Layout, p_intile: Position, col: Color)
-frame([A, N, E, D], P_intile, Col) :- panel([A, N, E, D], P, E, P_intile), in(P, Col).
-
-.decl stage(l: Layout, pan: Position)
-stage([A, N, E, D], Pan) :- panel([A, N, E, D], _, Pan, _), Pan != E.
-
-.decl next_stage(l: Layout, pan: Position, pan2: Position)
-next_stage([A, N, E, D], Pan, Pan2) :-
-    stage([A, N, E, D], Pan), neighbor(Pan, D, Pan2), stage([A, N, E, D], Pan2).
-
-.decl first_stage(l: Layout, pan: Position)
-first_stage(L, Pan) :- stage(L, Pan), !next_stage(L, _, Pan).
-
-// A figure cell: a stage cell that differs from the frame.
-.decl fig(l: Layout, pan: Position, p_intile: Position, col: Color)
-fig(L, Pan, P_intile, Col) :-
-    panel(L, P, Pan, P_intile), in(P, Col), frame(L, P_intile, Col2), Col != Col2.
-
-.decl stage_color(l: Layout, pan: Position, col: Color)
-stage_color(L, Pan, Col) :- fig(L, Pan, _, Col).
-
-// A figure color some stage lacks.
-.decl shifting(l: Layout, col: Color)
-shifting(L, Col) :- stage_color(L, _, Col), stage(L, Pan), !stage_color(L, Pan, Col).
-
-.type StageColor = [l: Layout, pan: Position, col: Color]
-
-// What a shifting color of a stage turns into in the next stage.
-// @claim color-cycle
-.init turned = Unanimous<StageColor, Color>
-turned.item([L, Pan, Col], Col2) :-
-    next_stage(L, Pan, Pan2), fig(L, Pan, P_intile, Col), fig(L, Pan2, P_intile, Col2),
-    shifting(L, Col), shifting(L, Col2).
-
-// Each color of the first stage followed from stage to stage: a shifting
-// color turns, and any other color keeps itself.
-.init hue_walk = Propagation<StageColor, StageColor>
-hue_walk.source([L, Pan, X], [L, Pan, X]) :- first_stage(L, Pan), stage_color(L, Pan, X).
-hue_walk.edge([L, Pan0, X], [L, Pan, Col], [L, Pan2, Col2]) :-
-    first_stage(L, Pan0), stage_color(L, Pan0, X),
-    next_stage(L, Pan, Pan2), stage_color(L, _, Col),
-    ( shifting(L, Col), turned.value([L, Pan, Col], Col2)
-    ; !shifting(L, Col), Col2 = Col
-    ).
-
-// Stage pan shows the first stage's color x as col.
-.decl hue(l: Layout, pan: Position, x: Color, col: Color)
-hue(L, Pan, X, Col) :- hue_walk.reached([L, _, X], [L, Pan, Col]).
-
-// --- $ReadPeriod ---
-
-.decl period_cand(l: Layout, k: number)
-period_cand([A, N, E, D], K) :- stage([A, N, E, D], Pan), dist(Pan, D, K).
-
-// Two stages k apart that show a first-stage color differently.
-.decl period_defect(l: Layout, k: number)
-period_defect([A, N, E, D], K) :-
-    period_cand([A, N, E, D], K), hue([A, N, E, D], Pan, X, Col),
-    jump(Pan, D, K, Pan2), hue([A, N, E, D], Pan2, X, Col2), Col != Col2.
-
-// @claim color-cycle
-.init period = Extremes<Layout>
-period.cand(L, K) :- period_cand(L, K), !period_defect(L, K).
-
-// The stage whose colors the next stage takes.
-.decl hue_source(l: Layout, co: ColorCycle, pan: Position)
-hue_source([A, N, E, D], $ReadPeriod(), Pan) :-
-    period.low([A, N, E, D], K), opposite(D, D2), jump(E, D2, K, Pan).
-
-// --- $StoredColorPeriod ---
-
-hue_source([A, N, E, D], $StoredColorPeriod(), Pan) :-
-    params.color_period(K), opposite(D, D2), jump(E, D2, K, Pan), stage([A, N, E, D], Pan).
-
-// --- $Connected ---
-
-.type StagePanel = [l: Layout, pan: Position]
-// @claim stage-figures
-.init figure = Components<StagePanel>
-figure.node([L, Pan], P_intile) :- fig(L, Pan, P_intile, _).
-
-.type StageFigure = [l: Layout, pan: Position, f: Ident]
-// @claim slices
-.init figure_box = Bbox<StageFigure>
-figure_box.cell([L, Pan, F], P_intile) :- figure.label([L, Pan], P_intile, F).
-
-// The figures' boxes in a stage, in order from corner dg, along axis a first.
-.type FigureOrder = [l: Layout, pan: Position, dg: DiagDir, a: Axis]
-// @claim slices
-.init figure_order = LexOrder<FigureOrder>
-figure_order.cell([L, Pan, Dg, A], B) :-
-    figure_box.box([L, Pan, _], B), diag_dir_elem(Dg), axis_elem(A).
-figure_order.corner([L, Pan, Dg, A], Dg) :- figure_order.cell([L, Pan, Dg, A], _).
-figure_order.axis([L, Pan, Dg, A], A) :- figure_order.cell([L, Pan, Dg, A], _).
-
-// The rank of figure f of stage pan in each order.
-.decl figure_rank(l: Layout, pan: Position, f: Ident, dg: DiagDir, a: Axis, r: number)
-figure_rank(L, Pan, F, Dg, A, R) :-
-    figure_box.box([L, Pan, F], B), figure_order.rank([L, Pan, Dg, A], B, R).
-
-// Figures of consecutive stages that some order ranks alike.
-.decl rank_pair(l: Layout, pan: Position, f: Ident, pan2: Position, f2: Ident)
-rank_pair(L, Pan, F, Pan2, F2) :-
-    next_stage(L, Pan, Pan2), figure_rank(L, Pan, F, Dg, A, R), figure_rank(L, Pan2, F2, Dg, A, R).
-
-// ... and that some order ranks apart.
-.decl rank_split(l: Layout, pan: Position, f: Ident, pan2: Position, f2: Ident)
-rank_split(L, Pan, F, Pan2, F2) :-
-    rank_pair(L, Pan, F, Pan2, F2),
-    figure_rank(L, Pan, F, Dg, A, R), figure_rank(L, Pan2, F2, Dg, A, R2), R != R2.
-
-// Each figure of the first stage followed from stage to stage through the
-// figures every order ranks alike.
-.init figure_walk = Propagation<StageFigure, StageFigure>
-figure_walk.source([L, Pan, F], [L, Pan, F]) :- first_stage(L, Pan), figure.label([L, Pan], _, F).
-figure_walk.edge([L, Pan0, F0], [L, Pan, F], [L, Pan2, F2]) :-
-    first_stage(L, Pan0), figure.label([L, Pan0], _, F0),
-    rank_pair(L, Pan, F, Pan2, F2), !rank_split(L, Pan, F, Pan2, F2).
-
-// Figure f of stage pan continues figure f0 of the first stage.
-.decl track(l: Layout, pan: Position, f: Ident, f0: Ident)
-track(L, Pan, F, F0) :- figure_walk.reached([L, _, F0], [L, Pan, F]).
-
-// The stages' figures do not continue one another one to one.
-.decl unmatched(l: Layout)
-unmatched(L) :- figure.label([L, Pan], _, F), !track(L, Pan, F, _).
-unmatched(L) :- track(L, Pan, F, F0), track(L, Pan, F, F1), F0 != F1.
-unmatched(L) :- track(L, Pan, F, F0), track(L, Pan, F2, F0), F != F2.
-
-// Figure f holds cell p_intile of stage pan, with first-stage color x.
-.decl fcell(l: Layout, pa: FigureParse, f: Ident, pan: Position, p_intile: Position, x: Color)
-fcell(L, $Connected(), F0, Pan, P_intile, X) :-
-    track(L, Pan, F, F0), figure.label([L, Pan], P_intile, F),
-    fig(L, Pan, P_intile, Col), hue(L, Pan, X, Col).
-
-// --- $ColorClassFigures ---
-
-// @claim stage-figures
-.init color_id = IdentOf<Color>
-color_id.value(X) :- hue(_, _, X, _).
-
-fcell(L, $ColorClassFigures(), F, Pan, P_intile, X) :-
-    fig(L, Pan, P_intile, Col), hue(L, Pan, X, Col), color_id.id(X, F).
-
-// --- $Slices ---
-
-.type FigureStage = [l: Layout, pa: FigureParse, f: Ident, pan: Position]
-// @claim slices growth
-.init fbox = Bbox<FigureStage>
-fbox.cell([L, Pa, F, Pan], P_intile) :- fcell(L, Pa, F, Pan, P_intile, _).
-
-// A figure some stage lacks.
-.decl absent(l: Layout, pa: FigureParse)
-absent(L, Pa) :- fcell(L, Pa, F, _, _, _), stage(L, Pan), !fbox.box([L, Pa, F, Pan], _).
-
-// The change in the margins of figure f's box from stage pan to the next.
-.decl step(l: Layout, pa: FigureParse, f: Ident, pan: Position, v: Box)
-step(L, Pa, F, Pan, V) :-
-    next_stage(L, Pan, Pan2), fbox.box([L, Pa, F, Pan], B), fbox.box([L, Pa, F, Pan2], B2),
-    relative(B, B2, V).
-
-// Figure f's box in the last stage, and the step into it.
-.decl last_shot(l: Layout, pa: FigureParse, f: Ident, b: Box, v: Box)
-last_shot([A, N, E, D], Pa, F, B, V) :-
-    fbox.box([[A, N, E, D], Pa, F, Pan], B), neighbor(Pan, D, E),
-    next_stage([A, N, E, D], Pan1, Pan), step([A, N, E, D], Pa, F, Pan1, V).
-
-// --- $EveryStep ---
-
-// The step at edge d grows by factor r from stage pan to the next.
-.decl edge_factor(l: Layout, pa: FigureParse, f: Ident, pan: Position, d: Dir, r: number)
-edge_factor(L, Pa, F, Pan, D, R) :-
-    step(L, Pa, F, Pan, V), next_stage(L, Pan, Pan2), step(L, Pa, F, Pan2, V2), dir_elem(D),
-    ( dist(V, D, S), dist(V2, D, S2)                            // a margin that grows
-    ; relative(V, ZERO, V_neg), dist(V_neg, D, S),              // or one that shrinks
-      relative(V2, ZERO, V2_neg), dist(V2_neg, D, S2)
-    ),
-    S > 0, stride(S2, S, 0, R, 0), R > 0.
-
-// A step that is no multiple of the step before it.
-.decl jagged(l: Layout, pa: FigureParse, f: Ident)
-jagged(L, Pa, F) :-
-    step(L, Pa, F, Pan, V), next_stage(L, Pan, Pan2), step(L, Pa, F, Pan2, V2),
-    dir_elem(D), dist(V, D, S), dist(V2, D, S2),
-    ( S != 0, !edge_factor(L, Pa, F, Pan, D, _)
-    ; S = 0, S2 != 0
-    ).
-
-.type FigureKey = [l: Layout, pa: FigureParse, f: Ident]
-// @claim growth
-.init factor = Unanimous<FigureKey, number>
-factor.item([L, Pa, F], R) :- edge_factor(L, Pa, F, _, _, R).
-
-// The last step's change at edge d, times the factor.
-.decl next_step_edge(l: Layout, pa: FigureParse, f: Ident, d: Dir, k: number)
-next_step_edge(L, Pa, F, D, K) :-
-    factor.value([L, Pa, F], R), last_shot(L, Pa, F, _, V), dir_elem(D), dist(V, D, S),
-    ( S = 0, K = 0
-    ; S > 0, frame(L, P_intile, _), dist(P_intile, D, K), stride(K, S, 0, R, 0)
-    ; S < 0, relative(V, ZERO, V_neg), dist(V_neg, D, S2),
-      frame(L, P_intile, _), dist(P_intile, D, M), stride(M, S2, 0, R, 0),
-      edge_outset(D, M, Bx), dist(Bx, D, K)
-    ).
-
-.init next_step = DirPack<FigureKey>
-next_step.edge([L, Pa, F], D, K) :- next_step_edge(L, Pa, F, D, K).
-
-// Figure f's box in the next stage.
-.decl next_box(l: Layout, pa: FigureParse, f: Ident, st: StepSource, b: Box)
-next_box(L, Pa, F, $EveryStep(), B2) :-
-    last_shot(L, Pa, F, B, V0),
-    ( next_step.box([L, Pa, F], V)                  // the last step times the factor
-    ; !factor.item([L, Pa, F], _), V = V0           // or, with no factor read, the last step
-    ),
-    compose(B, V, B2).
-
-// --- $LastStep ---
-
-next_box(L, Pa, F, $LastStep(), B2) :- last_shot(L, Pa, F, B, V), compose(B, V, B2).
-
-// --- $Slices ---
-
-// Line j of figure f in stage pan, counted from edge d of its box, and e from
-// the opposite edge.
-.decl slice_line(l: Layout, pa: FigureParse, f: Ident, d: Dir, pan: Position,
-                 j: number, e: number, along: Position)
-slice_line(L, Pa, F, D, Pan, J, E, Along) :-
-    fbox.box([L, Pa, F, Pan], B), frame(L, P_intile, _), crop(P_intile, B, P_rel),
-    dir_elem(D), dist_pair(P_rel, D, J, E), axis_of(D, G), split(P_intile, G, Along, _).
-
-// Line j holds first-stage color x at across.
-.decl slice_member(l: Layout, pa: FigureParse, f: Ident, d: Dir, pan: Position,
-                   j: number, across: Position, x: Color)
-slice_member(L, Pa, F, D, Pan, J, Across, X) :-
-    fcell(L, Pa, F, Pan, P_intile, X), fbox.box([L, Pa, F, Pan], B), crop(P_intile, B, P_rel),
-    dir_elem(D), dist(P_rel, D, J), axis_of(D, G), split(P_intile, G, _, Across).
-
-// Two lines of the figure that hold different slices.
-.decl slice_diff(l: Layout, pa: FigureParse, f: Ident, d: Dir, pan: Position, j: number,
-                 pan2: Position, j2: number)
-slice_diff(L, Pa, F, D, Pan, J, Pan2, J2) :-
-    ( slice_member(L, Pa, F, D, Pan, J, Across, X), slice_line(L, Pa, F, D, Pan2, J2, _, _),
-      !slice_member(L, Pa, F, D, Pan2, J2, Across, X)       // the first line holds more
-    ; slice_member(L, Pa, F, D, Pan2, J2, Across, X), slice_line(L, Pa, F, D, Pan, J, _, _),
-      !slice_member(L, Pa, F, D, Pan, J, Across, X) ).      // the second line holds more
-
-// The figure's box in stage pan, on the growth axis, and its length.
-.decl extent(l: Layout, pa: FigureParse, f: Ident, d: Dir, pan: Position, b_along: Box,
-             n: number)
-extent(L, Pa, F, D, Pan, B_along, N) :-
-    fbox.box([L, Pa, F, Pan], B), dir_elem(D), axis_of(D, G), split(B, G, B_along, _),
-    frame(L, P_intile, _), box_extent(B, P_intile, G, N).
-
-// A count of lines a lead, a tail or a block may hold.
-.decl size(l: Layout, pa: FigureParse, f: Ident, d: Dir, k: number)
-size(L, Pa, F, D, K) :- slice_line(L, Pa, F, D, _, K, _, _).
-size(L, Pa, F, D, K) :- extent(L, Pa, F, D, _, _, K).
-
-// A lead of a lines that two stages hold differently.
-.decl lead_bad(l: Layout, pa: FigureParse, f: Ident, d: Dir, a: number)
-lead_bad(L, Pa, F, D, A) :-
-    size(L, Pa, F, D, A), slice_line(L, Pa, F, D, Pan, J, _, _), J < A,
-    slice_line(L, Pa, F, D, Pan2, J, _, _), slice_diff(L, Pa, F, D, Pan, J, Pan2, J).
-
-// A tail of t lines that two stages hold differently.
-.decl tail_bad(l: Layout, pa: FigureParse, f: Ident, d: Dir, t: number)
-tail_bad(L, Pa, F, D, T) :-
-    size(L, Pa, F, D, T), slice_line(L, Pa, F, D, Pan, J, E, _), E < T,
-    slice_line(L, Pa, F, D, Pan2, J2, E, _), slice_diff(L, Pa, F, D, Pan, J, Pan2, J2).
-
-// A lead of a lines, a tail of t lines and a block of k lines.
-.decl cut(l: Layout, pa: FigureParse, f: Ident, d: Dir, a: number, t: number, k: number)
-cut(L, Pa, F, D, A, T, K) :-
-    size(L, Pa, F, D, A), size(L, Pa, F, D, T), size(L, Pa, F, D, K), K > 0,
-    !lead_bad(L, Pa, F, D, A), !tail_bad(L, Pa, F, D, T).
-
-// The lines between the lead and the tail in stage pan, and their count.
-.decl middle(l: Layout, pa: FigureParse, f: Ident, d: Dir, a: number, t: number, k: number,
-             pan: Position, m_along: Box, n: number)
-middle(L, Pa, F, D, A, T, K, Pan, M, N) :-
-    cut(L, Pa, F, D, A, T, K), extent(L, Pa, F, D, Pan, B_along, _),
-    axis_inset(D, A, T, Inset), compose(B_along, Inset, M),
-    frame(L, P_intile, _), axis_of(D, G), box_extent(M, P_intile, G, N).
-
-// A stage whose middle holds no whole number of blocks.
-.decl len_bad(l: Layout, pa: FigureParse, f: Ident, d: Dir, a: number, t: number, k: number)
-len_bad(L, Pa, F, D, A, T, K) :-
-    middle(L, Pa, F, D, A, T, K, _, _, N),
-    ( N < 0
-    ; stride(N, K, 0, _, S), S > 0
-    ).
-
-// Middle line j of stage pan is line s of a block.
-.decl slot(l: Layout, pa: FigureParse, f: Ident, d: Dir, a: number, t: number, k: number,
-           pan: Position, j: number, s: number)
-slot(L, Pa, F, D, A, T, K, Pan, J, S) :-
-    middle(L, Pa, F, D, A, T, K, Pan, M, _), !len_bad(L, Pa, F, D, A, T, K),
-    slice_line(L, Pa, F, D, Pan, J, _, Along), crop(Along, M, Rel), dist(Rel, D, R),
-    stride(R, K, 0, _, S).
-
-// Two lines at one place of a block that hold different slices.
-.decl middle_bad(l: Layout, pa: FigureParse, f: Ident, d: Dir, a: number, t: number, k: number)
-middle_bad(L, Pa, F, D, A, T, K) :-
-    slot(L, Pa, F, D, A, T, K, Pan, J, S), slot(L, Pa, F, D, A, T, K, Pan2, J2, S),
-    slice_diff(L, Pa, F, D, Pan, J, Pan2, J2).
-
-// The middle of the next stage, under a cut that every stage keeps.
-// @ignore: common-subexpr — the stage middles are read by every case, and the
-//  next box differs by step source
-.decl next_middle(l: Layout, pa: FigureParse, f: Ident, st: StepSource, d: Dir,
-                  a: number, t: number, k: number, m_along: Box)
-next_middle(L, Pa, F, St, D, A, T, K, M) :-
-    cut(L, Pa, F, D, A, T, K), !len_bad(L, Pa, F, D, A, T, K), !middle_bad(L, Pa, F, D, A, T, K),
-    next_box(L, Pa, F, St, B), axis_of(D, G), split(B, G, B_along, _),
-    axis_inset(D, A, T, Inset), compose(B_along, Inset, M),
-    frame(L, P_intile, _), box_extent(M, P_intile, G, N), N >= 0.
-
-// A cell of the next stage that the cut draws with first-stage color x.
-.decl drawn(l: Layout, pa: FigureParse, f: Ident, st: StepSource, d: Dir,
-            a: number, t: number, k: number, p_intile: Position, x: Color)
-drawn(L, Pa, F, St, D, A, T, K, P_intile, X) :-
-    next_middle(L, Pa, F, St, D, A, T, K, M), next_box(L, Pa, F, St, B),
-    frame(L, P_intile, _), crop(P_intile, B, P_rel), dist_pair(P_rel, D, J, E),
-    axis_of(D, G), split(P_intile, G, Along, Across),
-    ( J < A, slice_member(L, Pa, F, D, _, J, Across, X)                            // the lead
-    ; E < T, slice_line(L, Pa, F, D, Pan, J2, E, _),                               // the tail
-      slice_member(L, Pa, F, D, Pan, J2, Across, X)
-    ; J >= A, E >= T, crop(Along, M, Rel), dist(Rel, D, R), stride(R, K, 0, _, S),  // a block
-      slot(L, Pa, F, D, A, T, K, Pan, J2, S), slice_member(L, Pa, F, D, Pan, J2, Across, X)
-    ).
-
-// The edges a case reads a figure from: those on its growth axis.
-// @ignore: store — the four edges are the union over the two growth-axis
-//  branches, and no case reads that union
-.decl reads(l: Layout, ax: GrowthAxis, d: Dir)
-
-// --- $AcrossStrip ---
-
-reads([A, N, E, Ds], $AcrossStrip(), D) :-
-    layout.value(_, [A, N, E, Ds]), perp(A, G), axis_of(D, G).
-
-// --- $GrowthAxisDerived ---
-
-reads(L, $GrowthAxisDerived(), D) :- layout.value(_, L), dir_elem(D).
-
-// --- $Slices ---
-
-// Two readings of a figure that draw different cells.
-.decl clash(l: Layout, pa: FigureParse, ax: GrowthAxis, st: StepSource)
-clash(L, Pa, Ax, St) :-
-    drawn(L, Pa, F, St, D, A, T, K, P_intile, X), reads(L, Ax, D),
-    next_middle(L, Pa, F, St, D2, A2, T2, K2, _), reads(L, Ax, D2),
-    !drawn(L, Pa, F, St, D2, A2, T2, K2, P_intile, X).
-
-// A figure that some reading draws.
-.decl read_figure(l: Layout, pa: FigureParse, ax: GrowthAxis, st: StepSource, f: Ident)
-read_figure(L, Pa, Ax, St, F) :- next_middle(L, Pa, F, St, D, _, _, _, _), reads(L, Ax, D).
-
-.decl unready(ch: Choice)
-unready($Slices(E, Pa, Ax, St, Co)) :-
-    impl_choice($Slices(E, Pa, Ax, St, Co)), layout.value(E, L),
-    ( fig(L, Pan, _, Col), !hue(L, Pan, _, Col)    // a color no first-stage color turns into
-    ; absent(L, Pa)
-    ; clash(L, Pa, Ax, St)
-    ; fcell(L, Pa, F, _, _, _), !read_figure(L, Pa, Ax, St, F)   // a figure no reading draws
-    ; fcell(L, Pa, _, _, _, X), hue_source(L, Co, Pan), !hue(L, Pan, X, _)
-    ; !hue_source(L, Co, _)
-    ).
-unready($Slices(E, $Connected(), Ax, St, Co)) :-
-    impl_choice($Slices(E, $Connected(), Ax, St, Co)), layout.value(E, L), unmatched(L).
-unready($Slices(E, Pa, Ax, $EveryStep(), Co)) :-
-    impl_choice($Slices(E, Pa, Ax, $EveryStep(), Co)), layout.value(E, L),
-    ( jagged(L, Pa, _)
-    ; factor.clash([L, Pa, _])
-    ).
-
-out(P_intile, Col, $Slices(E, Pa, Ax, St, Co), R) :-
-    impl_choice($Slices(E, Pa, Ax, St, Co)), !unready($Slices(E, Pa, Ax, St, Co)),
-    demonstrated_choice(R),
-    layout.value(E, L), frame(L, P_intile, Col0),
-    ( drawn(L, Pa, _, St, D, _, _, _, P_intile, X), reads(L, Ax, D),
-      hue_source(L, Co, Pan), hue(L, Pan, X, Col)
-    ; !painted(L, Pa, Ax, St, P_intile), Col = Col0
-    ).
-
-.decl painted(l: Layout, pa: FigureParse, ax: GrowthAxis, st: StepSource, p_intile: Position)
-painted(L, Pa, Ax, St, P_intile) :- drawn(L, Pa, _, St, D, _, _, _, P_intile, _), reads(L, Ax, D).
-
-// --- $Runs ---
-
 .type Split = [a: Axis, n: number]
 .type Panel = [a: Axis, n: number, pan: Position]
 
 // The colors a candidate's panel holds.
-// @claim empty-last
+// @claim blank-panel
 .init palette = Tally<Panel, Color>
 palette.item([A, N, Pan], Col) :- cand_tile(A, N, P, Pan, _), in(P, Col).
 
-// The candidate's template: its plainest panel.
-// @claim empty-last
+// The candidate's frame: its plainest panel.
+// @claim blank-panel
 .init plainest = ArgExtremes<Split, Position>
 plainest.cand([A, N], Pan, S) :- palette.tally([A, N, Pan], S).
 
@@ -631,18 +51,18 @@ cand_tpl_pan(A, N, Pan) :- plainest.low([A, N], Pan, _).
 cand_tpl(A, N, P_intile, Col) :-
     cand_tile(A, N, P, Pan, P_intile), in(P, Col), cand_tpl_pan(A, N, Pan).
 
-// @claim empty-last
+// @claim blank-panel
 .init miss = Tally<Split, Position>
-// A cell the candidate's template does not explain.
+// A cell the candidate's frame does not explain.
 miss.item([A, N], P) :-
     cand_tile(A, N, P, _, P_intile), in(P, Col),
     cand_tpl(A, N, P_intile, Col2), Col != Col2.
-// A split worth weighing leaves room for a panel other than the template.
+// A split worth weighing leaves room for a panel other than the frame.
 miss.domain([A, N]) :-
     cand_tile(A, N, _, P_tile, _), cand_tpl_pan(A, N, Pan), P_tile != Pan.
 
-// The split its template explains best.
-// @claim empty-last
+// The split its frame explains best.
+// @claim blank-panel
 .init fewest = ArgExtremes<Unit, Split>
 fewest.cand($U(), [A, N], S) :- miss.tally([A, N], S).
 
@@ -652,231 +72,141 @@ tpl_layout(A, N) :- fewest.low($U(), [A, N], _).
 .decl tile(p: Position, p_tile: Position, p_intile: Position)
 tile(P, P_tile, P_intile) :- tpl_layout(A, N), cand_tile(A, N, P, P_tile, P_intile).
 
+// The blank panel and its frame.
 .decl tpl_pan(pan: Position)
 tpl_pan(Pan) :- tpl_layout(A, N), cand_tpl_pan(A, N, Pan).
 
 .decl tpl(p_intile: Position, col: Color)
 tpl(P_intile, Col) :- tpl_layout(A, N), cand_tpl(A, N, P_intile, Col).
 
-// Time runs toward the template: the axis edge it sits at.
+// Time runs toward the blank panel, at the end of the strip.
 .decl time_dir(d: Dir)
 time_dir(D) :- tpl_layout(A, _), axis_of(D, A), tpl_pan(Pan), dist(Pan, D, 0).
 
-// Every panel but the template holds a stage.
+.decl growth_axis(g: Axis)
+growth_axis(G) :- tpl_layout(A, _), perp(A, G).
+
 .decl stage_panel(pan: Position)
 stage_panel(Pan) :- tile(_, Pan, _), !tpl_pan(Pan).
 
+.decl stage_cell(pan: Position, p_intile: Position, col: Color)
+stage_cell(Pan, P_intile, Col) :- stage_panel(Pan), tile(P, Pan, P_intile), in(P, Col).
+
+// A stage cell that differs from the frame.
 .decl content(pan: Position, p: Position, col: Color)
-content(Pan, P_intile, Col) :-
-    stage_panel(Pan), tile(P, Pan, P_intile), in(P, Col),
-    tpl(P_intile, Col2), Col != Col2.
+content(Pan, P_intile, Col) :- stage_cell(Pan, P_intile, Col), tpl(P_intile, Col2), Col != Col2.
 
 .decl succ_stage(pan: Position, pan2: Position)
 succ_stage(Pan, Pan2) :-
     stage_panel(Pan), time_dir(D), neighbor(Pan, D, Pan2), stage_panel(Pan2).
 
-// The step the output continues.
-.decl last_step(pan: Position, pan2: Position)
-last_step(Pan, Pan2) :- succ_stage(Pan, Pan2), !succ_stage(Pan2, _).
+// @claim stages
+.init figure = Components<Position>
+figure.node(Pan, P) :- content(Pan, P, _).
 
-// The growth axis is derived from run counts, so runs are taken in every
-// direction.
-// @ignore dir: store — the runs are taken toward every direction, every value
-//  of the orientation type
-// @claim stage-figures
-.init run = Slide<Position>
-run.node(Pan, P) :- content(Pan, P, _).
-run.dir(Pan, D) :- content(Pan, _, _), dir_elem(D).
+.type StageFig = [pan: Position, f: Ident]
 
-// A run named by its end toward d, paired with its other end.
-.decl run_ends(pan: Position, d: Dir, s: Position, f: Position)
-run_ends(Pan, D, S, F) :-
-    run.rim_dir(Pan, S, D),                    // an end
-    opposite(D, D2), run.rest(Pan, S, D2, F).  // the other end, inward of it
+.decl fig_cell(pan: Position, f: Ident, p: Position, col: Color)
+fig_cell(Pan, F, P, Col) :- figure.label(Pan, P, F), content(Pan, P, Col).
 
-// The cells one run covers.
-.decl run_cell(pan: Position, d: Dir, s: Position, p: Position)
-run_cell(Pan, D, S, P) :-
-    run_ends(Pan, D, S, _), opposite(D, D2),
-    ( P = S                     // the end it is named by
-    ; run.run(Pan, S, D2, P)    // and what lies inward of it
+// @claim track
+.init fbox = Bbox<StageFig>
+fbox.cell([Pan, F], P) :- figure.label(Pan, P, F).
+
+// Figures of consecutive stages that share a cell.
+.decl succ_fig(pan: Position, f: Ident, pan2: Position, f2: Ident)
+succ_fig(Pan, F, Pan2, F2) :-
+    succ_stage(Pan, Pan2), figure.label(Pan, P, F), figure.label(Pan2, P, F2).
+
+// Each figure of the first stage followed from stage to stage.
+.init lineage = Propagation<StageFig, StageFig>
+lineage.source([Pan, F], [Pan, F]) :-
+    figure.label(Pan, _, F), !succ_stage(_, Pan).
+lineage.edge(Root, [Pan, F], [Pan2, F2]) :-
+    lineage.source(Root, _), succ_fig(Pan, F, Pan2, F2).
+
+// The figure's step over the stages.
+// @claim track
+.init step = Unanimous<StageFig, Box>
+step.item(Root, V) :-
+    lineage.reached(Root, [Pan, F]), succ_fig(Pan, F, Pan2, F2),
+    fbox.box([Pan, F], B), fbox.box([Pan2, F2], B2), relative(B, B2, V).
+
+// A stage's figure with its box and the box its step gives it in the next
+// stage.
+.decl fig_box(pan: Position, f: Ident, b: Box, b2: Box, v: Box)
+fig_box(Pan, F, B, B2, V) :-
+    lineage.reached(Root, [Pan, F]), step.value(Root, V),
+    growth_axis(G), split(V, G, _, ZERO),                   // nothing moves across the growth axis
+    fbox.box([Pan, F], B), compose(B, V, B2).
+
+// The figure's end at side d moves outward.
+.decl outward(pan: Position, f: Ident, d: Dir)
+outward(Pan, F, D) :-
+    fig_box(Pan, F, _, _, V), growth_axis(G), axis_of(D, G), dist(V, D, M), M < 0.
+
+// The translation that takes the figure's end at side d to its place in the
+// next stage.
+.decl end_shift(pan: Position, f: Ident, d: Dir, t: Offset)
+end_shift(Pan, F, D, T) :-
+    fig_box(Pan, F, B, B2, _), growth_axis(G), dir_of(Dg, G, D),
+    tpl(P, _), box_corner(P, B, Dg), tpl(Q, _), box_corner(Q, B2, Dg), relative(P, Q, T).
+
+// A cell of the figure's next box outside its box.
+.decl gained(pan: Position, f: Ident, q: Position)
+gained(Pan, F, Q) :- fig_box(Pan, F, B, B2, _), tpl(Q, _), inside(Q, B2), !inside(Q, B).
+
+// The figure travels with its end at side d, and the cells it gains past its
+// other end repeat the line at that other end.
+.decl travel(pan: Position, f: Ident, d: Dir, q: Position, col: Color)
+travel(Pan, F, D, Q, Col) :-
+    end_shift(Pan, F, D, T),
+    ( fig_cell(Pan, F, P, Col), compose(P, T, Q)            // a cell carried
+    ; fig_box(Pan, F, B, B2, _), compose(B, T, B_t),        // a cell gained past the other end
+      tpl(Q, _), inside(Q, B2), !inside(Q, B_t),
+      opposite(D, D2), growth_axis(G),
+      tpl(E, _), box_edge(E, B_t, D2), same_line(G, Q, E),        // the other end's cell in line
+      relative(T, E, P), fig_cell(Pan, F, P, Col)
     ).
 
-.decl run_line(pan: Position, d: Dir, s: Position, l: Position)
-run_line(Pan, D, S, L) :- run_ends(Pan, D, S, _), axis_of(D, A), split(S, A, _, L).
+// The rules the stages may demonstrate.
+.type DemonstratedChoice =
+    // Each figure travels with one end while its other end runs out ahead,
+    // and the lines it gains repeat the line at the leading end.
+    Stretch {}
+    // Each figure travels with the end that runs out, and the lines it gains
+    // behind repeat the line at the trailing end.
+  | Push {}
+    // Each figure keeps its place while its colors turn. A cell it gains takes
+    // the color the other stages show there, turned to the stage, and a cell
+    // no other stage shows repeats the cell one step of its end back.
+  | Stay {}
 
-.type LineKey = [pan: Position, d: Dir, l: Position]
+// The cells a rule draws over the frame in the stage after a stage.
+.decl rule_paint(r: DemonstratedChoice, pan: Position, p: Position, col: Color)
 
-// @claim stage-figures
-.init run_count = Tally<LineKey, Position>
-run_count.item([Pan, D, L], S) :- run_line(Pan, D, S, L).
-run_count.domain([Pan, D, L]) :-
-    stage_panel(Pan), dir_elem(D), axis_of(D, A), tpl(P_intile, _),
-    split(P_intile, A, _, L).
+rule_paint($Stretch(), Pan, Q, Col) :-
+    travel(Pan, F, D, Q, Col), opposite(D, D2), outward(Pan, F, D2).
 
-.type DirLine = [d: Dir, l: Position]
-
-// The run count a line carries, over the stages.
-// @claim stage-figures
-.init line_count = Unanimous<DirLine, number>
-line_count.item([D, L], N) :- run_count.tally([_, D, L], N).
-
-// A line whose run count differs between two stages breaks the axis.
-.decl axis_defect(a: Axis)
-axis_defect(A) :- axis_of(D, A), line_count.clash([D, _]).
-
-.decl growth_axis(a: Axis)
-growth_axis(A) :- axis_elem(A), !axis_defect(A).
+rule_paint($Push(), Pan, Q, Col) :-
+    travel(Pan, F, D, Q, Col), outward(Pan, F, D), opposite(D, D2), !outward(Pan, F, D2).
 
 // What a color turns into over a step, read where consecutive stages both
-// hold content. A color the steps disagree about keeps itself.
-// @claim color-cycle
+// hold a figure. A color the steps disagree about keeps itself.
+// @claim next-stage
 .init stage_turn = Unanimous<Color, Color>
 stage_turn.item(Col, Col2) :-
     succ_stage(Pan, Pan2), content(Pan, P, Col), content(Pan2, P, Col2).
 
-// @ignore: head-repeat — recolor is the stage turn made total over the content colors: a color the turn does not move keeps itself, and six clauses read that one map
+// @ignore: head-repeat — recolor is the stage turn made total over the figure
+//  colors: a color the turn does not move keeps itself
 .decl recolor(col: Color, col2: Color)
 recolor(Col, Col2) :- stage_turn.value(Col, Col2).
 recolor(Col, Col) :- content(_, _, Col), !stage_turn.value(Col, _).
 
-// The output of a runs case: the cells it draws over the template.
-.decl run_paint(ch: Choice, p: Position, col: Color)
-
-// --- $Rank, $Demo ---
-
-// Runs of a line in order from edge d, so the same run carries the same rank
-// in every stage.
-// @claim stage-figures
-.init run_ord = Ordinal<LineKey>
-run_ord.idx_set([Pan, D, L], K) :- run_line(Pan, D, S, L), dist(S, D, K).
-
-.decl run_rank(pan: Position, d: Dir, l: Position, r: number, s: Position, f: Position)
-run_rank(Pan, D, L, R, S, F) :-
-    growth_axis(A), axis_of(D, A), run_ends(Pan, D, S, F),
-    run_line(Pan, D, S, L), dist(S, D, K), run_ord.rank([Pan, D, L], K, R).
-
-// --- $Velocity ---
-
-// A last-stage run (pan, ends tn/tf) with the run it continues (ends sn/sf).
-.decl run_match(m: RunMatch, pan: Position, d: Dir,
-                sn: Position, sf: Position, tn: Position, tf: Position)
-
-// --- $Rank ---
-
-run_match($Rank(), Pan2, D, Sn, Sf, Tn, Tf) :-
-    last_step(Pan, Pan2),
-    run_rank(Pan, D, L, R, Sn, Sf), run_rank(Pan2, D, L, R, Tn, Tf).
-
-// --- $Hue ---
-
-.type RunEnd = [d: Dir, s: Position]
-
-// The source run's colors after the step's turn, against the last-stage
-// run's colors.
-// @claim stage-figures
-.init hues = KeyedSetCompare<RunEnd, RunEnd, Color>
-hues.pattern_member([D, S], Col2) :-
-    last_step(Pan, _), run_cell(Pan, D, S, P),   // a source run's cell
-    content(Pan, P, Col), recolor(Col, Col2).    // its color, turned
-hues.observed_member([D, T], Col) :-
-    last_step(_, Pan2), run_cell(Pan2, D, T, P), content(Pan2, P, Col).
-
-run_match($Hue(), Pan2, D, Sn, Sf, Tn, Tf) :-
-    last_step(Pan, Pan2), growth_axis(A), axis_of(D, A),
-    run_ends(Pan, D, Sn, Sf), run_line(Pan, D, Sn, L),      // a source run
-    run_ends(Pan2, D, Tn, Tf), run_line(Pan2, D, Tn, L),    // a last-stage run on its line
-    hues.equals([D, Tn], [D, Sn]).                          // whose color sets agree
-
-// --- $Velocity ---
-
-// Each end steps once more by the velocity it had over the last step, and
-// carries the run's content with it, as far as the run the two ends now bound.
-.decl drag(m: RunMatch, d: Dir, t: Position, q: Position, col: Color, v: Offset)
-drag(M, D, Tn, Q, Col2, V) :-
-    run_match(M, Pan, D, Sn, Sf, Tn, Tf),
-    relative(Sn, Tn, Vn), compose(Tn, Vn, En),             // the near end steps again
-    relative(Sf, Tf, Vf), compose(Tf, Vf, Ef),             // and so does the far end
-    ( V = Vn ; V = Vf ),                                       // one end does the carrying
-    run_cell(Pan, D, Tn, P), content(Pan, P, Col),             // a cell of the run
-    compose(P, V, Q),                                          // the cell it carries to
-    dist_pair(Q, D, Kq, Kq2),                                  // its distance to each edge
-    dist(En, D, Kn), dist_pair(Ef, D, _, Kf),                  // the new run's ends
-    Kq >= Kn, Kq2 >= Kf,                                       // the cell lies within it
-    recolor(Col, Col2).
-
-.decl moved(m: RunMatch, d: Dir, t: Position, q: Position)
-moved(M, D, T, Q) :- drag(M, D, T, Q, _, V), V != ZERO.
-
-run_paint($Runs($Velocity(M)), Q, Col) :-
-    drag(M, D, T, Q, Col, V),
-    ( V != ZERO                        // a moving end carries its content
-    ; V = ZERO, !moved(M, D, T, Q)     // a still end fills what the moving end misses
-    ).
-
-// --- $Demo ---
-
-.type RunKey = [d: Dir, l: Position, r: number]
-.type EndSteps = [vn: Offset, vf: Offset]
+.type Hued = [pan: Position, col: Color]
 .type PanelCell = [pan: Position, p: Position]
-.type Hued = [p: Position, col: Color]
-.type RunId = [pan: Position, d: Dir, s: Position]
 
-// The step each end of a run takes, the same over every step of the input.
-// @claim growth
-.init end_step = Unanimous<RunKey, EndSteps>
-end_step.item([D, L, R], [Vn, Vf]) :-
-    succ_stage(Pan, Pan2),
-    run_rank(Pan, D, L, R, Sn, Sf), run_rank(Pan2, D, L, R, Tn, Tf),
-    relative(Sn, Tn, Vn), relative(Sf, Tf, Vf).
-
-// A stage's run with the step of each end, and the ends it steps to.
-.decl ahead(pan: Position, d: Dir, s: Position, vn: Offset, vf: Offset,
-            en: Position, ef: Position)
-ahead(Pan, D, S, Vn, Vf, En, Ef) :-
-    run_rank(Pan, D, L, R, S, F), end_step.value([D, L, R], [Vn, Vf]),
-    compose(S, Vn, En), compose(F, Vf, Ef).
-
-// A cell of the extent a stage's run steps to.
-.decl next_cell(pan: Position, d: Dir, s: Position, q: Position)
-next_cell(Pan, D, S, Q) :-
-    ahead(Pan, D, S, _, _, En, Ef), run_line(Pan, D, S, L),
-    axis_of(D, A), tpl(Q, _), split(Q, A, _, L),             // a cell on the run's line
-    dist_pair(Q, D, Kq, Kq2),                                  // its distance to each edge
-    dist(En, D, Kn), dist_pair(Ef, D, _, Kf),                  // the stepped ends
-    Kq >= Kn, Kq2 >= Kf.                                       // the cell lies between them
-
-// The next-stage rules the input may demonstrate.
-.type DemonstratedChoice =
-    // Each end steps, the moving end carries the run's content, and a still
-    // end fills what the moving end misses.
-    Drag {}
-    // The run's cells keep their place and turn; a cell the run gains takes
-    // the color the other stages show there, turned to the stage, and a
-    // cell no other stage shows repeats the cell one step back.
-  | Stay {}
-
-// The cells a rule draws over the template in the stage after a stage.
-.decl rule_paint(r: DemonstratedChoice, pan: Position, p: Position, col: Color)
-
-// The $Drag rule.
-.decl carry(pan: Position, d: Dir, s: Position, q: Position, col: Color, v: Offset)
-carry(Pan, D, S, Q, Col2, V) :-
-    ahead(Pan, D, S, Vn, Vf, _, _), ( V = Vn ; V = Vf ),       // one end does the carrying
-    run_cell(Pan, D, S, P), content(Pan, P, Col),              // a cell of the run
-    compose(P, V, Q), next_cell(Pan, D, S, Q),                 // carried within the new extent
-    recolor(Col, Col2).
-
-.decl carried(pan: Position, d: Dir, s: Position, q: Position)
-carried(Pan, D, S, Q) :- carry(Pan, D, S, Q, _, V), V != ZERO.
-
-rule_paint($Drag(), Pan, Q, Col) :-
-    carry(Pan, D, S, Q, Col, V),
-    ( V != ZERO                             // a moving end carries its content
-    ; V = ZERO, !carried(Pan, D, S, Q)      // a still end fills what the moving end misses
-    ).
-
-// The $Stay rule.
 // A color of one stage, as another stage shows it: turned once per step
 // between them.
 .init phase = Propagation<Hued, Hued>
@@ -886,54 +216,34 @@ phase.edge([J, C], [K1, C1], [K, C2]) :-
     ( succ_stage(K1, K), recolor(C1, C2)      // a step on
     ; succ_stage(K, K1), recolor(C2, C1) ).   // a step back
 
-// The color the stages show at a cell, turned to the stage after pan; the
-// stage after pan is not read.
-// @claim growth
+// The color the stages other than the one after pan show at a cell, turned
+// to the stage after pan.
+// @claim next-stage
 .init recall = Unanimous<PanelCell, Color>
 recall.item([Pan, Q], Col2) :-
-    content(J, Q, C), !succ_stage(Pan, J),
-    phase.reached([J, C], [Pan, C1]),                                  // as stage pan shows it
-    recolor(C1, Col2).
+    content(J, Q, C), stage_panel(Pan), !succ_stage(Pan, J),
+    phase.reached([J, C], [Pan, C1]), recolor(C1, Col2).
 
-.decl stay(pan: Position, d: Dir, s: Position, q: Position, col: Color)
-stay(Pan, D, S, Q, Col) :-
-    next_cell(Pan, D, S, Q),
-    ( run_cell(Pan, D, S, Q), content(Pan, Q, Col0), recolor(Col0, Col)   // a cell the run holds
-    ; !run_cell(Pan, D, S, Q), recall.value([Pan, Q], Col) ).            // a cell the run gains
-
-// A gained cell no stage shows repeats the cell one moving step back.
-.init repeat = Propagation<RunId, Hued>
-repeat.source([Pan, D, S], [Q, Col]) :- stay(Pan, D, S, Q, Col).
-repeat.edge([Pan, D, S], [Q1, Col], [Q, Col]) :-
-    stay(Pan, D, S, _, Col), next_cell(Pan, D, S, Q1),
-    ahead(Pan, D, S, Vn, Vf, _, _), ( V = Vn ; V = Vf ), V != ZERO,
-    compose(Q1, V, Q), next_cell(Pan, D, S, Q),               // one moving step on
-    !run_cell(Pan, D, S, Q), !recall.value([Pan, Q], _).      // a gained cell no stage shows
-
-rule_paint($Stay(), Pan, Q, Col) :- repeat.reached([Pan, D, S], [Q, Col]).
+rule_paint($Stay(), Pan, Q, Col) :-
+    fig_box(Pan, F, B, _, _),
+    ( fig_cell(Pan, F, Q, Col0), recolor(Col0, Col)              // a cell it holds, turned
+    ; gained(Pan, F, Q), recall.value([Pan, Q], Col)             // a gained cell another stage shows
+    ; gained(Pan, F, Q), !recall.value([Pan, Q], _),             // else the cell one step of its
+      outward(Pan, F, D), end_shift(Pan, F, D, T),               //  end back
+      relative(T, Q, P), inside(P, B), fig_cell(Pan, F, P, Col0), recolor(Col0, Col)
+    ).
 
 // A stage and the stage after it.
-// @claim growth
+// @claim next-stage
 .init catalog = DemonstrationConsistency<Unit, DemonstratedChoice, Position, Position, Color>
-catalog.value($U(), Pan, P_intile, Col) :- stage_panel(Pan), tile(P, Pan, P_intile), in(P, Col).
+catalog.value($U(), Pan, P_intile, Col) :- stage_cell(Pan, P_intile, Col).
 catalog.demonstration($U(), Pan, Pan2) :- succ_stage(Pan, Pan2).
 catalog.prediction($U(), R, Pan, P_intile, Col) :-
     rule_paint(R, Pan, _, _),
     ( rule_paint(R, Pan, P_intile, Col)                         // drawn by the rule
-    ; tpl(P_intile, Col), !rule_paint(R, Pan, P_intile, _) ).   // else the template
+    ; tpl(P_intile, Col), !rule_paint(R, Pan, P_intile, _) ).   // else the frame
 
-// Each rule confirmed on every demonstrated pair draws the stage after the
-// last one.
-out(P_intile, Col, $Runs($Demo()), R) :-
-    last_step(_, Pan), catalog.confirmed($U(), R),
+out(P_intile, Col, R) :-
+    succ_stage(_, Pan), !succ_stage(Pan, _),                    // the last stage
+    catalog.confirmed($U(), R),
     catalog.prediction($U(), R, Pan, P_intile, Col).
-
-// --- $Runs ---
-
-out(P_intile, Col, Ch, R) :- run_paint(Ch, P_intile, Col), demonstrated_choice(R).
-
-// --- $Velocity ---
-
-out(P_intile, Col, $Runs($Velocity(M)), R) :-
-    run_match_choice(M), demonstrated_choice(R),
-    tpl(P_intile, Col), !run_paint($Runs($Velocity(M)), P_intile, _).
