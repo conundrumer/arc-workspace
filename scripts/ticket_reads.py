@@ -9,7 +9,7 @@ from pathlib import Path
 from controlled_markdown import mctx
 from ticket_files import listed_tickets, ticket_files, ticket_name
 from ticket_form import DEFAULT_PRIORITY, FRONT, front_fields, list_items, title
-from state_reads import stat_of, state_cache
+from state_reads import DERIVED, Kept, state_cache
 from ticket_log import (CLOSED_BY_LINE, WAIT, Wait, held_log, holder_of, log_lines, resolution_of,
                         waited, waited_change)
 from ticket_numbers import matched_number
@@ -53,7 +53,7 @@ def read_ticket(path: Path) -> Ticket:
     return ticket_of(path, text, log_lines(text))
 
 
-@state_cache(stat_of)
+@state_cache(DERIVED, kept=Kept.DISK)
 def held_ticket(path: Path) -> Ticket:
     """`read_ticket` of the text and log lines `held_log` holds."""
     return ticket_of(path, *held_log(path))

@@ -14,7 +14,7 @@ from typing import Any, Protocol
 from controlled_markdown import mctx
 from operations.constants import COORDINATOR as MAIN
 from token_prices import request_input
-from state_reads import DERIVED, is_file, state_cache
+from state_reads import DERIVED, Kept, is_file, state_cache
 from transcripts import (agent_id, chain, first_parent, is_subagent, main_transcript,
                          session_directory, session_subagents)
 from transcript_entries import (Entry, Refused, blocks, epoch, meta_path, read_entries,
@@ -115,7 +115,7 @@ def read_meta(path: Path) -> dict[str, Any] | None:
     return out
 
 
-@state_cache(DERIVED)
+@state_cache(DERIVED, kept=Kept.DISK)
 def agent_type(path: Path) -> str | None:
     """The agent type of the run whose transcript is at `path`: `main` for a
     session's main transcript, and for a subagent's, the type its

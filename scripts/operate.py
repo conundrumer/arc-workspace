@@ -29,6 +29,7 @@ from handbook.paths import console_importable, scripts_importable
 console_importable()
 scripts_importable()
 
+import kept_reads  # noqa: E402
 from agent_deliveries import accepted_after, last_delivered  # noqa: E402
 from operator_reads import read_operator  # noqa: E402
 from operator_state import read_state  # noqa: E402
@@ -418,7 +419,9 @@ if __name__ == "__main__":
     # agents. The process makes little such garbage, and the system takes
     # back its memory at the exit.
     gc.disable()
+    kept_reads.open_store()
     code = main(sys.argv[1:])
+    kept_reads.flush()
     sys.stdout.flush()
     sys.stderr.flush()
     os._exit(code)

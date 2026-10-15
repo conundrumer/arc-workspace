@@ -10,40 +10,44 @@ from pathlib import Path
 from agent_reports import Report, report_ids, reports_after
 from command_labels import AGENT_TOOLS
 from controlled_markdown import mctx
-from run_reads import (blocks, in_background, meta_parent, meta_path, notified,
-                       parent_label, read_meta, results_by_call, run_sessions, session_agents)
-from state_reads import DERIVED, stat_of, state_cache
-from transcripts import agent_id, chain, find, transcripts_of
+from run_reads import (blocks, in_background, meta_parent, notified, parent_label, read_meta,
+                       results_by_call, run_sessions, session_agents)
+from state_reads import DERIVED, Kept, state_cache
+from transcripts import agent_id, chain, find
 from transcript_entries import Entry, epoch
 from agent_resumes import note_latest, resumes, session_resumes
 from session_changes import timed_entries
 
 
-def launch_stamp(session: Path) -> tuple[tuple[Path, tuple[int, int] | None], ...]:
-    """The transcripts of the agents of `session`, wherever they lie, each
-    with the stat of its `.meta.json`. The run a transcript belongs to
-    changes only where a transcript of that run appears, so the entries of
-    the transcripts need no stamp."""
-    return tuple((p, stat_of(meta_path(p)))
-                 for aid in session_agents(session) for p in transcripts_of(aid))
-
-
-@state_cache(launch_stamp)
+@state_cache(DERIVED)
 def session_launches(session: Path) -> tuple[dict[str, Path], dict[str, frozenset[str]]]:
     """The transcripts of a session's agents by the Agent call that launched
     each, and the agent ids of the agents each run launched, by its agent
     id, or `MAIN` for the session's main transcript, as their `.meta.json`
-    files give them."""
+    files give them (`agent_launch`)."""
     by_call: dict[str, Path] = {}
     children: dict[str, set[str]] = {}
     for aid, p in session_agents(session).items():
-        meta = read_meta(p)
-        if meta is None:
+        found = agent_launch(p)
+        if found is None:
             continue
-        if meta.get("toolUseId"):
-            by_call[meta["toolUseId"]] = chain(p)[-1]
-        children.setdefault(meta_parent(meta), set()).add(aid)
+        call, last, parent = found
+        if call:
+            by_call[call] = last
+        children.setdefault(parent, set()).add(aid)
     return by_call, {k: frozenset(v) for k, v in children.items()}
+
+
+@state_cache(DERIVED, kept=Kept.DISK)
+def agent_launch(path: Path) -> tuple[str | None, Path, str] | None:
+    """The Agent call that launched the run of the subagent whose
+    transcript is at `path`, the last transcript of that run, and its
+    parent (`meta_parent`), as its `.meta.json` files give them, or None
+    where it has none."""
+    meta = read_meta(path)
+    if meta is None:
+        return None
+    return meta.get("toolUseId") or None, chain(path)[-1], meta_parent(meta)
 
 
 @state_cache(DERIVED)
@@ -60,7 +64,7 @@ def run_launches(path: Path) -> tuple[dict[str, Path], dict[str, frozenset[str]]
     return by_call, children
 
 
-@state_cache(DERIVED)
+@state_cache(DERIVED, kept=Kept.VALUE)
 def launched_by(path: Path, call: str) -> Path | None:
     """The transcript `run_launches` gives the Agent call `call` of the run
     at `path` as its launch, held so that a read derived from it sees no
@@ -68,7 +72,7 @@ def launched_by(path: Path, call: str) -> Path | None:
     return run_launches(path)[0].get(call)
 
 
-@state_cache(DERIVED)
+@state_cache(DERIVED, kept=Kept.VALUE)
 def children_of(path: Path, label: str) -> frozenset[str]:
     """The agents `run_launches` gives the run `label` as launching, of the
     sessions of the run at `path`, held as `launched_by` is."""
@@ -116,7 +120,7 @@ class Launch:
         return self.done is None or self.since > self.done
 
 
-@state_cache(DERIVED, notes="undecided")
+@state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
 def launches(path: Path, undecided: list[str]) -> list[Launch]:
     """The agents the run at `path` launched, in the order of their launch.
     A sign that an agent reported is the run's notification of it, or a

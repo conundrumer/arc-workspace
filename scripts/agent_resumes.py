@@ -3,7 +3,7 @@ as its result gives it, the latest call that resumed each agent among
 the calls of a run or of the other runs of its sessions, and the agents a
 run's calls went to."""
 
-from collections.abc import Collection
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,11 +11,11 @@ from typing import Any
 from controlled_markdown import mctx
 from run_reads import (blocks, parent_label, results_by_call, run_entries,
                        run_sessions)
-from state_reads import DERIVED, state_cache
+from state_reads import DERIVED, Kept, state_cache
 from transcripts import chain
-from transcript_entries import Entry, entries_unheld, epoch, snapshot
+from transcript_entries import Entry, entries_unheld, epoch
 from agent_deliveries import Delivery, delivery
-from session_changes import changed_since
+from session_changes import changed_with
 
 
 def pin_id(result: dict[str, Any]) -> str | None:
@@ -76,7 +76,7 @@ def sends(entries: list[Entry], run: str) -> list[Send]:
     return out
 
 
-def picked(calls: list[Send], agents: Collection[str] | None, undecided: list[str],
+def picked(calls: Iterable[Send], agents: Collection[str] | None, undecided: list[str],
            before: float | None) -> dict[str, float]:
     """The time of the last of `calls` that resumed each agent, or with
     `agents` each of those agents, and with `before` only of the calls
@@ -99,15 +99,15 @@ def resumes(entries: list[Entry], run: str, agents: set[str] | None,
     return picked(sends(entries, run), agents, undecided, before)
 
 
-@state_cache(lambda path: snapshot(path))
-def transcript_resumes(path: Path) -> list[Send]:
+@state_cache(DERIVED, kept=Kept.DISK)
+def transcript_resumes(path: Path) -> tuple[Send, ...]:
     """`sends` of the transcript at `path`, from the lines that hold
     `SendMessage`, which the line of each call holds, or a word of each
     result `resumed` gives an agent id or a note for. `resumes_since` reads
     it for every transcript of a session, so it holds none of their entries
     (`entries_unheld`)."""
-    return sends(entries_unheld(path, frozenset({"SendMessage", "resumedAgentId", '"pin":'})),
-                 parent_label(path))
+    return tuple(sends(entries_unheld(path, frozenset({"SendMessage", "resumedAgentId",
+                                                       '"pin":'})), parent_label(path)))
 
 
 def session_resumes(path: Path, agents: set[str], since: float,
@@ -119,28 +119,19 @@ def session_resumes(path: Path, agents: set[str], since: float,
     return resumes_since(path, frozenset(agents), since, undecided, before)
 
 
-@state_cache(DERIVED, notes="undecided")
+@state_cache(DERIVED, notes="undecided", kept=Kept.VALUE)
 def resumes_since(path: Path, agents: frozenset[str], since: float,
                   undecided: list[str], before: float | None) -> dict[str, float]:
     """`session_resumes`, held so that a read derived from it sees a new
     transcript of the sessions only where it resumed one of `agents`."""
-    own = chain(path)
+    own = set(chain(path))
     out: dict[str, float] = {}
-    for p in changed_since(run_sessions(path), since):
+    for p, found in changed_with(run_sessions(path), since, transcript_resumes):
         if p in own:
             continue
-        for aid, t in resumed_in(p, agents, undecided, before).items():
+        for aid, t in picked(found, agents, undecided, before).items():
             note_latest(out, aid, t)
     return out
-
-
-@state_cache(DERIVED, notes="undecided")
-def resumed_in(path: Path, agents: frozenset[str], undecided: list[str],
-               before: float | None) -> dict[str, float]:
-    """`picked` of `transcript_resumes` of the transcript at `path`, held so
-    that a read derived from it sees a call of that transcript only where
-    it resumed one of `agents`."""
-    return picked(transcript_resumes(path), agents, undecided, before)
 
 
 def sent_to(path: Path) -> frozenset[str]:

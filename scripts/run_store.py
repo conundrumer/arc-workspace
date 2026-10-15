@@ -29,6 +29,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from engine import checkout
+from kept_reads import LOCK_WAIT_SECONDS, SOURCES, UNREADABLE, mark_used
 from noted_reads import recording
 from run_profiler import profile
 from run_records import Run
@@ -38,16 +39,9 @@ from transcripts import agent_id, agent_transcripts, chain
 
 STORE_NAME = "run-profiles.sqlite"
 
-SOURCES = ("scripts/**/*.py", "src/**/*.py", "tools/console/solver_console/**/*.py")
-"""The code a held record rests on."""
-
 KEEP_SECONDS = 24 * 3600
 """How long the records of code that no process has read stay held: a
 worktree that runs other code within that time keeps its records."""
-
-LOCK_WAIT_SECONDS = 30
-"""How long a process waits on the lock another process holds on the
-store before it reads or writes nothing of it."""
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS records (
@@ -55,10 +49,6 @@ CREATE TABLE IF NOT EXISTS records (
     PRIMARY KEY (code, kind, agent));
 CREATE TABLE IF NOT EXISTS codes (code TEXT PRIMARY KEY, used REAL);
 """
-
-UNREADABLE = (pickle.UnpicklingError, EOFError, AttributeError, ImportError,
-              IndexError, TypeError, ValueError)
-"""What `pickle.loads` raises on a record it cannot read."""
 
 
 
@@ -182,12 +172,7 @@ class RunStore:
                 self.db.executemany(
                     "INSERT OR REPLACE INTO records VALUES (?, ?, ?, ?, ?)",
                     [(self.code, *r) for r in self.new])
-                self.db.execute("INSERT OR REPLACE INTO codes VALUES (?, ?)",
-                                (self.code, now))
-                self.db.execute("DELETE FROM records WHERE code IN (SELECT code FROM "
-                                "codes WHERE used < ?)", (now - KEEP_SECONDS,))
-                self.db.execute("DELETE FROM codes WHERE used < ?",
-                                (now - KEEP_SECONDS,))
+                mark_used(self.db, self.code, now, KEEP_SECONDS)
         except (sqlite3.Error, OSError):
             pass
         finally:

@@ -29,7 +29,7 @@ from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks
                        run_sessions, session_agents, tool_results)
 from run_reads import Status as TaskStatus
 from senders import Sender, sender
-from state_reads import DERIVED, file_text, is_dir, is_file, listed, mtime, state_cache
+from state_reads import DERIVED, Kept, file_text, is_dir, is_file, listed, mtime, state_cache
 from ticket_numbers import TICKET_NUMBER
 from transcripts import find, session_directory
 from transcript_entries import epoch, read_entries
@@ -134,7 +134,7 @@ def unfiled_call(aid: str, tool: str, inp: dict[str, Any], result: str | None,
     return inp, result
 
 
-@state_cache(DERIVED)
+@state_cache(DERIVED, kept=Kept.DISK)
 def ran_command(path: Path) -> bool:
     """Whether the transcript at `path` holds a Bash call of the command."""
     return any(b.get("name") == Tool.BASH and COMMAND in str((b.get("input") or {}).get("command"))
@@ -161,7 +161,7 @@ def session_operators(session: str, me: str) -> tuple[tuple[str, Path], ...]:
     return tuple((aid, p) for aid, p, _ in sorted(runs, key=lambda r: r[2]))
 
 
-@state_cache(DERIVED, notes="undecided")
+@state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
 def resumed_at(aid: str, path: Path, undecided: list[str]) -> list[float]:
     """The time of each resume of the agent `aid` whose transcript is at
     `path`. A resume is as `ALERTS` in `src/operations/monitor.py` gives
@@ -245,13 +245,28 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
     """What the transcript at `path` of the operator `aid` gives. A message
     from the operator's parent, the coordinator or the operator launcher
     that launched it, is read as a message of the coordinator's."""
-    return operator_read(aid, path, main, undecided, frozenset(subjects.items()))
+    merged = merge_subjects(path)
+    return operator_read(aid, path, main, undecided,
+                         frozenset((m, t) for m, t in subjects.items() if m in merged))
 
 
-@state_cache(DERIVED, notes="undecided")
+@state_cache(DERIVED, kept=Kept.DISK)
+def merge_subjects(path: Path) -> frozenset[str]:
+    """The commit messages the merge calls of the run at `path` give
+    (`operations.merging.merge_messages`), the subjects `merge_outcome`
+    looks up."""
+    return frozenset(m for e in run_entries(path, naming={MERGE_SCRIPT})
+                     if e.get("type") == "assistant" for b in blocks(e, "tool_use")
+                     if b.get("name") == Tool.BASH
+                     and MERGE_SCRIPT in (command := str((b.get("input") or {}).get("command", "")))
+                     for m in merge_messages(command) or ())
+
+
+@state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
 def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
                   commits: frozenset[tuple[str, float]]) -> OperatorRead:
-    """`read_operator`, with `subjects` as the pairs `commits` gives."""
+    """`read_operator`, with `subjects` as the pairs `commits` gives, those
+    of `merge_subjects`."""
     subjects = dict(commits)
     agents: list[Agent] = []
     calls: list[Call] = []
@@ -359,7 +374,7 @@ def background_output(aid: str, call: str, task: str, output: Path | None,
     return file_text(output, "replace"), status is not TaskStatus.COMPLETED
 
 
-@state_cache(DERIVED)
+@state_cache(DERIVED, kept=Kept.DISK)
 def final_reply(path: Path) -> Report | None:
     """The final reply in the transcript at `path`: the text of the entry
     that ends its last turn, or the message of the call that ends it, where

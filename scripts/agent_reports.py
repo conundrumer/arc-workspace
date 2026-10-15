@@ -131,13 +131,20 @@ def entry_signs(e: Entry) -> list[tuple[str, Sign]]:
 
 def last_sign(entries: Iterable[Entry], since: float,
               ids: set[str]) -> tuple[Sign, float] | None:
-    """The latest sign among `entries` timestamped after `since` of an
-    agent that one of `ids` names, other than `Sign.OTHER`, with its time,
-    or None. Of signs at one time, one of `ENDED` counts as the latest."""
+    """`latest_sign` of `entries` timestamped after `since`."""
+    return latest_sign(((epoch(e["timestamp"]), entry_signs(e))
+                        for e in entries_after(entries, since)), ids)
+
+
+def latest_sign(timed: Iterable[tuple[float, Iterable[tuple[str, Sign]]]],
+                ids: set[str]) -> tuple[Sign, float] | None:
+    """The latest sign among `timed`, the signs of entries (`entry_signs`)
+    each with its entry's time, of an agent that one of `ids` names, other
+    than `Sign.OTHER`, with its time, or None. Of signs at one time, one of
+    `ENDED` counts as the latest."""
     found: tuple[float, bool, Sign] | None = None
-    for e in entries_after(entries, since):
-        t = epoch(e["timestamp"])
-        for v, sign in entry_signs(e):
+    for t, signs in timed:
+        for v, sign in signs:
             if v in ids and sign is not Sign.OTHER:
                 k = (t, sign in ENDED, sign)
                 if found is None or k[:2] > found[:2]:

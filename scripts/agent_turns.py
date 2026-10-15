@@ -7,9 +7,9 @@ from pathlib import Path
 from controlled_markdown import mctx
 from run_reads import blocks, is_prompt
 from senders import is_interrupt_note
-from state_reads import DERIVED, state_cache
+from state_reads import DERIVED, Kept, state_cache
 from transcripts import agent_id, chain
-from transcript_entries import Entry, entries_back, entries_forward, epoch, read_entries, snapshot
+from transcript_entries import Entry, entries_back, entries_forward, epoch, read_entries
 
 # The types of a transcript's message entries, the entries of a turn: the
 # message that opens it and its work.
@@ -77,7 +77,7 @@ def turn_end(entries: list[Entry]) -> float | None:
     return times[-1] if times else None
 
 
-@state_cache(lambda path: tuple(snapshot(p) for p in chain(path)))
+@state_cache(DERIVED, kept=Kept.DISK)
 def has_ended(path: Path) -> bool:
     """`turn_ended` over the run at `path`, read from its last entry back to
     its last timestamped assistant entry, which settles it."""
@@ -90,7 +90,7 @@ def has_ended(path: Path) -> bool:
     return turn_ended(tail[::-1])
 
 
-@state_cache(DERIVED, notes="undecided")
+@state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
 def turn_after(path: Path, t: float, undecided: list[str]) -> bool:
     """Whether the transcript at `path` holds an entry of a turn timestamped
     after `t`. An entry of a turn with no timestamp counts as not, and an
@@ -117,7 +117,7 @@ def last_time(path: Path, holds: Callable[[Entry], bool] | None = None) -> float
     return None
 
 
-@state_cache(DERIVED)
+@state_cache(DERIVED, kept=Kept.DISK)
 def first_time(path: Path) -> float | None:
     """The time of the first timestamped entry of the run at `path`, with
     only the lines up to it parsed."""

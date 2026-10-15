@@ -18,7 +18,7 @@ from run_profiler import profile
 from run_records import Run, Span
 from run_reads import (BACKGROUND_TASK, LaunchStatus, blocks, is_prompt, parent_label,
                        run_entries, tool_calls)
-from state_reads import DERIVED, mtime, state_cache
+from state_reads import DERIVED, Kept, mtime, state_cache
 from transcripts import agent_id, is_subagent
 
 from operations.steps import BLOCK_SECONDS
@@ -139,7 +139,7 @@ def node(launcher: Path, a: Launch, path: Path, under: list[Node] | None,
                 not settled and turn_open(path, a.done, undecided))
 
 
-@state_cache(DERIVED)
+@state_cache(DERIVED, kept=Kept.DISK)
 def launch_settled(launcher: Path, call: str, path: Path) -> bool:
     """`Node.settled` of the agent whose transcript is at `path`, launched
     by the Agent call `call` of the run at `launcher`."""
@@ -239,7 +239,7 @@ def own_work(n: Node, undecided: list[str]) -> list[str]:
     if n.own is None:
         n.own = []
         reached = {m.launch.call for m in nodes_under(n, undecided)}
-        if may_still_run(n.path, reached, undecided):
+        if may_still_run(n.path, frozenset(reached), undecided):
             agents = {a.call: a.agent for a in launches(n.path, undecided)}
             n.own = [agents.get(m.call) or f"`{m.label}`"
                      for m in profiled(n.path, undecided).backgrounded
@@ -247,7 +247,8 @@ def own_work(n: Node, undecided: list[str]) -> list[str]:
     return n.own
 
 
-def may_still_run(path: Path, reached: set[str], undecided: list[str]) -> bool:
+@state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
+def may_still_run(path: Path, reached: frozenset[str], undecided: list[str]) -> bool:
     """Whether a call the run at `path` backgrounded, other than a call of
     `reached`, may still run. Only the lines that name such a call or its
     ids are read, which spares `profile` the whole run where none still

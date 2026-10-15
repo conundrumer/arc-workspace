@@ -1,36 +1,50 @@
 """The reads a state of the process rests on, each held for that state
-and, where what it rests on stands, for later states (`state_cache`), and
-the reads of files it holds: the stat of a path, the text of a file, and
-the entries of a directory."""
+and, where what it rests on stands, for later states (`state_cache`) and,
+for a read kept on disk, for later processes (`Kept`, the store of
+`kept_reads`), and the reads of files it holds: the stat of a path, the
+text of a file, and the entries of a directory."""
 
+import importlib
 import inspect
 import os
 import stat
 import time
+import uuid
 from collections.abc import Callable, Hashable, Iterator
 from dataclasses import dataclass
+from enum import Enum
 from functools import wraps
 from pathlib import Path
 from typing import Any
+
+import kept_reads
 
 _state = 0
 """The count of the states this process has opened (`new_state`)."""
 
 
 class Held:
-    """A held read: the state it was last brought up to date at and the
-    state a read last reached it at, its stamp, result and `undecided`
-    lines, the held reads its last run made (`made`) with the result each
-    gave it, the held reads whose last run made it (`dependents`), and whether a
-    source it rests on gave another result since it was last checked
-    (`marked`). A held read is a source where its stamp is not `DERIVED`."""
-    __slots__ = ("recall", "drop", "source", "state", "reached", "mark", "value",
-                 "lines", "made", "dependents", "marked")
+    """A held read: the read and its arguments (`read`, `call`), the state
+    it was last brought up to date at and the state a read last reached it
+    at, its stamp, with the held reads its stamp made (`stamped`), its
+    result and `undecided` lines, the version of its result in the store of
+    `kept_reads`, where it is kept there (`Kept.DISK`), the held reads its
+    last run made (`made`) with the result each gave it, the held reads
+    whose last run made it (`dependents`), and whether a source it rests on
+    gave another result since it was last checked (`marked`). A held read
+    is a source where its stamp is not `DERIVED`."""
+    __slots__ = ("recall", "drop", "source", "read", "call", "state", "reached", "mark",
+                 "stamped", "value", "lines", "version", "made", "dependents", "marked")
 
-    def __init__(self, recall: "Recall", drop: Callable[[], object], source: bool) -> None:
+    def __init__(self, recall: "Recall", drop: Callable[[], object], source: bool,
+                 read: "ReadInfo", call: "Call") -> None:
         self.recall = recall
         self.drop = drop
         self.source = source
+        self.read = read
+        self.call = call
+        self.stamped: dict[Held, object] = {}
+        self.version: str | None = None
         self.state = 0
         self.reached = 0
         self.mark: Hashable = None
@@ -66,11 +80,14 @@ def new_state() -> float:
     `state_cache` read gives what it reads as it stands now where its stamp
     changed, and as held where it did not.
 
-    Each held read that no read reached at the last state and no held read
-    rests on is dropped. Each held source is then brought up to date, each
+    The records the last state kept are written to the store first
+    (`kept_reads`). Each held read that no read reached at the last state
+    and no held read rests on is dropped. Each held source is then brought up to date, each
     after the sources it rests on, and each one whose result is not its
     held one marks each held read that rests on it, transitively."""
     global _state, _marking
+    kept_reads.flush()
+    _stats.clear()
     last = _state
     _state += 1
     late = list(_marked_late)
@@ -159,8 +176,150 @@ def held_still(made: dict[Held, object]) -> bool:
     return True
 
 
+class Kept(Enum):
+    """How a `state_cache` read stands across processes, in the store of
+    `kept_reads`, where a process opened it."""
+    DISK = "disk"
+    """Its result is kept in the store, with the trace of the reads it
+    rests on (`trace_of`), and stands in a later process while each read of
+    that trace gives what it gave (`holds`). A kept read that made it gives
+    its result in its trace."""
+    VALUE = "value"
+    """A kept read that made it gives its result in its trace, in place of
+    the reads that result rests on: it is computed again in a later
+    process, which a change of those reads that leaves the result as it
+    was does not make miss."""
+
+
+type Call = tuple[tuple[Any, ...], tuple[tuple[str, Any], ...]]
+"""The arguments of a read, positional and named, less its `notes`."""
+
+
+class By(Enum):
+    """What a trace gives of a read it rests on (`trace_of`)."""
+    STAMP = "stamp"
+    VALUE = "value"
+    VERSION = "version"
+    """The version of its result in the store, which a result that equals
+    the one before keeps."""
+
+
+type Leaf = tuple[By, str, tuple[Any, ...], tuple[tuple[str, Any], ...], object]
+"""A read of a trace (`trace_of`): what the trace gives of it, the read's
+name (`ReadInfo.name`), its arguments, and its stamp, result or version."""
+
+
+type Record = tuple[tuple[Leaf, ...], object, tuple[str, ...], str]
+"""What the store keeps of a read for its arguments: the trace of the reads
+it rests on, its result, its `undecided` lines, and its version."""
+
+
+class ReadInfo:
+    """A `state_cache` read: its name, `module:qualname`, by which a trace
+    gives it, its stamp, where its `notes` parameter stands, how it is
+    kept, the read as `state_cache` wraps it, and its held reads by their
+    arguments."""
+    __slots__ = ("name", "stamp", "notes", "notes_at", "kept", "wrapped", "held")
+
+    def __init__(self, name: str, stamp: Callable[..., Hashable] | None | Derived,
+                 notes: str | None, notes_at: int | None, kept: Kept | None) -> None:
+        self.name = name
+        self.stamp = stamp
+        self.notes = notes
+        self.notes_at = notes_at
+        self.kept = kept
+        self.wrapped: Callable[..., Any] | None = None
+        self.held: dict[Hashable, Held] = {}
+
+    def again(self, args: tuple[Any, ...], kwargs: tuple[tuple[str, Any], ...]) -> object:
+        """The read's result at this state for `args` and `kwargs`, its notes
+        dropped."""
+        named = dict(kwargs)
+        if self.notes is not None and self.notes_at is not None:
+            if len(args) >= self.notes_at:
+                args = (*args[:self.notes_at], [], *args[self.notes_at:])
+            else:
+                named[self.notes] = []
+        assert self.wrapped is not None
+        return self.wrapped(*args, **named)
+
+
+_reads: dict[str, ReadInfo] = {}
+"""Each `state_cache` read of this process, by its name."""
+
+
+def read_named(name: str) -> ReadInfo:
+    """The `state_cache` read `name` gives, its module imported where it is
+    not yet."""
+    if name not in _reads:
+        importlib.import_module(name.split(":", 1)[0])
+    return _reads[name]
+
+
+def trace_of(made: dict[Held, object]) -> tuple[Leaf, ...]:
+    """The reads that the held reads `made`, with the result each gave, rest
+    on, in the order they were made: a read kept on disk by its version, a
+    read kept by its result and a source with no stamp by its result, a
+    source with a stamp by that stamp, or by the reads its stamp made, and a
+    `DERIVED` read by the reads it made."""
+    out: dict[tuple[str, Hashable], Leaf] = {}
+    seen: set[Held] = set()
+
+    def visit(h: Held, value: object) -> None:
+        if h in seen:
+            return
+        seen.add(h)
+        ident = (h.read.name, h.call)
+        if h.read.kept is Kept.DISK and h.version is not None:
+            out.setdefault(ident, (By.VERSION, h.read.name, *h.call, h.version))
+        elif h.read.kept is not None or (h.source and h.read.stamp is None):
+            out.setdefault(ident, (By.VALUE, h.read.name, *h.call, value))
+        elif h.source and h.stamped:
+            for below, given in h.stamped.items():
+                visit(below, given)
+        elif h.source:
+            out.setdefault(ident, (By.STAMP, h.read.name, *h.call, h.mark))
+        else:
+            for below, given in h.made.items():
+                visit(below, given)
+    for h, value in made.items():
+        visit(h, value)
+    return tuple(out.values())
+
+
+def holds(leaf: Leaf) -> bool:
+    """Whether the read of `leaf` gives at this state the stamp, the result
+    or the version it gives, a read that fails counting as not."""
+    by, name, args, kwargs, given = leaf
+    try:
+        if by is By.STAMP:
+            return same(stamp_now(name, args, kwargs), given)
+        info = read_named(name)
+        now = info.again(args, kwargs)
+    except Exception:
+        return False
+    if by is By.VERSION:
+        return info.held[(args, kwargs)].version == given
+    return same(now, given)
+
+
+def canonical(value: object) -> object:
+    """`value`, an argument of a read, in a form whose `repr` is the same in
+    each process: a set's members in order. TypeError for a value of no
+    such form."""
+    if value is None or isinstance(value, (str, int, float)):
+        return value
+    if isinstance(value, Path):
+        return ("path", str(value))
+    if isinstance(value, (tuple, list)):
+        return (type(value).__name__, tuple(canonical(v) for v in value))
+    if isinstance(value, (set, frozenset)):
+        return ("set", tuple(sorted(repr(canonical(v)) for v in value)))
+    raise TypeError(f"{value!r} has no canonical form")
+
+
 def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
-                        notes: str | None = None) -> Callable[
+                        notes: str | None = None, kept: Kept | None = None) -> Callable[
         [Callable[P, R]], Callable[P, R]]:
     """Hold the result of a read for each of its arguments. Within one state
     the held result stands. At the first call of a new state the read runs
@@ -190,20 +349,59 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
     are held with its result, and each call appends them to the list it
     passes.
 
+    `kept` gives how a `DERIVED` read stands across processes (`Kept`).
+
     Each process-life read cache that `operator_state.read_state` reaches,
     in any module, is a `state_cache`, so the readers of one state see one
     state, and a change between two states reaches the second."""
     def hold(read: Callable[P, R]) -> Callable[P, R]:
-        held: dict[Hashable, Held] = {}
         at = None if notes is None else list(inspect.signature(read).parameters).index(notes)
         derived = isinstance(stamp, Derived)
+        info = ReadInfo(f"{read.__module__}:{read.__qualname__}", stamp, notes, at, kept)
+        held = info.held
+        _reads[info.name] = info
 
-        def run(key: Hashable, args: tuple[Any, ...], kwargs: dict[str, Any],
+        def recalled(key: Call) -> tuple[Record | None, dict[Held, object] | None]:
+            """The record the store keeps for `key`, and where each read of
+            its trace `holds`, the held reads its check made."""
+            store = kept_reads.store()
+            if kept is not Kept.DISK or store is None:
+                return None, None
+            try:
+                record: Record | None = store.held(info.name, repr(canonical(key)))
+            except TypeError:
+                return None, None
+            if record is None:
+                return None, None
+            _frames.append({})
+            try:
+                good = all(holds(leaf) for leaf in record[0])
+            finally:
+                made = _frames.pop()
+            return record, made if good else None
+
+        def keep(key: Call, made: dict[Held, object], value: object,
+                 lines: tuple[str, ...], version: str | None) -> str | None:
+            """The version of `value` once it is kept for `key`, `version`
+            where one is given, or None where it is not kept."""
+            store = kept_reads.store()
+            if kept is not Kept.DISK or store is None:
+                return None
+            try:
+                name = repr(canonical(key))
+            except TypeError:
+                return None
+            version = version or uuid.uuid4().hex
+            kept_now = store.keep(info.name, name, (trace_of(made), value, lines, version))
+            return version if kept_now else None
+
+        def run(key: Call, args: tuple[Any, ...], kwargs: dict[str, Any],
                 positional: bool) -> tuple[Any, tuple[str, ...]]:
             hit = held.get(key)
             if hit is not None and hit.state == _state:
                 return hit.value, hit.lines
             mark: Hashable = None
+            stamped: dict[Held, object] = {}
             if hit is not None and derived:
                 if (not hit.marked and not _marking) or held_still(hit.made):
                     hit.state, hit.marked = _state, False
@@ -213,32 +411,41 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                 try:
                     mark = stamp(*args, **kwargs)
                 finally:
-                    _frames.pop()
+                    stamped = _frames.pop()
                 if hit is not None and hit.mark == mark:
-                    hit.state = _state
+                    hit.state, hit.stamped = _state, stamped
                     return hit.value, hit.lines
-            lines: list[str] = []
-            if at is not None and notes is not None:
-                if positional:
-                    args = (*args[:at], lines, *args[at:])
-                else:
-                    kwargs = {**kwargs, notes: lines}
-            _frames.append({})
-            try:
-                value = read(*args, **kwargs)
-            finally:
-                made = _frames.pop()
+            record, made = recalled(key) if hit is None else (None, None)
+            if record is not None and made is not None:
+                _, value, kept_lines, version = record
+            else:
+                lines: list[str] = []
+                if at is not None and notes is not None:
+                    if positional:
+                        args = (*args[:at], lines, *args[at:])
+                    else:
+                        kwargs = {**kwargs, notes: lines}
+                _frames.append({})
+                try:
+                    value = read(*args, **kwargs)
+                finally:
+                    made = _frames.pop()
+                kept_lines = tuple(lines)
+                before = (record[1], record[3]) if record is not None else (
+                    (hit.value, hit.version) if hit is not None else None)
+                version = keep(key, made, value, kept_lines,
+                               before[1] if before is not None and same(value, before[0]) else None)
             if hit is None:
                 hit = Held(lambda: run(key, args, kwargs, positional)[0],
-                           lambda: held.pop(key), not derived)
+                           lambda: held.pop(key), not derived, info, key)
                 held[key] = hit
                 _held[hit] = None
             elif value is not hit.value and same(value, hit.value):
                 value = hit.value
             elif value is not hit.value and hit.source:
                 mark_dependents(hit)
-            hit.state, hit.mark, hit.value, hit.lines = _state, mark, value, tuple(lines)
-            hit.marked = False
+            hit.state, hit.mark, hit.value, hit.lines = _state, mark, value, kept_lines
+            hit.stamped, hit.marked, hit.version = stamped, False, version
             hit.rest_on(made if stamp is None or derived else {})
             return value, hit.lines
 
@@ -264,6 +471,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
             if _frames:
                 _frames[-1][hit] = value
             return value
+        info.wrapped = at_state
         return at_state
     return hold
 
@@ -277,14 +485,36 @@ def same(value: object, held: object) -> bool:
         return False
 
 
+@state_cache(None)
+def stamp_now(name: str, args: tuple[Any, ...],
+              kwargs: tuple[tuple[str, Any], ...]) -> Hashable:
+    """The stamp, at this state, of the read `name` with `args` and
+    `kwargs`, which a trace gives by its stamp (`holds`)."""
+    stamp = read_named(name).stamp
+    if not callable(stamp):
+        raise TypeError(f"{name} has no stamp")
+    return stamp(*args, **dict(kwargs))
+
+
+_stats: dict[Path, tuple[int, int] | None] = {}
+"""The stat `stat_of` read of each path inside a `state_cache` read at this
+state."""
+
+
 def stat_of(path: Path) -> tuple[int, int] | None:
     """The modification time and size of the file at `path`, or None where
-    there is none."""
+    there is none. Inside a `state_cache` read, each path is read once for
+    each state, as the reads of one state see one state."""
+    if _frames and path in _stats:
+        return _stats[path]
     try:
         st = path.stat()
+        found = st.st_mtime_ns, st.st_size
     except FileNotFoundError:
-        return None
-    return st.st_mtime_ns, st.st_size
+        found = None
+    if _frames:
+        _stats[path] = found
+    return found
 
 
 @dataclass(frozen=True)

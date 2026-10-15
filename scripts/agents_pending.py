@@ -1,15 +1,16 @@
 """The agents pending to a run, and the latest sign of the turn of each
 agent a run launched."""
 
+from dataclasses import dataclass
 from pathlib import Path
 
-from agent_reports import Sign, can_report, last_sign
+from agent_reports import Sign, can_report, entry_signs, latest_sign
 from run_reads import is_prompt, notified, run_sessions
-from state_reads import DERIVED, state_cache
-from transcript_entries import Entry, entries_unheld, epoch
+from state_reads import DERIVED, Kept, state_cache
+from transcript_entries import Entry, epoch, named_lines, own_range, parse, snapshot
 from agent_launches import Launch, launched
 from agent_resumes import note_latest
-from session_changes import changed_since
+from session_changes import changed_with
 
 
 def pending_agents(path: Path, undecided: list[str]) -> list[str]:
@@ -35,36 +36,73 @@ def notified_after(found: list[tuple[Path, Launch]],
     of the agent's own run, where its transcript is known."""
     agents = {a.agent for _, a in found if a.agent}
     out: dict[str, float] = {}
-    for e in session_entries(found, since):
-        if not e.get("timestamp") or e.get("type") == "assistant":
-            continue
-        for v in notified(e):
+    for e in session_signs(found, since):
+        for v in e.notified:
             if v in agents:
-                note_latest(out, v, epoch(e["timestamp"]))
+                note_latest(out, v, e.time)
     return out
 
 
-def session_entries(found: list[tuple[Path, Launch]], since: float) -> list[Entry]:
-    """The entries that name the agent of a launch of `found`, given with
-    the path of the run that launched it, in each transcript changed at or
-    after `since` of the sessions of that run and of the agent's own run,
-    where its transcript is known."""
+@dataclass(frozen=True)
+class SignEntry:
+    """What an entry that can give a notification of an agent or a sign of
+    its turn (`may_sign`) gives of them: its time, the ids it notifies
+    (`notified`), and the signs it gives (`agent_reports.entry_signs`)."""
+    time: float
+    notified: tuple[str, ...]
+    signs: tuple[tuple[str, Sign], ...]
+
+    def names(self, agents: frozenset[str]) -> bool:
+        return (any(v in agents for v in self.notified)
+                or any(v in agents for v, _ in self.signs))
+
+
+def session_signs(found: list[tuple[Path, Launch]], since: float) -> list[SignEntry]:
+    """The `SignEntry` of each entry that notifies the agent of a launch of
+    `found`, given with the path of the run that launched it, or gives a
+    sign of it, in each transcript changed at or after `since` of the
+    sessions of that run and of the agent's own run, where its transcript
+    is known."""
     agents = {a.agent for _, a in found if a.agent}
     runs = [p for launcher, a in found for p in (launcher, a.path) if p]
     sessions = dict.fromkeys(s for p in runs for s in run_sessions(p))
-    return entries_since(tuple(sessions), since, frozenset(agents))
+    return signs_since(tuple(sessions), since, frozenset(agents))
 
 
-@state_cache(DERIVED)
-def entries_since(sessions: tuple[Path, ...], since: float, agents: frozenset[str]) -> list[Entry]:
-    """The entries that name one of `agents` in each transcript of
-    `sessions` changed at or after `since`, held so that a read derived from
-    them sees a new transcript only where it names one of `agents`. It holds
-    only those that can give a notification or a sign of an agent
-    (`may_sign`), and each is parsed for it alone, so that its read of
-    every transcript of the sessions holds no other entry."""
-    return [e for p in changed_since(sessions, since) for e in entries_unheld(p, agents)
-            if may_sign(e)]
+@state_cache(DERIVED, kept=Kept.VALUE)
+def signs_since(sessions: tuple[Path, ...], since: float,
+                agents: frozenset[str]) -> list[SignEntry]:
+    """`session_signs`, held so that a read derived from it sees a new
+    transcript only where it names one of `agents`."""
+    return [e for _, found in changed_with(sessions, since, sign_entries) for e in found
+            if e.names(agents)]
+
+
+SIGN_WORDS = frozenset({"<task-notification>", "<agent-message from="})
+"""Words the line of each entry that gives a notification
+(`run_reads.NOTIFICATION`) or a message from an agent
+(`run_reads.AGENT_MESSAGE`) holds."""
+
+
+@state_cache(DERIVED, kept=Kept.DISK)
+def sign_entries(path: Path) -> tuple[SignEntry, ...]:
+    """The `SignEntry` of each entry of the transcript at `path` that may
+    give a notification or a sign (`may_sign`) and gives one of an id of
+    the form of an agent id. Only the lines that hold the opening of a
+    notification or of a message from an agent (`SIGN_WORDS`) are read,
+    each parsed for it alone, so that a read of every transcript of a
+    session holds no entry."""
+    snap = snapshot(path)
+    out: list[SignEntry] = []
+    for i in named_lines(snap, own_range(path), SIGN_WORDS):
+        for e in parse(snap.line(i)):
+            if not may_sign(e):
+                continue
+            told = tuple(v for v in notified(e) if v in snap.agent_ids)
+            signs = tuple((v, sign) for v, sign in entry_signs(e) if v in snap.agent_ids)
+            if told or signs:
+                out.append(SignEntry(epoch(e["timestamp"]), told, signs))
+    return tuple(out)
 
 
 def may_sign(entry: Entry) -> bool:
@@ -76,14 +114,15 @@ def may_sign(entry: Entry) -> bool:
 
 
 def turn_signs(path: Path, found: list[Launch]) -> dict[str, tuple[Sign, float]]:
-    """The latest sign of its turn (`agent_reports.last_sign`), with its
+    """The latest sign of its turn (`agent_reports.latest_sign`), with its
     time, of the agent
     of each launch of `found`, launched by the run at `path`, after the
     call that launched or last resumed it, in the transcripts
-    `session_entries` gives, where one stands."""
+    `session_signs` gives, where one stands."""
     own = [a for a in found if a.agent]
     if not own:
         return {}
-    entries = session_entries([(path, a) for a in own], min(a.since for a in own))
+    signs = session_signs([(path, a) for a in own], min(a.since for a in own))
     return {a.agent: sign for a in own if a.agent
-            and (sign := last_sign(entries, a.since, {a.agent})) is not None}
+            and (sign := latest_sign(((e.time, e.signs) for e in signs if e.time > a.since),
+                                     {a.agent})) is not None}

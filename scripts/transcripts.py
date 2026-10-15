@@ -10,7 +10,7 @@ from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 
 # `transcripts.new_state` is the name the tests of these reads open a state by.
-from state_reads import (DERIVED, Named, is_file, listed, new_state, stat_of,  # noqa: F401
+from state_reads import (DERIVED, Kept, Named, is_file, listed, new_state, stat_of,  # noqa: F401
                          state_cache)
 
 from controlled_markdown import mctx
@@ -157,7 +157,7 @@ def transcripts_of(agent: str) -> list[Path]:
     return agent_paths(tuple(project_dirs()), agent)
 
 
-@state_cache(DERIVED)
+@state_cache(DERIVED, kept=Kept.VALUE)
 def agent_paths(dirs: tuple[Path, ...], agent: str) -> list[Path]:
     """`transcripts_of` the agent `agent` under `dirs`, held so that a read
     derived from them sees a change only where they change."""
@@ -169,7 +169,7 @@ def mains_named(name: str) -> list[Path]:
     return main_paths(tuple(project_dirs()), name)
 
 
-@state_cache(DERIVED)
+@state_cache(DERIVED, kept=Kept.VALUE)
 def main_paths(dirs: tuple[Path, ...], name: str) -> list[Path]:
     """`mains_named` `name` under `dirs`, held as `agent_paths` is."""
     return main_transcripts_in(dirs).get(name, [])
