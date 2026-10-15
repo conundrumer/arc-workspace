@@ -86,11 +86,26 @@ out(P_grid_out, Col, $Checker()) :-
     inked(P_grid_out, _), checker(P_grid_out, Col).
 
 .comp Determine {
-    // Every ink cell's output tile.
-    .decl template(p: Position, col: Color)
-    template(P_intile, Col) :-
+    // The output cells over ink input cells, with their place in the tile.
+    .decl inked(e: Example, p_grid: Position, p_intile: Position, col: Color)
+    inked(E, P_grid_out, P_intile, Col) :-
         ex_in(E, P_tile, Ink), params.ink(Ink),            // ink input cell
         params.intile(P_intile),
-        concat_2d(P_tile, P_intile, 0, P_grid_out),   // its output tile cell
+        concat_2d(P_tile, P_intile, 0, P_grid_out),        // its output tile cell
         ex_out(E, P_grid_out, Col).
+
+    // Every ink cell's output tile.
+    .decl template(p: Position, col: Color)
+    template(P_intile, Col) :- inked(_, _, P_intile, Col).
+
+    // The cycle is as long as the colors the silhouette holds.
+    .init phases = Tally<Unit, Color>
+    phases.item($U(), Col) :- inked(_, _, _, Col).
+    phases.domain($U()).
+
+    .decl phase_color(k: number, col: Color)
+    phase_color(K, Col) :-
+        inked(_, P, _, Col),                                 // a silhouette cell
+        params.corner(Diag), corner_dist(P, Diag, T),        // steps from the anchor corner
+        phases.tally($U(), N), stride(T, N, 0, _, K).        // folded into the cycle
 }

@@ -101,3 +101,25 @@ out(P, Col, Ch) :-
     ( params.dot(Col_in), Col = Col_in     // a dot stands
     ; !params.dot(Col_in), params.bg(Col)  // every other cell empties
     ).
+
+.comp Determine {
+    .init ex_lattice = DividerTiles<Example>
+    ex_lattice.cell(E, P) :- ex_in(E, P, _), ex_out(E, _, _).
+    ex_lattice.divider(E, A, L) :-
+        ex_in(E, P, Col), params.dot(Col), ex_out(E, _, _),
+        axis_elem(A), split(P, A, L, _).
+
+    .type ET = [e: Example, p_tile: Position]
+
+    .init ex_tile_box = Bbox<ET>
+    ex_tile_box.cell([E, P_tile], P) :- ex_lattice.tile_of(E, P, P_tile).
+
+    // The moved piece's box in each output tile, in the frame of its tile.
+    .init landed_box = Bbox<ET>
+    landed_box.cell([E, P_tile], P_intile) :-
+        ex_lattice.tile_of(E, P, P_tile), ex_out(E, P, Col), !params.bg(Col),
+        ex_tile_box.box([E, P_tile], B), crop(P, B, P_intile).
+
+    .decl slot(b: Box)
+    slot(B) :- landed_box.box(_, B).
+}

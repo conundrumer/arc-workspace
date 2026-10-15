@@ -68,3 +68,20 @@ view(P_rel, P_inner) :-
 
 out(P_inner, Col, $Object()) :- obj_off(P_rel, Col), view(P_rel, P_inner).
 out(P_inner, Bg, $Object())  :- view(P_rel, P_inner), !obj_off(P_rel, _), params.bg(Bg).
+
+.comp Determine {
+    .type EC = [e: Example, c: Color]
+
+    // An ink color the overlay draws fewer times than the input holds it:
+    // the key cells of every fragment land on one output cell.
+    .init surplus = Excess<EC, Position>
+    surplus.plus([E, Col], P) :- ex_out(E, _, _), ex_in(E, P, Col), !params.bg(Col).
+    surplus.minus([E, Col], P) :- ex_out(E, P, Col).
+
+    .decl key(c: Color)
+    key(Col) :- surplus.excess([_, Col], _).
+
+    // The output cell the key cells land on.
+    .decl anchor(p: Position)
+    anchor(P) :- ex_out(_, P, Col), params.key(Col).
+}

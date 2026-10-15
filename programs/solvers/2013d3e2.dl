@@ -46,3 +46,53 @@ out(P_out, Col, $Window()) :-
     box_cell(P_box, Col),
     win.cell($U(), P_out),
     params.corner(Diag), corner_anchor(Diag, P_box, P_out).   // same dists to the corner
+
+.comp Determine {
+    .init ex_box = Bbox<Example>
+    ex_box.cell(E, P) :- ex_in(E, P, Col), !params.bg(Col), ex_out(E, _, _).
+
+    // Each trained example's box cells, in the box's frame.
+    .decl ex_box_cell(e: Example, p_box: Position, col: Color)
+    ex_box_cell(E, P_box, Col) :- ex_in(E, P, Col), ex_box.box(E, B), crop(P, B, P_box).
+
+    // A tile of the box cut N by N, with its cells in the tile's frame.
+    .decl tile_cell(e: Example, n: number, p_tile: Position, p_inner: Position, col: Color)
+    tile_cell(E, N, P_tile, P_inner, Col) :-
+        ex_box_cell(E, P_box, Col), axis_elem(A), sub_extent(P_box, A, N),
+        divide_2d(P_box, N, 0, P_tile, P_inner).
+
+    .decl half_cand(n: number, p_tile: Position)
+    half_cand(N, P_tile) :- tile_cell(_, N, P_tile, _, _).
+
+    // Some example whose output and the candidate tile differ.
+    .decl half_defect(n: number, p_tile: Position)
+    half_defect(N, P_tile) :-
+        half_cand(N, P_tile), ex_out(E, Q, Col),
+        !tile_cell(E, N, P_tile, Q, Col).
+    half_defect(N, P_tile) :-
+        tile_cell(E, N, P_tile, P_inner, Col), ex_out(E, _, _),
+        !ex_out(E, P_inner, Col).
+
+    .decl out_tile_at(n: number, p_tile: Position)
+    out_tile_at(N, P_tile) :- half_cand(N, P_tile), !half_defect(N, P_tile).
+
+    .decl divisor(n: number)
+    divisor(N) :- out_tile_at(N, _).
+
+    .decl out_tile(p_tile: Position)
+    out_tile(P_tile) :- out_tile_at(_, P_tile).
+
+    // Some example whose output is not the window at the corner.
+    .decl corner_defect(d: DiagDir)
+    corner_defect(Diag) :-
+        diag_dir_elem(Diag), ex_out(E, Q, Col), ex_box.box(E, _),
+        !window_cell(E, Diag, Q, Col).
+
+    .decl window_cell(e: Example, d: DiagDir, q: Position, col: Color)
+    window_cell(E, Diag, Q, Col) :-
+        ex_out(E, Q, _), diag_dir_elem(Diag),
+        ex_box_cell(E, P_box, Col), corner_anchor(Diag, P_box, Q).
+
+    .decl corner(d: DiagDir)
+    corner(Diag) :- diag_dir_elem(Diag), !corner_defect(Diag).
+}

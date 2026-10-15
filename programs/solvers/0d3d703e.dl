@@ -21,3 +21,13 @@
 
 out(P, Col_out) :- in(P, Col_in), params.mapping(Col_in, Col_out).
 out(P, Col)     :- in(P, Col), !params.mapping(Col, _).
+
+.comp Determine {
+    // The color pairs the examples trade, each pair one class.
+    .init pair = Canon<Color>
+    pair.edge(Col_in, Col_out) :- ex_in(E, P, Col_in), ex_out(E, P, Col_out), Col_in != Col_out.
+
+    // Each pair once: its representative first.
+    .decl swap(c1: Color, c2: Color)
+    swap(A, B) :- pair.rep(B, A), A != B.
+}
