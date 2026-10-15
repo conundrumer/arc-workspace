@@ -75,7 +75,6 @@
     //  concept's rule breaks the tie left among them; the output holds the
     //  grid of each open value
     // @witness cross-tie: ordinary any
-    //     @reassigned tie_dir
   | TieDirection {}
     // @rule tie-center: when the tied runs are parallel and odd in number,
     //  the middle one is painted; undefined otherwise

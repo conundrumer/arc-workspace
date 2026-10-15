@@ -38,7 +38,6 @@
     //  params.head_order gives casts
     // @witness two-heads: borderline concept
     //     @relaxed pointer
-    //     @reassigned head_order
     // @witness stray-head: borderline $ScanHead
     //     @relaxed pointer
     //     @reassigned head_order
@@ -79,7 +78,6 @@
     //  a tie
     // @witness field-3: variant $DerivedField
     //     @relaxed field
-    // @witness small-field: variant concept
     // @witness edge-pointer: borderline concept
   | DerivedField {}
 
