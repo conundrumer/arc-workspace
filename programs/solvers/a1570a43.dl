@@ -92,6 +92,9 @@
 
 .type Choice = [anchor: Anchor, others: Others, grouping: Grouping, marker: MarkerSource]
 
+// A marker color under the source that gives it.
+.type Marker = [m: MarkerSource, k: Color]
+
 // The cells that move, read against the marker color of one source.
 .type Load = [others: Others, m: MarkerSource]
 
@@ -273,12 +276,12 @@ piece_box.cell([O, M, $PerObject($Conn8()), Id], P) :- piece8.label([O, M], P, I
 // --- $Fill ---
 // The interior of each marker rectangle.
 // @claim place
-.init inner = Bbox<Color>
-inner.cell(K, P) :- marker_color(_, K), color_box.box(K, R), in(P, _), interior(P, R).
+.init inner = Bbox<Marker>
+inner.cell([M, K], P) :- marker_color(M, K), color_box.box(K, R), in(P, _), interior(P, R).
 
 // The unit's box is a translate of the interior.
 place($Fill(), O, M, G, B, V) :-
-    mover(O, M, G, B), marker_color(M, K), inner.box(K, I), relative(B, I, V), shift(V).
+    mover(O, M, G, B), marker_color(M, K), inner.box([M, K], I), relative(B, I, V), shift(V).
 
 // --- $Center ---
 // Where each translation puts a unit's box, in its marker rectangle's frame.
