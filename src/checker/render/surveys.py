@@ -92,6 +92,7 @@ from engine import Engine, RecordValue, Row, RunFailure, checkout
 from engine.quotes import quotes
 from solver.model import Case
 from solver.aggregate import Solver, has_determine
+from solver.determine import rigid_charts
 from solver.names import cover
 from solver.names import name as case_name
 from solver.value_order import row_key
@@ -381,17 +382,30 @@ def verdict_text(v: Verdict | Enumerable) -> str:
             return f"enumerable({n})"
 
 
-def _subject_text(subject: Subject) -> str:
+type Printed = Callable[[str], str]
+"""The name a plan line prints for a parameter (`printed_name`)."""
+
+
+def printed_name(solver: Solver) -> Printed:
+    """A RIGID chart's placed relation, the name a `Determine` relation
+    mirrors, for the chart, and its own name for any other parameter."""
+    placed = {chart: n for n, chart in rigid_charts(solver).items()}
+    return lambda name: placed.get(name, name)
+
+
+def _subject_text(subject: Subject, printed: Printed) -> str:
     if isinstance(subject, KeyedTable):
-        return f"{_value_text(subject.child)}+{_value_text(subject.parent)}"
-    return _value_text(subject)
+        return (f"{_value_text(subject.child, printed)}+"
+                f"{_value_text(subject.parent, printed)}")
+    return _value_text(subject, printed)
 
 
-def _value_text(v: PlanValue) -> str:
-    """A parameter's name, and for its value at a case, the case's."""
+def _value_text(v: PlanValue, printed: Printed) -> str:
+    """A parameter's printed name, and for its value at a case, the
+    case's."""
     if isinstance(v, str):
-        return v
-    return under_case(v.parameter, v.name)
+        return printed(v)
+    return under_case(printed(v.parameter), v.name)
 
 
 def _settled_note(settled: Settled, types: Sequence[str], solver: Solver
@@ -415,26 +429,28 @@ def _settled_note(settled: Settled, types: Sequence[str], solver: Solver
 
 
 def _by_parameter(values: Sequence[PlanValue],
-                  note: Callable[[PlanValue], str], form: str) -> list[str]:
+                  note: Callable[[PlanValue], str], form: str,
+                  printed: Printed) -> list[str]:
     """One item per parameter among `values` (`by_parameter`): a parameter's
     one value with its `note`, and a parameter that stores a value per
     case in `form`, with each case's name and its value's `note`."""
     def noted(name: str, v: PlanValue) -> str:
         return " ".join(x for x in (name, note(v)) if x)
 
-    return [noted(p, p) if vs is None else form.format(
-        param=p, cases=", ".join(noted(v.name, v) for v in vs))
+    return [noted(printed(p), p) if vs is None else form.format(
+        param=printed(p),
+        cases=", ".join(noted(v.name, v) for v in vs))
         for p, vs in by_parameter(values).items()]
 
 
-def _over_lines(settle: Sequence[tuple[PlanValue, Candidates]]
-                ) -> list[str]:
+def _over_lines(settle: Sequence[tuple[PlanValue, Candidates]],
+                printed: Printed) -> list[str]:
     """One item per parameter over the enumeration limit, with its
     candidate count (`by_parameter`); a parameter that stores a value per case
     with the product of its cases' counts and each case's count."""
     counts = {p: c.count for p, c in settle}
-    return [f"{p}({counts[p]})" if vs is None else
-            f"{p}({math.prod(counts[v] for v in vs)}: "
+    return [f"{printed(p)}({counts[p]})" if vs is None else
+            f"{printed(p)}({math.prod(counts[v] for v in vs)}: "
             + ", ".join(f"{v.name} {counts[v]}" for v in vs) + ")"
             for p, vs in by_parameter(p for p, _c in settle).items()]
 
@@ -466,6 +482,7 @@ def render_determination_plan(solver: Solver, result: PlanResult,
                          failed=CASES_RUN_FAILED)
                 + _make_run(result.failure)]
     types = dict(result.types)
+    printed = printed_name(solver)
 
     def shown_of(param: PlanValue) -> Callable[[Row], str]:
         return lambda r: row_text(r, types[param], solver)
@@ -538,9 +555,9 @@ def render_determination_plan(solver: Solver, result: PlanResult,
         lines.append(mctx("no actions"))
     section(mctx("write a determination relation"),
             _by_parameter(determine, state, mctx(
-                "{param}, giving the rows of each case: {cases}")))
+                "{param}, giving the rows of each case: {cases}"), printed))
     section(JUDGE_FREE,
-            [f"{_value_text(p)}: " + _also_admits(
+            [f"{_value_text(p, printed)}: " + _also_admits(
                 surviving[p].stored, surviving[p].extras(), types[p], solver)
              for p in open_valued])
     if over:
@@ -549,16 +566,18 @@ def render_determination_plan(solver: Solver, result: PlanResult,
                      "the product of the remaining candidate counts goes "
                      "under the limit").format(
             joint=product, limit=ENUMERATION_LIMIT),
-            _over_lines(settle))
-    section(mctx("determined"), list(by_parameter(classes.done)))
+            _over_lines(settle, printed))
+    section(mctx("determined"), [printed(p)
+                                 for p in by_parameter(classes.done)])
     if not isinstance(differing, frozenset):
         section(mctx("the determination run gives no result, so whether "
                      "these determination relations give the stored values "
                      "is not known") + _make_run(differing),
-                list(by_parameter(classes.unknown)))
+                [printed(p) for p in by_parameter(classes.unknown)])
     section(mctx("the value is covered on this task's examples, so no "
                  "determination relation is needed"),
-            _by_parameter(covered, covered_note, "{param}: {cases}"))
+            _by_parameter(covered, covered_note, "{param}: {cases}",
+                          printed))
     if surviving and enumerated is not None:
         lines.append(mctx("{survived} of {tried} joint assignments of the "
                           "enumerated parameters reproduce every train "
@@ -568,7 +587,7 @@ def render_determination_plan(solver: Solver, result: PlanResult,
         lines.append(mctx("{count} joint assignment(s) whose run timed "
                           "out:").format(count=len(enumerated.timed_out)))
         lines += [
-            "  " + ", ".join(f"{_value_text(n)}={shown_of(n)(r)}"
+            "  " + ", ".join(f"{_value_text(n, printed)}={shown_of(n)(r)}"
                              for n, r in a)
             + f": {' '.join(finding_lines(solver, t.finding))}"
             for a, t in enumerated.timed_out]
@@ -577,7 +596,7 @@ def render_determination_plan(solver: Solver, result: PlanResult,
     section(mctx("move data from clauses to fact parameters"),
             list(result.embedded))
     if verdicts:
-        detail = [f"{_subject_text(r.subject)}: " + ", ".join(
+        detail = [f"{_subject_text(r.subject, printed)}: " + ", ".join(
             f"{name} {verdict_text(v)}" for name, v in entries)
             for r in result.results if (entries := r.entries())]
         if detail:

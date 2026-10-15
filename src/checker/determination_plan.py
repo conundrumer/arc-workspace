@@ -31,7 +31,7 @@ from engine.quotes import quotes
 from solver.model import Base, Case, base_case
 from solver.aggregate import Solver
 from solver.readers import proposers_program
-from solver.determine import stored_facts, Determined, NoDetermine
+from solver.determine import rigid_charts, stored_facts, Determined, NoDetermine
 from solver.probe import Proposals, probe
 from solver.variations import FixParam, variation
 from solver.pair_runs import TaskSection
@@ -241,7 +241,9 @@ class Joint:
 @dataclass(frozen=True)
 class Plan:
     """The probe's results, the rule-derived parameters that hold data,
-    the determined parameters, the column types of each parameter, and
+    the determined parameters with the chart of each that a RIGID call
+    binds (`solver.determine.rigid_charts`), the column types of each
+    parameter, and
     the joint enumeration: None where none ran, the run of the stored
     values where it reached a limit."""
 
@@ -491,9 +493,11 @@ def survey_determination_plan(solver: Solver, runs: Runs) -> PlanResult:
             results.append(ProbeResult(table, tv, None))
 
     embedded = sorted(_embedded(solver, runs))
-    determined = frozenset(p.name for p in solver.params.parameters
-                           if p.determined)
-    differing = _differing(solver, runs, determined)
+    charts = rigid_charts(solver)
+    placed = frozenset(p.name for p in solver.params.parameters
+                       if p.determined)
+    determined = placed | {charts[n] for n in placed if n in charts}
+    differing = _differing(solver, runs, determined, charts)
     if isinstance(differing, NoCases):
         return differing
     all_types = tuple((n, t) for n, (t, _) in fact.items())
@@ -502,10 +506,12 @@ def survey_determination_plan(solver: Solver, runs: Runs) -> PlanResult:
                 all_types, joint)
 
 
-def _differing(solver: Solver, runs: Runs, determined: frozenset[str]
+def _differing(solver: Solver, runs: Runs, determined: frozenset[str],
+               charts: dict[str, str]
                ) -> frozenset[PlanValue] | RunFailure | NoCases:
     """The values of the determined parameters that the determination
-    run gives other than as stored: a parameter's one value, or its value
+    run gives other than as stored, a diff of a relation a RIGID call
+    binds under its chart of `charts`: a parameter's one value, or its value
     at each base where a row of its diff holds
     (`checker.runs.Runs.differing_bases`), a base it stores no rows at
     among them; the run's failure where it gives no result, and the
@@ -524,13 +530,14 @@ def _differing(solver: Solver, runs: Runs, determined: frozenset[str]
         return got
     out: set[PlanValue] = set()
     for d in got.diffs:
+        name = charts.get(d.parameter, d.parameter)
         bases = runs.differing_bases(d)
         if bases is None:
-            out.add(d.parameter)
+            out.add(name)
             continue
         if not isinstance(bases, tuple):
             return NoCases(bases)
-        out |= {at_case(solver, d.parameter, b) for b in bases}
+        out |= {at_case(solver, name, b) for b in bases}
     return frozenset(out)
 
 
