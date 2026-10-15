@@ -17,7 +17,8 @@ from ticket_form import front, ticket_kind
 from ticket_log import held_log, line_time, log_lines, read_ticket, resolution_of
 from ticket_reads import editors_field
 from token_prices import run_cost
-from transcripts import Refused, chain, entries_back, find
+from transcripts import chain, find
+from transcript_entries import Refused, entries_back
 
 from controlled_markdown import mctx
 from engine.memo import write_whole

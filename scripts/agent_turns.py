@@ -8,8 +8,8 @@ from controlled_markdown import mctx
 from run_reads import blocks, is_prompt
 from senders import is_interrupt_note
 from state_reads import DERIVED, state_cache
-from transcripts import (Entry, agent_id, chain, entries_back, entries_forward,
-                         epoch, read_entries, snapshot)
+from transcripts import agent_id, chain
+from transcript_entries import Entry, entries_back, entries_forward, epoch, read_entries, snapshot
 
 # The types of a transcript's message entries, the entries of a turn: the
 # message that opens it and its work.

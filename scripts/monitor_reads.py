@@ -13,7 +13,7 @@ from open_agents import Listed
 from operator_reads import resumed_at
 from run_prints import self_of
 from run_reads import bash_spans, repeated_runs, run_entries
-from transcripts import epoch
+from transcript_entries import epoch
 
 from controlled_markdown import mctx
 from operations import monitor

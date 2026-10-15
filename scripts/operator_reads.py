@@ -12,8 +12,10 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from agent_launches import (children_of, launched, launches, resumes, sent_to, timed_entries,
-                            turn_signs)
+from agent_launches import children_of, launched, launches
+from agent_resumes import resumes, sent_to
+from session_changes import timed_entries
+from agents_pending import turn_signs
 from agent_reports import ENDED, Sign, last_sign
 from agent_turns import first_time, has_ended, turns
 from context_bound_hook import OPERATOR
@@ -29,7 +31,8 @@ from run_reads import Status as TaskStatus
 from senders import Sender, sender
 from state_reads import DERIVED, file_text, is_dir, is_file, listed, mtime, state_cache
 from ticket_numbers import TICKET_NUMBER
-from transcripts import epoch, find, read_entries, session_directory
+from transcripts import find, session_directory
+from transcript_entries import epoch, read_entries
 
 from operations.merging import MERGE_SCRIPT, merge_messages
 from operations.reports import TICKETS_FILED, heading_part

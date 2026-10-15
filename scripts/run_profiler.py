@@ -20,7 +20,8 @@ from run_reads import (blocks, context_size, is_prompt, message_text, parent_id,
 from run_records import Call, Group, Key, Message, Part, Run, Span
 from senders import Sender, sender
 from token_prices import grouped, request_input, requests, run_cost
-from transcripts import agent_id, epoch, is_subagent
+from transcripts import agent_id, is_subagent
+from transcript_entries import epoch
 
 WAIT_TOOLS = ("Monitor", "TaskOutput")
 # Ways a Bash result says the harness, not the call, moved it to the

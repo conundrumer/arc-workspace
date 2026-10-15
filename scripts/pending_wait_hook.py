@@ -96,11 +96,12 @@ def check(hook: dict[str, Any]) -> str | None:
     pending to its caller, and None otherwise."""
     import printed_bash_check
     import trial_bounds_check
-    from agent_launches import pending_agents
+    from agents_pending import pending_agents
     from command_labels import runs_sleep
     from ticket_log import AGENT_ID
     from run_reads import blocks, caller_id, caller_transcript
-    from transcripts import is_subagent, read_entries
+    from transcripts import is_subagent
+    from transcript_entries import read_entries
 
     tool, inp = hook["tool_name"], hook["tool_input"]
     if (bound := over_bound(tool, inp, caller_id(hook) is not None)) is not None:

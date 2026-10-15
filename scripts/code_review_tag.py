@@ -19,7 +19,8 @@ from operations.state import code_review_tag as tag_name
 scripts_importable()
 
 from run_reads import tool_results  # noqa: E402
-from transcripts import Entry, Refused, blocks, read_entries, transcripts_of  # noqa: E402
+from transcripts import transcripts_of  # noqa: E402
+from transcript_entries import Entry, Refused, blocks, read_entries  # noqa: E402
 
 HELP = mctx("""
     - The usage form:

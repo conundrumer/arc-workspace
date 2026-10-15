@@ -21,7 +21,8 @@ from handbook.paths import console_importable, scripts_importable
 console_importable()
 scripts_importable()
 
-from agent_launches import pending_agents, runs_under  # noqa: E402
+from agent_launches import runs_under  # noqa: E402
+from agents_pending import pending_agents  # noqa: E402
 from agent_turns import first_time, last_time  # noqa: E402
 from budgets import (BUDGET_FACTOR, LOW_WAIT_PCT, MEDIAN_RUNS,  # noqa: E402
                      budget_group, print_budgets, role_group,
@@ -46,9 +47,8 @@ from operations.reports import BUDGET_PASSED  # noqa: E402
 from operations.roles import GENERAL, Role  # noqa: E402
 from ticketing.times import utc_stamp  # noqa: E402
 from token_prices import PRICES  # noqa: E402
-from transcripts import (Entry, Refused, agent_id, agent_transcripts,  # noqa: E402
-                         bare_id, epoch, find, is_subagent, read_entries,
-                         transcripts)
+from transcripts import agent_id, agent_transcripts, bare_id, find, is_subagent, transcripts
+from transcript_entries import Entry, Refused, epoch, read_entries
 
 from operations.batches import LEFT_OPEN, NO_RUN, RUNS_TAKEN, lines, read_under  # noqa: E402
 

@@ -47,7 +47,7 @@ from ticketing.times import TIME_FORM  # noqa: E402
 from ticket_vocabulary import ticked  # noqa: E402
 from ticketing.vocabulary import (DEFECT_SECTIONS, MANY_IDEAS, Domain, Kind,  # noqa: E402
                                   Resolution, Status, Verdict)
-from transcripts import Refused  # noqa: E402
+from transcript_entries import Refused  # noqa: E402
 
 HELP = mctx("""
     - `{invocation} <domain> <subject> <agent>` files the ticket on its stdin under the main tree's `tickets/`, and prints the path it wrote.

@@ -8,7 +8,7 @@ from dataclasses import dataclass, fields
 from typing import Any
 
 from controlled_markdown import mctx
-from transcripts import epoch
+from transcript_entries import epoch
 
 
 @dataclass(frozen=True)

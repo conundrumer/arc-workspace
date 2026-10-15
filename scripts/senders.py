@@ -7,7 +7,7 @@ from pathlib import Path
 
 from run_reads import (AGENT_MESSAGE, MAIN, NOTIFICATION, member, message_text,
                        text_of, type_in)
-from transcripts import Entry
+from transcript_entries import Entry
 
 # The start of the text of the entry the harness writes where the user
 # interrupts a run.

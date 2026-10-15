@@ -21,7 +21,8 @@ from ticket_watch import Thresholds, deferred, route
 from ticketing.text import VALIDATION
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Kind, Status, Verdict
-from transcripts import Refused, chain, find, own_range, snapshot
+from transcripts import chain, find
+from transcript_entries import Refused, own_range, snapshot
 
 UNEXERCISED_DAYS = 7
 """The days since its last move into `deferred` from which a `validation`

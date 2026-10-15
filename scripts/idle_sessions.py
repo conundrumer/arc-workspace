@@ -20,7 +20,8 @@ from controlled_markdown import mctx
 from ticket_numbers import SESSIONS, indexes, link_new, session_line, staged
 from ticketing.vocabulary import SETTLED, Status
 from state_reads import stat_read
-from transcripts import Refused, mains_named, project_dirs, session_directory, session_subagents
+from transcripts import mains_named, project_dirs, session_directory, session_subagents
+from transcript_entries import Refused
 
 MAIN = "main"
 

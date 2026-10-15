@@ -9,7 +9,8 @@ from operator_reads import (
     read_operator,
 )
 from run_reads import context_size
-from transcripts import Refused, entries_back, find
+from transcripts import find
+from transcript_entries import Refused, entries_back
 from tree_reads import main_tree, scratch
 
 from controlled_markdown import mctx

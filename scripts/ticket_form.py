@@ -11,7 +11,7 @@ from ticket_numbers import ticket_number
 from ticket_vocabulary import filer_kinds, ticked
 from ticketing.text import HEADING_MARK, heading, kind_sections
 from ticketing.vocabulary import Kind
-from transcripts import Refused
+from transcript_entries import Refused
 
 FRONT = r"---\nkind: (?P<kind>\S+)\n(?P<fields>(?:[a-z-]+: .*\n)*)---\n"
 

@@ -59,7 +59,7 @@ def bounds(path: Path) -> Bounds | None:
     at `path` gives, or None where that line gives none: the caller is no
     trial."""
     from run_reads import message_text
-    from transcripts import entries_forward
+    from transcript_entries import entries_forward
 
     first = next((e for e in entries_forward(path) if e.get("type") == "user"), None)
     if first is None:

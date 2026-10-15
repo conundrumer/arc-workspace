@@ -13,7 +13,7 @@ from state_reads import stat_of, state_cache
 from ticket_log import (CLOSED_BY_LINE, WAIT, Wait, held_log, holder_of, log_lines, resolution_of,
                         waited, waited_change)
 from ticket_numbers import matched_number
-from transcripts import Refused
+from transcript_entries import Refused
 
 from operations.roles import Role, editors_of
 from operations.state import LogLine, Ticket, Unread

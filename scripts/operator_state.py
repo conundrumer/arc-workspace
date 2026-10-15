@@ -29,7 +29,8 @@ from state_reads import new_state
 from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
 from ticket_settle import to_settle
-from transcripts import Refused, entries_back, find, is_subagent
+from transcripts import find, is_subagent
+from transcript_entries import Refused, entries_back
 from tree_reads import (
     claims,
     code_review,

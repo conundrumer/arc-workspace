@@ -20,7 +20,7 @@ from ticketing.text import VALIDATION, heading
 from ticketing.times import stamp_time, utc_stamp
 from ticketing.vocabulary import Domain, Kind, Note, Resolution, Status, Verdict, Wait, note_opening
 from state_reads import file_text, stat_of, state_cache
-from transcripts import Refused
+from transcript_entries import Refused
 
 AGENT_ID = re.compile(AGENT_ID_FORM)
 

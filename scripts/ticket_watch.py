@@ -17,7 +17,8 @@ from ticket_log import line_time, log_lines, log_moves, read_ticket
 from ticket_numbers import TicketNumber
 from ticket_reads import editors_field
 from token_prices import span_cost
-from transcripts import Refused, find
+from transcripts import find
+from transcript_entries import Refused
 
 from controlled_markdown import mctx
 from operations.roles import Role

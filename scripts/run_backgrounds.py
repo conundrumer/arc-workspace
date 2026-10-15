@@ -10,7 +10,7 @@ from controlled_markdown import mctx
 from noted_reads import note_live, note_read
 from run_reads import BACKGROUND_TASK, blocks, in_background, notified, output_file
 from state_reads import is_file, mtime, resolved, state_cache
-from transcripts import Entry, Refused, epoch
+from transcript_entries import Entry, Refused, epoch
 
 # The keys of a call's result that give an id a notification of the call
 # gives.

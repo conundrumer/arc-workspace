@@ -19,6 +19,7 @@ from tests.conftest import script
 
 profile_runs = script("profile_runs")
 transcripts = sys.modules["transcripts"]
+transcript_entries = sys.modules["transcript_entries"]
 Part = sys.modules["run_records"].Part
 
 
@@ -235,6 +236,6 @@ def test_under(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         previous = profile_runs.previous_call(agents / f"agent-{op}.jsonl", op, [])
     finally:
         transcripts.new_state()
-    assert previous == profile_runs.Previous(transcripts.epoch(at(30)), op,
+    assert previous == profile_runs.Previous(transcript_entries.epoch(at(30)), op,
                                              frozenset([late]))
     assert sorted(transcripts.agent_id(p) for p in taken) == sorted([c2, g, late])

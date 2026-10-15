@@ -20,7 +20,8 @@ from operations.roles import GENERAL, GENERAL_ROLES, Role, described
 from run_profile import clock, minutes, one_line, percentile
 from run_records import Message, Part, Run
 from run_reads import parent_id
-from transcripts import Refused, is_subagent
+from transcripts import is_subagent
+from transcript_entries import Refused
 
 # The terms of the budget of a type or a role, which `profile_runs.py --help budget` states.
 BUDGET_FACTOR = 2

@@ -24,7 +24,8 @@ from ticketing.text import SECTIONS, heading, ticket_text  # noqa: E402
 from ticketing.times import TIME_FORM, stamp_time, utc_stamp  # noqa: E402
 from ticketing.vocabulary import COORDINATOR, Domain, Kind, Status  # noqa: E402
 from ticket_vocabulary import ticked  # noqa: E402
-from transcripts import Entry, Refused, epoch, find, read_entries  # noqa: E402
+from transcripts import find  # noqa: E402
+from transcript_entries import Entry, Refused, epoch, read_entries  # noqa: E402
 
 INVOCATION = "uv run python scripts/spans.py"
 
