@@ -69,7 +69,7 @@ HELP = mctx("""
         - Where it adds or changes a rule or a fact in the agent-facing documents, it has that section.
     - A `request` has `# <target>: <what the user asks for>` as its title, and the sections {request_sections} in place of {defect_headings}.
         - A `request` that a `change` serves also has, before `## Log`, a `{validation}` section: what a later run must show for its need to count as met.
-            - It may hold lines `- {exercised_field} <regular expression>`, the expression with no backticks, each of which matches a line of the transcript of a run that exercises the change. Where it holds none, any run exercises the change.
+            - It may hold lines `- {exercised_field} <regular expression>`, the expression with no backticks, each of which matches a line of the transcript of a run that exercises the change, and, for a change to code, no line of a run that only reads that code or its diff. Where it holds none, any run exercises the change.
                 - A transcript line is a JSON line, so the expression matches a quote or a backslash in its JSON escape.
             - Where a command exits 0 only where the need is met, it holds one line `- {command_field} <command>`, the command in backticks with nothing after them, and otherwise a statement that an agent judges against a run.
     - `<domain>` is one of {domains}, and `<subject>` is the id of the thing it names: a task id for `task`, a ticket's number for `change` and `ticket`, a commit hash for `commit`, an agent id for `agent`.
