@@ -67,9 +67,7 @@ from solver.witnessed_cases import taken
 from solver.problems import (
     Fault,
 )
-from solver.witness import (
-    Undefined,
-)
+from solver.undefined import Undefined
 
 
 @dataclass(frozen=True)

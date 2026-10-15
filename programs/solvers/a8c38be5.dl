@@ -115,7 +115,11 @@
 // A piece and a side.
 .type Lean = [fill: FillColor, b: Box, d: Dir]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type TileOriginValue = [d: DiagDir]
+
+.type OpenValue = [tile_origin: TileOriginValue]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -252,8 +256,6 @@ mark(Fc, B, P) :- fill.value(Fc, _), parse.window_color($U(), B, P, Col), !fill.
 // The pieces each parse reads.
 .decl piece(sz: PieceSize, pc: PieceParse, b: Box)
 
-// A parse that is undefined on this input.
-.decl torn(sz: PieceSize, pc: PieceParse)
 
 // The pieces a case places, before and after it drops the unmarked ones.
 .decl candidate(sz: PieceSize, fc: FillColor, pc: PieceParse, ff: FillFree, b: Box)
@@ -281,48 +283,61 @@ points(Fc, Dr, B, S) :-
              dr: Direction, b: Box, s: Position)
 placed(Sz, Fc, Pc, Ff, Um, Dr, B, S) :- member(Sz, Fc, Pc, Ff, Um, B), points(Fc, Dr, B, S).
 
-.decl vacant(sz: PieceSize, fc: FillColor, pc: PieceParse, ff: FillFree, um: Unmarked,
-             dr: Direction, s: Position)
-
 // The color of a block that no piece points to.
 .decl empty_color(e: EmptyBlock, fc: FillColor, col: Color)
 
-out(P, Col, [Pc, Ff, Um, Dr, E, Fc, Sz]) :-
-    impl_choice([Pc, Ff, Um, Dr, E, Fc, Sz]), !torn(Sz, Pc),
-    ( placed(Sz, Fc, Pc, Ff, Um, Dr, B, S), parse.window_color($U(), B, P_inner, Col)
-    ; vacant(Sz, Fc, Pc, Ff, Um, Dr, S), side(Sz, K), parse.frame.cell(K, P_inner),
-      empty_color(E, Fc, Col) ),
-    concat_2d(S, P_inner, 0, P).
+// The cells a vacant block shows.
+.decl empty_cell(e: EmptyBlock, fc: FillColor, sz: PieceSize, p_inner: Position, col: Color)
+empty_cell(E, Fc, Sz, P_inner, Col) :-
+    empty_color(E, Fc, Col), side(Sz, K), parse.frame.cell(K, P_inner).
 
 // --- $WindowParse ---
 piece(Sz, $WindowParse(), B) :- window(Sz, B).
 
-vacant(Sz, Fc, $WindowParse(), Ff, Um, Dr, S) :-
+// The blocks no piece is put in.
+.decl vacant(sz: PieceSize, fc: FillColor, ff: FillFree, um: Unmarked, dr: Direction,
+             s: Position)
+vacant(Sz, Fc, Ff, Um, Dr, S) :-
     impl_choice([$WindowParse(), Ff, Um, Dr, _, Fc, Sz]), params.slot(S),
     !placed(Sz, Fc, $WindowParse(), Ff, Um, Dr, _, S).
+
+out(P, Col, [$WindowParse(), Ff, Um, Dr, E, Fc, Sz], [nil]) :-
+    impl_choice([$WindowParse(), Ff, Um, Dr, E, Fc, Sz]),
+    ( placed(Sz, Fc, $WindowParse(), Ff, Um, Dr, B, S), parse.window_color($U(), B, P_inner, Col)
+    ; vacant(Sz, Fc, Ff, Um, Dr, S), empty_cell(E, Fc, Sz, P_inner, Col) ),
+    concat_2d(S, P_inner, 0, P).
 
 // --- $TileParse ---
 // The pieces each open origin cuts.
 .decl tile_piece(sz: PieceSize, o: DiagDir, p: Position, b: Box)
 tile_piece(Sz, O, P, B) :- side(Sz, N), params.tile_origin(O), parse.tile_piece($U(), N, O, P, B).
 
-torn(Sz, $TileParse()) :-
+// The cut from origin o is undefined on this input.
+.decl torn(sz: PieceSize, o: DiagDir)
+torn(Sz, O) :-
     side(Sz, N), params.tile_origin(O), parse.corner($U(), N, O, P),
     !tile_piece(Sz, O, P, _).
 
 piece(Sz, $TileParse(), B) :- tile_piece(Sz, _, _, B).
 
-// The blocks each open origin puts a piece in. The grids of the origins lie on
-// one frame, so a cell where two origins differ holds two colors, and a block is
-// vacant when some origin puts no piece in it.
+// The pieces each open origin puts in each block.
 .decl filled(sz: PieceSize, fc: FillColor, ff: FillFree, um: Unmarked, dr: Direction,
-             o: DiagDir, s: Position)
-filled(Sz, Fc, Ff, Um, Dr, O, S) :-
+             o: DiagDir, b: Box, s: Position)
+filled(Sz, Fc, Ff, Um, Dr, O, B, S) :-
     placed(Sz, Fc, $TileParse(), Ff, Um, Dr, B, S), tile_piece(Sz, O, _, B).
 
-vacant(Sz, Fc, $TileParse(), Ff, Um, Dr, S) :-
+// The blocks each open origin puts no piece in.
+.decl unfilled(sz: PieceSize, fc: FillColor, ff: FillFree, um: Unmarked, dr: Direction,
+               o: DiagDir, s: Position)
+unfilled(Sz, Fc, Ff, Um, Dr, O, S) :-
     impl_choice([$TileParse(), Ff, Um, Dr, _, Fc, Sz]), params.tile_origin(O), params.slot(S),
-    !filled(Sz, Fc, Ff, Um, Dr, O, S).
+    !filled(Sz, Fc, Ff, Um, Dr, O, _, S).
+
+out(P, Col, [$TileParse(), Ff, Um, Dr, E, Fc, Sz], [[O]]) :-
+    impl_choice([$TileParse(), Ff, Um, Dr, E, Fc, Sz]), params.tile_origin(O), !torn(Sz, O),
+    ( filled(Sz, Fc, Ff, Um, Dr, O, B, S), parse.window_color($U(), B, P_inner, Col)
+    ; unfilled(Sz, Fc, Ff, Um, Dr, O, S), empty_cell(E, Fc, Sz, P_inner, Col) ),
+    concat_2d(S, P_inner, 0, P).
 
 // --- $FillFreeCenter ---
 candidate(Sz, Fc, Pc, $FillFreeCenter(), B) :- piece(Sz, Pc, B), fill.value(Fc, _).

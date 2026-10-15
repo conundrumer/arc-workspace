@@ -15,7 +15,7 @@ from engine.program import (
 )
 from engine.program import term_value, typed_value
 from souffle.index import Level, Tree
-from souffle.text import prefixed, split_top
+from souffle.text import NIL_WORD, prefixed, split_top
 
 
 class NotConstant(Exception):
@@ -105,6 +105,7 @@ def _primitive(text: str, kind: Primitive) -> Value | None:
 _PRINTED = ValueReading[str](
     primitive=_primitive,
     record=_record,
+    nil=lambda text: text == NIL_WORD,
     constructor=_constructor)
 """A value as Souffle prints it: a symbol bare, a record in brackets, a
 constructor with its prefix and, where it has fields, its argument

@@ -111,13 +111,13 @@ from solver.problems import (
     WitnessFileRole,
 )
 from solver.witnessed_cases import constructor_denoted
+from solver.undefined import Undefined
 from solver.witness import (
     AssignRows,
     Entry,
     Groups,
     RejectedOutput,
     Resolutions,
-    Undefined,
 )
 
 

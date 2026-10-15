@@ -887,3 +887,17 @@ Under the 2026-09-30 entry, "the cases the tool runs are the witnessed ones", a 
 > "the checks also report a Fit failure of any case on the task's pairs, from the runs witnessed() already makes; this replaces the part of the 2026-09-30 ruling that gives cases not witnessed no finding."
 
 This settled that a case whose output on a pair's input of the task is no candidate of that pair is witnessed, whatever branches it takes, so the pair run fails the pair at that case, and `witness --every-case` reports such a dropped case as failing Fit.
+
+## 2026-10-14 — a test pair is scored by two attempts, and open values give their union
+
+Fit judged a test pair as it judged a train pair, by equality with the pair's candidate, and Open parameters read the model at the open values as the intersection of their outputs. On a test input where two open values gave different grids, the output was undefined, where the competition's two attempts per test output would hold both grids: a64e4611's `quorum` is open with the values 3 to 8, and its test 0 has two candidates. The user approved the coordinator's option "The capped union for open values on test inputs", then asked of the proposed text:
+
+> "proposed text?"
+
+> "is all this text needed?"
+
+> "2"
+
+The "2" picked the reading "Split the Fit definition into a train line and a test line?".
+
+This settled that the model's output at the open values is the union of the grids each open value gives, and that a test pair fits where the output holds at most two grids, one of them in the pair's candidate, while a train pair still fits only where the output is its candidate. On a train pair, open values that give different grids leave a union that is no candidate, so the case fails Fit there as it did under the intersection. The cap of two stands in Fit alone, so it covers a tie on a test pair as well.

@@ -143,7 +143,12 @@
 // A line of a window, across the pair axis.
 .type WinLine = [w: Box, line: Position]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type BandSenseValue = [s: Sense]
+.type FlushValue = [d: Dir]
+
+.type OpenValue = [band_sense: BandSenseValue, flush: FlushValue]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     // The axis the two blocks of a pair lie along.
@@ -340,10 +345,20 @@ stack_dir(D) :- params.pair_axis(A0), perp(A0, A), axis_of(D, A).
 // Each line of each window, and its place in the stack along the stack axis.
 .decl slot(r: BlockReading, m: MarkerSource, c: CrowdedRows, w: Box, line: Position, p_row: Position)
 
+// The same at band sense S.
+.decl turned_slot(r: BlockReading, m: MarkerSource, c: CrowdedRows, s: Sense, w: Box,
+                  line: Position, p_row: Position)
+
 // Each window cell: its line, its place along the pair axis in the output,
 // and its color.
+// @ignore: single-consumer — the out clause reads it beside flush_placed, which
+//  holds the rows of the cases that read params.flush
 .decl placed(r: BlockReading, m: MarkerSource, c: CrowdedRows, wd: Widths, w: Box,
              line: Position, p_col: Position, col: Color)
+
+// The same at flush edge E.
+.decl flush_placed(r: BlockReading, m: MarkerSource, c: CrowdedRows, wd: Widths, e: Dir, w: Box,
+                   line: Position, p_col: Position, col: Color)
 
 // The blocks break the case's reading.
 .decl defect(ch: Choice)
@@ -352,9 +367,14 @@ stack_dir(D) :- params.pair_axis(A0), perp(A0, A), axis_of(D, A).
 defect([R, M, L, C, Wd]) :-
     impl_choice([R, M, L, C, Wd]), span(R, M, C, B1, B2, _), !window.box([R, M, C, B1, B2], _).
 
-out(P_out, Col, [R, M, L, C, Wd]) :-
+out(P_out, Col, [R, M, L, C, Wd], [V_s, V_e]) :-
     impl_choice([R, M, L, C, Wd]),
-    placed(R, M, C, Wd, W, Line, P_col, Col), slot(R, M, C, W, Line, P_row),
+    ( placed(R, M, C, Wd, W, Line, P_col, Col), V_e = nil
+    ; flush_placed(R, M, C, Wd, E, W, Line, P_col, Col), V_e = [E]
+    ),
+    ( slot(R, M, C, W, Line, P_row), V_s = nil
+    ; turned_slot(R, M, C, S, W, Line, P_row), V_s = [S]
+    ),
     compose(P_row, P_col, P_out),
     !defect([R, M, L, C, Wd]).
 
@@ -434,7 +454,7 @@ window_stack.before([R, M, C, D, S], [W1, L1], [W2, L2]) :-
     ; W1 = W2, dist(L1, D, K1), dist(L2, D, K2), K1 < K2                // one window: line nearer D
     ).
 
-slot(R, M, C, W, Line, P_row) :-
+turned_slot(R, M, C, S, W, Line, P_row) :-
     window_stack.rank([R, M, C, D, S], [W, Line], K1),
     window_stack.rank_desc([R, M, C, D, S], [W, Line], K2),
     axis_inset(D, K1, K2, P_row).
@@ -461,9 +481,9 @@ landing(R, M, C, W, E, P_col, Q) :-
     window_cell(R, M, C, W, P_col, _, _),
     params.flush(E), column(R, M, C, Q), same_dist(E, P_col, Q).
 
-placed(R, M, C, $PadWidest(), W, Line, Q, Col) :-
-    window_cell(R, M, C, W, P_col, Line, Col), landing(R, M, C, W, _, P_col, Q).
-placed(R, M, C, $PadWidest(), W, Line, Q, Col) :-
+flush_placed(R, M, C, $PadWidest(), E, W, Line, Q, Col) :-
+    window_cell(R, M, C, W, P_col, Line, Col), landing(R, M, C, W, E, P_col, Q).
+flush_placed(R, M, C, $PadWidest(), E, W, Line, Q, Col) :-
     window_line(R, M, C, W, Line), params.flush(E), column(R, M, C, Q),
     !landing(R, M, C, W, E, _, Q), params.bg(Col).                     // a place no cell lands on
 

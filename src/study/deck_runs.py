@@ -31,7 +31,8 @@ from solver.names import denote, model_of
 from solver.problems import Fault, InSolver, NameFault, WitnessFileRole
 from solver.solve import assignment, outcomes
 from solver.outcome import Grids
-from solver.witness import Entry, RejectedOutput, Undefined, WitnessFile
+from solver.undefined import Undefined
+from solver.witness import Entry, RejectedOutput, WitnessFile
 from study.card_runs import run_failure_text
 from study.deck_spec import CardSpec, Option
 

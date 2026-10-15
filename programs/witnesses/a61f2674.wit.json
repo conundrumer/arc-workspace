@@ -195,7 +195,7 @@
         [0,3,0,3,0,3,0,3,0]
       ]
     }, {
-      "cases": ["$DeriveBarColor","bar_color=RarestColor"],
+      "cases": ["bar_color=RarestColor","$DeriveBarColor"],
       "grid": [
         [0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,1,0],
@@ -280,7 +280,7 @@
         [3,0,3,0,3,0,3,0,3]
       ]
     }, {
-      "cases": ["$DeriveBarColor","bar_color=RarestColor"],
+      "cases": ["bar_color=RarestColor","$DeriveBarColor"],
       "grid": [
         [0,0,0,0,0,0,0,0,0],
         [0,0,1,0,0,0,0,0,0],
@@ -313,14 +313,6 @@
         [1,0,2]
       ]
     }, {
-      "cases": [
-        "$Area & bar_color=RarestColor",
-        "$ComponentSpan & bar_color=RarestColor",
-        "$EightConnected & bar_color=RarestColor",
-        "$TopExtent & bar_color=RarestColor"
-      ],
-      "grid": null
-    }, {
       "cases": ["$ColumnCount & bar_color=RarestColor"],
       "grid": [
         [5,1,2],
@@ -328,6 +320,24 @@
         [5,1,5],
         [5,1,5],
         [5,1,5]
+      ]
+    }, {
+      "cases": ["$ComponentSpan & bar_color=RarestColor"],
+      "grid": [
+        [
+          [5,1,1],
+          [5,1,5],
+          [5,1,5],
+          [5,1,5],
+          [5,1,5]
+        ],
+        [
+          [5,2,2],
+          [5,2,5],
+          [5,2,5],
+          [5,2,5],
+          [5,2,5]
+        ]
       ]
     }]
   }]

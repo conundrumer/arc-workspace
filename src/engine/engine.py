@@ -334,7 +334,7 @@ type Part = Term | Atom | BodyLiteral | Value | RelationDecl | GridLayout
 class Classed:
     """A program with the rules `Engine.classify` adds: `rows` holds the
     classified relation's rows at each class's representative alone, and
-    `classes` each value of the column with its class's representative."""
+    `classes` each key with its class's representative."""
 
     program: Program
     rows: RelationName
@@ -415,12 +415,14 @@ class Engine(Protocol):
         ...
 
     def classify(self, program: Program, relation: RelationName,
-                 column: int) -> Classed:
-        """`program` with rules that class the values `relation`, a
-        top-level relation, holds in `column` by its rows at each: two
-        values are of one class where the relation holds the same rows at
+                 key: tuple[int, ...]) -> Classed:
+        """`program` with rules that class the keys of `relation`, a
+        top-level relation, by its rows at each: a key is the values a row
+        holds in the columns `key`, the one value where `key` is one
+        column, and a record of them, in `key`'s order, where it is more.
+        Two keys are of one class where the relation holds the same rows at
         both, the other columns' values. A run of the result then compares
-        the values in the run and prints one value's rows per class.
+        the keys in the run and prints one key's rows per class.
         Raises `ValueError` where no top-level declaration answers
         `relation`."""
         ...

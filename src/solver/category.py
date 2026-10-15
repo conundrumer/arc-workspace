@@ -39,6 +39,7 @@ class Category(StrEnum):
     RANGE = "range"
     ORD = "ord"
     BANNED_TYPE = "banned type"
+    OPEN_VALUE_FIELD = "open value field"
     DEMONSTRATED_CHOICE = "demonstrated choice"
     PARAMS_DATA = "params data"
     RECURSION = "recursion"

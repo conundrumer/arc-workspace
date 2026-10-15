@@ -91,20 +91,23 @@ from solver.per_case import (
 )
 from solver.restricted import restricted
 from solver.stored_value import StoredValue, stored_value
-from solver.out_grids import Place, case_grids, out_columns, rows_by_base
+from solver.open_values import field_readings, open_fields
+from solver.out_grids import (
+    FieldValues,
+    OutColumns,
+    Place,
+    by_value,
+    case_grids,
+    open_grids,
+    out_columns,
+    rows_by_base,
+)
 from solver.vocabulary import (
     INPUT,
     OUTPUT,
 )
-from solver.witness import (
-    AnchoredGrid,
-    AssignArg,
-    AssignRows,
-    AssignValue,
-    NoDerivedValue,
-    NoOutput,
-    Undefined,
-)
+from solver.undefined import NoDerivedValue, NoOutput, Undefined
+from solver.witness import AnchoredGrid, AssignArg, AssignRows, AssignValue
 
 
 class StoredValues:
@@ -130,29 +133,36 @@ class StoredValues:
 @dataclass(frozen=True)
 class GroupRun:
     """One run `outcomes` makes: the cases that read their grids from it,
-    in the order given, and its result, or why the group has none."""
+    in the order given, its result, or why the group has none, and, where
+    `out` has an open-value column, each case's values at the fields of
+    `OpenValue` on the run (`solver.open_values.open_fields`), in the order
+    of the cases."""
 
     cases: tuple[Case, ...]
     result: RunResult | Undefined
+    fields: tuple[FieldValues, ...] = ()
+
+    def at(self, i: int) -> FieldValues:
+        """The field values of the run's case `i`; none where `out` has no
+        open-value column."""
+        return self.fields[i] if self.fields else ()
 
 
 @dataclass(frozen=True)
 class RunColumns:
-    """How a case reads its grids from a group's run: `out`'s case and
-    resolution columns (`out_columns`), and, where the run classes the
-    cases (`classed`), the relation of the representatives' rows and the
-    relation of the classes."""
+    """How a case reads its grids from a group's run: `out`'s columns
+    (`out_columns`), and, where the run classes the cases (`classed`), the
+    relation of the representatives' rows and the relation of the
+    classes."""
 
-    case: int | None
-    resolution: int | None
+    out: OutColumns
     classed: tuple[RelationName, RelationName] | None = None
 
 
 @dataclass(frozen=True)
 class GroupRuns:
-    """The runs `outcomes` makes on one input, in its order, and `out`'s
-    case and resolution columns (`out_columns`), by which each case reads
-    its grids from its run."""
+    """The runs `outcomes` makes on one input, in its order, and how each
+    case reads its grids from its run."""
 
     columns: RunColumns
     runs: tuple[GroupRun, ...]
@@ -182,7 +192,7 @@ def read_run(columns: RunColumns, run: GroupRun) -> dict[Case, Outcome]:
     if not isinstance(result, Tuples):
         return dict.fromkeys(run.cases, result)
     read = _read_of(result, columns)
-    return {c: read.grids(columns.resolution, c.base) for c in run.cases}
+    return {c: read.grids(c.base, run.at(i)) for i, c in enumerate(run.cases)}
 
 
 def read_case(columns: RunColumns, run: GroupRun, case: Case) -> Outcome:
@@ -190,7 +200,8 @@ def read_case(columns: RunColumns, run: GroupRun, case: Case) -> Outcome:
     result = run.result
     if not isinstance(result, Tuples):
         return result
-    return _read_of(result, columns).grids(columns.resolution, case.base)
+    return _read_of(result, columns).grids(case.base,
+                                           run.at(run.cases.index(case)))
 
 
 def runs_on(engine: Engine, solver: Solver, cases: Sequence[Case],
@@ -201,15 +212,16 @@ def runs_on(engine: Engine, solver: Solver, cases: Sequence[Case],
     input, all at once, since building a `@store` branch's program runs
     the program too; each result is read by its place in the order of
     the inputs and the groups."""
-    case_col, res_col = out_columns(solver.program)
+    out = out_columns(solver.program)
     groups = case_groups(solver, cases)
     unread = _unread_units(engine, solver, groups)
-    columns = RunColumns(case_col, res_col)
+    fields_at = _FieldsAt(engine, solver) if out.open is not None else None
+    columns = RunColumns(out)
     outputs = [OUTPUT]
-    if case_col is not None:
+    if out.case is not None or out.open is not None:
         cls = classed(engine, solver.program)
         solver = replace(solver, program=cls.program)
-        columns = RunColumns(case_col, res_col, (cls.rows, cls.classes))
+        columns = RunColumns(out, (cls.rows, cls.classes))
         outputs = [cls.rows, cls.classes]
     derives = any(isinstance(b, DeriveBranch) for g in groups
                   for b in g[0].branches)
@@ -232,8 +244,36 @@ def runs_on(engine: Engine, solver: Solver, cases: Sequence[Case],
     got: list[list[GroupRun]] = [[] for _ in inputs]
     for (k, members, _drop), result in zip(tasks, at_once(ran, tasks),
                                            strict=True):
-        got[k].append(GroupRun(tuple(members), result))
+        fields = () if fields_at is None or not isinstance(result, Tuples) \
+            else tuple(fields_at.of(c, k, inputs[k][1], proposals[k])
+                       for c in members)
+        got[k].append(GroupRun(tuple(members), result, fields))
     return [GroupRuns(columns, tuple(g)) for g in got]
+
+
+class _FieldsAt:
+    """`solver.open_values.open_fields` of each case on each input, computed
+    once, the derived values those the input's probe gives each
+    `@derive` branch's proposer, as `group_program` fixes them."""
+
+    def __init__(self, engine: Engine, solver: Solver) -> None:
+        self.engine = engine
+        self.solver = solver
+        self.readings = field_readings(solver)
+        self.got: dict[tuple[Case, int], FieldValues] = {}
+
+    def of(self, case: Case, k: int, assign: Assignment,
+           proposals: "Proposals | RunFailure | None") -> FieldValues:
+        key = (case, k)
+        got = self.got.get(key)
+        if got is None:
+            derived = {} if not isinstance(proposals, Proposals) else {
+                b.parameter: proposals.values.get(b.proposer, ())
+                for b in case.branches if isinstance(b, DeriveBranch)}
+            got = self.got[key] = open_fields(self.engine, self.solver,
+                                              self.readings, case, assign,
+                                              derived)
+        return got
 
 
 def _unread_units(engine: Engine, solver: Solver,
@@ -344,7 +384,7 @@ def case_groups(solver: Solver, cases: Sequence[Case]
     `@store` branches, and each base alone where `out` has no case
     column."""
     shared = solver.choice is None \
-        or out_columns(solver.program)[0] is not None
+        or out_columns(solver.program).case is not None
     groups: dict[tuple[tuple[Branch, ...], Base | None], list[Case]] = {}
     for case in dict.fromkeys(cases):
         groups.setdefault((case.branches, None if shared else case.base),
@@ -353,47 +393,97 @@ def case_groups(solver: Solver, cases: Sequence[Case]
 
 
 def classed(engine: Engine, program: Program) -> Classed:
-    """`program` with the rules that class a run's cases by equal `out`
-    rows (`Engine.classify` of `out`'s case column), so that a run outputs
-    `out` at each class's representative alone and the
-    case-to-representative table, and the cases are compared in the run."""
-    case_col = out_columns(program)[0]
-    assert case_col is not None
-    return engine.classify(program, OUTPUT, case_col)
+    """`program` with the rules that class a run's keys by equal `out`
+    rows (`Engine.classify`), so that a run outputs `out` at each class's
+    representative alone and the key-to-representative table, and the keys
+    are compared in the run. A key is `out`'s case and open-value columns,
+    those of them `out` has."""
+    out = out_columns(program)
+    key = tuple(c for c in (out.case, out.open) if c is not None)
+    assert key
+    return engine.classify(program, OUTPUT, key)
 
 
 class _Read:
     """What one run's `out` gives: its rows by base, the margins of each
     position value (`_grid_of`), and the grids already read, by base.
-    `classes` gives each case's representative, whose rows `rows` holds,
-    for a run of `classed`."""
+    `classes` gives each key's representative (`classed`), whose rows
+    `rows` holds, for a run of `classed`; where a key holds an open value,
+    a case's grid at a combination of open values is read from the rows
+    of the representatives of its keys that hold there, once for each set
+    of representatives (`solver.out_grids.open_grids`)."""
 
-    def __init__(self, rows: Rows, case_col: int | None,
+    def __init__(self, rows: Rows, out: OutColumns,
                  classes: Mapping[Value, Value] | None = None) -> None:
         self.rows = rows
-        self.case_col = case_col
+        self.out = out
         self.classes = classes
-        self.by_base = rows_by_base(rows, case_col)
+        self.by_base = rows_by_base(rows, out.case)
         self.margins: dict[int, Place | None] = {}
-        self.read: dict[tuple[int | None, Value | None], Grids | Undefined] = {}
+        self.read: dict[tuple[Value | None, FieldValues],
+                        Grids | Undefined] = {}
         self.lock = threading.Lock()
+        self.opens: dict[Value | None, list[tuple[Value, Value]]] = {}
+        self.by_reps: dict[tuple[Value, ...], Grids | Undefined] = {}
+        self.rep_rows: dict[Value, list[Row]] | None = None
+        if classes is not None and out.open is not None:
+            for k, rep in classes.items():
+                base, value = _key_parts(out, k)
+                self.opens.setdefault(base, []).append((value, rep))
 
-    def grids(self, res_col: int | None, base: Base | None
+    def grids(self, base: Base | None, fields: FieldValues
               ) -> Grids | Undefined:
-        mine = base if self.case_col is not None else None
-        if self.classes is not None and mine is not None:
-            rep = self.classes.get(mine)
+        mine = base if self.out.case is not None else None
+        with self.lock:
+            got = self.read.get((mine, fields))
+            if got is None:
+                got = self.read[(mine, fields)] = self._grids(mine, fields)
+            return got
+
+    def _grids(self, mine: Value | None, fields: FieldValues
+               ) -> Grids | Undefined:
+        if self.classes is None:
+            return case_grids(self.out, self.rows if mine is None
+                              else self.by_base.get(mine, ()), self.margins,
+                              fields)
+        if self.out.open is None:
+            rep = self.classes.get(mine) if mine is not None else None
             if rep is None:
                 return Undefined(NoOutput())
-            mine = rep
-        key = (res_col, mine)
-        with self.lock:
-            got = self.read.get(key)
-            if got is None:
-                got = self.read[key] = case_grids(
-                    res_col, self.rows if mine is None
-                    else self.by_base.get(mine, ()), self.margins)
-            return got
+            return case_grids(self.out, self.by_base.get(rep, ()),
+                              self.margins, fields)
+        reps = self.opens.get(mine)
+        if not reps:
+            return Undefined(NoOutput())
+        if self.rep_rows is None:
+            self.rep_rows = self._by_key()
+        return open_grids(self.out.resolution, reps, self._rows_of, fields,
+                          self.margins, self.by_reps)
+
+    def _rows_of(self, rep: Value) -> Sequence[Row]:
+        assert self.rep_rows is not None
+        return self.rep_rows.get(rep, ())
+
+    def _by_key(self) -> dict[Value, list[Row]]:
+        """The rows of each representative key."""
+        assert self.out.open is not None
+        if self.out.case is None:
+            return by_value(self.rows, self.out.open)
+        out: dict[Value, list[Row]] = {}
+        for base, rows in self.by_base.items():
+            for value, mine in by_value(rows, self.out.open).items():
+                out[RecordValue((base, value))] = mine
+        return out
+
+
+def _key_parts(out: OutColumns, key: Value) -> tuple[Value | None, Value]:
+    """The base and the open value of a key of `classed`: a record of the
+    two where `out` has a case column, the open value alone otherwise."""
+    if out.case is None:
+        return None, key
+    assert isinstance(key, RecordValue)
+    base, value = key.fields
+    return base, value
 
 
 _READS: ByIdentity[Tuples, dict[RunColumns, _Read]] = ByIdentity()
@@ -407,9 +497,9 @@ def _read_of(result: Tuples, columns: RunColumns) -> _Read:
         rels = result.relations
         if columns.classed is not None:
             rows, classes = columns.classed
-            return _Read(rels[rows], columns.case,
+            return _Read(rels[rows], columns.out,
                          {r[0]: r[1] for r in rels[classes]})
-        return _Read(rels[OUTPUT], columns.case)
+        return _Read(rels[OUTPUT], columns.out)
 
     return _READS.keyed(result, columns, make)
 

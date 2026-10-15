@@ -45,6 +45,10 @@ TIEBREAK_RESOLUTION: Annotated[str,
            "`out` column of type "
            "`TiebreakResolution`.")] = "TiebreakResolution"
 """The type of `out`'s resolution column."""
+OPEN_VALUE: Annotated[str,
+    quotes("solver-file.md", "Cases",
+           "`out` takes a column of type `OpenValue`")] = "OpenValue"
+"""The type of `out`'s open-value column."""
 DEMONSTRATED_CHOICE: Annotated[str,
     quotes("solver-file.md", "Demonstrated choice",
            "`DemonstratedChoice` is the `Demonstrated` type argument of a "
@@ -74,8 +78,7 @@ INPUT = RelationName((), "in")
 """The input grid's cells (lib.dl, the runner contract)."""
 OUTPUT: Annotated[RelationName,
     quotes("solver-file.md", "Cases",
-           "A case's model reads its output grids from `out` at that "
-           "case")] = RelationName((), "out")
+           "A case's model reads from `out` at that case")] = RelationName((), "out")
 """The output grids' cells."""
 EX_IN = RelationName((), "ex_in")
 EX_OUT: Annotated[RelationName,

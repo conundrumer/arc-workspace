@@ -157,7 +157,7 @@ class FakeEngine(TextMethods):
         return self.runs(program, inputs, outputs)
 
     def classify(self, program: Program, relation: RelationName,
-                 column: int) -> Classed:
+                 key: tuple[int, ...]) -> Classed:
         raise NotImplementedError
 
     def expand(self, program: Program) -> Program:

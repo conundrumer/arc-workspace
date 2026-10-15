@@ -36,6 +36,7 @@ from cli.common import (
     command_solver,
     compile_failure,
     compiles,
+    open_value_off,
     engine,
     load_solver,
     missing,
@@ -48,7 +49,7 @@ from solver.aggregate import Solver, has_determine
 from solver.problems import Fault
 from solver.outcome import Assignment, Outcome
 from solver.solve import outcomes
-from solver.pair_runs import CaseOnPair, candidates, examples, matching
+from solver.pair_runs import CaseOnPair, TaskSection, candidates, examples, matching
 from souffle import SouffleEngine
 
 COLLISIONS = frozenset({Category.RESERVED_NAME, Category.SHADOWED_TYPE,
@@ -166,6 +167,11 @@ def check_one(eng: SouffleEngine, solver: Solver, hints: bool) -> Checked:
     """The pairs, the lint and the determination of one solver: the run
     procedure.md asks for under "Develop", "Run the solver"."""
     runs = Runs(eng, solver, LIMITS)
+    off = open_value_off(eng, solver)
+    if off:
+        return Checked(solver.stem, 0, len(list(examples(solver.given_task))),
+                       False, (text.OPEN_VALUE_UNRUN,), (), tuple(off), (),
+                       (), has_determine(solver), 0.0, 0.0, solver)
     t0 = time.perf_counter()
     ok, total, lines, failing = _pairs(solver, runs)
     pair_secs = time.perf_counter() - t0
@@ -377,6 +383,7 @@ class PairsFault(Enum):
     NO_FORM = "no form"
     NO_LIST = "no list"
     NONE = "none"
+    LIST_OUTPUT = "list output"
 
 
 class PairsFileError(Exception):
@@ -395,6 +402,7 @@ PAIRS_TEXT = {
     PairsFault.NO_FORM: text.PAIRS_NO_FORM,
     PairsFault.NO_LIST: text.PAIRS_NO_LIST,
     PairsFault.NONE: text.PAIRS_NONE,
+    PairsFault.LIST_OUTPUT: text.PAIRS_LIST_OUTPUT,
 }
 """The sentence of each pairs-file fault, from its parts."""
 
@@ -408,7 +416,9 @@ def _pairs_file(path: Path) -> list[tuple[PairSection, list[Example | Probe]]]:
     pair is (`arc.task.read_pair`): a bare list of pairs is the one
     section `arc.task.LIST_SECTION`, and an object holds the sections a
     task file holds, beside which it may hold the keys that describe a
-    task, unread."""
+    task, unread. A pair of the bare list that holds an output is the fault
+    `PairsFault.LIST_OUTPUT`: an output is judged against a train or a test
+    pair's candidates (`solver.pair_runs.matching`)."""
     try:
         data = json.loads(path.read_text())
     except json.JSONDecodeError as e:
@@ -428,8 +438,12 @@ def _pairs_file(path: Path) -> list[tuple[PairSection, list[Example | Probe]]]:
     for section, pairs in found:
         if not isinstance(pairs, list):
             raise PairsFileError(PairsFault.NO_LIST, section=section)
-        out.append((section, [read_pair(section, i, e)
-                              for i, e in enumerate(pairs)]))
+        read = [read_pair(section, i, e) for i, e in enumerate(pairs)]
+        if section == LIST_SECTION and any(isinstance(e, Example)
+                                           for e in read):
+            raise PairsFileError(PairsFault.LIST_OUTPUT,
+                                 sections=spelled(PAIR_SECTIONS))
+        out.append((section, read))
     if not any(pairs for _, pairs in out):
         raise PairsFileError(PairsFault.NONE)
     return out
@@ -474,14 +488,17 @@ def cmd_pairs(arg: str, path: str) -> int:
                 print("\n".join(run_pairs.probe_lines(
                     solver, name, [(c, got[c]) for c in solver_cases])))
                 continue
-            cases = tuple(_on_pair(c, got[c], e) for c in solver_cases)
+            cases = tuple(_on_pair(c, got[c], TaskSection(kind), e)
+                          for c in solver_cases)
             if not run_pairs.passed(cases):
                 failed = True
             print("\n".join(run_pairs.pair_lines(solver, name, cases, e)))
     return 1 if failed else 0
 
 
-def _on_pair(case: Case, o: Outcome, ex: Example) -> CaseOnPair:
-    """What `case` gives on a pair, and the candidates its grids match,
-    as `solver.pair_runs.pairs` judges a case of the solver."""
-    return CaseOnPair(case, o, matching(candidates(ex), o))
+def _on_pair(case: Case, o: Outcome, section: TaskSection, ex: Example
+             ) -> CaseOnPair:
+    """What `case` gives on a pair of `section`, and the candidates its
+    grids match, as `solver.pair_runs.pairs` judges a case of the
+    solver."""
+    return CaseOnPair(case, o, matching(candidates(section, ex), o))

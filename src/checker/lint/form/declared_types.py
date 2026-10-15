@@ -48,6 +48,7 @@ from solver.vocabulary import (
     DEMONSTRATED_CHOICE,
     DEMONSTRATION_CONSISTENCY,
     DETERMINE,
+    OPEN_VALUE,
     PARSE,
     TIEBREAK_RESOLUTION,
 )
@@ -59,13 +60,15 @@ from checker.lint.form.case_type import choice_adts
 @quotes("solver-file.md", "Types",
         "a record used as a type argument of a generic comp")
 @quotes("solver-file.md", "Types",
+        "`OpenValue` for the open values the output depends on")
+@quotes("solver-file.md", "Types",
         "`DemonstratedChoice`, per [Demonstrated choice]")
 @quotes("solver-file.md", "Demonstrated choice",
         "`DemonstratedChoice` is the `Demonstrated` type argument of a "
         "`DemonstrationConsistency` instance.")
 def check_banned_type(solver: Solver, runs: Runs) -> list[Finding]:
     """A type the solver declares that is none of the types a solver may
-    define: the types `Choice` and `TiebreakResolution` reach, the types
+    define: the types `Choice`, `TiebreakResolution` and `OpenValue` reach, the types
     `DemonstratedChoice` reaches where an instance of the lib's
     `DemonstrationConsistency` takes it as its `Demonstrated` type
     argument, and the records an instance takes as a type argument with
@@ -92,7 +95,7 @@ def check_banned_type(solver: Solver, runs: Runs) -> list[Finding]:
                          if isinstance(r, admits) and r.id not in sanctioned)
 
     sanctioned: set[DeclId] = set()
-    sanction([d for n in (CHOICE, TIEBREAK_RESOLUTION)
+    sanction([d for n in (CHOICE, TIEBREAK_RESOLUTION, OPEN_VALUE)
               if (d := resolved(TypeName((), n), TOP)) is not None], object)
     demonstrated = demonstrated_choice(solver, runs)
     if demonstrated is not None and demonstrated.id in {

@@ -66,6 +66,7 @@ from engine.program import (
     Unit,
     UnitId,
     Variable,
+    NilTerm,
     Wildcard,
 )
 from souffle.layout import (
@@ -80,7 +81,7 @@ from souffle.layout import (
     Text,
 )
 from souffle.lexer import LINE_DIRECTIVE_RE, LexError, RawComment, Token, lex
-from souffle.text import GRID_FORM_SEGMENT, PREFIX
+from souffle.text import GRID_FORM_SEGMENT, NIL_WORD, PREFIX
 
 _FORM_OF_SEGMENT = {v: k for k, v in GRID_FORM_SEGMENT.items()}
 GRID_RE = re.compile(r"GRID_(STAMP_)?("
@@ -982,6 +983,8 @@ class _Parser:
                 return IntrinsicCall(INTRINSICS[t.text], self.arg_list())
             if t.text in self.b.defined:
                 return DefinedName(t.text)
+            if t.text == NIL_WORD:
+                return NilTerm()
             return Variable(t.text)
         raise self.fail(t, f"unexpected token {t.text or 'the end'!r} in term")
 

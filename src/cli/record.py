@@ -31,7 +31,8 @@ from solver import witness
 from solver.model import Case
 from solver.aggregate import Solver
 from solver.problems import Fault, InWitnessFile, WitnessFileRole
-from solver.witness import Entry, Groups, RejectedOutput, WitnessFile, grouped
+from solver.witness import Entry, Groups, RejectedOutput, WitnessFile
+from solver.witness_groups import grouped
 from solver.witness_changes import JudgedReplaced, PartitionChanged, rerecorded
 
 # A run of the solver's cases on an entry's input

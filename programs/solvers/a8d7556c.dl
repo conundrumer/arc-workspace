@@ -37,7 +37,11 @@
 
 .type Choice = [overlap: Overlap, qualify: Qualify]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type StartCornerValue = [d: DiagDir]
+
+.type OpenValue = [start_corner: StartCornerValue]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     // @derive RarestColor: variant derived
@@ -247,7 +251,7 @@ parse.cell($U(), P, Col) :- in(P, Col).
 
 // Every scan's claims fill, so a cell two scans claim differently takes two
 // colors.
-out(P, Col, Ch) :-
+out(P, Col, Ch, [nil]) :-
     in(P, C), parse.greedy(Ch), parse.scan($U(), D, A),
     ( parse.claimed_cell($U(), Ch, D, A, P), params.fill(Col)
     ; !parse.claimed_cell($U(), Ch, D, A, P), Col = C
@@ -272,7 +276,7 @@ dominated(Q, B) :-
 .decl kept_cell(q: Qualify, p: Position)
 kept_cell(Q, P) :- maximal(Q, B), !dominated(Q, B), parse.rect_cell($U(), B, P).
 
-out(P, Col, [$DropDominated(), Q]) :-
+out(P, Col, [$DropDominated(), Q], [nil]) :-
     in(P, C), qualify_choice(Q),
     ( kept_cell(Q, P), params.fill(Col)
     ; !kept_cell(Q, P), Col = C
@@ -280,7 +284,7 @@ out(P, Col, [$DropDominated(), Q]) :-
 
 // --- $AxisFirst & $ThicknessTwo ---
 
-out(P, Col, [$AxisFirst(), $ThicknessTwo()]) :-
+out(P, Col, [$AxisFirst(), $ThicknessTwo()], [[D]]) :-
     in(P, C), params.start_corner(D),
     ( parse.strip_fill($U(), D, P), params.fill(Col)
     ; !parse.strip_fill($U(), D, P), Col = C

@@ -51,7 +51,7 @@ from solver.pair_runs import CaseOnPair, PairId, PairRuns
 from solver.per_case import by_base, parameter_reading
 from solver.variant_limits import VariantBound
 from solver.vocabulary import COLOR
-from solver.witness import Undefined
+from solver.undefined import Undefined
 
 # A run that gives no result
 

@@ -115,7 +115,12 @@
     - Precise reading: a case's output is not the verdict's when its output on the grid differs from the output the verdict denotes: the output of the name's model for a name in one of the [Witness file](docs/handbook/solver-file.md#witness-file) forms, every case's for `other`, no case's for `any`.
 
 ### Cases
-- A case's model reads its output grids from `out` at that case, one grid per tiebreak resolution, and is undefined on an input where it reads no grid, or facts that describe no total grid.
+- A case's model reads from `out` at that case one grid per combination of a tiebreak resolution and one value of each `@open` relation of `OpenValue`, its output is the distinct grids it reads, and it is undefined on an input where some combination reads no grid, or facts that describe no total grid.
+    - A relation's values there are those the case stores, or those that the `@derive` branch the case takes on it derives on that input.
+    - Where the output of some case depends on an `@open` relation, `out` takes a column of type `OpenValue` before its `TiebreakResolution` column, or last where it has none, and each fact holds there the values of the `@open` relations it is derived at.
+    - `OpenValue` is a record with one field per `@open` relation the output of some case depends on, each field with that relation's name and of a record type the solver names for that relation, whose fields are the relation's columns that tell one open value from another, under the same names.
+        - `.type TieValue = [d: DiagAxis]`, `.type PickValue = [d: Dir]` and `.type OpenValue = [tie_dir: TieValue, pick_dir: PickValue]`.
+    - A fact whose derivation does not read an `@open` relation of `OpenValue` holds `nil` in that relation's field, which reads as every value of it, whether or not its case reads that relation.
 - A case's base is its `Choice` value, its branch at each point the `Choice` encodes; a case is a base with a branch at each `@derive` and `@store` point its base reads.
 - A case is witnessed when it is the concept case or stands for a branch's model, when its output on a pair's input of the task is no candidate of that pair, or when an input of the task or of the witness file shows it giving an output that no case taking only part of its non-concept branches gives, where undefined counts as an output.
     - The case that stands for a branch's model is that model where the model is a case, and otherwise the case that takes the branch and differs from the concept case at the fewest points.
@@ -162,6 +167,7 @@
         - as the type of a field in the `Choice` record
         - as the type of a field in one or more constructors in `Choice`
     - `TiebreakResolution` for alt outputs
+    - `OpenValue` for the open values the output depends on, per [Cases](docs/handbook/solver-file.md#cases), and the record type of each of its fields
     - `DemonstratedChoice`, per [Demonstrated choice](docs/handbook/solver-file.md#demonstrated-choice)
     - a record used as a type argument of a generic comp
 
@@ -233,7 +239,7 @@
       }] }
 
     Group: { "cases": <name>[],           // the fewest names whose cases together are exactly the cases that give this output; in work/task/<task_id>/witnesses.json, the branches whose models give it
-             "grid": Grid | Grid[] | null }  // null for undefined; a list of the grids the cases give, one per tiebreak resolution, when they give more than one
+             "grid": Grid | Grid[] | null }  // null for undefined; a list of the grids the cases give, when they give more than one
     Grid: number[][]                      // rows of colors
     Fact: Arg[]                           // the arguments of one fact
     Arg: number | string | Arg[]

@@ -32,10 +32,8 @@ from solver.input_task import input_task
 from solver.vocabulary import (
     INPUT,
 )
-from solver.witness import (
-    Entry,
-    Undefined,
-)
+from solver.undefined import Undefined
+from solver.witness import Entry
 
 
 def outcomes(engine: Engine, solver: Solver, cases: Sequence[Case],

@@ -34,14 +34,8 @@ from solver.witnessed_cases import task_inputs
 from solver.problems import (
     Fault,
 )
-from solver.witness import (
-    Entry,
-    GroupGrid,
-    NoOutput,
-    RejectedOutput,
-    Resolutions,
-    Undefined,
-)
+from solver.undefined import NoOutput, Undefined
+from solver.witness import Entry, GroupGrid, RejectedOutput, Resolutions
 
 
 def entry_at(runs: Runs, entry: Entry) -> AtEntry:

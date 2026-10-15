@@ -24,9 +24,8 @@ class TaskSection(Enum):
 
 
 @quotes("principles.md", "Models and tasks",
-        "**fit**: a model fits a split task at an assignment when its output "
-        "on each pair's input is that pair's candidate, including for the "
-        "test pairs.")
+        "**fit**: a model fits a split task at an assignment when it fits "
+        "each of the task's pairs.")
 @dataclass(frozen=True)
 class PairId:
     """A pair of the task, by section and index."""
@@ -92,28 +91,54 @@ def examples(task: Task) -> Iterator[tuple[PairId, Example]]:
         yield PairId(TaskSection.TEST, i), ex
 
 
-def candidates(ex: Example) -> tuple[tuple[Candidate, frozenset[Grid]], ...]:
-    """A pair's candidates as sets of accepted outputs (principles.md, under
+@dataclass(frozen=True)
+class Candidates:
+    """A pair's candidates as sets of accepted outputs, and the section of
+    the task the pair stands in, which gives how an output matches them
+    (`matching`)."""
+
+    section: TaskSection
+    accepted: tuple[tuple[Candidate, frozenset[Grid]], ...]
+
+
+def candidates(section: TaskSection, ex: Example) -> Candidates:
+    """The candidates of `ex`, a pair of `section` (principles.md, under
     "Models and tasks"; solver-file.md, under "Alt outputs")."""
     output = as_grid(ex.output)
     if ex.alt is None:
-        return ((Candidate.OUTPUT, frozenset({output})),)
+        return Candidates(section, ((Candidate.OUTPUT, frozenset({output})),))
     alt = as_grid(ex.alt.grid)
     if alt_kind(ex.alt) is AltKind.TIEBREAK:
-        return ((Candidate.OUTPUT, frozenset({output, alt})),)
-    return ((Candidate.OUTPUT, frozenset({output})),
-            (Candidate.ALT, frozenset({alt})))
+        return Candidates(section,
+                          ((Candidate.OUTPUT, frozenset({output, alt})),))
+    return Candidates(section, ((Candidate.OUTPUT, frozenset({output})),
+                                (Candidate.ALT, frozenset({alt}))))
 
 
-def matching(cands: Sequence[tuple[Candidate, frozenset[Grid]]],
-             outcome: Outcome) -> tuple[Candidate, ...]:
+TEST_ATTEMPTS = 2
+"""The most grids an output on a test pair's input holds where it fits
+the pair."""
+
+
+@quotes("principles.md", "Models and tasks",
+        "A train pair fits when the output on its input is the pair's "
+        "candidate.")
+@quotes("principles.md", "Models and tasks",
+        "A test pair fits when the output on its input holds at most two "
+        "grids, one of them in the pair's candidate.")
+def matching(cands: Candidates, outcome: Outcome) -> tuple[Candidate, ...]:
     """The candidates of `cands`, a pair's (`candidates`), that `outcome`
-    matches: the set of its grids is the candidate's set of accepted outputs
-    (principles.md, under "Models and tasks")."""
+    matches: on a train pair, the set of its grids is the candidate's set
+    of accepted outputs; on a test pair, it holds at most `TEST_ATTEMPTS`
+    grids, and one of them is in the candidate's set."""
     if not isinstance(outcome, Grids):
         return ()
     got = frozenset(outcome.grids)
-    return tuple(c for c, accepted in cands if got == accepted)
+    if cands.section is TaskSection.TRAIN:
+        return tuple(c for c, accepted in cands.accepted if got == accepted)
+    if len(got) > TEST_ATTEMPTS:
+        return ()
+    return tuple(c for c, accepted in cands.accepted if got & accepted)
 
 
 type RunOn = Callable[[Sequence[Case], Sequence[tuple[Grid, Assignment]]],
@@ -147,15 +172,14 @@ def pairs(engine: Engine, solver: Solver, limits: Limits,
 def pair_runs(task: Task, cases: Sequence[Case],
               got: Sequence[Mapping[Case, Outcome]]) -> tuple[PairRuns, ...]:
     """`pairs` of `cases`, from `got`, what each case gives on each pair's
-    input in the order of `examples`. A case matches a candidate when the set
-    of its grids is the candidate's set of accepted outputs (`matching`; a
-    `tiebreak` alt joins the output's candidate, a `rule` alt is a second one,
-    solver-file.md, under "Alt outputs")."""
+    input in the order of `examples`, each case matched against the pair's
+    candidates (`matching`; a `tiebreak` alt joins the output's candidate, a
+    `rule` alt is a second one, solver-file.md, under "Alt outputs")."""
     return tuple(pair_on(pair, ex, cases, here)
                  for (pair, ex), here in zip(examples(task), got, strict=True))
 
 
-def matches_every(cands: Sequence[Sequence[tuple[Candidate, frozenset[Grid]]]],
+def matches_every(cands: Sequence[Candidates],
                   given: Sequence[Outcome]) -> bool:
     """Whether each of `given`, one case's outcome on each of a run of
     pairs, is a candidate of its pair, `cands` the pairs' candidates in
@@ -175,14 +199,14 @@ def fits_pairs(engine: Engine, solver: Solver, case: Case,
     failed = first_failure(got)
     if failed is not None:
         return failed
-    return matches_every([candidates(ex) for _p, ex in pairs], got)
+    return matches_every([candidates(p.section, ex) for p, ex in pairs], got)
 
 
 def pair_on(pair: PairId, ex: Example, cases: Sequence[Case],
             here: Mapping[Case, Outcome]) -> PairRuns:
     """One pair's runs: each of `cases` with what it gives on the pair's
     input, `here`, matched against the pair's candidates (`pair_runs`)."""
-    cands = candidates(ex)
+    cands = candidates(pair.section, ex)
     return PairRuns(pair, tuple(
         CaseOnPair(case, here[case], matching(cands, here[case]))
         for case in cases))

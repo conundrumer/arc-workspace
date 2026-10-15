@@ -1,5 +1,5 @@
-"""The witness file (solver-file.md, under "Witness file"), and the one place
-where a name in it resolves to the model it denotes."""
+"""The witness file (solver-file.md, under "Witness file"): its entries,
+their reading from the file's text, and their writing to it."""
 
 import fcntl
 import json
@@ -7,7 +7,7 @@ import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, cast
+from typing import Annotated, Any, cast
 
 from arc.jsonio import format_file
 from arc.task import as_grid as task_grid
@@ -15,6 +15,7 @@ from engine import Grid, Value, checkout
 from engine.memo import write_whole
 from engine.program import as_grid, grid_lists
 from engine.quotes import quotes
+from solver.undefined import Undefined
 from solver.vocabulary import WITNESS_SUFFIX
 from solver.problems import (
     Expected,
@@ -25,98 +26,13 @@ from solver.problems import (
     WitnessFileRole,
 )
 
-if TYPE_CHECKING:
-    from solver.model import Case
-    from solver.aggregate import Solver
-
-
-@quotes("principles.md", "Models and tasks",
-        "A model is defined at an assignment and input when its output is "
-        "nonempty and contains only total grids.")
-@dataclass(frozen=True)
-class NoOutput:
-    """`out` holds no cell at the case: the output is empty."""
-
-
-type Cell = tuple[int, int]
-"""A cell of a grid, by row and column."""
-
-
-@quotes("principles.md", "Models and tasks",
-        "A model is defined at an assignment and input when its output is "
-        "nonempty and contains only total grids.")
-@dataclass(frozen=True)
-class MissingCells:
-    """`out`'s cells at the case leave cells of their frame without a color:
-    the grid is not total."""
-
-    cells: tuple[Cell, ...]
-    """The cells without a color, in row order."""
-
-
-@dataclass(frozen=True)
-class ConflictingCells:
-    """`out`'s cells at the case give cells two colors, so they describe
-    no grid."""
-
-    cells: tuple[Cell, ...]
-    """The cells with two colors, in row order."""
-
-
-@dataclass(frozen=True)
-class NegativeEdges:
-    """`out`'s cells at the case give a cell a negative distance to an
-    edge of its frame, so they describe no grid."""
-
-    edges: tuple[tuple[int, int, int, int], ...]
-    """Each such cell's distances to the top, bottom, left and right
-    edges, in order."""
-
-
-@dataclass(frozen=True)
-class InconsistentBounds:
-    """`out`'s cells at the case give more than one frame size, so they
-    describe no grid."""
-
-    bounds: tuple[Cell, ...]
-    """The frame sizes, as height and width, in order."""
-
-
-@dataclass(frozen=True)
-class NoDerivedValue:
-    """A `@derive` branch of the case derives its parameter, and the
-    proposer gives it no value on the input (principles.md, under "Stored or
-    derived")."""
-
-    parameter: str
-    proposer: str
-
-
-type UndefinedReason = (NoOutput | MissingCells | ConflictingCells
-                        | NegativeEdges | InconsistentBounds | NoDerivedValue)
-
 
 @quotes("solver-file.md", "Witness file",
-        "\"grid\": Grid | Grid[] | null } // null for undefined")
-@dataclass(frozen=True)
-class Undefined:
-    """`null`: the cases are undefined on the input. Two values are equal
-    whatever their reasons, as a witness file's `null` states none, and are
-    one output (`same_output`)."""
-
-    reason: UndefinedReason | None = field(default=None, compare=False)
-    """Why a run gives no grid; None for a witness file's `null`, which
-    states no reason."""
-
-
-@quotes("solver-file.md", "Witness file",
-        "a list of the grids the cases give, one per tiebreak resolution, "
-        "when they give more than one")
+        "a list of the grids the cases give, when they give more than one")
 @dataclass(frozen=True)
 class Resolutions:
-    """A list of grids, one per tiebreak resolution, and the resolution
-    value of each where a run gave them; a witness file holds the grids
-    alone."""
+    """A list of grids, and the resolution value of each where a run gave
+    them (`solver.outcome.Grids`); a witness file holds the grids alone."""
 
     grids: tuple[Grid, ...]
     values: tuple[Value, ...] = field(default=(), compare=False)
@@ -485,55 +401,6 @@ def _entry(raw: object, index: int, off: Off) -> Entry | None:
         return None
     return Entry(entry, separates, grid, assign, output)
 
-
-def output_key(o: object) -> object:
-    """A value two outputs share exactly where they are the same output
-    (`same_output`): the output itself, as undefined outputs are one output
-    whatever their reasons. `o` is what a witness file's group holds, or
-    what a run gives."""
-    return o
-
-
-def same_output(a: object, b: object) -> bool:
-    """Whether two cases give the same output: equal grids, or both
-    undefined, whatever the reason or the cells. `a` and `b` are what
-    a witness file's group holds, or what a run gives."""
-    return output_key(a) == output_key(b)
-
-
-def grouped(solver: "Solver", outcomes: Sequence[tuple["Case", GroupGrid]]
-            ) -> Groups:
-    """An entry's groups from what each of the solver's cases gives on its
-    input: one group per distinct output (`same_output`), the group that
-    holds the concept case first and the rest in the order the cases come
-    in, naming its cases by the fewest names that denote exactly them
-    (`solver.names.cover`; solver-file.md, under "Witness file")."""
-    from solver.aggregate import is_concept_case
-    from solver.names import cover
-    among = [c for c, _g in outcomes]
-    out: list[tuple[list["Case"], GroupGrid]] = []
-    for c, got in outcomes:
-        for cases, g in out:
-            if same_output(g, got):
-                cases.append(c)
-                break
-        else:
-            out.append(([c], got))
-    out.sort(key=lambda group: not any(
-        is_concept_case(solver, c) for c in group[0]))
-    return Groups(tuple(Group(cover(solver, cases, among), g)
-                        for cases, g in out))
-
-
-type Outcomes = tuple[tuple["Case", GroupGrid], ...]
-"""What each case of the solver gives on an entry's input at its
-`assign`, in the order the cases come in."""
-
-
-def members(outcomes: Outcomes, group: Group) -> tuple["Case", ...]:
-    """The cases a group of `grouped(solver, outcomes)` holds: those that
-    give its grid."""
-    return tuple(c for c, g in outcomes if same_output(g, group.grid))
 
 
 def with_grids(file: WitnessFile, grid_names: frozenset[str]) -> WitnessFile:

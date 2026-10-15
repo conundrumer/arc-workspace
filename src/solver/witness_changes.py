@@ -12,14 +12,8 @@ from solver.form_checks import entry_form_faults, recorded_form
 from solver.model import Case
 from solver.names import denoted_cases
 from solver.problems import Fault, NameFault, OutputForm, VerdictsDisagree
-from solver.witness import (
-    Entry,
-    GroupGrid,
-    Outcomes,
-    RejectedOutput,
-    grouped,
-    members,
-)
+from solver.witness import Entry, GroupGrid, RejectedOutput
+from solver.witness_groups import Outcomes, grouped, members
 
 
 @dataclass(frozen=True)

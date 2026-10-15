@@ -48,12 +48,12 @@ from solver.annotations import Slot, comment_text, verdict_text, witness_text
 from solver.aggregate import Solver
 from solver.outcome import Grids, Outcome
 from solver.pair_runs import PairId
+from solver.undefined import Undefined
 from solver.witness import (
     AssignValue,
     GroupGrid,
     RejectedOutput,
     Resolutions,
-    Undefined,
     assign_json,
 )
 

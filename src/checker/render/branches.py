@@ -48,9 +48,7 @@ from solver.model import DeriveBranch, StoreBranch
 from solver.aggregate import Solver
 from solver.names import branch_text
 from solver.pair_runs import PairId, TaskSection
-from solver.witness import (
-    Entry,
-)
+from solver.witness import Entry
 
 BRANCH_KINDS = frozenset({
     Kind.IDLE_BRANCH_IGNORE, Kind.MISSING_BRANCH_LINE,

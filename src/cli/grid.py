@@ -27,7 +27,9 @@ from solver import witness, witnessed_cases
 from solver.model import Case
 from solver.aggregate import Solver
 from solver.names import Denoted, denote, name
-from solver.witness import Entry, Group, Groups, Outcomes, grouped, members
+from solver.undefined import Undefined
+from solver.witness import Entry, Group, Groups
+from solver.witness_groups import Outcomes, grouped, members
 from souffle.parser import relation_name
 
 
@@ -155,7 +157,7 @@ def cmd_relation(arg: str, args: list[str],
     if unknown:
         return 2
     ran = runs.relations_on(grid, names, at)
-    if isinstance(ran, witness.Undefined):
+    if isinstance(ran, Undefined):
         print(run_pairs.NO_GRID, file=sys.stderr)
         return 1
     if not isinstance(ran, Mapping):

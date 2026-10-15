@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING, Annotated
 from engine import Grid, RelationValue, RunFailure, Value
 from engine.quotes import quotes
 from solver.problems import Fault
-from solver.witness import GroupGrid, Resolutions, Undefined
+from solver.undefined import Undefined
+from solver.witness import GroupGrid, Resolutions
 
 if TYPE_CHECKING:
     from typing_extensions import TypeIs
@@ -23,16 +24,17 @@ class Assignment:
 
 
 @quotes("solver-file.md", "Cases",
-        "A case's model reads its output grids from `out` at that case, one "
-        "grid per tiebreak resolution")
+        "A case's model reads from `out` at that case one grid per "
+        "combination of a tiebreak resolution and one value of each `@open` "
+        "relation of `OpenValue`, its output is the distinct grids it reads")
 @quotes("solver-file.md", "Alt outputs",
         "The solver enumerates a tiebreak's resolutions through a trailing "
         "`out` column of type `TiebreakResolution`.")
 @dataclass(frozen=True)
 class Grids:
-    """The grids a case gives, one per tiebreak resolution, and the
-    resolution value of each where `out` has a resolution column, the grid's
-    identity."""
+    """The grids a case gives (`solver.out_grids.case_grids`), and the
+    resolution value of each where `out` has a resolution column and no
+    open-value column, the grid's identity."""
 
     grids: tuple[Grid, ...]
     resolutions: tuple[Value, ...] = field(default=(), compare=False)
@@ -43,8 +45,8 @@ type Outcome = Annotated[Grids | Undefined | RunFailure,
            "A model is defined at an assignment and input when its output is "
            "nonempty and contains only total grids."),
     quotes("solver-file.md", "Cases",
-           "and is undefined on an input where it reads no grid, or facts "
-           "that describe no total grid.")]
+           "and it is undefined on an input where some combination reads no "
+           "grid, or facts that describe no total grid.")]
 """What a case gives on an input: its grids, undefined, or the failure of
 its run."""
 

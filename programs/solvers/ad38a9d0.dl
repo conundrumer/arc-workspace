@@ -56,7 +56,10 @@
 
 .type Choice = [cells: Cells, key: KeyForm, unknown: Unknown]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type SymValue = [s: Sym]
+.type OpenValue = [shape_sym: SymValue]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     // The subgroup of D4 under which a piece's shape matches a key. The pairs
@@ -191,17 +194,12 @@ impl_choice([S, K, $KeepUnknown()]) :- cells_choice(S), key_form_choice(K).
 paint(Sym, P, Col, [S, K, U]) :-
     parse.piece(S, Id, P), keyed(Sym, S, Id, Col, K), impl_choice([S, K, U]).
 
-// A piece cell that some value of shape_sym leaves unpainted.
-.decl unpainted(p: Position, ch: Choice)
-unpainted(P, [S, K, U]) :-
-    parse.piece(S, _, P), params.shape_sym(Sym), impl_choice([S, K, U]),
-    !paint(Sym, P, _, [S, K, U]).
-
-// A piece cell takes the color every value of shape_sym paints it.
-out(P, Col, Ch) :- paint(_, P, Col, Ch), !unpainted(P, Ch).
+// A piece cell takes the color each value of shape_sym paints it.
+out(P, Col, Ch, [[Sym]]) :- paint(Sym, P, Col, Ch).
 
 // Every other cell keeps its color.
-out(P, Col, [S, K, U]) :- in(P, Col), impl_choice([S, K, U]), !parse.piece(S, _, P).
+out(P, Col, [S, K, U], [[Sym]]) :-
+    in(P, Col), impl_choice([S, K, U]), !parse.piece(S, _, P), params.shape_sym(Sym).
 
 // --- $FgPieces ---
 

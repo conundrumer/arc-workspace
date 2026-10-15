@@ -108,6 +108,15 @@ class RecordValue:
 
 
 @dataclass(frozen=True)
+class NilValue:
+    """`nil` as a value (`NilTerm`)."""
+
+
+NIL = NilValue()
+"""The one `nil` value."""
+
+
+@dataclass(frozen=True)
 class AdtValue:
     """An ADT value: its constructor and the constructor's arguments."""
 
@@ -152,9 +161,9 @@ PRIMITIVES = frozenset(Primitive)
 """The names of Souffle's primitive types."""
 
 
-type Value = int | float | str | RecordValue | AdtValue
-"""One column's value: a number, a float, a symbol, a record or an ADT
-value."""
+type Value = int | float | str | RecordValue | NilValue | AdtValue
+"""One column's value: a number, a float, a symbol, a record, `nil` or an
+ADT value."""
 
 
 type Row = tuple[Value, ...]
@@ -371,6 +380,12 @@ class Wildcard:
 
 
 @dataclass(frozen=True)
+class NilTerm:
+    """`nil`, Souffle's record constant: a value of every record type that
+    is no record."""
+
+
+@dataclass(frozen=True)
 class NumberTerm:
     value: int | float
 
@@ -497,7 +512,8 @@ class Aggregate:
     body: tuple["BodyLiteral", ...]
 
 
-type Term = (Variable | Wildcard | NumberTerm | StringTerm | DefinedName
+type Term = (Variable | Wildcard | NilTerm | NumberTerm | StringTerm
+             | DefinedName
              | ConstructorTerm | RecordTerm | IntrinsicCall | FunctorCall
              | UnaryTerm | BinaryTerm | Aggregate | Cast)
 
@@ -1012,12 +1028,14 @@ def _aggregate_atoms(agg: Aggregate) -> Iterator[tuple[Atom, bool]]:
 def term_value(term: Term, defined: Callable[[str], "Value | None"]
                ) -> "Value | None":
     """The value a term states with no variable or call in it: a number, a
-    symbol, a constructor or record of such, a cast of one, a negation,
+    symbol, `nil`, a constructor or record of such, a cast of one, a negation,
     `+`, `-` or `*` of two numbers, or a defined name whose value
     `defined` gives; None for any other term."""
     match term:
         case NumberTerm(value=v) | StringTerm(value=v):
             return v
+        case NilTerm():
+            return NIL
         case DefinedName(name=name):
             return defined(name)
         case ConstructorTerm(args=args) | RecordTerm(args=args):
@@ -1053,6 +1071,8 @@ def term_of(v: Value) -> Term:
             return StringTerm(v)
         case RecordValue(fields):
             return RecordTerm(tuple(term_of(f) for f in fields))
+        case NilValue():
+            return NilTerm()
         case AdtValue(name, args):
             return ConstructorTerm(name, tuple(term_of(a) for a in args))
     raise TypeError(f"not a value: {v!r}")
@@ -1068,11 +1088,12 @@ ValueError where nothing answers the name."""
 @dataclass(frozen=True)
 class ValueReading[S]:
     """How a source of type `S` gives a value: as a primitive's value, as
-    the parts of a record, or as a constructor's name and parts; None
-    where the source is not of that form."""
+    the parts of a record, or as a constructor's name and parts, None
+    where the source is not of that form; and whether it is `nil`."""
 
     primitive: Callable[[S, Primitive], "Value | None"]
     record: Callable[[S], Sequence[S] | None]
+    nil: Callable[[S], bool]
     constructor: Callable[[S], tuple[str, Sequence[S]] | None]
 
 
@@ -1114,7 +1135,7 @@ def typed_value[S, P](source: S, name: TypeName, at: P, types: TypeReading[P],
     """The value of the type `name`, read at `at`, that `source` gives: of
     a primitive a value of that primitive, of an alias or subtype a value
     of its target, of a union a value of its first member that reads one,
-    of a record a record of values of its fields' types, and of an ADT one
+    of a record `nil` or a record of values of its fields' types, and of an ADT one
     of its constructors over values of its fields' types; None where
     `source` gives no value of the type. Raises ValueError where `types`
     answers no name, for a type that does not end in a declaration, and
@@ -1156,6 +1177,8 @@ def declared_value[S, P](source: S, decl: "TypeDecl | Primitive", at: P,
                                  f"different kinds, which Souffle rejects")
             return next((v for m in members
                          if (v := of(source, m)) is not None), None)
+        case RecordType() if reading.nil(source):
+            return NIL
         case RecordType(fields=fields):
             parts = reading.record(source)
             held = None if parts is None else each(parts, fields)

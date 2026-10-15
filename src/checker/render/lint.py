@@ -157,6 +157,18 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
     LintSentence.CONCEPT_UNCLAIMED: lambda n, _: mctx(
         "`{name}` is the concept branch; the claim the choice answers "
         "stands above it as {form}").format(name=n[0], form=FORM_CLAIM),
+    LintSentence.OPEN_VALUE_NO_RELATION: lambda n, _: mctx(
+        "the `OpenValue` field `{0}` has the name of no `@open` relation; "
+        "see [Cases](docs/handbook/solver-file.md#cases)").format(*n),
+    LintSentence.OPEN_VALUE_NO_RECORD: lambda n, _: mctx(
+        "the `OpenValue` field `{0}` is of `{1}`, which is no record the "
+        "solver declares; see [Cases](docs/handbook/solver-file.md#cases)"
+        ).format(*n),
+    LintSentence.OPEN_VALUE_NO_COLUMN: lambda n, m: mctx(
+        "`{0}`, the record of the `OpenValue` field `{1}`, names {missing}, "
+        "which `{1}` has no column of; see "
+        "[Cases](docs/handbook/solver-file.md#cases)").format(
+            *n, missing=", ".join(f"`{x}`" for x in m)),
     LintSentence.BANNED_TYPE: lambda n, _: mctx(
         "`{0}` is none of the types "
         "[Types](docs/handbook/solver-file.md#types) lists; re-encode it or "

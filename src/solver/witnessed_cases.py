@@ -30,10 +30,11 @@ from solver.model import (
     path_constructors,
 )
 from solver.outcome import Assignment, Outcome, is_result
-from solver.pair_runs import Candidate, RunOn, candidates, examples, matching
+from solver.pair_runs import Candidates, RunOn, candidates, examples, matching
 from solver.problems import WitnessFileRole
 from solver.solve import assignment, outcomes_on
-from solver.witness import Entry, same_output
+from solver.witness import Entry
+from solver.witness_groups import same_output
 
 if TYPE_CHECKING:
     from solver.names import Denoted
@@ -68,10 +69,6 @@ def task_inputs(task: Task) -> list[tuple[Grid, Assignment]]:
     return [(as_grid(ex.input), Assignment(())) for _pair, ex in examples(task)]
 
 
-type Candidates = tuple[tuple[Candidate, frozenset[Grid]], ...]
-"""A pair's candidates (`candidates`)."""
-
-
 def pairs_at(task: Task | None) -> dict[tuple[Grid, Assignment],
                                         tuple[Candidates, ...]]:
     """The candidates of each pair of `task` (`examples`) whose input is
@@ -80,8 +77,8 @@ def pairs_at(task: Task | None) -> dict[tuple[Grid, Assignment],
     out: dict[tuple[Grid, Assignment], tuple[Candidates, ...]] = {}
     if task is None:
         return out
-    for (_pair, ex), at in zip(examples(task), task_inputs(task), strict=True):
-        out[at] = (*out.get(at, ()), candidates(ex))
+    for (pair, ex), at in zip(examples(task), task_inputs(task), strict=True):
+        out[at] = (*out.get(at, ()), candidates(pair.section, ex))
     return out
 
 

@@ -29,7 +29,8 @@ from solver.pair_runs import PairRuns, TaskSection, pairs
 from solver.witnessed_cases import branch_model, recorded_inputs, witnessed
 from solver.group_runs import case_groups
 from solver.per_case import per_case, at_bases
-from solver.witness import Entry, Undefined, WitnessFile
+from solver.undefined import Undefined
+from solver.witness import Entry, WitnessFile
 
 if TYPE_CHECKING:
     from checker.derive import DeriveSurvey

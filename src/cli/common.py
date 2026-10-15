@@ -11,7 +11,9 @@ from typing import TextIO
 
 from arc.task import task_file
 from arc.task import GridFormError, read_grid
+from checker.finding import Finding
 from checker.judged import parse_fault
+from checker.lint.form.open_value_fields import check_open_value_field
 from checker.readable import finding_of
 from checker.render import commands, finding_lines
 from checker.render.no_result import run_failed
@@ -152,10 +154,21 @@ def compiles(eng: SouffleEngine, solver: Solver) -> bool:
     """True where the solver's program compiles; False, with the lines of
     its `compile_failure` (`failed_lines`), where it does not."""
     failure = compile_failure(eng, solver)
-    if failure is None:
-        return True
-    print("\n".join(failed_lines(solver, failure)))
-    return False
+    if failure is not None:
+        print("\n".join(failed_lines(solver, failure)))
+        return False
+    off = open_value_off(eng, solver)
+    if off:
+        print("\n".join(commands.lint_section(solver, off)))
+        return False
+    return True
+
+
+def open_value_off(eng: SouffleEngine, solver: Solver) -> list[Finding]:
+    """The lint findings of the fields of `OpenValue` off their form
+    (`checker.lint.form.open_value_fields`): a run reads its grids
+    through those fields, so a command runs nothing where one stands."""
+    return check_open_value_field(solver, Runs(eng, solver, LIMITS))
 
 
 def failed_lines(solver: Solver,

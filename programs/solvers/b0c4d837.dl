@@ -86,7 +86,10 @@
 
 .type Choice = [render: Render, rim: RimRow, liquid: Liquid]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type FillValue = [v: Ident]
+.type OpenValue = [fill_order: FillValue]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     .decl wall_color(c: Color) wall_color(5).
@@ -157,6 +160,10 @@ cell_order_choice($FillOrder()). cell_order_choice($SnakeOrder()). cell_order_ch
 
 // A state of a walk: the cell it stands on and its heading.
 .type Step = [p: Position, d: Dir]
+
+// A cell order at an open value of params.fill_order, nil where the order
+// reads none.
+.type OrderValue = [o: CellOrder, w: FillValue]
 
 .comp Parse<Key> {
     .type KeyLiquid = [key: Key, li: Liquid]
@@ -287,29 +294,23 @@ parse.corner($U(), C) :- params.order_corner(C).
 parse.axis($U(), A) :- params.line_axis(A).
 
 // --- $CountTable ---
-out(P, Col, [$CountTable(), Ri, Li]) :-
+out(P, Col, [$CountTable(), Ri, Li], [nil]) :-
     parse.empty_rows($U(), Ri, Li, K), params.count_table(K, P, Col).
 
 // --- $Laid ---
-// Each cell's rank in the order, under every open value.
-.decl rank(o: CellOrder, p: Position, r: number)
-
-// Some open value leaves a cell unranked that another ranks.
-.decl partial(o: CellOrder)
+// Each cell's rank in the order, at each open value W.
+.decl rank(o: CellOrder, w: FillValue, p: Position, r: number)
 
 // --- $FillOrder ---
-rank($FillOrder(), P, R) :- params.fill_order(_, P, R).
-
-partial($FillOrder()) :-
-    params.fill_order(_, P, _), params.fill_order(V, _, _), !params.fill_order(V, P, _).
+rank($FillOrder(), [V], P, R) :- params.fill_order(V, P, R).
 
 // --- $SnakeOrder, $SpiralOrder ---
-rank(O, P, R) :- parse.walk_rank($U(), O, P, R).
+rank(O, nil, P, R) :- parse.walk_rank($U(), O, P, R).
 
 // --- $Laid ---
 // @claim output-frame
-.init cells = Tally<CellOrder, Position>
-cells.item(O, P) :- rank(O, P, _).
+.init cells = Tally<OrderValue, Position>
+cells.item([O, W], P) :- rank(O, W, P, _).
 
 .decl mark(m: Mark, li: Liquid, col: Color)
 
@@ -320,11 +321,9 @@ mark($LiquidMark(), Li, Col) :- parse.liquid($U(), Li, Col).
 mark($MarkColor(), Li, Col) :- parse.liquid($U(), Li, _), params.mark_color(Col).
 
 // --- $Laid ---
-// A cell that two open values rank on either side of the count gets both
-// colors, so the grid is undefined there.
-out(P, Col, [$Laid(O, M), Ri, Li]) :-
-    parse.empty_rows($U(), Ri, Li, K), cells.tally(O, N), K <= N,      // the count fits the frame
-    rank(O, P, R), !partial(O), mark(M, Li, C),
+out(P, Col, [$Laid(O, M), Ri, Li], [W]) :-
+    parse.empty_rows($U(), Ri, Li, K), cells.tally([O, W], N), K <= N,     // the count fits the frame
+    rank(O, W, P, R), mark(M, Li, C),
     ( R < K, Col = C
     ; R >= K, params.background(Col)
     ).

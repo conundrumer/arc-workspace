@@ -75,10 +75,13 @@
         - A task with one candidate at every pair is its own only split task.
             - alts(T) = {T}
                 + formal
-- **fit**: a model fits a split task at an assignment when its output on each pair's input is that pair's candidate, including for the test pairs.
-    - M(θ) ⊨ T ⇔ ∀(x, Y) ∈ pairs(T). M(θ, x) = Y
+- **fit**: a model fits a split task at an assignment when it fits each of the task's pairs.
+    * comment: The user's words, session 129de8fc, 2026-10-14T21:37:20Z to 21:40:49Z: "proposed text?", "is all this text needed?", and "2", which picks the coordinator's "Split the Fit definition into a train line and a test line?" of 21:40:12Z.
+    - A train pair fits when the output on its input is the pair's candidate.
+    - A test pair fits when the output on its input holds at most two grids, one of them in the pair's candidate.
+    - M(θ) ⊨ T ⇔ (∀(x, Y) ∈ train(T). M(θ, x) = Y) ∧ (∀(x, Y) ∈ test(T). |M(θ, x)| ≤ 2 ∧ M(θ, x) ∩ Y ≠ ∅)
         + formal
-        - pairs(T) = train(T) ⧺ zip(test_in(T), test_out(T))
+        - test(T) = zip(test_in(T), test_out(T))
     - A model fits a task when it fits one of that task's split tasks.
 - **model family**: all tasks that a model fits under some assignment.
     - fam(M) = {T | ∃T′ ∈ alts(T). ∃θ ∈ Θ. M(θ) ⊨ T′}
@@ -121,7 +124,7 @@
         - A branch's cases are the cases that take it.
 - **open parameter**: an undetermined property whose possible answers are values of one parameter, with the program unchanged.
     - **open values**: the values of that parameter that a reader of the concept could take, and that the pairs do not separate.
-    - A sibling task containing an input on which the open values disagree fixes the parameter to one of those values.
+    - A sibling task that the model fails at the open values, and fits at one of them, fixes the parameter to that value.
 
 ### Witnesses
 - **divergence witness**: an input on which one of these holds:
@@ -260,17 +263,15 @@
 - **Redundant value.** A value that follows from another parameter in every variant task is derived data rather than a second parameter.
 
 ### Open parameters
-- The solver stores every open value of an open parameter in one relation, keyed by value.
+- The solver stores every open value of an open parameter in one relation.
 - open(i) ⊆ Θᵢ: the open values of parameter i
     + formal
-- M_open(θ, x) = ⋂_{v ∈ open(i)} M(θ[i ↦ v], x)
+- M_open(θ, x) = ⋃_{v ∈ open(i)} M(θ[i ↦ v], x) where ∀v ∈ open(i). Def_M(θ[i ↦ v], x), and ∅ otherwise
     + formal
     - M_open: the model read with open(i) in place of θᵢ
-- The program runs with every open value of the parameter.
-    - The output contains a grid exactly when every open value produces that grid.
-        - At those values, the model does not fit a task containing a pair whose accepted output some open value does not produce.
+- The output contains each grid some open value produces, and is undefined where the model is undefined at some open value.
     - 28a6681f
-        - Water settles under gravity: the basin it reaches fills by level, and what overflows pours to the next basin on one side first. The pairs fix neither side, and the program runs both.
+        - Water settles under gravity: the basin it reaches fills by level, and what overflows pours to the next basin on one side first. The pairs fix neither side, and the output holds both.
             + gloss
 
 ## Cases

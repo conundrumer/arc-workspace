@@ -26,6 +26,10 @@ PAIRS_NO_FORM = mctx("the file holds neither a list of pairs nor an object "
                      "of {sections} pairs")
 PAIRS_NO_LIST = mctx("`{section}` holds no list of pairs")
 PAIRS_NONE = mctx("the file holds no pair")
+OPEN_VALUE_UNRUN = mctx("pairs: not run, since an `OpenValue` field is off "
+                        "its form; see the lint section")
+PAIRS_LIST_OUTPUT = mctx("a pair of a bare list holds an output, and an "
+                         "output is judged on a pair under {sections} alone")
 
 # `grid`, `relation` and `record`
 

@@ -219,7 +219,15 @@
         [2,2,2,2,4,4,4,4]
       ]
     }, {
-      "cases": ["$SelectFewestCells"],
+      "cases": ["$SelectFewestCells & $AxisSpread"],
+      "grid": [
+        [3,0,3,3],
+        [3,0,0,3],
+        [3,0,0,3],
+        [3,3,3,3]
+      ]
+    }, {
+      "cases": ["$SelectFewestCells & $SeparatingAxis"],
       "grid": null
     }, {
       "cases": ["$SelectNotFull"],

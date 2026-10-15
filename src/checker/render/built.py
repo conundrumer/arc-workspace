@@ -9,19 +9,17 @@ from controlled_markdown import mctx
 from solver.aggregate import Solver
 from solver.model import Case
 from solver.names import Denoted, denote
-from solver.witness import (
+from solver.undefined import (
     ConflictingCells,
-    Entry,
-    Groups,
     InconsistentBounds,
     MissingCells,
     NegativeEdges,
     NoDerivedValue,
     NoOutput,
-    Resolutions,
     Undefined,
     UndefinedReason,
 )
+from solver.witness import Entry, Groups, Resolutions
 
 GROUP_WIDTH = 100
 """The widest a witness group's line of case names stands; a wider

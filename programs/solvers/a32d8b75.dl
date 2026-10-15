@@ -109,7 +109,10 @@
 .type Choice = [arrow: ArrowFind, pattern: PatternFind, mask: MaskFind,
                 anchor: AnchorFind, field: FieldFind]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type StampOrder = [d: Dir]
+.type OpenValue = [stamp_order: StampOrder]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     .decl sep(c: Color) sep(6).
@@ -533,7 +536,7 @@ parse.case($U(), [Af, Pa, Mk, A, F]) :-
     arrow_find_choice(Af), pattern_find_choice(Pa), mask_find_choice(Mk),
     anchor_find_choice(A), field_find_choice(F).
 
-out(P, Col, Ch) :- params.stamp_order(D), parse.shown($U(), Ch, D, P, Col).
+out(P, Col, Ch, [[D]]) :- params.stamp_order(D), parse.shown($U(), Ch, D, P, Col).
 
 .comp Determine {
     .decl trained(e: Example)

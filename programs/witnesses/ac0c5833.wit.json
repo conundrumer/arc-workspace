@@ -86,13 +86,18 @@
     ],
     "output": [{
       "cases": [
-        "$RectMarker",
+        "marker_max_side=SepTileCount",
         "$StoredStride & marker_stride=stored",
         "marker_stride=SepTileCount"
       ],
       "grid": null
     }, {
-      "cases": ["marker_stride=TileCount","$DerivedStride"],
+      "cases": [
+        "$RectMarker & marker_max_side=stored",
+        "marker_max_side=TileCount",
+        "marker_stride=TileCount",
+        "$DerivedStride"
+      ],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
         [0,4,0,0,4,0,0,0,0,0,0,0,0,0,0,0],
@@ -131,9 +136,9 @@
     ],
     "output": [{
       "cases": [
-        "$StoredStride & marker_stride=stored",
-        "marker_stride=TileCount",
-        "$DerivedStride"
+        "marker_stride=stored & marker_max_side=stored",
+        "marker_max_side=TileCount",
+        "marker_stride=TileCount"
       ],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -150,7 +155,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$RectMarker","marker_stride=SepTileCount"],
+      "cases": ["marker_max_side=SepTileCount","marker_stride=SepTileCount"],
       "grid": null
     }]
   }, {
@@ -407,9 +412,9 @@
     ],
     "output": [{
       "cases": [
-        "$StoredStride & $InkOnly & marker_stride=stored",
-        "marker_stride=TileCount",
-        "$DerivedStride"
+        "$InkOnly & marker_stride=stored & marker_max_side=stored",
+        "marker_max_side=TileCount",
+        "marker_stride=TileCount"
       ],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -428,7 +433,7 @@
         [0,0,0,0,0,0,0,0,4,0,4,0,0,0]
       ]
     }, {
-      "cases": ["$RectMarker","marker_stride=SepTileCount"],
+      "cases": ["marker_max_side=SepTileCount","marker_stride=SepTileCount"],
       "grid": null
     }, {
       "cases": ["$BoxStamp"],
@@ -469,11 +474,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": [
-        "marker_max_side=SepTileCount",
-        "$StoredStride & template_color=stored",
-        "$DerivedStride"
-      ],
+      "cases": ["template_color=stored"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,2],
         [0,4,0,4,0,0,0,0,0,4,0,2,0,2],
@@ -491,11 +492,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$RectMarker & marker_max_side=stored",
-        "marker_max_side=TileCount",
-        "template_color=RarestColor"
-      ],
+      "cases": ["template_color=RarestColor"],
       "grid": null
     }]
   }, {
@@ -594,13 +591,18 @@
     ],
     "output": [{
       "cases": [
-        "$RectMarker",
+        "marker_max_side=SepTileCount",
         "$StoredStride & marker_stride=stored",
         "marker_stride=SepTileCount"
       ],
       "grid": null
     }, {
-      "cases": ["marker_stride=TileCount","$DerivedStride"],
+      "cases": [
+        "$RectMarker & marker_max_side=stored",
+        "marker_max_side=TileCount",
+        "marker_stride=TileCount",
+        "$DerivedStride"
+      ],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
         [0,4,0,0,4,0,0,0,0,0,0,0,0,0,0,0],
@@ -640,11 +642,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": [
-        "marker_max_side=SepTileCount",
-        "$StoredStride & template_color=stored",
-        "$DerivedStride"
-      ],
+      "cases": ["template_color=stored"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,2],
         [0,4,0,4,0,0,0,0,0,4,0,2,0,2],
@@ -662,11 +660,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$RectMarker & marker_max_side=stored",
-        "marker_max_side=TileCount",
-        "template_color=RarestColor"
-      ],
+      "cases": ["template_color=RarestColor"],
       "grid": null
     }]
   }, {
@@ -765,10 +759,11 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$RectMarker","$StoredStride & marker_stride=stored"],
+      "cases": ["$DerivedMarkerColor","$StoredStride & marker_stride=stored"],
       "grid": null
     }, {
       "cases": [
+        "$RectMarker & $StoredMarkerColor",
         "$Mirror & marker_stride=TileCount",
         "$Mirror & marker_stride=SepTileCount",
         "$DerivedStride & $Mirror"
@@ -835,12 +830,7 @@
       [4,0,4,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": [
-        "marker_max_side=SepTileCount",
-        "marker_max_side=TileCount",
-        "$StoredStride & $Mirror",
-        "$DerivedStride & $Mirror"
-      ],
+      "cases": ["$StoredMarkerColor & $Mirror","$StoredStride & $Mirror"],
       "grid": [
         [4,0,4,0,0,0,0,0,4,0,4],
         [0,0,0,0,0,0,0,0,0,0,0],
@@ -855,7 +845,7 @@
         [4,0,4,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$RectMarker & marker_max_side=stored"],
+      "cases": ["$RectMarker & $DerivedMarkerColor"],
       "grid": null
     }, {
       "cases": ["$Rotate"],
@@ -942,10 +932,7 @@
       ]
     },
     "output": [{
-      "cases": [
-        "marker_max_side=stored & template_color=stored",
-        "marker_max_side=SepTileCount"
-      ],
+      "cases": ["template_color=stored"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,2],
         [0,4,0,4,0,0,0,0,0,4,0,2,0,2],
@@ -963,7 +950,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["marker_max_side=TileCount","template_color=RarestColor"],
+      "cases": ["template_color=RarestColor"],
       "grid": null
     }]
   }, {
@@ -984,10 +971,10 @@
     ],
     "output": [{
       "cases": [
+        "$StoredMarkerColor & $Mirror & marker_stride=stored & marker_max_side=stored",
         "marker_max_side=TileCount",
         "$StoredStride & $Mirror & marker_stride=stored",
-        "$Mirror & marker_stride=TileCount",
-        "$DerivedStride & $Mirror"
+        "$Mirror & marker_stride=TileCount"
       ],
       "grid": [
         [4,0,4,0,0,0,0,0,4,0,4],
@@ -1004,7 +991,7 @@
       ]
     }, {
       "cases": [
-        "$RectMarker & marker_max_side=stored",
+        "$RectMarker & $DerivedMarkerColor",
         "marker_max_side=SepTileCount",
         "marker_stride=SepTileCount"
       ],
@@ -1219,13 +1206,14 @@
     ],
     "output": [{
       "cases": [
-        "marker_stride=stored & marker_max_side=stored",
-        "marker_max_side=TileCount",
-        "marker_stride=TileCount"
+        "$DerivedMarkerColor",
+        "$StoredStride & marker_stride=stored",
+        "marker_stride=TileCount",
+        "$DerivedStride"
       ],
       "grid": null
     }, {
-      "cases": ["marker_max_side=SepTileCount"],
+      "cases": ["$RectMarker & $StoredMarkerColor"],
       "grid": [
         [4,0,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -1304,7 +1292,11 @@
       [0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$StoredStride & $Mirror & marker_stride=stored","$DerivedStride & $Mirror"],
+      "cases": [
+        "$StoredMarkerColor & $Mirror & marker_stride=stored & marker_max_side=stored",
+        "marker_max_side=TileCount",
+        "$StoredStride & $Mirror & marker_stride=stored"
+      ],
       "grid": [
         [4,0,4,0,4,0,4,0,0,0],
         [0,0,0,0,0,0,0,0,0,0],
@@ -1318,7 +1310,12 @@
         [0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$RectMarker","marker_stride=TileCount","marker_stride=SepTileCount"],
+      "cases": [
+        "$RectMarker & $DerivedMarkerColor",
+        "marker_max_side=SepTileCount",
+        "marker_stride=TileCount",
+        "marker_stride=SepTileCount"
+      ],
       "grid": null
     }, {
       "cases": ["$Rotate & marker_stride=stored"],

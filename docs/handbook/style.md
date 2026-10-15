@@ -71,6 +71,7 @@
 ### Bans
 - **Literals.** Literals are banned.
     - The program may read `0` and `ZERO` directly.
+    - It may write `nil` in an `OpenValue` field.
     - It reads every other lib constant macro, all colors, and non-zero task-shape lengths, offsets, and gaps from Params.
 - **Position destructure.** Destructuring a Position is banned.
     - Lib relations read a Position.

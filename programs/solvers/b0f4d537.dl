@@ -41,8 +41,8 @@
   | LineByEitherEnd {}
     // @rule field-lines: a line row has params.marker at its border cell on
     //  the edge of the corner params.header, and a line column at its border
-    //  cell on the corner's other edge. Undefined where two header values read
-    //  different lines.
+    //  cell on the corner's other edge. The output holds the grid of each
+    //  value of params.header.
     // @witness line-one-end: borderline $LineByEitherEnd
   | LineByHeaderEdge {}
     // @rule field-lines: the lines are the rows and the columns of the
@@ -123,7 +123,11 @@
 
 .type Choice = [l: LineRead, d: Drawing, g: GapRead, f: Panel, v: DividerRead, y: Layout]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type HeaderValue = [d: DiagDir]
+
+.type OpenValue = [header: HeaderValue]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     // The width of each line and each gap of the key.
@@ -160,8 +164,8 @@
 // A field and key split.
 .type Sides = [f: Panel, v: DividerRead, y: Layout]
 
-// An index of the field, counted from edge d.
-.type FieldIdx = [d: Dir, x: Position, l: LineRead, f: Panel, v: DividerRead, y: Layout]
+// An index of the field, counted from edge d, at open value w.
+.type FieldIdx = [d: Dir, x: Position, l: LineRead, w: OpenValue, f: Panel, v: DividerRead, y: Layout]
 
 // A line index of the key.
 .type KeyIdx = [x: Position, f: Panel, v: DividerRead, y: Layout]
@@ -274,23 +278,25 @@ key(P_inner, C, F, V, Y) :-
 field_idx(A, X, F, V, Y) :-
     field(P, _, F, V, Y), marker(_, F, V, Y), axis_elem(A), split(P, A, X, _).
 
-.decl field_line(a: Axis, x: Position, l: LineRead, f: Panel, v: DividerRead, y: Layout)
+// The field's lines under each line reading, at open value w.
+.decl field_line(a: Axis, x: Position, l: LineRead, w: OpenValue, f: Panel, v: DividerRead, y: Layout)
 
-// One header value reads a line at index x and another reads none.
-.decl undecided(a: Axis, x: Position, l: LineRead, f: Panel, v: DividerRead, y: Layout)
+// The open values each line reading is derived at.
+.decl reading_value(l: LineRead, w: OpenValue)
 
-.decl field_gap(a: Axis, x: Position, l: LineRead, f: Panel, v: DividerRead, y: Layout)
-field_gap(A, X, L, F, V, Y) :-
-    field_idx(A, X, F, V, Y), line_read_choice(L),
-    !field_line(A, X, L, F, V, Y), !undecided(A, X, L, F, V, Y).
+// A field index under each line reading, at open value w.
+.decl read_idx(a: Axis, x: Position, l: LineRead, w: OpenValue, f: Panel, v: DividerRead, y: Layout)
+read_idx(A, X, L, W, F, V, Y) :- field_idx(A, X, F, V, Y), reading_value(L, W).
+
+.decl field_gap(a: Axis, x: Position, l: LineRead, w: OpenValue, f: Panel, v: DividerRead, y: Layout)
+field_gap(A, X, L, W, F, V, Y) :- read_idx(A, X, L, W, F, V, Y), !field_line(A, X, L, W, F, V, Y).
 
 // The field lines between each field index and edge d.
 // @claim stretch-key
 .init before = Tally<FieldIdx, Position>
-before.domain([D, X, L, F, V, Y]) :-
-    field_idx(A, X, F, V, Y), axis_of(D, A), line_read_choice(L).
-before.item([D, X, L, F, V, Y], X2) :-
-    field_line(A, X2, L, F, V, Y), field_idx(A, X, F, V, Y), axis_of(D, A), nearer(D, X2, X).
+before.domain([D, X, L, W, F, V, Y]) :- read_idx(A, X, L, W, F, V, Y), axis_of(D, A).
+before.item([D, X, L, W, F, V, Y], X2) :-
+    field_line(A, X2, L, W, F, V, Y), field_idx(A, X, F, V, Y), axis_of(D, A), nearer(D, X2, X).
 
 .decl key_idx(a: Axis, x: Position, f: Panel, v: DividerRead, y: Layout)
 key_idx(A, X, F, V, Y) :- key(Q, _, F, V, Y), axis_elem(A), split(Q, A, X, _).
@@ -308,29 +314,29 @@ key_line(D, X, N, F, V, Y) :-
     neighbor(X, D, X2), key_gap(D, X2, N, F, V, Y).
 
 // The key gap that field gap x takes, counted from edge d.
-.decl gap_takes(d: Dir, x: Position, x_key: Position, l: LineRead, g: GapRead, f: Panel, v: DividerRead, y: Layout)
+.decl gap_takes(d: Dir, x: Position, x_key: Position, l: LineRead, w: OpenValue, g: GapRead, f: Panel, v: DividerRead, y: Layout)
 
 // The key index that field index x takes, counted from edge d.
-.decl takes(d: Dir, x: Position, x_key: Position, l: LineRead, g: GapRead, f: Panel, v: DividerRead, y: Layout)
-takes(D, X, X_key, L, G, F, V, Y) :-
+.decl takes(d: Dir, x: Position, x_key: Position, l: LineRead, w: OpenValue, g: GapRead, f: Panel, v: DividerRead, y: Layout)
+takes(D, X, X_key, L, W, G, F, V, Y) :-
     gap_read_choice(G),
-    ( field_line(_, X, L, F, V, Y), before.tally([D, X, L, F, V, Y], N),
+    ( field_line(_, X, L, W, F, V, Y), before.tally([D, X, L, W, F, V, Y], N),
       key_line(D, X_key, N, F, V, Y)
-    ; gap_takes(D, X, X_key, L, G, F, V, Y)
+    ; gap_takes(D, X, X_key, L, W, G, F, V, Y)
     ).
 
 // Counted from some edge, field index x takes no key index.
-.decl untaken(x: Position, l: LineRead, g: GapRead, f: Panel, v: DividerRead, y: Layout)
-untaken(X, L, G, F, V, Y) :-
-    field_idx(A, X, F, V, Y), line_read_choice(L), gap_read_choice(G), axis_of(D, A),
-    !takes(D, X, _, L, G, F, V, Y).
+.decl untaken(x: Position, l: LineRead, w: OpenValue, g: GapRead, f: Panel, v: DividerRead, y: Layout)
+untaken(X, L, W, G, F, V, Y) :-
+    read_idx(A, X, L, W, F, V, Y), gap_read_choice(G), axis_of(D, A),
+    !takes(D, X, _, L, W, G, F, V, Y).
 
 // Field cell p takes key cell q, its two indices counted from edges d1 and d2.
-.decl takes_cell(p: Position, q: Position, d1: Dir, d2: Dir, l: LineRead, g: GapRead, f: Panel, v: DividerRead, y: Layout)
-takes_cell(P, Q, D1, D2, L, G, F, V, Y) :-
+.decl takes_cell(p: Position, q: Position, d1: Dir, d2: Dir, l: LineRead, w: OpenValue, g: GapRead, f: Panel, v: DividerRead, y: Layout)
+takes_cell(P, Q, D1, D2, L, W, G, F, V, Y) :-
     field(P, _, F, V, Y), axis_elem(A), split(P, A, X1, X2),
-    !untaken(X1, L, G, F, V, Y), !untaken(X2, L, G, F, V, Y),
-    takes(D1, X1, K1, L, G, F, V, Y), takes(D2, X2, K2, L, G, F, V, Y),
+    !untaken(X1, L, W, G, F, V, Y), !untaken(X2, L, W, G, F, V, Y),
+    takes(D1, X1, K1, L, W, G, F, V, Y), takes(D2, X2, K2, L, W, G, F, V, Y),
     key(Q, _, F, V, Y), split(Q, A, K1, K2).
 
 // --- $DividerStored ---
@@ -423,46 +429,42 @@ field_mark.item([V, Y], C) :-
 marker(C, $KeyByFill($MarkerFromField()), V, Y) :- field_mark.value([V, Y], C).
 
 // --- $LineByBothEnds ---
-field_line(A, X, $LineByBothEnds(), F, V, Y) :- parse.both_marked([F, V, Y], A, X).
+reading_value($LineByBothEnds(), [nil]).
+
+field_line(A, X, $LineByBothEnds(), [nil], F, V, Y) :- parse.both_marked([F, V, Y], A, X).
 
 // --- $LineByEitherEnd ---
-field_line(A, X, $LineByEitherEnd(), F, V, Y) :- parse.marked_end([F, V, Y], A, X, _).
+reading_value($LineByEitherEnd(), [nil]).
+
+field_line(A, X, $LineByEitherEnd(), [nil], F, V, Y) :- parse.marked_end([F, V, Y], A, X, _).
 
 // --- $LineByHeaderEdge ---
 // Header value h reads a line at index x: its end on the header corner's edge
 // is a marker.
-.decl header_line(h: DiagDir, a: Axis, x: Position, f: Panel, v: DividerRead, y: Layout)
-header_line(H, A, X, F, V, Y) :-
+reading_value($LineByHeaderEdge(), [[H]]) :- params.header(H).
+
+field_line(A, X, $LineByHeaderEdge(), [[H]], F, V, Y) :-
     params.header(H), parse.marked_end([F, V, Y], A, X, D), perp(A, A2), dir_of(H, A2, D).
 
-// Some header value reads no line at index x.
-.decl header_unread(a: Axis, x: Position, f: Panel, v: DividerRead, y: Layout)
-header_unread(A, X, F, V, Y) :-
-    field_idx(A, X, F, V, Y), params.header(H), !header_line(H, A, X, F, V, Y).
-
-field_line(A, X, $LineByHeaderEdge(), F, V, Y) :-
-    header_line(_, A, X, F, V, Y), !header_unread(A, X, F, V, Y).
-
-undecided(A, X, $LineByHeaderEdge(), F, V, Y) :-
-    header_line(_, A, X, F, V, Y), header_unread(A, X, F, V, Y).
-
 // --- $LineByCrossing ---
-field_line(A, X, $LineByCrossing(), F, V, Y) :-
+reading_value($LineByCrossing(), [nil]).
+
+field_line(A, X, $LineByCrossing(), [nil], F, V, Y) :-
     field(P, C, F, V, Y), marker(C, F, V, Y), interior(P, ZERO),
     axis_elem(A), split(P, A, X, _).
 
 // --- $GapByCount ---
-gap_takes(D, X, X_key, L, $GapByCount(), F, V, Y) :-
-    field_gap(_, X, L, F, V, Y), before.tally([D, X, L, F, V, Y], N),
+gap_takes(D, X, X_key, L, W, $GapByCount(), F, V, Y) :-
+    field_gap(_, X, L, W, F, V, Y), before.tally([D, X, L, W, F, V, Y], N),
     key_gap(D, X_key, N, F, V, Y).
 
 // --- $GapToEnd ---
-gap_takes(D, X, X_key, L, $GapToEnd(), F, V, Y) :-
-    field_gap(A, X, L, F, V, Y), axis_of(D, A), key_gap(D, X_key, 0, F, V, Y).
+gap_takes(D, X, X_key, L, W, $GapToEnd(), F, V, Y) :-
+    field_gap(A, X, L, W, F, V, Y), axis_of(D, A), key_gap(D, X_key, 0, F, V, Y).
 
 // --- $Stretch ---
-out(P, Col, [L, $Stretch(), G, F, V, Y]) :-
-    takes_cell(P, Q, _, _, L, G, F, V, Y), key(Q, Col, F, V, Y).
+out(P, Col, [L, $Stretch(), G, F, V, Y], W) :-
+    takes_cell(P, Q, _, _, L, W, G, F, V, Y), key(Q, Col, F, V, Y).
 
 // --- $DrawLines ---
 // The colors of a key line off its crossings.
@@ -472,8 +474,8 @@ line_color.item([X, F, V, Y], C) :-
     key_line(_, X, _, F, V, Y), key(Q, C, F, V, Y), axis_elem(A), split(Q, A, X, X2),
     key_gap(_, X2, _, F, V, Y).
 
-out(P, Col, [L, $DrawLines(), $GapByCount(), F, V, Y]) :-
-    takes_cell(P, Q, D1, D2, L, $GapByCount(), F, V, Y), axis_of(D1, A), split(Q, A, K1, K2),
+out(P, Col, [L, $DrawLines(), $GapByCount(), F, V, Y], W) :-
+    takes_cell(P, Q, D1, D2, L, W, $GapByCount(), F, V, Y), axis_of(D1, A), split(Q, A, K1, K2),
     ( key_line(D1, K1, _, F, V, Y), key_line(D2, K2, _, F, V, Y), key(Q, Col, F, V, Y)  // a crossing
     ; key_line(D1, K1, _, F, V, Y), key_gap(D2, K2, _, F, V, Y),
       line_color.value([K1, F, V, Y], Col)                                            // on one line

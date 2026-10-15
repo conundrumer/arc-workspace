@@ -27,6 +27,8 @@ from engine.program import (
     GridForm,
     GridLayout,
     IntrinsicCall,
+    NilTerm,
+    NilValue,
     NumberTerm,
     RecordTerm,
     RecordValue,
@@ -39,6 +41,10 @@ from engine.program import (
     Variable,
     Wildcard,
 )
+
+NIL_WORD = "nil"
+"""How Souffle writes and prints its record constant
+(`engine.program.NilTerm`)."""
 
 PREFIX = "$"
 """What a constructor's name carries in a value, in a term, in a name and
@@ -119,6 +125,8 @@ def form(part: Part, of: Callable[[Part], str]) -> str:
             return name
         case Wildcard():
             return "_"
+        case NilTerm():
+            return NIL_WORD
         case NumberTerm(value=value):
             return str(value)
         case StringTerm(value=value):
@@ -147,7 +155,8 @@ def text(part: Part) -> str:
     a declaration as its `.decl` line; and a GRID layout as the name of
     its macro."""
     match part:
-        case bool() | int() | float() | str() | AdtValue() | RecordValue():
+        case bool() | int() | float() | str() | AdtValue() | RecordValue() \
+                | NilValue():
             return _value(part, quoted=True)
         case RelationDecl(name=name, columns=cs):
             return decl_line(name, cs)
@@ -188,6 +197,8 @@ def _value(value: Value, quoted: bool) -> str:
             return f"{PREFIX}{name}(" + ", ".join(_value(a, quoted) for a in args) + ")"
         case RecordValue(fields=fields):
             return "[" + ", ".join(_value(f, quoted) for f in fields) + "]"
+        case NilValue():
+            return NIL_WORD
 
 
 def split_top(text: str) -> list[str]:

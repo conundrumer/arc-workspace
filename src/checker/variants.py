@@ -45,7 +45,7 @@ from solver.group_runs import (
     read_run,
 )
 from solver.variant_limits import VariantBound, variant_bound, variant_limits
-from solver.witness import Undefined
+from solver.undefined import Undefined
 
 type Entry = frozenset[tuple[Case, tuple[Grid, ...]]]
 """A pair's profile entry: each case of the solver that gives grids on the pair,
@@ -175,7 +175,7 @@ def entry(engine: Engine, solver: Solver, cases: Sequence[Case],
     stop = _unresulted(failures, len(got), pair, bound)
     if stop is not None:
         return stop
-    cands = candidates(ex)
+    cands = candidates(pair.section, ex)
     if not any(matching(cands, got[c]) for c, _ in grids):
         return Fails(pair, None)
     if not held:

@@ -43,8 +43,8 @@
     //  cells
     // @rule halo: every background cell 4-adjacent to a cell of the object
     //  takes, of the colors tied for the fewest cells, the color of the cell
-    //  that comes first in the scan order params.scan_order; undefined where
-    //  the open orders disagree
+    //  that comes first in the scan order params.scan_order; the output holds
+    //  the grid of each open order
     // @witness diagonal-tie: borderline $ScanOrder
     //     @relaxed rare-color
   | ScanOrder {}
@@ -92,7 +92,14 @@
 // A halo cell under one halo color and one scope.
 .type Tint = [h: HaloColor, s: ColorScope, p: Position]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type ScanOrderValue = [d: DiagDir, a: Axis]
+
+.type OpenValue = [scan_order: ScanOrderValue]
+
+// A halo cell under one halo color and one scope, at one open value.
+.type OrderTint = [h: HaloColor, s: ColorScope, v: OpenValue, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     // @derive DominantColor: variant concept
@@ -207,11 +214,12 @@ beside(P, Q) :- field(P, _), dir_elem(D), neighbor(P, D, Q), object(Q).
 .init paint = Unanimous<Tint, Color>
 paint.item([H, S, P], Col) :- beside(P, Q), member([S, Id], Q), group_color(H, [S, Id], Col).
 
-out(P, Col, [H, R, S]) :-
+out(P, Col, [H, R, S], V) :-
     impl_choice([H, R, S]), in(P, Col0),
-    ( object(P), params.background(Col)                // erase
-    ; halo(R, P), paint.value([H, S, P], Col)          // halo
-    ; !object(P), !halo(R, P), Col = Col0 ).           // rest
+    ( object(P), params.background(Col), V = [nil]               // erase
+    ; halo(R, P), paint.value([H, S, P], Col), V = [nil]         // halo
+    ; halo(R, P), order_paint.value([H, S, V, P], Col)           // halo at an open value
+    ; !object(P), !halo(R, P), Col = Col0, V = [nil] ).          // rest
 
 // --- $AllCells ---
 // Every object cell in one class.
@@ -244,12 +252,12 @@ group_color($RareColor(C, $TieUndefined()), [S, Id], Col) :- parse.rare.value([C
 // --- $ScanOrder ---
 parse.order(Dg, A) :- params.scan_order(Dg, A).
 
-// The pick every open order gives.
-// @claim rare-color
-.init first_tied = Unanimous<Pool, Color>
-first_tied.item(Pl, Col) :- parse.first_tied(Pl, _, _, Col).
-
-group_color($RareColor(C, $ScanOrder()), [S, Id], Col) :- first_tied.value([C, S, Id], Col).
+// The color of each halo cell at each open value; two groups that give one
+// cell different colors leave it none.
+// @claim halo
+.init order_paint = Unanimous<OrderTint, Color>
+order_paint.item([$RareColor(C, $ScanOrder()), S, [[Dg, A]], P], Col) :-
+    beside(P, Q), member([S, Id], Q), parse.first_tied([C, S, Id], Dg, A, Col).
 
 // --- $RarestWithBackground ---
 parse.cell([$RarestWithBackground(), S, Id], P, Bg) :- member([S, Id], _), field(P, Bg).

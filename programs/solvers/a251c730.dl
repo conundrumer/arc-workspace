@@ -62,8 +62,8 @@
     ClashUndefined {}
     // @scene template-box: figures with the same anchor color may differ. A
     //  lone cell takes the figure of its color whose anchor comes first in the
-    //  scan order, from a corner along an axis. Undefined where the open scan
-    //  orders give different grids.
+    //  scan order, from a corner along an axis. The output holds the grid of
+    //  each open scan order.
     // @witness unused-clash: borderline $UnmatchedStays & $FirstWins
     //     @relaxed template-box
   | FirstWins {}
@@ -102,7 +102,10 @@
 // One role reading and one adjacency: the parse's key.
 .type Reading = [role: BoxRole, adj: Adjacency]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type Scan = [d: DiagDir, ax: Axis]
+.type OpenValue = [scan: Scan]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     // --- $FirstWins ---
@@ -341,7 +344,7 @@ clash(A, R) :-
     parse.fig_key($U(), A, R, Id, K), parse.fig_key($U(), A, R, Id2, K),
     parse.fig_rel($U(), A, R, Id, V, Col), !parse.fig_rel($U(), A, R, Id2, V, Col).
 
-out(P_inner, Col, [A, S, U, $ClashUndefined(), Role, J]) :-
+out(P_inner, Col, [A, S, U, $ClashUndefined(), Role, J], [nil]) :-
     impl_choice([A, S, U, $ClashUndefined(), Role, J]), settled(A, U, [Role, J]), !clash(A, [Role, J]),
     sheet([Role, J], P, P_inner, C),
     ( paint(A, S, [Role, J], _, P, Col)
@@ -355,9 +358,8 @@ out(P_inner, Col, [A, S, U, $ClashUndefined(), Role, J]) :-
 .decl scan_painted(d: DiagDir, ax: Axis, a: AnchorCell, s: StampReach, r: Reading, p: Position)
 scan_painted(D, Ax, A, S, R, P) :- parse.picked($U(), D, Ax, A, R, Id), paint(A, S, R, Id, P, _).
 
-// Each open scan gives a grid; a cell the scans settle differently gets both
-// colors.
-out(P_inner, Col, [A, S, U, $FirstWins(), Role, J]) :-
+// Each open scan gives a grid.
+out(P_inner, Col, [A, S, U, $FirstWins(), Role, J], [[D, Ax]]) :-
     impl_choice([A, S, U, $FirstWins(), Role, J]), settled(A, U, [Role, J]), params.scan(D, Ax),
     sheet([Role, J], P, P_inner, C),
     ( parse.picked($U(), D, Ax, A, [Role, J], Id), paint(A, S, [Role, J], Id, P, Col)

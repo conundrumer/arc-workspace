@@ -5,10 +5,12 @@
 // output: each block keeps its contents, and a D4 element moves it in the
 //  block-grid. That element carries either diagonal of the block-grid onto the
 //  other. The pairs fix none of the four elements that do so, so Params holds
-//  every one, the program runs them all, and the output is defined where they
-//  agree.
+//  every one, the program runs them all, and the output holds each one's grid.
 
-.decl out(p: Position, col: Color)
+.type BlockD4 = [d: D4]
+.type OpenValue = [block_d4: BlockD4]
+
+.decl out(p: Position, col: Color, v: OpenValue)
 
 .comp Params {
     .decl block_size(k: number)
@@ -26,7 +28,7 @@
 
 .init params = Params
 
-out(P_out, Col) :-
+out(P_out, Col, [[D]]) :-
     in(P_in, Col),                                          // input cell
     params.block_size(K),
     divide_by_size_2d(P_in, K, 0, P_block_in, P_local),     // its block, and its cell in that block

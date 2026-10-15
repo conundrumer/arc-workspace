@@ -89,7 +89,10 @@
 .type Choice = [reading: Reading, check: StepCheck, scope: StepScope, axis: PanelAxis,
                 width: DividerWidth, panels: PanelCount]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type TimeCorner = [d: DiagDir]
+.type OpenValue = [time_corner: TimeCorner]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .decl reading_choice(r: Reading)
 reading_choice($ObjectMotion()). reading_choice($FirstChange()).
@@ -542,14 +545,21 @@ frames_of(Ab, Wb, Nb, [T, C, G, N]) :-
 // Each reading's next frame.
 .decl result(r: Reading, ck: StepCheck, sc: StepScope, k: Frames, p_intile: Position, col: Color)
 
-out(P_intile, Col, [R, Ck, Sc, Ab, Wb, Nb]) :-
-    frames_of(Ab, Wb, Nb, K), result(R, Ck, Sc, K, P_intile, Col).
-
 // --- $StoredAxis ---
 time_read($StoredAxis(), T) :- params.time_dir(T).
 
+// One grid, read at every time corner.
+out(P_intile, Col, [R, Ck, Sc, $StoredAxis(), Wb, Nb], [nil]) :-
+    frames_of($StoredAxis(), Wb, Nb, K), result(R, Ck, Sc, K, P_intile, Col).
+
 // --- $PanelAxisFromLines ---
 time_read($PanelAxisFromLines(), T) :- params.time_corner(Dc), dir_of(Dc, _, T).
+
+// One grid per time corner: the frames whose time direction is one of the
+// corner's edges.
+out(P_intile, Col, [R, Ck, Sc, $PanelAxisFromLines(), Wb, Nb], [[Dc]]) :-
+    frames_of($PanelAxisFromLines(), Wb, Nb, [T, C, G, N]),
+    result(R, Ck, Sc, [T, C, G, N], P_intile, Col), params.time_corner(Dc), dir_of(Dc, _, T).
 
 // --- $StoredWidth ---
 width_read($StoredWidth(), G) :- params.divider_width(G).

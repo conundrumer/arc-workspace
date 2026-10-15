@@ -51,8 +51,8 @@
     // @claim blocks connect
     SoleBlock {}
     // @rule connect: the dot connects to the first block of its color in the
-    //  order params.block_order. Undefined where the open orders give
-    //  different grids.
+    //  order params.block_order. The output holds the grid of each open
+    //  order.
     // @witness two-blocks: borderline $AlignedBlock
     //     @relaxed blocks
     //     @reassigned block_order
@@ -90,7 +90,7 @@
     Clash {}
     // @rule overlap: the dots draw one at a time in the order
     //  params.scan_order, and a later drawing paints over an earlier one.
-    //  Undefined where the open orders give different grids.
+    //  The output holds the grid of each open order.
     // @witness crossing-lines: variant any
     //     @reassigned scan_order
   | ScanOrder {}
@@ -117,7 +117,11 @@
 // A dot under one case.
 .type Sighting = [ch: Choice, p: Position]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type BlockOrderValue = [c: DiagDir, a: Axis]
+.type ScanOrderValue = [c: DiagDir, a: Axis]
+.type OpenValue = [block_order: BlockOrderValue, scan_order: ScanOrderValue]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     // The drawing, in the frame where the dot lies toward `aim` from its block:
@@ -345,68 +349,71 @@ own([U, O, S, T, R, Ov, Co], P, Id) :-
 .decl several(ch: Choice, p: Position)
 several(Ch, P) :- own(Ch, P, Id), own(Ch, P, Id2), Id != Id2.
 
-// The block orders a case draws under. A case's grid is the one every run
-// gives. A case that picks no block by an order draws the same under each
-// one.
-.decl run(ch: Choice, c: DiagDir, a: Axis)
-run([U, O, S, T, R, Ov, Co], C, A) :-
-    impl_choice([U, O, S, T, R, Ov, Co]), S != $FirstBlock(), diag_dir_elem(C), axis_elem(A).
+// The block orders a case draws under, a grid for each; nil for a case that
+// picks no block by an order.
+.decl run(ch: Choice, b: BlockOrderValue)
+run([U, O, S, T, R, Ov, Co], nil) :- impl_choice([U, O, S, T, R, Ov, Co]), S != $FirstBlock().
 
-// The block dot P connects to under case Ch and run (C, A).
-.decl pick(ch: Choice, c: DiagDir, a: Axis, p: Position, id: Ident)
-pick(Ch, C, A, P, Id) :- run(Ch, C, A), own(Ch, P, Id), !several(Ch, P).
+// The scan orders a case draws under, a grid for each; nil for a case that
+// draws in no order.
+.decl scan_run(ch: Choice, s: ScanOrderValue)
 
-// Dot P keeps its color under case Ch and run (C, A).
-.decl skip(ch: Choice, c: DiagDir, a: Axis, p: Position)
+// The block dot P connects to under case Ch and block order Bo.
+.decl pick(ch: Choice, b: BlockOrderValue, p: Position, id: Ident)
+pick(Ch, Bo, P, Id) :- run(Ch, Bo), own(Ch, P, Id), !several(Ch, P).
 
-// Dot P draws from block Id toward D under case Ch and run (C, A).
-.decl link(ch: Choice, c: DiagDir, a: Axis, p: Position, id: Ident, d: Dir)
-link(Ch, C, A, P, Id, D) :- pick(Ch, C, A, P, Id), parse.aligned($U(), P, Id, D).
+// Dot P keeps its color under case Ch and block order Bo.
+.decl skip(ch: Choice, b: BlockOrderValue, p: Position)
+
+// Dot P draws from block Id toward D under case Ch and block order Bo.
+.decl link(ch: Choice, b: BlockOrderValue, p: Position, id: Ident, d: Dir)
+link(Ch, Bo, P, Id, D) :- pick(Ch, Bo, P, Id), parse.aligned($U(), P, Id, D).
 
 // The cells a case's dot paints, with their colors.
-.decl draw(ch: Choice, c: DiagDir, a: Axis, p: Position, x: Position, col: Color)
+.decl draw(ch: Choice, b: BlockOrderValue, p: Position, x: Position, col: Color)
 
-// The color a case's drawings give cell X.
-.decl painted(ch: Choice, c: DiagDir, a: Axis, x: Position, col: Color)
+// The color a case's drawings give cell X under scan order s.
+.decl painted(ch: Choice, b: BlockOrderValue, s: ScanOrderValue, x: Position, col: Color)
 
-// A cell the case does not read, which leaves it no grid: a dot that under
-// some run neither draws nor keeps its color, or a cell of a piece that is
+// A cell the case does not read under a run, which leaves the run no grid: a
+// dot that neither draws nor keeps its color, or a cell of a piece that is
 // neither a block nor made of dots.
-.decl blank(ch: Choice, x: Position)
-blank(Ch, X) :- run(Ch, C, A), dot(Ch, X, _), !link(Ch, C, A, X, _, _), !skip(Ch, C, A, X).
-blank([U, O, S, T, R, Ov, Co], X) :-
-    impl_choice([U, O, S, T, R, Ov, Co]), parse.part($U(), Id, X, _),
+.decl blank(ch: Choice, b: BlockOrderValue, x: Position)
+blank(Ch, Bo, X) :- run(Ch, Bo), dot(Ch, X, _), !link(Ch, Bo, X, _, _), !skip(Ch, Bo, X).
+blank([U, O, S, T, R, Ov, Co], Bo, X) :-
+    run([U, O, S, T, R, Ov, Co], Bo), parse.part($U(), Id, X, _),
     !dot([U, O, S, T, R, Ov, Co], X, _), !parse.block($U(), T, Id, _).
 
-// Each cell under each run: painted, or else its input color.
-out(X, Col, Ch) :-
-    ( painted(Ch, _, _, X, Col)
-    ; run(Ch, C, A), in(X, Col), !painted(Ch, C, A, X, _)
-    ), !blank(Ch, X).
+// Each cell under each run and scan order: painted, or else its input color.
+out(X, Col, Ch, [Bo, So]) :-
+    run(Ch, Bo), scan_run(Ch, So),
+    ( painted(Ch, Bo, So, X, Col)
+    ; in(X, Col), !painted(Ch, Bo, So, X, _)
+    ), !blank(Ch, Bo, X).
 
 // --- $CellDots ---
 dot([U, O, S, T, $CellDots(), Ov, Co], P, Col) :-
     impl_choice([U, O, S, T, $CellDots(), Ov, Co]), parse.loose($U(), P, Col).
 
 // --- $NearestFace ---
-link([$NearestFace(), O, S, T, R, Ov, Co], C, A, P, Id, D) :-
-    pick([$NearestFace(), O, S, T, R, Ov, Co], C, A, P, Id), parse.face($U(), P, Id, D).
+link([$NearestFace(), O, S, T, R, Ov, Co], Bo, P, Id, D) :-
+    pick([$NearestFace(), O, S, T, R, Ov, Co], Bo, P, Id), parse.face($U(), P, Id, D).
 
 // --- $SkipUnaligned ---
-skip([$SkipUnaligned(), O, S, T, R, Ov, Co], C, A, P) :-
-    pick([$SkipUnaligned(), O, S, T, R, Ov, Co], C, A, P, Id), !parse.aligned($U(), P, Id, _).
+skip([$SkipUnaligned(), O, S, T, R, Ov, Co], Bo, P) :-
+    pick([$SkipUnaligned(), O, S, T, R, Ov, Co], Bo, P, Id), !parse.aligned($U(), P, Id, _).
 
 // --- $SkipOrphan ---
-skip([U, $SkipOrphan(), S, T, R, Ov, Co], C, A, P) :-
-    run([U, $SkipOrphan(), S, T, R, Ov, Co], C, A), dot([U, $SkipOrphan(), S, T, R, Ov, Co], P, _),
+skip([U, $SkipOrphan(), S, T, R, Ov, Co], Bo, P) :-
+    run([U, $SkipOrphan(), S, T, R, Ov, Co], Bo), dot([U, $SkipOrphan(), S, T, R, Ov, Co], P, _),
     !own([U, $SkipOrphan(), S, T, R, Ov, Co], P, _).
 
 // --- $FirstBlock ---
-run([U, O, $FirstBlock(), T, R, Ov, Co], C, A) :-
+run([U, O, $FirstBlock(), T, R, Ov, Co], [C, A]) :-
     impl_choice([U, O, $FirstBlock(), T, R, Ov, Co]), params.block_order(C, A).
 
-pick([U, O, $FirstBlock(), T, R, Ov, Co], C, A, P, Id) :-
-    run([U, O, $FirstBlock(), T, R, Ov, Co], C, A), several([U, O, $FirstBlock(), T, R, Ov, Co], P),
+pick([U, O, $FirstBlock(), T, R, Ov, Co], [C, A], P, Id) :-
+    run([U, O, $FirstBlock(), T, R, Ov, Co], [C, A]), several([U, O, $FirstBlock(), T, R, Ov, Co], P),
     dot([U, O, $FirstBlock(), T, R, Ov, Co], P, Col), parse.first_block($U(), T, Col, C, A, Id).
 
 // --- $AlignedBlock ---
@@ -421,8 +428,8 @@ near_aligned.cand([Ch, P], Id, K) :-
 aligned_tie(Ch, P) :-
     near_aligned.high([Ch, P], Id, _), near_aligned.high([Ch, P], Id2, _), Id != Id2.
 
-pick([U, O, $AlignedBlock(), T, R, Ov, Co], C, A, P, Id) :-
-    run([U, O, $AlignedBlock(), T, R, Ov, Co], C, A),
+pick([U, O, $AlignedBlock(), T, R, Ov, Co], Bo, P, Id) :-
+    run([U, O, $AlignedBlock(), T, R, Ov, Co], Bo),
     near_aligned.high([[U, O, $AlignedBlock(), T, R, Ov, Co], P], Id, _),
     !aligned_tie([U, O, $AlignedBlock(), T, R, Ov, Co], P).
 
@@ -436,31 +443,33 @@ near_any.cand([Ch, P], Id, K) :-
 .decl any_tie(ch: Choice, p: Position)
 any_tie(Ch, P) :- near_any.high([Ch, P], Id, _), near_any.high([Ch, P], Id2, _), Id != Id2.
 
-pick([$NearestFace(), O, $AlignedBlock(), T, R, Ov, Co], C, A, P, Id) :-
-    run([$NearestFace(), O, $AlignedBlock(), T, R, Ov, Co], C, A),
+pick([$NearestFace(), O, $AlignedBlock(), T, R, Ov, Co], Bo, P, Id) :-
+    run([$NearestFace(), O, $AlignedBlock(), T, R, Ov, Co], Bo),
     near_any.high([[$NearestFace(), O, $AlignedBlock(), T, R, Ov, Co], P], Id, _),
     !any_tie([$NearestFace(), O, $AlignedBlock(), T, R, Ov, Co], P).
 
 // --- $SkipUnaligned & $AlignedBlock ---
-skip([$SkipUnaligned(), O, $AlignedBlock(), T, R, Ov, Co], C, A, P) :-
-    run([$SkipUnaligned(), O, $AlignedBlock(), T, R, Ov, Co], C, A),
+skip([$SkipUnaligned(), O, $AlignedBlock(), T, R, Ov, Co], Bo, P) :-
+    run([$SkipUnaligned(), O, $AlignedBlock(), T, R, Ov, Co], Bo),
     several([$SkipUnaligned(), O, $AlignedBlock(), T, R, Ov, Co], P),
     !near_aligned.cand([[$SkipUnaligned(), O, $AlignedBlock(), T, R, Ov, Co], P], _, _).
 
 // --- $PaintOver ---
-draw([U, O, S, T, R, Ov, $PaintOver()], C, A, P, X, Col) :-
-    link([U, O, S, T, R, Ov, $PaintOver()], C, A, P, Id, D), parse.stroke($U(), P, Id, D, X, Col).
+draw([U, O, S, T, R, Ov, $PaintOver()], Bo, P, X, Col) :-
+    link([U, O, S, T, R, Ov, $PaintOver()], Bo, P, Id, D), parse.stroke($U(), P, Id, D, X, Col).
 
 // --- $PaintBgOnly ---
-draw([U, O, S, T, R, Ov, $PaintBgOnly()], C, A, P, X, Col) :-
-    link([U, O, S, T, R, Ov, $PaintBgOnly()], C, A, P, Id, D), parse.stroke($U(), P, Id, D, X, Col),
+draw([U, O, S, T, R, Ov, $PaintBgOnly()], Bo, P, X, Col) :-
+    link([U, O, S, T, R, Ov, $PaintBgOnly()], Bo, P, Id, D), parse.stroke($U(), P, Id, D, X, Col),
     ( in(X, Bg), parse.ground.mode($U(), Bg)     // a background cell
     ; X = P                                      // the dot's own cell
     ).
 
 // --- $Clash ---
-painted([U, O, S, T, R, $Clash(), Co], C, A, X, Col) :-
-    draw([U, O, S, T, R, $Clash(), Co], C, A, _, X, Col).
+scan_run([U, O, S, T, R, $Clash(), Co], nil) :- impl_choice([U, O, S, T, R, $Clash(), Co]).
+
+painted([U, O, S, T, R, $Clash(), Co], Bo, nil, X, Col) :-
+    draw([U, O, S, T, R, $Clash(), Co], Bo, _, X, Col).
 
 // --- $ScanOrder ---
 // Each case's dots in each stored scan order.
@@ -472,14 +481,17 @@ dot_scan.cell([[U, O, S, T, R, $ScanOrder(), Co], C, A], P) :-
     params.scan_order(C, A), dot([U, O, S, T, R, $ScanOrder(), Co], P, _).
 
 // A dot later in the scan order from C2 along A2 also draws cell X.
-.decl overdrawn(ch: Choice, c: DiagDir, a: Axis, c2: DiagDir, a2: Axis, p: Position, x: Position)
-overdrawn(Ch, C, A, C2, A2, P, X) :-
-    draw(Ch, C, A, P, X, _), draw(Ch, C, A, P2, X, _), dot_scan.before([Ch, C2, A2], P, P2).
+.decl overdrawn(ch: Choice, b: BlockOrderValue, c2: DiagDir, a2: Axis, p: Position, x: Position)
+overdrawn(Ch, Bo, C2, A2, P, X) :-
+    draw(Ch, Bo, P, X, _), draw(Ch, Bo, P2, X, _), dot_scan.before([Ch, C2, A2], P, P2).
 
-painted([U, O, S, T, R, $ScanOrder(), Co], C, A, X, Col) :-
-    draw([U, O, S, T, R, $ScanOrder(), Co], C, A, P, X, Col),
+scan_run([U, O, S, T, R, $ScanOrder(), Co], [C, A]) :-
+    impl_choice([U, O, S, T, R, $ScanOrder(), Co]), params.scan_order(C, A).
+
+painted([U, O, S, T, R, $ScanOrder(), Co], Bo, [C2, A2], X, Col) :-
+    draw([U, O, S, T, R, $ScanOrder(), Co], Bo, P, X, Col),
     params.scan_order(C2, A2),
-    !overdrawn([U, O, S, T, R, $ScanOrder(), Co], C, A, C2, A2, P, X).
+    !overdrawn([U, O, S, T, R, $ScanOrder(), Co], Bo, C2, A2, P, X).
 
 .comp Determine {
     // A dot of one example.

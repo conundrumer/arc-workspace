@@ -82,8 +82,8 @@
     TileLattice {}
     // @rule tile-panel: each panel is filled with copies of its motif tile,
     //  laid from the corner of the panel's bounding box at params.anchor and
-    //  repeated along both axes; blank cells in the tile stay blank; anchors
-    //  whose copies give one cell different colors give no output
+    //  repeated along both axes; blank cells in the tile stay blank; the
+    //  output holds each anchor's grid
     // @witness off-lattice: borderline concept
     //     @relaxed tile
     //     @reassigned anchor
@@ -111,7 +111,11 @@
 // A panel of one example.
 .type ExPanel = [e: Example, x: Ident]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type AnchorValue = [d: DiagDir]
+
+.type OpenValue = [anchor: AnchorValue]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     // --- $StoredField ---
@@ -259,18 +263,30 @@ parse.color(Pn, P, Col) :- parse.box.box(Pn, B), in(P, Col), inside(P, B).
 // The cells the copies fill.
 .decl fill(pn: Panel, p: Position)
 
-.decl paint(ch: Choice, p: Position, col: Color)
-paint(Ch, P, Col) :- parse.copy([Ch, X], _, _, P, Col), fill([Ch, X], P).
+// The open values each case's output is derived at.
+.decl open_value(ch: Choice, v: OpenValue)
+
+// The panel's tile laid onto box b_laid at open value v.
+.decl laid(pn: Panel, v: OpenValue, b_laid: Box)
+parse.lay(Pn, B, B_laid) :- parse.tile(Pn, B), laid(Pn, _, B_laid).
+
+.decl paint(ch: Choice, v: OpenValue, p: Position, col: Color)
+paint(Ch, V, P, Col) :-
+    laid([Ch, X], V, B_laid), parse.copy([Ch, X], _, B_laid, P, Col), fill([Ch, X], P).
 
 // The case is undefined on the input.
 .decl broken(ch: Choice)
-broken(Ch) :- paint(Ch, P, Col), paint(Ch, P, Col2), Col != Col2.
 
-.decl live(ch: Choice)
-live(Ch) :- impl_choice(Ch), Ch = [F, _, _, _, _, _, _], field(F, _), !broken(Ch).
+// The case is undefined on the input at open value v.
+.decl broken_at(ch: Choice, v: OpenValue)
+broken_at(Ch, V) :- paint(Ch, V, P, Col), paint(Ch, V, P, Col2), Col != Col2.
 
-out(P, Col, Ch) :- live(Ch), paint(Ch, P, Col).
-out(P, Col, Ch) :- live(Ch), in(P, Col), !paint(Ch, P, _).
+.decl live(ch: Choice, v: OpenValue)
+live(Ch, V) :-
+    open_value(Ch, V), Ch = [F, _, _, _, _, _, _], field(F, _), !broken(Ch), !broken_at(Ch, V).
+
+out(P, Col, Ch, V) :- live(Ch, V), paint(Ch, V, P, Col).
+out(P, Col, Ch, V) :- live(Ch, V), in(P, Col), !paint(Ch, V, P, _).
 
 // --- $StoredField ---
 field($StoredField(), Col) :- params.field(Col).
@@ -342,11 +358,16 @@ parse.tile(Pn, B) :-
 broken(Ch) :- gap([Ch, _], _, K, K).
 
 // --- $TileLattice ---
-parse.lay([Ch, X], B, B) :- parse.tile([Ch, X], B), Ch = [_, _, _, _, _, $TileLattice(), _].
+open_value(Ch, [nil]) :- impl_choice(Ch), Ch = [_, _, _, _, _, $TileLattice(), _].
+
+laid([Ch, X], [nil], B) :- parse.tile([Ch, X], B), Ch = [_, _, _, _, _, $TileLattice(), _].
 
 // --- $CornerAnchor ---
-parse.lay([Ch, X], B, B_laid) :-
-    parse.corner_lay([Ch, X], B, D, B_laid), Ch = [_, _, _, _, _, $CornerAnchor(), _],
+open_value(Ch, [[D]]) :-
+    impl_choice(Ch), Ch = [_, _, _, _, _, $CornerAnchor(), _], params.anchor(D).
+
+laid([Ch, X], [[D]], B_laid) :-
+    parse.corner_lay([Ch, X], _, D, B_laid), Ch = [_, _, _, _, _, $CornerAnchor(), _],
     params.anchor(D).
 
 // --- $PanelCells ---

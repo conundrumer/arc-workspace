@@ -27,7 +27,10 @@
     //     @reassigned scan_order
   | LastSeed {}
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type ScanValue = [d: DiagDir, a: Axis]
+.type OpenValue = [scan_order: ScanValue]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     // @derive DominantColor: borderline derived
@@ -96,7 +99,7 @@ hue(P, S, Col) :-
     parse.taxicab($U(), P, S, K), parse.seed($U(), S, C0), cycle.walk($U(), C0, K, Col).
 
 // --- $OneSeed ---
-out(P, Col, $OneSeed()) :- hue(P, _, Col).
+out(P, Col, $OneSeed(), [nil]) :- hue(P, _, Col).
 
 // --- $NearestSeed ---
 
@@ -104,11 +107,11 @@ out(P, Col, $OneSeed()) :- hue(P, _, Col).
 .init nearest = ArgExtremes<Position, Position>
 nearest.cand(P, S, K) :- parse.taxicab($U(), P, S, K).
 
-out(P, Col, $NearestSeed()) :- nearest.low(P, S, _), hue(P, S, Col).
+out(P, Col, $NearestSeed(), [nil]) :- nearest.low(P, S, _), hue(P, S, Col).
 
 // --- $LastSeed ---
-// Each open scan order's last seed; seeds that differ give a cell two colors.
-out(P, Col, $LastSeed()) :-
+// Each open scan order's last seed rings the grid.
+out(P, Col, $LastSeed(), [[C, A]]) :-
     params.scan_order(C, A), parse.scan.last([$U(), C, A], S),
     hue(P, S, Col).
 

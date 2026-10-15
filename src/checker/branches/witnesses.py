@@ -20,13 +20,8 @@ from solver.outcome import Assignment, Grids, Outcome, group_grid, is_result
 from solver.problems import Fault, NameFault, WitnessFileRole
 from solver.solve import assignment
 from solver.witnessed_cases import entry_assignments
-from solver.witness import (
-    Entry,
-    GroupGrid,
-    Groups,
-    Outcomes,
-    grouped,
-)
+from solver.witness import Entry, GroupGrid, Groups
+from solver.witness_groups import Outcomes, grouped
 
 if TYPE_CHECKING:
     from checker.store.witness import Change
@@ -245,7 +240,7 @@ def witness_entry(runs: Runs, solver: Solver, name: str, separates: str,
                   given: Entry | None = None) -> Entry | RunFailure:
     """The witness file's entry a survey builds for a branch: its id the
     branch's name, its input `grid`, and its groups the outputs `cases`
-    give there, as `record` writes them (`solver.witness.grouped`); built
+    give there, as `record` writes them (`solver.witness_groups.grouped`); built
     from an entry of the file, `given`, the entry's `assign` and the
     outputs at its assignment. A case whose run fails fails the entry."""
     assign = Assignment(()) if given is None \
@@ -294,7 +289,7 @@ def entry_outcomes(runs: Runs, entry: Entry) -> Outcomes | RunFailure | Fault:
 def groups_of(solver: Solver, got: Sequence[tuple[Case, Outcome | Fault]]
               ) -> Groups | RunFailure | Fault:
     """An entry's groups from each case's outcome on its input, as
-    `record` writes them (`solver.witness.grouped`); the first outcome of
+    `record` writes them (`solver.witness_groups.grouped`); the first outcome of
     `got` that is no result in their place (`results`)."""
     found = results(got)
     return grouped(solver, found) if isinstance(found, tuple) else found

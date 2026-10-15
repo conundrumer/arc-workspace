@@ -277,10 +277,6 @@
 - The enum relation supplies the domain: `dir_elem`, `d4_elem`, `axis_elem`.
 - Repeating the tested atom once per member states the same universal by hand: the members become variable positions, and an assembly join must bind one variable per member.
 
-## Open values joined per value
-- The program derives the output, or a value the output depends on one-to-one, once per open value, keyed by that value in each case that shares the keyed clauses, and keeps it only where every open value gives the same one, and under tiebreak resolutions the same grid, through any resolution: `Unanimous` over the per-value results, or one `out` clause over every value, where two colors at a cell leave the grid undefined (28a6681f).
-    - Neither form makes the output undefined where some open value gives nothing, since the other values' result still stands. A defect clause states it, as in [Universals via defect negation](docs/handbook/patterns.md#universals-via-defect-negation).
-
 ## `cell_split` — input cell with its axis decomposition
 - `cell_split` pairs an input cell with its along/across split on the task's axis.
     ```

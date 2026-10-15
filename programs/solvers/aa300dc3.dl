@@ -72,8 +72,8 @@
     // @claim tie-center
     TieCenter {}
     // @rule tie-center: the tied runs along params.tie_dir win, and the
-    //  concept's rule breaks the tie left among them; at the open values,
-    //  undefined when runs tie across the two diagonals
+    //  concept's rule breaks the tie left among them; the output holds the
+    //  grid of each open value
     // @witness cross-tie: ordinary any
     //     @reassigned tie_dir
   | TieDirection {}
@@ -100,7 +100,11 @@
 
 .type Choice = [extent: Extent, cand: Candidates, scope: Scope, tie: Tie, hole: HoleColor]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type TieValue = [da: DiagAxis]
+.type PickValue = [d: Dir]
+.type OpenValue = [tie_dir: TieValue, pick_dir: PickValue]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     .decl paint_color(c: Color) paint_color(8).
@@ -128,11 +132,10 @@
 .init params = Params
 
 .type ArenaCell = [h: HoleColor, s: Scope, p: Position]
-.type DrawKey = [a: Ident, d: Dir]
-.type Pool = [e: Extent, c: Candidates, dr: Ident]
+.type Pool = [e: Extent, c: Candidates, a: Ident, pk: PickValue]
 .type DirPool = [pool: Pool, da: DiagAxis]
 .type Side = [pool: Pool, dc: DiagDir]
-.type Contest = [t: Tie, e: Extent, c: Candidates, a: Ident]
+.type Contest = [t: Tie, pool: Pool, tv: TieValue]
 
 .decl extent_choice(e: Extent)
 extent_choice($Run()). extent_choice($LineCount()). extent_choice($NoPinch()).
@@ -275,15 +278,15 @@ parse.cell(A, P) :- arena_cell(_, _, A, P).
 .decl seg_axis(sg: Ident, da: DiagAxis)
 seg_axis(Sg, DA) :- parse.segment(_, _, Sg, DA, _).
 
-// Segment Sg competes in pool [E, C, Dr]; the draw Dr is the arena itself, or
-// the arena under one reading order.
+// Segment Sg competes in pool [E, C, A, Pk]: arena A, at open value Pk of
+// params.pick_dir where the candidates read it.
 .decl cand(pool: Pool, sg: Ident)
 
 // --- $EveryRun ---
-cand([E, $EveryRun(), A], Sg) :- parse.segment(A, E, Sg, _, _).
+cand([E, $EveryRun(), A, nil], Sg) :- parse.segment(A, E, Sg, _, _).
 
 // --- $CornerRun ---
-cand([E, $CornerRun(), A], Sg) :- parse.segment(A, E, Sg, _, P), parse.corner(A, _, P).
+cand([E, $CornerRun(), A, nil], Sg) :- parse.segment(A, E, Sg, _, P), parse.corner(A, _, P).
 
 // --- $AnchorCorner ---
 // The anchor corners.
@@ -296,23 +299,17 @@ anchor($EdgeCorners(), Dc) :- params.anchor_edge(D), dir_of(Dc, _, D).
 anchor($EveryCorner(), Dc) :- diag_dir_elem(Dc).
 
 // --- $EveryCornerCell ---
-cand([E, $AnchorCorner(Cs, $EveryCornerCell()), A], Sg) :-
+cand([E, $AnchorCorner(Cs, $EveryCornerCell()), A, nil], Sg) :-
     anchor(Cs, Dc), diag_axis_of(Dc, DA), parse.corner(A, Dc, P), parse.segment(A, E, Sg, DA, P).
 
 // --- $AnchorFirst ---
 parse.order(A, Dp) :- arena_of(_, _, A), params.pick_dir(Dp).
 
-// One draw per arena and reading order.
-.init draw = Canon<DrawKey>
-draw.equiv([A, Dp], [A, Dp]) :- parse.order(A, Dp).
-
-cand([E, $AnchorCorner(Cs, $AnchorFirst()), Dr], Sg) :-
-    draw.id([A, Dp], Dr), anchor(Cs, Dc), diag_axis_of(Dc, DA),
+cand([E, $AnchorCorner(Cs, $AnchorFirst()), A, [Dp]], Sg) :-
+    parse.order(A, Dp), anchor(Cs, Dc), diag_axis_of(Dc, DA),
     parse.first_cell.first([A, Dp, Dc], P), parse.segment(A, E, Sg, DA, P).
 
 // --- shared ---
-.decl pool_arena(pool: Pool, a: Ident)
-pool_arena(Pool, A) :- cand(Pool, Sg), parse.segment(A, _, Sg, _, _).
 
 // @claim longest-run
 .init longest = ArgExtremes<Pool, Ident>
@@ -321,15 +318,16 @@ longest.cand(Pool, Sg, N) :- cand(Pool, Sg), parse.seg_len.tally(Sg, N).
 .decl tied(pool: Pool, sg: Ident)
 tied(Pool, Sg) :- longest.high(Pool, Sg, _).
 
-// A tied segment the tie rule keeps.
-.decl finalist(t: Tie, pool: Pool, sg: Ident)
+// A tied segment the tie rule keeps, at open value Tv of params.tie_dir
+// where the rule reads it.
+.decl finalist(t: Tie, pool: Pool, tv: TieValue, sg: Ident)
 
 // --- $TieCenter ---
 // @claim tie-center
 .init nearest = ArgExtremes<Pool, Ident>
 nearest.cand(Pool, Sg, K) :- tied(Pool, Sg), parse.center.low(Sg, K).
 
-finalist($TieCenter(), Pool, Sg) :- nearest.high(Pool, Sg, _).
+finalist($TieCenter(), Pool, nil, Sg) :- nearest.high(Pool, Sg, _).
 
 // --- $TieDirection ---
 .decl tied_along(pool: Pool, da: DiagAxis)
@@ -342,7 +340,7 @@ nearest_dir.cand([Pool, V], Sg, K) :-
     ( seg_axis(Sg, V)                // along the winning diagonal
     ; !tied_along(Pool, V) ).        // or none is
 
-finalist($TieDirection(), Pool, Sg) :- nearest_dir.high([Pool, _], Sg, _).
+finalist($TieDirection(), Pool, [V], Sg) :- nearest_dir.high([Pool, V], Sg, _).
 
 // --- $TieMiddle ---
 .decl mixed(pool: Pool)
@@ -358,7 +356,7 @@ middle.before([Pool, Dc], Sg1, Sg2) :-
     middle.elem([Pool, Dc], Sg1), middle.elem([Pool, Dc], Sg2),
     parse.segment(_, _, Sg1, _, P1), parse.segment(_, _, Sg2, _, P2), nearer(Dc, P1, P2).
 
-finalist($TieMiddle(), Pool, Sg) :-
+finalist($TieMiddle(), Pool, nil, Sg) :-
     middle.rank([Pool, Dc], Sg, R), middle.rank_desc([Pool, Dc], Sg, R), !mixed(Pool).
 
 // --- $TieCorner ---
@@ -368,42 +366,37 @@ contested(Pool) :- tied(Pool, Sg1), tied(Pool, Sg2), Sg1 != Sg2.
 .decl shared_corner(a: Ident, dc: DiagDir)
 shared_corner(A, Dc) :- parse.corner(A, Dc, P), parse.corner(A, Dc, Q), P != Q.
 
-finalist($TieCorner(), Pool, Sg) :-
+finalist($TieCorner(), Pool, nil, Sg) :-
     tied(Pool, Sg),
     ( !contested(Pool)
     ; contested(Pool), parse.segment(A, _, Sg, _, P),
       parse.corner(A, Dc, P), !shared_corner(A, Dc) ).  // holds a lone corner cell
 
 // --- shared ---
-// The one segment every draw of the contest keeps.
+// The one segment the contest keeps.
 // @claim longest-run tie-center
 .init pick = Unanimous<Contest, Ident>
-pick.item([T, E, C, A], Sg) :- finalist(T, [E, C, Dr], Sg), pool_arena([E, C, Dr], A).
+pick.item([T, Pool, Tv], Sg) :- finalist(T, Pool, Tv, Sg).
 
-// Some draw of the contest keeps no segment.
-.decl undecided(t: Tie, e: Extent, c: Candidates, a: Ident)
-undecided(T, E, C, A) :-
-    pool_arena([E, C, Dr], A), tie_choice(T), !finalist(T, [E, C, Dr], _).
+// An open value some arena of the case has a winner at.
+.decl case_value(ch: Choice, v: OpenValue)
+case_value([E, C, S, T, H], [Tv, Pk]) :-
+    impl_choice([E, C, S, T, H]), arena_of(H, S, A), pick.value([T, [E, C, A, Pk], Tv], _).
 
-.decl winner(t: Tie, e: Extent, c: Candidates, a: Ident, sg: Ident)
-winner(T, E, C, A, Sg) :- pick.value([T, E, C, A], Sg), !undecided(T, E, C, A).
+// Some arena of the case has no winner at the open value.
+.decl unsettled(ch: Choice, v: OpenValue)
+unsettled([E, C, S, T, H], [Tv, Pk]) :-
+    case_value([E, C, S, T, H], [Tv, Pk]), arena_of(H, S, A),
+    !pick.value([T, [E, C, A, Pk], Tv], _).
 
-// Some arena of the case has no winner.
-.decl unsettled(ch: Choice)
-unsettled([E, C, S, T, H]) :-
-    impl_choice([E, C, S, T, H]), arena_of(H, S, A), !winner(T, E, C, A, _).
+.decl painted(ch: Choice, v: OpenValue, p: Position)
+painted([E, C, S, T, H], [Tv, Pk], P) :-
+    case_value([E, C, S, T, H], [Tv, Pk]), !unsettled([E, C, S, T, H], [Tv, Pk]),
+    arena_of(H, S, A), pick.value([T, [E, C, A, Pk], Tv], Sg), parse.segment(_, _, Sg, _, P).
 
-.decl settled(ch: Choice)
-settled([E, C, S, T, H]) :-
-    impl_choice([E, C, S, T, H]), arena_of(H, S, _), !unsettled([E, C, S, T, H]).
-
-.decl painted(ch: Choice, p: Position)
-painted([E, C, S, T, H], P) :-
-    settled([E, C, S, T, H]), arena_of(H, S, A), winner(T, E, C, A, Sg),
-    parse.segment(_, _, Sg, _, P).
-
-out(P, Col, Ch) :- painted(Ch, P), params.paint_color(Col).
-out(P, Col, Ch) :- settled(Ch), in(P, Col), !painted(Ch, P).
+out(P, Col, Ch, V) :- painted(Ch, V, P), params.paint_color(Col).
+out(P, Col, Ch, V) :-
+    case_value(Ch, V), !unsettled(Ch, V), in(P, Col), !painted(Ch, V, P).
 
 .comp Determine {
     .type ExOrder = [e: Example, dp: Dir]

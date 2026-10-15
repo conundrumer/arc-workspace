@@ -106,7 +106,14 @@
 // A case, with the edge its sequence runs from.
 .type Run = [ch: Choice, d: Dir]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type TieAxisValue = [a: Axis]
+
+.type OpenValue = [tie_axis: TieAxisValue]
+
+// The kept squares at an open value.
+.type SqValue = [sq: Squares, v: OpenValue]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     // @derive DominantColor: variant derived
@@ -218,7 +225,7 @@ sq_line(Sq, B, A, L) :- sq_cell(Sq, B, P, _), axis_elem(A), split(P, A, L, _).
 .decl layout_axis(sq: Squares, r: AxisRule, a: Axis)
 
 // A case's sequence runs from each edge of its layout axis, and the two
-// must agree.
+// must agree at each open value.
 .decl run(ch: Choice, d: Dir, a: Axis)
 run([Sq, R, O], D, A) :- impl_choice([Sq, R, O]), layout_axis(Sq, R, A), axis_of(D, A).
 
@@ -233,7 +240,9 @@ sequence.before(Rn, [B1, L1], [B2, L2]) :-
 sequence.before([Ch, D], [B, L1], [B, L2]) :-            // within one square
     sequence.elem([Ch, D], [B, L1]), sequence.elem([Ch, D], [B, L2]), nearer(D, L1, L2).
 
-out(P_grid, Col, Ch) :-
+// The output cells of a case laid along axis a.
+.decl laid(ch: Choice, a: Axis, p: Position, col: Color)
+laid(Ch, A, P_grid, Col) :-
     run(Ch, D, A), Ch = [Sq, _, _],
     sequence.rank([Ch, D], [B, L], R), sequence.rank_desc([Ch, D], [B, L], R2),
     axis_inset(D, R, R2, P_along),                         // the line's place in the output
@@ -279,6 +288,8 @@ overlap(Sq, A) :- sq_line(Sq, B1, A, L), sq_line(Sq, B2, A, L), B1 != B2.
 layout_axis(Sq, $SeparatingAxis(), A) :-
     overlap(Sq, A2), perp(A, A2), !overlap(Sq, A).
 
+out(P, Col, [Sq, $SeparatingAxis(), O], [nil]) :- laid([Sq, $SeparatingAxis(), O], _, P, Col).
+
 // --- $AxisSpread ---
 // The box of the kept squares' corners, once per corner.
 // @claim axis
@@ -286,13 +297,16 @@ layout_axis(Sq, $SeparatingAxis(), A) :-
 spread.cell([Sq, D], P) :- sq_cell(Sq, B, P, _), box_corner(P, B, D).
 
 // @claim axis
-.init spread_axis = Unanimous<Squares, Axis>
-spread_axis.item(Sq, A) :-
-    spread.box([Sq, _], B), in(P, _),
+.init spread_axis = Unanimous<SqValue, Axis>
+spread_axis.item([Sq, [[T]]], A) :-
+    spread.box([Sq, _], B), in(P, _), params.tie_axis(T),
     perp(A, A2), box_extent(B, P, A, N), box_extent(B, P, A2, N2),
-    ( N > N2 ; N = N2, params.tie_axis(A) ).
+    ( N > N2 ; N = N2, A = T ).
 
-layout_axis(Sq, $AxisSpread(), A) :- spread_axis.value(Sq, A).
+layout_axis(Sq, $AxisSpread(), A) :- spread_axis.value([Sq, _], A).
+
+out(P, Col, [Sq, $AxisSpread(), O], V) :-
+    laid([Sq, $AxisSpread(), O], A, P, Col), spread_axis.value([Sq, V], A).
 
 // --- $AxisBbox ---
 // The joint box of the kept squares.
@@ -303,6 +317,8 @@ joint.cell(Sq, B) :- kept(Sq, B).
 layout_axis(Sq, $AxisBbox(), A) :-
     joint.box(Sq, B), in(P, _),
     perp(A, A2), box_extent(B, P, A, N), box_extent(B, P, A2, N2), N > N2.
+
+out(P, Col, [Sq, $AxisBbox(), O], [nil]) :- laid([Sq, $AxisBbox(), O], _, P, Col).
 
 // --- $AlongAxis ---
 // The squares go by their distance to edge d.

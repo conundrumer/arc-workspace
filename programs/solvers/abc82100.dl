@@ -99,7 +99,11 @@
 .type Choice = [colors: DominoColors, site: KeySite, per_shape: KeysPerShape,
                 order: StampOrder, cover: StampCover, keyless: Keyless]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type KeyOrderValue = [c: DiagDir, a: Axis]
+.type LayerOrderValue = [c: DiagDir, a: Axis]
+.type OpenValue = [key_order: KeyOrderValue, layer_order: LayerOrderValue]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     // @derive DominantColor: variant derived
@@ -157,11 +161,10 @@ stamp_cover_choice($StampOver()). stamp_cover_choice($KeepOnTop()).
 .decl keyless_choice(k: Keyless)
 keyless_choice($KeepKeyless()). keyless_choice($EraseKeyColor()).
 
-// The legends of each reading and the stamps they write, under every reading
-// order.
+// The legends of each reading and the stamps they write, under every key
+// order and every reading order.
 .comp Parse<Key> {
     .type Shape = [ky: Key, id: Ident]
-    .type SiteShape = [ky: Key, dc: DominoColors, s: KeySite, id: Ident]
     .type KeyScan = [ky: Key, dc: DominoColors, s: KeySite, id: Ident, corner: DiagDir, axis: Axis]
     .type Scan = [ky: Key, corner: DiagDir, axis: Axis]
 
@@ -191,24 +194,23 @@ keyless_choice($KeepKeyless()). keyless_choice($EraseKeyColor()).
     .decl key_domino(ky: Key, dc: DominoColors, s: KeySite,
                      id: Ident, a: Position, n: Position, f: Position)
 
-    // The legends each reading forms.
-    .decl legend(ky: Key, dc: DominoColors, s: KeySite, k: KeysPerShape,
+    // The legends each reading forms, at open value ko of the key order
+    // where the reading reads it.
+    .decl legend(ky: Key, dc: DominoColors, s: KeySite, k: KeysPerShape, ko: KeyOrderValue,
                  id: Ident, a: Position, n: Position, f: Position)
 
-    // The key orders in use agree on each shape's first key.
-    .decl settled(ky: Key, dc: DominoColors, s: KeySite, k: KeysPerShape)
-
     // The cells a legend holds: its shape, near, and far cells.
-    .decl legend_cell(ky: Key, dc: DominoColors, s: KeySite, k: KeysPerShape, p: Position)
-    legend_cell(Ky, Dc, S, K, P) :-
-        legend(Ky, Dc, S, K, Id, _, N, F), ( shape.label(Ky, P, Id) ; P = N ; P = F ).
+    .decl legend_cell(ky: Key, dc: DominoColors, s: KeySite, k: KeysPerShape, ko: KeyOrderValue,
+                      p: Position)
+    legend_cell(Ky, Dc, S, K, Ko, P) :-
+        legend(Ky, Dc, S, K, Ko, Id, _, N, F), ( shape.label(Ky, P, Id) ; P = N ; P = F ).
 
     // Legend (Id, N) writes its target color Tg at T.
-    .decl write(ky: Key, dc: DominoColors, s: KeySite, k: KeysPerShape,
+    .decl write(ky: Key, dc: DominoColors, s: KeySite, k: KeysPerShape, ko: KeyOrderValue,
                 t: Position, id: Ident, n: Position, tg: Color)
-    write(Ky, Dc, S, K, T, Id, N, Tg) :-
-        legend(Ky, Dc, S, K, Id, A, N, F), cell(Ky, F, Col), cell(Ky, N, Tg),
-        cell(Ky, P, Col), !legend_cell(Ky, Dc, S, K, P),   // a scene cell of the source color
+    write(Ky, Dc, S, K, Ko, T, Id, N, Tg) :-
+        legend(Ky, Dc, S, K, Ko, Id, A, N, F), cell(Ky, F, Col), cell(Ky, N, Tg),
+        cell(Ky, P, Col), !legend_cell(Ky, Dc, S, K, Ko, P),   // a scene cell of the source color
         shape.label(Ky, X, Id), relative(A, X, V), compose(P, V, T).
 
     // --- $TwoColors ---
@@ -243,9 +245,7 @@ keyless_choice($KeepKeyless()). keyless_choice($EraseKeyColor()).
         ( shape.label(Ky, A, Id) ; shape.label(Ky, Q, Id), neighbor(Q, _, A) ).
 
     // --- $EveryKey ---
-    legend(Ky, Dc, S, $EveryKey(), Id, A, N, F) :- key_domino(Ky, Dc, S, Id, A, N, F).
-
-    settled(Ky, Dc, S, $EveryKey()) :- cell(Ky, _, _), domino_colors_choice(Dc), key_site_choice(S).
+    legend(Ky, Dc, S, $EveryKey(), nil, Id, A, N, F) :- key_domino(Ky, Dc, S, Id, A, N, F).
 
     // --- $FirstKey ---
     // The near cells of a shape's keys, in each order.
@@ -256,21 +256,10 @@ keyless_choice($KeepKeyless()). keyless_choice($EraseKeyColor()).
     key_scan.cell([Ky, Dc, S, Id, C, A], N) :-
         key_domino(Ky, Dc, S, Id, _, N, _), diag_dir_elem(C), axis_elem(A).
 
-    // The first key's near cell; the key orders in use must agree.
-    // @claim key-site
-    .init first_key = Unanimous<SiteShape, Position>
-    first_key.item([Ky, Dc, S, Id], N) :-
-        key_order(Ky, C, A), key_scan.first([Ky, Dc, S, Id, C, A], N).
-
-    legend(Ky, Dc, S, $FirstKey(), Id, A, N, F) :-
-        first_key.value([Ky, Dc, S, Id], N), key_domino(Ky, Dc, S, Id, A, N, F).
-
-    // The key orders disagree on some shape's first key.
-    .decl split_key(ky: Key, dc: DominoColors, s: KeySite)
-    split_key(Ky, Dc, S) :- first_key.clash([Ky, Dc, S, _]).
-
-    settled(Ky, Dc, S, $FirstKey()) :-
-        cell(Ky, _, _), domino_colors_choice(Dc), key_site_choice(S), !split_key(Ky, Dc, S).
+    // The first key of each shape under each key order in use.
+    legend(Ky, Dc, S, $FirstKey(), [C, A_k], Id, A, N, F) :-
+        key_order(Ky, C, A_k), key_scan.first([Ky, Dc, S, Id, C, A_k], N),
+        key_domino(Ky, Dc, S, Id, A, N, F).
 
     // --- $ScanOrder ---
     // The shape cells and near cells, in each order.
@@ -292,10 +281,10 @@ keyless_choice($KeepKeyless()). keyless_choice($EraseKeyColor()).
         shape.label(Ky, P, Id), layer.elem([Ky, C, A], P), !trailing(Ky, C, A, Id, P).
 
     // A later legend also writes T.
-    .decl buried(ky: Key, dc: DominoColors, s: KeySite, k: KeysPerShape, c: DiagDir, a: Axis,
-                 t: Position, id: Ident, n: Position)
-    buried(Ky, Dc, S, K, C, A, T, Id, N) :-
-        write(Ky, Dc, S, K, T, Id, N, _), write(Ky, Dc, S, K, T, Id2, N2, _),
+    .decl buried(ky: Key, dc: DominoColors, s: KeySite, k: KeysPerShape, ko: KeyOrderValue,
+                 c: DiagDir, a: Axis, t: Position, id: Ident, n: Position)
+    buried(Ky, Dc, S, K, Ko, C, A, T, Id, N) :-
+        write(Ky, Dc, S, K, Ko, T, Id, N, _), write(Ky, Dc, S, K, Ko, T, Id2, N2, _),
         lead(Ky, C, A, Id, P), lead(Ky, C, A, Id2, P2),
         ( layer.before([Ky, C, A], P, P2)                  // a later shape
         ; Id = Id2, layer.before([Ky, C, A], N, N2)        // the same shape, a later near cell
@@ -306,52 +295,72 @@ keyless_choice($KeepKeyless()). keyless_choice($EraseKeyColor()).
 parse.cell($U(), P, Col) :- in(P, Col).
 parse.key_order($U(), C, A) :- params.key_order(C, A).
 
-.decl cleared(dc: DominoColors, s: KeySite, k: KeysPerShape, kl: Keyless, p: Position)
-cleared(Dc, S, K, Kl, P) :-
+.decl cleared(dc: DominoColors, s: KeySite, k: KeysPerShape, ko: KeyOrderValue, kl: Keyless,
+              p: Position)
+cleared(Dc, S, K, Ko, Kl, P) :-
     keyless_choice(Kl),
-    ( parse.legend_cell($U(), Dc, S, K, P)
-    ; parse.legend($U(), Dc, S, K, _, _, _, F), in(F, Col), in(P, Col)   // a source color
+    ( parse.legend_cell($U(), Dc, S, K, Ko, P)
+    ; parse.legend($U(), Dc, S, K, Ko, _, _, _, F), in(F, Col), in(P, Col)   // a source color
     ).
 
-// The color a stamp gives T under each stamp-order reading.
-.decl paint(dc: DominoColors, s: KeySite, k: KeysPerShape, o: StampOrder,
+// The open values of the key order each keys-per-shape reading is derived
+// at.
+.decl key_value(k: KeysPerShape, ko: KeyOrderValue)
+
+// The open values of the layer order each stamp-order reading is derived at.
+.decl layer_value(o: StampOrder, lo: LayerOrderValue)
+
+// The color a stamp gives T under each stamp-order reading, at open value V.
+.decl paint(dc: DominoColors, s: KeySite, k: KeysPerShape, o: StampOrder, v: OpenValue,
             t: Position, col: Color)
 
 // The color a stamp shows at T.
 .decl shown(dc: DominoColors, s: KeySite, k: KeysPerShape, o: StampOrder, c: StampCover,
-            kl: Keyless, t: Position, col: Color)
+            kl: Keyless, v: OpenValue, t: Position, col: Color)
 
-out(P, Col, [Dc, S, K, O, C, Kl]) :-
-    impl_choice([Dc, S, K, O, C, Kl]), parse.settled($U(), Dc, S, K), in(P, Col_in),
-    ( shown(Dc, S, K, O, C, Kl, P, Col)
-    ; !shown(Dc, S, K, O, C, Kl, P, _), cleared(Dc, S, K, Kl, P), params.bg(Col)
-    ; !shown(Dc, S, K, O, C, Kl, P, _), !cleared(Dc, S, K, Kl, P), Col = Col_in
+out(P, Col, [Dc, S, K, O, C, Kl], [Ko, Lo]) :-
+    impl_choice([Dc, S, K, O, C, Kl]), key_value(K, Ko), layer_value(O, Lo), in(P, Col_in),
+    ( shown(Dc, S, K, O, C, Kl, [Ko, Lo], P, Col)
+    ; !shown(Dc, S, K, O, C, Kl, [Ko, Lo], P, _), cleared(Dc, S, K, Ko, Kl, P), params.bg(Col)
+    ; !shown(Dc, S, K, O, C, Kl, [Ko, Lo], P, _), !cleared(Dc, S, K, Ko, Kl, P), Col = Col_in
     ).
 
+// --- $EveryKey ---
+key_value($EveryKey(), nil).
+
+// --- $FirstKey ---
+key_value($FirstKey(), [C, A]) :- params.key_order(C, A).
+
 // --- $EraseKeyColor ---
-cleared(Dc, S, K, $EraseKeyColor(), P) :-
-    parse.settled($U(), Dc, S, K), parse.shape.label($U(), P, _).
+cleared(Dc, S, K, Ko, $EraseKeyColor(), P) :-
+    domino_colors_choice(Dc), key_site_choice(S), key_value(K, Ko), parse.shape.label($U(), P, _).
 
 // --- $Unordered ---
-paint(Dc, S, K, $Unordered(), T, Col) :- parse.write($U(), Dc, S, K, T, _, _, Col).
+layer_value($Unordered(), nil).
+
+paint(Dc, S, K, $Unordered(), [Ko, nil], T, Col) :- parse.write($U(), Dc, S, K, Ko, T, _, _, Col).
 
 // --- $ScanOrder ---
-paint(Dc, S, K, $ScanOrder(), T, Col) :-
-    parse.write($U(), Dc, S, K, T, Id, N, Col), params.layer_order(C, A),
-    !parse.buried($U(), Dc, S, K, C, A, T, Id, N).
+layer_value($ScanOrder(), [C, A]) :- params.layer_order(C, A).
+
+paint(Dc, S, K, $ScanOrder(), [Ko, [C, A]], T, Col) :-
+    parse.write($U(), Dc, S, K, Ko, T, Id, N, Col), params.layer_order(C, A),
+    !parse.buried($U(), Dc, S, K, Ko, C, A, T, Id, N).
 
 // --- $StampOver ---
-shown(Dc, S, K, O, $StampOver(), Kl, T, Col) :- paint(Dc, S, K, O, T, Col), keyless_choice(Kl).
+shown(Dc, S, K, O, $StampOver(), Kl, V, T, Col) :-
+    paint(Dc, S, K, O, V, T, Col), keyless_choice(Kl).
 
 // --- $KeepOnTop ---
 // A cell that keeps a color other than background.
-.decl kept(dc: DominoColors, s: KeySite, k: KeysPerShape, kl: Keyless, p: Position)
-kept(Dc, S, K, Kl, P) :-
-    parse.settled($U(), Dc, S, K), keyless_choice(Kl), in(P, Col), !params.bg(Col),
-    !cleared(Dc, S, K, Kl, P).
+.decl kept(dc: DominoColors, s: KeySite, k: KeysPerShape, ko: KeyOrderValue, kl: Keyless,
+           p: Position)
+kept(Dc, S, K, Ko, Kl, P) :-
+    domino_colors_choice(Dc), key_site_choice(S), key_value(K, Ko), keyless_choice(Kl),
+    in(P, Col), !params.bg(Col), !cleared(Dc, S, K, Ko, Kl, P).
 
-shown(Dc, S, K, O, $KeepOnTop(), Kl, T, Col) :-
-    paint(Dc, S, K, O, T, Col), keyless_choice(Kl), !kept(Dc, S, K, Kl, T).
+shown(Dc, S, K, O, $KeepOnTop(), Kl, [Ko, Lo], T, Col) :-
+    paint(Dc, S, K, O, [Ko, Lo], T, Col), keyless_choice(Kl), !kept(Dc, S, K, Ko, Kl, T).
 
 .comp Determine {
     .init parse = Parse<Example>
@@ -371,11 +380,11 @@ shown(Dc, S, K, O, $KeepOnTop(), Kl, T, Col) :-
     // of the top stamp's.
     .decl layer_contradicted(c: DiagDir, a: Axis)
     layer_contradicted(C, A) :-
-        parse.write(E, $TwoColors(), $BoxSide(), $EveryKey(), T, Id, N, Col),
-        !parse.buried(E, $TwoColors(), $BoxSide(), $EveryKey(), C, A, T, Id, N),
+        parse.write(E, $TwoColors(), $BoxSide(), $EveryKey(), nil, T, Id, N, Col),
+        !parse.buried(E, $TwoColors(), $BoxSide(), $EveryKey(), nil, C, A, T, Id, N),
         diag_dir_elem(C), axis_elem(A),
         ex_out(E, T, Col_out), Col_out != Col,
-        parse.write(E, $TwoColors(), $BoxSide(), $EveryKey(), T, _, _, Col_out).
+        parse.write(E, $TwoColors(), $BoxSide(), $EveryKey(), nil, T, _, _, Col_out).
 
     .decl layer_order(c: DiagDir, a: Axis)
     layer_order(C, A) :- diag_dir_elem(C), axis_elem(A), !layer_contradicted(C, A).

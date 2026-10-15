@@ -16,7 +16,7 @@ from functools import cache
 
 from cli.common import LIMITS
 from engine.engine import ParseFailure, Tuples
-from engine.program import (AdtValue, RecordValue, RelationName, TypeName, Value, cell_place,
+from engine.program import (AdtValue, NilValue, RecordValue, RelationName, TypeName, Value, cell_place,
                             offset_place)
 from handbook.lib import LIB_SRC
 from souffle import SouffleEngine
@@ -24,7 +24,7 @@ from souffle import SouffleEngine
 INSTANCE = "c"
 """The name the component's instance takes in the program."""
 
-type PyValue = int | float | str | tuple["PyValue", ...] | AdtValue
+type PyValue = int | float | str | tuple["PyValue", ...] | AdtValue | NilValue
 type PyRow = tuple[PyValue, ...]
 type Size = tuple[int, int]
 """A grid's height and width."""

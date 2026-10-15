@@ -86,8 +86,8 @@ class SouffleEngine(TextMethods):
         return self.runner.run(program, inputs, outputs, limits, caps)
 
     def classify(self, program: Program, relation: RelationName,
-                 column: int) -> Classed:
-        return classify.classify(program, relation, column)
+                 key: tuple[int, ...]) -> Classed:
+        return classify.classify(program, relation, key)
 
     def expand(self, program: Program) -> Program:
         return expand.expand(program)

@@ -20,7 +20,8 @@ from solver.outcome import Grids, Outcome, is_result
 from engine.program import as_grid
 from solver.pair_runs import AltKind, CaseOnPair, alt_kind
 from solver.out_grids import out_columns
-from solver.witness import Undefined, output_key
+from solver.undefined import Undefined
+from solver.witness_groups import output_key
 
 NO_GRID = mctx("no case emitted a grid")
 """The line under a pair or a probe on whose input every case is
@@ -30,20 +31,20 @@ undefined."""
 def resolved(solver: Solver) -> bool:
     """Whether `out` has a resolution column (solver-file.md, under
     "Alt outputs")."""
-    return out_columns(solver.program)[1] is not None
+    return out_columns(solver.program).resolution is not None
 
 
 def pass_suffix(solver: Solver, cases: Sequence[CaseOnPair]) -> str:
     """What a passing pair gave: the count of cases where more than one
     gave grids, and for a solver whose `out` holds resolutions, the count
-    of resolutions and of distinct grids where more than one resolution
-    stands."""
+    of resolutions and of distinct grids where the grids carry more than
+    one resolution value (`solver.outcome.Grids`)."""
     given = [c for c in cases if isinstance(c.outcome, Grids)]
     parts: list[str] = []
     if len(given) > 1:
         parts.append(counted(len(given), mctx("witnessed case")))
     if resolved(solver):
-        n_res = max((len(c.outcome.grids) for c in given
+        n_res = max((len(c.outcome.resolutions) for c in given
                      if isinstance(c.outcome, Grids)), default=1)
         if n_res > 1:
             parts.append(counted(n_res, mctx("resolution")))

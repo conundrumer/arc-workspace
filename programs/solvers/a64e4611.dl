@@ -110,7 +110,11 @@
 .type Choice = [bands: Band, anchor: Anchor, extent: Extent, heading: Heading,
                 line: LineRule, edge: EdgeRule]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type QuorumValue = [n: number]
+
+.type OpenValue = [quorum: QuorumValue]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     // @derive DominantColor: variant derived
@@ -338,11 +342,13 @@ area.item(B, P) :- hull.box(_, B), parse.blank(_, P), inside(P, B).
 // ---------------------------------------------------------------------------
 // Bands
 
-// The band read at one open value of the quorum. Only EmptyLineBands reads
-// the quorum.
-.type Reading = [bd: Band, q: number]
+// The band read at one open value. Only EmptyLineBands reads the quorum.
+.type Reading = [bd: Band, v: OpenValue]
 
 .decl band_box(r: Reading, b: Box)
+
+// The open values each band branch's output is derived at.
+.decl band_value(bd: Band, v: OpenValue)
 
 // @claim band
 .init by_area = ArgExtremes<Unit, Box>
@@ -352,7 +358,8 @@ by_area.cand($U(), B, N) :- area.tally(B, N).
 .decl area_tie()
 area_tie() :- by_area.high(_, B1, _), by_area.high(_, B2, _), B1 != B2.
 
-band_box([$LargestArea(), Q], B) :- by_area.high(_, B, _), !area_tie(), params.quorum(Q).
+band_value($LargestArea(), [nil]).
+band_box([$LargestArea(), [nil]], B) :- by_area.high(_, B, _), !area_tie().
 
 // --- $WidestBand ---
 // @claim band
@@ -370,13 +377,16 @@ side_area.cand($U(), B, N) :- by_side.high(_, B, _), area.tally(B, N).
 .decl side_tie()
 side_tie() :- side_area.high(_, B1, _), side_area.high(_, B2, _), B1 != B2.
 
-band_box([$WidestBand(), Q], B) :- side_area.high(_, B, _), !side_tie(), params.quorum(Q).
+band_value($WidestBand(), [nil]).
+band_box([$WidestBand(), [nil]], B) :- side_area.high(_, B, _), !side_tie().
 
 // --- $TiedBands ---
-band_box([$TiedBands(), Q], B) :- by_area.high(_, B, _), params.quorum(Q).
+band_value($TiedBands(), [nil]).
+band_box([$TiedBands(), [nil]], B) :- by_area.high(_, B, _).
 
 // --- $EmptyLineBands ---
-band_box([$EmptyLineBands(), Q], B) :- parse.line_band(_, Q, B).
+band_value($EmptyLineBands(), [[Q]]) :- params.quorum(Q).
+band_box([$EmptyLineBands(), [[Q]]], B) :- parse.line_band(_, Q, B).
 
 // ---------------------------------------------------------------------------
 // Pieces
@@ -660,24 +670,24 @@ arm_cell(R, Hd, An, Ex, P) :-
 // ---------------------------------------------------------------------------
 // Output
 
-// The case's green at one open value of the quorum.
-.decl green(ch: Choice, q: number, p: Position)
-green([Bd, An, Ex, Hd, Ln, Eg], Q, P) :-
-    impl_choice([Bd, An, Ex, Hd, Ln, Eg]), band_green([Bd, Q], Eg, _, P).
+// The case's green at one open value.
+.decl green(ch: Choice, v: OpenValue, p: Position)
+green([Bd, An, Ex, Hd, Ln, Eg], V, P) :-
+    impl_choice([Bd, An, Ex, Hd, Ln, Eg]), band_green([Bd, V], Eg, _, P).
 
 // --- $ClearLine ---
-green([Bd, An, Ex, Hd, $ClearLine(), Eg], Q, P) :-
-    channel_green([[Bd, Q], Eg, Hd, An], Ex, P).
+green([Bd, An, Ex, Hd, $ClearLine(), Eg], V, P) :-
+    channel_green([[Bd, V], Eg, Hd, An], Ex, P).
 
 // --- $SideEmpty ---
-green([Bd, An, Ex, Hd, $SideEmpty(), Eg], Q, P) :-
-    edge_rule_choice(Eg), arm_cell([Bd, Q], Hd, An, Ex, P).
+green([Bd, An, Ex, Hd, $SideEmpty(), Eg], V, P) :-
+    edge_rule_choice(Eg), arm_cell([Bd, V], Hd, An, Ex, P).
 
 // The band branch finds its band or bands, or keeps the input.
 .decl framed(r: Reading)
 framed(R) :- band_box(R, _).
 // --- $EmptyLineBands ---
-framed([$EmptyLineBands(), Q]) :- params.quorum(Q).
+framed([$EmptyLineBands(), V]) :- band_value($EmptyLineBands(), V).
 
 // The case reads the band's long axis.
 .decl needs_axis(hd: Heading, eg: EdgeRule)
@@ -689,20 +699,17 @@ needs_axis(Hd, $BandEdgeMargin()) :- heading_choice(Hd).
 .decl unaligned(r: Reading, hd: Heading, eg: EdgeRule)
 unaligned(R, Hd, Eg) :- band_box(R, B), !long_axis(B, _), needs_axis(Hd, Eg).
 
-// The case is undefined at some open value of the quorum.
-.decl unready(ch: Choice)
-unready([Bd, An, Ex, Hd, Ln, Eg]) :-
-    impl_choice([Bd, An, Ex, Hd, Ln, Eg]), params.quorum(Q),
-    ( !framed([Bd, Q]) ; unaligned([Bd, Q], Hd, Eg) ).
+// The case is undefined at open value V.
+.decl unready(ch: Choice, v: OpenValue)
+unready([Bd, An, Ex, Hd, Ln, Eg], V) :-
+    impl_choice([Bd, An, Ex, Hd, Ln, Eg]), band_value(Bd, V),
+    ( !framed([Bd, V]) ; unaligned([Bd, V], Hd, Eg) ).
 
-// Two open values of the quorum give the case different grids.
-.decl clash(ch: Choice)
-clash(Ch) :- green(Ch, _, P), params.quorum(Q), !green(Ch, Q, P).
-
-out(P, Col, Ch) :-
-    impl_choice(Ch), !unready(Ch), !clash(Ch), in(P, Col_in),
-    ( green(Ch, _, P), params.fill(Col)
-    ; !green(Ch, _, P), Col = Col_in
+out(P, Col, [Bd, An, Ex, Hd, Ln, Eg], V) :-
+    impl_choice([Bd, An, Ex, Hd, Ln, Eg]), band_value(Bd, V),
+    !unready([Bd, An, Ex, Hd, Ln, Eg], V), in(P, Col_in),
+    ( green([Bd, An, Ex, Hd, Ln, Eg], V, P), params.fill(Col)
+    ; !green([Bd, An, Ex, Hd, Ln, Eg], V, P), Col = Col_in
     ).
 
 .comp Determine {

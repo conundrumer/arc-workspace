@@ -20,7 +20,7 @@ from solver.outcome import Assignment, Grids
 from solver.solve import outcomes
 from solver.pair_runs import examples
 from solver.witnessed_cases import witnessed
-from solver.witness import Undefined
+from solver.undefined import Undefined
 from study.card_spec import Card, from_root, options_of, options_phrase
 
 

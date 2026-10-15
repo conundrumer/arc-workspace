@@ -88,10 +88,14 @@
 // A reading of the markers: the extent branch and the marker-color branch.
 .type Reader = [extent: Extent, mcolor: MarkerHue]
 
-// A reading of the template: the marker branches and the template branch.
-.type TmplKey = [extent: Extent, mcolor: MarkerHue, tcolor: TemplateHue]
+// A reading of the template: the marker branches, the template branch, and
+// the n of the marker reading.
+.type TmplKey = [extent: Extent, mcolor: MarkerHue, tcolor: TemplateHue, n: number]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type SideValue = [n: number]
+.type OpenValue = [marker_max_side: SideValue]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     // --- $DerivedMarkerColor, $AnyColorTemplate, $BoxStamp ---
@@ -237,17 +241,16 @@ reading(Ext, Mc, N, Col) :- reading_cand(Ext, Mc, N, Col), !rival(Ext, Mc, N).
 marker_at(Ext, Mc, N, E, X) :-
     reading(Ext, Mc, N, Col), parse.box_triple($U(), [Ext, Mc], N, Col, E, X, _, _, _).
 
-// The readings at two values of n disagree.
-.decl split_reading(ext: Extent, mc: MarkerHue)
-split_reading(Ext, Mc) :-
-    marker_at(Ext, Mc, _, E, X), reading(Ext, Mc, N2, _), !marker_at(Ext, Mc, N2, E, X).
+// The open value of params.marker_max_side the reading at n is derived at,
+// nil where the extent reads none.
+// @ignore: head-repeat — the value column is nil for the extents that read no bound
+.decl value_of(ext: Extent, n: number, w: SideValue)
 
-// A marker, by its empty corner E and the corner X of its box that E is.
-.decl marker(ext: Extent, mc: MarkerHue, e: Position, x: DiagDir)
-marker(Ext, Mc, E, X) :- marker_at(Ext, Mc, _, E, X), !split_reading(Ext, Mc).
-
-.decl hue(ext: Extent, mc: MarkerHue, col: Color)
-hue(Ext, Mc, Col) :- reading(Ext, Mc, _, Col), !split_reading(Ext, Mc).
+// The readings at two values of n disagree at open value w.
+.decl split_reading(ext: Extent, mc: MarkerHue, w: SideValue)
+split_reading(Ext, Mc, W) :-
+    marker_at(Ext, Mc, N, E, X), value_of(Ext, N, W),
+    reading(Ext, Mc, N2, _), value_of(Ext, N2, W), !marker_at(Ext, Mc, N2, E, X).
 
 .decl tmpl(k: TmplKey, p: Position, col: Color)
 
@@ -257,8 +260,8 @@ tmpl_box.cell(K, P) :- tmpl(K, P, _).
 
 // A marker whose empty corner is the template box's corner across from X.
 .decl source_cand(k: TmplKey, e: Position, x: DiagDir)
-source_cand([Ext, Mc, Tc], E, X) :-
-    tmpl_box.box([Ext, Mc, Tc], B), marker(Ext, Mc, E, X),
+source_cand([Ext, Mc, Tc, N], E, X) :-
+    tmpl_box.box([Ext, Mc, Tc, N], B), marker_at(Ext, Mc, N, E, X),
     diag_opposite(X, X_o), box_corner(E, B, X_o).
 
 // More than one marker could be the template's.
@@ -278,19 +281,22 @@ source(K, E, X) :- source_cand(K, E, X), !source_clash(K).
 
 // A cell a copy writes at another marker.
 .decl copy(k: TmplKey, tr: Transform, sk: Stamp, p: Position, col: Color)
-copy([Ext, Mc, Tc], Tr, Sk, P, Col) :-
-    source([Ext, Mc, Tc], _, X), marker(Ext, Mc, E2, X2), !source([Ext, Mc, Tc], E2, _),
-    carry(Tr, X, X2, G), footprint([Ext, Mc, Tc], Sk, V, Col),
+copy([Ext, Mc, Tc, N], Tr, Sk, P, Col) :-
+    source([Ext, Mc, Tc, N], _, X), marker_at(Ext, Mc, N, E2, X2), !source([Ext, Mc, Tc, N], E2, _),
+    carry(Tr, X, X2, G), footprint([Ext, Mc, Tc, N], Sk, V, Col),
     apply(G, V, V2), compose(E2, V2, P).
 
-out(P, Col, [Ext, Mc, Tc, Tr, Sk]) :-
-    source([Ext, Mc, Tc], _, _), impl_choice([Ext, Mc, Tc, Tr, Sk]), in(P, C0),
-    ( copy([Ext, Mc, Tc], Tr, Sk, P, Col)
-    ; !copy([Ext, Mc, Tc], Tr, Sk, P, _), Col = C0
+out(P, Col, [Ext, Mc, Tc, Tr, Sk], [W]) :-
+    source([Ext, Mc, Tc, N], _, _), value_of(Ext, N, W), !split_reading(Ext, Mc, W),
+    impl_choice([Ext, Mc, Tc, Tr, Sk]), in(P, C0),
+    ( copy([Ext, Mc, Tc, N], Tr, Sk, P, Col)
+    ; !copy([Ext, Mc, Tc, N], Tr, Sk, P, _), Col = C0
     ).
 
 // --- $StoredStride ---
 parse.square($U(), [$StoredStride(), Mc], S) :- params.marker_stride(S), marker_hue_choice(Mc).
+
+value_of($StoredStride(), N, nil) :- params.marker_stride(N).
 
 // --- $StoredStride & $StoredMarkerColor ---
 reading_cand($StoredStride(), $StoredMarkerColor(), N, Col) :-
@@ -309,6 +315,8 @@ reading_cand($DerivedStride(), Mc, N, Col) :-
 rival($DerivedStride(), Mc, N) :-
     reading_cand($DerivedStride(), Mc, N, _), reading_cand($DerivedStride(), Mc, N2, _), N != N2.
 
+value_of($DerivedStride(), N, nil) :- parse.side($U(), N).
+
 // --- $RectMarker ---
 parse.admits($U(), [$RectMarker(), Mc], M, K1, K2) :-
     params.marker_max_side(M), marker_hue_choice(Mc),
@@ -317,9 +325,8 @@ parse.admits($U(), [$RectMarker(), Mc], M, K1, K2) :-
 reading_cand($RectMarker(), Mc, N, Col) :-
     parse.exact_split($U(), [$RectMarker(), Mc], N, Col).
 
-// Some open value of the bound reads no markers.
-split_reading($RectMarker(), Mc) :-
-    params.marker_max_side(M), marker_hue_choice(Mc), !reading($RectMarker(), Mc, M, _).
+// The reading at n is the one at the open value n.
+value_of($RectMarker(), N, [N]) :- params.marker_max_side(N).
 
 // --- $StoredMarkerColor ---
 hue_cand($StoredMarkerColor(), Col) :- params.marker_color(Col).
@@ -328,12 +335,12 @@ hue_cand($StoredMarkerColor(), Col) :- params.marker_color(Col).
 hue_cand($DerivedMarkerColor(), Col) :- in(_, Col), !params.bg(Col).
 
 // --- $StoredTemplateColor ---
-tmpl([Ext, Mc, $StoredTemplateColor()], P, Col) :-
-    hue(Ext, Mc, _), params.template_color(Col), in(P, Col).
+tmpl([Ext, Mc, $StoredTemplateColor(), N], P, Col) :-
+    reading(Ext, Mc, N, _), params.template_color(Col), in(P, Col).
 
 // --- $AnyColorTemplate ---
-tmpl([Ext, Mc, $AnyColorTemplate()], P, Col) :-
-    hue(Ext, Mc, _), in(P, Col), !params.bg(Col), !hue(Ext, Mc, Col).
+tmpl([Ext, Mc, $AnyColorTemplate(), N], P, Col) :-
+    reading(Ext, Mc, N, _), in(P, Col), !params.bg(Col), !reading(Ext, Mc, N, Col).
 
 // --- $Mirror ---
 // G carries some direction onto the other axis.

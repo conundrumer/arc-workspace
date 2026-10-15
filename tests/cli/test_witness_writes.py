@@ -11,13 +11,7 @@ import cli.record
 from engine import WallLimit
 from solver import witness
 from solver.problems import WitnessFileRole
-from solver.witness import (
-    AssignRows,
-    Entry,
-    Group,
-    Groups,
-    WitnessFile,
-)
+from solver.witness import AssignRows, Entry, Group, Groups, WitnessFile
 
 STEM = "5582e5ca"
 SOLVER = f"""\

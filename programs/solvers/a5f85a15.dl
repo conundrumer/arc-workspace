@@ -68,7 +68,11 @@
 // An ink cell counted under a lane.
 .type LaneCell = [lane: Lane, p: Position]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type StartEdgeValue = [d: Dir]
+
+.type OpenValue = [start_edge: StartEdgeValue]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     // @derive DominantColor: variant derived
@@ -126,11 +130,11 @@ impl_choice([O, $DerivedAxis()]) :- origin_choice(O), O != $ColumnParity().
 .init parse = Parse<Unit>
 parse.grid($U(), P, Col) :- in(P, Col).
 
-// The line direction under heading H.
-.decl heading(h: Heading, d: DiagDir)
+// The line direction under heading H, at open value V.
+.decl heading(h: Heading, v: OpenValue, d: DiagDir)
 
 .decl lane(l: Lane)
-lane([S, D]) :- color_split_choice(S), heading(_, D).
+lane([S, D]) :- color_split_choice(S), heading(_, _, D).
 
 // The count of ink cell P in its unit under origin O along D.
 .decl pos(o: Origin, d: DiagDir, p: Position, k: number)
@@ -139,16 +143,16 @@ lane([S, D]) :- color_split_choice(S), heading(_, D).
 marked(O, D, P) :-
     pos(O, D, P, K), params.period(W), stride(K, W, 0, _, R), params.mark_phase(R).
 
-out(P, Col, [O, H]) :-
-    impl_choice([O, H]), heading(H, D),
+out(P, Col, [O, H], V) :-
+    impl_choice([O, H]), heading(H, V, D),
     ( marked(O, D, P), params.mark(Col)
     ; in(P, Col), !marked(O, D, P) ).
 
 // --- $StoredStep ---
-heading($StoredStep(), D) :- params.line_dir(D).
+heading($StoredStep(), [nil], D) :- params.line_dir(D).
 
 // --- $DerivedAxis ---
-heading($DerivedAxis(), D) :-
+heading($DerivedAxis(), [[E]], D) :-
     parse.touch.value($U(), Da), diag_axis_of(D, Da),
     params.start_edge(E), opposite(E, E_far), dir_of(D, _, E_far).  // leads away from the start edge
 
@@ -183,8 +187,8 @@ pos($LineStart($Run(), S), D, P, K) :- run.clear([S, D], P, D, K, _).
 //     @relaxed diagonal-lines
 // @claim alternate-from-start
 .init diagonal = Ray<DiagDir>
-diagonal.dir(D, D) :- heading(_, D).
-diagonal.cell(D, P) :- heading(_, D), in(P, _).
+diagonal.dir(D, D) :- heading(_, _, D).
+diagonal.cell(D, P) :- heading(_, _, D), in(P, _).
 diagonal.mark(D, P) :- in(P, _), diag_opposite(D, O), dir_of(O, _, E), dist(P, E, 0).
 
 // --- $DiagonalClass ---
@@ -202,7 +206,7 @@ pos($GridDiagonal(), D, P, K) :- diagonal.ray(D, P, D, K, _), parse.ink($U(), P)
 
 // --- $ColumnParity ---
 pos($ColumnParity(), D, P, K) :-
-    heading(_, D), parse.ink($U(), P), params.parity_edge(E), dist(P, E, K).
+    heading(_, _, D), parse.ink($U(), P), params.parity_edge(E), dist(P, E, K).
 
 .comp Determine {
     .init parse = Parse<Example>

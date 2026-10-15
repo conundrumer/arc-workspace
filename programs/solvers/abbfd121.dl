@@ -115,7 +115,11 @@
 // A row or a column, by its axis.
 .type Line = [a: Axis, l: Position]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type AxisValue = [a: Axis]
+.type ScanValue = [c: DiagDir, a: Axis]
+.type OpenValue = [primary_axis: AxisValue, scan: ScanValue]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     // --- $ComponentRect ---
@@ -160,9 +164,6 @@ hidden_orbit_choice($NoSource()). hidden_orbit_choice($HiddenFill()).
 .decl selection_choice(s: Selection)
 selection_choice($Area()). selection_choice($Perimeter()).
 selection_choice($AxisThenCross()). selection_choice($LongestThenShortest()).
-
-.decl area_tie_choice(t: AreaTie)
-area_tie_choice($UniqueTop()). area_tie_choice($TieFirst()).
 
 // Beside the concept case, every case fills sourceless cells and breaks ties:
 // a case without the fill or the tie-break gives the output of the case with
@@ -338,32 +339,39 @@ impl_choice([O, R, $HiddenFill(), Sel, $TieFirst()]) :-
 .init parse = Parse<Occluder>
 parse.cell(S, P, Col) :- occluder_choice(S), in(P, Col).
 
-// The axes each selection is read along.
-.decl reads_axis(sel: Selection, x: Axis)
+// The axes each selection is read along, with the open value of
+// params.primary_axis each is read at, nil where the selection reads none.
+// @ignore: head-repeat — the value column is nil for the selections that read no open axis
+.decl reads_axis(sel: Selection, x: Axis, av: AxisValue)
 
-// The occluder each tie reading picks, per axis the selection is read along.
-.decl pick(s: Occluder, sel: Selection, x: Axis, t: AreaTie, b: Box)
+// The open values of params.scan each tie reading is derived at.
+.decl tie_value(t: AreaTie, sv: ScanValue)
 
-// Some axis the selection is read along leaves no pick.
-.decl unpicked(s: Occluder, sel: Selection, t: AreaTie)
-unpicked(S, Sel, T) :-
-    occluder_choice(S), reads_axis(Sel, X), area_tie_choice(T), !pick(S, Sel, X, T, _).
+// The occluder each tie reading picks at open value v, per axis the selection
+// is read along.
+.decl pick(s: Occluder, sel: Selection, x: Axis, t: AreaTie, v: OpenValue, b: Box)
+
+// Some axis the selection is read along leaves no pick at v.
+.decl unpicked(s: Occluder, sel: Selection, t: AreaTie, v: OpenValue)
+unpicked(S, Sel, T, [Av, Sv]) :-
+    occluder_choice(S), reads_axis(Sel, X, Av), tie_value(T, Sv),
+    !pick(S, Sel, X, T, [Av, Sv], _).
 
 // The colors each hidden-orbit reading gives a cell.
 .decl shade(s: Occluder, r: Recovery, f: HiddenOrbit, p: Position, col: Color)
 shade(S, R, F, P, Col) :- hidden_orbit_choice(F), parse.color(S, R, P, Col).
 
-// Some open value leaves the case with no grid, or with a cell of its grid
+// Open value v leaves the case with no grid, or with a cell of its grid
 // uncolored.
-.decl broken(ch: Choice)
-broken([O, R, F, Sel, T]) :- impl_choice([O, R, F, Sel, T]), unpicked(O, Sel, T).
-broken([O, R, F, Sel, T]) :-
-    impl_choice([O, R, F, Sel, T]), pick(O, Sel, _, T, B),
+.decl broken(ch: Choice, v: OpenValue)
+broken([O, R, F, Sel, T], V) :- impl_choice([O, R, F, Sel, T]), unpicked(O, Sel, T, V).
+broken([O, R, F, Sel, T], V) :-
+    impl_choice([O, R, F, Sel, T]), pick(O, Sel, _, T, V, B),
     parse.block_cell(O, B, P), !shade(O, R, F, P, _).
 
-out(P_inner, Col, [O, R, F, Sel, T]) :-
-    impl_choice([O, R, F, Sel, T]), !broken([O, R, F, Sel, T]),
-    pick(O, Sel, _, T, B), shade(O, R, F, P, Col), crop(P, B, P_inner).
+out(P_inner, Col, [O, R, F, Sel, T], V) :-
+    impl_choice([O, R, F, Sel, T]), pick(O, Sel, _, T, V, B), !broken([O, R, F, Sel, T], V),
+    shade(O, R, F, P, Col), crop(P, B, P_inner).
 
 // --- $ColorFill ---
 parse.occluder(S, B) :- S = $ColorFill(), parse.color_fill(S, _, B).
@@ -422,23 +430,28 @@ shade(S, R, $HiddenFill(), P, Col) :-
     parse.cell(S, P, _), recovery_choice(R), !parse.color(S, R, P, _), params.fill(Col).
 
 // --- $Area ---
-reads_axis($Area(), X) :- axis_elem(X).
+reads_axis($Area(), X, nil) :- axis_elem(X).
 
 // --- $Perimeter ---
-reads_axis($Perimeter(), X) :- axis_elem(X).
+reads_axis($Perimeter(), X, nil) :- axis_elem(X).
 
 // --- $AxisThenCross ---
-reads_axis($AxisThenCross(), X) :- params.primary_axis(X).
+reads_axis($AxisThenCross(), X, [X]) :- params.primary_axis(X).
 
 // --- $LongestThenShortest ---
-reads_axis($LongestThenShortest(), X) :- axis_elem(X).
+reads_axis($LongestThenShortest(), X, nil) :- axis_elem(X).
 
 // --- $UniqueTop ---
-pick(S, Sel, X, $UniqueTop(), B) :- reads_axis(Sel, X), parse.sole.value([S, Sel, X], B).
+tie_value($UniqueTop(), nil).
+
+pick(S, Sel, X, $UniqueTop(), [Av, nil], B) :-
+    reads_axis(Sel, X, Av), parse.sole.value([S, Sel, X], B).
 
 // --- $TieFirst ---
-pick(S, Sel, X, $TieFirst(), B) :-
-    reads_axis(Sel, X), params.scan(C, A), parse.first_pick([S, Sel, X], C, A, B).
+tie_value($TieFirst(), [C, A]) :- params.scan(C, A).
+
+pick(S, Sel, X, $TieFirst(), [Av, [C, A]], B) :-
+    reads_axis(Sel, X, Av), params.scan(C, A), parse.first_pick([S, Sel, X], C, A, B).
 
 .comp Determine {
     .init parse = Parse<Example>

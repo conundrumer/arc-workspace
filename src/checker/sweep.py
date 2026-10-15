@@ -51,7 +51,7 @@ from solver.pair_runs import (
     PairId,
     fits_pairs,
     matches_every,
-    Candidate,
+    Candidates,
     TaskSection,
 )
 from solver.group_runs import at_once
@@ -59,7 +59,7 @@ from solver.per_case import PerCase, parameter_reading, by_base, with_rows_at
 from solver.value_order import row_key
 from solver.pair_runs import candidates as pair_candidates
 from solver.vocabulary import NUMBER
-from solver.witness import Undefined
+from solver.undefined import Undefined
 
 MAX_CANDIDATES = 256
 """The most candidates tried per parameter; beyond it, only the
@@ -369,7 +369,7 @@ class _Clock:
 
 
 def _passing_every(got: Profile,
-                   cands: Sequence[Sequence[tuple[Candidate, frozenset[Grid]]]]
+                   cands: Sequence[Candidates]
                    ) -> frozenset[Case]:
     """The base cases (`solver.model.base_case`) whose grids are a
     candidate of every pair of the profile `got`
@@ -529,7 +529,7 @@ class _Sweeper:
         self.limits = runs.limits
         self.clock = clock
         self.train = pairs_of(solver, (TaskSection.TRAIN,))
-        self.accepted = [pair_candidates(ex) for _, ex in self.train]
+        self.accepted = [pair_candidates(p.section, ex) for p, ex in self.train]
 
     def program(self, fix: _Fix, rows: Sequence[Row]) -> Program:
         return fix.program(self.engine, self.solver, rows)
@@ -855,8 +855,8 @@ def _holders(solver: Solver) -> dict[str, Parameter]:
         "of that base that takes the concept branch at every `@derive` and "
         "`@store` point.")
 @quotes("principles.md", "Open parameters",
-        "The output contains a grid exactly when every open value produces "
-        "that grid.")
+        "The output contains each grid some open value produces, and is "
+        "undefined where the model is undefined at some open value.")
 def values_giving(solver: Solver, runs: Runs) -> tuple[GivingValues, ...]:
     """For each case that gives no output on a train pair, each parameter
     its base reads (`solver.dependence.dependence`) as stored, its case taking

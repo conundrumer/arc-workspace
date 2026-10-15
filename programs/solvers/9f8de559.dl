@@ -104,7 +104,11 @@
 // A ray cast under a stop reading, a field color, and a pointer.
 .type Cast = [stop: Stop, field: Color, ptr: Pointer]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type TieOrder = [c: DiagDir, a: Axis]
+.type HeadOrder = [c: DiagDir, a: Axis]
+.type OpenValue = [tie_order: TieOrder, head_order: HeadOrder]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     // --- $StoredField ---
@@ -217,35 +221,102 @@ head([H, B], P) :- pointer_of(_, [H, B]), in(P, H).
 .decl body(ptr: Pointer, p: Position)
 body([H, B], P) :- pointer_of(_, [H, B]), in(P, B).
 
-// The tie orders each direction reading runs at.
-.decl tie_run(ds: Direction, c: DiagDir, a: Axis)
+// The step from the body to each head cell under a direction reading that
+// reads no tie order.
+.decl heading(ds: Direction, ptr: Pointer, p: Position, d: Dir8)
 
-// The step from the body to each head cell under each direction reading, at
-// tie order (c, a).
-.decl heading(ds: Direction, ptr: Pointer, c: DiagDir, a: Axis, p: Position, d: Dir8)
+// The step from the body to each head cell under NearestBody, at tie order
+// (c, a).
+.decl tie_heading(ptr: Pointer, c: DiagDir, a: Axis, p: Position, d: Dir8)
 
-// The head cells that cast under each source reading, at head order (c, a).
-.decl source(hs: Source, ptr: Pointer, c: DiagDir, a: Axis, p: Position)
-
-// At some tie order, some casting head cell has no step.
-.decl unaimed(ds: Direction, hs: Source, ptr: Pointer)
-unaimed(Ds, Hs, Ptr) :- tie_run(Ds, C, A), source(Hs, Ptr, _, _, P), !heading(Ds, Ptr, C, A, P, _).
+// The head cell that casts under ScanHead, at head order (c, a); under
+// EveryHead, every head cell casts.
+.decl scan_source(ptr: Pointer, c: DiagDir, a: Axis, p: Position)
 
 // The cast from each head cell toward its step.
 // @claim ray exit
 .init ray = Ray<Cast>
-ray.dir([St, F, Ptr], D) :- stop_choice(St), palette(_, _, F, Ptr), heading(_, Ptr, _, _, _, D).
+ray.dir([St, F, Ptr], D) :-
+    stop_choice(St), palette(_, _, F, Ptr), ( heading(_, Ptr, _, D) ; tie_heading(Ptr, _, _, _, D) ).
 ray.mark([St, F, Ptr], P) :- stop_choice(St), palette(_, _, F, Ptr), head(Ptr, P).
-
-// The cells each case paints at head order (hc, ha) and tie order (tc, ta).
-.decl exit(ds: Direction, hs: Source, st: Stop, fs: FieldColor, ps: PointerColors,
-           hc: DiagDir, ha: Axis, tc: DiagDir, ta: Axis, p: Position)
-exit(Ds, Hs, St, Fs, Ps, Hc, Ha, Tc, Ta, P) :-
-    palette(Fs, Ps, F, Ptr), source(Hs, Ptr, Hc, Ha, Src), heading(Ds, Ptr, Tc, Ta, Src, D),
-    ray.stop([St, F, Ptr], P, D, _, Src).
 
 // The field the stop reading needs exists.
 .decl framed(st: Stop, f: Color)
+
+// The color each paint reading gives an exit cell of field f.
+// @ignore: head-repeat — under FieldPaint the exit color is the field color
+.decl paint_of(pt: Paint, f: Color, col: Color)
+
+// --- $Adjacent & $EveryHead, $BodyAxis & $EveryHead ---
+// Some head cell has no step.
+.decl unaimed(ds: Direction, ptr: Pointer)
+unaimed(Ds, Ptr) :- heading(Ds, Ptr, _, _), head(Ptr, P), !heading(Ds, Ptr, P, _).
+
+// The cells the rays from the head cells paint under each field-color and
+// pointer-color reading.
+.decl exit(ds: Direction, st: Stop, fs: FieldColor, ps: PointerColors, p: Position)
+exit(Ds, St, Fs, Ps, P) :-
+    palette(Fs, Ps, F, Ptr), heading(Ds, Ptr, Src, D), head(Ptr, Src),
+    ray.stop([St, F, Ptr], P, D, _, Src).
+
+// One grid, read at every order.
+out(P, Col, [Ds, $EveryHead(), St, Pt, Fs, Ps], [nil, nil]) :-
+    palette(Fs, Ps, F, Ptr), heading(Ds, Ptr, _, _), !unaimed(Ds, Ptr),
+    framed(St, F), paint_of(Pt, F, C),
+    ( exit(Ds, St, Fs, Ps, P), Col = C
+    ; in(P, Col), !exit(Ds, St, Fs, Ps, P) ).
+
+// --- $NearestBody & $EveryHead ---
+.decl tie_unaimed(ptr: Pointer, c: DiagDir, a: Axis)
+tie_unaimed(Ptr, C, A) :- params.tie_order(C, A), head(Ptr, P), !tie_heading(Ptr, C, A, P, _).
+
+.decl tie_exit(st: Stop, fs: FieldColor, ps: PointerColors, c: DiagDir, a: Axis, p: Position)
+tie_exit(St, Fs, Ps, C, A, P) :-
+    palette(Fs, Ps, F, Ptr), tie_heading(Ptr, C, A, Src, D), head(Ptr, Src),
+    ray.stop([St, F, Ptr], P, D, _, Src).
+
+// One grid per tie order, read at every head order.
+out(P, Col, [$NearestBody(), $EveryHead(), St, Pt, Fs, Ps], [[Tc, Ta], nil]) :-
+    palette(Fs, Ps, F, Ptr), head(Ptr, _), params.tie_order(Tc, Ta), !tie_unaimed(Ptr, Tc, Ta),
+    framed(St, F), paint_of(Pt, F, C),
+    ( tie_exit(St, Fs, Ps, Tc, Ta, P), Col = C
+    ; in(P, Col), !tie_exit(St, Fs, Ps, Tc, Ta, P) ).
+
+// --- $Adjacent & $ScanHead, $BodyAxis & $ScanHead ---
+.decl head_unaimed(ds: Direction, ptr: Pointer, c: DiagDir, a: Axis)
+head_unaimed(Ds, Ptr, C, A) :-
+    heading(Ds, Ptr, _, _), scan_source(Ptr, C, A, P), !heading(Ds, Ptr, P, _).
+
+.decl head_exit(ds: Direction, st: Stop, fs: FieldColor, ps: PointerColors, c: DiagDir, a: Axis,
+                p: Position)
+head_exit(Ds, St, Fs, Ps, C, A, P) :-
+    palette(Fs, Ps, F, Ptr), scan_source(Ptr, C, A, Src), heading(Ds, Ptr, Src, D),
+    ray.stop([St, F, Ptr], P, D, _, Src).
+
+// One grid per head order, read at every tie order.
+out(P, Col, [Ds, $ScanHead(), St, Pt, Fs, Ps], [nil, [Hc, Ha]]) :-
+    palette(Fs, Ps, F, Ptr), scan_source(Ptr, Hc, Ha, _), heading(Ds, Ptr, _, _),
+    !head_unaimed(Ds, Ptr, Hc, Ha), framed(St, F), paint_of(Pt, F, C),
+    ( head_exit(Ds, St, Fs, Ps, Hc, Ha, P), Col = C
+    ; in(P, Col), !head_exit(Ds, St, Fs, Ps, Hc, Ha, P) ).
+
+// --- $NearestBody & $ScanHead ---
+.decl tie_head_unaimed(ptr: Pointer, tc: DiagDir, ta: Axis, hc: DiagDir, ha: Axis)
+tie_head_unaimed(Ptr, Tc, Ta, Hc, Ha) :-
+    params.tie_order(Tc, Ta), scan_source(Ptr, Hc, Ha, P), !tie_heading(Ptr, Tc, Ta, P, _).
+
+.decl tie_head_exit(st: Stop, fs: FieldColor, ps: PointerColors, tc: DiagDir, ta: Axis,
+                    hc: DiagDir, ha: Axis, p: Position)
+tie_head_exit(St, Fs, Ps, Tc, Ta, Hc, Ha, P) :-
+    palette(Fs, Ps, F, Ptr), scan_source(Ptr, Hc, Ha, Src), tie_heading(Ptr, Tc, Ta, Src, D),
+    ray.stop([St, F, Ptr], P, D, _, Src).
+
+// One grid per pair of orders.
+out(P, Col, [$NearestBody(), $ScanHead(), St, Pt, Fs, Ps], [[Tc, Ta], [Hc, Ha]]) :-
+    palette(Fs, Ps, F, Ptr), scan_source(Ptr, Hc, Ha, _), params.tie_order(Tc, Ta),
+    !tie_head_unaimed(Ptr, Tc, Ta, Hc, Ha), framed(St, F), paint_of(Pt, F, C),
+    ( tie_head_exit(St, Fs, Ps, Tc, Ta, Hc, Ha, P), Col = C
+    ; in(P, Col), !tie_head_exit(St, Fs, Ps, Tc, Ta, Hc, Ha, P) ).
 
 // --- $Adjacent ---
 // The step from each body cell next to a head cell.
@@ -253,15 +324,10 @@ exit(Ds, Hs, St, Fs, Ps, Hc, Ha, Tc, Ta, P) :-
 .init touch = Unanimous<HeadCell, Dir8>
 touch.item([Ptr, P], D) :- head(Ptr, P), body(Ptr, Q), neighbor(Q, D, P).
 
-// Adjacent reads no tie order, and runs at every order alike.
-tie_run($Adjacent(), C, A) :- diag_dir_elem(C), axis_elem(A).
-
-heading($Adjacent(), Ptr, C, A, P, D) :- touch.value([Ptr, P], D), tie_run($Adjacent(), C, A).
+heading($Adjacent(), Ptr, P, D) :- touch.value([Ptr, P], D).
 
 // --- $NearestBody ---
-tie_run($NearestBody(), C, A) :- params.tie_order(C, A).
-
-heading($NearestBody(), Ptr, C, A, P, D) :- parse.tie_step(Ptr, P, C, A, D), params.tie_order(C, A).
+tie_heading(Ptr, C, A, P, D) :- parse.tie_step(Ptr, P, C, A, D), params.tie_order(C, A).
 
 // --- $BodyAxis ---
 // The axis on which body cells touch.
@@ -275,17 +341,10 @@ aligned.item(Ptr, A) :- body(Ptr, P), body(Ptr, Q), neighbor(P, D, Q), axis4_of(
 away.item([Ptr, P], D) :-
     head(Ptr, P), aligned.value(Ptr, A), axis4_of(D, A), body(Ptr, Q), nearer(D, P, Q).
 
-// BodyAxis reads no tie order, and runs at every order alike.
-tie_run($BodyAxis(), C, A) :- diag_dir_elem(C), axis_elem(A).
-
-heading($BodyAxis(), Ptr, C, A, P, D) :- away.value([Ptr, P], D), tie_run($BodyAxis(), C, A).
-
-// --- $EveryHead ---
-// EveryHead reads no head order, and runs at every order alike.
-source($EveryHead(), Ptr, C, A, P) :- head(Ptr, P), diag_dir_elem(C), axis_elem(A).
+heading($BodyAxis(), Ptr, P, D) :- away.value([Ptr, P], D).
 
 // --- $ScanHead ---
-source($ScanHead(), Ptr, C, A, P) :- parse.scan.first([Ptr, C, A], P), params.head_order(C, A).
+scan_source(Ptr, C, A, P) :- parse.scan.first([Ptr, C, A], P), params.head_order(C, A).
 
 // --- $FieldExit ---
 framed($FieldExit(), F) :- field.box(F, _).
@@ -299,21 +358,12 @@ framed($FirstNonfield(), F) :- palette(_, _, F, _).
 ray.blocked([$FirstNonfield(), F, Ptr], P) :- palette(_, _, F, Ptr), in(P, Col), Col != F.
 
 // --- $FieldPaint ---
-// One grid per pair of orders; a cell that two pairs color differently gets
-// both colors. The exit cells take the field's color.
-out(P, Col, [Ds, Hs, St, $FieldPaint(), Fs, Ps]) :-
-    palette(Fs, Ps, F, Ptr), source(Hs, Ptr, Hc, Ha, _), tie_run(Ds, Tc, Ta),
-    !unaimed(Ds, Hs, Ptr), framed(St, F),
-    ( exit(Ds, Hs, St, Fs, Ps, Hc, Ha, Tc, Ta, P), Col = F
-    ; in(P, Col), !exit(Ds, Hs, St, Fs, Ps, Hc, Ha, Tc, Ta, P) ).
+// The exit cells take the field's color.
+paint_of($FieldPaint(), F, F) :- palette(_, _, F, _).
 
 // --- $StoredPaint ---
 // The exit cells take the stored paint color.
-out(P, Col, [Ds, Hs, St, $StoredPaint(), Fs, Ps]) :-
-    palette(Fs, Ps, F, Ptr), source(Hs, Ptr, Hc, Ha, _), tie_run(Ds, Tc, Ta),
-    !unaimed(Ds, Hs, Ptr), framed(St, F), params.paint_color(C),
-    ( exit(Ds, Hs, St, Fs, Ps, Hc, Ha, Tc, Ta, P), Col = C
-    ; in(P, Col), !exit(Ds, Hs, St, Fs, Ps, Hc, Ha, Tc, Ta, P) ).
+paint_of($StoredPaint(), F, C) :- palette(_, _, F, _), params.paint_color(C).
 
 // --- $StoredField ---
 field_of($StoredField(), Ptr, F) :- pointer_of(_, Ptr), params.field_color(F).

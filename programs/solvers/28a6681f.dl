@@ -7,8 +7,11 @@
 //  water that rises over a rim pours into the next cup, in the pour sense
 //  first.
 
-// One grid per open pour sense; a cell the senses settle differently gets both.
-.decl out(p: Position, col: Color)
+// One grid per open pour sense.
+.type PourSense = [s: Sense]
+.type OpenValue = [pour_sense: PourSense]
+
+.decl out(p: Position, col: Color, v: OpenValue)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -172,7 +175,7 @@ filled.item([S, P], Q) :- upto(S, P, Q).
 amount.item($U(), P) :- parcel(P).
 amount.domain($U()).
 
-out(P, Col) :-
+out(P, Col, [[S]]) :-
     in(P, C), params.pour_sense(S),
     ( wall(P), Col = C                                          // a wall keeps its color
     ; filled.tally([S, P], K), amount.tally(_, N), K <= N,      // within the water's amount

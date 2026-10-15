@@ -26,11 +26,7 @@ from solver.model import (
 from solver.problems import (
     Fault,
 )
-from solver.witness import (
-    Entry,
-    Groups,
-    WitnessFile,
-)
+from solver.witness import Entry, Groups, WitnessFile
 
 TRY_ID = "try"
 """The id of the candidate entry `witness --try` runs."""

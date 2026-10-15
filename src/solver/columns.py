@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from engine.engine import unresolved
 from engine.memo import ByIdentity
 from engine import (
+    NilValue,
     AdtValue,
     Engine,
     Program,
@@ -272,6 +273,7 @@ _VALUES = ValueReading[Value](
     primitive=lambda v, kind: v if isinstance(v, kind.values)
     and not isinstance(v, bool) else None,
     record=lambda v: v.fields if isinstance(v, RecordValue) else None,
+    nil=lambda v: isinstance(v, NilValue),
     constructor=lambda v: (v.constructor, v.args)
     if isinstance(v, AdtValue) else None)
 """A value as the value it is."""

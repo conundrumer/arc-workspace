@@ -100,7 +100,10 @@
 // The components of one figure reading under one connectivity.
 .type Grouping = [fig: Figure, conn: Connectivity]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type FirstAxis = [s: Sym]
+.type OpenValue = [first_axis: FirstAxis]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
 
 .comp Params {
     // The color each mirror class takes, keyed by the class's symmetry group.
@@ -132,8 +135,9 @@
     // @open
     .decl first_axis(s: Sym) first_axis(SYM_TB). first_axis(SYM_LR).
 
-    .decl priority_color(c: Color)
-    priority_color(Col) :- first_axis(S), class_color(S, Col).
+    // The color of class s.
+    .decl priority_color(s: Sym, c: Color)
+    priority_color(S, Col) :- first_axis(S), class_color(S, Col).
 }
 
 .init params = Params
@@ -253,14 +257,23 @@ two_axis(K, C, Id) :- unclassed(K, C, Id), parse.axis_mirrored(K, C, Id).
 //  each stored copy is equivalent to its case
 .decl two_axis_color(k: Figure, c: Connectivity, id: Ident, ta: TwoAxisShape, col: Color)
 
-out(P, Col, [C, B, F, N, NA, TA]) :-
-    impl_choice([C, B, F, N, NA, TA]), background.value(B, BG), in(P, Col_in),
+// The color of a shape with an axis mirror under AxisPriority, at open value v.
+// @ignore: single-consumer — it keeps the AxisPriority color under its marker
+.decl first_axis_color(k: Figure, c: Connectivity, id: Ident, ta: TwoAxisShape, v: OpenValue, col: Color)
+
+// The open value each reading of the two-axis class point's output holds.
+.decl open_of(ta: TwoAxisShape, v: OpenValue)
+open_of(TA, [nil]) :- two_axis_shape_choice(TA), TA != $AxisPriority().
+
+out(P, Col, [C, B, F, N, NA, TA], V) :-
+    impl_choice([C, B, F, N, NA, TA]), open_of(TA, V), background.value(B, BG), in(P, Col_in),
     ( parse.member([B, F], C, Id, P),
       ( noise([B, F], C, Id, N), Col = BG
       ; shape([B, F], C, Id, N),
         ( parse.named.equals([[B, F], C, Id], S), params.class_color(S, Col)
         ; no_axis_color([B, F], C, Id, NA, Col)
-        ; two_axis_color([B, F], C, Id, TA, Col) ) )
+        ; two_axis_color([B, F], C, Id, TA, Col)
+        ; first_axis_color([B, F], C, Id, TA, V, Col) ) )
     ; !figure([B, F], P), Col = Col_in ).
 
 // --- $Commonest ---
@@ -303,7 +316,10 @@ no_axis_color([B, F], C, Id, $NoAxisErased(), BG) :-
 two_axis_color(K, C, Id, $TwoAxisThird(), Col) :- two_axis(K, C, Id), params.third(Col).
 
 // --- $AxisPriority ---
-two_axis_color(K, C, Id, $AxisPriority(), Col) :- two_axis(K, C, Id), params.priority_color(Col).
+open_of($AxisPriority(), [[S]]) :- params.first_axis(S).
+
+first_axis_color(K, C, Id, $AxisPriority(), [[S]], Col) :-
+    two_axis(K, C, Id), params.priority_color(S, Col).
 
 // --- $TwoAxisErased ---
 two_axis_color([B, F], C, Id, $TwoAxisErased(), BG) :-

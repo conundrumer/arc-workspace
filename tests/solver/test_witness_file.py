@@ -13,7 +13,8 @@ from solver.problems import (
     ShapeFault,
     WitnessFileRole,
 )
-from solver.witness import Entry, Group, Groups, RejectedOutput, Undefined
+from solver.undefined import Undefined
+from solver.witness import Entry, Group, Groups, RejectedOutput
 from tests.solver.fake import grid
 
 G = grid("1 2",
