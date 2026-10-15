@@ -436,8 +436,8 @@
     _dir(D) :- dir8_elem(D).
 }
 
-/// The regions a cell set closes off from the frame edge: a connected part of
-/// the set that no walk from the edge reaches, under its own id.
+/// The parts of a cell set that no walk through the set reaches from the
+/// frame edge: each connected part under its own id.
 .comp Closed<Key> {
     .decl cell(key: Key, p: Position)  // @input
 
