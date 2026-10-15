@@ -1,6 +1,7 @@
 """The words of a Bash command an operator runs, and the call of the
 command, `scripts/operate.py`, that a printed step runs."""
 
+import re
 import shlex
 from enum import StrEnum
 from functools import cache
@@ -18,11 +19,25 @@ OPERATORS = "();<>|&\n"
 """The characters of the shell's control and redirection operators."""
 
 
+HEREDOC = re.compile(r"<<-?\s*(['\"]?)([^\s<>|&;()'\"]+)\1([^\n]*)\n.*?\n\s*\2[ \t]*(?=\n|$)", re.S)
+"""A heredoc: its `<<WORD` or `<<-WORD` redirection, the rest of its
+line, its body and the line that ends it."""
+
+
+def without_heredocs(command: str) -> str:
+    """The Bash command `command` with each heredoc's redirection, body and
+    ending line in place of a space, and the rest of the redirection's line
+    kept."""
+    return HEREDOC.sub(lambda m: " " + m[3], command)
+
+
 def simple_commands(command: str) -> list[list[str]]:
     """The words of each simple command of the Bash command `command`,
-    without its redirections, or none where the shell's quoting in it is
-    unbalanced. A redirection is an operator with `<` or `>`, the word
-    after it, and a number before it."""
+    without its redirections and its heredocs, or none where the shell's
+    quoting outside its heredocs is unbalanced. A redirection is an
+    operator with `<` or `>`, the word after it, and a number before it.
+    A heredoc's redirection, body and ending line give no word, and the
+    words after the redirection on its own line stay."""
     return [list(words) for words in command_words(command)]
 
 
@@ -30,7 +45,7 @@ def simple_commands(command: str) -> list[list[str]]:
 def command_words(command: str) -> tuple[tuple[str, ...], ...]:
     """`simple_commands`, parsed once for each command: the state gives
     each operator's commands at each read."""
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=OPERATORS)
+    lexer = shlex.shlex(without_heredocs(command), posix=True, punctuation_chars=OPERATORS)
     lexer.whitespace = " \t\r"
     lexer.whitespace_split = True
     out: list[list[str]] = [[]]

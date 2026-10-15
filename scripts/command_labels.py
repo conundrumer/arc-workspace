@@ -12,6 +12,7 @@ from typing import Any
 from cli import command_args
 from cli.parser import parser as run_dl_parser
 from controlled_markdown import mctx
+from operations.command_words import without_heredocs
 from ticket_form import TICKET_HEAD
 
 WRITE_TOOLS = ("Write", "Edit", "NotebookEdit")
@@ -36,8 +37,6 @@ WRAPPER_OPTIONS = {"timeout": frozenset({"-s", "-k"}),
 OPENERS = {"do", "then", "else", "elif", "if", "while", "until", "!", "{", "("}
 CLOSERS = {"for", "case", "done", "fi", "esac", "}"}
 POLL = "poll"
-HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?\n\s*\2[ \t]*(?=\n|$)",
-                     re.S)
 REDIRECT = re.compile(r"\d*>&\d+|&>")
 ASSIGNMENT = re.compile(r"^(\w+)=(.*)$", re.S)
 VARIABLE = re.compile(r"\$\{(\w+)\}|\$(\w+)")
@@ -125,7 +124,7 @@ def simple_commands(cmd: str) -> Iterator[list[str]]:
     """The words of each simple command of a Bash command line, past the
     keywords that open it, with the values of the shell variables set
     before it put in place of their names."""
-    cmd = REDIRECT.sub(" ", HEREDOC.sub(" ", cmd)).replace("\\\n", " ")
+    cmd = REDIRECT.sub(" ", without_heredocs(cmd)).replace("\\\n", " ")
     values: dict[str, str] = {}
 
     def expand(word: str) -> str:

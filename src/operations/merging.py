@@ -150,19 +150,34 @@ def merge_command(t: Ticket, w: Path) -> str:
     return shlex.join(["uv", "run", "python", MERGE_SCRIPT, str(w), MESSAGE, t.title])
 
 
-def merge_messages(command: str) -> list[str] | None:
-    """The commit message after each `MESSAGE` of the call of `merge_change.py`
-    that the Bash command `command` runs, none where it runs none, or None
-    where the shell's quoting in `command` is unbalanced."""
+def merge_words(command: str) -> list[str] | None:
+    """The words of the call of `merge_change.py` that the Bash command
+    `command` runs, from the script's word on, none where it runs none, or
+    None where the shell's quoting in `command` is unbalanced."""
     found = simple_commands(command)
     if not found:
         return None
     for words in found:
         at = next((i for i, w in enumerate(words) if w.endswith(MERGE_SCRIPT)), None)
         if at is not None:
-            rest = words[at + 1:]
-            return [rest[i + 1] for i, w in enumerate(rest[:-1]) if w == MESSAGE]
+            return words[at:]
     return []
+
+
+def merge_messages(command: str) -> list[str] | None:
+    """The commit message after each `MESSAGE` of the call of `merge_change.py`
+    that the Bash command `command` runs, by `merge_words`."""
+    words = merge_words(command)
+    if words is None:
+        return None
+    return [words[i + 1] for i, w in enumerate(words[:-1]) if w == MESSAGE]
+
+
+def names_any(call: Call, paths: set[str]) -> bool:
+    """Whether a word of the call of `merge_change.py` that the Bash call
+    `call` runs holds any of `paths`."""
+    return any(p in w for w in merge_words(str(call.input.get("command", ""))) or ()
+               for p in paths)
 
 
 def log_worktrees(t: Ticket) -> set[str]:
@@ -175,9 +190,8 @@ def merge_calls(state: State, t: Ticket) -> list[Call]:
     pending, and those with an outcome (`state.Merge`), which a call that
     merges no change, as a call of the script's `--help`, has not."""
     paths = log_worktrees(t)
-    return [c for c in state.transcripts.calls if c.tool == Tool.BASH and MERGE_SCRIPT in str(
-        c.input.get("command", "")) and any(p in str(c.input.get("command", "")) for p in paths)
-        and (c.result is None or c.merge is not None)]
+    return [c for c in state.transcripts.calls if c.tool == Tool.BASH and names_any(c, paths)
+            and (c.result is None or c.merge is not None)]
 
 
 def merged(state: State, t: Ticket) -> bool:
@@ -190,8 +204,8 @@ def merged(state: State, t: Ticket) -> bool:
     that title as the commit message and an operator of another session
     may have made it, whose calls this session does not read."""
     gone = {p for p in log_worktrees(t) if Path(p) not in state.git.worktrees}
-    if any(c.merge is Merge.MERGED or (c.result is None and any(
-            p in str(c.input.get("command", "")) for p in gone)) for c in merge_calls(state, t)):
+    if any(c.merge is Merge.MERGED or (c.result is None and names_any(c, gone))
+           for c in merge_calls(state, t)):
         return True
     since = left_draft(t)
     return any(c.subject == t.title and c.time >= since for c in state.git.commits)
