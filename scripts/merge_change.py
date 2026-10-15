@@ -164,20 +164,15 @@ from handbook.paths import importable
 # import from there.
 importable(checkout.scripts())
 
-from change_checks import (MARKDOWN_CHECK, Check, code_paths,  # noqa: E402
+from change_checks import (Check, code_paths,  # noqa: E402
                            failures, run_in, said, timed)
 from change_worktree import carried  # noqa: E402
 from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
                                  submodules, locked_update, SetupFailed)
 
-from operations.merging import PATHS_SEP, split_paths  # noqa: E402
+from operations.merging import (CONTEXT_WRITE, DOCUMENT_CHECKS, PATHS_SEP,  # noqa: E402
+                                PREFIX, REFUSED, REFUSED_TREE, split_paths)
 from operations.worktrees import BASE  # noqa: E402
-
-PREFIX = "merge_change: "
-"""The opening of each line the script prints, on stdout and on stderr."""
-
-REFUSED = PREFIX + "refused: "
-"""The opening of the line of a refusal."""
 
 
 def say(text: str, file: TextIO | None = None, flush: bool = False) -> None:
@@ -270,20 +265,15 @@ def set_up_submodules(worktree: Path, main: Path) -> None:
         raise Refused(str(exc)) from exc
 
 
-CONTEXT_WRITE = ("scripts/context.py", "--write")
-"""The command, after `uv run python`, that writes the generated files."""
-
-
 def check(tree: Path, main: Path, base: str, touched: set[str]) -> Path:
     """Run in `tree` the checks of changes from the commit `base` that touch
     `touched`, or refuse; the gate's out-dir."""
     gate_out = tempfile.mkdtemp(prefix="merge-change-gate-")
     gate = Check(("uv", "run", "python", "scripts/gate.py", "--outputs-only", "--affected",
                   base, gate_out))
-    context = Check(("uv", "run", "python", *CONTEXT_WRITE))
     code = ([Check(("uv", "run", "pyright")), Check(("uv", "run", "pytest", "-q"))]
             if code_paths(tree, main, touched) else [])
-    run_checks(tree, [MARKDOWN_CHECK, context, gate, *code])
+    run_checks(tree, [*map(Check, DOCUMENT_CHECKS), gate, *code])
     return Path(gate_out)
 
 
@@ -516,10 +506,11 @@ def merge_alone(main: Path, change: Change) -> None:
         set_up_submodules(change.worktree, main)
         gate_out = check(change.worktree, main, onto, set(change.touched))
     except Refused as exc:
+        tree = checkout.git_out(change.worktree, "rev-parse", "HEAD^{tree}").strip()
         checkout.git_out(change.worktree, "reset", "-q", "--mixed", onto)
         raise Refused(f"{exc}\n{change.branch} is moved back to {BASE}'s commit "
                       f"{onto[:12]}, and the change stands uncommitted in "
-                      f"{change.worktree}") from exc
+                      f"{change.worktree}" + REFUSED_TREE.format(tree=tree)) from exc
     land(main, [change], gate_out)
 
 

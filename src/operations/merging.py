@@ -22,8 +22,17 @@ script's own forms and by `master` (`state.Merge`,
 - a refusal whose output reports a `quotes` call a change to the documents
   broke goes to a new code editor in the change's worktree, with those
   calls as its items and their files as the files it may edit;
-- any other refusal goes to the change's first editor as a finding of its
-  checks.
+- any other refusal goes as a finding of its checks to the change's doc
+  editor, where the check its refusal line gives as failed is a check of
+  the documents (`DOCUMENT_CHECKS`) and the change has one, and otherwise
+  to the change's first editor;
+- two refusals that give one tree (`REFUSED_TREE`) give one finding
+  message, with the output of the first refused merge call on that
+  worktree that gives that tree. Whether two refusals give one message
+  rests on the tree alone: the change rebased on another commit of
+  `master` gives another tree, unless the checks ran on the same content,
+  and the output that message gives holds the `master` commit of the
+  first call.
 
 Once an agent launched on the change since its last move out of
 `tickets/draft/` (`change_agents.of_change`), or a ticket analyst launched
@@ -57,6 +66,32 @@ from operations.worktrees import WORKTREE
 from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Note, Resolution, Status, Wait
 
 MERGE_SCRIPT = "scripts/merge_change.py"
+
+PREFIX = "merge_change: "
+"""The opening of each line `merge_change.py` prints, on stdout and on
+stderr."""
+
+REFUSED = PREFIX + "refused: "
+"""The opening of the line of a refusal."""
+
+REFUSED_TREE = mctx("; the refused commit's tree is {tree}")
+"""The end of a refusal of a change after its rebase: the tree of the
+commit it refused."""
+
+TREE = re.compile(form(REFUSED_TREE, {"tree": r"(?P<tree>[0-9a-f]+)"}) + "$", re.M)
+
+CONTEXT_WRITE = ("scripts/context.py", "--write")
+"""The command, after `uv run python`, that writes the generated files."""
+
+CHECK_FAILED = mctx("the check `{s}` failed:")
+"""The line that opens a failed check's output in a refusal, `s` the
+check's argv joined by spaces."""
+
+MARKDOWN_ARGV = ("uv", "run", "python", "-m", "controlled_markdown", "check")
+
+DOCUMENT_CHECKS = (MARKDOWN_ARGV, ("uv", "run", "python", *CONTEXT_WRITE))
+"""The checks of the documents a merge runs, first among its checks."""
+
 FINDING_TAIL = 40
 """The lines of a refused merge's output a finding gives."""
 
@@ -176,7 +211,7 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
     command = merge_command(t, w)
     calls = [c for c in merge_calls(state, t) if str(w) in str(c.input.get("command", ""))]
     last = calls[-1] if calls else None
-    message = None if last is None else finding(t, last, latest)
+    message = None if last is None else finding(t, last, calls, latest)
     on_step = [] if message is None else decided_by(state, unmoved(t, message))
     reported = [r.time for a in [*of_change(state, t.number), *on_step]
                 if (r := a.last_report) is not None]
@@ -198,14 +233,15 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
                 rerun=Note.RERUN, paths=PATHS_SEP.join(last.conflicts), worktree=w,
                 branch=branch), state.me))
         case Merge.REFUSED:
-            return refused(state, t, w, last, latest)
+            return refused(state, t, w, last, calls, latest)
         case Merge.LEFT_EDITS:
             return Bash(command)
         case Merge.MERGED:
             return None
 
 
-def refused(state: State, t: Ticket, w: Path, last: Call, latest: list[Agent]) -> Step | None:
+def refused(state: State, t: Ticket, w: Path, last: Call, calls: list[Call],
+            latest: list[Agent]) -> Step | None:
     text = last.result or ""
     quotes = [m.group(0) for m in QUOTE_LINE.finditer(text)]
     if quotes:
@@ -216,19 +252,40 @@ def refused(state: State, t: Ticket, w: Path, last: Call, latest: list[Agent]) -
             t.number, w, quotes, files,
             editor_scratch(t.number, Role.CODE_EDITOR, state.scratch), state.me),
             model=t.model(Role.CODE_EDITOR))
-    return finding(t, last, latest)
+    return finding(t, last, calls, latest)
 
 
-def finding(t: Ticket, last: Call, latest: list[Agent]) -> Send | None:
-    """The message that gives the refusal of the merge call `last` to the
-    change's first editor, where `last` was refused on no `quotes` call."""
+def refused_tree(output: str) -> str | None:
+    """The tree of the refused commit that `output`, a refused merge
+    call's, gives, or None where it gives none."""
+    m = TREE.search(output)
+    return None if m is None else m["tree"]
+
+
+def documents_failed(output: str) -> bool:
+    """Whether the refusal line of `output` gives a check of the documents
+    as failed."""
+    line = next((ln for ln in output.splitlines() if ln.startswith(REFUSED)), "")
+    m = re.match(form(REFUSED + CHECK_FAILED, {"s": r"(?P<s>[^`]*)"}), line)
+    return m is not None and m["s"] in {" ".join(argv) for argv in DOCUMENT_CHECKS}
+
+
+def finding(t: Ticket, last: Call, calls: list[Call], latest: list[Agent]) -> Send | None:
+    """The message that gives the refusal of the merge call `last`, one of
+    `calls`, the merge calls on its worktree in order, where `last` was
+    refused on no `quotes` call."""
     text = last.result or ""
-    first = latest[0] if latest else None
+    docs = [a for a in latest if a.role is Role.DOC_EDITOR] if documents_failed(text) else []
+    to = docs[0] if docs else latest[0] if latest else None
     if (last.merge is not Merge.REFUSED or QUOTE_LINE.search(text) is not None
-            or first is None or first.agent_id is None):
+            or to is None or to.agent_id is None):
         return None
+    tree = refused_tree(text)
+    if tree is not None:
+        text = next(c.result or "" for c in calls if c.merge is Merge.REFUSED
+                    and refused_tree(c.result or "") == tree)
     tail = "\n".join(text.splitlines()[-FINDING_TAIL:])
-    return Send(first.agent_id, messages.merge_finding(t.number, tail))
+    return Send(to.agent_id, messages.merge_finding(t.number, tail))
 
 
 def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:

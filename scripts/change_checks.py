@@ -1,4 +1,4 @@
-"""The checks `merge_change.py` runs on a change: the commands, the paths
+"""The checks `merge_change.py` runs on a change: the paths
 that call for the code checks, and the runs of the checks in a tree."""
 
 import contextlib
@@ -13,6 +13,7 @@ from pathlib import Path
 from cli.common import SOURCES
 from controlled_markdown import mctx
 from engine import checkout, duration
+from operations.merging import CHECK_FAILED
 
 CODE_DIRS = ("src", "scripts", "tests", "data/tasks")
 """The directories a change under which runs the code checks."""
@@ -33,10 +34,6 @@ def said(done: subprocess.CompletedProcess[str]) -> str:
     """What a command wrote, its last `TAIL` lines."""
     lines = (done.stdout + done.stderr).strip().splitlines()
     return "\n".join(lines[-TAIL:]) or f"exit status {done.returncode}"
-
-
-MARKDOWN_CHECK = Check(("uv", "run", "python", "-m", "controlled_markdown", "check"))
-"""The check every change runs."""
 
 
 def code_paths(tree: Path, main: Path, touched: set[str]) -> set[str]:
@@ -90,5 +87,5 @@ def failures(tree: Path, checks: Sequence[Check]) -> list[str]:
         print(mctx("merge_change: running {s}").format(s=s), flush=True)
     with ThreadPoolExecutor(max_workers=max(1, len(checks))) as pool:
         dones = list(pool.map(lambda c, s: run_check(tree, c.argv, s), checks, shown))
-    return [mctx("the check `{s}` failed:").format(s=s) + "\n" + said(done)
+    return [CHECK_FAILED.format(s=s) + "\n" + said(done)
             for s, done in zip(shown, dones, strict=True) if done.returncode != 0]
