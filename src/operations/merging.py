@@ -47,6 +47,7 @@ change, then the change's own ticket."""
 
 import re
 import shlex
+from collections.abc import Sequence
 from pathlib import Path
 
 from controlled_markdown import form, mctx
@@ -83,9 +84,15 @@ TREE = re.compile(form(REFUSED_TREE, {"tree": r"(?P<tree>[0-9a-f]+)"}) + "$", re
 CONTEXT_WRITE = ("scripts/context.py", "--write")
 """The command, after `uv run python`, that writes the generated files."""
 
+
+def check_name(argv: Sequence[str]) -> str:
+    """The name a merge's lines give the check whose command is `argv`."""
+    return " ".join(argv)
+
+
 CHECK_FAILED = mctx("the check `{s}` failed:")
 """The line that opens a failed check's output in a refusal, `s` the
-check's argv joined by spaces."""
+check's `check_name`."""
 
 MARKDOWN_ARGV = ("uv", "run", "python", "-m", "controlled_markdown", "check")
 
@@ -233,15 +240,17 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
                 rerun=Note.RERUN, paths=PATHS_SEP.join(last.conflicts), worktree=w,
                 branch=branch), state.me))
         case Merge.REFUSED:
-            return refused(state, t, w, last, calls, latest)
+            return refused(state, t, w, last, latest) or message
         case Merge.LEFT_EDITS:
             return Bash(command)
         case Merge.MERGED:
             return None
 
 
-def refused(state: State, t: Ticket, w: Path, last: Call, calls: list[Call],
-            latest: list[Agent]) -> Step | None:
+def refused(state: State, t: Ticket, w: Path, last: Call, latest: list[Agent]) -> Step | None:
+    """The launch of a code editor that fixes the `quotes` calls the
+    refusal `last` reports, or None where it reports none or such an
+    editor launched after it."""
     text = last.result or ""
     quotes = [m.group(0) for m in QUOTE_LINE.finditer(text)]
     if quotes:
@@ -252,7 +261,7 @@ def refused(state: State, t: Ticket, w: Path, last: Call, calls: list[Call],
             t.number, w, quotes, files,
             editor_scratch(t.number, Role.CODE_EDITOR, state.scratch), state.me),
             model=t.model(Role.CODE_EDITOR))
-    return finding(t, last, calls, latest)
+    return None
 
 
 def refused_tree(output: str) -> str | None:
@@ -267,7 +276,7 @@ def documents_failed(output: str) -> bool:
     as failed."""
     line = next((ln for ln in output.splitlines() if ln.startswith(REFUSED)), "")
     m = re.match(form(REFUSED + CHECK_FAILED, {"s": r"(?P<s>[^`]*)"}), line)
-    return m is not None and m["s"] in {" ".join(argv) for argv in DOCUMENT_CHECKS}
+    return m is not None and m["s"] in {check_name(argv) for argv in DOCUMENT_CHECKS}
 
 
 def finding(t: Ticket, last: Call, calls: list[Call], latest: list[Agent]) -> Send | None:
@@ -275,17 +284,29 @@ def finding(t: Ticket, last: Call, calls: list[Call], latest: list[Agent]) -> Se
     `calls`, the merge calls on its worktree in order, where `last` was
     refused on no `quotes` call."""
     text = last.result or ""
-    docs = [a for a in latest if a.role is Role.DOC_EDITOR] if documents_failed(text) else []
-    to = docs[0] if docs else latest[0] if latest else None
+    to = finding_recipient(text, latest)
     if (last.merge is not Merge.REFUSED or QUOTE_LINE.search(text) is not None
             or to is None or to.agent_id is None):
         return None
+    return Send(to.agent_id, messages.merge_finding(t.number, finding_output(last, calls)))
+
+
+def finding_recipient(output: str, latest: list[Agent]) -> Agent | None:
+    """The agent of `latest` that the finding on the refusal `output` goes
+    to."""
+    docs = [a for a in latest if a.role is Role.DOC_EDITOR] if documents_failed(output) else []
+    return docs[0] if docs else latest[0] if latest else None
+
+
+def finding_output(last: Call, calls: list[Call]) -> str:
+    """The merge output that the finding on the refusal `last`, one of
+    `calls`, gives."""
+    text = last.result or ""
     tree = refused_tree(text)
     if tree is not None:
         text = next(c.result or "" for c in calls if c.merge is Merge.REFUSED
                     and refused_tree(c.result or "") == tree)
-    tail = "\n".join(text.splitlines()[-FINDING_TAIL:])
-    return Send(to.agent_id, messages.merge_finding(t.number, tail))
+    return "\n".join(text.splitlines()[-FINDING_TAIL:])
 
 
 def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:

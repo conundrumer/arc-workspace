@@ -163,11 +163,10 @@ def resumed_at(aid: str, path: Path, undecided: list[str]) -> list[float]:
     """The time of each resume of the agent `aid` whose transcript is at
     `path`.
 
-    A resume is the first prompt after an entry with `toolEndsTurn`, with
-    no `assistant` entry between them, other than one `by_callees` gives:
-    a prompt that holds an agent message or a task notification, each of
-    an agent that `aid` launched, or resumed by its own SendMessage call,
-    before that prompt. A resume whose entry gives no time is left out, and
+    A resume is as `ALERTS` in `src/operations/monitor.py` gives it. The
+    transcript shows one as the first prompt after an entry with
+    `toolEndsTurn`, with no `assistant` entry between them, other than
+    one `by_callees` gives. A resume whose entry gives no time is left out, and
     an `undecided` line names it."""
     out: list[float] = []
     ended = False

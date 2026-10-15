@@ -13,7 +13,7 @@ from pathlib import Path
 from cli.common import SOURCES
 from controlled_markdown import mctx
 from engine import checkout, duration
-from operations.merging import CHECK_FAILED
+from operations.merging import CHECK_FAILED, check_name
 
 CODE_DIRS = ("src", "scripts", "tests", "data/tasks")
 """The directories a change under which runs the code checks."""
@@ -82,7 +82,7 @@ def run_check(tree: Path, argv: Sequence[str], shown: str) -> subprocess.Complet
 
 def failures(tree: Path, checks: Sequence[Check]) -> list[str]:
     """Run `checks` in `tree` concurrently: the output of each that fails."""
-    shown = [" ".join(c.argv) for c in checks]
+    shown = [check_name(c.argv) for c in checks]
     for s in shown:
         print(mctx("merge_change: running {s}").format(s=s), flush=True)
     with ThreadPoolExecutor(max_workers=max(1, len(checks))) as pool:
