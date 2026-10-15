@@ -25,8 +25,8 @@ from typing import Literal
 from controlled_markdown import mctx
 from operations import brief_reading, messages
 from operations.change_agents import editors_in, latest_editors
-from operations.change_budget import (OVERRUN_FINDING, by_role, file_overrun, overrun_ticket,
-                                      past_budget, taken)
+from operations.change_budget import (OVERRUN_FINDING, by_role, file_overrun, left_draft,
+                                      overrun_ticket, past_budget, taken)
 from operations.doc_review import with_ids
 from operations.handled import sends_to, sent
 from operations.item_check import check_items, is_checked, unfinished
@@ -46,14 +46,14 @@ def over_budget(state: State, t: Ticket, w: Path,
     take_line = taken(t)
     if take_line is None:
         return False
-    since, limit, _ = take_line
+    _, limit, _ = take_line
     spent = state.computed.spent.get(t.number)
     if spent is None:
         return Undecided(mctx("the spend of change {number} since its take is unknown").format(
             number=t.number))
     if not past_budget(take_line, spent):
         return False
-    trip = overrun_ticket(state, t, since)
+    trip = overrun_ticket(state, t, left_draft(t))
     if trip is None:
         budget = state.computed.budgets.get(t.number)
         if budget is None:
