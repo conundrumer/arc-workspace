@@ -39,7 +39,7 @@ from study.deck_spec import CardSpec, Option
 
 @dataclass(frozen=True)
 class Output:
-    """The grids an option gives on an input: one, or one per tiebreak
+    """The grids an option gives on an input: one, or one per
     resolution."""
 
     grids: tuple[Grid, ...]
@@ -262,7 +262,7 @@ def _judged(run: Loaded, id: str) -> Slot | None:
     `id`, `run` being the solver the witness file belongs to: the entry's
     bare grid where its verdict is `other`, else the output of the case
     its `@witness` line's verdict denotes (`checker.judged.verdict_case`),
-    run on the entry's input, every tiebreak resolution of it; why that
+    run on the entry's input, every resolution of it; why that
     output is not known, where a verdict is recorded
     or the solver does not parse; None where no line gives the entry a
     verdict."""

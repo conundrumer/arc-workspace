@@ -28,15 +28,29 @@
         [3,3,3,3,3,3,3,2,2,2,2,2,2]
       ]
     }, {
-      "cases": ["$FirstChange"],
+      "cases": ["$FirstChange & $EveryStep","$FirstChange & $WholePanel"],
       "grid": [
         [0,0,3,0,0,0,2,0,0,0,2,0,0],
         [0,3,3,3,0,3,3,2,0,2,2,2,0],
         [3,3,3,3,3,3,3,2,2,2,2,2,2]
       ]
     }, {
-      "cases": ["$ObjectMotion & $StepFromFirstTwo"],
+      "cases": ["$StepFromFirstTwo & $StepPerLine"],
       "grid": null
+    }, {
+      "cases": ["$ObjectMotion & $StepFromFirstTwo"],
+      "grid": [
+        [
+          [0,0,3,0,0,0,3,0,0,0,2,0,0],
+          [0,3,3,3,0,3,3,2,0,2,2,2,0],
+          [3,3,3,3,3,3,3,2,2,2,2,2,2]
+        ],
+        [
+          [0,0,3,0,0,0,2,0,0,0,2,0,0],
+          [0,3,3,3,0,3,3,2,0,2,2,2,0],
+          [3,3,3,3,3,3,3,2,2,2,2,2,2]
+        ]
+      ]
     }]
   }, {
     "id": "uneven-steps",

@@ -17,7 +17,7 @@
 //  panel's own color over what no image reaches.
 
 // The panel the demonstration leaves, read under the rule it demonstrates.
-.decl out(p: Position, col: Color)
+.decl out(p: Position, col: Color, r: DemonstratedChoice)
 
 .comp Params {
     // The color of a panel's unfilled cells.
@@ -81,9 +81,23 @@ own(Pan, Col) :- mark(Pan, _, Col), content(Pan2), Pan != Pan2, !mark(Pan2, _, C
 // The completion rules the input may demonstrate.
 .type DemonstratedChoice = Extend {} | Span {} | Reflect {}
 
-.init catalog = DemonstrationConsistency<Unit, DemonstratedChoice, Box, Position, Color>
-catalog.value($U(), Pan, P_inner, Col) :- content(Pan), pval(Pan, P_inner, Col).
-catalog.demonstration($U(), Pan, Pan2) :- content(Pan), content(Pan2), Pan != Pan2.
+.type Slot = [answer: Box, shown: Box]
+
+// A reading of the input: the panel to complete, and the demonstration of
+// the other two, shown then completed.
+.decl slot(answer: Box, shown: Box, done: Box)
+slot(Pan, Pan1, Pan2) :-
+    content(Pan), content(Pan1), content(Pan2), Pan != Pan1, Pan != Pan2, Pan1 != Pan2.
+
+// The completion each rule predicts for a panel.
+.decl predict(r: DemonstratedChoice, pan: Box, p_inner: Position, col: Color)
+
+.init catalog = DemonstrationConsistency<Slot, DemonstratedChoice, Box, Position, Color>
+catalog.value([Pan, Pan1], Pan3, P_inner, Col) :-
+    slot(Pan, Pan1, _), content(Pan3), pval(Pan3, P_inner, Col).
+catalog.demonstration([Pan, Pan1], Pan1, Pan2) :- slot(Pan, Pan1, Pan2).
+catalog.prediction([Pan, Pan1], R, Pan3, P_inner, Col) :-
+    slot(Pan, Pan1, _), predict(R, Pan3, P_inner, Col).
 
 // --- extend ---
 
@@ -98,7 +112,7 @@ spread.edge([Pan, P], [Pan, Q]) :-
 canvas.item([Pan, P_inner], Col) :-
     mark(Pan, P_mark, Col), spread.rep([Pan, P_mark], R), spread.rep([Pan, P_inner], R).
 
-catalog.prediction($U(), $Extend(), Pan, P_inner, Col) :-
+predict($Extend(), Pan, P_inner, Col) :-
     pval(Pan, P_inner, V), params.hole(H),
     ( V = H, canvas.value([Pan, P_inner], Col)                   // unfilled: the canvas
     ; V != H, Col = H ).                                          // a mark: unfilled
@@ -110,8 +124,8 @@ flank.cell(Pan, P_inner) :- pval(Pan, P_inner, _).
 flank.mark(Pan, P_inner) :- mark(Pan, P_inner, _).
 flank.axis(Pan, A) :- panel(Pan), axis_elem(A).
 
-catalog.prediction($U(), $Span(), Pan, P_inner, Col) :- mark(Pan, P_inner, Col).
-catalog.prediction($U(), $Span(), Pan, P_inner, Col) :-
+predict($Span(), Pan, P_inner, Col) :- mark(Pan, P_inner, Col).
+predict($Span(), Pan, P_inner, Col) :-
     pval(Pan, P_inner, H), params.hole(H),
     ( flank.between(Pan, P_inner), own(Pan, Col)                 // flanked: the panel's own color
     ; !flank.between(Pan, P_inner), Col = H ).                   // else it stays unfilled
@@ -131,13 +145,13 @@ repeat(Pan, Q, Col) :-
 .init image = Unanimous<PanelCell, Color>
 image.item([Pan, P_inner], Col) :- repeat(Pan, P_inner, Col).
 
-catalog.prediction($U(), $Reflect(), Pan, P_inner, Col) :-
+predict($Reflect(), Pan, P_inner, Col) :-
     pval(Pan, P_inner, _),
     ( image.value([Pan, P_inner], Col)                           // an image of the window
     ; !repeat(Pan, P_inner, _), own(Pan, Col) ).                 // out of every image's reach
 
 // --- output ---
 
-out(P_inner, Col) :-
-    content(Pan), Pan != Pan1, Pan != Pan2,
-    catalog.consistent($U(), R, Pan1, Pan2), catalog.prediction($U(), R, Pan, P_inner, Col).
+out(P_inner, Col, R) :-
+    slot(Pan, Pan1, _), catalog.confirmed([Pan, Pan1], R),
+    catalog.prediction([Pan, Pan1], R, Pan, P_inner, Col).

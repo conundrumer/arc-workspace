@@ -8,18 +8,22 @@ from checker.render.grids import grid_lines, shifted
 from controlled_markdown import mctx
 from engine import Engine, Value
 from solver.aggregate import Solver
-from solver.vocabulary import TIEBREAK_RESOLUTION
+from solver.out_grids import out_columns
 from solver.witness import Resolutions
 
 
 def resolution_lines(solver: Solver, out: Resolutions) -> list[str]:
     """A `Resolutions` output drawn: each grid under its resolution value
     as Souffle prints it, and under `grid <i>` where the run gave none, as
-    a witness file's grids are."""
+    a witness file's grids are, the values of a resolution of more than
+    one resolution column joined by `, `."""
     from checker.render.relation import souffle_text
+    columns = out_columns(solver.program).resolution
     lines: list[str] = []
     for i, grid in enumerate(out.grids):
-        head = souffle_text(solver, out.values[i], TIEBREAK_RESOLUTION) \
+        head = ", ".join(
+            souffle_text(solver, v, c.type)
+            for v, c in zip(out.values[i], columns, strict=True)) \
             if i < len(out.values) else mctx("grid {i}").format(i=i + 1)
         lines.append(f"{head}:")
         lines += [shifted(r, "  ") for r in grid_lines(grid)]

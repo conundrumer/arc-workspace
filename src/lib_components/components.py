@@ -191,16 +191,18 @@ class DemonstrationConsistencyRows(NamedTuple):
 
     counterexample: Relation
     consistent: Relation
+    unconfirmed: Relation
+    confirmed: Relation
 
 
 def DemonstrationConsistency(Key: TypeArg, Demonstrated: TypeArg, Object: TypeArg, Index: TypeArg, Value: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, value: Iterable[PyRow] | None = None, prediction: Iterable[PyRow] | None = None, demonstration: Iterable[PyRow] | None = None) -> DemonstrationConsistencyRows:
     """Runs `DemonstrationConsistency` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('DemonstrationConsistency', [Key, Demonstrated, Object, Index, Value],
                GridTypes(LibType.POSITION, LibType.OFFSET),
-               {'value': Columns((Key, Object, Index, Value, ), True), 'prediction': Columns((Key, Demonstrated, Object, Index, Value, ), True), 'demonstration': Columns((Key, Object, Object, ), True), 'counterexample': Columns((Key, Demonstrated, Object, Object, ), True), 'consistent': Columns((Key, Demonstrated, Object, Object, ), True)},
+               {'value': Columns((Key, Object, Index, Value, ), True), 'prediction': Columns((Key, Demonstrated, Object, Index, Value, ), True), 'demonstration': Columns((Key, Object, Object, ), True), 'counterexample': Columns((Key, Demonstrated, Object, Object, ), True), 'consistent': Columns((Key, Demonstrated, Object, Object, ), True), 'unconfirmed': Columns((Key, Demonstrated, ), True), 'confirmed': Columns((Key, Demonstrated, ), True)},
                {'value': value, 'prediction': prediction, 'demonstration': demonstration},
-               ['counterexample', 'consistent'], sizes)
-    return DemonstrationConsistencyRows(got['counterexample'], got['consistent'])
+               ['counterexample', 'consistent', 'unconfirmed', 'confirmed'], sizes)
+    return DemonstrationConsistencyRows(got['counterexample'], got['consistent'], got['unconfirmed'], got['confirmed'])
 
 
 class OrdinalRows(NamedTuple):

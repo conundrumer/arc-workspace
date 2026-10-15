@@ -30,8 +30,8 @@ undefined."""
 
 def resolved(solver: Solver) -> bool:
     """Whether `out` has a resolution column (solver-file.md, under
-    "Alt outputs")."""
-    return out_columns(solver.program).resolution is not None
+    "Cases")."""
+    return bool(out_columns(solver.program).resolution)
 
 
 def pass_suffix(solver: Solver, cases: Sequence[CaseOnPair]) -> str:

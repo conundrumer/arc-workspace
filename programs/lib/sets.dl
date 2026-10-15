@@ -190,4 +190,16 @@
     consistent(Ky, C, O, O2) :-
         demonstration(Ky, O, O2), prediction(Ky, C, O, _, _),
         !counterexample(Ky, C, O, O2).
+
+    /// Alternative c makes a prediction for some object, and a demonstrated
+    /// pair's prediction is missing or differs from its output.
+    .decl unconfirmed(key: Key, c: Demonstrated)
+    unconfirmed(Ky, C) :-
+        prediction(Ky, C, _, _, _), demonstration(Ky, O, O2),
+        !consistent(Ky, C, O, O2).
+
+    /// Alternative c makes a prediction for some object, and `consistent`
+    /// holds on every demonstrated pair: the alternatives that apply.
+    .decl confirmed(key: Key, c: Demonstrated)
+    confirmed(Ky, C) :- prediction(Ky, C, _, _, _), !unconfirmed(Ky, C).
 }

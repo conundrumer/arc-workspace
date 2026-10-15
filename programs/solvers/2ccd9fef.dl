@@ -132,7 +132,7 @@
     // @witness two-growing-parts: variant $Runs
   | Runs {rule: RunRule}
 
-.decl out(p: Position, col: Color, ch: Choice)
+.decl out(p: Position, col: Color, ch: Choice, r: DemonstratedChoice)
 
 .comp Params {
     // --- $StoredEnd ---
@@ -171,6 +171,10 @@ impl_choice($Slices(E, Pa, Ax, St, Co)) :-
     step_source_choice(St), color_cycle_choice(Co).
 impl_choice($Runs($Velocity(M))) :- run_match_choice(M).
 impl_choice($Runs($Demo())).
+
+// The rules of the catalog, which a case that reads no rule gives each grid at.
+.decl demonstrated_choice(r: DemonstratedChoice)
+demonstrated_choice($Drag()). demonstrated_choice($Stay()).
 
 // --- shared ---
 
@@ -593,8 +597,9 @@ unready($Slices(E, Pa, Ax, $EveryStep(), Co)) :-
     ; factor.clash([L, Pa, _])
     ).
 
-out(P_intile, Col, $Slices(E, Pa, Ax, St, Co)) :-
+out(P_intile, Col, $Slices(E, Pa, Ax, St, Co), R) :-
     impl_choice($Slices(E, Pa, Ax, St, Co)), !unready($Slices(E, Pa, Ax, St, Co)),
+    demonstrated_choice(R),
     layout.value(E, L), frame(L, P_intile, Col0),
     ( drawn(L, Pa, _, St, D, _, _, _, P_intile, X), reads(L, Ax, D),
       hue_source(L, Co, Pan), hue(L, Pan, X, Col)
@@ -917,22 +922,18 @@ catalog.prediction($U(), R, Pan, P_intile, Col) :-
     ( rule_paint(R, Pan, P_intile, Col)                         // drawn by the rule
     ; tpl(P_intile, Col), !rule_paint(R, Pan, P_intile, _) ).   // else the template
 
-// A rule some demonstrated pair refutes.
-.decl refuted(r: DemonstratedChoice)
-refuted(R) :-
-    catalog.prediction($U(), R, Pan, _, _), catalog.demonstration($U(), Pan, Pan2),
-    !catalog.consistent($U(), R, Pan, Pan2).
-
-// The rule consistent on every demonstrated pair draws the stage after the
+// Each rule confirmed on every demonstrated pair draws the stage after the
 // last one.
-run_paint($Runs($Demo()), P_intile, Col) :-
-    last_step(_, Pan), catalog.prediction($U(), R, Pan, P_intile, Col), !refuted(R).
+out(P_intile, Col, $Runs($Demo()), R) :-
+    last_step(_, Pan), catalog.confirmed($U(), R),
+    catalog.prediction($U(), R, Pan, P_intile, Col).
 
 // --- $Runs ---
 
-out(P_intile, Col, Ch) :- run_paint(Ch, P_intile, Col).
+out(P_intile, Col, Ch, R) :- run_paint(Ch, P_intile, Col), demonstrated_choice(R).
 
 // --- $Velocity ---
 
-out(P_intile, Col, $Runs($Velocity(M))) :-
-    run_match_choice(M), tpl(P_intile, Col), !run_paint($Runs($Velocity(M)), P_intile, _).
+out(P_intile, Col, $Runs($Velocity(M)), R) :-
+    run_match_choice(M), demonstrated_choice(R),
+    tpl(P_intile, Col), !run_paint($Runs($Velocity(M)), P_intile, _).

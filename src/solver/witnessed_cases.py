@@ -372,7 +372,7 @@ def witnessed(engine: Engine, solver: Solver, limits: Limits,
     more (`taken`). A case is witnessed when it is the concept case or a
     branch's model (`branch_models`), or when some recorded input
     (`recorded_inputs`, the witness file's entries) shows it giving an
-    output, its grids over the tiebreak resolutions or undefined, that no
+    output, its grids over the resolutions or undefined, that no
     case it extends gives, so that a case
     undefined where a case it extends gives a grid is witnessed and its
     Fit failure shown. A case other than the concept case and the

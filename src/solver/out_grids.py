@@ -5,6 +5,7 @@ why they give none."""
 from collections.abc import Callable, Iterable, Sequence
 from itertools import product
 from dataclasses import dataclass
+from enum import StrEnum
 
 from engine import (
     Grid,
@@ -27,9 +28,11 @@ from solver.model import (
     Case,
 )
 from solver.outcome import Grids
+from solver.witness import Resolution
 from solver.value_order import value_key
 from solver.vocabulary import (
     CHOICE,
+    DEMONSTRATED_CHOICE,
     OPEN_VALUE,
     OUTPUT,
     TIEBREAK_RESOLUTION,
@@ -53,14 +56,32 @@ def out_decl(program: Program) -> RelationDecl | None:
                  and r.scope == TOP and own(r.span)), None)
 
 
+class ResolutionType(StrEnum):
+    """The types of the columns of `out` that split a case's rows into
+    grids (solver-file.md, under "Cases")."""
+
+    DEMONSTRATED = DEMONSTRATED_CHOICE
+    TIEBREAK = TIEBREAK_RESOLUTION
+
+
+@dataclass(frozen=True)
+class ResolutionColumn:
+    """A column of `out` that splits a case's rows into grids."""
+
+    index: int
+    type: ResolutionType
+
+
 @dataclass(frozen=True)
 class OutColumns:
-    """The case column, the resolution column and the open-value column of
+    """The case column, the resolution columns and the open-value column of
     `out`, by type (solver-file.md, under "Cases" and "Alt outputs"); None
-    where `out` has none."""
+    where `out` has none. The resolution columns stand in `out`'s column
+    order, and a resolution value holds one value per column, in that
+    order."""
 
     case: int | None
-    resolution: int | None
+    resolution: tuple[ResolutionColumn, ...]
     open: int | None
 
 
@@ -68,13 +89,16 @@ def out_columns(program: Program) -> OutColumns:
     """`out`'s columns (`OutColumns`)."""
     decl = out_decl(program)
     if decl is None:
-        return OutColumns(None, None, None)
+        return OutColumns(None, (), None)
     types = [c.type.text for c in decl.columns]
 
     def at(name: str) -> int | None:
         return types.index(name) if name in types else None
 
-    return OutColumns(at(CHOICE), at(TIEBREAK_RESOLUTION), at(OPEN_VALUE))
+    resolving = tuple(ResolutionColumn(i, ResolutionType(t))
+                      for i, t in enumerate(types)
+                      if t in ResolutionType)
+    return OutColumns(at(CHOICE), resolving, at(OPEN_VALUE))
 
 
 @dataclass(frozen=True)
@@ -174,6 +198,17 @@ def rows_by_base(rows: Rows, case_col: int | None) -> dict[Value, list[Row]]:
     return {} if case_col is None else by_value(rows, case_col)
 
 
+def by_values(rows: Sequence[Row], cols: Sequence[int]
+              ) -> dict[Resolution, list[Row]]:
+    """`rows` by their values in columns `cols`, as `by_value` groups
+    them at each column in turn."""
+    if not cols:
+        return {(): list(rows)}
+    return {(v, *rest): group
+            for v, mine in by_value(rows, cols[0]).items()
+            for rest, group in by_values(mine, cols[1:]).items()}
+
+
 def by_value(rows: Sequence[Row], col: int) -> dict[Value, list[Row]]:
     """`rows` by their value in column `col`, each list in the rows' order,
     the values in the order they first stand. The rows of one run share one
@@ -217,7 +252,7 @@ def case_grids(columns: OutColumns, mine: Sequence[Row],
                       by_open.__getitem__, fields, margins, {})
 
 
-def open_grids[K](res_col: int | None, groups: Sequence[tuple[Value, K]],
+def open_grids[K](res_cols: tuple[ResolutionColumn, ...], groups: Sequence[tuple[Value, K]],
                   rows_of: Callable[[K], Sequence[Row]],
                   fields: FieldValues, margins: dict[int, Place | None],
                   read: dict[tuple[K, ...], Grids | Undefined]
@@ -235,7 +270,7 @@ def open_grids[K](res_col: int | None, groups: Sequence[tuple[Value, K]],
         if got is None:
             rows = [r for k in keys for r in rows_of(k)]
             got = read[keys] = Undefined(NoOutput()) if not rows \
-                else resolution_grids(res_col, rows, margins)
+                else resolution_grids(res_cols, rows, margins)
         return got
 
     return open_union(at(held) for held in
@@ -296,21 +331,20 @@ def open_union(per_value: Iterable[Grids | Undefined]) -> Grids | Undefined:
     return Grids(tuple(grids))
 
 
-def resolution_grids(res_col: int | None, mine: Sequence[Row],
+def resolution_grids(res_cols: tuple[ResolutionColumn, ...],
+                     mine: Sequence[Row],
                      margins: dict[int, Place | None]) -> Grids | Undefined:
     """The grids of `mine`, the rows of one combination of open values,
     one per resolution in the order of the resolution values
-    (solver-file.md, under "Cases"), each with its resolution value where `res_col`,
-    `out`'s resolution column, is one; or undefined, with the reason of
-    the first resolution that gives no total grid."""
-    by_res: dict[Value | None, list[Row]] = (
-        {None: list(mine)} if res_col is None
-        else {k: v for k, v in by_value(mine, res_col).items()})
+    (solver-file.md, under "Cases"), each with its resolution value where
+    `out` has resolution columns `res_cols`; or undefined, with the reason
+    of the first resolution that gives no total grid."""
+    by_res = by_values(mine, [c.index for c in res_cols])
     grids: list[Grid] = []
-    keys = sorted(by_res, key=lambda v: () if v is None else value_key(v))
+    keys = sorted(by_res, key=lambda k: tuple(value_key(v) for v in k))
     for key in keys:
         grid = _grid_of(by_res[key], margins)
         if not isinstance(grid, tuple):
             return Undefined(grid)
         grids.append(grid)
-    return Grids(tuple(grids), tuple(k for k in keys if k is not None))
+    return Grids(tuple(grids), tuple(keys) if res_cols else ())

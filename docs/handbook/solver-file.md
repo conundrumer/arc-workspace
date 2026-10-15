@@ -115,7 +115,7 @@
     - Precise reading: a case's output is not the verdict's when its output on the grid differs from the output the verdict denotes: the output of the name's model for a name in one of the [Witness file](docs/handbook/solver-file.md#witness-file) forms, every case's for `other`, no case's for `any`.
 
 ### Cases
-- A case's model reads from `out` at that case one grid per combination of a tiebreak resolution and one value of each `@open` relation of `OpenValue`, its output is the distinct grids it reads, and it is undefined on an input where some combination reads no grid, or facts that describe no total grid.
+- A case's model reads from `out` at that case one grid per combination of a value of each `out` column of type `DemonstratedChoice` or `TiebreakResolution` and one value of each `@open` relation of `OpenValue`, its output is the distinct grids it reads, and it is undefined on an input where some combination reads no grid, or facts that describe no total grid.
     - A relation's values there are those the case stores, or those that the `@derive` branch the case takes on it derives on that input.
     - Where the output of some case depends on an `@open` relation, `out` takes a column of type `OpenValue` before its `TiebreakResolution` column, or last where it has none, and each fact holds there the values of the `@open` relations it is derived at.
     - `OpenValue` is a record with one field per `@open` relation the output of some case depends on, each field with that relation's name and of a record type the solver names for that relation, whose fields are the relation's columns that tell one open value from another, under the same names.
@@ -219,7 +219,8 @@
 - A case that reads a `DemonstrationConsistency` instance solves the inner task of each input of a nested task.
 - That case's catalog, the constructors of `DemonstratedChoice`, holds the rules the task's inputs demonstrate, test inputs included, normally one per input.
     - Each rule is a general rule, with clauses of its own that read from the input what that rule needs.
-- The rule that applies to an input is a rule for which the instance's `consistent` relation holds on every demonstrated pair of that input, and no parameter stores it.
+- The rules that apply to an input are those the instance's `confirmed` relation gives, and no parameter stores them.
+- `out` takes a column of type `DemonstratedChoice` with the rule that gives each grid, after any `Choice` column and before any `TiebreakResolution` column.
 - In a nested task, substantial code that detects and constructs each input's rule through one parameterized mechanism, general enough to produce every input's rule, is the sign that those rules belong in the catalog.
     * comment: The solver passes on 20a9e565, a nested task, built a parameterized construction of each input's rule in place of a catalog, as change ticket 4-38 records.
 - The solver of a task that is not a nested task defines no `DemonstratedChoice`.

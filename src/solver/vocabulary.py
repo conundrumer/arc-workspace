@@ -44,7 +44,7 @@ TIEBREAK_RESOLUTION: Annotated[str,
            "The solver enumerates a tiebreak's resolutions through a trailing "
            "`out` column of type "
            "`TiebreakResolution`.")] = "TiebreakResolution"
-"""The type of `out`'s resolution column."""
+"""The type of `out`'s tiebreak resolution column."""
 OPEN_VALUE: Annotated[str,
     quotes("solver-file.md", "Cases",
            "`out` takes a column of type `OpenValue`")] = "OpenValue"

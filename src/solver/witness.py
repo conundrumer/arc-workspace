@@ -27,6 +27,11 @@ from solver.problems import (
 )
 
 
+type Resolution = tuple[Value, ...]
+"""A resolution value: one value per resolution column of `out`, in
+column order (`solver.out_grids.OutColumns`)."""
+
+
 @quotes("solver-file.md", "Witness file",
         "a list of the grids the cases give, when they give more than one")
 @dataclass(frozen=True)
@@ -35,7 +40,7 @@ class Resolutions:
     them (`solver.outcome.Grids`); a witness file holds the grids alone."""
 
     grids: tuple[Grid, ...]
-    values: tuple[Value, ...] = field(default=(), compare=False)
+    values: tuple[Resolution, ...] = field(default=(), compare=False)
 
 
 type GroupGrid = Grid | Resolutions | Undefined
