@@ -20,7 +20,7 @@ from ticket_watch import Thresholds, deferred, route
 from ticketing.text import VALIDATION
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Kind, Status, Verdict
-from transcripts import Refused, chain, find, own_start, snapshot
+from transcripts import Refused, chain, find, own_range, snapshot
 
 UNEXERCISED_DAYS = 7
 """The days since its last move into `deferred` from which a `validation`
@@ -100,9 +100,9 @@ def given_run(run: str) -> GivenRun:
 
 
 def own_lines(path: Path) -> list[str]:
-    """The lines of the transcript at `path` from `own_start` on."""
+    """The lines of the transcript at `path` that are its run's own."""
     snap = snapshot(path)
-    return [snap.line(i).decode() for i in range(own_start(path), snap.count)]
+    return [snap.line(i).decode() for i in own_range(path)]
 
 
 def exercisers(check: Check, runs: dict[str, list[str]]) -> list[str] | None:

@@ -510,9 +510,9 @@ def entries_naming(path: Path, naming: frozenset[str] | None) -> list[Entry]:
     if naming is None:
         return list(entries_forward(path))
     snap = snapshot(path)
-    start = own_start(path)
+    own = own_range(path)
     lines = sorted(i for i in frozenset[int]().union(*(snap.holding(w) for w in naming))
-                   if i >= start)
+                   if i in own)
     return [e for i in lines for e in snap.entry(i)]
 
 
@@ -520,7 +520,7 @@ def entries_forward(path: Path) -> Iterator[Entry]:
     """The entries of the transcript at `path` as it stands at the state this
     process is in, in their order, each line parsed only when it is reached."""
     snap = snapshot(path)
-    for i in range(own_start(path), snap.count):
+    for i in own_range(path):
         yield from snap.entry(i)
 
 
@@ -528,7 +528,7 @@ def entries_back(path: Path) -> Iterator[Entry]:
     """The entries of the transcript at `path` as it stands at the state this
     process is in, last first, each line parsed only when it is reached."""
     snap = snapshot(path)
-    for i in range(snap.count - 1, own_start(path) - 1, -1):
+    for i in reversed(own_range(path)):
         yield from snap.entry(i)
 
 
@@ -551,21 +551,23 @@ def blocks(entry: Entry, kind: str) -> list[dict[str, Any]]:
 
 
 @state_cache(DERIVED)
-def own_start(path: Path) -> int:
-    """The index of the first line of the entries of the transcript at
-    `path` that are its run's own. A fork's transcript opens with a copy of
-    its parent's entries, through the Agent call that launched the fork,
-    which its `.meta.json` gives as `toolUseId`, and its own entries open
-    at the entry that holds that call's result. For each other transcript,
-    and for a fork's where no line holds that result, it is 0."""
+def own_range(path: Path) -> range:
+    """The indices of the lines of the transcript at `path` that are its
+    run's own. A fork's transcript opens with a copy of its parent's
+    entries, through the Agent call that launched the fork, which its
+    `.meta.json` gives as `toolUseId`, and its own entries run from the
+    first line whose entry holds that call's result to its last line.
+    For a fork's transcript where no line holds that result, it is empty.
+    For each other transcript, it is every line."""
     meta = transcript_meta(path) or {}
     call = meta.get("toolUseId")
-    if meta.get("isFork") is not True or not isinstance(call, str):
-        return 0
     snap = snapshot(path)
-    return next((i for i in sorted(snap.holding(call))
-                 if any(b.get("tool_use_id") == call
-                        for e in snap.entry(i) for b in blocks(e, "tool_result"))), 0)
+    if meta.get("isFork") is not True or not isinstance(call, str):
+        return range(snap.count)
+    start = next((i for i in sorted(snap.holding(call))
+                  if any(b.get("tool_use_id") == call
+                         for e in snap.entry(i) for b in blocks(e, "tool_result"))), None)
+    return range(0) if start is None else range(start, snap.count)
 
 
 def forked_from(path: Path) -> str | None:
