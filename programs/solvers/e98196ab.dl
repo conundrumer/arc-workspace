@@ -31,7 +31,7 @@
     tile_decompose(P_grid, P_tile, P_intile) :-
         arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah),
         tile_dim(AXIS_V, Tv), tile_dim(AXIS_H, Th), gap(G),
-        helpers.tile_pos([Av, Ah], [Tv, Th], [G, 0], P_grid, P_tile, P_intile).
+        helpers.tile_pos([Av, Ah], [Tv, Th], [G, G], P_grid, P_tile, P_intile).
 
     // --- $Count: decompose data ---
     .decl divisor(n: number)

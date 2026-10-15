@@ -38,7 +38,7 @@
     tile_decompose(P_grid, P_tile, P_intile) :-
         arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah),
         frame_dim(AXIS_V, Fv), frame_dim(AXIS_H, Fh), gap(G),
-        helpers.tile_pos([Av, Ah], [Fv, Fh], [0, G], P_grid, P_tile, P_intile).
+        helpers.tile_pos([Av, Ah], [Fv, Fh], [G, G], P_grid, P_tile, P_intile).
 
     // --- $Count, $Size: decompose data ---
     .decl divide_axis(a: Axis)

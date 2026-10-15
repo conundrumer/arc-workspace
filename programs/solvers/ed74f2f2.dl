@@ -60,7 +60,7 @@
     .decl decompose(p_grid: Position, p_tile: Position, p_intile: Position)
     decompose(P_grid, P_tile, P_intile) :-
         arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah), tile_dim(K), gap(G),
-        helpers.tile_pos([Av, Ah], [K, K], [0, G], P_frame, P_tile, P_intile),
+        helpers.tile_pos([Av, Ah], [K, K], [G, G], P_frame, P_tile, P_intile),
         border(K2), uniform_inset(K2, B), compose(P_frame, B, P_grid).
 
     // Grid cells of the key tile, with their intile positions.
