@@ -310,8 +310,13 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
         help=mctx("the built-in derivations of stored parameters that fit, "
                   "each a branch, with each witness it builds, which it "
                   "writes into the task's witness file"),
+        # The first item says at which assignment the witness stands, which
+        # principles.md, Witnesses, states: without it, refine pass b2862040
+        # (ticket 10-292) read a witness at a changed parameter as wrong and
+        # rebuilt it by hand, and a later run (ticket 6-963) grepped src,
+        # scripts, docs and prompts for what "the stored value there" means.
         description=mctx("""
-            - Each built-in derivation of a stored parameter, a proposer of `programs/proposers.dl`, for which some case of the solver that takes its branch fits the task, with the witness that separates the cases that take the branch from the cases that take the stored value there and the same branches elsewhere.
+            - Each built-in derivation of a stored parameter, a proposer of `programs/proposers.dl`, for which some case of the solver that takes its branch fits the task, with the witness that separates the cases that take the branch from the cases that take the stored value there and the same branches elsewhere, at the assignment that changes the fewest parameters at which they differ.
             - A derivation is listed with no witness where its `@ignore: derive <Proposer> — <reason>` line or its parameter's `@ignore: derive — <reason>` line stands, where the `@ignore: derive <name>` lines exclude every case that takes its branch, and, where the concept case fits, where no case takes its branch.
             - The command writes each witness it builds into the task's witness file, as `record` writes one, with the `@derive` line standing, and keeps a witness the file already holds for the branch.
             """)
@@ -322,8 +327,12 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
         help=mctx("the program relations that hold one value on every "
                   "input, with each witness it builds, which it writes into "
                   "the task's witness file"),
+        # The first item says at which assignment the witness stands, which
+        # principles.md, Witnesses, states. The user's words, session
+        # 7fd429fb, 2026-10-13T02:58:03Z: "that should use clarification, but
+        # like improving the wording, not like adding new lines."
         description=mctx("""
-            - Each program relation between `in` and `out` whose value over a subset of its columns is the same on every input of the task, with the witness that separates the cases that take its `<rel>=stored` branch from the cases that take the derived value there and the same branches elsewhere.
+            - Each program relation between `in` and `out` whose value over a subset of its columns is the same on every input of the task, with the witness that separates the cases that take its `<rel>=stored` branch from the cases that take the derived value there and the same branches elsewhere, at the assignment that changes the fewest parameters at which they differ.
             - The command writes each witness it builds into the task's witness file, as `record` writes one, with the `@store` line standing, and keeps a witness the file already holds for the branch.
             """)
         + "\n" + unwritten(Section.STORE) + "\n" + mctx(
