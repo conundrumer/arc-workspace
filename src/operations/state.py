@@ -97,8 +97,8 @@ class Report:
 @dataclass(frozen=True)
 class LateResume:
     """A resume of an operator after `later`, a later operator of the
-    session, made its first entry, at `later_first`, as `monitor.ALERTS`
-    gives a resume, at `time`."""
+    session, made its first entry, at `later_first`, as `resumed_at` in
+    `scripts/operator_reads.py` gives a resume, at `time`."""
     time: float
     later: str
     later_first: float
@@ -329,7 +329,8 @@ class TranscriptsRead:
     messages that reached any of them. `made` holds each step the command
     printed to an operator with the call that operator made next
     (`handled.made`). `late_resumes` gives, for each operator of
-    `State.operators`, its resumes, as `monitor.ALERTS` gives them, after
+    `State.operators`, its resumes, as `resumed_at` in `scripts/operator_reads.py`
+    gives them, after
     the next operator of `State.operators` made its first entry, in the
     order of their time. `stalled` gives the final reply in the transcript
     of each agent a stall alert names that reached no operator as a

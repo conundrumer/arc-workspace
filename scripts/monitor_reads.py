@@ -43,10 +43,22 @@ UNWATCHED = OPERATORS
 
 
 def stalled_at(listed: Listed, listing: list[Listed], undecided: list[str]) -> float | None:
-    """The end of the turn of `listed` where it stalled, as
-    `monitor.ALERTS` gives a stall, or None. A run whose turn end
-    `agent_turns.turn_end` cannot find has no stall, and an `undecided`
-    line names it."""
+    """The end of the turn of `listed` where it stalled, or None.
+
+    It stalled where its turn ended since its parent's latest message to
+    it, and all of these hold:
+
+    - No `user` entry in its transcript is timestamped after that turn
+      ended.
+    - No agent it launched and no command it backgrounded still runs or
+      ended after that turn ended.
+    - Its parent's transcripts hold an `assistant` entry timestamped after
+      that turn ended.
+
+    That turn ended at the last timestamped entry of its transcripts that
+    ends a turn, as `scripts/profile_runs.py --help runs` gives one. A run
+    whose turn end `agent_turns.turn_end` cannot find has no stall, and an
+    `undecided` line names it."""
     aid = listed.launch.agent
     if (not listed.ended or listed.found != [] or listed.running
             or any(x.parent == aid for x in listing)):
