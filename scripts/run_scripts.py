@@ -41,11 +41,11 @@ def read_runs(state: State) -> tuple[dict[str, Starts], dict[str, Takes]]:
             command=" ".join(QUEUE_COMMAND), code=listed.returncode, stderr=listed.stderr.strip())
         return {runs.run_id(ln): fault for ln in given}, {runs.run_id(ln): fault for ln in given}
     queue = tuple(e["id"] for e in json.loads(listed.stdout))
-    ended = {p: (o.ended, o.stopped) for p, o in passes.outcomes(state)}
+    stands = dict(passes.outcomes(state))
     starts: dict[str, Starts] = {}
     takes: dict[str, Takes] = {}
     for ln in given:
-        run = runs.view(state, queue, ln, ended)
+        run = runs.view(state, queue, ln, stands)
         starts[runs.run_id(ln)], takes[runs.run_id(ln)] = script_reads(
             runs.script_path(state.main_tree, ln), run, lambda: runs.run_tickets(state, run))
     return starts, takes

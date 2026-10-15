@@ -19,7 +19,7 @@ import shlex
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeGuard
+from typing import Protocol, TypeGuard
 
 from arc.task import TASK_ID
 from controlled_markdown import mctx
@@ -57,12 +57,25 @@ SCRIPT_SECONDS = 10
 
 @dataclass(frozen=True)
 class Begun:
-    """A pipeline of a run, as its script reads it: its task, its passes,
-    and for one that ended, the reason it stopped, or None where it ran to
-    its end."""
+    """A pipeline of a run, as its script reads it, as
+    `scripts/operate.py --help run` gives its fields."""
     task: str
     passes: tuple[Role, ...]
     stopped: str | None = None
+    passing: bool = False
+    held: bool = False
+
+
+class Standing(Protocol):
+    """Where a pipeline stands, as `passes.Outcome` gives it."""
+    @property
+    def ended(self) -> bool: ...
+    @property
+    def stopped(self) -> str | None: ...
+    @property
+    def passing(self) -> bool: ...
+    @property
+    def held(self) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -208,19 +221,22 @@ def started(state: State, ln: Line) -> list[Started]:
 
 
 def view(state: State, listed: tuple[str, ...], ln: Line,
-         ended: Mapping[Pipeline, tuple[bool, str | None]]) -> Run:
+         stands: Mapping[Pipeline, Standing]) -> Run:
     """The `Run` the script of `ln` reads, where `listed` is the queue's
-    full listing and `ended` gives for each pipeline of the run whether it
-    ended, and the reason it stopped or None."""
+    full listing and `stands` gives where each pipeline of the run
+    stands."""
     pipelines = started(state, ln)
     taken = {s.pipeline.task for s in pipelines}
     queue = tuple(t for t in listed if t not in state.git.claims and t not in taken)
     running: list[Begun] = []
     over: list[Begun] = []
     for s in pipelines:
-        done, why = (True, s.failed) if s.failed is not None else ended[s.pipeline]
-        b = Begun(s.pipeline.task, tuple(s.pipeline.passes), why)
-        (over if done else running).append(b)
+        task, passes = s.pipeline.task, tuple(s.pipeline.passes)
+        if s.failed is not None:
+            over.append(Begun(task, passes, s.failed))
+            continue
+        o = stands[s.pipeline]
+        (over if o.ended else running).append(Begun(task, passes, o.stopped, o.passing, o.held))
     return Run(queue, tuple(running), tuple(over))
 
 

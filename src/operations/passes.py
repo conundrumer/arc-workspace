@@ -36,7 +36,7 @@ alone, the pipeline's outcome is read from its passes, reviews and
 tickets, as for a pipeline whose work has not gone back."""
 
 import shlex
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from controlled_markdown import mctx
 from operations import briefs, messages, runs
@@ -61,10 +61,14 @@ NO_REPORT = mctx("the {role} pass {agent} wrote, since its launch, no report fil
 class Outcome:
     """Where a pipeline stands: its next step, None where it waits, and
     where it has ended, the reason it stopped, or None where it ran to its
-    end."""
+    end. `held` gives whether an `interference` ticket holds its next pass
+    or its end (`interference`), and `passing` whether a pass of it runs,
+    or is to launch while it is not held."""
     step: Step | None
     ended: bool = False
     stopped: str | None = None
+    passing: bool = False
+    held: bool = False
 
 
 def claim_command(task: str) -> str:
@@ -181,6 +185,11 @@ def interference(state: State, p: Pipeline) -> Outcome | str | None:
     return Outcome(None) if found else None
 
 
+type Stopped = tuple[str | None]
+"""The end of a pass chain: the reason its pipeline stops, or None where
+each pass ended with its report."""
+
+
 def run(state: State, p: Pipeline) -> Outcome:
     """The next step of the pipeline `p`, the step of its review chain
     first, then that of its pass chain, or, where the first `restore`
@@ -191,66 +200,77 @@ def run(state: State, p: Pipeline) -> Outcome:
     given = restore_reason(first, p.task) if first is not None else None
     if given is not None:
         return Outcome(None, True, given[0])
-    since = p.since
     ended: list[Ended] = []
+    hold = interference(state, p)
+    held = isinstance(hold, Outcome)
+    own = pass_chain(state, p, ended, hold)
+    chain = reviews(state, p.task, ended)
+    if isinstance(own, Outcome):
+        return replace(chain if chain is not None and chain.step is not None else own,
+                       passing=own.passing, held=held)
+    if chain is not None:
+        return replace(chain, held=held)
+    reason = own[0]
+    if reason is None:
+        if isinstance(hold, Outcome):
+            return replace(hold, held=True)
+        reason = hold
+    return end(state, p, reason)
 
-    def stop(reason: str | None) -> Outcome:
-        chain = reviews(state, p.task, ended)
-        return chain if chain is not None else end(state, p, reason)
 
+def pass_chain(state: State, p: Pipeline, ended: list[Ended],
+               hold: Outcome | str | None) -> Outcome | Stopped:
+    """The next step of the pass chain of `p`, Outcome(None) where it
+    waits, or its end, with each pass that ended with its report appended
+    to `ended`, where `hold` is what `interference` gives on `p`."""
+    since = p.since
     for role in p.passes:
-        chain = reviews(state, p.task, ended)
-        if chain is not None and chain.step is not None:
-            return chain
         a = latest(state, role, p.task, since)
         if a is None:
-            held = interference(state, p)
-            if isinstance(held, str):
-                return stop(held)
-            if held is not None:
-                return held
+            if isinstance(hold, str):
+                return (hold,)
+            if hold is not None:
+                return hold
             holder = state.git.claims.get(p.task)
             if holder is not None and holder != state.session:
-                return stop(CLAIM_HELD.format(task=p.task, holder=holder))
+                return (CLAIM_HELD.format(task=p.task, holder=holder),)
             if holder is None:
                 claim = claim_command(p.task)
                 tries = ran(state, claim, since)
                 if any(tries):
-                    return stop(mctx("the claim on task {task} fails").format(task=p.task))
-                return Outcome(None if tries else Bash(claim))
+                    return (mctx("the claim on task {task} fails").format(task=p.task),)
+                return passing(None if tries else Bash(claim))
             aside = aside_command(p.task, role)
             if role in SETS_ASIDE and not ran(state, aside, since):
-                return Outcome(Bash(aside))
+                return passing(Bash(aside))
             launch = Launch(role, p.task, briefs.solver_pass(p.task, overrides(state, p.task, role, since)))
             ruling = passed(launch, state)
             if ruling is not None and not restored(state, p.task, ruling.message.time, p.since):
-                return stop(mctx("the line `{line}` passed over its {role} pass").format(
-                    line=ruling.text, role=role))
-            return Outcome(launch)
+                return (mctx("the line `{line}` passed over its {role} pass").format(
+                    line=ruling.text, role=role),)
+            return passing(launch)
         since = a.launched
         if a.pending:
-            return Outcome(None)
+            return passing(None)
         if a.agent_id is None:
-            return stop(mctx("the {role} pass on {task} has no agent id").format(role=role, task=p.task))
+            return (mctx("the {role} pass on {task} has no agent id").format(role=role, task=p.task),)
         filed = state.transcripts.pass_tickets.get(a.agent_id)
         if filed is None:
             if a.reports:
                 asked = send_again(state, a.agent_id, [r.time for r in a.reports],
                                    messages.pass_resend)
                 if isinstance(asked, Send):
-                    return Outcome(asked)
+                    return passing(asked)
             told = no_report(role, a)
             if not repeated(told, state):
-                return Outcome(told)
-            return stop(NO_REPORT.format(role=role, agent=a.agent_id, section=TICKETS_FILED))
+                return passing(told)
+            return (NO_REPORT.format(role=role, agent=a.agent_id, section=TICKETS_FILED),)
         ended.append((a.agent_id, a, filed))
-    chain = reviews(state, p.task, ended)
-    if chain is not None:
-        return chain
-    held = interference(state, p)
-    if isinstance(held, Outcome):
-        return held
-    return end(state, p, held)
+    return (None,)
+
+
+def passing(step: Step | None) -> Outcome:
+    return Outcome(step, passing=True)
 
 
 def no_report(role: Role, a: Agent) -> Undecided:

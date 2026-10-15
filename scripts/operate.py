@@ -146,7 +146,10 @@ PARTS = {
         - Write a run script under `work/runs/` in the main tree.
         - It defines `starts(run: Run) -> Iterable[Start]`, with `Run` and `Start(task, passes)` from the module `operations.runs`, each `passes` a non-empty sequence whose every item is `analyze`, `create` or `refine`.
         - `run.queue` gives the task ids of the queue, in the order of their names, less each task a claim file gives and each task of the run's pipelines.
-        - `run.running` and `run.ended` give the run's pipelines, each with `task`, `passes` and `stopped`, which gives, for an ended one, the reason it stopped, or None where it ran to its end.
+        - `run.running` and `run.ended` give the run's pipelines, each with `task`, `passes`, `stopped`, `held` and `passing`.
+            - `stopped` gives, for an ended one, the reason it stopped, or None where it ran to its end.
+            - `held` gives whether an `interference` ticket on its task, filed since it started, holds its next pass or its end.
+            - `passing` gives whether a pass of it runs, or is to launch while it is not `held`.
         - At each read of the state, `next` loads the script again and calls `starts`.
         - `next` gives as a step the `start` of the first item `starts` gives whose task no pipeline of the session runs and that matches no pipeline of the run by task and passes, and passes over each other item.
             - That `start` has as `<run>` the time of the line's message and its path.
