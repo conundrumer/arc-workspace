@@ -1,5 +1,5 @@
 + index: headings
-+ budget: 21900
++ budget: 22100
 * comment: when editing this doc
     - Write what File structure says by editing the template, and describe only what the template cannot explain.
 
@@ -99,6 +99,9 @@
 
     .comp Determine { ... }
     ```
+
+- `grep -n '^\.decl out(\|^out(\|^\.type ' <task_id>.dl` prints the lines of the solver's `out` declaration, its `out` clauses and its program-scope types.
+    * comment: Solver runs on `out` or the choice types read line ranges of the solver with no pointer to them, then grepped for these lines: tickets 9-294, 9-309.
 
 ### Header
 - `@scene` and `@rule` are in dependency order.
