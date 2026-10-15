@@ -2,7 +2,8 @@
 prints (`operations.filing.filed`): a brief or a message whose text gives a
 file by the line `operations.filing.FILED` or `operations.filing.COMMANDED`,
 and a report that is the path of a report file alone. A file that is gone
-leaves its text unknown, and an `undecided` line names it."""
+leaves its text unknown, and an `undecided` line of `GONE_FILE` or
+`GONE_REPORT` names it."""
 
 import re
 from pathlib import Path
@@ -13,6 +14,17 @@ from noted_reads import note_read
 from operations.filing import FILED_LINE, REPORT_NAME, filed_path
 from state_reads import file_text, is_file
 
+GONE_FILE = mctx("{where}: the file {path} its text gives is gone, so that text is unknown")
+GONE_REPORT = mctx("{where}: its report file {path} is gone, so its report is unknown")
+GONE = tuple(re.compile(re.escape(form).replace(re.escape("{where}"), ".*")
+                        .replace(re.escape("{path}"), ".*"))
+             for form in (GONE_FILE, GONE_REPORT))
+
+
+def gone_line(line: str) -> bool:
+    """Whether `line` is an `undecided` line that names a file that is gone."""
+    return any(p.fullmatch(line) for p in GONE)
+
 
 def unfiled(text: str, where: str, undecided: list[str]) -> str:
     """`text` with each `FILED_LINE` line in it replaced by the text of the file
@@ -21,8 +33,7 @@ def unfiled(text: str, where: str, undecided: list[str]) -> str:
         path = filed_path(m)
         note_read(path)
         if not is_file(path):
-            undecided.append(mctx("{where}: the file {path} its text gives is gone, so that "
-                                  "text is unknown").format(where=where, path=path))
+            undecided.append(GONE_FILE.format(where=where, path=path))
             return m.group(0)
         return file_text(path).rstrip("\n")
     return FILED_LINE.sub(read, text)
@@ -43,7 +54,6 @@ def report_text(path: Path, where: str, undecided: list[str]) -> str | None:
     an `undecided` line names."""
     note_read(path)
     if not is_file(path):
-        undecided.append(mctx("{where}: its report file {path} is gone, so its report is "
-                              "unknown").format(where=where, path=path))
+        undecided.append(GONE_REPORT.format(where=where, path=path))
         return None
     return file_text(path).strip()

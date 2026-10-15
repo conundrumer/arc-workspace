@@ -4,11 +4,13 @@ transcripts of the session's operators, and of the state the monitor's
 steps read (`monitor_reads`)."""
 
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 
 from agent_turns import first_time, last_time
 from context_bound_hook import past_bound
+from filed_texts import gone_line
 from held_budgets import change_budgets, change_spend, doc_budgets
 from idle_sessions import main_wanted, read_sessions, running, want_main
 from monitor_reads import late_resumes, watched
@@ -122,17 +124,20 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
               for a in agents]
     known = {a.agent_id for a in agents if a.agent_id} | {aid for aid, _ in runs}
     given = given_lines(runs, me, calls)
+    sorted_calls = tuple(sorted(calls, key=lambda c: c.time))
+    parents = {aid: parent_id(p) for aid, p in runs}
+    operators = tuple(aid for aid, _ in runs)
+    took_up = taken_up(me, operators, sorted_calls, parents)
+    readers = text_readers(me, took_up, ended, agents)
     watching.extend(line for line in dict.fromkeys(undecided)
-                    if line.split(":", 1)[0] in known and unknown_line(line) not in given)
+                    if (where := line.split(":", 1)[0]) in known and unknown_line(line) not in given
+                    and (where in readers or not gone_line(line)))
     tickets, unread = read_tickets(tickets_dir)
     index = session_index(tickets_dir, session)
     holders = {t.holder for t in tickets.values() if t.status is Status.ASSIGNED and t.holder}
     my_path = dict(runs)[me]
     holding = {t.number: w for t in tickets.values() if t.status is Status.ASSIGNED
                and t.holder == me and (w := worktree_in(t, tree.worktrees)) is not None}
-    sorted_calls = tuple(sorted(calls, key=lambda c: c.time))
-    parents = {aid: parent_id(p) for aid, p in runs}
-    operators = tuple(aid for aid, _ in runs)
     now = time.time()
     main_path = find(session)
     session_dir = main_path.parent / session
@@ -156,7 +161,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
             agents=tuple(sorted(agents, key=lambda a: a.launched)),
             calls=sorted_calls, messages=tuple(messages),
             made=made(calls), late_resumes=late, stalled=stalled, pass_tickets=passes),
-        git=tree, taken_up=taken_up(me, operators, sorted_calls, parents),
+        git=tree, taken_up=took_up,
         held=read_held(holding),
         readers=Deferred(lambda: tuple(Reader(name, tuple(args)) for name, args in reader_calls()
                                        if name not in DEPRECATED)),
@@ -173,6 +178,19 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
         run_starts=run_starts, run_takes=run_takes))
     return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(stalled),
                                undecided=tuple(watching))
+
+
+def text_readers(me: str, took_up: frozenset[str], ended: Mapping[str, Report | None],
+                 agents: Sequence[Agent]) -> frozenset[str]:
+    """The runs and agents whose texts a step of `me` still reads: `me`, the
+    operators it takes up, the agents whose report the read hands to `me`,
+    and each agent one of those launched. A gone file of any other text
+    leaves no `undecided` line in the reply."""
+    out = {me, *took_up, *ended}
+    while added := {a.agent_id for a in agents
+                    if a.agent_id and a.agent_id not in out and a.operator in out}:
+        out |= added
+    return frozenset(out)
 
 
 def read_git(main: Path) -> GitRead:
