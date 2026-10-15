@@ -238,10 +238,10 @@ def check_lib_internal(solver: Solver, runs: Runs) -> list[Finding]:
     return sorted(out, key=line_of)
 
 
-@quotes("patterns.md", "`RIGID` — parameter relations coupled as a rigid assembly",
+@quotes("patterns.md", "`RIGID` — a stored shape and its attached parts, in every orientation",
         "The block's generated names are unreadable outside the expansion "
         "(lint category 'rigid chart').")
-@quotes("patterns.md", "`RIGID` — parameter relations coupled as a rigid assembly",
+@quotes("patterns.md", "`RIGID` — a stored shape and its attached parts, in every orientation",
         "exposes them only as D4 placements that transform them together, so "
         "the stored pose is unobservable.")
 def check_rigid_chart(solver: Solver, runs: Runs) -> list[Finding]:

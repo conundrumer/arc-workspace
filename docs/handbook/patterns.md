@@ -95,7 +95,9 @@
     ```
 - Per-entry relations with derive clauses hold the same data, but a new entry is then new program text rather than new facts.
 
-## `RIGID` — parameter relations coupled as a rigid assembly
+## `RIGID` — a stored shape and its attached parts, in every orientation
+* comment: The user's words, session 129de8fc, 2026-10-15T01:32:56Z to 01:34:03Z: "in rigid.md i noted the gloss may be resulting in solvers not using rigid. let's update the gloss?", and "send", which chose the coordinator's proposed gloss.
+- Where a shape the parameters store may stand in more than one orientation, and the task treats each orientation alike, a `RIGID` block stores it once, with each cell, direction or second shape attached to it, and gives each D4 image of the whole, in place of a shape closed over D4 by hand or a stamp stored apart from its direction.
 - A `RIGID` block groups parameter relations stated in one shared intrinsic frame and exposes them only as D4 placements that transform them together, so the stored pose is unobservable.
     - Each relation reappears as `<block>_<rel>` with a leading D4 column and every column transformed by that element.
     - Consumers join relations on the element, which is what "the same oriented instance" means.

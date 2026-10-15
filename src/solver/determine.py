@@ -136,11 +136,12 @@ def determine(engine: Engine, solver: Solver, limits: Limits,
     compare together per block, up to a D4 image of the stored assembly, since
     a RIGID block exposes them only as D4 placements that transform them
     together and the stored pose is unobservable (patterns.md, under "`RIGID` —
-    parameter relations coupled as a rigid assembly"): the Determine relations
-    stand in for the block's charts, the program places them, and the
-    parameters agree where some pose of one side gives the rows of every
-    parameter of the block that the other side gives at some pose
-    (`_same_pose_orbits`). A diff of such a parameter holds its placed rows.
+    a stored shape and its attached parts, in every orientation"): the
+    Determine relations stand in for the block's charts, the program places
+    them, and the parameters agree where some pose of one side gives the
+    rows of every parameter of the block that the other side gives at some
+    pose (`_same_pose_orbits`). A diff of such a parameter holds its placed
+    rows.
     The runs take `limits` once per example; a variant's runs, where the
     solver's own determination spent `measured` CPU seconds, take
     `variant_limits` of those. A solver whose task has no task file is a
@@ -317,8 +318,8 @@ def _signatures(rows_by_param: Mapping[str, Rows],
     and each id's assembly is its own: its part of the id's signature is the
     orbit of its placed rows at the id, the set over the poses of its rows at
     the pose, so that the id's assembly in any pose gives the same part
-    (patterns.md, under "`RIGID` — parameter relations coupled as a rigid
-    assembly")."""
+    (patterns.md, under "`RIGID` — a stored shape and its attached parts,
+    in every orientation")."""
     by_id: dict[Value, list[_Key]] = {}
     for name, col in ident_cols.items():
         if name not in placed:

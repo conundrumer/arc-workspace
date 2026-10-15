@@ -76,7 +76,7 @@ def check_color_structure_stored(solver: Solver, runs: Runs
         "the rows of every case.")
 @quotes("solver-file.md", "Determination",
         "A derived relation has no determination relation.")
-@quotes("patterns.md", "`RIGID` — parameter relations coupled as a rigid assembly",
+@quotes("patterns.md", "`RIGID` — a stored shape and its attached parts, in every orientation",
         "exposes them only as D4 placements that transform them together, so "
         "the stored pose is unobservable.")
 def check_stored_assignment(solver: Solver, runs: Runs) -> list[Finding]:
