@@ -295,15 +295,6 @@ class Place:
 
 
 @dataclass(frozen=True)
-class Seen:
-    """A file `tree_reads.py seen` wrote for a change: the time of its
-    write, and the file and text of each place it holds, or None where the
-    file does not read."""
-    time: float
-    places: frozenset[tuple[str, str]] | None
-
-
-@dataclass(frozen=True)
 class Start:
     """A pipeline a run script starts: its task and its passes, in their
     order (`runs`)."""
@@ -418,12 +409,9 @@ class HeldRead:
     `tests/gate/accepted/` its change writes, and `fragments` the
     fragments whose text that change adds or changes, as
     `tree_reads.fragments` gives them, each read at its first use
-    (`ReadOnUse`), and `seen` the files
-    `tree_reads.py seen` wrote for each change, by its number, in the
-    order of their time."""
+    (`ReadOnUse`)."""
     gate_outputs: Mapping[Path, tuple[str, ...]]
     fragments: Mapping[Path, tuple[Place, ...]]
-    seen: Mapping[str, tuple[Seen, ...]]
 
 
 @dataclass(frozen=True)

@@ -113,6 +113,15 @@ FRAGMENTS = mctx("Judge whether the text of each `mctx` fragment below, which a 
 
 FRAGMENT = mctx("- `{file}`, line {line}")
 
+
+def gives_fragments(agent: Agent) -> bool:
+    """Whether `agent` is a doc editor whose brief gave it fragments of its
+    change: `FRAGMENTS_PART`, or the `FRAGMENTS` line that leads the
+    `FRAGMENT` lines."""
+    return agent.role is Role.DOC_EDITOR and (FRAGMENTS_PART in agent.brief
+                                              or FRAGMENTS in agent.brief)
+
+
 CODE_EDITORS = mctx("Where a move needs the code to change, send that code change by "
                     "SendMessage to the code editor of the change: {ids}.")
 

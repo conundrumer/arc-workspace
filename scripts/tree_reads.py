@@ -2,37 +2,20 @@
 take their state from: the worktrees, the commits of `master`, the code
 review tags, the standing doc review tags, the task claims, the accepted
 gate outputs a change writes, the `mctx` fragments a change adds or
-changes, the places a change's fragments had at a launch of a doc editor on
-them, and the session's scratchpad directory. `HELP`, which `--help` prints,
-gives the usage form of the command that writes those places."""
+changes, and the session's scratchpad directory."""
 
-import argparse
-import json
 import os
-import sys
-import textwrap
-import time
 from collections.abc import Hashable
 from pathlib import Path
 
 from state_reads import file_text, listed, stat_of, stat_read, state_cache
 
-from controlled_markdown import ControlledMarkdownError, mctx
+from controlled_markdown import ControlledMarkdownError
 from controlled_markdown.prose import Fragment, text_fragments
 from engine import checkout
-from operations.state import DOC_REVIEW, Commit, Place, Seen
+from operations.state import DOC_REVIEW, Commit, Place
 from operations.task_work import CLAIM, tasks_work
 from operations.worktrees import BASE
-
-HELP = mctx("""
-    - Usage:
-        ```
-        uv run python scripts/tree_reads.py seen <worktree> <directory>
-        ```
-    - The command writes to a new file `<time>.json` in `<directory>` the file and the text of each fragment whose text the change in `<worktree>` adds or changes, against its merge base with `master`, with `<time>` the time of the write in seconds since the epoch.
-        - A file of the change whose text does not read as fragments has no entry.
-    - It makes `<directory>` where it does not exist, and prints the path of the file it wrote.
-    """)
 
 COMMITS = 300
 """The commits of `master` read for After a batch, newest first."""
@@ -191,34 +174,6 @@ def fragments_of(text: str, path: Path, name: str) -> tuple[Fragment, ...]:
     return tuple(text_fragments(text, path, name))
 
 
-def write_seen(tree: Path, directory: Path) -> Path:
-    """Carry out the `seen` command that `HELP` gives, and return the path of
-    the file it wrote."""
-    directory.mkdir(parents=True, exist_ok=True)
-    out = directory / f"{time.time():.6f}.json"
-    part = out.with_suffix(".part")
-    part.write_text(json.dumps([[p.file, p.text] for p in fragments(tree) if p.text is not None]))
-    os.replace(part, out)
-    return out
-
-
-def read_seen(directory: Path) -> tuple[Seen, ...]:
-    """The files `write_seen` wrote to `directory`."""
-    out: list[Seen] = []
-    for path in directory.glob("*.json"):
-        try:
-            entries = json.loads(path.read_text())
-        except (OSError, ValueError):
-            entries = None
-        places = (frozenset((f, t) for f, t in entries)
-                  if isinstance(entries, list) and all(
-                      isinstance(e, list) and len(e) == 2 and all(isinstance(x, str) for x in e)
-                      for e in entries)
-                  else None)
-        out.append(Seen(float(path.stem), places))
-    return tuple(sorted(out, key=lambda s: s.time))
-
-
 def scratch(session: str) -> Path:
     """The session's scratchpad directory, as the section `Launching` of
     `prompts/agents/notes/launching.md` gives it, for a session that
@@ -227,18 +182,3 @@ def scratch(session: str) -> Path:
     return (Path(f"/private/tmp/claude-{os.getuid()}") / started.replace("/", "-") / session
             / "scratchpad")
 
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=textwrap.dedent(HELP),
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = parser.add_subparsers(dest="command", required=True)
-    seen = sub.add_parser("seen")
-    seen.add_argument("worktree", type=Path)
-    seen.add_argument("directory", type=Path)
-    args = parser.parse_args()
-    print(write_seen(args.worktree, args.directory))
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

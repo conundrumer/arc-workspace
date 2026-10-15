@@ -36,7 +36,6 @@ from tree_reads import (
     fragments,
     gate_outputs,
     main_tree,
-    read_seen,
     scratch,
     worktrees,
 )
@@ -46,7 +45,6 @@ from controlled_markdown import mctx
 from engine.checkout import agents_of
 from handbook.reader_names import ReaderName
 from handbook.readers import reader_calls
-from operations import change_fragments
 from operations.directives import named
 from operations.final_reply import final_sends_in, for_context, sent_final_text
 from operations.handled import made
@@ -159,7 +157,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
             calls=sorted_calls, messages=tuple(messages),
             made=made(calls), late_resumes=late, stalled=stalled, pass_tickets=passes),
         git=tree, taken_up=taken_up(me, operators, sorted_calls, parents),
-        held=read_held(holding, scratch(session)),
+        held=read_held(holding),
         readers=Deferred(lambda: tuple(Reader(name, tuple(args)) for name, args in reader_calls()
                                        if name not in DEPRECATED)),
         limit_lifted=limit_lifted(now, watching),
@@ -210,14 +208,12 @@ def editor_reviewers(agents: list[Agent], main: Path, undecided: list[str]) -> l
     return out
 
 
-def read_held(holding: dict[str, Path], scratch: Path) -> HeldRead:
+def read_held(holding: dict[str, Path]) -> HeldRead:
     """The read of the changes `me` holds, where `holding` gives the
-    worktree of each by its number, and `scratch` is the session's
-    scratchpad."""
+    worktree of each by its number."""
     trees = set(holding.values())
     return HeldRead(gate_outputs=ReadOnUse(sorted(trees), gate_outputs),
-                    fragments=ReadOnUse(sorted(trees), fragments),
-                    seen={n: read_seen(change_fragments.seen_dir(n, scratch)) for n in holding})
+                    fragments=ReadOnUse(sorted(trees), fragments))
 
 
 def given_lines(runs: list[tuple[str, Path]], me: str, calls: list[Call]) -> set[str]:
