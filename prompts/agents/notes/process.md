@@ -1,4 +1,4 @@
-+ budget: 22300
++ budget: 22500
 * comment: when editing this doc
     - The ticket analyst loads this document by the links of its step documents, before it writes the Intent of a `change` to the agents' processes and at the process assessment; the ticket reviewer loads it by a link of its Checks, for such a `change`. Each serves judging a change to the processes against what they must achieve.
     - Acts, each with its section, one process each, giving its outcomes and how it can fail:
@@ -19,7 +19,7 @@
 - Purpose: keep the agents' processes, as a whole, fit for [The user's goals](prompts/agents/notes/decisions.md#the-users-goals).
 - Principles: the third of those goals, and "Spend no run the work does not need", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
 - Outcomes:
-    - These notes give one owner for each process.
+    - These notes give the owners of each process.
     - These notes give, for each kind of work product, the agent that acts on it and the reviews it gets.
     - Work that two processes duplicate, an outcome that no owner meets, rules that conflict, a step whose cost is out of proportion to what it finds, and a step or a rule that serves no outcome reach the user before the user asks.
     - The context each run of an agent loads holds only the lines each of its runs needs, and each other line loads by a stated condition before the work that needs it.
@@ -65,7 +65,7 @@
         - In a document under [agents](prompts/agents), the design puts each rule or fact under the act of that document's spec whose rule it joins, replaces or retires, or revises that spec.
     - Each design gives what it costs and what it gains against the goal of [The user's goals](prompts/agents/notes/decisions.md#the-users-goals) that its change serves.
     - A part whose gain its grounds do not show to exceed its cost is left out, a requirement included, and leaving out a part that serves a need the user stated is a decline.
-    - An agent other than the one that wrote the design checks it before the build, against the code, or against the documents and the rules for editing them.
+    - An agent other than the one that wrote the design checks it before the build, in each revision before the one at the operator's cap of ticket reviews, against the code, or against the documents and the rules for editing them.
     - The Scope covers each file the design gives.
 - Owner: the ticket analyst writes the design, and the ticket reviewer checks it.
 - Takes from: requirements. Gives to: implementation, and configuration management, by the Scope.
@@ -88,12 +88,12 @@
 - Purpose: confirm that each work product meets its requirements before it merges.
 - Principles: "check new agent-facing text against each agent it reaches before a pass runs on it", in [Decisions on the agents' documents](prompts/agents/notes/decisions.md#decisions-on-the-agents-documents).
 - Outcomes:
-    - Each `change` ticket is checked before the build: each requirement traces to the request's spans or Grounds and can be checked, each claim about the current state holds, and the Scope covers the design.
+    - Each revision of a `change` ticket before the one at the operator's cap of ticket reviews is checked before the build: each requirement traces to the request's spans or Grounds and can be checked, each claim about the current state holds, and the Scope covers the design.
     - An agent other than its editor checks the built change against each requirement, for documents as for code, outside the lib and the solvers, which the handbook judges.
         * comment: The user's words, request 9-143, session 129de8fc, 2026-10-14T18:08:21Z: "ok file that item checkers do not apply to solver things since solver things require handbook to judge".
     - For a document change that alters what an agent does, there is evidence before the merge that its reader acts as the requirement states, from a trial that read nothing that reveals its case's outcome.
     - The lines in force in the agents' documents get a standing review, as the code in the tree gets the code review.
-    - A finding in a later round of a review falls only on text that changed since the earlier round.
+    - A finding in a later round of the ticket review or the doc review falls only on text or a ground that changed since the earlier round, or still stands from it.
 - Owner: the ticket reviewer for the `change` ticket, the item checker for the built change outside the lib and the solvers, the doc reviewer for the form of the documents and, by its trials, for the evidence of a reader's behavior, a standing doc review for the lines in force in the agents' documents, and the code reviewer and the gate for the code.
 - Takes from: implementation and requirements. Gives to: merge.
 - How it can fail:
