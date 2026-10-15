@@ -4,7 +4,7 @@
 //  specks of one further color litter the grid.
 // output: A frame's lines run on under whatever hides them — a speck, or a
 //  frame lying over it: a line runs straight on past two cells of the frame
-//  in a row, and only background stops it.
+//  in a row, and only background stops it, even past the line's end.
 //  Each frame closes off some number of compartments from the grid edge.
 //  The output is a bar chart, one row per frame from params.rank_dir in
 //  ascending compartment count, each row that many cells of the frame's
