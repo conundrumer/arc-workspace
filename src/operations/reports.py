@@ -16,6 +16,10 @@ BUDGET_PASSED = "budget passed"
 """The opening, in any case, of the reply of a code editor that ended its
 turn at its budget with work left."""
 
+DONE = "done"
+"""The opening, in any case, of the report of a `handbook-expanded` agent
+where every item is done."""
+
 NO_FINDING = "no finding stands"
 """The opening, in any case, of a doc reviewer's reply where no finding
 stands and none is held back."""
@@ -114,6 +118,10 @@ def opens(a: Agent, opening: str) -> bool:
 
 def budget_passed(a: Agent) -> bool:
     return opens(a, BUDGET_PASSED)
+
+
+def done(a: Agent) -> bool:
+    return opens(a, DONE)
 
 
 def no_finding(a: Agent) -> bool:

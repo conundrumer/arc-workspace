@@ -1,4 +1,4 @@
-+ budget: 21600
++ budget: 21700
 * comment: when editing this doc
     - Each Claude Code session and agent loads [Launching](#launching) by the link of [arc-workspace](CLAUDE.md), before it launches an agent by a call no command printed; the ticket reviewer inlines draft-outcome there too. Each agent inlines the sections under [Briefs](#briefs) that give its own brief's form, and the editors An editor's report on a change. The coordinator loads Passes on a task, Operators and While the user gives feedback by the links of its Changes section.
     - Acts, each with its section:
@@ -84,11 +84,11 @@
 
 ### An item checker's brief
 - An item checker's brief gives the change's worktree, and the number of the change's ticket, or, where the change has none, the transcript brief its editors' briefs give.
-- It gives the agent id of each editor of the change, with the part that editor's brief gave it, or the whole change where its brief gave none.
-- It gives the latest report of each editor of the change that has reported since the last item checker launched on the change.
+- It gives the agent id of each editor of the change other than the `handbook-expanded` agent, with the part that editor's brief gave it, or the whole change where its brief gave none.
+- It gives the latest report of each editor of the change other than the `handbook-expanded` agent that has reported since the last item checker launched on the change.
 - Where ticket analysts already decided items on the change, it gives their agent ids and latest reports.
 - Where the change is past its cost budget, it gives that it is.
-- Where the change writes accepted gate outputs, it gives them.
+- Where the change writes accepted gate outputs, it gives them, other than those a `run_dl.py` command writes where the change has the `handbook-expanded` agent.
 - Where the operator launches it, it gives the command whose output its final reply ends with.
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 

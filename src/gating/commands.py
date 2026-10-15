@@ -205,6 +205,14 @@ COMMANDS: dict[str, GateCommand] = {c.name: c for c in (
 """Every gate command, in the order a pass runs them."""
 
 
+def command_of(output: str) -> GateCommand | None:
+    """The gate command whose accepted output `output` is, a path whose
+    file name is a key of that command followed by an extension, or None
+    where it is no command's."""
+    key = Path(output).name.split(".", 1)[0]
+    return next((c for c in COMMANDS.values() if key in keys_of([c])), None)
+
+
 def keys_of(cmds: Iterable[GateCommand]) -> set[str]:
     return {c.key(s) for c in cmds for s in c.stems}
 

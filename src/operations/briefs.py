@@ -266,10 +266,10 @@ def item_check(number: str, worktree: Path, reports: list[tuple[str, str]],
                decisions: list[tuple[str, str]], gate: list[str],
                editors: list[tuple[Agent, str]],
                operator: str, past: bool = False) -> str:
-    """The brief of an item checker that checks the items of a change's
-    editors, by each editor's agent id and latest report, and the accepted
-    gate outputs the change writes, with the agent id and part of each of
-    its editors, each beside its record in `editors`.
+    """The brief of an item checker that checks the items of the editors
+    of a change it checks, by each editor's agent id and latest report,
+    and the accepted gate outputs `gate` it reads, with the agent id and
+    part of each of those editors, each beside its record in `editors`.
     Where `decisions` gives the agent id and latest report of ticket
     analysts on the change, it tells the checker to leave out of its
     `LEFT_FOR_DECISION` part what those decisions settle, unless the
@@ -302,10 +302,12 @@ def item_check(number: str, worktree: Path, reports: list[tuple[str, str]],
 
 def findings(number: str, worktree: Path, left: str | None, questions: list[str],
              editors: list[tuple[Agent, str]], reports: list[tuple[str, str]],
-             operator: str) -> str:
+             unfinished: list[str], operator: str) -> str:
     """The brief of a ticket analyst that judges what a change's editors
     leave for a decision, by the part of the latest item checker's reply
-    that gives it, and the `question` tickets filed on the change, with
+    that gives it, the `question` tickets filed on the change, and the
+    items the latest report of each editor of `unfinished`, by agent id,
+    gives as unfinished, with
     the agent id and part of each of its editors, each beside its record
     in `editors`, and each editor's agent id and latest report in
     `reports`, which that part refers to."""
@@ -318,6 +320,10 @@ def findings(number: str, worktree: Path, left: str | None, questions: list[str]
         lines.append(mctx("Decide, as items left for a decision, the `question` tickets filed "
                           "on the change, {questions}, and send each decision to its "
                           "editors.").format(questions=", ".join(questions)))
+    if unfinished:
+        lines.append(mctx("Decide, as items left for a decision, the items that the latest "
+                          "report above of each of {editors} gives as "
+                          "unfinished.").format(editors=", ".join(unfinished)))
     lines.append(LAUNCHER.format(operator=operator))
     return "\n".join(lines)
 

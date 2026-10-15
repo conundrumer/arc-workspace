@@ -19,19 +19,23 @@ launched with no isolation, and its brief gives that worktree.
 
 What the editors' and the doc reviewer's replies give is read by the fixed
 forms of `reports`. Once each editor of a change has reported, the latest report of
-each editor that has reported since the last item checker was launched on
-the change, and the accepted gate outputs the change writes, go to one
-item checker. That checker checks the items of each such editor's part,
+each editor other than the `handbook-expanded` agent that has reported since the last item checker was launched on
+the change, and the accepted gate outputs the change writes, other than,
+on a change with that agent, those of a `run_dl.py` command
+(`item_check.checked_outputs`), go to one item checker. That checker checks the items of each such editor's part,
 and an editor it sends a message reports again. So the change merges only
-once an item checker was launched after each editor's last report, or
+once an item checker was launched after the last report of each editor other than that agent, or
 the latest checker sent no editor a message and its `reports.WORKTREE`
 line gives the `worktrees.fingerprint` the worktree has now, as then the
 worktree is in the state that checker read. The
 checker gives under `reports.LEFT_FOR_DECISION` what those reports leave
 for a decision.
 Where no item checker is due, that part of the latest checker's reply,
-where it follows the last ticket analyst's launch on the change, and the
+where it follows the last ticket analyst's launch on the change, the
+latest report of the `handbook-expanded` agent, where it follows that
+launch and does not open with `reports.DONE`, and the
 open `question` tickets filed on the change go to one ticket analyst.
+A change whose only editor is that agent gets no item checker.
 That analyst's reply leaves nothing more, unless its part for the
 coordinator gives a `decision:` or an `unfinished:` item and no item
 checker was launched since its launch: then the change is held on those
@@ -66,7 +70,7 @@ from operations.change_fragments import drafter_ids, fragments_step
 from operations.change_overrun import over_budget, over_budget_step
 from operations.doc_review import doc_review, with_ids
 from operations.directives import (Decision, decided, held_on)
-from operations.item_check import check_items, latest_reports
+from operations.item_check import check_items, is_checked, latest_reports, unfinished
 from operations.reports import OPEN_LABELS, Label, items_of, left_for_decision, shows_current
 from operations.roles import Purpose, Role, analyst_of, analyst_subject
 from operations.state import Agent, State, Ticket
@@ -214,13 +218,15 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     if isinstance(editors, Undecided):
         return editors
     checked = max((a.launched for a in checkers), default=0.0)
-    needing = [a for a in latest if (r := a.last_report) is not None and r.time > checked]
+    needing = [a for a in latest if is_checked(a) and (r := a.last_report) is not None
+               and r.time > checked]
     if needing and not unchanged_since(checkers, w):
         return check_items(state, t, w, needing, editors)
     questions = [q for q in state.tracker.tickets.values() if q.kind is Kind.QUESTION
                  and q.domain is Domain.CHANGE and q.subject == t.number
                  and q.status in (Status.OPEN, Status.ASSIGNED)]
     judged = max((a.launched for a in analysts), default=0.0)
+    left_open = unfinished(latest, judged)
     left = left_for_decision(checkers[-1]) if checkers else None
     fresh = left if left is not None and (r := checkers[-1].last_report) is not None \
         and r.time > judged else None
@@ -230,9 +236,9 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     if analysts and judged > checked and (hold := left_hold(analysts[-1], t.number)):
         on_user = items_of(analysts[-1], [Label.DECISION]) is not None
         parts = left
-    elif fresh is None and not questions:
+    elif fresh is None and not questions and not left_open:
         return False
-    elif fresh is None and judged > max(q.filed for q in questions):
+    elif fresh is None and not left_open and judged > max(q.filed for q in questions):
         hold = mctx("ticket analyst {agent} returned on change {number}, and its question "
                     "tickets stand open").format(agent=analysts[-1].agent_id, number=t.number)
     if hold is not None:
@@ -246,7 +252,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
         return reports
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
         t.number, w, parts, [q.number for q in questions], editors, reports,
-        state.me))
+        [i for a, i in editors if a in left_open], state.me))
 
 
 def step(state: State) -> Step | None:

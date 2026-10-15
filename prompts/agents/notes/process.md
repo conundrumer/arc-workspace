@@ -1,4 +1,4 @@
-+ budget: 21800
++ budget: 22300
 * comment: when editing this doc
     - The ticket analyst loads this document by the links of its step documents, before it writes the Intent of a `change` to the agents' processes and at the process assessment; the ticket reviewer loads it by a link of its Checks, for such a `change`. Each serves judging a change to the processes against what they must achieve.
     - Acts, each with its section, one process each, giving its outcomes and how it can fail:
@@ -89,11 +89,12 @@
 - Principles: "check new agent-facing text against each agent it reaches before a pass runs on it", in [Decisions on the agents' documents](prompts/agents/notes/decisions.md#decisions-on-the-agents-documents).
 - Outcomes:
     - Each `change` ticket is checked before the build: each requirement traces to the request's spans or Grounds and can be checked, each claim about the current state holds, and the Scope covers the design.
-    - An agent other than its editor checks the built change against each requirement, for documents as for code.
+    - An agent other than its editor checks the built change against each requirement, for documents as for code, outside the lib and the solvers, which the handbook judges.
+        * comment: The user's words, request 9-143, session 129de8fc, 2026-10-14T18:08:21Z: "ok file that item checkers do not apply to solver things since solver things require handbook to judge".
     - For a document change that alters what an agent does, there is evidence before the merge that its reader acts as the requirement states, from a trial that read nothing that reveals its case's outcome.
     - The lines in force in the agents' documents get a standing review, as the code in the tree gets the code review.
     - A finding in a later round of a review falls only on text that changed since the earlier round.
-- Owner: the ticket reviewer for the `change` ticket, the item checker for the built change, the doc reviewer for the form of the documents and, by its trials, for the evidence of a reader's behavior, a standing doc review for the lines in force in the agents' documents, and the code reviewer and the gate for the code.
+- Owner: the ticket reviewer for the `change` ticket, the item checker for the built change outside the lib and the solvers, the doc reviewer for the form of the documents and, by its trials, for the evidence of a reader's behavior, a standing doc review for the lines in force in the agents' documents, and the code reviewer and the gate for the code.
 - Takes from: implementation and requirements. Gives to: merge.
 - How it can fail:
     - Each review adds cost to every change: the reviews a work product gets are set by its reader.
@@ -192,7 +193,8 @@
 ## Work products
 - A `request`: a ticket analyst writes the `change` tickets that serve it. Its reviews: the ticket reviewer's check of each requirement's trace to its spans or Grounds, and validation.
 - A `change` ticket with its design: a ticket analyst writes it. Its review: a ticket reviewer's, before the build.
-- A built code change: a code editor builds it, and the `handbook-expanded` agent the part in the lib and the solvers. Its reviews: the item checker's check of its items, the gate at its merge, and the code review that follows its merge.
+- A built code change: a code editor builds it, and the `handbook-expanded` agent the part in the lib and the solvers. Its reviews: the item checker's check of its items outside the lib and the solvers, which the handbook judges, the gate at its merge, and the code review that follows its merge.
+    * comment: The user's words, request 9-143, session 129de8fc, 2026-10-14T18:08:21Z: "ok file that item checkers do not apply to solver things since solver things require handbook to judge".
 - A built document change, the text of each `mctx` fragment a change adds or changes included: the doc editor builds it, from a code editor's draft for a fragment's text. Its reviews: the doc reviewer's, the item checker's check of its items, and the `controlled_markdown` check.
 - A solver: the Create pass writes it, and each Refine pass reconciles it with the latest report. Its review: the transcript review of each pass that writes it.
 - A pass's report: the pass writes it, and a ticket analyst takes the tickets it lists. Its review: the transcript review of that pass.
