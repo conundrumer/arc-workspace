@@ -252,7 +252,7 @@ def read_named(name: str) -> ReadInfo:
     """The `state_cache` read `name` gives, its module imported where it is
     not yet."""
     if name not in _reads:
-        importlib.import_module(name.split(":", 1)[0])
+        importlib.import_module(kept_reads.module_of(name))
     return _reads[name]
 
 

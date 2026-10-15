@@ -3,16 +3,21 @@
 and its arguments, its result, its `undecided` lines, and the trace of the
 reads it rests on, which `state_reads` checks before the result stands.
 
-A record stands only while the code that wrote it is the code that reads
-it. A process reads and writes the store only after `open_store`; until
+A record of a read stands only while the code the read's module can run
+is the code that wrote it: the files of that module's import closure
+(`code_of`). A process reads and writes the store only after `open_store`; until
 then, and where the process cannot read or write the store, each read is
 computed, as with no store.
 
 SQLite writes the records of a call in one transaction, under a lock it
 takes across processes, so no reader sees a record half written."""
 
+import ast
+import hashlib
+import importlib.util
 import pickle
 import sqlite3
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -20,9 +25,6 @@ from typing import Any
 from engine import checkout
 
 STORE_NAME = "state-reads.sqlite"
-
-SOURCES = ("scripts/**/*.py", "src/**/*.py", "tools/console/solver_console/**/*.py")
-"""The code a record rests on."""
 
 KEEP_SECONDS = 3600
 """How long the records of code that no process has written stay held: a
@@ -38,6 +40,7 @@ CREATE TABLE IF NOT EXISTS records (
     code TEXT, read TEXT, key TEXT, record BLOB,
     PRIMARY KEY (code, read, key));
 CREATE TABLE IF NOT EXISTS codes (code TEXT PRIMARY KEY, used REAL);
+CREATE TABLE IF NOT EXISTS imports (file TEXT PRIMARY KEY, names BLOB, written REAL);
 """
 
 UNREADABLE = (pickle.UnpicklingError, EOFError, AttributeError, ImportError,
@@ -51,8 +54,8 @@ class Store:
     last `flush`, written together by it."""
 
     def __init__(self, path: Path) -> None:
-        self.code = checkout.sources_digest(SOURCES)
         self.path = path
+        self.used: set[str] = set()
         self.loaded: dict[str, dict[str, bytes]] = {}
         self.new: dict[tuple[str, str], bytes] = {}
 
@@ -69,6 +72,8 @@ class Store:
         if found is None:
             if read not in self.loaded:
                 self.loaded[read] = self.load(read)
+                if self.loaded[read]:
+                    self.used.add(code_of(module_of(read)))
             found = self.loaded[read].get(key)
         if found is None:
             return None
@@ -83,7 +88,7 @@ class Store:
             try:
                 return dict(db.execute(
                     "SELECT key, record FROM records WHERE code = ? AND read = ?",
-                    (self.code, read)).fetchall())
+                    (code_of(module_of(read)), read)).fetchall())
             finally:
                 db.close()
         except (sqlite3.Error, OSError):
@@ -100,9 +105,12 @@ class Store:
             return False
 
     def flush(self) -> None:
-        """Write the records held since the last flush, and drop those of
-        code that no process has read for `KEEP_SECONDS`."""
-        if not self.new:
+        """Write the records held since the last flush, note as used the
+        code of each read this process loaded or wrote records of, and drop
+        the records of code that no process has used for `KEEP_SECONDS`."""
+        written = [(code_of(module_of(r)), r, k, v) for (r, k), v in self.new.items()]
+        used = self.used | {c for c, _, _, _ in written}
+        if not used:
             return
         now = time.time()
         try:
@@ -110,8 +118,9 @@ class Store:
             try:
                 with db:
                     db.executemany("INSERT OR REPLACE INTO records VALUES (?, ?, ?, ?)",
-                                   [(self.code, r, k, v) for (r, k), v in self.new.items()])
-                    mark_used(db, self.code, now, KEEP_SECONDS)
+                                   written)
+                    for code in sorted(used):
+                        mark_used(db, code, now, KEEP_SECONDS)
             finally:
                 db.close()
         except (sqlite3.Error, OSError):
@@ -119,6 +128,7 @@ class Store:
         for (r, k), v in self.new.items():
             self.loaded.setdefault(r, {})[k] = v
         self.new = {}
+        self.used = set()
 
 
 def mark_used(db: sqlite3.Connection, code: str, now: float, keep: float) -> None:
@@ -129,6 +139,134 @@ def mark_used(db: sqlite3.Connection, code: str, now: float, keep: float) -> Non
     db.execute("DELETE FROM records WHERE code IN (SELECT code FROM codes WHERE used < ?)",
                (now - keep,))
     db.execute("DELETE FROM codes WHERE used < ?", (now - keep,))
+
+
+def module_of(read: str) -> str:
+    """The module of `read`, a `state_reads.ReadInfo.name`."""
+    return read.split(":", 1)[0]
+
+
+type Import = tuple[int, str, tuple[str, ...]]
+"""One `import` statement of a file: its level of relative import, the
+module it names, and, for `from ... import`, the names it takes."""
+
+
+def imports_of(source: bytes) -> list[Import]:
+    """Each `import` statement of `source`, at any depth."""
+    out: list[Import] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            out.extend((0, a.name, ()) for a in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            out.append((node.level, node.module or "", tuple(a.name for a in node.names)))
+    return out
+
+
+def module_file(name: str) -> Path | None:
+    """The file of module `name` as this process resolves it, where it lies
+    under `checkout.ROOT` and outside its `.venv`."""
+    loaded = sys.modules.get(name)
+    origin = getattr(loaded, "__file__", None) if loaded is not None else None
+    if loaded is None:
+        try:
+            spec = importlib.util.find_spec(name)
+        except (ImportError, ValueError):
+            return None
+        origin = spec.origin if spec is not None else None
+    if origin is None:
+        return None
+    path = Path(origin).resolve()
+    if not path.is_relative_to(checkout.ROOT) or path.is_relative_to(checkout.ROOT / ".venv"):
+        return None
+    return path
+
+
+def named_modules(module: str, path: Path, statement: Import) -> list[str]:
+    """The modules `statement` of `module`, whose file is `path`, can
+    import, each parent package with it."""
+    level, base, names = statement
+    if level:
+        package = module if path.name == "__init__.py" else module.rpartition(".")[0]
+        try:
+            base = importlib.util.resolve_name("." * level + base, package)
+        except (ImportError, ValueError):
+            return []
+    named = [base, *(f"{base}.{n}" for n in names if n != "*")]
+    parts = base.split(".")
+    return [".".join(parts[:i]) for i in range(1, len(parts))] + named
+
+
+_codes: dict[str, str] = {}
+
+
+def code_of(module: str) -> str:
+    """The sha256, in hex, of the path and bytes of each file of the import
+    closure of `module`: its own file, and each file of a module that an
+    `import` statement of a closure file names, with its parent packages,
+    where `module_file` gives one. The `import` statements of each file are
+    kept in the open store by the sha256 of its bytes, so a file is parsed
+    only once its bytes change, or once `KEEP_SECONDS` pass from the parse
+    that wrote them."""
+    if module not in _codes:
+        _codes[module] = _closure_digest(module)
+    return _codes[module]
+
+
+def _closure_digest(module: str) -> str:
+    known: dict[str, list[Import]] = {}
+    found: dict[str, list[Import]] = {}
+    db = _imports_db()
+    files: dict[Path, bytes] = {}
+    todo = named_modules(module, Path(), (0, module, ()))
+    seen: set[str] = set()
+    while todo:
+        name = todo.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        path = module_file(name)
+        if path is None or path in files or not path.is_file():
+            continue
+        data = files[path] = path.read_bytes()
+        digest = hashlib.sha256(data).hexdigest()
+        statements = known.get(digest) or found.get(digest)
+        if statements is None and db is not None:
+            row = db.execute("SELECT names FROM imports WHERE file = ?", (digest,)).fetchone()
+            if row is not None:
+                try:
+                    statements = known[digest] = pickle.loads(row[0])
+                except UNREADABLE:
+                    statements = None
+        if statements is None:
+            try:
+                statements = found[digest] = imports_of(data)
+            except (SyntaxError, ValueError):
+                statements = []
+        for statement in statements:
+            todo.extend(named_modules(name, path, statement))
+    if db is not None:
+        try:
+            if found:
+                now = time.time()
+                with db:
+                    db.executemany("INSERT OR REPLACE INTO imports VALUES (?, ?, ?)",
+                                   [(d, pickle.dumps(s, pickle.HIGHEST_PROTOCOL), now)
+                                    for d, s in found.items()])
+                    db.execute("DELETE FROM imports WHERE written < ?", (now - KEEP_SECONDS,))
+        except sqlite3.Error:
+            pass
+        db.close()
+    return checkout.files_digest({path: files[path] for path in sorted(files)})
+
+
+def _imports_db() -> sqlite3.Connection | None:
+    """A connection to the open store, where one is open and it opens."""
+    if _store is None:
+        return None
+    try:
+        return _store.connect()
+    except (sqlite3.Error, OSError):
+        return None
 
 
 _store: Store | None = None

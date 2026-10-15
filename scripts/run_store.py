@@ -29,7 +29,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from engine import checkout
-from kept_reads import LOCK_WAIT_SECONDS, SOURCES, UNREADABLE, mark_used
+from kept_reads import LOCK_WAIT_SECONDS, UNREADABLE, mark_used
 from noted_reads import recording
 from run_profiler import profile
 from run_records import Run
@@ -38,6 +38,9 @@ from state_reads import stat_of, state_cache
 from transcripts import agent_id, agent_transcripts, chain
 
 STORE_NAME = "run-profiles.sqlite"
+
+SOURCES = ("scripts/**/*.py", "src/**/*.py", "tools/console/solver_console/**/*.py")
+"""The code a held record rests on."""
 
 KEEP_SECONDS = 24 * 3600
 """How long the records of code that no process has read stay held: a

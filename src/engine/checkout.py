@@ -332,11 +332,17 @@ def sources_digest(patterns: Sequence[str]) -> str:
     """The sha256 of each file under `ROOT` that one of the glob `patterns`
     gives, with its path, in hex: the same for two checkouts with the same
     such files."""
+    return files_digest({path: path.read_bytes() for pattern in patterns
+                         for path in sorted(ROOT.glob(pattern))})
+
+
+def files_digest(files: dict[Path, bytes]) -> str:
+    """The sha256, in hex, of the path from `ROOT` and the bytes of each
+    file of `files`, in the order `files` gives them."""
     digest = hashlib.sha256()
-    for pattern in patterns:
-        for path in sorted(ROOT.glob(pattern)):
-            digest.update(str(path.relative_to(ROOT)).encode() + b"\0")
-            digest.update(path.read_bytes() + b"\0")
+    for path, data in files.items():
+        digest.update(str(path.relative_to(ROOT)).encode() + b"\0")
+        digest.update(data + b"\0")
     return digest.hexdigest()
 
 
