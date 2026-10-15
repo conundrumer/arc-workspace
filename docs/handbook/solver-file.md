@@ -55,11 +55,10 @@
         .decl recolor(c_fg: Color, c_fill: Color)
         recolor(3, 1).
         recolor(5, 4).
-        // @open
-        .decl corner(c: DiagDir) corner(DIAG_TL). corner(DIAG_BR).
 
         // --- $BranchA ---
-        ...
+        // @open
+        .decl corner(c: DiagDir) corner(DIAG_TL). corner(DIAG_BR).
 
         // --- $BranchB ---
         ...
