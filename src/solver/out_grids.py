@@ -230,9 +230,13 @@ def by_value(rows: Sequence[Row], col: int) -> dict[Value, list[Row]]:
     return out
 
 
-type RuleChoice = tuple[tuple[Value, Value], ...]
-"""One rule for each inner task, as its pairs of an inner task and a rule,
-in the inner tasks' order (`solver.value_order.value_key`)."""
+type Choice[K] = tuple[tuple[K, Value], ...]
+"""One value for each dimension, as its pairs of a dimension's key and a
+value, in the dimensions' order (`choices`)."""
+
+type RuleChoice = Choice[Value]
+"""One rule for each inner task, its keys the inner tasks, in their order
+(`solver.value_order.value_key`)."""
 
 type RuleChoices = tuple[RuleChoice, ...]
 """A case's choices of one rule for each inner task (`rule_choices`)."""
@@ -291,16 +295,37 @@ def open_grids[K](columns: OutColumns, groups: Sequence[tuple[Value, K]],
                       combinations([v for v, _k in groups], fields))
 
 
-def _fields(value: Value) -> tuple[Value, ...] | None:
-    """The fields of an `OpenValue` value, one per `@open` relation; None
-    for `nil`, which holds `nil` in every field. Raises ValueError for a
-    value that is no record, which `OpenValue`, a record type, never
-    holds (solver-file.md, under "Cases")."""
+def choices[K](dims: Sequence[tuple[K, Iterable[Value]]]) -> list[Choice[K]]:
+    """One choice per product of the values of `dims`, each dimension a key
+    and its values, which are taken in their order
+    (`solver.value_order.value_key`)."""
+    keys = [k for k, _vs in dims]
+    return [tuple(zip(keys, combo, strict=True)) for combo in product(
+        *(sorted(vs, key=value_key) for _k, vs in dims))]
+
+
+def holds[K](pairs: Choice[K], choice: dict[K, Value]) -> bool:
+    """Whether a value holds at `choice`: `pairs` are its key and value at
+    each dimension where it is not `nil`, and each is `choice`'s value at
+    its key. A `nil` value has no pair, and holds at every choice."""
+    return all(choice[k] == v for k, v in pairs)
+
+
+def _fields(value: Value, width: int) -> Choice[int]:
+    """The fields of an `OpenValue` value, one per `@open` relation, as
+    the pairs of each field's index and value, with no pair for a field
+    that holds `nil`; `nil` holds `nil` in every field. Raises ValueError
+    for a value that is no record of `width` fields, which `OpenValue`, a
+    record type, never holds (solver-file.md, under "Cases")."""
     if isinstance(value, NilValue):
-        return None
+        return ()
     if not isinstance(value, RecordValue):
         raise ValueError(f"an `OpenValue` value is no record: {value!r}")
-    return value.fields
+    if len(value.fields) != width:
+        raise ValueError(
+            f"{width} field values for {len(value.fields)} fields")
+    return tuple((i, f) for i, f in enumerate(value.fields)
+                 if not isinstance(f, NilValue))
 
 
 def combinations(values: Sequence[Value], fields: FieldValues
@@ -313,33 +338,25 @@ def combinations(values: Sequence[Value], fields: FieldValues
     where each of its fields holds `nil` or the combination's value. A
     case whose values are `nil` at every field has one combination, at
     which every value holds."""
-    parts = [_fields(v) for v in values]
-    width = max((len(p) for p in parts if p is not None), default=0)
-    if width and len(fields) != width:
-        raise ValueError(f"{len(fields)} field values for {width} fields")
-    dims: list[tuple[int, list[Value]]] = []
-    for i in range(width):
-        if any(p is not None and not isinstance(p[i], NilValue)
-               for p in parts):
-            dims.append((i, sorted(fields[i], key=value_key)))
-    return [tuple(j for j, p in enumerate(parts) if p is None or all(
-                isinstance(p[i], NilValue) or p[i] == c
-                for (i, _vs), c in zip(dims, combo, strict=True)))
-            for combo in product(*(vs for _i, vs in dims))]
+    parts = [_fields(v, len(fields)) for v in values]
+    dims = sorted({i for p in parts for i, _f in p})
+    return [tuple(j for j, p in enumerate(parts) if holds(p, dict(c)))
+            for c in choices([(i, fields[i]) for i in dims])]
 
 
-def _task_rule(value: Value) -> tuple[Value, Value] | None:
-    """The inner task and the rule of a `DemonstratedRule` value; None for
-    `nil`, which reads as every rule of every inner task. Raises ValueError
+def _task_rule(value: Value) -> Choice[Value]:
+    """The inner task and the rule of a `DemonstratedRule` value, as its
+    one pair; no pair for `nil`, which reads as every rule of every inner
+    task. Raises ValueError
     for a value that is no record of two fields, which `DemonstratedRule`
     never holds (solver-file.md, under "Demonstrated choice")."""
     if isinstance(value, NilValue):
-        return None
+        return ()
     if not isinstance(value, RecordValue) or len(value.fields) != 2:
         raise ValueError(f"a `DemonstratedRule` value is no record of an "
                          f"inner task and a rule: {value!r}")
     task, rule = value.fields
-    return task, rule
+    return ((task, rule),)
 
 
 def rule_choices(columns: OutColumns, rows: Sequence[Row]) -> RuleChoices:
@@ -354,20 +371,10 @@ def rule_choices(columns: OutColumns, rows: Sequence[Row]) -> RuleChoices:
         return ((),)
     rules: dict[Value, dict[Value, None]] = {}
     for v in by_value(rows, columns.rule):
-        got = _task_rule(v)
-        if got is not None:
-            rules.setdefault(got[0], {})[got[1]] = None
-    tasks = sorted(rules, key=value_key)
-    return tuple(tuple(zip(tasks, combo, strict=True)) for combo in product(
-        *(sorted(rules[t], key=value_key) for t in tasks)))
-
-
-def _holds(value: Value, choice: dict[Value, Value]) -> bool:
-    """Whether a row whose `DemonstratedRule` value is `value` holds at
-    `choice`: its value is `nil`, or its rule is the choice at its inner
-    task. `choice` holds every inner task of the case's rows."""
-    got = _task_rule(value)
-    return got is None or choice[got[0]] == got[1]
+        for task, rule in _task_rule(v):
+            rules.setdefault(task, {})[rule] = None
+    return tuple(choices(
+        [(t, rules[t]) for t in sorted(rules, key=value_key)]))
 
 
 def rule_grids(columns: OutColumns, rows: Sequence[Row],
@@ -383,7 +390,7 @@ def rule_grids(columns: OutColumns, rows: Sequence[Row],
     def at(choice: RuleChoice) -> Grids | Undefined:
         mine = dict(choice)
         held = rows if col is None else [
-            r for v, group in by_rule.items() if _holds(v, mine)
+            r for v, group in by_rule.items() if holds(_task_rule(v), mine)
             for r in group]
         return resolution_grids(columns.resolution, held, margins) \
             if held else Undefined(NoOutput())
