@@ -12,8 +12,7 @@
 //  params.layout_axis by a key, the distance from that end to the object's
 //  nearest cell, and objects with the same key may take either order
 // @rule columns: the output has one line per kept object, laid out in that
-//  order from that end, each filled with that object's color; undefined where
-//  the two ends give different grids
+//  order from that end, each filled with that object's color
 // @rule height: each line is as long as the largest cell count
 
 // what the cell count and the order are taken over
@@ -39,18 +38,20 @@
     // @claim order
     NearEdge {}
     // @rule order: the key is read over the unit's line nearest an edge
-    //  across params.layout_axis alone; undefined where the two edges give
-    //  different grids
+    //  across params.layout_axis alone
     // @witness narrow-ends: borderline concept
     //     @relaxed apart
   | FirstScan {}
 
 .type Choice = [piece: Piece, rank: Rank]
 
+.type LeadCorner = [c: DiagDir]
+.type OpenValue = [lead_corner: LeadCorner]
+
 .type TiebreakResolution =
     End {} | Sit {line: Position, id: Ident, rest: TiebreakResolution}
 
-.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue, res: TiebreakResolution)
 
 .comp Params {
     // @derive DominantColor: variant derived
@@ -59,6 +60,13 @@
 
     // The axis the kept units are ordered along and laid out along.
     .decl layout_axis(a: Axis) layout_axis(AXIS_H).
+
+    // The corner the order starts from: its side on params.layout_axis is the
+    // lead end, and its other side the scan edge. The pairs fix neither, so
+    // every corner stays open.
+    // @open
+    .decl lead_corner(c: DiagDir)
+    lead_corner(DIAG_TL). lead_corner(DIAG_TR). lead_corner(DIAG_BL). lead_corner(DIAG_BR).
 }
 
 .init params = Params
@@ -69,9 +77,8 @@
 // A unit, read toward an edge.
 .type Lean = [part: Part, d: Dir]
 
-// A case's order under one reading: the lead edge, or for FirstScan the
-// corner the scan starts from.
-.type View = [ch: Choice, from: Dir8]
+// A case's order at one open corner.
+.type View = [ch: Choice, c: DiagDir]
 
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !params.bg(Col).
@@ -96,9 +103,9 @@ kept(Pc, Id) :- size.tally([Pc, Id], N), largest.high(Pc, N).
 .init kept_count = Tally<Piece, Ident>
 kept_count.item(Pc, Id) :- kept(Pc, Id).
 
-// Either end of the layout axis.
-.decl lead(d: Dir)
-lead(D) :- params.layout_axis(A), axis_of(D, A).
+// The lead end of each open corner: its side on the layout axis.
+.decl lead_end(c: DiagDir, l: Dir)
+lead_end(C, L) :- params.lead_corner(C), params.layout_axis(A), dir_of(C, A, L).
 
 .init chart = Frame2D<Piece>
 chart.extent(Pc, A, K) :- params.layout_axis(A), kept_count.tally(Pc, K).
@@ -116,39 +123,16 @@ obox.cell([Pc, Id], P) :- cell(Pc, Id, P).
 
 // @claim order
 .init order = Order<View, Ident>
-order.elem([[Pc, K], D8], Id) :- view([[Pc, K], D8]), kept(Pc, Id).
+order.elem([[Pc, K], C], Id) :- view([[Pc, K], C]), kept(Pc, Id).
 
 // A unit sits no nearer the lead edge than the count of units before it;
 // seating them all leaves each the lines of its own tie.
 .init ties = TiebreakResolutions<View, Position, Ident>
 
-// The color of a unit.
-.decl hue(pc: Piece, id: Ident, col: Color)
-hue(Pc, Id, Col) :- cell(Pc, Id, P), in(P, Col).
-
-// Resolutions under two readings of a case that draw some line in
-// different colors.
-.decl differ(ch: Choice, from: Dir8, res: TiebreakResolution, from2: Dir8, res2: TiebreakResolution)
-differ([Pc, K], D8, Res, D8_2, Res2) :-
-    ties.assign([[Pc, K], D8], Res, P_line, Id), hue(Pc, Id, Col),
-    ties.assign([[Pc, K], D8_2], Res2, P_line, Id2), hue(Pc, Id2, Col2),
-    D8 != D8_2, Col != Col2.
-
-// Another reading of the case draws the resolution's grid.
-.decl drawn(ch: Choice, from: Dir8, res: TiebreakResolution, from2: Dir8)
-drawn(Ch, D8, Res, D8_2) :-
-    ties.resolution([Ch, D8], Res), ties.resolution([Ch, D8_2], Res2), D8 != D8_2,
-    !differ(Ch, D8, Res, D8_2, Res2).
-
-// A resolution whose grid some other reading of the case does not draw.
-.decl lacks(w: View, res: TiebreakResolution)
-lacks([Ch, D8], Res) :-
-    ties.resolution([Ch, D8], Res), view([Ch, D8_2]), D8 != D8_2,
-    !drawn(Ch, D8, Res, D8_2).
-
-out(P, Col, [Pc, K], Res) :-
-    line_of(Pc, P, P_line), ties.assign([[Pc, K], D8], Res, P_line, Id),
-    !lacks([[Pc, K], D8], Res), hue(Pc, Id, Col).
+// Each line takes the color of the unit seated on it.
+out(P, Col, [Pc, K], [[C]], Res) :-
+    line_of(Pc, P, P_line), ties.assign([[Pc, K], C], Res, P_line, Id),
+    cell(Pc, Id, Q), in(Q, Col).
 
 // --- $Conn8 ---
 
@@ -175,41 +159,34 @@ cell($ColorClass(), Id, P) :- classes.id(P, Id).
 
 // --- $NearEdge ---
 
-view([[Pc, $NearEdge()], L]) :- piece_choice(Pc), lead(L).
+view([[Pc, $NearEdge()], C]) :- piece_choice(Pc), params.lead_corner(C).
 
-ties.cand([[Pc, $NearEdge()], L], P_line, Id) :-
-    view([[Pc, $NearEdge()], L]), lead(L), line_of(Pc, _, P_line), dist(P_line, L, N),
-    order.rank([[Pc, $NearEdge()], L], Id, R), R <= N.
+ties.cand([[Pc, $NearEdge()], C], P_line, Id) :-
+    view([[Pc, $NearEdge()], C]), lead_end(C, L), line_of(Pc, _, P_line), dist(P_line, L, N),
+    order.rank([[Pc, $NearEdge()], C], Id, R), R <= N.
 
-order.before([[Pc, $NearEdge()], L], A, B) :-
-    lead(L),
+order.before([[Pc, $NearEdge()], C], A, B) :-
+    lead_end(C, L),
     obox.box([Pc, A], B1), dist(B1, L, K1),
     obox.box([Pc, B], B2), dist(B2, L, K2), K1 < K2.
 
 // --- $FirstScan ---
 
-// Either edge across the layout axis.
-.decl scan_from(d: Dir)
-scan_from(S) :- params.layout_axis(A), perp(A, A2), axis_of(S, A2).
-
-// The corner a scan starts from, with its lead edge and its scan edge.
-.decl scan_corner(c: DiagDir, l: Dir, s: Dir)
-scan_corner(C, L, S) :- lead(L), scan_from(S), diag_dirs(C, _, L, S).
-
-view([[Pc, $FirstScan()], C]) :- piece_choice(Pc), scan_corner(C, _, _).
+view([[Pc, $FirstScan()], C]) :- piece_choice(Pc), params.lead_corner(C).
 
 ties.cand([[Pc, $FirstScan()], C], P_line, Id) :-
-    view([[Pc, $FirstScan()], C]), scan_corner(C, L, _), line_of(Pc, _, P_line), dist(P_line, L, N),
+    view([[Pc, $FirstScan()], C]), lead_end(C, L), line_of(Pc, _, P_line), dist(P_line, L, N),
     order.rank([[Pc, $FirstScan()], C], Id, R), R <= N.
 
 // A unit's line nearest the scan edge.
 // @claim order
 .init head = Bbox<Lean>
 head.cell([[Pc, Id], S], P) :-
-    scan_from(S), obox.box([Pc, Id], B), dist(B, S, K),
+    params.lead_corner(C), params.layout_axis(A), diag_dirs(C, A, _, S),   // scan edge
+    obox.box([Pc, Id], B), dist(B, S, K),
     cell(Pc, Id, P), dist(P, S, K).
 
 order.before([[Pc, $FirstScan()], C], A, B) :-
-    scan_corner(C, L, S),
+    view([[Pc, $FirstScan()], C]), params.layout_axis(Ax), diag_dirs(C, Ax, L, S),  // lead end, scan edge
     head.box([[Pc, A], S], B1), dist(B1, L, K1),
     head.box([[Pc, B], S], B2), dist(B2, L, K2), K1 < K2.
