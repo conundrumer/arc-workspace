@@ -161,13 +161,8 @@ def session_operators(session: str, me: str) -> tuple[tuple[str, Path], ...]:
 @state_cache(DERIVED, notes="undecided")
 def resumed_at(aid: str, path: Path, undecided: list[str]) -> list[float]:
     """The time of each resume of the agent `aid` whose transcript is at
-    `path`.
-
-    A resume is as `ALERTS` in `src/operations/monitor.py` gives it. The
-    transcript shows one as the first prompt after an entry with
-    `toolEndsTurn`, with no `assistant` entry between them, other than
-    one `by_callees` gives. A resume whose entry gives no time is left out, and
-    an `undecided` line names it."""
+    `path`. A resume is as `ALERTS` in `src/operations/monitor.py` gives
+    it."""
     out: list[float] = []
     ended = False
     for e in run_entries(path):

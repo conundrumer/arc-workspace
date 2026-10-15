@@ -230,7 +230,7 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
     after its commit or that a report of an agent on the change follows,
     and the step on a failed merge call."""
     command = merge_command(t, w)
-    calls = [c for c in merge_calls(state, t) if str(w) in str(c.input.get("command", ""))]
+    calls = [c for c in merge_calls(state, t) if names_any(c, {str(w)})]
     last = calls[-1] if calls else None
     message = None if last is None else finding(t, last, calls, latest)
     on_step = [] if message is None else decided_by(state, unmoved(t, message))

@@ -24,6 +24,15 @@ HEREDOC = re.compile(r"<<-?\s*(['\"]?)([^\s<>|&;()'\"]+)\1([^\n]*)\n.*?\n\s*\2[ 
 line, its body and the line that ends it."""
 
 
+QUOTED_OR_ESCAPED = re.compile(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"|\\.", re.S)
+
+
+def joined(command: str) -> str:
+    """The Bash command `command` with each backslash before a newline
+    outside quotes cut with that newline, as Bash reads a continued line."""
+    return QUOTED_OR_ESCAPED.sub(lambda m: "" if m[0] == "\\\n" else m[0], command)
+
+
 def without_heredocs(command: str) -> str:
     """The Bash command `command` with each heredoc's redirection, body and
     ending line in place of a space, and the rest of the redirection's line
@@ -37,7 +46,9 @@ def simple_commands(command: str) -> list[list[str]]:
     quoting outside its heredocs is unbalanced. A redirection is an
     operator with `<` or `>`, the word after it, and a number before it.
     A heredoc's redirection, body and ending line give no word, and the
-    words after the redirection on its own line stay."""
+    words after the redirection on its own line stay. A backslash before
+    a newline outside quotes and heredocs gives no character, so a
+    continued line stays in the simple command it continues."""
     return [list(words) for words in command_words(command)]
 
 
@@ -45,7 +56,7 @@ def simple_commands(command: str) -> list[list[str]]:
 def command_words(command: str) -> tuple[tuple[str, ...], ...]:
     """`simple_commands`, parsed once for each command: the state gives
     each operator's commands at each read."""
-    lexer = shlex.shlex(without_heredocs(command), posix=True, punctuation_chars=OPERATORS)
+    lexer = shlex.shlex(joined(without_heredocs(command)), posix=True, punctuation_chars=OPERATORS)
     lexer.whitespace = " \t\r"
     lexer.whitespace_split = True
     out: list[list[str]] = [[]]
