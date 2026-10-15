@@ -18,6 +18,11 @@ BLOCK_SECONDS = (FOREGROUND_MS // 1000) - 30
 """The longest foreground block of the command's `next`, under the bound on
 a foreground call, with room for the read of the state."""
 
+LIMIT_SECONDS = (FOREGROUND_MS // 1000) - 20
+"""The longest run of the command's `next` and `relay`, read of the state
+included, under the bound on a foreground call, with room for the start
+of the process: past it the caller has given up on the call."""
+
 
 @dataclass(frozen=True)
 class Launch:

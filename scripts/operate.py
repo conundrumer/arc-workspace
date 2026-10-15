@@ -10,8 +10,12 @@ a transcript, or in a file it wrote for a call it printed (`operations.filing.fi
 which a transcript points to."""
 
 import argparse
+import fcntl
+import gc
 import math
+import os
 import re
+import signal
 import sys
 import time
 from dataclasses import replace
@@ -48,8 +52,8 @@ from operations.roles import BARE_BRIEFS, Role  # noqa: E402
 from operations.filing import filed, with_report  # noqa: E402
 from operations.printing import key_line, printed  # noqa: E402
 from operations.state import State  # noqa: E402
-from operations.steps import (BLOCK_SECONDS, Bash, EndTurn, Launch, Poll, Send, Step,  # noqa: E402
-                              Undecided)
+from operations.steps import (BLOCK_SECONDS, LIMIT_SECONDS, Bash, EndTurn, Launch, Poll, Send,  # noqa: E402
+                              Step, Undecided)
 from collections.abc import Callable  # noqa: E402
 from operations.task_work import CLAIM_HELD, claim, restore, set_aside  # noqa: E402
 
@@ -112,6 +116,8 @@ PARTS = {
             - Once the usage file of the Claude config directory (`$CLAUDE_CONFIG_DIR/usage.json`, or `~/.claude/usage.json` where that is unset) was written after that stop, less than {stale} seconds ago, with a `used_pct` under 100 in each window, `next` prints, ahead of every other step, a SendMessage call that asks the agent to carry on its work, once for each such stop.
         - Where no step is ready, it blocks for up to {block} seconds until one is, then prints it, or prints that the operator runs it again.
             - The block also ends, and it prints that the operator runs it again, once a message to the operator waits that the harness accepted after the latest `user` entry of the operator's transcript before the call.
+        - Where it has printed no step {limit} seconds after it started, it prints that the operator runs it again, and ends.
+        - A call of `next` or `relay` ends each call of either for the same agent id that runs.
     - Before each call it prints, `next` prints that step's key, on a line that gives the command to run after the call.
         - The key is the same at each read of the state that gives the same step.
     - A ticket file whose read refuses or fails, other than a file that moved during the read, leaves its ticket out of every procedure.
@@ -185,6 +191,7 @@ POLL_SECONDS = 15
 CALLS = (Launch, Send, Bash)
 """The steps after whose call the operator runs `next` again."""
 TASK_ID = re.compile(task.TASK_ID)
+LOCK_DIR = Path("/tmp")
 
 
 class OperateAction(StrEnum):
@@ -234,10 +241,44 @@ def reloading(step: Launch, state: State) -> float:
     return 0.0 if failed is None else max(0.0, failed.time + plan.RETRY_SECONDS - time.time())
 
 
+def single_instance(me: str) -> None:
+    """End each other call of `next` or `relay` for `me` that runs, as
+    `--help next` gives it, and hold the lock that marks this call as the
+    one that runs until the process ends."""
+    fd = os.open(LOCK_DIR / f"operate-{me}.lock", os.O_RDWR | os.O_CREAT, 0o600)
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except BlockingIOError:
+            pass
+        held = os.pread(fd, 32, 0).decode().strip()
+        if held.isdigit() and int(held) != os.getpid():
+            try:
+                os.kill(int(held), signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        time.sleep(0.2)
+    os.ftruncate(fd, 0)
+    os.pwrite(fd, f"{os.getpid()}\n".encode(), 0)
+
+
+def arm_watchdog(me: str) -> None:
+    """Print that the agent runs the command again, and end the process,
+    once `LIMIT_SECONDS` have passed, as `--help next` gives it."""
+    def expire(_signum: int, _frame: object) -> None:
+        print(printed(Poll(), me, Path()), flush=True)
+        os._exit(0)
+    signal.signal(signal.SIGALRM, expire)
+    signal.alarm(LIMIT_SECONDS)
+
+
 def block(me: str, action: Action, step_at: Callable[[float], tuple[Step, Path]]) -> int:
     """Print the step `step_at` gives, with the scratchpad its files go
     under, by the deadline it is given, as `--help next` gives the block of `next`
     and `--help relay` the end of the turn of `relay`."""
+    single_instance(me)
+    arm_watchdog(me)
     deadline = time.monotonic() + BLOCK_SECONDS
     path = find(me)
     since = last_delivered(path)
@@ -247,6 +288,7 @@ def block(me: str, action: Action, step_at: Callable[[float], tuple[Step, Path]]
             step = Poll()
         if (not isinstance(step, Poll) or time.monotonic() + POLL_SECONDS > deadline
                 or accepted_after(path, since, [])):
+            signal.alarm(0)
             if isinstance(step, CALLS):
                 print(key_line(step, me, action))
             if isinstance(step, Launch):
@@ -322,7 +364,8 @@ def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("--help", "-h"):
         return print_help(argv[1:], HelpPart, lambda parts: USAGE.format(parts=parts), PURPOSES,
                           lambda part: PARTS[part].format(
-                              block=BLOCK_SECONDS, load=plan.LOAD_SECONDS, retry=plan.RETRY_SECONDS,
+                              block=BLOCK_SECONDS, limit=LIMIT_SECONDS, load=plan.LOAD_SECONDS,
+                              retry=plan.RETRY_SECONDS,
                               write=round(WRITE_SECONDS), stale=USAGE_STALE, rate_limit=RATE_LIMIT,
                               script=runs.SCRIPT_SECONDS))
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
@@ -365,4 +408,13 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    # The state a call reads is large: a collection of the cyclic garbage
+    # walks all of it, at each threshold the reads cross and at the exit
+    # of the interpreter, for minutes on a session with thousands of
+    # agents. The process makes little such garbage, and the system takes
+    # back its memory at the exit.
+    gc.disable()
+    code = main(sys.argv[1:])
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
