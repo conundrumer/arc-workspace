@@ -1,5 +1,5 @@
 + index: headings
-+ budget: 21300
++ budget: 21600
 * comment: when editing this doc
     - Write what File structure says by editing the template, and describe only what the template cannot explain.
 
@@ -42,7 +42,10 @@
 
     .type Choice = [l: Locate, f: Fill]
 
-    .decl out(p: Position, col: Color, ch: Choice)
+    .type CornerValue = [c: DiagDir]
+    .type OpenValue = [corner: CornerValue]
+
+    .decl out(p: Position, col: Color, ch: Choice, ov: OpenValue)
 
     .comp Params {
         // @derive <Proposer>: <plausibility> <verdict>
@@ -53,7 +56,7 @@
         recolor(3, 1).
         recolor(5, 4).
         // @open
-        .decl corner(c: number) corner(0). corner(1).
+        .decl corner(c: DiagDir) corner(DIAG_TL). corner(DIAG_BR).
 
         // --- $BranchA ---
         ...
@@ -90,10 +93,10 @@
     .init outline = Outlines<Unit>
 
     // --- $BranchA ---
-    out(..., [$BranchA(), F]) :- impl_choice([$BranchA(), F]), ...
+    out(..., [$BranchA(), F], [[C]]) :- impl_choice([$BranchA(), F]), params.corner(C), ...
 
     // --- $BranchB ---
-    out(..., [$BranchB(), F]) :- impl_choice([$BranchB(), F]), ...
+    out(..., [$BranchB(), F], [nil]) :- impl_choice([$BranchB(), F]), ...
 
     .comp Determine { ... }
     ```
@@ -115,11 +118,11 @@
     - Precise reading: a case's output is not the verdict's when its output on the grid differs from the output the verdict denotes: the output of the name's model for a name in one of the [Witness file](docs/handbook/solver-file.md#witness-file) forms, every case's for `other`, no case's for `any`.
 
 ### Cases
-- A case's model reads from `out` at that case one grid per combination of one rule for each inner task among those its facts hold with it in the `DemonstratedRule` column, a value of each `out` column of type `TiebreakResolution`, and one value of each `@open` relation of `OpenValue`, its output is the distinct grids it reads, and it is undefined on an input where some combination reads no grid, or facts that describe no total grid.
-    - A relation's values there are those the case stores, or those that the `@derive` branch the case takes on it derives on that input.
-    - Where the output of some case depends on an `@open` relation, `out` takes a column of type `OpenValue` before its `TiebreakResolution` column, or last where it has none, and each fact holds there the values of the `@open` relations it is derived at.
+- A case's model reads from `out` at that case one grid per combination of a value the case reads in each `out` column of a type whose lines give the values a case reads in it, its output is the distinct grids it reads, and it is undefined on an input where some combination reads no grid, or facts that describe no total grid.
+    - A relation's values at that case are those the case stores, or those that the `@derive` branch the case takes on it derives on that input.
     - `OpenValue` is a record with one field per `@open` relation the output of some case depends on, each field with that relation's name and of a record type the solver names for that relation, whose fields are the relation's columns that tell one open value from another, under the same names.
         - `.type TieValue = [d: DiagAxis]`, `.type PickValue = [d: Dir]` and `.type OpenValue = [tie_dir: TieValue, pick_dir: PickValue]`.
+    - Where the output of some case depends on an `@open` relation, `out` takes a column of type `OpenValue` before its `TiebreakResolution` column, or last where it has none, each fact holds there the values of the `@open` relations it is derived at, and a case reads there each choice of one value of each field.
     - A fact whose derivation does not read an `@open` relation of `OpenValue` holds `nil` in that relation's field, which reads as every value of it, whether or not its case reads that relation.
 - A case's base is its `Choice` value, its branch at each point the `Choice` encodes; a case is a base with a branch at each `@derive` and `@store` point its base reads.
 - A case is witnessed when it is the concept case or stands for a branch's model, when its output on a pair's input of the task is no candidate of that pair, or when an input of the task or of the witness file shows it giving an output that no case taking only part of its non-concept branches gives, where undefined counts as an output.
@@ -209,6 +212,7 @@
 - An alt with kind `rule` gives the pair a second candidate.
 - An alt with kind `tiebreak` gives resolutions within one candidate.
 - The solver enumerates a tiebreak's resolutions through a trailing `out` column of type `TiebreakResolution`.
+    - A case reads in that column each value.
 - No parameter stores the resolution values.
 - No clause treats one resolution differently from another.
 
@@ -222,6 +226,7 @@
     - Each rule is a general rule, with clauses of its own that read from the input what that rule needs.
 - The rules that apply to an inner task are those the instance's `confirmed` relation gives at its key, and no parameter stores them.
 - `out` takes a column of type `DemonstratedRule`, `[task: Key, rule: DemonstratedChoice]` with the instance's `Key`, after any `Choice` column and before any `TiebreakResolution` column, holding the inner task and the rule each fact is derived at.
+    - A case reads in that column each choice of one rule for each inner task among those its facts hold there.
     - A fact whose derivation reads no rule holds `nil` there, which reads as every rule of every inner task.
 - In a nested task, substantial code that detects and constructs each inner task's rule through one parameterized mechanism, general enough to produce every inner task's rule, is the sign that those rules belong in the catalog.
     * comment: The solver passes on 20a9e565, a nested task, built a parameterized construction of each input's rule in place of a catalog, as change ticket 4-38 records.

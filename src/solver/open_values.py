@@ -107,8 +107,9 @@ def field_readings(solver: Solver) -> tuple[FieldReading | FieldOff, ...]:
 
 
 @quotes("solver-file.md", "Cases",
-        "A relation's values there are those the case stores, or those that "
-        "the `@derive` branch the case takes on it derives on that input.")
+        "A relation's values at that case are those the case stores, or "
+        "those that the `@derive` branch the case takes on it derives on "
+        "that input.")
 def open_fields(engine: Engine, solver: Solver,
                 readings: Sequence[FieldReading | FieldOff], case: Case,
                 assign: Assignment, derived: Mapping[str, Rows]
