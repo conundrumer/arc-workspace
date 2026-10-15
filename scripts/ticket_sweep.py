@@ -20,7 +20,7 @@ from ticket_watch import Thresholds, deferred, route
 from ticketing.text import VALIDATION
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Kind, Status, Verdict
-from transcripts import Refused, chain, find
+from transcripts import Refused, chain, find, own_start, snapshot
 
 UNEXERCISED_DAYS = 7
 """The days since its last move into `deferred` from which a `validation`
@@ -84,7 +84,7 @@ def check_of(path: Path, text: str) -> Check:
 @dataclass(frozen=True)
 class GivenRun:
     """A run given to the sweep: the time of its first timestamped entry,
-    and the lines of its transcripts."""
+    and the lines of its transcripts that are its own (`own_lines`)."""
     start: float
     lines: list[str]
 
@@ -96,7 +96,13 @@ def given_run(run: str) -> GivenRun:
     start = first_time(path)
     if start is None:
         raise Refused(mctx("{run} has no timestamped entry").format(run=run))
-    return GivenRun(start, [line for p in chain(path) for line in p.read_text().splitlines()])
+    return GivenRun(start, [line for p in chain(path) for line in own_lines(p)])
+
+
+def own_lines(path: Path) -> list[str]:
+    """The lines of the transcript at `path` from `own_start` on."""
+    snap = snapshot(path)
+    return [snap.line(i).decode() for i in range(own_start(path), snap.count)]
 
 
 def exercisers(check: Check, runs: dict[str, list[str]]) -> list[str] | None:

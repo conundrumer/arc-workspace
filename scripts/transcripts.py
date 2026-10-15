@@ -510,7 +510,9 @@ def entries_naming(path: Path, naming: frozenset[str] | None) -> list[Entry]:
     if naming is None:
         return list(entries_forward(path))
     snap = snapshot(path)
-    lines = sorted(frozenset[int]().union(*(snap.holding(w) for w in naming)))
+    start = own_start(path)
+    lines = sorted(i for i in frozenset[int]().union(*(snap.holding(w) for w in naming))
+                   if i >= start)
     return [e for i in lines for e in snap.entry(i)]
 
 
@@ -518,7 +520,7 @@ def entries_forward(path: Path) -> Iterator[Entry]:
     """The entries of the transcript at `path` as it stands at the state this
     process is in, in their order, each line parsed only when it is reached."""
     snap = snapshot(path)
-    for i in range(snap.count):
+    for i in range(own_start(path), snap.count):
         yield from snap.entry(i)
 
 
@@ -526,8 +528,44 @@ def entries_back(path: Path) -> Iterator[Entry]:
     """The entries of the transcript at `path` as it stands at the state this
     process is in, last first, each line parsed only when it is reached."""
     snap = snapshot(path)
-    for i in range(snap.count - 1, -1, -1):
+    for i in range(snap.count - 1, own_start(path) - 1, -1):
         yield from snap.entry(i)
+
+
+def meta_path(path: Path) -> Path:
+    """The `.meta.json` file of the transcript at `path`."""
+    return path.with_suffix(".meta.json")
+
+
+@state_cache(lambda path: stat_of(meta_path(path)))
+def transcript_meta(path: Path) -> dict[str, Any] | None:
+    m = meta_path(path)
+    return json.loads(m.read_text()) if m.is_file() else None
+
+
+def blocks(entry: Entry, kind: str) -> list[dict[str, Any]]:
+    content = (entry.get("message") or {}).get("content")
+    if not isinstance(content, list):
+        return []
+    return [b for b in content if isinstance(b, dict) and b.get("type") == kind]
+
+
+@state_cache(DERIVED)
+def own_start(path: Path) -> int:
+    """The index of the first line of the entries of the transcript at
+    `path` that are its run's own. A fork's transcript opens with a copy of
+    its parent's entries, through the Agent call that launched the fork,
+    which its `.meta.json` gives as `toolUseId`, and its own entries open
+    at the entry that holds that call's result. For each other transcript,
+    and for a fork's where no line holds that result, it is 0."""
+    meta = transcript_meta(path) or {}
+    call = meta.get("toolUseId")
+    if meta.get("isFork") is not True or not isinstance(call, str):
+        return 0
+    snap = snapshot(path)
+    return next((i for i in sorted(snap.holding(call))
+                 if any(b.get("tool_use_id") == call
+                        for e in snap.entry(i) for b in blocks(e, "tool_result"))), 0)
 
 
 def forked_from(path: Path) -> str | None:

@@ -1,9 +1,8 @@
 """Read the run of an agent from its Claude Code transcripts: its
-`.meta.json`, its entries and the blocks, texts, call results, messages,
+`.meta.json`, its entries and the texts, call results, messages,
 notifications and request sizes they give, and the session its transcripts
 belong to."""
 
-import json
 import re
 import sys
 from collections.abc import Collection, Iterable
@@ -15,9 +14,10 @@ from typing import Any, Protocol
 from controlled_markdown import mctx
 from operations.constants import COORDINATOR as MAIN
 from token_prices import request_input
-from state_reads import DERIVED, is_file, stat_of, state_cache
-from transcripts import (Entry, Refused, agent_id, chain, epoch, first_parent, is_subagent,
-                         main_transcript, read_entries, session_directory, session_subagents)
+from state_reads import DERIVED, is_file, state_cache
+from transcripts import (Entry, Refused, agent_id, blocks, chain, epoch, first_parent,
+                         is_subagent, main_transcript, meta_path, read_entries,
+                         session_directory, session_subagents, transcript_meta)
 
 UNKNOWN_TYPE = mctx("the agent type of `{path}` is unknown: its .meta.json is "
                     "absent or gives none")
@@ -114,17 +114,6 @@ def read_meta(path: Path) -> dict[str, Any] | None:
     return out
 
 
-def meta_path(path: Path) -> Path:
-    """The `.meta.json` file of the transcript at `path`."""
-    return path.with_suffix(".meta.json")
-
-
-@state_cache(lambda path: stat_of(meta_path(path)))
-def transcript_meta(path: Path) -> dict[str, Any] | None:
-    m = meta_path(path)
-    return json.loads(m.read_text()) if m.is_file() else None
-
-
 @state_cache(DERIVED)
 def agent_type(path: Path) -> str | None:
     """The agent type of the run whose transcript is at `path`: `main` for a
@@ -175,13 +164,6 @@ def run_entries(path: Path, naming: set[str] | None = None) -> list[Entry]:
     across its transcripts, or with `naming` only those `read_entries`
     gives with it."""
     return [e for p in chain(path) for e in read_entries(p, naming=naming)]
-
-
-def blocks(entry: Entry, kind: str) -> list[dict[str, Any]]:
-    content = (entry.get("message") or {}).get("content")
-    if not isinstance(content, list):
-        return []
-    return [b for b in content if isinstance(b, dict) and b.get("type") == kind]
 
 
 def text_of(content: Any) -> str:
@@ -313,10 +295,13 @@ def context_size(entries: Iterable[Entry]) -> int | None:
 
 def is_prompt(entry: Entry) -> bool:
     """Whether an entry gives the model a message: a user entry that answers
-    no tool call, or a message queued while the model worked."""
+    no tool call, a user entry that holds a text block outside its
+    `tool_result` blocks, such as a fork's directive, or a message queued
+    while the model worked."""
     if entry.get("type") == "attachment":
         return (entry.get("attachment") or {}).get("type") == "queued_command"
-    return entry.get("type") == "user" and not blocks(entry, "tool_result")
+    return entry.get("type") == "user" and (not blocks(entry, "tool_result")
+                                            or bool(blocks(entry, "text")))
 
 
 def message_text(entry: Entry) -> str:
