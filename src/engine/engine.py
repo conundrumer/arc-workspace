@@ -341,6 +341,13 @@ class Classed:
     classes: RelationName
 
 
+D4_SOURCE = RelationName((), "d4_source")
+"""The relation of the rows a `Engine.d4_images` program transforms."""
+D4_IMAGE = RelationName((), "d4_image")
+"""The relation of a `Engine.d4_images` program that holds each D4 image
+of each row, the element's lib code first."""
+
+
 class Engine(Protocol):
     """The interface between a language and the rest. Every rewrite returns
     a new program, and no caller reads the text a program renders to."""
@@ -355,6 +362,14 @@ class Engine(Protocol):
                         base_dir: Path) -> Program | ParseFailure:
         """`parse` of `text` with an `#include` of the file `included`
         above it, each line of `text` at its own number."""
+        ...
+
+    def d4_images(self, lib: Path, types: Sequence[TypeName],
+                  kept: frozenset[int]) -> Program | ParseFailure:
+        """A program that includes the lib file `lib` and gives in
+        `D4_IMAGE` each D4 image of each row of `D4_SOURCE`, a relation of
+        columns of `types`, by the transform a RIGID block places its
+        charts by, each column of `kept` as it stands."""
         ...
 
     def index(self, program: Program) -> Index:

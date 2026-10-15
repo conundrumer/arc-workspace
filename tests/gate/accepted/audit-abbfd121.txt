@@ -87,3 +87,6 @@ store: ok
   scan: removing `scan(DIAG_BL, AXIS_H)` changes no output on any input of the task or of the witness file
   scan: removing `scan(DIAG_BR, AXIS_V)` changes no output on any input of the task or of the witness file
   scan: removing `scan(DIAG_BR, AXIS_H)` changes no output on any input of the task or of the witness file
+
+--- relabelings ---
+relabelings: ok

@@ -17,3 +17,6 @@ store: ok
 
 --- open values ---
 open values: ok
+
+--- relabelings ---
+relabelings: ok

@@ -32,3 +32,6 @@ derive: ok
 --- open values ---
   start_edge: removing `start_edge(DIR_T)` changes no output on any input of the task or of the witness file
   start_edge: removing `start_edge(DIR_L)` changes no output on any input of the task or of the witness file
+
+--- relabelings ---
+relabelings: ok

@@ -7,6 +7,7 @@ from enum import StrEnum
 
 from checker.payloads.branches import BranchesPayload
 from checker.payloads.open_values import TrainFails, UnexercisedPayload
+from checker.payloads.relabeling import UnobservedPayload
 from checker.payloads.witness import (  # noqa: F401  (re-exported)
     AnnotationPayload,
     ApproximatedWithoutWitness,
@@ -123,6 +124,13 @@ class Kind(StrEnum):
     (`checker.open_values.check_open_values`)."""
     OPEN_VALUES_UNCHECKED = "open-values-unchecked"
     """The open-values check did not run
+    (`checker.payloads.open_values.TrainFails`)."""
+    UNOBSERVED_RELABELING = "unobserved-relabeling"
+    """A relabeling of the stored parameters under which no case that reads
+    a changed parameter gives a different outcome on any input the check
+    reads (`checker.relabeling.check_relabelings`)."""
+    RELABELINGS_UNCHECKED = "relabelings-unchecked"
+    """The relabeling check did not run
     (`checker.payloads.open_values.TrainFails`)."""
 
     # Runs that gave no result.
@@ -477,6 +485,7 @@ class RunKind(StrEnum):
     DETERMINATION = "determination"
     PROBE = "probe"
     STORE_SEARCH = "store search"
+    RELABELING = "relabeling"
 
 
 @dataclass(frozen=True)
@@ -516,7 +525,7 @@ class UndecidedPayload:
 
 type Payload = (WitnessPayload | FaultPayload | LintPayload
                 | BranchesPayload | NoResultPayload | UndecidedPayload
-                | UnexercisedPayload | TrainFails)
+                | UnexercisedPayload | TrainFails | UnobservedPayload)
 
 
 @dataclass(frozen=True)

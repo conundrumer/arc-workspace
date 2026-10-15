@@ -247,7 +247,7 @@ def unexercised_line(solver: Solver, at: str, p: UnexercisedPayload) -> str:
                     at=at, fact=_fact_text(solver, p.fact))
 
 
-UNCHECKED_TRAIN_FAILS = mctx("{at}: open values not checked: the stored "
+UNCHECKED_TRAIN_FAILS = mctx("{at}: {check} not checked: the stored "
                              "program fails a train pair")
 
 

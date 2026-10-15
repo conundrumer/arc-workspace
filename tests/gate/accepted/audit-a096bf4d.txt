@@ -24,3 +24,6 @@ dropped cases: ok
 
 --- open values ---
 open values: ok
+
+--- relabelings ---
+relabelings: ok

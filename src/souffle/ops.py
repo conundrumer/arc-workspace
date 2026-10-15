@@ -308,7 +308,13 @@ def _fix_relation(program: Program, relation: RelationName,
     hit = tree.resolve(relation, Scope(()))
     if hit is None:
         raise ValueError(f"no relation {relation.text}")
+    grid_call: GridCall | None = None
     if program.rigid_bound(hit.decl) or hit.decl.chart_of is not None:
+        # The expansion writes a GRID call as plain units, so the call
+        # that places a grid value is taken before it.
+        fed = {o.unit for o in index.feeding(hit.decl.id)}
+        grid_call = next((m for m in program.macros
+                          if isinstance(m, GridCall) and m.id in fed), None)
         program = expand(program)
         index = index_of(program)
         tree = index.tree
@@ -319,7 +325,7 @@ def _fix_relation(program: Program, relation: RelationName,
                if _feeds_instance(tree, scope_of[o.unit], o, relation)]
     feeders = {o.unit for o in feeding}
     layout = next((m for m in program.macros
-                   if isinstance(m, GridCall) and m.id in feeders), None)
+                   if isinstance(m, GridCall) and m.id in feeders), grid_call)
     scopes = {scope_of[o.unit] for o in feeding}
     shared = [s for s in scopes if s and _uses(tree, program, s) != 1]
     if shared:

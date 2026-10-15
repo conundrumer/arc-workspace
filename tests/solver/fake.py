@@ -144,6 +144,10 @@ class FakeEngine(TextMethods):
     def remove(self, program: Program, target: RemovalTarget) -> Program:
         return program
 
+    def d4_images(self, lib: Path, types: Sequence[TypeName],
+                  kept: frozenset[int]) -> Program | ParseFailure:
+        raise NotImplementedError
+
     def instantiate(self, program: Program, component: str,
                     name: str) -> Program:
         return program

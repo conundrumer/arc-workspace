@@ -4,6 +4,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from engine.engine import (
+    D4_IMAGE,
+    D4_SOURCE,
     Classed,
     GridMisfit,
     GridValue,
@@ -59,6 +61,17 @@ class SouffleEngine(TextMethods):
         init = Instance(DeclId(0), instance, Scope(()), component,
                         tuple(type_arguments), None)
         text = f"{render.include(lib.name)}\n{printer.declaration(init)}\n"
+        return self.parse(text, lib.parent)
+
+    def d4_images(self, lib: Path, types: Sequence[TypeName],
+                  kept: frozenset[int]) -> Program | ParseFailure:
+        cols = ", ".join(f"c{i}: {t.text}" for i, t in enumerate(types))
+        text = "\n".join([
+            render.include(lib.name),
+            f".decl {D4_SOURCE.name}({cols})",
+            f".decl {D4_IMAGE.name}(d: D4, {cols})",
+            expand.rigid_rule(D4_IMAGE.name, D4_SOURCE.name, list(types),
+                              kept), ""])
         return self.parse(text, lib.parent)
 
     def index(self, program: Program) -> Index:

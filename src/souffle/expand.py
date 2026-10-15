@@ -48,12 +48,16 @@ from souffle.parser import (
 from souffle.text import columns
 
 
-def rigid_rule(head: str, src: str, types: list[TypeName]) -> str:
+def rigid_rule(head: str, src: str, types: list[TypeName],
+               kept: frozenset[int] = frozenset()) -> str:
     """The rule that derives `head`, the D4 placements of the chart
-    `src`."""
+    `src`, each column of `kept` placed as it stands."""
     heads, srcs, atoms = [], [], []
     for i, t in enumerate(type_name.text for type_name in types):
-        if t in RIGID_ACTIONS:
+        if i in kept:
+            heads.append(f"A{i}")
+            srcs.append(f"A{i}")
+        elif t in RIGID_ACTIONS:
             heads.append(f"A{i}")
             srcs.append(f"B{i}")
             atoms.append(f"{RIGID_ACTIONS[t]}(D4, B{i}, A{i})")

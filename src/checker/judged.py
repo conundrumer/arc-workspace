@@ -35,6 +35,7 @@ from solver.model import (
     Branch,
     Case,
     DeriveBranch,
+    Parameter,
     StoreBranch,
     choice_bases,
     choice_values,
@@ -334,6 +335,11 @@ def swapped(grid: Grid, a: int, b: int) -> Grid:
                  for row in grid)
 
 
+def color_columns(p: Parameter) -> list[int]:
+    """The `Color` columns of `p`."""
+    return [i for i, c in enumerate(p.columns) if c.type.text == COLOR]
+
+
 def stored_colors(engine: Engine, solver: Solver, cases: Iterable[Case]
                   ) -> frozenset[int]:
     """Every color the parameters' stored facts (`solver.determine.stored_facts`)
@@ -343,7 +349,7 @@ def stored_colors(engine: Engine, solver: Solver, cases: Iterable[Case]
     bases = choice_bases(cases)
     out: set[int] = set()
     for p in solver.params.parameters:
-        cols = [i for i, c in enumerate(p.columns) if c.type.text == COLOR]
+        cols = color_columns(p)
         got = by_base(solver, parameter_reading(solver, p.name),
                       stored_facts(engine, solver, p), bases)
         out |= {v for _base, rows in got for r in rows for i in cols

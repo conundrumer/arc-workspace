@@ -2,6 +2,8 @@
 more than one at a case no input of the task or of the witness file
 exercises."""
 
+from collections.abc import Collection
+
 from checker.drop_one import DropOneReport, removal, survey_drop_one
 from checker.finding import (
     AtFile,
@@ -18,10 +20,23 @@ from checker.payloads.open_values import (
 )
 from checker.runs import Runs
 from checker.variants import TimedOut, with_program
+from engine import Grid
 from engine.quotes import quotes
 from solver.aggregate import Solver
-from solver.outcome import first_failure
+from solver.outcome import Assignment, first_failure
 from solver.witnessed_cases import entry_assignments, placed_inputs
+
+
+def inputs_without(solver: Solver, runs: Runs, parameters: Collection[str]
+                   ) -> list[tuple[Grid, Assignment]]:
+    """Each pair's input at the stored assignment, and each witness entry's
+    input at its assignment, less an entry whose `assign` gives one of
+    `parameters` or whose assignment is a fault."""
+    entries = entry_assignments(runs.engine, solver, runs.entries,
+                                runs.file_role)
+    return placed_inputs(solver, [
+        (e, at) for e, at in entries
+        if all(name not in parameters for name, _v in e.assign)])
 
 
 @quotes("principles.md", "Choice points and open parameters",
@@ -46,14 +61,10 @@ def check_open_values(solver: Solver, runs: Runs) -> list[Finding]:
     if not isinstance(cases, tuple):
         return [no_result(cases, RunKind.CASE, None, AtFile(WholeFile.SOLVER))] \
             if got.dropped else []
-    entries = entry_assignments(runs.engine, solver, runs.entries,
-                                runs.file_role)
     out: list[Finding] = []
     for d in got.dropped:
         f = d.fact
-        inputs = placed_inputs(solver, [
-            (e, at) for e, at in entries
-            if all(name != f.parameter for name, _v in e.assign)])
+        inputs = inputs_without(solver, runs, {f.parameter})
         before = runs.outcomes_on(solver, cases, inputs)
         after = runs.outcomes_on(
             with_program(solver, removal(runs.engine, solver, f)),

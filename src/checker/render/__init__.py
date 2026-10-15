@@ -26,6 +26,7 @@ from checker.finding import (
     UnexercisedPayload,
     is_hint,
 )
+from checker.payloads.relabeling import UnobservedPayload
 from checker.render.faults import reading_lines
 from checker.render.lint import lint_line
 from checker.render.locations import LineForm, where_text
@@ -46,6 +47,12 @@ class Section(StrEnum):
     PAIRS = "pairs"
     DETERMINATION = "determination"
     OPEN_VALUES = "open values"
+    RELABELINGS = "relabelings"
+
+
+UNCHECKED_SECTION = {Kind.OPEN_VALUES_UNCHECKED: Section.OPEN_VALUES,
+                     Kind.RELABELINGS_UNCHECKED: Section.RELABELINGS}
+"""The section of each kind that says its check did not run."""
 
 
 def line_form(section: Section) -> LineForm:
@@ -152,7 +159,11 @@ def finding_lines(solver: Solver, f: Finding,
             return [unexercised_line(solver, at, p)]
         case TrainFails():
             from checker.render.surveys import UNCHECKED_TRAIN_FAILS
-            return [UNCHECKED_TRAIN_FAILS.format(at=at)]
+            return [UNCHECKED_TRAIN_FAILS.format(
+                at=at, check=UNCHECKED_SECTION[f.kind].value)]
+        case UnobservedPayload():
+            from checker.render.relabeling import unobserved_line
+            return [unobserved_line(at, p)]
         case _ if isinstance(p, LINT_SHAPES):
             return [lint_line(solver, f)]
         case FaultPayload():
