@@ -162,8 +162,11 @@
     // first.
     .decl scan(k: Key, d: DiagDir, a: Axis)
 
-    // The tiles to lay: box b's cells moved onto box b_laid.
-    .decl lay(k: Key, b: Box, b_laid: Box)
+    // The tiles to lay in place.
+    .decl lay(k: Key, b: Box)
+
+    // The tiles to lay moved: box b's cells moved onto box b_laid.
+    .decl moved(k: Key, b: Box, b_laid: Box)
 
     // @claim tile-panel
     .init box = Bbox<Key>
@@ -202,7 +205,8 @@
     // takes the tile cell at q's place within its copy on each axis.
     .decl copy(k: Key, b: Box, b_laid: Box, p: Position, col: Color)
     copy(K, B, B_laid, Q, Col) :-
-        lay(K, B, B_laid), relative(B, B_laid, V),                // the tile's move
+        ( lay(K, B), B_laid = B ; moved(K, B, B_laid) ),
+        relative(B, B_laid, V),                                   // the tile's move
         color(K, Q, _), relative(V, Q, Q_v),                      // q, moved back by it
         diag_dirs(_, A, D1, D2), perp(A, A2), opposite(D1, O1), opposite(D2, O2),
         relative(B, Q_v, Q_rel), dist(Q_rel, O1, T1), dist(Q_rel, O2, T2),
@@ -268,7 +272,6 @@ parse.color(Pn, P, Col) :- parse.box.box(Pn, B), in(P, Col), inside(P, B).
 
 // The panel's tile laid onto box b_laid at open value v.
 .decl laid(pn: Panel, v: OpenValue, b_laid: Box)
-parse.lay(Pn, B, B_laid) :- parse.tile(Pn, B), laid(Pn, _, B_laid).
 
 .decl paint(ch: Choice, v: OpenValue, p: Position, col: Color)
 paint(Ch, V, P, Col) :-
@@ -361,6 +364,7 @@ broken(Ch) :- gap([Ch, _], _, K, K).
 open_value(Ch, [nil]) :- impl_choice(Ch), Ch = [_, _, _, _, _, $TileLattice(), _].
 
 laid([Ch, X], [nil], B) :- parse.tile([Ch, X], B), Ch = [_, _, _, _, _, $TileLattice(), _].
+parse.lay([Ch, X], B) :- parse.tile([Ch, X], B), Ch = [_, _, _, _, _, $TileLattice(), _].
 
 // --- $CornerAnchor ---
 open_value(Ch, [[D]]) :-
@@ -368,6 +372,9 @@ open_value(Ch, [[D]]) :-
 
 laid([Ch, X], [[D]], B_laid) :-
     parse.corner_lay([Ch, X], _, D, B_laid), Ch = [_, _, _, _, _, $CornerAnchor(), _],
+    params.anchor(D).
+parse.moved([Ch, X], B, B_laid) :-
+    parse.corner_lay([Ch, X], B, D, B_laid), Ch = [_, _, _, _, _, $CornerAnchor(), _],
     params.anchor(D).
 
 // --- $PanelCells ---
@@ -390,8 +397,8 @@ fill([Ch, X], P) :-
     parse.tile(Pn, B) :- parse.marks_box.box(Pn, B).
     parse.scan(Pn, D, A) :- parse.box.box(Pn, _), diag_dir_elem(D), axis_elem(A).
 
-    parse.lay(Pn, B, B_laid) :- parse.corner_lay(Pn, B, _, B_laid).
-    parse.lay(Pn, B, B) :- parse.first_color.box([Pn, _, _], B).
+    parse.moved(Pn, B, B_laid) :- parse.corner_lay(Pn, B, _, B_laid).
+    parse.lay(Pn, B) :- parse.first_color.box([Pn, _, _], B).
 
     // A laid tile whose copies a train output contradicts.
     .decl wrong(pn: ExPanel, b: Box, b_laid: Box)

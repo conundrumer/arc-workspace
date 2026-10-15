@@ -1,8 +1,9 @@
 """The lint checks on a clause head's columns: a literal zero in a head,
 and one variable in two of a head's arguments. Each reads the heads of the
-solver's own relations, and no head of a relation of an instance: the
-component fixes its columns, and what such a head states is a value of the
-instance."""
+relations the solver's own text declares, those of an instance of a
+component the solver declares too, and no head of a relation of an
+instance of a lib component: the lib component fixes its columns, and what
+such a head states is a value of the instance."""
 
 from collections.abc import Iterator
 
@@ -17,9 +18,9 @@ from solver.category import Category
 
 
 def _own_heads(v: View) -> Iterator[Unit]:
-    """The units program style applies to whose head is a relation of the
-    solver's own, not of an instance."""
-    return (u for u in v.style_units() if not u.head.relation.instances)
+    """The units program style applies to whose head is a relation the
+    solver's own text declares."""
+    return (u for u in v.style_units() if not v.is_lib(v.head(u)))
 
 
 @quotes("encoding.md", "Numbers",

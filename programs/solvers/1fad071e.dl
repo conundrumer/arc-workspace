@@ -161,6 +161,7 @@ out(P, BG,  [Det, M]) :-
     .decl trial(e: Example, col: Color, k: number)
     trial(E, Col, K) :- cand(Col, K), ex_out(E, _, _).
 
+    // @ignore color: head-repeat — the key is the candidate the trial counts, and its color is the color the parse counts
     .init parse = Parse<Cand>
     parse.cell([E, Col, K], P, C) :- trial(E, Col, K), ex_in(E, P, C).
     parse.color([E, Col, K], Col) :- trial(E, Col, K).

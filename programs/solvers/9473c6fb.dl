@@ -99,6 +99,7 @@ out(P, Col, Ch) :-
 
     // --- the order and the cycle, per candidate corner ---
 
+    // @ignore corner: head-repeat — the key is the candidate corner the examples test, and its corner is the corner the parse ranks from
     .init parse = Parse<ExDiag>
     parse.cell([E, Diag], P, Col) :- diag_dir_elem(Diag), ex_in(E, P, Col).
     parse.corner([E, Diag], Diag) :- diag_dir_elem(Diag), ex_in(E, _, _).
