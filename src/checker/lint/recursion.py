@@ -5,7 +5,7 @@ closes, less the reads that `Take`'s contract permits."""
 from dataclasses import dataclass
 
 from checker.finding import Finding, LintNamed, LintSentence
-from checker.lint.view import lint
+from checker.lint.view import lint, view
 from checker.runs import Runs
 from engine import RelationName, UnitId
 from engine.program import Atom, Unit, body_atoms, own
@@ -64,8 +64,11 @@ def _permitted(solver: Solver, graph: Graph, e: _Edge) -> bool:
         "A clause that defines the `step`, `skip` or `take` input of a "
         "`Take` instance may read that instance's relations through an atom "
         "whose every variable another atom of the clause grounds.")
+@quotes("style.md", "Components",
+        "**Proposal comps.** The program-style checks skip a proposal comp.")
 def check_recursion(solver: Solver, runs: Runs) -> list[Finding]:
-    """One finding per set of units of the solver's own text that close a
+    """One finding per set of units of the solver's own text, each in a
+    program scope (`checker.lint.view.View.program_scope`), that close a
     cycle of the relations of the program its runs run
     (`solver.determine.run_program`), each relation at the instance path
     that declares it, the lib's units read at each instance they run at.
@@ -78,6 +81,7 @@ def check_recursion(solver: Solver, runs: Runs) -> list[Finding]:
     `.comp Determine` names it. Where cycles at several instances stand on
     one set of units, the finding is that of the cycle whose names sort
     first, since the solver's text gives those units once."""
+    v = view(solver, runs)
     run = run_program(solver)
     added = run.determine.path \
         if run.determine is not None and run.determine.added else None
@@ -95,7 +99,7 @@ def check_recursion(solver: Solver, runs: Runs) -> list[Finding]:
                 if read is None:
                     continue
                 succ.setdefault(read, {})[head] = None
-                if own(u.span):
+                if own(u.span) and v.program_scope(u.scope):
                     solver_edges.append(_Edge(u, at, atom, read, head))
     by_units: dict[frozenset[UnitId], tuple[tuple[str, ...], Finding]] = {}
     for comp in cyclic_components(succ, lambda n: succ[n]):
