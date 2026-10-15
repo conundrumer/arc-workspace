@@ -294,7 +294,7 @@ def pipeline_state(o: passes.Outcome | None) -> str | None:
         return mctx("its pipeline has not started")
     if not o.ended:
         return mctx("its pipeline runs")
-    return STOPPED.format(why=o.stopped) if o.stopped else None
+    return STOPPED.format(why=o.standing.stopped) if o.standing.stopped else None
 
 
 STOPPED = mctx("its pipeline stopped: {why}")
@@ -364,7 +364,7 @@ def run_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Outc
         return []
     stopped = [REASON.format(of=s.pipeline.task, reason=r) for s in own
                if (r := s.failed if s.failed is not None
-                   else None if (why := by_pipeline[s.pipeline].stopped) is None
+                   else None if (why := by_pipeline[s.pipeline].standing.stopped) is None
                    else STOPPED.format(why=why)) is not None]
     return [*going, *stopped]
 

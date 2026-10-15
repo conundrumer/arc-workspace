@@ -36,7 +36,7 @@ alone, the pipeline's outcome is read from its passes, reviews and
 tickets, as for a pipeline whose work has not gone back."""
 
 import shlex
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from controlled_markdown import mctx
 from operations import briefs, messages, runs
@@ -59,16 +59,11 @@ NO_REPORT = mctx("the {role} pass {agent} wrote, since its launch, no report fil
 
 @dataclass(frozen=True)
 class Outcome:
-    """Where a pipeline stands: its next step, None where it waits, and
-    where it has ended, the reason it stopped, or None where it ran to its
-    end. `held` gives whether an `interference` ticket holds its next pass
-    or its end (`interference`), and `passing` whether a pass of it runs,
-    or is to launch while it is not held."""
+    """A pipeline's next step, None where it waits, whether it has ended,
+    and where it stands."""
     step: Step | None
     ended: bool = False
-    stopped: str | None = None
-    passing: bool = False
-    held: bool = False
+    standing: runs.Standing = runs.Standing()
 
 
 def claim_command(task: str) -> str:
@@ -140,36 +135,34 @@ type Ended = tuple[str, Agent, tuple[str, ...]]
 tickets its report lists."""
 
 
-def reviews(state: State, task: str, ended: list[Ended]) -> Outcome | None:
-    """The review chain over the passes of `ended`: its next step,
-    Outcome(None) where it waits, or None where each review and analyst
-    has returned."""
+def reviews(state: State, task: str, ended: list[Ended]) -> tuple[Step | None] | None:
+    """The review chain over the passes of `ended`: its next step, (None,)
+    where it waits, or None where each review and analyst has returned."""
     found = [latest(state, Role.TRANSCRIPT_REVIEW, i, a.launched) for i, a, _ in ended]
     waits = False
     for (i, _, filed), review in zip(ended, found, strict=True):
         if review is None:
-            return Outcome(Launch(Role.TRANSCRIPT_REVIEW, i, briefs.transcript_review(
-                i, Domain.TASK.value, task, True)))
+            return (Launch(Role.TRANSCRIPT_REVIEW, i, briefs.transcript_review(
+                i, Domain.TASK.value, task, True)),)
         if review.pending:
-            return Outcome(None)
+            return (None,)
         reviewer = agent_ids([review])
         if isinstance(reviewer, Undecided):
-            return Outcome(reviewer)
+            return (reviewer,)
         numbers = [*filed, *review_tickets(state, task, review)]
         analyst = [x for x, purpose, nums in state.analysts()
                    if purpose is Purpose.PASS and nums[0] == task and settles(x, reviewer[0])]
         if numbers and not analyst:
             subject = analyst_subject(Purpose.PASS, joined([task, *numbers]))
-            return Outcome(Launch(Role.TICKET_ANALYST, subject, briefs.pass_settle(
-                numbers, task, reviewer[0], state.me), items=len(numbers)))
+            return (Launch(Role.TICKET_ANALYST, subject, briefs.pass_settle(
+                numbers, task, reviewer[0], state.me), items=len(numbers)),)
         waits = waits or any(x.pending for x in analyst)
-    return Outcome(None) if waits else None
+    return (None,) if waits else None
 
 
-def interference(state: State, p: Pipeline) -> Outcome | str | None:
+def interference(state: State, p: Pipeline) -> str | bool:
     """The `interference` check before a pass: the reason the pipeline
-    stops, Outcome(None) where a ticket holds the next pass, or None where
-    none does."""
+    stops, or whether a ticket holds the next pass."""
     found = [t for t in state.tracker.tickets.values() if t.kind is Kind.INTERFERENCE
              and t.domain is Domain.TASK and t.subject == p.task
              and t.filed >= p.since and t.status is not Status.CLOSED]
@@ -182,7 +175,7 @@ def interference(state: State, p: Pipeline) -> Outcome | str | None:
                 x.pending for x in given):
             return mctx("the ticket analyst left interference ticket {number} open").format(
                 number=t.number)
-    return Outcome(None) if found else None
+    return bool(found)
 
 
 type Stopped = tuple[str | None]
@@ -199,38 +192,44 @@ def run(state: State, p: Pipeline) -> Outcome:
     first = next(iter(restores(state, p.task, p.since, float("inf"))), None)
     given = restore_reason(first, p.task) if first is not None else None
     if given is not None:
-        return Outcome(None, True, given[0])
+        return Outcome(None, True, runs.Standing(stopped=given[0]))
     ended: list[Ended] = []
     hold = interference(state, p)
-    held = isinstance(hold, Outcome)
+    held = hold is True
     own = pass_chain(state, p, ended, hold)
     chain = reviews(state, p.task, ended)
-    if isinstance(own, Outcome):
-        return replace(chain if chain is not None and chain.step is not None else own,
-                       passing=own.passing, held=held)
-    if chain is not None:
-        return replace(chain, held=held)
-    reason = own[0]
-    if reason is None:
-        if isinstance(hold, Outcome):
-            return replace(hold, held=True)
-        reason = hold
-    return end(state, p, reason)
+    passing = False
+    if len(own) == 2:
+        step, passing = own
+        if chain is not None and chain[0] is not None:
+            step = chain[0]
+    elif chain is not None:
+        step = chain[0]
+    elif own[0] is None and held:
+        step = None
+    else:
+        reason = own[0]
+        return end(state, p, hold if reason is None and isinstance(hold, str) else reason)
+    return Outcome(step, standing=runs.Standing(passing=passing, held=held))
 
 
-def pass_chain(state: State, p: Pipeline, ended: list[Ended],
-               hold: Outcome | str | None) -> Outcome | Stopped:
-    """The next step of the pass chain of `p`, Outcome(None) where it
-    waits, or its end, with each pass that ended with its report appended
-    to `ended`, where `hold` is what `interference` gives on `p`."""
+type Next = tuple[Step | None, bool]
+"""The next step of a pass chain, None where it waits, and its `passing`,
+as `scripts/operate.py --help run` gives it."""
+
+
+def pass_chain(state: State, p: Pipeline, ended: list[Ended], hold: str | bool) -> Next | Stopped:
+    """The next step of the pass chain of `p`, or its end, with each pass
+    that ended with its report appended to `ended`, where `hold` is what
+    `interference` gives on `p`."""
     since = p.since
     for role in p.passes:
         a = latest(state, role, p.task, since)
         if a is None:
             if isinstance(hold, str):
                 return (hold,)
-            if hold is not None:
-                return hold
+            if hold:
+                return (None, False)
             holder = state.git.claims.get(p.task)
             if holder is not None and holder != state.session:
                 return (CLAIM_HELD.format(task=p.task, holder=holder),)
@@ -239,19 +238,19 @@ def pass_chain(state: State, p: Pipeline, ended: list[Ended],
                 tries = ran(state, claim, since)
                 if any(tries):
                     return (mctx("the claim on task {task} fails").format(task=p.task),)
-                return passing(None if tries else Bash(claim))
+                return (None if tries else Bash(claim), True)
             aside = aside_command(p.task, role)
             if role in SETS_ASIDE and not ran(state, aside, since):
-                return passing(Bash(aside))
+                return (Bash(aside), True)
             launch = Launch(role, p.task, briefs.solver_pass(p.task, overrides(state, p.task, role, since)))
             ruling = passed(launch, state)
             if ruling is not None and not restored(state, p.task, ruling.message.time, p.since):
                 return (mctx("the line `{line}` passed over its {role} pass").format(
                     line=ruling.text, role=role),)
-            return passing(launch)
+            return (launch, True)
         since = a.launched
         if a.pending:
-            return passing(None)
+            return (None, True)
         if a.agent_id is None:
             return (mctx("the {role} pass on {task} has no agent id").format(role=role, task=p.task),)
         filed = state.transcripts.pass_tickets.get(a.agent_id)
@@ -260,17 +259,13 @@ def pass_chain(state: State, p: Pipeline, ended: list[Ended],
                 asked = send_again(state, a.agent_id, [r.time for r in a.reports],
                                    messages.pass_resend)
                 if isinstance(asked, Send):
-                    return passing(asked)
+                    return (asked, True)
             told = no_report(role, a)
             if not repeated(told, state):
-                return passing(told)
+                return (told, True)
             return (NO_REPORT.format(role=role, agent=a.agent_id, section=TICKETS_FILED),)
         ended.append((a.agent_id, a, filed))
     return (None,)
-
-
-def passing(step: Step | None) -> Outcome:
-    return Outcome(step, passing=True)
 
 
 def no_report(role: Role, a: Agent) -> Undecided:
@@ -294,7 +289,7 @@ def end(state: State, p: Pipeline, reason: str | None) -> Outcome:
     restore = restore_step(p.task, reason)
     if not (ran(state, restore_command(p.task), p.since) or ran(state, restore, p.since)):
         return Outcome(Bash(restore))
-    return Outcome(None, True, reason)
+    return Outcome(None, True, runs.Standing(stopped=reason))
 
 
 def runs_at(state: State, p: Pipeline, time: float) -> bool:
@@ -363,7 +358,7 @@ def outcomes(state: State) -> list[tuple[Pipeline, Outcome]]:
     """Where each pipeline stands, as `run` gives it, ended pipelines
     included, and each run's pipeline that `session` drops as ended."""
     pipelines_now = every(state)
-    out = [(p, Outcome(None, True, DROPPED.format(task=p.task)))
+    out = [(p, Outcome(None, True, runs.Standing(stopped=DROPPED.format(task=p.task))))
            for p in started(state, lines(state)) if p not in pipelines_now]
     return out + [(p, run(state, p)) for p in pipelines_now]
 

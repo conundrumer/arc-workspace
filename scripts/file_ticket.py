@@ -225,7 +225,7 @@ SWEEP_RULES = mctx("""
         - Where it exits with another code, the ticket moves into `{open}`, with the note `{failed}: <command> exited <code>`, and where it runs past the time, with the note `{failed}: <command> timed out`.
     - Where the ticket is exercised and its section holds no `{command_field}` line, it moves into `{open}`, with the note `{exercised}: <agent id> ...`, with the runs that match, or each of those runs where the section holds no `{exercised_field}` line.
     - Where the ticket is not exercised, and the last line of its log that moves it into `{deferred}` is {days} days old or more, it moves into `{open}`, with the note `{unexercised}: no run matched since <time>`, with that line's time.
-    - Where a ticket's section holds more than one `{command_field}` line, or a pattern that does not compile or that matches its own text in its JSON escape, or where its log holds no line that moves it into `{deferred}`, it moves into `{open}`, with the note `{failed}: <reason>`.
+    - Where a ticket's section holds more than one `{command_field}` line, or a pattern that does not compile or that the `{exercised_field}` line of `{invocation} --help` gives the sweep as refusing, or where its log holds no line that moves it into `{deferred}`, it moves into `{open}`, with the note `{failed}: <reason>`.
     - Where running the command of a `{command_field}` line would take the sweep past the timeout of a foreground Bash call, the command does not start it, and the ticket stays in `{deferred}` until the next sweep, with an `undecided` line on stderr.
     - The command refuses, and moves nothing, where a run it gives has no transcript, or none with a timestamped entry.
     """)

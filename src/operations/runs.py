@@ -17,9 +17,9 @@ import argparse
 import re
 import shlex
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Protocol, TypeGuard
+from typing import TypeGuard
 
 from arc.task import TASK_ID
 from controlled_markdown import mctx
@@ -55,27 +55,21 @@ SCRIPT_SECONDS = 10
 """How long the load and the call of a run script may take at one read."""
 
 
-@dataclass(frozen=True)
-class Begun:
-    """A pipeline of a run, as its script reads it, as
+@dataclass(frozen=True, kw_only=True)
+class Standing:
+    """Where a pipeline stands, as its run's script reads it, as
     `scripts/operate.py --help run` gives its fields."""
-    task: str
-    passes: tuple[Role, ...]
     stopped: str | None = None
     passing: bool = False
     held: bool = False
 
 
-class Standing(Protocol):
-    """Where a pipeline stands, as `passes.Outcome` gives it."""
-    @property
-    def ended(self) -> bool: ...
-    @property
-    def stopped(self) -> str | None: ...
-    @property
-    def passing(self) -> bool: ...
-    @property
-    def held(self) -> bool: ...
+@dataclass(frozen=True)
+class Begun(Standing):
+    """A pipeline of a run, as its script reads it, as
+    `scripts/operate.py --help run` gives its fields."""
+    task: str
+    passes: tuple[Role, ...]
 
 
 @dataclass(frozen=True)
@@ -221,10 +215,10 @@ def started(state: State, ln: Line) -> list[Started]:
 
 
 def view(state: State, listed: tuple[str, ...], ln: Line,
-         stands: Mapping[Pipeline, Standing]) -> Run:
+         stands: Mapping[Pipeline, tuple[bool, Standing]]) -> Run:
     """The `Run` the script of `ln` reads, where `listed` is the queue's
-    full listing and `stands` gives where each pipeline of the run
-    stands."""
+    full listing and `stands` gives, for each pipeline of the run, whether
+    it ended and where it stands."""
     pipelines = started(state, ln)
     taken = {s.pipeline.task for s in pipelines}
     queue = tuple(t for t in listed if t not in state.git.claims and t not in taken)
@@ -233,10 +227,10 @@ def view(state: State, listed: tuple[str, ...], ln: Line,
     for s in pipelines:
         task, passes = s.pipeline.task, tuple(s.pipeline.passes)
         if s.failed is not None:
-            over.append(Begun(task, passes, s.failed))
+            over.append(Begun(task, passes, stopped=s.failed))
             continue
-        o = stands[s.pipeline]
-        (over if o.ended else running).append(Begun(task, passes, o.stopped, o.passing, o.held))
+        ended, standing = stands[s.pipeline]
+        (over if ended else running).append(Begun(task, passes, **asdict(standing)))
     return Run(queue, tuple(running), tuple(over))
 
 
