@@ -15,8 +15,8 @@ from engine import checkout
 from operations.constants import FOREGROUND_MS
 from ticket_files import ticket_name
 from ticket_form import section
-from ticket_log import VALIDATED, Moved, log_lines, log_moves
-from ticket_watch import Thresholds, deferred, line_time, route
+from ticket_log import VALIDATED, Moved, line_time, log_lines, log_moves
+from ticket_watch import Thresholds, deferred, route
 from ticketing.text import VALIDATION
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Kind, Status, Verdict

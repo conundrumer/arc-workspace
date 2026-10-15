@@ -4,7 +4,7 @@ its spend is counted over, the test of that spend against it, and the
 
 A take writes in its log line the change's cost budget and time budget,
 taken over the changes closed `fixed` before it with the same `editors`
-(`scripts/ticket_watch.py`). A line that gives the held change a new
+(`scripts/spends.py`). A line that gives the held change a new
 `editors` field writes the budgets of that field's set, which stand in
 place of the take's from then on. The agents of a change are those launched
 since its last move out of `tickets/draft/`, and its spend is theirs and

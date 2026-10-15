@@ -2,16 +2,19 @@
 project directories, and read their entries, each read held for one state
 of the process (`state_cache`)."""
 
+import bisect
 import filecmp
 import json
 import os
 import re
-import time
-from collections.abc import Callable, Hashable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime
-from functools import wraps
 from pathlib import Path
 from typing import Any
+
+# `transcripts.new_state` is the name the tests of these reads open a state by.
+from state_reads import (DERIVED, Named, is_file, listed, new_state, stat_of,  # noqa: F401
+                         state_cache)
 
 from controlled_markdown import mctx
 from handbook.paths import console_importable
@@ -23,70 +26,11 @@ from solver_console import config  # noqa: E402
 
 type Entry = dict[str, Any]
 
-AGENT_ID_IN_TEXT = re.compile(rf"(?=({AGENT_ID_FORM}))".encode())
-"""Each substring of the form of an agent id, overlapping ones too, as a
-substring search finds it."""
-
-_state = 0
-"""The count of the states this process has opened (`new_state`)."""
-
-
-def new_state() -> float:
-    """Open a new state, and give the time it opened: from then on, each
-    `state_cache` read gives what it reads as it stands now where its stamp
-    changed, and as held where it did not."""
-    global _state
-    _state += 1
-    return time.time()
-
-
-def state_cache[**P, R](stamp: Callable[P, Hashable] | None) -> Callable[
-        [Callable[P, R]], Callable[P, R]]:
-    """Hold the result of a read for each of its arguments. Within one state
-    the held result stands. At the first call of a new state the read runs
-    again, unless `stamp` of its arguments is the stamp of the held result.
-    The stamp of a read of files is their stat, and that of a read derived
-    from other `state_cache` reads is their results, so it agrees with
-    them within a state. A read with nothing to stamp, `stamp` None, runs
-    again at each new state.
-
-    Each process-life read cache that `operator_state.read_state` reaches,
-    in any module, is a `state_cache`, so the readers of one state see one
-    state, and a change between two states reaches the second."""
-    def hold(read: Callable[P, R]) -> Callable[P, R]:
-        held: dict[Hashable, tuple[int, Hashable, R]] = {}
-
-        @wraps(read)
-        def at_state(*args: P.args, **kwargs: P.kwargs) -> R:
-            key = (args, tuple(sorted(kwargs.items())))
-            hit = held.get(key)
-            if hit is not None and hit[0] == _state:
-                return hit[2]
-            mark = stamp(*args, **kwargs) if stamp is not None else None
-            if hit is not None and stamp is not None and hit[1] == mark:
-                value = hit[2]
-            else:
-                value = read(*args, **kwargs)
-            held[key] = (_state, mark, value)
-            return value
-        return at_state
-    return hold
-
-
-def stat_of(path: Path) -> tuple[int, int] | None:
-    """The modification time and size of the file at `path`, or None where
-    there is none."""
-    try:
-        st = path.stat()
-    except FileNotFoundError:
-        return None
-    return st.st_mtime_ns, st.st_size
-
-
 class Refused(Exception):
     """A call the command does not carry out, with the reason."""
 
 
+@state_cache(None)
 def project_dirs() -> list[Path]:
     dirs: list[Path] = []
     for d in (config.USER_PROJECTS, config.PROJECTS):
@@ -95,6 +39,7 @@ def project_dirs() -> list[Path]:
     return dirs
 
 
+@state_cache(lambda p, q: (stat_of(p), stat_of(q)))
 def identical(p: Path, q: Path) -> bool:
     """Whether the transcripts at `p` and `q` are one file or copies."""
     return p == q or filecmp.cmp(p, q, shallow=False)
@@ -128,12 +73,27 @@ SUBAGENTS = "subagents"
 subagent transcripts, each named `agent-*.jsonl`."""
 
 
-def subdirectories(d: Path, depth: int) -> list[Path]:
-    """The directories `depth` levels under `d`, in path order."""
+def subdirectories(d: Path, depth: int,
+                   listing: Callable[[Path], tuple[Named, ...]] = listed) -> list[Path]:
+    """The directories `depth` levels under `d`, in path order, with
+    `listing` as each directory's entries."""
     if depth == 0:
         return [d]
-    return [s for p in sorted((e.path for e in os.scandir(d) if e.is_dir()), key=path_order)
-            for s in subdirectories(Path(p), depth - 1)]
+    return [s for p in sorted((os.path.join(d, e.name) for e in listing(d) if e.is_dir),
+                              key=path_order)
+            for s in subdirectories(Path(p), depth - 1, listing)]
+
+
+def walked(top: str, listing: Callable[[Path], tuple[Named, ...]]) -> Iterator[str]:
+    """The path of each entry that is no directory in the tree of `top`, as
+    `os.walk` gives the files of each directory, with `listing` as each
+    directory's entries: a link to a directory is not descended."""
+    for e in listing(Path(top)):
+        path = os.path.join(top, e.name)
+        if not e.is_dir:
+            yield path
+        elif not e.is_link:
+            yield from walked(path, listing)
 
 
 def path_order(path: str) -> list[str]:
@@ -149,22 +109,97 @@ def session_directory(main: Path) -> Path:
     return main.with_suffix("")
 
 
-def subagent_transcripts(session: Path) -> list[Path]:
-    # A walk of the tree lists it with no stat of each file, which a glob
-    # of every session at each state cannot afford.
-    return [Path(p) for p in sorted(
-        (os.path.join(root, f) for root, _, files in os.walk(session / SUBAGENTS)
-         for f in files if f.startswith("agent-") and f.endswith(".jsonl")),
-        key=path_order)]
+def subagent_transcripts(session: Path,
+                         listing: Callable[[Path], tuple[Named, ...]] = listed) -> list[Path]:
+    """The subagent transcripts of `session`, in path order, with `listing`
+    as each directory's entries."""
+    found = [p for p in walked(str(session / SUBAGENTS), listing)
+             if os.path.basename(p).startswith("agent-") and p.endswith(".jsonl")]
+    return [Path(p) for p in sorted(found, key=path_order)]
 
 
-@state_cache(None)
+@state_cache(DERIVED)
+def session_subagents(session: Path) -> tuple[Path, ...]:
+    """`subagent_transcripts` of `session`, of the listings this state
+    holds."""
+    return tuple(subagent_transcripts(session))
+
+
+def agent_index(dirs: tuple[Path, ...],
+                listing: Callable[[Path], tuple[Named, ...]]) -> dict[str, list[Path]]:
+    """The subagent transcripts under the project directories `dirs`, by
+    agent id, with `listing` as each directory's entries."""
+    return by_agent(p for s in sessions_under(dirs, listing)
+                    for p in subagent_transcripts(s, listing))
+
+
+def sessions_under(dirs: tuple[Path, ...],
+                   listing: Callable[[Path], tuple[Named, ...]]) -> list[Path]:
+    """The session directories under the project directories `dirs`, with
+    `listing` as each directory's entries."""
+    return [s for d in dirs for s in subdirectories(d, 2, listing)]
+
+
+def by_agent(paths: Iterable[Path]) -> dict[str, list[Path]]:
+    """The subagent transcripts `paths`, by agent id, in their order."""
+    out: dict[str, list[Path]] = {}
+    for p in paths:
+        out.setdefault(agent_id(p), []).append(p)
+    return out
+
+
 def agent_transcripts() -> dict[str, list[Path]]:
     """The subagent transcripts under the project directories, by agent id."""
+    return agent_transcripts_in(tuple(project_dirs()))
+
+
+@state_cache(DERIVED)
+def agent_transcripts_in(dirs: tuple[Path, ...]) -> dict[str, list[Path]]:
+    """`agent_index` of `dirs`, of the listings this state holds, each
+    session's from `session_subagents`."""
+    return by_agent(p for s in sessions_under(dirs, listed) for p in session_subagents(s))
+
+
+def transcripts_of(agent: str) -> list[Path]:
+    """The transcripts `agent_transcripts` gives the agent `agent`."""
+    return agent_paths(tuple(project_dirs()), agent)
+
+
+@state_cache(DERIVED)
+def agent_paths(dirs: tuple[Path, ...], agent: str) -> list[Path]:
+    """`transcripts_of` the agent `agent` under `dirs`, held so that a read
+    derived from them sees a change only where they change."""
+    return agent_transcripts_in(dirs).get(agent, [])
+
+
+def mains_named(name: str) -> list[Path]:
+    """The transcripts `main_transcripts` gives `name`."""
+    return main_paths(tuple(project_dirs()), name)
+
+
+@state_cache(DERIVED)
+def main_paths(dirs: tuple[Path, ...], name: str) -> list[Path]:
+    """`mains_named` `name` under `dirs`, held as `agent_paths` is."""
+    return main_transcripts_in(dirs).get(name, [])
+
+
+def main_transcripts() -> dict[str, list[Path]]:
+    """The transcripts at `*/<name>.jsonl` under each project directory, by
+    `<name>`, as a glob of that pattern finds them."""
+    return main_transcripts_in(tuple(project_dirs()))
+
+
+@state_cache(DERIVED)
+def main_transcripts_in(dirs: tuple[Path, ...]) -> dict[str, list[Path]]:
+    """`main_transcripts` under `dirs`, of the listings this state holds."""
     out: dict[str, list[Path]] = {}
-    for p in (p for d in project_dirs() for s in subdirectories(d, 2)
-              for p in subagent_transcripts(s)):
-        out.setdefault(agent_id(p), []).append(p)
+    for d in dirs:
+        for e in listed(d):
+            if e.is_dir:
+                for f in listed(d / e.name):
+                    if f.name.endswith(".jsonl") and (f.is_file or f.is_dir):
+                        name = f.name.removesuffix(".jsonl")
+                        out.setdefault(name, []).append(d / e.name / f.name)
     return out
 
 
@@ -174,16 +209,16 @@ def find(ident: str, *, recheck: bool = False) -> Path:
     for an id taken from a read later than the index."""
     if ident.endswith(".jsonl"):
         path = Path(ident).expanduser()
-        if not path.is_file():
+        if not is_file(path):
             raise Refused(mctx("no file `{path}`").format(path=path))
         return path
-    for found in (sorted(p for d in project_dirs() for p in d.glob(f"*/{ident}.jsonl")),
-                  agent_transcripts().get(bare_id(ident), [])):
+    for found in (sorted(mains_named(ident)), transcripts_of(bare_id(ident))):
         path = one_of(ident, found)
         if path:
             return path
     if recheck:
-        path = one_of(ident, agent_transcripts.__wrapped__().get(bare_id(ident), []))
+        fresh = agent_index(tuple(project_dirs()), listed.__wrapped__)
+        path = one_of(ident, fresh.get(bare_id(ident), []))
         if path:
             return path
     raise Refused(mctx("no transcript of session or agent `{ident}` under "
@@ -237,7 +272,7 @@ def chain(path: Path) -> list[Path]:
     before it, its first entry answering that one's last."""
     if not is_subagent(path):
         return [path]
-    others = [p for p in distinct(agent_transcripts().get(agent_id(path), []))
+    others = [p for p in distinct(transcripts_of(agent_id(path)))
               if not identical(p, path)]
     run = [path]
     while True:
@@ -258,48 +293,159 @@ def chain(path: Path) -> list[Path]:
         run = before + run + after
 
 
+HEX = bytes(ord("1") if chr(c) in "0123456789abcdef" else ord("0") for c in range(256))
+"""The table that maps each hexadecimal digit to `1` and each other byte to
+`0`."""
+HEX_RUN = b"1" * (len("a") + 16)
+"""The mask of the shortest run of digits that holds an agent id."""
+
+
+def agent_ids_in(text: bytes, start: int) -> Iterator[tuple[bytes, int]]:
+    """Each substring of `text` from `start` on of the form of an agent id,
+    overlapping ones too, with its offset: each `a` of a run of hexadecimal
+    digits with 16 digits after it in the run. The runs are found in a mask
+    of the text, so the text is scanned once. `start` is the offset of a
+    line, which no run crosses."""
+    mask = text[start:].translate(HEX)
+    k = mask.find(HEX_RUN)
+    while k >= 0:
+        end = mask.find(b"0", k)
+        end = len(mask) if end < 0 else end
+        j = text.find(b"a", start + k, start + end - 16)
+        while j >= 0:
+            yield text[j:j + 17], j
+            j = text.find(b"a", j + 1, start + end - 16)
+        k = mask.find(HEX_RUN, end)
+
+
 class Snapshot:
     """The lines of a transcript as they stood when it was read, with the
     lines that hold each word asked about, and the entries of the lines
     parsed for such a word.
 
-    At the first word of the form of an agent id asked about, one pass over
-    the lines indexes every substring of that form, overlapping ones too,
-    by the lines that hold it, so a search for many agent ids reads the text
-    once."""
+    `starts` gives the offset of each line, so a word is found by a search
+    of the whole text, and at the first word of the form of an agent id
+    asked about, one search indexes every substring of that form,
+    overlapping ones too, by the lines that hold it.
 
-    def __init__(self, path: Path) -> None:
-        self.text = path.read_bytes()
-        self.lines = self.text.splitlines()
+    A snapshot read on from an earlier one (`extended`) keeps what that one
+    found in its whole lines."""
+
+    def __init__(self, text: bytes) -> None:
+        self.text = text
+        self.starts = line_starts(text, 0, [])
         self.found: dict[str, frozenset[int]] = {}
         self.agent_ids: dict[str, frozenset[int]] | None = None
         self.parsed: dict[int, list[Entry]] = {}
 
+    @property
+    def count(self) -> int:
+        """The number of its lines."""
+        return len(self.starts)
+
+    def line(self, i: int) -> bytes:
+        """The `i`-th line, without the line break that ends it, as
+        `bytes.splitlines` gives it."""
+        end = self.starts[i + 1] if i + 1 < len(self.starts) else len(self.text)
+        line = self.text[self.starts[i]:end]
+        if line.endswith(b"\r\n"):
+            return line[:-2]
+        return line[:-1] if line.endswith((b"\n", b"\r")) else line
+
+    def settled(self) -> int:
+        """The number of its whole lines, those a newline ends."""
+        return self.count - (0 if self.text.endswith(b"\n") or not self.text else 1)
+
+    def settled_end(self) -> int:
+        """The offset after its whole lines."""
+        whole = self.settled()
+        return self.starts[whole] if whole < self.count else len(self.text)
+
+    def line_of(self, offset: int) -> int:
+        return bisect.bisect_right(self.starts, offset) - 1
+
     def holding(self, word: str) -> frozenset[int]:
         if re.fullmatch(AGENT_ID_FORM, word):
             if self.agent_ids is None:
-                self.agent_ids = self.index_agent_ids()
+                self.agent_ids = self.index_agent_ids(0)
             return self.agent_ids.get(word, frozenset())
         if word not in self.found:
-            w = word.encode()
-            # One search of the whole text spares the scan of each line
-            # for a word the transcript does not hold.
-            self.found[word] = frozenset(
-                i for i, line in enumerate(self.lines) if w in line
-            ) if w in self.text else frozenset()
+            self.found[word] = self.lines_holding(word.encode(), 0)
         return self.found[word]
 
-    def index_agent_ids(self) -> dict[str, frozenset[int]]:
+    def lines_holding(self, w: bytes, start: int) -> frozenset[int]:
+        """The lines from the one at offset `start` on that hold `w`, a word
+        with no line break in it."""
+        if not w or b"\n" in w or b"\r" in w:
+            raise ValueError(f"{w!r} is no word a line holds")
+        out: set[int] = set()
+        k = self.text.find(w, start)
+        while k >= 0:
+            out.add(self.line_of(k))
+            k = self.text.find(w, k + 1)
+        return frozenset(out)
+
+    def index_agent_ids(self, start: int) -> dict[str, frozenset[int]]:
+        """Each substring of the form of an agent id from offset `start` on,
+        by the lines that hold it."""
         index: dict[bytes, set[int]] = {}
-        for i, line in enumerate(self.lines):
-            for aid in AGENT_ID_IN_TEXT.findall(line):
-                index.setdefault(aid, set()).add(i)
+        for aid, k in agent_ids_in(self.text, start):
+            index.setdefault(aid, set()).add(self.line_of(k))
         return {aid.decode(): frozenset(found) for aid, found in index.items()}
 
     def entry(self, i: int) -> list[Entry]:
         if i not in self.parsed:
-            self.parsed[i] = parse(self.lines[i])
+            self.parsed[i] = parse(self.line(i))
         return self.parsed[i]
+
+    def extended(self, more: bytes) -> "Snapshot":
+        """This snapshot's whole lines followed by `more`, the text of its
+        file after them, with what this one found in them kept. A carriage
+        return also breaks a line, and one at the end of a read can open a
+        break that the next byte ends, so a text that holds one is read
+        whole."""
+        whole = self.settled()
+        offset = self.settled_end()
+        text = self.text[:offset] + more
+        if b"\r" in text:
+            return Snapshot(text)
+        out = Snapshot.__new__(Snapshot)
+        out.text = text
+        out.starts = line_starts(text, offset, self.starts[:whole])
+        out.found = {w: frozenset(i for i in lines if i < whole)
+                     | out.lines_holding(w.encode(), offset) for w, lines in self.found.items()}
+        out.agent_ids = None
+        if self.agent_ids is not None:
+            kept = {aid: frozenset(i for i in lines if i < whole) if whole < self.count else lines
+                    for aid, lines in self.agent_ids.items()}
+            for aid, lines in out.index_agent_ids(offset).items():
+                kept[aid] = kept.get(aid, frozenset()) | lines
+            out.agent_ids = {aid: lines for aid, lines in kept.items() if lines}
+        out.parsed = {i: e for i, e in self.parsed.items() if i < whole}
+        return out
+
+
+LINE_BREAK = re.compile(rb"\r\n|\r|\n")
+"""A line break, as `bytes.splitlines` takes one."""
+
+
+def line_starts(text: bytes, offset: int, before: list[int]) -> list[int]:
+    """`before`, the offsets of the lines before `offset`, followed by the
+    offset of each line of `text` from `offset` on, as `bytes.splitlines`
+    splits it. A text with no carriage return is split by a search for each
+    newline, which is faster than `LINE_BREAK`."""
+    out = list(before)
+    if offset >= len(text):
+        return out
+    out.append(offset)
+    if b"\r" in text:
+        out += [m.end() for m in LINE_BREAK.finditer(text, offset) if m.end() < len(text)]
+        return out
+    n = text.find(b"\n", offset)
+    while 0 <= n < len(text) - 1:
+        out.append(n + 1)
+        n = text.find(b"\n", n + 1)
+    return out
 
 
 def epoch(iso: str) -> float:
@@ -314,17 +460,53 @@ def parse(line: str | bytes) -> list[Entry]:
         return []
 
 
+_read: dict[Path, tuple[Snapshot, int, int]] = {}
+"""The last snapshot of each transcript, with the device and inode of its
+file, which a later read of a transcript that grew goes on from."""
+
+CHECKED = 4096
+"""How many bytes at each end of the whole lines of a transcript's last
+snapshot a later read compares, to find a file that was written anew
+rather than added to."""
+
+
 @state_cache(stat_of)
 def snapshot(path: Path) -> Snapshot:
     """The transcript at `path` as it stands at the state this process is
-    in (`state_cache`)."""
-    return Snapshot(path)
+    in (`state_cache`). A transcript is added to at its end, so where the
+    file is the one of its last snapshot and its bytes there still stand,
+    only the bytes after that snapshot's whole lines are read."""
+    with path.open("rb") as fh:
+        st = os.fstat(fh.fileno())
+        last = _read.get(path)
+        snap = None
+        if last is not None and last[1:] == (st.st_dev, st.st_ino):
+            before = last[0]
+            offset = before.settled_end()
+            head = before.text[:min(CHECKED, offset)]
+            tail_at = max(len(head), offset - CHECKED)
+            if st.st_size >= offset and fh.read(len(head)) == head:
+                fh.seek(tail_at)
+                if fh.read(offset - tail_at) == before.text[tail_at:offset]:
+                    snap = before.extended(fh.read())
+        if snap is None:
+            fh.seek(0)
+            snap = Snapshot(fh.read())
+    _read[path] = (snap, st.st_dev, st.st_ino)
+    return snap
 
 
-def read_entries(path: Path, naming: set[str] | None = None) -> list[Entry]:
+def read_entries(path: Path, naming: Iterable[str] | None = None) -> list[Entry]:
     """The entries of the transcript at `path` as it stands at the state this
     process is in, or with `naming` only those whose line holds one of its
     words, which spares parsing the rest."""
+    return entries_naming(path, None if naming is None else frozenset(naming))
+
+
+@state_cache(DERIVED)
+def entries_naming(path: Path, naming: frozenset[str] | None) -> list[Entry]:
+    """`read_entries`, held so that a read derived from it sees a change of
+    the transcript only where the entries it gives change."""
     if naming is None:
         return list(entries_forward(path))
     snap = snapshot(path)
@@ -336,7 +518,7 @@ def entries_forward(path: Path) -> Iterator[Entry]:
     """The entries of the transcript at `path` as it stands at the state this
     process is in, in their order, each line parsed only when it is reached."""
     snap = snapshot(path)
-    for i in range(len(snap.lines)):
+    for i in range(snap.count):
         yield from snap.entry(i)
 
 
@@ -344,7 +526,7 @@ def entries_back(path: Path) -> Iterator[Entry]:
     """The entries of the transcript at `path` as it stands at the state this
     process is in, last first, each line parsed only when it is reached."""
     snap = snapshot(path)
-    for i in range(len(snap.lines) - 1, -1, -1):
+    for i in range(snap.count - 1, -1, -1):
         yield from snap.entry(i)
 
 

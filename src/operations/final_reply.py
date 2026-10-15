@@ -10,7 +10,7 @@ SendMessage (`SENT_BY_MESSAGE`). `live_holder` and `carrier` read the calls of
 `next` by `handled.next_call`."""
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from controlled_markdown import form, mctx
 from operations.constants import COORDINATOR
@@ -95,13 +95,20 @@ def final_replies(state: State, operator: str) -> list[float]:
             for c in final_sends(state, operator)]
 
 
-def carrier(state: State, operator: str, time: float) -> str | None:
+def replies_by_operator(state: State) -> dict[str, list[float]]:
+    """`final_replies` of each operator of `state.operators`."""
+    return {o: final_replies(state, o) for o in state.operators}
+
+
+def carrier(state: State, operator: str, time: float,
+            replies: Mapping[str, list[float]]) -> str | None:
     """The operator whose final reply carries what reached `operator` at
     `time`: of `operator` and the operators launched after it, the one
-    whose call that printed a final reply came first after `time`, with
-    `me` counted as printing one now, or None where none did."""
+    whose call that printed a final reply came first after `time`, by
+    `replies`, which `replies_by_operator` gives, with `me` counted as
+    printing one now, or None where none did."""
     after = state.operators[state.operators.index(operator):]
-    printed_at = [(t, o) for o in after for t in final_replies(state, o) if t > time]
+    printed_at = [(t, o) for o in after for t in replies[o] if t > time]
     if state.me in after:
         printed_at.append((state.now, state.me))
     return min(printed_at)[1] if printed_at else None

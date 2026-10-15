@@ -5,7 +5,8 @@ import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from agent_launches import Launch, handed_back, launches, notified_after, run_launches
+from agent_launches import (Launch, children_of, handed_back, launch_of, launches,
+                            notified_after)
 from agent_reports import (TURN_ENDED, Report, ReportKind, parent_transcripts, reports,
                            stopped_after)
 from agent_turns import has_ended, is_turn_entry, last_time, turn_after, turn_end
@@ -16,6 +17,7 @@ from run_profiler import profile
 from run_records import Run, Span
 from run_reads import (BACKGROUND_TASK, LaunchStatus, blocks, is_prompt, parent_label,
                        run_entries, tool_calls)
+from state_reads import DERIVED, mtime, state_cache
 from transcripts import agent_id, is_subagent
 
 from operations.steps import BLOCK_SECONDS
@@ -63,6 +65,12 @@ def hung_from(start: float, usual: float) -> float:
 def hung_time(run: Run, runs: list[Run], s: Span) -> float:
     """The time the call `s` of `run` counts as hung (`hung_from`)."""
     return hung_from(s.start, usual(run, runs, s))
+
+
+@state_cache(DERIVED, notes="undecided")
+def profiled(path: Path, undecided: list[str]) -> Run:
+    """`run_profiler.profile` of the run at `path`, held."""
+    return profile(path, undecided)
 
 
 def reported_since(a: Launch, since: float | None,
@@ -120,14 +128,21 @@ def turn_open(path: Path, sign: float | None, undecided: list[str]) -> bool:
     or None where none is known: it has not ended, and its transcript holds
     an entry of a turn timestamped after `sign`."""
     return not has_ended(path) and (sign is None or (
-        path.stat().st_mtime > sign and turn_after(path, sign, undecided)))
+        mtime(path) > sign and turn_after(path, sign, undecided)))
 
 
 def node(launcher: Path, a: Launch, path: Path, under: list[Node] | None,
          undecided: list[str]) -> Node:
-    settled = reported_since(a, last_time(path), TURN_ENDED)
+    settled = launch_settled(launcher, a.call, path)
     return Node(parent_label(launcher), launcher, a, path, under, settled,
                 not settled and turn_open(path, a.done, undecided))
+
+
+@state_cache(DERIVED)
+def launch_settled(launcher: Path, call: str, path: Path) -> bool:
+    """`Node.settled` of the agent whose transcript is at `path`, launched
+    by the Agent call `call` of the run at `launcher`."""
+    return reported_since(launch_of(launcher, call), last_time(path), TURN_ENDED)
 
 
 def notified_turns(nodes: list[Node]) -> dict[str, float]:
@@ -169,7 +184,7 @@ def by_rule(n: Node, parent_open: bool, undecided: list[str]) -> Listed | None:
     if n.settled:
         return None
     if n.in_progress:
-        return Listed(n.parent, child, a, profile(child, undecided), False, None, None)
+        return Listed(n.parent, child, a, profiled(child, undecided), False, None, None)
     if not parent_open:
         return None
     received = last_time(child, is_prompt)
@@ -202,7 +217,7 @@ def unknown_work(n: Node, undecided: list[str]) -> Listed | None:
 
 def turn_ended(n: Node, undecided: list[str]) -> Listed:
     """The agent of `n` as listed where its turn has ended."""
-    run = profile(n.path, undecided)
+    run = profiled(n.path, undecided)
     return Listed(n.parent, n.path, n.launch, run, True,
                   turn_end(run_entries(n.path)), parent_reports(run, undecided, n.launch))
 
@@ -226,7 +241,7 @@ def own_work(n: Node, undecided: list[str]) -> list[str]:
         if may_still_run(n.path, reached, undecided):
             agents = {a.call: a.agent for a in launches(n.path, undecided)}
             n.own = [agents.get(m.call) or f"`{m.label}`"
-                     for m in profile(n.path, undecided).backgrounded
+                     for m in profiled(n.path, undecided).backgrounded
                      if m.call not in reached]
     return n.own
 
@@ -249,6 +264,7 @@ def may_still_run(path: Path, reached: set[str], undecided: list[str]) -> bool:
     return None in background_ends(found, run_entries(path, ids)).values()
 
 
+@state_cache(DERIVED, notes="undecided")
 def running_agents(path: Path, undecided: list[str]) -> list[Listed]:
     """The agents under the run at `path` whose work is open, as `listing`
     gives each, each parent's agents after it, with one `settle_turns`
@@ -261,6 +277,7 @@ def running_agents(path: Path, undecided: list[str]) -> list[Listed]:
     return listed_under(down, open_along(up, undecided), undecided)
 
 
+@state_cache(DERIVED, notes="undecided")
 def work_open(path: Path, undecided: list[str]) -> bool:
     """Whether the work of the run at `path` is open: where it is the main
     transcript, or where `listing` gives it from its parent's run, read up
@@ -306,13 +323,12 @@ def open_along(up: list[Node], undecided: list[str]) -> bool:
 def launched_under(path: Path, undecided: list[str]) -> list[Node]:
     """The agents the run at `path` launched whose transcript is known, each
     as a `Node` with the agents under it."""
-    parents = run_launches(path)[1]
     out: list[Node] = []
     for a in launches(path, undecided):
         child = a.path
         if child is None:
             continue
-        under = launched_under(child, undecided) if agent_id(child) in parents else []
+        under = launched_under(child, undecided) if children_of(path, agent_id(child)) else []
         out.append(node(path, a, child, under, undecided))
     return out
 

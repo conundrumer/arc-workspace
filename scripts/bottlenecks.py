@@ -24,7 +24,7 @@ importable(checkout.scripts())
 from file_ticket import print_undecided  # noqa: E402
 from ticket_form import section, section_head  # noqa: E402
 from ticket_reads import read_tickets  # noqa: E402
-from ticket_watch import union_seconds  # noqa: E402
+from spends import union_seconds  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 
 from operations.merging import RERUN_OPENING, rerun_paths  # noqa: E402

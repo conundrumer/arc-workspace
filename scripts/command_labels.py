@@ -158,10 +158,12 @@ def run_dl_command(args: list[str]) -> str:
     return command_args(args, run_dl_commands())[0]
 
 
+@cache
 def command_label(cmd: str) -> str:
     """The known commands a Bash command runs, joined by " + ", or else
     `poll` for one that runs sleep, or else the first program it runs
-    past setup, or else the first program it runs."""
+    past setup, or else the first program it runs. A run's profile labels
+    each of its calls at each read, so each command is labeled once."""
     known: list[str] = []
     first: str | None = None
     setup: str | None = None

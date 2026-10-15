@@ -17,8 +17,9 @@ from ticket_numbers import TICKET_NUMBER, TicketNumber, matched_number, reserve,
 from ticket_vocabulary import ticked
 from operations.roles import AGENT_ID as AGENT_ID_FORM
 from ticketing.text import VALIDATION, heading
-from ticketing.times import utc_stamp
+from ticketing.times import stamp_time, utc_stamp
 from ticketing.vocabulary import Domain, Kind, Note, Resolution, Status, Verdict, Wait, note_opening
+from state_reads import file_text, stat_of, state_cache
 from transcripts import Refused
 
 AGENT_ID = re.compile(AGENT_ID_FORM)
@@ -106,6 +107,14 @@ def read_ticket(path: Path) -> str:
         raise Moved(mctx("{path} moved before this call could read it").format(path=path))
 
 
+@state_cache(stat_of)
+def held_log(path: Path) -> tuple[str, list[re.Match[str]]]:
+    """The text of the ticket at `path`, with its log lines, read and
+    parsed again only where the file's stat changed."""
+    text = file_text(path)
+    return text, log_lines(text)
+
+
 def resolution_of(note: str | None) -> Resolution | None:
     """The resolution `note` opens with, None where it opens with none."""
     opening = RESOLUTION.match(note or "")
@@ -178,7 +187,12 @@ def holder(text: str) -> str | None:
     before the bracket held it, as its note's first word, among the lines
     of the log's final run of `assigned` lines. None where none of them
     gives one."""
-    for line in reversed(log_lines(text)):
+    return holder_of(log_lines(text))
+
+
+def holder_of(lines: list[re.Match[str]]) -> str | None:
+    """`holder` of the ticket whose log lines are `lines`."""
+    for line in reversed(lines):
         if line["status"] != Status.ASSIGNED:
             break
         if line["id"]:
@@ -363,3 +377,8 @@ def unblock(tickets: Path, change: TicketNumber, agent: str, agent_id: str | Non
         except Refused as e:
             moves.refused.append((path, str(e)))
     return moves
+
+
+def line_time(line: re.Match[str]) -> float:
+    """The time of a match of `ticket_log.LOG_LINE`."""
+    return stamp_time(line.group().split(" ", 1)[0])

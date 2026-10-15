@@ -1,234 +1,79 @@
 """The assembly of the state the operator's procedures read, from the reads
 of the ticket tracker, of git and the main worktree, and of the
 transcripts of the session's operators, and of the state the monitor's
-steps read, from the session's running agents and their transcripts; and
-the assembly of what an operator launcher reads (`read_relay`)."""
+steps read (`monitor_reads`)."""
 
-import json
-import os
-import signal
-import subprocess
-import sys
 import time
-import traceback
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
-from types import FrameType, ModuleType
 from dataclasses import replace
 from pathlib import Path
 
-from agent_reports import parent_transcripts
 from agent_turns import first_time, last_time
-from budgets import budgets_in_force, past_budget
-from context_bound_hook import OPERATORS, past_bound
-from controlled_markdown import mctx
-from open_agents import Listed, running_agents, work_open
-from operator_reads import (ended_elsewhere, ended_with, operator_runs, read_operator,
-                            resumed_at, stalled_reports)
-from run_prints import self_of
-from run_reads import bash_spans, context_size, parent_id, repeated_runs, run_entries
+from context_bound_hook import past_bound
+from held_budgets import change_budgets, change_spend, doc_budgets
 from idle_sessions import main_wanted, read_sessions, running, want_main
+from monitor_reads import late_resumes, watched
+from open_agents import running_agents, work_open
+from operator_reads import (
+    ended_elsewhere,
+    ended_with,
+    operator_runs,
+    read_operator,
+    stalled_reports,
+)
+from relay_reads import run_index, session_id
+from run_reads import context_size, parent_id
+from run_scripts import read_runs
+from state_reads import new_state
 from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
 from ticket_settle import to_settle
-from ticket_watch import budget, spend
-from transcripts import Refused, entries_back, epoch, find, is_subagent, new_state
-from tree_reads import (claims, code_review, commits, doc_reviews, fragments, gate_outputs, main_tree,
-                        read_seen, scratch, worktrees)
+from transcripts import Refused, entries_back, find, is_subagent
+from tree_reads import (
+    claims,
+    code_review,
+    commits,
+    doc_reviews,
+    fragments,
+    gate_outputs,
+    main_tree,
+    read_seen,
+    scratch,
+    worktrees,
+)
+from usage_limit import limit_lifted
 
+from controlled_markdown import mctx
 from engine.checkout import agents_of
 from handbook.reader_names import ReaderName
 from handbook.readers import reader_calls
-
-from operations.constants import COORDINATOR
+from operations import change_fragments
+from operations.directives import named
 from operations.final_reply import final_sends_in, for_context, sent_final_text
-from operations.relay import Relay, Run
-from operations.roles import Role
-from operations.directives import lines, named
-from operations.plan import taken_up, unknown_line
-from operations import change_agents, change_budget, change_fragments, changes, monitor, passes, runs, taking
-from operations.monitor import MonitorState, Watched
-from operations.state import (Agent, Budget, Call, Computed, GitRead, HeldRead, LateResume, Message,
-                              Reader, Report, SessionsRead, Spend, Starts, State, Takes,
-                              Ticket, TrackerRead, TranscriptsRead)
 from operations.handled import made
-from operations.worktrees import worktree, worktree_in
+from operations.monitor import MonitorState
+from operations.plan import taken_up, unknown_line
+from operations.roles import Role
+from operations.state import (
+    Agent,
+    Call,
+    Computed,
+    GitRead,
+    HeldRead,
+    Message,
+    Reader,
+    Report,
+    SessionsRead,
+    State,
+    TrackerRead,
+    TranscriptsRead,
+)
+from operations.worktrees import worktree_in
 from ticketing.vocabulary import Status
-
 
 DEPRECATED = frozenset({ReaderName.ROLE, ReaderName.CONSOLE, ReaderName.SURVEY,
                         ReaderName.WORKFLOW})
 """The readers of the deprecated mechanisms, which no standing doc review
 reads."""
-
-
-USAGE_STALE = 10 * 60
-"""How old, in seconds, the usage file (`usage_file`) may be to give the
-usage limit as lifted."""
-
-
-def usage_file() -> Path:
-    """The usage file `operate.py --help next` gives."""
-    home = os.environ.get("CLAUDE_CONFIG_DIR")
-    return (Path(home) if home else Path.home() / ".claude") / "usage.json"
-
-
-def limit_lifted(now: float, undecided: list[str]) -> float | None:
-    """The time of the last write of the usage file, where that file gives
-    the usage limit as lifted by the rule `operate.py --help next` gives,
-    and otherwise None."""
-    path = usage_file()
-    try:
-        written = path.stat().st_mtime
-        windows = json.loads(path.read_text())
-    except FileNotFoundError:
-        undecided.append(mctx("{path} does not exist, so whether the usage limit is lifted "
-                              "is unknown").format(path=path))
-        return None
-    except (OSError, ValueError) as e:
-        undecided.append(mctx("{path}: it does not read as JSON ({why}), so whether "
-                              "the usage limit is lifted is unknown").format(path=path, why=e))
-        return None
-    if now - written >= USAGE_STALE:
-        return None
-    found = [w.get("used_pct") if isinstance(w, dict) else None
-             for w in (windows.values() if isinstance(windows, dict) else [None])]
-    used = [u for u in found if isinstance(u, int | float)]
-    if not used or len(used) < len(found):
-        undecided.append(mctx("{path}: a window of it gives no numeric `used_pct`, so "
-                              "whether the usage limit is lifted is unknown").format(path=path))
-        return None
-    return written if all(u < 100 for u in used) else None
-
-
-def session_id() -> str:
-    """The session `CLAUDE_CODE_SESSION_ID` gives, which the command refuses
-    without."""
-    session = os.environ.get("CLAUDE_CODE_SESSION_ID")
-    if not session:
-        raise Refused(mctx("the shell gives no `CLAUDE_CODE_SESSION_ID`"))
-    return session
-
-
-def read_relay(me: str) -> tuple[Relay, Path]:
-    """What the operator launcher `me` reads, from its own transcript and
-    those of the operators it launched, and the session's scratchpad."""
-    session = session_id()
-    main = main_tree()
-    undecided: list[str] = []
-    path = find(me)
-    own = read_operator(me, path, main, undecided, {})
-    runs: list[Run] = []
-    for a in sorted(own.agents, key=lambda a: a.launched):
-        if a.role is not Role.OPERATOR:
-            continue
-        final = None
-        if a.agent_id is not None:
-            theirs = read_operator(a.agent_id, find(a.agent_id), main, undecided, {}).calls
-            sends = [c for c in final_sends_in(theirs, a.agent_id, me) if c.time > a.launched]
-            final = sent_final_text(sends[0]) if sends else None
-        runs.append(Run(a.agent_id, a.launched, a.pending, final))
-    relay = Relay(me, tuple(sorted((m for m in own.messages if m.sender is None),
-                                   key=lambda m: m.time)),
-                  tuple(runs), tuple(sorted(own.calls, key=lambda c: c.time)),
-                  past_bound(context_size(entries_back(path))))
-    return relay, scratch(session)
-
-
-def run_index(runs: list[tuple[str, Path]], me: str) -> int:
-    """The position of `me` among the operator runs `runs`."""
-    return [a for a, _ in runs].index(me)
-
-
-QUEUE_COMMAND = ("bash", "scripts/queue.sh", "--order", "name", "--all", "--json")
-
-
-def read_runs(state: State) -> tuple[dict[str, Starts], dict[str, Takes]]:
-    """What the script of each `Run:` line the operator received gave, by
-    its run, where it received one, with the queue's full listing: from its
-    `starts`, and from its `takes`. Where the listing fails, its failure is
-    the fault of each such line, for both."""
-    given = runs.run_lines(lines(state))
-    if not given:
-        return {}, {}
-    listed = subprocess.run(QUEUE_COMMAND, cwd=state.main_tree, capture_output=True, text=True)
-    if listed.returncode != 0:
-        fault = mctx("the queue's listing `{command}` exited {code}: {stderr}").format(
-            command=" ".join(QUEUE_COMMAND), code=listed.returncode, stderr=listed.stderr.strip())
-        return {runs.run_id(ln): fault for ln in given}, {runs.run_id(ln): fault for ln in given}
-    queue = tuple(e["id"] for e in json.loads(listed.stdout))
-    ended = {p: (o.ended, o.stopped) for p, o in passes.outcomes(state)}
-    starts: dict[str, Starts] = {}
-    takes: dict[str, Takes] = {}
-    for ln in given:
-        run = runs.view(state, queue, ln, ended)
-        starts[runs.run_id(ln)], takes[runs.run_id(ln)] = script_reads(
-            runs.script_path(state.main_tree, ln), run, lambda: runs.run_tickets(state, run))
-    return starts, takes
-
-
-class ScriptTimeout(Exception):
-    pass
-
-
-@contextmanager
-def bounded(seconds: int) -> Iterator[None]:
-    """Raise `ScriptTimeout` in the block once `seconds` have passed."""
-    def expire(_signum: int, _frame: FrameType | None) -> None:
-        raise ScriptTimeout(mctx("the load and the calls of `starts` and `takes` ran past "
-                                 "{seconds} seconds").format(seconds=seconds))
-    before = signal.signal(signal.SIGALRM, expire)
-    signal.alarm(seconds)
-    try:
-        yield
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, before)
-
-
-def fault_text(e: BaseException) -> str:
-    return "".join(traceback.format_exception_only(e)).strip()
-
-
-def script_reads(path: Path, run: runs.Run,
-                 tickets: Callable[[], tuple[runs.RunTicket, ...]]) -> tuple[Starts, Takes]:
-    """What the run script at `path`, loaded afresh as a module, gives from
-    its `starts` called with `run`, and from its `takes` called on each of
-    `tickets`, or None where it defines no `takes`, each as the text of its
-    fault where it has one, within `runs.SCRIPT_SECONDS`. A fault of the
-    load or of the bound is the fault of both, unless the loaded module
-    defines no `takes`."""
-    name = f"run_script_{abs(hash((str(path), time.time())))}"
-    module: ModuleType | None = None
-    try:
-        with bounded(runs.SCRIPT_SECONDS):
-            # Compiled from its text at each read: a cached bytecode file
-            # hides an edit that keeps the file's size within one second.
-            loading = ModuleType(name)
-            loading.__file__ = str(path)
-            sys.modules[name] = loading
-            exec(compile(path.read_text(), str(path), "exec"), loading.__dict__)
-            module = loading
-            try:
-                starts = runs.read_starts(module.starts(run))
-            except ScriptTimeout:
-                raise
-            except (Exception, SystemExit) as e:
-                starts = fault_text(e)
-            takes = getattr(module, "takes", None)
-            if takes is None:
-                return starts, None
-            try:
-                return starts, runs.read_takes(takes, tickets())
-            except ScriptTimeout:
-                raise
-            except (Exception, SystemExit) as e:
-                return starts, fault_text(e)
-    except (Exception, SystemExit) as e:
-        fault = fault_text(e)
-        return fault, (None if module is not None and not hasattr(module, "takes") else fault)
-    finally:
-        sys.modules.pop(name, None)
 
 
 def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState]:
@@ -373,55 +218,6 @@ def read_held(holding: dict[str, Path], scratch: Path) -> HeldRead:
                     seen={n: read_seen(change_fragments.seen_dir(n, scratch)) for n in holding})
 
 
-def change_spend(state: State, undecided: list[str]) -> dict[str, Spend]:
-    """The spend of each change `state.me` holds whose spend reads."""
-    out: dict[str, Spend] = {}
-    for t in changes.held(state):
-        ids = [a.agent_id for a in change_agents.of_change(state, t.number) if a.agent_id is not None]
-        if (s := spend(ids, undecided)) is not None:
-            out[t.number] = s
-    return out
-
-
-def change_budgets(state: State, spent: dict[str, Spend], tickets: Path,
-                   undecided: list[str]) -> dict[str, Budget]:
-    """The budgets `Computed.budgets` gives."""
-    known: dict[tuple[frozenset[str], float], Budget | None] = {}
-
-    def of(t: Ticket, before: float) -> Budget | None:
-        if t.editors is None:
-            return None
-        key = (frozenset(t.editors), before)
-        if key not in known:
-            known[key] = budget(tickets, key[0], before, undecided)
-        return known[key]
-
-    out: dict[str, Budget] = {}
-    for t in taking.takeable(state):
-        if (b := of(t, state.now)) is not None:
-            out[t.number] = b
-    for t in changes.held(state):
-        take = change_budget.taken(t)
-        s = spent.get(t.number)
-        if take is not None and s is not None and change_budget.past_budget(take, s) \
-                and (b := of(t, take.budgeted)) is not None:
-            out[t.number] = b
-    return out
-
-
-def doc_budgets(state: State, tickets: Path, undecided: list[str]) -> dict[str, Budget]:
-    """The budgets `Computed.doc_budgets` gives."""
-    out: dict[str, Budget] = {}
-    for t in changes.held(state):
-        editors = change_fragments.lacking_doc_editor(t, worktree(t, state), state)
-        if editors is None:
-            continue
-        b = budget(tickets, frozenset({*editors, Role.DOC_EDITOR}), state.now, undecided)
-        if b is not None:
-            out[t.number] = b
-    return out
-
-
 def given_lines(runs: list[tuple[str, Path]], me: str, calls: list[Call]) -> set[str]:
     """The lines of each final reply that an operator of `runs` before `me`
     sent its parent, other than one that ends it for its context: a line
@@ -432,81 +228,6 @@ def given_lines(runs: list[tuple[str, Path]], me: str, calls: list[Call]) -> set
             text = sent_final_text(c)
             if text is not None and not for_context(text):
                 out.update(text.split("\n"))
-    return out
-
-
-def late_resumes(runs: list[tuple[str, Path]],
-                 undecided: list[str]) -> dict[str, tuple[LateResume, ...]]:
-    """`TranscriptsRead.late_resumes` of the operators `runs` gives, in the order of
-    their first entry."""
-    out: dict[str, tuple[LateResume, ...]] = {}
-    for (aid, path), (later, later_path) in zip(runs, runs[1:]):
-        first = first_time(later_path)
-        if first is None:
-            continue
-        found = tuple(LateResume(t, later, first) for t in resumed_at(aid, path, undecided)
-                      if t > first)
-        if found:
-            out[aid] = found
-    return out
-
-
-UNWATCHED = OPERATORS
-"""The agent types the monitor's steps do not watch."""
-
-
-def stalled_at(listed: Listed, listing: list[Listed], undecided: list[str]) -> float | None:
-    """The end of the turn of `listed` where it stalled, as
-    `monitor.ALERTS` gives a stall, or None. A run whose turn end
-    `agent_turns.turn_end` cannot find has no stall, and an `undecided`
-    line names it."""
-    aid = listed.launch.agent
-    if (not listed.ended or listed.found != [] or listed.running
-            or any(x.parent == aid for x in listing)):
-        return None
-    end = listed.end
-    if end is None:
-        undecided.append(mctx("{run}: its turn reads as ended, yet no timestamped entry "
-                              "of its transcripts ends it, so it counts as not "
-                              "stalled").format(run=aid))
-        return None
-    if any(t > end for t in listed.run.ended):
-        return None
-    if any(e.get("type") == "user" and e.get("timestamp") and epoch(e["timestamp"]) > end
-           for e in run_entries(listed.path)):
-        return None
-    answered = [t for p in parent_transcripts(listed.path)
-                if (t := last_time(p, lambda e: e.get("type") == "assistant")) is not None]
-    return end if any(t > end for t in answered) else None
-
-
-def repeated(listed: Listed) -> tuple[float, ...]:
-    """The `repeated` readings of `listed` (`run_reads.repeated_runs`)."""
-    entries = run_entries(listed.path)
-    calls = [(s.call, s.command, s.start) for s in bash_spans(listed.run.spans, entries)]
-    return tuple(repeated_runs(calls, entries, monitor.REPEATS))
-
-
-def watched(listing: list[Listed], launched: set[str],
-            undecided: list[str], opened: float) -> list[Watched]:
-    """The agents of `listing`, whose work is open, that an operator
-    launched, by `launched`, their agent ids, or that the coordinator, the
-    session's main transcript, launched, as read in the state that opened
-    at `opened`."""
-    out: list[Watched] = []
-    now = time.time()
-    for listed in listing:
-        r = listed.run
-        aid = listed.launch.agent
-        if (aid is None or r.agent_type in UNWATCHED
-                or (aid not in launched and listed.parent != COORDINATOR)):
-            continue
-        budget = next(reversed(budgets_in_force(r, undecided)), None)
-        self_time = self_of(listed, now)
-        out.append(Watched(
-            agent_id=aid,
-            over_budget=past_budget(self_time, budget),
-            stalled=stalled_at(listed, listing, undecided), repeated=repeated(listed)))
     return out
 
 

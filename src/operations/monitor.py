@@ -4,7 +4,7 @@ once per occurrence of what fired, as `ALERTS`, which
 `scripts/operate.py --help alerts` prints, gives them.
 
 The watched agents are the agents whose work is open that an operator of
-the session or the coordinator launched, other than an operator. `scripts/operator_state.py` reads each reading of a watched
+the session or the coordinator launched, other than an operator. `scripts/monitor_reads.py` reads each reading of a watched
 agent from the running agents' listing and its transcript. The command
 keeps no state of its own: an alert counts as sent where an operator sent
 it after the occurrence it is on. A stall alert goes only to an agent that

@@ -30,7 +30,8 @@ importable(checkout.scripts())
 
 from ticket_files import FIELD, NAME_FORM, TicketName, ticket_path, ticket_status  # noqa: E402
 from ticket_form import (DEFAULT_PRIORITY, DESIGN, LOG, LOG_SECTION, MECHANICAL,  # noqa: E402
-                         RETIRED, VALIDATES, checked_kind, section, sections_example, ticket_kind, title_line)
+                         RETIRED, VALIDATES, checked_kind, front, section, sections_example, ticket_kind,
+                         title_line)
 from ticket_log import (AGENT_ID, CLOSED_BY, SESSION_ID, UNBLOCKED_BY, VALIDATED, Wait,  # noqa: E402
                         log_lines, log_moves, logged, read_ticket, resolution_of, status_of)
 from ticket_numbers import (SESSION_VAR, SESSIONS, TicketNumber, reserve, session_id,  # noqa: E402
@@ -38,8 +39,9 @@ from ticket_numbers import (SESSION_VAR, SESSIONS, TicketNumber, reserve, sessio
 from ticket_settle import to_settle  # noqa: E402
 from idle_sessions import MAIN, name_main, read_sessions  # noqa: E402
 from ticket_reads import editors_field  # noqa: E402
-from ticket_watch import (CAP, CHANGES, SECOND_PRICE, Case, add_evidence, budget,  # noqa: E402
-                          Thresholds, case_loss, evict, fix_field, front, loss, route)
+from spends import budget  # noqa: E402
+from ticket_watch import (CAP, CHANGES, SECOND_PRICE, Case, add_evidence,  # noqa: E402
+                          Thresholds, case_loss, evict, fix_field, loss, route)
 from ticket_sweep import (COMMAND_FIELD, COMMAND_SECONDS, EXERCISED_FIELD,  # noqa: E402
                           UNEXERCISED_DAYS, sweep)
 from ticketing.text import SECTIONS, VALIDATION, heading  # noqa: E402

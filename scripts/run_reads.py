@@ -15,9 +15,9 @@ from typing import Any, Protocol
 from controlled_markdown import mctx
 from operations.constants import COORDINATOR as MAIN
 from token_prices import request_input
-from transcripts import (Entry, Refused, agent_id, chain, epoch, first_parent,
-                         is_subagent, main_transcript, read_entries,
-                         session_directory, state_cache, subagent_transcripts)
+from state_reads import DERIVED, is_file, stat_of, state_cache
+from transcripts import (Entry, Refused, agent_id, chain, epoch, first_parent, is_subagent,
+                         main_transcript, read_entries, session_directory, session_subagents)
 
 UNKNOWN_TYPE = mctx("the agent type of `{path}` is unknown: its .meta.json is "
                     "absent or gives none")
@@ -119,11 +119,13 @@ def meta_path(path: Path) -> Path:
     return path.with_suffix(".meta.json")
 
 
+@state_cache(lambda path: stat_of(meta_path(path)))
 def transcript_meta(path: Path) -> dict[str, Any] | None:
     m = meta_path(path)
     return json.loads(m.read_text()) if m.is_file() else None
 
 
+@state_cache(DERIVED)
 def agent_type(path: Path) -> str | None:
     """The agent type of the run whose transcript is at `path`: `main` for a
     session's main transcript, and for a subagent's, the type its
@@ -247,9 +249,9 @@ def run_sessions(path: Path) -> list[Path]:
     order."""
     return list(dict.fromkeys(session_of(p) for p in chain(path)))
 
-@state_cache(None)
+@state_cache(DERIVED)
 def session_agents(session: Path) -> dict[str, Path]:
-    return {agent_id(p): p for p in subagent_transcripts(session)}
+    return {agent_id(p): p for p in session_subagents(session)}
 
 
 def type_in(sessions: Iterable[Path], agent: str) -> str | None:
@@ -289,7 +291,7 @@ def session_transcripts(session: Path) -> list[Path]:
     """The transcripts of `session`: its main transcript, where it has one,
     and those of its subagents."""
     main = main_transcript(session)
-    return [*([main] if main.is_file() else []), *session_agents(session).values()]
+    return [*([main] if is_file(main) else []), *session_agents(session).values()]
 
 
 def entry_input(entry: Entry) -> int | None:

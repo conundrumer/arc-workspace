@@ -211,3 +211,8 @@ def checked_kind(tickets: Path, agent: str, text: str) -> Kind:
     if section_head(text, LOG_SECTION):
         raise Refused(mctx("the ticket on stdin has a `{log}` section, which the command writes").format(log=LOG))
     return kind
+
+
+def front(text: str) -> dict[str, str]:
+    head = re.match(FRONT, text)
+    return {} if head is None else dict(front_fields(head))

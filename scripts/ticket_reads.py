@@ -3,14 +3,15 @@ procedures read."""
 
 import hashlib
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from controlled_markdown import mctx
-from ticket_files import ticket_files, ticket_name
+from ticket_files import listed_tickets, ticket_files, ticket_name
 from ticket_form import DEFAULT_PRIORITY, FRONT, front_fields, list_items, title
-from ticket_log import (CLOSED_BY_LINE, WAIT, Wait, holder, log_lines, resolution_of, waited,
-                        waited_change)
+from state_reads import stat_of, state_cache
+from ticket_log import (CLOSED_BY_LINE, WAIT, Wait, held_log, holder_of, log_lines, resolution_of,
+                        waited, waited_change)
 from ticket_numbers import matched_number
 from transcripts import Refused
 
@@ -48,13 +49,25 @@ def editors_field(fields: Mapping[str, str]) -> tuple[Role, ...] | None:
 
 
 def read_ticket(path: Path) -> Ticket:
-    name = ticket_name(path)
     text = path.read_text()
+    return ticket_of(path, text, log_lines(text))
+
+
+@state_cache(stat_of)
+def held_ticket(path: Path) -> Ticket:
+    """`read_ticket` of the text and log lines `held_log` holds."""
+    return ticket_of(path, *held_log(path))
+
+
+def ticket_of(path: Path, text: str, found: list[re.Match[str]]) -> Ticket:
+    """The ticket of the file at `path`, whose text is `text`, with the log
+    lines `found`."""
+    name = ticket_name(path)
     head = re.match(FRONT, text)
     if head is None:
         raise Refused(mctx("{path} has no front matter").format(path=path))
     fields = dict(front_fields(head))
-    lines = tuple(log_line(m) for m in log_lines(text))
+    lines = tuple(log_line(m) for m in found)
     if not lines:
         raise Refused(mctx("{path} has no log line").format(path=path))
     return Ticket(
@@ -65,22 +78,25 @@ def read_ticket(path: Path) -> Ticket:
         depends_on=tuple(list_items(fields["depends-on"])) if "depends-on" in fields else (),
         priority=int(fields["priority"]) if "priority" in fields else DEFAULT_PRIORITY,
         editors=editors_field(fields),
-        after_merge=fields.get("after-merge"), mechanical="mechanical" in fields, log=lines, holder=holder(text), path=path)
+        after_merge=fields.get("after-merge"), mechanical="mechanical" in fields, log=lines,
+        holder=holder_of(found), path=path)
 
 
 def read_tickets(tickets: Path) -> tuple[dict[str, Ticket], tuple[Unread, ...]]:
     """Each ticket of the tracker, and each ticket file whose read refused
     or failed other than for a move, which it leaves out of the tickets. A
     ticket that moves between the listing and its read is read again from
-    a new listing."""
+    a new listing: the first listing is the one this state holds, and each
+    later one is read anew."""
+    listing: Callable[[Path, Status], list[Path]] = listed_tickets
     for _ in range(3):
         try:
             out: dict[str, Ticket] = {}
             unread: list[Unread] = []
             for s in Status:
-                for path in ticket_files(tickets, s):
+                for path in listing(tickets, s):
                     try:
-                        t = read_ticket(path)
+                        t = held_ticket(path)
                     except FileNotFoundError:
                         raise
                     except (Refused, ValueError, OSError) as exc:
@@ -89,6 +105,7 @@ def read_tickets(tickets: Path) -> tuple[dict[str, Ticket], tuple[Unread, ...]]:
                     out[t.number] = t
             return out, tuple(unread)
         except FileNotFoundError:
+            listing = ticket_files
             continue
     raise Refused(mctx("the tickets moved during three reads of the tracker"))
 

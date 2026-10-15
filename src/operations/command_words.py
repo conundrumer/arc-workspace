@@ -3,6 +3,7 @@ command, `scripts/operate.py`, that a printed step runs."""
 
 import shlex
 from enum import StrEnum
+from functools import cache
 from pathlib import PurePosixPath
 
 
@@ -22,6 +23,13 @@ def simple_commands(command: str) -> list[list[str]]:
     without its redirections, or none where the shell's quoting in it is
     unbalanced. A redirection is an operator with `<` or `>`, the word
     after it, and a number before it."""
+    return [list(words) for words in command_words(command)]
+
+
+@cache
+def command_words(command: str) -> tuple[tuple[str, ...], ...]:
+    """`simple_commands`, parsed once for each command: the state gives
+    each operator's commands at each read."""
     lexer = shlex.shlex(command, posix=True, punctuation_chars=OPERATORS)
     lexer.whitespace = " \t\r"
     lexer.whitespace_split = True
@@ -40,8 +48,8 @@ def simple_commands(command: str) -> list[list[str]]:
             else:
                 out[-1].append(word)
     except ValueError:
-        return []
-    return [words for words in out if words]
+        return ()
+    return tuple(tuple(words) for words in out if words)
 
 
 class Action(StrEnum):
@@ -64,6 +72,7 @@ def run_words(action: Action, agent: str) -> list[str]:
     return [*RUN_COMMAND.split(), action, agent]
 
 
+@cache
 def runs(command: str, action: Action, agent: str) -> bool:
     """Whether the Bash command `command` runs `operate.py` with `action`
     for the operator `agent`, whatever else it runs."""

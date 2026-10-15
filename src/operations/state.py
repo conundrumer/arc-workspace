@@ -268,7 +268,7 @@ class Spend:
     """The spend of runs: their token cost and that of the runs under
     them, their agent-running time, the union of the wall time of all
     those runs, and their cost by the agent type of each run, the runs
-    under it summed with it (`scripts/ticket_watch.py`)."""
+    under it summed with it (`scripts/spends.py`)."""
     dollars: float
     seconds: float
     by_role: dict[str, float]
@@ -278,7 +278,7 @@ class Spend:
 class Budget:
     """A change's cost budget in dollars and its time budget in seconds,
     with the median spend of each agent type over the changes the budget
-    is taken over (`scripts/ticket_watch.py`)."""
+    is taken over (`scripts/spends.py`)."""
     dollars: float
     seconds: float
     role_medians: dict[str, float]
@@ -460,7 +460,7 @@ class State:
     review rotates over, in the order `context.py contexts` lists them.
     `limit_lifted` is the time of the reading of the usage limit that
     gives it as lifted, or None where the reading gives it in force, as
-    `operator_state.limit_lifted` gives it. `sessions` is the read of the
+    `usage_limit.limit_lifted` gives it. `sessions` is the read of the
     tracker's sessions, and `computed` the values computed over the
     reads."""
     me: str

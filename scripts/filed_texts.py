@@ -11,6 +11,7 @@ from controlled_markdown import mctx
 
 from noted_reads import note_read
 from operations.filing import FILED_LINE, REPORT_NAME, filed_path
+from state_reads import file_text, is_file
 
 
 def unfiled(text: str, where: str, undecided: list[str]) -> str:
@@ -19,11 +20,11 @@ def unfiled(text: str, where: str, undecided: list[str]) -> str:
     def read(m: re.Match[str]) -> str:
         path = filed_path(m)
         note_read(path)
-        if not path.is_file():
+        if not is_file(path):
             undecided.append(mctx("{where}: the file {path} its text gives is gone, so that "
                                   "text is unknown").format(where=where, path=path))
             return m.group(0)
-        return path.read_text().rstrip("\n")
+        return file_text(path).rstrip("\n")
     return FILED_LINE.sub(read, text)
 
 
@@ -41,8 +42,8 @@ def report_text(path: Path, where: str, undecided: list[str]) -> str | None:
     """The text of the report file `path`, or None where it is gone, which
     an `undecided` line names."""
     note_read(path)
-    if not path.is_file():
+    if not is_file(path):
         undecided.append(mctx("{where}: its report file {path} is gone, so its report is "
                               "unknown").format(where=where, path=path))
         return None
-    return path.read_text().strip()
+    return file_text(path).strip()

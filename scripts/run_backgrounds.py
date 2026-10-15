@@ -9,8 +9,8 @@ from pathlib import Path
 from controlled_markdown import mctx
 from noted_reads import note_live, note_read
 from run_reads import BACKGROUND_TASK, blocks, in_background, notified, output_file
-from transcripts import Entry, Refused, epoch, state_cache
-
+from state_reads import is_file, mtime, resolved, state_cache
+from transcripts import Entry, Refused, epoch
 
 # The keys of a call's result that give an id a notification of the call
 # gives.
@@ -65,13 +65,13 @@ def background_ends(found: dict[str, Background],
                if ends[call] is None and b.output is not None}
     for f in outputs.values():
         note_read(f)
-    files = {call: f for call, f in outputs.items() if f.is_file()}
+    files = {call: f for call, f in outputs.items() if is_file(f)}
     for call, f in files.items():
-        if str(f.resolve()) in held_in(f.resolve().parent):
+        if str(resolved(f)) in held_in(resolved(f).parent):
             note_live()
             continue
         try:
-            ends[call] = f.stat().st_mtime
+            ends[call] = mtime(f)
         except FileNotFoundError:
             pass
     return ends

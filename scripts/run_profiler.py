@@ -8,7 +8,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from agent_launches import run_launches
+from agent_launches import children_of
 from agent_turns import idle_after, turns
 from command_labels import AGENT_TOOLS, POLL, call_command, command_label
 from controlled_markdown import mctx
@@ -21,7 +21,6 @@ from run_records import Call, Group, Key, Message, Part, Run, Span
 from senders import Sender, sender
 from token_prices import grouped, request_input, requests, run_cost
 from transcripts import agent_id, epoch, is_subagent
-
 
 WAIT_TOOLS = ("Monitor", "TaskOutput")
 # Ways a Bash result says the harness, not the call, moved it to the
@@ -82,7 +81,7 @@ def profile(path: Path, undecided: list[str], price_at: str | None = None) -> Ru
     # prompts up to it.
     briefed = min(starts, default=len(entries))
     parent = parent_id(path) if is_subagent(path) else None
-    children = run_launches(path)[1].get(label, frozenset())
+    children = children_of(path, label)
     sessions = run_sessions(path)
     messages: list[Message] = []
     others: list[Message] = []

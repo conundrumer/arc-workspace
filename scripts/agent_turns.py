@@ -7,8 +7,9 @@ from pathlib import Path
 from controlled_markdown import mctx
 from run_reads import blocks, is_prompt
 from senders import is_interrupt_note
+from state_reads import DERIVED, state_cache
 from transcripts import (Entry, agent_id, chain, entries_back, entries_forward,
-                         epoch, read_entries, snapshot, state_cache)
+                         epoch, read_entries, snapshot)
 
 # The types of a transcript's message entries, the entries of a turn: the
 # message that opens it and its work.
@@ -89,6 +90,7 @@ def has_ended(path: Path) -> bool:
     return turn_ended(tail[::-1])
 
 
+@state_cache(DERIVED, notes="undecided")
 def turn_after(path: Path, t: float, undecided: list[str]) -> bool:
     """Whether the transcript at `path` holds an entry of a turn timestamped
     after `t`. An entry of a turn with no timestamp counts as not, and an
@@ -115,6 +117,7 @@ def last_time(path: Path, holds: Callable[[Entry], bool] | None = None) -> float
     return None
 
 
+@state_cache(DERIVED)
 def first_time(path: Path) -> float | None:
     """The time of the first timestamped entry of the run at `path`, with
     only the lines up to it parsed."""

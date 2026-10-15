@@ -3,8 +3,8 @@ pending to it, and the runs under it, as `profile_runs.py --help running`
 and `profile_runs.py --help under` give them, the agents its SendMessage calls went to, and whether a message to
 it that the harness accepted waits for delivery."""
 
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Collection, Iterable
+from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -15,8 +15,9 @@ from controlled_markdown import mctx
 from run_reads import (blocks, in_background, is_prompt, meta_parent, meta_path, notified,
                        parent_label, read_meta, results_by_call, run_entries,
                        run_sessions, session_agents, session_transcripts)
-from transcripts import (Entry, agent_id, agent_transcripts, chain, entries_back, epoch, find,
-                         read_entries, snapshot, stat_of, state_cache)
+from state_reads import DERIVED, mtime, stat_of, state_cache
+from transcripts import (Entry, agent_id, chain, entries_back, epoch, find, read_entries, snapshot,
+                         transcripts_of)
 
 
 class Delivery(Enum):
@@ -74,7 +75,7 @@ def launch_stamp(session: Path) -> tuple[tuple[Path, tuple[int, int] | None], ..
     changes only where a transcript of that run appears, so the entries of
     the transcripts need no stamp."""
     return tuple((p, stat_of(meta_path(p)))
-                 for aid in session_agents(session) for p in agent_transcripts().get(aid, []))
+                 for aid in session_agents(session) for p in transcripts_of(aid))
 
 
 @state_cache(launch_stamp)
@@ -95,6 +96,7 @@ def session_launches(session: Path) -> tuple[dict[str, Path], dict[str, frozense
     return by_call, {k: frozenset(v) for k, v in children.items()}
 
 
+@state_cache(DERIVED)
 def run_launches(path: Path) -> tuple[dict[str, Path], dict[str, frozenset[str]]]:
     """`session_launches` over the sessions of the transcripts of the run
     at `path`."""
@@ -108,6 +110,21 @@ def run_launches(path: Path) -> tuple[dict[str, Path], dict[str, frozenset[str]]
     return by_call, children
 
 
+@state_cache(DERIVED)
+def launched_by(path: Path, call: str) -> Path | None:
+    """The transcript `run_launches` gives the Agent call `call` of the run
+    at `path` as its launch, held so that a read derived from it sees no
+    launch of another call."""
+    return run_launches(path)[0].get(call)
+
+
+@state_cache(DERIVED)
+def children_of(path: Path, label: str) -> frozenset[str]:
+    """The agents `run_launches` gives the run `label` as launching, of the
+    sessions of the run at `path`, held as `launched_by` is."""
+    return run_launches(path)[1].get(label, frozenset())
+
+
 def runs_under(path: Path) -> list[Path]:
     """The last transcript of each run under the run at `path`: the agents
     it launched, the agents those launched, and so on, by `run_launches`."""
@@ -115,7 +132,7 @@ def runs_under(path: Path) -> list[Path]:
     todo = [path]
     while todo:
         p = todo.pop()
-        for aid in sorted(run_launches(p)[1].get(parent_label(p), frozenset())):
+        for aid in sorted(children_of(p, parent_label(p))):
             if aid not in out:
                 out[aid] = find(aid)
                 todo.append(out[aid])
@@ -207,7 +224,7 @@ def sends(entries: list[Entry], run: str) -> list[Send]:
     return out
 
 
-def picked(calls: list[Send], agents: set[str] | None, undecided: list[str],
+def picked(calls: list[Send], agents: Collection[str] | None, undecided: list[str],
            before: float | None) -> dict[str, float]:
     """The time of the last of `calls` that resumed each agent, or with
     `agents` each of those agents, and with `before` only of the calls
@@ -245,14 +262,31 @@ def session_resumes(path: Path, agents: set[str], since: float,
     among the calls of each agent of the sessions of the run at `path`, main
     among them, other than that run, whose transcript changed at or after
     `since`, and with `before` only of the calls earlier than it."""
+    return resumes_since(path, frozenset(agents), since, undecided, before)
+
+
+@state_cache(DERIVED, notes="undecided")
+def resumes_since(path: Path, agents: frozenset[str], since: float,
+                  undecided: list[str], before: float | None) -> dict[str, float]:
+    """`session_resumes`, held so that a read derived from it sees a new
+    transcript of the sessions only where it resumed one of `agents`."""
     own = chain(path)
     out: dict[str, float] = {}
     for p in changed_since(run_sessions(path), since):
         if p in own:
             continue
-        for aid, t in picked(transcript_resumes(p), agents, undecided, before).items():
+        for aid, t in resumed_in(p, agents, undecided, before).items():
             note_latest(out, aid, t)
     return out
+
+
+@state_cache(DERIVED, notes="undecided")
+def resumed_in(path: Path, agents: frozenset[str], undecided: list[str],
+               before: float | None) -> dict[str, float]:
+    """`picked` of `transcript_resumes` of the transcript at `path`, held so
+    that a read derived from it sees a call of that transcript only where
+    it resumed one of `agents`."""
+    return picked(transcript_resumes(path), agents, undecided, before)
 
 
 def sent_to(path: Path) -> frozenset[str]:
@@ -264,14 +298,28 @@ def sent_to(path: Path) -> frozenset[str]:
 
 def changed_since(sessions: Iterable[Path], since: float) -> list[Path]:
     """The transcripts of `sessions` that changed at or after `since`."""
-    return [p for session in sessions for p in session_transcripts(session)
-            if p.stat().st_mtime >= since]
+    return [p for session in sessions for p in changed_in(session, since)]
+
+
+@state_cache(None)
+def written(session: Path) -> tuple[tuple[Path, float], ...]:
+    """Each transcript of `session`, with the time of its last write."""
+    return tuple((p, mtime(p)) for p in session_transcripts(session))
+
+
+@state_cache(DERIVED)
+def changed_in(session: Path, since: float) -> list[Path]:
+    """The transcripts of `session` that changed at or after `since`, from
+    `written`, so a read derived from it sees a change only where the
+    transcripts it gives change."""
+    return [p for p, t in written(session) if t >= since]
 
 
 def timed_entries(path: Path) -> list[Entry]:
     return [e for e in run_entries(path) if e.get("timestamp")]
 
 
+@state_cache(DERIVED, notes="undecided")
 def launches(path: Path, undecided: list[str]) -> list[Launch]:
     """The agents the run at `path` launched, in the order of their launch.
     A sign that an agent reported is the run's notification of it, or a
@@ -292,7 +340,6 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
     for e in entries:
         for v in report_ids(e):
             naming.setdefault(v, []).append(e)
-    by_call = run_launches(path)[0]
     out: list[Launch] = []
     for e in entries:
         if e.get("type") != "assistant":
@@ -304,7 +351,7 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
             given = results.get(tid)
             background = given is not None and in_background(given, undecided, tid)
             result = given or {}
-            child = by_call.get(tid)
+            child = launched_by(path, tid)
             if tid in failed and child is None and "agentId" not in result:
                 continue
             signs = [told.get(tid), told.get(result.get("agentId", "")),
@@ -319,6 +366,20 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
             out.append(Launch(aid, child, epoch(e["timestamp"]), done, tid,
                               list(named.values())))
     return out
+
+
+@state_cache(DERIVED)
+def launches_by_call(path: Path) -> dict[str, Launch]:
+    """`launches` of the run at `path`, by the id of the call of each."""
+    return {a.call: a for a in launches(path, [])}
+
+
+@state_cache(DERIVED)
+def launch_of(path: Path, call: str) -> Launch:
+    """The launch of `launches` of the run at `path` by the Agent call
+    `call`, held so that a read derived from it sees a change only where
+    that launch changes."""
+    return launches_by_call(path)[call]
 
 
 def resume_times(path: Path, found: list[Launch], undecided: list[str],
@@ -339,12 +400,10 @@ def resume_times(path: Path, found: list[Launch], undecided: list[str],
 def launched(path: Path, undecided: list[str]) -> list[Launch]:
     """`launches` of the run at `path`, each from the last call that resumed
     it where one did."""
-    out = launches(path, undecided)
-    own, others = resume_times(path, out, undecided)
-    for a in out:
-        a.since = max(a.since, own.get(a.agent or "", 0.0),
-                      others.get(a.agent or "", 0.0))
-    return out
+    found = launches(path, undecided)
+    own, others = resume_times(path, found, undecided)
+    return [replace(a, since=max(a.since, own.get(a.agent or "", 0.0),
+                                 others.get(a.agent or "", 0.0))) for a in found]
 
 
 def callees(path: Path, undecided: list[str], before: float | None = None) -> set[str]:
@@ -440,6 +499,14 @@ def session_entries(found: list[tuple[Path, Launch]], since: float) -> list[Entr
     agents = {a.agent for _, a in found if a.agent}
     runs = [p for launcher, a in found for p in (launcher, a.path) if p]
     sessions = dict.fromkeys(s for p in runs for s in run_sessions(p))
+    return entries_since(tuple(sessions), since, frozenset(agents))
+
+
+@state_cache(DERIVED)
+def entries_since(sessions: tuple[Path, ...], since: float, agents: frozenset[str]) -> list[Entry]:
+    """The entries that name one of `agents` in each transcript of
+    `sessions` changed at or after `since`, held so that a read derived from
+    them sees a new transcript only where it names one of `agents`."""
     return [e for p in changed_since(sessions, since) for e in read_entries(p, naming=agents)]
 
 

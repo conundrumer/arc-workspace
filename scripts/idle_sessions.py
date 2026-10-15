@@ -15,11 +15,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from operations.constants import FOREGROUND_MS
-from ticket_files import ticket_files, ticket_name
+from ticket_files import listed_tickets, ticket_name
 from controlled_markdown import mctx
 from ticket_numbers import SESSIONS, indexes, link_new, session_line, staged
 from ticketing.vocabulary import SETTLED, Status
-from transcripts import Refused, project_dirs, session_directory, subagent_transcripts
+from state_reads import stat_read
+from transcripts import Refused, mains_named, project_dirs, session_directory, session_subagents
 
 MAIN = "main"
 
@@ -45,20 +46,17 @@ class Sessions:
 
 
 def modified(path: Path) -> float:
-    try:
-        return path.stat().st_mtime
-    except FileNotFoundError:
-        return 0.0
+    found = stat_read(path)
+    return 0.0 if found is None else found.mtime
 
 
 def live(session: str, now: float) -> bool:
     since = now - FOREGROUND_MS / 1000
-    for d in project_dirs():
-        for transcript in d.glob(f"*/{session}.jsonl"):
-            if modified(transcript) >= since:
-                return True
-            if any(modified(p) >= since for p in subagent_transcripts(session_directory(transcript))):
-                return True
+    for transcript in mains_named(session):
+        if modified(transcript) >= since:
+            return True
+        if any(modified(p) >= since for p in session_subagents(session_directory(transcript))):
+            return True
     return False
 
 
@@ -116,7 +114,7 @@ def named_main(tickets: Path) -> str | None:
 def read_sessions(tickets: Path, index: int, now: float) -> Sessions:
     ids = indexes(tickets)
     held = {ticket_name(p).number.session for s in Status if s not in SETTLED
-            for p in ticket_files(tickets, s)}
+            for p in listed_tickets(tickets, s)}
     idle = frozenset(i for i in held if i is not None and i != index
                      and not any(live(sid, now) for sid in ids.get(i, [])))
     main = named_main(tickets)

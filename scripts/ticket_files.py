@@ -4,6 +4,7 @@ directory of each status the file moves between, and the path of a ticket
 found by its number."""
 
 import glob
+import os
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, fields
@@ -12,6 +13,7 @@ from pathlib import Path
 from controlled_markdown import mctx
 from ticket_numbers import TICKET_NUMBER, TicketNumber, is_reserved, matched_number
 from ticketing.vocabulary import Domain, Status
+from state_reads import DERIVED, names_in, state_cache
 from transcripts import Refused
 
 FIELD = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -69,14 +71,30 @@ def ticket_status(path: Path) -> Status:
     return Status(path.parent.name)
 
 
-def ticket_files(tickets: Path, status: Status) -> list[Path]:
-    """The files of a status's directory. A closed file whose name
-    `TICKET_NAME` does not match is left out: it is a ticket of an old form,
-    which no ticket number finds."""
-    found = sorted((tickets / status).glob(f"*{SUFFIX}"))
+def entry_names(directory: Path) -> list[str]:
+    """The names of the entries of `directory`, none where there is none."""
+    try:
+        return os.listdir(directory)
+    except FileNotFoundError:
+        return []
+
+
+def ticket_files(tickets: Path, status: Status,
+                 names: Callable[[Path], Iterable[str]] = entry_names) -> list[Path]:
+    """The files of a status's directory, of the names `names` gives of its
+    entries. A closed file whose name `TICKET_NAME` does not match is left
+    out: it is a ticket of an old form, which no ticket number finds."""
+    directory = tickets / status
+    found = [directory / n for n in sorted(names(directory)) if n.endswith(SUFFIX)]
     if status is Status.CLOSED:
         return [p for p in found if TICKET_NAME.fullmatch(p.name)]
     return found
+
+
+@state_cache(DERIVED)
+def listed_tickets(tickets: Path, status: Status) -> list[Path]:
+    """`ticket_files` of the listing of the directory this state holds."""
+    return ticket_files(tickets, status, names_in)
 
 
 def ticket_path(tickets: Path, number: TicketNumber) -> Path:

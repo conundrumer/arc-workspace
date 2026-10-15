@@ -1,43 +1,37 @@
-"""The routing of a `delay` ticket that gives a case: the priced loss of a
-case, the threshold of an editor, the groups of the deferred `delay`
-tickets, and the moves of their tickets into and out of
-`tickets/deferred/`, whose rules `file_ticket.py case --help-all` states.
-It also gives the spend of a change by role, recorded under
-`tickets/spends/` once its runs have stopped, and the budget of a change
-taken over the changes like it. The sweep of the `validation` tickets is
-`ticket_sweep`."""
+"""The `delay` tickets under `tickets/deferred/` that give a case: the
+priced loss of a case, the threshold of an editor, the groups of the
+deferred `delay` tickets, and the moves of their tickets into and out of
+`tickets/deferred/`, whose rules `file_ticket.py case --help-all` states."""
 
-import json
 import re
 import statistics
 import time
-from collections.abc import Iterator
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
-from agent_launches import runs_under
-from agent_turns import first_time, has_ended, last_time
-from controlled_markdown import mctx
-from engine.memo import write_whole
-from operations.roles import Role
-from operations.state import Budget, Spend
-from run_reads import agent_type, run_entries
+from run_reads import run_entries
+from spends import change_spend, closed_changes
 from ticket_files import ticket_files, ticket_name
-from ticket_form import FRONT, check_fix, front_fields, ticket_kind, title
-from ticket_log import log_lines, log_moves, read_ticket, resolution_of
+from ticket_form import check_fix, front, ticket_kind, title
+from ticket_log import line_time, log_lines, log_moves, read_ticket
 from ticket_numbers import TicketNumber
 from ticket_reads import editors_field
+from token_prices import span_cost
+from transcripts import Refused, find
+
+from controlled_markdown import mctx
+from operations.roles import Role
 from ticketing.times import TIME_FORM, stamp_time
 from ticketing.vocabulary import Kind, Resolution, Status
-from token_prices import run_cost, span_cost
-from transcripts import Refused, chain, entries_back, find
 
 CHANGES = 10
 """The count of the most recent fixed changes an editor's threshold is the
 median loss of."""
 
+
 CAP = 100
 """The most `delay` tickets `tickets/deferred/` holds."""
+
 
 SECOND_PRICE = 5 / 1800
 """The dollars a second of wall time is worth: the user's preference to
@@ -53,6 +47,7 @@ def loss(dollars: float, seconds: float) -> float:
 
 CASE = "case {run} {start} {end}: {dollars:.4f} dollars, {seconds:.0f} s"
 """The note of the log line that records a case."""
+
 
 CASE_NOTE = re.compile(r"case (?P<run>\S+) (?P<start>\S+) (?P<end>\S+): "
                        r"(?P<dollars>[0-9.]+) dollars, (?P<seconds>[0-9]+) s")
@@ -88,11 +83,6 @@ def case_loss(run: str, start: str, end: str, undecided: list[str]) -> Case:
     return Case(run, start, end, dollars, finish - begin)
 
 
-def front(text: str) -> dict[str, str]:
-    head = re.match(FRONT, text)
-    return {} if head is None else dict(front_fields(head))
-
-
 def fix_field(text: str) -> Role | None:
     """The role the `fix` field of the front matter of the ticket text
     `text` gives, or None where it has none. Refuses a `fix` that is no
@@ -104,132 +94,15 @@ def fix_field(text: str) -> Role | None:
     return Role(fix)
 
 
-def union_seconds(spans: list[tuple[float, float]]) -> float:
-    """The seconds the spans cover, counting an overlap once."""
-    total, end = 0.0, float("-inf")
-    for a, b in sorted(spans):
-        if b > end:
-            total += b - max(a, end)
-            end = b
-    return total
-
-
-SPENDS = "spends"
-"""The directory under `tickets/` that holds, for each change closed
-`fixed` whose runs have all stopped, its spend as `change_spend` read it,
-one JSON file per ticket number. It is no status directory, so no reader
-of tickets takes a record for a ticket."""
-
-
-def owners(runs: list[str]) -> dict[Path, str] | None:
-    """The transcript of each of the runs `runs` and of the runs under them,
-    with the agent type it counts under, or None where a run has no
-    transcript or no agent type. Each transcript counts once, under the
-    agent type of the nearest run of `runs` at or above it, so a run of
-    `runs` launched under another keeps its own type."""
-    trees: list[tuple[str, list[Path]]] = []
-    for run in runs:
-        try:
-            top = find(run)
-        except Refused:
-            return None
-        role = agent_type(top)
-        if role is None:
-            return None
-        trees.append((role, [top, *runs_under(top)]))
-    owner: dict[Path, tuple[int, str]] = {}
-    for role, tree in trees:
-        for p in tree:
-            if p not in owner or len(tree) < owner[p][0]:
-                owner[p] = (len(tree), role)
-    return {p: role for p, (_, role) in owner.items()}
-
-
-def priced(owner: dict[Path, str], undecided: list[str]) -> Spend | None:
-    """The spend of the transcripts `owner` gives, each under its agent
-    type, or None where one has no price or no time."""
-    total = 0.0
-    spans: list[tuple[float, float]] = []
-    by_role: dict[str, float] = {}
-    for p, role in owner.items():
-        cost = run_cost(run_entries(p), undecided)
-        start, end = first_time(p), last_time(p)
-        if cost is None or start is None or end is None:
-            return None
-        total += cost
-        by_role[role] = by_role.get(role, 0.0) + cost
-        spans.append((start, end))
-    return Spend(total, union_seconds(spans), by_role)
-
-
-def spend(runs: list[str], undecided: list[str]) -> Spend | None:
-    """The spend of the runs `runs` and of the runs under them, as `owners`
-    and `priced` give it."""
-    owner = owners(runs)
-    return None if owner is None else priced(owner, undecided)
-
-
-def stopped(path: Path) -> bool:
-    """Whether the run at `path` does nothing until a message resumes it:
-    it has ended its turn, or its last entry is an API error entry."""
-    if has_ended(path):
-        return True
-    for p in reversed(chain(path)):
-        for e in entries_back(p):
-            return e.get("isApiErrorMessage") is True
-    return False
-
-
-def change_spend(path: Path, undecided: list[str]) -> Spend | None:
-    """The spend of the `change` at `path`, closed `fixed`: that of the
-    runs its closing line gives, or None where that line gives no run or
-    `spend` gives none. A spend is recorded under `SPENDS` only once each
-    run it read has stopped, since the spend of a run that goes on still grows."""
-    record = path.parent.parent / SPENDS / f"{ticket_name(path).number}.json"
-    if record.exists():
-        return Spend(**json.loads(record.read_text()))
-    closing = [m for m in log_lines(read_ticket(path)) if m["status"] == Status.CLOSED
-               and resolution_of(m["note"]) is Resolution.FIXED]
-    runs = (closing[-1]["note"] or "").split()[3:] if closing else []
-    owner = owners(runs) if runs else None
-    if owner is None:
-        return None
-    lines = len(undecided)
-    s = priced(owner, undecided)
-    if s is not None and len(undecided) == lines and all(stopped(p) for p in owner):
-        record.parent.mkdir(exist_ok=True)
-        write_whole(record, (json.dumps(asdict(s), sort_keys=True) + "\n").encode())
-    return s
-
-
-def line_time(line: re.Match[str]) -> float:
-    """The time of a match of `ticket_log.LOG_LINE`."""
-    return stamp_time(line.group().split(" ", 1)[0])
-
-
-def closed_at(path: Path) -> float:
-    return line_time(log_lines(read_ticket(path))[-1])
-
-
-def closed_changes(tickets: Path) -> Iterator[tuple[Path, str]]:
-    """The path and text of each ticket under `tickets/closed/` of kind
-    `change`."""
-    for path in ticket_files(tickets, Status.CLOSED):
-        text = read_ticket(path)
-        if ticket_kind(text) is Kind.CHANGE:
-            yield path, text
-
-
 def threshold(tickets: Path, editor: Role, undecided: list[str]) -> float | None:
     """The median loss of the most recent `CHANGES` changes closed `fixed`
     with a known cost whose `editors` give `editor`, or None, with an
     `undecided` line, where fewer exist."""
     losses: list[float] = []
-    for path, text in sorted(closed_changes(tickets), key=lambda c: closed_at(c[0]),
-                             reverse=True):
-        if editor not in (editors_field(front(text)) or ()):
+    for c in sorted(closed_changes(tickets), key=lambda c: c.at, reverse=True):
+        if editor not in (editors_field(front(c.text)) or ()):
             continue
-        s = change_spend(path, undecided)
+        s = change_spend(c.path, undecided)
         if s is not None:
             losses.append(loss(s.dollars, s.seconds))
         if len(losses) == CHANGES:
@@ -238,48 +111,6 @@ def threshold(tickets: Path, editor: Role, undecided: list[str]) -> float | None
                           "cost, of the {changes} it is taken over").format(
                               editor=editor, count=len(losses), changes=CHANGES))
     return None
-
-
-OVERRUN = 8
-"""The multiple of the median of the changes like a change that is its
-budget."""
-
-FEWEST_LIKE = 5
-"""The fewest earlier changes with the change's `editors` set that its
-budget is taken over; with fewer, it is taken over every earlier one."""
-
-
-def like_changes(tickets: Path, editors: frozenset[Role], before: float,
-                 undecided: list[str]) -> list[Spend]:
-    """The spend of each `change` closed `fixed` before `before` with a
-    known spend whose `editors` set is `editors`, or of each such change
-    whatever its `editors` where fewer than `FEWEST_LIKE` have it."""
-    every: list[tuple[tuple[Role, ...] | None, Spend]] = []
-    for path, text in closed_changes(tickets):
-        if closed_at(path) >= before:
-            continue
-        s = change_spend(path, undecided)
-        if s is not None:
-            every.append((editors_field(front(text)), s))
-    like = [s for e, s in every if e is not None and frozenset(e) == editors]
-    return like if len(like) >= FEWEST_LIKE else [s for _, s in every]
-
-
-def budget(tickets: Path, editors: frozenset[Role], before: float,
-           undecided: list[str]) -> Budget | None:
-    """The budget of a change with the `editors` set `editors` taken at
-    `before`, or None, with an `undecided` line, where no earlier change
-    has a known spend. A role with no run on a change spent nothing on
-    it."""
-    like = like_changes(tickets, editors, before, undecided)
-    if not like:
-        undecided.append(mctx("budget unknown: no change closed `fixed` before the take has a "
-                              "known spend"))
-        return None
-    roles = sorted({r for s in like for r in s.by_role})
-    return Budget(OVERRUN * statistics.median(s.dollars for s in like),
-                  OVERRUN * statistics.median(s.seconds for s in like),
-                  {r: statistics.median(s.by_role.get(r, 0.0) for s in like) for r in roles})
 
 
 def cases(text: str) -> list[tuple[float, float, float]]:

@@ -263,6 +263,6 @@ def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
             return Bash(log(q.number, Status.CLOSED, q.status, note, None))
     ids = [a.agent_id for a in agents]
     # An agent with no known id leaves the line with no run, and the
-    # change with no known cost (`scripts/ticket_watch.py`).
+    # change with no known cost (`scripts/spends.py`).
     runs = "" if None in ids else "".join(f" {i}" for i in ids)
     return Bash(log(t.number, Status.CLOSED, Status.ASSIGNED, note + runs, None))
