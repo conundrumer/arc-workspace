@@ -70,7 +70,7 @@ HELP = mctx("""
     - A `request` has `# <target>: <what the user asks for>` as its title, and the sections {request_sections} in place of {defect_headings}.
         - A `request` that a `change` serves also has, before `## Log`, a `{validation}` section: what a later run must show for its need to count as met.
             - It may hold lines `- {exercised_field} <regular expression>`, the expression with no backticks, each of which matches a line of the transcript of a run that exercises the change, and, for a change to code, no line of a run that only reads that code or its diff. Where it holds none, any run exercises the change.
-                - A transcript line is a JSON line, so the expression matches a quote or a backslash in its JSON escape.
+                - A transcript line is a JSON line, so the expression matches a quote or a backslash in its JSON escape, and the sweep refuses an expression that matches its own text in that escape, applied once or twice.
             - Where a command exits 0 only where the need is met, it holds one line `- {command_field} <command>`, the command in backticks with nothing after them, and otherwise a statement that an agent judges against a run.
     - `<domain>` is one of {domains}, and `<subject>` is the id of the thing it names: a task id for `task`, a ticket's number for `change` and `ticket`, a commit hash for `commit`, an agent id for `agent`.
         - A `change` or a `request` takes `change` as `<domain>` and `<namespace>-<short-title>` as `<subject>`, with `-` in place of each `_`.
@@ -225,7 +225,7 @@ SWEEP_RULES = mctx("""
         - Where it exits with another code, the ticket moves into `{open}`, with the note `{failed}: <command> exited <code>`, and where it runs past the time, with the note `{failed}: <command> timed out`.
     - Where the ticket is exercised and its section holds no `{command_field}` line, it moves into `{open}`, with the note `{exercised}: <agent id> ...`, with the runs that match, or each of those runs where the section holds no `{exercised_field}` line.
     - Where the ticket is not exercised, and the last line of its log that moves it into `{deferred}` is {days} days old or more, it moves into `{open}`, with the note `{unexercised}: no run matched since <time>`, with that line's time.
-    - Where a ticket's section holds more than one `{command_field}` line or a pattern that does not compile, or where its log holds no line that moves it into `{deferred}`, it moves into `{open}`, with the note `{failed}: <reason>`.
+    - Where a ticket's section holds more than one `{command_field}` line, or a pattern that does not compile or that matches its own text in its JSON escape, or where its log holds no line that moves it into `{deferred}`, it moves into `{open}`, with the note `{failed}: <reason>`.
     - Where running the command of a `{command_field}` line would take the sweep past the timeout of a foreground Bash call, the command does not start it, and the ticket stays in `{deferred}` until the next sweep, with an `undecided` line on stderr.
     - The command refuses, and moves nothing, where a run it gives has no transcript, or none with a timestamped entry.
     """)

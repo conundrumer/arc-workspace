@@ -1,6 +1,7 @@
 """The sweep of the `validation` tickets under `tickets/deferred/`, whose
 rules `file_ticket.py sweep --help-all` states."""
 
+import json
 import os
 import re
 import signal
@@ -65,9 +66,8 @@ class Check:
 
 
 def check_of(path: Path, text: str) -> Check:
-    """The check of the ticket at `path` with text `text`. Refuses a
-    section with more than one `Command:` line, or with a pattern that
-    does not compile."""
+    """The check of the ticket at `path` with text `text`, or a refusal
+    by the rules `file_ticket.py sweep --help-all` states."""
     body = section(text, VALIDATION)
     commands = [m["command"] for m in COMMAND_LINE.finditer(body)]
     if len(commands) > 1:
@@ -78,6 +78,12 @@ def check_of(path: Path, text: str) -> Check:
     except re.error as e:
         raise Refused(mctx("{path} gives an `{field}` pattern that does not compile: "
                            "{error}").format(path=path, field=EXERCISED_FIELD, error=e))
+    for pattern in patterns:
+        once = json.dumps(pattern.pattern)[1:-1]
+        if pattern.search(once) or pattern.search(json.dumps(once)[1:-1]):
+            raise Refused(mctx("{path} gives an `{field}` pattern that matches its own "
+                               "text in its JSON escape: {pattern}").format(
+                path=path, field=EXERCISED_FIELD, pattern=pattern.pattern))
     return Check(patterns, commands[0] if commands else None)
 
 
