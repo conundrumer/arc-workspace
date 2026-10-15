@@ -58,7 +58,7 @@ from operations.change_budget import TIME_NOTE, TIME_OPENING, left_draft, taken
 from operations.filing import editor_scratch
 from operations.reports import splits
 from operations.roles import Role
-from operations.state import Agent, Call, Merge, State, Ticket, Tool
+from operations.state import Agent, Call, Commit, Merge, State, Ticket, Tool
 from operations.command_words import simple_commands
 from operations.handled import bash_calls, decided_by, unmoved
 from operations.steps import Bash, Launch, Send, Step
@@ -194,21 +194,26 @@ def merge_calls(state: State, t: Ticket) -> list[Call]:
             and (c.result is None or c.merge is not None)]
 
 
+def merge_commit(state: State, t: Ticket) -> Commit | None:
+    """The newest commit of `master` that merged the change `t`: its
+    subject is `t`'s title, since the merge call gives that title as the
+    commit message, and it was made since `t` left `tickets/draft/`."""
+    since = left_draft(t)
+    return next((c for c in state.git.commits if c.subject == t.title and c.time >= since), None)
+
+
 def merged(state: State, t: Ticket) -> bool:
     """Whether the change `t` landed on `master`. A pending call that
     names a worktree that is gone counts as landed: `merge_change.py`
     removes a worktree only after it lands the change, and a call that
-    runs `operate.py next` after the merge has no result yet. A commit of
-    `master` whose subject is `t`'s title, made since `t` left
-    `tickets/draft/`, counts as landed too, since the merge call gives
-    that title as the commit message and an operator of another session
-    may have made it, whose calls this session does not read."""
+    runs `operate.py next` after the merge has no result yet. A
+    `merge_commit` counts as landed too, since an operator of another
+    session may have made it, whose calls this session does not read."""
     gone = {p for p in log_worktrees(t) if Path(p) not in state.git.worktrees}
     if any(c.merge is Merge.MERGED or (c.result is None and names_any(c, gone))
            for c in merge_calls(state, t)):
         return True
-    since = left_draft(t)
-    return any(c.subject == t.title and c.time >= since for c in state.git.commits)
+    return merge_commit(state, t) is not None
 
 
 def merge(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
@@ -334,7 +339,8 @@ def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
                 t.number, t.after_merge, head))
         if runs[-1].pending:
             return None
-    note = f"{Resolution.FIXED.value} {t.number} {head}"
+    commit = merge_commit(state, t)
+    note = f"{Resolution.FIXED.value} {t.number} {head if commit is None else commit.hash}"
     split: dict[str, str | None] = {}
     for a in agents:
         split.update(splits(a))
