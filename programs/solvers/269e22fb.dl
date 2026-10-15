@@ -1,62 +1,68 @@
 // 269e22fb
 // @draft
 // @keywords: grow lookup d4
-// input: One chart of ink and blank cells underlies every pair. The input is
-//  a window cut from the chart in some pose, its ink and blank rendered in
-//  the pair's two colors.
-// output: The output is the whole chart in that pose and rendering. Nothing
-//  marks the pose or the color roles, so the program takes the rendering the
-//  input lays onto without contradiction.
+// input: One chart of cells in two classes underlies every pair. The input is
+//  a window cut from the chart in some rendering: a pose, and an assignment
+//  of the pair's two colors to the two classes.
+// output: The output is the whole chart in that rendering. Nothing marks the
+//  pose or which class takes which color, so the program takes the rendering
+//  the input lays onto without contradiction.
 
 .decl out(p: Position, col: Color)
 
 .comp Params {
     RIGID(chart,
-        .decl ink(p: Position)
-        GRID_MASK_20x20(ink,
-            1, 1, _, _, _, _, _, _, _, _, _, _, _, _, _, 1, 1, _, _, _,
-            1, 1, 1, 1, 1, 1, _, _, _, _, _, _, _, _, _, 1, 1, _, _, _,
-            1, 1, 1, 1, 1, 1, 1, _, _, _, _, _, _, _, _, 1, 1, 1, _, _,
-            1, 1, _, _, _, 1, 1, 1, _, _, _, _, _, _, _, 1, 1, 1, _, _,
-            _, _, _, _, _, _, 1, 1, 1, _, _, _, _, _, 1, 1, 1, 1, 1, _,
-            _, _, _, _, _, _, _, 1, 1, 1, _, _, _, _, 1, _, _, 1, 1, _,
-            _, _, _, _, _, _, _, _, 1, 1, _, _, 1, 1, 1, _, _, 1, 1, _,
-            _, _, _, _, _, _, _, _, _, 1, _, _, 1, _, 1, _, _, 1, 1, _,
-            _, _, _, _, _, _, _, _, _, 1, 1, 1, 1, _, 1, _, _, 1, 1, _,
-            _, 1, 1, 1, 1, 1, 1, 1, 1, 1, _, 1, 1, _, 1, _, _, 1, 1, _,
-            _, 1, _, _, _, _, _, _, _, 1, 1, 1, 1, _, 1, _, _, 1, 1, _,
-            _, 1, 1, 1, 1, 1, 1, 1, 1, 1, _, _, 1, _, 1, _, _, 1, 1, _,
-            _, 1, _, 1, _, _, _, _, _, 1, _, _, 1, 1, 1, _, _, 1, 1, _,
-            1, 1, 1, _, 1, 1, 1, 1, 1, 1, _, _, _, _, 1, _, _, 1, 1, _,
-            _, 1, _, 1, 1, _, _, _, _, 1, _, _, _, _, 1, 1, 1, 1, 1, _,
-            1, 1, 1, _, 1, _, _, _, _, 1, _, _, _, 1, 1, _, 1, 1, _, _,
-            _, 1, _, 1, 1, _, _, _, _, 1, _, _, _, 1, _, _, _, 1, 1, _,
-            1, 1, 1, _, 1, _, _, _, _, 1, _, _, _, 1, 1, _, _, _, 1, 1,
-            _, 1, _, 1, 1, _, _, _, 1, _, 1, _, _, _, 1, _, 1, 1, 1, _,
-            1, 1, 1, _, _, _, _, 1, _, _, _, 1, _, _, 1, 1, 1, _, _, _)
+        .decl cell_class(p: Position, k: Ident)
+        GRID_20x20(cell_class,
+            1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0,
+            1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0,
+            1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0,
+            1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0,
+            0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0,
+            0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 1, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 1, 0, 0, 1, 1, 0,
+            0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0,
+            0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 1, 0, 0, 1, 1, 0,
+            0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 1, 0, 0, 1, 1, 0,
+            0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1, 0,
+            1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0,
+            0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0,
+            1, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0,
+            0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0,
+            1, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1,
+            0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0,
+            1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 0)
     )
 }
 
 .init params = Params
 
-// The chart's canvas — the frame its cells are stated in.
-.init canvas = Frame2D<Unit>
-canvas.extent($U(), A, N) :- params.chart_ink(_, P), axis_elem(A), axis_dim(P, A, N).
+// The chart's canvas in each pose — the frame its cells are stated in.
+.init canvas = Frame2D<D4>
+canvas.extent(D, A, N) :- params.chart_cell_class(D, P, _), axis_elem(A), axis_dim(P, A, N).
 
-// A rendering of the chart: a pose, and an assignment of the pair's two
-// colors to the chart's two cell classes.
-.type Render = [ink: Color, blank: Color, d: D4]
+// A rendering of the chart: a pose, and a one-to-one map of the chart's two
+// cell classes onto the pair's two colors, class k taking col and class k2
+// taking col2.
+.type Render = [d: D4, k: Ident, col: Color, k2: Ident, col2: Color]
+
+// The chart's cell classes.
+.decl cell_class(k: Ident)
+cell_class(K) :- params.chart_cell_class(_, _, K).
 
 .decl render(r: Render)
-render([Ink, Blank, D]) :- in(_, Ink), in(_, Blank), Ink != Blank, d4_elem(D).
+render([D, K, Col, K2, Col2]) :-
+    d4_elem(D), cell_class(K), cell_class(K2), K != K2,
+    in(_, Col), in(_, Col2), Col != Col2.
 
 // The chart rendered: every canvas cell in the color its class takes.
 .decl chart(r: Render, p: Position, col: Color)
-chart([Ink, Blank, D], P, Col) :-
-    render([Ink, Blank, D]), canvas.cell($U(), P),  // a rendering, cell by cell
-    ( params.chart_ink(D, P), Col = Ink             // ink
-    ; !params.chart_ink(D, P), Col = Blank          // blank
-    ).
+chart([D, K1, Col1, K2, Col2], P, Col) :-
+    render([D, K1, Col1, K2, Col2]), canvas.cell(D, P),  // a rendering, cell by cell
+    params.chart_cell_class(D, P, K),                    // the cell's class
+    ( K = K1, Col = Col1 ; K = K2, Col = Col2 ).          // the color it takes
 
 // Where the input lays onto the rendered chart, cell for cell.
 .init occ = Occurrences<Render, Color>
@@ -75,13 +81,10 @@ out(P, Col) :-
     .decl witness(p: Position, col: Color)
     witness(P, Col) :- pick.rep(E, E), ex_out(E, P, Col).
 
-    // Ink is the rarer of the witness's two colors.
-    .init size = Tally<Color, Position>
-    size.item(Col, P) :- witness(P, Col).
+    // Each of the witness's two colors gives one class of cells.
+    .init class_id = IdentOf<Color>
+    class_id.value(Col) :- witness(_, Col).
 
-    .init rare = ArgExtremes<Unit, Color>
-    rare.cand($U(), Col, N) :- size.tally(Col, N).
-
-    .decl chart_ink(p: Position)
-    chart_ink(P) :- rare.low($U(), Col, _), witness(P, Col).
+    .decl chart_cell_class(p: Position, k: Ident)
+    chart_cell_class(P, K) :- witness(P, Col), class_id.id(Col, K).
 }
