@@ -283,8 +283,9 @@ def enumerator_name(type_name: str) -> str:
 def check_enumerator_name(solver: Solver, runs: Runs) -> list[Finding]:
     """An enumerator of a record `Choice`'s field whose name is not the one
     the field's type gives it (`enumerator_name`). An enumerator is
-    one of `View.enumerators` other than `impl_choice`, and it is a
-    field's where it has one column and that column's type is a field's
+    one of `View.enumerators` other than `impl_choice`, which in a solver
+    with `impl_choice` are the relations `impl_choice` reaches, and it is
+    a field's where it has one column and that column's type is a field's
     type. Serves
     readability: the enumerator's name says which field it ranges over."""
     choice = solver.choice

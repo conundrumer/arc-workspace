@@ -418,11 +418,12 @@ class View:
 
     @cached_property
     def enumerators(self) -> set[str]:
-        """`impl_choice`, each top-level relation whose every clause is a
-        fact of one argument, a constructor or a record (`tag_fact`), and
-        the greatest set of other top-level relations that `impl_choice`
-        reads, directly or through members, whose every clause reads only
-        members and those relations, a fact of any arity among them."""
+        """In a solver whose `impl_choice` has clauses: `impl_choice` and
+        the greatest set of top-level relations that it reads, directly or
+        through members, whose every clause reads only members, a fact of
+        any arity among them. In any other solver: `impl_choice` and each
+        top-level relation whose every clause is a fact of one argument, a
+        constructor or a record (`tag_fact`)."""
         heads = self.top_heads
         tags = {n for n, us in heads.items() if all(map(tag_fact, us))}
         tags.add(ENUMERATOR)
@@ -434,7 +435,9 @@ class View:
                            for u in heads[n] for a in atoms_read(u))}
             keep &= self.reach({ENUMERATOR}, keep | tags)
             if keep == group:
-                return group | tags
+                if ENUMERATOR not in heads:
+                    return tags
+                return {ENUMERATOR} | self.reach({ENUMERATOR}, group | tags)
             group = keep
 
     def in_enumeration(self, unit: Unit) -> bool:
