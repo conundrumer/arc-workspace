@@ -24,6 +24,7 @@ import re
 from collections.abc import Callable
 
 from controlled_markdown import form, mctx
+from operations import rank
 from operations.change_budget import TAKE_NOTE
 from operations.directives import Directive, allow_named, named, NUMBER, numbers, paused
 from operations.final_reply import live_holder
@@ -146,7 +147,8 @@ def takeable(state: State) -> list[Ticket]:
           and Exit.TAKE in exits(state, t).by
           and all(closed(state, d) for d in t.depends_on)
           and (admitted(n) or taken_before(t))]
-    return sorted(ts, key=lambda t: (t.number not in lead, -t.priority, t.order))
+    key = rank.ranking(state)
+    return sorted(ts, key=lambda t: (t.number not in lead, key(t)))
 
 
 def waiting(state: State) -> list[tuple[str, list[str]]]:

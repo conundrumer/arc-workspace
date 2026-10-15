@@ -77,14 +77,11 @@ VALIDATES = "validates"
 """The field of a `validation` ticket that gives the number of the
 `request` it checks."""
 
-FIELDS = {Kind.CHANGE: frozenset({"depends-on", "priority", "editors", "after-merge",
+FIELDS = {Kind.CHANGE: frozenset({"depends-on", "editors", "after-merge",
                                        "mechanical"}),
           Kind.DELAY: frozenset({"fix"}),
           Kind.VALIDATION: frozenset({VALIDATES})}
 """The front matter fields besides `kind` that each kind may give."""
-
-DEFAULT_PRIORITY = 50
-"""The `priority` of a `change` that gives no `priority` field."""
 
 MECHANICAL = "yes"
 """The one value of a `change`'s `mechanical` field, whose condition the
@@ -189,8 +186,6 @@ def checked_kind(tickets: Path, agent: str, text: str) -> Kind:
         keys.append(key)
         if key not in FIELDS.get(kind, frozenset()):
             raise Refused(mctx("a `{kind}` gives no `{key}`").format(kind=kind, key=key))
-        if key == "priority" and not (value.isdigit() and 0 <= int(value) <= 100):
-            raise Refused(mctx("`priority` `{value}` is not an integer from 0 to 100").format(value=value))
         if key == "depends-on":
             check_depends_on(tickets, value)
         if key == "editors":

@@ -6,7 +6,7 @@
 
 # Design
 - In a `change` for speed, give in its Scope the profile that exists.
-- The kind of a ticket you file is `change`, and you set its `priority`, from 0 to 100, a higher one taken first.
+- The kind of a ticket you file is `change`.
 - A `change` to the agents' processes gives in its Motivation the outcome of [Process notes](prompts/agents/notes/process.md) that it serves.
 - Write the `Design` section of a `change` that adds a mechanism to code from reading the code, and of a `change` that adds or changes a rule or a fact in the agent-facing documents from reading the documents it touches, so that the design makes illegal states unrepresentable and each two units of code it names that compute the same thing are one, by these steps:
     * comment: On the units that compute the same thing, the user's words, session 7fd429fb-e3be-4173-9b0e-df52f507d6a2, 2026-10-15T16:11:25Z: "3 ok", which chose the option "A one-line design rule, \"where the design names two units that compute the same thing, it unifies them\"". Without it, the `Design` of change 6-1052 named `takeable` and `waiting` and did not unify them: ticket 6-1058. On the rest, the user's words, session 7fd429fb-e3be-4173-9b0e-df52f507d6a2, 2026-10-13T14:46:25Z: "im curious if this could be part of a planning principle"; 14:47:10Z: "what about just poitnting at the core idea", the core idea being "Make illegal states unrepresentable"; 14:47:43Z, on reading the bare name as license for big refactors: "i dont expect that to happen but if it did i would welcome it".

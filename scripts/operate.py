@@ -160,7 +160,7 @@ PARTS = {
         - The line is done once no pipeline of the run runs, no fault of the load or of `starts` stands, and `starts` gives nothing to start.
         - The script may define `takes(ticket: RunTicket) -> bool`, with `RunTicket` from the module `operations.runs`, which the same load calls on each ticket outside `tickets/closed/` and `tickets/deferred/`.
             - A `RunTicket` gives:
-                - `number`, `kind`, `status`, `domain`, `subject`, `filer`, `priority` and `depends_on`: the ticket's.
+                - `number`, `kind`, `status`, `domain`, `subject`, `filer` and `depends_on`: the ticket's.
                 - `waits_on`: the change it waits on, or None.
                 - `filed_by_run`: whether a pipeline of the run, running or ended, filed it.
                 - `reached_by_run`: whether a chain of `depends_on` and `waits_on` links reaches it from a ticket such a pipeline filed.

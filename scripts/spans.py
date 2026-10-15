@@ -22,7 +22,7 @@ from ticket_log import log_moves  # noqa: E402
 from ticket_numbers import TicketNumber, session_id, ticket_number  # noqa: E402
 from ticketing.text import SECTIONS, heading, ticket_text  # noqa: E402
 from ticketing.times import TIME_FORM, stamp_time, utc_stamp  # noqa: E402
-from ticketing.vocabulary import COORDINATOR, Domain, Kind, Status  # noqa: E402
+from ticketing.vocabulary import COORDINATOR, ROUTE_NOTE, Domain, Kind, Note, Route, Status  # noqa: E402
 from ticket_vocabulary import ticked  # noqa: E402
 from transcripts import find  # noqa: E402
 from transcript_entries import Entry, Refused, epoch, read_entries  # noqa: E402
@@ -30,15 +30,6 @@ from transcript_entries import Entry, Refused, epoch, read_entries  # noqa: E402
 INVOCATION = "uv run python scripts/spans.py"
 
 GOAL, TRANSCRIPT, GROUNDS = SECTIONS[Kind.REQUEST]
-
-
-class Route(Enum):
-    """The routes of work that write a request, a brief or a span."""
-    DIRECT = "direct"
-    SEND = "send"
-    HOTFIX = "hotfix"
-    FILE = "file"
-    DRAFT = "draft"
 
 
 ROUTES = ticked(r.value for r in Route)
@@ -71,7 +62,8 @@ HELP = mctx("""
         - On `draft`, and on a route given with `{inferred}`, it moves the request to `tickets/draft/`, and on each of {held} with no `{inferred}`, to `tickets/assigned/`, with an `assigned` line whose holder is the session id the shell holds in `CLAUDE_CODE_SESSION_ID`.
     - `{invocation} brief [--route <route>] <number>` prints the brief of the request `<number>`.
     - `{invocation} brief --route <route> <start words> <end words> <goal>` prints the brief of that span and `<goal>`, with the Grounds lines on its stdin.
-    - `{invocation} append [{inferred}] [{goal_flag} <goal>] <number> <start words> <end words>` appends that span to the request `<number>`, with a log line, and prints its path.
+    - `{invocation} append [{inferred}] [--route <route>] [{goal_flag} <goal>] <number> <start words> <end words>` appends that span to the request `<number>`, with a log line, and prints its path.
+        - With `--route` and a route other than `draft`, it moves a request under `tickets/draft/` to where `file` puts a request on that route with no `{inferred}`.
         - `{goal_flag}` gives `<goal>` as the request's `{goal}`, in place of the one it holds, or before its `{transcript}` where it holds none.
     - `<goal>` holds at most {goal_words} words.
     - `<route>` is one of {routes}, and `{inferred}` marks a route the coordinator inferred.
@@ -93,7 +85,6 @@ NO_GOAL_LINE = mctx("- The request holds no goal.")
 
 INFERRED_NOTE = mctx(", inferred, so wait for the user's reply before you act")
 
-DRAFT_NOTE = mctx("route `{route}`")
 
 SPAN_NOTE = mctx("span added: {span}")
 
@@ -215,15 +206,25 @@ def file_request(route: Route, inferred: bool, subject: str, title: str, goal: s
     span = resolve_span(start_words, end_words)
     text = ticket_text(Kind.REQUEST, title, {GOAL: goal, TRANSCRIPT: span.line(), GROUNDS: grounds_lines()})
     tickets = main_tickets()
-    path = file_ticket(tickets, Domain.CHANGE.value, subject, COORDINATOR, text)
+    route_note = ROUTE_NOTE.format(route=route)
+    path = file_ticket(tickets, Domain.CHANGE.value, subject, COORDINATOR, text,
+                       filed=f"{Note.FILED}: {route_note}")
     number = ticket_name(path).number
-    if route is Route.DRAFT or inferred:
-        path = log_moves(tickets, number, Status.DRAFT, COORDINATOR, Status.OPEN,
-                         None, DRAFT_NOTE.format(route=route.value)).moved[0]
-    elif route in HELD:
-        path = log_moves(tickets, number, Status.ASSIGNED, COORDINATOR, Status.OPEN,
-                         session_id(), None).moved[0]
+    path = move_routed(tickets, number, Route.DRAFT if inferred else route, Status.OPEN)
     return f"{path}\n\n{readback_prompt(route, goal, inferred)}"
+
+
+def move_routed(tickets: Path, number: TicketNumber, route: Route, source: Status) -> Path:
+    """Moves the request `number`, which stands in `source`, to where
+    `route` places it, as `HELP` gives, with the note `ROUTE_NOTE`, and
+    returns its path."""
+    to = (Status.DRAFT if route is Route.DRAFT else Status.ASSIGNED if route in HELD
+          else Status.OPEN)
+    if to is source:
+        return ticket_path(tickets, number)
+    return log_moves(tickets, number, to, COORDINATOR, source,
+                     session_id() if to is Status.ASSIGNED else None,
+                     ROUTE_NOTE.format(route=route)).moved[0]
 
 
 def no_form() -> Refused:
@@ -280,13 +281,17 @@ def brief(*args: str) -> str:
     return render_brief(goal, spans, grounds)
 
 
-def append(inferred: bool, goal: str | None, number: str, start_words: str, end_words: str) -> str:
+def append(inferred: bool, route: Route | None, goal: str | None, number: str, start_words: str,
+           end_words: str) -> str:
     if goal is not None:
         check_goal(goal)
     span = resolve_span(start_words, end_words)
     tickets = main_tickets()
     ref = ticket_number(number)
     path = ticket_path(tickets, ref)
+    if route is not None and (ticket_status(path) is not Status.DRAFT or route is Route.DRAFT):
+        raise Refused(mctx("`--route` takes a route other than `{draft}`, on a request under "
+                           "`tickets/{draft}/`").format(draft=Route.DRAFT))
     text = path.read_text()
     if goal is not None:
         text = with_goal(text, goal)
@@ -296,7 +301,10 @@ def append(inferred: bool, goal: str | None, number: str, start_words: str, end_
     status = ticket_status(path)
     moved = log_moves(tickets, ref, status, COORDINATOR, status, None,
                       SPAN_NOTE.format(span=span.line())).moved[0]
-    return f"{moved}\n\n{readback_prompt(FollowUp(ref), request_goal(text), inferred)}"
+    if route is None:
+        return f"{moved}\n\n{readback_prompt(FollowUp(ref), request_goal(text), inferred)}"
+    moved = move_routed(tickets, ref, route, Status.DRAFT)
+    return f"{moved}\n\n{readback_prompt(route, request_goal(text), inferred)}"
 
 
 def marked(args: tuple[str, ...], count: int | None) -> tuple[bool, list[str]]:
@@ -336,12 +344,15 @@ def check_goal(goal: str) -> str:
 
 def append_command(*args: str) -> str:
     inferred, rest = marked(args, None)
+    route = None
+    if rest[:1] == ["--route"] and len(rest) >= 2:
+        route, rest = route_of(rest[1]), rest[2:]
     goal = None
     if rest[:1] == [GOAL_FLAG] and len(rest) >= 2:
         goal, rest = rest[1], rest[2:]
     if len(rest) != 3:
         raise no_form()
-    return append(inferred, goal, *rest)
+    return append(inferred, route, goal, *rest)
 
 
 SUBCOMMANDS = {

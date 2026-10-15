@@ -44,6 +44,14 @@ CLOSED_BY_LINE = re.compile(CLOSED_BY.format(fixed=Resolution.FIXED, change=Wait
 """The opening of a note of the form `CLOSED_BY`, whose literal words hold
 no regular expression syntax."""
 
+DUPLICATE_OF = "{duplicate} of {number}: {note}"
+"""The note of the line that closes a ticket with `duplicate`, with the
+number of the ticket it duplicates."""
+
+DUPLICATE_OF_LINE = re.compile(DUPLICATE_OF.format(
+    duplicate=Resolution.DUPLICATE, number=f"(?P<number>{TICKET_NUMBER.pattern})", note=""))
+"""The opening of a note of the form `DUPLICATE_OF`."""
+
 UNBLOCKED_BY = "{change} {number} closed {resolution}"
 """The note of the line that moves into `open` a ticket that waits on a
 change closed with another resolution, with that change's number and
@@ -86,9 +94,10 @@ LOG_LINE = re.compile(rf"^.*? (?P<status>{'|'.join(Status)}) \[(?P<agent>[^\]\s]
 """A log line, of whatever time form, as the command or a hand wrote it."""
 
 
-def logged(text: str, status: Status, agent: str) -> str:
-    """`text` with a `## Log` that gives its filing time."""
-    return f"{text.rstrip(chr(10))}\n\n{LOG}\n{log_line(status, agent, None, Note.FILED)}"
+def logged(text: str, status: Status, agent: str, note: str) -> str:
+    """`text` with a `## Log` that gives its filing time, with the note
+    `note`, which opens with `Note.FILED`."""
+    return f"{text.rstrip(chr(10))}\n\n{LOG}\n{log_line(status, agent, None, note)}"
 
 
 def log_line(status: Status, agent: str, agent_id: str | None, note: str | None) -> str:
@@ -141,6 +150,11 @@ def check_line(status: Status, moves: bool, agent: str, agent_id: str | None,
     if moves and status is Status.CLOSED and resolution_of(note) is None:
         raise Refused(mctx("the note of a move into `closed` opens with one of {resolutions}").format(
             resolutions=ticked(Resolution)))
+    if (moves and status is Status.CLOSED and resolution_of(note) is Resolution.DUPLICATE
+            and not DUPLICATE_OF_LINE.match(note or "")):
+        raise Refused(mctx("the note of a move into `closed` with `{duplicate}` has the form "
+                           "`{form}`").format(duplicate=Resolution.DUPLICATE, form=DUPLICATE_OF.format(
+                               duplicate=Resolution.DUPLICATE, number="<number>", note="<note>")))
 
 
 def check_wait(tickets: Path, note: str | None) -> None:

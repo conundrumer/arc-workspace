@@ -1,7 +1,7 @@
 """The ticket vocabulary that the ticket tools under `scripts/` and the
 operator's command (`operations`) share: the statuses a ticket moves
 between, the resolutions it closes with, the domains of its subject, its
-kinds, the note of the line that files it, and the end of the title of a
+kinds, the note of the line that files it and the route of a request, and the end of the title of a
 `refactor` ticket on a module that holds more than one subject. What
 takes a ticket out of each status, `exits` gives."""
 
@@ -102,6 +102,27 @@ class Note(StrEnum):
     RERUN = "rerun"
     """The line gives the worktree of a run of the change that the command
     left, which `worktrees.logged_worktree` passes over."""
+    RECURS = "recurs"
+    """`recurs <number>`: the `bug` `<number>` is a recurrence of the
+    defect the ticket records, its root cause."""
+
+
+class Route(StrEnum):
+    """The routes of work that write a request, a brief or a span
+    (`spans.py --help`)."""
+    DIRECT = "direct"
+    SEND = "send"
+    HOTFIX = "hotfix"
+    FILE = "file"
+    DRAFT = "draft"
+
+
+ROUTE_NOTE = "route `{route}`"
+"""The note, after `Note.FILED` on the line that files it, that gives the
+route of a request."""
+
+ROUTED = re.compile(rf"(?:{Note.FILED}: )?route `(?P<route>{'|'.join(Route)})`")
+"""The opening of a note that gives a route (`ROUTE_NOTE`)."""
 
 MANY_IDEAS = "many ideas in one place"
 """The end of the title of a `refactor` ticket on a module that holds more

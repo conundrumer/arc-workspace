@@ -96,7 +96,6 @@ class RunTicket:
     domain: Domain
     subject: str
     filer: str
-    priority: int
     depends_on: tuple[str, ...]
     waits_on: str | None
     filed_by_run: bool
@@ -116,7 +115,7 @@ def run_tickets(state: State, run: Run) -> tuple[RunTicket, ...]:
         if t.status in SETTLED:
             continue
         line = wait_line(t)
-        out.append(RunTicket(t.number, t.kind, t.status, t.domain, t.subject, t.filer, t.priority,
+        out.append(RunTicket(t.number, t.kind, t.status, t.domain, t.subject, t.filer,
                              t.depends_on, line.on_change if line is not None else None,
                              filed(t), t.number in reached))
     return tuple(out)

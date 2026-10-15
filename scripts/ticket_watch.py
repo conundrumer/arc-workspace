@@ -22,6 +22,8 @@ from transcript_entries import Refused
 
 from controlled_markdown import mctx
 from operations.roles import Role
+from ticketing.loss import CASE, Found, loss, rate
+from ticketing.loss import cases as loss_cases
 from ticketing.times import TIME_FORM, stamp_time
 from ticketing.vocabulary import Kind, Resolution, Status
 
@@ -32,26 +34,6 @@ median loss of."""
 
 CAP = 100
 """The most `delay` tickets `tickets/deferred/` holds."""
-
-
-SECOND_PRICE = 5 / 1800
-"""The dollars a second of wall time is worth: the user's preference to
-count about 30 minutes saved as worth about $5 of token cost
-(`prompts/agents/notes/decisions.md`, The user's preferences)."""
-
-
-def loss(dollars: float, seconds: float) -> float:
-    """The loss of a spend of `dollars` of tokens and `seconds` of wall
-    time, in dollars."""
-    return dollars + seconds * SECOND_PRICE
-
-
-CASE = "case {run} {start} {end}: {dollars:.4f} dollars, {seconds:.0f} s"
-"""The note of the log line that records a case."""
-
-
-CASE_NOTE = re.compile(r"case (?P<run>\S+) (?P<start>\S+) (?P<end>\S+): "
-                       r"(?P<dollars>[0-9.]+) dollars, (?P<seconds>[0-9]+) s")
 
 
 @dataclass(frozen=True)
@@ -114,16 +96,9 @@ def threshold(tickets: Path, editor: Role, undecided: list[str]) -> float | None
     return None
 
 
-def cases(text: str) -> list[tuple[float, float, float]]:
-    """The time of each case line of a ticket's log, with its dollars and
-    its seconds."""
-    out: list[tuple[float, float, float]] = []
-    for m in log_lines(text):
-        case = CASE_NOTE.fullmatch(m["note"] or "")
-        if case:
-            out.append((line_time(m), float(case["dollars"]),
-                        float(case["seconds"])))
-    return out
+def cases(text: str) -> list[Found]:
+    """The cases of a ticket's log, whose text is `text`."""
+    return loss_cases((line_time(m), m["note"] or "") for m in log_lines(text))
 
 
 TARGET_PATH = re.compile(r"[\w.-]+(?:/[\w.-]+)+\.\w+")
@@ -160,7 +135,7 @@ class Watched:
     the dollars and the seconds of each of their cases."""
     group: Group
     numbers: list[TicketNumber]
-    found: list[tuple[float, float, float]]
+    found: list[Found]
 
     @property
     def loss(self) -> float:
@@ -239,13 +214,13 @@ def evict(tickets: Path, agent: str) -> None:
         return
     now = time.time()
 
-    def rate(w: Watched) -> float:
+    def rate_of(w: Watched) -> float:
         if not w.found:
             raise Refused(mctx("{group} stands under `{deferred}` with no case").format(
                 group=w.named, deferred=Status.DEFERRED))
-        return w.loss / ((now - min(t for t, _, _ in w.found)) / 86400)
+        return rate(w.found, now)
 
-    lowest = min(watched(tickets), key=rate)
+    lowest = min(watched(tickets), key=rate_of)
     note = mctx("{wontfix}: {group} has the lowest loss rate under `{deferred}` at its cap of "
                 "{cap}, its cases summing {total:.4f} dollars of loss").format(
                     wontfix=Resolution.WONTFIX, deferred=Status.DEFERRED, cap=CAP, group=lowest.named, total=lowest.loss)

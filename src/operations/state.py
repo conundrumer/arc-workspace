@@ -21,9 +21,10 @@ class LogLine:
     `on_user` is whether the note opens with the wait on the user, and
     `on_change` the number of the change the note opens with a wait on.
     `waits` is whether the note opens with a wait of any kind.
-    `resolution` is the resolution the note opens with, and `closed_by`
+    `resolution` is the resolution the note opens with, `closed_by`
     the number of the change a note of the form `ticket_log.CLOSED_BY`
-    gives."""
+    gives, and `duplicate_of` the number of the ticket a note of the form
+    `ticket_log.DUPLICATE_OF` gives."""
     time: float
     status: Status
     agent: str
@@ -34,6 +35,7 @@ class LogLine:
     waits: bool
     resolution: Resolution | None
     closed_by: str | None
+    duplicate_of: str | None
 
 
 @dataclass(frozen=True)
@@ -67,7 +69,6 @@ class Ticket:
     filed: float
     title: str
     depends_on: tuple[str, ...]
-    priority: int
     editors: tuple[Role, ...] | None
     after_merge: str | None
     mechanical: bool
@@ -436,8 +437,8 @@ class Computed:
     for the session, with the numbers the coordinator names, keeping only
     the tickets that `tracker.tickets` holds. `spent` gives, for each
     change `me` holds, the spend of the agents `change_agents.of_change` gives
-    for it. `budgets` gives the budget of each change `taking.take` takes
-    next, taken at `State.now`, and of each held change whose spend passes
+    for it. `budgets` gives the budget of each change of `taking.takeable`,
+    taken at `State.now`, and of each held change whose spend passes
     the budget its take gives, taken at the line that gives that budget
     (`change_budget.Take`). `doc_budgets` gives, for each held change where
     `change_fragments.fragments_due` holds and that

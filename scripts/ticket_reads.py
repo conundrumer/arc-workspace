@@ -8,9 +8,9 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from ticket_files import listed_tickets, ticket_files, ticket_name
-from ticket_form import DEFAULT_PRIORITY, FRONT, front_fields, list_items, title
+from ticket_form import FRONT, front_fields, list_items, title
 from state_reads import DERIVED, Kept, state_cache
-from ticket_log import (CLOSED_BY_LINE, WAIT, Wait, held_log, holder_of, log_lines, resolution_of,
+from ticket_log import (CLOSED_BY_LINE, DUPLICATE_OF_LINE, WAIT, Wait, held_log, holder_of, log_lines, resolution_of,
                         waited, waited_change)
 from ticket_numbers import matched_number
 from transcript_entries import Refused
@@ -34,10 +34,12 @@ def log_line(m: re.Match[str]) -> LogLine:
     wait = WAIT.match(note)
     change = None if wait is None else waited_change(wait)
     closed = CLOSED_BY_LINE.match(note)
+    duplicate = DUPLICATE_OF_LINE.match(note)
     return LogLine(log_time(m.group().split(" ", 1)[0]), Status(m["status"]), m["agent"],
                    m["id"], note, wait is not None and waited(wait) is Wait.USER,
                    None if change is None else str(change), wait is not None, resolution_of(note),
-                   None if closed is None else str(matched_number(closed)))
+                   None if closed is None else str(matched_number(closed)),
+                   None if duplicate is None else str(matched_number(duplicate)))
 
 
 def editors_field(fields: Mapping[str, str]) -> tuple[Role, ...] | None:
@@ -76,7 +78,6 @@ def ticket_of(path: Path, text: str, found: list[re.Match[str]]) -> Ticket:
         subject=name.subject, filer=name.agent, filed=lines[0].time,
         title=title(path, text),
         depends_on=tuple(list_items(fields["depends-on"])) if "depends-on" in fields else (),
-        priority=int(fields["priority"]) if "priority" in fields else DEFAULT_PRIORITY,
         editors=editors_field(fields),
         after_merge=fields.get("after-merge"), mechanical="mechanical" in fields, log=lines,
         holder=holder_of(found), path=path)

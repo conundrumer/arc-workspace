@@ -27,10 +27,10 @@ from handbook.paths import scripts_importable
 scripts_importable()
 
 from ticket_files import FIELD, NAME_FORM, TicketName, ticket_path, ticket_status  # noqa: E402
-from ticket_form import (DEFAULT_PRIORITY, DESIGN, LOG, LOG_SECTION, MECHANICAL,  # noqa: E402
+from ticket_form import (DESIGN, LOG, LOG_SECTION, MECHANICAL,  # noqa: E402
                          RETIRED, VALIDATES, checked_kind, front, section, sections_example, ticket_kind,
                          title_line)
-from ticket_log import (AGENT_ID, CLOSED_BY, SESSION_ID, UNBLOCKED_BY, VALIDATED, Wait,  # noqa: E402
+from ticket_log import (AGENT_ID, CLOSED_BY, DUPLICATE_OF, SESSION_ID, UNBLOCKED_BY, VALIDATED, Wait,  # noqa: E402
                         log_lines, log_moves, logged, read_ticket, resolution_of, status_of)
 from ticket_numbers import (SESSION_VAR, SESSIONS, TicketNumber, reserve, session_id,  # noqa: E402
                             session_index, ticket_number, write_new)
@@ -38,15 +38,16 @@ from ticket_settle import to_settle  # noqa: E402
 from idle_sessions import MAIN, name_main, read_sessions  # noqa: E402
 from ticket_reads import editors_field  # noqa: E402
 from spends import budget  # noqa: E402
-from ticket_watch import (CAP, CHANGES, SECOND_PRICE, Case, add_evidence,  # noqa: E402
-                          Thresholds, case_loss, evict, fix_field, loss, route)
+from ticket_watch import (CAP, CHANGES, Case, add_evidence,  # noqa: E402
+                          Thresholds, case_loss, evict, fix_field, route)
 from ticket_sweep import (COMMAND_FIELD, COMMAND_SECONDS, EXERCISED_FIELD,  # noqa: E402
                           UNEXERCISED_DAYS, sweep)
+from ticketing.loss import SECOND_PRICE, loss  # noqa: E402
 from ticketing.text import SECTIONS, VALIDATION, heading  # noqa: E402
 from ticketing.times import TIME_FORM  # noqa: E402
 from ticket_vocabulary import ticked  # noqa: E402
 from ticketing.vocabulary import (DEFECT_SECTIONS, MANY_IDEAS, Domain, Kind,  # noqa: E402
-                                  Resolution, Status, Verdict)
+                                  Note, Resolution, Status, Verdict)
 from transcript_entries import Refused  # noqa: E402
 
 HELP = mctx("""
@@ -62,7 +63,7 @@ HELP = mctx("""
         EOF
         ```
     - A `change` takes `kind: change` and `editors: <editor>, <editor>`, with each editor the change needs among {editors}.
-        - It may add `depends-on: <number>, <number>`, `priority: <0 to 100>` (`{default_priority}` where it gives none), `after-merge: <the steps and checks its Scope places at or after the merge>` and `mechanical: {mechanical}` to the front matter.
+        - It may add `depends-on: <number>, <number>`, `after-merge: <the steps and checks its Scope places at or after the merge>` and `mechanical: {mechanical}` to the front matter.
         - It gives `mechanical` only where its Intent gives each edit under `src/` and `scripts/` outright.
         - It has `# <title>` as its title, and the sections {change_sections} in place of {defect_headings}.
         - Where it adds a mechanism to code, it has a `{design}` section after `## Intent` that gives the existing operations the change uses or extends and each new operation with its module.
@@ -125,6 +126,8 @@ LOG_HELP = mctx("""
     - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}` or `{change} <number>`, with `<number>` the number of a `change` ticket the ticket tracker holds.
     - A ticket waits on the change that the last line of its log whose note opens with what a ticket waits on gives as `{change} <number>`.
     - The note of a line that moves a ticket into `closed` opens with its resolution, one of {resolutions}.
+        - With `{duplicate}`, the note has the form `{duplicate_of}`, with `<number>` the number of the ticket it duplicates.
+    - A line whose note opens with `{recurs} <number>` records a recurrence of the defect the ticket records, with `<number>` the number of a `{bug}` whose root cause is that defect.
     """)
 
 LOG_RULES = mctx("""
@@ -278,10 +281,11 @@ def check_subject(tickets: Path, domain: Domain, subject: str) -> None:
 
 
 def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str,
-                case: list[str] | None = None) -> Path:
+                case: list[str] | None = None, filed: str = Note.FILED) -> Path:
     """Writes `text` as a ticket of the agent's session under its first
     status, with the case `case` gives as run, start and end where it
-    gives one, and returns its path."""
+    gives one, and the note `filed` on the line that files it, and returns
+    its path."""
     try:
         dom = Domain(domain)
     except ValueError:
@@ -318,7 +322,7 @@ def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str,
             evict(tickets, agent)
     number = reserve(tickets, session_index(tickets, session_id()))
     name = TicketName(number, dom, subject, agent).file_name
-    path = write_new(tickets / status, logged(text, status, agent), [name])
+    path = write_new(tickets / status, logged(text, status, agent, filed), [name])
     if found is not None and found.dollars is not None:
         path = log_moves(tickets, number, status, agent, status, None, found.note).moved[0]
     if found is not None:
@@ -595,7 +599,7 @@ their lines."""
 def help_values() -> dict[str, str]:
     """The values each help text of `file_ticket.py` is formatted with."""
     return dict(domains=ticked(Domain), editors=ticked(map(str, EDITORS)),
-                mechanical=MECHANICAL, default_priority=str(DEFAULT_PRIORITY),
+                mechanical=MECHANICAL,
                 defect_sections=sections_example(DEFECT_SECTIONS),
                 defect_headings=ticked(map(heading, DEFECT_SECTIONS)),
                 change_sections=ticked(map(heading, SECTIONS[Kind.CHANGE])), design=heading(DESIGN),
@@ -605,6 +609,9 @@ def help_values() -> dict[str, str]:
                 resolutions=ticked(Resolution), fixed=Resolution.FIXED, blocked=Status.BLOCKED,
                 user=Wait.USER, change=Wait.CHANGE, validation=heading(VALIDATION),
                 session_var=SESSION_VAR,
+                duplicate=Resolution.DUPLICATE, recurs=Note.RECURS, bug=Kind.BUG,
+                duplicate_of=DUPLICATE_OF.format(duplicate=Resolution.DUPLICATE, number="<number>",
+                                                 note="<note>"),
                 closed_by=CLOSED_BY.format(fixed=Resolution.FIXED, change=Wait.CHANGE,
                                            number="<number>", note="<note>"),
                 unblocked_by=UNBLOCKED_BY.format(change=Wait.CHANGE, number="<number>",
