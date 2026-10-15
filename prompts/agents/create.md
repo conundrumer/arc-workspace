@@ -1,6 +1,6 @@
 ---
 name: create
-description: Runs Create on the task the brief gives: writes the solver from the Analyze files, develops it, and pins its cases to witnesses.
+description: "[Solver work](prompts/agents/notes/launching.md#solver-work), [A solver work brief](prompts/agents/notes/launching.md#a-solver-work-brief)"
 model: opus
 effort: high
 tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop

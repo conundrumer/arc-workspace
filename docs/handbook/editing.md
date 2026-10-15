@@ -76,7 +76,7 @@
     - A rule on an act that one step of a reader applies stands in that reader's context at that step: inlined there from the section that states it, or stated there where that step is its subject.
     - A rule on an act that several steps of a reader apply stands once in that reader's context, in the section whose subject is that act or at the first of those steps, and each other step links it there.
     - Link every other fact or rule from each other place that needs it.
-- An agent's `description`, in the front matter of its prompt, says what the agent reads and what work it is for, as much as a launcher needs to pick the agent, and what its reply gives, where a launcher acts on that. It may give what the work is on, such as the task its brief gives, and gives nothing else of the brief's form, which [Launching notes](prompts/agents/notes/launching.md) states.
+- An agent's `description`, in the front matter of its prompt, is, where its `message` attribute is `brief`, the links to the sections under [Briefs](prompts/agents/notes/launching.md#briefs) that give its brief's form, and otherwise one phrase that says what work the agent is for, as much as a launcher needs to pick the agent.
 - A line that links a section relies on that section's heading alone.
 - No document restricts, replaces or redirects an operation another document states.
 - Progressive disclosure and staged disclosure manage an agent's context: an agent does better work when its context holds only what its current work needs, and these rules keep the rest out of its context until the agent reaches the work that needs it, so that its context does not overload.

@@ -1,6 +1,6 @@
 ---
 name: doc-reviewer
-description: Reviews a change to the agent-facing documents, sends each review's findings to the change's editors, each with the line, the rule it breaks, and the reader it fails, and files as a ticket each finding on a fault the change did not make, outside the places the change may edit.
+description: "[A doc reviewer's brief](prompts/agents/notes/launching.md#a-doc-reviewers-brief)"
 model: opus
 tools: Read, Grep, Glob, Bash, Write, Agent, SendMessage, TaskStop
 ---

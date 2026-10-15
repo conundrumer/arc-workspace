@@ -1,6 +1,6 @@
 ---
 name: ticket-reviewer
-description: Reviews each draft `change` ticket as an execution plan, moves each with no finding and no suggestion to `tickets/open/`, and writes in its log the findings, and a suggestion of a more general resolution, on any other. Its final reply gives each ticket it moved to `tickets/open/`, each finding and each suggestion.
+description: "[A ticket reviewer's brief](prompts/agents/notes/launching.md#a-ticket-reviewers-brief)"
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 ---

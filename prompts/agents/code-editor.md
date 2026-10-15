@@ -1,6 +1,6 @@
 ---
 name: code-editor
-description: Edits the code under `src/` and `scripts/` against the spec, the docstrings of the modules it touches, for its part of a change. Its final reply is its report, which gives each item of its brief, and of each later request, as done or as unfinished with its reason.
+description: "[An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), [A code editor's brief](prompts/agents/notes/launching.md#a-code-editors-brief), [A change's brief](prompts/agents/notes/launching.md#a-changes-brief), [Items and files](prompts/agents/notes/launching.md#items-and-files)"
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 ---

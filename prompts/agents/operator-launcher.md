@@ -1,6 +1,6 @@
 ---
 name: operator-launcher
-description: Launches an operator with its brief, passes each later line of the coordinator's to its running operator, and launches a fresh operator each time one ends for its context. It sends the coordinator the final reply of an operator that ends for another reason, with that operator's agent id, and, past its context bound, its own final reply asks for a fresh operator launcher.
+description: "[An operator's brief](prompts/agents/notes/launching.md#an-operators-brief)"
 model: haiku
 tools: Bash, Agent, SendMessage
 ---

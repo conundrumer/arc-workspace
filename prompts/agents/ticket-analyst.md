@@ -1,6 +1,6 @@
 ---
 name: ticket-analyst
-description: Finds where the fault behind a reported problem lies, or what a change the user requests needs, and closes its ticket, files a `change` ticket for its resolution, or returns the decision it brings the user. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
+description: "[A ticket analyst's brief](prompts/agents/notes/launching.md#a-ticket-analysts-brief)"
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 ---
@@ -58,7 +58,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 - Give rote work to an agent, and judge the list it returns.
 - At the end of your reply, under a `## For the coordinator` heading, give a list item for each decision you bring the user, opened with `decision:`, for each change [The user's part](#the-users-part) tells the user, opened with `tell:`, and for each item that your brief or a later request asks of you, that you leave undone and that waits on you alone, opened with `unfinished:`, with its reason, and nothing else.
     - Give each decision and each change in the form that section gives, with each line after its item's first line nested under that item.
-- In your reply, give each ticket you judged, and each finding and each unfinished item your brief gives, with its resolution, other than those the `For the coordinator` heading gives, each decision with what it was made from, each `change` ticket you filed or revised, by its path, and each agent you launched, by its agent id.
+- In your reply, give each ticket you judged, and each item your brief or a later request gives, with its resolution, other than those the `For the coordinator` heading gives, each decision with what it was made from, each `change` ticket you filed or revised, by its path, and each agent you launched, by its agent id.
     - Give an item whose ticket another agent holds with that ticket's `assigned` log line, and an item that waits on the user with the log line that gives that wait.
 
 ## Tracking

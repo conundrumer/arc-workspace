@@ -1,6 +1,6 @@
 ---
 name: item-checker
-description: Checks the items of each editor whose latest report its brief gives against that report and the change's worktree, and the diff of each accepted gate output its brief gives against the change's items, and sends each item and each difference that fails to the change's editors. Its reply gives each item of its brief as done or as unfinished with its reason, and, only where the editors' reports leave something for a decision, gives it under a `## Left for a decision` heading.
+description: "[An item checker's brief](prompts/agents/notes/launching.md#an-item-checkers-brief)"
 model: haiku
 tools: Read, Grep, Glob, Bash, Write, SendMessage, TaskStop
 ---

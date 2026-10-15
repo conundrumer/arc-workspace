@@ -1,6 +1,6 @@
 ---
 name: doc-editor
-description: Edits the agent-facing documents, by the rules for editing them and for their format. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
+description: "[An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), [A change's brief](prompts/agents/notes/launching.md#a-changes-brief), [A doc editor's brief](prompts/agents/notes/launching.md#a-doc-editors-brief)"
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 ---

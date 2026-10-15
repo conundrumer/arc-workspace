@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Judges the defect places in a diff of the code and the modules over 500 lines under `src/` and `scripts/`, and files each defect, each defect place that stands with its reason, and each place that poses a question as a ticket.
+description: "[A code reviewer's brief](prompts/agents/notes/launching.md#a-code-reviewers-brief)"
 model: opus
 tools: Read, Grep, Glob, Bash, Write, TaskStop
 ---

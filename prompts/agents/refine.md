@@ -1,6 +1,6 @@
 ---
 name: refine
-description: Runs Refine on the task the brief gives: reconciles the solver with the latest report, then simplifies and prunes.
+description: "[Solver work](prompts/agents/notes/launching.md#solver-work), [A solver work brief](prompts/agents/notes/launching.md#a-solver-work-brief)"
 model: opus
 effort: high
 tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop

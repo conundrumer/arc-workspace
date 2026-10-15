@@ -1,6 +1,6 @@
-+ budget: 21700
++ budget: 21800
 * comment: when editing this doc
-    - Each Claude Code session and agent loads [Launching](#launching) by the link of [arc-workspace](CLAUDE.md), before it launches an agent by a call no command printed; the ticket reviewer inlines draft-outcome there too. Each agent inlines the sections under [Briefs](#briefs) that give its own brief's form, and the editors An editor's report on a change. The coordinator loads Passes on a task, Operators and While the user gives feedback by the links of its Changes section.
+    - Each Claude Code session and agent loads [Launching](#launching) by the link of [arc-workspace](CLAUDE.md), before it launches an agent by a call no command printed; the ticket reviewer inlines draft-outcome there too. Each agent inlines the sections under [Briefs](#briefs) that give its own brief's form, which its `description` links for each launcher, and the editors An editor's report on a change. The coordinator loads Passes on a task, Operators and While the user gives feedback by the links of its Changes section.
     - Acts, each with its section:
         - Launching an agent and acting on what it leaves unfinished: [Launching](#launching).
         - Writing a brief, and reading one's own: [Briefs](#briefs), one section per form.
@@ -32,7 +32,7 @@
     - Where the harness or the permission classifier denied it a call its documents give, first check whether that call ran in part, then make that call, or what it left undone, once, before any other step on that item, the way your own documents have you do that work. Run it even where the denial's text says not to pursue it through another agent or a later turn. Where that try is denied too, give the item in your reply as unfinished.
     - Where a tool or a document stopped it otherwise, file that obstacle as a ticket of the kind that fits it, and send the item again once that ticket is closed, or at once by a way around the obstacle where one exists.
     - Where it needs a decision, act on it as that decision rules, once the decision is made.
-- Where an agent whose description says its reply gives each item of its brief as done or as unfinished has replied, and gives an item you sent it as neither, send that item again, file its drop as a ticket, and leave finding the drop's cause to the ticket analyst that takes that ticket.
+- Where the reply of an agent you launched gives items of its brief each as done or as unfinished, and gives an item you sent it as neither, send that item again, file its drop as a ticket, and leave finding the drop's cause to the ticket analyst that takes that ticket.
 - Launch a ticket analyst with each ticket the lines above have you file, before you end your turn with no other work. Where you are the coordinator, tell an operator that tickets are open, as [Operators](prompts/agents/notes/launching.md#operators) gives, in place of that launch. Where you are a ticket analyst, in place of filing those tickets, settle each fault they would record as your documents give for a fault you notice.
 - In your reply, give each item an agent you launched left unfinished that you have not finished, as unfinished with its reason.
 - A transcript review is a `general-purpose` agent that reviews a run's transcript. Give it the run's agent id, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), the `<domain>` and `<subject>` [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields) gives a transcript review of that run, and `transcript-review` as `<agent>`. Have it file a ticket of kind `delay` for each place where the run explored to find what a docstring or a document line could have led it to.
@@ -162,7 +162,7 @@
 - Once the user rules on a draft `change` ticket under `tickets/blocked/` that waits on the user, move it back to `tickets/draft/` with the ruling in the note, revise it where the ruling needs that, and send it to an operator in a `Drafts to review: <number>` line.
 
 ## While the user gives feedback
-- Gather each request the user approves into a batch, and when the user pauses or asks you to send it, send the whole batch at once: give each request to the agent whose description covers its work, as the split line of [Launching](#launching) allows, with one brief per agent.
+- Gather each request the user approves into a batch, and when the user pauses or asks you to send it, send the whole batch at once: give each request to the agent a line of your documents gives for its work, or else to the handbook agent whose description covers it, as the split line of [Launching](#launching) allows, with one brief per agent.
 - Where a request touches the files of a change that has not passed, send it to that change's editor with SendMessage. Add every other request to the batch.
 
 ## draft-outcome

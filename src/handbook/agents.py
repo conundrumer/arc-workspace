@@ -64,14 +64,21 @@ def agent_document(name: str, agents: Path = AGENT_DIR) -> nm.Node:
     return nm.Registry(DOCUMENTS_ROOT).load(agent_doc(name, agents))
 
 
-def agent_meta(name: str, agents: Path = AGENT_DIR) -> dict[str, str]:
-    """An agent's definition, as its document's front matter gives it."""
-    out: dict[str, str] = {}
-    for line in agent_document(name, agents).front.split("\n"):
+def _front_fields(document: nm.Node) -> dict[str, tuple[int, str]]:
+    """Each key of a document's front matter, with the line of the front
+    matter that gives it and its value as written, quotes and all."""
+    out: dict[str, tuple[int, str]] = {}
+    for n, line in enumerate(document.front.split("\n"), 1):
         if ": " in line and not line.startswith("---"):
             key, value = line.split(": ", 1)
-            out[key.strip()] = value.strip().strip('"')
+            out[key.strip()] = (n, value.strip())
     return out
+
+
+def agent_meta(name: str, agents: Path = AGENT_DIR) -> dict[str, str]:
+    """An agent's definition, as its document's front matter gives it."""
+    return {key: value.strip('"') for key, (_, value)
+            in _front_fields(agent_document(name, agents)).items()}
 
 
 def render(name: str, lib: Path = LIB_SRC, agents: Path = AGENT_DIR) -> str:
@@ -117,6 +124,44 @@ class MessageForm(Enum):
 def _takes_brief(document: nm.Node) -> bool:
     return attr_form(document, "message", MessageForm,
                      MessageForm.ROLE) is MessageForm.BRIEF
+
+
+LINKS_RE = re.compile(rf'"{nm.LINK_RE.pattern}(?:, {nm.LINK_RE.pattern})*"')
+"""The quotes are for the harness, which reads the front matter as YAML,
+where an unquoted value that opens with `[` is a sequence."""
+
+
+def description_findings(agents: Path = AGENT_DIR) -> list[str]:
+    """A finding for each agent whose document takes its brief alone and
+    whose `description` breaks the form `LINKS_RE` gives. It reads the
+    value as written, since `agent_meta` strips the quotes."""
+    out: list[str] = []
+    for name in agent_names(agents):
+        document = agent_document(name, agents)
+        if not _takes_brief(document):
+            continue
+        path = agent_doc(name, agents)
+        where = f"{repo_label(path)}:"
+        field = _front_fields(document).get("description")
+        if field is None:
+            out.append(f"{where} no `description`")
+            continue
+        n, value = field
+        if not LINKS_RE.fullmatch(value):
+            out.append(f"{where}{n}: the `description` is not links alone, "
+                       "joined by `, `, in double quotes")
+            continue
+        refs = [nm.reference(m.group(2)) for m in nm.LINK_RE.finditer(value)]
+        if any(not (ref.path and ref.ident) for ref in refs):
+            out.append(f"{where}{n}: a link of the `description` names no "
+                       "heading")
+            continue
+        try:
+            nm.check_links(nm.parse(f"- {value[1:-1]}", str(path)), path,
+                           REPO_ROOT)
+        except nm.ControlledMarkdownError as e:
+            out.append(f"{where}{n}: {e.message}")
+    return out
 
 
 def agent_prompt(handbook: str) -> str:
