@@ -29,22 +29,3 @@ out(P_out, Col) :-
     ; diag_dir_elem(Diag), corner_dist(P_in, Diag, 0),        // at corner diag
       neighbor(P_seat, Diag, P_out), params.bg(Col)           // steps out as bg
     ).
-
-.comp Determine {
-    // Seat each train input among its output's cells, color for color.
-    .init occ = Occurrences<Example, Color>
-    occ.shape(E, P_in, Col)  :- ex_in(E, P_in, Col).
-    occ.cell(E, P_out, Col)  :- ex_out(E, P_out, Col).
-
-    // A delta some train pair does not seat.
-    .decl broken(p: Box)
-    broken(Delta) :-
-        occ.occurrence(_, Delta),     // seats one pair
-        ex_out(E, _, _),              // and a train pair
-        !occ.occurrence(E, Delta).    // it misses
-
-    .decl ring_width(k: number)
-    ring_width(K) :-
-        occ.occurrence(_, Delta), !broken(Delta),   // the seat every pair takes
-        dir_elem(D), dist(Delta, D, K).             // its width at an edge
-}

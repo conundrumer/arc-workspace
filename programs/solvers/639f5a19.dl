@@ -80,12 +80,6 @@ out(P, Col, Ch) :-
     params.core_color(Col).
 
 .comp Determine {
-    .decl changed(col: Color)
-    changed(Col) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
-
-    .decl bg(col: Color)
-    bg(Col) :- ex_in(_, _, Col), !changed(Col).
-
     .type ObjKey = [e: Example, id: Ident]
 
     .init objs = Components<Example>

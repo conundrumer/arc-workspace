@@ -180,10 +180,6 @@ out(P_out, Col, [$HoleBox(), Dc]) :-
     .decl ftile(t: TileKey, p_intile: Position, col: Color)
     ftile([E, P_tile], P_intile, Col) :- parse.tile_cell(E, P_tile, P_intile, Col, $Count()).
 
-    // The tile's extent along the split axis.
-    .decl tile_size(k: number)
-    tile_size(K) :- ftile(_, P_intile, _), params.tile_axis(A), axis_dim(P_intile, A, K).
-
     // Tiles with equal content share an entry.
     .init same = KeyedSetCompare<TileKey, TileKey, TileMember>
     same.pattern_member(T, [P_intile, C]) :- ftile(T, P_intile, C).

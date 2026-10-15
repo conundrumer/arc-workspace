@@ -213,13 +213,3 @@ order.before([[Pc, $FirstScan()], C], A, B) :-
     scan_corner(C, L, S),
     head.box([[Pc, A], S], B1), dist(B1, L, K1),
     head.box([[Pc, B], S], B2), dist(B2, L, K2), K1 < K2.
-
-.comp Determine {
-    // An edge some output contradicts: a line across its axis holds two colors.
-    .decl clash(d: Dir)
-    clash(D) :-
-        ex_out(E, P, C1), ex_out(E, Q, C2), C1 != C2, dir_elem(D), same_dist(D, P, Q).
-
-    .decl layout_axis(a: Axis)
-    layout_axis(A) :- dir_elem(D), !clash(D), axis_of(D, A).
-}

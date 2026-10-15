@@ -20,8 +20,6 @@
 
 .type Choice = [m: Mark, s: Span]
 
-.type SpanKey = [e: Example, s: Span]
-
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
@@ -99,39 +97,3 @@ drawn(P, Ch) :- in(P, _), rect(B, Ch), box_edge(P, B, _).
 
 out(P, Col, [M, S]) :- drawn(P, [M, S]), ink(Col, M).
 out(P, Col, [M, S]) :- in(P, Col), mark_choice(M), span_choice(S), !drawn(P, [M, S]).
-
-.comp Determine {
-    // The cells the output draws, over the color they replace.
-    .decl drawn(e: Example, p: Position, col: Color)
-    drawn(E, P, Col) :- ex_in(E, P, C_in), ex_out(E, P, Col), Col != C_in.
-
-    .decl bg(c: Color)
-    bg(C_in) :- ex_in(E, P, C_in), drawn(E, P, _).
-
-    // A train input's non-bg color that its output does not draw with.
-    .decl mark_col(c: Color)
-    mark_col(Col) :- ex_out(E, _, _), ex_in(E, _, Col), !bg(Col), !drawn(E, _, Col).
-
-    // The cells each reading spans.
-    .decl spanned(e: Example, s: Span, p: Position)
-    spanned(E, $Markers(), P) :- ex_in(E, P, Col), mark_col(Col).
-    spanned(E, $Content(), P) :- ex_in(E, P, Col), !bg(Col).
-
-    .init span_box = Bbox<SpanKey>
-    span_box.cell([E, S], P) :- spanned(E, S, P).
-
-    .init rect_box = Bbox<Example>
-    rect_box.cell(E, P) :- drawn(E, P, _).
-
-    // How far inside the spanned box the drawn rectangle sits.
-    .decl inset(s: Span, k: number)
-    inset(S, K) :-
-        span_box.box([E, S], B), rect_box.box(E, B_rect),
-        relative(B, B_rect, V), dir_elem(D), dist(V, D, K).
-
-    .decl mark_inset(k: number)
-    mark_inset(K) :- inset($Markers(), K).
-
-    .decl content_inset(k: number)
-    content_inset(K) :- inset($Content(), K).
-}

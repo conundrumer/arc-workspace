@@ -122,15 +122,6 @@ out(P, Col, Ch) :-
         ex_out(E, P, Col), ex_in(E, P, Col2), Col != Col2,
         parse.label(E, P, Id).
 
-    // A corner refuted by a repainted block no mark seats toward it.
-    .decl stray(diag: DiagDir)
-    stray(Diag) :-
-        repaint(E, _, Id), diag_dir_elem(Diag),
-        !parse.mark_block(E, _, Diag, Id).
-
-    .decl corner(d: DiagDir)
-    corner(Diag) :- diag_dir_elem(Diag), !stray(Diag).
-
     // Repainted cells in their block's frame.
     .decl stamp(p: Position)
     stamp(P_inner) :-

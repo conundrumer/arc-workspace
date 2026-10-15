@@ -69,9 +69,6 @@ cast.cell([$Span(), D], P) :- axis_of(D, A), span.between(A, P).
     .decl changed(e: Example, p: Position)
     changed(E, P) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
 
-    .decl bg(c: Color)
-    bg(Col) :- changed(E, P), ex_in(E, P, Col).
-
     .decl cand(c: Color)
     cand(Col) :- ex_in(_, _, Col).
 

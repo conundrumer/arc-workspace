@@ -31,20 +31,3 @@ out(P, Col) :-
     ( tail(P, Col)                 // a grown cell
     ; !tail(P, _), Col = Col_in    // untouched
     ).
-
-.comp Determine {
-    // A cell the output paints over.
-    .decl changed(e: Example, p: Position)
-    changed(E, P) :- ex_out(E, P, Col), ex_in(E, P, Col_in), Col != Col_in.
-
-    // Some cell beside p is painted over.
-    .decl grew(e: Example, p: Position)
-    grew(E, P) :- ex_in(E, P, _), dir_elem(D), neighbor(P, D, Q), changed(E, Q).
-
-    // Contradicted: some cell of that color grows nothing.
-    .decl no_growth(col: Color)
-    no_growth(Col) :- ex_in(E, P, Col), ex_out(E, _, _), !grew(E, P).
-
-    .decl mark(col: Color)
-    mark(Col) :- ex_in(E, _, Col), ex_out(E, _, _), !no_growth(Col).
-}

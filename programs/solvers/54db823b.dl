@@ -22,26 +22,19 @@
 
 .init params = Params
 
-.comp Parse<Key> {
-    .decl cell(key: Key, p: Position, col: Color)  // input
-
-    .init objs = Components<Key>
-    objs.node(K, P) :- cell(K, P, Col), !params.bg(Col).
-}
-
-.init parse = Parse<Unit>
-parse.cell($U(), P, Col) :- in(P, Col).
+.init objs = Components<Unit>
+objs.node($U(), P) :- in(P, Col), !params.bg(Col).
 
 // An object with no mark cells counts zero, so it wins.
 .init marks = Tally<Ident, Position>
-marks.item(O, P) :- parse.objs.label($U(), P, O), in(P, Col), params.mark(Col).
-marks.domain(O) :- parse.objs.label($U(), _, O).
+marks.item(O, P) :- objs.label($U(), P, O), in(P, Col), params.mark(Col).
+marks.domain(O) :- objs.label($U(), _, O).
 
 .init fewest = ArgExtremes<Unit, Ident>
 fewest.cand($U(), O, N) :- marks.tally(O, N).
 
 .decl erased_object(o: Ident, p: Position)
-erased_object(O, P) :- fewest.low($U(), O, _), parse.objs.label($U(), P, O).
+erased_object(O, P) :- fewest.low($U(), O, _), objs.label($U(), P, O).
 
 .decl erased_cell(p: Position, ch: Choice)
 
@@ -61,37 +54,3 @@ erased_cell(P, $Cells()) :- erased_object(_, P).
 ebox.cell(O, P) :- erased_object(O, P).
 
 erased_cell(P, $Box()) :- in(P, _), ebox.box(_, B), inside(P, B).
-
-.comp Determine {
-    .init ex = Parse<Example>
-    ex.cell(E, P, Col) :- ex_in(E, P, Col).
-
-    // A pair changes only the erased object's cells, and they turn bg.
-    .decl bg(c: Color)
-    bg(Col) :- ex_in(E, P, C_in), ex_out(E, P, Col), C_in != Col.
-
-    .decl erased(e: Example, o: Ident)
-    erased(E, O) :- ex.objs.label(E, P, O), ex_out(E, P, Col), params.bg(Col).
-
-    .type EOC = [e: Example, o: Ident, c: Color]
-
-    .decl cand(c: Color)
-    cand(C) :- ex_in(E, _, C), ex_out(E, _, _), !params.bg(C).
-
-    // How much of each candidate color each object holds.
-    .init tint = Tally<EOC, Position>
-    tint.item([E, O, C], P) :- ex.objs.label(E, P, O), ex_in(E, P, C).
-    tint.domain([E, O, C]) :- ex.objs.label(E, _, O), cand(C).
-
-    .type EC = [e: Example, c: Color]
-
-    .init fewest = ArgExtremes<EC, Ident>
-    fewest.cand([E, C], O, N) :- tint.tally([E, O, C], N).
-
-    // C is out when some object other than the erased one holds the least of it.
-    .decl not_mark(c: Color)
-    not_mark(C) :- erased(E, O), fewest.low([E, C], O2, _), O2 != O.
-
-    .decl mark(c: Color)
-    mark(C) :- cand(C), !not_mark(C).
-}

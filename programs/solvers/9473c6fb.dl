@@ -97,14 +97,6 @@ out(P, Col, Ch) :-
 .comp Determine {
     .type ExDiag = [e: Example, diag: DiagDir]
 
-    // --- bg: the color the output leaves in place ---
-
-    .decl bg_defect(c: Color)
-    bg_defect(Col) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col2 != Col.
-
-    .decl bg(c: Color)
-    bg(Col) :- ex_out(E, _, _), ex_in(E, _, Col), !bg_defect(Col).   // a color of a drawn example
-
     // --- the order and the cycle, per candidate corner ---
 
     .init parse = Parse<ExDiag>
@@ -126,11 +118,6 @@ out(P, Col, Ch) :-
 
     .decl order_corner(d: DiagDir)
     order_corner(Diag) :- diag_dir_elem(Diag), !corner_defect(Diag).
-
-    .decl cycle_start(c: Color)
-    cycle_start(Col) :-
-        order_corner(Diag), rank_dir(E, Diag, D),
-        parse.order.first([[E, Diag], D], P), ex_out(E, P, Col).
 
     .decl cycle_succ(c: Color, c_next: Color)
     cycle_succ(Col, Col2) :-

@@ -16,43 +16,22 @@
 
 .init params = Params
 
-.comp Parse<Key> {
-    .decl grid(key: Key, p: Position, col: Color)
+// A cell of a segment, and the axis that segment runs along.
+.decl segment(p: Position, a: Axis, col: Color)
+segment(P, A, Col) :-
+    in(P, Col), !params.bg(Col),
+    neighbor(P, D, Q), in(Q, Col), axis_of(D, A).
 
-    // A cell of a segment, and the axis that segment runs along.
-    .decl segment(key: Key, p: Position, a: Axis, col: Color)
-    segment(Ky, P, A, Col) :-
-        grid(Ky, P, Col), !params.bg(Col),
-        neighbor(P, D, Q), grid(Ky, Q, Col), axis_of(D, A).
-
-    // The line of family A through P carries a segment of color Col.
-    .decl line_col(key: Key, p: Position, a: Axis, col: Color)
-    line_col(Ky, P, A, Col) :-
-        grid(Ky, P, _), segment(Ky, Q, A, Col), same_line(A, P, Q).
-}
-
-.init parse = Parse<Unit>
-parse.grid($U(), P, Col) :- in(P, Col).
+// The line of family A through P carries a segment of color Col.
+.decl line_col(p: Position, a: Axis, col: Color)
+line_col(P, A, Col) :- in(P, _), segment(Q, A, Col), same_line(A, P, Q).
 
 // The color a filled line leaves at P.
 .decl shown(p: Position, col: Color)
 shown(P, Col) :-
     params.over(A), perp(A, A2),
-    ( parse.line_col($U(), P, A, Col)                                   // the covering line
-    ; !parse.line_col($U(), P, A, _), parse.line_col($U(), P, A2, Col)  // the covered line
+    ( line_col(P, A, Col)                          // the covering line
+    ; !line_col(P, A, _), line_col(P, A2, Col)     // the covered line
     ).
 
 out(P, Col) :- in(P, _), ( shown(P, Col) ; !shown(P, _), params.bg(Col) ).
-
-.comp Determine {
-    .init ex = Parse<Example>
-    ex.grid(E, P, Col) :- ex_in(E, P, Col).
-
-    // A cell where the axis's filled line is not the color the output shows.
-    .decl covered(a: Axis)
-    covered(A) :- ex.line_col(E, P, A, Col), ex_out(E, P, Col2), Col2 != Col.
-
-    // The axis whose lines nothing covers.
-    .decl over(a: Axis)
-    over(A) :- axis_elem(A), !covered(A).
-}

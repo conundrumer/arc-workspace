@@ -152,14 +152,8 @@ out(P, Col, Ch) :- frame.cell(Ch, P), !seated(P, _, Ch), params.filler(Col).
     sep_dim(A, N) :- disp(_, Delta), axis_of(D, A), dist(Delta, D, N), N != 0.
 
     // A slab seats at the corner whose two edges its relative leaves alone.
-    .decl seat(p_tile: Position, diag: DiagDir)
-    seat(P_tile, Diag) :- disp(P_tile, Delta), diag_dist(Delta, Diag, _, 0, 0).
-
     .decl seat_of(d: Dir, diag: DiagDir)
     seat_of(D, Diag) :-
-        seat(P_tile, Diag),
-        axis(A), axis_of(D, A), dist(P_tile, D, 0).   // the slab's side of the stack
-
-    .decl diag(da: DiagAxis)
-    diag(DA) :- seat(_, Diag), diag_axis_of(Diag, DA).
+        disp(P_tile, Delta), diag_dist(Delta, Diag, _, 0, 0),   // the slab's corner
+        axis(A), axis_of(D, A), dist(P_tile, D, 0).             // the slab's side of the stack
 }

@@ -334,10 +334,6 @@ two_axis_color([B, F], C, Id, $TwoAxisErased(), BG) :-
     .init commonest = Mode<Example, Color, Position>
     commonest.item(E, Col, P) :- ex_in(E, P, Col).
 
-    // A component whose cells the output erases to the background color.
-    .decl cleared(e: Example, id: Ident)
-    cleared(E, Id) :- parse.member(E, $Conn8(), Id, P), ex_out(E, P, Col), commonest.mode(E, Col).
-
     // A component the output keeps, and the color it takes.
     .decl kept(e: Example, id: Ident, col: Color)
     kept(E, Id, Col) :-
@@ -345,24 +341,6 @@ two_axis_color([B, F], C, Id, $TwoAxisErased(), BG) :-
 
     .decl class_color(s: Sym, c: Color)
     class_color(S, Col) :- kept(E, Id, Col), parse.named.equals([E, $Conn8(), Id], S).
-
-    // A bound that erases a kept component or keeps an erased one.
-    .decl size_contradicted(k: number)
-    size_contradicted(K) :-
-        noise_cand(K), parse.size.tally([E, $Conn8(), Id], N),
-        ( N <= K, kept(E, Id, _)
-        ; N > K, cleared(E, Id) ).
-
-    // The bounds within the grid's extent.
-    .decl noise_cand(k: number)
-    noise_cand(K) :- ex_in(_, P, _), axis_elem(A), sub_extent(P, A, K).
-
-    // The bounds no pair contradicts.
-    .init bound = Extremes<Unit>
-    bound.cand($U(), K) :- noise_cand(K), !size_contradicted(K).
-
-    .decl noise_size(k: number)
-    noise_size(K) :- bound.low($U(), K).
 
     // A component in no class, mirrored across an axis.
     .decl two_axis(e: Example, id: Ident)

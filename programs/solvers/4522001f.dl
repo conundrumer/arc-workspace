@@ -226,21 +226,9 @@ out(Q, Col, $Pair()) :-
     .decl mask(p: Position)
     mask(P) :- first.rep(E, E), ex_out(E, P, Col), !params.bg(Col).
 
-    .decl ink(c: Color)
-    ink(Col) :- ex_out(_, _, Col), !params.bg(Col).
-
-    // The corner the picture seats against.
+    // The picture's box, which seats against a corner.
     .init pbox = Bbox<Unit>
     pbox.cell($U(), P) :- mask(P).
-
-    .decl corner(d: DiagDir)
-    corner(Diag) :- pbox.box($U(), B), corner_anchor(Diag, B, ZERO).
-
-    .decl box_anchor(d: DiagDir)
-    box_anchor(Diag) :- corner(Diag).
-
-    .decl mask_corner(d: DiagDir)
-    mask_corner(Diag) :- corner(Diag).
 
     // The boxes as separate objects; the stored one seats at the corner.
     .init sq = Components<Unit>
@@ -251,6 +239,7 @@ out(Q, Col, $Pair()) :-
 
     .decl box(d: Dir, k: number)
     box(D, K) :-
-        sqbox.box(_, B), corner(Diag), corner_anchor(Diag, B, ZERO),  // the box at the corner
+        pbox.box($U(), B0), corner_anchor(Diag, B0, ZERO),            // the corner the picture seats against
+        sqbox.box(_, B), corner_anchor(Diag, B, ZERO),                // the box at that corner
         dir_elem(D), dist(B, D, K).                                   // its margin at each edge
 }

@@ -138,7 +138,4 @@ out(P, Col, $Classify()) :-
     center_on_out(N, Col) :-
         ex_out(E, _, Col),
         parse.center_on(E), parse.corners.tally(E, N).
-
-    .decl out_dim(a: Axis, n: number)
-    out_dim(A, N) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, N).
 }

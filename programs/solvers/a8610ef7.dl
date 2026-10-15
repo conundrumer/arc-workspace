@@ -60,14 +60,6 @@ out(P, Col_out, $Lookup()) :-
         d4_elem(D),
         ex_in(E, P, C), apply(D, P, P_m), ex_in(E, P_m, C_m),   // cell and its image
         ex_out(E, P, Col).
-
-    // A transform that paints one color pair two ways.
-    .decl mismatch(d: D4)
-    mismatch(D) :- pair_color.clash([D, _, _]).
-
-    .decl mirror(d: D4)
-    mirror(D) :- d4_elem(D), !mismatch(D).
-
     .decl recolor(c_self: Color, c_mirror: Color, c_out: Color)
     recolor(C, C_m, Col) :- params.mirror(D), pair_color.value([D, C, C_m], Col).
 

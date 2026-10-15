@@ -105,9 +105,6 @@ out(P, Col_out, Ch) :-
         key_cell(E, P2), ex_in(E, P2, C2),    // another
         mapping(E, C1, C2).                   // their colors swap
 
-    .decl axis(a: Axis)
-    axis(A) :- grid_partner(P1, P2), axis_elem(A), same_line(A, P1, P2).
-
     .init frame = Frame2D<Unit>
     frame.extent($U(), A, N) :- key_dim(A, N).
 

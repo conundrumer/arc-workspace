@@ -97,22 +97,4 @@ out(P, Col, Ch) :- in(P, _), pivot(_, Ch), !copy(P, _, Ch), params.bg(Col).
     pivot_shape(P_inner) :-
         pivot(E, Col), shape_cell(E, Col, P),
         bbox.box([E, Col], B), crop(P, B, P_inner).
-
-    // Each candidate group's images of the shape cells.
-    .decl orbit(e: Example, s: Sym, p: Position, col: Color)
-    orbit(E, S, P_img, Col) :-
-        shape_cell(E, Col, P),
-        pivot(E, Pivot), bbox.box([E, Pivot], B),               // the pivot's box
-        relative(B, P, P_rel),                                  // cell in the pivot's frame
-        sym_member(S, D), apply(D, P_rel, P_rel2),              // one image per group element
-        compose(B, P_rel2, P_img), ex_in(E, P_img, _).          // seated back on the grid
-
-    .type ExCell = [e: Example, p: Position, col: Color]
-    .init same = KeyedSetCompare<Sym, Unit, ExCell>
-    same.pattern_member($U(), [E, P, Col]) :- ex_out(E, P, Col), !params.bg(Col).
-    same.observed_member(S, [E, P, Col]) :- orbit(E, S, P, Col).
-
-    // The group whose images are exactly the output's shape cells.
-    .decl group(s: Sym)
-    group(S) :- same.equals(S, $U()).
 }

@@ -131,9 +131,6 @@ out(P, BG,  [Det, M]) :-
     .decl mark(c: Color)
     mark(Col) :- bar(_, _, Col).
 
-    .decl out_dim(a: Axis, n: number)
-    out_dim(A, N) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, N).
-
     // An edge the bar does not run from.
     .decl mismatch_edge(d: Dir)
     mismatch_edge(D) :-

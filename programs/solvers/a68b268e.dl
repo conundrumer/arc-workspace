@@ -140,27 +140,9 @@ out(P, Col, $Ink(Dc)) :- front_ink.low([Dc, P], Col, _).
     order.elem($U(), T) :- tile_ink(_, T, _, _).
     order.before($U(), T, T2) :- beaten.reached(T, T2).
 
-    // The scan starts at the corner the unbeaten tile occupies.
-    .decl lex_corner(d: DiagDir)
-    lex_corner(Diag) :- order.first($U(), T), corner_dist(T, Diag, 0).
-
-    // The primary axis decides alone: nearer the corner's edge on it wins,
-    // whatever the across coordinate does.
-    .decl axis_mismatch(a: Axis)
-    axis_mismatch(A) :-
-        lex_corner(Diag), dir_of(Diag, A, D),
-        beats(T, T2), nearer(D, T2, T).
-
-    .decl lex_axis(a: Axis)
-    lex_axis(A) :- axis_elem(A), !axis_mismatch(A).
-
     .decl prio(p: Position, r: number)
     prio(T, R) :- order.rank($U(), T, R).
 
     .decl ink_rank(c: Color, r: number)
     ink_rank(Col, R) :- tile_ink(_, T, _, Col), prio(T, R).
-
-    // The tile is the output frame.
-    .decl tile_dim(k: number)
-    tile_dim(K) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, K).
 }

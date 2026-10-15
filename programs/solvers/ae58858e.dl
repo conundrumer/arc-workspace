@@ -183,12 +183,7 @@ keep($SizeTable(), X) :- size.tally(X, N), params.size_keep(N).
     .init shape_size = Tally<Patch, Position>
     shape_size.item([E, Id], P) :- shapes.label(E, P, Id).
 
-    .decl recolored(x: Patch)
-    recolored([E, Id]) :- shapes.label(E, P, Id), changed(E, P).
-
+    // The size of a shape the output recolors.
     .decl size_recolor(n: number)
-    size_recolor(N) :- recolored(X), shape_size.tally(X, N).
-
-    .decl size_keep(n: number)
-    size_keep(N) :- shape_size.tally(X, N), !recolored(X).
+    size_recolor(N) :- shapes.label(E, P, Id), changed(E, P), shape_size.tally([E, Id], N).
 }

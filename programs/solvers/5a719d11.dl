@@ -15,69 +15,39 @@
 
 .init params = Params
 
-.comp Parse<Key> {
-    .type Line = [key: Key, a: Axis, l: Position]
-    .type Panel = [key: Key, t: Position]
+.type Line = [a: Axis, l: Position]
 
-    .decl cell(key: Key, p: Position, col: Color)  // input
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
-    .init line_color = Unanimous<Line, Color>
-    line_color.item([K, A, L], Col) :- cell(K, P, Col), axis_elem(A), split(P, A, L, _).
+.init frame = DividerTiles<Unit>
+frame.cell($U(), P) :- in(P, _).
+// A uniform line spans the grid, so it cuts panels apart rather than sitting in one.
+frame.divider($U(), A, L) :- line_color.value([A, L], _).
 
-    .init frame = DividerTiles<Key>
-    frame.cell(K, P) :- cell(K, P, _).
-    // A uniform line spans the grid, so it cuts panels apart rather than sitting in one.
-    frame.divider(K, A, L) :- line_color.value([K, A, L], _).
+// Each panel's box, so paired panels share a cell vocabulary.
+.init panel = Bbox<Position>
+panel.cell(T, P) :- frame.tile_of($U(), P, T).
 
-    // Each panel's box, so paired panels share a cell vocabulary.
-    .init panel = Bbox<Panel>
-    panel.cell([K, T], P) :- frame.tile_of(K, P, T).
+// A panel's cells, in the panel's own frame.
+.decl panel_cell(t: Position, p_grid: Position, p_intile: Position)
+panel_cell(T, P_grid, P_intile) :-
+    panel.cell(T, P_grid), panel.box(T, B), crop(P_grid, B, P_intile).
 
-    // A panel's cells, in the panel's own frame.
-    .decl panel_cell(key: Key, t: Position, p_grid: Position, p_intile: Position)
-    panel_cell(K, T, P_grid, P_intile) :-
-        panel.cell([K, T], P_grid), panel.box([K, T], B), crop(P_grid, B, P_intile).
+// The ground a panel is drawn on: its commonest color.
+.init ground = Mode<Position, Color, Position>
+ground.item(T, Col, P_grid) :- panel_cell(T, P_grid, _), in(P_grid, Col).
 
-    // The ground a panel is drawn on: its commonest color.
-    .init ground = Mode<Panel, Color, Position>
-    ground.item([K, T], Col, P_grid) :- panel_cell(K, T, P_grid, _), cell(K, P_grid, Col).
-
-    // A cell of the panel's mark: everything the ground does not cover.
-    .decl mark(key: Key, t: Position, p_intile: Position)
-    mark(K, T, P_intile) :-
-        panel_cell(K, T, P_grid, P_intile),
-        cell(K, P_grid, Col), !ground.mode([K, T], Col).
-}
-
-.init parse = Parse<Unit>
-parse.cell($U(), P, Col) :- in(P, Col).
+// A cell of the panel's mark: everything the ground does not cover.
+.decl mark(t: Position, p_intile: Position)
+mark(T, P_intile) :- panel_cell(T, P_grid, P_intile), in(P_grid, Col), !ground.mode(T, Col).
 
 // --- program ---
 
 out(P_grid, Col) :-
-    parse.panel_cell($U(), T, P_grid, P_intile),
-    params.pair_axis(A), flip_of(A, D), apply(D, T, T2),                    // the panel it pairs with
-    ( parse.mark($U(), T2, P_intile), parse.ground.mode([$U(), T2], Col)    // its mark, in its own ground
-    ; !parse.mark($U(), T2, P_intile), parse.ground.mode([$U(), T], Col)    // elsewhere this panel's ground
+    panel_cell(T, P_grid, P_intile),
+    params.pair_axis(A), flip_of(A, D), apply(D, T, T2),    // the panel it pairs with
+    ( mark(T2, P_intile), ground.mode(T2, Col)              // its mark, in its own ground
+    ; !mark(T2, P_intile), ground.mode(T, Col)              // elsewhere this panel's ground
     ).
-out(P_grid, Col) :- in(P_grid, Col), !parse.frame.tile_of($U(), P_grid, _).  // the cutting lines stand
-
-.comp Determine {
-    .init ex = Parse<Example>
-    ex.cell(E, P, Col) :- ex_in(E, P, Col).
-
-    // The output each candidate pairing axis predicts.
-    .decl cand_out(e: Example, a: Axis, p: Position, col: Color)
-    cand_out(E, A, P_grid, Col) :-
-        ex.panel_cell(E, T, P_grid, P_intile),
-        axis_elem(A), flip_of(A, D), apply(D, T, T2),
-        ( ex.mark(E, T2, P_intile), ex.ground.mode([E, T2], Col)
-        ; !ex.mark(E, T2, P_intile), ex.ground.mode([E, T], Col)
-        ).
-
-    .decl contradicted(a: Axis)
-    contradicted(A) :- cand_out(E, A, P, Col), ex_out(E, P, Col2), Col != Col2.
-
-    .decl pair_axis(a: Axis)
-    pair_axis(A) :- axis_elem(A), !contradicted(A).
-}
+out(P_grid, Col) :- in(P_grid, Col), !frame.tile_of($U(), P_grid, _).  // the cutting lines stand

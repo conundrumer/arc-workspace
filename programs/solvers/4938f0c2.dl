@@ -93,33 +93,3 @@ out(P, Col, Ch) :-
     ( img(P, Col, Ch)              // an image lands here
     ; !img(P, _, Ch), Col = C0     // nothing lands — the input cell
     ).
-
-.comp Determine {
-    .decl ink(e: Example, p: Position, col: Color)
-    ink(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col), !params.marker(Col).
-
-    .decl out_ink(e: Example, p: Position, col: Color)
-    out_ink(E, P, Col) :- ex_out(E, P, Col), !params.bg(Col), !params.marker(Col).
-
-    .init block = Bbox<Example>
-    block.cell(E, P) :- ex_in(E, P, Col), params.marker(Col).
-
-    // Where a transform about the block carries an ink cell, inside the grid.
-    .decl img(e: Example, d: D4, p: Position, col: Color)
-    img(E, D, P_out, Col) :-
-        ink(E, P, Col), block.box(E, B),   // an ink cell and its block
-        relative(B, P, V),                 // its offset from the block
-        d4_elem(D), apply(D, V, V2),
-        compose(B, V2, P_out), ex_in(E, P_out, _).
-
-    .type ExCell = [e: Example, p: Position, col: Color]
-    .init orbit = KeyedSetCompare<Sym, Unit, ExCell>
-    orbit.pattern_member($U(), [E, P, Col]) :- out_ink(E, P, Col).
-    orbit.observed_member(S, [E, P, Col]) :-
-        sym_member(S, D), img(E, D, P, Col),   // the cells the group's transforms reach
-        ex_out(E, _, _).                       // in the examples with outputs
-
-    // The group whose orbit is exactly the output's ink.
-    .decl sym(s: Sym)
-    sym(S) :- orbit.equals(S, $U()).
-}

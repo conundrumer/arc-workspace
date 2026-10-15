@@ -30,33 +30,27 @@
 .decl impl_choice(ch: Choice)
 impl_choice($Corner()). impl_choice($Quadrant()).
 
-// The drawn rectangle, and the cells one diagonal step in and out of each of
-// its corners.
-.comp Parse<Key> {
-    .decl cell(key: Key, p: Position)  // @input
+.decl drawn(p: Position)
+drawn(P) :- in(P, Col), !params.bg(Col).
 
-    .init bb = Bbox<Key>
-    bb.cell(Ky, P) :- cell(Ky, P).
+// The drawn rectangle.
+.init bb = Bbox<Unit>
+bb.cell($U(), P) :- drawn(P).
 
-    .decl corner(key: Key, d: DiagDir, p: Position)
-    corner(Ky, D, P) :- bb.box(Ky, B), cell(Ky, P), box_corner(P, B, D).
+// The drawn cell at each corner of the rectangle.
+.decl corner(d: DiagDir, p: Position)
+corner(D, P) :- bb.box($U(), B), drawn(P), box_corner(P, B, D).
 
-    .decl inner(key: Key, d: DiagDir, p: Position)
-    inner(Ky, D, P) :- corner(Ky, D, P_c), diag_opposite(D, D_in), neighbor(P_c, D_in, P).
-
-    .decl outer(key: Key, d: DiagDir, p: Position)
-    outer(Ky, D, P) :- corner(Ky, D, P_c), neighbor(P_c, D, P).
-}
-
-.init parse = Parse<Unit>
-parse.cell($U(), P) :- in(P, Col), !params.bg(Col).
+// The cell one diagonal step in from each corner.
+.decl inner(d: DiagDir, p: Position)
+inner(D, P) :- corner(D, P_c), diag_opposite(D, D_in), neighbor(P_c, D_in, P).
 
 // The mark that leaves corner d.
 .decl mark(d: DiagDir, p: Position, col: Color, ch: Choice)
 
 // --- $Corner ---
 
-mark(D, P, Col, $Corner()) :- parse.inner($U(), D, P), in(P, Col), !params.bg(Col).
+mark(D, P, Col, $Corner()) :- inner(D, P), in(P, Col), !params.bg(Col).
 
 // --- $Quadrant ---
 
@@ -64,7 +58,7 @@ mark(D, P, Col, $Corner()) :- parse.inner($U(), D, P), in(P, Col), !params.bg(Co
 .decl enclosed(p: Position, col: Color, p_rel: Position)
 enclosed(P, Col, P_rel) :-
     in(P, Col), !params.bg(Col),
-    parse.bb.box($U(), B), interior(P, B), relative(B, P, P_rel).
+    bb.box($U(), B), interior(P, B), relative(B, P, P_rel).
 
 .init quad = DiagPlacement<Unit>
 quad.cell($U(), P_rel) :- enclosed(_, _, P_rel).
@@ -77,31 +71,10 @@ mark(D, P, Col, $Quadrant()) :- enclosed(P, Col, P_rel), quad.quadrant($U(), P_r
 .decl landing(p: Position, col: Color, ch: Choice)
 landing(P, Col, Ch) :-
     mark(D, _, Col, Ch), params.eject(R), apply_diag_dir(R, D, D_out),
-    parse.outer($U(), D_out, P).
+    corner(D_out, P_c), neighbor(P_c, D_out, P).
 
 out(P, Col, Ch) :- landing(P, Col, Ch).
 out(P, Col, Ch) :-
     impl_choice(Ch), in(P, Col_in), !landing(P, _, Ch),
     ( mark(_, P, _, Ch), params.bg(Col)      // the cell the mark left
     ; !mark(_, P, _, Ch), Col = Col_in ).    // unchanged
-
-.comp Determine {
-    .init parse = Parse<Example>
-    parse.cell(E, P) :- ex_in(E, P, Col), !params.bg(Col).
-
-    // The mark at each corner, and the color that lands outside each corner.
-    .decl left(e: Example, d: DiagDir, col: Color)
-    left(E, D, Col) :- parse.inner(E, D, P), ex_in(E, P, Col), !params.bg(Col).
-
-    .decl landed(e: Example, d: DiagDir, col: Color)
-    landed(E, D, Col) :- parse.outer(E, D, P), ex_out(E, P, Col).
-
-    // A transform that some mark's landing contradicts.
-    .decl clash(d: D4)
-    clash(R) :-
-        left(E, D, Col), ex_out(E, _, _),                     // a mark of a train pair
-        apply_diag_dir(R, D, D_out), !landed(E, D_out, Col).  // no landing at the corner R names
-
-    .decl eject(d: D4)
-    eject(R) :- d4_elem(R), !clash(R).
-}
