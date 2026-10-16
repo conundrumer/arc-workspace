@@ -196,6 +196,11 @@ class Hunk(NamedTuple):
         """The last line of the old side, where its count is not 0."""
         return self.old_start + self.old_count - 1
 
+    @property
+    def new_end(self) -> int:
+        """The last line of the new side, where its count is not 0."""
+        return self.new_start + self.new_count - 1
+
 
 @dataclass(frozen=True)
 class Touched:
@@ -252,9 +257,13 @@ def touched_from(base: str, recorded: str) -> list[Touched]:
     path that stands at `base` and not at `recorded` is `unrecorded` where
     it is a Python file, and is otherwise added, or deleted where the change
     deletes it; a path that stands at `recorded` and
-    not at `base` is modified where the change adds it. A modified Python
-    file that differs between the two commits has no hunk, since its hunks
-    number the lines of `base` and not the recorded lines."""
+    not at `base` is modified where the change adds it. The hunks of a
+    modified Python file are those of its diff from `base` to the checkout,
+    with the old side of each numbered in the recorded text; where the file
+    differs between the two commits, `renumbered` numbers them. The hunks
+    from `recorded` to `base` count only where a hunk of the change meets
+    them: the commits that wrote them passed their own merge's gate, whose
+    accepted outputs this gate compares against."""
     moved = between(recorded, base)
     absent = between(recorded, base, "--diff-filter=A")
     gone = between(recorded, base, "--diff-filter=D")
@@ -270,12 +279,54 @@ def touched_from(base: str, recorded: str) -> list[Touched]:
         elif c.path in gone:
             status = checkout.Change.MODIFIED
         hunks: tuple[Hunk, ...] = ()
-        if (status is checkout.Change.MODIFIED and Path(c.path).suffix in PY_SUFFIXES
-                and c.path not in moved):
-            hunks = hunks_of(checkout.git_out(checkout.ROOT, "diff", "-U0", "--no-color",
-                                              "--no-ext-diff", base, "--", c.path))
+        if status is checkout.Change.MODIFIED and Path(c.path).suffix in PY_SUFFIXES:
+            hunks = _diff_hunks(c.path, base)
+            if c.path in moved:
+                hunks = renumbered(hunks, _diff_hunks(c.path, recorded, base))
         out.append(Touched(c.path, status, hunks))
     return out
+
+
+def _diff_hunks(path: str, *commits: str) -> tuple[Hunk, ...]:
+    """The `-U0` hunks of `path` from the first of `commits` to the second,
+    or to the checkout where `commits` give one."""
+    return hunks_of(checkout.git_out(checkout.ROOT, "diff", "-U0", "--no-color",
+                                     "--no-ext-diff", *commits, "--", path))
+
+
+def _old_line(n: int, since: Sequence[Hunk]) -> int:
+    """The line `n` of the new text of `since`, which stands outside the
+    new side of each, numbered in the old text: the inverse of `moved`."""
+    shift = 0
+    for r in since:
+        if n > (r.new_end if r.new_count else r.new_start):
+            shift += r.new_count - r.old_count
+    return n - shift
+
+
+def renumbered(hunks: Sequence[Hunk], since: Sequence[Hunk]) -> tuple[Hunk, ...]:
+    """The hunks `hunks` of a diff from a text B, each with its old side
+    numbered in the text A that the hunks `since` change into B. A line of
+    B that a hunk of `since` wrote stands for the lines of A that hunk
+    replaced, or for its point of insertion, so a hunk whose old side meets
+    the new side of a hunk of `since` takes in that hunk's old side. An
+    insertion meets a hunk of `since` where the line it follows is one that
+    hunk wrote."""
+    out: list[Hunk] = []
+    for h in hunks:
+        lo, hi = (h.old_start, h.old_end) if h.old_count else (h.old_start, h.old_start)
+        met = [r for r in since if r.new_count
+               and r.new_start <= hi and lo <= r.new_end]
+        lines = {n for r in met for n in range(r.old_start, r.old_end + 1)}
+        points = [r.old_start for r in met if not r.old_count]
+        if h.old_count:
+            lines |= {_old_line(n, since) for n in range(lo, hi + 1)
+                      if not any(r.new_start <= n <= r.new_end for r in met)}
+        elif not met:
+            points.append(_old_line(h.old_start, since))
+        out.append(Hunk(min(lines), max(lines) - min(lines) + 1, h.new_start, h.new_count)
+                   if lines else Hunk(min(points), 0, h.new_start, h.new_count))
+    return tuple(out)
 
 
 @dataclass(frozen=True)
