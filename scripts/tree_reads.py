@@ -119,8 +119,8 @@ def claims(main: Path) -> dict[str, str]:
 
 def gate_outputs(tree: Path) -> tuple[str, ...]:
     """The accepted gate outputs the change in the worktree `tree` writes,
-    against `master`."""
-    return tuple(sorted({c.path for c in checkout.changed_paths(tree, BASE, ACCEPTED)}))
+    against its merge base with `master`."""
+    return tuple(sorted({c.path for c in checkout.changed_paths(tree, merge_base(tree), ACCEPTED)}))
 
 
 def fragments(tree: Path) -> tuple[Place, ...]:
