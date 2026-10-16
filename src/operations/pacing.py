@@ -3,7 +3,7 @@
 
 A `Pace:` line names a preset with its arguments (`PARSER`) or the path
 of a script that defines `paces` (`Script`). With no such line, the pace
-is `even` with its defaults. A preset reads a `Usage` and gives the time
+is `asap`. A preset reads a `Usage` and gives the time
 from which it admits a ticket (`Until`); a script gives whether it admits
 one now (`Scripted`); a reading that gives neither is `Unknown`, under
 which the pace counts as past."""
@@ -178,7 +178,7 @@ def preset(words: list[str]) -> Preset:
     return args.build(args)
 
 
-DEFAULT: Preset = preset(["even"])
+DEFAULT: Preset = preset(["asap"])
 
 
 def line_pace(rest: str, main_tree: Path) -> Preset | Path | None:

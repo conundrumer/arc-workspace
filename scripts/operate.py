@@ -183,7 +183,7 @@ PARTS = {
         - `even [--factor F] [--window W]`, with F {factor} and W `{window}` by default: within the pace while the window's `used_pct` is at most F times its `elapsed_pct`.
         - `by <ISO 8601 time> [--window W]`, the time with its time zone and W `{window}` by default: within the pace while the window's `used_pct` is at most the percentage that has passed of the time from the window's start to the given time, and always from that time on.
         - `asap`: always within the pace.
-    - With no `Pace:` line, the pace is `even` with its defaults.
+    - With no `Pace:` line, the pace is `asap`.
     - Where the usage file holds no reading of a preset's window written less than {stale} seconds ago, that preset's pace counts as past, and the coordinator gets a line that says so.
     - `Pace: <path>` gives the Python script at `<path>`, absolute or relative to the main tree, which `next` loads at each read of the state.
         - It defines `paces(usage: Usage) -> bool`, with `Usage` from the module `operations.pacing`, which gives `True` where the pace admits a ticket now.
