@@ -7,8 +7,10 @@ cause that held it. A step is due on it by an exit of `tracker.exits` that
 an operator's step makes, read by the function that step selects its work
 by (`selection`); a ticket whose only exits are steps of no operator, or
 that such a function leaves out, waits by design and is not due. A ticket
-that a live session holds waits on that session's own work, a step of no
-operator, and is not due. Its progress is a line of its log other than a
+that a live holder outside the session's own agent runs holds waits on
+that holder's work, a step of no operator, which the operators'
+transcripts do not show and which that holder's own session watches, and
+is not due. Its progress is a line of its log other than a
 take or a release, the first take after such progress, the launch of an
 agent of it, a report of such an agent, and, for a change, its merge onto
 `master`; an agent of it that is pending and not quiet is progress too,
@@ -42,11 +44,10 @@ ON_USER = mctx("it waits on the user")
 NO_STEP = mctx("it has had no step since {time}")
 
 
-def held_by_live_session(state: State, t: Ticket) -> bool:
-    """Whether the holder of `t` is a session id, not an agent id, and is
-    live (`live_holder`)."""
-    return (t.holder is not None and re.fullmatch(AGENT_ID, t.holder) is None
-            and live_holder(state, t.holder))
+def held_outside_session(state: State, t: Ticket) -> bool:
+    return (t.holder is not None and live_holder(state, t.holder)
+            and (re.fullmatch(AGENT_ID, t.holder) is None
+                 or t.holder not in state.session_holders))
 
 
 def selection(state: State, e: Exit) -> set[str]:
@@ -56,7 +57,7 @@ def selection(state: State, e: Exit) -> set[str]:
     match e:
         case Exit.HOLDER | Exit.RELEASE:
             return {n for n, t in state.tracker.tickets.items()
-                    if t.status is Status.ASSIGNED and not held_by_live_session(state, t)}
+                    if t.status is Status.ASSIGNED and not held_outside_session(state, t)}
         case Exit.TAKE:
             return {t.number for t in taking.takeable(state)}
         case Exit.TICKET_REVIEW:
