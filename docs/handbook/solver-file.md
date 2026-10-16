@@ -170,7 +170,7 @@
         - `Choice` itself
         - the type of a field of the `Choice` record
         - the type of a field of a constructor in `Choice`
-    - `TiebreakResolution` for alt outputs
+    - `TiebreakResolution` for alt outputs, and for the grids a case gives on one input, one per resolution of a tie its model leaves unbroken
     - `OpenValue` for the open values the output depends on, per [Cases](docs/handbook/solver-file.md#cases), and the record type of each of its fields
     - `DemonstratedChoice`, per [Demonstrated choice](docs/handbook/solver-file.md#demonstrated-choice)
     - `DemonstratedRule`, per [Demonstrated choice](docs/handbook/solver-file.md#demonstrated-choice)
