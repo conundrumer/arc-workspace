@@ -78,7 +78,7 @@ def progress(state: State, t: Ticket) -> float | None:
     """The time of `t`'s last progress, or None where an agent of it is
     at work."""
     agents = agents_of(state, t.number)
-    if any(a.pending and a.quiet is None for a in agents):
+    if any(a.pending and a.agent_id not in state.transcripts.quiet for a in agents):
         return None
     merge = merging.merge_commit(state, t) if t.kind is Kind.CHANGE else None
     last: float = max([t.filed,

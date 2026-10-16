@@ -5,7 +5,7 @@ steps read (`monitor_reads`)."""
 
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from agent_turns import first_time, last_time
@@ -16,9 +16,13 @@ from idle_sessions import main_wanted, read_sessions, running, take_main, want_m
 from monitor_reads import late_resumes, watched
 from open_agents import Listed, quiet_since, running_agents, work_open
 from operator_reads import (
+    AgentsRead,
+    OperatorRead,
     ended_elsewhere,
     ended_with,
     operator_runs,
+    joined,
+    kept,
     read_operator,
     stalled_reports,
 )
@@ -49,13 +53,14 @@ from engine.checkout import agents_of
 from handbook.reader_names import ReaderName
 from handbook.readers import reader_calls
 from operations import pacing
+from operations.pacing import Usage
 from operations.directives import named, pace
 from operations.final_reply import final_sends_in, for_context, sent_final_text
 from operations.handled import made
 from operations.change_agents import on_change
 from operations.change_budget import left_draft
 from operations.log_commands import AGENT
-from operations.monitor import MonitorState
+from operations.monitor import MonitorState, Watched
 from operations.plan import elsewhere, taken_up, unknown_line
 from operations.roles import Role
 from operations.state import (
@@ -65,11 +70,11 @@ from operations.state import (
     Deferred,
     GitRead,
     HeldRead,
-    Message,
-    PassReport,
+    LateResume,
     Reader,
     ReadOnUse,
     Report,
+    Waits,
     SessionsRead,
     State,
     Stuck,
@@ -98,130 +103,263 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     main = main_tree()
     tickets_dir = main / "tickets"
     undecided: list[str] = []
-    runs = operator_runs(session, me)
-    if me not in dict(runs):
-        runs.append((me, find(me)))
-    agents: list[Agent] = []
-    calls: list[Call] = []
-    messages: list[Message] = []
-    passes: dict[str, PassReport] = {}
+    runs = runs_read(session, me)
     tree = read_git(main)
-    subjects: dict[str, float] = {}
-    for c in tree.commits:
-        subjects[c.subject] = max(subjects.get(c.subject, c.time), c.time)
-    read = [(aid, path) for aid, path in runs
-            if since is None or aid == me or (t := last_time(path)) is not None and t >= since]
-    for aid, path in read:
-        one = read_operator(aid, path, main, undecided, subjects)
-        agents += one.agents
-        calls += one.calls
-        messages += one.messages
-        passes.update(one.passes)
-    agents += editor_reviewers(agents, main, undecided)
+    read = operators_since(runs.runs, me, since)
+    ops = operators_read(read, main, undecided, tree)
     late = late_resumes(read, undecided)
-    launched = {a.agent_id for a in agents if a.agent_id}
     watching: list[str] = []
     listing = running_agents(find(session), watching)
-    now_watched = watched(listing, launched, watching, opened)
-    watched_ids = {w.agent_id for w in now_watched}
-    coordinators = {aid: x.launch.since for x in listing
-                    if (aid := x.launch.agent) in watched_ids and aid not in launched}
-    stalled = stalled_reports(agents, coordinators,
-                              [w.agent_id for w in now_watched if w.stalled is not None])
-    ended: dict[str, Report | None] = {**ended_elsewhere(agents, me, undecided), **stalled}
-    agents = [ended_with(a, ended[a.agent_id]) if a.pending and a.agent_id in ended else a
-              for a in agents]
+    now_watched = watched_read(listing, ops.agents, watching, opened)
     now = time.time()
-    agents = [with_quiet(a, listing, now) for a in agents]
-    quiet_ended = {a.agent_id for a in agents
-                   if a.pending and a.still_running and a.quiet is not None and a.agent_id}
-    ended.update(dict.fromkeys(quiet_ended))
-    agents = [ended_with(a, None) if a.pending and a.agent_id in quiet_ended else a
-              for a in agents]
-    running_work = {aid: tuple(sp.command for sp in x.running)
-                    for x in listing if (aid := x.launch.agent) is not None}
-    stuck = {aid: Stuck(session, q, running_work.get(aid, ()))
-             for aid, q in [*((a.agent_id, a.quiet) for a in agents),
-                            *((w.agent_id, w.stuck) for w in now_watched)]
-             if aid is not None and q is not None}
+    ends = ends_read(ops.agents, me, listing, now_watched, now, undecided)
+    running_work = work_of(listing)
+    stuck = stuck_read(session, ends.quiet, now_watched, running_work)
     tickets, unread = read_tickets(tickets_dir)
-    elsewhere_read = elsewhere_agents(
-        [t for t in tickets.values() if t.kind is Kind.CHANGE and t.status is Status.ASSIGNED
-         and t.holder == me], me, frozenset(dict(runs)), main, undecided)
-    known = {a.agent_id for a in (*agents, *elsewhere_read) if a.agent_id} \
-        | {aid for aid, _ in runs}
-    given = given_lines(runs, me, calls)
-    sorted_calls = tuple(sorted(calls, key=lambda c: c.time))
-    parents = {aid: parent_id(p) for aid, p in runs}
-    operators = tuple(aid for aid, _ in runs)
-    took_up = taken_up(me, operators, sorted_calls, parents)
-    readers = text_readers(me, took_up, ended, agents)
-    watching.extend(line for line in dict.fromkeys(undecided)
-                    if (where := line.split(":", 1)[0]) in known and unknown_line(line) not in given
-                    and (where in readers or not gone_line(line)))
+    others = elsewhere_agents(tickets, me, frozenset(runs.operators), main, undecided)
+    transcripts = transcripts_read(ops, ends, late, stuck, others)
+    took_up = taken_up(me, runs.operators, transcripts.calls, runs.parents)
+    watching.extend(undecided_lines(me, runs.runs, ops.calls, ends.agents, others.agents,
+                                    took_up, ends.ended, undecided))
     index = session_index(tickets_dir, session)
-    holders = {t.holder for t in tickets.values() if t.status is Status.ASSIGNED and t.holder}
-    my_path = dict(runs)[me]
-    holding = {t.number: w for t in tickets.values() if t.status is Status.ASSIGNED
-               and t.holder == me and (w := worktree_in(t, tree.worktrees)) is not None}
     main_path = find(session)
-    session_dir = main_path.parent / session
-    found = {h: find(h) for h in sorted(holders)}
     sessions_running = running(session)
-    open_paths = {h: p for h, p in found.items()
-                  if (h in sessions_running if sessions_running is not None and not is_subagent(p)
-                      else work_open(p, []))}
+    holders = holders_read(tickets, session, main_path, sessions_running)
     lifted, usage = read_usage(now, watching)
     state = State(
         me=me, now=now, session=session, started=started(session),
         transcripts_dir=main_path.parent, main_tree=main,
-        scratch=scratch(session), operators=operators, parents=parents,
-        open_operators=frozenset(aid for aid, p in runs[run_index(runs, me) + 1:]
-                                 if work_open(p, [])),
-        past_bound=past_bound(context_size(entries_back(my_path))),
-        open_holders=frozenset(open_paths),
-        session_holders=frozenset(h for h, p in open_paths.items()
-                                  if p == main_path or p.is_relative_to(session_dir)),
-        tracker=TrackerRead(tickets, unread, index),
-        transcripts=TranscriptsRead(
-            agents=tuple(sorted(agents, key=lambda a: a.launched)),
-            calls=sorted_calls, messages=tuple(messages),
-            made=made(calls), late_resumes=late, stalled=stalled, stuck=stuck,
-            pass_reports=passes, elsewhere=elsewhere_read),
-        git=tree, taken_up=took_up,
-        held=read_held(holding),
-        readers=Deferred(lambda: tuple(Reader(name, tuple(args)) for name, args in reader_calls()
-                                       if name not in DEPRECATED)),
+        scratch=scratch(session), operators=runs.operators, parents=runs.parents,
+        open_operators=open_operators(runs.runs, me),
+        past_bound=bound_read(runs.runs, me),
+        open_holders=holders.open, session_holders=holders.session,
+        tracker=TrackerRead(tickets, unread, index), transcripts=transcripts,
+        git=tree, taken_up=took_up, held=read_held(tickets, me, tree),
+        readers=readers_read(),
         limit_lifted=lifted,
         sessions=sessions(tickets_dir, index, session, now, sessions_running))
-    state = with_quiet_holders(state, found, listing, running_work)
+    state = with_quiet_holders(state, holders.found, listing, running_work)
+    state = replace(state, computed=computed_read(state, tickets_dir, undecided, usage))
+    return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(ends.stalled),
+                               undecided=tuple(watching))
+
+
+@dataclass(frozen=True)
+class RunsRead:
+    """The runs of the session's operators, `me` among them, by agent id
+    and transcript, in the order of `operator_runs`, with their agent ids
+    (`State.operators`) and their parents (`State.parents`)."""
+    runs: list[tuple[str, Path]]
+    operators: tuple[str, ...]
+    parents: Mapping[str, str]
+
+
+def runs_read(session: str, me: str) -> RunsRead:
+    """`RunsRead` of `session`, where `me` is one of its operators."""
+    runs = operator_runs(session, me)
+    if me not in dict(runs):
+        runs.append((me, find(me)))
+    return RunsRead(runs, tuple(aid for aid, _ in runs),
+                    {aid: parent_id(p) for aid, p in runs})
+
+
+def watched_read(listing: list[Listed], agents: Sequence[Agent], undecided: list[str],
+                 opened: float) -> list[Watched]:
+    """`watched` of `listing`, with `agents` as the operators' launches."""
+    return watched(listing, {a.agent_id for a in agents if a.agent_id}, undecided, opened)
+
+
+def bound_read(runs: list[tuple[str, Path]], me: str) -> bool:
+    """`State.past_bound` of the run of `me` in `runs`."""
+    return past_bound(context_size(entries_back(dict(runs)[me])))
+
+
+def readers_read() -> Deferred[tuple[Reader, ...]]:
+    """`State.readers`: the doc readers outside `DEPRECATED`, read on use."""
+    return Deferred(lambda: tuple(Reader(name, tuple(args)) for name, args in reader_calls()
+                                  if name not in DEPRECATED))
+
+
+def operators_since(runs: list[tuple[str, Path]], me: str,
+                    since: float | None) -> list[tuple[str, Path]]:
+    """The runs of `runs` that `read_state` reads at `since`."""
+    return [(aid, path) for aid, path in runs
+            if since is None or aid == me or (t := last_time(path)) is not None and t >= since]
+
+
+def open_operators(runs: list[tuple[str, Path]], me: str) -> frozenset[str]:
+    """`State.open_operators`: the operators after `me` in `runs` whose work
+    is open."""
+    return frozenset(aid for aid, p in runs[run_index(runs, me) + 1:] if work_open(p, []))
+
+
+def work_of(listing: list[Listed]) -> dict[str, tuple[str, ...]]:
+    """The command line of each span of the work still running of each
+    agent of `listing`, by agent id."""
+    return {aid: tuple(sp.command for sp in x.running)
+            for x in listing if (aid := x.launch.agent) is not None}
+
+
+def transcripts_read(ops: OperatorRead, ends: "EndsRead",
+                     late: Mapping[str, tuple[LateResume, ...]], stuck: Mapping[str, Stuck],
+                     others: AgentsRead) -> TranscriptsRead:
+    """`TranscriptsRead` of the steps' reads."""
+    both = joined([ops.launched, others])
+    return TranscriptsRead(
+        agents=tuple(sorted(ends.agents, key=lambda a: a.launched)),
+        calls=tuple(sorted(ops.calls, key=lambda c: c.time)), messages=tuple(ops.messages),
+        made=made(ops.calls), late_resumes=late, stalled=ends.stalled, quiet=ends.quiet,
+        stuck=stuck, pass_reports=ops.passes, elsewhere=others.agents,
+        messaged=both.messaged, limited=both.limited)
+
+
+def operators_read(read: list[tuple[str, Path]], main: Path, undecided: list[str],
+                   tree: GitRead) -> OperatorRead:
+    """What the transcripts of the operators `read`, by agent id and
+    transcript, give together, as `OperatorRead` gives it of one, with the
+    doc reviewers of their doc editors (`editor_reviewers`). A commit's
+    subject stands at the latest time `tree` gives it."""
+    subjects: dict[str, float] = {}
+    for c in tree.commits:
+        subjects[c.subject] = max(subjects.get(c.subject, c.time), c.time)
+    ones = [read_operator(aid, path, main, undecided, subjects) for aid, path in read]
+    launched = joined([one.launched for one in ones])
+    reviewers = editor_reviewers(launched.agents, main, undecided)
+    return OperatorRead(
+        joined([launched, reviewers]), tuple(c for one in ones for c in one.calls),
+        tuple(m for one in ones for m in one.messages),
+        {k: v for one in ones for k, v in one.passes.items()})
+
+
+@dataclass(frozen=True)
+class EndsRead:
+    """The operators' agents with their ends read (`ends_read`), the reports
+    that end them, by agent id, or None where none does (`ended`), the
+    part of those of stalled agents (`TranscriptsRead.stalled`), and
+    `TranscriptsRead.quiet`."""
+    agents: tuple[Agent, ...]
+    ended: Mapping[str, Report | None]
+    stalled: Mapping[str, Report]
+    quiet: Mapping[str, float]
+
+
+def ends_read(agents: Sequence[Agent], me: str, listing: list[Listed],
+              now_watched: Sequence[Watched], now: float, undecided: list[str]) -> EndsRead:
+    """`agents`, each pending one ended where a stall alert fired on it, where
+    it is of another operator whose work is no longer open
+    (`ended_elsewhere`), or where it stopped with work of its own still
+    running and is quiet. A watched agent that no operator launched, and
+    that the coordinator launched, has its stall read too."""
+    launched = {a.agent_id for a in agents if a.agent_id}
+    watched_ids = {w.agent_id for w in now_watched}
+    coordinators = {aid: x.launch.since for x in listing
+                    if (aid := x.launch.agent) in watched_ids and aid not in launched}
+    stalled = stalled_reports(list(agents), coordinators,
+                              [w.agent_id for w in now_watched if w.stalled is not None])
+    ended: dict[str, Report | None] = {**ended_elsewhere(list(agents), me, undecided), **stalled}
+    out = ended_by(agents, ended)
+    quiet = quiet_read(out, listing, now)
+    quiet_ended = [aid for a in out if a.waits is Waits.STILL_RUNNING
+                   and (aid := a.agent_id) is not None and aid in quiet]
+    ended.update(dict.fromkeys(quiet_ended))
+    out = ended_by(out, dict.fromkeys(quiet_ended))
+    return EndsRead(tuple(out), ended, stalled, quiet)
+
+
+def ended_by(agents: Sequence[Agent], ended: Mapping[str, Report | None]) -> list[Agent]:
+    """`agents`, each pending one of `ended` ended with the report it gives
+    (`ended_with`)."""
+    return [ended_with(a, ended[a.agent_id])
+            if a.pending and a.agent_id is not None and a.agent_id in ended else a
+            for a in agents]
+
+
+def quiet_read(agents: Sequence[Agent], listing: list[Listed], now: float) -> dict[str, float]:
+    """`TranscriptsRead.quiet` of `agents`. An agent the usage limit stopped
+    is left out, since `limit_resume` covers it, and so is an agent whose
+    transcript is not found."""
+    out: dict[str, float] = {}
+    for a in agents:
+        if a.agent_id is None or a.waits in (None, Waits.LIMITED):
+            continue
+        try:
+            path = find(a.agent_id)
+        except Refused:
+            continue
+        q = quiet_since(a.agent_id, path, listing, now)
+        if q is not None:
+            out[a.agent_id] = q
+    return out
+
+
+def stuck_read(session: str, quiet: Mapping[str, float], now_watched: Sequence[Watched],
+               running_work: Mapping[str, tuple[str, ...]]) -> dict[str, Stuck]:
+    """`TranscriptsRead.stuck` of the agents of `quiet` and `now_watched`,
+    where `running_work` gives the command lines of each agent's work
+    still running. A watched agent's `Watched.stuck` stands in place of
+    its time in `quiet`."""
+    return {aid: Stuck(session, q, running_work.get(aid, ()))
+            for aid, q in [*quiet.items(), *((w.agent_id, w.stuck) for w in now_watched)]
+            if q is not None}
+
+
+def undecided_lines(me: str, runs: list[tuple[str, Path]], calls: Sequence[Call],
+                    agents: Sequence[Agent], others: Sequence[Agent], took_up: frozenset[str],
+                    ended: Mapping[str, Report | None], undecided: list[str]) -> list[str]:
+    """The lines of `undecided` that `MonitorState.undecided` gives: each
+    on a run or an agent the read knows, that no final reply of an
+    earlier operator gave (`given_lines`), and whose text a step of `me`
+    still reads (`text_readers`) or is not gone."""
+    known = {a.agent_id for a in (*agents, *others) if a.agent_id} | {aid for aid, _ in runs}
+    given = given_lines(runs, me, list(calls))
+    readers = text_readers(me, took_up, ended, agents)
+    return [line for line in dict.fromkeys(undecided)
+            if (where := line.split(":", 1)[0]) in known and unknown_line(line) not in given
+            and (where in readers or not gone_line(line))]
+
+
+@dataclass(frozen=True)
+class HoldersRead:
+    """The transcript of each holder of an assigned ticket (`found`), those
+    of them whose work is open (`State.open_holders`), and
+    `State.session_holders`."""
+    found: Mapping[str, Path]
+    open: frozenset[str]
+    session: frozenset[str]
+
+
+def holders_read(tickets: Mapping[str, Ticket], session: str, main_path: Path,
+                 sessions_running: frozenset[str] | None) -> HoldersRead:
+    """`HoldersRead` of `tickets`, where `main_path` is the transcript of
+    `session`. A holder that is a session is open where
+    `sessions_running` gives it, and any other where its work is open."""
+    holders = {t.holder for t in tickets.values() if t.status is Status.ASSIGNED and t.holder}
+    found = {h: find(h) for h in sorted(holders)}
+    open_paths = {h: p for h, p in found.items()
+                  if (h in sessions_running if sessions_running is not None
+                      and not is_subagent(p) else work_open(p, []))}
+    return HoldersRead(found, frozenset(open_paths), frozenset(
+        h for h, p in open_paths.items()
+        if p == main_path or p.is_relative_to(main_path.parent / session)))
+
+
+def computed_read(state: State, tickets_dir: Path, undecided: list[str],
+                  usage: Usage) -> Computed:
+    """`State.computed` of `state`, at the usage `usage`."""
+    tickets = state.tracker.tickets
     given = [ticket_number(n) for n in named(state) if n in tickets]
     spent = change_spend(state, undecided)
     run_starts, run_takes = read_runs(state)
     given_pace = pace(state)
-    state = replace(state, computed=Computed(
-        to_settle=tuple(str(n) for n in to_settle(tickets_dir, index, state.sessions.adopted, given)
+    return Computed(
+        to_settle=tuple(str(n) for n in to_settle(tickets_dir, state.tracker.index,
+                                                  state.sessions.adopted, given)
                         if str(n) in tickets),
         spent=spent, budgets=change_budgets(state, spent, tickets_dir, undecided),
         doc_budgets=doc_budgets(state, tickets_dir, undecided),
         run_starts=run_starts, run_takes=run_takes,
         pace=(pace_reads(given_pace, usage) if isinstance(given_pace, Path)
-              else (given_pace or pacing.DEFAULT)(usage))))
-    return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(stalled),
-                               undecided=tuple(watching))
-
-
-def with_quiet(a: Agent, listing: list[Listed], now: float) -> Agent:
-    """`a` with its `quiet` reading, where it is pending and the usage limit
-    did not stop it (`limit_resume` covers that agent), and whose
-    transcript is found."""
-    if not a.pending or a.agent_id is None or a.limited is not None:
-        return a
-    try:
-        path = find(a.agent_id)
-    except Refused:
-        return a
-    return replace(a, quiet=quiet_since(a.agent_id, path, listing, now))
+              else (given_pace or pacing.DEFAULT)(usage)))
 
 
 def with_quiet_holders(state: State, found: Mapping[str, Path], listing: list[Listed],
@@ -229,15 +367,14 @@ def with_quiet_holders(state: State, found: Mapping[str, Path], listing: list[Li
     """`state` with each live holder of a ticket of `plan.elsewhere` that is
     quiet in `TranscriptsRead.stuck`, where `found` gives each holder's
     transcript."""
-    stuck = dict(state.transcripts.stuck)
-    for n in elsewhere(state):
-        h = state.tracker.tickets[n].holder
-        if h is None or h in stuck:
-            continue
-        q = quiet_since(h, found[h], listing, state.now)
-        if q is not None:
-            stuck[h] = Stuck(state.session, q, running_work.get(h, ()))
-    return replace(state, transcripts=replace(state.transcripts, stuck=stuck))
+    stuck = state.transcripts.stuck
+    holders = dict.fromkeys(h for n in elsewhere(state)
+                            if (h := state.tracker.tickets[n].holder) is not None
+                            and h not in stuck)
+    quiet = {h: q for h in holders
+             if (q := quiet_since(h, found[h], listing, state.now)) is not None}
+    added = stuck_read(state.session, quiet, (), running_work)
+    return replace(state, transcripts=replace(state.transcripts, stuck={**stuck, **added}))
 
 
 def text_readers(me: str, took_up: frozenset[str], ended: Mapping[str, Report | None],
@@ -280,28 +417,33 @@ def sessions(tickets: Path, index: int, session: str, now: float,
     return SessionsRead(read.idle, read.adopted, read.main_live, main_wanted(tickets))
 
 
-def editor_reviewers(agents: list[Agent], main: Path, undecided: list[str]) -> list[Agent]:
+def editor_reviewers(agents: Sequence[Agent], main: Path, undecided: list[str]) -> AgentsRead:
     """The doc reviewers that the doc editors among `agents` launched, read
     from those editors' transcripts as an operator's launches are read,
     with the doc editor as their `operator`."""
     out: list[Agent] = []
+    reads: list[AgentsRead] = []
     for a in agents:
         if a.role is not Role.DOC_EDITOR or a.agent_id is None:
             continue
-        theirs = read_operator(a.agent_id, find(a.agent_id), main, undecided, {}).agents
-        out += [r for r in theirs if r.role is Role.DOC_REVIEWER]
-    return out
+        theirs = read_operator(a.agent_id, find(a.agent_id), main, undecided, {})
+        out += [r for r in theirs.agents if r.role is Role.DOC_REVIEWER]
+        reads.append(theirs.launched)
+    return kept(out, reads)
 
 
-def elsewhere_agents(held: list[Ticket], me: str, operators: frozenset[str], main: Path,
-                     undecided: list[str]) -> tuple[Agent, ...]:
-    """`TranscriptsRead.elsewhere` over the changes `held`, where
+def elsewhere_agents(tickets: Mapping[str, Ticket], me: str, operators: frozenset[str],
+                     main: Path, undecided: list[str]) -> AgentsRead:
+    """`TranscriptsRead.elsewhere` over the changes of `tickets` `me` holds, where
     `operators` gives the operators of the session. Each agent kept whose
     work is no longer open ends with its final reply, as `ended_elsewhere`
     gives it. Where the transcript of such an operator is not found, an
     `undecided` line names it."""
     out: list[Agent] = []
-    for t in held:
+    reads: list[AgentsRead] = []
+    for t in tickets.values():
+        if t.kind is not Kind.CHANGE or t.status is not Status.ASSIGNED or t.holder != me:
+            continue
         since = left_draft(t)
         others = dict.fromkeys(ln.agent_id for ln in t.log
                                if ln.time > since and ln.agent == AGENT and ln.agent_id
@@ -314,20 +456,21 @@ def elsewhere_agents(held: list[Ticket], me: str, operators: frozenset[str], mai
                                       "session is found, so its agents on change {number} are "
                                       "not read").format(run=me, agent=oid, number=t.number))
                 continue
-            theirs = [a for a in read_operator(oid, path, main, undecided, {}).agents
-                      if a.launched > since and on_change(a, t.number)]
-            theirs += [r for r in editor_reviewers(theirs, main, undecided)
+            one = read_operator(oid, path, main, undecided, {})
+            theirs = [a for a in one.agents if a.launched > since and on_change(a, t.number)]
+            reviewers = editor_reviewers(theirs, main, undecided)
+            reads += [one.launched, reviewers]
+            theirs += [r for r in reviewers.agents
                        if r.launched > since and on_change(r, t.number)]
-            ended = ended_elsewhere(theirs, me, undecided)
-            out += [ended_with(a, ended[a.agent_id]) if a.pending and a.agent_id in ended else a
-                    for a in theirs]
-    return tuple(sorted(out, key=lambda a: a.launched))
+            out += ended_by(theirs, ended_elsewhere(theirs, me, undecided))
+    return kept(sorted(out, key=lambda a: a.launched), reads)
 
 
-def read_held(holding: dict[str, Path]) -> HeldRead:
-    """The read of the changes `me` holds, where `holding` gives the
-    worktree of each by its number."""
-    trees = set(holding.values())
+def read_held(tickets: Mapping[str, Ticket], me: str, tree: GitRead) -> HeldRead:
+    """The read of the worktrees of the tickets of `tickets` that `me`
+    holds."""
+    trees = {w for t in tickets.values() if t.status is Status.ASSIGNED and t.holder == me
+             and (w := worktree_in(t, tree.worktrees)) is not None}
     return HeldRead(gate_outputs=ReadOnUse(sorted(trees), gate_outputs),
                     fragments=ReadOnUse(sorted(trees), fragments))
 

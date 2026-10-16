@@ -108,54 +108,58 @@ class LateResume:
     later_first: float
 
 
+class Waits(Enum):
+    """How a pending agent waits. `STILL_RUNNING`: it stopped with work of
+    its own still running, has not reported yet, and the operator's turn
+    may not end on it. `LIMITED`: the usage limit stopped it, it has not
+    ended its work, and it waits for a resume (`limit_resume`)."""
+    AT_WORK = "at work"
+    STILL_RUNNING = "still running"
+    LIMITED = "limited"
+
+
 @dataclass(frozen=True)
 class Agent:
     """An agent an operator of any session launched with a description the
     command gave, or a doc reviewer that a doc editor an operator launched
     launched, which is read as a launch of that doc editor's, with
-    the doc editor as its `operator`. `pending` holds where that operator holds neither the
-    result of a launch in the foreground nor a sign since its launch or
-    its last resume, in any transcript of the session, that its turn
-    ended, as `agent_reports.last_sign` gives the latest sign: a
-    notification that it stopped, or its SubagentHandback message. It
-    holds too where the latest sign is a notification that it stopped
-    with work of its own still running, and then `still_running` holds:
-    it has not reported yet, and the operator's turn may not end on it.
-    It holds as well where the latest sign is a notification that the
-    usage limit stopped it, and then `limited` gives that sign's time: it
-    has not ended its work, and waits for a resume (`limit_resume`).
+    the doc editor as its `operator`. `waits` is None where it no longer
+    waits: where that operator holds the result of a launch in the
+    foreground, or a sign since its launch or its last resume, in any
+    transcript of the session, that its turn ended, as
+    `agent_reports.last_sign` gives the latest sign: a notification that
+    it stopped, or its SubagentHandback message. A notification that it
+    stopped with work of its own still running, or that the usage limit
+    stopped it, leaves it waiting, as `Waits.STILL_RUNNING` and
+    `Waits.LIMITED` give.
     Where a sign ends it and no report of it reached that operator since
     its launch or its last resume, the final reply in its transcript, where
     it gives one after them and it went to that operator or is the path of
     a report file alone, read from that file, ends its `reports`.
-    `pending` does not hold either for an agent in `TranscriptsRead.stalled`, nor
-    for an agent of another operator whose work is no longer open, and
+    It no longer waits either where it is in `TranscriptsRead.stalled`, or
+    is an agent of another operator whose work is no longer open, and
     the final reply in its transcript, where it gives one and it went to
     that operator or is the path of a report file alone, read from that
     file, then ends its `reports`. `notifies` holds where that
     operator launched or last resumed it itself, so the notification of
-    its end and its final reply reach that operator. `messaged` holds, for
-    a doc reviewer or an item checker whose transcript is known, the agent
-    ids its SendMessage calls went to, and is None for any other agent.
-    `quiet` is the time of its latest sign of progress where it is quiet,
-    as `quiet_since` in `scripts/open_agents.py` gives it, and None
-    otherwise. Where the latest sign is a notification that it stopped
-    with work of its own still running, and it is quiet, `pending` does not
-    hold, and its work ends with the reports it has, as for an agent of
-    another operator whose work is no longer open."""
+    its end and its final reply reach that operator. Where it stopped
+    with work of its own still running and it is quiet
+    (`TranscriptsRead.quiet`), it no longer waits, and its work ends with
+    the reports it has, as for an agent of another operator whose work is
+    no longer open."""
     agent_id: str | None
     operator: str
     role: Role
     subject: str
     brief: str
     launched: float
-    pending: bool
+    waits: Waits | None
     reports: tuple[Report, ...]
-    still_running: bool
     notifies: bool
-    messaged: frozenset[str] | None = None
-    limited: float | None = None
-    quiet: float | None = None
+
+    @property
+    def pending(self) -> bool:
+        return self.waits is not None
 
     @property
     def last_report(self) -> Report | None:
@@ -372,9 +376,20 @@ class TranscriptsRead:
     the next operator of `State.operators` made its first entry, in the
     order of their time. `stalled` gives the final reply in the transcript
     of each agent a stall alert names that reached no operator as a
-    report. `stuck` gives, by agent id, each pending agent and each live
-    holder of a ticket held elsewhere (`plan.elsewhere`) that is quiet,
-    and each watched agent whose `Watched.stuck` holds. `pass_reports` gives, for each
+    report. `quiet` gives the time of the latest sign of progress of each
+    agent of `agents` that is quiet, as `quiet_since` in
+    `scripts/open_agents.py` gives it, by agent id, read while it was
+    pending and the usage limit had not stopped it (`limit_resume` covers
+    that agent). `stuck` gives, by agent id, each agent of `quiet`, each
+    live holder of a ticket held elsewhere (`plan.elsewhere`) that is
+    quiet, and each watched agent whose `Watched.stuck` holds.
+    `messaged` gives, for each doc reviewer and item checker of `agents`
+    and of `elsewhere` whose transcript is known, the agent ids its
+    SendMessage calls went to. `limited` gives, by agent id, the time of
+    the usage-limit stop of each agent of `agents` and of `elsewhere` whose
+    latest sign is that stop, kept where a later read ends the agent, so
+    that the work of such an agent of `agents` is resumed once the limit
+    lifts. `pass_reports` gives, for each
     solver pass with an agent id, the read of the report file it wrote
     under the task's work directory since its launch (`PassReport`),
     whatever its reply. `elsewhere` holds, for each change `State.me`
@@ -390,8 +405,16 @@ class TranscriptsRead:
     late_resumes: Mapping[str, tuple[LateResume, ...]]
     stalled: Mapping[str, Report]
     pass_reports: Mapping[str, PassReport]
+    quiet: Mapping[str, float]
     stuck: Mapping[str, Stuck]
     elsewhere: tuple[Agent, ...]
+    messaged: Mapping[str, frozenset[str]]
+    limited: Mapping[str, float]
+
+    def sent_by(self, a: Agent) -> frozenset[str] | None:
+        """The agent ids of `messaged` for `a`, or None where `a` is not a
+        doc reviewer or an item checker, or its transcript is unknown."""
+        return None if a.agent_id is None else self.messaged.get(a.agent_id)
 
 
 @dataclass(frozen=True)

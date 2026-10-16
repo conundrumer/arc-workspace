@@ -273,7 +273,7 @@ def next_step(state: State, watch: monitor.MonitorState) -> Step:
                                     *(t.number for t in taking.ready(state)
                                       if not taking.taken_before(t))])
     stuck = state.transcripts.stuck
-    waits = [a.agent_id for a in state.transcripts.agents if a.pending or a.quiet is not None]
+    waits = [a.agent_id for a in state.transcripts.agents if a.pending or a.agent_id in state.transcripts.quiet]
     waits += [h for n in elsewhere(state) if (h := state.tracker.tickets[n].holder) is not None]
     if (pace is not None or any(w is None or w not in stuck for w in waits)
             or any(decisions.writing(state, u) for u in state.tracker.unread)):

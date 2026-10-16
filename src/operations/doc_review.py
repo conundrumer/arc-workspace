@@ -97,13 +97,14 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
     if no_finding(r):
         if shows_current(r, w):
             return False
-        if r.messaged is None:
+        messaged = state.transcripts.sent_by(r)
+        if messaged is None:
             return Undecided(mctx("the transcript of doc reviewer {agent} of change {number} "
                                   "is unknown").format(agent=r.agent_id, number=t.number))
         ids = agent_ids(late)
         if isinstance(ids, Undecided):
             return ids
-        if all(i in r.messaged or i == r.operator for i in ids):
+        if all(i in messaged or i == r.operator for i in ids):
             return False
     message = messages.review_again(since)
     if r.agent_id is not None and r not in state.transcripts.elsewhere \

@@ -91,10 +91,11 @@ def repeated(listed: Listed) -> tuple[float, ...]:
 
 
 def stuck_at(aid: str, listed: Listed, listing: list[Listed], now: float) -> float | None:
-    """`Watched.stuck` of `listed`, the run of `aid`: the time `quiet_since`
-    gives, or else the start of the last run of its Bash calls with the
-    same command and result (`run_reads.same_since`) where that run started
-    `STUCK_SECONDS` or more before `now`."""
+    """The time from which `listed`, the run of `aid`, is stuck, or None
+    where it is not. An agent that keeps making the same Bash call with
+    the same result shows progress to `quiet_since`, so a run of such
+    calls `STUCK_SECONDS` long counts as stuck too, from that run's
+    start."""
     quiet = quiet_since(aid, listed.path, listing, now)
     if quiet is not None:
         return quiet

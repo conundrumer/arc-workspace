@@ -248,8 +248,8 @@ def left_decision(a: Agent, number: str) -> str | None:
     return None if hold is None else held_on(hold, LEFT_CHOICES).what
 
 
-def unchanged_since(checkers: list[Agent], w: Path) -> bool:
-    if not checkers or checkers[-1].messaged != frozenset():
+def unchanged_since(state: State, checkers: list[Agent], w: Path) -> bool:
+    if not checkers or state.transcripts.sent_by(checkers[-1]) != frozenset():
         return False
     return shows_current(checkers[-1], w)
 
@@ -268,7 +268,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     checked = max((a.launched for a in checkers), default=0.0)
     needing = [a for a in latest if is_checked(a) and (r := a.last_report) is not None
                and r.time > checked]
-    if needing and not unchanged_since(checkers, w):
+    if needing and not unchanged_since(state, checkers, w):
         return check_items(state, t, w, needing, editors)
     questions = [q for q in state.tracker.tickets.values() if q.kind is Kind.QUESTION
                  and q.domain is Domain.CHANGE and q.subject == t.number

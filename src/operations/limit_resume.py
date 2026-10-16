@@ -1,5 +1,5 @@
 """The resume of each agent of the session's operators that the usage limit
-stopped (`state.Agent.limited`): once a reading of the limit made after
+stopped (`TranscriptsRead.limited`): once a reading of the limit made after
 that stop gives it as lifted (`State.limit_lifted`), a message that asks
 the agent to carry on its work. A step that sends it only after the stop's
 time counts as made, so each stop gets one resume, and a later stop of the
@@ -20,6 +20,7 @@ def step(state: State) -> Step | None:
     if lifted is None:
         return None
     for a in state.transcripts.agents:
-        if a.agent_id is not None and a.limited is not None and lifted > a.limited:
-            return Send(a.agent_id, RESUME, since=a.limited)
+        at = None if a.agent_id is None else state.transcripts.limited.get(a.agent_id)
+        if a.agent_id is not None and at is not None and lifted > at:
+            return Send(a.agent_id, RESUME, since=at)
     return None

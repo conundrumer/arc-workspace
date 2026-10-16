@@ -7,7 +7,7 @@ calls, and the tickets its solver passes filed."""
 
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -37,7 +37,9 @@ from transcript_entries import epoch, read_entries
 from operations.merging import MERGE_SCRIPT, merge_messages
 from operations.reports import CONCEPT_FAULTS, TICKETS_FILED, section, section_items
 from operations.roles import PASSES, Role, described
-from operations.state import Agent, Call, Merge, Message, PassReport, Report, Tool
+from operations.state import (
+    Agent, Call, Merge, Message, PassReport, Report, Tool, Waits,
+)
 from operations.task_work import refine_report, tasks_work
 from operations.command_words import COMMAND, is_next
 from operations.printing import unfenced
@@ -222,7 +224,32 @@ def from_parent(aid: str, e: dict[str, Any], parent: str, undecided: list[str]) 
 
 
 MESSAGING = frozenset({Role.DOC_REVIEWER, Role.ITEM_CHECKER})
-"""The roles whose `Agent.messaged` the command reads."""
+"""The roles whose `TranscriptsRead.messaged` the command reads."""
+
+
+@dataclass(frozen=True)
+class AgentsRead:
+    """Agents read from transcripts, with the parts of
+    `TranscriptsRead.messaged` and `TranscriptsRead.limited` for them."""
+    agents: tuple[Agent, ...]
+    messaged: Mapping[str, frozenset[str]]
+    limited: Mapping[str, float]
+
+
+def joined(reads: Sequence[AgentsRead]) -> AgentsRead:
+    """The agents of `reads`, in their order, with their mappings merged."""
+    return AgentsRead(tuple(a for r in reads for a in r.agents),
+                      {k: v for r in reads for k, v in r.messaged.items()},
+                      {k: v for r in reads for k, v in r.limited.items()})
+
+
+def kept(agents: Sequence[Agent], reads: Sequence[AgentsRead]) -> AgentsRead:
+    """`agents`, with the parts of the mappings of `reads` for them."""
+    ids = {a.agent_id for a in agents}
+    whole = joined(reads)
+    return AgentsRead(tuple(agents),
+                      {k: v for k, v in whole.messaged.items() if k in ids},
+                      {k: v for k, v in whole.limited.items() if k in ids})
 
 
 @dataclass(frozen=True)
@@ -231,10 +258,14 @@ class OperatorRead:
     the messages that reached it, and `passes`, for each solver pass it
     launched with an agent id, the read of its report
     (`TranscriptsRead.pass_reports`)."""
-    agents: tuple[Agent, ...]
+    launched: AgentsRead
     calls: tuple[Call, ...]
     messages: tuple[Message, ...]
     passes: Mapping[str, PassReport]
+
+    @property
+    def agents(self) -> tuple[Agent, ...]:
+        return self.launched.agents
 
 
 def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
@@ -269,6 +300,8 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
     calls: list[Call] = []
     messages: list[Message] = []
     passes: dict[str, PassReport] = {}
+    messaged: dict[str, frozenset[str]] = {}
+    limited: dict[str, float] = {}
     entries = run_entries(path)
     uses: dict[str, tuple[float, dict[str, Any], str]] = {}
     results: dict[str, tuple[str | None, bool]] = {}
@@ -316,7 +349,7 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
         calls.append(Call(aid, t, tool, inp, text, error, merge, conflicts or ()))
     if not any(tool == Tool.AGENT and described(str(inp.get("description", "")))
                for _, inp, tool in uses.values()):
-        return OperatorRead((), tuple(calls), tuple(messages), {})
+        return OperatorRead(AgentsRead((), {}, {}), tuple(calls), tuple(messages), {})
     found = launched(path, undecided)
     signs = turn_signs(path, [launch for launch in found if launch.pending])
     own = resumes(path, undecided)
@@ -330,22 +363,36 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
         reports = tuple(Report(r.time, r.text, r.file) for r in launch.reports(0.0, undecided))
         signed = (signs.get(launch.agent or "") if launch.pending else
                   last_sign(launch.entries, launch.since, {launch.agent or "", launch.call}))
-        sign, at = signed if signed else (None, None)
-        still = sign is Sign.STILL_RUNNING
-        limited = at if sign is Sign.LIMITED else None
         a = Agent(launch.agent, aid, d.role, d.subject, str(use[1].get("prompt", "")),
-                  use[0], still or limited is not None or (launch.pending and sign not in ENDED),
-                  reports, still_running=still, limited=limited,
-                  notifies=launch.since <= max(use[0], own.get(launch.agent or "", 0.0)),
-                  messaged=sent_to(launch.path) if d.role in MESSAGING and launch.path
-                  else None)
+                  use[0], waits(signed, launch.pending), reports,
+                  notifies=launch.since <= max(use[0], own.get(launch.agent or "", 0.0)))
+        if d.role in MESSAGING and launch.path and launch.agent is not None:
+            messaged[launch.agent] = sent_to(launch.path)
+        if signed is not None and signed[0] is Sign.LIMITED and launch.agent is not None:
+            limited[launch.agent] = signed[1]
         if not a.pending and launch.agent:
             a = ended_with(a, None if any(r.time > launch.since for r in reports)
                            else reply_to(a, launch.since, undecided))
         agents.append(a)
         if d.role in PASSES and launch.agent:
             passes[launch.agent] = pass_read(d.subject, d.role, use[0], main)
-    return OperatorRead(tuple(agents), tuple(calls), tuple(messages), passes)
+    return OperatorRead(AgentsRead(tuple(agents), messaged, limited), tuple(calls),
+                        tuple(messages), passes)
+
+
+def waits(signed: tuple[Sign, float] | None, pending: bool) -> Waits | None:
+    """`Agent.waits` of a launch whose latest sign is the first of
+    `signed`, where `pending` gives whether the launch's result has not
+    reached its operator."""
+    match signed:
+        case (Sign.STILL_RUNNING, _):
+            return Waits.STILL_RUNNING
+        case (Sign.LIMITED, _):
+            return Waits.LIMITED
+        case (sign, _) if sign in ENDED:
+            return None
+        case _:
+            return Waits.AT_WORK if pending else None
 
 
 def background_output(aid: str, call: str, task: str, output: Path | None,
@@ -438,7 +485,7 @@ def stalled_reports(agents: list[Agent], coordinators: dict[str, float],
 
 def ended_with(a: Agent, reply: Report | None) -> Agent:
     """`a` as no longer pending, with `reply` as its last report."""
-    return replace(a, pending=False, reports=a.reports if reply is None else (*a.reports, reply))
+    return replace(a, waits=None, reports=a.reports if reply is None else (*a.reports, reply))
 
 
 def ended_elsewhere(agents: list[Agent], me: str,
