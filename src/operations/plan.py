@@ -46,7 +46,11 @@ an `Override: pass over` ruling passed over (`directives.passed`), other
 than a solver pass, whose pipeline stops on it (`passes.run`). A
 launch a procedure gives, other than that of a ticket analyst on a held
 step, is held where its chain of causes runs `lineage.DEPTH` launches of
-its kind deep (`lineage`).
+its kind deep (`lineage`). A launch comes with each launch the procedures
+give after it, with the launches before it made, up to the harness's
+limit of concurrent subagents; each step of the procedures from the
+release of tickets on that is no launch is set aside, and comes at a
+later call, in this order (`batch`).
 
 Where no step is ready, and an agent of an operator runs that is not
 stuck, a ticket of the operators' waits on another holder whose work is
@@ -59,6 +63,7 @@ agent gives its final reply, after the message that sends its parent
 its text (`ending`), with each stuck agent or holder it waited on."""
 
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 
 from controlled_markdown import mctx
 from operations import (alerts, batches, changes, concept_faults, decisions, drafts, limit_resume, lineage, merging,
@@ -74,13 +79,13 @@ from operations.directives import (
     unread,
 )
 from operations.roles import PASSES, Role, description, launched_type
-from operations.state import Call, State, Ticket, Tool
+from operations.state import Agent, Call, State, Ticket, Tool, Waits
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Status
 from operations.final_reply import (FOR_CONTEXT, ending_step, failure, final_sends, final_sends_in,
                                    for_context, live_holder, nested, sent_final_text)
 from operations.handled import bash_calls, repeated
-from operations.constants import COORDINATOR
+from operations.constants import COORDINATOR, SUBAGENT_LIMIT
 from operations.pacing import Unknown
 from operations.steps import (Bash, Launch, Poll, Send, Step, Undecided, decision_key, key,
                               unread_line)
@@ -108,8 +113,12 @@ def placed(state: State, procedure: Callable[[State], Step | None]
     until the state changes. A step passed over or failed is undecided,
     once, as one its procedure waits on, other than the launch of an
     analyst on an undecided step: where the line that passed it over
-    answered that step, or that launch failed, the step stays held."""
+    answered that step, or that launch failed, the step stays held. A
+    procedure whose step, as it gives it, `State.aside` holds gives no
+    step."""
     s = procedure(state)
+    if s is not None and state.aside and key(s) in state.aside:
+        return None, None
     while s is not None:
         if isinstance(s, Launch):
             s = lineage.held(state, s)
@@ -197,6 +206,68 @@ def refused(state: State, step: Step) -> Undecided | None:
         return None
     return Undecided(mctx("the call `{what}` failed: {why}").format(what=what,
                                                                      why=failure(last)))
+
+
+def made(state: State, step: Launch) -> State:
+    """`state` with `step` made, as the next read would give it with no
+    report yet: an Agent call of `state.me` at `state.now` that gives the
+    step, with no result, and a pending agent of `state.me` with no agent
+    id."""
+    call = Call(operator=state.me, time=state.now, tool=Tool.AGENT, result=None, error=False,
+                input={"description": description(step.role, step.subject),
+                       "subagent_type": launched_type(step.role, step.subject), "prompt": step.brief})
+    agent = Agent(agent_id=None, operator=state.me, role=step.role, subject=step.subject,
+                  brief=step.brief, launched=state.now, waits=Waits.AT_WORK, reports=(),
+                  notifies=True)
+    t = state.transcripts
+    return replace(state, transcripts=replace(t, calls=(*t.calls, call),
+                                              agents=(*t.agents, agent)))
+
+
+def joins(state: State, step: Step) -> bool:
+    """Whether `step` goes out in a batch: a launch neither marked
+    `reread` nor made again after an `unloaded` call, each of which
+    `operator_step` holds back from the state already read."""
+    return isinstance(step, Launch) and not step.reread and unloaded(state, step) is None
+
+
+def batch(state: State, watch: monitor.MonitorState, first_launch: Launch) -> tuple[Launch, ...]:
+    """`first_launch`, then each launch the procedures give on the state
+    with each launch before it made (`made`), in the plan's order, past
+    the steps of `LATE` that are no launch, which a later call gives. A
+    step of a procedure of `LATE` that does not join the batch (`joins`)
+    is set aside (`State.aside`), as its procedure gave it, and the
+    procedures read again. The batch ends where a procedure of `EARLY` or
+    the monitor gives a step that does not join it, where the operator is
+    past its context bound, as `next_step` then gives its final reply,
+    where the pending agents of the session's operators number
+    `SUBAGENT_LIMIT`, since the agents of the session share the limit, or
+    where no procedure of `LATE` gives a step."""
+    out = [first_launch]
+    state = made(state, first_launch)
+    while (not state.past_bound
+           and sum(a.pending for a in state.transcripts.agents) < SUBAGENT_LIMIT):
+        early = first(state, *EARLY, lambda st: monitor_step(st, watch))
+        if early is not None:
+            if not isinstance(early, Launch) or not joins(state, early):
+                break
+            out.append(early)
+            state = made(state, early)
+            continue
+        for procedure in LATE:
+            given = procedure(state)
+            s, _ = placed(state, lambda _st: given)
+            if s is None or given is None:
+                continue
+            if isinstance(s, Launch) and joins(state, s):
+                out.append(s)
+                state = made(state, s)
+            else:
+                state = replace(state, aside=state.aside | {key(given)})
+            break
+        else:
+            break
+    return tuple(out)
 
 
 def unread_lines(state: State) -> Step | None:

@@ -54,9 +54,9 @@ from operations.monitor import ALERTS  # noqa: E402
 from operations.command_words import Action  # noqa: E402
 from operations.roles import Role  # noqa: E402
 from operations.filing import filed, with_report  # noqa: E402
-from operations.printing import key_line, printed  # noqa: E402
+from operations.printing import batch_line, key_line, printed  # noqa: E402
 from operations.state import State  # noqa: E402
-from operations.constants import BLOCK_SECONDS, LIMIT_SECONDS  # noqa: E402
+from operations.constants import BLOCK_SECONDS, LIMIT_SECONDS, SUBAGENT_LIMIT  # noqa: E402
 from operations.steps import (Bash, EndTurn, Launch, Poll, Send,  # noqa: E402
                               Step, Undecided)
 from collections.abc import Callable  # noqa: E402
@@ -108,7 +108,9 @@ PURPOSES = {
 
 PARTS = {
     HelpPart.NEXT: mctx("""
-    - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters, or the final reply.
+    - `next` prints the next step of the operator whose agent id it is given: one call to make, or several launches to make in one message, with their parameters, or the final reply.
+        - With a launch, it prints each launch that it gives on the state with the launches before it made, past each step that is no launch, which a later call prints, other than a launch on a held step that a reply landing during its read of the state can end, or one it gives again after an `Agent type ... not found` failure.
+            - It prints no further launch once a step that `next` prints ahead of every launch is ready and the output does not hold it, the operator is past its context bound, or the running agents of the session's operators, the launches included, number {subagents}.
         - Before the final reply, it prints a SendMessage call that sends the reply's text to the agent that launched the operator.
         - It then prints the SubagentHandback call whose message is the line that says so.
         - Where the agent is no `{operator}`, it prints only that no step is printed and that the agent gives its final reply, and writes no file.
@@ -126,13 +128,14 @@ PARTS = {
             - The block also ends, and it prints that the operator runs it again, once a message to the operator waits that the harness accepted after the latest `user` entry of the operator's transcript before the call.
         - Where it has printed no step {limit} seconds after it started, it prints that the operator runs it again, and ends.
         - A call of `next` or `relay` ends each call of either for the same agent id that runs.
-    - Before each call it prints, `next` prints that step's key, on a line that gives the command to run after the call.
+    - Before the call it prints, `next` prints that step's key, on a line that gives the command to run after the call, and before several launches, one line that gives each launch's key, in their order, and the command to run after them.
         - The key is the same at each read of the state that gives the same step.
     - A ticket file whose read refuses or fails, other than a file that moved during the read, leaves its ticket out of every procedure.
         - A ticket that depends on it waits.
         - `next` gives that file, once for each content it has and once its last write is {write} seconds old, to a ticket analyst it launches, as a step it cannot place, with the read's failure, and goes on with every other procedure.
         - Where the file still does not read once that analyst returned, the final reply gives it.
     - A step `next` printed counts as made by the call the operator made: a Bash call whose command runs the printed command among others, or the call the operator made right after the call of `next` that printed the step, other than a call of `next` alone.
+        - Each launch of an output counts as made by an Agent call of the message after it that gives its description.
     """),
     HelpPart.RULINGS: mctx("""
     - `next` applies the rulings that the coordinator gives an operator of the session, and that the reply of a ticket analyst on a held step gives, each a line in one of these forms, matched whole, past a list marker:
@@ -325,34 +328,42 @@ def served(me: str, action: Action) -> bool:
     return False
 
 
-def block(me: str, action: Action, step_at: Callable[[float], tuple[Step, Path]]) -> int:
-    """Print the step `step_at` gives, with the scratchpad its files go
-    under, by the deadline it is given, as `--help next` gives the block of `next`
-    and `--help relay` the end of the turn of `relay`."""
+def block(me: str, action: Action,
+          step_at: Callable[[float], tuple[tuple[Step, ...], Path]]) -> int:
+    """Print the steps of one output `step_at` gives, one step or several
+    launches, with the scratchpad their files go under, by the deadline it
+    is given, as `--help next` gives the block of `next` and `--help relay`
+    the end of the turn of `relay`."""
     single_instance(me)
     arm_watchdog(me)
     deadline = time.monotonic() + BLOCK_SECONDS
     path = find(me)
     since = last_delivered(path)
     while True:
-        step, scratch = step_at(deadline)
-        if isinstance(step, EndTurn) and accepted_after(path, since, []):
-            step = Poll()
-        if (not isinstance(step, Poll) or time.monotonic() + POLL_SECONDS > deadline
+        steps, scratch = step_at(deadline)
+        head = steps[0]
+        if isinstance(head, EndTurn) and accepted_after(path, since, []):
+            head = Poll()
+            steps = (head,)
+        if (not isinstance(head, Poll) or time.monotonic() + POLL_SECONDS > deadline
                 or accepted_after(path, since, [])):
             signal.alarm(0)
-            if isinstance(step, CALLS):
-                print(key_line(step, me, action))
-            if isinstance(step, Launch):
-                step = with_budget(with_report(step, scratch))
-            print_step(step, scratch, me)
+            if len(steps) > 1:
+                print(batch_line(steps, me, action))
+            elif isinstance(head, CALLS):
+                print(key_line(head, me, action))
+            for step in steps:
+                if isinstance(step, Launch):
+                    step = with_budget(with_report(step, scratch))
+                print_step(step, scratch, me)
             return 0
         time.sleep(POLL_SECONDS)
 
 
-def operator_step(me: str, deadline: float) -> tuple[Step, Path]:
+def operator_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
     """The operator's next step, with a launch held until `reloading` gives
-    no wait, or the wait, where the hold runs past `deadline`.
+    no wait, or the wait, where the hold runs past `deadline`, and a
+    launch given with the launches after it (`plan.batch`).
     `steps.Undecided.reread` gives why the command reads the state again
     before it launches an analyst on a step marked `reread`."""
     while True:
@@ -363,10 +374,12 @@ def operator_step(me: str, deadline: float) -> tuple[Step, Path]:
             step = plan.next_step(state, watch)
         if isinstance(step, Launch) and (left := reloading(step, state)) > 0:
             if time.monotonic() + left > deadline:
-                return Poll(), state.scratch
+                return (Poll(),), state.scratch
             time.sleep(left)
             continue
-        return step, state.scratch
+        if isinstance(step, Launch):
+            return plan.batch(state, watch, step), state.scratch
+        return (step,), state.scratch
 
 
 def review(editor: str) -> int:
@@ -407,9 +420,9 @@ def change_filed(operator: str, editor: str) -> float | None:
         return None
 
 
-def relay_step(me: str, deadline: float) -> tuple[Step, Path]:
+def relay_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
     found, scratch = read_relay(me)
-    return relay.next_step(found), scratch
+    return (relay.next_step(found),), scratch
 
 
 def main(argv: list[str]) -> int:
@@ -421,7 +434,7 @@ def main(argv: list[str]) -> int:
                               write=round(WRITE_SECONDS), stale=USAGE_STALE, rate_limit=RATE_LIMIT,
                               script=runs.SCRIPT_SECONDS, factor=f"{pacing.EVEN_FACTOR:g}",
                               window=pacing.DEFAULT_WINDOW, operator=serving(Action.NEXT),
-                              launcher=serving(Action.RELAY)))
+                              launcher=serving(Action.RELAY), subagents=SUBAGENT_LIMIT))
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
     parser.add_argument("action", choices=list(OperateAction))
     runs.add_arguments(parser)

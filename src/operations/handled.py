@@ -34,11 +34,14 @@ def decided_by(state: State, step: Undecided) -> list[Agent]:
 
 
 def repeated(step: Step, state: State) -> bool:
-    """Whether `step` is a message an operator already sent, or an
+    """Whether `step` is a step `state.aside` holds, a message an operator
+    already sent, or an
     undecided step that an operator already handled: a ticket analyst was
     launched on it, or an operator gave it to the coordinator, as
     `steps.UNDECIDED` and its `what`, or in a message that holds each of its
     `given`. Its procedure then waits on the answer."""
+    if state.aside and key(step) in state.aside:
+        return True
     match step:
         case Undecided(what, given):
             return bool(decided_by(state, step)) or sent(state, COORDINATOR,

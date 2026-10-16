@@ -1,6 +1,6 @@
 """The text the command prints for a step, with the key line before it
-(`key_line`), the SubagentHandback call that gives the agent's final reply
-(`REPLY_TEXT`), and the message that sends a final reply's text
+(`key_line`), or before the launches of one output (`batch_line`), the
+SubagentHandback call that gives the agent's final reply (`REPLY_TEXT`), and the message that sends a final reply's text
 (`final_message`).
 
 Each printed prompt or message is fenced (`fenced`): the value to pass is
@@ -8,6 +8,7 @@ the text inside the fence, and its readers read a value given with or
 without the fence lines (`unfenced`)."""
 
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 from controlled_markdown import form, mctx
@@ -61,6 +62,16 @@ def key_line(step: Step, agent: str, action: Action) -> str:
     follows the call's last field, so an operator who copies that field
     copies no other line."""
     return KEY_LINE.format(key=key(step), command=next_command(agent, action))
+
+
+BATCH_LINE = mctx("Step keys {keys}: after the calls below, run `{command}`.")
+
+
+def batch_line(steps: Sequence[Step], agent: str, action: Action) -> str:
+    """The line the command prints before the launches `steps` of one
+    output, in place of a key line for each (`key_line`)."""
+    return BATCH_LINE.format(keys=", ".join(key(s) for s in steps),
+                             command=next_command(agent, action))
 
 
 FENCE = "```"
@@ -151,22 +162,35 @@ def launch_text(fields: dict[str, str], prompt: str) -> str:
                       f"{PROMPT}:", fenced(prompt)])
 
 
+def printed_launches(text: str) -> list[dict[str, str] | None]:
+    """The parameters of each launch that `text`, a result of `next`,
+    prints, in its order, None for one that the result cut before the
+    closing fence of its prompt."""
+    lines = text.rstrip("\n").split("\n")
+    starts = [i for i, line in enumerate(lines) if line == LAUNCH]
+    return [launch_fields(lines[a + 1:b]) for a, b in zip(starts, [*starts[1:], len(lines)])]
+
+
 def printed_launch(text: str) -> dict[str, str] | None:
     """The parameters of the last launch that `text`, a result of `next`,
     prints, or None where it prints no launch, or one that the result cut
     before the closing fence of its prompt."""
-    lines = text.rstrip("\n").split("\n")
-    if LAUNCH not in lines:
-        return None
-    at = len(lines) - 1 - lines[::-1].index(LAUNCH)
+    found = printed_launches(text)
+    return found[-1] if found else None
+
+
+def launch_fields(lines: list[str]) -> dict[str, str] | None:
+    """The parameters of the launch whose lines after its first are
+    `lines`, or None where they end before the closing fence of its
+    prompt."""
     fields: dict[str, str] = {}
-    for i in range(at + 1, len(lines)):
-        if lines[i] == f"{PROMPT}:":
+    for i, line in enumerate(lines):
+        if line == f"{PROMPT}:":
             opened, prompt, closed = fence_split("\n".join(lines[i + 1:]))
             if not (opened and closed):
                 return None
             return fields | {PROMPT: prompt}
-        name, sep, value = lines[i].partition(": ")
+        name, sep, value = line.partition(": ")
         if not sep:
             return None
         fields[name] = value

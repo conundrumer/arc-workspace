@@ -1,7 +1,8 @@
 """The values that both the operator's command and the scripts an agent
 runs hold: the address of the coordinator, the interval of the keep-alive
-timer, the bound on a foreground Bash call's timeout, and the bounds on
-a call of the command's `next`. This module
+timer, the bound on a foreground Bash call's timeout, the bounds on
+a call of the command's `next`, and the harness's limit of concurrent
+subagents. This module
 imports nothing, so a hook loads it at no cost."""
 
 COORDINATOR = "main"
@@ -32,3 +33,8 @@ LIMIT_SECONDS = (FOREGROUND_MS // 1000) - 20
 """The longest run of the command's `next` and `relay`, read of the state
 included, under the bound on a foreground call, with room for the start
 of the process: past it the caller has given up on the call."""
+
+SUBAGENT_LIMIT = 20
+"""The harness's limit of concurrent subagents, which the agents of a
+session share: past it, an Agent call fails with `Concurrent subagent
+limit reached`."""

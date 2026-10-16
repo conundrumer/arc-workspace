@@ -84,7 +84,7 @@ def off_script_reason(command: str, printed: str | None) -> str:
         return "\n".join([
             mctx("Blocked: this Bash call is not `{command}`, and the last result of "
                  "`{command}` prints no call."),
-            mctx("Run `{command}`, and make the call it prints."),
+            mctx("Run `{command}`, and make each call it prints."),
         ]).format(command=command)
     return with_call(
         mctx("Blocked: this Bash call is neither `{command}` nor the call the last "

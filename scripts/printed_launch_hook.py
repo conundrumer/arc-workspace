@@ -1,16 +1,18 @@
 """PreToolUse hook on Agent: denies the Agent call of an operator subagent
-that is not the launch `operate.py next` last printed to it, other than the
-launch of a reply-only agent (`context_bound_hook.reply_only`). An operator
+that is none of the launches the last result of `operate.py next` printed
+to it, other than the launch of a reply-only agent
+(`context_bound_hook.reply_only`). An operator
 launcher is held the same way to the launch `operate.py relay` last printed
 to it (`context_bound_hook.ACTIONS`), and a doc editor's launch of a doc
 reviewer to the launch `operate.py review` last printed to it
 (`EDITOR_LAUNCHES`).
 
-The printed launch is read from the result of the last call of `next` in
-the caller's own transcript (`printing.printed_launch`). Where that result
-gives no whole launch, or a parameter of the call differs from the printed
-one, the denial gives what the operator calls instead. A printed
-`run_in_background` is compared only where the call input gives it: the
+The printed launches are read from the result of the last call of `next`
+in the caller's own transcript (`printing.printed_launches`). Where that
+result gives no whole launch, or a parameter of the call differs from
+each printed one, the denial gives what the operator calls instead,
+against the printed launch with the call's description, or else the
+last. A printed `run_in_background` is compared only where the call input gives it: the
 harness gives the hook a `tool_input` with no `run_in_background`, though
 the call gives it. Where the hook cannot tell the caller's agent type, it
 allows the call and says why on stderr."""
@@ -156,7 +158,7 @@ def check(hook: dict[str, Any]) -> str | None:
     """The reason to deny the Agent call `hook` gives where `held_action`
     holds it and it is not the launch its command last printed to its
     caller, and None otherwise."""
-    from operations.printing import printed_launch
+    from operations.printing import printed_launches
 
     tool, inp = hook["tool_name"], hook["tool_input"]
     if tool != "Agent":
@@ -167,11 +169,15 @@ def check(hook: dict[str, Any]) -> str | None:
     if caller is None:
         return None
     command, found = caller.command, caller.found
-    printed = None if found is None else printed_launch(found[1])
-    if printed is None:
+    launches = [] if found is None else printed_launches(found[1])
+    whole = [p for p in launches if p is not None]
+    if not whole:
         return no_launch_reason(command, caller.action)
-    diffs = differing(printed, inp)
-    return differ_reason(command, diffs) if diffs else None
+    diffs = [differing(p, inp) for p in whole]
+    if not all(diffs):
+        return None
+    same = [d for p, d in zip(whole, diffs) if p.get("description") == inp.get("description")]
+    return differ_reason(command, (same or diffs)[-1])
 
 
 def main() -> int:

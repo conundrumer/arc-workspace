@@ -39,7 +39,7 @@ def stop_reason(command: str) -> str:
 
     return "\n".join([
         mctx("Blocked: the last result of `{command}` is not your final reply."),
-        mctx("Run `{command}` again, and make the call it prints."),
+        mctx("Run `{command}` again, and make each call it prints."),
     ]).format(command=command)
 
 
