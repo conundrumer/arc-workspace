@@ -66,7 +66,7 @@ from ticketing.vocabulary import SETTLED, Status
 from operations.constants import COORDINATOR
 from operations.final_reply import carrier, nested, replies_by_operator
 from operations.handled import repeated, sent
-from operations.steps import DECISION, Bash, Launch, Send, Step, Undecided
+from operations.steps import Bash, Launch, Send, Step, Undecided, labeled
 from operations.log_commands import AGENT, log
 from operations.tracker import blocked_on_user, coordinator_lines, exits, final_run
 from ticketing.exits import Exit, freed
@@ -202,11 +202,6 @@ def main_wanted(state: State) -> Step | None:
     key = f"main session, asked at {state.sessions.main_wanted[1]:.0f}"
     step = Send(COORDINATOR, labeled(key, MAIN_WANTED.format(tickets=", ".join(stuck))))
     return None if sent(state, step.to, step.message, key) else step
-
-
-def labeled(key: str, body: str) -> str:
-    """A message to the coordinator on `key`, with the items of `body`."""
-    return mctx("{label} {key}:").format(label=DECISION, key=key) + "\n" + body
 
 
 def for_coordinator_key(agent: str, time: float) -> str:

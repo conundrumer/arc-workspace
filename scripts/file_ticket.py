@@ -126,7 +126,7 @@ PATH_HELP = mctx("""
 LOG_HELP = mctx("""
     - `<status>` and `<current status>` are each one of {statuses}.
         - `<current status>` is the status you saw the ticket in.
-    - A line that moves a ticket into `assigned` takes, in `--id`, the agent id of the agent that writes it, or the session id of a session that writes it for itself.
+    - A line that moves a ticket into `assigned` takes, in `--id`, the agent id of the agent that writes it, or the session id of a session that writes it for itself or that an operator hands a change to.
     - The note of a line that moves a ticket into `{blocked}` or `{waiting}` opens with what the ticket waits on: `{user}` into `{blocked}`, and `{change} <number>` into `{waiting}`, with `<number>` the number of a `change` ticket the ticket tracker holds.
     - A ticket waits on the change that the last line of its log whose note opens with what a ticket waits on gives as `{change} <number>`.
     - The note of a line that moves a ticket into `closed` opens with its resolution, one of {resolutions}.

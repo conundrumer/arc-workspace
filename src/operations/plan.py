@@ -28,7 +28,8 @@ fault of each run script, once for each text it has (`runs`); the ticket
 files the read of the tracker left out (`decisions.unread_files`); the
 alerts; the tickets on stalled agents; the messages on the concept
 faults of the solver passes that ended (`concept_faults`); the request to a ticket analyst on a held step to give its decision
-again; the decisions for the user, and the items of each ticket analyst's
+again; the decisions for the user, the changes handed to the coordinator
+(`merging.handoffs`), and the items of each ticket analyst's
 reply for the coordinator; the monitor's steps (`monitor`); at launch,
 the release of tickets; the move back to `tickets/open/` of the tickets the coordinator wrote on
 under `tickets/blocked/`, `tickets/waiting/` or `tickets/closed/`; the coordinator's later
@@ -60,7 +61,7 @@ its text (`ending`), with each stuck agent or holder it waited on."""
 from collections.abc import Callable, Mapping, Sequence
 
 from controlled_markdown import mctx
-from operations import (alerts, batches, changes, concept_faults, decisions, drafts, limit_resume, lineage,
+from operations import (alerts, batches, changes, concept_faults, decisions, drafts, limit_resume, lineage, merging,
                         monitor, passes, runs, ticket_stall, triage, taking)
 from operations.directives import (
     NUMBER,
@@ -230,7 +231,7 @@ def elsewhere(state: State) -> list[str]:
 
 
 EARLY: tuple[Callable[[State], Step | None], ...] = (
-    limit_resume.step, unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.stuck, alerts.late_resumes, concept_faults.step, decisions.asks, triage.decisions, triage.main_wanted, triage.for_coordinator,
+    limit_resume.step, unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.stuck, alerts.late_resumes, concept_faults.step, decisions.asks, triage.decisions, merging.handoffs, triage.main_wanted, triage.for_coordinator,
     triage.unfinished)
 LATE: tuple[Callable[[State], Step | None], ...] = (
     launching, triage.reopen, triage.later_lines, triage.settle, ticket_stall.stall, drafts.step,

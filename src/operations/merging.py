@@ -9,22 +9,26 @@ script's own forms and by `master` (`state.Merge`,
 - a call that left edits in the worktree after its commit leaves the
   change unmerged, and once no editor of the change runs, the merge call
   on that worktree is given again;
-- a call that never ran, as where the harness denied it, moves the change
-  to `tickets/blocked/` with a line whose note opens with the wait on the
-  user and gives the call, the first line of its result and the worktree;
-  once a line moves the change from `tickets/blocked/` back to
-  `tickets/assigned/` after that call, the merge call is given again;
+- a call that never ran, as where the harness denied it, hands the change
+  to the coordinator (`HANDED_OFF`), with a note that gives the call, the
+  first line of its result and the worktree;
 - a conflict in the rebase leaves the change in its worktree, put by the
   script onto `master` with git's conflict markers in the paths that
   conflict: the command writes those paths on the ticket in a line whose
   note opens with `conflict`, once per such call, and the refusal then
   goes as a finding as any other refusal goes;
 - a conflict where the script could not put the change onto `master`
-  (`NOT_PUT_ON`) moves the change to `tickets/blocked/` with a line whose
-  note opens with the wait on the user and gives the call, the script's
-  refusal line and the worktree, since no editor may move the branch; the
-  line that moves it back gives the merge call again, as for a call that
-  never ran;
+  (`NOT_PUT_ON`) hands the change to the coordinator, with a note that
+  gives the call, the script's refusal line and the worktree, since no
+  editor may move the branch;
+- a hand-off moves the change to `tickets/open/` and back to
+  `tickets/assigned/` with the session id as its holder, which holds it
+  live while the coordinator's session runs, so no operator takes it; the
+  command then sends the coordinator the note as an `unfinished:` item,
+  once (`handoffs`). Once an operator takes the change from
+  `tickets/open/` after the hand-off, or a line moves it from
+  `tickets/blocked/` back to `tickets/assigned/` after the call, the merge
+  call is given again;
 - a refusal whose output reports a `quotes` call a change to the documents
   broke goes to a new code editor in the change's worktree, with those
   calls as its items and their files as the files it may edit;
@@ -65,13 +69,14 @@ from operations.change_budget import TIME_NOTE, TIME_OPENING, left_draft, taken
 from operations.filing import editor_scratch
 from operations.reports import splits, unread_split
 from operations.roles import Role
-from operations.state import Agent, Call, Commit, Merge, State, Ticket, Tool
+from operations.constants import COORDINATOR
+from operations.state import Agent, Call, Commit, LogLine, Merge, State, Ticket, Tool
 from operations.command_words import simple_commands
-from operations.handled import ask_again, bash_calls, decided_by, unmoved
-from operations.steps import Bash, Launch, Send, Step
+from operations.handled import ask_again, bash_calls, decided_by, sent, unmoved
+from operations.steps import Bash, Launch, Send, Step, labeled
 from operations.log_commands import log
 from operations.worktrees import WORKTREE
-from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Note, Resolution, Status, Wait
+from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Note, Resolution, Status
 
 MERGE_SCRIPT = "scripts/merge_change.py"
 
@@ -124,9 +129,14 @@ QUOTE_LINE = finding_lines(BROKEN_QUOTES)
 """A line of the `controlled_markdown` check that reports such a call."""
 
 
-NOT_RUN = mctx("{wait}: the merge call `{command}` did not run: {first}; worktree {worktree}")
-"""The note of the line that moves a change whose merge call did not run
-to `tickets/blocked/`."""
+HANDED_OFF = mctx("handed to the coordinator: the merge call `{command}` {outcome}; "
+                  "worktree {worktree}")
+"""The note of the lines that hand a change to the coordinator."""
+
+HANDED_OFF_OPENING = HANDED_OFF.split("{", 1)[0]
+
+NOT_RUN = mctx("did not run: {first}")
+"""The outcome a `HANDED_OFF` note gives of a merge call that did not run."""
 
 RERUN_CONFLICT = mctx("{rerun}: the rebase conflicts in {paths}; the old worktree is {worktree} "
                       "on branch {branch}")
@@ -152,10 +162,9 @@ where it could not put the change onto `master`."""
 
 NOT_PUT = re.compile(form(NOT_PUT_ON, {"onto": r"\S+", "commit": r"[0-9a-f]+"}))
 
-NOT_PUT_ON_NOTE = mctx("{wait}: the merge call `{command}` could not put the change onto "
-                       "`master`: {refusal}; worktree {worktree}")
-"""The note of the line that moves a change to `tickets/blocked/` where
-its merge call conflicts and could not put it onto `master`."""
+NOT_PUT_ON_NOTE = mctx("could not put the change onto `master`: {refusal}")
+"""The outcome a `HANDED_OFF` note gives of a merge call that conflicts and
+could not put the change onto `master`."""
 
 PATHS_SEP = ", "
 """What stands between two paths of `RERUN_CONFLICT`, of `CONFLICT_NOTE`
@@ -301,22 +310,19 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
     reported = [r.time for a in [*of_change(state, t.number), *on_step]
                 if (r := a.last_report) is not None]
     if (last is None or (reported and max(reported) > last.time)
-            or any(prev.status is Status.BLOCKED and ln.status is Status.ASSIGNED
-                   and ln.time > last.time for prev, ln in zip(t.log, t.log[1:]))):
+            or came_back(t, last.time)):
         return Bash(command)
     match last.merge:
         case None:
             return None
         case Merge.NOT_RUN:
             first = (last.result or "").strip().splitlines()
-            return Bash(log(t.number, Status.BLOCKED, Status.ASSIGNED, NOT_RUN.format(
-                wait=Wait.USER, command=command, first=first[0] if first else "no result text",
-                worktree=w), state.me))
+            return hand_off(state, t, command, w, NOT_RUN.format(
+                first=first[0] if first else "no result text"))
         case Merge.CONFLICT if NOT_PUT.search(last.result or "") is not None:
             refusal = next(ln for ln in (last.result or "").splitlines()
                            if NOT_PUT.search(ln) is not None)
-            return Bash(log(t.number, Status.BLOCKED, Status.ASSIGNED, NOT_PUT_ON_NOTE.format(
-                wait=Wait.USER, command=command, refusal=refusal, worktree=w), state.me))
+            return hand_off(state, t, command, w, NOT_PUT_ON_NOTE.format(refusal=refusal))
         case Merge.CONFLICT:
             if not any(ln.time > last.time and ln.note.startswith(CONFLICT_OPENING)
                        for ln in t.log):
@@ -329,6 +335,52 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
             return Bash(command)
         case Merge.MERGED:
             return None
+
+
+def handed_off(line: LogLine) -> bool:
+    return line.status is Status.ASSIGNED and line.note.startswith(HANDED_OFF_OPENING)
+
+
+def hand_off(state: State, t: Ticket, command: str, w: Path, outcome: str) -> Bash:
+    """The step that hands the change `t` to the coordinator, after its
+    merge call `command` on `w` gave `outcome`. The move back is refused
+    where an operator took the change between the two moves."""
+    note = HANDED_OFF.format(command=command, outcome=outcome, worktree=w)
+    return Bash(log(t.number, Status.OPEN, Status.ASSIGNED, note, None) + " && "
+                + log(t.number, Status.ASSIGNED, Status.OPEN, note, state.session))
+
+
+def came_back(t: Ticket, since: float) -> bool:
+    """Whether the change `t` came back to an operator after `since` from a
+    state off the merge path: a line moved it from `tickets/blocked/` back
+    to `tickets/assigned/`, or an operator took it from `tickets/open/`
+    after a hand-off."""
+    handed = False
+    for prev, ln in zip(t.log, t.log[1:]):
+        handed = handed or (ln.time > since and handed_off(ln))
+        if ln.time > since and ln.status is Status.ASSIGNED and (
+                prev.status is Status.BLOCKED
+                or (handed and prev.status is Status.OPEN and not handed_off(ln))):
+            return True
+    return False
+
+
+def handoffs(state: State) -> Step | None:
+    """The message that gives the coordinator, once, each change a
+    hand-off line gives to the session's coordinator while it holds it."""
+    for t in sorted(state.tracker.tickets.values(), key=lambda t: t.order):
+        line = next((ln for ln in reversed(t.log) if handed_off(ln)), None)
+        if (line is None or t.status is not Status.ASSIGNED or t.holder != state.session
+                or line.agent_id != state.session):
+            continue
+        key = HANDED_OFF_KEY.format(number=t.number, time=f"{line.time:.0f}")
+        step = Send(COORDINATOR, labeled(key, mctx("- unfinished: {note}").format(note=line.note)))
+        if not sent(state, step.to, step.message, key):
+            return step
+    return None
+
+
+HANDED_OFF_KEY = mctx("change {number}, handed off at {time}")
 
 
 def refused(state: State, t: Ticket, w: Path, last: Call, latest: list[Agent],

@@ -49,6 +49,8 @@
 - Where that script does not merge the change, act on what it reports:
     - Where it reports that the rebase conflicts and that it moved the branch onto `master`, or a failed check, send what it reports to the change's editor as a finding of its checks.
         - Where the failed check is the gate, give in that finding, for each `DIFF` line that the change's briefs ask for, the accepted output under `tests/gate/accepted/` to update.
+    - Where it reports that the rebase conflicts and that the worktree is as it was, put the change in its worktree yourself onto what it rebased it onto, resolving each conflict, then run that script again.
+        * comment: Decision a3fdafaa399f0c20c on 6-1429, from the user's words on 6-1417: "it gets sent to you and you handle it". Trial afa894d8d289e9d58 took it as the case below.
     - Where it reports anything else, give the worktree and the script's message in your reply.
 - Once a change is merged, and before you close its ticket, run each step and each check its ticket's Scope places at or after the merge, and file each one that fails as a `bug` ticket on the change. Give each such check whose subject is an event that has not happened at the merge in your reply as unfinished, with that reason. Run a check of what a running Claude Code session reads only at its start, such as its hooks, in a `claude -p` session you start in the main worktree after the merge, and not in an agent you launch.
 - Once a change is merged, move to `tickets/closed/` its ticket, then each `question` ticket filed on it that still stands outside `tickets/closed/`, with `fixed`, the change's number and the hash `master` stands at after the merge as the note.

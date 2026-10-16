@@ -110,7 +110,13 @@ operator in an earlier transcript gave the coordinator an undecided step
 DECISION = "for the coordinator:"
 """The opening of a message that gives the coordinator labeled items to act
 on: the `decision:` items of a ticket analyst's reply, or the note of a
-blocked ticket as a `decision:` item."""
+blocked ticket as a `decision:` item, or a change an operator hands to the
+coordinator as an `unfinished:` item."""
+
+
+def labeled(key: str, body: str) -> str:
+    """A message to the coordinator on `key`, with the items of `body`."""
+    return mctx("{label} {key}:").format(label=DECISION, key=key) + "\n" + body
 
 
 def unread_line(line: str) -> Send:
