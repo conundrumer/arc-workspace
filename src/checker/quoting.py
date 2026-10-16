@@ -16,10 +16,12 @@ import textwrap
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from enum import Enum, auto
+from pathlib import Path
 
 import checker
 import checker.lint
 from checker.finding import FAILING, Kind
+from controlled_markdown import ControlledMarkdownError, Rule
 from engine.quotes import guarded, quoted
 
 CHECK_PREFIX = "check_"
@@ -109,3 +111,28 @@ def unquoted(functions: Iterable[tuple[Function, bool]]
                 and all(q.document != PRINCIPLES for q in words):
             out.append(Unquoted(function, Breach.PRINCIPLE))
     return out
+
+
+def quote_rule_errors(shown: Callable[[Path], str]
+                     ) -> list[ControlledMarkdownError]:
+    """Each check or survey of the checker that breaks its rule on the words
+    it rests on (`unquoted`), at its `def` line, its file as `shown`
+    gives it."""
+    broken = {
+        Breach.GUARD: (Rule.QUOTE_GUARD,
+                       "`{name}` carries a `guard`, which only a hint or "
+                       "lint check may carry"),
+        Breach.MISSING: (Rule.QUOTE_MISSING, "`{name}` carries no `quotes`"),
+        Breach.PRINCIPLE: (Rule.QUOTE_PRINCIPLE,
+                           "`{name}` carries no `quotes` from `{principles}`"),
+    }
+    errors: list[ControlledMarkdownError] = []
+    for u in unquoted(checks_and_surveys()):
+        lines, first = inspect.getsourcelines(u.function)
+        at = first + next(i for i, ln in enumerate(lines)
+                          if ln.lstrip().startswith(("def ", "async def ")))
+        rule, sentence = broken[u.breach]
+        errors.append(ControlledMarkdownError(
+            shown(Path(inspect.getfile(u.function))), at, rule,
+            sentence.format(name=u.function.__name__, principles=PRINCIPLES)))
+    return errors

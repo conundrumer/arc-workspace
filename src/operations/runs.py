@@ -19,6 +19,7 @@ import shlex
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass
 from enum import StrEnum
+from functools import cache
 from pathlib import Path
 from typing import TypeGuard
 
@@ -179,20 +180,35 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(RUN_OPTION)
 
 
+def call_parser() -> argparse.ArgumentParser:
+    """The parser of the words of a call of `operate.py` after the script."""
+    parser = argparse.ArgumentParser(add_help=False, exit_on_error=False)
+    parser.add_argument("action")
+    add_arguments(parser)
+    return parser
+
+
+CALL_PARSER = call_parser()
+
+
 def start_words(c: Call) -> tuple[str, Start] | None:
     """The run, the task and the passes of the call `c`, where it is a Bash
     call of `operate.py start`, or None."""
     if c.tool != Tool.BASH:
         return None
+    return command_start(str(c.input.get("command", "")))
+
+
+@cache
+def command_start(command: str) -> tuple[str, Start] | None:
+    """`start_words` of a Bash call of `command`. The procedures ask it of
+    each call of the session's operators many times in one read."""
     lead = RUN_COMMAND.split()
     script = lead.index(COMMAND)
-    for words in simple_commands(str(c.input.get("command", ""))):
+    for words in simple_commands(command):
         if len(words) > script and words[:script] == lead[:script] and words[script].endswith(COMMAND):
-            parser = argparse.ArgumentParser(add_help=False, exit_on_error=False)
-            parser.add_argument("action")
-            add_arguments(parser)
             try:
-                args = parser.parse_args(words[script + 1:])
+                args = CALL_PARSER.parse_args(words[script + 1:])
             except argparse.ArgumentError:
                 continue
             start = start_of(args.ident, args.rest)

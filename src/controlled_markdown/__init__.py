@@ -132,7 +132,6 @@ from controlled_markdown.prose import (
     Quote as Quote,
     handbook_sections as handbook_sections,
     check_quotes as check_quotes,
-    check_quote_rule as check_quote_rule,
     DL_DOC_RE as DL_DOC_RE,
     dl_fragments as dl_fragments,
     check_dl_comments as check_dl_comments,

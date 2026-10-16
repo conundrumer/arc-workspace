@@ -24,6 +24,8 @@ import sys
 import tomllib
 from pathlib import Path
 
+from checker.quoting import quote_rule_errors
+
 from . import (
     ControlledMarkdownError,
     Node,
@@ -35,7 +37,6 @@ from . import (
     check_links,
     check_partial_sites,
     check_paths,
-    check_quote_rule,
     check_quotes,
     parse,
     render,
@@ -129,7 +130,7 @@ def check_code(root: Path, document_set: set[Path]) -> int:
             for err in check_quotes(path, shown(path)):
                 print(err)
                 off += 1
-    for err in check_quote_rule(shown):
+    for err in quote_rule_errors(shown):
         print(err)
         off += 1
     for pattern in LIB_GLOBS:

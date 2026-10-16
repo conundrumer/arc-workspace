@@ -18,7 +18,7 @@ from ticket_form import front, ticket_kind
 from ticket_log import held_log, line_time, log_lines, read_ticket, resolution_of
 from ticket_reads import editors_field
 from token_prices import run_cost
-from transcripts import chain, find
+from transcripts import chain, held_find
 from transcript_entries import Refused, entries_back
 
 from controlled_markdown import mctx
@@ -54,8 +54,10 @@ def owners(runs: list[str]) -> dict[Path, str] | None:
     trees: list[tuple[str, list[Path]]] = []
     for run in runs:
         try:
-            top = find(run)
+            top = held_find(run)
         except Refused:
+            return None
+        if top is None:
             return None
         role = agent_type(top)
         if role is None:

@@ -195,6 +195,16 @@ def main_transcripts_in(dirs: tuple[Path, ...]) -> dict[str, list[Path]]:
     return out
 
 
+def held_find(ident: str) -> Path | None:
+    """The transcript `find` gives the session or agent id `ident`, of the
+    agent index this state holds, or None where that index holds none."""
+    for found in (sorted(mains_named(ident)), transcripts_of(bare_id(ident))):
+        path = one_of(ident, found)
+        if path:
+            return path
+    return None
+
+
 def find(ident: str) -> Path:
     """The transcript `ident` names, and for a run of more than one
     transcript, its last. A miss reads the agent index again before it
@@ -204,10 +214,9 @@ def find(ident: str) -> Path:
         if not is_file(path):
             raise Refused(mctx("no file `{path}`").format(path=path))
         return path
-    for found in (sorted(mains_named(ident)), transcripts_of(bare_id(ident))):
-        path = one_of(ident, found)
-        if path:
-            return path
+    path = held_find(ident)
+    if path:
+        return path
     fresh = agent_index(tuple(project_dirs()), listed.__wrapped__)
     path = one_of(ident, fresh.get(bare_id(ident), []))
     if path:
