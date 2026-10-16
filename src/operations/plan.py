@@ -43,14 +43,15 @@ launch a procedure gives, other than that of a ticket analyst on a held
 step, is held where its chain of causes runs `lineage.DEPTH` launches of
 its kind deep (`lineage`).
 
-Where no step is ready, and an agent of an operator runs, a ticket of
-the operators' waits on another holder whose work is open, a ticket
+Where no step is ready, and an agent of an operator runs that is not
+stuck, a ticket of the operators' waits on another holder whose work is
+open and that is not stuck (`TranscriptsRead.stuck`), a ticket
 file the read of the tracker left out may still be written
 (`decisions.writing`), or the usage pace alone holds back an open
 ticket (`taking.pace_held`), the agent runs
 the command again, which blocks in the foreground first. Otherwise the
 agent gives its final reply, after the message that sends its parent
-its text (`ending`)."""
+its text (`ending`), with each stuck agent or holder it waited on."""
 
 from collections.abc import Callable, Mapping, Sequence
 
@@ -69,6 +70,7 @@ from operations.directives import (
 )
 from operations.roles import PASSES, Role, description
 from operations.state import Call, State, Ticket, Tool
+from ticketing.times import utc_stamp
 from ticketing.vocabulary import Status
 from operations.final_reply import (FOR_CONTEXT, ending_step, failure, final_sends, final_sends_in,
                                    for_context, live_holder, nested, sent_final_text)
@@ -224,7 +226,7 @@ def elsewhere(state: State) -> list[str]:
 
 
 EARLY: tuple[Callable[[State], Step | None], ...] = (
-    limit_resume.step, unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.late_resumes, concept_faults.step, decisions.asks, triage.decisions, triage.main_wanted, triage.for_coordinator,
+    limit_resume.step, unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.stuck, alerts.late_resumes, concept_faults.step, decisions.asks, triage.decisions, triage.main_wanted, triage.for_coordinator,
     triage.unfinished)
 LATE: tuple[Callable[[State], Step | None], ...] = (
     launching, triage.reopen, triage.later_lines, triage.settle, taking.stall, drafts.step,
@@ -263,10 +265,15 @@ def next_step(state: State, watch: monitor.MonitorState) -> Step:
     pace = taking.pace_held(state, [*triage.unsettled_open(state),
                                     *(t.number for t in taking.ready(state)
                                       if not taking.taken_before(t))])
-    if (pace is not None or any(a.pending for a in state.transcripts.agents) or elsewhere(state)
+    stuck = state.transcripts.stuck
+    waits = [a.agent_id for a in state.transcripts.agents if a.pending or a.quiet is not None]
+    waits += [h for n in elsewhere(state) if (h := state.tracker.tickets[n].holder) is not None]
+    if (pace is not None or any(w is None or w not in stuck for w in waits)
             or any(decisions.writing(state, u) for u in state.tracker.unread)):
         return Poll(pace)
-    return ending(state, "\n".join([final(state), *unknown]))
+    quiet = [mctx("- Stopped waiting on {agent}: no progress since {time}.").format(
+        agent=w, time=utc_stamp(stuck[w].since)) for w in dict.fromkeys(waits) if w is not None]
+    return ending(state, "\n".join([final(state), *quiet, *unknown]))
 
 
 def monitor_step(state: State, watch: monitor.MonitorState) -> Step | None:

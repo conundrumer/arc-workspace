@@ -21,6 +21,7 @@ from run_reads import (BACKGROUND_TASK, LaunchStatus, blocks, is_prompt, parent_
 from state_reads import DERIVED, Kept, mtime, state_cache
 from transcripts import agent_id, is_subagent
 
+from operations.constants import STUCK_SECONDS
 from operations.steps import BLOCK_SECONDS
 
 
@@ -277,6 +278,21 @@ def running_agents(path: Path, undecided: list[str]) -> list[Listed]:
         up[-1].under = down
     settle_turns([*up, *every_node(down, undecided)], undecided)
     return listed_under(down, open_along(up, undecided), undecided)
+
+
+def quiet_since(agent: str, path: Path, listing: list[Listed], now: float) -> float | None:
+    """The time of the latest timestamped entry of the transcript at `path`,
+    the run of `agent`, and of the transcript of each agent under it in
+    `listing`, at any depth by `Listed.parent`, where that entry is older
+    than `STUCK_SECONDS` at `now`, and None otherwise, or where no such
+    transcript gives a time."""
+    reached = {agent}
+    while added := {aid for x in listing if x.parent in reached
+                    and (aid := x.launch.agent) is not None and aid not in reached}:
+        reached |= added
+    paths = [path, *(x.path for x in listing if x.launch.agent in reached - {agent})]
+    latest = max((t for p in paths if (t := last_time(p)) is not None), default=None)
+    return latest if latest is not None and now - latest > STUCK_SECONDS else None
 
 
 @state_cache(DERIVED, notes="undecided")

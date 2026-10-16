@@ -135,7 +135,13 @@ class Agent:
     operator launched or last resumed it itself, so the notification of
     its end and its final reply reach that operator. `messaged` holds, for
     a doc reviewer or an item checker whose transcript is known, the agent
-    ids its SendMessage calls went to, and is None for any other agent."""
+    ids its SendMessage calls went to, and is None for any other agent.
+    `quiet` is the time of its latest sign of progress where it is quiet,
+    as `quiet_since` in `scripts/open_agents.py` gives it, and None
+    otherwise. Where the latest sign is a notification that it stopped
+    with work of its own still running, and it is quiet, `pending` does not
+    hold, and its work ends with the reports it has, as for an agent of
+    another operator whose work is no longer open."""
     agent_id: str | None
     operator: str
     role: Role
@@ -148,6 +154,7 @@ class Agent:
     notifies: bool
     messaged: frozenset[str] | None = None
     limited: float | None = None
+    quiet: float | None = None
 
     @property
     def last_report(self) -> Report | None:
@@ -341,6 +348,17 @@ class PassReport:
 
 
 @dataclass(frozen=True)
+class Stuck:
+    """An agent that showed no sign of progress for `STUCK_SECONDS`, or whose
+    Bash calls repeated with the same result for it: its `session`, the
+    start of that stretch (`since`), and the command line of each span of
+    the work of its own still running (`running`)."""
+    session: str
+    since: float
+    running: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class TranscriptsRead:
     """What the operator reads of the transcripts of the session's
     operators. `agents` holds their launches, in the order of their launch,
@@ -353,7 +371,9 @@ class TranscriptsRead:
     the next operator of `State.operators` made its first entry, in the
     order of their time. `stalled` gives the final reply in the transcript
     of each agent a stall alert names that reached no operator as a
-    report. `pass_reports` gives, for each
+    report. `stuck` gives, by agent id, each pending agent and each live
+    holder of a ticket held elsewhere (`plan.elsewhere`) that is quiet,
+    and each watched agent whose `Watched.stuck` holds. `pass_reports` gives, for each
     solver pass with an agent id, the read of the report file it wrote
     under the task's work directory since its launch (`PassReport`),
     whatever its reply."""
@@ -364,6 +384,7 @@ class TranscriptsRead:
     late_resumes: Mapping[str, tuple[LateResume, ...]]
     stalled: Mapping[str, Report]
     pass_reports: Mapping[str, PassReport]
+    stuck: Mapping[str, Stuck]
 
 
 @dataclass(frozen=True)

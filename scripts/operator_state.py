@@ -14,7 +14,7 @@ from filed_texts import gone_line
 from held_budgets import change_budgets, change_spend, doc_budgets
 from idle_sessions import main_wanted, read_sessions, running, want_main
 from monitor_reads import late_resumes, watched
-from open_agents import running_agents, work_open
+from open_agents import Listed, quiet_since, running_agents, work_open
 from operator_reads import (
     ended_elsewhere,
     ended_with,
@@ -53,7 +53,7 @@ from operations.directives import named, pace
 from operations.final_reply import final_sends_in, for_context, sent_final_text
 from operations.handled import made
 from operations.monitor import MonitorState
-from operations.plan import taken_up, unknown_line
+from operations.plan import elsewhere, taken_up, unknown_line
 from operations.roles import Role
 from operations.state import (
     Agent,
@@ -69,6 +69,7 @@ from operations.state import (
     Report,
     SessionsRead,
     State,
+    Stuck,
     TrackerRead,
     TranscriptsRead,
 )
@@ -125,6 +126,19 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     ended: dict[str, Report | None] = {**ended_elsewhere(agents, me, undecided), **stalled}
     agents = [ended_with(a, ended[a.agent_id]) if a.pending and a.agent_id in ended else a
               for a in agents]
+    now = time.time()
+    agents = [with_quiet(a, listing, now) for a in agents]
+    quiet_ended = {a.agent_id for a in agents
+                   if a.pending and a.still_running and a.quiet is not None and a.agent_id}
+    ended.update(dict.fromkeys(quiet_ended))
+    agents = [ended_with(a, None) if a.pending and a.agent_id in quiet_ended else a
+              for a in agents]
+    running_work = {aid: tuple(sp.command for sp in x.running)
+                    for x in listing if (aid := x.launch.agent) is not None}
+    stuck = {aid: Stuck(session, q, running_work.get(aid, ()))
+             for aid, q in [*((a.agent_id, a.quiet) for a in agents),
+                            *((w.agent_id, w.stuck) for w in now_watched)]
+             if aid is not None and q is not None}
     known = {a.agent_id for a in agents if a.agent_id} | {aid for aid, _ in runs}
     given = given_lines(runs, me, calls)
     sorted_calls = tuple(sorted(calls, key=lambda c: c.time))
@@ -141,7 +155,6 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     my_path = dict(runs)[me]
     holding = {t.number: w for t in tickets.values() if t.status is Status.ASSIGNED
                and t.holder == me and (w := worktree_in(t, tree.worktrees)) is not None}
-    now = time.time()
     main_path = find(session)
     session_dir = main_path.parent / session
     found = {h: find(h, recheck=True) for h in sorted(holders)}
@@ -164,13 +177,15 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
         transcripts=TranscriptsRead(
             agents=tuple(sorted(agents, key=lambda a: a.launched)),
             calls=sorted_calls, messages=tuple(messages),
-            made=made(calls), late_resumes=late, stalled=stalled, pass_reports=passes),
+            made=made(calls), late_resumes=late, stalled=stalled, stuck=stuck,
+            pass_reports=passes),
         git=tree, taken_up=took_up,
         held=read_held(holding),
         readers=Deferred(lambda: tuple(Reader(name, tuple(args)) for name, args in reader_calls()
                                        if name not in DEPRECATED)),
         limit_lifted=lifted,
         sessions=sessions(tickets_dir, index, session, now))
+    state = with_quiet_holders(state, found, listing, running_work)
     given = [ticket_number(n) for n in named(state) if n in tickets]
     spent = change_spend(state, undecided)
     run_starts, run_takes = read_runs(state)
@@ -185,6 +200,35 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
               else (given_pace or pacing.DEFAULT)(usage))))
     return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(stalled),
                                undecided=tuple(watching))
+
+
+def with_quiet(a: Agent, listing: list[Listed], now: float) -> Agent:
+    """`a` with its `quiet` reading, where it is pending and the usage limit
+    did not stop it (`limit_resume` covers that agent), and whose
+    transcript is found."""
+    if not a.pending or a.agent_id is None or a.limited is not None:
+        return a
+    try:
+        path = find(a.agent_id, recheck=True)
+    except Refused:
+        return a
+    return replace(a, quiet=quiet_since(a.agent_id, path, listing, now))
+
+
+def with_quiet_holders(state: State, found: Mapping[str, Path], listing: list[Listed],
+                       running_work: Mapping[str, tuple[str, ...]]) -> State:
+    """`state` with each live holder of a ticket of `plan.elsewhere` that is
+    quiet in `TranscriptsRead.stuck`, where `found` gives each holder's
+    transcript."""
+    stuck = dict(state.transcripts.stuck)
+    for n in elsewhere(state):
+        h = state.tracker.tickets[n].holder
+        if h is None or h in stuck:
+            continue
+        q = quiet_since(h, found[h], listing, state.now)
+        if q is not None:
+            stuck[h] = Stuck(state.session, q, running_work.get(h, ()))
+    return replace(state, transcripts=replace(state.transcripts, stuck=stuck))
 
 
 def text_readers(me: str, took_up: frozenset[str], ended: Mapping[str, Report | None],

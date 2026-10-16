@@ -384,19 +384,18 @@ WAIT_LEAD = ": 'unattended-wait:"
 command."""
 
 
-def repeated_runs(calls: Iterable[tuple[str, str, float]], entries: list[Entry],
+def repeated_runs(calls: list[tuple[str, str, float]], entries: list[Entry],
                   least: int) -> list[float]:
     """The time of the last call of each run of `least` or more consecutive
     calls of `calls`, each a Bash call's id, command and start, with the same
     command and the same result text in `entries`, other than a command led
     by `WAIT_LEAD` and a call with no result."""
-    results = {cid: text for e in entries for cid, _, text in tool_results(e)}
     out: list[float] = []
     key: tuple[str, str] | None = None
     count, last = 0, 0.0
-    for cid, command, start in calls:
-        given = None if command.lstrip().startswith(WAIT_LEAD) or cid not in results \
-            else (command, results[cid])
+    for (_, command, start), given in zip(calls, call_keys(calls, entries)):
+        if command.lstrip().startswith(WAIT_LEAD):
+            given = None
         if given is not None and given == key:
             count, last = count + 1, start
             continue
@@ -406,6 +405,28 @@ def repeated_runs(calls: Iterable[tuple[str, str, float]], entries: list[Entry],
     if count >= least:
         out.append(last)
     return out
+
+
+def call_keys(calls: list[tuple[str, str, float]],
+              entries: list[Entry]) -> list[tuple[str, str] | None]:
+    """The command and result text of each call of `calls`, as
+    `repeated_runs` takes them, or None for a call with no result."""
+    results = {cid: text for e in entries for cid, _, text in tool_results(e)}
+    return [(command, results[cid]) if cid in results else None for cid, command, _ in calls]
+
+
+def same_since(calls: list[tuple[str, str, float]], entries: list[Entry]) -> float | None:
+    """The start of the first call of the last run of calls of `calls`, as
+    `repeated_runs` takes them, with the same command and the same result
+    text, a command led by `WAIT_LEAD` included, where that run holds two
+    calls or more, and None otherwise."""
+    keys = call_keys(calls, entries)
+    if len(keys) < 2 or keys[-1] is None or keys[-2] != keys[-1]:
+        return None
+    first = len(keys) - 1
+    while first > 0 and keys[first - 1] == keys[-1]:
+        first -= 1
+    return calls[first][2]
 
 
 def caller_type(hook: str, data: dict[str, Any]) -> tuple[Path, str | None]:

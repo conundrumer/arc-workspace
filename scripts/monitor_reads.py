@@ -9,15 +9,15 @@ from agent_reports import parent_transcripts
 from agent_turns import first_time, last_time
 from budgets import budgets_in_force, past_budget
 from context_bound_hook import OPERATORS
-from open_agents import Listed
+from open_agents import Listed, quiet_since
 from operator_reads import resumed_at
 from run_prints import self_of
-from run_reads import bash_spans, repeated_runs, run_entries
-from transcript_entries import epoch
+from run_reads import bash_spans, repeated_runs, run_entries, same_since
+from transcript_entries import Entry, epoch
 
 from controlled_markdown import mctx
 from operations import monitor
-from operations.constants import COORDINATOR
+from operations.constants import COORDINATOR, STUCK_SECONDS
 from operations.monitor import Watched
 from operations.state import LateResume
 
@@ -79,11 +79,30 @@ def stalled_at(listed: Listed, listing: list[Listed], undecided: list[str]) -> f
     return end if any(t > end for t in answered) else None
 
 
+def bash_calls(listed: Listed) -> tuple[list[tuple[str, str, float]], list[Entry]]:
+    """The Bash calls of `listed`, as `run_reads.repeated_runs` takes them,
+    and the entries of its transcript."""
+    entries = run_entries(listed.path)
+    return [(s.call, s.command, s.start) for s in bash_spans(listed.run.spans, entries)], entries
+
+
 def repeated(listed: Listed) -> tuple[float, ...]:
     """The `repeated` readings of `listed` (`run_reads.repeated_runs`)."""
-    entries = run_entries(listed.path)
-    calls = [(s.call, s.command, s.start) for s in bash_spans(listed.run.spans, entries)]
+    calls, entries = bash_calls(listed)
     return tuple(repeated_runs(calls, entries, monitor.REPEATS))
+
+
+def stuck_at(aid: str, listed: Listed, listing: list[Listed], now: float) -> float | None:
+    """`Watched.stuck` of `listed`, the run of `aid`: the time `quiet_since`
+    gives, or else the start of the last run of its Bash calls with the
+    same command and result (`run_reads.same_since`) where that run started
+    `STUCK_SECONDS` or more before `now`."""
+    quiet = quiet_since(aid, listed.path, listing, now)
+    if quiet is not None:
+        return quiet
+    calls, entries = bash_calls(listed)
+    since = same_since(calls, entries)
+    return since if since is not None and now - since >= STUCK_SECONDS else None
 
 
 def watched(listing: list[Listed], launched: set[str],
@@ -105,5 +124,6 @@ def watched(listing: list[Listed], launched: set[str],
         out.append(Watched(
             agent_id=aid,
             over_budget=past_budget(self_time, budget),
-            stalled=stalled_at(listed, listing, undecided), repeated=repeated(listed)))
+            stalled=stalled_at(listed, listing, undecided), repeated=repeated(listed),
+            stuck=stuck_at(aid, listed, listing, now)))
     return out

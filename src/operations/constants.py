@@ -12,6 +12,13 @@ WAIT_SECONDS = 272
 agent's previous request, less the longest measured time past the interval
 from that request to the agent's next one, 27.6 s."""
 
+STUCK_SECONDS = 1800
+"""The bound on the time an agent may show no sign of progress before an
+operator stops waiting on it and the coordinator hears of it
+(`open_agents.quiet_since` in `scripts/open_agents.py`), or may repeat
+its Bash calls with the same result (`stuck_at` in
+`scripts/monitor_reads.py`)."""
+
 FOREGROUND_MS = 240000
 """The bound `scripts/pending_wait_hook.py` holds a subagent's foreground
 Bash call's timeout to, and the timeout of each one the command prints."""

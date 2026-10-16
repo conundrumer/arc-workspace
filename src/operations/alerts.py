@@ -36,7 +36,13 @@ session made its first entry (`TranscriptsRead.late_resumes`), as `resumed_at` i
 `scripts/operator_reads.py` gives a resume, is recorded the same
 way, in one `bug` ticket of its own kind (`late_resumes`): each line is on
 one operator, and gives each of its resumes that no earlier line on it
-gives."""
+gives.
+
+A message on each agent of `TranscriptsRead.stuck` goes to the
+coordinator once per stretch, with the agent's own work that still runs,
+so that the coordinator ends that work or asks the session that holds it,
+and the agent is recorded the same way, in one `bug` ticket of its own
+kind (`stuck`)."""
 
 import re
 import shlex
@@ -47,7 +53,7 @@ from controlled_markdown import mctx
 from operations import briefs, messages
 from operations.constants import COORDINATOR
 from operations.roles import AGENT_ID
-from operations.state import Agent, LateResume, Message, Report, State, Ticket
+from operations.state import Agent, LateResume, Message, Report, State, Stuck, Ticket
 from operations.handled import ask_again, repeated
 from operations.steps import Bash, Send, Step, Undecided
 from operations.log_commands import AGENT, FILE_TICKET, log
@@ -146,6 +152,7 @@ class BugKind(Enum):
     """The kinds of `bug` ticket the operator's command files."""
     STALL = "stall"
     LATE_RESUME = "late resume"
+    STUCK = "stuck"
 
 
 TICKETS = {
@@ -159,6 +166,11 @@ TICKETS = {
              "later operator of the session started"),
         mctx("The resumed operator spent a run on its context, with the session's work in "
              "the hands of a later operator.")),
+    BugKind.STUCK: (
+        mctx("the wait on an agent's work: the agent showed no sign of progress for "
+             "`STUCK_SECONDS`"),
+        mctx("The agent's work made no progress for `STUCK_SECONDS`, and then a message on "
+             "the agent went to the coordinator.")),
 }
 """The title and the `Impact` of the `bug` ticket of each kind that files one,
 by which the operator also finds that kind's ticket in the tracker."""
@@ -240,6 +252,36 @@ def stalls(state: State) -> Step | None:
                 return sent
         if (s := stall_step(state, agent, since, reply)) is not None:
             return s
+    return None
+
+
+def stuck_text(agent: str, s: Stuck) -> str:
+    """The text on `agent`, stuck as `s` gives, of the message to the
+    coordinator and of the `bug` ticket's Evidence."""
+    head = mctx("Agent {agent} of session {session} has made no progress since {time}: no "
+                "entry of its transcript, or of an agent under it, is later, or each of its "
+                "Bash calls since then repeats the one before with the same result.").format(agent=agent, session=s.session, time=utc_stamp(s.since))
+    if not s.running:
+        return head + " " + mctx("No work of its own still runs.")
+    return (head + " " + mctx("Its work of its own that still runs:") + "\n"
+            + "\n".join(f"- `{c}`" for c in s.running))
+
+
+def stuck(state: State) -> Step | None:
+    """The first step on an agent of `TranscriptsRead.stuck`: the message
+    that gives the coordinator `stuck_text`, once after the start of its
+    stretch, then the step `ticket_step` gives from that start."""
+    for agent, s in sorted(state.transcripts.stuck.items()):
+        text = stuck_text(agent, s)
+        sent = Send(COORDINATOR, text + "\n" + mctx("End its work, or ask the session that "
+                                                     "holds it."), s.since)
+        if not repeated(sent, state):
+            return sent
+        t = ticket_step(state, BugKind.STUCK, agent, s.since,
+                        mctx("no progress since {time}").format(time=utc_stamp(s.since)),
+                        text)
+        if t is not None:
+            return t
     return None
 
 

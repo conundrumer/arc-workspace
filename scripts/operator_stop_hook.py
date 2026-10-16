@@ -15,8 +15,9 @@ would still be blocked.
 A blocked stop or a denied call is recorded with the id of the operator's
 last call of `next`, in a file named by its agent id under `STOPS` of its
 session directory, and neither a stop nor a call is blocked again while
-that call is still the last: a fault in `next` then cannot hold the
-operator in a loop of blocks, and a handback that passes is followed by a
+that call is still the last: a fault in `next` that leaves the same
+call of `next` the last one then cannot hold the operator in a loop of
+blocks, and a handback that passes is followed by a
 stop that passes. Where the hook cannot tell the agent type, or the
 transcript holds no result of `next`, it lets the stop or the call pass and
 says why on stderr."""
