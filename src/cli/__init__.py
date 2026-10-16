@@ -1,6 +1,8 @@
 """The commands, each a few lines over the packages below: load the
 solver, call the checks, surveys or solve functions it needs, render
-through `checker`, and exit by the pass rule."""
+through `checker`, and exit by the pass rule. `run.py` dispatches the
+`run` command to the modules that hold its forms, and no module imports
+it."""
 
 import sys
 from collections.abc import Collection

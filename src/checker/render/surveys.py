@@ -470,6 +470,25 @@ JUDGE_FREE: Annotated[str, quotes(
     "where the concept leaves that parameter's value free")] \
     = mctx("judge whether the concept leaves the value free")
 
+PLAN_HELP = mctx("""
+    - Each entry under `write a determination relation:` is a value that needs a determination relation, with the rows each case needs, and the note beside it gives why.
+    - `<n> of <m> joint assignments of the enumerated parameters reproduce every train pair`: of the `m` joint assignments of the parameters that their own domain settles, `n` give every train pair's output.
+    - The verdicts, which a covered line gives for its best proposer and `--verdicts` appends for each proposer:
+        - `exact`: the proposal is the stored value.
+        - `narrowed(<n>)`: a one-column proposal that holds the stored value and is smaller than the column's domain, of `n` candidates, the non-empty subsets of the proposal for a multi-fact value.
+        - `open`: a one-column proposal that holds the stored value and is no smaller than the domain.
+        - `missed`: a proposal that leaves out part of the stored value, or a table proposal none of whose rows is stored.
+        - `empty`: a table proposal that holds no row.
+        - `superset(+<n>)`: a table proposal that holds every stored row and `n` more.
+        - `partial`: a table proposal that holds some stored rows and leaves out others.
+        - `enumerable(<n>)`: a single-fact parameter's own value domain, of `n` values.
+    - A covered line gives, after the verdict, for an enumerated parameter, what the train pairs leave of its values:
+        - `pairs-exact`: one value, which follows.
+        - `pairs-ambiguous(<n>)`: `n` values, which the `{judge_free}:` section lists.
+    """).format(judge_free=JUDGE_FREE)
+"""The `determination-plan` command's help: what the plan's lines and
+verdict words mean, kept beside the code that prints them."""
+
 
 def render_determination_plan(solver: Solver, result: PlanResult,
                               verdicts: bool = False) -> list[str]:

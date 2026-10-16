@@ -37,7 +37,7 @@ def plan_lines(runs: Runs, source: Path, stamp: str, verdicts: bool
         pass
     result = survey_determination_plan(runs.solver, runs)
     lines = render_determination_plan(runs.solver, result, verdicts)
-    if not _reaches_wall(result):
+    if not reaches_wall(result):
         path.parent.mkdir(parents=True, exist_ok=True)
         write_whole(path, "\n".join(lines).encode())
     return lines
@@ -51,6 +51,14 @@ def _key(runs: Runs, source: Path, stamp: str, verdicts: bool) -> str:
     h.update(f"{stamp}\0{runs.solver.stem}\0{runs.limits!r}\0{verdicts}"
              .encode())
     h.update(b"\0" + runs.solver.engine.runtime_identity() + b"\0")
+    hash_solver_files(h, source, task_id)
+    return h.hexdigest()
+
+
+def hash_solver_files(h: "hashlib._Hash", source: Path, task_id: str
+                      ) -> None:
+    """Adds to `h` the solver file `source`, and the task file and the
+    witness file of its task `task_id`."""
     for path in (source.resolve(), task_file(task_id),
                  witness.path(task_id)):
         try:
@@ -58,17 +66,17 @@ def _key(runs: Runs, source: Path, stamp: str, verdicts: bool) -> str:
         except OSError:
             body = None
         hash_file(h, str(path), body)
-    return h.hexdigest()
 
 
-def _reaches_wall(x: object) -> bool:
+def reaches_wall(x: object) -> bool:
+    """Whether `x` holds a run that reached the wall limit."""
     if isinstance(x, WallLimit):
         return True
     if isinstance(x, tuple | list | frozenset | set):
-        return any(_reaches_wall(y) for y in x)
+        return any(reaches_wall(y) for y in x)
     if isinstance(x, dict):
-        return any(_reaches_wall(y) for y in x.values())
+        return any(reaches_wall(y) for y in x.values())
     if is_dataclass(x) and not isinstance(x, type):
-        return any(_reaches_wall(getattr(x, f.name)) for f in fields(x))
+        return any(reaches_wall(getattr(x, f.name)) for f in fields(x))
     return False
 

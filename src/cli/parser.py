@@ -9,9 +9,10 @@ from typing import Any
 from checker.render import Section
 from checker.render.built import GROUP_WIDTH
 from checker.render.commands import SLOWEST
+from checker.render.surveys import PLAN_HELP
 from checker.store.survey import ROW_CAP
 from checker.sweep import MAX_CANDIDATES, TIME_LIMIT_SECONDS
-from cli import audit, grid, record, run, survey, text
+from cli import audit, grid, lint, record, run, survey, text
 from controlled_markdown import mctx
 
 SWEEP_LIMIT_HELP = mctx("wall-clock limit in seconds on the sweep's solver "
@@ -27,7 +28,9 @@ GRID_HELP = mctx("""
 STEM_HELP = mctx("a task id, or the path, in any directory, to a solver file "
                  "whose name starts with the task id")
 
-ASSIGN_HELP = mctx("an `assign` object, in the witness file's shape")
+ASSIGN_HELP = mctx("an `assign` object, in the shape that "
+                   "[Witness file](docs/handbook/solver-file.md#witness-file) "
+                   "gives")
 
 def unwritten(kind: Section) -> str:
     """Which witnesses the command `kind`, `derive` or `store`, does not
@@ -69,7 +72,8 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
             - Run Souffle solvers and their checks.
             - The commands follow, each with what it runs.
             - `uv run python scripts/run_dl.py <command> --help` prints a command's arguments.
-            """),
+            - A stem, which the commands take, is {stem}.
+            """).format(stem=STEM_HELP),
     )
     sub = top.add_subparsers(dest="cmd", required=True)
 
@@ -85,8 +89,8 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                   "the first argument is not a command"),
         epilog=RUN_HELP,
     )
-    lint = command(
-        "lint", lambda a: run.cmd_lint(a.stems or None, a.hints),
+    lint_p = command(
+        "lint", lambda a: lint.cmd_lint(a.stems or None, a.hints),
         help=mctx("lint only, no pair runs"),
         description=mctx("A hint changes neither the verdict nor the exit "
                          "code."),
@@ -96,10 +100,10 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                                  "solver when omitted; more than one gives "
                                  "the report of a run over every solver, "
                                  "for those solvers alone").format(stem=STEM_HELP))
-    lint.add_argument("stems", nargs="*",
+    lint_p.add_argument("stems", nargs="*",
                       help=mctx("the solvers to lint, each {stem}, or every "
                                 "solver when omitted").format(stem=STEM_HELP))
-    for p in (run_p, lint):
+    for p in (run_p, lint_p):
         p.add_argument("--hints", action=argparse.BooleanOptionalAction,
                        default=True, help=mctx("include the hints section"))
     run_p.add_argument("--time", action="store_true", dest="timed",
@@ -351,6 +355,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
         "determination-plan",
         lambda a: survey.cmd_determination_plan(a.stem, a.verdicts),
         help=mctx("which Params parameters need determination relations"),
+        description=PLAN_HELP,
     )
     plan.add_argument("stem", help=STEM_HELP)
     plan.add_argument("--verdicts", action="store_true",

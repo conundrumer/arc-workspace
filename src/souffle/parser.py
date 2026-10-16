@@ -4,7 +4,7 @@ its layout."""
 import re
 from bisect import bisect_right
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 
 from arc.task import COLORS
@@ -196,6 +196,23 @@ class _Build:
     defined: set[str] = field(default_factory=set)
     including: list[str] = field(default_factory=list)
 
+    def lengths(self) -> dict[str, int]:
+        """The length of each list the parse gathers."""
+        return {f.name: len(getattr(self, f.name)) for f in fields(self)
+                if f.name not in _NOT_GATHERED}
+
+    def added(self, lengths: dict[str, int]) -> dict[str, tuple]:
+        """What each list the parse gathers holds past `lengths`."""
+        return {name: tuple(getattr(self, name)[n:])
+                for name, n in lengths.items()}
+
+    def replay(self, kept: "_Included") -> None:
+        """Advances the builder as the parse of `kept`'s include did."""
+        self.decl_n, self.unit_n = kept.decl_n, kept.unit_n
+        for name, items in kept.added.items():
+            getattr(self, name).extend(items)
+        self.defined |= kept.defined
+
     def decl_id(self) -> DeclId:
         self.decl_n += 1
         return DeclId(self.decl_n - 1)
@@ -203,6 +220,42 @@ class _Build:
     def unit_id(self) -> UnitId:
         self.unit_n += 1
         return UnitId(self.unit_n - 1)
+
+
+_NOT_GATHERED = frozenset({"base_dir", "decl_n", "unit_n", "defined",
+                           "including"})
+
+
+@dataclass(frozen=True)
+class _Start:
+    """What the parse of an included file depends on: its segments embed
+    the ids the counters give, a name parses as a `DefinedName` where it is
+    defined, and an include of a file in `including` fails."""
+
+    path: str
+    text: str
+    decl_n: int
+    unit_n: int
+    defined: frozenset[str]
+    including: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _Included:
+    """The parse of an included file, as the builder stands after it."""
+
+    body: tuple[Segment, ...]
+    decl_n: int
+    unit_n: int
+    added: dict[str, tuple]
+    defined: frozenset[str]
+
+
+_KEPT: dict[_Start, _Included] = {}
+"""The parses of included files this process has made, so that each
+solver's parse reuses the lib's (`engine.SouffleEngine.parse_including`
+puts its include at the head of the text, so each reaches it from the
+same state)."""
 
 
 class _Parser:
@@ -383,15 +436,25 @@ class _Parser:
         if key in self.b.including:
             raise self.fail(t, f"#include \"{path}\" includes itself")
         self.b.includes.append(Include(path, t.line, file=self.file))
-        self.b.including.append(key)
-        try:
-            sub = _Parser(self.b, target.read_text(), key, target.parent)
-            body = sub.file_items()
-        except _Fail as e:
-            raise self.fail(t, f"{path}:{e.line}:{e.col}: {e.message}") from None
-        finally:
-            self.b.including.pop()
-        return IncludeBlock(t.text, t.line, key, tuple(body))
+        text = target.read_text()
+        start = _Start(key, text, self.b.decl_n, self.b.unit_n,
+                       frozenset(self.b.defined), tuple(self.b.including))
+        kept = _KEPT.get(start)
+        if kept is None:
+            before = self.b.lengths()
+            self.b.including.append(key)
+            try:
+                body = _Parser(self.b, text, key, target.parent).file_items()
+            except _Fail as e:
+                raise self.fail(t, f"{path}:{e.line}:{e.col}: {e.message}") from None
+            finally:
+                self.b.including.pop()
+            kept = _KEPT[start] = _Included(
+                tuple(body), self.b.decl_n, self.b.unit_n,
+                self.b.added(before), frozenset(self.b.defined))
+        else:
+            self.b.replay(kept)
+        return IncludeBlock(t.text, t.line, key, kept.body)
 
     def file_items(self) -> list[Segment]:
         segments, _ = self.items(Scope(()), False)
