@@ -20,6 +20,7 @@ from run_reads import parent_id
 from run_store import RunStore
 from transcripts import agent_transcripts, is_subagent
 from transcript_entries import Refused
+from trial_agent import is_trial
 
 # The terms of the budget of a type or a role, which `profile_runs.py --help budget` states.
 BUDGET_FACTOR = 2
@@ -34,8 +35,10 @@ def low_wait(r: Run) -> bool:
 def budget_group(r: Run) -> str | None:
     """The budget `r` joins, as `--help budget` gives it: the role its description
     gives where its agent type is `general-purpose`, None where that
-    description gives no role of `roles.GENERAL_ROLES`, and otherwise its
-    agent type."""
+    description gives no role of `roles.GENERAL_ROLES` or where its agent
+    type is a trial type, and otherwise its agent type."""
+    if is_trial(r.agent_type):
+        return None
     if r.agent_type != GENERAL:
         return r.agent_type
     d = described(r.description)

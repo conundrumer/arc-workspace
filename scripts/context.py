@@ -21,6 +21,7 @@ from handbook.paths import REPO_ROOT
 from handbook.reader_diffs import (context_at, context_diff, contexts_diff,
                                    held_update_diff, update_diff)
 from handbook.readers import context_text, contexts_text, reader_named
+from trial_agent import is_trial
 
 HELP = mctx("""
     - Usage:
@@ -59,7 +60,7 @@ HELP = mctx("""
     - Each form that writes a generated file in the checkout, other than `session-start`, first checks that git ignores each one it writes there.
         - Where git does not ignore one, the form writes none, prints each such file and `.gitignore`, and exits 1.
     - `--write` then removes each file that manifest lists and no source renders any more, where git ignores it and it has not changed since it was written, and prints it after `removed`.
-        - It prints on stderr each listed file it leaves in place, with the reason, and each agent file that has no document and that the manifest does not list.
+        - It prints on stderr each listed file it leaves in place, with the reason, and each agent file that has no document and that the manifest does not list, other than one that `scripts/trial_agent.py write` writes, which it neither removes nor prints.
     - `session-start` is the command the session-start hook in `.claude/settings.json` runs.
         - Where Claude Code started the session for the user to talk with, it writes `.claude/coordinator.md` and prints it, and in a `claude -p` session it prints nothing.
         - Where that write fails, it prints the failure and then the document, and exits 0.
@@ -129,7 +130,7 @@ if __name__ == "__main__":
         report(budgeted.sizes())
         rest = [*agent_renderings(), *next_renderings(),
                 coordinator_rendering(), *codex_renderings()]
-        unlisted = unlisted_agents()
+        unlisted = [out for out in unlisted_agents() if not is_trial(out.stem)]
         written, done = write_lib_output(rest, stale=True)
         for out in written:
             print(out.relative_to(REPO_ROOT))
