@@ -26,10 +26,7 @@ stopped (`limit_resume`); the coordinator's lines in no form the
 command reads, each given back to the coordinator once, and then the
 fault of each run script, once for each text it has (`runs`); the ticket
 files the read of the tracker left out (`decisions.unread_files`); the
-alerts; the tickets on stalled agents; the messages and the tickets on
-the stalled tickets of the operators (`alerts.ticket_stalls`), ahead of
-the steps of the changes, so that steps queued ahead of a ticket do not
-hold back its own; the messages on the concept
+alerts; the tickets on stalled agents; the messages on the concept
 faults of the solver passes that ended (`concept_faults`); the request to a ticket analyst on a held step to give its decision
 again; the decisions for the user, and the items of each ticket analyst's
 reply for the coordinator; the monitor's steps (`monitor`); at launch,
@@ -38,7 +35,10 @@ under `tickets/blocked/`, `tickets/waiting/` or `tickets/closed/`; the coordinat
 lines to the ticket analysts that run on their tickets; the ticket
 analysts on open tickets; the move to `tickets/draft/` of the changes
 that a ticket holds up (`ticket_stall.stall`); the review
-of drafts; the changes; the solver pipelines; After a batch. A step that
+of drafts; the changes; the solver pipelines; After a batch; the
+messages and the tickets on the stalled tickets of the operators
+(`alerts.ticket_stalls`), last, so that a step that would end a stall
+comes before the message on it. A step that
 is a message an operator already sent is passed over, and so are an
 undecided step an operator already handled (`handled.repeated`) and a step
 an `Override: pass over` ruling passed over (`directives.passed`), other
@@ -230,12 +230,12 @@ def elsewhere(state: State) -> list[str]:
 
 
 EARLY: tuple[Callable[[State], Step | None], ...] = (
-    limit_resume.step, unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.ticket_stalls, alerts.stuck, alerts.late_resumes, concept_faults.step, decisions.asks, triage.decisions, triage.main_wanted, triage.for_coordinator,
+    limit_resume.step, unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.stuck, alerts.late_resumes, concept_faults.step, decisions.asks, triage.decisions, triage.main_wanted, triage.for_coordinator,
     triage.unfinished)
 LATE: tuple[Callable[[State], Step | None], ...] = (
     launching, triage.reopen, triage.later_lines, triage.settle, ticket_stall.stall, drafts.step,
     changes.step,
-    pipelines, batches.step)
+    pipelines, batches.step, alerts.ticket_stalls)
 PROCEDURES = EARLY + LATE
 
 
