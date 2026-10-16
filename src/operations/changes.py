@@ -40,6 +40,11 @@ coordinator gives a `decision:` or an `unfinished:` item and no item
 checker was launched since its launch: then the change is held on those
 items, in place of its merge, and a ruling of another analyst gives that
 analyst the latest checker's part, whatever its time.
+The brief of each such analyst gives each earlier hold of the change that
+a ruling gave `merge` (`merged_holds`), a decision already made on the
+items it gives, so that a later analyst whose reply would give those items
+again in other words leaves them out, and the change is not held on them
+again.
 Where they give a `decision:` item, the step waits on the coordinator,
 which gets those items with the line that rules the step
 (`triage.for_coordinator`), and otherwise it goes to a ticket analyst
@@ -300,7 +305,15 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
         return reports
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
         t.number, w, parts, [q.number for q in questions], editors, reports,
-        [i for a, i in editors if a in left_open], state.me))
+        [i for a, i in editors if a in left_open], merged_holds(state, t.number, analysts),
+        state.me))
+
+
+def merged_holds(state: State, number: str, analysts: list[Agent]) -> list[str]:
+    """The steps held on what `analysts`, the ticket analysts on what the
+    editors of change `number` leave, left, that a ruling gave `merge`."""
+    return [hold for a in analysts if (hold := left_hold(a, number)) is not None
+            and decided(state, hold, LEFT_CHOICES) is Decision.MERGE]
 
 
 def step(state: State) -> Step | None:

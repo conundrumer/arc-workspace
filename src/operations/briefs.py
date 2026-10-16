@@ -337,7 +337,7 @@ def item_check(number: str, worktree: Path, reports: list[tuple[str, str]],
 
 def findings(number: str, worktree: Path, left: str | None, questions: list[str],
              editors: list[tuple[Agent, str]], reports: list[tuple[str, str]],
-             unfinished: list[str], operator: str) -> str:
+             unfinished: list[str], merged: list[str], operator: str) -> str:
     """The brief of a ticket analyst that judges what a change's editors
     leave for a decision, by the latest item checker's reply from after
     its last `LEFT_FOR_DECISION` line, or the whole reply where it has none,
@@ -346,7 +346,8 @@ def findings(number: str, worktree: Path, left: str | None, questions: list[str]
     gives as unfinished, with
     the agent id and part of each of its editors, each beside its record
     in `editors`, and each editor's agent id and latest report in
-    `reports`, which that reply refers to."""
+    `reports`, which that reply refers to, and the steps of `merged`, the
+    earlier holds of the change a ruling gave `merge`."""
     lines = [*change_lines(number, worktree), *editor_lines(editors)]
     if left is not None:
         lines.append(mctx(
@@ -363,8 +364,17 @@ def findings(number: str, worktree: Path, left: str | None, questions: list[str]
         lines.append(mctx("Decide, as items left for a decision, the items that the latest "
                           "report above of each of {editors} gives as "
                           "unfinished.").format(editors=", ".join(unfinished)))
+    if merged:
+        lines.append(MERGED_HOLDS)
+        lines.extend(f"\n{hold}\n" for hold in merged)
     lines.append(LAUNCHER.format(operator=operator))
     return "\n".join(lines)
+
+
+MERGED_HOLDS = mctx("A ruling of the coordinator or of a ticket analyst gave each step below, "
+                    "an earlier hold of the change on what a ticket analyst left, the choice "
+                    "`merge`, which goes on to the merge. That ruling is a decision already made "
+                    "on each item the step gives, whatever words a later reply gives it in:")
 
 
 def pass_settle(numbers: list[str], task: str, review: str, operator: str) -> str:
