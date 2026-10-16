@@ -174,8 +174,6 @@ impl_choice([O, R, $HiddenFill(), Sel, $TieFirst()]) :-
 // every scan order.
 .comp Parse<Key> {
     .type Hue = [ky: Key, col: Color]
-    // A recovery's colors from one axis-period color.
-    .type Shade = [ky: Key, r: Recovery, col: Color]
     .type Block = [ky: Key, b: Box]
     // A selection's order over the key's occluders, read along an axis.
     .type Rank = [ky: Key, sel: Selection, axis: Axis]
@@ -249,17 +247,8 @@ impl_choice([O, R, $HiddenFill(), Sel, $TieFirst()]) :-
     // The colors each recovery gives a cell: those of the axis periods, and
     // those its maps carry into hidden cells.
     .decl color(ky: Key, r: Recovery, p: Position, col: Color)
-    color(Ky, R, Q, Col) :- shade_reach.reached([Ky, R, Col], Q).
-
-    // A recovery and an axis-period color it carries.
-    .decl source_color(ky: Key, r: Recovery, col: Color)
-    source_color(Ky, R, Col) :- recovery_choice(R), axis_color(Ky, _, Col).
-
-    // The colors the maps carry from the cells of each axis-period color.
-    // @claim recover
-    .init shade_reach = Propagation<Shade, Position>
-    shade_reach.source([Ky, R, Col], P) :- source_color(Ky, R, Col), axis_color(Ky, P, Col).
-    shade_reach.edge([Ky, R, Col], P, Q) :- source_color(Ky, R, Col), map_link(Ky, R, P, Q).
+    color(Ky, R, P, Col) :- recovery_choice(R), axis_color(Ky, P, Col).
+    color(Ky, R, Q, Col) :- map_link(Ky, R, P, Q), axis_color(Ky, P, Col).
 
     // --- selection ---
 
