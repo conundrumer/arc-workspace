@@ -23,7 +23,9 @@ def change_spend(state: State, undecided: list[str]) -> dict[str, Spend]:
 
 def change_budgets(state: State, spent: dict[str, Spend], tickets: Path,
                    undecided: list[str]) -> dict[str, Budget]:
-    """The budgets `Computed.budgets` gives."""
+    """The budgets `Computed.budgets` gives, each change of `taking.ready`
+    standing for those of `taking.takeable`, which reads the `Computed`
+    values this read has not yet given."""
     known: dict[tuple[frozenset[str], float], Budget | None] = {}
 
     def of(t: Ticket, before: float) -> Budget | None:
@@ -35,7 +37,7 @@ def change_budgets(state: State, spent: dict[str, Spend], tickets: Path,
         return known[key]
 
     out: dict[str, Budget] = {}
-    for t in taking.takeable(state):
+    for t in taking.ready(state):
         if (b := of(t, state.now)) is not None:
             out[t.number] = b
     for t in changes.held(state):

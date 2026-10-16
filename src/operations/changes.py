@@ -258,15 +258,17 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
 def step(state: State) -> Step | None:
     """The next step of the changes: a message to an agent on a change no
     longer carried, a take, then a step of each change the operator
-    holds."""
-    if (s := give_up(state)) is not None:
-        return s
-    if (s := take(state)) is not None:
-        return s
+    holds, other than a step an operator already made or handled
+    (`repeated`). Where each step is such a step, the step is that of the
+    message or the take, so the procedure waits on it."""
+    before = [s for s in (give_up(state), take(state)) if s is not None]
+    for s in before:
+        if not repeated(s, state):
+            return s
     for t in held(state):
         if (s := next_step(state, t)) is not None and not repeated(s, state):
             return s
-    return None
+    return before[0] if before else None
 
 
 def next_step(state: State, t: Ticket) -> Step | None:
