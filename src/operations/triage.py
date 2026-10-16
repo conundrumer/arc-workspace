@@ -129,12 +129,17 @@ def later_lines(state: State) -> Step | None:
     return None
 
 
+def unsettled_open(state: State) -> list[str]:
+    """The tickets of the list that no analyst was given and no solver
+    pipeline awaits."""
+    return [n for n in state.computed.to_settle
+            if not given(state, n) and not awaits_analyst(state, n)]
+
+
 def settle(state: State) -> Step | None:
     admitted = taking.admits(state)
     passing = taking.through_pause(state) if paused(state) else None
-    numbers = [n for n in state.computed.to_settle
-               if not given(state, n) and not awaits_analyst(state, n)
-               and admitted(n) and (passing is None or n in passing)]
+    numbers = [n for n in unsettled_open(state) if admitted(n) and (passing is None or n in passing)]
     if not numbers:
         return None
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.TRIAGE, joined(numbers)),

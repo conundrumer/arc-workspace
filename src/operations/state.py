@@ -9,7 +9,9 @@ from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Any
 
+from controlled_markdown import mctx
 from handbook.reader_names import ReaderName
+from operations.pacing import Pace, Unknown
 from operations.roles import Model, Purpose, Role, analyst_of, subjects
 from ticketing.vocabulary import Domain, Kind, Resolution, Status
 
@@ -455,13 +457,15 @@ class Computed:
     taken at `State.now`, of that field's set with the doc editor.
     `run_starts` gives what the script of each `Run:` line gave at this
     read, by its run (`runs.run_id`), and `run_takes` what its `takes`
-    gave."""
+    gave. `pace` is the usage pace at `State.now` (`pacing`), Unknown
+    until the read computes it."""
     to_settle: tuple[str, ...] = ()
     spent: Mapping[str, Spend] = field(default_factory=dict)
     budgets: Mapping[str, Budget] = field(default_factory=dict)
     doc_budgets: Mapping[str, Budget] = field(default_factory=dict)
     run_starts: Mapping[str, Starts] = field(default_factory=dict)
     run_takes: Mapping[str, Takes] = field(default_factory=dict)
+    pace: Pace = field(default_factory=lambda: Unknown(mctx("the read of the state did not compute it")))
 
     def admitted(self) -> frozenset[str] | None:
         """The tickets each run whose script defines `takes` admits, a run
@@ -509,7 +513,7 @@ class State:
     review rotates over, read at its first use, in the order `context.py contexts` lists them.
     `limit_lifted` is the time of the reading of the usage limit that
     gives it as lifted, or None where the reading gives it in force, as
-    `usage_limit.limit_lifted` gives it. `sessions` is the read of the
+    `usage_limit.read_usage` gives it. `sessions` is the read of the
     tracker's sessions, and `computed` the values computed over the
     reads."""
     me: str

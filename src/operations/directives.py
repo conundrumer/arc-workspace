@@ -16,6 +16,8 @@ word of its kind and a colon, past a list marker:
   ticket or takes a change outside the work held and the tickets an
   `Allow:` or an `Expedite:` line gives (`paused`), and
   `Resume.`, which ends that pause;
+- `Pace: <preset> [<argument> ...]` or `Pace: <path>`, the usage pace
+  for every operator of the session (`pace`), as `pacing` gives it;
 - the rulings, `Decision:` and `Override:` lines in the forms that
   `scripts/operate.py --help rulings` gives, which the command applies (`decided`,
   `passed_over`, `overrides`).
@@ -37,10 +39,12 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 
 from arc.task import TASK_ID
 from controlled_markdown import mctx
 from operations.reports import LIST_MARKER
+from operations.pacing import Preset, line_pace
 from operations.roles import PASSES, Purpose, Role
 from operations.state import Agent, Message, Report, State
 from operations.steps import STEP_KEY, Launch, Step, Undecided, decision_key, held, key
@@ -66,6 +70,7 @@ class Directive(StrEnum):
     OPEN = "Tickets are open"
     PAUSE = "Pause"
     RESUME = "Resume"
+    PACE = "Pace"
     OVERRIDE = "Override"
     DECISION = "Decision"
 
@@ -192,6 +197,15 @@ def paused(state: State) -> bool:
     return bool(last) and last[-1] is Directive.PAUSE
 
 
+def pace(state: State) -> Preset | Path | None:
+    """The preset or the script path of the last `Pace:` line in a form
+    `pacing.line_pace` reads to any operator of the session, or None where
+    none came."""
+    given = [p for ln in session_lines(state) if ln.kind is Directive.PACE
+             if (p := line_pace(ln.rest, state.main_tree)) is not None]
+    return given[-1] if given else None
+
+
 def ruling_form(ln: Line) -> re.Match[str] | None:
     """The fixed form `ln`, a ruling, is in, or None."""
     if ln.kind is Directive.DECISION:
@@ -257,7 +271,8 @@ def pipelines(given: list[Line]) -> list[Pipeline]:
 
 
 def unread(state: State) -> list[Line]:
-    """The coordinator's lines in no form the command reads, rulings in no
-    fixed form among them."""
+    """The coordinator's lines in no form the command reads, rulings and
+    `Pace:` lines in no fixed form among them."""
     return [ln for ln in lines(state)
-            if ln.kind is None or ln.kind in RULINGS and ruling_form(ln) is None]
+            if ln.kind is None or ln.kind in RULINGS and ruling_form(ln) is None
+            or ln.kind is Directive.PACE and line_pace(ln.rest, state.main_tree) is None]

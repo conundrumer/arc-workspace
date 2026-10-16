@@ -24,7 +24,7 @@ from operator_reads import (
 )
 from relay_reads import run_index, session_id
 from run_reads import context_size, parent_id
-from run_scripts import read_runs
+from run_scripts import pace_reads, read_runs
 from state_reads import new_state
 from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
@@ -42,13 +42,14 @@ from tree_reads import (
     scratch,
     worktrees,
 )
-from usage_limit import limit_lifted
+from usage_limit import read_usage
 
 from controlled_markdown import mctx
 from engine.checkout import agents_of
 from handbook.reader_names import ReaderName
 from handbook.readers import reader_calls
-from operations.directives import named
+from operations import pacing
+from operations.directives import named, pace
 from operations.final_reply import final_sends_in, for_context, sent_final_text
 from operations.handled import made
 from operations.monitor import MonitorState
@@ -148,6 +149,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     open_paths = {h: p for h, p in found.items()
                   if (h in sessions_running if sessions_running is not None and not is_subagent(p)
                       else work_open(p, []))}
+    lifted, usage = read_usage(now, watching)
     state = State(
         me=me, now=now, session=session, started=started(session),
         transcripts_dir=main_path.parent, main_tree=main,
@@ -167,17 +169,20 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
         held=read_held(holding),
         readers=Deferred(lambda: tuple(Reader(name, tuple(args)) for name, args in reader_calls()
                                        if name not in DEPRECATED)),
-        limit_lifted=limit_lifted(now, watching),
+        limit_lifted=lifted,
         sessions=sessions(tickets_dir, index, session, now))
     given = [ticket_number(n) for n in named(state) if n in tickets]
     spent = change_spend(state, undecided)
     run_starts, run_takes = read_runs(state)
+    given_pace = pace(state)
     state = replace(state, computed=Computed(
         to_settle=tuple(str(n) for n in to_settle(tickets_dir, index, state.sessions.adopted, given)
                         if str(n) in tickets),
         spent=spent, budgets=change_budgets(state, spent, tickets_dir, undecided),
         doc_budgets=doc_budgets(state, tickets_dir, undecided),
-        run_starts=run_starts, run_takes=run_takes))
+        run_starts=run_starts, run_takes=run_takes,
+        pace=(pace_reads(given_pace, usage) if isinstance(given_pace, Path)
+              else (given_pace or pacing.DEFAULT)(usage))))
     return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(stalled),
                                undecided=tuple(watching))
 

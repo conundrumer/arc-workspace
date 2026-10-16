@@ -14,7 +14,9 @@ from controlled_markdown import form, mctx
 from operations.command_words import Action, next_command
 from operations.constants import FOREGROUND_MS
 from operations.filing import filed_line, split_message
+from operations.pacing import Pace, Scripted, Until
 from operations.roles import description
+from ticketing.times import utc_stamp
 from operations.steps import Bash, EndTurn, Launch, Poll, Reply, Send, Step, Undecided, key
 
 
@@ -175,6 +177,18 @@ def printed_launch(text: str) -> dict[str, str] | None:
     return None
 
 
+def pace_line(pace: Pace | None) -> str | None:
+    """The line that gives how the usage pace holds back open tickets."""
+    match pace:
+        case Until(time):
+            return mctx("No ticket is admitted past the usage pace until {time}.").format(
+                time=utc_stamp(time))
+        case Scripted(path):
+            return mctx("The pace of the script {path} holds back open tickets.").format(path=path)
+        case _:
+            return None
+
+
 def printed(step: Step, agent: str, scratch: Path) -> str:
     """The text the command prints for `step`, for the operator whose agent
     id is `agent`, with the files `filing.filed` gives under `scratch`."""
@@ -191,8 +205,9 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
             return send_text(to, "\n".join(part for part in (head, line) if part))
         case Bash(command):
             return bash_text(command)
-        case Poll():
-            return mctx("Run the command again: nothing is ready.")
+        case Poll(pace):
+            again = mctx("Run the command again: nothing is ready.")
+            return "\n".join([*([held] if (held := pace_line(pace)) else []), again])
         case EndTurn():
             return END_TURN
         case Reply(to):

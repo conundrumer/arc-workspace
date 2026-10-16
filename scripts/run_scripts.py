@@ -1,5 +1,7 @@
 """The load and the call of the run scripts the `Run:` lines an operator
-received give, under a time bound, as `operate.py --help run` gives them."""
+received give, and of the pace script a `Pace:` line gives, under a time
+bound, as `operate.py --help run` and `operate.py --help pace` give
+them."""
 
 import json
 import signal
@@ -18,6 +20,7 @@ from operations import (
     runs,
 )
 from operations.directives import lines
+from operations.pacing import Pace, Scripted, Unknown, Usage
 from operations.state import (
     Starts,
     State,
@@ -56,11 +59,12 @@ class ScriptTimeout(Exception):
 
 
 @contextmanager
-def bounded(seconds: int) -> Iterator[None]:
-    """Raise `ScriptTimeout` in the block once `seconds` have passed."""
+def bounded(seconds: int, calls: str) -> Iterator[None]:
+    """Raise `ScriptTimeout` in the block once `seconds` have passed, with
+    `calls` the calls the block makes."""
     def expire(_signum: int, _frame: FrameType | None) -> None:
-        raise ScriptTimeout(mctx("the load and the calls of `starts` and `takes` ran past "
-                                 "{seconds} seconds").format(seconds=seconds))
+        raise ScriptTimeout(mctx("the load and {calls} ran past "
+                                 "{seconds} seconds").format(calls=calls, seconds=seconds))
     before = signal.signal(signal.SIGALRM, expire)
     signal.alarm(seconds)
     try:
@@ -74,6 +78,38 @@ def fault_text(e: BaseException) -> str:
     return "".join(traceback.format_exception_only(e)).strip()
 
 
+def module_name(path: Path) -> str:
+    return f"run_script_{abs(hash((str(path), time.time())))}"
+
+
+def load(path: Path, name: str) -> ModuleType:
+    """The script at `path`, loaded afresh as the module `name`, which
+    stays in `sys.modules` until its caller pops it."""
+    # Compiled from its text at each read: a cached bytecode file
+    # hides an edit that keeps the file's size within one second.
+    loading = ModuleType(name)
+    loading.__file__ = str(path)
+    sys.modules[name] = loading
+    exec(compile(path.read_text(), str(path), "exec"), loading.__dict__)
+    return loading
+
+
+def pace_reads(path: Path, usage: Usage) -> Pace:
+    """What the pace script at `path`, loaded afresh as a module, gives
+    from its `paces` called with `usage`, within `runs.SCRIPT_SECONDS`."""
+    name = module_name(path)
+    try:
+        with bounded(runs.SCRIPT_SECONDS, mctx("the call of `paces`")):
+            given = load(path, name).paces(usage)
+    except (Exception, SystemExit) as e:
+        return Unknown(fault_text(e))
+    finally:
+        sys.modules.pop(name, None)
+    if not isinstance(given, bool):
+        return Unknown(mctx("`paces` gave {given}, no `bool`").format(given=repr(given)))
+    return Scripted(path, given)
+
+
 def script_reads(path: Path, run: runs.Run,
                  tickets: Callable[[], tuple[runs.RunTicket, ...]]) -> tuple[Starts, Takes]:
     """What the run script at `path`, loaded afresh as a module, gives from
@@ -82,17 +118,11 @@ def script_reads(path: Path, run: runs.Run,
     fault where it has one, within `runs.SCRIPT_SECONDS`. A fault of the
     load or of the bound is the fault of both, unless the loaded module
     defines no `takes`."""
-    name = f"run_script_{abs(hash((str(path), time.time())))}"
+    name = module_name(path)
     module: ModuleType | None = None
     try:
-        with bounded(runs.SCRIPT_SECONDS):
-            # Compiled from its text at each read: a cached bytecode file
-            # hides an edit that keeps the file's size within one second.
-            loading = ModuleType(name)
-            loading.__file__ = str(path)
-            sys.modules[name] = loading
-            exec(compile(path.read_text(), str(path), "exec"), loading.__dict__)
-            module = loading
+        with bounded(runs.SCRIPT_SECONDS, mctx("the calls of `starts` and `takes`")):
+            module = load(path, name)
             try:
                 starts = runs.read_starts(module.starts(run))
             except ScriptTimeout:

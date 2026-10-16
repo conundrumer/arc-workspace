@@ -1,4 +1,4 @@
-+ budget: 21800
++ budget: 22100
 * comment: when editing this doc
     - Each Claude Code session and agent loads [Launching](#launching) by the link of [arc-workspace](CLAUDE.md), before it launches an agent by a call no command printed; the ticket reviewer inlines draft-outcome there too. Each agent inlines the sections under [Briefs](#briefs) that give its own brief's form, which its `description` links for each launcher, and the editors An editor's report on a change. The coordinator loads Passes on a task, Operators and While the user gives feedback by the links of its Changes section.
     - Acts, each with its section:
@@ -104,6 +104,7 @@
     - `Allow: <number>, ...`: tickets of any session, and each `change` that a chain of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, reaches from them. The operators of the session settle and take each of them under a pause too, with no priority over other work.
     - `Pause.`: a pause, under which the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than the tickets and changes an `Allow:` or an `Expedite:` line gives, and the work an operator of the session took and each `change` that work waits on, which they carry to its end.
     - `Resume.`: ends the pause.
+    - `Pace: <preset> [<argument> ...]` or `Pace: <path>`: the usage pace, as `uv run python scripts/operate.py --help pace` gives it. Past that pace, the operators of the session admit no ticket that a pause holds back.
     - `Override: <task id> <pass> <override>`: an override that the brief of the next launch of that pass on that task gives.
     - `Override: pass over <step key>`: passes over the solver pass whose step key it gives: that pass's task id and its pass, in the form `uv run python scripts/operate.py --help rulings` gives.
     - `Decision: <decision key> <choice>`: rules the held step that gives that decision key with one of the choices that step gives, as the whole rest of the line.

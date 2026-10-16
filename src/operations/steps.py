@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from arc.task import TASK_ID
 from controlled_markdown import mctx
 from operations.constants import COORDINATOR, FOREGROUND_MS
+from operations.pacing import Pace
 from operations.roles import PASSES, Model, Role
 from operations.state import Agent
 
@@ -64,7 +65,9 @@ class Bash:
 @dataclass(frozen=True)
 class Poll:
     """Nothing is ready by the end of the command's block: the agent runs
-    the command again at once."""
+    the command again at once. `pace` is the usage pace where it alone
+    holds back an open ticket (`taking.pace_held`), or None."""
+    pace: Pace | None = None
 
 
 @dataclass(frozen=True)

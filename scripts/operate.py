@@ -47,7 +47,7 @@ from ticket_numbers import parsed_number  # noqa: E402
 from ticket_reads import read_ticket  # noqa: E402
 from help_parts import print_help  # noqa: E402
 
-from operations import briefs, concept_faults, doc_review, plan, relay, runs  # noqa: E402
+from operations import briefs, concept_faults, doc_review, pacing, plan, relay, runs  # noqa: E402
 from operations.decisions import WRITE_SECONDS  # noqa: E402
 from operations.monitor import ALERTS  # noqa: E402
 from operations.command_words import Action  # noqa: E402
@@ -67,6 +67,7 @@ class HelpPart(StrEnum):
     NEXT = "next"
     RULINGS = "rulings"
     RUN = "run"
+    PACE = "pace"
     RELAY = "relay"
     REVIEW = "review"
     ALERTS = "alerts"
@@ -96,6 +97,7 @@ PURPOSES = {
     HelpPart.NEXT: mctx("what `next` prints, and when a step counts as made"),
     HelpPart.RULINGS: mctx("the forms of the rulings `next` applies"),
     HelpPart.RUN: mctx("the `Run:` line and the run script `next` reads"),
+    HelpPart.PACE: mctx("the `Pace:` line, which sets the usage pace within which `next` admits open tickets"),
     HelpPart.RELAY: mctx("what `relay` prints"),
     HelpPart.REVIEW: mctx("what `review` prints"),
     HelpPart.ALERTS: mctx("the alerts `next` sends, and the messages it sends the coordinator on concept faults"),
@@ -169,6 +171,24 @@ PARTS = {
                 - A ticket an `Expedite:` line gives passes, and so does a change that an operator took before and that went back to `tickets/open/`.
             - Where `takes` raises or gives a result that is no `bool`, the run takes no ticket while that fault stands.
         - Where the script fails to load, or the load and the calls of `starts` and `takes` run past {script} seconds, the run starts nothing, and takes no ticket unless the script loaded and defines no `takes`, while that fault stands.
+        - The coordinator gets the text of each fault, once for each distinct text.
+    """),
+    HelpPart.PACE: mctx("""
+    - `next` reads a coordinator's line `Pace: <preset> [<argument> ...]` or `Pace: <path>` as the usage pace of each operator of the session, and the last line in one of these forms stands. A `Pace:` line in neither form goes back to the coordinator and leaves the pace as it was.
+        - Past the pace, `next` launches no ticket analyst on an open ticket and takes no open change, other than the tickets and changes an `Allow:` or an `Expedite:` line gives, the work an operator of the session took, and each change that work waits on.
+        - One call of `next` takes each change an `Expedite:` line gives and each change that settles an `interference` ticket, and at most one other change, so that the pace is read again before each further take.
+        - Where no step is ready and only the pace holds back an open ticket, `next` prints that the operator runs it again, with the time from which a preset's pace admits a ticket, or with the path of the script whose pace holds them back.
+    - The pace reads the usage file that `--help next` gives: for each of its windows, `used_pct`, `elapsed_pct` and the time it resets.
+    - The presets:
+        - `even [--factor F] [--window W]`, with F {factor} and W `{window}` by default: within the pace while the window's `used_pct` is at most F times its `elapsed_pct`.
+        - `by <ISO 8601 time> [--window W]`, the time with its time zone and W `{window}` by default: within the pace while the window's `used_pct` is at most the percentage that has passed of the time from the window's start to the given time, and always from that time on.
+        - `asap`: always within the pace.
+    - With no `Pace:` line, the pace is `even` with its defaults.
+    - Where the usage file holds no reading of a preset's window written less than {stale} seconds ago, that preset's pace counts as past, and the coordinator gets a line that says so.
+    - `Pace: <path>` gives the Python script at `<path>`, absolute or relative to the main tree, which `next` loads at each read of the state.
+        - It defines `paces(usage: Usage) -> bool`, with `Usage` from the module `operations.pacing`, which gives `True` where the pace admits a ticket now.
+        - `usage.now` is the time in seconds since the epoch, and `usage.windows` maps the name of each window of which the usage file holds a reading written less than {stale} seconds ago to a `Window` with `used_pct`, `elapsed_pct` and `resets_at`, the last in seconds since the epoch.
+        - Where the script fails to load, `paces` raises or gives a result that is no `bool`, or the load and the call run past {script} seconds, the pace counts as past while that fault stands.
         - The coordinator gets the text of each fault, once for each distinct text.
     """),
     HelpPart.RELAY: mctx("""
@@ -374,7 +394,8 @@ def main(argv: list[str]) -> int:
                               block=BLOCK_SECONDS, limit=LIMIT_SECONDS, load=plan.LOAD_SECONDS,
                               retry=plan.RETRY_SECONDS,
                               write=round(WRITE_SECONDS), stale=USAGE_STALE, rate_limit=RATE_LIMIT,
-                              script=runs.SCRIPT_SECONDS))
+                              script=runs.SCRIPT_SECONDS, factor=f"{pacing.EVEN_FACTOR:g}",
+                              window=pacing.DEFAULT_WINDOW))
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
     parser.add_argument("action", choices=list(OperateAction))
     runs.add_arguments(parser)

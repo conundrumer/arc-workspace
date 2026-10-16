@@ -44,9 +44,10 @@ step, is held where its chain of causes runs `lineage.DEPTH` launches of
 its kind deep (`lineage`).
 
 Where no step is ready, and an agent of an operator runs, a ticket of
-the operators' waits on another holder whose work is open, or a ticket
+the operators' waits on another holder whose work is open, a ticket
 file the read of the tracker left out may still be written
-(`decisions.writing`), the agent runs
+(`decisions.writing`), or the usage pace alone holds back an open
+ticket (`taking.pace_held`), the agent runs
 the command again, which blocks in the foreground first. Otherwise the
 agent gives its final reply, after the message that sends its parent
 its text (`ending`)."""
@@ -72,7 +73,9 @@ from ticketing.vocabulary import Status
 from operations.final_reply import (FOR_CONTEXT, ending_step, failure, final_sends, final_sends_in,
                                    for_context, live_holder, nested, sent_final_text)
 from operations.handled import bash_calls, repeated
-from operations.steps import (Bash, Launch, Poll, Step, Undecided, decision_key, key,
+from operations.constants import COORDINATOR
+from operations.pacing import Unknown
+from operations.steps import (Bash, Launch, Poll, Send, Step, Undecided, decision_key, key,
                               unread_line)
 
 GIVEN_AGAIN = mctx("a line below that stands unfinished reaches it only where it is given to it "
@@ -194,6 +197,9 @@ def unread_lines(state: State) -> Step | None:
             found.append(runs.fault_message(ln, runs.STARTS_NOTHING, fault))
         if isinstance(fault := runs.takes_given(state, ln), str):
             found.append(runs.fault_message(ln, runs.TAKES_NOTHING, fault))
+    if isinstance(pace := state.computed.pace, Unknown):
+        found.append(Send(COORDINATOR, mctx("The usage pace counts as past: {why}").format(
+            why=pace.why)))
     return next((s for s in found if not repeated(s, state)), None)
 
 
@@ -254,9 +260,12 @@ def next_step(state: State, watch: monitor.MonitorState) -> Step:
     s = first(state, lambda st: monitor_step(st, watch), *LATE)
     if s is not None:
         return s
-    if (any(a.pending for a in state.transcripts.agents) or elsewhere(state)
+    pace = taking.pace_held(state, [*triage.unsettled_open(state),
+                                    *(t.number for t in taking.ready(state)
+                                      if not taking.taken_before(t))])
+    if (pace is not None or any(a.pending for a in state.transcripts.agents) or elsewhere(state)
             or any(decisions.writing(state, u) for u in state.tracker.unread)):
-        return Poll()
+        return Poll(pace)
     return ending(state, "\n".join([final(state), *unknown]))
 
 
