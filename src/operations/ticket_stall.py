@@ -6,7 +6,9 @@ is due on it and it has made no progress for `STUCK_SECONDS`, whatever the
 cause that held it. A step is due on it by an exit of `tracker.exits` that
 an operator's step makes, read by the function that step selects its work
 by (`selection`); a ticket whose only exits are steps of no operator, or
-that such a function leaves out, waits by design and is not due. Its
+that such a function leaves out, waits by design and is not due. A ticket
+that a live session holds waits on that session's own work, a step of no
+operator, and is not due. Its
 progress is a line of its log other than a take or a release, the launch
 of an agent of it, and a report of such an agent; an agent of it that is
 pending and not quiet is progress too, and a ticket with one is not
@@ -17,6 +19,7 @@ A change that waits for a ticket that holds it up (`holding`), one under
 a line whose note is `taking.STALL_FINDING` on that ticket, once after the
 time from which that ticket holds it up (`stall`)."""
 
+import re
 from collections.abc import Mapping
 from typing import assert_never
 
@@ -24,7 +27,9 @@ from controlled_markdown import mctx
 from operations import drafts, lineage, taking, triage
 from operations.change_budget import TAKEN
 from operations.constants import STUCK_SECONDS
+from operations.final_reply import live_holder
 from operations.log_commands import log
+from operations.roles import AGENT_ID
 from operations.state import Agent, State, Ticket
 from operations.steps import Bash, Step
 from operations.tracker import blocked_on_user, exits
@@ -37,13 +42,21 @@ ON_USER = mctx("it waits on the user")
 NO_STEP = mctx("it has had no step since {time}")
 
 
+def held_by_live_session(state: State, t: Ticket) -> bool:
+    """Whether the holder of `t` is a session id, not an agent id, and is
+    live (`live_holder`)."""
+    return (t.holder is not None and re.fullmatch(AGENT_ID, t.holder) is None
+            and live_holder(state, t.holder))
+
+
 def selection(state: State, e: Exit) -> set[str]:
     """The tickets on which the step that makes `e` is due, as the function
     that step selects its work by gives them, or none where no operator's
     step makes `e`."""
     match e:
         case Exit.HOLDER | Exit.RELEASE:
-            return {n for n, t in state.tracker.tickets.items() if t.status is Status.ASSIGNED}
+            return {n for n, t in state.tracker.tickets.items()
+                    if t.status is Status.ASSIGNED and not held_by_live_session(state, t)}
         case Exit.TAKE:
             return {t.number for t in taking.takeable(state)}
         case Exit.TICKET_REVIEW:
