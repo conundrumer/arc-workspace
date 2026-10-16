@@ -139,7 +139,8 @@
         - [Develop](#develop) step 4 gives which of the branches the line above leaves out you hold.
     - A concept branch's constructor takes a name of your own, and so does the constructor of a branch the report names in a form other than a constructor name, such as `<rel>=derived`. In the witness file, rewrite each name of that branch to that name.
     - An open parameter of that report, unless [Principles](docs/handbook/principles.md) make it a choice point, is a `Params` relation with a fact per open value, and no constructor; its values are the report's where it gives them, whatever the concept file gives.
-    - The cases are the combinations of those branches that fit, which the run shows, whether or not one case's model subsumes another's.
+    - The cases are the combinations of those branches that fit, whether or not one case's model subsumes another's, and the run shows which fit, as a combination that does not fit is a witnessed case.
+        * comment: The Create pass on b7955b3c read "which the run shows" without that inference: on `PASS (4 witnessed cases)` for a solver of 8 cases, it wrote a scratch script to learn whether the 4 other cases fit, as ticket 10-445 records.
     - A line of that report that gives a `<property>` & `<property>` pair gives what each case that takes a non-concept branch at both points of that pair reads, and a `<branch>` & `<branch>` line under it gives what the case that takes both branches reads.
     - Leave the `Determine` comp for the Determine operation.
 
