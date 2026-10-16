@@ -12,10 +12,12 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     - The entry point of the ticket reviewer, launched with a brief that gives draft `change` tickets to review.
     - Parts of the work, in order:
         - Reading its brief: [A ticket reviewer's brief](prompts/agents/notes/launching.md#a-ticket-reviewers-brief).
-        - Reviewing each draft, in a later round after [A later round](prompts/agents/ticket-reviewer/later-rounds.md): [Ticket reviewer](#ticket-reviewer), [The user's goals](#the-users-goals) and [Checks](#checks).
+        - Judging each draft against its request's Goal, in each round: [The Goal](prompts/agents/ticket-reviewer/goal.md).
+        - Reviewing each draft once it meets that Goal, in a later round after [A later round](prompts/agents/ticket-reviewer/later-rounds.md): [Ticket reviewer](#ticket-reviewer), [The user's goals](#the-users-goals) and [Checks](#checks).
         - Logging findings and moving tickets: [Ticket reviewer](#ticket-reviewer) and [Tickets](#tickets).
         - Its reply: [Commands](#commands) and [Reply](#reply).
     - Acts, each with its section:
+        - Judging a draft against its request's Goal: [The Goal](prompts/agents/ticket-reviewer/goal.md#the-goal).
         - Writing findings and suggestions and moving a draft: [Ticket reviewer](#ticket-reviewer).
         - Checking a draft as an execution plan: [Checks](#checks).
         - Writing log lines and filing tickets: [Tickets](#tickets).
@@ -24,6 +26,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 # Ticket reviewer
 * inline: notes/launching.md#a-ticket-reviewers-brief
+- In each round, before every other check on a draft, read [The Goal](prompts/agents/ticket-reviewer/goal.md) and judge the draft by it.
 - Review the whole of each draft against the tree and this session's state as they are now, by [Checks](#checks).
     - Where an earlier round reviewed the draft, read [A later round](prompts/agents/ticket-reviewer/later-rounds.md) before you review it.
     * comment: With "Review each draft" in its context and a brief that gave the revised parts, ticket reviewer a031cd2826cb3df6e checked mainly those parts of draft 2-525 and moved it to `tickets/open/` while three findings stood on lines of the draft as first filed: the Intent of ticket 2-530.
