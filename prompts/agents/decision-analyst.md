@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 + lib: none
 + message: brief
-+ budget: 21800
++ budget: 22926
 * comment: when editing this doc
     - The entry point of the decision analyst: the ticket analyst launched with a brief that gives what a change's editors leave or a step an operator holds.
     - Parts of the work, in order:
