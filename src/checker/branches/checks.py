@@ -57,7 +57,7 @@ def check_stored_or_derived(solver: Solver, runs: Runs) -> list[Finding]:
         "colors as a parameter.")
 def check_color_structure_stored(solver: Solver, runs: Runs
                                  ) -> list[Finding]:
-    """A relation between `in` and `out` that the concept case reads and
+    """A relation the `store` survey reads that the concept case reads and
     that holds one color on every input, with no `@store` line, asks for a
     Params parameter."""
     return [f for f in runs.store_survey.findings

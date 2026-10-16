@@ -108,7 +108,8 @@ class RelationPayload:
 
 @dataclass(frozen=True)
 class NotBetween:
-    """The relation is no program relation between `in` and `out`."""
+    """The relation is none of those the `store` survey reads
+    (`checker.store.relations.between` and `store_line_relations`)."""
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,161 @@
+// b775ac94
+// @draft
+// @keywords: objects markers d4
+// @scene shapes: the cells that are not params.background form separate
+//  objects. Each object is one shape of one color, its cells 8-connected,
+//  plus one to three single marker cells.
+// @scene key-block: one cell of the shape, at a corner of the shape's
+//  bounding box, and the object's marker cells lie in one 2×2 block. That
+//  shape cell is the block's corner nearest the shape, and each marker fills
+//  one of the other three corners of the block.
+// @scene room: each copy fits in the grid and covers no other object
+// @rule keep: each input cell that is not params.background stays in the
+//  output, and a copy cell that lands on one does not replace it
+// @rule mirror-copy: for each marker, the shape is copied into the marker's
+//  quadrant of the key block, in the marker's color. The copy is the shape's
+//  image under the reflection that takes the shape's key cell to the
+//  marker's cell: across the key block's vertical center line for a marker
+//  beside the key cell along a row, across its horizontal center line for a
+//  marker beside it along a column, and both together for the diagonal
+//  marker. Undefined where two copies of different colors meet, or where an
+//  object's markers lie in no key block.
+// @rule no-marker-no-copy: a corner of the key block with no marker gets no
+//  copy
+
+// which cells of an object are its markers
+.type MarkerSource =
+    // @claim key-block
+    ColorMarkers {}
+    // @scene key-block: the key block is a 2×2 block that holds a cell of
+    //  the object besides its corner nearest the shape, a shape cell at a
+    //  corner of the shape's bounding box. The markers are the block's cells
+    //  other than that shape cell. A cell of the object outside the block
+    //  that is not of the shape's color stays and makes no copy.
+    // @witness stray-cell: borderline $BlockMarkers
+    //     @relaxed key-block
+  | BlockMarkers {}
+
+// what a copy cell does to an input cell of another object it lands on
+.type ObjectCover =
+    // @claim keep
+    KeepObject {}
+    // @rule keep: a copy cell replaces the input cell it lands on
+    // @witness copy-over-object: borderline any
+    //     @relaxed room
+  | CopyOver {}
+
+.type Choice = [m: MarkerSource, o: ObjectCover]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed shapes
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+.decl marker_source_choice(m: MarkerSource)
+marker_source_choice($ColorMarkers()). marker_source_choice($BlockMarkers()).
+
+.decl object_cover_choice(o: ObjectCover)
+object_cover_choice($KeepObject()). object_cover_choice($CopyOver()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([M, O]) :- marker_source_choice(M), object_cover_choice(O).
+
+// @claim shapes
+.init objs = Components8<Unit>
+objs.node($U(), P) :- in(P, Col), !params.background(Col).
+
+// The shape's color: the commonest color of its object.
+// @claim shapes
+.init shape_color = Mode<Ident, Color, Position>
+shape_color.item(Id, Col, P) :- objs.label($U(), P, Id), in(P, Col).
+
+.decl shape(id: Ident, p: Position)
+shape(Id, P) :- objs.label($U(), P, Id), in(P, Col), shape_color.mode(Id, Col).
+
+// @claim key-block
+.init shape_box = Bbox<Ident>
+shape_box.cell(Id, P) :- shape(Id, P).
+
+// The shape cell at corner C of the shape's box.
+.decl corner_cell(id: Ident, p: Position, c: DiagDir)
+corner_cell(Id, P, C) :- shape(Id, P), shape_box.box(Id, B), box_corner(P, B, C).
+
+// The 2×2 block that the shape cell at corner C of the shape's box reaches
+// toward C.
+.type Block = [id: Ident, c: DiagDir]
+
+// @claim key-block
+.init block = Bbox<Block>
+block.cell([Id, C], P), block.cell([Id, C], Q) :- corner_cell(Id, P, C), neighbor(P, C, Q).
+
+// The block's shape cell P, at its corner K.
+.decl block_key(id: Ident, c: DiagDir, b: Box, p: Position, k: DiagDir)
+block_key(Id, C, B, P, K) :- block.box([Id, C], B), corner_cell(Id, P, C), box_corner(P, B, K).
+
+// The key block B, with the key cell at its corner K.
+.decl key(m: MarkerSource, id: Ident, b: Box, k: DiagDir)
+
+.decl marker(m: MarkerSource, id: Ident, p: Position, col: Color)
+
+// An object whose markers no key block holds.
+.decl unread(m: MarkerSource)
+unread(M) :- marker(M, Id, _, _), !key(M, Id, _, _).
+
+// Op turns one axis into the other.
+.decl swaps_axes(op: D4)
+swaps_axes(Op) :- apply_dir(Op, D, D2), axis_of(D, A), !axis_of(D2, A).
+
+// The reflection of the key block that takes its corner K to its corner
+// M_corner: across one center line for corners on one side, across both
+// for opposite corners.
+.decl quadrant_op(key_corner: DiagDir, marker_corner: DiagDir, op: D4)
+quadrant_op(K, M_corner, Op) :- apply_diag_dir(Op, K, M_corner), !swaps_axes(Op), K != M_corner.
+
+// Cell T of a copy, in the color Col of its marker.
+.decl copy(m: MarkerSource, p: Position, col: Color)
+copy(Ms, T, Col) :-
+    key(Ms, Id, B, K), marker(Ms, Id, M, Col), box_corner(M, B, M_corner),
+    quadrant_op(K, M_corner, Op),
+    shape(Id, S), relative(B, S, S_rel), apply(Op, S_rel, T_rel), compose(B, T_rel, T).
+
+// A cell no copy covers keeps its input color.
+out(P, Col, [Ms, O]) :- impl_choice([Ms, O]), !unread(Ms), in(P, Col), !copy(Ms, P, _).
+
+// --- $ColorMarkers ---
+// A cell of the object that is not of the shape's color.
+.decl color_marker(id: Ident, p: Position, col: Color)
+color_marker(Id, P, Col) :- objs.label($U(), P, Id), in(P, Col), !shape_color.mode(Id, Col).
+
+marker($ColorMarkers(), Id, P, Col) :- color_marker(Id, P, Col).
+
+// A marker of the object lies outside the block.
+.decl stray(id: Ident, c: DiagDir)
+stray(Id, C) :- block.box([Id, C], B), color_marker(Id, M, _), !inside(M, B).
+
+key($ColorMarkers(), Id, B, K) :- block_key(Id, C, B, _, K), !stray(Id, C).
+
+// --- $BlockMarkers ---
+// A cell of the object other than its shape cell in the block.
+.decl block_other(id: Ident, c: DiagDir, p: Position, col: Color)
+block_other(Id, C, M, Col) :-
+    block_key(Id, C, B, P, _), objs.label($U(), M, Id), M != P, inside(M, B), in(M, Col).
+
+key($BlockMarkers(), Id, B, K) :- block_key(Id, C, B, _, K), block_other(Id, C, _, _).
+
+marker($BlockMarkers(), Id, M, Col) :- block_other(Id, _, M, Col).
+
+// --- $KeepObject ---
+out(P, Col, [Ms, $KeepObject()]) :-
+    !unread(Ms), in(P, Col_in), copy(Ms, P, Col_copy),
+    ( params.background(Col_in), Col = Col_copy
+    ; !params.background(Col_in), Col = Col_in
+    ).
+
+// --- $CopyOver ---
+out(P, Col, [Ms, $CopyOver()]) :-
+    !unread(Ms), in(P, _), copy(Ms, P, Col).

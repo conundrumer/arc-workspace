@@ -1,5 +1,7 @@
 """The relations the `store` survey reads: those between `in` and `out`,
-and the clauses that feed a relation."""
+those a `@store` line names, and the clauses that feed a relation."""
+
+from collections.abc import Iterable
 
 from engine import (
     DeclId,
@@ -12,6 +14,7 @@ from engine.program import Qualifier, Unit
 from solver.aggregate import TOP, Solver
 from solver.dependence import Dependence
 from solver.graph import Graph
+from solver.model import StoreBranch
 from solver.vocabulary import RUN_RELATIONS
 
 SKIP = frozenset(r.name for r in RUN_RELATIONS)
@@ -33,12 +36,30 @@ def between(solver: Solver, index: Index, rd: Dependence
     top-level clause reads it by, but the run's own relations and the
     inline ones."""
     graph = Graph(solver.program, solver.engine)
+    return _surveyable(solver, index, (
+        rel for rel in rd.relations if graph.reads_input(rel)))
+
+
+def store_line_relations(solver: Solver, index: Index, rd: Dependence
+                 ) -> tuple[RelationName, ...]:
+    """The relations a `@store` line of the solver names that a base's
+    derivation of `out` depends on (`dependence`), whether or not their
+    rows read `in`, but the run's own relations and the inline ones."""
+    named = {b.relation for b in solver.branches
+             if isinstance(b, StoreBranch)}
+    return _surveyable(solver, index, (
+        rel for rel in rd.relations if rel in named))
+
+
+def _surveyable(solver: Solver, index: Index,
+                rels: Iterable[RelationName]) -> tuple[RelationName, ...]:
+    """`rels` less the run's own relations, the inline ones and those no
+    top-level declaration gives, in the order of their text."""
     out: list[RelationName] = []
-    for rel in rd.relations:
+    for rel in rels:
         d = declaration(index, rel, TOP)
         r = None if d is None else solver.program.relation(d)
-        if r is None or not graph.reads_input(rel) \
-                or rel.name in SKIP \
+        if r is None or rel.name in SKIP \
                 or Qualifier.INLINE in r.qualifiers:
             continue
         out.append(rel)

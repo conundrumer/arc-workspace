@@ -13,7 +13,10 @@ a value and the search for it; `checker.store.lines` the findings on the
 the package, `survey` imports none at its top level, and `stored`,
 `witness` and `lines` import `survey`.
 
-The values the survey asks for a `@store` line are `Found.asks_line`'s."""
+The survey reads, beside the relations between `in` and `out`, each
+relation a `@store` line names that the derivation of `out` reads, so
+that the line is judged and its witness searched as any other; the values
+the survey asks for a `@store` line are `Found.asks_line`'s."""
 
 from collections.abc import Mapping, Sequence
 
@@ -29,7 +32,7 @@ from checker.judged import (
 from checker.payloads.branches import NotCheckedPayload, RowCapPayload
 from checker.runs import Runs
 from checker.store.lines import line_findings
-from checker.store.relations import between
+from checker.store.relations import between, store_line_relations
 from checker.store.stored import (
     StoredAlready,
     concept_runs,
@@ -81,7 +84,9 @@ def survey_store(runs: Runs) -> StoreSurvey:
     bases, concept = _bases(solver, solver_cases)
     rd = dependence(runs.engine, solver, bases)
     task = solver.task
-    rels = between(solver, runs.index, rd)
+    rels = tuple(sorted(set(between(solver, runs.index, rd))
+                        | set(store_line_relations(solver, runs.index, rd)),
+                        key=lambda r: r.text))
     if not rels:
         return StoreSurvey((), (), (), (Finding(
             Kind.NOT_CHECKED, AtFile(WholeFile.SOLVER), NotCheckedPayload()),

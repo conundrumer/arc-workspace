@@ -1,0 +1,104 @@
+{
+  "id": "b775ac94",
+  "witnesses": [{
+    "id": "copy-over-object",
+    "separates": "A mirror copy lands on a cell of another object. The concept keeps the object's cell; $CopyOver paints the copy's color over it.",
+    "input": [
+      [2,2,0,0,0,8,8,0,0,0],
+      [0,2,0,0,0,0,8,2,0,0],
+      [0,0,2,4,0,0,0,7,0,0],
+      [0,0,0,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$KeepObject"],
+      "grid": [
+        [2,2,0,0,4,8,8,2,2,0],
+        [0,2,0,0,4,0,8,2,0,0],
+        [0,0,2,4,0,0,0,7,0,0],
+        [0,0,0,3,0,0,0,7,7,0],
+        [0,0,0,0,3,0,0,0,0,0],
+        [0,0,0,0,3,3,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$CopyOver"],
+      "grid": [
+        [2,2,0,0,4,4,8,2,2,0],
+        [0,2,0,0,4,0,8,2,0,0],
+        [0,0,2,4,0,0,0,7,0,0],
+        [0,0,0,3,0,0,0,7,7,0],
+        [0,0,0,0,3,0,0,0,0,0],
+        [0,0,0,0,3,3,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "The objects lie on a field of 5. With the stored background 0, the whole grid is one object and no key block is found, so every other case is undefined; the derived background 5 draws the copies on the field.",
+    "input": [
+      [2,2,5,5,5,5,5],
+      [5,2,5,5,5,5,5],
+      [5,5,2,4,5,5,5],
+      [5,5,5,3,5,5,5],
+      [5,5,5,5,5,5,5],
+      [5,5,5,5,5,5,5],
+      [5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["$ColorMarkers & background=stored"],
+      "grid": null
+    }, {
+      "cases": ["$BlockMarkers"],
+      "grid": [
+        [2,2,5,5,5,5,5],
+        [5,2,5,5,5,5,5],
+        [5,5,2,4,5,5,5],
+        [5,5,5,3,5,5,5],
+        [5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": [
+        [2,2,5,5,4,4,5],
+        [5,2,5,5,4,5,5],
+        [5,5,2,4,5,5,5],
+        [5,5,5,3,5,5,5],
+        [5,5,5,5,3,5,5],
+        [5,5,5,5,3,3,5],
+        [5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "stray-cell",
+    "separates": "A cell of a third color touches the shape outside the key block. $ColorMarkers takes it for a marker that no key block holds and is undefined; $BlockMarkers takes the markers from the block, keeps the stray cell and draws the copies.",
+    "input": [
+      [2,2,0,0,0,0,0],
+      [6,2,0,0,0,0,0],
+      [0,0,2,4,0,0,0],
+      [0,0,0,3,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$ColorMarkers"],
+      "grid": null
+    }, {
+      "cases": ["$BlockMarkers"],
+      "grid": [
+        [2,2,0,0,4,4,0],
+        [6,2,0,0,4,0,0],
+        [0,0,2,4,0,0,0],
+        [0,0,0,3,0,0,0],
+        [0,0,0,0,3,0,0],
+        [0,0,0,0,3,3,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }]
+  }]
+}

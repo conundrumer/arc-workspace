@@ -332,7 +332,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
         # 7fd429fb, 2026-10-13T02:58:03Z: "that should use clarification, but
         # like improving the wording, not like adding new lines."
         description=mctx("""
-            - Each program relation between `in` and `out` whose value over a subset of its columns is the same on every input of the task, with the witness that separates the cases that take its `<rel>=stored` branch from the cases that take the derived value there and the same branches elsewhere, at the assignment that changes the fewest parameters at which they differ.
+            - Each program relation between `in` and `out`, and each one a `@store` line names that the derivation of `out` reads, whose value over a subset of its columns is the same on every input of the task, with the witness that separates the cases that take its `<rel>=stored` branch from the cases that take the derived value there and the same branches elsewhere, at the assignment that changes the fewest parameters at which they differ.
             - The command writes each witness it builds into the task's witness file, as `record` writes one, with the `@store` line standing, and keeps a witness the file already holds for the branch.
             """)
         + "\n" + unwritten(Section.STORE) + "\n" + mctx(

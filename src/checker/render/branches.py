@@ -177,8 +177,9 @@ def cases_suffix(names: Sequence[str]) -> str:
 def _no_value_text(rel: str, why: NoValue) -> str:
     match why:
         case NotBetween():
-            return mctx("`{rel}` is no program relation between `in` and "
-                        "`out`").format(rel=rel)
+            return mctx("`{rel}` is no relation the derivation of `out` "
+                        "reads, other than an inline one or one of the "
+                        "run's own").format(rel=rel)
         case Unread():
             return mctx("`{rel}` is no relation a case reads").format(rel=rel)
         case NoAnchor():
