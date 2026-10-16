@@ -1,7 +1,8 @@
 """Read the entries of a Claude Code transcript, each read held for one
 state of the process (`state_cache`): the snapshot of its lines, the
-lines that hold a word, their parsed entries, the lines that are its
-run's own, and its `.meta.json` file."""
+lines that hold a word, the lines that are its run's own, and its
+`.meta.json` file. No held read holds a parsed entry: each read parses
+the lines it reads anew, so its entries are held by its caller alone."""
 
 import bisect
 import json
@@ -51,8 +52,7 @@ def agent_ids_in(text: bytes, start: int) -> Iterator[tuple[bytes, int]]:
 
 class Snapshot:
     """The lines of a transcript as they stood when it was read, with the
-    lines that hold each word asked about, and the entries of the lines
-    parsed for such a word.
+    lines that hold each word asked about.
 
     It holds no text, so that a read of many transcripts holds little:
     `starts` gives the offset of each line and `size` the bytes it covers,
@@ -77,7 +77,6 @@ class Snapshot:
         self.starts = line_starts(text, 0, [])
         self.found: dict[str, frozenset[int]] = {}
         self.agent_ids = self.index_agent_ids(text, 0)
-        self.parsed: dict[int, list[Entry]] = {}
         self.head, self.tail = edges(text, self.settled_end())
 
     @property
@@ -142,9 +141,7 @@ class Snapshot:
         return {aid.decode(): frozenset(found) for aid, found in index.items()}
 
     def entry(self, i: int) -> list[Entry]:
-        if i not in self.parsed:
-            self.parsed[i] = parse(self.line(i))
-        return self.parsed[i]
+        return parse(self.line(i))
 
     def extended(self, more: bytes) -> "Snapshot":
         """This snapshot's whole lines followed by `more`, the bytes of its
@@ -165,7 +162,6 @@ class Snapshot:
         for aid, lines in out.index_agent_ids(more, offset).items():
             kept[aid] = kept.get(aid, frozenset()) | lines
         out.agent_ids = {aid: lines for aid, lines in kept.items() if lines}
-        out.parsed = {i: e for i, e in self.parsed.items() if i < whole}
         end = out.settled_end()
         head = read_at(out, 0, min(CHECKED, end))
         tail_at = max(len(head), end - CHECKED)
@@ -281,17 +277,22 @@ def read_entries(path: Path, naming: Iterable[str] | None = None) -> list[Entry]
     """The entries of the transcript at `path` as it stands at the state this
     process is in, or with `naming` only those whose line holds one of its
     words, which spares parsing the rest."""
-    return entries_naming(path, None if naming is None else frozenset(naming))
+    lines = entries_naming(path, None if naming is None else frozenset(naming))
+    # The snapshot `entries_naming` read, taken from `_read` so that the
+    # caller rests on the lines it gives and not on each change of the file.
+    snap = _read[path]
+    return [e for i in lines for e in snap.entry(i)]
 
 
 @state_cache(DERIVED)
-def entries_naming(path: Path, naming: frozenset[str] | None) -> list[Entry]:
-    """`read_entries`, held so that a read derived from it sees a change of
-    the transcript only where the entries it gives change."""
+def entries_naming(path: Path, naming: frozenset[str] | None) -> list[int]:
+    """The lines whose entries `read_entries` gives, held so that a read
+    derived from it sees a change of the transcript only where those lines
+    change: a transcript is added to at its end, so a line keeps its bytes
+    while its index stands here."""
     if naming is None:
-        return list(entries_forward(path))
-    snap = snapshot(path)
-    return [e for i in named_lines(snap, own_range(path), naming) for e in snap.entry(i)]
+        return list(own_range(path))
+    return named_lines(snapshot(path), own_range(path), naming)
 
 
 def named_lines(snap: Snapshot, own: range, naming: frozenset[str]) -> list[int]:
@@ -299,15 +300,6 @@ def named_lines(snap: Snapshot, own: range, naming: frozenset[str]) -> list[int]
     their order."""
     return sorted(i for i in frozenset[int]().union(*(snap.holding(w) for w in naming))
                   if i in own)
-
-
-def entries_unheld(path: Path, naming: frozenset[str]) -> list[Entry]:
-    """`read_entries` of the transcript at `path` with `naming`, with each
-    entry parsed anew and held by nothing but the caller, so that a read of
-    every transcript of a session holds no more than what it makes of
-    them."""
-    snap = snapshot(path)
-    return [e for i in named_lines(snap, own_range(path), naming) for e in parse(snap.line(i))]
 
 
 def entries_forward(path: Path) -> Iterator[Entry]:

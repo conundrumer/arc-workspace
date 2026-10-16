@@ -13,7 +13,7 @@ from run_reads import (blocks, parent_label, results_by_call, run_entries,
                        run_sessions)
 from state_reads import DERIVED, Kept, state_cache
 from transcripts import chain
-from transcript_entries import Entry, entries_unheld, epoch
+from transcript_entries import Entry, epoch, read_entries
 from agent_deliveries import Delivery, delivery
 from session_changes import changed_with
 
@@ -105,9 +105,9 @@ def transcript_resumes(path: Path) -> tuple[Send, ...]:
     `SendMessage`, which the line of each call holds, or a word of each
     result `resumed` gives an agent id or a note for. `resumes_since` reads
     it for every transcript of a session, so it holds none of their entries
-    (`entries_unheld`)."""
-    return tuple(sends(entries_unheld(path, frozenset({"SendMessage", "resumedAgentId",
-                                                       '"pin":'})), parent_label(path)))
+    (`read_entries`)."""
+    return tuple(sends(read_entries(path, {"SendMessage", "resumedAgentId", '"pin":'}),
+                       parent_label(path)))
 
 
 def session_resumes(path: Path, agents: set[str], since: float,
