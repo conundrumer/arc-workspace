@@ -1,0 +1,19 @@
+comment: train 1 output gives the shape one row below the row the step of train 1 input's panels gives. move it up one row
+
+@diff train 1 output
+8 8 8 8 8 8
+8 2 2 2 2 8
+8 2 2 2 2 8
+8 2 2 2 2 8
+8 2 2 2 2 8
+8 2 2 2 2 8
+8 2 2 2 2 8
+8 2 2 2 2 8
+8 2 2 2 2 8
+8 2 2 2 2 8
+8 2 2 2 2 8
+8 2 2~8 2~8 2 8
+8 2 8 8 2 8
+8 2 8~2 8~2 2 8
+8 2 2 2 2 8
+8 8 8 8 8 8

@@ -4,6 +4,10 @@
     "dataset": "arc-agi-2",
     "split": "training"
   }],
+  "patches": [{
+    "level": "canonical",
+    "comment": "train 1 output gives the shape one row below the row the step of train 1 input's panels gives. move it up one row"
+  }],
   "train": [{
     "index": 0,
     "input": [
@@ -74,9 +78,9 @@
       [8,2,2,2,2,8],
       [8,2,2,2,2,8],
       [8,2,2,2,2,8],
+      [8,2,8,8,2,8],
+      [8,2,8,8,2,8],
       [8,2,2,2,2,8],
-      [8,2,8,8,2,8],
-      [8,2,8,8,2,8],
       [8,2,2,2,2,8],
       [8,8,8,8,8,8]
     ]
