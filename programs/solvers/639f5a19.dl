@@ -69,6 +69,8 @@ rim.cell(Id, P) :- objs.label($U(), P, Id).
 // Fewer steps inward from the object's outline than the band is deep.
 band_cell(P, $Erode()) :- rim.depth(_, P, K), params.band_depth(N), K < N.
 
+// --- $Inset, $Erode ---
+
 out(P, Col, Ch) :- in(P, Col), params.bg(Col), impl_choice(Ch).
 
 out(P, Col, Ch) :-
