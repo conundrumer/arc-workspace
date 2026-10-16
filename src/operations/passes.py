@@ -10,10 +10,11 @@ pass runs once the pass before it ended with its report and no
 `interference` ticket on the task filed since the pipeline started stands
 outside `tickets/closed/`; it waits on no review and no analyst. On the
 review chain, each ended pass gets a transcript review once the review of
-the pass before it returned, then one ticket analyst with the tickets the
-pass's report lists under `## Tickets filed` and those its review filed,
-and the review; a pass's analyst is the one whose brief gives that pass's
-review. The pipeline ends once each review and analyst has returned. For
+the pass before it returned, then, where any ticket below is, one ticket
+analyst with the tickets the pass's report lists under `## Tickets filed`
+that stand outside `tickets/closed/` once the review returned, those its
+review filed, and the review; a pass's analyst is the one whose brief
+gives that pass's review. The pipeline ends once each review and analyst has returned. For
 the `interference` tickets, the changes that settle them are taken first, as
 `taking.boosted` gives. A pass's tickets are read from the report file
 it wrote under the task's work directory since its launch, whatever its
@@ -43,7 +44,7 @@ from operations import briefs, messages, runs
 from operations.directives import Line, Pipeline, lines, overrides, passed, pipelines, session_lines
 from operations.reports import TICKETS_FILED
 from operations.roles import PASSES, Purpose, Role, analyst_subject, joined
-from operations.state import Agent, Call, State
+from operations.state import Agent, Call, State, Ticket
 from ticketing.vocabulary import Domain, Kind, Status
 from operations.command_words import RUN_COMMAND, simple_commands
 from operations.handled import bash_calls, repeated, send_again
@@ -123,6 +124,16 @@ def review_tickets(state: State, task: str, review: Agent) -> list[str]:
             and t.status is not Status.DEFERRED]
 
 
+def held(state: State, numbers: tuple[str, ...]) -> tuple[Ticket, ...]:
+    tickets = state.tracker.tickets
+    return tuple(tickets[n] for n in numbers if n in tickets)
+
+
+def standing(state: State, numbers: tuple[str, ...]) -> list[str]:
+    tickets = state.tracker.tickets
+    return [n for n in numbers if n not in tickets or tickets[n].status is not Status.CLOSED]
+
+
 def settles(analyst: Agent, review: str) -> bool:
     """Whether the pass analyst `analyst` is the one of the pass whose
     transcript review is the agent `review`. A pass analyst's brief gives
@@ -143,13 +154,13 @@ def reviews(state: State, task: str, ended: list[Ended]) -> tuple[Step | None] |
     for (i, _, filed), review in zip(ended, found, strict=True):
         if review is None:
             return (Launch(Role.TRANSCRIPT_REVIEW, i, briefs.transcript_review(
-                i, Domain.TASK.value, task, True)),)
+                i, Domain.TASK.value, task, True, held(state, filed))),)
         if review.pending:
             return (None,)
         reviewer = agent_ids([review])
         if isinstance(reviewer, Undecided):
             return (reviewer,)
-        numbers = [*filed, *review_tickets(state, task, review)]
+        numbers = [*standing(state, filed), *review_tickets(state, task, review)]
         analyst = [x for x, purpose, nums in state.analysts()
                    if purpose is Purpose.PASS and nums[0] == task and settles(x, reviewer[0])]
         if numbers and not analyst:

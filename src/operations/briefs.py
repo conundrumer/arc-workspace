@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from controlled_markdown import form, mctx
 from operations.reports import LEFT_FOR_DECISION, WORKTREE
 from operations.roles import Role, description
-from operations.state import SETTLED, Agent, Place, code_review_tag
+from operations.state import SETTLED, Agent, Place, Ticket, code_review_tag
 from operations.log_commands import AGENT, FILE_TICKET
 from ticketing.times import utc_stamp
 
@@ -500,13 +500,28 @@ PASS_REVIEW = mctx("""
     - Read the pass call by call, with its timing, for what the tool and the documents did to the pass's work, and file a ticket of kind `interference` where they made the pass's output wrong, and of kind `delay` where they added only to its time or token cost.
     """)
 
+PASS_DUPLICATES = mctx("""
+    - The run filed these tickets: {tickets}. Once you have appended a place as a case to a ticket, or filed a ticket with the place's case, close each of those tickets of the run that is a `delay` and whose title states the same place, as a `duplicate` of the ticket that holds the case, by `uv run python scripts/file_ticket.py log --help`, with the name of the directory it stands under as `<current status>`.
+    """)
 
-def transcript_review(run: str, domain: str, subject: str, solver_pass: bool) -> str:
+PASS_TICKET = mctx("{number}, of kind `{kind}` under `tickets/{status}/`, titled \"{title}\"")
+
+TICKET_SEPARATOR = "; "
+
+
+def transcript_review(run: str, domain: str, subject: str, solver_pass: bool,
+                      tickets: tuple[Ticket, ...]) -> str:
     filing = FILE_AS.format(
         domain_subject=mctx("`{domain}` and `{subject}`").format(domain=domain, subject=subject),
         agent=CODE_WORD.format(word=Role.TRANSCRIPT_REVIEW))
-    text = TRANSCRIPT_REVIEW.format(run=run, filing=filing, deferred_titles=DEFERRED_TITLES)
-    return f"{text}\n{PASS_REVIEW}" if solver_pass else text
+    parts = [TRANSCRIPT_REVIEW.format(run=run, filing=filing, deferred_titles=DEFERRED_TITLES)]
+    if tickets:
+        parts.append(PASS_DUPLICATES.format(tickets=TICKET_SEPARATOR.join(
+            PASS_TICKET.format(number=t.number, kind=t.kind, status=t.status, title=t.title)
+            for t in tickets)))
+    if solver_pass:
+        parts.append(PASS_REVIEW)
+    return "\n".join(parts)
 
 
 OVERRIDE = mctx("Override: {text}")
@@ -573,7 +588,7 @@ def batch_profile(runs: list[str], reviewable: list[str], commit: str) -> str:
                            model=Role.TRANSCRIPT_REVIEW.model)
     text = BATCH_PROFILE.format(runs=", ".join(runs), filing=filing, review=review,
                                 deferred_titles=DEFERRED_TITLES)
-    brief = transcript_review(RUN, "agent", RUN, False)
+    brief = transcript_review(RUN, "agent", RUN, False, ())
     return f"{text}\n\n```\n{brief}\n```"
 
 
