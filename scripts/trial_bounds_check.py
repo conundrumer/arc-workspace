@@ -55,9 +55,7 @@ class Bounds:
 
 
 def bounds(path: Path) -> Bounds | None:
-    """The bounds the first or the last non-empty line of the first user entry
-    of the transcript at `path` gives, or None where neither gives any: the
-    caller is no trial."""
+    """The trial's bounds, or None where the caller is no trial."""
     from run_reads import message_text
     from transcript_entries import entries_forward
 
