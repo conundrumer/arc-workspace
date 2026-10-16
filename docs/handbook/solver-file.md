@@ -133,7 +133,7 @@
     - Every check, survey and count of `scripts/run_dl.py` runs the witnessed cases alone, and a case name it prints denotes witnessed cases alone.
         * comment: A Create pass on b2bc3ffd read a failure line's name `$ColorClass & $Clamp` as covering the case `$FloorColor & $ColorClass & $Clamp`, which was not witnessed, and spent a `grid` run to find the cases that fit: ticket 10-295.
 - A branch's clauses are the clauses shared by its cases and absent from the other cases.
-- A constructor stands for its branch alone, not for what another branch shares with it, and is named as the Analyze report names the branch.
+- A constructor stands for its branch alone, not for what another branch shares with it.
 - `@claim` under the concept branch's constructor denotes the header claim the choice point turns on, which each other branch's `@scene` or `@rule` line changes.
     - A case's reading of a claim is the header's claim with each of its branches' changes made.
 - A solver with one case has no `Choice`, case markers, or case column on `out`.
