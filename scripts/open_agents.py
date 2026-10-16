@@ -23,8 +23,7 @@ from file_reads import mtime
 from state_reads import DERIVED, Kept, state_cache
 from transcripts import agent_id, is_subagent
 
-from operations.constants import STUCK_SECONDS
-from operations.steps import BLOCK_SECONDS
+from operations.constants import BLOCK_SECONDS, STUCK_SECONDS
 
 
 @dataclass
@@ -91,7 +90,7 @@ def usual(own: CallTimes, among: CallTimes, call: Span) -> float:
 HUNG_FACTOR = 10
 """How many times a call's usual time a call in flight runs before it
 counts as hung, once. A call whose usual time no run gives takes
-`steps.BLOCK_SECONDS` as its usual time."""
+`constants.BLOCK_SECONDS` as its usual time."""
 
 
 def hung_from(start: float, usual: float) -> float:

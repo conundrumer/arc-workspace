@@ -2,9 +2,9 @@
 
 A brief, and a message to an agent other than the coordinator, goes to a
 file the command writes before it prints the call (`filed`), and the
-printed prompt or message is the line `FILED` with that file's path, or,
+printed prompt or message is the line `printed_forms.FILED` with that file's path, or,
 for an agent whose own command reads that file, an operator or an
-operator launcher, the line `COMMANDED`, which asks for no read. A
+operator launcher, the line `printed_forms.COMMANDED`, which asks for no read. A
 message to the coordinator that opens with `steps.DECISION` keeps its
 first line, which names what it gives, and files the rest. Each brief
 gives the report file the agent writes its final reply to
@@ -13,43 +13,15 @@ message to it and of its report read the file in place of the line.
 The scratch directory a brief gives is named here too (`scratch_dir`),
 by the same search for the first free name as the report file."""
 
-import re
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
-from controlled_markdown import form, mctx
 from operations import briefs
 from operations.constants import COORDINATOR
 from operations.roles import BARE_BRIEFS, GENERAL_ROLES, Role
-from operations.steps import DECISION, STEP_KEY, Launch, Send, Step, key
-
-
-FILED = mctx("Read the file {path} first: it holds the text of this message.")
-"""The line that gives the file a brief or a message is in."""
-
-
-COMMANDED = mctx("The text of this message is in the file {path}, which your command reads.")
-"""The line that gives the file a brief or a message is in, to an agent
-whose command reads it."""
-
-
-FILED_LINE = re.compile(
-    "^(?:" + "|".join(form(line, {"path": f"(?P<{name}>/[^\\n]*?)"})
-                      for name, line in (("path", FILED), ("commanded", COMMANDED)))
-    + ")$", re.MULTILINE)
-
-
-def filed_path(m: re.Match[str]) -> Path:
-    """The path of the file the match `m` of `FILED_LINE` gives."""
-    return Path(m["path"] or m["commanded"])
-
-
-REPORT_SUFFIX = "-report.md"
-
-
-REPORT_NAME = re.compile(rf"(?:{STEP_KEY.pattern})(?:-[0-9]+)?{re.escape(REPORT_SUFFIX)}")
-"""The name of the report file a brief gives."""
+from operations.printed_forms import COMMANDED, FILED, REPORT_SUFFIX
+from operations.steps import DECISION, Launch, Send, Step, key
 
 
 FILES = "operator-files"

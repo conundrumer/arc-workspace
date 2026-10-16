@@ -16,7 +16,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from filed_texts import report_file, report_text
-from operations.final_reply import SENT_BY_MESSAGE
+from operations.printed_forms import SENT_BY_MESSAGE
 from run_reads import (MAIN, LaunchStatus, Notification, Status, agent_messages, agent_type,
                        blocks, is_prompt, launch_status, notifications, notified, parent_id,
                        read_meta, run_sessions, session_agents, text_of)

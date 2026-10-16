@@ -4,19 +4,16 @@ gives, whether that text ends the operator for
 its context (`for_context`), the calls that sent its text to its parent
 (`final_sends`), whether a holder of a change is live (`live_holder`),
 the operator whose final reply carries what
-reached an earlier one (`carrier`), and the lines the reply nests; with
-the pattern of the report of an agent that sent its final reply by
-SendMessage (`SENT_BY_MESSAGE`). `live_holder` and `carrier` read the calls of
+reached an earlier one (`carrier`), and the lines the reply nests.
+`live_holder` and `carrier` read the calls of
 `next` by `handled.next_call`."""
 
-import re
 from collections.abc import Iterable, Mapping
 
-from controlled_markdown import form, mctx
+from controlled_markdown import mctx
 from operations.constants import COORDINATOR
 from operations.handled import next_call, sends_in
-from operations.printing import FINAL_REPLY, SENT, final_message, unfenced
-from operations.roles import AGENT_ID
+from operations.printing import FINAL_REPLY, final_message, unfenced
 from operations.state import Call, State, Tool
 from operations.steps import Reply, Send
 
@@ -42,11 +39,6 @@ def for_context(text: str) -> bool:
     """Whether the final reply whose text is `text` ends the operator for
     its context."""
     return text.split("\n", 1)[0] == FOR_CONTEXT
-
-
-SENT_BY_MESSAGE = re.compile(
-    r"\A" + form(SENT, {"to": rf"(?:{re.escape(COORDINATOR)}|{AGENT_ID})"}) + r"\Z")
-"""The whole text of `printing.SENT`, to the coordinator or to any agent."""
 
 
 def final_sends(state: State, operator: str) -> list[Call]:

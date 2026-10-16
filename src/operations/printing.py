@@ -15,6 +15,7 @@ from operations.command_words import Action, next_command
 from operations.constants import FOREGROUND_MS
 from operations.filing import filed_line, split_message
 from operations.pacing import Pace, Scripted, Until
+from operations.printed_forms import SENT
 from operations.roles import description
 from ticketing.times import utc_stamp
 from operations.steps import Bash, EndTurn, Launch, Poll, Reply, Send, Step, Undecided, key
@@ -23,11 +24,6 @@ from operations.steps import Bash, EndTurn, Launch, Poll, Reply, Send, Step, Und
 FINAL_REPLY = mctx("final reply")
 """The first line of the text `next` prints for the operator's final
 reply, and of the message that sends the agent's parent its text."""
-
-
-SENT = mctx("My final reply went to {to} by SendMessage.")
-"""The line an agent gives as its report after it sent its final reply by
-SendMessage to the agent `to`."""
 
 
 def final_message(text: str) -> str:

@@ -2,7 +2,7 @@
 text, and the function its command runs."""
 
 import argparse
-from collections.abc import Callable, Collection
+from collections.abc import Callable
 from functools import partial
 from typing import Any
 
@@ -12,7 +12,7 @@ from checker.render.commands import SLOWEST
 from checker.render.surveys import PLAN_HELP
 from checker.store.survey import ROW_CAP
 from checker.sweep import MAX_CANDIDATES, TIME_LIMIT_SECONDS
-from cli import audit, grid, lint, record, run, survey, text
+from cli import Command, audit, grid, lint, record, run, survey, text
 from controlled_markdown import mctx
 
 SWEEP_LIMIT_HELP = mctx("wall-clock limit in seconds on the sweep's solver "
@@ -63,9 +63,9 @@ RUN_HELP = mctx("""
 type Handler = Callable[[argparse.Namespace], int]
 
 
-def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
-    """The parser, and the command names its subparsers take. Each
-    subparser carries, as `handler`, the function its command runs."""
+def parser() -> argparse.ArgumentParser:
+    """The parser, with a subparser for each `Command`. Each subparser
+    carries, as `handler`, the function its command runs."""
     top = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=mctx("""
@@ -77,20 +77,20 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
     )
     sub = top.add_subparsers(dest="cmd", required=True)
 
-    def command(name: str, handler: Handler, **kwargs: Any) -> argparse.ArgumentParser:
+    def command(name: Command, handler: Handler, **kwargs: Any) -> argparse.ArgumentParser:
         p = sub.add_parser(
             name, formatter_class=argparse.RawDescriptionHelpFormatter, **kwargs)
         p.set_defaults(handler=handler)
         return p
 
     run_p = command(
-        "run", run.dispatch,
+        Command.RUN, run.dispatch,
         help=mctx("pairs, lint and determination checks, the command run when "
                   "the first argument is not a command"),
         epilog=RUN_HELP,
     )
     lint_p = command(
-        "lint", lambda a: lint.cmd_lint(a.stems or None, a.hints),
+        Command.LINT, lambda a: lint.cmd_lint(a.stems or None, a.hints),
         help=mctx("lint only, no pair runs"),
         description=mctx("A hint changes neither the verdict nor the exit "
                          "code."),
@@ -122,7 +122,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                                  'pair without "output"'))
 
     grid_p = command(
-        "grid",
+        Command.GRID,
         lambda a: grid.cmd_grid(a.stem, a.file, a.every, a.cases, a.assign),
         help=mctx("run one solver on a grid you write, printing what each "
                   "witnessed case emits"),
@@ -153,7 +153,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                       help=ASSIGN_HELP)
 
     relation = command(
-        "relation", lambda a: grid.cmd_relation(a.stem, a.args, a.assign),
+        Command.RELATION, lambda a: grid.cmd_relation(a.stem, a.args, a.assign),
         help=mctx("run one solver on a grid you write, printing the rows of "
                   "each relation the arguments give"),
         description=mctx("""
@@ -171,7 +171,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                           help=ASSIGN_HELP)
 
     record_p = command(
-        "record", record.dispatch,
+        Command.RECORD, record.dispatch,
         help=mctx("run one solver on a grid you write and write the run into "
                   "the task's witness file"),
         description=mctx("""
@@ -211,7 +211,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                                     "the serializer and add no witness"))
 
     sweep = command(
-        "sweep",
+        Command.SWEEP,
         lambda a: survey.cmd_sweep(a.stem, a.cap, a.sweep_limit),
         help=mctx("parameter value sweep only"),
         description=mctx("""
@@ -230,13 +230,13 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                        default=TIME_LIMIT_SECONDS, help=SWEEP_LIMIT_HELP)
 
     command(
-        "deletions", lambda a: survey.cmd_deletions(a.stem),
+        Command.DELETIONS, lambda a: survey.cmd_deletions(a.stem),
         help=mctx("deletion report only"),
         description=mctx("The clauses and facts of the solver that no train "
                          "pair needs."),
     ).add_argument("stem", help=STEM_HELP)
     audit_p = command(
-        "audit",
+        Command.AUDIT,
         lambda a: audit.cmd_audit(a.stem, a.witness_file),
         help=mctx("witness report + dropped case report + derive report + "
                   "store report + open values report, writing no "
@@ -248,14 +248,14 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                          help=mctx("a witness file to read in place of the "
                                    "task's"))
     command(
-        "drop-one", lambda a: survey.cmd_drop_one(a.stem),
+        Command.DROP_ONE, lambda a: survey.cmd_drop_one(a.stem),
         help=mctx("which stored facts of a multi-fact parameter no train pair "
                   "needs"),
         description=mctx("A fact that only the test pairs need is reported "
                          "apart from one that no pair needs."),
     ).add_argument("stem", help=STEM_HELP)
     command(
-        "derived-constant", lambda a: survey.cmd_derived_constant(a.stem),
+        Command.DERIVED_CONSTANT, lambda a: survey.cmd_derived_constant(a.stem),
         help=mctx("program relations that hold the same tuples on every "
                   "example"),
         description=mctx("""
@@ -264,7 +264,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
             """),
     ).add_argument("stem", help=STEM_HELP)
     witness = command(
-        "witness",
+        Command.WITNESS,
         lambda a: audit.cmd_witness(a.stem, a.file, a.every_case,
                                     a.witness_file, a.try_path,
                                     a.dropped_from),
@@ -310,7 +310,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                   "whose dropped cases, the cases of the solver's `Choice` "
                   "it does not hold, take the place of the solver's own"))
     derive = command(
-        "derive", partial(audit.derive_or_store, audit.cmd_derive),
+        Command.DERIVE, partial(audit.derive_or_store, audit.cmd_derive),
         help=mctx("the built-in derivations of stored parameters that fit, "
                   "each a branch, with each witness it builds, which it "
                   "writes into the task's witness file"),
@@ -327,7 +327,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
         + "\n" + unwritten(Section.DERIVE),
     )
     store = command(
-        "store", partial(audit.derive_or_store, audit.cmd_store),
+        Command.STORE, partial(audit.derive_or_store, audit.cmd_store),
         help=mctx("the program relations that hold one value on every "
                   "input, with each witness it builds, which it writes into "
                   "the task's witness file"),
@@ -352,7 +352,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                        help=mctx("a witness file to read and write in place "
                                  "of the task's"))
     plan = command(
-        "determination-plan",
+        Command.DETERMINATION_PLAN,
         lambda a: survey.cmd_determination_plan(a.stem, a.verdicts),
         help=mctx("which Params parameters need determination relations"),
         description=PLAN_HELP,
@@ -363,14 +363,14 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                                 "parameter"))
 
     size = command(
-        "size", lambda a: survey.cmd_size(a.stem),
+        Command.SIZE, lambda a: survey.cmd_size(a.stem),
         help=mctx("literal count per solver"),
         description=mctx("Print each solver's literal count, count first."),
     )
     size.add_argument("stem", nargs="?", help=STEM_OR_ALL_HELP)
 
     keywords = command(
-        "keywords", lambda a: survey.cmd_keywords(a.stem),
+        Command.KEYWORDS, lambda a: survey.cmd_keywords(a.stem),
         help=mctx("how many solvers carry each keyword of the Keywords doc"),
         description=mctx("Count, for each keyword of the Keywords doc, the "
                          "solvers whose `// @keywords:` line carries it, and "
@@ -381,7 +381,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                                     "omitted"))
 
     since = command(
-        "since", lambda a: survey.cmd_since(a.when),
+        Command.SINCE, lambda a: survey.cmd_since(a.when),
         help=mctx("the solvers in scope for a delta survey since a date-time"),
         description=mctx("""
             - Print the stem of each solver that the commits since the given date-time touch, and of each solver whose working-tree content differs from HEAD.
@@ -393,11 +393,12 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                                          '"2026-09-08 14:30"'))
 
     command(
-        "expand", lambda a: survey.cmd_expand(a.stem),
+        Command.EXPAND, lambda a: survey.cmd_expand(a.stem),
         help=mctx("the source after GRID and RIGID expansion, as Souffle "
                   "sees it"),
         description=mctx("Print the solver source with each GRID call and "
                          "RIGID block replaced by what it emits and nothing else "
                          "changed."),
     ).add_argument("stem", help=STEM_HELP)
-    return top, sub.choices
+    assert sub.choices.keys() == set(Command)
+    return top

@@ -4,36 +4,37 @@ through `checker`, and exit by the pass rule. `run.py` dispatches the
 `run` command to the modules that hold its forms, and no module imports
 it."""
 
-import sys
-from collections.abc import Collection
+from enum import StrEnum
 
 HELP_FLAGS = ("-h", "--help")
 
 
-def command_args(argv: list[str], names: Collection[str]) -> list[str]:
-    if not argv or argv[0] not in (*names, *HELP_FLAGS):
-        return ["run", *argv]
+class Command(StrEnum):
+    """The commands, each a subparser of `parser.parser`. A script that
+    labels a run of `run_dl.py` reads them here without loading the
+    packages the commands run."""
+    RUN = "run"
+    LINT = "lint"
+    GRID = "grid"
+    RELATION = "relation"
+    RECORD = "record"
+    SWEEP = "sweep"
+    DELETIONS = "deletions"
+    AUDIT = "audit"
+    DROP_ONE = "drop-one"
+    DERIVED_CONSTANT = "derived-constant"
+    WITNESS = "witness"
+    DERIVE = "derive"
+    STORE = "store"
+    DETERMINATION_PLAN = "determination-plan"
+    SIZE = "size"
+    KEYWORDS = "keywords"
+    SINCE = "since"
+    EXPAND = "expand"
+
+
+def command_args(argv: list[str]) -> list[str]:
+    if not argv or argv[0] not in (*Command, *HELP_FLAGS):
+        return [Command.RUN, *argv]
     return argv
 
-
-def main(argv: list[str]) -> int:
-    """Run the command `argv` names, as `command_args` reads it, under the
-    shared hold of the heavy commands' lock. The stamp of the code the
-    process loaded goes to stderr after the command, so that what a command
-    writes for a program stays as it is, and after it the duration footer
-    (`engine.duration`)."""
-    from checker.render import commands
-    from cli.common import stamp
-    from cli.parser import parser
-    from engine import rwlock
-    from engine.duration import footer
-
-    taken = stamp()
-    top, names = parser()
-    args = top.parse_args(command_args(argv, names))
-    with footer(f"run_dl {args.cmd}"):
-        with rwlock.held(rwlock.Hold.SHARED):
-            code = args.handler(args)
-        sys.stdout.flush()
-        print(commands.STAMP.format(stamp=taken), file=sys.stderr)
-    return code

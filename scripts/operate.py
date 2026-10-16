@@ -55,7 +55,8 @@ from operations.roles import BARE_BRIEFS, Role  # noqa: E402
 from operations.filing import filed, with_report  # noqa: E402
 from operations.printing import key_line, printed  # noqa: E402
 from operations.state import State  # noqa: E402
-from operations.steps import (BLOCK_SECONDS, LIMIT_SECONDS, Bash, EndTurn, Launch, Poll, Send,  # noqa: E402
+from operations.constants import BLOCK_SECONDS, LIMIT_SECONDS  # noqa: E402
+from operations.steps import (Bash, EndTurn, Launch, Poll, Send,  # noqa: E402
                               Step, Undecided)
 from collections.abc import Callable  # noqa: E402
 from operations.task_work import CLAIM_HELD, claim, restore, set_aside  # noqa: E402

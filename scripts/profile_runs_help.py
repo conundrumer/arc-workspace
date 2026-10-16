@@ -9,7 +9,7 @@ from context_bound_hook import CONTEXT_BOUND, OPERATOR
 from open_agents import HUNG_FACTOR
 from run_prints import RECENT_CALLS
 from run_profile import COMMAND_WIDTH
-from operations.steps import BLOCK_SECONDS
+from operations.constants import BLOCK_SECONDS
 from operations.roles import GENERAL
 
 

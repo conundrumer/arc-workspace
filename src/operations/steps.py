@@ -7,23 +7,12 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
-from arc.task import TASK_ID
 from controlled_markdown import mctx
-from operations.constants import COORDINATOR, FOREGROUND_MS
+from operations.constants import COORDINATOR
 from operations.pacing import Pace
+from operations.printed_forms import KEY_LENGTH, STEP_KEY
 from operations.roles import PASSES, Model, Role
 from operations.state import Agent
-from ticketing.vocabulary import TICKET_NUMBER
-
-
-BLOCK_SECONDS = (FOREGROUND_MS // 1000) - 30
-"""The longest foreground block of the command's `next`, under the bound on
-a foreground call, with room for the read of the state."""
-
-LIMIT_SECONDS = (FOREGROUND_MS // 1000) - 20
-"""The longest run of the command's `next` and `relay`, read of the state
-included, under the bound on a foreground call, with room for the start
-of the process: past it the caller has given up on the call."""
 
 
 @dataclass(frozen=True)
@@ -50,7 +39,7 @@ class Launch:
 class Send:
     """A SendMessage call. Where `since` is given, only a call an operator
     made after that time counts as made of it. `commanded` is whether `to`
-    is an agent whose command reads its messages (`filing.COMMANDED`); it
+    is an agent whose command reads its messages (`printed_forms.COMMANDED`); it
     stays out of the step's key and its equality, which `to` already
     fixes. `change` is as `key` gives it."""
     to: str
@@ -181,10 +170,3 @@ def key(step: Step) -> str:
     digest = hashlib.sha1(repr(step).encode()).hexdigest()[:KEY_LENGTH]
     change = step.change if isinstance(step, Launch | Send | Bash | Undecided) else None
     return digest if change is None else f"{change}-{digest}"
-
-
-KEY_LENGTH = 12
-
-
-STEP_KEY = re.compile(rf"{TASK_ID}-(?:{'|'.join(PASSES)})"
-                      rf"|(?:(?P<change>{TICKET_NUMBER.pattern})-)?[0-9a-f]{{{KEY_LENGTH}}}")

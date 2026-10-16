@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 from cli import command_args
-from cli.parser import parser as run_dl_parser
 from controlled_markdown import mctx
 from operations.command_words import simple_commands as shared_commands
 from ticket_form import TICKET_HEAD
@@ -100,15 +99,10 @@ def simple_commands(cmd: str) -> Iterator[list[str]]:
         yield [expand(w) for w in words]
 
 
-@cache
-def run_dl_commands() -> frozenset[str]:
-    return frozenset(run_dl_parser()[1])
-
-
 def run_dl_command(args: list[str]) -> str:
     """The command a run of `run_dl.py` with the arguments `args` runs, or
     the help flag it gives."""
-    return command_args(args, run_dl_commands())[0]
+    return command_args(args)[0]
 
 
 @cache

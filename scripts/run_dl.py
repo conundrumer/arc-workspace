@@ -7,7 +7,7 @@ A sentence a tool prints stands in an `mctx` call where the tool prints it.
 
 import sys
 
-from cli import main
+from cli.main import main
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

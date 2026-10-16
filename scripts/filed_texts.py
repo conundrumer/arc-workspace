@@ -1,6 +1,6 @@
 """The reads of the files the operator's command writes for the calls it
 prints (`operations.filing.filed`): a brief or a message whose text gives a
-file by the line `operations.filing.FILED` or `operations.filing.COMMANDED`,
+file by the line `operations.printed_forms.FILED` or `operations.printed_forms.COMMANDED`,
 and a report that is the path of a report file alone. A file that is gone
 leaves its text unknown, and an `undecided` line of `GONE_FILE` or
 `GONE_REPORT` names it."""
@@ -11,7 +11,7 @@ from pathlib import Path
 from controlled_markdown import form, mctx
 
 from noted_reads import note_read
-from operations.filing import FILED_LINE, REPORT_NAME, filed_path
+from operations.printed_forms import FILED_LINE, REPORT_NAME, filed_path
 from file_reads import file_text, is_file
 
 GONE_FILE = mctx("{where}: the file {path} its text gives is gone, so that text is unknown")
