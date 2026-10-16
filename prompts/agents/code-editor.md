@@ -17,7 +17,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
         - Writing the code against the spec: [Code editor: second stage](prompts/agents/code-editor-next.md#code-editor-second-stage) and [code-working-rules](prompts/agents/notes/code.md#code-working-rules).
         - The before side, where its brief asks for one: [The before side](prompts/agents/code-editor/before-side.md).
         - A split, where a `refactor` ticket cites a module it edits: [A split](prompts/agents/code-editor/split.md).
-        - The gate, where its brief gives outputs to write: [gate](prompts/agents/notes/worktree.md#gate).
+        - The gate, where its brief gives outputs to write: [Gate](prompts/agents/notes/worktree.md#gate).
         - Reading its diff for defect places: [Code editor: second stage](prompts/agents/code-editor-next.md#code-editor-second-stage), [unit-kinds](prompts/agents/notes/code.md#unit-kinds) and [line-kinds](prompts/agents/notes/code.md#line-kinds).
         - Its report: [Code editor: second stage](prompts/agents/code-editor-next.md#code-editor-second-stage).
         - Its final reply and the end of its turn: [Code editor](#code-editor) and [An editor's report on a change](prompts/agents/notes/launching.md#an-editors-report-on-a-change).

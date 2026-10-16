@@ -6,7 +6,7 @@
         - Finding the worktree: [worktree](#worktree).
         - Running commands there: [worktree-commands](#worktree-commands).
         - Another agent's worktree: [Re-invoked in another agent's worktree](#re-invoked-in-another-agents-worktree).
-        - Writing accepted gate outputs: [gate](#gate).
+        - Writing accepted gate outputs: [Gate](#gate).
 
 # Worktree notes
 - The statements on working in a worktree, that more than one entry point inlines or links.
@@ -36,7 +36,7 @@
             - "At that update" stays: with the launch line opening "Once each command you started has finished", under the line "Act by the line below each time one of these happens:" alone, ticket reviewer a0ea60e7c262c7daa, in a run where neither event happened, read the launch as a step of every run, and reported that its documents told it to launch such an agent before it ended its turn: ticket 2-291.
 - Once the environment update that gives your working directory at start has come, carry on your work, with the requests of each message that reached you before it.
 
-## gate
+## Gate
 - `uv run python scripts/gate.py --outputs-only <out-dir> [cmd ...]` is the gate: it runs the gate commands it is given on the fixed inputs under `tests/gate/` that `gate.py --help` lists, and compares their outputs with the accepted ones.
 - Run it only to write the accepted gate outputs your brief lists and those a finding of your checks gives to update, with the commands whose outputs those are as `cmd` and a new directory under your scratch directory as `<out-dir>`.
     - Where your brief gives those outputs as the ones that a `DIFF` of the gate your items cause gives, run it with no `cmd` and with `--affected <base>`, where `<base>` is the commit `git merge-base HEAD master` prints in your worktree.

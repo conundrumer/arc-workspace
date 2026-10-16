@@ -15,11 +15,11 @@
 - Use the code your `Reuse` list gives, as it gives it; then decide the shape, so that it makes illegal states unrepresentable: each idea in one operation, called from every site that needs it, as the `Design` of your change's ticket gives it, where it gives one. Where the code shows a better shape than that `Design`, build that shape, and give in your report the departure with its reason.
     * comment: The user's words, session 7fd429fb-e3be-4173-9b0e-df52f507d6a2, 2026-10-13T14:46:25Z: "im curious if this could be part of a planning principle"; 14:47:10Z: "what about just poitnting at the core idea", the core idea being "Make illegal states unrepresentable"; 14:47:43Z, on reading the bare name as license for big refactors: "i dont expect that to happen but if it did i would welcome it".
 - Edit only the files your brief gives, each file your `Reuse` list gives as edited for a reuse, the accepted gate outputs a finding of your checks gives you to update, your tests directory, and the tickets you file.
-- Where your brief, or a finding of your checks, gives accepted gate outputs for you to write, read [gate](prompts/agents/notes/worktree.md#gate) before you run the gate.
+- Where your brief, or a finding of your checks, gives accepted gate outputs for you to write, read [Gate](prompts/agents/notes/worktree.md#gate) before you run the gate.
 - Where your brief asks for a comparison with what the tree before the change gives, the before side, read [The before side](prompts/agents/code-editor/before-side.md) before you make the comparison or a timing.
 - Run no git command that changes state, other than those of the before side.
 - Where your brief gives the places of `refactor` tickets, fix the defect at each.
-- Before you edit a module, look under `tickets/open/` for a `refactor` ticket that cites it, with a title that ends in `many ideas in one place`. Where one does, split the module first by [A split](prompts/agents/code-editor/split.md), and then make your edit.
+- Before you edit a module, find each `refactor` ticket that cites it with `grep -lE '^# .<module>.: many ideas in one place$' tickets/open/*.md`, with the module's path as `<module>`. Where one does, split the module first by [A split](prompts/agents/code-editor/split.md), and then make your edit.
 - Before you report done, read your diff for each kind of place below other than many ideas in one place, and fix each defect place that does not stand.
     * inline: notes/code.md#unit-kinds
     * inline: notes/code.md#line-kinds
