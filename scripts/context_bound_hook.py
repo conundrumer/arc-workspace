@@ -23,9 +23,9 @@ ACTIONS: dict[str, Action] = {OPERATOR: Action.NEXT, OPERATOR_LAUNCHER: Action.R
 hooks hold to them."""
 OPERATORS = frozenset(ACTIONS)
 """The agent types that make only the calls their command prints."""
-CONTEXT_BOUND = 100_000
+CONTEXT_BOUND = 500_000
 """Has no margin under it: the requests of a run's hand-over may go past
-it."""
+it. It goes back to 100,000 once a hand-over loses no held work."""
 REPLY_ONLY_TYPE = "general-purpose"
 
 
