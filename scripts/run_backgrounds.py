@@ -104,10 +104,10 @@ def held_in(directory: Path) -> frozenset[str]:
     """The paths of the files in `directory` that a process holds open, as
     `lsof` gives them, read once for each state, so each reader of a run
     sees one state, and one `lsof` call serves the runs of a session."""
-    return lsof_paths(["+d", str(directory)], f"in {directory}")
+    return lsof_paths(["+d", str(directory)], mctx("in {directory}").format(directory=directory))
 
 
 @state_cache(None)
 def held_gone() -> frozenset[str]:
     """The paths of the open files with no link, read once for each state."""
-    return lsof_paths(["+L1"], "with no link")
+    return lsof_paths(["+L1"], mctx("with no link"))

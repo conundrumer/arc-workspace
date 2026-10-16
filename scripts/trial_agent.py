@@ -15,6 +15,7 @@ from controlled_markdown.renderers import render
 from engine import checkout
 from handbook.agents import agent_meta
 from handbook.paths import scripts_importable
+from handbook.reader_names import ReaderName
 from handbook.readers import context_text, reader_named
 from operations.roles import Model
 
@@ -66,7 +67,7 @@ TRIAL = re.compile(rf"{TRIAL_PREFIX}(?P<number>{TICKET_NUMBER.pattern})-(?P<slug
 """A trial type's file: its slug opens with a reader's name, so the number
 ends at the last `-` before a letter."""
 
-SESSION_READERS = ("coordinator", "user-session", "session")
+SESSION_READERS = (ReaderName.COORDINATOR, ReaderName.USER_SESSION, ReaderName.SESSION)
 """The readers that run on the model of the session's coordinator."""
 
 POLL_SECONDS = 0.5
@@ -103,7 +104,7 @@ def session_model() -> Model:
 
 
 def reader_model(reader: str, args: list[str]) -> str:
-    if reader == "agent" and len(args) == 1:
+    if reader == ReaderName.AGENT and len(args) == 1:
         model = agent_meta(args[0]).get("model")
         if model is None:
             raise Refused(mctx("the prompt of agent `{name}` gives no `model`").format(name=args[0]))
@@ -170,7 +171,7 @@ def write(number: TicketNumber, reader: str, args: list[str]) -> list[str]:
                 if p != path and earlier.fullmatch(p.name)]
     for old in [*replaced, *closed_trials(agents, tree / "tickets")]:
         old.unlink()
-        lines.append(f"removed {old.name}")
+        lines.append(mctx("removed {name}").format(name=old.name))
     return lines
 
 

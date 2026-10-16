@@ -18,6 +18,7 @@ from handbook.budgeted import rendered_texts, sizes
 from handbook.context import composed
 from handbook.lib import LIB_SRC
 from handbook.paths import repo_label, scripts_importable
+from operations.roles import Role
 from ticketing.text import DESIGN, SECTIONS, ticket_text
 from ticketing.vocabulary import Domain, Kind, Status
 
@@ -31,7 +32,7 @@ from ticket_vocabulary import Filer  # noqa: E402
 
 FILER = Filer.MERGE_CHANGE.value
 SUBJECT = "handbook-document-pass"
-EDITORS = "doc-editor"
+EDITORS = Role.DOC_EDITOR
 
 TITLE = mctx("handbook: a whole-document pass on each document past its budget")
 """The title of every pass, by which the lookup finds one."""
@@ -89,7 +90,7 @@ def pass_text(past: list[Size], commit: str) -> str:
         DESIGN: PASS_DESIGN,
         motivation: MOTIVATION,
         scope: SCOPE.format(documents=listed(docs),
-                              read=listed(read) if read else "none"),
+                              read=listed(read) if read else mctx("none")),
         grounds: GROUNDS.format(commit=commit, sizes=", ".join(
             SIZE.format(path=repo_label(s.measured), size=s.size, budget=s.budget)
             for s in past)),

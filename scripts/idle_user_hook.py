@@ -103,7 +103,7 @@ def reason(since: float | None, oldest: float | None, count: int) -> str | None:
     def at(t: float) -> str:
         return datetime.fromtimestamp(t, UTC).strftime("%Y-%m-%dT%H:%MZ")
 
-    when = at(since) if since is not None else f"before {at(oldest)}" if oldest is not None else None
+    when = at(since) if since is not None else mctx("before {time}").format(time=at(oldest)) if oldest is not None else None
     if when is None:
         return None
     return mctx(

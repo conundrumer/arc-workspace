@@ -135,15 +135,16 @@ if __name__ == "__main__":
         for out in written:
             print(out.relative_to(REPO_ROOT))
         for out in done.removed:
-            print(f"removed {out.relative_to(REPO_ROOT)}")
+            print(mctx("removed {path}").format(path=out.relative_to(REPO_ROOT)))
         for left in done.left:
-            print(f"{left.path.relative_to(REPO_ROOT)}: in {MANIFEST} and "
-                  f"rendered by no source, left in place: {left.why.value}",
-                  file=sys.stderr)
+            print(mctx("{path}: in {manifest} and rendered by no source, "
+                       "left in place: {why}").format(
+                path=left.path.relative_to(REPO_ROOT), manifest=MANIFEST,
+                why=left.why.value), file=sys.stderr)
         for out in unlisted:
-            print(f"{out.relative_to(REPO_ROOT)}: no document under "
-                  f"prompts/agents/ and not in {MANIFEST}; left in place",
-                  file=sys.stderr)
+            print(mctx("{path}: no document under prompts/agents/ and not in "
+                       "{manifest}; left in place").format(
+                path=out.relative_to(REPO_ROOT), manifest=MANIFEST), file=sys.stderr)
     elif args == ["session-start"]:
         text = session_start_text(os.environ)
         print(text, end="", flush=True)
