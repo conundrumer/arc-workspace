@@ -1,0 +1,22 @@
++ budget: 4458
+* comment: when editing this doc
+    - Readers: each reader of [Editing the agent-facing documents](docs/handbook/editing.md), by the link of its [What goes where](docs/handbook/editing.md#what-goes-where), before it writes or reviews the documents of an agent with a checklist, or gives an agent one.
+    - Acts, each with its section:
+        - Writing the documents of an agent with a checklist, and reviewing a change to them: [Checklists](#checklists).
+
+# Checklist notes
+- The statements on an agent's checklist that [Editing the agent-facing documents](docs/handbook/editing.md) links.
+
+## Checklists
+* comment: The lines on an agent with a checklist: the user's words, session 7fd429fb, 2026-10-16T21:06:01Z: "we should separate rules and general procedures from specific required do-at-this-step-only directives", "if it's a required step, the info should stay in top level context, but the directive should come later", and "if it's a conditional step, prog disc"; 21:14:17Z: "it needs to be made clear the distinction btwn required and conditional".
+- An agent's checklist is a read-do checklist with a `+ budget:` line, whose sections are its items: the steps of the agent's work, in order. No entry point includes or inlines it, and the agent receives each item from the step command.
+- Of an agent with a checklist, a required step is a step that each run of the agent, or of the conditional part it stands in, takes, and a conditional step or part is one that only the runs that meet a stated condition take.
+- Sort each line of its documents: a line that says how to do an act or what is so is reference, and a line that tells the agent to do a thing at a point of its run is an item of its checklist.
+- Reference stands under the act or the event it applies to, as in "When you send findings, ...", with no words of order, such as "after", "then" or "before". Reference that a step of every run uses stands in the agent's context from its start, and a conditional part's reference stands in that part's file.
+- A required step's item is one line that tells the agent to do the step now, with a link to its reference. This is the form staged disclosure takes for the agent.
+- A conditional part's file is one the agent receives only as it enters that part, where its condition holds, and it holds reference alone. The part's items stand as subsections of the checklist item that calls that file, and that item states the condition alone and links the file. The file's editing notes give the state that holds on entering it, and not the condition. This is the form progressive disclosure takes for the agent.
+- The step command, `uv run python scripts/step.py <agent>`, prints the first item of the checklist, and `uv run python scripts/step.py <agent> <item>` prints the item after `<item>`. For an item that calls a conditional part's file, it prints the condition, the call that enters the part, which prints the file's text and the first item under the call, and the call that skips it. After the last item under a call comes the item after that call, and after the checklist's last item, it prints that the item is the last.
+- The agent's entry point has it run the step command at its start, and, once it has done the item that command prints, run it with that item's name. A later round that repeats steps runs again the call that printed the first step it repeats.
+- The agent's entry point's spec gives the checklist's path. The checklist gives the order, and the item that calls a conditional part's file gives its condition.
+- In a review of a change to a checklist or to a conditional part's file, the agent whose checklist it is or links it is a reader of the change, and its context holds the output of each step command it runs.
+- A part reaches the agent before the agent meets the part of its work that needs it where it is an item that reaches the agent before its step, or the text of a conditional part that reaches the agent before that part's condition holds.
