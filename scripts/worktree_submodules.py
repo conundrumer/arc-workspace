@@ -7,6 +7,8 @@ network."""
 import fcntl
 import os
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,12 +49,16 @@ def main_gitdir(main: Path, sub: Submodule) -> str:
 def update(worktree: Path, main: Path) -> None:
     """Run `git submodule update --init` in the worktree, with each
     submodule's URL set to the main tree's copy of its repository, and every
-    transport but the local one refused."""
+    transport but the local one refused. Raise `SetupFailed` where git fails,
+    for `locked_update` and `set_up` alike."""
     overrides: list[str] = []
-    for sub in submodules(worktree):
-        overrides += ["-c", f"submodule.{sub.name}.url={main_gitdir(main, sub)}"]
-    checkout.git_out(worktree, *overrides, "submodule", "update", "--init",
-            env={**os.environ, "GIT_ALLOW_PROTOCOL": "file"})
+    try:
+        for sub in submodules(worktree):
+            overrides += ["-c", f"submodule.{sub.name}.url={main_gitdir(main, sub)}"]
+        checkout.git_out(worktree, *overrides, "submodule", "update", "--init",
+                env={**os.environ, "GIT_ALLOW_PROTOCOL": "file"})
+    except checkout.GitFailed as exc:
+        raise SetupFailed(SETUP_FAILED.format(tree=worktree, main=main, cause=exc)) from exc
 
 
 def checked_out(tree: Path, sub: Submodule) -> bool:
@@ -64,29 +70,40 @@ def checked_out(tree: Path, sub: Submodule) -> bool:
 
 
 class SetupFailed(RuntimeError):
-    """A setup by `locked_update` that failed, with its cause."""
+    """A submodule setup that failed, by `locked_update` or by `set_up`, with
+    its cause."""
 
 
 SETUP_FAILED = mctx("setting up the submodules of {tree} from {main} failed: {cause}")
 
 
-def locked_update(tree: Path, main: Path) -> None:
-    """Run `update` on `tree` from `main`, one setup at a time across the
-    repository's worktrees."""
+@contextmanager
+def setup_lock(tree: Path) -> Iterator[None]:
+    """Hold the exclusive lock on `UPSTREAM_LOCK` in the common git directory
+    of `tree`, so one submodule setup at a time runs across the repository's
+    worktrees."""
     with open(checkout.git_common_dir(tree) / UPSTREAM_LOCK, "a") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)
-        try:
-            update(tree, main)
-        except checkout.GitFailed as exc:
-            raise SetupFailed(SETUP_FAILED.format(tree=tree, main=main, cause=exc)) from exc
+        yield
+
+
+def locked_update(tree: Path, main: Path) -> None:
+    """Run `update` on `tree` from `main` under `setup_lock`, with no check of
+    whether the submodules are checked out. Raise `SetupFailed` where it
+    fails."""
+    with setup_lock(tree):
+        update(tree, main)
 
 
 def set_up(tree: Path) -> None:
-    """Set up the submodules of `tree` by `locked_update`, from the main
-    tree's copies, where one is not checked out."""
-    if all(checked_out(tree, sub) for sub in submodules(tree)):
-        return
-    locked_update(tree, checkout.main_worktree(tree))
+    """Set up the submodules of `tree` from the main tree's copies, where one
+    is not checked out. It reads whether each is checked out only while it
+    holds `setup_lock`, so it waits for another process's setup and returns
+    once the files stand. Raise `SetupFailed` where `update` fails."""
+    with setup_lock(tree):
+        if all(checked_out(tree, sub) for sub in submodules(tree)):
+            return
+        update(tree, checkout.main_worktree(tree))
 
 
 def set_up_in_script(tree: Path) -> bool:
