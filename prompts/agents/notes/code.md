@@ -17,10 +17,11 @@
 
 ## unit-kinds
 - Defects of a whole unit:
-    - One idea in two places: a computation, selection, rule, rendering or sentence written twice, in one module or across modules.
+    * comment: The user's words, session 7fd429fb, 2026-10-15T22:44:57Z: "Let’s try it. Principles are short and well known in training set"; 2026-10-16T02:19:36Z: "almost seems liek a regression".
+    - One idea in two places: a computation, selection, rule, rendering or sentence written twice, in one module or across modules, a break of DRY.
         - A place of this kind stands where a package boundary forces the second copy.
-    - Many ideas in one place: a module whose docstring has to describe more than one subject.
-    - A unit grown by accretion: a function, a record or a class that has taken a branch, a flag, a field or a parameter for each case it was extended to cover, where a restructure into units of one subject each, or one general rule over those cases, would hold them.
+    - Many ideas in one place: a module whose docstring has to describe more than one subject, a break of the single-responsibility principle.
+    - A unit grown by accretion: a function, a record or a class that has taken a branch, a flag, a field or a parameter for each case it was extended to cover, where a restructure into units of one subject each, or one general rule over those cases, would hold them, a break of the open-closed principle.
 
 ## line-kinds
 - Defects of a line:
