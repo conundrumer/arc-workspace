@@ -14,7 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from controlled_markdown import mctx
-from operations.alerts import READING, REPEATS, AlertKind, to_agent
+from operations.alerts import READING, REPEATS, STUCK_RULE, AlertKind, to_agent
 from operations.constants import STUCK_SECONDS
 from operations.steps import Send, Step
 
@@ -56,9 +56,10 @@ ALERTS = mctx("""
     - The operator takes the final reply of a stalled agent as its report, sends the final reply of a stalled agent the coordinator launched to the coordinator once, and files a `bug` ticket on it.
     - The operator files a `bug` ticket on each resume of an operator of the session after the next operator of the session made its first entry, or writes a line in it.
         - A resume of an operator is a prompt that reached it after its turn ended and that no agent it launched or resumed sent.
-    - The operator sends the coordinator once, and records in a `bug` ticket, each agent that an operator of the session or the coordinator launched that is stuck: no entry of its transcript, or of an agent under it, is less than {stuck_minutes} minutes old, or each of its Bash calls in those minutes repeats the call before it with the same result, a command led by `: 'unattended-wait:` included. The message gives the agent's own work that still runs. No alert goes to the agent.
+    - The operator sends the coordinator once, and records in a `bug` ticket, each agent that an operator of the session or the coordinator launched that is stuck: {stuck_rule}. The message gives the agent's own work that still runs. No alert goes to the agent.
     - An operator stops waiting on an agent or a holder that is stuck, and where nothing else holds it, gives its final reply with each such wait.
-    """).format(stuck_minutes=STUCK_SECONDS // 60, **{k.value: READING[k] for k in AlertKind})
+    """).format(stuck_rule=STUCK_RULE.format(stretch=mctx("the last {minutes} minutes").format(
+        minutes=STUCK_SECONDS // 60)), **{k.value: READING[k] for k in AlertKind})
 """The alerts of `step`, which `scripts/operate.py --help alerts` gives."""
 
 

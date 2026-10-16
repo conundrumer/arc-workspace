@@ -5,7 +5,7 @@ belong to."""
 
 import re
 import sys
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -391,20 +391,22 @@ def repeated_runs(calls: list[tuple[str, str, float]], entries: list[Entry],
     calls of `calls`, each a Bash call's id, command and start, with the same
     command and the same result text in `entries`, other than a command led
     by `WAIT_LEAD` and a call with no result."""
-    out: list[float] = []
-    key: tuple[str, str] | None = None
-    count, last = 0, 0.0
-    for (_, command, start), given in zip(calls, call_keys(calls, entries)):
-        if command.lstrip().startswith(WAIT_LEAD):
-            given = None
-        if given is not None and given == key:
-            count, last = count + 1, start
+    keys = [None if command.lstrip().startswith(WAIT_LEAD) else given
+            for (_, command, _), given in zip(calls, call_keys(calls, entries))]
+    return [calls[last][2] for first, last in key_runs(keys) if last - first + 1 >= least]
+
+
+def key_runs[K](keys: Sequence[K | None]) -> list[tuple[int, int]]:
+    """The first and last index of each run of equal consecutive keys of
+    `keys`, in order, None being in no run."""
+    out: list[tuple[int, int]] = []
+    for i, k in enumerate(keys):
+        if k is None:
             continue
-        if count >= least:
-            out.append(last)
-        key, count, last = given, 1, start
-    if count >= least:
-        out.append(last)
+        if out and out[-1][1] == i - 1 and keys[i - 1] == k:
+            out[-1] = (out[-1][0], i)
+        else:
+            out.append((i, i))
     return out
 
 
@@ -421,13 +423,10 @@ def same_since(calls: list[tuple[str, str, float]], entries: list[Entry]) -> flo
     `repeated_runs` takes them, with the same command and the same result
     text, a command led by `WAIT_LEAD` included, where that run holds two
     calls or more, and None otherwise."""
-    keys = call_keys(calls, entries)
-    if len(keys) < 2 or keys[-1] is None or keys[-2] != keys[-1]:
+    runs = key_runs(call_keys(calls, entries))
+    if not runs or runs[-1][1] != len(calls) - 1 or runs[-1][0] == runs[-1][1]:
         return None
-    first = len(keys) - 1
-    while first > 0 and keys[first - 1] == keys[-1]:
-        first -= 1
-    return calls[first][2]
+    return calls[runs[-1][0]][2]
 
 
 def caller_type(hook: str, data: dict[str, Any]) -> tuple[Path, str | None]:

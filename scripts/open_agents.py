@@ -25,7 +25,7 @@ from state_reads import DERIVED, Kept, state_cache
 from transcript_entries import Entry
 from transcripts import agent_id, is_subagent
 
-from operations.constants import BLOCK_SECONDS, STUCK_SECONDS
+from operations.constants import BLOCK_SECONDS, stuck_reached
 
 
 @dataclass
@@ -328,16 +328,16 @@ def running_agents(path: Path, undecided: list[str]) -> list[Listed]:
 def quiet_since(agent: str, path: Path, listing: list[Listed], now: float) -> float | None:
     """The time of the latest timestamped entry of the transcript at `path`,
     the run of `agent`, and of the transcript of each agent under it in
-    `listing`, at any depth by `Listed.parent`, where that entry is older
-    than `STUCK_SECONDS` at `now`, and None otherwise, or where no such
-    transcript gives a time."""
+    `listing`, at any depth by `Listed.parent`, where the stretch from that
+    entry to `now` has reached `STUCK_SECONDS` (`stuck_reached`), and None
+    otherwise, or where no such transcript gives a time."""
     reached = {agent}
     while added := {aid for x in listing if x.parent in reached
                     and (aid := x.launch.agent) is not None and aid not in reached}:
         reached |= added
     paths = [path, *(x.path for x in listing if x.launch.agent in reached - {agent})]
     latest = max((t for p in paths if (t := last_time(p)) is not None), default=None)
-    return latest if latest is not None and now - latest > STUCK_SECONDS else None
+    return latest if latest is not None and stuck_reached(latest, now) else None
 
 
 @state_cache(DERIVED, notes="undecided")

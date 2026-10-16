@@ -26,7 +26,7 @@ from typing import assert_never
 from controlled_markdown import mctx
 from operations import drafts, lineage, merging, taking, triage
 from operations.change_budget import TAKEN
-from operations.constants import STUCK_SECONDS
+from operations.constants import stuck_reached
 from operations.final_reply import live_holder
 from operations.log_commands import log
 from operations.roles import AGENT_ID
@@ -105,7 +105,7 @@ def stalled(state: State) -> dict[str, float]:
             if e not in selections:
                 selections[e] = selection(state, e)
             due = due or n in selections[e]
-        if due and (last := progress(state, t)) is not None and state.now - last > STUCK_SECONDS:
+        if due and (last := progress(state, t)) is not None and stuck_reached(last, state.now):
             out[n] = last
     return out
 

@@ -488,6 +488,14 @@ def ended_with(a: Agent, reply: Report | None) -> Agent:
     return replace(a, waits=None, reports=a.reports if reply is None else (*a.reports, reply))
 
 
+def ended_by(agents: Sequence[Agent], ended: Mapping[str, Report | None]) -> list[Agent]:
+    """`agents`, each pending one of `ended` ended with the report it gives
+    (`ended_with`)."""
+    return [ended_with(a, ended[a.agent_id])
+            if a.pending and a.agent_id is not None and a.agent_id in ended else a
+            for a in agents]
+
+
 def ended_elsewhere(agents: list[Agent], me: str,
                     undecided: list[str]) -> dict[str, Report | None]:
     """For each pending agent of another operator whose work is no longer

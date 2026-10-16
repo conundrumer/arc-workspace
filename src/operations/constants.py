@@ -1,8 +1,8 @@
 """The values that both the operator's command and the scripts an agent
 runs hold: the address of the coordinator, the interval of the keep-alive
-timer, the bound on a foreground Bash call's timeout, the bounds on
-a call of the command's `next`, and the harness's limit of concurrent
-subagents. This module
+timer, the bound on a stretch with no progress, the bound on a foreground
+Bash call's timeout, the bounds on a call of the command's `next`, and the
+harness's limit of concurrent subagents. This module
 imports nothing, so a hook loads it at no cost."""
 
 COORDINATOR = "main"
@@ -20,6 +20,12 @@ operator stops waiting on it and the coordinator hears of it
 (`open_agents.quiet_since` in `scripts/open_agents.py`), or may repeat
 its Bash calls with the same result (`stuck_at` in
 `scripts/monitor_reads.py`)."""
+
+
+def stuck_reached(since: float, now: float) -> bool:
+    """Whether a stretch with no progress that started at `since` has
+    reached `STUCK_SECONDS` at `now`."""
+    return now - since >= STUCK_SECONDS
 
 FOREGROUND_MS = 240000
 """The bound `scripts/pending_wait_hook.py` holds a subagent's foreground

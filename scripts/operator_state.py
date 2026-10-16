@@ -18,8 +18,8 @@ from open_agents import Listed, quiet_since, running_agents, work_open
 from operator_reads import (
     AgentsRead,
     OperatorRead,
+    ended_by,
     ended_elsewhere,
-    ended_with,
     operator_runs,
     joined,
     kept,
@@ -257,21 +257,10 @@ def ends_read(agents: Sequence[Agent], me: str, listing: list[Listed],
     stalled = stalled_reports(list(agents), coordinators,
                               [w.agent_id for w in now_watched if w.stalled is not None])
     ended: dict[str, Report | None] = {**ended_elsewhere(list(agents), me, undecided), **stalled}
-    out = ended_by(agents, ended)
-    quiet = quiet_read(out, listing, now)
-    quiet_ended = [aid for a in out if a.waits is Waits.STILL_RUNNING
-                   and (aid := a.agent_id) is not None and aid in quiet]
-    ended.update(dict.fromkeys(quiet_ended))
-    out = ended_by(out, dict.fromkeys(quiet_ended))
-    return EndsRead(tuple(out), ended, stalled, quiet)
-
-
-def ended_by(agents: Sequence[Agent], ended: Mapping[str, Report | None]) -> list[Agent]:
-    """`agents`, each pending one of `ended` ended with the report it gives
-    (`ended_with`)."""
-    return [ended_with(a, ended[a.agent_id])
-            if a.pending and a.agent_id is not None and a.agent_id in ended else a
-            for a in agents]
+    quiet = quiet_read([a for a in agents if a.agent_id not in ended], listing, now)
+    ended.update(dict.fromkeys(aid for a in agents if a.waits is Waits.STILL_RUNNING
+                               and (aid := a.agent_id) is not None and aid in quiet))
+    return EndsRead(tuple(ended_by(agents, ended)), ended, stalled, quiet)
 
 
 def quiet_read(agents: Sequence[Agent], listing: list[Listed], now: float) -> dict[str, float]:

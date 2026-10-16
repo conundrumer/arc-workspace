@@ -255,12 +255,20 @@ def stalls(state: State) -> Step | None:
     return None
 
 
+STUCK_RULE = mctx("no entry of its transcript, or of an agent under it, falls within {stretch}, "
+                  "or each of its Bash calls in {stretch} repeats the call before it with the "
+                  "same result, a command led by `: 'unattended-wait:` included")
+"""What makes an agent stuck over the stretch `{stretch}` gives, which
+`stuck_text` and `monitor.ALERTS` both give."""
+
+
 def stuck_text(agent: str, s: Stuck) -> str:
     """The text on `agent`, stuck as `s` gives, of the message to the
     coordinator and of the `bug` ticket's Evidence."""
-    head = mctx("Agent {agent} of session {session} has made no progress since {time}: no "
-                "entry of its transcript, or of an agent under it, is later, or each of its "
-                "Bash calls since then repeats the one before with the same result.").format(agent=agent, session=s.session, time=utc_stamp(s.since))
+    stretch = mctx("the time since then")
+    head = mctx("Agent {agent} of session {session} has made no progress since {time}: "
+                "{rule}.").format(agent=agent, session=s.session, time=utc_stamp(s.since),
+                                  rule=STUCK_RULE.format(stretch=stretch))
     if not s.running:
         return head + " " + mctx("No work of its own still runs.")
     return (head + " " + mctx("Its work of its own that still runs:") + "\n"

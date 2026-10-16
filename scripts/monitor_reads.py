@@ -15,7 +15,7 @@ from transcript_entries import Entry, epoch
 
 from controlled_markdown import mctx
 from operations import monitor
-from operations.constants import COORDINATOR, STUCK_SECONDS
+from operations.constants import COORDINATOR, stuck_reached
 from operations.monitor import Watched
 from operations.state import LateResume
 
@@ -101,7 +101,7 @@ def stuck_at(aid: str, listed: Listed, listing: list[Listed], now: float) -> flo
         return quiet
     calls, entries = bash_calls(listed)
     since = same_since(calls, entries)
-    return since if since is not None and now - since >= STUCK_SECONDS else None
+    return since if since is not None and stuck_reached(since, now) else None
 
 
 def watched(listing: list[Listed], launched: set[str],
