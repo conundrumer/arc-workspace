@@ -12,4 +12,4 @@
     - The `Design` of a `change` to code or to the agent-facing documents, with the Scope covering each file it gives.
     - The readers a rule's stated scope covers.
     - The Intent items as requirements, and their traces.
-    - The states a `Design` lists, with each part's cost and gain.
+    - Each part's estimated cost and gain, on each model an agent the design acts on runs on from the merge, where the model changes the estimate.
