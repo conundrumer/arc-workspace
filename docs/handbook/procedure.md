@@ -180,8 +180,8 @@
     - Rewrite the groups of every witness of the witness file: `uv run python scripts/run_dl.py record <task_id> --all`.
     - For a branch added in Develop, build the witness its `@witness` line needs.
     - Judge the plausibility and verdict of a witness you build, and put that judgment in the review.
-- A branch dropped under a case condition goes in the review with the condition it fails, and for Relational form with why no set of clauses states its claim.
-- For each approximated rule, state in the review why no set of clauses states it.
+- A branch dropped under a case condition goes in the review with the condition it fails, and for Relational form with why its claim has no relational form.
+- For each approximated rule, state in the review why it has no relational form.
 - When the approximation agrees with the rule on every input the generator produces, replace the rule's text with the approximation's and remove the `@approximated:` line.
 - Record each witness you build with `uv run python scripts/run_dl.py record <task_id> <witness id> --separates "<its separates text>"`, with the grid on stdin.
     - For an `other` verdict, take the judged output from `uv run python scripts/run_dl.py grid <task_id>` on a control grid: the witness changed so that the program's output is the output the concept's claims give on the witness.
