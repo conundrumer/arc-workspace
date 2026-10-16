@@ -1,21 +1,19 @@
 """The budget of each agent type, and of each role of
 `roles.GENERAL_ROLES`, for a run and for one item of a brief that gives
-items, the runs its budget cut, and the budget in force for each message
+items, and the budget in force for each message
 from a run's parent, as `profile_runs.py --help budget`
 and `profile_runs.py --help messages` give them."""
 
 import re
 from dataclasses import dataclass
-from functools import cache
 from pathlib import Path
 
 from agent_reports import parent_type
 from context_bound_hook import OPERATOR
 from controlled_markdown import mctx
 from engine import checkout
-from handbook.agents import agent_names, agent_prompt_text, agent_sources
+from handbook.agents import agent_names, agent_sources
 from operations import brief_reading, briefs
-from operations.reports import BUDGET_PASSED
 from operations.roles import GENERAL, GENERAL_ROLES, Role, described
 from run_profile import clock, minutes, one_line, percentile
 from run_records import Message, Part, Run
@@ -105,11 +103,10 @@ def type_budget(kind: str, runs: list[Run], since_date: float | None, per_item: 
     gives items, or None where it gets none. `since_date` is the start of
     the window `--since` sets, where it is given."""
     rs = [(r, w) for r in runs
-          if operator_launched(r, undecided) and censored(r, undecided) is False
+          if operator_launched(r, undecided)
           and (w := measured(r, per_item)) is not None]
-    which = (mctx("runs an operator launched, not cut, whose brief gives "
-                  "items") if per_item
-             else mctx("runs an operator launched, not cut"))
+    which = (mctx("runs an operator launched whose brief gives items") if per_item
+             else mctx("runs an operator launched"))
     since = since_date if since_date is not None else type_window(kind, undecided)
     window: list[tuple[Run, float]] = []
     if since is not None:
@@ -221,36 +218,6 @@ def operator_launched(r: Run, undecided: list[str]) -> bool:
                               "budget").format(run=r.label, parent=parent_id(r.path)))
         return False
     return kind == OPERATOR
-
-
-@cache
-def acts_at_budget(kind: str) -> bool:
-    """Whether the documents of the agent type `kind` give what it does at
-    its budget, as `--help budget` gives it."""
-    return kind in agent_names() and f"`{BUDGET_PASSED}`" in agent_prompt_text(kind)
-
-
-def censored(r: Run, undecided: list[str]) -> bool | None:
-    """Whether `r` is censored, cut by its budget as `--help budget` gives it,
-    or None where it gives that unknown."""
-    if not acts_at_budget(r.agent_type):
-        return False
-    unknown = False
-    for i, budget in enumerate(budgets_in_force(r, undecided)):
-        if budget is None:
-            continue
-        self_time = r.self_from(i)
-        if self_time is None:
-            unknown = True
-        elif past_budget(self_time, budget):
-            return True
-    if unknown:
-        undecided.append(mctx("{run}: the self time of a message with a budget "
-                              "in force is unknown, so whether its budget cut it "
-                              "is unknown, and it is left out of its type's "
-                              "budget").format(run=r.label))
-        return None
-    return False
 
 
 def past_budget(self_time: float | None, budget: float | None) -> bool:

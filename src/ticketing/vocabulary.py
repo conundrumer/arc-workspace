@@ -144,6 +144,13 @@ ROUTE_NOTE = "route `{route}`"
 """The note, after `Note.FILED` on the line that files it, that gives the
 route of a request."""
 
+COUNT = re.compile(r"[1-9]\d*")
+"""A session's index, the `<n>` of a ticket's number, or a bare number."""
+
+TICKET_NUMBER = re.compile(rf"(?:(?P<session>{COUNT.pattern})-)?(?P<n>{COUNT.pattern})")
+"""A ticket's number, `<session>-<n>`, or the bare number of a ticket filed
+before a number gave the filing session's index."""
+
 ROUTED = re.compile(rf"(?:{Note.FILED}: )?route `(?P<route>{'|'.join(Route)})`")
 """The opening of a note that gives a route (`ROUTE_NOTE`)."""
 

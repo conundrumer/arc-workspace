@@ -18,9 +18,9 @@
 * inline: #ending-commands
 
 ## waiting-on-commands
-- Run each command in the foreground, with a timeout of 240000 ms on the Bash call, other than a budget timer your documents have you start, which runs in the background. A turn that does not end with your final reply may end while that timer runs.
-- Before you end your turn, and before your final reply, wait on each command of yours that runs in the background, other than a budget timer you have not ended, until its completion notification reaches you: run a foreground Bash call with a timeout of 240000 ms, whose until-loop gives up just under that timeout, and repeat the call.
-    * comment: The cases this rule covers: a command you started that has not finished at the end of your turn; a command the harness moved to the background; a command whose completion notification your final reply waits on; a budget timer once you have ended it.
+- Run each command in the foreground, with a timeout of 240000 ms on the Bash call.
+- Before you end your turn, and before your final reply, wait on each command of yours that runs in the background until its completion notification reaches you: run a foreground Bash call with a timeout of 240000 ms, whose until-loop gives up just under that timeout, and repeat the call.
+    * comment: The cases this rule covers: a command you started that has not finished at the end of your turn; a command the harness moved to the background; a command whose completion notification your final reply waits on.
     - Lead its command with `: 'unattended-wait: <the command you wait on>';`. A command so led is exempt from the PreToolUse hook that blocks waits, unless that command reads the output file the harness gave a command of yours that runs in the background.
     - Loop on the completion where you can observe it, and otherwise on the time alone.
     - Where a wait call that you started after the command completed ends with no notification of it, stop waiting on it.

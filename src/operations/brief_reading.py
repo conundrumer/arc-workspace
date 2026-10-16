@@ -46,10 +46,3 @@ MARKED_OPENING = re.compile(rf"^\s*{LIST_MARKER}?\s*")
 
 def unmarked(line: str) -> str:
     return MARKED_OPENING.sub("", line).strip()
-
-
-def budgets(text: str) -> set[float]:
-    """The minutes each `BUDGET_LINE` of `text` states."""
-    return {float(m["minutes"]) for line in text.splitlines()
-            if (m := BUDGET_LINE.fullmatch(unmarked(line))) is not None}
-

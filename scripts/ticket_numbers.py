@@ -15,6 +15,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from ticket_vocabulary import ticked
+from ticketing.vocabulary import COUNT, TICKET_NUMBER
 from transcripts import find
 from transcript_entries import Refused, forked_from
 
@@ -28,13 +29,6 @@ index, named by the index, whose lines are the ids of its sessions."""
 
 SESSION_VAR = "CLAUDE_CODE_SESSION_ID"
 """The variable of an agent's shell that holds its session's id."""
-
-COUNT = re.compile(r"[1-9]\d*")
-"""A session's index, the `<n>` of a ticket's number, or a bare number."""
-
-TICKET_NUMBER = re.compile(rf"(?:(?P<session>{COUNT.pattern})-)?(?P<n>{COUNT.pattern})")
-"""A ticket's number, `<session>-<n>`, or the bare number of a ticket filed
-before a number gave the filing session's index."""
 
 
 @dataclass(frozen=True)

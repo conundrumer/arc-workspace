@@ -75,7 +75,8 @@ def unread_files(state: State) -> Step | None:
 
 def launch(state: State, step: Undecided) -> Launch:
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.STEP, decision_key(step.what)),
-                  briefs.held_step(step.what, state.me, rulable(step.what)), reread=step.reread)
+                  briefs.held_step(step.what, state.me, rulable(step.what)), reread=step.reread,
+                  change=step.change)
 
 
 def applier(state: State, a: Agent) -> str:

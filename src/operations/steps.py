@@ -13,6 +13,7 @@ from operations.constants import COORDINATOR, FOREGROUND_MS
 from operations.pacing import Pace
 from operations.roles import PASSES, Model, Role
 from operations.state import Agent
+from ticketing.vocabulary import TICKET_NUMBER
 
 
 BLOCK_SECONDS = (FOREGROUND_MS // 1000) - 30
@@ -34,13 +35,15 @@ class Launch:
     gives (`briefs.ITEM_LINES`), and None for any other brief; it stays
     out of the step's key, which its brief already fixes. `reread` is the
     mark of the `Undecided` step a launch of a ticket analyst is on, and
-    stays out of the step's key and its equality."""
+    stays out of the step's key and its equality. `change` is as `key`
+    gives it."""
     role: Role
     subject: str
     brief: str
     model: Model | None = None
     items: int | None = field(default=None, repr=False)
     reread: bool = field(default=False, repr=False, compare=False)
+    change: str | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -49,17 +52,20 @@ class Send:
     made after that time counts as made of it. `commanded` is whether `to`
     is an agent whose command reads its messages (`filing.COMMANDED`); it
     stays out of the step's key and its equality, which `to` already
-    fixes."""
+    fixes. `change` is as `key` gives it."""
     to: str
     message: str
     since: float | None = None
     commanded: bool = field(default=False, repr=False, compare=False)
+    change: str | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
 class Bash:
-    """A Bash call in the foreground, with the timeout `FOREGROUND_MS`."""
+    """A Bash call in the foreground, with the timeout `FOREGROUND_MS`.
+    `change` is as `key` gives it."""
     command: str
+    change: str | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -95,10 +101,14 @@ class Undecided:
     such a form. `reread` is whether a reply that lands during the read of
     the state can end the hold, so the command reads the state once more
     before it launches the step's analyst (`scripts/operate.py`
-    `operator_step`); it stays out of the step's key and its equality."""
+    `operator_step`); it stays out of the step's key and its equality.
+    `change` is the number of the held change whose step it is
+    (`changes.step`), which the launch of its analyst carries
+    (`decisions.launch`)."""
     what: str
     given: tuple[str, ...] = field(default=(), repr=False)
     reread: bool = field(default=False, repr=False, compare=False)
+    change: str | None = field(default=None, repr=False, compare=False)
 
 
 UNDECIDED = "undecided:"
@@ -163,13 +173,18 @@ def key(step: Step) -> str:
     (`directives.passed_over`). A solver pass's key is its task id and its
     pass, `<task id>-<pass>`, so that the writer of a ruling can form it,
     and a ruling that passes it over holds whatever overrides its brief
-    gains."""
+    gains. The key of a step whose `change` is given opens with that
+    change's number, `<number>-<hash>`, so the key line `next` prints
+    before it gives the change it serves (`changes.held`)."""
     if isinstance(step, Launch) and step.role in PASSES:
         return f"{step.subject}-{step.role}"
-    return hashlib.sha1(repr(step).encode()).hexdigest()[:KEY_LENGTH]
+    digest = hashlib.sha1(repr(step).encode()).hexdigest()[:KEY_LENGTH]
+    change = step.change if isinstance(step, Launch | Send | Bash | Undecided) else None
+    return digest if change is None else f"{change}-{digest}"
 
 
 KEY_LENGTH = 12
 
 
-STEP_KEY = re.compile(rf"{TASK_ID}-(?:{'|'.join(PASSES)})|[0-9a-f]{{{KEY_LENGTH}}}")
+STEP_KEY = re.compile(rf"{TASK_ID}-(?:{'|'.join(PASSES)})"
+                      rf"|(?:(?P<change>{TICKET_NUMBER.pattern})-)?[0-9a-f]{{{KEY_LENGTH}}}")

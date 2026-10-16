@@ -2,7 +2,7 @@
 agent of an event on its work, or asks it for an act or a reply."""
 
 from controlled_markdown import mctx
-from operations.briefs import BUDGET, OVER_BUDGET
+from operations.briefs import OVER_BUDGET
 from operations.reports import FOR_COORDINATOR, TICKETS_FILED
 from ticketing.times import utc_stamp
 
@@ -51,15 +51,6 @@ def over_budget(number: str, reviewer: bool) -> str:
                           "ticket, with `change` as its domain and {number} as its "
                           "subject.").format(number=number))
     return "\n".join(lines)
-
-
-GO_ON = mctx("Go on with the work your reply at {time} leaves.")
-
-
-def go_on(time: float, minutes: float) -> str:
-    """The message to an editor whose reply at `time` says its budget is
-    passed, which gives it again the budget of `minutes` it had."""
-    return "\n".join([GO_ON.format(time=utc_stamp(time)), BUDGET.format(minutes=f"{minutes:g}")])
 
 
 RESTATE = mctx("""

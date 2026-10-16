@@ -12,10 +12,6 @@ from operations.roles import AGENT_ID, Role
 from operations.state import Agent
 from operations.worktrees import fingerprint
 
-BUDGET_PASSED = "budget passed"
-"""The opening, in any case, of the reply of a code editor that ended its
-turn at its budget with work left."""
-
 DONE = "done"
 """The opening, in any case, of the report of a `handbook-expanded` agent
 where every item is done."""
@@ -142,10 +138,6 @@ which `LABELED` does not read."""
 def opens(a: Agent, opening: str) -> bool:
     r = a.last_report
     return r is not None and r.text.lstrip().lower().startswith(opening)
-
-
-def budget_passed(a: Agent) -> bool:
-    return opens(a, BUDGET_PASSED)
 
 
 def done(a: Agent) -> bool:

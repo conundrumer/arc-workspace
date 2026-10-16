@@ -6,8 +6,7 @@ review of the documents. The steps carry out
 `merging` the merge and what follows it. `change_agents` gives the
 agents of a change and the editors it needs, `item_check` the launch of
 its item checker, `change_fragments` the doc editor of its `mctx`
-fragments, and `change_overrun` a change past its cost budget and an
-editor whose budget is passed.
+fragments, and `change_overrun` a change past its cost budget.
 
 A change with no worktree gets one from
 `scripts/change_worktree.py`, which logs its path on the ticket, so a
@@ -58,7 +57,9 @@ A step of a change that the command cannot place holds that change alone,
 until a `Decision:` line rules it with one of the choices the step gives
 (`directives.decided`)."""
 
+import re
 import shlex
+from dataclasses import replace
 from pathlib import Path
 from typing import Literal
 
@@ -67,7 +68,7 @@ from operations import briefs, merging, messages
 from operations.change_agents import (change_editors, editors_in, latest_editors, launched_on,
                                       of_change, unstaffed)
 from operations.change_fragments import drafter_ids, fragments_step
-from operations.change_overrun import over_budget, over_budget_step
+from operations.change_overrun import over_budget
 from operations.doc_review import doc_review, with_ids
 from operations.directives import (Decision, decided, held_on)
 from operations.item_check import check_items, is_checked, latest_reports, unfinished
@@ -76,7 +77,7 @@ from operations.roles import Purpose, Role, analyst_of, analyst_subject
 from operations.state import Agent, State, Ticket
 from operations.filing import editor_scratch
 from operations.final_reply import live_holder
-from operations.handled import answered, repeated, sent, unmoved
+from operations.handled import PRINTED_KEY, answered, next_call, repeated, sent, unmoved
 from operations.steps import Bash, Launch, Send, Step, Undecided
 from operations.log_commands import AGENT
 from operations.taking import take
@@ -86,10 +87,33 @@ from ticketing.vocabulary import Domain, Kind, Note, Status
 
 
 def held(state: State) -> list[Ticket]:
-    return sorted((t for t in state.tracker.tickets.values()
-                   if t.kind is Kind.CHANGE and t.status is Status.ASSIGNED
-                   and t.holder == state.me),
-                  key=lambda t: t.order)
+    """The changes the operator holds, in ticket order rotated to start at
+    the first that follows the change its latest printed step served
+    (`last_served`), so that each held change with a ready step gets one
+    step before any gets a second."""
+    tickets = sorted((t for t in state.tracker.tickets.values()
+                      if t.kind is Kind.CHANGE and t.status is Status.ASSIGNED
+                      and t.holder == state.me),
+                     key=lambda t: t.order)
+    served = last_served(state)
+    if served is None:
+        return tickets
+    after = [t for t in tickets if t.order > served.order]
+    return after + [t for t in tickets if t.order <= served.order]
+
+
+def last_served(state: State) -> Ticket | None:
+    """The change whose number opens the latest step key printed in the
+    results of the operator's calls of `next`, or None where none does."""
+    for c in reversed(state.transcripts.calls):
+        if c.result is None or not next_call(c, state.me):
+            continue
+        for m in reversed(list(re.finditer(PRINTED_KEY, c.result))):
+            if (number := m["change"]) is not None and number in state.tracker.tickets:
+                return state.tracker.tickets[number]
+            if number is not None:
+                return None
+    return None
 
 
 def give_up(state: State) -> Step | None:
@@ -162,8 +186,6 @@ def carry(state: State, t: Ticket) -> Step | None:
     if (step := fragments_step(state, t, w, here)) is not None:
         return step
     latest = latest_editors(here)
-    if (step := over_budget_step(state, t, latest)) is not None:
-        return step
     if (step := leftover(state, t, w, latest, agents)) is not False:
         return step
     if Role.DOC_EDITOR in editors and (
@@ -275,8 +297,12 @@ def next_step(state: State, t: Ticket) -> Step | None:
     """The step of the change `t` the operator holds: the one `carry`
     gives, or, where that is a message its recipient already answered,
     the one `unmoved` gives."""
-    s = carry(state, t)
+    s = served(carry(state, t), t)
     if isinstance(s, Send) and answered(s, state):
-        return unmoved(t, s)
+        return served(unmoved(t, s), t)
     return s
 
+
+def served(s: Step | None, t: Ticket) -> Step | None:
+    """`s`, a step of the change `t`, with the number of `t` (`steps.key`)."""
+    return replace(s, change=t.number) if isinstance(s, Launch | Send | Bash | Undecided) else s

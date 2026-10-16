@@ -1,5 +1,4 @@
-"""A change past its cost budget, and an editor of a change whose budget
-is passed.
+"""A change past its cost budget.
 
 `change_budget` gives a change's cost budget. Once its spend passes
 that budget, at the command's next call, whether or not an agent of the
@@ -13,25 +12,21 @@ decision, and each editor it does not check has reported, and its
 latest report opens with `reports.DONE` or is followed by the launch of
 a ticket analyst on the change, the change merges; otherwise it moves to
 `tickets/draft/` with a line that opens with `OVERRUN_FINDING`, which
-`drafts` reads as findings.
-
-An editor whose latest reply says its budget is passed is sent a message
-to go on with the work that reply leaves, with the budget the operators
-last gave it, and that reply goes to no ticket analyst."""
+`drafts` reads as findings."""
 
 from pathlib import Path
 from typing import Literal
 
 from controlled_markdown import mctx
-from operations import brief_reading, messages
+from operations import messages
 from operations.change_agents import editors_in, latest_editors
 from operations.change_budget import (OVERRUN_FINDING, by_role, file_overrun, left_draft,
                                       overrun_ticket, past_budget, taken)
 from operations.doc_review import with_ids
-from operations.handled import sends_to, sent
+from operations.handled import sent
 from operations.item_check import check_items, is_checked, unfinished
 from operations.merging import merge
-from operations.reports import budget_passed, left_for_decision
+from operations.reports import left_for_decision
 from operations.roles import Role
 from operations.state import Agent, State, Ticket
 from operations.steps import Bash, Send, Step, Undecided, agent_ids
@@ -102,21 +97,3 @@ def over_budget(state: State, t: Ticket, w: Path,
             opening=OVERRUN_FINDING, limit=f"{limit:.2f}", spent=f"{spent.dollars:.2f}",
             roles=by_role(spent.by_role), agents=", ".join(ids)),
         state.me))
-
-
-def over_budget_step(state: State, t: Ticket, latest: list[Agent]) -> Step | None:
-    """The message to the first editor of `latest` whose latest reply says
-    its budget is passed, or None where no such reply is."""
-    for a in latest:
-        r = a.last_report
-        if r is None or a.agent_id is None or not budget_passed(a):
-            continue
-        given = [a.brief] + [c.message for c in sends_to(state, a.agent_id)]
-        stated = next((s for text in reversed(given) if (s := brief_reading.budgets(text))), set[float]())
-        if len(stated) != 1:
-            return Undecided(mctx("editor {agent} of change {number} says its budget is "
-                                  "passed, and the latest brief or operator's message to it "
-                                  "that states a budget states {count}").format(
-                agent=a.agent_id, number=t.number, count=len(stated)))
-        return Send(a.agent_id, messages.go_on(r.time, stated.pop()))
-    return None
