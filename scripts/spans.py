@@ -373,8 +373,8 @@ def main(args: list[str]) -> int:
                        goal=heading(GOAL), goal_flag=GOAL_FLAG, goal_words=GOAL_WORDS, transcript=heading(TRANSCRIPT), follow_up=FOLLOW_UP.format(number="<number>"), grounds=heading(GROUNDS))
     act = SUBCOMMANDS.get(args[0]) if args else None
     if act is None:
-        return run(args, text, 1, unknown, False, args)
-    return run(args[1:], text, None, act, False, args)
+        return run(args, text, 1, unknown, False, args, INVOCATION)
+    return run(args[1:], text, None, act, False, args, INVOCATION)
 
 
 if __name__ == "__main__":

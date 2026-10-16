@@ -103,12 +103,14 @@ RULES = mctx("""
 """The rules of numbers, sessions and filing, which `--help-all` with no
 subcommand prints after `HELP`."""
 
+HELP_RETRY = mctx("{reason}: run `{call} --help`")
+
 SUBCOMMAND_LINE = mctx("""
     - `{name}` {purpose}: `{invocation} {name} --help` prints its form.
     """)
 
 SUBCOMMAND_HELP = mctx("""
-    - `{invocation} {name}{args}` {purpose}.
+    - `{call}{args}` {purpose}.
     {detail}
     {further}
     """)
@@ -435,10 +437,16 @@ def filed_in_main(args: list[str]) -> int | None:
                           env=checkout.tree_env()).returncode
 
 
+class ArgumentsRefused(Refused):
+    """A refusal of a call's arguments, which `run` completes with the
+    pointer to the `--help` of the call."""
+
+
 def run(args: Sequence[str | None], help_text: str, count: int | None,
         act: Callable[..., Path | int | str], in_main: bool, argv: list[str],
-        full_text: str | None = None) -> int:
-    """`argv` is the call's arguments as given, which the main tree's copy
+        call: str, full_text: str | None = None) -> int:
+    """`call` is the invocation of the command or subcommand that runs.
+    `argv` is the call's arguments as given, which the main tree's copy
     takes in place of `args` where `in_main` holds. `full_text` is what
     `FULL_FLAG` prints, None where the call has no further rules."""
     if args and args[0] in ("--help", "-h"):
@@ -455,6 +463,9 @@ def run(args: Sequence[str | None], help_text: str, count: int | None,
         if status is not None:
             return status
         print(act(*args))
+    except ArgumentsRefused as e:
+        print_refused(HELP_RETRY.format(reason=e, call=call))
+        return 1
     except Refused as e:
         print_refused(e)
         return 1
@@ -537,7 +548,7 @@ def show_command(*given: str) -> str:
     """The ticket `given[0]`, whole where `given` names no section, and
     otherwise its title line and each section `given[1:]` names."""
     if not given:
-        raise Refused(mctx("the call gives no ticket number"))
+        raise ArgumentsRefused(mctx("the call gives no ticket number"))
     path = ticket_path(main_tickets(), ticket_number(given[0]))
     text = read_ticket(path)
     if len(given) == 1:
@@ -550,7 +561,7 @@ def await_close_command(*given: str) -> str:
     """Each ticket of `given` that stands under `closed`, with the line of
     its log that closed it, once one does."""
     if not given:
-        raise Refused(mctx("the call gives no ticket number"))
+        raise ArgumentsRefused(mctx("the call gives no ticket number"))
     tickets = main_tickets()
     numbers = [ticket_number(ref) for ref in given]
     for number in numbers:
@@ -587,8 +598,7 @@ def closed_on_command(*targets: str) -> str:
     """Each closed ticket whose title refers to one of `targets`, as
     `CLOSED_ON_HELP` gives it."""
     if not targets:
-        raise Refused(mctx("the call gives no name: run `{invocation} closed-on --help`").format(
-            invocation=INVOCATION))
+        raise ArgumentsRefused(mctx("the call gives no name"))
     main = main_tree()
     known = set(targets) | {line for n in targets for line in checkout.git_out(
         main, "log", "--follow", "--name-only", "--format=", "master", "--", n).splitlines() if line}
@@ -607,7 +617,6 @@ def ground_command(*given: str) -> str:
     """The `Grounds` line of the span or of the command `given` gives, as
     `GROUND_HELP` gives it."""
     main = main_tree()
-    retry = mctx("run `{invocation} ground --help`").format(invocation=INVOCATION)
     if len(given) == 2 and given[0] == "--command":
         try:
             done = subprocess.run(given[1], shell=True, cwd=main, capture_output=True, text=True,
@@ -623,14 +632,13 @@ def ground_command(*given: str) -> str:
         return f"{GROUND_COMMAND.format(**values)}\n{textwrap.indent(f'```\n{out}\n```', '    ')}"
     span = SPAN.fullmatch(given[0]) if len(given) == 1 else None
     if span is None:
-        raise Refused(mctx("the call gives neither `<path>:<first>-<last>` nor `--command <command>`: "
-                           "{retry}").format(retry=retry))
+        raise ArgumentsRefused(mctx("the call gives neither `<path>:<first>-<last>` nor `--command <command>`"))
     first, last = int(span["first"]), int(span["last"])
     shown = checkout.git(main, "show", f"master:{span['path']}")
     lines = shown.stdout.splitlines()
     if shown.returncode != 0 or not first <= last <= len(lines):
-        raise Refused(mctx("`master` holds no file `{path}` with lines {first} to {last}: {retry}").format(
-            path=span["path"], first=first, last=last, retry=retry))
+        raise ArgumentsRefused(mctx("`master` holds no file `{path}` with lines {first} to {last}").format(
+            path=span["path"], first=first, last=last))
     quote = " ".join(line.strip() for line in lines[first - 1:last])
     return GROUND_SPAN.format(path=span["path"], first=first, last=last, hash=master_hash(main), quote=quote)
 
@@ -639,8 +647,7 @@ def scope_check_command(*given: str) -> str:
     """The paths of a ticket's `Design` that its `Scope` does not cover, as
     `SCOPE_CHECK_HELP` gives them."""
     if len(given) > 1:
-        raise Refused(mctx("the call gives more than one number: run `{invocation} scope-check --help`").format(
-            invocation=INVOCATION))
+        raise ArgumentsRefused(mctx("the call gives more than one number"))
     text = read_ticket(ticket_path(main_tickets(), ticket_number(given[0]))) if given else sys.stdin.read()
     root = main_tree()
     scope = section_paths(text, SCOPE, root)
@@ -757,20 +764,21 @@ def helps(call: str, render: Callable[[str], str], rules: str) -> tuple[str, str
     return render(further).rstrip("\n"), render(rules.rstrip("\n")).rstrip("\n")
 
 
-def subcommand_help(name: str, sub: Subcommand, values: dict[str, str]) -> tuple[str, str | None]:
-    """The helps of `sub`, as `helps` gives them, for `<name>`."""
+def subcommand_help(call: str, sub: Subcommand, values: dict[str, str]) -> tuple[str, str | None]:
+    """The helps of `sub`, as `helps` gives them, for the invocation `call`."""
     def indent(text: str) -> str:
         return textwrap.indent(text.format(**values), "    ")
-    return helps(f"{values['invocation']} {name}", lambda further: SUBCOMMAND_HELP.format(
-        invocation=values["invocation"], name=name, args=sub.args, purpose=sub.purpose,
+    return helps(call, lambda further: SUBCOMMAND_HELP.format(
+        call=call, args=sub.args, purpose=sub.purpose,
         detail=indent(sub.detail), further=further), indent(sub.rules))
 
 
 def main(args: list[str]) -> int:
     values = help_values()
     if args[:1] and (sub := SUBCOMMANDS.get(args[0])):
-        short, full = subcommand_help(args[0], sub, values)
-        return run(sub.parse(args[1:]), short, sub.count, sub.act, sub.in_main, args, full)
+        call = f"{values['invocation']} {args[0]}"
+        short, full = subcommand_help(call, sub, values)
+        return run(sub.parse(args[1:]), short, sub.count, sub.act, sub.in_main, args, call, full)
     given: list[str | None] = list(args)
     if args[3:4] == ["--case"]:
         given = [*args[:3], " ".join(args[4:])] if len(args) == 7 else list(args)
@@ -779,7 +787,7 @@ def main(args: list[str]) -> int:
     return run(given, short, 4 if len(given) == 4 else 3,
                lambda domain, subject, agent, case=None: file_ticket(
                    main_tickets(), domain, subject, agent, sys.stdin.read(),
-                   None if case is None else case.split()), True, args, full)
+                   None if case is None else case.split()), True, args, values["invocation"], full)
 
 
 if __name__ == "__main__":
