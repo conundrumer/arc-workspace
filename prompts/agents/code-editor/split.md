@@ -1,6 +1,6 @@
-+ budget: 1400
++ budget: 1500
 * comment: when editing this doc
-    - The code editor loads this document from [Code editor: second stage](prompts/agents/code-editor-next.md#code-editor-second-stage), where a `refactor` ticket for many ideas in one place cites a module it is to edit.
+    - The code editor receives this document from the step command as it enters a split, once it has written its `Reuse` list and searched the `refactor` tickets on its modules, or, in the middle of writing the code, on a module it comes to edit.
     - Acts, each with its section:
         - Splitting the module and reporting the split: [A split](#a-split).
 

@@ -1,6 +1,6 @@
 + budget: 4300
 * comment: when editing this doc
-    - [Code editor](prompts/agents/code-editor.md), with [code-editor-next.md](prompts/agents/code-editor-next.md), and [Code reviewer](prompts/agents/code-reviewer.md), with [code-reviewer-next.md](prompts/agents/code-reviewer-next.md), inline its sections, for editing and reviewing the code under `src/` and `scripts/`.
+    - [Code editor](prompts/agents/code-editor.md) and [Code reviewer](prompts/agents/code-reviewer.md), with [code-reviewer-next.md](prompts/agents/code-reviewer-next.md), inline its sections, for editing and reviewing the code under `src/` and `scripts/`.
     - Acts, each with its section:
         - The rules every run of either agent keeps: [code-working-rules](#code-working-rules).
         - Judging a whole unit: [unit-kinds](#unit-kinds).

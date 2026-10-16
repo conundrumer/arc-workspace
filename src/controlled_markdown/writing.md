@@ -41,6 +41,14 @@
 ## Prose in code
 + rules on prose in code
 
+### Docstrings, comments and help text
+- A docstring, or a comment in Python or JavaScript, holds only a rule or a reason the code does not show, or an index that leads a reader to what the code holds.
+    - An edit that meets text in one that restates the code it sits beside cuts that text in place of updating it.
+    - A rule that the `--help` text of a script under [scripts](scripts) states stands in that text alone, and a docstring or a comment of the code that carries the rule out leads its reader to that text where the reader needs the rule.
+- The `--help` text of a script under [scripts](scripts) gives in its first thirty lines what its reader most needs to run the script, most often its usage forms, and where the text runs past thirty lines, those lines say what the rest holds.
+    - Where the usage forms do not fit in thirty lines, the text is split into parts the reader prints one at a time, each part meets the rule, and the first thirty lines of the script's bare `--help` give the command that prints each part.
+
+### Text the check reads in code
 - A string a program puts in an agent's context is wrapped in `mctx`, and the check reads it there.
     - In Python, `mctx` takes a string, or a dict whose every value is one. A call whose string the check cannot read without running the program is an error.
     - In JavaScript, `mctx` tags a template literal. A backtick inside one opens a nested literal, which the check does not read.
@@ -62,11 +70,6 @@
         - Every other `check_` function has a `quotes` decorator that quotes [Principles](docs/handbook/principles.md).
 - A `///` or `//!` comment in a Souffle file is read as the text of one statement, and the rules on a statement's text apply to it.
 - The check reads nothing else in a code file as a document, and it reports each finding in a code file at that file's own line.
-- A docstring, or a comment in Python or JavaScript, holds only a rule or a reason the code does not show, or an index that leads a reader to what the code holds.
-    - An edit that meets text in one that restates the code it sits beside cuts that text in place of updating it.
-    - A rule that the `--help` text of a script under [scripts](scripts) states stands in that text alone, and a docstring or a comment of the code that carries the rule out leads its reader to that text where the reader needs the rule.
-- The `--help` text of a script under [scripts](scripts) gives in its first thirty lines what its reader most needs to run the script, most often its usage forms, and where the text runs past thirty lines, those lines say what the rest holds.
-    - Where the usage forms do not fit in thirty lines, the text is split into parts the reader prints one at a time, each part meets the rule, and the first thirty lines of the script's bare `--help` give the command that prints each part.
 
 ## Nesting
 
