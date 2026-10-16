@@ -41,7 +41,8 @@ class Role(StrEnum):
 
     @property
     def agent_type(self) -> str:
-        """The `subagent_type` its launch gives."""
+        """The `subagent_type` its launch gives, where `launched_type` gives
+        no other for the launch's subject."""
         return GENERAL if self in GENERAL_ROLES else self.value
 
     @property
@@ -52,8 +53,14 @@ class Role(StrEnum):
         Raises ValueError on a model that is no `Model`."""
         if self in GENERAL_ROLES:
             return GENERAL_MODELS.get(self)
-        model = agent_meta(self.agent_type).get("model")
-        return None if model is None else Model(model)
+        return document_model(self.agent_type)
+
+
+def document_model(agent_type: str) -> Model | None:
+    """The model the document of `agent_type` gives. Raises ValueError on a
+    model that is no `Model`."""
+    model = agent_meta(agent_type).get("model")
+    return None if model is None else Model(model)
 
 
 GENERAL = "general-purpose"
@@ -129,6 +136,29 @@ class Purpose(StrEnum):
     PASS = "pass"
     STEP = "step"
     ASSESS = "assess"
+
+
+ANALYST_TYPES: dict[Purpose, str] = {Purpose.CHANGE: "decision-analyst",
+                                     Purpose.STEP: "decision-analyst",
+                                     Purpose.DRAFT: "draft-analyst"}
+"""The agent type that runs a ticket analyst on a purpose, where it is not
+`ticket-analyst`: the role stays `Role.TICKET_ANALYST` whichever type runs
+it."""
+
+
+def launched_type(role: Role, subject: str) -> str:
+    """The `subagent_type` a launch of `role` on `subject` gives."""
+    if role is Role.TICKET_ANALYST and (of := analyst_of(subject)) is not None:
+        return ANALYST_TYPES.get(of[0], role.agent_type)
+    return role.agent_type
+
+
+def launched_model(role: Role, subject: str) -> Model | None:
+    """The model a launch of `role` on `subject` gives, where its step sets
+    none in its place."""
+    if (agent_type := launched_type(role, subject)) == role.agent_type:
+        return role.model
+    return document_model(agent_type)
 
 
 def analyst_subject(purpose: Purpose, subject: str) -> str:

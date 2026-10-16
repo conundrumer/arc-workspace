@@ -1,6 +1,6 @@
 + budget: 5900
 * comment: when editing this doc
-    - Readers: the editors of a change and the doc reviewer inline its sections, the ticket analyst and the ticket reviewer the one on another agent's worktree, and the coordinator links that one.
+    - Readers: the editors of a change and the doc reviewer inline its sections, the ticket analyst, the draft analyst, the decision analyst and the ticket reviewer the one on another agent's worktree, and the coordinator links that one.
     - Acts, each with its section:
         - Later findings and requests: [editor-messages](#editor-messages).
         - Finding the worktree: [worktree](#worktree).

@@ -1,4 +1,4 @@
-+ budget: 22100
++ budget: 22200
 * comment: when editing this doc
     - Each Claude Code session and agent loads [Launching](#launching) by the link of [arc-workspace](CLAUDE.md), before it launches an agent by a call no command printed; the ticket reviewer inlines draft-outcome there too. Each agent inlines the sections under [Briefs](#briefs) that give its own brief's form, which its `description` links for each launcher, and the editors An editor's report on a change. The coordinator loads Passes on a task, Operators and While the user gives feedback by the links of its Changes section.
     - Acts, each with its section:
@@ -16,7 +16,7 @@
 ## Launching
 - A newly added agent type can stay unknown to the harness for minutes after the write of its rendered file, `.claude/agents/<agent type>.md`: where a launch fails with that type not found, make it again a minute after that failure, until 15 minutes have passed since that write. After that, give the launch as unfinished, with the failure's text as its reason.
     - Wait that minute out in a foreground Bash call that sleeps for the rest of it, with its command led by `: 'unattended-wait: <agent type> reload';`.
-- Give an agent a brief in the form the sections under [Briefs](prompts/agents/notes/launching.md#briefs) for its agent type and its work give, where any does: read each of those sections and each section they link. Restate neither a docstring of the code nor the agent's definition.
+- Give an agent a brief in the form the sections under [Briefs](prompts/agents/notes/launching.md#briefs) for its work give, where any does, and launch it as the agent type whose `description` links those sections: read each of those sections and each section they link. Restate neither a docstring of the code nor the agent's definition.
 - Where a brief gives a scratch directory, give a new directory under the session's scratchpad directory.
 - In a brief or a `change` ticket that gives the items or the Intent of an edit, give the meaning to state, the case that shows the need, and the span the edit may change, and no wording.
     - Give each item as a requirement: a statement of what holds once the edit is made, that a check or a reading of the result can confirm. Give each way the edit can fail that you foresee as an item that gives what holds in that case, and ask no agent to think a case through.
@@ -28,6 +28,7 @@
     * comment: The user's words, session 7fd429fb, 2026-10-16, on a fixed ratio of wall-clock to token cost: "that seems overly rigid", "also saves on context rot", and on the overhead: "that sounds right": ticket 6-1416.
     - Token cost is the list price of the tokens a run uses: each request's uncached input, cache writes, cache reads and output, each at its own price on the model that ran the request. `uv run python scripts/profile_runs.py <agent id>` prints a run's token cost, and `--price-at <model>` reprices it at another model.
 - Take each token cost you give or write into a brief from `profile_runs`, and give a repriced token cost as repriced. Take each price you give from the price table of [token_prices.py](scripts/token_prices.py).
+- Resume an agent that the usage limit stopped by a message, in place of launching it again.
 - Act on each item that an agent you launched gives as unfinished, by its reason:
     - Where it needs more work or a part its brief left out, change that agent's brief or split its work, and send the item again, in the same turn.
     - Where the harness or the permission classifier denied it a call its documents give, first check whether that call ran in part, then make that call, or what it left undone, once, before any other step on that item, the way your own documents have you do that work. Run it even where the denial's text says not to pursue it through another agent or a later turn. Where that try is denied too, give the item in your reply as unfinished.
@@ -73,15 +74,22 @@
 ### A ticket analyst's brief
 - A ticket analyst's brief gives one of these:
     - The tickets under `tickets/open/` to settle.
-    - A draft `change` ticket whose log holds findings or a suggestion.
-        - With a draft whose next revision opens at its operator's cap of ticket reviews, it gives that this revision is the last: once it is written, the operator moves the draft to `tickets/open/` with no further ticket review, and the change's own review checks what the change writes.
+    - The process assessment.
+- With the tickets a solver pass filed, it gives the review of that pass's transcript, where one was made.
+- With a `request` that the coordinator filed on `send`, it gives that request's transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it.
+- It gives the agent id of the agent that launches it, where that is not the coordinator.
+
+### A draft analyst's brief
+- A draft analyst's brief gives a draft `change` ticket whose log holds findings or a suggestion.
+    - With a draft whose next revision opens at its operator's cap of ticket reviews, it gives that this revision is the last: once it is written, the operator moves the draft to `tickets/open/` with no further ticket review, and the change's own review checks what the change writes.
+- It gives the agent id of the agent that launches it, where that is not the coordinator.
+
+### A decision analyst's brief
+- A decision analyst's brief gives one of these:
     - The findings an editor left on a review of its change, the items an editor left unfinished for a decision, and the places a code editor's report gives as standing, each with the editor's reasons.
         - With those, it gives the agent id of each editor of the change, with the part that editor's brief gave it, or the whole change where its brief gave none.
         - It gives the change's worktree, and the number of the change's ticket, or, where the change has none, its intent and what is already settled about it.
     - A step that an operator's command cannot decide, which the operator holds.
-    - The process assessment.
-- With the tickets a solver pass filed, it gives the review of that pass's transcript, where one was made.
-- With a `request` that the coordinator filed on `send`, it gives that request's transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it.
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 
 ### An item checker's brief

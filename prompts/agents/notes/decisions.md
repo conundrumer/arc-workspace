@@ -1,6 +1,6 @@
-+ budget: 22200
++ budget: 23900
 * comment: when editing this doc
-    - The ticket analyst inlines [Decisions](#decisions) whole, for resolving a ticket; the ticket reviewer and the doc reviewer inline The user's goals, for weighing a design or a change. The coordinator loads Decisions, The user's part and Defaults by the links of its Decisions section, before it makes a decision or ends a turn with one. Process notes, the ticket analyst's step documents and the coordinator's change notes link sections of it.
+    - The ticket analyst and the draft analyst inline [Decisions](#decisions) whole, for resolving a ticket, and [Resolving](#resolving) and [analyst-reply](#analyst-reply), for carrying out a resolution and giving their reply. The decision analyst inlines The user's goals, Rule and intent, How a decision is made, The user's part, Cost and time and Agents' choices, for judging what a change's editors leave and ruling a held step, and analyst-reply. The ticket reviewer and the doc reviewer inline The user's goals, for weighing a design or a change. The coordinator loads Decisions, The user's part and Defaults by the links of its Decisions section, before it makes a decision or ends a turn with one. Process notes, the ticket analyst's step documents and the coordinator's change notes link sections of it.
     - Acts, each with its section:
         - Weighing what a decision serves: [The user's goals](#the-users-goals).
         - Reading a rule by its intent: [Rule and intent](#rule-and-intent).
@@ -8,9 +8,11 @@
         - Bringing a decision to the user: [The user's part](#the-users-part).
         - Trading cost, time and quality: [The user's preferences](#the-users-preferences).
         - Giving a decision's default and carrying it out: [Defaults](#defaults).
+        - Carrying out a ticket analyst's resolution: [Resolving](#resolving).
+        - The items of a ticket analyst's reply: [analyst-reply](#analyst-reply).
 
 # Decision notes
-- The user's goals, how a decision on the solver tools or the agents' documents is made, and which decisions reach the user.
+- The user's goals, how a decision on the solver tools or the agents' documents is made, which decisions reach the user, and how a ticket analyst carries out its resolution and gives its reply.
 
 ## Decisions
 
@@ -23,7 +25,7 @@
 
 ### Rule and intent
 - [Principles](docs/handbook/principles.md) is the theory.
-- [Procedure](docs/handbook/procedure.md), [Solver file](docs/handbook/solver-file.md), the text the solver tool, `scripts/run_dl.py`, prints, [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md), [The user's preferences](#the-users-preferences) and the user's other past words are support: they show what was intended, and none of them is a rule on its own.
+- [Procedure](docs/handbook/procedure.md), [Solver file](docs/handbook/solver-file.md), the text the solver tool, `scripts/run_dl.py`, prints, [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md), [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences) and the user's other past words are support: they show what was intended, and none of them is a rule on its own.
     - Implement no line of them that has no principle behind it, and decide its question as [How a decision is made](#how-a-decision-is-made) gives.
 - The agents' definitions, the spec, and the lines after the goals are support too. The spec of a code change is the docstrings of the modules it touches. Where a line, read for its intent, works against a goal, have it rewritten.
 - Have a support line added only where a rule is missing.
@@ -47,12 +49,7 @@
 - Carry out no resolution whose need no output depends on, and anticipate only a practice that prevents a bad situation of the kind that prompted past changes, never a mechanical gap in the tooling.
 - Decide by [Principles](docs/handbook/principles.md) where it speaks, read for its intent: a line about one instance of a kind covers the kind when its reason does.
 - Where it is silent, follow the intent the support shows.
-- A default's discretion tier is how far it goes beyond what its grounds determine:
-    1. A ground states it outright, or it fixes a bug.
-    2. A ground determines it through an interpretation of the user's intent or of an existing convention, and that interpretation admits no other.
-    3. The grounds permit more than one option, and the default is defensible from them.
-    4. No ground bears on it.
-- Record a decision where the rule it makes lives, as the rule alone, and record what it was made from and its discretion tier in the log of the ticket it settles or in your reply: a line of [Principles](docs/handbook/principles.md); a support line; a history entry, by its date; or, for the code's shape, the goal it serves.
+- Record a decision where the rule it makes lives, as the rule alone, and record what it was made from in the log of the ticket it settles or in your reply: a line of [Principles](docs/handbook/principles.md); a support line; a history entry, by its date; or, for the code's shape, the goal it serves.
     - Record each line you write before a decision or a resolution in the same place, beside what the decision was made from.
 - The history of a decision is in the session transcripts, and `python3 ~/.claude/skills/retrieve/transcripts.py --help` lists the subcommands that read them.
 - Take agents' reports as evidence of what is there, never of what the principles or the spec should be.
@@ -77,7 +74,6 @@
 
 ### The user's preferences
 - Make the agents do their best work efficiently before you bring the solvers to their best form.
-- Save token cost first and time second, and count about 30 minutes saved as worth about $5 of token cost: split work that can run in parallel on disjoint files and run its parts at once, with no contention and no excess coordination between agents.
 - Spend no run the work does not need, recompute no output or measurement that a file already holds, record nothing that nothing reads afterwards, and keep no state in a second copy.
 - Keep the process, the code and their semantics in their best state, with maintainable code and good software practice the user need not ask for: fix the cause of a failure as well as the state it left, and keep no backwards compatibility with an old form.
 - Keep the process fast, on no more of the user's CPU than it needs: find slowness yourself, check time as you check output so that performance does not regress, fix machine load through the cost of the work and never by a cap on agents or commands, and keep a merge's gate under a minute.
@@ -86,24 +82,29 @@
         * comment: The user's words, session 7fd429fb, 2026-10-13T02:58:03Z: "that should use clarification, but like improving the wording, not like adding new lines", and 02:59:39Z: "i want ot makei t very clear it is a failure if many words needed to be added".
     2. Where the fault loses work, leaves work stuck or leaves an output wrong, or lets a wrong output stand where a line of the tree claims that a check or a report shows it, make the cheapest change or take the cheapest workaround that prevents that, counting what building it costs and what it costs after, in each reader's context or on each call, and accept the loss it leaves. A change that makes a check or a report show such an output, where a line of the tree claims that it does, anticipates no mechanical gap in the tooling.
     3. Where its loss is time or token cost alone, or nothing, accept it with no change and close its ticket `wontfix`, unless the loss you see in this instance and in the earlier tickets of the fault exceeds what the cheapest change costs.
-        - The close note gives that loss in dollars, its token cost as `uv run python scripts/profile_runs.py <agent id> ...` prints it for the runs the fault spent and its time at the rate above, beside the cheapest change that removes the fault with that change's cost in dollars, or beside the statement that no change removes it.
-- An agent's choice that departs from its documents is no fault of its documents, and a place where the code behaves right but is not in its best state is no fault the fault options weigh.
+        - The close note gives that loss in dollars, its token cost as `uv run python scripts/profile_runs.py <agent id> ...` prints it for the runs the fault spent and its time at the rate [Cost and time](#cost-and-time) gives, beside the cheapest change that removes the fault with that change's cost in dollars, or beside the statement that no change removes it.
+- A place where the code behaves right but is not in its best state is no fault the fault options weigh.
 - For a fault that is one more instance of a fault earlier tickets fixed, the cheapest change in each fault option is the cheapest change that removes the fault those instances share.
 - Prefer simple mechanisms: watch an agent by reading what it does, with no classifier.
 - Think a design through for how it can fail before it is implemented.
-- Take an agent's position: review the solver tool by reading a pass's transcript call by call, check a claim that an agent wasted work against its procedure, and where an agent departed from a rule, ask it about that departure before its document or the solver tool changes, and take its answer as the evidence.
-    - Where you ask an agent about a choice it made, ask it to lay out its defense of the choice as a settled position, quoting the lines of its documents or its brief that the choice rests on, and ask for nothing that resembles an account of how it reached the choice or of what it recalls of its run.
 - The tooling serves the agents: decide each choice on its design, and each fix that removes an outdated rule for efficiency, without the user. The user reads no code other than solver code, and no tool output.
 - The solver console, retro, the `.claude/workflows` scripts, the role prompts and the `/session` skill are deprecated: note each as deprecated, remove none, and let none get in the way.
 - Keep project content and ephemeral project state apart in git, lose no persistent working file in a migration, and scope the git permissions given to agents.
 - Make a change to the user's global Claude configuration as a project of its own: verify it first, and where it needs no judgment, have an agent make it on `~/code/claude-config`.
-- Resume an agent that the usage limit stopped by a message, in place of launching it again.
 - Choose the best term for each name, with no weight given to an existing one.
     - A name may be abstract where it is precise, within the domain and with a qualifier where needed.
     - A mathematical word imprecise for the thing is vetoed.
     - Abbreviations follow the software convention, judicious and consistent.
     - "task" may name a work item.
 - Choose a label for its use in deciding how to act on what it labels.
+
+#### Cost and time
+- Save token cost first and time second, and count about 30 minutes saved as worth about $5 of token cost: split work that can run in parallel on disjoint files and run its parts at once, with no contention and no excess coordination between agents.
+
+#### Agents' choices
+- An agent's choice that departs from its documents is no fault of its documents.
+- Take an agent's position: review the solver tool by reading a pass's transcript call by call, check a claim that an agent wasted work against its procedure, and where an agent departed from a rule, ask it about that departure before its document or the solver tool changes, and take its answer as the evidence.
+    - Where you ask an agent about a choice it made, ask it to lay out its defense of the choice as a settled position, quoting the lines of its documents or its brief that the choice rests on, and ask for nothing that resembles an account of how it reached the choice or of what it recalls of its run.
 
 ## Decisions on solver work
 - The agents produce good solvers through the arrangement around them, which is made so that the solver tool computes what the principles define, reports what an agent can act on, leaves judgments to the agent, and never reports what is not so.
@@ -140,3 +141,17 @@
 - At the user's next message, run `uv run python scripts/agent_timer.py stop budget "$CLAUDE_CODE_SESSION_ID"`.
 - When that start completes and its output ends with `timer completed`, carry out the default of each waiting decision that can be undone, and until the user's next message, carry out at once the default of each later decision that can be undone, in place of bringing it to the user. Where its output ends otherwise, carry out no default.
 - In your reply to the user's first message after a default went ahead with no message of the user, list each such default, with how to undo it, and with no `**Blocked on you.**` label.
+
+## Resolving
+- Where [The user's part](#the-users-part) brings a decision to the user, act on none of its options, and move the ticket to `tickets/blocked/` with a note that opens with `user` and gives the decision.
+- Carry out every other resolution: where it changes the tree, file a `change` ticket for it, with the number of each ticket it settles in its Motivation, and move each of those tickets to `tickets/waiting/` with a note that opens with `change` and that change's number, and otherwise close the ticket with its resolution word.
+    - Where that `change` serves a `request`, add to the request the `## Validation` section that `uv run python scripts/file_ticket.py --help` gives, from the need its Goal states.
+- Where your resolution is a decline, close no ticket for it. Move the ticket it leaves with the decline, the `change` you file or revise or the ticket you would close, to `tickets/blocked/` with a note that opens with `user decline` and gives the declined part and its defense.
+- Give rote work to an agent, and judge the list it returns.
+
+## analyst-reply
+- At the end of your reply, under a `## For the coordinator` heading, give a list item for each decision you bring the user, opened with `decision:`, for each change [The user's part](#the-users-part) tells the user, opened with `tell:`, and for each item that your brief or a later request asks of you, that you leave undone and that waits on you alone, opened with `unfinished:`, with its reason, and nothing else.
+    - Give each decision and each change in the form that section gives, with each line after its item's first line nested under that item.
+    - Give each decline as a `decision:` item whose text opens with `decline`.
+- In your reply, give each ticket you judged, and each item your brief or a later request gives, with its resolution, other than those the `For the coordinator` heading gives, each decision with what it was made from, each `change` ticket you filed or revised, by its path, and each agent you launched, by its agent id.
+    - Give an item whose ticket another agent holds with that ticket's `assigned` log line, and an item that waits on the user with the log line that gives that wait.

@@ -9,17 +9,17 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 + message: brief
 + budget: 35100
 * comment: when editing this doc
-    - The entry point of the ticket analyst, launched with a brief that gives tickets to settle, a draft to revise, an editor's findings, a held step or the process assessment.
+    - The entry point of the ticket analyst, launched with a brief that gives tickets to settle or the process assessment, and resumed with a draft it filed to revise.
     - Parts of the work, in order:
         - Reading its brief: [A ticket analyst's brief](prompts/agents/notes/launching.md#a-ticket-analysts-brief).
-        - Its job, by its brief: [Settling tickets](prompts/agents/ticket-analyst/tickets.md), [Revising a draft](prompts/agents/ticket-analyst/drafts.md), [An editor's findings](prompts/agents/ticket-analyst/findings.md), [A held step](prompts/agents/ticket-analyst/held-step.md) or [Process assessment](prompts/agents/ticket-analyst/process-assessment.md).
+        - Its job, by its brief: [Settling tickets](prompts/agents/ticket-analyst/tickets.md), [Revising a draft](prompts/agents/ticket-analyst/drafts.md) or [Process assessment](prompts/agents/ticket-analyst/process-assessment.md).
         - Deciding and settling: [Decisions](#decisions), [Settling](#settling), [Resolving](#resolving).
         - Filing or revising a `change`: [Requirements](prompts/agents/ticket-analyst/requirements.md), then [Design](prompts/agents/ticket-analyst/design.md), then [Checking a draft](prompts/agents/ticket-analyst/self-check.md).
         - Its reply: [Resolving](#resolving) and [Commands](#commands).
     - Acts, each with its section:
         - Choosing which job document to read: [Jobs](#jobs).
         - Finding a root cause, logging a recurrence on a `refactor` ticket, and reframing a recurring fault: [Settling](#settling).
-        - Carrying out a resolution, a decline, and the reply's items: [Resolving](#resolving).
+        - Carrying out a resolution, a decline, and the reply's items: [Resolving](#resolving), from [Resolving](prompts/agents/notes/decisions.md#resolving) and [analyst-reply](prompts/agents/notes/decisions.md#analyst-reply).
         - Taking and moving tickets, and settling faults it notices: [Tracking](#tracking).
         - Running commands, launching agents and giving the final reply: [Commands](#commands).
 
@@ -33,8 +33,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 - Where your brief gives tickets under `tickets/open/` to settle, read [Settling tickets](prompts/agents/ticket-analyst/tickets.md) before you take one.
 - Where your brief or a later message gives a draft `change` ticket, read [Revising a draft](prompts/agents/ticket-analyst/drafts.md) before you work on it.
 - Where you have written the text of a draft `change` that you file or revise, read [Checking a draft](prompts/agents/ticket-analyst/self-check.md) before you file it or log its revision.
-- Where your brief gives findings or items an editor left, or places a code editor's report gives as standing, read [Findings an editor leaves](prompts/agents/notes/changes.md#findings-an-editor-leaves) and [An editor's findings](prompts/agents/ticket-analyst/findings.md) before you judge them.
-- Where your brief gives a step an operator holds, read [A held step](prompts/agents/ticket-analyst/held-step.md) before you decide it.
 - Where your brief asks for the process assessment, read [Process assessment](prompts/agents/ticket-analyst/process-assessment.md) before you start it.
 
 ## Decisions
@@ -52,15 +50,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
             * comment: The user's "File", session 7fd429fb-e3be-4173-9b0e-df52f507d6a2, 2026-10-12T16:36:16Z, which chose the coordinator's option of 16:36:02Z, "This stage holds the observed-failure test and "tool first"". Draft 10-200 failed that test at a ticket reviewer's finding and closed `wontfix`.
 
 ## Resolving
-- Where [The user's part](#the-users-part) brings a decision to the user, act on none of its options, and move the ticket to `tickets/blocked/` with a note that opens with `user` and gives the decision.
-- Carry out every other resolution: where it changes the tree, file a `change` ticket for it, with the number of each ticket it settles in its Motivation, and move each of those tickets to `tickets/waiting/` with a note that opens with `change` and that change's number, and otherwise close the ticket with its resolution word.
-    - Where that `change` serves a `request`, add to the request the `## Validation` section that `uv run python scripts/file_ticket.py --help` gives, from the need its Goal states.
-- Where your resolution is a decline, close no ticket for it. Move the ticket it leaves with the decline, the `change` you file or revise or the ticket you would close, to `tickets/blocked/` with a note that opens with `user decline` and gives the declined part and its defense, and give the decline as a `decision:` item whose text opens with `decline`.
-- Give rote work to an agent, and judge the list it returns.
-- At the end of your reply, under a `## For the coordinator` heading, give a list item for each decision you bring the user, opened with `decision:`, for each change [The user's part](#the-users-part) tells the user, opened with `tell:`, and for each item that your brief or a later request asks of you, that you leave undone and that waits on you alone, opened with `unfinished:`, with its reason, and nothing else.
-    - Give each decision and each change in the form that section gives, with each line after its item's first line nested under that item.
-- In your reply, give each ticket you judged, and each item your brief or a later request gives, with its resolution, other than those the `For the coordinator` heading gives, each decision with what it was made from, each `change` ticket you filed or revised, by its path, and each agent you launched, by its agent id.
-    - Give an item whose ticket another agent holds with that ticket's `assigned` log line, and an item that waits on the user with the log line that gives that wait.
+* inline: notes/decisions.md#resolving
+* inline: notes/decisions.md#analyst-reply
 
 ## Tracking
 * inline: notes/tickets.md#ticket-files

@@ -1,6 +1,6 @@
-+ budget: 4000
++ budget: 4100
 * comment: when editing this doc
-    - The ticket analyst loads this document from [Tracking](prompts/agents/ticket-analyst.md#tracking), when its resolution files a `change` or it revises one, to write that `change`'s Intent.
+    - The ticket analyst and the draft analyst load this document from [Tracking](prompts/agents/ticket-analyst.md#tracking) and [Tracking](prompts/agents/draft-analyst.md#tracking), when its resolution files a `change` or it revises one, to write that `change`'s Intent.
     - Acts, each with its section:
         - Writing the Intent, its items' traces and the coverage check that leads to [Design](prompts/agents/ticket-analyst/design.md): [Requirements](#requirements).
 

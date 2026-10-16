@@ -72,7 +72,7 @@ from operations.directives import (
     passed,
     unread,
 )
-from operations.roles import PASSES, Role, description
+from operations.roles import PASSES, Role, description, launched_type
 from operations.state import Call, State, Ticket, Tool
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Status
@@ -159,7 +159,7 @@ def unloaded(state: State, step: Launch) -> Call | None:
     (`GitRead.definitions`)."""
     if (last := failed_last(launch_calls(state, step))) is None:
         return None
-    agent_type = step.role.agent_type
+    agent_type = launched_type(step.role, step.subject)
     written = state.git.definitions.get(agent_type)
     if written is None or last.time - written >= LOAD_SECONDS:
         return None

@@ -42,7 +42,7 @@ FILER_KINDS: dict[Filer, frozenset[Kind]] = {
     Filer.TICKET_REVIEWER: REVIEW_KINDS,
     Filer.CODE_REVIEWER: REVIEW_KINDS | {Kind.REFACTOR, Kind.QUESTION},
     Filer.COORDINATOR: frozenset({Kind.REQUEST, Kind.BUG}),
-    Filer.TICKET_ANALYST: frozenset({Kind.CHANGE}),
+    Filer.TICKET_ANALYST: frozenset({Kind.CHANGE, Kind.BUG}),
 }
 """The kinds each filing agent, by its name, may file."""
 
