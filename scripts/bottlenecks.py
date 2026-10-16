@@ -73,7 +73,8 @@ NEITHER = mctx("{number} waits at {time} on neither the user nor a change")
 
 def scope_paths(t: Ticket, root: Path) -> frozenset[str]:
     """The paths the `Scope` of `t` gives, in backticks or as link targets:
-    each that holds a `/` or stands at the root of the tree `root`, and,
+    each that is not absolute and holds a `/` or stands at the root of the
+    tree `root`, and,
     for each solver it gives, that solver's witness file, since a solver
     and its witness file are edited together. A ticket with no `Scope`
     gives none."""
@@ -83,7 +84,7 @@ def scope_paths(t: Ticket, root: Path) -> frozenset[str]:
     body = section(text, "Scope")
     words = re.findall(r"`([^`\s]+)`", body) + re.findall(r"\]\(([^)\s]+)\)", body)
     paths = {w.split("#", 1)[0].rstrip(":") for w in words}
-    given = {p for p in paths if p and ("/" in p or (root / p).exists())}
+    given = {p for p in paths if p and not Path(p).is_absolute() and ("/" in p or (root / p).exists())}
     pairs = (task_paths(Path(p).name.removesuffix(SOLVER_SUFFIX)) for p in given)
     return frozenset(given | {str(w) for s, w in pairs if str(s) in given})
 
