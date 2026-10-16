@@ -8,9 +8,9 @@ an operator's step makes, read by the function that step selects its work
 by (`selection`); a ticket whose only exits are steps of no operator, or
 that such a function leaves out, waits by design and is not due. A ticket
 that a live session holds waits on that session's own work, a step of no
-operator, and is not due. Its
-progress is a line of its log other than a take or a release, the launch
-of an agent of it, and a report of such an agent; an agent of it that is
+operator, and is not due. Its progress is a line of its log other than a
+take or a release, the launch of an agent of it, a report of such an
+agent, and, for a change, its merge onto `master`; an agent of it that is
 pending and not quiet is progress too, and a ticket with one is not
 stalled.
 
@@ -24,7 +24,7 @@ from collections.abc import Mapping
 from typing import assert_never
 
 from controlled_markdown import mctx
-from operations import drafts, lineage, taking, triage
+from operations import drafts, lineage, merging, taking, triage
 from operations.change_budget import TAKEN
 from operations.constants import STUCK_SECONDS
 from operations.final_reply import live_holder
@@ -35,7 +35,7 @@ from operations.steps import Bash, Step
 from operations.tracker import blocked_on_user, exits
 from ticketing.exits import Exit
 from ticketing.times import utc_stamp
-from ticketing.vocabulary import Status
+from ticketing.vocabulary import Kind, Status
 
 
 ON_USER = mctx("it waits on the user")
@@ -80,7 +80,9 @@ def progress(state: State, t: Ticket) -> float | None:
     agents = agents_of(state, t.number)
     if any(a.pending and a.quiet is None for a in agents):
         return None
+    merge = merging.merge_commit(state, t) if t.kind is Kind.CHANGE else None
     return max([t.filed,
+                *([merge.time] if merge is not None else []),
                 *(ln.time for ln in t.log
                   if TAKEN.fullmatch(ln.note) is None and taking.RELEASED_LINE.fullmatch(ln.note) is None),
                 *(a.launched for a in agents),

@@ -87,7 +87,9 @@ from ticketing.vocabulary import Domain, Kind, Note, Status
 
 
 def held(state: State) -> list[Ticket]:
-    """The changes the operator holds, in ticket order rotated to start at
+    """The changes the operator holds: those `master` holds merged first,
+    in ticket order, so that a merged change's close comes at the next step
+    of the changes; then the others in ticket order rotated to start at
     the first that follows the change its latest printed step served
     (`last_served`), so that each held change with a ready step gets one
     step before any gets a second."""
@@ -95,11 +97,13 @@ def held(state: State) -> list[Ticket]:
                       if t.kind is Kind.CHANGE and t.status is Status.ASSIGNED
                       and t.holder == state.me),
                      key=lambda t: t.order)
+    landed = [t for t in tickets if merging.merged(state, t)]
+    rest = [t for t in tickets if t not in landed]
     served = last_served(state)
     if served is None:
-        return tickets
-    after = [t for t in tickets if t.order > served.order]
-    return after + [t for t in tickets if t.order <= served.order]
+        return landed + rest
+    after = [t for t in rest if t.order > served.order]
+    return landed + after + [t for t in rest if t.order <= served.order]
 
 
 def last_served(state: State) -> Ticket | None:
