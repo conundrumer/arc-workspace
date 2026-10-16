@@ -1,5 +1,5 @@
 """The check `pending_wait_hook` runs on the Bash call of a subagent that is
-a doc reviewer's trial: a subagent whose first message opens with the line
+a doc reviewer's trial: a subagent whose first message ends with the line
 `Trial bounds: <case time> <case commit>`. It denies a call that reads past
 the trial's case: a transcript read other than `transcripts.py window` with
 an end no later than the case time, a command that names a transcript file,
@@ -55,16 +55,16 @@ class Bounds:
 
 
 def bounds(path: Path) -> Bounds | None:
-    """The bounds the first line of the first user entry of the transcript
-    at `path` gives, or None where that line gives none: the caller is no
-    trial."""
+    """The bounds the last non-empty line of the first user entry of the
+    transcript at `path` gives, or None where that line gives none: the
+    caller is no trial."""
     from run_reads import message_text
     from transcript_entries import entries_forward
 
     first = next((e for e in entries_forward(path) if e.get("type") == "user"), None)
     if first is None:
         return None
-    m = BOUNDS.fullmatch(message_text(first).split("\n", 1)[0].strip())
+    m = BOUNDS.fullmatch(message_text(first).strip().rsplit("\n", 1)[-1].strip())
     return Bounds(m.group(1)[:STAMP], m.group(2)) if m else None
 
 

@@ -91,7 +91,7 @@
     - Each revision of a `change` ticket before the one at the operator's cap of ticket reviews is checked before the build: each requirement traces to the request's spans or Grounds and can be checked, each claim about the current state holds, and the Scope covers the design.
     - An agent other than its editor checks the built change against each requirement, for documents as for code, outside the lib and the solvers, which the handbook judges.
         * comment: The user's words, request 9-143, session 129de8fc, 2026-10-14T18:08:21Z: "ok file that item checkers do not apply to solver things since solver things require handbook to judge".
-    - For a document change that alters what an agent does, there is evidence before the merge that its reader acts as the requirement states, from a trial that read nothing that reveals its case's outcome.
+    - For a document change whose misread by an agent other than the doc reviewer, doc editor and ticket reviewer would be silent in use, a trial that read nothing that reveals its case's outcome shows before the merge that this agent acts as the requirement states.
     - The lines in force in the agents' documents get a standing review, as the code in the tree gets the code review.
     - A finding in a later round of the doc review, or by Checks in a round of the ticket review after one that checked the draft by Checks, falls only on text or a ground that changed since such an earlier round, or still stands from it.
 - Owner: the ticket reviewer for the `change` ticket, the item checker for the built change outside the lib and the solvers, the doc reviewer for the form of the documents and, by its trials, for the evidence of a reader's behavior, a standing doc review for the lines in force in the agents' documents, and the code reviewer and the gate for the code.
@@ -99,7 +99,7 @@
 - How it can fail:
     - Each review adds cost to every change: the reviews a work product gets are set by its reader.
     - A reviewer checks that a form is filled in: each requirement is checked against the worktree or a run, and not against text.
-    - Evidence of a reader's behavior is costly, and one run proves little: it is made only for a line that changes what an agent does, and it is evidence for the reviewer of the change, and no pass or fail on its own.
+    - Evidence of a reader's behavior is costly, and one run proves little: it is evidence for the reviewer of the change, and no pass or fail on its own.
     - The standing review files many small findings: they go through the fault options of [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
 
 ## Validation
