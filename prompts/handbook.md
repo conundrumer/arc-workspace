@@ -6,5 +6,4 @@
 * include: ../docs/handbook/style.md
 * include: ../docs/handbook/patterns.md
 * include: ../docs/handbook/keywords.md
-* include: ../docs/handbook/lib-protocol.md
 * include: ../docs/handbook/former-names.md

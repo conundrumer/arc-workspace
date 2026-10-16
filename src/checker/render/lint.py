@@ -26,7 +26,7 @@ from checker.render.locations import LineForm, line_text, where_text
 from checker.render.no_result import failure_text
 from checker.render.values import _codes, _ticked
 from controlled_markdown import mctx
-from engine import CpuLimit, Engine, ParseFailure, WallLimit, checkout
+from engine import CpuLimit, Engine, ParseFailure, WallLimit
 from solver import names
 from solver.aggregate import Solver
 from solver.annotations import (
@@ -79,19 +79,11 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
     LintSentence.LIB_INTERNAL_COMP: lambda n, _: mctx(
         "`{0}` is internal to the lib; instantiate a public component"
     ).format(*n),
-    LintSentence.NO_PROPOSAL_ENTRY: lambda n, _: mctx(
-        "`{0}` is a proposal comp with no entry {entry}; report the "
-        "operation, or fold the comp into the program").format(
-            *n, entry=checkout.proposal_entry(n[0]).relative_to(
-                checkout.ROOT).as_posix()),
-    LintSentence.PROPOSAL_UNREAD: lambda n, _: (mctx(
-        "`{comp}` is a proposal comp, and the concept case reads none of "
-        "its relations; the cases that read them: {cases} "
-        "([In the pass](docs/handbook/lib-protocol.md#in-the-pass))").format(
-            comp=n[0], cases=_ticked(n[1:])) if n[1:] else mctx(
-        "`{comp}` is a proposal comp, and no case reads its relations "
-        "([In the pass]"
-        "(docs/handbook/lib-protocol.md#in-the-pass))").format(comp=n[0])),
+    LintSentence.LIB_CODE: lambda n, _: mctx(
+        "`{0}` is lib code; state its claims in the program, and each claim "
+        "that needs a form the program bans as the Banned forms line of "
+        "[Every pass](docs/handbook/procedure.md#every-pass) gives"
+    ).format(*n),
     LintSentence.PARSE_UNREAD: lambda n, _: mctx(
         "no Determine comp reads this Parse comp; read it in Determine, or "
         "fold it into the program"),

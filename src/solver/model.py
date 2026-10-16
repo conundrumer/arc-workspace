@@ -348,8 +348,6 @@ class Params:
 # Lib
 
 
-@quotes("lib-protocol.md", "Lib addition protocol",
-        "the lib, `programs/lib.dl` and the modules under `programs/lib/`")
 @dataclass(frozen=True)
 class Lib:
     """The lib's types and constants as the model reads them, parsed

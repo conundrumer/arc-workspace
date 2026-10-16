@@ -312,11 +312,6 @@ def handbook() -> Path:
     return docs() / "handbook"
 
 
-def proposal_entry(comp: str) -> Path:
-    """Where the entry of the proposal comp `comp` stands."""
-    return docs() / "wf-solver" / "proposals" / f"{comp}.md"
-
-
 def prompts() -> Path:
     """`prompts/`: the prose the commands print and the roles read."""
     return ROOT / "prompts"

@@ -253,7 +253,7 @@ def pass_chain(state: State, p: Pipeline, ended: list[Ended], hold: str | bool) 
             return (None, True)
         if a.agent_id is None:
             return (mctx("the {role} pass on {task} has no agent id").format(role=role, task=p.task),)
-        filed = state.transcripts.pass_tickets.get(a.agent_id)
+        filed = tickets_listed(state, a.agent_id)
         if filed is None:
             if a.reports:
                 asked = send_again(state, a.agent_id, [r.time for r in a.reports],
@@ -266,6 +266,13 @@ def pass_chain(state: State, p: Pipeline, ended: list[Ended], hold: str | bool) 
             return (NO_REPORT.format(role=role, agent=a.agent_id, section=TICKETS_FILED),)
         ended.append((a.agent_id, a, filed))
     return (None,)
+
+
+def tickets_listed(state: State, agent_id: str | None) -> tuple[str, ...] | None:
+    """The tickets the report of the pass `agent_id` lists
+    (`state.PassReport.tickets`)."""
+    r = state.transcripts.pass_reports.get(agent_id or "")
+    return None if r is None else r.tickets
 
 
 def no_report(role: Role, a: Agent) -> Undecided:
@@ -393,7 +400,7 @@ def awaits_analyst(state: State, number: str) -> bool:
             continue
         passes = [a for r in PASSES for a in state.agents_of(r, t.subject) if a.launched >= p.since]
         if any(a.pending or a.agent_id is not None
-               and number in (state.transcripts.pass_tickets.get(a.agent_id) or ()) for a in passes):
+               and number in (tickets_listed(state, a.agent_id) or ()) for a in passes):
             return True
     return False
 

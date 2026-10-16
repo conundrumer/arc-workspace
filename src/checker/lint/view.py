@@ -55,8 +55,6 @@ from solver.vocabulary import (
 STOCK_COMPS = (PARAMS, DETERMINE, PARSE)
 """The comps a solver holds as its own (solver-file.md, under "Components")."""
 
-PROGRAM_COMPS = (DETERMINE, PARSE)
-"""The comps whose clauses program style reads beside the top level."""
 
 
 def lint(line: int, payload: LintPayload,
@@ -360,10 +358,9 @@ class View:
         return scope.components[0] if scope.components else None
 
     def program_scope(self, scope: Scope) -> bool:
-        """A scope that holds program code: the top level, `Determine`,
-        `Parse` and `Params`."""
-        return scope == TOP or (len(scope.components) == 1
-                                and scope.components[0] in STOCK_COMPS)
+        """A scope that holds program code: the top level and each comp
+        declared there."""
+        return len(scope.components) <= 1
 
     @cached_property
     def top_heads(self) -> dict[str, list[Unit]]:
@@ -446,11 +443,11 @@ class View:
 
     def style_units(self) -> list[Unit]:
         """The own units program style applies to: the top level, less the
-        case enumeration's clauses, and the clauses of `Determine` and
-        `Parse`."""
+        case enumeration's clauses, and the clauses of each comp other than
+        `Params`."""
         return [u for u in self.own_units
                 if (u.scope == TOP and not self.in_enumeration(u))
-                or (u.scope != TOP and self.comp_of(u.scope) in PROGRAM_COMPS)]
+                or (u.scope != TOP and self.comp_of(u.scope) != PARAMS)]
 
     def program_units(self) -> list[Unit]:
         """The own units of the program scopes, less the case

@@ -35,9 +35,9 @@ from transcripts import find, session_directory
 from transcript_entries import epoch, read_entries
 
 from operations.merging import MERGE_SCRIPT, merge_messages
-from operations.reports import TICKETS_FILED, heading_part
+from operations.reports import CONCEPT_FAULTS, TICKETS_FILED, section, section_items
 from operations.roles import PASSES, Role, described
-from operations.state import Agent, Call, Merge, Message, Report, Tool
+from operations.state import Agent, Call, Merge, Message, PassReport, Report, Tool
 from operations.task_work import refine_report, tasks_work
 from operations.command_words import COMMAND, is_next
 from operations.printing import unfenced
@@ -100,19 +100,16 @@ def pass_report(task: str, role: Role, launched: float, main: Path) -> Path | No
     return min(((t, p) for t, p in written if t > launched), default=(0.0, None))[1]
 
 
-def pass_tickets(task: str, role: Role, launched: float, main: Path) -> tuple[str, ...] | None:
-    """The numbers the report file of the pass lists under
-    `## Tickets filed`, or None where it wrote no such file with that
-    section since its launch."""
+def pass_read(task: str, role: Role, launched: float, main: Path) -> PassReport:
+    """The read of the report file of the pass (`PassReport`)."""
     path = pass_report(task, role, launched, main)
     if path is None:
-        return None
-    body = heading_part(file_text(path), TICKETS_FILED)
-    if body is None:
-        return None
-    section = body.split("\n## ", 1)[0]
-    return tuple(m.group(0).rstrip("_") for m in re.finditer(
-        rf"(?<![\w-]){TICKET_NUMBER.pattern}_", section))
+        return PassReport(None, ())
+    text = file_text(path)
+    filed = section(text, TICKETS_FILED)
+    tickets = None if filed is None else tuple(m.group(0).rstrip("_") for m in re.finditer(
+        rf"(?<![\w-]){TICKET_NUMBER.pattern}_", filed))
+    return PassReport(tickets, section_items(text, CONCEPT_FAULTS))
 
 
 FILED_FIELDS: dict[str, str] = {Tool.AGENT: "prompt", Tool.SEND_MESSAGE: "message"}
@@ -232,12 +229,12 @@ MESSAGING = frozenset({Role.DOC_REVIEWER, Role.ITEM_CHECKER})
 class OperatorRead:
     """What the transcript of one operator gives: its launches, its calls,
     the messages that reached it, and `passes`, for each solver pass it
-    launched with an agent id, the tickets that pass filed
-    (`TranscriptsRead.pass_tickets`)."""
+    launched with an agent id, the read of its report
+    (`TranscriptsRead.pass_reports`)."""
     agents: tuple[Agent, ...]
     calls: tuple[Call, ...]
     messages: tuple[Message, ...]
-    passes: Mapping[str, tuple[str, ...] | None]
+    passes: Mapping[str, PassReport]
 
 
 def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
@@ -271,7 +268,7 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
     agents: list[Agent] = []
     calls: list[Call] = []
     messages: list[Message] = []
-    passes: dict[str, tuple[str, ...] | None] = {}
+    passes: dict[str, PassReport] = {}
     entries = run_entries(path)
     uses: dict[str, tuple[float, dict[str, Any], str]] = {}
     results: dict[str, tuple[str | None, bool]] = {}
@@ -347,7 +344,7 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
                            else reply_to(a, launch.since, undecided))
         agents.append(a)
         if d.role in PASSES and launch.agent:
-            passes[launch.agent] = pass_tickets(d.subject, d.role, use[0], main)
+            passes[launch.agent] = pass_read(d.subject, d.role, use[0], main)
     return OperatorRead(tuple(agents), tuple(calls), tuple(messages), passes)
 
 

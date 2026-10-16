@@ -4,7 +4,7 @@
     - This doc and [Encoding](docs/handbook/encoding.md) state a theory of tasks, models and encodings, in that theory's own terms.
         - A statement about how a file, a format, a marker, a command, or a tool's output represents them, or about how the solver's code is written, goes elsewhere.
         - So does a heuristic, a decision criterion, a convention, or a procedure step.
-    - Place a statement in another document whose subject covers it, such as [Style](docs/handbook/style.md), [Patterns](docs/handbook/patterns.md), [Procedure](docs/handbook/procedure.md), [Lib addition protocol](docs/handbook/lib-protocol.md) or [Solver file](docs/handbook/solver-file.md), even where it relates to a principle. Place it in this doc or Encoding only where no other document's subject covers it.
+    - Place a statement in another document whose subject covers it, such as [Style](docs/handbook/style.md), [Patterns](docs/handbook/patterns.md), [Procedure](docs/handbook/procedure.md) or [Solver file](docs/handbook/solver-file.md), even where it relates to a principle. Place it in this doc or Encoding only where no other document's subject covers it.
     - Judge a principle placed here by whether it is consistent, useful, and general.
     - Prefer nested lists:
         - When a sentence states two or more parallel parts, write them as a nested list, one item each.

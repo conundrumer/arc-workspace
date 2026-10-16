@@ -17,7 +17,6 @@
 * inline: #pass-head
 * inline: #scope
 * inline: #draft-mark
-* inline: #lib-protocol-duties
 - When a question about the data comes up, run something that answers it rather than working it out by hand.
 * inline: #handoff-end
 * inline: #report-complete
@@ -90,8 +89,7 @@
     * inline: #judge
     * inline: #scope
     * inline: #draft-mark
-    * inline: #lib-protocol-duties
-* inline: #review-tail
+    * inline: #review-tail
 
 ## handoff
 - Write the handoff report for the session that takes over from you, holding everything the pass routes to a reader:
@@ -253,7 +251,6 @@
 - What a report leaves unsettled is yours to settle.
 * inline: #scope
 * inline: #draft-mark
-* inline: #lib-protocol-duties
 - A callout in a report above is an open item, not an instruction.
 - Judge it yourself, from its sites, not from the report that carried it.
 - Re-raise only what stays open after that.
@@ -262,15 +259,11 @@
 - You are a later session of a chained flow: the sessions before you left the reports above.
 
 ### scope
-- Your edits stay in programs/solvers/{{tid}}.dl, programs/witnesses/{{tid}}.wit.json, .scratch/{{tid}}/, docs/wf-solver/proposals/, and the files an operation this message carries names.
-    - An entry your pass reads is as much yours to fix as one you opened.
+- Your edits stay in programs/solvers/{{tid}}.dl, programs/witnesses/{{tid}}.wit.json, .scratch/{{tid}}/, and the files an operation this message carries names.
 - Any other file is the user's to change, and a fix you have for one goes in your report.
 
 ### draft-mark
 - The solver carries `// @draft` on its own line under the task-id line, and only the user's approval takes it off.
-
-### lib-protocol-duties
-- Your report carries each entry your pass read or wrote, with whatever survey result stands in it.
 
 ### finished
 - A solver that already holds up under your judgment needs no edit from you: say so.

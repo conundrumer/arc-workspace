@@ -3,7 +3,6 @@
 - You change no repo file.
 - Your final text is data for a script, not a message for a person.
 - Read the spec: the entry the brief names.
-    - [The entry](docs/handbook/lib-protocol.md#the-entry) states the fields an entry carries.
 
 # Procedure
 - Survey every solver in the scope the brief gives, not a sample.

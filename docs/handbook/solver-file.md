@@ -196,7 +196,7 @@
     - An input that is the same across cases is part of the instance's identity and takes no key.
     - An input that varies per case is per-key data and keys the comp by the `Choice` fields it varies with.
 - **Nested comps.** A nested comp's outputs are read through the instance path.
-- **Proposal comps.** A comp outside `Params`, `Determine`, and `Parse` is lib code, and a solver writes one only as a proposal comp, per [Lib addition protocol](docs/handbook/lib-protocol.md).
+- **Lib code.** A comp outside `Params`, `Determine`, and `Parse` is lib code, and a solver writes none.
 
 ## Parse
 - A `.comp Parse<Key>` contains a derivation that the program and the Determine comp share.

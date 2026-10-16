@@ -62,6 +62,7 @@ from operations.state import (
     GitRead,
     HeldRead,
     Message,
+    PassReport,
     Reader,
     ReadOnUse,
     Report,
@@ -96,7 +97,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     agents: list[Agent] = []
     calls: list[Call] = []
     messages: list[Message] = []
-    passes: dict[str, tuple[str, ...] | None] = {}
+    passes: dict[str, PassReport] = {}
     tree = read_git(main)
     subjects: dict[str, float] = {}
     for c in tree.commits:
@@ -161,7 +162,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
         transcripts=TranscriptsRead(
             agents=tuple(sorted(agents, key=lambda a: a.launched)),
             calls=sorted_calls, messages=tuple(messages),
-            made=made(calls), late_resumes=late, stalled=stalled, pass_tickets=passes),
+            made=made(calls), late_resumes=late, stalled=stalled, pass_reports=passes),
         git=tree, taken_up=took_up,
         held=read_held(holding),
         readers=Deferred(lambda: tuple(Reader(name, tuple(args)) for name, args in reader_calls()

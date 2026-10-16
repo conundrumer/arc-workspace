@@ -26,7 +26,8 @@ stopped (`limit_resume`); the coordinator's lines in no form the
 command reads, each given back to the coordinator once, and then the
 fault of each run script, once for each text it has (`runs`); the ticket
 files the read of the tracker left out (`decisions.unread_files`); the
-alerts; the tickets on stalled agents; the request to a ticket analyst on a held step to give its decision
+alerts; the tickets on stalled agents; the messages on the concept
+faults of the solver passes that ended (`concept_faults`); the request to a ticket analyst on a held step to give its decision
 again; the decisions for the user, and the items of each ticket analyst's
 reply for the coordinator; the monitor's steps (`monitor`); at launch,
 the release of tickets; the move back to `tickets/open/` of the tickets the coordinator wrote on
@@ -53,7 +54,7 @@ its text (`ending`)."""
 from collections.abc import Callable, Mapping, Sequence
 
 from controlled_markdown import mctx
-from operations import (alerts, batches, changes, decisions, drafts, limit_resume, lineage,
+from operations import (alerts, batches, changes, concept_faults, decisions, drafts, limit_resume, lineage,
                         monitor, passes, runs, triage, taking)
 from operations.directives import (
     NUMBER,
@@ -217,7 +218,7 @@ def elsewhere(state: State) -> list[str]:
 
 
 EARLY: tuple[Callable[[State], Step | None], ...] = (
-    limit_resume.step, unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.late_resumes, decisions.asks, triage.decisions, triage.main_wanted, triage.for_coordinator,
+    limit_resume.step, unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.late_resumes, concept_faults.step, decisions.asks, triage.decisions, triage.main_wanted, triage.for_coordinator,
     triage.unfinished)
 LATE: tuple[Callable[[State], Step | None], ...] = (
     launching, triage.reopen, triage.later_lines, triage.settle, taking.stall, drafts.step,

@@ -46,7 +46,7 @@ from ticket_numbers import parsed_number  # noqa: E402
 from ticket_reads import read_ticket  # noqa: E402
 from help_parts import print_help  # noqa: E402
 
-from operations import briefs, doc_review, plan, relay, runs  # noqa: E402
+from operations import briefs, concept_faults, doc_review, plan, relay, runs  # noqa: E402
 from operations.decisions import WRITE_SECONDS  # noqa: E402
 from operations.monitor import ALERTS  # noqa: E402
 from operations.command_words import Action  # noqa: E402
@@ -97,7 +97,7 @@ PURPOSES = {
     HelpPart.RUN: mctx("the `Run:` line and the run script `next` reads"),
     HelpPart.RELAY: mctx("what `relay` prints"),
     HelpPart.REVIEW: mctx("what `review` prints"),
-    HelpPart.ALERTS: mctx("the alerts `next` sends"),
+    HelpPart.ALERTS: mctx("the alerts `next` sends, and the messages it sends the coordinator on concept faults"),
 }
 """What each part of the help gives."""
 
@@ -188,7 +188,7 @@ PARTS = {
         - Where the agent is no doc editor that an operator of the session launched, it prints that no launch is printed, and that the agent gives its final reply.
         - It reads the state as the doc editor's operator's `next` reads it.
     """),
-    HelpPart.ALERTS: ALERTS,
+    HelpPart.ALERTS: ALERTS + "\n" + concept_faults.HELP,
 }
 """The text of each part of the help."""
 

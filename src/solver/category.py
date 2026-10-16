@@ -19,8 +19,7 @@ class Category(StrEnum):
     LIB_NAME = "lib name"
     LIB_INTERNAL = "lib internal"
     ENUMERATOR_NAME = "enumerator name"
-    COMP_WITHOUT_ENTRY = "comp without entry"
-    PROPOSAL_COMP = "proposal comp"
+    LIB_CODE = "lib code"
     PARSE_UNSHARED_WITH_DETERMINE = "parse unshared with determine"
     DETERMINE_SCHEMA = "determine schema"
     FAMILY_CASE = "family case"
@@ -73,7 +72,7 @@ class Category(StrEnum):
 
 
 HINTS = frozenset({
-    Category.KEYWORD, Category.COMP_WITHOUT_ENTRY, Category.UNREAD_FIELD,
+    Category.KEYWORD, Category.UNREAD_FIELD,
     Category.CASE_SECTION, Category.PASS_THROUGH, Category.CHAIN_JOIN,
     Category.SINGLE_CONSUMER, Category.DOMAIN_ENUMERATOR, Category.ARGMAX,
     Category.COMMON_SUBEXPR, Category.CONST_JOIN, Category.COMP_IDIOM,

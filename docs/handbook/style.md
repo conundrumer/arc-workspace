@@ -115,8 +115,5 @@
 - A clause does not range over choice tags through a disjunction.
 
 ## Components
-- **Proposal comps.** The program-style checks skip a proposal comp.
-- A proposal comp with no entry is a hint.
-    + deferred
 - **Shared comp instances.** A comp instance is shared exactly when its case-specific versions differ only in the case name.
     - A comp instance stays per-case when one case derives a value and another reads it from Params, even when one derivation could feed every case.

@@ -31,7 +31,7 @@
 - A change consistent with principles that resolves a reason against, and adds no reason against of its own, goes in the default.
 - A change that resolves no reason against, or adds a reason against of its own, is returned as an option.
 - A candidate the program cannot express gets no text.
-- An entry fix goes to the lib addition protocol, which judges it.
+- An entry fix goes to the user, who judges it.
     - Leave its against empty.
 - With the default, give what argues for it and what argues against it.
 - State each reason as its own sentence.

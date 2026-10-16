@@ -73,7 +73,7 @@ PROGRAM_CHECKS: tuple[Check, ...] = (
     names.check_reserved_name,
     names.check_shadowed_type, names.check_lib_name,
     names.check_lib_internal, names.check_enumerator_name,
-    components.check_comp_without_entry,
+    components.check_lib_code,
     components.check_parse_unshared_with_determine,
     components.check_determine_schema, declared_types.check_banned_type,
     open_value_fields.check_open_value_field,

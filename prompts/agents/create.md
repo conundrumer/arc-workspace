@@ -51,9 +51,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
 * include: ../../docs/handbook/keywords.md
     + exclude: draft, gloss, deferred
 
-* include: ../../docs/handbook/lib-protocol.md
-    + exclude: draft, gloss, deferred
-
 ## Grids
 * inline: ../console.md#grids
 

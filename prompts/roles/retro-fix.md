@@ -14,8 +14,6 @@
 - An addition that answers text the file already contains replaces that text.
 - A prose fix in the lib changes comments only.
 - A code fix keeps every member relation, signature, and documented guarantee as they are.
-- An entry fix writes the entry with the fields [The entry](docs/handbook/lib-protocol.md#the-entry) gives, its `Survey:` line stamped with the current time to the minute, and stops there.
-    - It does not change the lib.
 - A citation of a draft solver waits: write it at its place in the pending form that file's editing note gives.
 - Where the brief's issue is a rule of [Principles](docs/handbook/principles.md), examine each of the brief's tasks.
     - If the fix leaves that task's solver something to act on, such as a case to add or drop, write `// review principle: <section heading> — <that subject>` as the solver's last header line.

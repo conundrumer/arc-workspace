@@ -16,7 +16,7 @@
     - The solver that introduces or improves that encoding establishes the precedent.
     - A precedent covers how the structure is found and encoded.
     - It does not cover the tests performed inside that encoding.
-- **component**: a comp declared in a module under `programs/lib/`, or a proposal comp.
+- **component**: a comp declared in a module under `programs/lib/`.
 - **construction**: a component whose outputs give another form of its inputs.
 - **equivariant lib relation**: a lib relation whose output changes under each D4 element exactly as its input does.
 

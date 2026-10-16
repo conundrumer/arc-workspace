@@ -35,8 +35,8 @@
     ## Open
     - <what the pass leaves unsettled>: <what would settle it>
 
-    ## Lib
-    - <an operation the trigger fires on>: <its solver-local form, and the sites the grep found>
+    ## Concept faults
+    - <task_id> `<claim slug>`: <the form the program bans that the claim needs>
 
     ## Fixes elsewhere
     - <another task's file, and the line>: <the fix it needs>

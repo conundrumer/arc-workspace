@@ -329,6 +329,16 @@ it admits, the text of its fault, or None where the script defines no
 
 
 @dataclass(frozen=True)
+class PassReport:
+    """The read of a solver pass's report file: the numbers of the tickets
+    it lists under `## Tickets filed`, or None where the pass wrote no
+    such file with that section, and the items of its `## Concept faults`
+    section (`reports.section_items`)."""
+    tickets: tuple[str, ...] | None
+    faults: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class TranscriptsRead:
     """What the operator reads of the transcripts of the session's
     operators. `agents` holds their launches, in the order of their launch,
@@ -341,18 +351,17 @@ class TranscriptsRead:
     the next operator of `State.operators` made its first entry, in the
     order of their time. `stalled` gives the final reply in the transcript
     of each agent a stall alert names that reached no operator as a
-    report. `pass_tickets` gives, for each
-    solver pass with an agent id, the numbers of the tickets the report
-    file it wrote under the task's work directory since its launch lists
-    under `## Tickets filed`, or None where it wrote no such file with
-    that section, whatever its reply."""
+    report. `pass_reports` gives, for each
+    solver pass with an agent id, the read of the report file it wrote
+    under the task's work directory since its launch (`PassReport`),
+    whatever its reply."""
     agents: tuple[Agent, ...]
     calls: tuple[Call, ...]
     messages: tuple[Message, ...]
     made: tuple[Made, ...]
     late_resumes: Mapping[str, tuple[LateResume, ...]]
     stalled: Mapping[str, Report]
-    pass_tickets: Mapping[str, tuple[str, ...] | None]
+    pass_reports: Mapping[str, PassReport]
 
 
 @dataclass(frozen=True)

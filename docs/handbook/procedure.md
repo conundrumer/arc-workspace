@@ -8,7 +8,8 @@
 ## Every pass
 - **One operation at a time.** Finish each operation before you start the next.
 - **Reading files.** Read the task with `cat data/tasks/<task_id>.json`, and each other file you need whole, with no other command piped or chained to the read.
-- **Lib protocol.** Apply [Lib addition protocol](docs/handbook/lib-protocol.md) where its trigger holds.
+- **Banned forms.** A claim that needs a form the program bans, where no lib relation states that part of it, has no set of clauses: write no comp for it. Where it is a claim of the concept case, give in the review, as a concept fault, the task, the claim, and the form it needs.
+    * comment: The user's ruling, session 19c17548, 2026-10-15T23:34:30Z, on the choice "replaces the protocol with the line that a pass that needs a banned form reports a fault of the concept and writes no comp": "2 but leave proposals alone".
 - **Source reading.**
     - Do not read `src/` during a pass.
     - If you do, say why in the review, as a gap in the docs or the runner.
@@ -240,7 +241,7 @@
 ### Promote
 - When the user says `promote` or `migrate` over an entry under `docs/wf-solver/proposals/`.
 - Have the `handbook-expanded` agent write the change in your session's own tree, with that tree as the worktree its brief gives and the entry's path in its brief.
-- On `promote`, the brief's items move the plain relations or proposal comp into the module under `programs/lib/` whose file doc admits it, and update the solver that introduced the proposal.
+- On `promote`, the brief's items move the entry's plain relations into the module under `programs/lib/` whose file doc admits it, and update the solver that introduced them.
 - On `migrate`, the brief gives one item for each of the entry's callers, which replaces the hand-written form there with the lib relation the entry became.
     - List in the review the callers the agent reports unfinished.
 
@@ -249,7 +250,7 @@
 
 #### The items
 - Include only:
-    - A lib operation to promote.
+    - A concept fault.
     - A judgment the session made.
     - An issue with a doc or tool that interfered with the pass or cost it effort.
     - An item carried over from an earlier pass's report, marked with the pass it came from.

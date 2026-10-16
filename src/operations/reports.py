@@ -33,6 +33,10 @@ TICKETS_FILED = "## Tickets filed"
 """The heading of a solver pass's report over the numbers of the tickets
 the pass filed."""
 
+CONCEPT_FAULTS = "## Concept faults"
+"""The heading of a solver pass's report over the concept faults the pass
+gives, one list item each, or `none`."""
+
 SPLIT = re.compile(r"^\s*[-*]\s+split: `(?P<path>[^`]+)`(?:; left unsplit: (?P<part>.+))?$",
                    re.MULTILINE)
 """An item of a code editor's report that gives a module it split, by the
@@ -56,6 +60,27 @@ def heading_part(text: str, heading: str) -> str | None:
     for last in re.finditer(rf"^{re.escape(heading)}[ \t]*$", text, re.MULTILINE):
         pass
     return None if last is None else text[last.end():]
+
+
+def section(text: str, heading: str) -> str | None:
+    """The text under the last line of `text` that is `heading` alone, up
+    to the next `## ` heading, or None where no line is `heading`."""
+    body = heading_part(text, heading)
+    return None if body is None else body.split("\n## ", 1)[0]
+
+
+def section_items(text: str, heading: str) -> tuple[str, ...]:
+    """The top-level list items of the section of `text` under `heading`
+    (`section`), each with the lines nested under it, less an item that is
+    `none`; none where `text` has no such section."""
+    items: list[list[str]] = []
+    for line in (section(text, heading) or "").splitlines():
+        if TOP_ITEM.match(line):
+            items.append([line])
+        elif items and line.strip() and indent(line) > 0:
+            items[-1].append(line)
+    return tuple(t for item in items if (t := "\n".join(item).strip()).lower().strip(
+        "-*+ .") != "none")
 
 
 def worktree_line(ln: str) -> bool:
@@ -94,6 +119,9 @@ LABELS = f"(?P<label>{'|'.join(Label)})"
 LIST_MARKER = r"(?:[-*+]|\d+[.)])"
 """The marker of a Markdown list item, which the command reads past at the
 opening of a line."""
+
+TOP_ITEM = re.compile(rf"^{LIST_MARKER}[ \t]+")
+"""The opening of a list item at the top level of a section."""
 
 ITEM_WITH_AGENT = re.compile(rf"^[ \t]*{LIST_MARKER}[ \t]+.*\b{AGENT_ID}\b", re.MULTILINE)
 
