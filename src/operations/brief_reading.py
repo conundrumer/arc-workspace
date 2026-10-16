@@ -1,12 +1,10 @@
-"""The reading of a brief's or a message's text back: the number of items
-a brief that gives several items of the same work gives, and the budgets
-a text states."""
+"""The reading of a brief's text back: the number of items
+a brief that gives several items of the same work gives."""
 
 import re
 from string import Formatter
 
 from operations.briefs import ITEM_LINES, ITEM_SEPARATOR
-from operations.reports import LIST_MARKER
 
 ITEM = r"[^\s,]+"
 
@@ -35,14 +33,3 @@ def items(brief: str) -> int | None:
         if (m := pattern.fullmatch(first)) is not None:
             return len(m["numbers"].split(ITEM_SEPARATOR))
     return None
-
-
-BUDGET_LINE = re.compile(r"Budget: (?P<minutes>\d+(?:\.\d+)?) minutes(?:[.,;:].*)?")
-"""A line that states a budget, past its list marker, in the form
-`profile_runs.py --help messages` gives, which `BUDGET` renders."""
-
-MARKED_OPENING = re.compile(rf"^\s*{LIST_MARKER}?\s*")
-
-
-def unmarked(line: str) -> str:
-    return MARKED_OPENING.sub("", line).strip()

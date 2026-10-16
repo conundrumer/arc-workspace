@@ -1,4 +1,4 @@
-"""The store of what `profile_runs.budget_of` reads of each run, held on
+"""The store of what `budgets.group_budgets` reads of each run, held on
 disk across processes in `run-profiles.sqlite` under `.cache/` of the main
 worktree: the last transcript and the agent type of each agent, and the
 profile of a run with the `undecided` lines its profile appends.

@@ -22,8 +22,7 @@ from operations.steps import Send, Step
 @dataclass(frozen=True)
 class Watched:
     """A watched agent at the time of the read.
-    `over_budget` is whether its self time is past its budget. `stalled`
-    is the time its turn ended where it stalled, as
+    `stalled` is the time its turn ended where it stalled, as
     `stalled_at` in `scripts/monitor_reads.py` gives it, or None. `repeated` gives the time of the last call of each run
     of `REPEATS` or more identical Bash calls with identical results.
     `stuck` is the start of the stretch where it is stuck, as `stuck_at` in
@@ -31,7 +30,6 @@ class Watched:
     through `TranscriptsRead.stuck`, and no alert goes to the agent, since
     an agent that a system fault holds cannot act on that fault."""
     agent_id: str
-    over_budget: bool
     stalled: float | None
     repeated: tuple[float, ...]
     stuck: float | None
@@ -53,7 +51,6 @@ def undecided(state: MonitorState) -> list[str]:
 
 ALERTS = mctx("""
     - `next` sends an agent that an operator of the session or the coordinator launched, whose work is open and that is no operator, an alert that gives it its step, then holds the line `alert: <kind> <agent id>` on a line of its own, once for each time one of these fires:
-        - `budget`: {budget}.
         - `repeated`: {repeated}, other than a command led by `: 'unattended-wait:`.
         - `stall`: {stall}.
     - The operator takes the final reply of a stalled agent as its report, sends the final reply of a stalled agent the coordinator launched to the coordinator once, and files a `bug` ticket on it.
@@ -70,16 +67,9 @@ def alert(kind: AlertKind, w: Watched, since: float | None = None) -> Send:
     return Send(w.agent_id, to_agent(kind, w.agent_id), since)
 
 
-def budget_alert(w: Watched) -> Send:
-    """The budget alert on `w`, to `w` itself."""
-    return alert(AlertKind.BUDGET, w)
-
-
 def alerts(state: MonitorState, w: Watched) -> list[Send]:
     """The alerts on `w`, one per reading that fired."""
     out: list[Send] = []
-    if w.over_budget:
-        out.append(budget_alert(w))
     out.extend(alert(AlertKind.REPEATED, w, t) for t in w.repeated)
     if w.stalled is not None and w.agent_id not in state.stalled:
         out.append(alert(AlertKind.STALL, w, w.stalled))

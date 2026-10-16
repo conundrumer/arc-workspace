@@ -1,16 +1,12 @@
 """The alerts of the monitor's steps and the alerts that reach an operator, and the steps they give.
 
 An alert opens with a line of the form `alert: <kind> <agent id>`
-(`OPENING`), with the kind of `AlertKind` and the agent it is on. On an agent an
-operator of the session launched whose work is open:
+(`OPENING`), with the kind of `AlertKind` and the agent it is on. Each alert
+of the monitor goes to the agent it is on, with its reading (`READING`) and
+the message of its kind under it (`to_agent`), which gives the agent its
+step.
 
-- A `budget` alert goes to the agent itself, as the monitor's own budget
-  alert, from its kind and its agent alone; each alert of the monitor goes
-  to it with its reading (`READING`) and the message of its kind under it
-  (`to_agent`), which gives the agent its step.
-
-Any other alert, and an alert on an agent no operator launched, are
-undecided. A message from an agent an operator of the session launched
+An alert that reaches an operator is undecided, whichever agent it is on. A message from an agent an operator of the session launched
 gives no step. A message from an agent no operator
 launched that is no alert goes back to its sender once, with a request to
 send it again as an alert, or to say that it is none, and is undecided
@@ -18,11 +14,8 @@ where the sender's next message is still no alert. An undecided alert or message
 analyst launched on it (`decisions`), other than one an operator already
 handled (`handled.repeated`).
 
-A `budget` alert on an agent an operator of the session
-launched gives its step to the operator that carries the session's work
-on, whichever operator of the session it reached, other than where it is
-undecided. Every other alert and message gives a step only to the
-operator `me` where it reached `me`.
+An alert or a message gives a step only to the operator `me` where it
+reached `me`.
 
 An agent of `TranscriptsRead.stalled`, whose final reply the operator took as its
 report on its `stall` reading (`monitor`), or sends the coordinator once
@@ -56,7 +49,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from controlled_markdown import mctx
-from operations import briefs, messages, ticket_stall
+from operations import messages, ticket_stall
 from operations.constants import COORDINATOR
 from operations.roles import AGENT_ID
 from operations.state import Agent, LateResume, Message, Report, State, Stuck, Ticket
@@ -70,7 +63,6 @@ from ticketing.vocabulary import DEFECT_SECTIONS, Domain, Kind, Status
 
 class AlertKind(Enum):
     """The kinds of alert, one per reading of the monitor (`monitor`)."""
-    BUDGET = "budget"
     REPEATED = "repeated"
     STALL = "stall"
 
@@ -116,7 +108,6 @@ result before it gets a `repeated` alert."""
 
 
 READING = {k: v.format(repeats=REPEATS) for k, v in {
-    AlertKind.BUDGET: mctx("Its self time is past its budget"),
     AlertKind.REPEATED: mctx("It ran the same Bash command with the same result at least "
                              "{repeats} times in a row"),
     AlertKind.STALL: mctx("Its turn ended while its work is open, and no report of it reached "
@@ -126,7 +117,6 @@ READING = {k: v.format(repeats=REPEATS) for k, v in {
 
 
 LEAD = mctx("A monitor's alert:")
-BUDGET_MESSAGE = briefs.AT_BUDGET
 REPEATED_MESSAGE = mctx("Run that command again only once something has changed that can "
                         "change its result.")
 STALL_MESSAGE = mctx("""
@@ -139,8 +129,6 @@ def to_agent(kind: AlertKind, agent: str) -> str:
     """The message to `agent` of the alert of `kind` on it: the alert, with
     its reading and, under them, the step the kind gives the agent."""
     match kind:
-        case AlertKind.BUDGET:
-            step = BUDGET_MESSAGE
         case AlertKind.REPEATED:
             step = REPEATED_MESSAGE
         case AlertKind.STALL:
@@ -361,27 +349,15 @@ def late_resumes(state: State) -> Step | None:
     return None
 
 
-def on(state: State, alert: Alert, a: Agent) -> Step | None:
-    """The step `alert` gives on `a`, an agent an operator launched."""
-    match alert.kind:
-        case AlertKind.BUDGET:
-            return Send(alert.agent, to_agent(AlertKind.BUDGET, alert.agent)) if a.pending else None
-        case _:
-            return Undecided(mctx("an alert the command does not act on:") + "\n"
-                             + alert.message.text)
-
-
 def step(state: State) -> Step | None:
     """The first step the alerts and the other agents' messages give the
     operator `me`."""
     launched = {a.agent_id for a in state.transcripts.agents if a.agent_id}
     for m in state.arrived:
-        if m.sender is None or m.sender in launched:
+        if m.sender is None or m.sender in launched or m.operator != state.me:
             continue
         alert = parsed(m)
         if alert is None:
-            if m.operator != state.me:
-                continue
             replies = [x.time for x in state.received if x.sender == m.sender and x.time <= m.time]
             asked = ask_again(state, m.sender, replies, messages.ALERT_FORM)
             if asked is False:
@@ -389,12 +365,10 @@ def step(state: State) -> Step | None:
             s: Step | None = asked if isinstance(asked, Send) else Undecided(
                 mctx("a message from {sender} in no form the command reads:").format(
                     sender=m.sender) + "\n" + m.text)
-        elif (a := latest(state, alert.agent)) is None:
+        elif latest(state, alert.agent) is None:
             s = Undecided(mctx("an alert on an agent no operator launched:") + "\n" + m.text)
         else:
-            s = on(state, alert, a)
-        if m.operator != state.me and isinstance(s, Undecided):
-            continue
+            s = Undecided(mctx("an alert the command does not act on:") + "\n" + m.text)
         if s is not None and not repeated(s, state):
             return s
     return None

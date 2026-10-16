@@ -37,7 +37,7 @@ from operator_state import read_state  # noqa: E402
 from relay_reads import read_relay, session_id  # noqa: E402
 from usage_limit import USAGE_STALE  # noqa: E402
 from agent_reports import RATE_LIMIT, parent_type  # noqa: E402
-from profile_runs import budget_of  # noqa: E402
+from budgets import budget_of  # noqa: E402
 from run_reads import parent_id  # noqa: E402
 from transcripts import find  # noqa: E402
 from transcript_entries import Refused  # noqa: E402
@@ -51,7 +51,7 @@ from operations import briefs, concept_faults, doc_review, pacing, plan, relay, 
 from operations.decisions import WRITE_SECONDS  # noqa: E402
 from operations.monitor import ALERTS  # noqa: E402
 from operations.command_words import Action  # noqa: E402
-from operations.roles import BARE_BRIEFS, Role  # noqa: E402
+from operations.roles import Role  # noqa: E402
 from operations.filing import filed, with_report  # noqa: E402
 from operations.printing import key_line, printed  # noqa: E402
 from operations.state import State  # noqa: E402
@@ -114,7 +114,7 @@ PARTS = {
         - The value of a prompt or a message parameter it prints stands between two lines of three backticks, and the value to pass is the text between those lines, without them.
         - A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items.
         - The brief of a launch other than a solver pass's gives the file the agent writes its final reply to.
-        - The brief of a launch other than a solver pass's ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where `profile_runs.py --help budget` gives a budget for the brief over every run under the project directories.
+        - The brief of a code editor's launch ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where `profile_runs.py --help budget` gives a budget for the brief over every run under the project directories.
             - N is that budget in minutes, rounded up: the budget per item times the number of items for a brief that gives items, as that help gives them, and the budget per run for any other brief.
         - Where its last call of a launch failed with a result whose first line is `Agent type '<agent type>' not found`, or starts with that text followed by `.`, less than {load} seconds after the last write of its rendered definition `.claude/agents/<agent type>.md`, it gives the launch again once {retry} seconds have passed since that call, in place of a step on that failure.
         - An agent whose latest notification has the status `failed` and a summary that gives `{rate_limit}` was stopped by the usage limit.
@@ -244,7 +244,7 @@ def claim_task(task_id: str) -> int:
 
 def with_budget(step: Launch) -> Launch:
     """`step` with the budget line `--help next` gives."""
-    if step.role in BARE_BRIEFS:
+    if step.role is not Role.CODE_EDITOR:
         return step
     seconds = budget_of(step.role, step.items, [])
     if seconds is None:

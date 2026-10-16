@@ -5,7 +5,7 @@ from a run's parent, and of the run's report to that parent, as
 from collections.abc import Callable
 
 from agent_reports import Report
-from budgets import budgets_in_force, of_budget, past_budget
+from budgets import of_budget, past_budget
 from context_bound_hook import CONTEXT_BOUND, bounded, past_bound
 from controlled_markdown import mctx
 from open_agents import Listed, parent_reports
@@ -58,13 +58,13 @@ def print_running(agents: list[Listed], now: float, calls_since: float | None,
             if active_time is not None else "?")
         self_time = self_of(listed, now)
         self_text = minutes_or_unknown(self_time)
-        budget = next(reversed(budgets_in_force(r, undecided)), None)
+        note_unknown(r, undecided)
         context = f"{r.context:,}" if r.context is not None else "?"
         past = "past " if past_bound(r.context) else ""
         mark = (" " + mctx("{past}bound {bound:,}").format(
             past=past, bound=CONTEXT_BOUND) if bounded(r.agent_type) else "")
         print(f"{r.label} {r.agent_type}  parent {listed.parent}  {since}  "
-              f"active {active}  self {self_text}{of_budget(budget)}  "
+              f"active {active}  self {self_text}  "
               f"context {context} tokens{mark}: {r.description}")
         print(f"  cwd: {r.cwd or '?'}")
         if listed.ended:
@@ -101,15 +101,23 @@ def print_ended(r: Run, end: float | None, now: float,
         time=clock(end), ago=minutes(now - end)))
 
 
-def print_messages(r: Run, undecided: list[str]) -> None:
-    """Print each message from the parent of `r` with its active time, its
-    self time and the budget in force for it, marking each self time past its
-    budget."""
+def note_unknown(r: Run, undecided: list[str]) -> None:
+    """Name in `undecided` each message to `r` whose sender is unknown."""
+    for text in r.unknown:
+        undecided.append(mctx("{run}: the sender of the message `{text}` is "
+                              "unknown, so the run has no active time and no "
+                              "self time").format(run=r.label, text=one_line(text)))
+
+
+def print_messages(r: Run, undecided: list[str], budget: float | None) -> None:
+    """Print each message from the parent of `r` with its active time and its
+    self time, with `budget`, the run's budget in minutes, marking each self
+    time past it."""
     if r.agent_type == MAIN:
         return
+    note_unknown(r, undecided)
     print("  messages from the parent:")
-    budgets = budgets_in_force(r, undecided)
-    for i, (m, budget) in enumerate(zip(r.messages, budgets, strict=True)):
+    for i, m in enumerate(r.messages):
         active, self_time = r.active_from(i), r.self_from(i)
         past = "  past budget" if past_budget(self_time, budget) else ""
         active_text = minutes_or_unknown(active)

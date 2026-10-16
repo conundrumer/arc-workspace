@@ -1,10 +1,9 @@
 """The budget of each agent type, and of each role of
 `roles.GENERAL_ROLES`, for a run and for one item of a brief that gives
-items, and the budget in force for each message
-from a run's parent, as `profile_runs.py --help budget`
-and `profile_runs.py --help messages` give them."""
+items, as `profile_runs.py --help budget` gives it, and the budget of a
+brief over every run under the project directories (`group_budgets`)."""
 
-import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,20 +14,17 @@ from engine import checkout
 from handbook.agents import agent_names, agent_sources
 from operations import brief_reading, briefs
 from operations.roles import GENERAL, GENERAL_ROLES, Role, described
-from run_profile import clock, minutes, one_line, percentile
-from run_records import Message, Part, Run
+from run_profile import clock, minutes, percentile
+from run_records import Part, Run
 from run_reads import parent_id
-from transcripts import is_subagent
+from run_store import RunStore
+from transcripts import agent_transcripts, is_subagent
 from transcript_entries import Refused
 
 # The terms of the budget of a type or a role, which `profile_runs.py --help budget` states.
 BUDGET_FACTOR = 2
 MEDIAN_RUNS = 5
 LOW_WAIT_PCT = 10
-
-# The opening of a line that words a budget.
-BUDGET_OPENING = re.compile(r"budget\s*:", re.I)
-
 
 def low_wait(r: Run) -> bool:
     waited = r.parts[Part.WAITS] + r.parts[Part.IDLE]
@@ -92,8 +88,13 @@ def measured(r: Run, per_item: bool) -> float | None:
     its brief, or None where its brief gives no items."""
     if not per_item:
         return r.wall
-    count = brief_reading.items(r.messages[0].text) if r.messages else None
+    count = brief_items(r)
     return None if count is None else r.wall / count
+
+
+def brief_items(r: Run) -> int | None:
+    """The number of items the brief of `r` gives, or None where it gives none."""
+    return brief_reading.items(r.messages[0].text) if r.messages else None
 
 
 def type_budget(kind: str, runs: list[Run], since_date: float | None, per_item: bool,
@@ -157,49 +158,49 @@ def print_budgets(runs: list[Run], since_date: float | None,
                       + mctx("per item, {basis}").format(basis=b.basis))
 
 
-def budget_openings(text: str) -> list[str]:
-    """The lines of `text` that open with `Budget:`, past a list marker."""
-    lines = (brief_reading.unmarked(line) for line in text.splitlines())
-    return [line for line in lines if BUDGET_OPENING.match(line)]
+type GroupBudget = Callable[[str, int | None], float | None]
+"""The budget in seconds of a group of `budget_group`, for a brief that
+gives no items where the count is None, and otherwise for a brief that
+gives that many items, or None where it gets none."""
 
 
-def message_name(r: Run, m: Message) -> str:
-    """How an `undecided` line names a message from the parent of `r`."""
-    if m is r.messages[0]:
-        return mctx("the brief")
-    return mctx("the message at {time}").format(time=clock(m.time))
+def group_budgets(undecided: list[str]) -> GroupBudget:
+    """The `GroupBudget` over every run under the project directories. The
+    agent type and the profile of each run are read through `run_store`,
+    those of a group's agent type at the first budget asked of the group."""
+    store = RunStore()
+    agents = agent_transcripts()
+    runs: dict[str, list[Run]] = {}
+    budgets: dict[tuple[str, bool], Budget | None] = {}
+
+    def budget(group: str, items: int | None) -> float | None:
+        if group not in runs:
+            kind = GENERAL if group in GENERAL_ROLES else group
+            runs[group] = [r for agent in agents
+                           if (typed := store.last_and_type(agent))[1] == kind
+                           and budget_group(r := store.profile(typed[0], undecided)) == group]
+            store.flush()
+        key = (group, items is not None)
+        if key not in budgets:
+            budgets[key] = type_budget(group, runs[group], None, items is not None, undecided)
+        b = budgets[key]
+        if b is None:
+            return None
+        return b.seconds if items is None else b.seconds * items
+    return budget
 
 
-def budgets_in_force(r: Run, undecided: list[str]) -> list[float | None]:
-    """The budget in minutes in force for each message from the parent of
-    `r`, which the latest message up to it states, as `--help messages` gives it, or
-    None."""
-    for text in r.unknown:
-        undecided.append(mctx("{run}: the sender of the message `{text}` is "
-                              "unknown, so the run has no active time and no "
-                              "budget").format(run=r.label, text=one_line(text)))
-    budget: float | None = None
-    budgets: list[float | None] = []
-    for m in r.messages:
-        stated: set[float] = set()
-        for line in budget_openings(m.text):
-            match = brief_reading.BUDGET_LINE.fullmatch(line)
-            if match:
-                stated.add(float(match.group(1)))
-            else:
-                undecided.append(mctx("{run}: the line `{line}` of {message} is "
-                                      "not of the form `Budget: N minutes`, so "
-                                      "it gives no budget").format(
-                    run=r.label, line=line, message=message_name(r, m)))
-        if len(stated) > 1:
-            undecided.append(mctx("{run}: {message} states more than one budget, "
-                                  "{values}, so it gives none").format(
-                run=r.label, message=message_name(r, m),
-                values=", ".join(f"{v:g}" for v in sorted(stated))))
-        if stated:
-            budget = next(iter(stated)) if len(stated) == 1 else None
-        budgets.append(None if r.unknown else budget)
-    return budgets
+def run_budget(budget: GroupBudget, r: Run) -> float | None:
+    """The budget in minutes of `r`, that of its group of `budget_group` for
+    the items of its brief, or None where it has none."""
+    group = budget_group(r)
+    seconds = budget(group, brief_items(r)) if group is not None else None
+    return None if seconds is None else seconds / 60
+
+
+def budget_of(role: Role, items: int | None, undecided: list[str]) -> float | None:
+    """The budget in seconds of a brief of `role`, as `group_budgets` gives it."""
+    return group_budgets(undecided)(role_group(role), items)
 
 
 def operator_launched(r: Run, undecided: list[str]) -> bool:

@@ -7,11 +7,9 @@ from pathlib import Path
 
 from agent_reports import parent_transcripts
 from agent_turns import first_time, last_time
-from budgets import budgets_in_force, past_budget
 from context_bound_hook import OPERATORS
 from open_agents import Listed, quiet_since
 from operator_reads import resumed_at
-from run_prints import self_of
 from run_reads import bash_spans, repeated_runs, run_entries, same_since
 from transcript_entries import Entry, epoch
 
@@ -119,11 +117,8 @@ def watched(listing: list[Listed], launched: set[str],
         if (aid is None or r.agent_type in UNWATCHED
                 or (aid not in launched and listed.parent != COORDINATOR)):
             continue
-        budget = next(reversed(budgets_in_force(r, undecided)), None)
-        self_time = self_of(listed, now)
         out.append(Watched(
             agent_id=aid,
-            over_budget=past_budget(self_time, budget),
             stalled=stalled_at(listed, listing, undecided), repeated=repeated(listed),
             stuck=stuck_at(aid, listed, listing, now)))
     return out

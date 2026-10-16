@@ -541,4 +541,4 @@ AT_BUDGET = mctx("Where your documents give what you do at your budget, do that 
 
 BUDGET = "Budget: {minutes} minutes. " + AT_BUDGET
 """The line of a brief that gives the agent its budget and what it does at
-its budget, in the form `profile_runs.py --help messages` reads."""
+its budget."""

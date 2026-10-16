@@ -59,7 +59,7 @@ PURPOSES = {
     HelpPart.BUDGET: mctx("the budget of each agent type and role"),
     HelpPart.UNDER: mctx("what `--under` prints"),
     HelpPart.RUNNING: mctx("what `--running`, `--calls-since`, `--pending` and `--open` print"),
-    HelpPart.MESSAGES: mctx("the messages from a listed agent's parent, its active time, self time and budget"),
+    HelpPart.MESSAGES: mctx("the messages from a listed agent's parent, its active time and self time"),
     HelpPart.COMMANDS: mctx("how a call's command is printed and labelled"),
     HelpPart.OPTIONS: mctx("the options, each with what it does"),
 }
@@ -105,13 +105,13 @@ PARTS = {
             - the usual time of a label is the median duration of the run's own other ended calls with that label, or where it has none, of the other ended calls with that label of the runs profiled, or where none has one, {block} seconds;
         - after `alerts:`, each kind of monitor's alert on it that a message to it holds on a line of its own, with the number of such messages, or `none`.
     - One run prints its parts and its labels by time, with each label's share of the wall time and its calls, and for backgrounded work the time it ran from launch to its notification, or for a command that ended with none, to its end.
-    - One run of a subagent, completed or not, also prints each message from its parent, as `--help messages` gives those messages, with the time it arrived, its active time, its self time and the budget in force for it.
+    - One run of a subagent, completed or not, also prints each message from its parent, as `--help messages` gives those messages, with the time it arrived, its active time and its self time, and the run's budget.
         - A message's active time is the run's wall time less `idle` over that message's period.
         - Its self time is its active time less the run's waits on agents over that period.
-        - The budget in force for it is the budget `--help messages` gives from the messages up to it.
         - A wait on agents is an interval in which an Agent call of the run is in flight, in the foreground or the background, and the run is not generating and blocks on no `tools` call.
-        - A message whose self time is past its budget is marked `past budget`.
-        - A message with no budget in force prints none, and a run with an unknown message prints no active time, no self time and no budget.
+        - A run's budget is the budget of its type or role, as `--help budget` gives it over every run under the project directories: the budget per item times the number of items its brief gives where its brief gives items, and the budget per run otherwise.
+        - A message whose self time is past the run's budget is marked `past budget`.
+        - A run with no budget prints none, and a run with an unknown message prints no active time and no self time.
     - One run of a subagent also prints, after `report to the parent:`, the latest entry of its parent's transcripts after the parent's latest message to it that gives a report of it, with the entry's time, its kind and the start of its text.
         - Where no entry does, it prints `none after the message at` and that message's time.
         - The parent's transcripts are, under each session of the run, the main transcript where the parent is `main`, and otherwise the transcripts of the parent's run.
@@ -145,8 +145,8 @@ PARTS = {
     HelpPart.BUDGET: mctx("""
     - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over.
         - In place of a budget of type `{general}`, it prints one for each role of `operations.roles.GENERAL_ROLES`, taken over the runs of type `{general}` whose description `operations.roles.described` gives that role, and a run of that type whose description gives no such role joins no budget.
-        - The budget `operate.py next` gives a brief is the budget of its role where that role is one of these, and otherwise the budget of its agent type.
-    - That median is taken over the runs an operator launched alone, with or without a budget in force.
+        - The budget `operate.py next` gives a code editor's brief is the budget of the type `code-editor`.
+    - That median is taken over the runs an operator launched alone.
         - An operator launched a run where its parent, as `--running` gives it, is an agent of type `{operator}`.
         - A run whose parent's type no transcript of the sessions of the run gives is left out, and an `undecided` line on stderr names it.
     - A brief gives items where its first line is one of the lines `operations.briefs` gives for a brief of several items of the same work, each item a ticket number.
@@ -202,7 +202,7 @@ PARTS = {
         - its parent, which is the agent id of the agent that launched it or `main`;
         - the time since its first entry;
         - its active time, with the time of the message it is measured from and, where that message's period has ended, the time it ended;
-        - its self time and its budget;
+        - its self time;
         - its context size in tokens, which is the input of its last request;
             - for an agent of type `operator`, after its context size, `bound` and the operator's bound of {bound} tokens, led by `past` where its context is past that bound;
         - its working directory, as its first entry gives it;
@@ -235,12 +235,7 @@ PARTS = {
     - The period of a message from the parent runs from it to the next message from the parent or from another agent, or to the run's last entry.
     - A listed agent's active time is its wall time less `idle` over the period of the latest message from its parent, with its wall time running to now where that period and its turn have not ended.
     - Its self time is that active time less its waits on agents over that period, as `--help one` defines them, with the time since its last entry a wait where it waits on agents at that entry.
-    - An agent with an unknown message has no active time, no self time and no budget.
-    - A listed agent's budget is the N of the line of the form `Budget: N minutes` in the latest message from its parent that has a line of that form.
-        - An agent none of whose parent's messages has such a line gets no budget.
-        - A line is of that form where it opens, past a list marker, with `Budget: N minutes`, and ends there or goes on after `.`, `,`, `;` or `:`, and the text after it gives nothing.
-        - A line that opens with `Budget:` in another form gives no budget, and an `undecided` line on stderr names it.
-        - A message with lines of more than one N gives no budget, and an `undecided` line on stderr names it.
+    - An agent with an unknown message has no active time and no self time.
     """),
     HelpPart.COMMANDS: mctx("""
     - A call's command and an agent's text output are printed on one line, a command cut to its first {width} characters and a text output to its last {width}.

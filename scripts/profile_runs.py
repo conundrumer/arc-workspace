@@ -2,9 +2,7 @@
 wall time goes, the budget of each agent type and role, the runs under a run since
 an operator's previous call of `--under` on it, the agents under a run
 whose work is open, as `--running` lists them, and whether one run's work
-is open, as `--open` gives it. `--help` prints `USAGE`, and `--help PART` a part of the help, which `profile_runs_help` holds. `budget_of` gives the
-budget of a brief of one role, as more than one run prints it,
-over every run under the project directories."""
+is open, as `--open` gives it. `--help` prints `USAGE`, and `--help PART` a part of the help, which `profile_runs_help` holds."""
 
 import argparse
 import sys
@@ -22,8 +20,7 @@ scripts_importable()
 from agent_launches import runs_under  # noqa: E402
 from agents_pending import pending_agents  # noqa: E402
 from agent_turns import first_time, last_time  # noqa: E402
-from budgets import (budget_group, print_budgets, role_group,  # noqa: E402
-                     type_budget)
+from budgets import group_budgets, print_budgets, run_budget  # noqa: E402
 from command_labels import programs  # noqa: E402
 from context_bound_hook import OPERATOR  # noqa: E402
 from open_agents import Listed, call_times, running_agents, work_open  # noqa: E402
@@ -37,9 +34,7 @@ from run_records import Run  # noqa: E402
 from run_reads import (BACKGROUND_TASK, agent_type, blocks,  # noqa: E402
                        result_text, run_entries, run_type)
 from run_readings import print_readings  # noqa: E402
-from run_store import RunStore  # noqa: E402
 from help_parts import print_help  # noqa: E402
-from operations.roles import Role  # noqa: E402
 from ticketing.times import utc_stamp  # noqa: E402
 from token_prices import PRICES  # noqa: E402
 from transcripts import agent_id, agent_transcripts, bare_id, find, is_subagent, transcripts
@@ -161,24 +156,6 @@ def runs_since(path: Path, ident: str, undecided: list[str]) -> list[Path]:
     return taken
 
 
-def budget_of(role: Role, items: int | None, undecided: list[str]) -> float | None:
-    """The budget in seconds of a brief of `role`, over every run under
-    the project directories that joins its budget, for a brief that gives
-    no items where `items` is None, and otherwise for a brief that gives
-    `items` items, or None where it gets none. The agent type and the
-    profile of each run are read through `run_store`."""
-    group = role_group(role)
-    store = RunStore()
-    runs = [r for agent in agent_transcripts()
-            if (typed := store.last_and_type(agent))[1] == role.agent_type
-            and budget_group(r := store.profile(typed[0], undecided)) == group]
-    store.flush()
-    b = type_budget(group, runs, None, items is not None, undecided)
-    if b is None:
-        return None
-    return b.seconds if items is None else b.seconds * items
-
-
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(add_help=False, usage=argparse.SUPPRESS)
     ap.add_argument("ids", nargs="*", metavar="ID")
@@ -283,15 +260,15 @@ def main(argv: list[str]) -> int:
         print(mctx("refused: no run to profile"), file=sys.stderr)
         return 2
     elif runs and (len(runs) == 1 or args.runs or args.each or args.under):
-        whole = len(runs) == 1 or args.each
+        budgets = group_budgets(undecided) if len(runs) == 1 or args.each else None
         among = call_times(runs)
         for r in runs:
             print(f"{r.label} {r.agent_type} {clock(r.start)}: {r.description}\n"
                   f"  wall {minutes(r.wall)}  {part_split(r.parts)}  "
                   f"cost {dollars(r.cost)}")
             print_readings(r, call_times([r]), among)
-            if whole:
-                print_messages(r, undecided)
+            if budgets is not None:
+                print_messages(r, undecided, run_budget(budgets, r))
                 print_report(r, undecided)
                 print_groups(r.groups, args.top, r.wall)
             if args.each and len(runs) > 1:
