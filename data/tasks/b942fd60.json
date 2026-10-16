@@ -10,7 +10,7 @@
   }],
   "patches": [{
     "level": "canonical",
-    "comment": "train 1 bottom orange ends line instead of splitting. remove bottom orange"
+    "comment": "train 1 bottom orange ends line instead of splitting. remove bottom orange. train 1 line that stops before the 8 at (1,2) does not branch. add its branches"
   }],
   "train": [{
     "index": 0,
@@ -55,10 +55,10 @@
       [0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [
-      [0,0,0,0,3,7,0,2,0,0,0,0],
+      [0,0,0,2,3,7,0,2,0,0,0,0],
       [0,0,8,2,2,2,2,2,7,0,0,3],
       [2,2,2,2,2,2,6,2,2,2,2,2],
-      [0,0,2,0,2,8,0,2,2,8,0,0],
+      [2,2,2,2,2,8,0,2,2,8,0,0],
       [2,2,2,8,2,0,0,2,2,0,0,0],
       [0,0,2,0,2,7,0,2,2,0,0,0],
       [2,2,2,2,2,2,2,2,2,6,0,0],
