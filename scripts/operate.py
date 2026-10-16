@@ -334,6 +334,8 @@ def block(me: str, action: Action,
     launches, with the scratchpad their files go under, by the deadline it
     is given, as `--help next` gives the block of `next` and `--help relay`
     the end of the turn of `relay`."""
+    if not served(me, action):
+        return 0
     single_instance(me)
     arm_watchdog(me)
     deadline = time.monotonic() + BLOCK_SECONDS
@@ -442,12 +444,8 @@ def main(argv: list[str]) -> int:
     try:
         match OperateAction(args.action):
             case OperateAction.NEXT:
-                if not served(args.ident, Action.NEXT):
-                    return 0
                 return block(args.ident, Action.NEXT, lambda deadline: operator_step(args.ident, deadline))
             case OperateAction.RELAY:
-                if not served(args.ident, Action.RELAY):
-                    return 0
                 return block(args.ident, Action.RELAY, lambda deadline: relay_step(args.ident, deadline))
             case OperateAction.REVIEW:
                 if args.rest:
