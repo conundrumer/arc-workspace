@@ -42,7 +42,13 @@ A message on each agent of `TranscriptsRead.stuck` goes to the
 coordinator once per stretch, with the agent's own work that still runs,
 so that the coordinator ends that work or asks the session that holds it,
 and the agent is recorded the same way, in one `bug` ticket of its own
-kind (`stuck`)."""
+kind (`stuck`).
+
+A message on each ticket of `ticket_stall.stalled` goes to the coordinator once
+per stall, with its log since its last progress and its agents, and the
+ticket is recorded the same way, in one `bug` ticket of its own kind
+(`ticket stall`), by `ticket_stalls`. A kind's ticket and its lines are on an agent, or, for
+that kind, on a ticket."""
 
 import re
 import shlex
@@ -50,7 +56,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from controlled_markdown import mctx
-from operations import briefs, messages
+from operations import briefs, messages, ticket_stall
 from operations.constants import COORDINATOR
 from operations.roles import AGENT_ID
 from operations.state import Agent, LateResume, Message, Report, State, Stuck, Ticket
@@ -153,6 +159,7 @@ class BugKind(Enum):
     STALL = "stall"
     LATE_RESUME = "late resume"
     STUCK = "stuck"
+    TICKET_STALL = "ticket stall"
 
 
 TICKETS = {
@@ -171,19 +178,24 @@ TICKETS = {
              "`STUCK_SECONDS`"),
         mctx("The agent's work made no progress for `STUCK_SECONDS`, and then a message on "
              "the agent went to the coordinator.")),
+    BugKind.TICKET_STALL: (
+        mctx("the progress of a ticket: no step was made on it, and no agent worked on it, "
+             "for `STUCK_SECONDS`"),
+        mctx("The ticket made no progress for `STUCK_SECONDS` while a step of an operator "
+             "was due on it, and then a message on the ticket went to the coordinator.")),
 }
 """The title and the `Impact` of the `bug` ticket of each kind that files one,
 by which the operator also finds that kind's ticket in the tracker."""
 
 INSTANCE = "instance"
-"""The word the note of the log line of a further agent of a `BugKind`
-opens with, in that kind's ticket. A note that opened with the agent's id
+"""The word the note of the log line of a further subject of a `BugKind`
+opens with, in that kind's ticket. A note that opened with an agent's id
 would make that agent the holder of an `assigned` ticket."""
 
 
-def instance(agent: str) -> str:
-    """The opening of the note of `agent`'s log line in a kind's ticket."""
-    return f"{INSTANCE} {agent}:"
+def instance(subject: str) -> str:
+    """The opening of the note of `subject`'s log line in a kind's ticket."""
+    return f"{INSTANCE} {subject}:"
 
 
 def kind_tickets(state: State, kind: BugKind) -> list[Ticket]:
@@ -194,33 +206,33 @@ def kind_tickets(state: State, kind: BugKind) -> list[Ticket]:
                   key=lambda t: t.order)
 
 
-def handled(tickets: list[Ticket], agent: str, launched: float) -> bool:
-    """Whether an operator filed one of `tickets` on `agent`, or wrote its
-    line in one, after `launched`, the time of its launch."""
-    return any((t.domain is Domain.AGENT and t.subject == agent and t.filed >= launched)
-               or any(ln.agent == AGENT and ln.time >= launched
-                      and ln.note.startswith(instance(agent)) for ln in t.log)
+def handled(tickets: list[Ticket], domain: Domain, subject: str, since: float) -> bool:
+    """Whether an operator filed one of `tickets` on `subject` of `domain`,
+    or wrote its line in one, after `since`."""
+    return any((t.domain is domain and t.subject == subject and t.filed >= since)
+               or any(ln.agent == AGENT and ln.time >= since
+                      and ln.note.startswith(instance(subject)) for ln in t.log)
                for t in tickets)
 
 
-def ticket_step(state: State, kind: BugKind, agent: str, since: float, line: str,
-                evidence: str) -> Step | None:
-    """The step on `agent`, an agent of `kind` from `since` on: none where
-    `handled`, the line of `agent` in the first of that kind's tickets
-    outside `tickets/closed/`, with `line` after `instance`, and otherwise
-    the command that files that kind's ticket, with `evidence` as its
-    Evidence."""
+def ticket_step(state: State, kind: BugKind, domain: Domain, subject: str, since: float,
+                line: str, evidence: str) -> Step | None:
+    """The step on `subject` of `domain`, of `kind` from `since` on: none
+    where `handled`, the line of `subject` in the first of that kind's
+    tickets outside `tickets/closed/`, with `line` after `instance`, and
+    otherwise the command that files that kind's ticket, with `evidence` as
+    its Evidence."""
     tickets = kind_tickets(state, kind)
-    if handled(tickets, agent, since):
+    if handled(tickets, domain, subject, since):
         return None
     standing = [t for t in tickets if t.status is not Status.CLOSED]
     if standing:
         t = standing[0]
-        return Bash(log(t.number, t.status, t.status, instance(agent) + " " + line, None))
+        return Bash(log(t.number, t.status, t.status, instance(subject) + " " + line, None))
     title, impact_text = TICKETS[kind]
     impact, evidence_section = DEFECT_SECTIONS
     text = ticket_text(Kind.BUG, title, {impact: impact_text, evidence_section: evidence})
-    return Bash(shlex.join([*FILE_TICKET, Domain.AGENT.value, agent, AGENT])
+    return Bash(shlex.join([*FILE_TICKET, domain.value, subject, AGENT])
                 + " <<'TICKET'\n" + text + "TICKET")
 
 
@@ -229,7 +241,7 @@ def stall_step(state: State, agent: str, since: float, reply: Report) -> Step | 
     reply in its transcript is `reply`."""
     time = utc_stamp(reply.time)
     return ticket_step(
-        state, BugKind.STALL, agent, since,
+        state, BugKind.STALL, Domain.AGENT, agent, since,
         mctx("its final reply in its transcript stands at {time}").format(time=time),
         mctx("The final reply of {agent}, in its transcript at {time}:").format(
             agent=agent, time=time) + "\n" + reply.text)
@@ -277,11 +289,51 @@ def stuck(state: State) -> Step | None:
                                                      "holds it."), s.since)
         if not repeated(sent, state):
             return sent
-        t = ticket_step(state, BugKind.STUCK, agent, s.since,
+        t = ticket_step(state, BugKind.STUCK, Domain.AGENT, agent, s.since,
                         mctx("no progress since {time}").format(time=utc_stamp(s.since)),
                         text)
         if t is not None:
             return t
+    return None
+
+
+def ticket_stall_text(state: State, t: Ticket, since: float) -> str:
+    """The text on `t`, stalled since `since`, of the message to the
+    coordinator and of the `bug` ticket's Evidence."""
+    head = mctx("Ticket {number}, under `tickets/{status}/` and held by {holder}, has had no "
+                "step, and no agent at work on it, since {time}.").format(
+        number=t.number, status=t.status.value, holder=t.holder or "no agent",
+        time=utc_stamp(since))
+    lines = [f"- {utc_stamp(ln.time)} {ln.status.value} [{ln.agent_id or ln.agent}]: {ln.note}"
+             for ln in t.log if ln.time > since]
+    agents = [mctx("- {agent} ({role} on {subject}): last report {report}").format(
+        agent=a.agent_id or "unknown", role=a.role.value, subject=a.subject,
+        report=utc_stamp(r.time) if (r := a.last_report) is not None else "none")
+        for a in ticket_stall.agents_of(state, t.number)]
+    return "\n".join([head,
+                      mctx("Its log since then:") if lines else mctx("Its log has no line since then."),
+                      *lines,
+                      mctx("The agents the operators launched on it:") if agents
+                      else mctx("No operator launched an agent on it."),
+                      *agents])
+
+
+def ticket_stalls(state: State) -> Step | None:
+    """The first step on a ticket of `ticket_stall.stalled`: the message that
+    gives the coordinator `ticket_stall_text`, once after its last
+    progress, then the step `ticket_step` gives from that time."""
+    for n, since in sorted(ticket_stall.stalled(state).items()):
+        t = state.tracker.tickets[n]
+        text = ticket_stall_text(state, t, since)
+        sent = Send(COORDINATOR, text + "\n" + mctx(
+            "Find the step it waits for, from its log and the last reports of its agents, then "
+            "have the agent whose work that step is make it."), since)
+        if not repeated(sent, state):
+            return sent
+        s = ticket_step(state, BugKind.TICKET_STALL, Domain.TICKET, n, since,
+                        mctx("no progress since {time}").format(time=utc_stamp(since)), text)
+        if s is not None:
+            return s
     return None
 
 
@@ -297,11 +349,11 @@ def late_resumes(state: State) -> Step | None:
     tickets = kind_tickets(state, BugKind.LATE_RESUME)
     for agent in state.operators:
         left = [r for r in state.transcripts.late_resumes.get(agent, ())
-                if not handled(tickets, agent, r.time)]
+                if not handled(tickets, Domain.AGENT, agent, r.time)]
         if not left:
             continue
         texts = [resume_text(r) for r in left]
-        s = ticket_step(state, BugKind.LATE_RESUME, agent, left[0].time, "; ".join(texts),
+        s = ticket_step(state, BugKind.LATE_RESUME, Domain.AGENT, agent, left[0].time, "; ".join(texts),
                         mctx("The resumes of {agent}, from its transcript:").format(agent=agent)
                         + "".join(f"\n- {t}" for t in texts))
         if s is not None:

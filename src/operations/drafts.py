@@ -20,7 +20,7 @@ A draft waits for a ticket analyst where its log holds findings after its
 last `filed` or `revised` line, and no ticket reviewer or ticket analyst
 runs on it; a line of the operator's that moves a change past its cost
 budget to `tickets/draft/` (`change_budget.OVERRUN_FINDING`), or that moves
-there a change that waits on a ticket that waits on the user
+there a change that waits on a ticket that holds it up
 (`taking.STALL_FINDING`), counts as findings,
 and the analyst's brief gives that line and what the item checker it names leaves
 for a decision; one ticket analyst takes each such draft with the others a
@@ -211,6 +211,16 @@ def step(state: State) -> Step | None:
         return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.DRAFT, joined(nums)),
                       briefs.revise(nums, last, state.me, overruns), items=len(nums))
     return None
+
+
+def due(state: State) -> set[str]:
+    """The drafts on which a step of the review is due."""
+    ready: list[Ticket] = []
+    waiting: list[Ticket] = []
+    out = {t.number for t in drafts(state)
+           if (s := draft_step(state, t, ready, waiting)) is not None
+           and not isinstance(s, Undecided)}
+    return out | {t.number for t in [*ready, *waiting]}
 
 
 def draft_step(state: State, t: Ticket, ready: list[Ticket],

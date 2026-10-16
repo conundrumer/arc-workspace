@@ -1,6 +1,5 @@
-"""The release of tickets whose holder is not live, the take of open
-changes, and the move to `tickets/draft/` of a change that waits on the
-user.
+"""The release of tickets whose holder is not live, and the take of open
+changes.
 
 The operators act on the tickets of the session and on those of the
 sessions `SessionsRead.adopted` gives, as `State.mine` gives them. Which session
@@ -14,12 +13,10 @@ tickets an `Allow:` or an `Expedite:` line gives, and each other change
 waits for a `Resume.` line. Past the usage pace (`pacing`), the same
 changes are taken, and each other one waits until the pace admits it.
 
-A change that waits for a ticket under `tickets/blocked/` moves to
-`tickets/draft/` with a line whose note is
-`STALL_FINDING` on that ticket, which `drafts` reads as findings, once
-after each move of that ticket into `tickets/blocked/` (`stall`). A
-change under `tickets/blocked/` is taken back on a `Merge:` line that
-came after its last move there."""
+A change that waits for a ticket that holds it up moves to
+`tickets/draft/` with a line whose note is `STALL_FINDING` on that ticket,
+which `drafts` reads as findings (`ticket_stall`). A change under `tickets/blocked/` is taken back on a `Merge:`
+line that came after its last move there."""
 
 import re
 from collections.abc import Callable
@@ -33,7 +30,7 @@ from operations.log_commands import log
 from operations.pacing import Pace
 from operations.state import State, Ticket
 from operations.steps import Bash, Step, Undecided
-from operations.tracker import blocked_on_user, closed, exits, final_run, wait_line
+from operations.tracker import closed, exits, final_run, wait_line
 from ticketing.exits import Exit
 from ticketing.vocabulary import Kind, Status
 
@@ -135,6 +132,7 @@ def through_pause(state: State) -> set[str]:
 
 
 RELEASED = mctx("released: holder {holder} is not live")
+RELEASED_LINE = re.compile(form(RELEASED, {"holder": r"\S+"}))
 
 
 def release(state: State) -> Step | None:
@@ -201,36 +199,18 @@ def waiting(state: State) -> list[tuple[str, list[str]]]:
     return [(t.number, awaited) for t, awaited in awaiting(state) if awaited]
 
 
-STALL_FINDING = mctx("finding: {number} waits on the user")
+STALL_FINDING = mctx("finding: {number} holds up this change: {reason}")
 """The note of the line that moves to `tickets/draft/` a change that waits
-for the ticket `number`, which waits on the user."""
+for the ticket `number`, which holds it up for `reason`."""
 
-STALLED = re.compile(form(STALL_FINDING, {"number": rf"(?P<number>{NUMBER.pattern})"}))
+STALLED = re.compile(form(STALL_FINDING, {"number": rf"(?P<number>{NUMBER.pattern})",
+                                          "reason": r".*"}))
 
 
 def blocked_since(t: Ticket) -> float:
     """The time of the last move of `t`, which stands under
     `tickets/blocked/`, into `tickets/blocked/`."""
     return t.log[final_run(t)[0]].time if t.log else t.filed
-
-
-def stall(state: State) -> Step | None:
-    """The move to `tickets/draft/` of a change that `waiting()` gives that
-    waits for a ticket under `tickets/blocked/` (`blocked_on_user`), where no line of
-    its log since that ticket's last move into `tickets/blocked/` gives
-    `STALL_FINDING` on it."""
-    for n, deps in waiting(state):
-        t = state.tracker.tickets[n]
-        for d in deps:
-            u = state.tracker.tickets.get(d)
-            if u is None or blocked_on_user(u) is None:
-                continue
-            since = blocked_since(u)
-            if not any(ln.time >= since and (m := STALLED.match(ln.note)) is not None
-                       and m["number"] == d for ln in t.log):
-                return Bash(log(n, Status.DRAFT, Status.OPEN, STALL_FINDING.format(number=d),
-                                state.me))
-    return None
 
 
 def take(state: State) -> Step | None:

@@ -135,10 +135,14 @@ def unsettled_open(state: State) -> list[str]:
             if not given(state, n) and not awaits_analyst(state, n)]
 
 
-def settle(state: State) -> Step | None:
+def selected(state: State) -> list[str]:
     admitted = taking.admits(state)
     clear = taking.past_pause(state, taking.through_pause(state).__contains__)
-    numbers = [n for n in unsettled_open(state) if admitted(n) and clear(n)]
+    return [n for n in unsettled_open(state) if admitted(n) and clear(n)]
+
+
+def settle(state: State) -> Step | None:
+    numbers = selected(state)
     if not numbers:
         return None
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.TRIAGE, joined(numbers)),
