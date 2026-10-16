@@ -1,4 +1,4 @@
-+ budget: 23900
++ budget: 26674
 * comment: when editing this doc
     - The ticket analyst and the draft analyst inline [Decisions](#decisions) whole, for resolving a ticket, and [Resolving](#resolving) and [analyst-reply](#analyst-reply), for carrying out a resolution and giving their reply. The decision analyst inlines The user's goals, Rule and intent, How a decision is made, The user's part, Cost and time and Agents' choices, for judging what a change's editors leave and ruling a held step, and analyst-reply. The ticket reviewer and the doc reviewer inline The user's goals, for weighing a design or a change. The coordinator loads Decisions, The user's part and Defaults by the links of its Decisions section, before it makes a decision or ends a turn with one. Process notes, the ticket analyst's step documents and the coordinator's change notes link sections of it.
     - Acts, each with its section:
@@ -12,7 +12,7 @@
         - The items of a ticket analyst's reply: [analyst-reply](#analyst-reply).
 
 # Decision notes
-- The user's goals, how a decision on the solver tools or the agents' documents is made, which decisions reach the user, and how a ticket analyst carries out its resolution and gives its reply.
+- How a decision is made, and which decisions reach the user.
 
 ## Decisions
 
@@ -35,6 +35,7 @@
 - Where a decision touches a solver, the lib, the solver tool or what it reports, the witnesses, a solver pass, [Principles](docs/handbook/principles.md) or [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md), read [Decisions on solver work](prompts/agents/notes/decisions.md#decisions-on-solver-work) as well.
 - Where a decision touches a document an agent or a session reads, read [Decisions on the agents' documents](prompts/agents/notes/decisions.md#decisions-on-the-agents-documents) as well.
 - A ground is a source that is quotable or checkable. Cite it so that every reader of your text can check it: by a path that reader can open, a command it can run, or the line quoted, and a bundled skill's file by the absolute path of the copy that invoking the skill extracts under `/private/tmp/claude-<uid>/bundled-skills/`.
+    * comment: Without the bundled skill's clause, a ticket reviewer, given a skill's file cited by a path relative to the skill, searched the CLI binary six minutes for what that file holds: ticket 2-357.
 - Before you state a reason, verify each claim it depends on. State with each reason its ground, or where it has none, its assumption.
 - Rest no default on an assumption a ground rules out.
 - Churn is no reason against an option, and a risk to behavior is one.

@@ -1,8 +1,8 @@
-+ budget: 22200
++ budget: 25786
 * comment: when editing this doc
-    - Each Claude Code session and agent loads [Launching](#launching) by the link of [arc-workspace](CLAUDE.md), before it launches an agent by a call no command printed; the ticket reviewer inlines draft-outcome there too. Each agent inlines the sections under [Briefs](#briefs) that give its own brief's form, which its `description` links for each launcher, and the editors An editor's report on a change. The coordinator loads Passes on a task, Operators and While the user gives feedback by the links of its Changes section.
+    - Each Claude Code session and agent loads [Launching](#launching) by the link of [arc-workspace](CLAUDE.md), before it launches an agent by a call no command printed, and An agent type not found and A transcript review's brief by their links, at such a launch's failure and at a transcript review's launch; the ticket reviewer inlines draft-outcome there too. Each agent inlines the sections under [Briefs](#briefs) that give its own brief's form, which its `description` links for each launcher, and the editors An editor's report on a change. The coordinator loads Passes on a task, Operators and While the user gives feedback by the links of its Changes section.
     - Acts, each with its section:
-        - Launching an agent and acting on what it leaves unfinished: [Launching](#launching).
+        - Launching an agent and acting on what it leaves unfinished: [Launching](#launching), and [An agent type not found](#an-agent-type-not-found).
         - Writing a brief, and reading one's own: [Briefs](#briefs), one section per form.
         - Giving what shows a change's item holds: [An editor's report on a change](#an-editors-report-on-a-change).
         - Launching a pass on a task: [Passes on a task](#passes-on-a-task).
@@ -14,8 +14,7 @@
 - The statements on launching an agent, that more than one entry point inlines or links.
 
 ## Launching
-- A newly added agent type can stay unknown to the harness for minutes after the write of its rendered file, `.claude/agents/<agent type>.md`: where a launch fails with that type not found, make it again a minute after that failure, until 15 minutes have passed since that write. After that, give the launch as unfinished, with the failure's text as its reason.
-    - Wait that minute out in a foreground Bash call that sleeps for the rest of it, with its command led by `: 'unattended-wait: <agent type> reload';`.
+- Where a launch fails with its agent type not found, read [An agent type not found](prompts/agents/notes/launching.md#an-agent-type-not-found).
 - Give an agent a brief in the form the sections under [Briefs](prompts/agents/notes/launching.md#briefs) for its work give, where any does, and launch it as the agent type whose `description` links those sections: read each of those sections and each section they link. Restate neither a docstring of the code nor the agent's definition.
 - Where a brief gives a scratch directory, give a new directory under the session's scratchpad directory.
 - In a brief or a `change` ticket that gives the items or the Intent of an edit, give the meaning to state, the case that shows the need, and the span the edit may change, and no wording.
@@ -37,8 +36,12 @@
 - Where the reply of an agent you launched gives items of its brief each as done or as unfinished, and gives an item you sent it as neither, send that item again, file its drop as a ticket, and leave finding the drop's cause to the ticket analyst that takes that ticket.
 - Launch a ticket analyst with each ticket the lines above have you file that still stands under `tickets/open/`, before you end your turn with no other work.
 - In your reply, give each item an agent you launched left unfinished that you have not finished, as unfinished with its reason.
-- A transcript review is a `general-purpose` agent that reviews a run's transcript. Give it the run's agent id, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), the `<domain>` and `<subject>` [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields) gives a transcript review of that run, and `transcript-review` as `<agent>`. Have it file a ticket of kind `delay` for each place where the run explored to find what a docstring or a document line could have led it to.
+- A transcript review is a `general-purpose` agent that reviews a run's transcript, with the brief [A transcript review's brief](prompts/agents/notes/launching.md#a-transcript-reviews-brief) gives.
 - Pause or serialize agents only where the user agreed to it.
+
+## An agent type not found
+- A newly added agent type can stay unknown to the harness for minutes after the write of its rendered file, `.claude/agents/<agent type>.md`: make the launch again a minute after its failure, until 15 minutes have passed since that write. After that, give the launch as unfinished, with the failure's text as its reason.
+    - Wait that minute out in a foreground Bash call that sleeps for the rest of it, with its command led by `: 'unattended-wait: <agent type> reload';`.
 
 ## Briefs
 
@@ -130,6 +133,9 @@
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 - A doc reviewer's brief on a commit of `master` that the coordinator merged with no `change` ticket gives that commit's hash in place of a worktree and editors.
 - A doc reviewer's brief on a standing doc review gives the reader with its arguments, the commit of `master` it reviews, and the tag `doc-review/<reader>` that records that review in git, in place of a change, a worktree and editors.
+
+### A transcript review's brief
+- A transcript review's brief gives the run's agent id, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), the `<domain>` and `<subject>` [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields) gives a transcript review of that run, and `transcript-review` as `<agent>`. It has the review file a ticket of kind `delay` for each place where the run explored to find what a docstring or a document line could have led it to.
 
 ### Solver work
 - Solver work is a solver pass, or an edit of a solver or of the lib for one task.

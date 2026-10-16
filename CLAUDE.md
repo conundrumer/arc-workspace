@@ -1,4 +1,4 @@
-+ budget: 4536
++ budget: 5043
 
 # arc-workspace
 - ARC-AGI-2 work for the 2026 Kaggle competition.
@@ -25,13 +25,12 @@
 
 ## Solver console
 - `tools/console/` is deprecated. It runs solver sessions as `claude -p` workers in staged chains.
-- The module docstrings in [solver_console](tools/console/solver_console) index what each module holds: what a worker session reads and may do, how a stage hands off, and how the user reaches a session.
-- Read them before answering a question about how console sessions run.
+- Before you answer a question about how console sessions run, read the module docstrings in [solver_console](tools/console/solver_console), which index what each module holds.
 - A running server re-execs itself when `server.py` or a module under `solver_console/` changes, at its next quiet moment (`solver_console/reload.py`), so a code change needs no restart.
 - The page and `ui/` are served from disk on each request.
 
 ## Tickets
-- `tickets/` is the ticket tracker, which holds the tickets agents file, and [Ticket notes](prompts/agents/notes/tickets.md) states its conventions.
+- `tickets/` is the ticket tracker, and [Ticket notes](prompts/agents/notes/tickets.md) states its conventions.
 
 ## Launching
 - Before you launch an agent by a call that no command printed to you, read [Launching](prompts/agents/notes/launching.md#launching), where your context does not hold it.

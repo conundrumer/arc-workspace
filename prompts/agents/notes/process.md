@@ -1,4 +1,4 @@
-+ budget: 23000
++ budget: 25484
 * comment: when editing this doc
     - The ticket analyst and the draft analyst load this document by the links of their step documents, before it writes the Intent of a `change` to the agents' processes and at the process assessment; the ticket reviewer loads it by a link of its Checks, for such a `change`. Each serves judging a change to the processes against what they must achieve.
     - Acts, each with its section, one process each, giving its outcomes and how it can fail:
@@ -56,7 +56,7 @@
 - How it can fail: each small choice is given as a decline and floods the coordinator: only a part of a need the user stated counts.
 
 ## Design (design definition, architecture definition)
-- Purpose: decide the shape of a change's code and of its document lines before they are written: the existing code or lines it uses or extends, each new operation and its module, each new rule or fact, its section and the rules and facts on the same act it joins, replaces or retires, and how its parts fit.
+- Purpose: decide the shape of a change's code and of its document lines, and how its parts fit, before they are written.
 - Principles: "Keep the process, the code and their semantics in their best state, with maintainable code", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences), DRY (one idea in one place), and make illegal states unrepresentable.
     * comment: The user's words, session 7fd429fb, 2026-10-13T14:46:25Z: "im curious if this could be part of a planning principle"; 14:47:10Z: "what about just poitnting at the core idea", the core idea being "Make illegal states unrepresentable"; 14:47:43Z, on reading the bare name as license for big refactors: "i dont expect that to happen but if it did i would welcome it". On the standard names, the user's words, session 7fd429fb, 2026-10-15T22:44:57Z: "Let’s try it. Principles are short and well known in training set"; 2026-10-16T02:19:36Z: "almost seems liek a regression".
 - Outcomes:
