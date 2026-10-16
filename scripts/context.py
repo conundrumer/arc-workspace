@@ -52,8 +52,8 @@ HELP = mctx("""
             - The files a codex session on the repo reads: `AGENTS.md`, [Codex on arc-workspace](prompts/codex.md) rendered, and `.codex/config.toml`, with the main tree's `docs/codex-style.md` as its developer instructions.
     - Before it writes, `--write` checks `CLAUDE.md` and each `.md` file under `docs/handbook/` and `prompts/agents/` against the budget its `+ budget:` line gives.
         - The budget bounds the rendering `--write` writes from the file, where the file is the coordinator's document, a `<name>-next.md`, or an agent's prompt whose `+ lib:` is `none`, and otherwise the file's own text.
-        - For each file whose bounded text holds between 90 % of its budget and its budget, it prints a warning on stderr and goes on.
-        - For each file whose bounded text holds more than its budget, and each file with no `+ budget:` line, it prints the failure, writes nothing and exits 1.
+        - For each file whose bounded text holds 90 % of its budget or more, it prints a warning on stderr and goes on.
+        - For each file with no `+ budget:` line, it prints the failure, writes nothing and exits 1.
     - Each other form that renders the coordinator's document, other than `session-start`, checks that rendering the same way.
     - Each form that writes a generated file in the checkout, other than `session-start`, first checks that git ignores each one it writes there.
         - Where git does not ignore one, the form writes none, prints each such file and `.gitignore`, and exits 1.

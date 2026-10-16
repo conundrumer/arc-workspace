@@ -66,17 +66,15 @@ class Size:
 
     @property
     def fails(self) -> bool:
-        return self.standing in (Standing.PAST, Standing.NONE)
+        return self.standing is Standing.NONE
 
 
 WITHIN_BAND = mctx("Warning: {text} holds {size} characters, near the "
                    "budget of {budget} that {path} gives.")
 PAST_BUDGET = mctx(
-    "{text} holds {size} characters, past the budget of {budget} that {path} "
-    "gives: cut that text first, and raise the `+ budget:` line of "
-    "{path} only by what the text that "
-    "[What a file holds](docs/handbook/editing.md#what-a-file-holds) keeps "
-    "after that cut still needs.")
+    "Warning: {text} holds {size} characters, past the budget of {budget} "
+    "that {path} gives. Budgets are not enforced for now: cut no text for "
+    "this, and leave the `+ budget:` line as it is.")
 NO_BUDGET = mctx("{path} has no `+ budget:` line.")
 NOT_A_NUMBER = mctx("`{attr}: {value}` in {doc} is no number of characters")
 
