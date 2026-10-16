@@ -1,5 +1,5 @@
 + index: headings
-+ budget: 22100
++ budget: 24490
 * comment: when editing this doc
     - Write what File structure says by editing the template, and describe only what the template cannot explain.
 
@@ -123,7 +123,6 @@
 - A case's model reads from `out` at that case one grid per combination of a value the case reads in each `out` column of a type whose lines give the values a case reads in it, its output is the distinct grids it reads, and it is undefined on an input where some combination reads no grid, or facts that describe no total grid.
     - A relation's values at that case are those the case stores, or those that the `@derive` branch the case takes on it derives on that input.
     - `OpenValue` is a record with one field per `@open` relation the output of some case depends on, each field with that relation's name and of a record type the solver names for that relation, whose fields are the relation's columns that tell one open value from another, under the same names.
-        - `.type TieValue = [d: DiagAxis]`, `.type PickValue = [d: Dir]` and `.type OpenValue = [tie_dir: TieValue, pick_dir: PickValue]`.
     - Where the output of some case depends on an `@open` relation, `out` takes a column of type `OpenValue` before its `TiebreakResolution` column, or last where it has none, each fact holds there the values of the `@open` relations it is derived at, and a case reads there each choice of one value of each field.
     - A fact whose derivation does not read an `@open` relation of `OpenValue` holds `nil` in that relation's field, which counts as every value of it, whether or not its case reads that relation.
 - A case's base is its `Choice` value, its branch at each point the `Choice` encodes; a case is a base with a branch at each `@derive` and `@store` point its base reads.
@@ -168,9 +167,9 @@
 ## Types
 - A solver may define:
     - an ADT in `Choice`, in one of these places:
-        - as `Choice` itself
-        - as the type of a field in the `Choice` record
-        - as the type of a field in one or more constructors in `Choice`
+        - `Choice` itself
+        - the type of a field of the `Choice` record
+        - the type of a field of a constructor in `Choice`
     - `TiebreakResolution` for alt outputs
     - `OpenValue` for the open values the output depends on, per [Cases](docs/handbook/solver-file.md#cases), and the record type of each of its fields
     - `DemonstratedChoice`, per [Demonstrated choice](docs/handbook/solver-file.md#demonstrated-choice)
