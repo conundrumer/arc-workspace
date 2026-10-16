@@ -259,7 +259,8 @@
     - a partition
 - Deriving a value asserts that the value depends on the source from which it is derived.
     - **Two parameterizations.** Storing a value and deriving that value produce two different parameterizations.
-        - On an input where the derivation gives a value other than the stored one, the stored value agrees with no assignment of the derived model, so they are not equivalent.
+        - Where Θᵢ of the stored parameter holds a value that the derivation gives at no assignment of the derived model on some input, an assignment that stores that value agrees with no assignment of the derived model, so they are not equivalent.
+            * comment: The Analyze pass a52ba117c25f3e31a on cf5fd0ad and its transcript review a1fb31a652189058e each read the line's former words, "On an input where the derivation gives a value other than the stored one", as making a stored value and its derivation never equivalent, against the Θᵢ definition, as tickets 10-625 and 10-629 record.
         - 3b4c2228
             - One model renders a count as marks down a diagonal. Another looks up a stored grid for the count. Every train and test count is a key of the table, so the models never differ on a pair.
                 + gloss
