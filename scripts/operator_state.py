@@ -59,6 +59,7 @@ from operations.final_reply import final_sends_in, for_context, sent_final_text
 from operations.handled import made
 from operations.change_agents import on_change
 from operations.change_budget import left_draft
+from operations.changes import holds
 from operations.log_commands import AGENT
 from operations.monitor import MonitorState, Watched
 from operations.plan import elsewhere, taken_up, unknown_line
@@ -430,9 +431,7 @@ def elsewhere_agents(tickets: Mapping[str, Ticket], me: str, operators: frozense
     `undecided` line names it."""
     out: list[Agent] = []
     reads: list[AgentsRead] = []
-    for t in tickets.values():
-        if t.kind is not Kind.CHANGE or t.status is not Status.ASSIGNED or t.holder != me:
-            continue
+    for t in (t for t in tickets.values() if holds(t, me)):
         since = left_draft(t)
         others = dict.fromkeys(ln.agent_id for ln in t.log
                                if ln.time > since and ln.agent == AGENT and ln.agent_id
@@ -458,7 +457,7 @@ def elsewhere_agents(tickets: Mapping[str, Ticket], me: str, operators: frozense
 def read_held(tickets: Mapping[str, Ticket], me: str, tree: GitRead) -> HeldRead:
     """The read of the worktrees of the tickets of `tickets` that `me`
     holds."""
-    trees = {w for t in tickets.values() if t.status is Status.ASSIGNED and t.holder == me
+    trees = {w for t in tickets.values() if holds(t, me)
              and (w := worktree_in(t, tree.worktrees)) is not None}
     return HeldRead(gate_outputs=ReadOnUse(sorted(trees), gate_outputs),
                     fragments=ReadOnUse(sorted(trees), fragments))

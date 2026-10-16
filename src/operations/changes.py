@@ -91,6 +91,11 @@ from operations.worktrees import WORKTREE, worktree
 from ticketing.vocabulary import Domain, Kind, Note, Status
 
 
+def holds(t: Ticket, me: str) -> bool:
+    """Whether `t` is a change that the operator `me` holds."""
+    return t.kind is Kind.CHANGE and t.status is Status.ASSIGNED and t.holder == me
+
+
 def held(state: State) -> list[Ticket]:
     """The changes the operator holds: those `master` holds merged first,
     in ticket order, so that a merged change's close comes at the next step
@@ -98,9 +103,7 @@ def held(state: State) -> list[Ticket]:
     the first that follows the change its latest printed step served
     (`last_served`), so that each held change with a ready step gets one
     step before any gets a second."""
-    tickets = sorted((t for t in state.tracker.tickets.values()
-                      if t.kind is Kind.CHANGE and t.status is Status.ASSIGNED
-                      and t.holder == state.me),
+    tickets = sorted((t for t in state.tracker.tickets.values() if holds(t, state.me)),
                      key=lambda t: t.order)
     landed = [t for t in tickets if merging.merged(state, t)]
     rest = [t for t in tickets if t not in landed]

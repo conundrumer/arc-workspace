@@ -8,6 +8,7 @@ from handbook.paths import scripts_importable
 
 scripts_importable()
 
+from dependents import module_names  # noqa: E402
 from ticket_form import section, section_head  # noqa: E402
 
 from operations.state import Ticket  # noqa: E402
@@ -17,9 +18,6 @@ from solver.vocabulary import SOLVER_SUFFIX  # noqa: E402
 SCOPE = "Scope"
 
 LINES = re.compile(r":\d+(?:-\d+)?$")
-
-IMPORT_ROOTS = ("src", "scripts")
-"""The directories a Python module's dotted name counts from."""
 
 
 def section_paths(text: str, name: str, root: Path) -> frozenset[str]:
@@ -45,16 +43,18 @@ def scope_paths(t: Ticket, root: Path) -> frozenset[str]:
 
 def names(text: str, name: str) -> bool:
     """Whether `text` names `name`. A path, which holds a `/`, is named by
-    the path, by its file name as a whole word, or, for a `.py` file under
-    an import root, by its dotted module name as a whole word. Any other
-    name is named as a whole word."""
+    the path, by its file name as a whole word, or, for a `.py` file other
+    than a package's `__init__.py`, by each name `module_names` gives it, as
+    a whole word. A package's name is no form of its `__init__.py`, since
+    `whole_word` admits a `/` or a `.` on each side of a word, so that the
+    name stands in each title that gives any module of the package. Any
+    other name is named as a whole word."""
     if "/" not in name:
         return whole_word(text, name)
     path = Path(name)
     forms = [path.name]
-    root = next((r for r in IMPORT_ROOTS if path.is_relative_to(r)), None)
-    if path.suffix == ".py" and root is not None:
-        forms.append(".".join(path.relative_to(root).with_suffix("").parts))
+    if path.suffix == ".py" and path.name != "__init__.py":
+        forms += module_names(name)
     return name in text or any(whole_word(text, f) for f in forms)
 
 

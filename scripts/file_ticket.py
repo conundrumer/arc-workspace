@@ -260,8 +260,8 @@ EMPTY = mctx("the list is empty")
 
 CLOSED_ON_HELP = mctx("""
     - `<name>` is a word or a path from the root of the tree, as the title of a ticket gives it.
-    - The command prints, for each ticket under `tickets/{closed}/` whose title names a `<name>`, or a path that a `<name>` that is a path had before, as `git log --follow --name-only` gives it on `master`, its number and title, and under them its last log line, in the order of numbers, or `{empty}` where no title names one.
-    - A title names a path, which holds a `/`, where it holds the path, the path's file name as a whole word, or, for a `.py` file under `src/` or `scripts/`, its dotted module name from that directory as a whole word, such as `operations.plan` for `src/operations/plan.py`. It names any other `<name>` where it holds it as a whole word.
+    - The command prints, for each ticket under `tickets/{closed}/` whose title refers to a `<name>`, or a path that a `<name>` that is a path had before, as `git log --follow --name-only` gives it on `master`, its number and title, and under them its last log line, in the order of numbers, or `{empty}` where no title refers to one.
+    - A title refers to a path, which holds a `/`, where it holds the path, the path's file name as a whole word, or, for a `.py` file other than a package's `__init__.py`, each dotted name it can be imported by, as a whole word, such as `operations.plan` for `src/operations/plan.py`. It refers to any other `<name>` where it holds it as a whole word.
     """)
 
 NAMES = mctx("names: {names}")
@@ -696,7 +696,7 @@ SUBCOMMANDS = {
                        " <number> [<section> ...]", SHOW_HELP, "", None, show_command, False),
     "await-close": Subcommand(mctx("ends once a ticket closes, and prints how it closed"),
                               " <number> [<number> ...]", AWAIT_CLOSE_HELP, "", None, await_close_command, False),
-    "closed-on": Subcommand(mctx("prints the closed tickets whose title names a target, with how each closed"),
+    "closed-on": Subcommand(mctx("prints the closed tickets whose title refers to a target, with how each closed"),
                             " <name> [<name> ...]", CLOSED_ON_HELP, "", None, closed_on_command, False),
     "ground": Subcommand(mctx("prints the `Grounds` line of a span of a file or of a command"),
                          " <path>:<first>-<last> | --command <command>", GROUND_HELP, "", None,
