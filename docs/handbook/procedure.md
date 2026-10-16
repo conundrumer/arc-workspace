@@ -67,7 +67,7 @@
             - The function takes the component's type arguments, each a `Primitive` from `engine.program` or a `LibType` from `lib_components.components`, the grid size of each key as `sizes`, and the rows of each input relation by that relation's name, with a cell as `(row, column)`. It returns each output relation, whose `.rows` is its set of rows as tuples, and whose `.map()` and `.map_per_key()` give a relation that is a function of its leading columns as a dict.
             - `Components(Primitive.NUMBER, sizes={i: (h, w)}, node=[(i, (r, c)), ...]).label.map_per_key()` gives `{i: {(r, c): id}}` for each key `i`.
     - A scene claim fixes no task data.
-        - A value a scene claim states that is task data is a parameter: name it in the claim, and list it with this task's value, under Parameters when applying the rules needs its value and under Scene parameters otherwise.
+        - A value a scene claim states that is task data is a parameter: name it in the claim, and list it with this task's value, under Parameters when the program reads its value and under Scene parameters otherwise.
 3. Only after step 2 is complete, read the next steps: `cat .claude/analyze-next.md`.
 
 ### Analyze after the concept
@@ -151,7 +151,7 @@
     - Flag performance issues in the review.
     - When a performance issue prevents the principled form, make a temporary workaround, marked with the `@workaround` directive.
 3. Form each claim under the Analyze report's Not formed as a branch, with each reading of an item that gives several as a claim of its own, and add as cases the combinations that take it and meet Fit and Relational form.
-4. Hold as a branch each built-in derivation that fits a parameter, and each stored reading of a derived value on which a `@store` line stands or for which `store` prints a `@store` line to add.
+4. Hold as a branch each built-in derivation that fits a parameter, and each stored reading of a derived value on which a `@store` line stands, for which `store` prints a `@store` line to add, or that the Analyze report gives a witness, whatever `store` reports.
     - `uv run python scripts/run_dl.py derive <task_id>` lists the built-in derivations that fit.
     - `uv run python scripts/run_dl.py store <task_id>` lists the derived values that are the same on every input.
     - Write the directive line each prints, in the form the [`@derive`](docs/handbook/solver-file.md#params) or [`@store`](docs/handbook/solver-file.md#program) directive gives, and, on a `@derive` or `@store` line, with the plausibility and verdict of the witness it records, and in the witness file rewrite each name of the branch it records to the name [Witness file](docs/handbook/solver-file.md#witness-file) gives that line.
