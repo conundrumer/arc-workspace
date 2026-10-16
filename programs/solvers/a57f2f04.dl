@@ -104,8 +104,9 @@
                 marks: MarkSet, tile: TileExtent, anchor: Anchor,
                 extent: PanelExtent]
 
-// A panel under one case.
-.type Panel = [ch: Choice, x: Ident]
+// A panel under the cases that differ only in their panel extent.
+.type Panel = [field: FieldColor, conn: Connectivity, blank: BlankColor,
+               marks: MarkSet, tile: TileExtent, anchor: Anchor, x: Ident]
 
 // A panel of one example.
 .type ExPanel = [e: Example, x: Ident]
@@ -254,7 +255,8 @@ panel_cell(F, P) :- field(F, _), in(P, Col), !field(F, Col).
 orth.node(F, P) :- panel_cell(F, P).
 
 .decl panel(pn: Panel, p: Position)
-panel([Ch, X], P) :- impl_choice(Ch), Ch = [F, $Orthogonal(), _, _, _, _, _], orth.label(F, P, X).
+panel([F, C, B, M, T, A, X], P) :-
+    impl_choice([F, C, B, M, T, A, _]), C = $Orthogonal(), orth.label(F, P, X).
 
 .init parse = Parse<Panel>
 parse.panel(Pn, P) :- panel(Pn, P).
@@ -263,8 +265,8 @@ parse.color(Pn, P, Col) :- parse.box.box(Pn, B), in(P, Col), inside(P, B).
 // The marks that bound the tile, and their box.
 .decl marks_box(pn: Panel, b: Box)
 
-// The cells the copies fill.
-.decl fill(pn: Panel, p: Position)
+// The cells the copies fill under panel extent e.
+.decl fill(e: PanelExtent, pn: Panel, p: Position)
 
 // The open values each case's output is derived at.
 .decl open_value(ch: Choice, v: OpenValue)
@@ -273,8 +275,9 @@ parse.color(Pn, P, Col) :- parse.box.box(Pn, B), in(P, Col), inside(P, B).
 .decl laid(pn: Panel, v: OpenValue, b_laid: Box)
 
 .decl paint(ch: Choice, v: OpenValue, p: Position, col: Color)
-paint(Ch, V, P, Col) :-
-    laid([Ch, X], V, B_laid), parse.copy([Ch, X], _, B_laid, P, Col), fill([Ch, X], P).
+paint([F, C, B, M, T, A, E], V, P, Col) :-
+    laid([F, C, B, M, T, A, X], V, B_laid),
+    parse.copy([F, C, B, M, T, A, X], _, B_laid, P, Col), fill(E, [F, C, B, M, T, A, X], P).
 
 // The case is undefined on the input.
 .decl broken(ch: Choice)
@@ -305,48 +308,49 @@ field($DeriveField(), Col) :- border.value($U(), Col).
 .init diag = Components8<FieldColor>
 diag.node(F, P) :- panel_cell(F, P).
 
-panel([Ch, X], P) :- impl_choice(Ch), Ch = [F, $DiagPanel(), _, _, _, _, _], diag.label(F, P, X).
+panel([F, C, B, M, T, A, X], P) :-
+    impl_choice([F, C, B, M, T, A, _]), C = $DiagPanel(), diag.label(F, P, X).
 
 // --- $StoredBlank ---
-parse.blank([Ch, X], Col) :-
-    parse.box.box([Ch, X], _), Ch = [_, _, $StoredBlank(), _, _, _, _], params.blank(Col).
+parse.blank(Pn, Col) :-
+    parse.box.box(Pn, _), Pn = [_, _, $StoredBlank(), _, _, _, _], params.blank(Col).
 
 // --- $DeriveBlank ---
 // @claim panels
 .init commonest = Mode<Panel, Color, Position>
-commonest.item([Ch, X], Col, P) :-
-    panel([Ch, X], P), Ch = [_, _, $DeriveBlank(), _, _, _, _], in(P, Col).
+commonest.item(Pn, Col, P) :-
+    panel(Pn, P), Pn = [_, _, $DeriveBlank(), _, _, _, _], in(P, Col).
 
 // @claim panels
 .init top = Unanimous<Panel, Color>
 top.item(Pn, Col) :- commonest.mode(Pn, Col).
 
 parse.blank(Pn, Col) :- top.value(Pn, Col).
-broken(Ch) :- top.clash([Ch, _]).
+broken([F, C, B, M, T, A, E]) :- top.clash([F, C, B, M, T, A, _]), panel_extent_choice(E).
 
 // --- $AllMarks ---
-marks_box([Ch, X], B) :- parse.marks_box.box([Ch, X], B), Ch = [_, _, _, $AllMarks(), _, _, _].
+marks_box(Pn, B) :- parse.marks_box.box(Pn, B), Pn = [_, _, _, $AllMarks(), _, _, _].
 
 // --- $ColorBox ---
-parse.scan([Ch, X], D, A) :-
-    parse.box.box([Ch, X], _), Ch = [_, _, _, $ColorBox(), _, _, _], params.scan(D, A).
+parse.scan(Pn, D, A) :-
+    parse.box.box(Pn, _), Pn = [_, _, _, $ColorBox(), _, _, _], params.scan(D, A).
 
 // @claim tile
 .init color_box = Unanimous<Panel, Box>
 color_box.item(Pn, B) :- parse.first_color.box([Pn, _, _], B).
 
 marks_box(Pn, B) :- color_box.value(Pn, B).
-broken(Ch) :- color_box.clash([Ch, _]).
+broken([F, C, B, M, T, A, E]) :- color_box.clash([F, C, B, M, T, A, _]), panel_extent_choice(E).
 
 // --- $MarkBox ---
-parse.tile([Ch, X], B) :- marks_box([Ch, X], B), Ch = [_, _, _, _, $MarkBox(), _, _].
+parse.tile(Pn, B) :- marks_box(Pn, B), Pn = [_, _, _, _, $MarkBox(), _, _].
 
 // --- $CornerBox ---
 // The marks' box's distance to the panel box's side d, and to the opposite.
 .decl gap(pn: Panel, d: Dir, k: number, k2: number)
-gap([Ch, X], D, K, K2) :-
-    marks_box([Ch, X], B), Ch = [_, _, _, _, $CornerBox(), _, _],
-    parse.box.box([Ch, X], B_p), relative(B_p, B, B_rel), dist_pair(B_rel, D, K, K2).
+gap(Pn, D, K, K2) :-
+    marks_box(Pn, B), Pn = [_, _, _, _, $CornerBox(), _, _],
+    parse.box.box(Pn, B_p), relative(B_p, B, B_rel), dist_pair(B_rel, D, K, K2).
 
 // The side of each axis that the marks' box lies nearer.
 .decl near(pn: Panel, d: Dir, k: number)
@@ -357,32 +361,30 @@ parse.tile(Pn, B) :-
     near(Pn, D1, K1), near(Pn, D2, K2), diag_dirs(_, _, D1, D2),  // a corner's two sides
     edge_outset(D1, K1, O1), compose(B_m, O1, B1),     // out to the near side on one axis
     edge_outset(D2, K2, O2), compose(B1, O2, B).       // and on the other
-broken(Ch) :- gap([Ch, _], _, K, K).
+broken([F, C, B, M, T, A, E]) :- gap([F, C, B, M, T, A, _], _, K, K), panel_extent_choice(E).
 
 // --- $TileLattice ---
 open_value(Ch, [nil]) :- impl_choice(Ch), Ch = [_, _, _, _, _, $TileLattice(), _].
 
-laid([Ch, X], [nil], B) :- parse.tile([Ch, X], B), Ch = [_, _, _, _, _, $TileLattice(), _].
-parse.lay([Ch, X], B) :- parse.tile([Ch, X], B), Ch = [_, _, _, _, _, $TileLattice(), _].
+laid(Pn, [nil], B) :- parse.tile(Pn, B), Pn = [_, _, _, _, _, $TileLattice(), _].
+parse.lay(Pn, B) :- parse.tile(Pn, B), Pn = [_, _, _, _, _, $TileLattice(), _].
 
 // --- $CornerAnchor ---
 open_value(Ch, [[D]]) :-
     impl_choice(Ch), Ch = [_, _, _, _, _, $CornerAnchor(), _], params.anchor(D).
 
-laid([Ch, X], [[D]], B_laid) :-
-    parse.corner_lay([Ch, X], _, D, B_laid), Ch = [_, _, _, _, _, $CornerAnchor(), _],
+laid(Pn, [[D]], B_laid) :-
+    parse.corner_lay(Pn, _, D, B_laid), Pn = [_, _, _, _, _, $CornerAnchor(), _],
     params.anchor(D).
-parse.moved([Ch, X], B, B_laid) :-
-    parse.corner_lay([Ch, X], B, D, B_laid), Ch = [_, _, _, _, _, $CornerAnchor(), _],
+parse.moved(Pn, B, B_laid) :-
+    parse.corner_lay(Pn, B, D, B_laid), Pn = [_, _, _, _, _, $CornerAnchor(), _],
     params.anchor(D).
 
 // --- $PanelCells ---
-fill([Ch, X], P) :- panel([Ch, X], P), Ch = [_, _, _, _, _, _, $PanelCells()].
+fill($PanelCells(), Pn, P) :- panel(Pn, P).
 
 // --- $ComponentBbox ---
-fill([Ch, X], P) :-
-    parse.box.box([Ch, X], B), Ch = [_, _, _, _, _, _, $ComponentBbox()],
-    in(P, _), inside(P, B).
+fill($ComponentBbox(), Pn, P) :- parse.box.box(Pn, B), in(P, _), inside(P, B).
 
 .comp Determine {
     // The concept's panels in each example.
