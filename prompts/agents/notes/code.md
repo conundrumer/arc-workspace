@@ -1,4 +1,4 @@
-+ budget: 3600
++ budget: 3840
 * comment: when editing this doc
     - [Code editor](prompts/agents/code-editor.md), with [code-editor-next.md](prompts/agents/code-editor-next.md), and [Code reviewer](prompts/agents/code-reviewer.md), with [code-reviewer-next.md](prompts/agents/code-reviewer-next.md), inline its sections, for editing and reviewing the code under `src/` and `scripts/`.
     - Acts, each with its section:
@@ -18,7 +18,8 @@
 ## unit-kinds
 - Defects of a whole unit:
     * comment: The user's words, session 7fd429fb, 2026-10-15T22:44:57Z: "Let’s try it. Principles are short and well known in training set"; 2026-10-16T02:19:36Z: "almost seems liek a regression".
-    - One idea in two places: a computation, selection, rule, rendering or sentence written twice, in one module or across modules, a break of DRY.
+    - One idea in two places: a computation, selection, rule, rendering or sentence written twice for the same purpose, in one module or across modules, a break of DRY.
+        * comment: Code editor a3fa90721fd524e00 keyed the kept reads, which need another file set, by `run_store`'s `SOURCES`, as the fix of this kind (ticket 6-1148). The user, session 7fd429fb, 2026-10-15T22:46:49Z: "Reusing code in an inappropriate way, I forgot the term , was it high coupling?".
         - A place of this kind stands where a package boundary forces the second copy.
     - Many ideas in one place: a module whose docstring has to describe more than one subject, a break of the single-responsibility principle.
     - A unit grown by accretion: a function, a record or a class that has taken a branch, a flag, a field or a parameter for each case it was extended to cover, where a restructure into units of one subject each, or one general rule over those cases, would hold them, a break of the open-closed principle.
