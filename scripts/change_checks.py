@@ -20,7 +20,7 @@ from controlled_markdown import mctx
 from engine import checkout, duration
 from operations.merging import CHECK_FAILED, PREFIX, check_name
 
-CODE_DIRS = ("src", "scripts", "tests", "data/tasks")
+CODE_DIRS = ("src", "scripts", "tests", "data/tasks", "tools/console")
 """The directories a change under which runs the code checks."""
 
 CODE_FILES = ("pyproject.toml", "uv.lock")
