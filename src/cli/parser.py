@@ -290,13 +290,15 @@ def parser() -> argparse.ArgumentParser:
                                    "file gets"))
     witness.add_argument("--try", metavar="PATH", dest="try_path",
                          help=mctx("a grid file read as a candidate "
-                                   "witness: run the solver's cases on it "
-                                   "as `record` would, and print its "
+                                   "witness: run on it the cases `record` "
+                                   "would, those witnessed with it added "
+                                   "to the witness file, and print its "
                                    "groups, the unseparated branch "
                                    "differences whose pairs it separates, "
-                                   "and the subsumed ones whose pairs it "
-                                   "shows defined and differing, writing "
-                                   "nothing"))
+                                   "the subsumed ones whose pairs it "
+                                   "shows defined and differing, and the "
+                                   "subsumed ones that the cases it newly "
+                                   "witnesses bring, writing nothing"))
     file_or_every.add_argument(
         "--every-case", action="store_true",
         help=mctx("run with `impl_choice` holding every case of `Choice`, "

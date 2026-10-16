@@ -9,7 +9,11 @@ from dataclasses import replace
 from pathlib import Path
 
 from checker import Runs
-from checker.branches.witnesses import entry_outcomes
+from checker.branches.witnesses import (
+    entry_outcomes,
+    runs_with_entry,
+    solver_with_entry,
+)
 from checker.render import commands, recording
 from checker.render.built import record_lines
 from cli import text
@@ -185,18 +189,6 @@ def _write(solver: Solver, at: Path, entries: list[Entry]) -> bool:
     return not problems
 
 
-def _with_entry(solver: Solver, entry: Entry) -> Solver:
-    """The solver with `entry` in its witness file, as `put` writes it
-    (`solver.witness.with_entry`). The cases `record` groups are then the cases witnessed with the
-    entry's input among the file's (solver-file.md, under "Cases"), which
-    `witness` reads on the file `record` writes."""
-    held = () if solver.witness_file is None \
-        else solver.witness_file.entries
-    entries = witness.with_entry(held, entry.id, entry, lambda e: e.id)
-    return replace(solver, witness_file=WitnessFile(solver.task_id,
-                                                    tuple(entries)))
-
-
 def cmd_record(arg: str, entry_id: str, separates: str,
                path: str | None = None, assign_text: str | None = None,
                witness_file: str | None = None) -> int:
@@ -220,8 +212,7 @@ def cmd_record(arg: str, entry_id: str, separates: str,
     if not compiles(eng, solver):
         return 1
     entry = Entry(entry_id, separates, grid, assign, Groups(()))
-    runs = Runs(eng, _with_entry(lined, entry), LIMITS)
-    outcomes = entry_outcomes(runs, entry)
+    runs, outcomes = runs_with_entry(Runs(eng, lined, LIMITS), entry)
     if not isinstance(outcomes, tuple):
         print("\n".join(failure_lines(solver, outcomes)), file=sys.stderr)
         return 1
@@ -258,7 +249,7 @@ def cmd_rerecord(arg: str, entry_id: str,
         old = replace(old, assign=assign)
     if separates is not None:
         old = replace(old, separates=separates)
-    lined = _with_entry(lined, old)
+    lined = solver_with_entry(lined, old)
     if not compiles(eng, solver):
         return 1
     runs = Runs(eng, lined, LIMITS)

@@ -28,7 +28,6 @@ from checker.payloads.witness import (
     SubsumedPayload,
     TaskAssignPayload,
     ListsNoCasePayload,
-    ModelNotCasePayload,
     UnjustifiedDropPayload,
     UnlistedPayload,
     UnseparatedPayload,
@@ -36,7 +35,6 @@ from checker.payloads.witness import (
     WitnessEntryMissing,
 )
 from checker.render import _no_sentence
-from checker.render.recording import grid_command
 from checker.render.cases import names_text
 from checker.render.faults import NO_ASSIGN_VALUE
 from checker.render.locations import where_text
@@ -306,6 +304,18 @@ def witness_lines(solver: Solver, f: Finding) -> list[str]:
         case SeparatesPayload(name=name):
             return [mctx("{entry}: the `separates` text has `{name}`, and no "
                          "group lists it").format(entry=at, name=name)]
+        case ListsNoCasePayload(names=names) \
+                if f.kind is Kind.MODEL_NOT_CASE:
+            return [f"{at}: " + (
+                mctx("{names} denotes a model that is no case of the "
+                     "solver, so the solver gives no output for it to "
+                     "compare with the grid of the group that lists it")
+                if len(names) == 1 else
+                mctx("these names denote models that are no case of the "
+                     "solver, so the solver gives no output for them to "
+                     "compare with the grids of the groups that list them: "
+                     "{names}")
+            ).format(names=_ticked(names))]
         case ListsNoCasePayload(names=names):
             return [f"{at}: " + (
                 mctx("{names} denotes no case of the solver, so "
@@ -314,20 +324,6 @@ def witness_lines(solver: Solver, f: Finding) -> list[str]:
                 mctx("these names denote no case of the solver, "
                      "so the grids of the groups that list them are not "
                      "checked: {names}")).format(names=_ticked(names))]
-        case ModelNotCasePayload(names=names, assign=assign):
-            line = (mctx("{entry}: {names} denotes a model that is no case "
-                         "of the solver, so the run does not check the grid "
-                         "of the group that lists it; check that grid against "
-                         "what this command prints with the entry's input "
-                         "grid on stdin:")
-                    if len(names) == 1 else
-                    mctx("{entry}: these names denote models that are no "
-                         "cases of the solver, so the run does not check the "
-                         "grids of the groups that list them; check each such "
-                         "grid against what this command prints for its name "
-                         "with the entry's input grid on stdin: {names}"))
-            return [line.format(entry=at, names=_ticked(names)),
-                    f"  {grid_command(solver.stem, names, assign)}"]
         case DroppedPayload():
             return [_dropped_line(solver, p)]
         case UnjustifiedDropPayload():
@@ -368,8 +364,9 @@ def witness_lines(solver: Solver, f: Finding) -> list[str]:
 def try_lines(solver: Solver, result: "TryResult") -> list[str]:
     """The `witness --try` report: the candidate's groups as `record`
     prints them, the unseparated branch differences whose pairs it
-    separates, and the subsumed ones whose pairs it shows defined and
-    differing; it writes nothing."""
+    separates, the subsumed ones whose pairs it shows defined and
+    differing, and the subsumed ones the cases it newly witnesses bring;
+    it writes nothing."""
     from checker.render.built import record_lines
 
     lines = record_lines(result.entry, solver, result.cases,
@@ -403,5 +400,17 @@ def try_lines(solver: Solver, result: "TryResult") -> list[str]:
     if not result.unseparated and not result.subsumed:
         lines.append(mctx("it separates no unseparated pair and shows no "
                           "subsumed case defined and differing"))
+    if result.brought:
+        lines.append(mctx("subsumed branch differences that the cases it "
+                          "newly witnesses bring:"))
+        for f in result.brought:
+            p = f.payload
+            assert isinstance(p, SubsumedPayload)
+            lines.append("  " + mctx(
+                "{a} from {b}: {n} pair(s) that no run shows defined and "
+                "differing").format(
+                a=_branches_text(solver.engine, p.a),
+                b=_branches_text(solver.engine, p.b),
+                n=len(p.contexts.cases)))
     lines.append(mctx("wrote nothing"))
     return lines

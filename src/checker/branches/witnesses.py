@@ -3,7 +3,7 @@ the entries of the witness file it builds from them, and the findings on
 an entry of a branch's name."""
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
@@ -20,7 +20,8 @@ from solver.outcome import Assignment, Grids, Outcome, group_grid, is_result
 from solver.problems import Fault, NameFault, WitnessFileRole
 from solver.solve import assignment
 from solver.witnessed_cases import entry_assignments
-from solver.witness import Entry, GroupGrid, Groups
+from solver import witness
+from solver.witness import Entry, GroupGrid, Groups, WitnessFile
 from solver.witness_groups import Outcomes, grouped
 
 if TYPE_CHECKING:
@@ -284,6 +285,30 @@ def entry_outcomes(runs: Runs, entry: Entry) -> Outcomes | RunFailure | Fault:
     if isinstance(at, Fault):
         return at
     return results([(c, runs.outcome(entry, c)) for c in cases])
+
+
+def solver_with_entry(solver: Solver, entry: Entry) -> Solver:
+    """The solver with `entry` in its witness file, as `put` writes it
+    (`solver.witness.with_entry`). The cases `record` groups are then the
+    cases witnessed with the entry's input among the file's
+    (solver-file.md, under "Cases"), which `witness` reads on the file
+    `record` writes."""
+    held = () if solver.witness_file is None \
+        else solver.witness_file.entries
+    entries = witness.with_entry(held, entry.id, entry, lambda e: e.id)
+    return replace(solver, witness_file=WitnessFile(solver.task_id,
+                                                    tuple(entries)))
+
+
+def runs_with_entry(runs: Runs, entry: Entry
+                    ) -> tuple[Runs, Outcomes | RunFailure | Fault]:
+    """The runs of the solver with `entry` in its witness file
+    (`solver_with_entry`), holding the outcomes `runs` holds, and what
+    each case they read gives on the entry's input (`entry_outcomes`):
+    the outcomes `record` groups."""
+    got = runs.sharing(solver_with_entry(runs.solver, entry),
+                       kept=runs.kept)
+    return got, entry_outcomes(got, entry)
 
 
 def groups_of(solver: Solver, got: Sequence[tuple[Case, Outcome | Fault]]

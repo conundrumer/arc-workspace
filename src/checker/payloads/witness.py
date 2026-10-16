@@ -214,18 +214,10 @@ class SeparatesPayload:
 
 @dataclass(frozen=True)
 class ListsNoCasePayload:
-    """Group names, as written, that list no case of the solver."""
+    """Group names, as written, that list no case of the solver, or, on a
+    `MODEL_NOT_CASE` finding, whose model is no case of it."""
 
     names: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class ModelNotCasePayload:
-    """A given file's group names, as written, whose model is no case of
-    the solver, and the `assign` of their entry."""
-
-    names: tuple[str, ...]
-    assign: tuple[tuple[str, AssignValue], ...]
 
 
 class Condition(StrEnum):
@@ -286,7 +278,6 @@ class ConceptUnenumeratedPayload:
 type WitnessPayload = (DriftPayload | UnlistedPayload | AnnotationPayload
                        | UnseparatedPayload | SubsumedPayload
                        | ConceptPayload | SeparatesPayload | ListsNoCasePayload
-                       | ModelNotCasePayload
                        | DroppedPayload | UnjustifiedDropPayload
                        | ConceptUnenumeratedPayload
                        | TaskAssignPayload)

@@ -19,7 +19,7 @@ from engine.program import RelationDecl
 from solver.aggregate import Solver
 from solver.model import Case, takes_constructor
 from solver.names import ctor_text
-from solver.witness import AssignValue, Entry, assign_json
+from solver.witness import Entry, assign_json
 from solver.witness_changes import (
     GridChanged,
     GroupsKept,
@@ -81,18 +81,6 @@ def record_command(stem: str, entry: Entry, at: Path | None) -> str:
         words += ["--assign", json.dumps(assign_json(entry.assign))]
     if at is not None:
         words += ["--witness-file", str(at)]
-    return shlex.join([*words, "-"])
-
-
-def grid_command(stem: str, names: Sequence[str],
-                 assign: Sequence[tuple[str, AssignValue]]) -> str:
-    """The `grid` command that prints, from stdin, the output of the cases
-    each of `names` gives on the solver `stem`, at `assign`."""
-    words = ["uv", "run", "python", "scripts/run_dl.py", "grid", stem]
-    for name in names:
-        words += ["--case", name]
-    if assign:
-        words += ["--assign", json.dumps(assign_json(assign))]
     return shlex.join([*words, "-"])
 
 

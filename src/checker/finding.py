@@ -27,7 +27,6 @@ from checker.payloads.witness import (  # noqa: F401  (re-exported)
     SubsumedPayload,
     TaskAssignPayload,
     ListsNoCasePayload,
-    ModelNotCasePayload,
     UnjustifiedDropPayload,
     UnlistedPayload,
     UnseparatedPayload,

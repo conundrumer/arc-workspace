@@ -36,7 +36,6 @@ from checker.payloads.witness import (
     DriftPayload,
     ForeignUnderApproximated,
     ListsNoCasePayload,
-    ModelNotCasePayload,
     NoDivergence,
     ReassignedMismatch,
     RelaxedNoClaim,
@@ -289,8 +288,7 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
                            ListsNoCasePayload(tuple(listing_none))))
     if unchecked:
         out.append(Finding(Kind.MODEL_NOT_CASE, where,
-                           ModelNotCasePayload(tuple(unchecked),
-                                               entry.assign)))
+                           ListsNoCasePayload(tuple(unchecked))))
     if runs.given is not None or _unread_names(solver, entry):
         return out
     own = _own(solver, entry, solver_cases)
