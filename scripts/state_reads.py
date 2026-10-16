@@ -1,17 +1,13 @@
 """The reads a state of the process rests on, each held for that state
 and, where what it rests on stands, for later states (`state_cache`) and,
 for a read kept on disk, for later processes (`Kept`, the store of
-`kept_reads`), and the reads of files it holds: the stat of a path, the
-text of a file, and the entries of a directory."""
+`kept_reads`). The reads of files it holds are in `file_reads`."""
 
 import importlib
 import inspect
-import os
-import stat
 import time
 import uuid
-from collections.abc import Callable, Hashable, Iterator
-from dataclasses import dataclass
+from collections.abc import Callable, Hashable
 from enum import Enum
 from functools import wraps
 from pathlib import Path
@@ -24,7 +20,8 @@ _state = 0
 
 
 class Held:
-    """A held read: the read and its arguments (`read`, `call`), the state
+    """A held read: the read and its arguments (`read`, `call`), whether
+    its `notes` are passed by position (`positional`), the state
     it was last brought up to date at and the state a read last reached it
     at, its stamp, with the held reads its stamp made (`stamped`), its
     result and `undecided` lines, the version of its result in the store of
@@ -33,16 +30,14 @@ class Held:
     whose last run made it (`dependents`), and whether a source it rests on
     gave another result since it was last checked (`marked`). A held read
     is a source where its stamp is not `DERIVED`."""
-    __slots__ = ("recall", "drop", "source", "read", "call", "state", "reached", "mark",
+    __slots__ = ("source", "read", "call", "positional", "state", "reached", "mark",
                  "stamped", "value", "lines", "version", "made", "dependents", "marked")
 
-    def __init__(self, recall: "Recall", drop: Callable[[], object], source: bool,
-                 read: "ReadInfo", call: "Call") -> None:
-        self.recall = recall
-        self.drop = drop
+    def __init__(self, source: bool, read: "ReadInfo", call: "Call", positional: bool) -> None:
         self.source = source
         self.read = read
         self.call = call
+        self.positional = positional
         self.stamped: dict[Held, object] = {}
         self.version: str | None = None
         self.state = 0
@@ -53,6 +48,15 @@ class Held:
         self.made: dict[Held, object] = {}
         self.dependents: dict[Held, None] = {}
         self.marked = False
+
+    def recall(self) -> object:
+        """The read's result at this state for its arguments."""
+        assert self.read.run is not None
+        return self.read.run(self.call, self.positional)[0]
+
+    def drop(self) -> None:
+        """Drop this read from the held reads of its read."""
+        self.read.held.pop(self.call)
 
     def rest_on(self, made: dict["Held", object]) -> None:
         """Replace the reads this one rests on, and their reverse edges, by
@@ -87,7 +91,6 @@ def new_state() -> float:
     held one marks each held read that rests on it, transitively."""
     global _state, _marking
     kept_reads.flush()
-    _stats.clear()
     last = _state
     _state += 1
     late = list(_marked_late)
@@ -154,12 +157,19 @@ DERIVED = Derived()
 made in its last run gives the result it gave then."""
 
 
-type Recall = Callable[[], object]
-
-
 _frames: list[dict[Held, object]] = []
 """For each read running, innermost last, the held reads it made, each
 with the result it gave."""
+
+
+def state() -> int:
+    """The count of the states this process has opened."""
+    return _state
+
+
+def in_read() -> bool:
+    """Whether a `state_cache` read is running."""
+    return bool(_frames)
 
 
 def held_still(made: dict[Held, object]) -> bool:
@@ -204,6 +214,11 @@ class By(Enum):
     the one before keeps."""
 
 
+type Run = Callable[[Call, bool], tuple[Any, tuple[str, ...]]]
+"""A read's run for its arguments, its `notes` passed by position or not:
+its result and `undecided` lines."""
+
+
 type Leaf = tuple[By, str, tuple[Any, ...], tuple[tuple[str, Any], ...], object]
 """A read of a trace (`trace_of`): what the trace gives of it, the read's
 name (`ReadInfo.name`), its arguments, and its stamp, result or version."""
@@ -217,9 +232,9 @@ it rests on, its result, its `undecided` lines, and its version."""
 class ReadInfo:
     """A `state_cache` read: its name, `module:qualname`, by which a trace
     gives it, its stamp, where its `notes` parameter stands, how it is
-    kept, the read as `state_cache` wraps it, and its held reads by their
-    arguments."""
-    __slots__ = ("name", "stamp", "notes", "notes_at", "kept", "wrapped", "held")
+    kept, the read as `state_cache` wraps it, the run of the read for a
+    held read's arguments (`Run`), and its held reads by their arguments."""
+    __slots__ = ("name", "stamp", "notes", "notes_at", "kept", "wrapped", "run", "held")
 
     def __init__(self, name: str, stamp: Callable[..., Hashable] | None | Derived,
                  notes: str | None, notes_at: int | None, kept: Kept | None) -> None:
@@ -229,6 +244,7 @@ class ReadInfo:
         self.notes_at = notes_at
         self.kept = kept
         self.wrapped: Callable[..., Any] | None = None
+        self.run: Run | None = None
         self.held: dict[Hashable, Held] = {}
 
     def again(self, args: tuple[Any, ...], kwargs: tuple[tuple[str, Any], ...]) -> object:
@@ -395,8 +411,9 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
             kept_now = store.keep(info.name, name, (trace_of(made), value, lines, version))
             return version if kept_now else None
 
-        def run(key: Call, args: tuple[Any, ...], kwargs: dict[str, Any],
-                positional: bool) -> tuple[Any, tuple[str, ...]]:
+        def run(key: Call, positional: bool) -> tuple[Any, tuple[str, ...]]:
+            args: tuple[Any, ...] = key[0]
+            kwargs: dict[str, Any] = dict(key[1])
             hit = held.get(key)
             if hit is not None and hit.state == _state:
                 return hit.value, hit.lines
@@ -436,8 +453,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                 version = keep(key, made, value, kept_lines,
                                before[1] if before is not None and same(value, before[0]) else None)
             if hit is None:
-                hit = Held(lambda: run(key, args, kwargs, positional)[0],
-                           lambda: held.pop(key), not derived, info, key)
+                hit = Held(not derived, info, key, positional)
                 held[key] = hit
                 _held[hit] = None
             elif value is not hit.value and same(value, hit.value):
@@ -463,7 +479,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                 else:
                     sink = kwargs.pop(notes)
             key = (args, tuple(sorted(kwargs.items())))
-            value, lines = run(key, args, kwargs, positional)
+            value, lines = run(key, positional)
             hit = held[key]
             hit.reached = _state
             if sink is not None:
@@ -472,6 +488,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                 _frames[-1][hit] = value
             return value
         info.wrapped = at_state
+        info.run = run
         return at_state
     return hold
 
@@ -494,115 +511,3 @@ def stamp_now(name: str, args: tuple[Any, ...],
     if not callable(stamp):
         raise TypeError(f"{name} has no stamp")
     return stamp(*args, **dict(kwargs))
-
-
-_stats: dict[Path, tuple[int, int] | None] = {}
-"""The stat `stat_of` read of each path inside a `state_cache` read at this
-state."""
-
-
-def stat_of(path: Path) -> tuple[int, int] | None:
-    """The modification time and size of the file at `path`, or None where
-    there is none. Inside a `state_cache` read, each path is read once for
-    each state, as the reads of one state see one state."""
-    if _frames and path in _stats:
-        return _stats[path]
-    try:
-        st = path.stat()
-        found = st.st_mtime_ns, st.st_size
-    except FileNotFoundError:
-        found = None
-    if _frames:
-        _stats[path] = found
-    return found
-
-
-@dataclass(frozen=True)
-class FileStat:
-    """What a stat that follows links gives of a file, as `stat_read` reads
-    it: no time of last access, which a read of the file changes."""
-    mtime: float
-    mtime_ns: int
-    size: int
-    ino: int
-    is_dir: bool
-    is_file: bool
-
-
-@state_cache(None)
-def stat_read(path: Path) -> FileStat | None:
-    """The stat of the file at `path`, or None where there is none."""
-    try:
-        st = path.stat()
-    except FileNotFoundError:
-        return None
-    return FileStat(st.st_mtime, st.st_mtime_ns, st.st_size, st.st_ino,
-                    stat.S_ISDIR(st.st_mode), stat.S_ISREG(st.st_mode))
-
-
-def is_file(path: Path) -> bool:
-    """`Path.is_file`, from `stat_read`."""
-    return stat_is(path, lambda found: found.is_file)
-
-
-def is_dir(path: Path) -> bool:
-    """`Path.is_dir`, from `stat_read`."""
-    return stat_is(path, lambda found: found.is_dir)
-
-
-def stat_is(path: Path, holds: Callable[[FileStat], bool]) -> bool:
-    """Whether `holds` of the stat of the file at `path`, False where none
-    reads, as `Path.is_file` takes a path under a file."""
-    try:
-        found = stat_read(path)
-    except NotADirectoryError:
-        return False
-    return found is not None and holds(found)
-
-
-def mtime(path: Path) -> float:
-    """The time of the last write of the file at `path`, as `Path.stat`
-    gives it, from `stat_read`; FileNotFoundError where there is none."""
-    found = stat_read(path)
-    if found is None:
-        raise FileNotFoundError(path)
-    return found.mtime
-
-
-@state_cache(lambda path, errors=None: stat_of(path))
-def file_text(path: Path, errors: str | None = None) -> str:
-    """`Path.read_text` of the file at `path`, with `errors`."""
-    return path.read_text(errors=errors)
-
-
-@state_cache(None)
-def resolved(path: Path) -> Path:
-    """`Path.resolve` of `path`."""
-    return path.resolve()
-
-
-@dataclass(frozen=True)
-class Named:
-    """An entry of a directory, as `os.scandir` gives it: `is_dir` and
-    `is_file` follow a link, and `is_link` says whether it is one."""
-    name: str
-    is_dir: bool
-    is_file: bool
-    is_link: bool
-
-
-@state_cache(stat_of)
-def listed(path: Path) -> tuple[Named, ...]:
-    """The entries of the directory at `path`, or none where it is no
-    directory that reads. Its stamp is the directory's stat, which an entry
-    added, removed or renamed changes."""
-    try:
-        with os.scandir(path) as found:
-            return tuple(Named(e.name, e.is_dir(), e.is_file(), e.is_symlink()) for e in found)
-    except OSError:
-        return ()
-
-
-def names_in(path: Path) -> Iterator[str]:
-    """The names of the entries `listed` gives of the directory at `path`."""
-    return (e.name for e in listed(path))

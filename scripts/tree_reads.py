@@ -8,7 +8,8 @@ import os
 from collections.abc import Hashable
 from pathlib import Path
 
-from state_reads import file_text, listed, stat_of, stat_read, state_cache
+from file_reads import file_text, listed, stat_of, stat_read
+from state_reads import state_cache
 
 from controlled_markdown import ControlledMarkdownError
 from controlled_markdown.prose import Fragment, text_fragments

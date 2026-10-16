@@ -9,9 +9,9 @@ import os
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 
+from file_reads import Named, is_file, listed, stat_of  # noqa: F401
 # `transcripts.new_state` is the name the tests of these reads open a state by.
-from state_reads import (DERIVED, Kept, Named, is_file, listed, new_state, stat_of,  # noqa: F401
-                         state_cache)
+from state_reads import DERIVED, Kept, new_state, state_cache  # noqa: F401
 
 from controlled_markdown import mctx
 from handbook.paths import console_importable

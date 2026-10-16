@@ -10,7 +10,7 @@ by SendMessage."""
 
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 
@@ -20,7 +20,7 @@ from operations.final_reply import SENT_BY_MESSAGE
 from run_reads import (MAIN, LaunchStatus, Notification, Status, agent_messages, agent_type,
                        blocks, is_prompt, launch_status, notifications, notified, parent_id,
                        read_meta, run_sessions, session_agents, text_of)
-from state_reads import is_file
+from file_reads import is_file
 from transcripts import agent_id, chain, find, main_transcript
 from transcript_entries import Entry, epoch, read_entries
 
@@ -129,11 +129,10 @@ def entry_signs(e: Entry) -> list[tuple[str, Sign]]:
     return out
 
 
-def last_sign(entries: Iterable[Entry], since: float,
+def last_sign(found: Iterable["AgentEntry"], since: float,
               ids: set[str]) -> tuple[Sign, float] | None:
-    """`latest_sign` of `entries` timestamped after `since`."""
-    return latest_sign(((epoch(e["timestamp"]), entry_signs(e))
-                        for e in entries_after(entries, since)), ids)
+    """`latest_sign` of `found` timestamped after `since`."""
+    return latest_sign(((a.time, a.signs) for a in found if a.time > since), ids)
 
 
 def latest_sign(timed: Iterable[tuple[float, Iterable[tuple[str, Sign]]]],
@@ -158,24 +157,54 @@ def can_report(entry: Entry) -> bool:
     return bool(entry.get("timestamp")) and entry.get("type") != "assistant"
 
 
-def entries_after(entries: Iterable[Entry], since: float) -> Iterable[Entry]:
-    """The entries of `entries` timestamped after `since` that can give a
-    report of an agent or a notification of it (`can_report`)."""
-    return (e for e in entries if can_report(e) and epoch(e["timestamp"]) > since)
+@dataclass(frozen=True)
+class AgentEntry:
+    """What an entry of a parent's transcripts that can give a report
+    (`can_report`) gives of one agent: its time, its reports
+    (`entry_reports`), whether it notifies that the agent stopped
+    (`is_stop`), its signs (`entry_signs`), and the `undecided` lines that
+    the reads of its reports and of its notifications give, so that a
+    holder keeps these records in place of the entries."""
+    time: float
+    reports: tuple[Report, ...]
+    report_notes: tuple[str, ...]
+    stopped: bool
+    stop_notes: tuple[str, ...]
+    signs: tuple[tuple[str, Sign], ...]
 
 
-def reports_after(entries: Iterable[Entry], since: float, aid: str | None,
+def agent_entries(entries: Iterable[Entry], aid: str | None,
+                  call: str | None) -> tuple[AgentEntry, ...]:
+    """The `AgentEntry` of each of `entries` that can give a report, of the
+    agent `aid`, launched by call `call`."""
+    out: list[AgentEntry] = []
+    for e in entries:
+        if not can_report(e):
+            continue
+        report_notes: list[str] = []
+        stop_notes: list[str] = []
+        found = entry_reports(e, aid, call, report_notes)
+        stopped = any(is_stop(n) for n in agent_notifications(e, aid, call, stop_notes))
+        out.append(AgentEntry(epoch(e["timestamp"]), tuple(found), tuple(report_notes),
+                              stopped, tuple(stop_notes), tuple(entry_signs(e))))
+    return tuple(out)
+
+
+def reports_after(found: Iterable[AgentEntry], since: float, aid: str | None,
                   call: str | None, undecided: list[str]) -> list[Report]:
-    """The reports of the agent `aid`, launched by call `call`, among
-    `entries` of its parent's transcripts, each that is the path of a
+    """The reports of `found` after `since`, of the agent `aid`, launched by
+    call `call`, each that is the path of a
     report file alone (`filed_texts.report_file`) read from that file, which
     it keeps as its `file`. An agent writes each report to its report file
     in place of the one before, so only the latest report that gives a file
     is read from it, and an earlier one, or one whose file is gone, keeps
     the path as its text."""
-    out = sorted((r for e in entries_after(entries, since)
-                  for r in entry_reports(e, aid, call, undecided)),
-                 key=lambda r: r.time)
+    out: list[Report] = []
+    for a in found:
+        if a.time > since:
+            undecided.extend(a.report_notes)
+            out.extend(replace(r) for r in a.reports)
+    out.sort(key=lambda r: r.time)
     latest = {path: r for r in out if (path := report_file(r.text)) is not None}
     for path, r in latest.items():
         where = aid if aid is not None else mctx("the agent of call {call}").format(call=call)
@@ -185,13 +214,15 @@ def reports_after(entries: Iterable[Entry], since: float, aid: str | None,
     return out
 
 
-def stopped_after(entries: Iterable[Entry], since: float, aid: str | None,
-                  call: str | None, undecided: list[str]) -> bool:
-    """Whether `entries` of the parent's transcripts of the agent `aid`,
-    launched by call `call`, hold a notification after `since` that it
-    stopped, as `is_stop` gives one."""
-    return any(is_stop(n) for e in entries_after(entries, since)
-               for n in agent_notifications(e, aid, call, undecided))
+def stopped_after(found: Iterable[AgentEntry], since: float, undecided: list[str]) -> bool:
+    """Whether `found` hold a notification after `since` that the agent
+    stopped."""
+    for a in found:
+        if a.time > since:
+            undecided.extend(a.stop_notes)
+            if a.stopped:
+                return True
+    return False
 
 
 def parent_transcripts(path: Path) -> list[Path]:
@@ -234,8 +265,8 @@ def reports(path: Path, since: float, undecided: list[str]) -> list[Report] | No
         undecided.append(mctx("{run}: no `.meta.json` of its run gives a `toolUseId`, "
                               "so the result of its launch cannot be matched").format(run=aid))
     words = {aid, call} if call else {aid}
-    return reports_after((e for p in found for e in read_entries(p, naming=words)),
-                         since, aid, call, undecided)
+    return reports_after(agent_entries((e for p in found for e in read_entries(p, naming=words)),
+                                       aid, call), since, aid, call, undecided)
 
 
 def report_ids(entry: Entry) -> list[str]:

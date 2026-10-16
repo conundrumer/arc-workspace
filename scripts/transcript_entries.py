@@ -5,7 +5,10 @@ lines that hold a word, the lines that are its run's own, and its
 the lines it reads anew, so its entries are held by its caller alone."""
 
 import bisect
+import hashlib
 import json
+from array import array
+from dataclasses import dataclass
 import os
 import re
 from collections.abc import Iterable, Iterator
@@ -13,7 +16,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from state_reads import DERIVED, stat_of, state_cache
+from file_reads import stat_of
+from state_reads import DERIVED, state_cache
 
 from controlled_markdown import mctx
 from operations.roles import AGENT_ID as AGENT_ID_FORM
@@ -60,7 +64,7 @@ class Snapshot:
     from its file (`read_at`). A transcript is added to at its end, so the
     bytes a snapshot covers stand while its file is the one it read; a read
     again of a file that is not, or whose bytes at either end of the
-    snapshot's whole lines (`head`, `tail`) changed, is refused.
+    snapshot's whole lines (`edges`) changed, is refused.
 
     At its read, one search indexes every substring of the form of an agent
     id, overlapping ones too, by the lines that hold it.
@@ -74,10 +78,10 @@ class Snapshot:
         self.size = len(text)
         self.closed = text.endswith(b"\n") or not text
         self.breaks_cr = b"\r" in text
-        self.starts = line_starts(text, 0, [])
+        self.starts = line_starts(text, 0, array("q"))
         self.found: dict[str, frozenset[int]] = {}
         self.agent_ids = self.index_agent_ids(text, 0)
-        self.head, self.tail = edges(text, self.settled_end())
+        self.edges = edges(text, self.settled_end())
 
     @property
     def count(self) -> int:
@@ -96,7 +100,7 @@ class Snapshot:
     def text(self) -> bytes:
         """The bytes it covers, read again from its file."""
         text = read_at(self, 0, self.size)
-        if len(text) != self.size or edges(text, self.settled_end()) != (self.head, self.tail):
+        if len(text) != self.size or edges(text, self.settled_end()) != self.edges:
             raise Refused(mctx("the transcript {path} changed other than at its end while "
                                "it was read").format(path=self.path))
         return text
@@ -115,7 +119,7 @@ class Snapshot:
 
     def holding(self, word: str) -> frozenset[int]:
         if re.fullmatch(AGENT_ID_FORM, word):
-            return self.agent_ids.get(word, frozenset())
+            return frozenset(self.agent_ids.get(word, ()))
         if word not in self.found:
             self.found[word] = self.lines_holding(self.text(), 0, word.encode())
         return self.found[word]
@@ -132,13 +136,15 @@ class Snapshot:
             k = chunk.find(w, k + 1)
         return frozenset(out)
 
-    def index_agent_ids(self, chunk: bytes, base: int) -> dict[str, frozenset[int]]:
+    def index_agent_ids(self, chunk: bytes, base: int) -> dict[str, tuple[int, ...]]:
         """Each substring of the form of an agent id in `chunk`, the bytes of
-        its file from offset `base`, a line's, by the lines that hold it."""
-        index: dict[bytes, set[int]] = {}
+        its file from offset `base`, a line's, by the lines that hold it, in
+        order. The lines are a tuple, a quarter of the size of a set of
+        one, as a call holds the index of every transcript it reads."""
+        index: dict[bytes, dict[int, None]] = {}
         for aid, k in agent_ids_in(chunk, 0):
-            index.setdefault(aid, set()).add(self.line_of(base + k))
-        return {aid.decode(): frozenset(found) for aid, found in index.items()}
+            index.setdefault(aid, {})[self.line_of(base + k)] = None
+        return {aid.decode(): tuple(found) for aid, found in index.items()}
 
     def entry(self, i: int) -> list[Entry]:
         return parse(self.line(i))
@@ -157,15 +163,15 @@ class Snapshot:
         out.found = {w: frozenset(i for i in lines if i < whole)
                      | out.lines_holding(more, offset, w.encode())
                      for w, lines in self.found.items()}
-        kept = {aid: frozenset(i for i in lines if i < whole) if whole < self.count else lines
+        kept = {aid: tuple(i for i in lines if i < whole) if whole < self.count else lines
                 for aid, lines in self.agent_ids.items()}
         for aid, lines in out.index_agent_ids(more, offset).items():
-            kept[aid] = kept.get(aid, frozenset()) | lines
+            kept[aid] = kept.get(aid, ()) + lines
         out.agent_ids = {aid: lines for aid, lines in kept.items() if lines}
         end = out.settled_end()
         head = read_at(out, 0, min(CHECKED, end))
         tail_at = max(len(head), end - CHECKED)
-        out.head, out.tail = head, read_at(out, tail_at, end - tail_at)
+        out.edges = Edges.of(head, read_at(out, tail_at, end - tail_at))
         return out
 
 
@@ -173,18 +179,19 @@ LINE_BREAK = re.compile(rb"\r\n|\r|\n")
 """A line break, as `bytes.splitlines` takes one."""
 
 
-def line_starts(chunk: bytes, base: int, before: list[int]) -> list[int]:
+def line_starts(chunk: bytes, base: int, before: "array[int]") -> "array[int]":
     """`before`, the offsets of the lines before `base`, followed by the
     offset of each line of `chunk`, the bytes of a file from offset `base`,
     a line's, as `bytes.splitlines` splits it. A chunk with no carriage
     return is split by a search for each newline, which is faster than
-    `LINE_BREAK`."""
-    out = list(before)
+    `LINE_BREAK`. The offsets are held as machine integers,
+    8 bytes each, as a call holds those of every transcript it reads."""
+    out = array("q", before)
     if not chunk:
         return out
     out.append(base)
     if b"\r" in chunk:
-        out += [base + m.end() for m in LINE_BREAK.finditer(chunk) if m.end() < len(chunk)]
+        out.extend(base + m.end() for m in LINE_BREAK.finditer(chunk) if m.end() < len(chunk))
         return out
     n = chunk.find(b"\n")
     while 0 <= n < len(chunk) - 1:
@@ -222,11 +229,25 @@ _open: dict[Path, tuple[int, tuple[int, int]]] = {}
 device and inode of its file, the one it opened last at the end."""
 
 
-def edges(text: bytes, end: int) -> tuple[bytes, bytes]:
+@dataclass(frozen=True)
+class Edges:
+    """The bytes at either end of a snapshot's whole lines, as their sizes
+    and a digest of them, as a call holds those of every transcript it
+    reads."""
+    head: int
+    tail: int
+    digest: bytes
+
+    @staticmethod
+    def of(head: bytes, tail: bytes) -> "Edges":
+        return Edges(len(head), len(tail), hashlib.blake2b(head + b"\n" + tail).digest())
+
+
+def edges(text: bytes, end: int) -> Edges:
     """The first `CHECKED` bytes of `text` up to `end`, and the last
     `CHECKED` bytes up to `end` after those."""
     head = text[:min(CHECKED, end)]
-    return head, text[max(len(head), end - CHECKED):end]
+    return Edges.of(head, text[max(len(head), end - CHECKED):end])
 
 
 def read_at(snap: Snapshot, offset: int, length: int) -> bytes:
@@ -259,10 +280,10 @@ def snapshot(path: Path) -> Snapshot:
         snap = None
         if before is not None and before.file == file and not before.breaks_cr:
             offset = before.settled_end()
-            tail_at = offset - len(before.tail)
-            if st.st_size >= offset and fh.read(len(before.head)) == before.head:
-                fh.seek(tail_at)
-                if fh.read(len(before.tail)) == before.tail:
+            if st.st_size >= offset:
+                head = fh.read(before.edges.head)
+                fh.seek(offset - before.edges.tail)
+                if Edges.of(head, fh.read(before.edges.tail)) == before.edges:
                     more = fh.read()
                     if b"\r" not in more:
                         snap = before.extended(more)

@@ -14,7 +14,8 @@ from typing import Any, Protocol
 from controlled_markdown import mctx
 from operations.constants import COORDINATOR as MAIN
 from token_prices import request_input
-from state_reads import DERIVED, Kept, is_file, state_cache
+from file_reads import is_file
+from state_reads import DERIVED, Kept, state_cache
 from transcripts import (agent_id, chain, first_parent, is_subagent, main_transcript,
                          session_directory, session_subagents)
 from transcript_entries import (Entry, Refused, blocks, epoch, meta_path, read_entries,

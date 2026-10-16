@@ -13,6 +13,7 @@ from tests.conftest import script
 script("profile_runs")
 state_reads = sys.modules["state_reads"]
 kept_reads = sys.modules["kept_reads"]
+file_reads = sys.modules["file_reads"]
 
 runs: list[str] = []
 
@@ -20,7 +21,7 @@ runs: list[str] = []
 @state_reads.state_cache(state_reads.DERIVED, kept=state_reads.Kept.DISK)
 def words(path: Path) -> int:
     runs.append("words")
-    return len(state_reads.file_text(path).split())
+    return len(file_reads.file_text(path).split())
 
 
 @state_reads.state_cache(state_reads.DERIVED, kept=state_reads.Kept.DISK)

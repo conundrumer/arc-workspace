@@ -18,7 +18,8 @@ from run_profiler import profile
 from run_records import Run, Span
 from run_reads import (BACKGROUND_TASK, LaunchStatus, blocks, is_prompt, parent_label,
                        run_entries, tool_calls)
-from state_reads import DERIVED, Kept, mtime, state_cache
+from file_reads import mtime
+from state_reads import DERIVED, Kept, state_cache
 from transcripts import agent_id, is_subagent
 
 from operations.constants import STUCK_SECONDS
@@ -192,7 +193,7 @@ def by_rule(n: Node, parent_open: bool, undecided: list[str]) -> Listed | None:
     received = last_time(child, is_prompt)
     if received is not None and (
             reported_since(a, received, frozenset(ReportKind))
-            or stopped_after(a.entries, received, a.agent, a.call, undecided)):
+            or stopped_after(a.entries, received, undecided)):
         return None
     if handed_back(child):
         return None

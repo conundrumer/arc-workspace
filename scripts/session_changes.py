@@ -6,7 +6,8 @@ from pathlib import Path
 
 from run_reads import (run_entries,
                        session_transcripts)
-from state_reads import DERIVED, mtime, state_cache
+from file_reads import mtime
+from state_reads import DERIVED, state_cache
 from transcript_entries import Entry
 
 

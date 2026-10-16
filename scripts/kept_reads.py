@@ -9,8 +9,9 @@ is the code that wrote it: the files of that module's import closure
 then, and where the process cannot read or write the store, each read is
 computed, as with no store.
 
-SQLite writes the records of a call in one transaction, under a lock it
-takes across processes, so no reader sees a record half written."""
+SQLite writes each batch of a call's records in one transaction, under a
+lock it takes across processes, so no reader sees a record half written; a
+reader can see some of a call's records before the rest."""
 
 import ast
 import hashlib
@@ -35,6 +36,10 @@ LOCK_WAIT_SECONDS = 30
 """How long a process waits on the lock another process holds on the
 store before it reads or writes nothing of it."""
 
+WRITE_BYTES = 16 * 1024 * 1024
+"""How many bytes of records a process holds before it writes them, so
+that a call holds at most that much of what it writes."""
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS records (
     code TEXT, read TEXT, key TEXT, record BLOB,
@@ -58,6 +63,7 @@ class Store:
         self.used: set[str] = set()
         self.loaded: dict[str, dict[str, bytes]] = {}
         self.new: dict[tuple[str, str], bytes] = {}
+        self.new_bytes = 0
 
     def connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -74,7 +80,7 @@ class Store:
                 self.loaded[read] = self.load(read)
                 if self.loaded[read]:
                     self.used.add(code_of(module_of(read)))
-            found = self.loaded[read].get(key)
+            found = self.loaded[read].pop(key, None)
         if found is None:
             return None
         try:
@@ -95,22 +101,34 @@ class Store:
             return {}
 
     def keep(self, read: str, key: str, record: object) -> bool:
-        """Hold `record` for the next `flush`, where it pickles, and give
+        """Hold `record` for the next write, where it pickles, and give
         whether it does."""
         try:
-            self.new[(read, key)] = pickle.dumps(record, pickle.HIGHEST_PROTOCOL)
-            return True
+            data = pickle.dumps(record, pickle.HIGHEST_PROTOCOL)
         except (pickle.PicklingError, TypeError, AttributeError, RecursionError):
             self.new.pop((read, key), None)
             return False
+        self.new[(read, key)] = data
+        self.new_bytes += len(data)
+        self.used.add(code_of(module_of(read)))
+        if self.new_bytes > WRITE_BYTES:
+            self.write(set())
+        return True
 
     def flush(self) -> None:
         """Write the records held since the last flush, note as used the
         code of each read this process loaded or wrote records of, and drop
         the records of code that no process has used for `KEEP_SECONDS`."""
+        self.write(self.used)
+        self.used = set()
+
+    def write(self, used: set[str]) -> None:
+        """Write the records held, in one transaction with `mark_used` of
+        each code of `used`, and hold none of them after."""
         written = [(code_of(module_of(r)), r, k, v) for (r, k), v in self.new.items()]
-        used = self.used | {c for c, _, _, _ in written}
-        if not used:
+        self.new = {}
+        self.new_bytes = 0
+        if not written and not used:
             return
         now = time.time()
         try:
@@ -125,10 +143,6 @@ class Store:
                 db.close()
         except (sqlite3.Error, OSError):
             pass
-        for (r, k), v in self.new.items():
-            self.loaded.setdefault(r, {})[k] = v
-        self.new = {}
-        self.used = set()
 
 
 def mark_used(db: sqlite3.Connection, code: str, now: float, keep: float) -> None:

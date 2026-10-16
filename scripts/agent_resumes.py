@@ -93,21 +93,31 @@ def picked(calls: Iterable[Send], agents: Collection[str] | None, undecided: lis
     return out
 
 
-def resumes(entries: list[Entry], run: str, agents: set[str] | None,
-            undecided: list[str], before: float | None = None) -> dict[str, float]:
-    """`picked` of the SendMessage calls among `entries`."""
-    return picked(sends(entries, run), agents, undecided, before)
+SEND_WORDS = frozenset({"SendMessage", "resumedAgentId", '"pin":'})
+"""The words of the lines `sends` reads: `SendMessage`, which the line of
+each call holds, and each word of a result that `resumed` gives an agent id
+or a note for."""
+
+
+def resumes(path: Path, undecided: list[str], before: float | None = None) -> dict[str, float]:
+    """`picked` of the SendMessage calls of the run at `path`."""
+    return picked(run_sends(path), None, undecided, before)
+
+
+@state_cache(DERIVED, kept=Kept.DISK)
+def run_sends(path: Path) -> tuple[Send, ...]:
+    """`sends` of the run at `path`, from the lines that hold a word of
+    `SEND_WORDS`, held so that each caller reads none of the run's other
+    entries."""
+    return tuple(sends(run_entries(path, naming=set(SEND_WORDS)), path.stem))
 
 
 @state_cache(DERIVED, kept=Kept.DISK)
 def transcript_resumes(path: Path) -> tuple[Send, ...]:
-    """`sends` of the transcript at `path`, from the lines that hold
-    `SendMessage`, which the line of each call holds, or a word of each
-    result `resumed` gives an agent id or a note for. `resumes_since` reads
-    it for every transcript of a session, so it holds none of their entries
-    (`read_entries`)."""
-    return tuple(sends(read_entries(path, {"SendMessage", "resumedAgentId", '"pin":'}),
-                       parent_label(path)))
+    """`sends` of the transcript at `path`, from the lines that hold a word
+    of `SEND_WORDS`. `resumes_since` reads it for every transcript of a
+    session, so it holds none of their entries (`read_entries`)."""
+    return tuple(sends(read_entries(path, SEND_WORDS), parent_label(path)))
 
 
 def session_resumes(path: Path, agents: set[str], since: float,

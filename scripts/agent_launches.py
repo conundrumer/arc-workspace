@@ -7,7 +7,7 @@ run launched or resumed."""
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from agent_reports import Report, report_ids, reports_after
+from agent_reports import AgentEntry, Report, agent_entries, report_ids, reports_after
 from command_labels import AGENT_TOOLS
 from controlled_markdown import mctx
 from run_reads import (blocks, in_background, meta_parent, notified, parent_label, read_meta,
@@ -50,13 +50,22 @@ def agent_launch(path: Path) -> tuple[str | None, Path, str] | None:
     return meta.get("toolUseId") or None, chain(path)[-1], meta_parent(meta)
 
 
-@state_cache(DERIVED)
 def run_launches(path: Path) -> tuple[dict[str, Path], dict[str, frozenset[str]]]:
     """`session_launches` over the sessions of the transcripts of the run
     at `path`."""
+    return sessions_launches(tuple(run_sessions(path)))
+
+
+@state_cache(DERIVED)
+def sessions_launches(sessions: tuple[Path, ...]
+                      ) -> tuple[dict[str, Path], dict[str, frozenset[str]]]:
+    """`session_launches` merged over `sessions`, held once for each set of
+    sessions that runs span."""
+    if len(sessions) == 1:
+        return session_launches(sessions[0])
     by_call: dict[str, Path] = {}
     children: dict[str, frozenset[str]] = {}
-    for session in run_sessions(path):
+    for session in sessions:
         calls, kids = session_launches(session)
         by_call.update(calls)
         for k, v in kids.items():
@@ -100,15 +109,15 @@ class Launch:
     time of the run's call that launched it, or in `launched` of the last
     call that resumed it, by the run or by any agent of the run's sessions,
     the time of the run's last sign that it reported, or None where the
-    run holds none, the id of the call that launched it, and the entries of
-    the run's transcripts to which `report_ids` gives its agent id or the
-    id of that call."""
+    run holds none, the id of the call that launched it, and the
+    `AgentEntry` of each entry of the run's transcripts to which
+    `report_ids` gives its agent id or the id of that call."""
     agent: str | None
     path: Path | None
     since: float
     done: float | None
     call: str
-    entries: list[Entry]
+    entries: tuple[AgentEntry, ...]
 
     def reports(self, since: float, undecided: list[str]) -> list[Report]:
         return reports_after(self.entries, since, self.agent, self.call, undecided)
@@ -165,7 +174,7 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
             named = {id(n): n for v in (tid, *([aid] if aid else []))
                      for n in naming.get(v, [])}
             out.append(Launch(aid, child, epoch(e["timestamp"]), done, tid,
-                              list(named.values())))
+                              agent_entries(named.values(), aid, tid)))
     return out
 
 
@@ -190,7 +199,7 @@ def resume_times(path: Path, found: list[Launch], undecided: list[str],
     sessions that resumed an agent of `found`, the run's launches, or an
     agent the run resumed, with `before` only of the calls earlier than
     it."""
-    own = resumes(timed_entries(path), path.stem, None, undecided, before)
+    own = resumes(path, undecided, before)
     agents = {a.agent for a in found if a.agent} | set(own)
     if not agents:
         return own, {}

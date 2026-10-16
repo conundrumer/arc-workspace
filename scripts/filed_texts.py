@@ -12,7 +12,7 @@ from controlled_markdown import form, mctx
 
 from noted_reads import note_read
 from operations.filing import FILED_LINE, REPORT_NAME, filed_path
-from state_reads import file_text, is_file
+from file_reads import file_text, is_file
 
 GONE_FILE = mctx("{where}: the file {path} its text gives is gone, so that text is unknown")
 GONE_REPORT = mctx("{where}: its report file {path} is gone, so its report is unknown")

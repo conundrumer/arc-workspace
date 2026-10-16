@@ -14,7 +14,6 @@ from typing import Any
 
 from agent_launches import children_of, launched, launches
 from agent_resumes import resumes, sent_to
-from session_changes import timed_entries
 from agents_pending import turn_signs
 from agent_reports import ENDED, Sign, last_sign
 from agent_turns import first_time, has_ended, turns
@@ -29,7 +28,8 @@ from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks
                        run_sessions, session_agents, tool_results)
 from run_reads import Status as TaskStatus
 from senders import Sender, sender
-from state_reads import DERIVED, Kept, file_text, is_dir, is_file, listed, mtime, state_cache
+from file_reads import file_text, is_dir, is_file, listed, mtime
+from state_reads import DERIVED, Kept, state_cache
 from ticket_numbers import TICKET_NUMBER
 from transcripts import find, session_directory
 from transcript_entries import epoch, read_entries
@@ -189,7 +189,7 @@ def by_callees(path: Path, e: dict[str, Any], t: float, undecided: list[str]) ->
     if not senders and not notes:
         return False
     mine = {a.agent for a in launches(path, undecided) if a.agent and a.since < t}
-    mine |= resumes(timed_entries(path), path.stem, None, undecided, before=t).keys()
+    mine |= resumes(path, undecided, before=t).keys()
     return (all(s in mine for s in senders)
             and all(any(i in mine for i in n.ids) for n in notes))
 
@@ -319,7 +319,7 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
         return OperatorRead((), tuple(calls), tuple(messages), {})
     found = launched(path, undecided)
     signs = turn_signs(path, [launch for launch in found if launch.pending])
-    own = resumes(timed_entries(path), path.stem, None, undecided)
+    own = resumes(path, undecided)
     for launch in found:
         use = uses.get(launch.call)
         if use is None:
