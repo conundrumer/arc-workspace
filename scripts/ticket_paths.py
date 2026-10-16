@@ -1,5 +1,5 @@
 """The paths a section of a ticket gives, as `section_paths` reads them,
-and whether a text names a file, as `names` judges it."""
+and whether a text refers to a file, as `names` judges it."""
 
 import re
 from pathlib import Path
@@ -42,13 +42,10 @@ def scope_paths(t: Ticket, root: Path) -> frozenset[str]:
 
 
 def names(text: str, name: str) -> bool:
-    """Whether `text` names `name`. A path, which holds a `/`, is named by
-    the path, by its file name as a whole word, or, for a `.py` file other
-    than a package's `__init__.py`, by each name `module_names` gives it, as
-    a whole word. A package's name is no form of its `__init__.py`, since
+    """Whether `text` refers to `name`, as `CLOSED_ON_HELP` in `file_ticket.py`
+    gives it. A package's name is no form of its `__init__.py`, since
     `whole_word` admits a `/` or a `.` on each side of a word, so that the
-    name stands in each title that gives any module of the package. Any
-    other name is named as a whole word."""
+    name stands in each title that gives any module of the package."""
     if "/" not in name:
         return whole_word(text, name)
     path = Path(name)

@@ -584,8 +584,8 @@ def sweep_command(*runs: str) -> str:
 
 
 def closed_on_command(*targets: str) -> str:
-    """Each closed ticket whose title holds one of `targets`, or a path one of
-    them had before, with its last log line."""
+    """Each closed ticket whose title refers to one of `targets`, as
+    `CLOSED_ON_HELP` gives it."""
     if not targets:
         raise Refused(mctx("the call gives no name: run `{invocation} closed-on --help`").format(
             invocation=INVOCATION))
@@ -636,8 +636,8 @@ def ground_command(*given: str) -> str:
 
 
 def scope_check_command(*given: str) -> str:
-    """Each path the `Design` of the ticket `given` gives, or of the text on
-    stdin where it gives none, that its Scope does not cover."""
+    """The paths of a ticket's `Design` that its `Scope` does not cover, as
+    `SCOPE_CHECK_HELP` gives them."""
     if len(given) > 1:
         raise Refused(mctx("the call gives more than one number: run `{invocation} scope-check --help`").format(
             invocation=INVOCATION))

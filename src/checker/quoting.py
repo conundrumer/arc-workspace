@@ -21,7 +21,7 @@ from pathlib import Path
 import checker
 import checker.lint
 from checker.finding import FAILING, Kind
-from controlled_markdown import ControlledMarkdownError, Rule
+from controlled_markdown import ControlledMarkdownError, Rule, mctx
 from engine.quotes import guarded, quoted
 
 CHECK_PREFIX = "check_"
@@ -120,11 +120,11 @@ def quote_rule_errors(shown: Callable[[Path], str]
     gives it."""
     broken = {
         Breach.GUARD: (Rule.QUOTE_GUARD,
-                       "`{name}` carries a `guard`, which only a hint or "
-                       "lint check may carry"),
-        Breach.MISSING: (Rule.QUOTE_MISSING, "`{name}` carries no `quotes`"),
+                       mctx("`{name}` carries a `guard`, which only a hint or "
+                            "lint check may carry")),
+        Breach.MISSING: (Rule.QUOTE_MISSING, mctx("`{name}` carries no `quotes`")),
         Breach.PRINCIPLE: (Rule.QUOTE_PRINCIPLE,
-                           "`{name}` carries no `quotes` from `{principles}`"),
+                           mctx("`{name}` carries no `quotes` from `{principles}`")),
     }
     errors: list[ControlledMarkdownError] = []
     for u in unquoted(checks_and_surveys()):
