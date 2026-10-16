@@ -2,10 +2,13 @@
 instantiates the component, run through `souffle.SouffleEngine` with its
 run cache.
 
-A `Position` value crosses as the `(row, column)` of its cell, and its
-place in the lib (`engine.program.cell_place`) is computed from the size of
-the grid of the row's key. In a relation with no key column, a cell lies
-in the one grid the call is given a size for.
+An input `Position` value is the `(row, column)` of a cell, and its place
+in the lib (`engine.program.cell_place`) is computed from the size of the
+grid of the row's key. In a relation with no key column, a cell lies in the
+one grid the call is given a size for. An output `Position` value is read
+as the cell its place gives, `(place[0], place[2])`, in the frame the
+component's own declaration gives that column, which need not be the grid
+of the row's key.
 
 An `Offset` value crosses as its `(row, column)` displacement."""
 
@@ -141,16 +144,15 @@ def _row_in(name: str, columns: Columns, row: PyRow, grid: GridTypes,
     return tuple(out)
 
 
-def _row_out(name: str, columns: Columns, row: Sequence[Value], grid: GridTypes,
-             sizes: Mapping[PyValue, Size] | None) -> PyRow:
+def _row_out(name: str, columns: Columns, row: Sequence[Value],
+             grid: GridTypes) -> PyRow:
     out = [_value_out(v) for v in row]
     for i, t in enumerate(columns.types):
         if t == grid.position:
-            h, w = _size(name, columns, tuple(out), sizes)
             place = _ints(out[i], 4)
-            if place is None or place != cell_place(place[0], place[2], h, w):
-                raise CallError(f"`{name}` gives {out[i]!r}, which is no cell of a "
-                                f"{h}x{w} grid")
+            if place is None or min(place) < 0:
+                raise CallError(f"`{name}` gives {out[i]!r}, which is no place "
+                                f"of a cell")
             out[i] = (place[0], place[2])
         elif t == grid.offset:
             place = _ints(out[i], 4)
@@ -167,9 +169,11 @@ def call(component: str, type_args: Sequence[StrEnum], grid: GridTypes,
          sizes: Mapping[PyValue, Size] | None) -> dict[str, Relation]:
     """The rows of each of the instance's relations `outputs`, after a run
     of `component` instantiated at `type_args` over the rows of each of its
-    relations `inputs` that is not None. A column whose type is
-    `grid.position` crosses as a cell of the frame `_size` gives, and one
-    whose type is `grid.offset` as a displacement. Raises `CallError` where
+    relations `inputs` that is not None. An input column whose type is
+    `grid.position` is placed in the grid of its row's key (`_size`), an
+    output one is read as the cell its place gives, in the frame the
+    component's declaration gives it, and a column whose type is
+    `grid.offset` crosses as a displacement. Raises `CallError` where
     the program fails to parse, the run fails, or a value cannot cross."""
     engine = _engine()
     program = engine.lib_instance(LIB_SRC, INSTANCE, component,
@@ -184,6 +188,6 @@ def call(component: str, type_args: Sequence[StrEnum], grid: GridTypes,
     if not isinstance(result, Tuples):
         raise CallError(result)
     return {rel.name: Relation(frozenset(
-                _row_out(rel.name, columns[rel.name], row, grid, sizes)
+                _row_out(rel.name, columns[rel.name], row, grid)
                 for row in result.relations[rel]))
             for rel in wanted}
