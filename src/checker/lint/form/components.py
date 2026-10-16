@@ -21,7 +21,6 @@ from checker.lint.view import (
 from checker.runs import Runs
 from engine import Resolved
 from engine.program import (
-    Column,
     FunctorDecl,
     RelationDecl,
     own,
@@ -33,7 +32,9 @@ from solver.aggregate import (
 )
 from solver.determine import (
     block_key_columns,
+    column_signature,
     determine_columns,
+    key_width,
     off_key_blocks,
     rigid_parameters,
 )
@@ -122,8 +123,9 @@ def check_determine_schema(solver: Solver, runs: Runs) -> list[Finding]:
         if d.scope != DETERMINE_SCOPE or not own(d.span) or p is None:
             continue
         want = determine_columns(p, rigid)
-        width = len(d.columns) - len(want) if p.name in rigid else 0
-        if width >= 0 and _named(d.columns[width:]) == _named(want):
+        width = key_width(d, p, rigid)
+        if width >= 0 and column_signature(d.columns[width:]) \
+                == column_signature(want):
             continue
         stored = v.decls.get(p.declaration)
         if not isinstance(stored, RelationDecl):
@@ -142,8 +144,3 @@ def check_determine_schema(solver: Solver, runs: Runs) -> list[Finding]:
             Category.DETERMINE_SCHEMA, LintSentence.DETERMINE_KEYS,
             (block, *sorted(keys[block])))))
     return out
-
-
-def _named(columns: tuple[Column, ...]) -> tuple[tuple[str, str], ...]:
-    """Each column's name and type."""
-    return tuple((c.name, c.type.text) for c in columns)

@@ -1,6 +1,6 @@
 """The Determine run and what it reads."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 
 from arc.task import Example, Task
@@ -234,9 +234,8 @@ def determine(engine: Engine, solver: Solver, limits: Limits,
     for p in determined:
         if p.name in keyed:
             continue
-        s, d = set(stored[p.name]), set(derived[p.name])
-        if p.name in ident_cols and ids_agree or s == d \
-                or p.name in posed:
+        if _reproduces(p.name, stored[p.name], derived[p.name], ident_cols,
+                       ids_agree, posed):
             reproduced.append(p.name)
             continue
         diffs.append(_diff(p.name, stored[p.name], derived[p.name],
@@ -333,13 +332,27 @@ def determine_relation(solver: Solver, name: str) -> RelationDecl | None:
                  if d.scope == DETERMINE_SCOPE and d.name == name), None)
 
 
+def key_width(d: RelationDecl, p: Parameter, rigid: frozenset[str]) -> int:
+    """The number of key columns that lead `d`, the relation of `Determine`
+    that gives `p`: the columns before as many as `determine_columns`
+    gives, for a parameter of `rigid`, and none for any other; negative
+    where `d` has too few columns (solver-file.md, under
+    "Determination")."""
+    if p.name not in rigid:
+        return 0
+    return len(d.columns) - len(determine_columns(p, rigid))
+
+
+def column_signature(columns: tuple[Column, ...]
+                     ) -> tuple[tuple[str, str], ...]:
+    """Each column's name and type."""
+    return tuple((c.name, c.type.text) for c in columns)
+
+
 def block_key_columns(solver: Solver
                       ) -> dict[str, dict[str, tuple[Column, ...]]]:
     """Each RIGID block's relations of `Determine`, with the key columns
-    that lead each: the columns before as many as the parameter's columns,
-    the pose column left out, count (`determine_columns`); none where the
-    relation has no more columns than those (solver-file.md, under
-    "Determination")."""
+    that lead each (`key_width`)."""
     rigid = rigid_parameters(solver)
     blocks = rigid_blocks(solver)
     params = {p.name: p for p in solver.params.parameters}
@@ -348,7 +361,7 @@ def block_key_columns(solver: Solver
         if d.scope != DETERMINE_SCOPE or d.name not in blocks \
                 or d.name not in params:
             continue
-        width = len(d.columns) - len(determine_columns(params[d.name], rigid))
+        width = key_width(d, params[d.name], rigid)
         out.setdefault(blocks[d.name], {})[d.name] = d.columns[:max(0, width)]
     return out
 
@@ -359,8 +372,7 @@ def off_key_blocks(solver: Solver) -> tuple[str, ...]:
     order."""
     return tuple(sorted(
         block for block, keys in block_key_columns(solver).items()
-        if len({tuple((c.name, c.type.text) for c in k)
-                for k in keys.values()}) > 1))
+        if len({column_signature(k) for k in keys.values()}) > 1))
 
 
 type _Copy = dict[str, Rows]
@@ -419,6 +431,15 @@ def _place(engine: Engine, solver: Solver, program: Program,
                       limits)
 
 
+def _reproduces(name: str, stored: Rows, placed: Rows, ids: Collection[str],
+                ids_agree: bool, posed: Collection[str]) -> bool:
+    """Whether the determination reproduces `name`'s stored rows: as an
+    id-keyed chart of `ids` whose ids agree up to renaming, as one of
+    `posed` whose block agrees up to pose, or with equal rows."""
+    return name in ids and ids_agree or name in posed \
+        or set(stored) == set(placed)
+
+
 def _compare_copies(engine: Engine, solver: Solver, program: Program,
                     inputs: Mapping[RelationName, InputValue],
                     limits: Limits, copies: Sequence[_Copy],
@@ -447,8 +468,8 @@ def _compare_copies(engine: Engine, solver: Solver, program: Program,
         ids_agree = mine <= set(want.values())
         posed = _same_pose_orbits(solver, poseable, stored, placed)
         bad = [n for n in names
-               if not (n in ids and ids_agree or n in posed
-                       or set(stored[n]) == set(placed[n]))]
+               if not _reproduces(n, stored[n], placed[n], ids, ids_agree,
+                                  posed)]
         if bad:
             return _Compared(
                 tuple(_diff(n, stored[n], placed[n], True) for n in bad),
