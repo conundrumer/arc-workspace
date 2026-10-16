@@ -9,10 +9,10 @@ by (`selection`); a ticket whose only exits are steps of no operator, or
 that such a function leaves out, waits by design and is not due. A ticket
 that a live session holds waits on that session's own work, a step of no
 operator, and is not due. Its progress is a line of its log other than a
-take or a release, the launch of an agent of it, a report of such an
-agent, and, for a change, its merge onto `master`; an agent of it that is
-pending and not quiet is progress too, and a ticket with one is not
-stalled.
+take or a release, the first take after such progress, the launch of an
+agent of it, a report of such an agent, and, for a change, its merge onto
+`master`; an agent of it that is pending and not quiet is progress too,
+and a ticket with one is not stalled.
 
 A change that waits for a ticket that holds it up (`holding`), one under
 `tickets/blocked/` or one that is stalled, moves to `tickets/draft/` with
@@ -81,12 +81,14 @@ def progress(state: State, t: Ticket) -> float | None:
     if any(a.pending and a.quiet is None for a in agents):
         return None
     merge = merging.merge_commit(state, t) if t.kind is Kind.CHANGE else None
-    return max([t.filed,
-                *([merge.time] if merge is not None else []),
-                *(ln.time for ln in t.log
-                  if TAKEN.fullmatch(ln.note) is None and taking.RELEASED_LINE.fullmatch(ln.note) is None),
-                *(a.launched for a in agents),
-                *(r.time for a in agents for r in a.reports)])
+    last: float = max([t.filed,
+                       *([merge.time] if merge is not None else []),
+                       *(ln.time for ln in t.log
+                         if TAKEN.fullmatch(ln.note) is None and taking.RELEASED_LINE.fullmatch(ln.note) is None),
+                       *(a.launched for a in agents),
+                       *(r.time for a in agents for r in a.reports)])
+    return next((ln.time for ln in t.log
+                 if ln.time > last and TAKEN.fullmatch(ln.note) is not None), last)
 
 
 def stalled(state: State) -> dict[str, float]:
