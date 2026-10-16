@@ -34,10 +34,10 @@
 - **Crop.** A crop to a region's box, using `crop`, names it `P_inner`.
 - **Overlay.** An overlay names the frame cell that it stacks onto: `P`, or `P_frame` when another frame shares the clause.
 
-### Box readings
-- A Box column is read as a cell with the `Position` alias, a translation with the `Offset` alias, or a rectangle, margin, or frame change with bare `Box`.
-- A comment states a bare Box's reading where the name does not.
-- A variable is named for its reading: `B` for a box, `V` for an offset, and `P_rel` for a cell read relative to a box.
+### Box roles
+- A Box column takes the role of a cell with the `Position` alias, a translation with the `Offset` alias, or a rectangle, margin, or frame change with bare `Box`.
+- A comment states a bare Box's role where the name does not.
+- A variable is named for its role: `B` for a box, `V` for an offset, and `P_rel` for a cell relative to a box.
 - A box is not named `M`.
 - "Frame" in a component's name means a frame of cells derived from data, as in `Frame2D`.
 - The coordinate-frame sense is stated in prose and Position variable names.

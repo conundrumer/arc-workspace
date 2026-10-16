@@ -10,7 +10,7 @@
 - **Reading files.** Read the task with `cat data/tasks/<task_id>.json`, and each other file you need whole, with no other command piped or chained to the read.
 - **Banned forms.** A claim that needs a form the program bans, where no lib relation states that part of it, has no set of clauses: write no comp for it. Where it is a claim of the concept case, give in the review, as a concept fault, the task, the claim, and the form it needs.
     * comment: The user's ruling, session 19c17548, 2026-10-15T23:34:30Z, on the choice "replaces the protocol with the line that a pass that needs a banned form reports a fault of the concept and writes no comp": "2 but leave proposals alone".
-- **Source reading.**
+- **Reading `src/`.**
     - Do not read `src/` during a pass.
     - If you do, say why in the review, as a gap in the docs or the runner.
 - **Corpus.**
@@ -61,7 +61,7 @@
         - <what it holds, where the name does not say>
     ```
     - A slug is lowercase letters and digits, in words joined by single `-`.
-    - Write it from your reading of the pairs alone, before you write any script.
+    - Write it from your interpretation of the pairs alone, before you write any script.
     - Then check that it fits every pair.
         - Where a script of this pass needs what a lib component computes, read the component's interface, then call the component in place of rebuilding it: `lib_components.components` has a function of the same name for each component with no column of a type its caller declares, which runs the component on the rows it is given.
             - The function takes the component's type arguments, each a `Primitive` from `engine.program` or a `LibType` from `lib_components.components`, the grid size of each key as `sizes`, and the rows of each input relation by that relation's name, with a cell as `(row, column)`. It returns each output relation, whose `.rows` is its set of rows as tuples, and whose `.map()` and `.map_per_key()` give a relation that is a function of its leading columns as a dict.
@@ -78,10 +78,10 @@
         - The `@derive` directive in [Params](docs/handbook/solver-file.md#params) states the values a parameter takes on an input under a `@derive` branch, and where that branch is undefined.
     - Form them from these sources alone: the pairs, the headers of the solvers under `programs/solvers/`, the lib, the proposers in `programs/proposers.dl`, probes over the pairs, and variant tasks.
         - `grep -l '^// @keywords:.*<keyword>' programs/solvers/*.dl` lists the solvers under a keyword, and `awk '/^$/{exit} 1' programs/solvers/<id>.dl` prints one solver's header.
-        - A probe is a script you write under `work/task/<task_id>/` that runs a reading over grids and prints the outputs.
-            - A probe whose readings are all written in Souffle, and that needs only each reading's output grid, can be a Souffle file under `work/task/<task_id>/`, its name starting with the task id, that declares a `Choice` with one constructor per reading, `impl_choice` containing each, and `out(p: Position, col: Color, ch: Choice)`. `uv run python scripts/run_dl.py grid <that file> <grid file>` prints each reading's output as a grid, one grid for the readings that give the same one.
-                - Each reading in it instantiates the lib components it uses under instances of its own, and no key of a component instance holds a reading or a `Choice`.
-            - A probe that needs a component's rows in the script, or would key one instance of a component by reading, calls the component through `lib_components.components`, once per reading where its inputs differ by reading.
+        - A probe is a script you write under `work/task/<task_id>/` that runs an interpretation over grids and prints the outputs.
+            - A probe whose interpretations are all written in Souffle, and that needs only each interpretation's output grid, can be a Souffle file under `work/task/<task_id>/`, its name starting with the task id, that declares a `Choice` with one constructor per interpretation, `impl_choice` containing each, and `out(p: Position, col: Color, ch: Choice)`. `uv run python scripts/run_dl.py grid <that file> <grid file>` prints each interpretation's output as a grid, one grid for the interpretations that give the same one.
+                - Each interpretation in it instantiates the lib components it uses under instances of its own, and no key of a component instance holds an interpretation or a `Choice`.
+            - A probe that needs a component's rows in the script, or would key one instance of a component by interpretation, calls the component through `lib_components.components`, once per interpretation where its inputs differ by interpretation.
     - Name each branch by a constructor name of its own, in the form [Witness file](docs/handbook/solver-file.md#witness-file) gives. The name says what the branch changes and contains no value of a parameter.
     - A claim considered and not formed as a branch goes under Not formed, with why.
 2. Place each choice point at the concept or under a branch, as [Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) states. A point whose branches' models differ, in an output or in where they are defined, stands at the concept. A point whose branches give one model under another point's concept branch stands under a branch of that point under which they differ.
@@ -150,9 +150,9 @@
     - When a hint appears, judge it, and put that judgment in the review.
     - Flag performance issues in the review.
     - When a performance issue prevents the principled form, make a temporary workaround, marked with the `@workaround` directive.
-3. Form as a branch each reading that an item under the Analyze report's Not formed gives and that states one model, and add as cases the combinations that take it and meet Fit and Relational form.
+3. Form as a branch each interpretation that an item under the Analyze report's Not formed gives and that states one model, and add as cases the combinations that take it and meet Fit and Relational form.
     * comment: The Create pass on b9b7f026, agent a439e0b4a10625696, read this step as having it form the item "A rank among several holed rectangles", which names no order, and chose rank by cell count as branches, as ticket 10-507 records.
-4. Hold as a branch each built-in derivation that fits a parameter, and each stored reading of a derived value on which a `@store` line stands, for which `store` prints a `@store` line to add, or that the Analyze report gives a witness, whatever `store` reports.
+4. Hold as a branch each built-in derivation that fits a parameter, and each interpretation that stores a derived value, where a `@store` line stands on that value or `store` prints one to add for it, or where the Analyze report gives that interpretation a witness, whatever `store` reports.
     - `uv run python scripts/run_dl.py derive <task_id>` lists the built-in derivations that fit.
     - `uv run python scripts/run_dl.py store <task_id>` lists the derived values that are the same on every input.
     - Write the directive line each prints, in the form the [`@derive`](docs/handbook/solver-file.md#params) or [`@store`](docs/handbook/solver-file.md#program) directive gives, and, on a `@derive` or `@store` line, with the plausibility and verdict of the witness it records, and in the witness file rewrite each name of the branch it records to the name [Witness file](docs/handbook/solver-file.md#witness-file) gives that line.
@@ -184,7 +184,7 @@
 - For each approximated rule, state in the review why no set of clauses states it.
 - When the approximation agrees with the rule on every input the generator produces, replace the rule's text with the approximation's and remove the `@approximated:` line.
 - Record each witness you build with `uv run python scripts/run_dl.py record <task_id> <witness id> --separates "<its separates text>"`, with the grid on stdin.
-    - For an `other` verdict, take the judged output from `uv run python scripts/run_dl.py grid <task_id>` on a control grid: the witness changed so that the program's output is the concept's reading.
+    - For an `other` verdict, take the judged output from `uv run python scripts/run_dl.py grid <task_id>` on a control grid: the witness changed so that the program's output is the output the concept's claims give on the witness.
 - When the divergence requires a parameter to be reassigned, reassign that parameter with `--assign`.
 * comment:
     - The audit runs the same check.
@@ -212,7 +212,7 @@
 - The model, its parameterization, and its cases stay as they are.
 - Simplify covers code that:
     - Reimplements what the lib provides.
-    - Reads as implementation detail with no conceptual meaning.
+    - States implementation detail with no conceptual meaning.
     - Has repetition where a principled form exists.
     - Has unusual or needless indirection.
 - Run `uv run python scripts/run_dl.py deletions <task_id>`.

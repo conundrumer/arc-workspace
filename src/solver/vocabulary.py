@@ -100,8 +100,8 @@ IDENT = "Ident"
 """The lib's identity type (lib.dl, `.type Ident`)."""
 COLOR = "Color"
 BOX: Annotated[str,
-    quotes("style.md", "Box readings",
-           "A Box column is read as a cell with the `Position` alias, a "
+    quotes("style.md", "Box roles",
+           "A Box column takes the role of a cell with the `Position` alias, a "
            "translation with the `Offset` alias, or a rectangle, margin, or "
            "frame change with bare `Box`.")] = "Box"
 """The lib's edge-margin record."""

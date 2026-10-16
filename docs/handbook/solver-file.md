@@ -117,7 +117,7 @@
 - A witness under an `@approximated:` line is not `foreign`.
 - Each case that runs the approximation has a witness on which its output is not the verdict's.
 * comment
-    - Precise reading: a case's output is not the verdict's when its output on the grid differs from the output the verdict denotes: the output of the name's model for a name in one of the [Witness file](docs/handbook/solver-file.md#witness-file) forms, every case's for `other`, no case's for `any`.
+    - Precisely: a case's output is not the verdict's when its output on the grid differs from the output the verdict denotes: the output of the name's model for a name in one of the [Witness file](docs/handbook/solver-file.md#witness-file) forms, every case's for `other`, no case's for `any`.
 
 ### Cases
 - A case's model reads from `out` at that case one grid per combination of a value the case reads in each `out` column of a type whose lines give the values a case reads in it, its output is the distinct grids it reads, and it is undefined on an input where some combination reads no grid, or facts that describe no total grid.
@@ -125,7 +125,7 @@
     - `OpenValue` is a record with one field per `@open` relation the output of some case depends on, each field with that relation's name and of a record type the solver names for that relation, whose fields are the relation's columns that tell one open value from another, under the same names.
         - `.type TieValue = [d: DiagAxis]`, `.type PickValue = [d: Dir]` and `.type OpenValue = [tie_dir: TieValue, pick_dir: PickValue]`.
     - Where the output of some case depends on an `@open` relation, `out` takes a column of type `OpenValue` before its `TiebreakResolution` column, or last where it has none, each fact holds there the values of the `@open` relations it is derived at, and a case reads there each choice of one value of each field.
-    - A fact whose derivation does not read an `@open` relation of `OpenValue` holds `nil` in that relation's field, which reads as every value of it, whether or not its case reads that relation.
+    - A fact whose derivation does not read an `@open` relation of `OpenValue` holds `nil` in that relation's field, which counts as every value of it, whether or not its case reads that relation.
 - A case's base is its `Choice` value, its branch at each point the `Choice` encodes; a case is a base with a branch at each `@derive` and `@store` point its base reads.
 - A case is witnessed when it is the concept case or stands for a branch's model, when its output on a pair's input of the task is no candidate of that pair, or when an input of the task or of the witness file shows it giving an output that no case taking only part of its non-concept branches gives, where undefined counts as an output.
     - The case that stands for a branch's model is that model where the model is a case, and otherwise the case that takes the branch and differs from the concept case at the fewest points.
@@ -135,7 +135,7 @@
 - A branch's clauses are the clauses shared by its cases and absent from the other cases.
 - A constructor stands for its branch alone, not for what another branch shares with it.
 - `@claim` under the concept branch's constructor denotes the header claim the choice point turns on, which each other branch's `@scene` or `@rule` line changes.
-    - A case's reading of a claim is the header's claim with each of its branches' changes made.
+    - A case's interpretation of a claim is the header's claim with each of its branches' changes made.
 - A solver with one case has no `Choice`, case markers, or case column on `out`.
 - **Case markers.** Cases do not interleave: each case's Params and clauses are under its marker.
     - Cases that share facts or clauses are under one marker listing names whose cases they are, in the forms the [Witness file](docs/handbook/solver-file.md#witness-file) gives, `// --- $Box, $Erode ---`.
@@ -146,7 +146,7 @@
 
 ## Params
 - Params contains the parameterization and what derives from it.
-- The program reads a parameter as `params.<rel>`.
+- The program reads a parameter through `params.<rel>`.
 - `.init helpers = ParamsHelpers` gives the declarations inside Params the shared helpers as `helpers.<rel>`.
     * comment: Kept from the user's words, session 05598448 at 2026-05-08T23:15:02Z: "Consts helpers — for declaring CONSTS data, not for solver bodies".
     - The program has no access to those helpers.
@@ -230,7 +230,7 @@
 - The rules that apply to an inner task are those the instance's `confirmed` relation gives at its key, and no parameter stores them.
 - `out` takes a column of type `DemonstratedRule`, `[task: Key, rule: DemonstratedChoice]` with the instance's `Key`, after any `Choice` column and before any `TiebreakResolution` column, holding the inner task and the rule each fact is derived at.
     - A case reads in that column each choice of one rule for each inner task among those its facts hold there.
-    - A fact whose derivation reads no rule holds `nil` there, which reads as every rule of every inner task.
+    - A fact whose derivation reads no rule holds `nil` there, which counts as every rule of every inner task.
 - In a nested task, substantial code that detects and constructs each inner task's rule through one parameterized mechanism, general enough to produce every inner task's rule, is the sign that those rules belong in the catalog.
     * comment: The solver passes on 20a9e565, a nested task, built a parameterized construction of each input's rule in place of a catalog, as change ticket 4-38 records.
 - The solver of a task that is not a nested task defines no `DemonstratedChoice`.
@@ -261,10 +261,10 @@
     - The case part of a `@store` line's relation is each column whose type is an ADT in `Choice` or a record built only of such ADTs, and a record column that has such fields beside others is written as the list, in order, of the others.
 - The key of an `assign` for the relation of a `@store` line above an `.init` is `<instance>.<relation>`.
 - [`GRID_HxW` for grid data](docs/handbook/patterns.md#grid_hxw-for-grid-data) states the form of a GRID call that stores a parameter.
-    - For a parameter that a `GRID_STAMP_HxW` or `GRID_STAMP_SPARSE_HxW` call stores, a grid of the call's size is read as a picture with the `@` on the cell that carries it in the call's layout, and `{"grid": Grid, "anchor": [row, col]}` is read as a picture of any size with the `@` on the cell at that row and column, counted from 0.
+    - For a parameter that a `GRID_STAMP_HxW` or `GRID_STAMP_SPARSE_HxW` call stores, a grid of the call's size is interpreted as a picture with the `@` on the cell that carries it in the call's layout, and `{"grid": Grid, "anchor": [row, col]}` is interpreted as a picture of any size with the `@` on the cell at that row and column, counted from 0.
 - A `<name>` fixes the branch at some choice points, in one of these forms. Its model takes the fixed branches and the concept branch at every other point it takes; its cases are the cases of the solver that take the fixed branches ([Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) states both for one branch). A `@witness` verdict denotes its model; a case marker and an `@ignore: derive` or `@ignore: store` line denote its cases.
     - `concept`: the concept branch at every point the `Choice` encodes, the concept base; alone, its model and its one case are the concept case
     - a constructor's name with its prefix, such as `$Alt`: that branch at each point where the constructor stands, for a nested constructor too, whether or not `impl_choice` contains its model
     - `<name> & <name>`: what each fixes
-    - `<param>=<Proposer>`, `<rel>=stored`, `<rel>=derived` and `<param>=stored`, each read as a constructor's name: the branch that the `@derive` line on `<param>` with that `<Proposer>` is; the branch that the `@store` line on `<rel>` is; the branch of the point of the `@store` line on `<rel>` in which the solver's clauses derive its value; and the branch of `<param>`'s choice point in which its value is stored per case
+    - `<param>=<Proposer>`, `<rel>=stored`, `<rel>=derived` and `<param>=stored`, each interpreted as a constructor's name: the branch that the `@derive` line on `<param>` with that `<Proposer>` is; the branch that the `@store` line on `<rel>` is; the branch of the point of the `@store` line on `<rel>` in which the solver's clauses derive its value; and the branch of `<param>`'s choice point in which its value is stored per case
         - A `<Proposer>` is a component of [proposers.dl](programs/proposers.dl).

@@ -559,7 +559,7 @@
     min_period(Ky, A, K) <= min_period(Ky, A, K2) :- K > K2.
 }
 
-/// The isometries of a valued cell set read as a periodic pattern: each
+/// The isometries of a valued cell set interpreted as a periodic pattern: each
 /// candidate is a D4 transform composed with a shift whose component on each
 /// axis is less than one period where the axis has a `period` row, and zero
 /// where it has none. A candidate is a symmetry when it takes some cell onto

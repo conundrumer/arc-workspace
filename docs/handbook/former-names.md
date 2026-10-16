@@ -16,7 +16,7 @@
 | Draft (the procedure operation) | Write |
 | concept rule | claim |
 | lib primitive | lib relation |
-| `Position`, the record | `Box`; `Position` is its cell reading |
+| `Position`, the record | `Box`; `Position` is its cell role |
 - Fit names the case condition that [Cases](docs/handbook/principles.md#cases) states.
 
 ## Identifiers

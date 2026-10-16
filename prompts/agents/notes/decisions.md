@@ -49,7 +49,7 @@
 - Where it is silent, follow the intent the support shows.
 - A default's discretion tier is how far it goes beyond what its grounds determine:
     1. A ground states it outright, or it fixes a bug.
-    2. A ground determines it through a reading of the user's intent or of an existing convention, and that reading admits no other.
+    2. A ground determines it through an interpretation of the user's intent or of an existing convention, and that interpretation admits no other.
     3. The grounds permit more than one option, and the default is defensible from them.
     4. No ground bears on it.
 - Record a decision where the rule it makes lives, as the rule alone, and record what it was made from and its discretion tier in the log of the ticket it settles or in your reply: a line of [Principles](docs/handbook/principles.md); a support line; a history entry, by its date; or, for the code's shape, the goal it serves.
@@ -68,7 +68,7 @@
     - A part whose decline a log line of the coordinator on the ticket lets stand is no decline again. Meet each part whose decline such a line vetoes.
 - Tell the user, without waiting on them, each change that affects the user directly, in one line, with the solver's code before and after where the user judges it by that code. A change affects the user directly where it does one of these:
     - It changes what the user reads, judges or uses. The user judges solver code, a concept an Analyze pass wrote and [Principles](docs/handbook/principles.md).
-        - The user judges a solver's code by whether it is principled and pure. It is principled when [Principles](docs/handbook/principles.md) justifies each of its parts. It is pure when it reads as the concept, with nothing verbose and nothing shaped to one task.
+        - The user judges a solver's code by whether it is principled and pure. It is principled when [Principles](docs/handbook/principles.md) justifies each of its parts. It is pure when it states the concept, with nothing verbose and nothing shaped to one task.
     - It changes how the user's own Claude Code sessions behave.
     - It changes what the user must learn or do.
     - It moves or loses a persistent working file, or rewrites git history.

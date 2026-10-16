@@ -2,15 +2,16 @@
 //! or an Offset, and that takes no keyed set of cells as input.
 //!
 //! Box is the edge-margin record (t, b, l, r), ordered V-first then H — a
-//! rectangle placed in a frame by its margins from the four edges. A frame of
-//! extent (V, H) reads the record as the rows t..V-1-b and the columns
+//! rectangle placed in a frame by its margins from the four edges. In a frame
+//! of extent (V, H), the record gives the rows t..V-1-b and the columns
 //! l..H-1-r; a negative margin reaches past the frame.
 //!
 //! The per-axis sum (t+b, l+r) measures the frame's extent minus the
 //! rectangle's, so boxes with one sum are translates of one another. A
 //! Position is a cell, extent 1 on both axes, which carries its frame. An
 //! Offset is a translation, sum 0, which moves any box and keeps its extent.
-//! Every other reading is a Box read against a frame the reader supplies.
+//! In every other role, a Box is interpreted in a frame that the caller
+//! supplies, such as the frame of the cell `p` in `box_extent`.
 
 /// The zero box: the whole frame as a box, no move as an offset.
 #define ZERO [0, 0, 0, 0]
@@ -53,7 +54,7 @@ inside(A, B) :- @box_inside(A, B) = 1.
 interior(A, B) :- @box_interior(A, B) = 1.
 
 /// Cell p of box b, as a cell of b's own frame: the covering test and the
-/// relative read.
+/// relative position.
 .decl crop(p: Position, b: Box, p_rel: Position) inline
 crop(P, B, P_rel) :- inside(P, B), relative(B, P, P_rel).
 
@@ -80,7 +81,7 @@ corner_dist(P, Diag, K) :- diag_dir_elem(Diag), K = @box_corner_dist(P, Diag).
 .decl split(p: Box, a: Axis, along: Box, across: Box) inline
 split(P, A, Along, Across) :- Along = @box_along(P, A), Across = @box_across(P, A).
 
-/// Extent of p's frame along axis a — read off any position in the frame.
+/// Extent of p's frame along axis a — taken from any position in the frame.
 .decl axis_dim(p: Position, a: Axis, n: number) inline
 axis_dim(P, A, N) :- N = @box_axis_dim(P, A).
 
@@ -365,7 +366,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         compose(P1, P2, P).
 }
 
-/// The Box with a given distance to each edge: the inverse read of dist. A
+/// The Box with a given distance to each edge: the inverse of dist. A
 /// caller with an edge of no width writes that edge's zero row.
 .comp DirPack<Key> {  // @construction
     .decl edge(key: Key, d: Dir, k: number)  // @input

@@ -149,12 +149,12 @@
                 + gloss
     - `variant`: routinely, in a variant task.
         - 3b4c2228
-            - A scene that contains no block of the counted color is a scene a variant task contains. The stored table has no entry for a count of zero, and a person reads the derived output.
+            - A scene that contains no block of the counted color is a scene a variant task contains. The stored table has no entry for a count of zero, and a person expects the derived output.
                 + gloss
     - `borderline`: only under unusual conditions.
     - `foreign`: never.
         - 00dbd492
-            - The two readings of an object's empty region differ only where the object's outline is broken, which no input in the evidence shows. A person reads the enclosed region there.
+            - The two interpretations of an object's empty region differ only where the object's outline is broken, which no input in the evidence shows. A person interprets the region there as enclosed.
                 + gloss
 - **verdict**: the annotator's judgment of the output that the generator would pair with the witness.
     - `concept`: the concept case's output.
@@ -176,7 +176,7 @@
             + gloss
 - Agreement on every input the generator produces does not establish equivalence either: the comparison ranges over every input.
     - 00dbd492
-        - The two readings of an object's empty region part only where the outline is broken, an input the generator never produces, and each reading is a case.
+        - The two interpretations of an object's empty region part only where the outline is broken, an input the generator never produces, and each interpretation is a case.
             + gloss
     * comment
         - The 9f41bd9c create and refine sessions read a scene claim as narrowing the comparison, and dropped a peer that parts from the concept case only off the scene.
@@ -271,7 +271,7 @@
     + formal
 - M_open(θ, x) = ⋃_{v ∈ open(i)} M(θ[i ↦ v], x) where ∀v ∈ open(i). Def_M(θ[i ↦ v], x), and ∅ otherwise
     + formal
-    - M_open: the model read with open(i) in place of θᵢ
+    - M_open: the model with open(i) in place of θᵢ
 - The output contains each grid some open value produces, and is undefined where the model is undefined at some open value.
     - 28a6681f
         - Water settles under gravity: the basin it reaches fills by level, and what overflows pours to the next basin on one side first. The pairs fix neither side, and the output holds both.
@@ -282,7 +282,7 @@
     - **Fit.** The model fits some split task at its stored assignment.
         - Fit(S_M, T) ⇔ ∃T′ ∈ alts(T). M(stored_M(D(T))) ⊨ T′
             + formal
-        - For a case with an open parameter, only Fit reads the model as M_open at the stored open values.
+        - For a case with an open parameter, only Fit uses M_open at the stored open values in place of the model.
         - **Unseen key.** When a test uses a key that no train pair contains, a lookup table fails Fit.
             - 1fad071e
                 - The test count is 3, and the train counts are 2 and 4. The table is therefore ruled out.

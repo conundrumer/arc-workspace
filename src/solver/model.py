@@ -135,7 +135,7 @@ class StoreBranch:
     spelled: Annotated[str,
         quotes("solver-file.md", "Witness file",
                "`<param>=<Proposer>`, `<rel>=stored`, `<rel>=derived` and "
-               "`<param>=stored`, each read as a constructor's name")]
+               "`<param>=stored`, each interpreted as a constructor's name")]
     """The relation as the line spells it, the name the witness file writes
     before `=stored`: the `.decl`'s name, or `<instance>.<relation>` for a
     line above an `.init`. Two lines that spell it the same are homonyms."""
