@@ -47,8 +47,11 @@ def filed_path(m: re.Match[str]) -> Path:
 REPORT_SUFFIX = "-reply.txt"
 
 
-REPORT_NAME = re.compile(rf"(?:{STEP_KEY.pattern})(?:-[0-9]+)?{re.escape(REPORT_SUFFIX)}")
-"""The name of the report file a brief gives."""
+REPORT_NAME = re.compile(rf"(?:{STEP_KEY.pattern})-.+")
+"""The name of the report file a brief gives, with any suffix that opens
+with `-`: a reply that gives the path of a report file named with an
+earlier `REPORT_SUFFIX` reads as that file's report after the suffix
+changes."""
 
 
 SENT = mctx("My final reply went to {to} by SendMessage.")
