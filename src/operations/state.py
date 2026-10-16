@@ -4,13 +4,14 @@ session's operators, and those of the operators of another session on a
 change `me` holds.
 """
 
+import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Any
 
-from controlled_markdown import mctx
+from controlled_markdown import form, mctx
 from handbook.reader_names import ReaderName
 from operations.pacing import Pace, Unknown
 from operations.roles import Model, Purpose, Role, analyst_of, subjects
@@ -118,6 +119,20 @@ class Waits(Enum):
     LIMITED = "limited"
 
 
+SETTLED = mctx("What is already settled on change {number} follows.")
+"""The line that opens the block of a brief on a change that gives what
+the agents launched on it before settled (`briefs.settled_lines`)."""
+SETTLED_LINE = re.compile(form(SETTLED, {"number": r"\S+"}))
+
+
+def own(brief: str) -> str:
+    """`brief` cut at its first `SETTLED` line, or the whole of it where it
+    has none."""
+    lines = brief.split("\n")
+    cut = next((i for i, line in enumerate(lines) if SETTLED_LINE.fullmatch(line)), len(lines))
+    return "\n".join(lines[:cut])
+
+
 @dataclass(frozen=True)
 class Agent:
     """An agent an operator of any session launched with a description the
@@ -146,7 +161,9 @@ class Agent:
     with work of its own still running and it is quiet
     (`TranscriptsRead.quiet`), it no longer waits, and its work ends with
     the reports it has, as for an agent of another operator whose work is
-    no longer open."""
+    no longer open.
+    `brief` is the brief it was launched with cut at its `SETTLED` line
+    (`own`), so that no read of it sees the text that block quotes."""
     agent_id: str | None
     operator: str
     role: Role
@@ -156,6 +173,9 @@ class Agent:
     waits: Waits | None
     reports: tuple[Report, ...]
     notifies: bool
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "brief", own(self.brief))
 
     @property
     def pending(self) -> bool:

@@ -40,11 +40,11 @@ coordinator gives a `decision:` or an `unfinished:` item and no item
 checker was launched since its launch: then the change is held on those
 items, in place of its merge, and a ruling of another analyst gives that
 analyst the latest checker's part, whatever its time.
-The brief of each such analyst gives each earlier hold of the change that
-a ruling gave `merge` (`merged_holds`), a decision already made on the
-items it gives, so that a later analyst whose reply would give those items
-again in other words leaves them out, and the change is not held on them
-again.
+The brief of each such analyst, as of every agent launched on the change,
+gives what the agents before it settled (`change_agents.settled`), the
+earlier holds of the change a ruling gave `merge` included, so that a
+later analyst whose reply would give those items again in other words
+leaves them out, and the change is not held on them again.
 Where they give a `decision:` item, the step waits on the coordinator,
 which gets those items with the line that rules the step
 (`triage.for_coordinator`), and otherwise it goes to a ticket analyst
@@ -68,16 +68,17 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Literal
 
-from controlled_markdown import mctx
 from operations import briefs, merging, messages
 from operations.change_agents import (change_editors, editors_in, elsewhere_on, latest_editors,
-                                      launched_on, of_change, unstaffed, with_elsewhere)
+                                      launched_on, of_change, Reported, reported, settled,
+                                      unstaffed, with_before, with_elsewhere)
+from operations.change_holds import LEFT_CHOICES, left_hold, questions_hold
 from operations.change_fragments import drafter_ids, fragments_step
 from operations.change_overrun import over_budget
 from operations.doc_review import doc_review, with_ids
-from operations.directives import (Decision, decided, held_on)
+from operations.directives import Decision, decided, held_on
 from operations.item_check import check_items, is_checked, latest_reports, unfinished
-from operations.reports import OPEN_LABELS, Label, items_of, left_for_decision, shows_current
+from operations.reports import Label, items_of, left_for_decision, shows_current
 from operations.roles import Purpose, Role, analyst_of, analyst_subject
 from operations.state import Agent, State, Ticket
 from operations.filing import editor_scratch
@@ -193,11 +194,17 @@ def carry(state: State, t: Ticket) -> Step | None:
         drafters = drafter_ids(here)
         if isinstance(drafters, Undecided):
             return drafters
-        before = editor_before([a for a in theirs if a.role is role])
+        part = len(editors) > 1
+        own = briefs.editor_part(role, part)
+        known = settled(state, t.number, role, own)
+        before = editor_before([a for a in theirs if a.role is role and briefs.part_of(a) == own])
+        if before is not None:
+            known = with_before(known, before[0])
         return Launch(role, t.number, briefs.editor(
-            role, t.number, len(editors) > 1, w,
-            editor_scratch(t.number, role, state.scratch), state.me,
-            state.held.fragments.get(w, ()), tuple(drafters), before=before),
+            role, t.number, part, w,
+            editor_scratch(t.number, role, state.scratch), state.me, known,
+            state.held.fragments.get(w, ()), tuple(drafters),
+            before=None if before is None else (before[0].agent_id, before[1])),
             model=t.model(role))
     if any(a.pending for a in here):
         return None
@@ -214,38 +221,17 @@ def carry(state: State, t: Ticket) -> Step | None:
     return merging.merge(state, t, w, latest)
 
 
-def editor_before(theirs: list[Agent]) -> tuple[str, Path, str] | None:
-    """The agent id, the scratch directory and the latest report of the
-    last of `theirs`, the editors of one role in a change's worktree that
-    an operator of another session launched, that gives all three, for
-    the brief of the editor launched in its place (`briefs.editor`), or
-    None where none of them does."""
+def editor_before(theirs: list[Agent]) -> tuple[Reported, Path] | None:
+    """The latest report and the scratch directory of the last of `theirs`,
+    the editors of one role and one part in a change's worktree that an
+    operator of another session launched, that has an agent id, a report
+    and a scratch directory, for the brief of the editor launched in its
+    place (`briefs.editor`), or None where none of them does."""
     for a in reversed(theirs):
         scratch = briefs.scratch_of(a.brief)
-        report = a.last_report
-        if a.agent_id is not None and scratch is not None and report is not None:
-            return a.agent_id, scratch, report.text
+        if scratch is not None and (r := reported([a])):
+            return r[0], scratch
     return None
-
-
-LEFT_CHOICES = {
-    Decision.MERGE: mctx("go on to the merge; the close of the change closes its open question "
-                       "tickets"),
-    Decision.AGAIN: mctx("launch another ticket analyst on what the item checker leaves for a "
-                       "decision")}
-"""The choices of a step held on what the editors of a change leave."""
-
-
-def left_hold(a: Agent, number: str) -> str | None:
-    """The step held on the `decision:` and `unfinished:` items of the
-    latest reply of `a`, the ticket analyst on what the editors of change
-    `number` leave, or None where that reply gives none."""
-    items = items_of(a, OPEN_LABELS)
-    if items is None:
-        return None
-    return mctx("ticket analyst {agent} on change {number} leaves these items for the "
-                "coordinator:").format(agent=a.agent_id, number=number) + (
-                    "\n" + items + "\n" + mctx("The change is held on them"))
 
 
 def left_decision(a: Agent, number: str) -> str | None:
@@ -295,8 +281,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     elif fresh is None and not questions and not left_open:
         return False
     elif fresh is None and not left_open and judged > max(q.filed for q in questions):
-        hold = mctx("ticket analyst {agent} returned on change {number}, and its question "
-                    "tickets stand open").format(agent=analysts[-1].agent_id, number=t.number)
+        hold = questions_hold(analysts[-1], t.number)
     if hold is not None:
         choice = decided(state, hold, LEFT_CHOICES)
         if isinstance(choice, Undecided):
@@ -308,15 +293,8 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
         return reports
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
         t.number, w, parts, [q.number for q in questions], editors, reports,
-        [i for a, i in editors if a in left_open], merged_holds(state, t.number, analysts),
-        state.me))
-
-
-def merged_holds(state: State, number: str, analysts: list[Agent]) -> list[str]:
-    """The steps held on what `analysts`, the ticket analysts on what the
-    editors of change `number` leave, left, that a ruling gave `merge`."""
-    return [hold for a in analysts if (hold := left_hold(a, number)) is not None
-            and decided(state, hold, LEFT_CHOICES) is Decision.MERGE]
+        [i for a, i in editors if a in left_open], state.me,
+        settled(state, t.number, Role.TICKET_ANALYST, None)))
 
 
 def step(state: State) -> Step | None:

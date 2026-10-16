@@ -18,7 +18,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from operations import briefs
-from operations.change_agents import latest_editors
+from operations.change_agents import latest_editors, settled
 from operations.filing import editor_scratch
 from operations.roles import Role
 from operations.state import Agent, State, Ticket
@@ -83,4 +83,6 @@ def fragments_step(state: State, t: Ticket, w: Path,
     return Launch(Role.DOC_EDITOR, t.number, briefs.editor(
         Role.DOC_EDITOR, t.number, True, w,
         editor_scratch(t.number, Role.DOC_EDITOR, state.scratch), state.me,
+        settled(state, t.number, Role.DOC_EDITOR,
+                briefs.editor_part(Role.DOC_EDITOR, True, of_fragments=True)),
         places, tuple(drafters), of_fragments=True), model=t.model(Role.DOC_EDITOR))

@@ -1,6 +1,6 @@
 """The launch of an item checker on a change: the latest reports of the
-editors it checks, the replies of its ticket analysts, and the accepted
-gate outputs it reads. No item checker checks the `UNCHECKED` editor,
+editors it checks, what the agents before it settled
+(`change_agents.settled`), and the accepted gate outputs it reads. No item checker checks the `UNCHECKED` editor,
 whose report goes to the ticket analyst on what the editors leave where
 it leaves items unfinished (`unfinished`)."""
 
@@ -9,7 +9,7 @@ from pathlib import Path
 from controlled_markdown import mctx
 from gating.commands import Command, command_of
 from operations import briefs
-from operations.change_agents import change_editors, of_change
+from operations.change_agents import change_editors, settled
 from operations.reports import done
 from operations.roles import Role
 from operations.state import Agent, State, Ticket
@@ -72,18 +72,14 @@ def check_items(state: State, t: Ticket, w: Path, needing: list[Agent],
     `needing` it checks (`is_checked`), which have reported since the last
     item checker was launched on the change `t`, and on the accepted gate
     outputs of `checked_outputs`, with each editor of `editors` it checks,
-    and the latest report of each ticket analyst launched on `t` that has
-    reported, in launch order, so the checker leaves out what they already
-    decided. `past` gives that the change is past its cost budget."""
+    and what the agents before it settled (`change_agents.settled`).
+    `past` gives that the change is past its cost budget."""
     reports = latest_reports([a for a in needing if is_checked(a)])
     if isinstance(reports, Undecided):
         return reports
     gate = checked_outputs(t, state.held.gate_outputs.get(w, ()))
     if isinstance(gate, Undecided):
         return gate
-    decisions = [(a.agent_id, r.text) for a in of_change(state, t.number)
-                 if a.role is Role.TICKET_ANALYST and a.agent_id is not None
-                 and (r := a.last_report) is not None]
     return Launch(Role.ITEM_CHECKER, t.number, briefs.item_check(
-        t.number, w, reports, decisions, gate,
-        [(a, i) for a, i in editors if is_checked(a)], state.me, past))
+        t.number, w, reports, gate, [(a, i) for a, i in editors if is_checked(a)], state.me,
+        settled(state, t.number, Role.ITEM_CHECKER, None), past))

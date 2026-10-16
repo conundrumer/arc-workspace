@@ -40,10 +40,11 @@ file read while an agent writes it goes to no analyst."""
 
 from controlled_markdown import mctx
 from operations import briefs, messages
+from operations.change_agents import settled
 from operations.directives import reply_decisions
 from operations.reports import Label, items_of
 from operations.roles import Purpose, Role, analyst_of, analyst_subject, described
-from operations.state import Agent, State, Tool, Unread
+from operations.state import Agent, State, Tool, Unread, own
 from operations.final_reply import failure, final_replies, nested
 from operations.handled import ask_again, decided_by, repeated
 from operations.steps import Launch, Send, Step, Undecided, decision_key, rulable
@@ -74,9 +75,13 @@ def unread_files(state: State) -> Step | None:
 
 
 def launch(state: State, step: Undecided) -> Launch:
+    """The launch of a ticket analyst on the held step `step`, whose brief
+    gives, where the step is of a change, what the agents launched on it
+    settled (`change_agents.settled`)."""
+    known = None if step.change is None else settled(state, step.change, Role.TICKET_ANALYST, None)
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.STEP, decision_key(step.what)),
-                  briefs.held_step(step.what, state.me, rulable(step.what)), reread=step.reread,
-                  change=step.change)
+                  briefs.held_step(step.what, state.me, rulable(step.what), known),
+                  reread=step.reread, change=step.change)
 
 
 def applier(state: State, a: Agent) -> str:
@@ -153,7 +158,7 @@ def failed(state: State) -> list[str]:
         parsed = analyst_of(d.subject)
         if parsed is not None and parsed[0] is Purpose.STEP:
             last[d.subject] = (c.time, what, failure(c) if c.error else "",
-                               str(c.input.get("prompt", "")))
+                               own(str(c.input.get("prompt", ""))))
     out: list[str] = []
     for subject, (time, what, why, prompt) in last.items():
         if not why or any(a.launched > time for a in state.agents_of(Role.TICKET_ANALYST, subject)):

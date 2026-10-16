@@ -64,7 +64,7 @@ from pathlib import Path
 from controlled_markdown import form, mctx
 from controlled_markdown.nodes import Rule, finding_lines
 from operations import briefs, messages
-from operations.change_agents import of_change
+from operations.change_agents import of_change, settled
 from operations.change_budget import TIME_NOTE, TIME_OPENING, left_draft, taken
 from operations.filing import editor_scratch
 from operations.reports import splits, unread_split
@@ -394,7 +394,8 @@ def refused(state: State, t: Ticket, w: Path, last: Call, latest: list[Agent],
         files = sorted({m["path"] for m in quotes})
         return Launch(Role.CODE_EDITOR, t.number, briefs.quotes_fix(
             t.number, w, [m.group(0) for m in quotes], files,
-            editor_scratch(t.number, Role.CODE_EDITOR, state.scratch), state.me),
+            editor_scratch(t.number, Role.CODE_EDITOR, state.scratch), state.me,
+            settled(state, t.number, Role.CODE_EDITOR, briefs.QUOTES_PART)),
             model=t.model(Role.CODE_EDITOR))
     return None
 

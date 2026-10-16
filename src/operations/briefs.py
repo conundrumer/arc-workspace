@@ -6,13 +6,17 @@ the agent replies to."""
 import re
 import shlex
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from controlled_markdown import form, mctx
 from operations.reports import LEFT_FOR_DECISION, WORKTREE
 from operations.roles import Role, description
-from operations.state import Agent, Place, code_review_tag
+from operations.state import SETTLED, Agent, Place, code_review_tag
 from operations.log_commands import AGENT, FILE_TICKET
 from ticketing.times import utc_stamp
+
+if TYPE_CHECKING:
+    from operations.change_agents import Reported, Settled
 
 TICKET_PATH = shlex.join([*FILE_TICKET, "path"]) + " {number}"
 WORK_IN = mctx("Work in the worktree {worktree}.")
@@ -84,22 +88,37 @@ def part_of(agent: Agent) -> str:
     return next((part for line, part in BRIEF_PARTS if line in agent.brief), WHOLE_CHANGE)
 
 
+def part_line(role: Role, part: bool, of_fragments: bool) -> str | None:
+    """The line that gives the brief `editor` builds with `role`, `part`
+    and `of_fragments` its part, or None where that editor takes the whole
+    change."""
+    if of_fragments:
+        return FRAGMENTS_PART
+    return YOUR_PART.format(part=PARTS[role]) if part else None
+
+
+def editor_part(role: Role, part: bool, of_fragments: bool = False) -> str:
+    """The part, as `part_of` reads it, of the editor whose brief `editor`
+    builds with `role`, `part` and `of_fragments`."""
+    line = part_line(role, part, of_fragments)
+    return WHOLE_CHANGE if line is None else dict(BRIEF_PARTS)[line]
+
+
 def editor(role: Role, number: str, part: bool, worktree: Path, scratch: Path,
-           operator: str, fragments: tuple[Place, ...] = (),
+           operator: str, settled: "Settled", fragments: tuple[Place, ...] = (),
            code_editors: tuple[str, ...] = (), of_fragments: bool = False,
-           before: tuple[str, Path, str] | None = None) -> str:
+           before: tuple[str, Path] | None = None) -> str:
     """The brief of an editor of the change `number`, with its part where
     `part`, or `FRAGMENTS_PART` where `of_fragments`, in the change's
-    worktree `worktree`. A doc editor's brief gives the `fragments`, and
+    worktree `worktree`, with what the agents before it settled
+    (`settled_lines`). A doc editor's brief gives the `fragments`, and
     the agent ids of the change's `code_editors`. `before` gives the agent
-    id, the scratch directory and the latest report of the last editor of
-    the role in that worktree that an operator of another session
-    launched, where there is one."""
+    id and the scratch directory of the last editor of the role in that
+    worktree that an operator of another session launched, where there is
+    one, whose latest report that block gives."""
     lines = [read_ticket(number)]
-    if of_fragments:
-        lines.append(FRAGMENTS_PART)
-    elif part:
-        lines.append(YOUR_PART.format(part=PARTS[role]))
+    if (given := part_line(role, part, of_fragments)) is not None:
+        lines.append(given)
     lines.append(WORK_IN.format(worktree=worktree))
     if role is Role.DOC_EDITOR and fragments:
         lines.append(FRAGMENTS)
@@ -113,20 +132,18 @@ def editor(role: Role, number: str, part: bool, worktree: Path, scratch: Path,
     lines.append(SCRATCH.format(scratch=scratch))
     lines.append(LAUNCHER.format(operator=operator))
     if before is not None:
-        agent, theirs, report = before
-        lines += [BEFORE.format(agent=agent, scratch=theirs), report]
-    return "\n".join(lines)
+        agent, theirs = before
+        lines.append(BEFORE.format(agent=agent, scratch=theirs))
+    return "\n".join(lines + settled_lines(settled))
 
 
 BEFORE = mctx("An editor of your role that another session launched, {agent}, worked in this "
-              "worktree before you, with the scratch directory {scratch}, and its latest report "
-              "follows.")
+              "worktree before you, with the scratch directory {scratch}.")
 
 
 def scratch_of(brief: str) -> Path | None:
     """The scratch directory the first `SCRATCH` line of `brief` gives, or
-    None where it gives none: a report that `BEFORE` leads, at the end of
-    the brief, may give lines of its own."""
+    None where it gives none."""
     found = [m.group("scratch") for line in brief.split("\n")
              if (m := SCRATCH_LINE.fullmatch(line))]
     return Path(found[0]) if found else None
@@ -169,7 +186,7 @@ def editor_lines(editors: list[tuple[Agent, str]]) -> list[str]:
 
 
 def doc_review(number: str, worktree: Path, editors: list[tuple[Agent, str]],
-               operator: str) -> str:
+               operator: str, settled: "Settled") -> str:
     lines = [mctx("Review the change to the documents of change {number}: the diff that "
                   "`git -C {worktree} diff --merge-base master` prints, and each file that "
                   "`git -C {worktree} ls-files --others --exclude-standard` prints.").format(
@@ -177,11 +194,11 @@ def doc_review(number: str, worktree: Path, editors: list[tuple[Agent, str]],
     lines.extend(editor_lines(editors))
     lines.append(fingerprint_line(worktree))
     lines.append(LAUNCHER.format(operator=operator))
-    return "\n".join(lines)
+    return "\n".join(lines + settled_lines(settled))
 
 
 def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], scratch: Path,
-               operator: str) -> str:
+               operator: str, settled: "Settled") -> str:
     """The brief of a code editor on the `quotes` calls a change to the
     documents broke, as [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change)
     gives it."""
@@ -190,7 +207,7 @@ def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], 
         QUOTES_ITEMS,
         *calls,
         MAY_EDIT.format(files=", ".join(files)), TESTS, SCRATCH.format(scratch=scratch),
-        LAUNCHER.format(operator=operator)])
+        LAUNCHER.format(operator=operator), *settled_lines(settled)])
 
 
 # The lines on a check whose event has not happened and on a check of what
@@ -297,33 +314,19 @@ def editor_reports(reports: list[tuple[str, str]]) -> list[str]:
     return lines
 
 
-def item_check(number: str, worktree: Path, reports: list[tuple[str, str]],
-               decisions: list[tuple[str, str]], gate: list[str],
-               editors: list[tuple[Agent, str]],
-               operator: str, past: bool = False) -> str:
+def item_check(number: str, worktree: Path, reports: list[tuple[str, str]], gate: list[str],
+               editors: list[tuple[Agent, str]], operator: str, settled: "Settled",
+               past: bool = False) -> str:
     """The brief of an item checker that checks the items of the editors
     of a change it checks, by each editor's agent id and latest report,
     and the accepted gate outputs `gate` it reads, with the agent id and
-    part of each of those editors, each beside its record in `editors`.
-    Where `decisions` gives the agent id and latest report of ticket
-    analysts on the change, it tells the checker to leave out of its
-    `LEFT_FOR_DECISION` part what those decisions settle, unless the
-    editor's report gives a reason they did not judge. `past` gives that
-    the change is past its cost budget."""
+    part of each of those editors, each beside its record in `editors`,
+    and what the agents before it settled (`settled_lines`). `past` gives
+    that the change is past its cost budget."""
     lines = [*change_lines(number, worktree), *editor_lines(editors)]
     if past:
         lines.append(OVER_BUDGET.format(number=number))
     lines.extend(editor_reports(reports))
-    if decisions:
-        lines.append(mctx(
-            "Leave out of your `{heading}` part each finding, item or standing place that a "
-            "decision of a ticket analyst on the change, {analysts}, settles in its report "
-            "below, where the editor's report gives no reason for it that the decision did "
-            "not judge.").format(
-                analysts=", ".join(i for i, _ in decisions), heading=LEFT_FOR_DECISION))
-    for analyst_id, report in decisions:
-        lines.append(mctx("The latest report of ticket analyst {analyst}:").format(analyst=analyst_id))
-        lines.append(f"\n{report}\n")
     if gate:
         lines.append(mctx(
             "Read the diff of each accepted gate output the change writes, {gate}, and send "
@@ -332,12 +335,12 @@ def item_check(number: str, worktree: Path, reports: list[tuple[str, str]],
                 gate=", ".join(gate), editors=", ".join(i for _, i in editors)))
     lines.append(fingerprint_line(worktree))
     lines.append(LAUNCHER.format(operator=operator))
-    return "\n".join(lines)
+    return "\n".join(lines + settled_lines(settled))
 
 
 def findings(number: str, worktree: Path, left: str | None, questions: list[str],
              editors: list[tuple[Agent, str]], reports: list[tuple[str, str]],
-             unfinished: list[str], merged: list[str], operator: str) -> str:
+             unfinished: list[str], operator: str, settled: "Settled") -> str:
     """The brief of a ticket analyst that judges what a change's editors
     leave for a decision, by the latest item checker's reply from after
     its last `LEFT_FOR_DECISION` line, or the whole reply where it has none,
@@ -346,8 +349,8 @@ def findings(number: str, worktree: Path, left: str | None, questions: list[str]
     gives as unfinished, with
     the agent id and part of each of its editors, each beside its record
     in `editors`, and each editor's agent id and latest report in
-    `reports`, which that reply refers to, and the steps of `merged`, the
-    earlier holds of the change a ruling gave `merge`."""
+    `reports`, which that reply refers to, and what the agents before it
+    settled (`settled_lines`)."""
     lines = [*change_lines(number, worktree), *editor_lines(editors)]
     if left is not None:
         lines.append(LEFT_REPLY.format(number=number, heading=LEFT_FOR_DECISION))
@@ -361,17 +364,55 @@ def findings(number: str, worktree: Path, left: str | None, questions: list[str]
         lines.append(mctx("Decide, as items left for a decision, the items that the latest "
                           "report above of each of {editors} gives as "
                           "unfinished.").format(editors=", ".join(unfinished)))
-    if merged:
-        lines.append(MERGED_HOLDS)
-        lines.extend(f"\n{hold}\n" for hold in merged)
     lines.append(LAUNCHER.format(operator=operator))
-    return "\n".join(lines)
+    return "\n".join(lines + settled_lines(settled))
 
 
-MERGED_HOLDS = mctx("A ruling of the coordinator or of a ticket analyst gave each step below, "
-                    "an earlier hold of the change on what a ticket analyst left, the choice "
-                    "`merge`, which goes on to the merge. That ruling is a decision already made "
-                    "on each item the step gives, whatever words a later reply gives it in:")
+DECIDED = mctx("Raise, keep or leave for a decision, in any words, no finding or item, or place "
+               "a code editor's report gives as standing, that a report of a ticket analyst or a "
+               "ruling below settles, unless you have, or an editor's report gives, a reason for "
+               "it that the report or the ruling did not judge.")
+EARLIER = mctx("Raise again, in any words, no finding or item that the latest report below of an "
+               "earlier {role} on the change gives as settled, unless you have a reason for it "
+               "that the report did not judge.")
+REPORT_FILED = mctx("- The latest report of {role} {agent} is in the file `{path}`.")
+REPORT_BELOW = mctx("- The latest report of {role} {agent} follows.")
+RULED = mctx("- A ruling gave the hold below the choice `{choice}`: {meaning}.")
+RESTS_FILED = mctx("- That hold rests on the reply of {agent}, whose latest report is in the "
+                   "file `{path}`.")
+RESTS_BELOW = mctx("- That hold rests on the reply of {agent}, whose latest report follows.")
+
+
+def report_lines(filed: str, below: str, r: "Reported", **holes: str) -> list[str]:
+    """The lines that give the latest report of `r`: the line `filed`
+    with the path of its report file, or, where it was read from none, the
+    line `below` with its text."""
+    if r.report.file is not None:
+        return [filed.format(agent=r.agent_id, path=r.report.file, **holes)]
+    return [below.format(agent=r.agent_id, **holes), f"\n{r.report.text}\n"]
+
+
+def settled_lines(settled: "Settled") -> list[str]:
+    """The block that ends the brief of an agent launched on a change,
+    which gives what the agents launched on it before settled, or no
+    line where they settled nothing."""
+    if not (settled.analysts or settled.earlier or settled.ruled):
+        return []
+    lines = [SETTLED.format(number=settled.number)]
+    if settled.analysts or settled.ruled:
+        lines.append(DECIDED)
+        for r in settled.analysts:
+            lines += report_lines(REPORT_FILED, REPORT_BELOW, r, role=Role.TICKET_ANALYST)
+        for ruled in settled.ruled:
+            lines += [RULED.format(choice=ruled.choice, meaning=ruled.meaning),
+                      f"\n{ruled.hold}\n"]
+            if ruled.reply is not None:
+                lines += report_lines(RESTS_FILED, RESTS_BELOW, ruled.reply)
+    if settled.earlier:
+        lines.append(EARLIER.format(role=settled.role))
+        for r in settled.earlier:
+            lines += report_lines(REPORT_FILED, REPORT_BELOW, r, role=settled.role)
+    return lines
 
 
 def pass_settle(numbers: list[str], task: str, review: str, operator: str) -> str:
@@ -387,11 +428,14 @@ UNPLACED_STEP = mctx("Make the act the step below needs, which the operator that
                      "holds and its command cannot place, and give no ruling line.")
 
 
-def held_step(what: str, operator: str, rulable: bool) -> str:
+def held_step(what: str, operator: str, rulable: bool, settled: "Settled | None") -> str:
     """The brief of a ticket analyst on the undecided step `what`, which
-    gives the `Decision:` line that rules it where `rulable`."""
+    gives the `Decision:` line that rules it where `rulable`, with, where
+    the step is of a change, what the agents launched on it settled
+    (`settled_lines`)."""
     head = HELD_STEP if rulable else UNPLACED_STEP
-    return "\n".join([head, "", what, "", LAUNCHER.format(operator=operator)])
+    block = [] if settled is None else settled_lines(settled)
+    return "\n".join([head, "", what, "", LAUNCHER.format(operator=operator), *block])
 
 
 # "read no ticket's body to match": the user's words, "if there's a brief
