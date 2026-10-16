@@ -2,7 +2,7 @@
 /* Rules that may match anywhere: the element defaults, and the classes the
    modules share (chips, badges, prose, messages, grids). Every other section
    scopes each rule under its component's root id, so a class name one
-   component picks cannot style another; tests/test_console.py checks it. */
+   component picks cannot style another. */
 :root {
   --bg:#F6F7F5; --panel:#FFFFFF; --panel2:#EFF1EE; --ink:#1A1D21; --muted:#67707C;
   --border:#E2E5E1; --accent:#0F766E; --accent-ink:#FFFFFF;

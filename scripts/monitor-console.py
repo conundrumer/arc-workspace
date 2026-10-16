@@ -139,15 +139,16 @@ loses the workers. Never save a broken file over a watched one:
 - For a small edit, write the new text to a copy, run `python -m py_compile`
   on the copy, then move the copy over the watched file. One rename is one
   mtime change.
-- For a larger edit, make it in a git worktree, then apply the same edit to
-  the main tree with one write.
+- For a larger edit, make it in a git worktree, run `python -m py_compile`
+  on each file it changes there, then apply the same edit to the main tree
+  with one write.
 - A busy fleet is rarely quiet, so a reload can wait a long time. Check on
   the next poll that it took: the server log says "server source changed —
   restarting", and the process id stays the same across the exec.
 
 Before the launch
 -----------------
-- Run the console suite and `uv run python scripts/context.py`.
+- Run `uv run python scripts/context.py`.
 - Run this script with `--preflight`. It shows the account the console home
   is logged into and the account of the user's own home; they must differ.
 - Set the dials on the night endpoint, for example
