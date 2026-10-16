@@ -14,15 +14,23 @@ import shlex
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import NoReturn
 
 from controlled_markdown import mctx
 
-WINDOW_SECONDS: Mapping[str, int] = {
-    "five_hour": 5 * 3600,
-    "seven_day": 7 * 86400,
-    "fable_weekly": 7 * 86400,
+class WindowName(StrEnum):
+    """The name in the usage file of each window a preset may read."""
+    FIVE_HOUR = "five_hour"
+    SEVEN_DAY = "seven_day"
+    FABLE_WEEKLY = "fable_weekly"
+
+
+WINDOW_SECONDS: Mapping[WindowName, int] = {
+    WindowName.FIVE_HOUR: 5 * 3600,
+    WindowName.SEVEN_DAY: 7 * 86400,
+    WindowName.FABLE_WEEKLY: 7 * 86400,
 }
 """The length of each window of the usage file a preset may read."""
 
@@ -30,7 +38,7 @@ EVEN_FACTOR = 2.0
 """The default of `even --factor`: the account's two Claude Code accounts
 spend twice an even spread of one."""
 
-DEFAULT_WINDOW = "seven_day"
+DEFAULT_WINDOW = WindowName.SEVEN_DAY
 
 
 @dataclass(frozen=True)
@@ -81,7 +89,7 @@ def admits(pace: Pace, now: float) -> bool:
             return False
 
 
-def window_start(usage: Usage, name: str) -> tuple[Window, float] | str:
+def window_start(usage: Usage, name: WindowName) -> tuple[Window, float] | str:
     w = usage.windows.get(name)
     if w is None:
         return mctx("the usage file gives no fresh reading of its `{window}` window").format(
@@ -89,7 +97,7 @@ def window_start(usage: Usage, name: str) -> tuple[Window, float] | str:
     return w, w.resets_at - WINDOW_SECONDS[name]
 
 
-def even(usage: Usage, factor: float, window: str) -> Pace:
+def even(usage: Usage, factor: float, window: WindowName) -> Pace:
     """Within the pace while the used share is at most `factor` times the
     elapsed share, and otherwise from the time the elapsed share reaches
     the used share over `factor`."""
@@ -102,7 +110,7 @@ def even(usage: Usage, factor: float, window: str) -> Pace:
     return Until(start + WINDOW_SECONDS[window] * w.used_pct / factor / 100)
 
 
-def by(usage: Usage, end: float, window: str) -> Pace:
+def by(usage: Usage, end: float, window: WindowName) -> Pace:
     """Within the pace while the used share is at most the share of the
     time from the window's start to `end` that has passed, and from `end`
     on always."""
@@ -151,11 +159,11 @@ def parser() -> tuple[Parser, frozenset[str]]:
     presets = p.add_subparsers(dest="preset", required=True, parser_class=Parser)
     e = presets.add_parser("even", add_help=False)
     e.add_argument("--factor", type=float, default=EVEN_FACTOR)
-    e.add_argument("--window", choices=list(WINDOW_SECONDS), default=DEFAULT_WINDOW)
+    e.add_argument("--window", type=WindowName, choices=list(WindowName), default=DEFAULT_WINDOW)
     e.set_defaults(build=lambda a: lambda u: even(u, a.factor, a.window))
     b = presets.add_parser("by", add_help=False)
     b.add_argument("end", type=iso_time)
-    b.add_argument("--window", choices=list(WINDOW_SECONDS), default=DEFAULT_WINDOW)
+    b.add_argument("--window", type=WindowName, choices=list(WindowName), default=DEFAULT_WINDOW)
     b.set_defaults(build=lambda a: lambda u: by(u, a.end, a.window))
     presets.add_parser("asap", add_help=False).set_defaults(build=lambda a: asap)
     return p, frozenset(presets.choices)
