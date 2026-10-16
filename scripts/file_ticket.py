@@ -40,7 +40,7 @@ from ticket_reads import editors_field  # noqa: E402
 from spends import budget  # noqa: E402
 from ticket_watch import (CAP, CHANGES, Case, add_evidence,  # noqa: E402
                           Thresholds, case_loss, evict, fix_field, route)
-from ticket_sweep import (COMMAND_FIELD, COMMAND_SECONDS, EXERCISED_FIELD,  # noqa: E402
+from ticket_sweep import (AGENT_FIELD, COMMAND_FIELD, COMMAND_SECONDS, EXERCISED_FIELD,  # noqa: E402
                           UNEXERCISED_DAYS, sweep)
 from ticketing.loss import SECOND_PRICE, loss  # noqa: E402
 from ticketing.text import SECTIONS, VALIDATION, heading  # noqa: E402
@@ -70,8 +70,9 @@ HELP = mctx("""
         - Where it adds or changes a rule or a fact in the agent-facing documents, it has that section.
     - A `request` has `# <target>: <what the user asks for>` as its title, and the sections {request_sections} in place of {defect_headings}.
         - A `request` that a `change` serves also has, before `## Log`, a `{validation}` section: what a later run must show for its need to count as met.
-            - It may hold lines `- {exercised_field} <regular expression>`, the expression with no backticks, each of which matches a line of the transcript of a run that exercises the change, and, for a change to code, no line of a run that only reads that code or its diff. Where it holds none, any run exercises the change.
+            - It may hold lines `- {exercised_field} <regular expression>`, the expression with no backticks, each of which matches a line of the transcript of a run that exercises the change, and, for a change to code, no line of a run that only reads that code or its diff. Where it holds none, a run needs no match.
                 - A transcript line is a JSON line, so the expression matches a quote or a backslash in its JSON escape, and the sweep refuses an expression that matches its own text in that escape, applied once or twice.
+            - It may hold lines `- {agent_field} <agent type>`, `main` for a session's main run. Where it holds one or more, a run of a type none of them gives does not exercise the change, so neither does a run of another type that reads other runs' transcripts.
             - Where a command exits 0 only where the need is met, it holds one line `- {command_field} <command>`, the command in backticks with nothing after them, and otherwise a statement that an agent judges against a run.
     - `<domain>` is one of {domains}, and `<subject>` is the id of the thing it names: a task id for `task`, a ticket's number for `change` and `ticket`, a commit hash for `commit`, an agent id for `agent`.
         - A `change` or a `request` takes `change` as `<domain>` and `<namespace>-<short-title>` as `<subject>`, with `-` in place of each `_`.
@@ -223,11 +224,13 @@ SWEEP_HELP = mctx("""
 SWEEP_RULES = mctx("""
     - The command checks a `{validation_kind}` ticket only against the given runs that started at or after the last line of the ticket's log that moves it into `{deferred}`.
         - Where no given run did, the ticket is not exercised, whether or not its section holds an `{exercised_field}` line.
-    - A ticket is exercised where its section holds no `{exercised_field}` line, or where the pattern of one of them matches, as Python's `re.search` does, a line of the transcript of one of those runs.
+    - A ticket is exercised where one of those runs meets both conditions below.
+        - Its section holds no `{agent_field}` line, or the run's agent type is one that such a line gives: `main` for a session's main run, and for a subagent's, the `agentType` of its `.meta.json`.
+        - Its section holds no `{exercised_field}` line, or the pattern of one of them matches, as Python's `re.search` does, a line of the run's transcript.
     - Where the ticket is exercised and its section holds a `{command_field}` line, the command runs that line's command from the main tree, for at most {seconds} seconds.
         - Where it exits 0, the ticket moves into `{closed}`, with the note `{validated} <command>`.
         - Where it exits with another code, the ticket moves into `{open}`, with the note `{failed}: <command> exited <code>`, and where it runs past the time, with the note `{failed}: <command> timed out`.
-    - Where the ticket is exercised and its section holds no `{command_field}` line, it moves into `{open}`, with the note `{exercised}: <agent id> ...`, with the runs that match, or each of those runs where the section holds no `{exercised_field}` line.
+    - Where the ticket is exercised and its section holds no `{command_field}` line, it moves into `{open}`, with the note `{exercised}: <agent id> ...`, with the runs that meet both conditions.
     - Where the ticket is not exercised, and the last line of its log that moves it into `{deferred}` is {days} days old or more, it moves into `{open}`, with the note `{unexercised}: no run matched since <time>`, with that line's time.
     - Where a ticket's section holds more than one `{command_field}` line, or a pattern that does not compile or that the `{exercised_field}` line of `{invocation} --help` gives the sweep as refusing, or where its log holds no line that moves it into `{deferred}`, it moves into `{open}`, with the note `{failed}: <reason>`.
     - Where running the command of a `{command_field}` line would take the sweep past the timeout of a foreground Bash call, the command does not start it, and the ticket stays in `{deferred}` until the next sweep, with an `undecided` line on stderr.
@@ -627,7 +630,7 @@ def help_values() -> dict[str, str]:
                 validated=VALIDATED, failed=Verdict.FAILED, exercised=Verdict.EXERCISED,
                 unexercised=Verdict.UNEXERCISED, days=str(UNEXERCISED_DAYS),
                 seconds=str(COMMAND_SECONDS), exercised_field=EXERCISED_FIELD,
-                command_field=COMMAND_FIELD, none_moved=NONE_MOVED,
+                command_field=COMMAND_FIELD, agent_field=AGENT_FIELD, none_moved=NONE_MOVED,
                 assigned=Status.ASSIGNED, open=Status.OPEN, closed=Status.CLOSED, wontfix=Resolution.WONTFIX, changes=str(CHANGES), cap=str(CAP),
                 hour_price=f"{SECOND_PRICE * 3600:g}",
                 subcommands="\n".join(SUBCOMMAND_LINE.format(

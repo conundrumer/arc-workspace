@@ -20,6 +20,7 @@ from ticket_log import VALIDATED, Moved, line_time, log_lines, log_moves
 from ticket_watch import Thresholds, deferred, route
 from ticketing.text import VALIDATION
 from ticketing.times import utc_stamp
+from run_reads import agent_type
 from ticketing.vocabulary import Kind, Status, Verdict, last_move_into
 from transcripts import chain, find
 from transcript_entries import Refused, own_range, snapshot
@@ -38,9 +39,13 @@ EXERCISED_FIELD = "Exercised:"
 
 COMMAND_FIELD = "Command:"
 
+AGENT_FIELD = "Agent:"
+
 EXERCISED_LINE = re.compile(rf"^- {EXERCISED_FIELD} (?P<pattern>.+)$", re.MULTILINE)
 
 COMMAND_LINE = re.compile(rf"^- {COMMAND_FIELD} `(?P<command>.+)`$", re.MULTILINE)
+
+AGENT_LINE = re.compile(rf"^- {AGENT_FIELD} (?P<agent_type>\S+)$", re.MULTILINE)
 
 EXERCISED = mctx("{exercised}: {runs}")
 
@@ -59,11 +64,10 @@ commands of checks."""
 
 @dataclass(frozen=True)
 class Check:
-    """The check a `validation` ticket's `Validation` section gives: the patterns of
-    its `Exercised:` lines, and the command of its `Command:` line, None
-    where it gives none."""
+    """The check a `validation` ticket's `Validation` section gives."""
     patterns: tuple[re.Pattern[str], ...]
     command: str | None
+    agent_types: frozenset[str]
 
 
 def check_of(path: Path, text: str) -> Check:
@@ -85,15 +89,16 @@ def check_of(path: Path, text: str) -> Check:
             raise Refused(mctx("{path} gives an `{field}` pattern that matches its own "
                                "text in its JSON escape: {pattern}").format(
                 path=path, field=EXERCISED_FIELD, pattern=pattern.pattern))
-    return Check(patterns, commands[0] if commands else None)
+    return Check(patterns, commands[0] if commands else None,
+                 frozenset(m["agent_type"] for m in AGENT_LINE.finditer(body)))
 
 
 @dataclass(frozen=True)
 class GivenRun:
-    """A run given to the sweep: the time of its first timestamped entry,
-    and the lines of its transcripts that are its own (`own_lines`)."""
+    """A run given to the sweep."""
     start: float
     lines: list[str]
+    agent_type: str | None
 
 
 def given_run(run: str) -> GivenRun:
@@ -103,7 +108,8 @@ def given_run(run: str) -> GivenRun:
     start = first_time(path)
     if start is None:
         raise Refused(mctx("{run} has no timestamped entry").format(run=run))
-    return GivenRun(start, [line for p in chain(path) for line in own_lines(p)])
+    return GivenRun(start, [line for p in chain(path) for line in own_lines(p)],
+                    agent_type(path))
 
 
 def own_lines(path: Path) -> list[str]:
@@ -112,16 +118,14 @@ def own_lines(path: Path) -> list[str]:
     return [snap.line(i).decode() for i in own_range(path)]
 
 
-def exercisers(check: Check, runs: dict[str, list[str]]) -> list[str] | None:
-    """The runs of `runs`, by agent id with the lines of their transcripts,
-    that exercise `check`, or None where none does. Which runs exercise a
-    check, `file_ticket.py sweep --help-all` states."""
-    if not runs:
-        return None
-    if not check.patterns:
-        return list(runs)
-    by = [run for run, lines in runs.items()
-          if any(p.search(line) for p in check.patterns for line in lines)]
+def exercisers(check: Check, runs: dict[str, GivenRun]) -> list[str] | None:
+    """The runs of `runs`, by agent id, that exercise `check`, or None
+    where none does. Which runs exercise a check, `file_ticket.py sweep
+    --help-all` states."""
+    by = [run for run, given in runs.items()
+          if (not check.agent_types or given.agent_type in check.agent_types)
+          and (not check.patterns
+               or any(p.search(line) for p in check.patterns for line in given.lines))]
     return by or None
 
 
@@ -169,7 +173,7 @@ def judged(path: Path, text: str, runs: dict[str, GivenRun], now: float,
     would run past `deadline`, a `time.monotonic` time."""
     check = check_of(path, text)
     since = deferred_since(path, text)
-    by = exercisers(check, {run: given.lines for run, given in runs.items()
+    by = exercisers(check, {run: given for run, given in runs.items()
                             if given.start >= since})
     if by is not None and check.command is not None:
         if time.monotonic() + COMMAND_SECONDS > deadline:
