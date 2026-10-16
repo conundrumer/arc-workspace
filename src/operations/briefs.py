@@ -42,8 +42,9 @@ def read_ticket(number: str) -> str:
         number=number, command=TICKET_PATH.format(number=number))
 
 PARTS: dict[Role, str] = {
-    Role.CODE_EDITOR: mctx("the code under `src/`, `scripts/` and `tests/`, with a draft of the "
-                           "text of each `mctx` fragment it needs"),
+    Role.CODE_EDITOR: mctx("each file outside the documents, the lib, its modules, the solvers under "
+                           "`programs/` and the accepted gate outputs that their items change, "
+                           "with a draft of the text of each `mctx` fragment it needs"),
     Role.HANDBOOK_EXPANDED: mctx("the lib, its modules and the solvers under `programs/`, with "
                                  "the accepted gate outputs its items change"),
     Role.DOC_EDITOR: mctx("the documents and the text of the `mctx` fragments"),

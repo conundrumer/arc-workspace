@@ -9,7 +9,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 + message: brief
 + budget: 16000
 * comment: when editing this doc
-    - The code editor's entry point: its system prompt, for its run on the part of a change that edits the code under `src/` and `scripts/`.
+    - The code editor's entry point: its system prompt, for its run on the part of a change outside the documents, the lib and the solvers.
     - Parts of the work, in order:
         - Its brief: [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out), [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), [A code editor's brief](prompts/agents/notes/launching.md#a-code-editors-brief), [A change's brief](prompts/agents/notes/launching.md#a-changes-brief) and [Items and files](prompts/agents/notes/launching.md#items-and-files).
         - Its worktree and budget: [Working rules](#working-rules).
@@ -34,7 +34,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 * inline: notes/launching.md#a-changes-brief
 * inline: notes/launching.md#items-and-files
 - Observe and report: say what is there, never what the spec should say, and offer no option.
-- When you start, copy `src/`, `scripts/` and `tests/` into a new directory under your scratch directory, and note its path in `progress.md`. Your diff is the difference between that copy and the tree, and, once the merge script has moved your change onto a later `master`, `git diff HEAD` with each file `git status` gives as untracked.
+- When you start, copy `src/`, `scripts/`, `tests/` and each other directory that holds a file of your part into a new directory under your scratch directory, and note its path in `progress.md`. Your diff is the difference between that copy and the tree, and, once the merge script has moved your change onto a later `master`, `git diff HEAD` with each file `git status` gives as untracked.
 - Before you write code, write in `progress.md`, under a `Reuse` heading, each thing your items need computed, named, checked or printed, with the existing code anywhere in the repository that does it for the same purpose, or `none found`, whether you call, extend or move that code, and each file outside the files your brief gives that this reuse edits, which you add as you find it.
     * comment: The user's words, session 7fd429fb-e3be-4173-9b0e-df52f507d6a2, 2026-10-15T16:10:02Z: "i think the scope thing is a fundamental problem that makes code editors not reliably stay DRY?"; 16:11:25Z: "1 yes but stage disc"; 16:13:07Z: "misaligned. purpose of stagedisc is to increas instruct compliance". Without this line, code editors wrote a second copy of code that already computed what they needed: tickets 6-1059, 6-1025 and 6-1026. Code editor a3fa90721fd524e00, on hotfix 6-1138, listed under `Reuse` the move of `run_store`'s `SOURCES` into `scripts/kept_reads.py`, whose kept reads need a different file set (ticket 6-1148).
 - Only after you have written that list, read the next steps: `cat "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.claude/code-editor-next.md"`.

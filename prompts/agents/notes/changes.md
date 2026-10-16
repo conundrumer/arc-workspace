@@ -13,7 +13,7 @@
 ## Changes
 
 ### Carrying a change
-- Have an editor write each change to the code or the documents. The `handbook-expanded` agent writes the part of a change in [lib.dl](programs/lib.dl), in the modules under [lib](programs/lib) and in the solvers under [solvers](programs/solvers), with the accepted gate outputs its items change, and a code editor in the same worktree writes the part under [src](src) or [scripts](scripts). A code editor drafts the text of each `mctx` fragment its code needs, and a doc editor writes that text once the code editors have reported.
+- Have an editor write each change to the code or the documents. The `handbook-expanded` agent writes the part of a change in [lib.dl](programs/lib.dl), in the modules under [lib](programs/lib) and in the solvers under [solvers](programs/solvers), with the accepted gate outputs its items change, and a code editor in the same worktree writes the part in each other file outside the documents. A code editor drafts the text of each `mctx` fragment its code needs, and a doc editor writes that text once the code editors have reported.
 - A change is one editor's edit, or one edit for each part the line above splits it into, and each edit that fixes what its review or its checks found.
 - A change's ticket is the `change` ticket that gives that change, and a change no `change` ticket gives has no ticket.
 - Make the worktree of a change with `uv run python scripts/change_worktree.py <number> <agent>`, with the number of its ticket, or, where it has no ticket, with `uv run python scripts/change_worktree.py --name <name>`, with a name for the change that `--help` allows.

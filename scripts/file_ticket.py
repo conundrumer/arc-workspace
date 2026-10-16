@@ -62,9 +62,9 @@ HELP = mctx("""
         # <target>: <what is wrong in it>{defect_sections}
         EOF
         ```
-    - A `change` takes `kind: change` and `editors: <editor>, <editor>`, with each editor the change needs among {editors}.
+    - A `change` takes `kind: change` and `editors: <editor>, <editor>`, with each editor whose part, as [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change) gives it, holds a file of its Scope, among {editors}.
         - It may add `depends-on: <number>, <number>`, `after-merge: <the steps and checks its Scope places at or after the merge>` and `mechanical: {mechanical}` to the front matter.
-        - It gives `mechanical` only where its Intent gives each edit under `src/` and `scripts/` outright.
+        - It gives `mechanical` only where its Intent gives each edit of the code editor's part outright.
         - It has `# <title>` as its title, and the sections {change_sections} in place of {defect_headings}.
         - Where it adds a mechanism to code, it has a `{design}` section after `## Intent` that gives the existing operations the change uses or extends and each new operation with its module.
         - Where it adds or changes a rule or a fact in the agent-facing documents, it has that section.
