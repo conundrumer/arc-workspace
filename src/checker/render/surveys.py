@@ -554,7 +554,8 @@ def render_determination_plan(solver: Solver, result: PlanResult,
         or any(s.unjudged for s in surviving.values())
     moved = result.moved
     if (not determine and not over and not result.embedded
-            and not open_valued and not unjudged and not moved):
+            and not open_valued and not unjudged and not moved
+            and not covered):
         lines.append(mctx("no actions"))
     section(mctx("write a determination relation"),
             _by_parameter(determine, state, mctx(
@@ -583,7 +584,10 @@ def render_determination_plan(solver: Solver, result: PlanResult,
                      "these determination relations give the stored values "
                      "is not known") + _make_run(differing),
                 [printed(p) for p in by_parameter(classes.unknown)])
-    section(mctx("the value is covered on this task's examples"),
+    section(mctx("the value is covered on this task's examples; write a "
+                 "determination relation for each value here that a "
+                 "proposer derives from a fact other than the one the "
+                 "concept derives it from"),
             _by_parameter(covered, covered_note, "{param}: {cases}",
                           printed))
     if surviving and enumerated is not None:

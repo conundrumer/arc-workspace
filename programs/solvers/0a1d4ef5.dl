@@ -25,33 +25,47 @@
 
 // --- rectangles ---
 
-// Touching cells of one color.
-.init region = Components<Color>
-region.node(Col, P) :- in(P, Col).
+// The one-color regions, with the lines each spans and its side lengths.
+.comp Parse<Key> {
+    .type KeyColor = [k: Key, col: Color]
+    .type KeyRegionAxis = [k: Key, id: Ident, a: Axis]
 
-.decl region_cell(id: Ident, p: Position)
-region_cell(Id, P) :- region.label(_, P, Id).
+    .decl cell(k: Key, p: Position, col: Color)
 
-// The lines a region spans, per axis.
+    // Touching cells of one color.
+    .init region = Components<KeyColor>
+    region.node([K, Col], P) :- cell(K, P, Col).
+
+    .decl region_cell(k: Key, id: Ident, p: Position)
+    region_cell(K, Id, P) :- region.label([K, _], P, Id).
+
+    // The lines a region spans, per axis.
+    .decl region_line(k: Key, id: Ident, a: Axis, p_line: Position)
+    region_line(K, Id, A, P_line) :- region_cell(K, Id, P), axis_elem(A), split(P, A, P_line, _).
+
+    // The region does not fill the rectangle its lines span.
+    .decl hole(k: Key, id: Ident)
+    hole(K, Id) :-
+        region_line(K, Id, A, P_line), region_line(K, Id, A2, P_line2), perp(A, A2),   // a crossing of its lines
+        compose(P_line, P_line2, P), !region_cell(K, Id, P).                           // holding no cell of it
+
+    // Side length on each axis: how many lines it spans.
+    .init side = Tally<KeyRegionAxis, Position>
+    side.item([K, Id, A], P_line) :- region_line(K, Id, A, P_line).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
 .decl region_line(id: Ident, a: Axis, p_line: Position)
-region_line(Id, A, P_line) :- region_cell(Id, P), axis_elem(A), split(P, A, P_line, _).
-
-// The region does not fill the rectangle its lines span.
-.decl hole(id: Ident)
-hole(Id) :-
-    region_line(Id, A, P_line), region_line(Id, A2, P_line2), perp(A, A2),   // a crossing of its lines
-    compose(P_line, P_line2, P), !region_cell(Id, P).                        // holding no cell of it
-
-// Side length on each axis: how many lines it spans.
-.init side = Tally<RegionAxis, Position>
-side.item([Id, A], P_line) :- region_line(Id, A, P_line).
+region_line(Id, A, P_line) :- parse.region_line($U(), Id, A, P_line).
 
 // Too short on one axis to tell it from noise.
 .decl short(id: Ident)
-short(Id) :- side.tally([Id, _], N), params.min_side(K), N < K.
+short(Id) :- parse.side.tally([$U(), Id, _], N), params.min_side(K), N < K.
 
 .decl block(id: Ident)
-block(Id) :- side.tally([Id, _], _), !hole(Id), !short(Id).
+block(Id) :- parse.side.tally([$U(), Id, _], _), !parse.hole($U(), Id), !short(Id).
 
 // The band a rectangle belongs to on each axis.
 .decl block_band(c: Choice, a: Axis, id: Ident, b: Ident)
@@ -88,7 +102,24 @@ layout.axis([C, A], A) :- block_band(C, A, _, _).
 layout.member([C, A], B, P_line) :- block_band(C, A, Id, B), region_line(Id, A, P_line).
 
 out(P, Col, C) :-
-    region.label(Col, _, Id),                                          // the rectangle's color
+    parse.region.label([$U(), Col], _, Id),                            // the rectangle's color
     block_band(C, A, Id, B), block_band(C, A2, Id, B2), perp(A, A2),   // its band on each axis
     layout.pos([C, A], B, P_line), layout.pos([C, A2], B2, P_line2),   // the bands' output lines
     compose(P_line, P_line2, P).                                       // where the two lines cross
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A rectangle the output shows: a region with no hole, of a color the
+    // example's output holds.
+    .decl rect(e: Example, id: Ident)
+    rect(E, Id) :- parse.region.label([E, Col], _, Id), ex_out(E, _, Col), !parse.hole(E, Id).
+
+    // The least side of a rectangle.
+    .init sides = Extremes<Unit>
+    sides.cand($U(), N) :- rect(E, Id), parse.side.tally([E, Id, _], N).
+
+    .decl min_side(k: number)
+    min_side(K) :- sides.low($U(), K).
+}
