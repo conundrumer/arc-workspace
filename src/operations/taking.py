@@ -213,15 +213,30 @@ def blocked_since(t: Ticket) -> float:
     return t.log[final_run(t)[0]].time if t.log else t.filed
 
 
-def take(state: State) -> Step | None:
-    """The take of each change of `takeable` of `lead`, and then of the
-    first other one, so that the pace is read again before each further
-    take, in its order, up to the first whose budget `Computed.budgets`
-    does not give."""
-    commands: list[str] = []
+def batch(state: State) -> list[Ticket]:
+    """The changes of `takeable` that one step of `take` takes, as `take`
+    gives them."""
+    free = pacing.admits(state.computed.pace, state.now) and not paused(state)
     first = lead(state)
-    ts = takeable(state)
-    for t in [*(t for t in ts if t.number in first), *[t for t in ts if t.number not in first][:1]]:
+    out: list[Ticket] = []
+    paced = False
+    for t in takeable(state):
+        if t.number in first or taken_before(t):
+            out.append(t)
+        elif free or not paced:
+            out.append(t)
+            paced = True
+    return out
+
+
+def take(state: State) -> Step | None:
+    """The take of each change of `takeable`, in its order, up to the first
+    whose budget `Computed.budgets` does not give. Where the usage pace does
+    not admit a ticket, or a `Pause.` line stands, a step takes, of the
+    changes neither of `lead` nor `taken_before`, only the first, so that
+    the pace is read again before each further take."""
+    commands: list[str] = []
+    for t in batch(state):
         b = state.computed.budgets.get(t.number)
         if b is None:
             if not commands:
