@@ -1,4 +1,4 @@
-+ budget: 23000
++ budget: 23400
 * comment: when editing this doc
     - The ticket analyst loads this document by the links of its step documents, before it writes the Intent of a `change` to the agents' processes and at the process assessment; the ticket reviewer loads it by a link of its Checks, for such a `change`. Each serves judging a change to the processes against what they must achieve.
     - Acts, each with its section, one process each, giving its outcomes and how it can fail:
@@ -143,8 +143,8 @@
 - Outcomes:
     - Each figure of cost or time in a decision cites the command that produced it.
     - The summed cost of each kind of step over a window, against what it finds, reaches a ticket with no word of the user.
-- Owner: the agent that gives the figure, and, for the summed cost, the cost audit, a `general-purpose` agent an operator launches after each process assessment's launch.
-- Takes from: the transcripts. Gives to: each decision on cost or time.
+- Owner: the agent that gives the figure, and, for the summed cost, the cost audit, a `general-purpose` agent an operator launches after each process assessment's launch, and, for each script's calls, [check_script_calls.py](scripts/check_script_calls.py), which an operator runs at each batch's end.
+- Takes from: the transcripts, and the record of each script call under `.cache/script-calls/`. Gives to: each decision on cost or time.
 - How it can fail:
     - A cited figure rests on a wrong price table: the table cites its source and its date.
     - The audit files a finding a process already covers: it files none on a cause a ticket outside `tickets/closed/` records.
