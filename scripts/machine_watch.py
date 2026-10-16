@@ -14,6 +14,9 @@ from pathlib import Path
 from controlled_markdown import mctx
 from gating.cpu import busy_seconds, busy_ticks
 import script_calls
+from file_ticket import main_tickets
+from idle_sessions import running, take_main
+from ticket_numbers import session_id
 
 SAMPLE_SECONDS = 30
 LOW_MEMORY = 10
@@ -30,6 +33,7 @@ HELP = mctx("""
     - The command samples the machine every {sample} s, and exits 0 once trouble holds: free memory under {low}% of the machine's for {memory} samples in a row, or the machine's CPU over {busy}% busy for {cpu} samples in a row.
         - Trouble that holds at the first sample counts only after a sample without it.
     - On trouble it prints the trouble that held, then the {top} largest processes by resident memory and the {top} largest by CPU, each with its pid, parent pid, resident memory, CPU percent, elapsed time, session id and command line.
+    - Only the watcher of the main session samples, as `uv run python scripts/file_ticket.py main --help-all` gives that session. The watcher of another session keeps running, and samples from the first sample time at which its session is the main.
     - It kills no process and notifies no one.
     """).format(sample=SAMPLE_SECONDS, low=LOW_MEMORY, memory=MEMORY_SAMPLES, busy=BUSY_CPU,
             cpu=CPU_SAMPLES, top=TOP)
@@ -109,16 +113,24 @@ def cpus() -> int:
     return n
 
 
+def troubles() -> tuple[Trouble, Trouble]:
+    return Trouble(MEMORY_SAMPLES), Trouble(CPU_SAMPLES)
+
+
 def watch() -> str:
     """Samples until a trouble counts, and returns what held."""
-    memory, cpu = Trouble(MEMORY_SAMPLES), Trouble(CPU_SAMPLES)
+    session, tickets = session_id(), main_tickets()
+    memory, cpu = troubles()
     ticks, at = busy_ticks(), time.monotonic()
     while True:
         time.sleep(SAMPLE_SECONDS)
-        free = free_memory()
         now_ticks, now_at = busy_ticks(), time.monotonic()
         busy = 100 * busy_seconds(ticks, now_ticks) / ((now_at - at) * cpus())
         ticks, at = now_ticks, now_at
+        if take_main(tickets, session, running(session)) != session:
+            memory, cpu = troubles()
+            continue
+        free = free_memory()
         low, hot = memory.held(free < LOW_MEMORY), cpu.held(busy > BUSY_CPU)
         if low or hot:
             held = []

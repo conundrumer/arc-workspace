@@ -12,7 +12,7 @@ from agent_turns import first_time, last_time
 from context_bound_hook import past_bound
 from filed_texts import gone_line
 from held_budgets import change_budgets, change_spend, doc_budgets
-from idle_sessions import main_wanted, read_sessions, running, want_main
+from idle_sessions import main_wanted, read_sessions, running, take_main, want_main
 from monitor_reads import late_resumes, watched
 from open_agents import Listed, quiet_since, running_agents, work_open
 from operator_reads import (
@@ -184,7 +184,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
         readers=Deferred(lambda: tuple(Reader(name, tuple(args)) for name, args in reader_calls()
                                        if name not in DEPRECATED)),
         limit_lifted=lifted,
-        sessions=sessions(tickets_dir, index, session, now))
+        sessions=sessions(tickets_dir, index, session, now, sessions_running))
     state = with_quiet_holders(state, found, listing, running_work)
     given = [ticket_number(n) for n in named(state) if n in tickets]
     spent = change_spend(state, undecided)
@@ -253,12 +253,19 @@ def read_git(main: Path) -> GitRead:
                    {d.stem: d.stat().st_mtime for d in sorted(agents_of(main).glob("*.md"))})
 
 
-def sessions(tickets: Path, index: int, session: str, now: float) -> SessionsRead:
-    """The read of `idle_sessions`. Where an index is idle and no main is
-    live, the read first creates `tickets/main-wanted` with the session's
-    id where no file holds that name, so that one session asks the user to
-    pick a main (`triage.main_wanted`)."""
+def sessions(tickets: Path, index: int, session: str, now: float,
+             sessions_running: frozenset[str] | None) -> SessionsRead:
+    """The read of `idle_sessions`. Where an index is idle and the session
+    is not the main, the read first lets the session take the main role
+    (`take_main`), and reads again, so that it adopts the idle indexes at
+    once. Where after that an index is idle and no main is live, the read
+    creates `tickets/main-wanted` with the session's id where no file holds
+    that name, so that one session asks the user to pick a main
+    (`triage.main_wanted`)."""
     read = read_sessions(tickets, index, now)
+    if read.idle and not read.main:
+        take_main(tickets, session, sessions_running)
+        read = read_sessions(tickets, index, now)
     if read.idle and not read.main and not read.main_live:
         want_main(tickets, session)
     return SessionsRead(read.idle, read.adopted, read.main_live, main_wanted(tickets))

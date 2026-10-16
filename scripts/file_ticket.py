@@ -172,6 +172,7 @@ MAIN_HELP = mctx("""
 
 MAIN_RULES = mctx("""
     - The command writes `<session id>` to `tickets/main`, in place of what it holds, and removes `tickets/main-wanted`, the mark that a session has asked the user to pick a main session.
+    - Where `tickets/main` holds no session id, or the id of a session whose process has ended, the first session to read it, by its machine watcher, or by its operator where another session in which no agent runs has an unsettled ticket, writes its own id there, and is the main session until this command sets another.
     """)
 
 CASE_HELP = mctx("""

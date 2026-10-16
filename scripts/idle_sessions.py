@@ -17,7 +17,7 @@ from pathlib import Path
 from operations.constants import FOREGROUND_MS
 from ticket_files import listed_tickets, ticket_name
 from controlled_markdown import mctx
-from ticket_numbers import SESSIONS, indexes, link_new, session_line, staged
+from ticket_numbers import SESSIONS, indexes, link_new, session_index, session_line, staged
 from ticketing.vocabulary import SETTLED, Status
 from state_reads import stat_read
 from transcripts import mains_named, project_dirs, session_directory, session_subagents
@@ -123,10 +123,20 @@ def read_sessions(tickets: Path, index: int, now: float) -> Sessions:
                     main_live=main is not None and live(main, now))
 
 
+def create_session_file(path: Path, session: str) -> bool:
+    """Creates `path` with `session`, where no file holds that name, and
+    gives whether this call created it."""
+    with staged(path.parent, session_line(session)) as tmp:
+        return link_new(tmp, path)
+
+
+def replace_session_file(path: Path, session: str) -> None:
+    with staged(path.parent, session_line(session)) as tmp:
+        os.replace(tmp, path)
+
+
 def want_main(tickets: Path, session: str) -> None:
-    """Creates `MAIN_WANTED` with `session`, where no file holds that name."""
-    with staged(tickets, session_line(session)) as tmp:
-        link_new(tmp, tickets / MAIN_WANTED)
+    create_session_file(tickets / MAIN_WANTED, session)
 
 
 def main_wanted(tickets: Path) -> tuple[str, float] | None:
@@ -134,10 +144,26 @@ def main_wanted(tickets: Path) -> tuple[str, float] | None:
     return read_session(tickets / MAIN_WANTED)
 
 
+def take_main(tickets: Path, session: str, sessions_running: frozenset[str] | None) -> str | None:
+    """`file_ticket.py main --help-all` gives the rule. Of two sessions
+    that find no main at once, the first to create `MAIN` wins. Where
+    `sessions_running`, as `running` gives it, is None, it writes
+    nothing."""
+    held = named_main(tickets)
+    if sessions_running is None or (held is not None and held in sessions_running):
+        return held
+    session_index(tickets, session)
+    if held is None:
+        create_session_file(tickets / MAIN, session)
+    else:
+        replace_session_file(tickets / MAIN, session)
+    (tickets / MAIN_WANTED).unlink(missing_ok=True)
+    return named_main(tickets)
+
+
 def name_main(tickets: Path, session: str) -> None:
     if not any(session in ids for ids in indexes(tickets).values()):
         raise Refused(mctx("no file under `tickets/{sessions}/` holds the session id `{session}`").format(
             sessions=SESSIONS, session=session))
-    with staged(tickets, session_line(session)) as tmp:
-        os.replace(tmp, tickets / MAIN)
+    replace_session_file(tickets / MAIN, session)
     (tickets / MAIN_WANTED).unlink(missing_ok=True)
