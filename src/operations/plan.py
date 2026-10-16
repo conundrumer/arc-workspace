@@ -31,7 +31,7 @@ faults of the solver passes that ended (`concept_faults`); the request to a tick
 again; the decisions for the user, and the items of each ticket analyst's
 reply for the coordinator; the monitor's steps (`monitor`); at launch,
 the release of tickets; the move back to `tickets/open/` of the tickets the coordinator wrote on
-under `tickets/blocked/` or `tickets/closed/`; the coordinator's later
+under `tickets/blocked/`, `tickets/waiting/` or `tickets/closed/`; the coordinator's later
 lines to the ticket analysts that run on their tickets; the ticket
 analysts on open tickets; the review
 of drafts; the changes; the solver pipelines; After a batch. A step that

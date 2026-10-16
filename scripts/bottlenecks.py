@@ -33,7 +33,7 @@ from operations.state import LogLine, Ticket  # noqa: E402
 from operations.tracker import runs  # noqa: E402
 from operations.worktrees import BASE  # noqa: E402
 from ticketing.times import TIME_FORM, stamp_time, utc_stamp  # noqa: E402
-from ticketing.vocabulary import Kind, Status  # noqa: E402
+from ticketing.vocabulary import WAIT_STATUSES, Kind, Status  # noqa: E402
 
 NO_SHARED_FILE = "(no shared file)"
 PATHS_NOT_RECORDED = "(paths not recorded)"
@@ -47,9 +47,9 @@ HELP = mctx("""
         - A wait is a span in which a `change` ticket stood under `tickets/open/` and a ticket its `depends-on` gives stood outside `tickets/closed/`, charged to each path both Scopes give, or to the row `{no_shared}` where they give none in common.
         - The wait hours of a path are change-hours: the overlapping spans of one change count once, and those of different changes add up.
     - Rebase conflicts: each log line of a `change` ticket whose note opens with `{opening}` or `{rerun}`, charged to each path it gives, or to the row `{not_recorded}` where it gives none.
-    - A `blocked` span opens at a line that moves a ticket into `blocked` or whose note opens with a wait while it stands blocked, takes its cause from that line's wait, and runs to the next line of the ticket's log that moves it out of `blocked` or whose note opens with a wait.
-    - Waits on the user: one row per ticket of any kind, with the hours of its `blocked` spans whose wait is `user`.
-    - Waits on another change: one row per change number, with the hours of the `blocked` spans of `change` tickets whose wait is `change <number>`.
+    - A wait span opens at a line that moves a ticket into `blocked` or `waiting`, or whose note opens with a wait while it stands there, takes its cause from that line's wait, and runs to the next line of the ticket's log that moves it out of that status or whose note opens with a wait.
+    - Waits on the user: one row per ticket of any kind, with the hours of its wait spans whose wait is `user`.
+    - Waits on another change: one row per change number, with the hours of the wait spans of `change` tickets whose wait is `change <number>`.
     - Ready and not taken: one row per `change` ticket, with the hours it stood under `tickets/open/` while each ticket its `depends-on` gives stood under `tickets/closed/`.
     - Churn: with `--since`, each path row gives the number of commits of `master` that touch the path, or a file under it, in the window of the same length that ends at the window's start.
     """)
@@ -67,7 +67,7 @@ NO_TICKET = mctx("{number} {link} {d}, and no ticket the read finds has that num
 CHURN = mctx("churn {commits}")
 WAITS_ON_CHANGE = mctx("waits on change")
 DEPENDS_ON_LINK = mctx("depends on")
-NO_WAIT = mctx("{number} moves into `blocked` at {time} with a note that opens with no wait")
+NO_WAIT = mctx("{number} moves into `{status}` at {time} with a note that opens with no wait")
 NEITHER = mctx("{number} waits at {time} on neither the user nor a change")
 
 
@@ -108,20 +108,21 @@ def clip(spans: list[Span], start: float) -> list[Span]:
     return [(max(s, start), e) for s, e in spans if e > start]
 
 
-def blocked_spans(t: Ticket, now: float) -> list[tuple[Span, LogLine]]:
-    """The spans in which `t` stood blocked, each with the line that opens
-    it: the first line of each run of `blocked` lines (`runs`), and each
-    line of the run after it whose note opens with a wait. A span runs to
-    the next of those lines, or, after the last, to the time of the line
-    after the run, or to `now` where the run ends the log."""
-    out: list[tuple[Span, LogLine]] = []
+def wait_spans(t: Ticket, now: float) -> list[tuple[Span, LogLine, Status]]:
+    """The spans in which `t` stood under `blocked` or `waiting`, each with
+    the line that opens it and that status: the first line of each run of
+    lines in that status (`runs`), and each line of the run after it whose
+    note opens with a wait. A span runs to the next of those lines, or,
+    after the last, to the time of the line after the run, or to `now`
+    where the run ends the log."""
+    out: list[tuple[Span, LogLine, Status]] = []
     for run in runs(t):
-        if run.status is not Status.BLOCKED:
+        if run.status not in WAIT_STATUSES:
             continue
         opens = [run.start] + [i for i in run.waits if i > run.start]
         end = t.log[run.end].time if run.end < len(t.log) else now
         ends = [t.log[i].time for i in opens[1:]] + [end]
-        out += [((t.log[i].time, e), t.log[i]) for i, e in zip(opens, ends)]
+        out += [((t.log[i].time, e), t.log[i], run.status) for i, e in zip(opens, ends)]
     return out
 
 
@@ -151,20 +152,20 @@ def by_number(spans: dict[str, list[Span]]) -> dict[str, float]:
     return {n: hours(s) for n, s in sorted(spans.items()) if s}
 
 
-def blocked_waits(tickets: dict[str, Ticket], window: Window,
-                  undecided: list[str]) -> tuple[dict[str, float], dict[str, float]]:
+def wait_hours(tickets: dict[str, Ticket], window: Window,
+               undecided: list[str]) -> tuple[dict[str, float], dict[str, float]]:
     """The hours each ticket waited on the user, and the hours `change`
     tickets waited on each change number, in `window`."""
     start, now = window
     on_user: dict[str, list[Span]] = defaultdict(list)
     on_change: dict[str, list[Span]] = defaultdict(list)
     for n, t in sorted(tickets.items()):
-        for span, line in blocked_spans(t, now):
+        for span, line, status in wait_spans(t, now):
             spans = clip([span], start)
             if not spans:
                 continue
             if not line.waits:
-                undecided.append(NO_WAIT.format(number=n, time=utc_stamp(line.time)))
+                undecided.append(NO_WAIT.format(number=n, status=status, time=utc_stamp(line.time)))
             elif line.on_user:
                 on_user[n] += spans
             elif line.on_change is None:
@@ -228,7 +229,7 @@ def dependency_waits(tickets: dict[str, Ticket], root: Path, window: Window,
 def bottlenecks(tickets: dict[str, Ticket], root: Path, start: float, now: float,
                 undecided: list[str]) -> Costs:
     """The costs of each cause over the window from `start` to `now`."""
-    on_user, on_change = blocked_waits(tickets, (start, now), undecided)
+    on_user, on_change = wait_hours(tickets, (start, now), undecided)
     conflicts = conflict_counts(tickets, start)
     depends_on, ready = dependency_waits(tickets, root, (start, now), undecided)
     return Costs(depends_on=depends_on, conflicts=conflicts, on_user=on_user,

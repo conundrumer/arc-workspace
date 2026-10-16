@@ -23,7 +23,7 @@ def settled_elsewhere(tickets: Path, path: Path, name: TicketName) -> bool:
         raise Refused(mctx("{path} gives no kind in its front matter").format(path=path))
     on_open_change = (kind is Kind.QUESTION and name.domain is Domain.CHANGE and ticket_status(
         ticket_path(tickets, ticket_number(name.subject))) is not Status.CLOSED)
-    exits = exit_of(Status.OPEN, kind, None, on_open_change=on_open_change, title=title(path, text))
+    exits = exit_of(Status.OPEN, kind, on_open_change=on_open_change, title=title(path, text))
     return Exit.TICKET_ANALYST not in exits.by
 
 

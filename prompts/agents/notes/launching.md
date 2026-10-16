@@ -99,7 +99,7 @@
     - `Drafts to review: <number>, ...`: the draft `change` tickets to review.
     - `Expedite: <number>, ...`: tickets of any session, and each `change` that a chain of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, reaches from them. The operator releases, takes and settles each of them as it does its session's, and takes each of those changes ahead of the other changes it may take.
     - `Merged: <number>, ...`: the changes the coordinator merged itself.
-    - `Merge: <number>`: a `change` under `tickets/blocked/` that waits on the user, which the user's ruling has the operator merge.
+    - `Merge: <number>`: a `change` under `tickets/blocked/`, which the user's ruling has the operator merge.
     - `Tickets are open.`
     - `Allow: <number>, ...`: tickets of any session, and each `change` that a chain of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, reaches from them. The operators of the session settle and take each of them under a pause too, with no priority over other work.
     - `Pause.`: a pause, under which the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than the tickets and changes an `Allow:` or an `Expedite:` line gives, and the work an operator of the session took and each `change` that work waits on, which they carry to its end.
@@ -159,8 +159,8 @@
 - Ask an operator for no message to you before its final reply, other than the messages that open with `for the coordinator:` or `undecided:`, which it sends as it goes.
 - Send each draft `change` ticket that the reply of an agent you launched gives, and each `change` ticket you revise, to an operator in a `Drafts to review: <number>` line.
 - Each time a `change` of your session comes to stand under `tickets/open/` with every ticket its `depends-on` gives under `tickets/closed/`, while no operator of your session holds it or runs its review, tell an operator that tickets are open.
-- Revise a `change` ticket that stands under `tickets/open/`, `tickets/assigned/` or `tickets/blocked/` only once you have moved it back to `tickets/draft/`, with a log line whose note gives what you revise and on what ground.
-- Once the user rules on a draft `change` ticket under `tickets/blocked/` that waits on the user, move it back to `tickets/draft/` with the ruling in the note, revise it where the ruling needs that, and send it to an operator in a `Drafts to review: <number>` line.
+- Revise a `change` ticket that stands under `tickets/open/`, `tickets/assigned/`, `tickets/blocked/` or `tickets/waiting/` only once you have moved it back to `tickets/draft/`, with a log line whose note gives what you revise and on what ground.
+- Once the user rules on a draft `change` ticket under `tickets/blocked/`, move it back to `tickets/draft/` with the ruling in the note, revise it where the ruling needs that, and send it to an operator in a `Drafts to review: <number>` line.
 
 ## While the user gives feedback
 - Gather each request the user approves into a batch, and when the user pauses or asks you to send it, send the whole batch at once: give each request to the agent a line of your documents gives for its work, or else to the handbook agent whose description covers it, as the split line of [Launching](#launching) allows, with one brief per agent.

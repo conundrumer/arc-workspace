@@ -18,7 +18,7 @@ from ticket_vocabulary import ticked
 from operations.roles import AGENT_ID as AGENT_ID_FORM
 from ticketing.text import VALIDATION, heading
 from ticketing.times import stamp_time, utc_stamp
-from ticketing.vocabulary import Domain, Kind, Note, Resolution, Status, Verdict, Wait, note_opening
+from ticketing.vocabulary import WAIT_STATUSES, Domain, Kind, Note, Resolution, Status, Verdict, Wait, note_opening
 from state_reads import file_text, stat_of, state_cache
 from transcript_entries import Refused
 
@@ -75,7 +75,7 @@ class Moved(Refused):
 
 
 WAIT = note_opening(Wait.USER, rf"{Wait.CHANGE} (?P<change>{TICKET_NUMBER.pattern})")
-"""The opening of the note of a line into `blocked`."""
+"""The opening of the note of a line into `blocked` or `waiting`."""
 
 
 def waited_change(wait: re.Match[str]) -> TicketNumber | None:
@@ -157,15 +157,15 @@ def check_line(status: Status, moves: bool, agent: str, agent_id: str | None,
                                duplicate=Resolution.DUPLICATE, number="<number>", note="<note>")))
 
 
-def check_wait(tickets: Path, note: str | None) -> None:
-    """Refuses the note of a line into `blocked` that does not open with
-    what the ticket waits on, or that names as the change it waits on a
+def check_wait(tickets: Path, status: Status, note: str | None) -> None:
+    """Refuses the note of a line into `status` that does not open with
+    the wait of that status, or that names as the change it waits on a
     ticket that is no `change`."""
     wait = WAIT.match(note or "")
-    if wait is None:
-        raise Refused(mctx("the note of a move into `{blocked}` opens with `{user}` or "
-                           "`{change} <number>`").format(
-            blocked=Status.BLOCKED, user=Wait.USER, change=Wait.CHANGE))
+    if wait is None or waited(wait).status is not status:
+        raise Refused(mctx("the note of a move into `{blocked}` opens with `{user}`, and "
+                           "the note of a move into `{waiting}` with `{change} <number>`").format(
+            blocked=Status.BLOCKED, waiting=Status.WAITING, user=Wait.USER, change=Wait.CHANGE))
     change = waited_change(wait)
     if change is None:
         return
@@ -252,8 +252,8 @@ def write_log(tickets: Path, path: Path, number: TicketNumber, status: Status, a
     check_status(path, number, source)
     moves = source is not status
     check_line(status, moves, agent, agent_id, note)
-    if moves and status is Status.BLOCKED:
-        check_wait(tickets, note)
+    if moves and status in WAIT_STATUSES:
+        check_wait(tickets, status, note)
     text = read_ticket(path)
     headings = HEADING.findall(text)
     if not headings or headings[-1] != LOG:
@@ -377,14 +377,14 @@ def unblock(tickets: Path, change: TicketNumber, agent: str, agent_id: str | Non
     moves = Moves()
     opened = UNBLOCKED_BY.format(change=Wait.CHANGE, number=change, resolution=resolution)
     closed = CLOSED_BY.format(fixed=resolution, change=Wait.CHANGE, number=change, note=note)
-    for path in ticket_files(tickets, Status.BLOCKED):
+    for path in ticket_files(tickets, Status.WAITING):
         try:
             if waits_on(read_ticket(path)) == change:
                 if resolution is Resolution.FIXED and not is_change(path):
                     to, line = Status.CLOSED, closed
                 else:
                     to, line = Status.OPEN, opened
-                moves.add(log_moves(tickets, ticket_name(path).number, to, agent, Status.BLOCKED,
+                moves.add(log_moves(tickets, ticket_name(path).number, to, agent, Status.WAITING,
                                     agent_id, line))
         except Moved:
             continue

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from operations.state import LogLine, State, Ticket
 from ticketing.exits import Exits, exit_of
-from ticketing.vocabulary import COORDINATOR, Domain, Status, Wait
+from ticketing.vocabulary import COORDINATOR, WAIT_STATUSES, Domain, Status
 
 
 def last_index(t: Ticket, words: tuple[str, ...]) -> int:
@@ -61,18 +61,18 @@ def final_run(t: Ticket) -> tuple[int, int | None]:
 
 def wait_line(t: Ticket) -> LogLine | None:
     """The line of `t`'s log that `t` waits on, where `t` stands under
-    `tickets/blocked/`: the line `final_run(t)` gives as its last wait
-    line."""
-    if t.status is not Status.BLOCKED:
+    `tickets/blocked/` or `tickets/waiting/`: the line `final_run(t)` gives
+    as its last wait line."""
+    if t.status not in WAIT_STATUSES:
         return None
     _, wait = final_run(t)
     return t.log[wait] if wait is not None else None
 
 
 def blocked_on_user(t: Ticket) -> LogLine | None:
-    """The line `wait_line(t)` gives, where that wait is on the user."""
-    line = wait_line(t)
-    return line if line is not None and line.on_user else None
+    """The line `wait_line(t)` gives, where `t` stands under
+    `tickets/blocked/`."""
+    return wait_line(t) if t.status is Status.BLOCKED else None
 
 
 def closed(state: State, number: str) -> bool:
@@ -85,8 +85,6 @@ def closed(state: State, number: str) -> bool:
 
 def exits(state: State, t: Ticket) -> Exits:
     """`exit_of` for `t`."""
-    line = wait_line(t)
-    wait = None if line is None else Wait.USER if line.on_user else Wait.CHANGE if line.on_change else None
-    return exit_of(t.status, t.kind, wait,
+    return exit_of(t.status, t.kind,
                    on_open_change=t.domain is Domain.CHANGE and not closed(state, t.subject),
                    title=t.title)

@@ -123,7 +123,7 @@ LOG_HELP = mctx("""
     - `<status>` and `<current status>` are each one of {statuses}.
         - `<current status>` is the status you saw the ticket in.
     - A line that moves a ticket into `assigned` takes, in `--id`, the agent id of the agent that writes it, or the session id of a session that writes it for itself.
-    - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}` or `{change} <number>`, with `<number>` the number of a `change` ticket the ticket tracker holds.
+    - The note of a line that moves a ticket into `{blocked}` or `{waiting}` opens with what the ticket waits on: `{user}` into `{blocked}`, and `{change} <number>` into `{waiting}`, with `<number>` the number of a `change` ticket the ticket tracker holds.
     - A ticket waits on the change that the last line of its log whose note opens with what a ticket waits on gives as `{change} <number>`.
     - The note of a line that moves a ticket into `closed` opens with its resolution, one of {resolutions}.
         - With `{duplicate}`, the note has the form `{duplicate_of}`, with `<number>` the number of the ticket it duplicates.
@@ -143,7 +143,7 @@ LOG_RULES = mctx("""
     - On a ticket that already stands in `assigned`, the command refuses an `assigned` line whose `--id` does not hold the ticket, and accepts one with no `--id`.
         - The holder is the agent id or the session id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines.
             - Where none of them gives one, the ticket has no holder.
-    - Where the line moves a `{change}` ticket into `closed`, the command also moves each ticket under `{blocked}` that waits on that change, and prints the path of each one it moved, one per line, after the change's own path.
+    - Where the line moves a `{change}` ticket into `closed`, the command also moves each ticket under `{waiting}` that waits on that change, and prints the path of each one it moved, one per line, after the change's own path.
     - A `{change}` ticket that waits on it moves into `open`, with the note `{unblocked_by}`, whatever the change's resolution.
     - Each other ticket that waits on it moves into `closed`, with the note `{closed_by}`, where the change's resolution is `{fixed}`, and into `open`, with the note `{unblocked_by}`, where it is another.
     - Each line that moves a ticket that waits on the change takes the `<agent>` and the `--id` of the call.
@@ -607,6 +607,7 @@ def help_values() -> dict[str, str]:
                 request_retired=heading(RETIRED[Kind.REQUEST]),
                 statuses=ticked(Status), log=LOG, time_form=TIME_FORM,
                 resolutions=ticked(Resolution), fixed=Resolution.FIXED, blocked=Status.BLOCKED,
+                waiting=Status.WAITING,
                 user=Wait.USER, change=Wait.CHANGE, validation=heading(VALIDATION),
                 session_var=SESSION_VAR,
                 duplicate=Resolution.DUPLICATE, recurs=Note.RECURS, bug=Kind.BUG,

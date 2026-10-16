@@ -14,8 +14,8 @@ tickets an `Allow:` or an `Expedite:` line gives, and each other change
 waits for a `Resume.` line. Past the usage pace (`pacing`), the same
 changes are taken, and each other one waits until the pace admits it.
 
-A change that waits for a ticket under `tickets/blocked/` whose last
-wait is on the user moves to `tickets/draft/` with a line whose note is
+A change that waits for a ticket under `tickets/blocked/` moves to
+`tickets/draft/` with a line whose note is
 `STALL_FINDING` on that ticket, which `drafts` reads as findings, once
 after each move of that ticket into `tickets/blocked/` (`stall`). A
 change under `tickets/blocked/` is taken back on a `Merge:` line that
@@ -205,8 +205,8 @@ def blocked_since(t: Ticket) -> float:
 
 
 def stall(state: State) -> Step | None:
-    """The move to `tickets/draft/` of a change of `waiting` that waits for
-    a ticket that waits on the user (`blocked_on_user`), where no line of
+    """The move to `tickets/draft/` of a change that `waiting()` gives that
+    waits for a ticket under `tickets/blocked/` (`blocked_on_user`), where no line of
     its log since that ticket's last move into `tickets/blocked/` gives
     `STALL_FINDING` on it."""
     for n, deps in waiting(state):

@@ -14,6 +14,9 @@ class Status(StrEnum):
     OPEN = "open"
     ASSIGNED = "assigned"
     BLOCKED = "blocked"
+    """A ticket that waits on the user."""
+    WAITING = "waiting"
+    """A ticket that waits on a change."""
     CLOSED = "closed"
     DEFERRED = "deferred"
     """A ticket that waits on a condition `file_ticket.py` checks: a `delay`
@@ -82,10 +85,24 @@ COORDINATOR = "coordinator"
 """The `<agent>` of the coordinator's tickets and log lines."""
 
 class Wait(StrEnum):
-    """What a ticket under `blocked` waits on, the word the note of the line
-    into `blocked` opens with."""
+    """What a ticket under `blocked` or `waiting` waits on, the word the
+    note of the line into that status opens with."""
     USER = "user"
     CHANGE = "change"
+
+    @property
+    def status(self) -> Status:
+        """The status of a ticket that waits on this."""
+        match self:
+            case Wait.USER:
+                return Status.BLOCKED
+            case Wait.CHANGE:
+                return Status.WAITING
+
+
+WAIT_STATUSES = frozenset(w.status for w in Wait)
+"""The statuses of a ticket that waits, whose move in opens its note with a
+wait."""
 
 
 class Note(StrEnum):

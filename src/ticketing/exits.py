@@ -1,9 +1,8 @@
-"""What takes a ticket out of each status, and, under `tickets/blocked/`,
-out of each kind of wait (`exit_of`), and the event that frees a ticket for
-a fresh ticket analyst (`freed`).
+"""What takes a ticket out of each status (`exit_of`), and the event that
+frees a ticket for a fresh ticket analyst (`freed`).
 
-Each `match` in `exit_of` ends in `assert_never`, so a `Status` or a `Wait`
-added with no case fails pyright, and each case gives `frees` as well as
+The `match` in `exit_of` ends in `assert_never`, so a `Status` added with no
+case fails pyright, and each case gives `frees` as well as
 its exits, so a status added with no value for it fails as one with no
 exit does."""
 
@@ -11,7 +10,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol, assert_never
 
-from ticketing.vocabulary import COORDINATOR, MANY_IDEAS, Kind, Status, Wait
+from ticketing.vocabulary import COORDINATOR, MANY_IDEAS, Kind, Status
 
 
 class Exit(StrEnum):
@@ -47,11 +46,9 @@ class Exits:
     frees: bool
 
 
-def exit_of(status: Status, kind: Kind, wait: Wait | None, *,
-            on_open_change: bool, title: str) -> Exits:
-    """The exits of a ticket of `kind` in `status`, which waits on `wait`
-    under `tickets/blocked/`, with `title`. `on_open_change`: its subject is
-    a change not closed."""
+def exit_of(status: Status, kind: Kind, *, on_open_change: bool, title: str) -> Exits:
+    """The exits of a ticket of `kind` in `status`, with `title`.
+    `on_open_change`: its subject is a change not closed."""
     change = kind is Kind.CHANGE
     match status:
         case Status.DRAFT:
@@ -68,7 +65,11 @@ def exit_of(status: Status, kind: Kind, wait: Wait | None, *,
         case Status.ASSIGNED:
             return Exits(frozenset({Exit.HOLDER, Exit.RELEASE}), frees=False)
         case Status.BLOCKED:
-            return Exits(blocked(change, wait), frees=True)
+            return Exits(frozenset({Exit.MERGE_LINE if change else Exit.COORDINATOR_LINE}),
+                         frees=True)
+        case Status.WAITING:
+            return Exits(frozenset({Exit.CHANGE_CLOSE} if change
+                                   else {Exit.COORDINATOR_LINE, Exit.CHANGE_CLOSE}), frees=True)
         case Status.DEFERRED:
             return Exits(frozenset({Exit.SWEEP}), frees=True)
         case Status.CLOSED:
@@ -76,17 +77,6 @@ def exit_of(status: Status, kind: Kind, wait: Wait | None, *,
                          frees=False)
         case _:
             assert_never(status)
-
-
-def blocked(change: bool, wait: Wait | None) -> frozenset[Exit]:
-    line = frozenset({Exit.MERGE_LINE if change else Exit.COORDINATOR_LINE})
-    match wait:
-        case None | Wait.USER:
-            return line
-        case Wait.CHANGE:
-            return line | {Exit.CHANGE_CLOSE}
-        case _:
-            assert_never(wait)
 
 
 class Line(Protocol):
@@ -120,4 +110,4 @@ def freed[L: Line](log: tuple[L, ...], kind: Kind, filed: float) -> Freed:
 
 
 def frees(status: Status, kind: Kind) -> bool:
-    return exit_of(status, kind, None, on_open_change=False, title="").frees
+    return exit_of(status, kind, on_open_change=False, title="").frees

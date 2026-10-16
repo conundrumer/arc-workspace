@@ -11,10 +11,10 @@ task whose solver pipeline has yet to launch its own ticket analyst, which
 runs on it, nor again once one returned, until the coordinator writes a line
 in its log after that analyst's launch, as where it records a decision of the
 user or the user's later words on it, or the ticket moves from
-`tickets/deferred/` or `tickets/blocked/` into `tickets/open/` after it. A
+`tickets/deferred/`, `tickets/blocked/` or `tickets/waiting/` into `tickets/open/` after it. A
 ticket analyst that runs on the ticket gets the coordinator's line by
 message, and then counts as given it. A ticket other than a `change` that
-stands under `tickets/blocked/` or `tickets/closed/` with such a line after the line that moved it there
+stands under `tickets/blocked/`, `tickets/waiting/` or `tickets/closed/` with such a line after the line that moved it there
 moves back to `tickets/open/` first.
 
 The coordinator gets from a ticket analyst's reply only what goes to the
@@ -92,7 +92,7 @@ def given(state: State, number: str) -> bool:
 
 def reopen(state: State) -> Step | None:
     """The move to `tickets/open/` of a ticket other than a `change` that
-    stands under `tickets/blocked/` or `tickets/closed/` with a line of the
+    stands under `tickets/blocked/`, `tickets/waiting/` or `tickets/closed/` with a line of the
     coordinator's after the line that moved it there, and after the last
     line since then whose note opens with a wait, citing that line. A
     `change` the user rules on comes back by a `Merge:` or a `Drafts to
