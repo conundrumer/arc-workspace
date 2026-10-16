@@ -23,11 +23,11 @@
     //  pairs
     // @witness three-bar: variant concept
   | LargestSize {}
-    // @rule pick-pairs: a group whose shape is params.footprint up to a D4
-    //  transform is a pair
+    // @rule pick-pairs: a group whose shape is params.pair_footprint in some
+    //  placement is a pair
     // @witness bar-and-l: variant concept
     //     @reassigned pair_size
-    //     @reassigned footprint
+    //     @reassigned pair_footprint
   | ShapeMatch {}
 
 // which cells form a pair's frame
@@ -70,10 +70,12 @@
 
     // --- $ShapeMatch ---
     // the shape of a group that gets a frame
-    .decl footprint(p: Position)
-    GRID_MASK_2x1(footprint,
-        1,
-        1)
+    RIGID(pair,
+        .decl footprint(p: Position)
+        GRID_MASK_2x1(footprint,
+            1,
+            1)
+    )
 }
 
 .init params = Params
@@ -156,16 +158,12 @@ largest.cand($U(), N) :- parse.size.tally(_, N).
 pair(Id, $LargestSize()) :- parse.size.tally([$U(), Id], N), largest.high($U(), N).
 
 // --- $ShapeMatch ---
-// A group turned by D.
-.type Turned = [id: Ident, d: D4]
-
 // @claim pick-pairs
-.init shape = KeyedSetCompare<Turned, Unit, Position>
-shape.pattern_member($U(), P) :- params.footprint(P).
-shape.observed_member([Id, D], P_turned) :-
-    parse.shape([$U(), Id], P), d4_elem(D), apply(D, P, P_turned).
+.init shape = KeyedSetCompare<Ident, D4, Position>
+shape.pattern_member(D, P) :- params.pair_footprint(D, P).
+shape.observed_member(Id, P) :- parse.shape([$U(), Id], P).
 
-pair(Id, $ShapeMatch()) :- shape.equals([Id, _], $U()).
+pair(Id, $ShapeMatch()) :- shape.equals(Id, _).
 
 // --- $BoxRing ---
 // The cells that touch the group's box at a side or a corner.
@@ -195,17 +193,10 @@ frame_cell(Q, [S, C, $FrameOverMarks()]) :-
     .decl shape(g: EI, p: Position)
     shape([E, Id], P) :- parse.shape([E, Id], P), !kept_beside([E, Id]).
 
-    // The framed groups whose shapes are one up to D4.
-    .type Turned = [g: EI, d: D4]
+    // One framed group serves as the chart, in its own pose.
+    .init pick = Canon<EI>
+    pick.equiv(G, G2) :- shape(G, _), shape(G2, _).
 
-    .init congruent = KeyedSetCompare<Turned, EI, Position>
-    congruent.pattern_member(G, P) :- shape(G, P).
-    congruent.observed_member([G, D], P_turned) :-
-        shape(G, P), d4_elem(D), apply(D, P, P_turned).
-
-    .init shape_class = Canon<EI>
-    shape_class.edge(G, G2) :- congruent.equals([G, _], G2).
-
-    .decl footprint(p: Position)
-    footprint(P) :- shape_class.rep(G, G), shape(G, P).
+    .decl pair_footprint(p: Position)
+    pair_footprint(P) :- pick.rep(G, G), shape(G, P).
 }
