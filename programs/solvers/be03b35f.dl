@@ -46,8 +46,8 @@ out(P_grid_out, Col) :-
     .decl broken(diag: DiagDir, d4: D4)
     broken(Diag, D) :- d4m.mismatch([E, Diag], D), ex_out(E, _, _).
 
+    // The D4 that takes a quadrant's anchored cells onto an output, and onto
+    // no output it fails to take them onto.
     .decl template(diag: DiagDir, d4: D4)
-    template(Diag, D) :-
-        diag_dir_elem(Diag), d4_elem(D),
-        ex_out(_, _, _), !broken(Diag, D).
+    template(Diag, D) :- d4m.map([E, Diag], D), ex_out(E, _, _), !broken(Diag, D).
 }

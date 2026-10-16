@@ -136,4 +136,7 @@ out(P, Col, [Dt, $Count()]) :-
 
     .decl target(n: number)
     target(N) :- win_count.tally(_, N).
+
+    .decl out_dim(a: Axis, n: number)
+    out_dim(A, N) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, N).
 }

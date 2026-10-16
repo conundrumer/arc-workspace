@@ -391,6 +391,9 @@ out(P, Col, Ch) :-
     .init gap_lines = Tally<Run, Position>
     gap_lines.item([E, Id], L) :- gap.label(E, P, Id), ex.panel_axis(E, A), split(P, A, L, _).
 
+    // @ignore: determine prediction — the test runs no step of the program at
+    //  the width: it reads the runs of output lines all in the input's field
+    //  color
     .decl gap_width(k: number)
     gap_width(K) :- gap_lines.tally(_, K).
 

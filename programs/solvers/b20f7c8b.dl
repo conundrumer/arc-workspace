@@ -336,6 +336,9 @@ match_color.item([$ExactFirst(), Gp, Bc, Bx], Col) :-
     .decl frame_defect(col: Color)
     frame_defect(Col) :- cand(Col), edge_change(_, _, C_in, C_out), C_in != Col, C_out != Col.
 
+    // @ignore: determine prediction — the test runs no step of the program at
+    //  the color: it reads the colors on the two sides of each cell the output
+    //  changes beside a cell it keeps
     .decl frame_color(c: Color)
     frame_color(Col) :- cand(Col), !frame_defect(Col).
 
@@ -345,6 +348,9 @@ match_color.item([$ExactFirst(), Gp, Bc, Bx], Col) :-
         cand(Col), frame_color(F), Col != F,
         changed(_, _, C_in, C_out), C_in != Col, C_out != Col, C_in != F, C_out != F.
 
+    // @ignore: determine prediction — the test runs no step of the program at
+    //  the color: it reads the colors on the two sides of each cell the output
+    //  changes
     .decl ink_color(c: Color)
     ink_color(Col) :- cand(Col), frame_color(F), Col != F, !ink_defect(Col).
 }

@@ -114,6 +114,9 @@ out(P, Col, $GroupMatch()) :- best_id.high($U(), Id, _), params.mapping_out(Id, 
     named.pattern_member(S, D) :- sym_member(S, D).
     named.observed_member($U(), D) :- d4_elem(D), !inv_broken(D).
 
+    // @ignore: determine prediction — the test runs no step of the program at
+    //  the group: it reads the transforms every input of the symmetric class
+    //  is invariant under
     .decl sym_group(s: Sym)
     sym_group(S) :- named.equals($U(), S).
 
@@ -132,6 +135,9 @@ out(P, Col, $GroupMatch()) :- best_id.high($U(), Id, _), params.mapping_out(Id, 
     named_class.pattern_member(S, D) :- sym_member(S, D).
     named_class.observed_member(Id, D) :- class.id(_, Id), d4_elem(D), !group_broken(Id, D).
 
+    // @ignore: determine prediction — the test runs no step of the program at
+    //  the group: it reads the transforms every input of the class is
+    //  invariant under
     .decl mapping_sym(id: Ident, s: Sym)
     mapping_sym(Id, S) :- named_class.equals(Id, S).
 

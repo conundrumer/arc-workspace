@@ -60,12 +60,13 @@ out(P, Col) :- span.between(_, P), params.path(Col).
 out(P, Col) :- in(P, Col), !span.between(_, P).
 
 .comp Determine {
-    // Train pairs only — the ex_out atom holds the test inputs out.
+    // The marks of each train output: every cell neither background nor
+    // path, which leaves each mark where it stands.
     .init parse = Parse<Example>
-    parse.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
+    parse.cell(E, P, Col) :- ex_out(E, P, Col), !params.path(Col).
 
-    // A leg's elbow is drawn in every pair: keep the ordered mark pairs no
-    // example refutes.
+    // A leg's elbow is drawn in every output: keep the ordered mark pairs
+    // whose elbow no output leaves off the path.
     .decl refuted(src: Color, dst: Color)
     refuted(S, D) :- parse.elbow(E, S, D, P), ex_out(E, P, Col), !params.path(Col).
 

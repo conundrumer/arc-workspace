@@ -35,187 +35,163 @@ lateral(L) :- params.gravity(D), perp_dir(D, L).
 .decl up(d: Dir)
 up(U) :- params.gravity(D), opposite(D, U).
 
-// The settled water of each grid, under each pour sense.
-.comp Parse<Key> {
-    // A cell under one pour sense.
-    .type SenseCell = [k: Key, s: Sense, p: Position]
-    .type KSense = [k: Key, s: Sense]
-    .type KRow = [k: Key, y: Position]
+// The settled water under each pour sense.
 
-    // A cup, the open cells at or below row y joined to one another, with
-    // the cell r its water lands on.
-    .type Entry = [y: Position, c: Ident, r: Position]
+// A cell under one pour sense.
+.type SenseCell = [s: Sense, p: Position]
 
-    .decl cell(k: Key, p: Position, col: Color)  // input
+// A cup, the open cells at or below row y joined to one another, with
+// the cell r its water lands on.
+.type Entry = [y: Position, c: Ident, r: Position]
 
-    // The pour senses to settle under.
-    .decl sense(s: Sense)  // input
+// The direction the water pours in first, per sense.
+.decl pour(s: Sense, d: Dir)
+pour(S, L) :- params.pour_sense(S), params.gravity(D), turn(S, D, L).
 
-    // The direction the water pours in first, per sense.
-    .decl pour(s: Sense, d: Dir)
-    pour(S, L) :- sense(S), params.gravity(D), turn(S, D, L).
+.decl wall(p: Position)
+wall(P) :- in(P, Col), !params.bg(Col), !params.water(Col).
 
-    .decl wall(k: Key, p: Position)
-    wall(K, P) :- cell(K, P, Col), !params.bg(Col), !params.water(Col).
+.decl open(p: Position)
+open(P) :- in(P, _), !wall(P).
 
-    .decl open(k: Key, p: Position)
-    open(K, P) :- cell(K, P, _), !wall(K, P).
+.decl parcel(p: Position)
+parcel(P) :- in(P, Col), params.water(Col).
 
-    .decl parcel(k: Key, p: Position)
-    parcel(K, P) :- cell(K, P, Col), params.water(Col).
+// The row of each cell, axis-only.
+.decl row(p: Position, y: Position)
+row(P, Y) :- in(P, _), params.gravity(D), axis_of(D, A), split(P, A, Y, _).
 
-    // The row of each cell, axis-only.
-    .decl row(k: Key, p: Position, y: Position)
-    row(K, P, Y) :- cell(K, P, _), params.gravity(D), axis_of(D, A), split(P, A, Y, _).
+// The cell under p is open, so the water falls.
+.decl hangs(p: Position)
+hangs(P) :- open(P), params.gravity(D), neighbor(P, D, Q), open(Q).
 
-    // The cell under p is open, so the water falls.
-    .decl hangs(k: Key, p: Position)
-    hangs(K, P) :- open(K, P), params.gravity(D), neighbor(P, D, Q), open(K, Q).
+// @claim settle
+.init run = Slide<Unit>
+run.node($U(), P) :- open(P).
+run.dir($U(), L) :- open(_), lateral(L).
 
-    // @claim settle
-    .init run = Slide<Key>
-    run.node(K, P) :- open(K, P).
-    run.dir(K, L) :- open(K, _), lateral(L).
+// Along the open run from p toward d, some cell hangs.
+.decl drains(p: Position, d: Dir)
+drains(P, L) :- lateral(L), run.run($U(), P, L, Q), hangs(Q).
 
-    // Along the open run from p toward d, some cell hangs.
-    .decl drains(k: Key, p: Position, d: Dir)
-    drains(K, P, L) :- lateral(L), run.run(K, P, L, Q), hangs(K, Q).
+// One step of falling water: down where it hangs, else along its line
+// toward a drain, the pour direction first.
+.decl step(s: Sense, p: Position, q: Position)
+step(S, P, Q) :-
+    params.pour_sense(S), open(P),
+    ( hangs(P), params.gravity(D), neighbor(P, D, Q)
+    ; !hangs(P), pour(S, L), drains(P, L), neighbor(P, L, Q)
+    ; !hangs(P), pour(S, L), !drains(P, L),
+      opposite(L, L2), drains(P, L2), neighbor(P, L2, Q)
+    ).
 
-    // One step of falling water: down where it hangs, else along its line
-    // toward a drain, the pour direction first.
-    .decl step(k: Key, s: Sense, p: Position, q: Position)
-    step(K, S, P, Q) :-
-        sense(S), open(K, P),
-        ( hangs(K, P), params.gravity(D), neighbor(P, D, Q)
-        ; !hangs(K, P), pour(S, L), drains(K, P, L), neighbor(P, L, Q)
-        ; !hangs(K, P), pour(S, L), !drains(K, P, L),
-          opposite(L, L2), drains(K, P, L2), neighbor(P, L2, Q)
-        ).
+// Footing below and no drain either way.
+.decl rest(p: Position)
+rest(P) :- open(P), !hangs(P), !drains(P, _).
 
-    // Footing below and no drain either way.
-    .decl rest(k: Key, p: Position)
-    rest(K, P) :- open(K, P), !hangs(K, P), !drains(K, P, _).
+// The cells whose water comes to rest at r, by the steps back from r.
+// @claim settle
+.init sink = GraphDistance<SenseCell, Position>
+sink.seed([S, R], R) :- params.pour_sense(S), rest(R).
+sink.edge([S, R], Q, P) :- rest(R), step(S, P, Q).
 
-    // The cells whose water comes to rest at r, by the steps back from r.
-    // @claim settle
-    .init sink = GraphDistance<SenseCell, Position>
-    sink.seed([K, S, R], R) :- sense(S), rest(K, R).
-    sink.edge([K, S, R], Q, P) :- rest(K, R), step(K, S, P, Q).
+.decl lands(s: Sense, p: Position, r: Position)
+lands(S, P, R) :- sink.distance([S, R], P, _).
 
-    .decl lands(k: Key, s: Sense, p: Position, r: Position)
-    lands(K, S, P, R) :- sink.distance([K, S, R], P, _).
+// The cell the water reaches first: the first place it rests, from
+// gravity's far edge, in the pour direction.
+// @claim settle
+.init lex = LexOrder<Sense>
+lex.axis(S, A) :- in(_, _), params.pour_sense(S), params.gravity(D), axis_of(D, A).
+lex.corner(S, Diag) :-
+    in(_, _), pour(S, L), params.gravity(D), diag_dirs(Diag, _, D, L).
+lex.cell(S, R) :- parcel(P), lands(S, P, R).
 
-    // The cell the water reaches first: the first place it rests, from
-    // gravity's far edge, in the pour direction.
-    // @claim settle
-    .init lex = LexOrder<KSense>
-    lex.axis([K, S], A) :- cell(K, _, _), sense(S), params.gravity(D), axis_of(D, A).
-    lex.corner([K, S], Diag) :-
-        cell(K, _, _), pour(S, L), params.gravity(D), diag_dirs(Diag, _, D, L).
-    lex.cell([K, S], R) :- parcel(K, P), lands(K, S, P, R).
+// The cups of each row: the components of the open cells at or below it.
+// @claim settle
+.init cup = Components<Position>
+cup.node(Y, P) :- row(_, Y), open(P), params.gravity(D), !nearer(D, Y, P).
 
-    // The cups of each row: the components of the open cells at or below it.
-    // @claim settle
-    .init cup = Components<KRow>
-    cup.node([K, Y], P) :- row(K, _, Y), open(K, P), params.gravity(D), !nearer(D, Y, P).
+// Cup c at row yc lies in cup cp, one row up.
+.decl inner(yc: Position, c: Ident, yp: Position, cp: Ident)
+inner(Yc, C, Yp, Cp) :-
+    cup.label(Yc, P, C), up(U), neighbor(Yc, U, Yp),
+    cup.label(Yp, P, Cp).
 
-    // Cup c at row yc lies in cup cp, one row up.
-    .decl inner(k: Key, yc: Position, c: Ident, yp: Position, cp: Ident)
-    inner(K, Yc, C, Yp, Cp) :-
-        cup.label([K, Yc], P, C), up(U), neighbor(Yc, U, Yp),
-        cup.label([K, Yp], P, Cp).
+// A cell of cup c's top row with open space above, where water pours in.
+.decl mouth(y: Position, c: Ident, m: Position)
+mouth(Y, C, M) :-
+    cup.label(Y, M, C), row(M, Y),
+    up(U), neighbor(M, U, M2), open(M2).
 
-    // A cell of cup c's top row with open space above, where water pours in.
-    .decl mouth(k: Key, y: Position, c: Ident, m: Position)
-    mouth(K, Y, C, M) :-
-        cup.label([K, Y], M, C), row(K, M, Y),
-        up(U), neighbor(M, U, M2), open(K, M2).
+// Mouth m has another mouth of its cup nearer d.
+.decl shadowed(y: Position, c: Ident, d: Dir, m: Position)
+shadowed(Y, C, L, M) :- mouth(Y, C, M), mouth(Y, C, M2), lateral(L), nearer(L, M2, M).
 
-    // Mouth m has another mouth of its cup nearer d.
-    .decl shadowed(k: Key, y: Position, c: Ident, d: Dir, m: Position)
-    shadowed(K, Y, C, L, M) :- mouth(K, Y, C, M), mouth(K, Y, C, M2), lateral(L), nearer(L, M2, M).
+// Cup c in cup cp, whose water lands at r outside c, lies toward d from r.
+// @ignore: common-subexpr — shadowed compares two mouths, and this a mouth with the landing
+.decl away(yp: Position, cp: Ident, r: Position, yc: Position, c: Ident, d: Dir)
+away(Yp, Cp, R, Yc, C, L) :-
+    inner(Yc, C, Yp, Cp), rest(R), cup.label(Yp, R, Cp), !cup.label(Yc, R, C),
+    mouth(Yc, C, M), lateral(L), nearer(L, M, R).
 
-    // Cup c in cup cp, whose water lands at r outside c, lies toward d from r.
-    // @ignore: common-subexpr — shadowed compares two mouths, and this a mouth with the landing
-    .decl away(k: Key, yp: Position, cp: Ident, r: Position, yc: Position, c: Ident, d: Dir)
-    away(K, Yp, Cp, R, Yc, C, L) :-
-        inner(K, Yc, C, Yp, Cp), rest(K, R), cup.label([K, Yp], R, Cp), !cup.label([K, Yc], R, C),
-        mouth(K, Yc, C, M), lateral(L), nearer(L, M, R).
+// Each cup the water fills, with the cell its water lands on: the inner
+// cup that holds the landing keeps it, and another inner cup takes the
+// water that pours in over its first mouth on the side of the landing.
+// @claim settle
+.init descent = GraphDistance<Sense, Entry>
+descent.seed(S, [Y, C, R]) :-
+    lex.first(S, R), cup.label(Y, R, C), up(U), dist(Y, U, 0).
+descent.edge(S, [Yp, Cp, R], [Yc, C, R]) :-
+    params.pour_sense(S), rest(R), inner(Yc, C, Yp, Cp), cup.label(Yc, R, C).
+descent.edge(S, [Yp, Cp, R], [Yc, C, R2]) :-
+    away(Yp, Cp, R, Yc, C, L), opposite(L, L2),
+    mouth(Yc, C, M), !shadowed(Yc, C, L2, M), lands(S, M, R2).
 
-    // Each cup the water fills, with the cell its water lands on: the inner
-    // cup that holds the landing keeps it, and another inner cup takes the
-    // water that pours in over its first mouth on the side of the landing.
-    // @claim settle
-    .init descent = GraphDistance<KSense, Entry>
-    descent.seed([K, S], [Y, C, R]) :-
-        lex.first([K, S], R), cup.label([K, Y], R, C), up(U), dist(Y, U, 0).
-    descent.edge([K, S], [Yp, Cp, R], [Yc, C, R]) :-
-        sense(S), rest(K, R), inner(K, Yc, C, Yp, Cp), cup.label([K, Yc], R, C).
-    descent.edge([K, S], [Yp, Cp, R], [Yc, C, R2]) :-
-        away(K, Yp, Cp, R, Yc, C, L), opposite(L, L2),
-        mouth(K, Yc, C, M), !shadowed(K, Yc, C, L2, M), lands(K, S, M, R2).
+.decl entry(s: Sense, y: Position, c: Ident, r: Position)
+entry(S, Y, C, R) :- descent.distance(S, [Y, C, R], _).
 
-    .decl entry(k: Key, s: Sense, y: Position, c: Ident, r: Position)
-    entry(K, S, Y, C, R) :- descent.distance([K, S], [Y, C, R], _).
+// Of two inner cups of one cup, c1 fills first: it holds the landing, or
+// it lies in the pour direction from the landing and the other does not,
+// or both lie one way and c1 is nearer the landing.
+.decl first_cup(s: Sense, y: Position, c1: Ident, c2: Ident)
+first_cup(S, Yc, C1, C2) :-
+    entry(S, Yp, Cp, R), inner(Yc, C1, Yp, Cp), cup.label(Yc, R, C1),
+    inner(Yc, C2, Yp, Cp), C1 != C2.
+first_cup(S, Yc, C1, C2) :-
+    entry(S, Yp, Cp, R), away(Yp, Cp, R, Yc, C1, L1), away(Yp, Cp, R, Yc, C2, L2),
+    ( pour(S, L1), !pour(S, L2)
+    ; L1 = L2, C1 != C2, mouth(Yc, C1, M1), mouth(Yc, C2, M2), nearer(L1, M2, M1)
+    ).
 
-    // Of two inner cups of one cup, c1 fills first: it holds the landing, or
-    // it lies in the pour direction from the landing and the other does not,
-    // or both lie one way and c1 is nearer the landing.
-    .decl first_cup(k: Key, s: Sense, y: Position, c1: Ident, c2: Ident)
-    first_cup(K, S, Yc, C1, C2) :-
-        entry(K, S, Yp, Cp, R), inner(K, Yc, C1, Yp, Cp), cup.label([K, Yc], R, C1),
-        inner(K, Yc, C2, Yp, Cp), C1 != C2.
-    first_cup(K, S, Yc, C1, C2) :-
-        entry(K, S, Yp, Cp, R), away(K, Yp, Cp, R, Yc, C1, L1), away(K, Yp, Cp, R, Yc, C2, L2),
-        ( pour(S, L1), !pour(S, L2)
-        ; L1 = L2, C1 != C2, mouth(K, Yc, C1, M1), mouth(K, Yc, C2, M2), nearer(L1, M2, M1)
-        ).
+// Cell q fills no later than cell p: q lies in p's cup at p's row, or in
+// a cup that fills before p's.
+.decl upto(s: Sense, p: Position, q: Position)
+upto(S, P, Q) :-
+    entry(S, Y, C, _), row(P, Y), cup.label(Y, P, C), cup.label(Y, Q, C).
+upto(S, P, Q) :-
+    first_cup(S, Y, C1, C2), cup.label(Y, Q, C1), cup.label(Y, P, C2).
 
-    // Cell q fills no later than cell p: q lies in p's cup at p's row, or in
-    // a cup that fills before p's.
-    .decl upto(k: Key, s: Sense, p: Position, q: Position)
-    upto(K, S, P, Q) :-
-        entry(K, S, Y, C, _), row(K, P, Y), cup.label([K, Y], P, C), cup.label([K, Y], Q, C).
-    upto(K, S, P, Q) :-
-        first_cup(K, S, Y, C1, C2), cup.label([K, Y], Q, C1), cup.label([K, Y], P, C2).
+// @claim settle
+.init filled = Tally<SenseCell, Position>
+filled.item([S, P], Q) :- upto(S, P, Q).
 
-    // @claim settle
-    .init filled = Tally<SenseCell, Position>
-    filled.item([K, S, P], Q) :- upto(K, S, P, Q).
+// @claim settle
+.init amount = Tally<Unit, Position>
+amount.item($U(), P) :- parcel(P).
+amount.domain($U()) :- in(_, _).
 
-    // @claim settle
-    .init amount = Tally<Key, Position>
-    amount.item(K, P) :- parcel(K, P).
-    amount.domain(K) :- cell(K, _, _).
+// The settled grid under each pour sense.
+.decl settled(s: Sense, p: Position, col: Color)
+settled(S, P, Col) :-
+    in(P, C), params.pour_sense(S),
+    ( wall(P), Col = C                                              // a wall keeps its color
+    ; filled.tally([S, P], N1), amount.tally($U(), N), N1 <= N,        // within the water's amount
+      params.water(Col)
+    ; upto(S, P, Q), !upto(S, Q, P), filled.tally([S, Q], N1), // a cell before it fills the amount
+      amount.tally($U(), N), N1 >= N, params.bg(Col)
+    ; open(P), !upto(S, P, P), params.bg(Col)                    // out of the water's reach
+    ).
 
-    // The settled grid under each pour sense.
-    .decl settled(k: Key, s: Sense, p: Position, col: Color)
-    settled(K, S, P, Col) :-
-        cell(K, P, C), sense(S),
-        ( wall(K, P), Col = C                                              // a wall keeps its color
-        ; filled.tally([K, S, P], N1), amount.tally(K, N), N1 <= N,        // within the water's amount
-          params.water(Col)
-        ; upto(K, S, P, Q), !upto(K, S, Q, P), filled.tally([K, S, Q], N1), // a cell before it fills the amount
-          amount.tally(K, N), N1 >= N, params.bg(Col)
-        ; open(K, P), !upto(K, S, P, P), params.bg(Col)                    // out of the water's reach
-        ).
-}
 
-.init parse = Parse<Unit>
-parse.cell($U(), P, Col) :- in(P, Col).
-parse.sense(S) :- params.pour_sense(S).
-
-out(P, Col, [[S]]) :- parse.settled($U(), S, P, Col).
-
-.comp Determine {
-    .init ex = Parse<Example>
-    ex.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
-    ex.sense(S) :- sense_elem(S).
-
-    // A train output differs from the grid the sense settles.
-    .decl contradicted(s: Sense)
-    contradicted(S) :- ex_out(E, P, Col), ex.settled(E, S, P, Col2), Col != Col2.
-
-    .decl pour_sense(s: Sense)
-    pour_sense(S) :- sense_elem(S), !contradicted(S).
-}
+out(P, Col, [[S]]) :- settled(S, P, Col).

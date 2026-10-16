@@ -38,19 +38,18 @@ out(P, Col) :-
     ).
 
 .comp Determine {
-    .decl dot(e: Example, p: Position, col: Color)
-    dot(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col).
-
-    // A line the dot paints is covered end to end, by its own color or by an
-    // overriding one; a line in the other family keeps bg cells.
-    .decl bare(col: Color, a: Axis)
-    bare(Col, A) :-
-        dot(E, P, Col), axis_elem(A),              // a dot, and a family for it
+    // An output line that keeps a bg cell: no dot paints it.
+    .decl bare(e: Example, p: Position, a: Axis)
+    bare(E, P, A) :-
+        ex_out(E, P, _), axis_elem(A),             // a cell, and a family for its line
         ex_out(E, Q, Bg), params.bg(Bg),           // a bg cell of the output
-        same_line(A, P, Q).                        // on the dot's line
+        same_line(A, P, Q).                        // on that line
 
+    // The family whose line through a dot the output covers end to end, by
+    // the dot's color or by an overriding one.
     .decl line_axis(col: Color, a: Axis)
     line_axis(Col, A) :-
-        dot(E, _, Col), ex_out(E, _, _),    // a color some solved example shows
-        axis_elem(A), !bare(Col, A).        // the family it never leaves bare
+        ex_in(E, P, Col), !params.bg(Col),  // a dot
+        ex_out(E, P, _),                    // of a solved example
+        axis_elem(A), !bare(E, P, A).       // its line in that family is covered
 }

@@ -116,17 +116,8 @@
 // One piece of the marker color.
 .type Piece = [c: Connectivity, id: Ident]
 
-// The blocks of one case.
-.type Reading = [r: BlockReading, m: MarkerSource]
-
 // One piece of the marker color in an example.
 .type ExPiece = [e: Example, id: Ident]
-
-// Two adjacent blocks of an example.
-.type ExGap = [e: Example, b1: Box, b2: Box]
-
-// A window of an example.
-.type ExWindow = [e: Example, w: Box]
 
 // The blocks of one case, ordered from edge d of the pair axis.
 .type BandSide = [r: BlockReading, m: MarkerSource, d: Dir]
@@ -214,6 +205,90 @@ impl_choice([R, M, $LoneSkip(), $ConsecutiveWindows(), $PadWidest()]) :-
 
 .decl block(r: BlockReading, m: MarkerSource, b: Box)
 
+// Blocks B1 and B2 cover the same band, and B1 lies nearer edge D of the
+// pair axis.
+.decl beyond(r: BlockReading, m: MarkerSource, b1: Box, b2: Box, d: Dir)
+beyond(R, M, B1, B2, D) :-
+    block(R, M, B1), block(R, M, B2),
+    params.pair_axis(A), same_line(A, B1, B2),          // one band
+    axis_of(D, A), dist(B1, D, K1), dist(B2, D, K2), K1 < K2.
+
+// A block lies between B1 and B2.
+.decl crossed(r: BlockReading, m: MarkerSource, b1: Box, b2: Box, d: Dir)
+crossed(R, M, B1, B2, D) :- beyond(R, M, B1, B, D), beyond(R, M, B, B2, D).
+
+.decl adjacent(r: BlockReading, m: MarkerSource, b1: Box, b2: Box, d: Dir)
+adjacent(R, M, B1, B2, D) :- beyond(R, M, B1, B2, D), !crossed(R, M, B1, B2, D).
+
+// The cells of the band past B1 away from D, and short of B2.
+.decl gap(r: BlockReading, m: MarkerSource, b1: Box, b2: Box, d: Dir, p: Position)
+gap(R, M, B1, B2, D, P) :-
+    beyond(R, M, B1, B2, D), in(P, _),
+    params.pair_axis(A), split(B1, A, _, Band), split(P, A, _, Line), inside(Line, Band),
+    opposite(D, O), dist(P, O, K1), dist(B1, O, J1), K1 < J1,   // past B1
+    dist(P, D, K2), dist(B2, D, J2), K2 < J2.                    // short of B2
+
+// The two blocks that bound a window, B1 nearer edge D.
+.decl span(r: BlockReading, m: MarkerSource, c: CrowdedRows, b1: Box, b2: Box, d: Dir)
+
+// @claim window
+.init window = Bbox<Span>
+window.cell([R, M, C, B1, B2], P) :- span(R, M, C, B1, B2, D), gap(R, M, B1, B2, D, P).
+
+.decl win(r: BlockReading, m: MarkerSource, c: CrowdedRows, w: Box)
+win(R, M, C, W) :- window.box([R, M, C, _, _], W).
+
+// A window cell: its place along the pair axis in the window, its line, and
+// its color.
+.decl window_cell(r: BlockReading, m: MarkerSource, c: CrowdedRows, w: Box,
+                  p_col: Position, line: Position, col: Color)
+window_cell(R, M, C, W, P_col, Line, Col) :-
+    win(R, M, C, W), in(P, Col), crop(P, W, P_inner),
+    params.pair_axis(A), split(P_inner, A, P_col, _), split(P, A, _, Line).
+
+.decl window_line(r: BlockReading, m: MarkerSource, c: CrowdedRows, w: Box, line: Position)
+window_line(R, M, C, W, Line) :- window_cell(R, M, C, W, _, Line, _).
+
+// Each edge of the stack axis.
+.decl stack_dir(d: Dir)
+stack_dir(D) :- params.pair_axis(A0), perp(A0, A), axis_of(D, A).
+
+// Each line of each window, and its place in the stack along the stack axis.
+.decl slot(r: BlockReading, m: MarkerSource, c: CrowdedRows, w: Box, line: Position, p_row: Position)
+
+// The same at band sense S.
+.decl turned_slot(r: BlockReading, m: MarkerSource, c: CrowdedRows, s: Sense, w: Box,
+                  line: Position, p_row: Position)
+
+// Each window cell: its line, its place along the pair axis in the output,
+// and its color.
+// @ignore: single-consumer — the out clause reads it beside flush_placed, which
+//  holds the rows of the cases that read params.flush
+.decl placed(r: BlockReading, m: MarkerSource, c: CrowdedRows, wd: Widths, w: Box,
+             line: Position, p_col: Position, col: Color)
+
+// The same at flush edge E.
+.decl flush_placed(r: BlockReading, m: MarkerSource, c: CrowdedRows, wd: Widths, e: Dir, w: Box,
+                   line: Position, p_col: Position, col: Color)
+
+// The blocks break the case's reading.
+.decl defect(ch: Choice)
+
+// A span with no cell between its blocks.
+defect([R, M, L, C, Wd]) :-
+    impl_choice([R, M, L, C, Wd]), span(R, M, C, B1, B2, _), !window.box([R, M, C, B1, B2], _).
+
+out(P_out, Col, [R, M, L, C, Wd], [V_s, V_e]) :-
+    impl_choice([R, M, L, C, Wd]),
+    ( placed(R, M, C, Wd, W, Line, P_col, Col), V_e = nil
+    ; flush_placed(R, M, C, Wd, E, W, Line, P_col, Col), V_e = [E]
+    ),
+    ( slot(R, M, C, W, Line, P_row), V_s = nil
+    ; turned_slot(R, M, C, S, W, Line, P_row), V_s = [S]
+    ),
+    compose(P_row, P_col, P_out),
+    !defect([R, M, L, C, Wd]).
+
 // --- $WindowBlocks ---
 // @claim marker-blocks
 .init window_blocks = Occurrences<Color, Unit>
@@ -285,112 +360,19 @@ thin($ComponentBlocks($DerivedShape(), Cn), B) :-
     found($ComponentBlocks($DerivedShape(), Cn), _, B),
     in(P, _), box_edge(P, B, D), opposite(D, O), box_edge(P, B, O).
 
-.comp Parse<Key> {
-    .decl block(key: Key, b: Box)  // @input
-    .decl cell(key: Key, p: Position)  // @input
-
-    // Blocks B1 and B2 cover the same band, and B1 lies nearer edge D of the
-    // pair axis.
-    .decl beyond(key: Key, b1: Box, b2: Box, d: Dir)
-    beyond(Ky, B1, B2, D) :-
-        block(Ky, B1), block(Ky, B2),
-        params.pair_axis(A), same_line(A, B1, B2),          // one band
-        axis_of(D, A), dist(B1, D, K1), dist(B2, D, K2), K1 < K2.
-
-    // A block lies between B1 and B2.
-    .decl crossed(key: Key, b1: Box, b2: Box, d: Dir)
-    crossed(Ky, B1, B2, D) :- beyond(Ky, B1, B, D), beyond(Ky, B, B2, D).
-
-    .decl adjacent(key: Key, b1: Box, b2: Box, d: Dir)
-    adjacent(Ky, B1, B2, D) :- beyond(Ky, B1, B2, D), !crossed(Ky, B1, B2, D).
-
-    // The cells of the band past B1 away from D, and short of B2.
-    .decl gap(key: Key, b1: Box, b2: Box, d: Dir, p: Position)
-    gap(Ky, B1, B2, D, P) :-
-        beyond(Ky, B1, B2, D), cell(Ky, P),
-        params.pair_axis(A), split(B1, A, _, Band), split(P, A, _, Line), inside(Line, Band),
-        opposite(D, O), dist(P, O, K1), dist(B1, O, J1), K1 < J1,   // past B1
-        dist(P, D, K2), dist(B2, D, J2), K2 < J2.                    // short of B2
-}
-
-.init parse = Parse<Reading>
-parse.block([R, M], B) :- block(R, M, B).
-parse.cell([R, M], P) :- block(R, M, _), in(P, _).
-
-// The two blocks that bound a window, B1 nearer edge D.
-.decl span(r: BlockReading, m: MarkerSource, c: CrowdedRows, b1: Box, b2: Box, d: Dir)
-
-// @claim window
-.init window = Bbox<Span>
-window.cell([R, M, C, B1, B2], P) :- span(R, M, C, B1, B2, D), parse.gap([R, M], B1, B2, D, P).
-
-.decl win(r: BlockReading, m: MarkerSource, c: CrowdedRows, w: Box)
-win(R, M, C, W) :- window.box([R, M, C, _, _], W).
-
-// A window cell: its place along the pair axis in the window, its line, and
-// its color.
-.decl window_cell(r: BlockReading, m: MarkerSource, c: CrowdedRows, w: Box,
-                  p_col: Position, line: Position, col: Color)
-window_cell(R, M, C, W, P_col, Line, Col) :-
-    win(R, M, C, W), in(P, Col), crop(P, W, P_inner),
-    params.pair_axis(A), split(P_inner, A, P_col, _), split(P, A, _, Line).
-
-.decl window_line(r: BlockReading, m: MarkerSource, c: CrowdedRows, w: Box, line: Position)
-window_line(R, M, C, W, Line) :- window_cell(R, M, C, W, _, Line, _).
-
-// Each edge of the stack axis.
-.decl stack_dir(d: Dir)
-stack_dir(D) :- params.pair_axis(A0), perp(A0, A), axis_of(D, A).
-
-// Each line of each window, and its place in the stack along the stack axis.
-.decl slot(r: BlockReading, m: MarkerSource, c: CrowdedRows, w: Box, line: Position, p_row: Position)
-
-// The same at band sense S.
-.decl turned_slot(r: BlockReading, m: MarkerSource, c: CrowdedRows, s: Sense, w: Box,
-                  line: Position, p_row: Position)
-
-// Each window cell: its line, its place along the pair axis in the output,
-// and its color.
-// @ignore: single-consumer — the out clause reads it beside flush_placed, which
-//  holds the rows of the cases that read params.flush
-.decl placed(r: BlockReading, m: MarkerSource, c: CrowdedRows, wd: Widths, w: Box,
-             line: Position, p_col: Position, col: Color)
-
-// The same at flush edge E.
-.decl flush_placed(r: BlockReading, m: MarkerSource, c: CrowdedRows, wd: Widths, e: Dir, w: Box,
-                   line: Position, p_col: Position, col: Color)
-
-// The blocks break the case's reading.
-.decl defect(ch: Choice)
-
-// A span with no cell between its blocks.
-defect([R, M, L, C, Wd]) :-
-    impl_choice([R, M, L, C, Wd]), span(R, M, C, B1, B2, _), !window.box([R, M, C, B1, B2], _).
-
-out(P_out, Col, [R, M, L, C, Wd], [V_s, V_e]) :-
-    impl_choice([R, M, L, C, Wd]),
-    ( placed(R, M, C, Wd, W, Line, P_col, Col), V_e = nil
-    ; flush_placed(R, M, C, Wd, E, W, Line, P_col, Col), V_e = [E]
-    ),
-    ( slot(R, M, C, W, Line, P_row), V_s = nil
-    ; turned_slot(R, M, C, S, W, Line, P_row), V_s = [S]
-    ),
-    compose(P_row, P_col, P_out),
-    !defect([R, M, L, C, Wd]).
-
 // --- $LoneUndefined ---
 defect([R, M, $LoneUndefined(), C, Wd]) :-
-    impl_choice([R, M, $LoneUndefined(), C, Wd]), block(R, M, B), !parse.beyond([R, M], B, _, _).
+    impl_choice([R, M, $LoneUndefined(), C, Wd]), block(R, M, B), !beyond(R, M, B, _, _).
 
 // --- $TwoPerBand ---
-span(R, M, $TwoPerBand(), B1, B2, D) :- parse.adjacent([R, M], B1, B2, D).
+span(R, M, $TwoPerBand(), B1, B2, D) :- adjacent(R, M, B1, B2, D).
 defect([R, M, L, $TwoPerBand(), Wd]) :-
-    impl_choice([R, M, L, $TwoPerBand(), Wd]), parse.crossed([R, M], _, _, _).
+    impl_choice([R, M, L, $TwoPerBand(), Wd]), crossed(R, M, _, _, _).
 
 // --- $OuterSpan ---
 // The first and the last block of a band.
 span(R, M, $OuterSpan(), B1, B2, D) :-
-    parse.beyond([R, M], B1, B2, D), !parse.beyond([R, M], _, B1, D), !parse.beyond([R, M], B2, _, D).
+    beyond(R, M, B1, B2, D), !beyond(R, M, _, B1, D), !beyond(R, M, B2, _, D).
 
 // --- $TwoPerBand, $OuterSpan ---
 // One window per band: the windows stack in the order of their bands, each
@@ -416,8 +398,8 @@ slot(R, M, C, W, Line, P_row) :-
 // The blocks of each band that holds two or more, ranked from edge D.
 // @claim block-pairs
 .init band_rank = Order<BandSide, Box>
-band_rank.elem([R, M, D], B) :- ( parse.beyond([R, M], B, _, D) ; parse.beyond([R, M], _, B, D) ).
-band_rank.before([R, M, D], B1, B2) :- parse.beyond([R, M], B1, B2, D).
+band_rank.elem([R, M, D], B) :- ( beyond(R, M, B, _, D) ; beyond(R, M, _, B, D) ).
+band_rank.before([R, M, D], B1, B2) :- beyond(R, M, B1, B2, D).
 
 // The blocks that open a pair, counting from edge D: each block after a
 // whole number of pairs.
@@ -425,14 +407,14 @@ band_rank.before([R, M, D], B1, B2) :- parse.beyond([R, M], B1, B2, D).
 opens(R, M, B, D) :-
     band_rank.rank([R, M, D], B, K), params.pair_size(N), stride(K, N, 0, _, 0).
 
-span(R, M, $PairLeftRight(), B1, B2, D) :- opens(R, M, B1, D), parse.adjacent([R, M], B1, B2, D).
+span(R, M, $PairLeftRight(), B1, B2, D) :- opens(R, M, B1, D), adjacent(R, M, B1, B2, D).
 
 defect([R, M, L, $PairLeftRight(), Wd]) :-
     impl_choice([R, M, L, $PairLeftRight(), Wd]),
-    opens(R, M, B, D), !parse.beyond([R, M], B, _, D).               // a block left over
+    opens(R, M, B, D), !beyond(R, M, B, _, D).               // a block left over
 
 // --- $ConsecutiveWindows ---
-span(R, M, $ConsecutiveWindows(), B1, B2, D) :- parse.adjacent([R, M], B1, B2, D).
+span(R, M, $ConsecutiveWindows(), B1, B2, D) :- adjacent(R, M, B1, B2, D).
 
 // --- $PairLeftRight, $ConsecutiveWindows ---
 // The windows stack in the order of their bands, the windows of one band in
@@ -497,63 +479,4 @@ flush_placed(R, M, C, $PadWidest(), E, W, Line, Q, Col) :-
     // The cells of the marker pieces, each read in its bounding box.
     .decl block_shape(p: Position)
     block_shape(P_rel) :- pieces.label(E, P, Id), piece_box.box([E, Id], B), crop(P, B, P_rel).
-
-    .init blocks = Occurrences<Example, Unit>
-    blocks.cell(E, P, $U()) :- ex_in(E, P, K), params.marker_color(K), ex_out(E, _, _).
-    blocks.shape(E, S, $U()) :- ex_out(E, _, _), params.block_shape(S).
-
-    .init parse = Parse<Example>
-    parse.block(E, B) :- blocks.occurrence(E, B).
-    parse.cell(E, P) :- ex_in(E, P, _), ex_out(E, _, _).
-
-    // The window between each two adjacent blocks.
-    .init gap_box = Bbox<ExGap>
-    gap_box.cell([E, B1, B2], P) :- parse.adjacent(E, B1, B2, D), parse.gap(E, B1, B2, D, P).
-
-    .decl window(e: Example, w: Box)
-    window(E, W) :- gap_box.box([E, _, _], W).
-
-    // Where each window's content shows in the output.
-    .init shown = Occurrences<ExWindow, Color>
-    shown.cell([E, W], Q, Col) :- window(E, W), ex_out(E, Q, Col).
-    shown.shape([E, W], P_rel, Col) :- window(E, W), ex_in(E, P, Col), crop(P, W, P_rel).
-
-    // On one band, window W1 lies nearer edge D of the pair axis than W2.
-    .decl band_order(e: Example, w1: Box, w2: Box, d: Dir)
-    band_order(E, W1, W2, D) :-
-        window(E, W1), window(E, W2), params.pair_axis(A), same_line(A, W1, W2),
-        axis_of(D, A), dist(W1, D, K1), dist(W2, D, K2), K1 < K2.
-
-    // The output shows W1 nearer edge D of the stack axis than W2.
-    .decl shown_before(e: Example, w1: Box, w2: Box, d: Dir)
-    shown_before(E, W1, W2, D) :-
-        band_order(E, W1, W2, _), shown.occurrence([E, W1], O1), shown.occurrence([E, W2], O2),
-        params.pair_axis(A0), perp(A0, A), axis_of(D, A), dist(O1, D, K1), dist(O2, D, K2), K1 < K2.
-
-    // Both windows of a band show, and never in the order sense S gives.
-    .decl sense_contradicted(s: Sense)
-    sense_contradicted(S) :-
-        band_order(E, W1, W2, D), shown.occurrence([E, W1], _), shown.occurrence([E, W2], _),
-        turn(S, D, D_stack), !shown_before(E, W1, W2, D_stack).
-
-    .decl band_sense(s: Sense)
-    band_sense(S) :- sense_elem(S), !sense_contradicted(S).
-
-    // Window W is narrower than another window of its example.
-    .decl narrower(e: Example, w: Box)
-    narrower(E, W) :-
-        window(E, W), window(E, W2), ex_in(E, P, _),
-        params.pair_axis(A), box_extent(W, P, A, N1), box_extent(W2, P, A, N2), N1 < N2.
-
-    .decl flush_shown(e: Example, w: Box, d: Dir)
-    flush_shown(E, W, D) :- shown.occurrence([E, W], O), dir_elem(D), dist(O, D, 0).
-
-    // A narrower window shows in the output, and never against edge D.
-    .decl flush_contradicted(d: Dir)
-    flush_contradicted(D) :-
-        narrower(E, W), shown.occurrence([E, W], _),
-        params.pair_axis(A), axis_of(D, A), !flush_shown(E, W, D).
-
-    .decl flush(d: Dir)
-    flush(D) :- params.pair_axis(A), axis_of(D, A), !flush_contradicted(D).
 }

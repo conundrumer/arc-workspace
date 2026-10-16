@@ -116,23 +116,20 @@ out(P, Col, Ch) :-
 .comp Determine {
     .type ExampleColor = [e: Example, col: Color]
 
-    // The output renders marks in colors the input holds; any other output
-    // color is the fill.
-    .decl mark_col(e: Example, col: Color)
-    mark_col(E, Col) :- ex_out(E, _, Col), ex_in(E, _, Col).
-
+    // An output color that no mark takes is the fill.
     .decl fill(col: Color)
-    fill(Col) :- ex_out(E, _, Col), !mark_col(E, Col).
+    fill(Col) :- ex_out(_, _, Col), !params.color_rank(Col, _).
 
     .init reading = LexOrder<Example>
     reading.cell(E, P) :- ex_out(E, P, _).
     reading.corner(E, D) :- ex_out(E, _, _), params.corner(D).
     reading.axis(E, A) :- ex_out(E, _, _), params.order_axis(A).
 
-    // Where each color's block starts.
+    // Where each color's block starts: the output renders marks in colors
+    // the input holds.
     .init first = Extremes<ExampleColor>
     first.cand([E, Col], R) :-
-        mark_col(E, Col), ex_out(E, P, Col), reading.rank(E, P, R).
+        ex_in(E, _, Col), ex_out(E, P, Col), reading.rank(E, P, R).
 
     // The blocks follow one another, so a color ranks by its start.
     .init place = Ordinal<Example>

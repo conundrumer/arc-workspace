@@ -123,42 +123,12 @@
 
 .init params = Params
 
-// The rare color of a set of cells, and the pick of each scan order among
-// the colors tied for the fewest cells.
-.comp Parse<Key> {
-    .type Hue = [k: Key, col: Color]
-    .type Scan = [k: Key, corner: DiagDir, a: Axis]
+.type Hue = [k: Pool, col: Color]
+.type Scan = [k: Pool, corner: DiagDir, a: Axis]
 
-    .decl cell(key: Key, p: Position, col: Color)  // @input
+// The cells each pool holds, with their colors.
+.decl cell(key: Pool, p: Position, col: Color)
 
-    // The scan orders read.
-    .decl order(d: DiagDir, a: Axis)  // @input
-
-    // @claim rare-color
-    .init hue_count = Tally<Hue, Position>
-    hue_count.item([K, Col], P) :- cell(K, P, Col).
-
-    // @claim rare-color
-    .init fewest = ArgExtremes<Key, Color>
-    fewest.cand(K, Col, N) :- hue_count.tally([K, Col], N).
-
-    // @claim rare-color
-    .init rare = Unanimous<Key, Color>
-    rare.item(K, Col) :- fewest.low(K, Col, _).
-
-    // The cells of the colors tied for the fewest, under each scan order.
-    // @claim rare-color
-    .init scan = LexOrder<Scan>
-    scan.cell([K, Dg, A], P) :- fewest.low(K, Col, _), cell(K, P, Col), order(Dg, A).
-    scan.corner([K, Dg, A], Dg) :- scan.cell([K, Dg, A], _).
-    scan.axis([K, Dg, A], A) :- scan.cell([K, Dg, A], _).
-
-    // The color of the first tied cell.
-    .decl first_tied(key: Key, d: DiagDir, a: Axis, col: Color)
-    first_tied(K, Dg, A, Col) :- scan.first([K, Dg, A], P), cell(K, P, Col).
-}
-
-.init parse = Parse<Pool>
 
 .decl bg_count_choice(c: BgCount)
 bg_count_choice($ObjectCount()). bg_count_choice($RarestWithBackground()).
@@ -244,23 +214,41 @@ member([$PerObject($PerObject8()), Id], P) :- piece8.label($U(), P, Id).
 
 // --- $RareColor ---
 // The cells each pool counts.
-parse.cell([C, S, Id], P, Col) :- bg_count_choice(C), member([S, Id], P), in(P, Col).
+cell([C, S, Id], P, Col) :- bg_count_choice(C), member([S, Id], P), in(P, Col).
+
+// @claim rare-color
+.init hue_count = Tally<Hue, Position>
+hue_count.item([K, Col], P) :- cell(K, P, Col).
+
+// @claim rare-color
+.init fewest = ArgExtremes<Pool, Color>
+fewest.cand(K, Col, N) :- hue_count.tally([K, Col], N).
+
+// @claim rare-color
+.init rare = Unanimous<Pool, Color>
+rare.item(K, Col) :- fewest.low(K, Col, _).
 
 // --- $TieUndefined ---
-group_color($RareColor(C, $TieUndefined()), [S, Id], Col) :- parse.rare.value([C, S, Id], Col).
+group_color($RareColor(C, $TieUndefined()), [S, Id], Col) :- rare.value([C, S, Id], Col).
 
 // --- $ScanOrder ---
-parse.order(Dg, A) :- params.scan_order(Dg, A).
+// The cells of the colors tied for the fewest, under each scan order.
+// @claim rare-color
+.init scan = LexOrder<Scan>
+scan.cell([K, Dg, A], P) :- fewest.low(K, Col, _), cell(K, P, Col), params.scan_order(Dg, A).
+scan.corner([K, Dg, A], Dg) :- scan.cell([K, Dg, A], _).
+scan.axis([K, Dg, A], A) :- scan.cell([K, Dg, A], _).
 
 // The color of each halo cell at each open value; two groups that give one
 // cell different colors leave it none.
 // @claim halo
 .init order_paint = Unanimous<OrderTint, Color>
 order_paint.item([$RareColor(C, $ScanOrder()), S, [[Dg, A]], P], Col) :-
-    beside(P, Q), member([S, Id], Q), parse.first_tied([C, S, Id], Dg, A, Col).
+    beside(P, Q), member([S, Id], Q),
+    scan.first([[C, S, Id], Dg, A], P_first), cell([C, S, Id], P_first, Col).  // the first tied cell's color
 
 // --- $RarestWithBackground ---
-parse.cell([$RarestWithBackground(), S, Id], P, Bg) :- member([S, Id], _), field(P, Bg).
+cell([$RarestWithBackground(), S, Id], P, Bg) :- member([S, Id], _), field(P, Bg).
 
 // --- $InnermostColor ---
 // A color's level less one: its hops from the colors beside the background
@@ -295,19 +283,3 @@ outside.node($U(), P) :- field(P, _).
 outside.seed($U(), P) :- field(P, _), dir_elem(D), dist(P, D, 0).
 
 halo($ExteriorHalo(), P) :- beside(P, _), outside.reach($U(), P).
-
-.comp Determine {
-    // The whole object of each example's input.
-    .init parse = Parse<Example>
-    parse.cell(E, P, Col) :- ex_in(E, P, Col), !params.background(Col).
-    parse.order(Dg, A) :- diag_dir_elem(Dg), axis_elem(A).
-
-    // An order that picks another color than an example's halo, the output's
-    // non-background color.
-    .decl order_contradicted(d: DiagDir, a: Axis)
-    order_contradicted(Dg, A) :-
-        parse.first_tied(E, Dg, A, Col), ex_out(E, _, C), !params.background(C), C != Col.
-
-    .decl scan_order(d: DiagDir, a: Axis)
-    scan_order(Dg, A) :- diag_dir_elem(Dg), axis_elem(A), !order_contradicted(Dg, A).
-}

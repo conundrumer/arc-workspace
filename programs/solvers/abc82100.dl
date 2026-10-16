@@ -161,146 +161,12 @@ stamp_cover_choice($StampOver()). stamp_cover_choice($KeepOnTop()).
 .decl keyless_choice(k: Keyless)
 keyless_choice($KeepKeyless()). keyless_choice($EraseKeyColor()).
 
-// The legends of each reading and the stamps they write, under every key
-// order and every reading order.
-.comp Parse<Key> {
-    .type Shape = [ky: Key, id: Ident]
-    .type KeyScan = [ky: Key, dc: DominoColors, s: KeySite, id: Ident, corner: DiagDir, axis: Axis]
-    .type Scan = [ky: Key, corner: DiagDir, axis: Axis]
-
-    .decl cell(ky: Key, p: Position, col: Color)
-
-    // The key orders in use.
-    .decl key_order(ky: Key, c: DiagDir, a: Axis)
-
-    // @claim legend-shape
-    .init shape = Components8<Key>
-    shape.node(Ky, P) :- cell(Ky, P, Col), params.key(Col).
-
-    // A cell in a domino color: neither the background nor the key.
-    .decl ink(ky: Key, p: Position)
-    ink(Ky, P) :- cell(Ky, P, Col), !params.bg(Col), !params.key(Col).
-
-    // Near cell N and far cell F one step from N toward D, both ink, and the
-    // anchor A one step from N away from F.
-    .decl ink_pair(ky: Key, a: Position, n: Position, f: Position, d: Dir)
-    ink_pair(Ky, A, N, F, D) :-
-        ink(Ky, N), opposite(D, D_back), neighbor(N, D, F), ink(Ky, F), neighbor(N, D_back, A).
-
-    // The dominoes under each domino-color reading.
-    .decl domino(ky: Key, dc: DominoColors, a: Position, n: Position, f: Position, d: Dir)
-
-    // The dominoes each key-site reading takes as keys of shape Id.
-    .decl key_domino(ky: Key, dc: DominoColors, s: KeySite,
-                     id: Ident, a: Position, n: Position, f: Position)
-
-    // The legends each reading forms, at open value ko of the key order
-    // where the reading reads it.
-    .decl legend(ky: Key, dc: DominoColors, s: KeySite, k: KeysPerShape, ko: KeyOrderValue,
-                 id: Ident, a: Position, n: Position, f: Position)
-
-    // The cells a legend holds: its shape, near, and far cells.
-    .decl legend_cell(ky: Key, dc: DominoColors, s: KeySite, k: KeysPerShape, ko: KeyOrderValue,
-                      p: Position)
-    legend_cell(Ky, Dc, S, K, Ko, P) :-
-        legend(Ky, Dc, S, K, Ko, Id, _, N, F), ( shape.label(Ky, P, Id) ; P = N ; P = F ).
-
-    // Legend (Id, N) writes its target color Tg at T.
-    .decl write(ky: Key, dc: DominoColors, s: KeySite, k: KeysPerShape, ko: KeyOrderValue,
-                t: Position, id: Ident, n: Position, tg: Color)
-    write(Ky, Dc, S, K, Ko, T, Id, N, Tg) :-
-        legend(Ky, Dc, S, K, Ko, Id, A, N, F), cell(Ky, F, Col), cell(Ky, N, Tg),
-        cell(Ky, P, Col), !legend_cell(Ky, Dc, S, K, Ko, P),   // a scene cell of the source color
-        shape.label(Ky, X, Id), relative(A, X, V), compose(P, V, T).
-
-    // --- $TwoColors ---
-    domino(Ky, $TwoColors(), A, N, F, D) :-
-        ink_pair(Ky, A, N, F, D), cell(Ky, N, Col), cell(Ky, F, Col_f), Col != Col_f.
-
-    // --- $SameColorDomino ---
-    domino(Ky, $SameColorDomino(), A, N, F, D) :- ink_pair(Ky, A, N, F, D).
-
-    // --- $BoxSide, $CenterLine ---
-    // @claim key-site
-    .init hull = Bbox<Shape>
-    hull.cell([Ky, Id], P) :- shape.label(Ky, P, Id).
-
-    // The anchor lies on the box side facing the domino.
-    .decl side_key(ky: Key, dc: DominoColors, id: Ident,
-                   a: Position, n: Position, f: Position, d: Dir)
-    side_key(Ky, Dc, Id, A, N, F, D) :-
-        domino(Ky, Dc, A, N, F, D), hull.box([Ky, Id], B), box_edge(A, B, D).
-
-    // --- $BoxSide ---
-    key_domino(Ky, Dc, $BoxSide(), Id, A, N, F) :- side_key(Ky, Dc, Id, A, N, F, _).
-
-    // --- $CenterLine ---
-    key_domino(Ky, Dc, $CenterLine(), Id, A, N, F) :-
-        side_key(Ky, Dc, Id, A, N, F, D), hull.box([Ky, Id], B), crop(A, B, A_rel),
-        perp_dir(D, E), dist_pair(A_rel, E, K, K).     // centered across D
-
-    // --- $AnchorTouch ---
-    key_domino(Ky, Dc, $AnchorTouch(), Id, A, N, F) :-
-        domino(Ky, Dc, A, N, F, _), cell(Ky, A, Col), ( params.bg(Col) ; params.key(Col) ),
-        ( shape.label(Ky, A, Id) ; shape.label(Ky, Q, Id), neighbor(Q, _, A) ).
-
-    // --- $EveryKey ---
-    legend(Ky, Dc, S, $EveryKey(), nil, Id, A, N, F) :- key_domino(Ky, Dc, S, Id, A, N, F).
-
-    // --- $FirstKey ---
-    // The near cells of a shape's keys, in each order.
-    // @claim key-site
-    .init key_scan = LexOrder<KeyScan>
-    key_scan.corner([Ky, Dc, S, Id, C, A], C) :- key_scan.cell([Ky, Dc, S, Id, C, A], _).
-    key_scan.axis([Ky, Dc, S, Id, C, A], A) :- key_scan.cell([Ky, Dc, S, Id, C, A], _).
-    key_scan.cell([Ky, Dc, S, Id, C, A], N) :-
-        key_domino(Ky, Dc, S, Id, _, N, _), diag_dir_elem(C), axis_elem(A).
-
-    // The first key of each shape under each key order in use.
-    legend(Ky, Dc, S, $FirstKey(), [C, A_k], Id, A, N, F) :-
-        key_order(Ky, C, A_k), key_scan.first([Ky, Dc, S, Id, C, A_k], N),
-        key_domino(Ky, Dc, S, Id, A, N, F).
-
-    // --- $ScanOrder ---
-    // The shape cells and near cells, in each order.
-    // @claim stamp
-    .init layer = LexOrder<Scan>
-    layer.corner([Ky, C, A], C) :- layer.cell([Ky, C, A], _).
-    layer.axis([Ky, C, A], A) :- layer.cell([Ky, C, A], _).
-    layer.cell([Ky, C, A], P) :-
-        ( shape.label(Ky, P, _) ; key_domino(Ky, _, _, _, _, P, _) ), diag_dir_elem(C), axis_elem(A).
-
-    // Some cell of shape Id comes before P.
-    .decl trailing(ky: Key, c: DiagDir, a: Axis, id: Ident, p: Position)
-    trailing(Ky, C, A, Id, P) :-
-        shape.label(Ky, P, Id), shape.label(Ky, Q, Id), layer.before([Ky, C, A], Q, P).
-
-    // The first cell of each shape.
-    .decl lead(ky: Key, c: DiagDir, a: Axis, id: Ident, p: Position)
-    lead(Ky, C, A, Id, P) :-
-        shape.label(Ky, P, Id), layer.elem([Ky, C, A], P), !trailing(Ky, C, A, Id, P).
-
-    // A later legend also writes T.
-    .decl buried(ky: Key, dc: DominoColors, s: KeySite, k: KeysPerShape, ko: KeyOrderValue,
-                 c: DiagDir, a: Axis, t: Position, id: Ident, n: Position)
-    buried(Ky, Dc, S, K, Ko, C, A, T, Id, N) :-
-        write(Ky, Dc, S, K, Ko, T, Id, N, _), write(Ky, Dc, S, K, Ko, T, Id2, N2, _),
-        lead(Ky, C, A, Id, P), lead(Ky, C, A, Id2, P2),
-        ( layer.before([Ky, C, A], P, P2)                  // a later shape
-        ; Id = Id2, layer.before([Ky, C, A], N, N2)        // the same shape, a later near cell
-        ).
-}
-
-.init parse = Parse<Unit>
-parse.cell($U(), P, Col) :- in(P, Col).
-parse.key_order($U(), C, A) :- params.key_order(C, A).
-
 .decl cleared(dc: DominoColors, s: KeySite, k: KeysPerShape, ko: KeyOrderValue, kl: Keyless,
               p: Position)
 cleared(Dc, S, K, Ko, Kl, P) :-
     keyless_choice(Kl),
-    ( parse.legend_cell($U(), Dc, S, K, Ko, P)
-    ; parse.legend($U(), Dc, S, K, Ko, _, _, _, F), in(F, Col), in(P, Col)   // a source color
+    ( legend_cell(Dc, S, K, Ko, P)
+    ; legend(Dc, S, K, Ko, _, _, _, F), in(F, Col), in(P, Col)   // a source color
     ).
 
 // The open values of the key order each keys-per-shape reading is derived
@@ -325,6 +191,128 @@ out(P, Col, [Dc, S, K, O, C, Kl], [Ko, Lo]) :-
     ; !shown(Dc, S, K, O, C, Kl, [Ko, Lo], P, _), !cleared(Dc, S, K, Ko, Kl, P), Col = Col_in
     ).
 
+// The legends of each reading and the stamps they write, under every key
+// order and every reading order.
+.type Shape = [id: Ident]
+.type KeyScan = [dc: DominoColors, s: KeySite, id: Ident, corner: DiagDir, axis: Axis]
+.type Scan = [corner: DiagDir, axis: Axis]
+
+// @claim legend-shape
+.init shape = Components8<Unit>
+shape.node($U(), P) :- in(P, Col), params.key(Col).
+
+// A cell in a domino color: neither the background nor the key.
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.bg(Col), !params.key(Col).
+
+// Near cell N and far cell F one step from N toward D, both ink, and the
+// anchor A one step from N away from F.
+.decl ink_pair(a: Position, n: Position, f: Position, d: Dir)
+ink_pair(A, N, F, D) :-
+    ink(N), opposite(D, D_back), neighbor(N, D, F), ink(F), neighbor(N, D_back, A).
+
+// The dominoes under each domino-color reading.
+.decl domino(dc: DominoColors, a: Position, n: Position, f: Position, d: Dir)
+
+// The dominoes each key-site reading takes as keys of shape Id.
+.decl key_domino(dc: DominoColors, s: KeySite,
+                 id: Ident, a: Position, n: Position, f: Position)
+
+// The legends each reading forms, at open value ko of the key order
+// where the reading reads it.
+.decl legend(dc: DominoColors, s: KeySite, k: KeysPerShape, ko: KeyOrderValue,
+             id: Ident, a: Position, n: Position, f: Position)
+
+// The cells a legend holds: its shape, near, and far cells.
+.decl legend_cell(dc: DominoColors, s: KeySite, k: KeysPerShape, ko: KeyOrderValue,
+                  p: Position)
+legend_cell(Dc, S, K, Ko, P) :-
+    legend(Dc, S, K, Ko, Id, _, N, F), ( shape.label($U(), P, Id) ; P = N ; P = F ).
+
+// Legend (Id, N) writes its target color Tg at T.
+.decl write(dc: DominoColors, s: KeySite, k: KeysPerShape, ko: KeyOrderValue,
+            t: Position, id: Ident, n: Position, tg: Color)
+write(Dc, S, K, Ko, T, Id, N, Tg) :-
+    legend(Dc, S, K, Ko, Id, A, N, F), in(F, Col), in(N, Tg),
+    in(P, Col), !legend_cell(Dc, S, K, Ko, P),   // a scene cell of the source color
+    shape.label($U(), X, Id), relative(A, X, V), compose(P, V, T).
+
+// --- $TwoColors ---
+domino($TwoColors(), A, N, F, D) :-
+    ink_pair(A, N, F, D), in(N, Col), in(F, Col_f), Col != Col_f.
+
+// --- $SameColorDomino ---
+domino($SameColorDomino(), A, N, F, D) :- ink_pair(A, N, F, D).
+
+// --- $BoxSide, $CenterLine ---
+// @claim key-site
+.init hull = Bbox<Shape>
+hull.cell([Id], P) :- shape.label($U(), P, Id).
+
+// The anchor lies on the box side facing the domino.
+.decl side_key(dc: DominoColors, id: Ident,
+               a: Position, n: Position, f: Position, d: Dir)
+side_key(Dc, Id, A, N, F, D) :-
+    domino(Dc, A, N, F, D), hull.box([Id], B), box_edge(A, B, D).
+
+// --- $BoxSide ---
+key_domino(Dc, $BoxSide(), Id, A, N, F) :- side_key(Dc, Id, A, N, F, _).
+
+// --- $CenterLine ---
+key_domino(Dc, $CenterLine(), Id, A, N, F) :-
+    side_key(Dc, Id, A, N, F, D), hull.box([Id], B), crop(A, B, A_rel),
+    perp_dir(D, E), dist_pair(A_rel, E, K, K).     // centered across D
+
+// --- $AnchorTouch ---
+key_domino(Dc, $AnchorTouch(), Id, A, N, F) :-
+    domino(Dc, A, N, F, _), in(A, Col), ( params.bg(Col) ; params.key(Col) ),
+    ( shape.label($U(), A, Id) ; shape.label($U(), Q, Id), neighbor(Q, _, A) ).
+
+// --- $EveryKey ---
+legend(Dc, S, $EveryKey(), nil, Id, A, N, F) :- key_domino(Dc, S, Id, A, N, F).
+
+// --- $FirstKey ---
+// The near cells of a shape's keys, in each order.
+// @claim key-site
+.init key_scan = LexOrder<KeyScan>
+key_scan.corner([Dc, S, Id, C, A], C) :- key_scan.cell([Dc, S, Id, C, A], _).
+key_scan.axis([Dc, S, Id, C, A], A) :- key_scan.cell([Dc, S, Id, C, A], _).
+key_scan.cell([Dc, S, Id, C, A], N) :-
+    key_domino(Dc, S, Id, _, N, _), diag_dir_elem(C), axis_elem(A).
+
+// The first key of each shape under each key order in use.
+legend(Dc, S, $FirstKey(), [C, A_k], Id, A, N, F) :-
+    params.key_order(C, A_k), key_scan.first([Dc, S, Id, C, A_k], N),
+    key_domino(Dc, S, Id, A, N, F).
+
+// --- $ScanOrder ---
+// The grid's cells, in each order.
+// @claim stamp
+.init layer = LexOrder<Scan>
+layer.corner([C, A], C) :- layer.cell([C, A], _).
+layer.axis([C, A], A) :- layer.cell([C, A], _).
+layer.cell([C, A], P) :- in(P, _), diag_dir_elem(C), axis_elem(A).
+
+// Some cell of shape Id comes before P.
+.decl trailing(c: DiagDir, a: Axis, id: Ident, p: Position)
+trailing(C, A, Id, P) :-
+    shape.label($U(), P, Id), shape.label($U(), Q, Id), layer.before([C, A], Q, P).
+
+// The first cell of each shape.
+.decl lead(c: DiagDir, a: Axis, id: Ident, p: Position)
+lead(C, A, Id, P) :-
+    shape.label($U(), P, Id), layer.elem([C, A], P), !trailing(C, A, Id, P).
+
+// A later legend also writes T.
+.decl buried(dc: DominoColors, s: KeySite, k: KeysPerShape, ko: KeyOrderValue,
+             c: DiagDir, a: Axis, t: Position, id: Ident, n: Position)
+buried(Dc, S, K, Ko, C, A, T, Id, N) :-
+    write(Dc, S, K, Ko, T, Id, N, _), write(Dc, S, K, Ko, T, Id2, N2, _),
+    lead(C, A, Id, P), lead(C, A, Id2, P2),
+    ( layer.before([C, A], P, P2)                  // a later shape
+    ; Id = Id2, layer.before([C, A], N, N2)        // the same shape, a later near cell
+    ).
+
 // --- $EveryKey ---
 key_value($EveryKey(), nil).
 
@@ -333,19 +321,19 @@ key_value($FirstKey(), [C, A]) :- params.key_order(C, A).
 
 // --- $EraseKeyColor ---
 cleared(Dc, S, K, Ko, $EraseKeyColor(), P) :-
-    domino_colors_choice(Dc), key_site_choice(S), key_value(K, Ko), parse.shape.label($U(), P, _).
+    domino_colors_choice(Dc), key_site_choice(S), key_value(K, Ko), shape.label($U(), P, _).
 
 // --- $Unordered ---
 layer_value($Unordered(), nil).
 
-paint(Dc, S, K, $Unordered(), [Ko, nil], T, Col) :- parse.write($U(), Dc, S, K, Ko, T, _, _, Col).
+paint(Dc, S, K, $Unordered(), [Ko, nil], T, Col) :- write(Dc, S, K, Ko, T, _, _, Col).
 
 // --- $ScanOrder ---
 layer_value($ScanOrder(), [C, A]) :- params.layer_order(C, A).
 
 paint(Dc, S, K, $ScanOrder(), [Ko, [C, A]], T, Col) :-
-    parse.write($U(), Dc, S, K, Ko, T, Id, N, Col), params.layer_order(C, A),
-    !parse.buried($U(), Dc, S, K, Ko, C, A, T, Id, N).
+    write(Dc, S, K, Ko, T, Id, N, Col), params.layer_order(C, A),
+    !buried(Dc, S, K, Ko, C, A, T, Id, N).
 
 // --- $StampOver ---
 shown(Dc, S, K, O, $StampOver(), Kl, V, T, Col) :-
@@ -361,31 +349,3 @@ kept(Dc, S, K, Ko, Kl, P) :-
 
 shown(Dc, S, K, O, $KeepOnTop(), Kl, [Ko, Lo], T, Col) :-
     paint(Dc, S, K, O, [Ko, Lo], T, Col), keyless_choice(Kl), !kept(Dc, S, K, Ko, Kl, T).
-
-.comp Determine {
-    .init parse = Parse<Example>
-    parse.cell(E, P, Col) :- ex_in(E, P, Col).
-
-    // Under key order (C, A), a shape's first key keeps its far cell's color.
-    .decl key_contradicted(c: DiagDir, a: Axis)
-    key_contradicted(C, A) :-
-        parse.key_scan.first([E, $TwoColors(), $BoxSide(), Id, C, A], N),
-        parse.key_domino(E, $TwoColors(), $BoxSide(), Id, _, N, F),
-        ex_in(E, F, Col), ex_out(E, F, Col).
-
-    .decl key_order(c: DiagDir, a: Axis)
-    key_order(C, A) :- diag_dir_elem(C), axis_elem(A), !key_contradicted(C, A).
-
-    // Under layer order (C, A), a cell shows another stamp's color in place
-    // of the top stamp's.
-    .decl layer_contradicted(c: DiagDir, a: Axis)
-    layer_contradicted(C, A) :-
-        parse.write(E, $TwoColors(), $BoxSide(), $EveryKey(), nil, T, Id, N, Col),
-        !parse.buried(E, $TwoColors(), $BoxSide(), $EveryKey(), nil, C, A, T, Id, N),
-        diag_dir_elem(C), axis_elem(A),
-        ex_out(E, T, Col_out), Col_out != Col,
-        parse.write(E, $TwoColors(), $BoxSide(), $EveryKey(), nil, T, _, _, Col_out).
-
-    .decl layer_order(c: DiagDir, a: Axis)
-    layer_order(C, A) :- diag_dir_elem(C), axis_elem(A), !layer_contradicted(C, A).
-}

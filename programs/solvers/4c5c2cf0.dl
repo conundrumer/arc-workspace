@@ -93,6 +93,9 @@ out(P, Col, Ch) :- in(P, _), pivot(_, Ch), !copy(P, _, Ch), params.bg(Col).
     .decl pivot(e: Example, col: Color)
     pivot(E, Col) :- shape_cell(E, Col, _), ex_out(E, _, _), !gained(E, Col).
 
+    // @ignore: determine prediction — the test runs no step of the program at
+    //  the shape: it reads the cells of the shape whose color the output adds
+    //  no cell of
     .decl pivot_shape(p: Position)
     pivot_shape(P_inner) :-
         pivot(E, Col), shape_cell(E, Col, P),

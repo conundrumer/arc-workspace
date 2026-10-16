@@ -129,6 +129,23 @@ out(P_grid_out, Col, Ch) :-
     cell(_, _, _, P_grid_out), impl_choice(Ch), !paint(P_grid_out, Ch), params.bg(Col).
 
 .comp Determine {
+    // The outputs' own symmetries, per example.
+    .init grid_map = D4Map<Example, Color>
+    grid_map.src(E, P_grid_out, Col) :- ex_out(E, P_grid_out, Col).
+    grid_map.dst(E, P_grid_out, Col) :- ex_out(E, P_grid_out, Col).
+
+    // A transform some output breaks.
+    .decl broken(d: D4)
+    broken(D) :- ex_out(E, _, _), d4_elem(D), !grid_map.map(E, D).
+
+    // The named subgroup matching the transforms every output holds.
+    .init sym_id = KeyedSetCompare<Unit, Sym, D4>
+    sym_id.pattern_member(S, D) :- sym_member(S, D).
+    sym_id.observed_member($U(), D) :- d4_elem(D), !broken(D).
+
+    .decl sym(s: Sym)
+    sym(S) :- sym_id.equals($U(), S).
+
     // The output's quadrants, each in its own frame.
     .decl tile_cell(e: Example, p_tile: Position, p_intile: Position, col: Color)
     tile_cell(E, P_tile, P_intile, Col) :-

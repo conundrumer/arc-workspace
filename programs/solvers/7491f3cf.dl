@@ -108,20 +108,22 @@ out(P, Col) :-
     ; !out_cell(P, _), in(P, Col)                    // the rest stands
     ).
 
+.type ExTile = [e: Example, p_tile: Position]
+
 .comp Determine {
     .init ex = Parse<Example>
     ex.cell(E, P, Col) :- ex_in(E, P, Col).
 
-    // A panel the output repaints.
-    .decl repainted(e: Example, p_tile: Position)
-    repainted(E, T) :-
-        ex.frame.tile_of(E, P, T), ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+    // The blank panel is one color.
+    .init panel_color = Unanimous<ExTile, Color>
+    panel_color.item([E, T], Col) :- ex.panel_cell(E, T, _, Col).
 
-    .decl kept(p_tile: Position)
-    kept(T) :- ex_out(E, _, _), ex.frame.tile_of(E, _, T), !repainted(E, T).
+    // A panel that some input inks.
+    .decl inked(p_tile: Position)
+    inked(T) :- ex.frame.tile_of(E, _, T), !panel_color.value([E, T], _).
 
     .decl out_tile(p_tile: Position)
-    out_tile(T) :- repainted(_, T), !kept(T).
+    out_tile(T) :- ex.frame.tile_of(_, _, T), !inked(T).
 
     ex.ground(E, Col) :- out_tile(T), ex.panel_cell(E, T, _, Col).
 
@@ -138,6 +140,7 @@ out(P, Col) :-
     .decl pattern(p_tile: Position)
     pattern(T) :- ex.frame.tile_of(_, _, T), !mask_tile(T), !out_tile(T).
 
+    // @workaround: no determination of top_tile, so that a proposer and the fit give it, once the joint enumeration of top_tile and under_tile is within the plan's limit
     // A pattern panel that the painted marker's side contradicts.
     .decl not_top(p_tile: Position)
     not_top(T) :-
@@ -148,6 +151,8 @@ out(P, Col) :-
     .decl top_tile(p_tile: Position)
     top_tile(T) :- pattern(T), !not_top(T).
 
+    // @ignore: determine prediction — the test runs no step of the program at
+    //  the panel: it keeps the pattern panel that is not the top one
     .decl under_tile(p_tile: Position)
     under_tile(T) :- pattern(T), !top_tile(T).
 }

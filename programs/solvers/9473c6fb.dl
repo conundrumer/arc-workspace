@@ -99,10 +99,12 @@ out(P, Col, Ch) :-
 
     // --- the order and the cycle, per candidate corner ---
 
+    // The output keeps each mark where it is, so the parse reads the marks
+    // off the outputs.
     // @ignore corner: head-repeat — the key is the candidate corner the examples test, and its corner is the corner the parse ranks from
     .init parse = Parse<ExDiag>
-    parse.cell([E, Diag], P, Col) :- diag_dir_elem(Diag), ex_in(E, P, Col).
-    parse.corner([E, Diag], Diag) :- diag_dir_elem(Diag), ex_in(E, _, _).
+    parse.cell([E, Diag], P, Col) :- diag_dir_elem(Diag), ex_out(E, P, Col).
+    parse.corner([E, Diag], Diag) :- diag_dir_elem(Diag), ex_out(E, _, _).
 
     // The direction whose ranking is well defined: no two marks tie on it.
     .decl rank_dir(e: Example, diag: DiagDir, d: Dir)
@@ -119,6 +121,11 @@ out(P, Col, Ch) :-
 
     .decl order_corner(d: DiagDir)
     order_corner(Diag) :- diag_dir_elem(Diag), !corner_defect(Diag).
+
+    .decl cycle_start(c: Color)
+    cycle_start(Col) :-
+        order_corner(Diag), rank_dir(E, Diag, D),
+        parse.order.first([[E, Diag], D], P), ex_out(E, P, Col).
 
     .decl cycle_succ(c: Color, c_next: Color)
     cycle_succ(Col, Col2) :-

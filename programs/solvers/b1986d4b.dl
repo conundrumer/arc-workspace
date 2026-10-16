@@ -174,10 +174,12 @@ out(P, Col) :-
     .init ex = Parse<Example>
     ex.cell(E, P, Col) :- ex_in(E, P, Col).
 
-    // An output corner cell that is background: the squares sit in another
-    // corner.
+    // An output corner cell whose color another corner of the output shows:
+    // the background, which fills every corner but the squares' own.
     .decl blank_corner(diag: DiagDir)
-    blank_corner(Diag) :- ex_out(E, P, Col), ex.bg(E, Col), corner_dist(P, Diag, 0).
+    blank_corner(Diag) :-
+        ex_out(E, P, Col), corner_dist(P, Diag, 0),
+        ex_out(E, Q, Col), corner_dist(Q, Diag2, 0), Diag2 != Diag.
 
     .decl corner(d: DiagDir)
     corner(Diag) :- diag_dir_elem(Diag), !blank_corner(Diag).

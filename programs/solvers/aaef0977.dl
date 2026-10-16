@@ -134,6 +134,11 @@ out(P, Col, $LastSeed(), [[C, A]]) :-
         parse.taxicab(E, P, S, K), parse.taxicab(E, Q, S, K),
         ex_out(E, P, C), ex_out(E, Q, C2), C != C2.
 
+    // A scan order whose last seed keeps its color in the output, as the
+    // rings' center does.
+    .decl scan_kept(d: DiagDir, a: Axis)
+    scan_kept(D, A) :- parse.scan.last([E, D, A], S), parse.seed(E, S, Col), ex_out(E, S, Col).
+
     .decl scan_order(d: DiagDir, a: Axis)
-    scan_order(D, A) :- diag_dir_elem(D), axis_elem(A), !scan_contradicted(D, A).
+    scan_order(D, A) :- scan_kept(D, A), !scan_contradicted(D, A).
 }

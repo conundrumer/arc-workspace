@@ -398,54 +398,24 @@ out(P, Col, Ch, V) :-
     case_value(Ch, V), !unsettled(Ch, V), in(P, Col), !painted(Ch, V, P).
 
 .comp Determine {
-    .type ExOrder = [e: Example, dp: Dir]
-
     // Train pairs only: the ex_out atom holds the test inputs out.
     .init parse = Parse<Example>
     parse.cell(E, P) :- ex_in(E, P, Col), params.hole_color(Col), ex_out(E, _, _).
     parse.order(E, Dp) :- ex_out(E, _, _), dir_elem(Dp).
 
-    .decl painted(e: Example, p: Position)
-    painted(E, P) :- ex_out(E, P, Col), params.paint_color(Col).
+    // --- pick_dir: the painted run holds the corner cell the reading picks ---
 
-    // A run with a cell the output leaves unpainted.
-    .decl unpainted(sg: Ident)
-    unpainted(Sg) :- parse.segment(E, $Run(), Sg, _, P), !painted(E, P).
+    // A painted cell that the reading from edge Dp picks first at a corner
+    // of the anchor edge.
+    .decl anchored(e: Example, dp: Dir)
+    anchored(E, Dp) :-
+        ex_out(E, P, Col), params.paint_color(Col),  // a painted cell
+        anchor($EdgeCorners(), Dc), parse.first_cell.first([E, Dp, Dc], P).
 
-    // --- tie_dir: the painted run is along it whenever a run along it ties ---
-
-    .init longest = ArgExtremes<Example, Ident>
-    longest.cand(E, Sg, N) :- parse.segment(E, $Run(), Sg, _, _), parse.seg_len.tally(Sg, N).
-
-    .decl tie_dir_defect(da: DiagAxis)
-    tie_dir_defect(V) :-
-        longest.high(E, Sg, _), !unpainted(Sg),              // the painted run
-        parse.segment(E, _, Sg, DA, _), diag_perp(DA, V),    // lies across V
-        longest.high(E, Sg2, _), parse.segment(E, _, Sg2, V, _).  // while a run along V ties
-
-    .decl tie_dir(da: DiagAxis)
-    tie_dir(V) :- diag_axis_elem(V), !tie_dir_defect(V).
-
-    // --- pick_dir: the anchored runs of the order give the painted run ---
-
-    // The runs through the cells the order picks at the corners of the anchor edge.
-    .init anchor_longest = ArgExtremes<ExOrder, Ident>
-    anchor_longest.cand([E, Dp], Sg, N) :-
-        anchor($EdgeCorners(), Dc), diag_axis_of(Dc, DA), parse.first_cell.first([E, Dp, Dc], P),
-        parse.segment(E, $Run(), Sg, DA, P), parse.seg_len.tally(Sg, N).
-
-    .init anchor_nearest = ArgExtremes<ExOrder, Ident>
-    anchor_nearest.cand(O, Sg, K) :- anchor_longest.high(O, Sg, _), parse.center.low(Sg, K).
-
-    .init anchor_pick = Unanimous<ExOrder, Ident>
-    anchor_pick.item(O, Sg) :- anchor_nearest.high(O, Sg, _).
-
-    .decl order_ok(e: Example, dp: Dir)
-    order_ok(E, Dp) :- anchor_pick.value([E, Dp], Sg), !unpainted(Sg).
-
+    // A trained example whose painted cells hold no such cell.
     .decl order_defect(dp: Dir)
-    order_defect(Dp) :- parse.order(E, Dp), !order_ok(E, Dp).
+    order_defect(Dp) :- anchored(_, Dp), ex_out(E, _, _), !anchored(E, Dp).
 
     .decl pick_dir(d: Dir)
-    pick_dir(Dp) :- dir_elem(Dp), !order_defect(Dp).
+    pick_dir(Dp) :- anchored(_, Dp), !order_defect(Dp).
 }

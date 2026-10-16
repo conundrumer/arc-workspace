@@ -56,44 +56,25 @@ out(P_out, Col, $Window()) :-
     .decl ex_box_cell(e: Example, p_box: Position, col: Color)
     ex_box_cell(E, P_box, Col) :- ex_in(E, P, Col), ex_box.box(E, B), crop(P, B, P_box).
 
-    // A tile of the box cut N by N, with its cells in the tile's frame.
-    .decl tile_cell(e: Example, n: number, p_tile: Position, p_inner: Position, col: Color)
-    tile_cell(E, N, P_tile, P_inner, Col) :-
-        ex_box_cell(E, P_box, Col), axis_elem(A), sub_extent(P_box, A, N),
-        divide_2d(P_box, N, 0, P_tile, P_inner).
+    // Where each output occurs in its box, as a window of the box's frame.
+    .init seat = Occurrences<Example, Color>
+    seat.cell(E, P_box, Col) :- ex_box_cell(E, P_box, Col).
+    seat.shape(E, Q, Col) :- ex_out(E, Q, Col), ex_box.box(E, _).
 
-    .decl half_cand(n: number, p_tile: Position)
-    half_cand(N, P_tile) :- tile_cell(_, N, P_tile, _, _).
-
-    // Some example whose output and the candidate tile differ.
-    .decl half_defect(n: number, p_tile: Position)
-    half_defect(N, P_tile) :-
-        half_cand(N, P_tile), ex_out(E, Q, Col),
-        !tile_cell(E, N, P_tile, Q, Col).
-    half_defect(N, P_tile) :-
-        tile_cell(E, N, P_tile, P_inner, Col), ex_out(E, _, _),
-        !ex_out(E, P_inner, Col).
-
-    .decl out_tile_at(n: number, p_tile: Position)
-    out_tile_at(N, P_tile) :- half_cand(N, P_tile), !half_defect(N, P_tile).
-
+    // The tile count, on each axis, that cuts the box into tiles of the output's extents.
     .decl divisor(n: number)
-    divisor(N) :- out_tile_at(N, _).
+    divisor(N) :-
+        ex_box_cell(E, P_box, _), axis_elem(A), sub_extent(P_box, A, N),
+        divide_2d(P_box, N, 0, _, P_inner),
+        ex_out(E, Q, _), axis_dims(P_inner, A, K1, K2), axis_dims(Q, A, K1, K2).
 
+    // The tile the output's window is.
     .decl out_tile(p_tile: Position)
-    out_tile(P_tile) :- out_tile_at(_, P_tile).
+    out_tile(P_tile) :-
+        seat.occurrence(E, M), ex_box_cell(E, P_box, _), crop(P_box, M, P_rel),
+        divisor(N), divide_2d(P_box, N, 0, P_tile, P_rel).
 
-    // Some example whose output is not the window at the corner.
-    .decl corner_defect(d: DiagDir)
-    corner_defect(Diag) :-
-        diag_dir_elem(Diag), ex_out(E, Q, Col), ex_box.box(E, _),
-        !window_cell(E, Diag, Q, Col).
-
-    .decl window_cell(e: Example, d: DiagDir, q: Position, col: Color)
-    window_cell(E, Diag, Q, Col) :-
-        ex_out(E, Q, _), diag_dir_elem(Diag),
-        ex_box_cell(E, P_box, Col), corner_anchor(Diag, P_box, Q).
-
+    // The box corner the output's window touches.
     .decl corner(d: DiagDir)
-    corner(Diag) :- diag_dir_elem(Diag), !corner_defect(Diag).
+    corner(Diag) :- seat.occurrence(_, M), corner_dist(M, Diag, 0).
 }

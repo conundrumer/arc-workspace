@@ -115,4 +115,8 @@ out(P, Col, $Ink(Dc)) :- front_ink.low([Dc, P], Col, _).
 
     .decl ink_rank(c: Color, r: number)
     ink_rank(Col, R) :- tile_ink(_, T, _, Col), prio(T, R).
+
+    // The tile is the output frame.
+    .decl tile_dim(k: number)
+    tile_dim(K) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, K).
 }

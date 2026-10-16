@@ -61,13 +61,25 @@ out(P, Col) :- in(P, Col), !paint(P, _).
     .init ex = Parse<Example>
     ex.cell(E, P, Col) :- ex_in(E, P, Col).
 
-    // A D4 some example refutes: it lands a stamp cell on a different color.
-    .decl refuted(col_mark: Color, d: D4)
-    refuted(M, D) :-
-        ex.lone(E, P, M), ex.footprint(E, M, V, Col),   // a bare marker and a cell of its stamp
-        d4_elem(D), apply(D, V, V2), compose(P, V2, Q), // placed under a candidate D4
-        ex_out(E, Q, Col2), Col2 != Col.                // the output disagrees
+    .type Marker = [e: Example, p: Position]
 
+    // Each bare marker's stamp, and the output about that marker, both as
+    // displacements from the marker.
+    .init stamp = D4Map<Marker, Color>
+    stamp.src([E, P], V, Col) :- ex.lone(E, P, M), ex.footprint(E, M, V, Col), ex_out(E, _, _).
+    stamp.dst([E, P], V, Col) :- ex.lone(E, P, _), ex_out(E, Q, Col), relative(P, Q, V).
+
+    // A D4 that carries a marker's stamp onto the output about that marker.
+    .decl carries(col: Color, d: D4)
+    carries(M, D) :- ex.lone(E, P, M), stamp.compatible([E, P], D).
+
+    // A marker of that color whose stamp that D4 does not carry.
+    .decl uncarried(col: Color, d: D4)
+    uncarried(M, D) :-
+        carries(M, D), stamp.src([E, P], _, _), ex.lone(E, P, M),   // a solved marker of that color
+        !stamp.compatible([E, P], D).
+
+    // The D4 that carries the stamp of every marker of its color.
     .decl stamp_d4(col: Color, d: D4)
-    stamp_d4(M, D) :- ex.footprint(_, M, _, _), d4_elem(D), !refuted(M, D).
+    stamp_d4(M, D) :- carries(M, D), !uncarried(M, D).
 }

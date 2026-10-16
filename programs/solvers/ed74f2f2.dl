@@ -111,21 +111,9 @@ out(P, Col, Ch) :-
 out(P, C, Ch) :- target(Ch, P, C), params.bg(C).                // bg passes through
 
 .comp Determine {
-    // A cell of the tile where the input's ink and the output's ink part.
-    .decl misfit(p_tile: Position)
-    misfit(P_tile) :-
-        ex_in(E, P_grid, C), params.decompose(P_grid, P_tile, P_intile),
-        ex_out(E, P_intile, C2),
-        ( params.bg(C), !params.bg(C2)
-        ; !params.bg(C), params.bg(C2) ).
-
-    // The output repaints the tile whose ink it keeps on every example.
-    .decl target_tile(p: Position)
-    target_tile(P_tile) :- params.decompose(_, P_tile, _), !misfit(P_tile).
-
-    // The key is the other tile.
+    // The key is the tile other than the target.
     .decl key_tile(p: Position)
-    key_tile(P_tile) :- params.decompose(_, P_tile, _), !target_tile(P_tile).
+    key_tile(P_tile) :- params.decompose(_, P_tile, _), !params.target_tile(P_tile).
 
     // The key tile's content, per example.
     .decl key_content(e: Example, p_intile: Position, col: Color)

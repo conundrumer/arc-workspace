@@ -141,15 +141,20 @@ out(P_intile, Col, [Cut, Pk]) :-
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
 
-    // A pair of places some output refutes: a shape cell there carries
-    // another color in its example's output.
+    // A pair of places some output shows: a shape cell there carries its
+    // own color in its example's output.
+    .decl shown(p_panel: Position, p_shape: Position)
+    shown(P_panel, P_shape) :-
+        parse.place(E, _, P_intile, Col, P_panel, P_shape), ex_out(E, P_intile, Col).
+
+    // A shown pair some output refutes: a shape cell there carries another
+    // color in its example's output.
     .decl refuted(p_panel: Position, p_shape: Position)
     refuted(P_panel, P_shape) :-
+        shown(P_panel, P_shape),
         parse.place(E, _, P_intile, Col, P_panel, P_shape),
         ex_out(E, P_intile, Col2), Col2 != Col.
 
     .decl pick(p_panel: Position, p_shape: Position)
-    pick(P_panel, P_shape) :-
-        parse.place(E, _, _, _, P_panel, P_shape), ex_out(E, _, _),
-        !refuted(P_panel, P_shape).
+    pick(P_panel, P_shape) :- shown(P_panel, P_shape), !refuted(P_panel, P_shape).
 }

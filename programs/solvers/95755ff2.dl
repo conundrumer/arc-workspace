@@ -69,8 +69,11 @@ cast.cell([$Span(), D], P) :- axis_of(D, A), span.between(A, P).
     .decl changed(e: Example, p: Position)
     changed(E, P) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
 
+    .decl bg(c: Color)
+    bg(Col) :- changed(E, P), ex_in(E, P, Col).
+
     .decl cand(c: Color)
-    cand(Col) :- ex_in(_, _, Col).
+    cand(Col) :- ex_in(_, _, Col), !params.bg(Col).
 
     .type ExColor = [e: Example, c: Color]
 
@@ -78,11 +81,10 @@ cast.cell([$Span(), D], P) :- axis_of(D, A), span.between(A, P).
     .init closed = Closed<ExColor>
     closed.cell([E, Col], P) :- ex_in(E, P, Col_cell), cand(Col), Col_cell != Col.
 
-    // A candidate the pairs contradict: a painted cell its cells leave open
-    // to the grid edge.
-    .decl leaks(c: Color)
-    leaks(Col) :- cand(Col), changed(E, P), !closed.region([E, Col], P, _).
+    // A candidate that closes nothing off in some input.
+    .decl open(c: Color)
+    open(Col) :- cand(Col), ex_in(E, _, _), !closed.region([E, Col], _, _).
 
     .decl wall(c: Color)
-    wall(Col) :- cand(Col), !leaks(Col).
+    wall(Col) :- cand(Col), !open(Col).
 }

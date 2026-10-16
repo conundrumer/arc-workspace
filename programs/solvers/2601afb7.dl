@@ -94,3 +94,29 @@ ink(L, P, $Length()) :-
     bar_len.tally(L_next, N),                   // the size of the bar ahead
     in(P, _), axis(A), split(P, A, L, _),       // a cell on this line
     params.anchor(D), dist(P, D, K), K < N.     // among the N nearest the anchor edge
+
+.comp Determine {
+    .type EP = [e: Example, p: Position]
+
+    .init bg_count = Mode<Unit, Color, EP>
+    bg_count.item($U(), Col, [E, P]) :- ex_in(E, P, Col).
+
+    .decl bg(col: Color)
+    bg(Col) :- bg_count.mode($U(), Col).
+
+    // The bars of each input, each named by its line across color_dir.
+    .decl bar(e: Example, l: Position, p: Position)
+    bar(E, L, P) :-
+        ex_in(E, P, Col), !params.bg(Col),                      // an ink cell
+        params.color_dir(D), axis_of(D, A), split(P, A, L, _).  // the line it sits on
+
+    .decl bar_on_edge(e: Example, l: Position, d: Dir)
+    bar_on_edge(E, L, D) :- bar(E, L, P), dir_elem(D), dist(P, D, 0).
+
+    .decl anchor_bad(d: Dir)
+    anchor_bad(D) :- dir_elem(D), bar(E, L, _), !bar_on_edge(E, L, D).
+
+    // The turn that lands on an edge every bar touches.
+    .decl anchor_sense(s: Sense)
+    anchor_sense(S) :- params.color_dir(D), turn(S, D, D_anchor), !anchor_bad(D_anchor).
+}

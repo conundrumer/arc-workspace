@@ -112,3 +112,16 @@ out(P_grid, Col) :-
     ( paint(P_grid, Col)                    // a square's cell
     ; !paint(P_grid, _), params.bg(Col)     // the rest
     ).
+
+.comp Determine {
+    .decl reaches(e: Example, col: Color, d: Dir)
+    reaches(E, Col, D) :- ex_out(E, P_grid, Col), dir_elem(D), dist(P_grid, D, 0).
+
+    // A square that stops short of edge d.
+    .decl short_of(e: Example, d: Dir)
+    short_of(E, D) :- ex_out(E, _, Col), !params.bg(Col), dir_elem(D), !reaches(E, Col, D).
+
+    // The squares rest on the edge every one of them reaches.
+    .decl rest_sense(s: Sense)
+    rest_sense(S) :- params.pack_dir(D), turn(S, D, D_rest), !short_of(_, D_rest).
+}

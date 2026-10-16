@@ -437,6 +437,7 @@ out(P, Col, Ch) :-
     ).
 
 .comp Determine {
+    // @workaround: no determination of stamp_gap, so that a proposer and the fit give it, once the joint enumeration of stamp_gap and dot_step is within the plan's limit
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
 

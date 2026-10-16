@@ -107,6 +107,13 @@ moved(D, D_out, $Table()) :- params.move(D, D_out).
     .init ex = Parse<Example>
     ex.grid(E, P, Col) :- ex_in(E, P, Col).
 
+    // A ring cell's color stands, in its example's output, on the seat
+    // toward D_out.
+    .decl landed(d: Dir8, d_out: Dir8)
+    landed(D, D_out) :-
+        ex.ring(E, P_hole, D, _, Col),
+        neighbor(P_hole, D_out, P_out), ex_out(E, P_out, Col).
+
     // The move carries a ring cell's color onto a seat some example's
     // output fills with another color.
     .decl move_defect(d: Dir8, d_out: Dir8)
@@ -115,21 +122,26 @@ moved(D, D_out, $Table()) :- params.move(D, D_out).
         neighbor(P_hole, D_out, P_out), ex_out(E, P_out, Col2), Col2 != Col.
 
     .decl move(d: Dir8, d_out: Dir8)
-    move(D, D_out) :- dir8_elem(D), dir8_elem(D_out), !move_defect(D, D_out).
+    move(D, D_out) :- landed(D, D_out), !move_defect(D, D_out).
+
+    // A quarter turn in sense S carries seat D onto seat D_out.
+    .decl turned(s: Sense, d: Dir8, d_out: Dir8)
+    turned(S, D, D_out) :- rotation(S, R), apply_dir8(R, D, D_out).
 
     // A turn some example contradicts: it carries a seat of the class onto
     // a seat that example's output fills with another color.
     .decl corner_sense_defect(s: Sense)
-    corner_sense_defect(S) :-
-        rotation(S, R), apply_diag_dir(R, D, D_out), move_defect(D, D_out).
+    corner_sense_defect(S) :- turned(S, D, D_out), diag_dir_elem(D), move_defect(D, D_out).
 
+    // The turn a corner's move makes.
     .decl corner_sense(s: Sense)
-    corner_sense(S) :- sense_elem(S), !corner_sense_defect(S).
+    corner_sense(S) :-
+        move(D, D_out), diag_dir_elem(D), turned(S, D, D_out), !corner_sense_defect(S).
 
     .decl edge_sense_defect(s: Sense)
-    edge_sense_defect(S) :-
-        rotation(S, R), apply_dir(R, D, D_out), move_defect(D, D_out).
+    edge_sense_defect(S) :- turned(S, D, D_out), dir_elem(D), move_defect(D, D_out).
 
+    // The turn an edge's move makes.
     .decl edge_sense(s: Sense)
-    edge_sense(S) :- sense_elem(S), !edge_sense_defect(S).
+    edge_sense(S) :- move(D, D_out), dir_elem(D), turned(S, D, D_out), !edge_sense_defect(S).
 }

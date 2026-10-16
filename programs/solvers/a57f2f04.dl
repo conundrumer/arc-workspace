@@ -397,23 +397,45 @@ fill([Ch, X], P) :-
     parse.tile(Pn, B) :- parse.marks_box.box(Pn, B).
     parse.scan(Pn, D, A) :- parse.box.box(Pn, _), diag_dir_elem(D), axis_elem(A).
 
-    parse.moved(Pn, B, B_laid) :- parse.corner_lay(Pn, B, _, B_laid).
-    parse.lay(Pn, B) :- parse.first_color.box([Pn, _, _], B).
+    // The panel cell at the panel box's corner, in a panel that has a tile.
+    .decl corner_cell(pn: ExPanel, d: DiagDir, p: Position)
+    corner_cell(Pn, D, P) :-
+        parse.tile(Pn, _), parse.box.box(Pn, B_p), diag_dir_elem(D),
+        box_corner(P, B_p, D), parse.panel(Pn, P).
 
-    // A laid tile whose copies a train output contradicts.
-    .decl wrong(pn: ExPanel, b: Box, b_laid: Box)
-    wrong([E, X], B, B_laid) :-
-        parse.copy([E, X], B, B_laid, P, Col), parse.panel([E, X], P), ex_out(E, P, Col2), Col != Col2.
+    // The corners at which a train output shows the tile's own corner cell
+    // at the panel box's corner.
+    .decl corner_shown(pn: ExPanel, d: DiagDir)
+    corner_shown([E, X], D) :-
+        corner_cell([E, X], D, P),
+        parse.tile([E, X], B), box_corner(Q, B, D), parse.color([E, X], Q, Col),   // the tile's corner cell
+        ex_out(E, P, Col).
+
+    // A corner some train panel's output does not show so.
+    .decl anchor_missed(d: DiagDir)
+    anchor_missed(D) :-
+        corner_shown(_, D), corner_cell([E, X], D, _), ex_out(E, _, _),
+        !corner_shown([E, X], D).
 
     .decl anchor(d: DiagDir)
-    anchor(D) :- diag_dir_elem(D), !contradicted_anchor(D).
+    anchor(D) :- corner_shown(_, D), !anchor_missed(D).
 
-    .decl contradicted_anchor(d: DiagDir)
-    contradicted_anchor(D) :- parse.corner_lay(Pn, B, D, B_laid), wrong(Pn, B, B_laid).
+    // The colors a train output paints over a panel box's input cells.
+    .decl added(pn: ExPanel, col: Color)
+    added([E, X], Col) :-
+        parse.color([E, X], P, C_in), ex_out(E, P, Col), Col != C_in.
+
+    // The orders whose first mark is of a color the output paints, per panel.
+    .decl scan_shown(pn: ExPanel, d: DiagDir, a: Axis)
+    scan_shown(Pn, D, A) :-
+        parse.scan_order.first([Pn, D, A], P), parse.color(Pn, P, Col), added(Pn, Col).
+
+    // An order some train panel's first mark does not find so.
+    .decl scan_missed(d: DiagDir, a: Axis)
+    scan_missed(D, A) :-
+        scan_shown(_, D, A), parse.scan_order.first([[E, X], D, A], _), ex_out(E, _, _),
+        !scan_shown([E, X], D, A).
 
     .decl scan(d: DiagDir, a: Axis)
-    scan(D, A) :- diag_dir_elem(D), axis_elem(A), !contradicted_scan(D, A).
-
-    .decl contradicted_scan(d: DiagDir, a: Axis)
-    contradicted_scan(D, A) :- parse.first_color.box([Pn, D, A], B), wrong(Pn, B, B).
+    scan(D, A) :- scan_shown(_, D, A), !scan_missed(D, A).
 }

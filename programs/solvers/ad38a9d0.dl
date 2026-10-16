@@ -296,25 +296,4 @@ paint(Sym, P, Col, [S, K, $KeepUnknown()]) :-
     box_key_color(Key, Col) :- box_class.id([E, Id], Key), parse.piece(E, Id, P), ex_out(E, P, Col).
 
     // --- shape_sym: the groups no two keys of different colors contradict ---
-
-    .decl quarter_turn(s: Sym)
-    quarter_turn(S) :- sym_member(S, D), rotation(_, D).
-
-    // A group that moves something without a quarter turn: a matching that
-    // admits a mirror or a half turn and not every rotation.
-    .decl partial(s: Sym)
-    partial(S) :- sym_member(S, D), apply_dir(D, Dir, Dir2), Dir != Dir2, !quarter_turn(S).
-
-    .init congruent = KeyedSetCompare<Pose, Ident, Position>
-    congruent.pattern_member(Key, P) :- shape(Key, P).
-    congruent.observed_member([Key, D], Q) :- shape(Key, P), d4_elem(D), apply(D, P, Q).
-
-    // A transform of the group carries a key onto a key of another color.
-    .decl clash(s: Sym)
-    clash(S) :-
-        congruent.equals([Key, D], Key2), sym_member(S, D),
-        shape_color(Key, Col), shape_color(Key2, Col2), Col != Col2.
-
-    .decl shape_sym(s: Sym)
-    shape_sym(S) :- sym_elem(S), !partial(S), !clash(S).
 }

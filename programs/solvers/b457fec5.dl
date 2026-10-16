@@ -321,5 +321,5 @@ paint(P, Q, [H, K, C, $TailLastColor(), S]) :-
     refuted(D_head) :- head(_, D), dir_elem(D_head), !dir_of(D, _, D_head).
 
     .decl head_dir(d: Dir)
-    head_dir(D_head) :- head(_, _), dir_elem(D_head), !refuted(D_head).
+    head_dir(D_head) :- head(_, D), dir_of(D, _, D_head), !refuted(D_head).
 }

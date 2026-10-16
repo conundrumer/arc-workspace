@@ -124,27 +124,11 @@ out(P_grid, Col, $Lookup()) :-
     .init out_parse = Parse<Example>
     out_parse.cell(E, P) :- ex_out(E, P, _).
 
-    // The pattern: an input tile's non-bg content.
-    .decl src(e: Example, p_intile: Position, col: Color)
-    src(E, P_intile, Col) :-
-        ex_in(E, P_grid, Col), !params.bg(Col), in_parse.tile(E, P_grid, _, P_intile).
-
     .decl out_cell(e: Example, p_tile: Position, p_intile: Position, col: Color)
     out_cell(E, P_tile, P_intile, Col) :-
         ex_out(E, P_grid, Col), out_parse.tile(E, P_grid, P_tile, P_intile).
 
     .type TileK = [e: Example, p_tile: Position]
-
-    // The pattern must map onto each tile's content.
-    .init lookup = D4Map<TileK, Color>
-    lookup.src([E, P_tile], P_src, Col) :- src(E, P_src, Col), out_cell(E, P_tile, _, _).
-    lookup.dst([E, P_tile], P, Col)     :- out_cell(E, P_tile, P, Col).
-
-    .decl broken(p_tile: Position, d: D4)
-    broken(P_tile, D) :- lookup.mismatch([E, P_tile], D), out_cell(E, P_tile, _, _).
-
-    .decl tile_d4(p: Position, d: D4)
-    tile_d4(P_tile, D) :- out_cell(_, P_tile, _, _), d4_elem(D), !broken(P_tile, D).
 
     // Tiles paired with their neighbor toward the flow.
     .decl flow_pair(e: Example, t1: Position, t2: Position)

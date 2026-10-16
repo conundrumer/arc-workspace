@@ -52,48 +52,33 @@
 
 .init params = Params
 
-.comp Parse<Key> {
-    .type Obj = [k: Key, id: Ident]
+.decl on(p: Position)
+on(P) :- in(P, Col), params.block_color(Col).
 
-    .decl cell(k: Key, p: Position, col: Color)
-    .decl color(k: Key, col: Color)
-    .decl shape(k: Key, p: Position)    // the block's cells in its own frame
+.init comps = Components<Unit>
+comps.node($U(), P) :- on(P).
 
-    .decl on(k: Key, p: Position)
-    on(K, P) :- cell(K, P, Col), color(K, Col).
+.init bbox = Bbox<Ident>
+bbox.cell(Id, P) :- comps.label($U(), P, Id).
 
-    .init comps = Components<Key>
-    comps.node(K, P) :- on(K, P).
+// Each component's cells in its bbox frame, against the block shape.
+.init same = KeyedSetCompare<Ident, Unit, Position>
+same.pattern_member($U(), P) :- params.block_shape(P).
+same.observed_member(O, P_inner) :- bbox.cell(O, P), bbox.box(O, B), crop(P, B, P_inner).
 
-    .init bbox = Bbox<Obj>
-    bbox.cell([K, Id], P) :- comps.label(K, P, Id).
-
-    .init same = KeyedSetCompare<Obj, Key, Position>
-    same.pattern_member(K, P) :- shape(K, P).
-    same.observed_member(O, P_inner) :- bbox.cell(O, P), bbox.box(O, B), crop(P, B, P_inner).
-
-    .decl block(k: Key, id: Ident)
-    block(K, Id) :- same.equals([K, Id], K).
-
-    .init blocks = Tally<Key, Ident>
-    blocks.item(K, Id) :- block(K, Id).
-    blocks.domain(K) :- cell(K, _, _).
-}
-
-.init parse = Parse<Unit>
-parse.cell($U(), P, Col) :- in(P, Col).
-parse.color($U(), Col)   :- params.block_color(Col).
-parse.shape($U(), P)     :- params.block_shape(P).
+.init blocks = Tally<Unit, Ident>
+blocks.item($U(), Id) :- same.equals(Id, $U()).
+blocks.domain($U()) :- in(_, _).
 
 // The count the bar draws.
 .decl total(n: number, detect: Detect)
 
 // --- $Object ---
-total(N, $Object()) :- parse.blocks.tally($U(), N).
+total(N, $Object()) :- blocks.tally($U(), N).
 
 // --- $Placement ---
 .init occ = Occurrences<Unit, Unit>
-occ.cell($U(), P, $U())  :- parse.on($U(), P).
+occ.cell($U(), P, $U())  :- on(P).
 occ.shape($U(), P, $U()) :- params.block_shape(P).
 
 .init placements = Tally<Unit, Position>
@@ -119,8 +104,6 @@ out(P, BG,  [Det, M]) :-
     params.out_pos(P), total(_, Det), !marked(P, Det), bar_mark(_, M), params.bg(BG).
 
 .comp Determine {
-    .type Cand = [e: Example, col: Color, k: number]
-
     // The bar an output draws: its non-bg cells, and its length.
     .decl bar(e: Example, p: Position, col: Color)
     bar(E, P, Col) :- ex_out(E, P, Col), !params.bg(Col).
@@ -141,43 +124,6 @@ out(P, BG,  [Det, M]) :-
     .decl bar_edge(d: Dir)
     bar_edge(D) :- dir_elem(D), !mismatch_edge(D).
 
-    // Input cells of the train pairs; the test input is held out.
-    .decl train_in(e: Example, p: Position, col: Color)
-    train_in(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
-
-    // Candidate block sizes: every size an input frame admits.
-    .decl cand_dim(k: number)
-    cand_dim(K) :- train_in(_, P, _), axis_elem(A), sub_extent(P, A, K).
-
-    // Candidate blocks: a color a train input shows, at a candidate size.
-    .decl cand(col: Color, k: number)
-    cand(Col, K) :- train_in(_, _, Col), cand_dim(K).
-
-    // The k x k block shape of each candidate size.
-    .init block_frame = Frame2D<number>
-    block_frame.extent(K, A, K) :- cand_dim(K), axis_elem(A).
-
-    // Each candidate counted on each train pair.
-    .decl trial(e: Example, col: Color, k: number)
-    trial(E, Col, K) :- cand(Col, K), ex_out(E, _, _).
-
-    // @ignore color: head-repeat — the key is the candidate the trial counts, and its color is the color the parse counts
-    .init parse = Parse<Cand>
-    parse.cell([E, Col, K], P, C) :- trial(E, Col, K), ex_in(E, P, C).
-    parse.color([E, Col, K], Col) :- trial(E, Col, K).
-    parse.shape([E, Col, K], P)   :- trial(E, Col, K), block_frame.cell(K, P).
-
-    // A candidate whose count misses some bar's length.
-    .decl mismatch(col: Color, k: number)
-    mismatch(Col, K) :- parse.blocks.tally([E, Col, K], N), bar_len.tally(E, M), N != M.
-
-    // The block the bars count.
-    .decl block(col: Color, k: number)
-    block(Col, K) :- cand(Col, K), !mismatch(Col, K).
-
-    .decl block_color(c: Color)
-    block_color(Col) :- block(Col, _).
-
-    .decl block_dim(k: number)
-    block_dim(K) :- block(_, K).
+    .decl out_dim(a: Axis, n: number)
+    out_dim(A, N) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, N).
 }

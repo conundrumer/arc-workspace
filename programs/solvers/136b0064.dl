@@ -256,27 +256,31 @@ out(P, Col, [M, Dc]) :-
     .decl drawn(e: Example)
     drawn(E) :- ex_out(E, _, _).
 
-    // --- legend_dir: the marker's panel is the canvas ---
+    // --- legend_dir: the canvas is the panel that holds the marker and no glyph ink ---
 
-    .decl side_ok(e: Example, d: Dir)
-    side_ok(E, D) :-
-        ex_in(E, P, M), params.marker(M),                 // the marker cell
+    // An input cell of the panel away from legend side D.
+    .decl far_cell(e: Example, d: Dir, col: Color)
+    far_cell(E, D, Col) :-
+        ex_in(E, P, Col),
         dir_elem(D), axis_of(D, A),                       // candidate legend side
-        params.divisor(N), params.divide_gap(G), divide_slab(P, A, N, G, P_outer, P_canvas),
-        opposite(D, D2), dist(P_outer, D2, 0),            // marker in the far panel
-        ex_out(E, P_canvas, M).                           // the output holds it there
+        params.divisor(N), params.divide_gap(G), divide_slab(P, A, N, G, P_outer, _),
+        opposite(D, D2), dist(P_outer, D2, 0).            // in the far panel
 
     .decl side_defect(d: Dir)
-    side_defect(D) :- dir_elem(D), drawn(E), !side_ok(E, D).
+    side_defect(D) :-
+        dir_elem(D), drawn(E),
+        ( !far_cell(E, D, M), params.marker(M)                        // no marker there
+        ; far_cell(E, D, Col), !params.bg(Col), !params.marker(Col)   // glyph ink there
+        ).
 
     .decl legend_dir(d: Dir)
     legend_dir(D) :- dir_elem(D), !side_defect(D).
 
-    // --- advance: the marker's inked neighbor ---
+    // --- advance: the output marker's inked neighbor ---
 
     .decl step_ok(e: Example, d: Dir)
     step_ok(E, D) :-
-        parse.marker_cell(E, P), dir_elem(D),                       // marker, candidate step
+        ex_out(E, P, M), params.marker(M), dir_elem(D),             // marker, candidate step
         neighbor(P, D, P2), ex_out(E, P2, Col), !params.bg(Col).    // its neighbor is inked
 
     .decl step_defect(d: Dir)

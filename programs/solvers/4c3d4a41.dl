@@ -130,28 +130,6 @@ out(P, Bg, Ch) :-
     .decl shift(v: Offset)
     shift(V) :- occ.placement(_, V), !refuted_shift(V).
 
-    // The emptied cells are the comb.
-    .init comb_box = Bbox<Example>
-    comb_box.cell(E, P) :- vanished(E, P, _).
-
-    .init comb_rim = Rim<Example>
-    comb_rim.cell(E, P) :- vanished(E, P, _).
-
-    // A comb cell on the comb's d-side edge.
-    .decl comb_edge_cell(e: Example, p: Position, d: Dir)
-    comb_edge_cell(E, P, D) :- vanished(E, P, _), comb_box.box(E, B), box_edge(P, B, D).
-
-    // A direction the comb does not stand along: the teeth rise from the back
-    // edge, so away from that edge every comb cell has comb behind it.
-    .decl refuted_dir(d: Dir)
-    refuted_dir(D) :-
-        opposite(D, D_back),
-        comb_rim.rim_dir(E, P, D_back),      // a comb cell with nothing behind it
-        !comb_edge_cell(E, P, D_back).       // away from the comb's back edge
-
-    .decl rise(d: Dir)
-    rise(D) :- dir_elem(D), !refuted_dir(D).
-
     // After the move the scene's ink is the container with its contents, so
     // the ink's box is the container's outline.
     .init ink_box = Bbox<Example>

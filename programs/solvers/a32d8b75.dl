@@ -550,15 +550,6 @@ out(P, Col, Ch, [[D]]) :- params.stamp_order(D), parse.shown($U(), Ch, D, P, Col
     .decl concept(ch: Choice)
     concept([$ArrowColor(), $PatternRect(), $MaskShape(), $AnchorColor(), $NoSepPanel()]).
 
-    // Case Ch on example E, read with stamp order D, misses the example's output.
-    .decl wrong(e: Example, ch: Choice, d: Dir)
-    wrong(E, Ch, D) :-
-        probe.case(E, Ch), dir_elem(D), ex_out(E, P, Col),
-        ( probe.shown(E, Ch, D, P, Col2), Col != Col2
-        ; !probe.shown(E, Ch, D, P, _)
-        ).
-    wrong(E, Ch, D) :- probe.shown(E, Ch, D, P, _), !ex_out(E, P, _).
-
     // A color some trained input holds and no trained output holds.
     .decl dropped(c: Color)
     dropped(Col) :- trained(E), ex_in(E, _, Col), !ex_out(_, _, Col).
@@ -588,12 +579,6 @@ out(P, Col, Ch, [[D]]) :- params.stamp_order(D), parse.shown($U(), Ch, D, P, Col
     // drops.
     .decl bg(c: Color)
     bg(Col) :- dropped(Col), !dropped_missing(Col), !sep(Col).
-
-    .decl stamp_contradicted(d: Dir)
-    stamp_contradicted(D) :- concept(Ch), wrong(_, Ch, D).
-
-    .decl stamp_order(d: Dir)
-    stamp_order(D) :- dir_elem(D), !stamp_contradicted(D).
 
     // The side of a filled square region that params.sep closes off in
     // example E.

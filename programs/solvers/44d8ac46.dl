@@ -119,12 +119,9 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, Ch).
 .comp Determine {
     .type Hole = [e: Example, id: Ident]
 
-    // The cells the output fills; their components are the filled holes.
-    .decl changed(e: Example, p: Position)
-    changed(E, P) :- ex_in(E, P, C_in), ex_out(E, P, Col), Col != C_in.
-
+    // The output's fill cells; their components are the filled holes.
     .init regions = Components<Example>
-    regions.node(E, P) :- changed(E, P).
+    regions.node(E, P) :- ex_out(E, P, Col), params.fill(Col).
 
     .init view = Parse<Hole>
     view.cell([E, Id], P) :- regions.label(E, P, Id).

@@ -334,6 +334,9 @@ covered(P, $SeedOverStamp(), E, G) :- stamp_paint(P, _, E, G), !seed(P, _).
     .decl line_defect(c: Color, v: Offset)
     line_defect(C, V) :- line_mark(_, _, V), seed(E, S, C), !line_mark(E, S, V).
 
+    // @ignore: determine prediction — the test runs no step of the program at
+    //  the offset: it reads, around each seed, the cells the output changes,
+    //  and keeps the offsets every seed of the color shows
     .decl stamp_line(c: Color, v: Offset)
     stamp_line(C, V) :- seed(E, S, C), line_mark(E, S, V), !line_defect(C, V).
 }

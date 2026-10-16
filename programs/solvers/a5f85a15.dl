@@ -115,20 +115,13 @@ origin_choice($GridDiagonal()). origin_choice($ColumnParity()).
 impl_choice([O, $StoredStep()]) :- origin_choice(O).
 impl_choice([O, $DerivedAxis()]) :- origin_choice(O), O != $ColumnParity().
 
-.comp Parse<Key> {
-    .decl grid(key: Key, p: Position, col: Color)
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.bg(Col).
 
-    .decl ink(key: Key, p: Position)
-    ink(Ky, P) :- grid(Ky, P, Col), !params.bg(Col).
-
-    // The diagonal axes on which two ink cells touch.
-    // @claim diagonal-lines
-    .init touch = Unanimous<Key, DiagAxis>
-    touch.item(Ky, Da) :- ink(Ky, P), neighbor(P, D, Q), ink(Ky, Q), diag_axis_of(D, Da).
-}
-
-.init parse = Parse<Unit>
-parse.grid($U(), P, Col) :- in(P, Col).
+// The diagonal axes on which two ink cells touch.
+// @claim diagonal-lines
+.init touch = Unanimous<Unit, DiagAxis>
+touch.item($U(), Da) :- ink(P), neighbor(P, D, Q), ink(Q), diag_axis_of(D, Da).
 
 // The line direction under heading H, at open value V.
 .decl heading(h: Heading, v: OpenValue, d: DiagDir)
@@ -153,31 +146,31 @@ heading($StoredStep(), [nil], D) :- params.line_dir(D).
 
 // --- $DerivedAxis ---
 heading($DerivedAxis(), [[E]], D) :-
-    parse.touch.value($U(), Da), diag_axis_of(D, Da),
+    touch.value($U(), Da), diag_axis_of(D, Da),
     params.start_edge(E), opposite(E, E_far), dir_of(D, _, E_far).  // leads away from the start edge
 
 // --- $ColorBlind ---
 // Q may share a unit with P under split S.
 .decl kin(s: ColorSplit, p: Position, q: Position)
-kin($ColorBlind(), P, Q) :- parse.ink($U(), P), parse.ink($U(), Q).
+kin($ColorBlind(), P, Q) :- ink(P), ink(Q).
 
 // --- $ColorRuns ---
-kin($ColorRuns(), P, Q) :- parse.ink($U(), P), in(P, Col), in(Q, Col).
+kin($ColorRuns(), P, Q) :- ink(P), in(P, Col), in(Q, Col).
 
 // --- $Run ---
 // The first cell of a unit: the cell behind it is not its kin.
 .decl start(l: Lane, p: Position)
 start([S, D], P) :-
-    lane([S, D]), parse.ink($U(), P), diag_opposite(D, O), neighbor(P, O, Q), !kin(S, P, Q).
+    lane([S, D]), ink(P), diag_opposite(D, O), neighbor(P, O, Q), !kin(S, P, Q).
 
 // Each unit cast from its first cell; it stops at the background and at the
 // first cell of the next unit.
 // @claim alternate-from-start
 .init run = Ray<Lane>
 run.dir([S, D], D) :- lane([S, D]).
-run.cell(L, P) :- lane(L), parse.ink($U(), P).
+run.cell(L, P) :- lane(L), ink(P).
 run.mark(L, P) :- start(L, P).
-run.blocked(L, P) :- lane(L), in(P, _), ( !parse.ink($U(), P) ; start(L, P) ).
+run.blocked(L, P) :- lane(L), in(P, _), ( !ink(P) ; start(L, P) ).
 
 pos($LineStart($Run(), S), D, P, K) :- run.clear([S, D], P, D, K, _).
 
@@ -195,43 +188,15 @@ diagonal.mark(D, P) :- in(P, _), diag_opposite(D, O), dir_of(O, _, E), dist(P, E
 // The kin cells before each ink cell on its grid diagonal.
 // @claim alternate-from-start
 .init behind = Tally<LaneCell, Position>
-behind.domain([L, P]) :- lane(L), parse.ink($U(), P).
+behind.domain([L, P]) :- lane(L), ink(P).
 behind.item([[S, D], P], Q) :-
     diagonal.ray(D, P, D, K, E), diagonal.ray(D, Q, D, K2, E), K2 < K, kin(S, P, Q).
 
 pos($LineStart($DiagonalClass(), S), D, P, K) :- behind.tally([[S, D], P], K).
 
 // --- $GridDiagonal ---
-pos($GridDiagonal(), D, P, K) :- diagonal.ray(D, P, D, K, _), parse.ink($U(), P).
+pos($GridDiagonal(), D, P, K) :- diagonal.ray(D, P, D, K, _), ink(P).
 
 // --- $ColumnParity ---
 pos($ColumnParity(), D, P, K) :-
-    heading(_, _, D), parse.ink($U(), P), params.parity_edge(E), dist(P, E, K).
-
-.comp Determine {
-    .init parse = Parse<Example>
-    parse.grid(E, P, Col) :- ex_in(E, P, Col).
-
-    // One example's lines, read from a candidate start edge.
-    .type EdgeKey = [e: Example, edge: Dir]
-
-    .init run = Ray<EdgeKey>
-    run.dir([E, Edge], D) :-
-        parse.touch.value(E, Da), diag_axis_of(D, Da),
-        opposite(Edge, E_far), dir_of(D, _, E_far).
-    run.cell([E, Edge], P) :- run.dir([E, Edge], _), parse.ink(E, P).
-    run.mark([E, Edge], P) :-
-        run.dir([E, Edge], D), parse.ink(E, P), diag_opposite(D, O), neighbor(P, O, Q), !parse.ink(E, Q).
-    run.blocked([E, Edge], P) :- run.dir([E, Edge], _), ex_in(E, P, _), !parse.ink(E, P).
-
-    // A train cell whose output disagrees with the count from start edge Edge.
-    .decl contradicted(edge: Dir)
-    contradicted(Edge) :-
-        run.clear([E, Edge], P, _, K, _), ex_out(E, P, Col),
-        params.period(W), stride(K, W, 0, _, R),
-        ( params.mark_phase(R), !params.mark(Col)
-        ; !params.mark_phase(R), params.mark(Col) ).
-
-    .decl start_edge(d: Dir)
-    start_edge(Edge) :- dir_elem(Edge), !contradicted(Edge).
-}
+    heading(_, _, D), ink(P), params.parity_edge(E), dist(P, E, K).

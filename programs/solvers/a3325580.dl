@@ -199,16 +199,24 @@ order.before([[Pc, $FirstScan()], C], A, B) :-
     .init color_box = Bbox<ExColor>
     color_box.cell([E, Col], P) :- ex_in(E, P, Col), !params.bg(Col).
 
-    // Under lead corner c, an output line nearer the lead end holds a color
-    // whose input cells lie farther from that end than the cells of a color
-    // on a later line.
-    .decl lead_contradicted(c: DiagDir)
-    lead_contradicted(C) :-
-        diag_dir_elem(C), params.layout_axis(A), dir_of(C, A, L),         // lead end
+    // An end of the layout axis that orders some output's lines as it
+    // orders their colors' input cells: a line nearer it holds a color whose
+    // input cells lie nearer it than the cells of a color on a later line.
+    .decl ordering_end(d: Dir)
+    ordering_end(L) :-
+        params.layout_axis(A), axis_of(L, A),
         ex_out(E, P1, Col1), dist(P1, L, K1), ex_out(E, P2, Col2), dist(P2, L, K2), K1 < K2,
         color_box.box([E, Col1], B1), dist(B1, L, J1),
-        color_box.box([E, Col2], B2), dist(B2, L, J2), J2 < J1.
+        color_box.box([E, Col2], B2), dist(B2, L, J2), J1 < J2.
 
     .decl lead_corner(c: DiagDir)
-    lead_corner(C) :- diag_dir_elem(C), !lead_contradicted(C).
+    lead_corner(C) :- ordering_end(L), params.layout_axis(A), dir_of(C, A, L).
+
+    // An edge some output contradicts: a line across its axis holds two colors.
+    .decl clash(d: Dir)
+    clash(D) :-
+        ex_out(E, P, C1), ex_out(E, Q, C2), C1 != C2, dir_elem(D), same_dist(D, P, Q).
+
+    .decl layout_axis(a: Axis)
+    layout_axis(A) :- dir_elem(D), !clash(D), axis_of(D, A).
 }

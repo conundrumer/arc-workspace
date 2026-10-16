@@ -143,10 +143,6 @@ out(P, Col, [V, E]) :-
         params.grow(D), opposite(D, D0),                  // seat edge
         slab_anchor(D0, P_in, P_out).
 
-    // The echoed cells an output shows.
-    .decl echoed(e: Example, p: Position)
-    echoed(E, P) :- ex_out(E, P, Col), params.echo(Col).
-
     // Strictly inside the V's cone.
     .decl within(e: Example, p: Position)
     within(E, P) :-
@@ -154,23 +150,14 @@ out(P, Col, [V, E]) :-
         cast_corner(CD),   nearer(CD, P, S),
         mirror_corner(MD), nearer(MD, P, S).
 
-    .decl cand(k: number)
-    cand(K) :-
-        ex_out(_, P, _),
-        mirror_corner(MD), corner_dist(P, MD, K), K != 0.
+    // The steps from each echoed cell inside the cone to the seed, counted
+    // as the seed's distance to the mirror corner less the cell's.
+    .init near = Extremes<Example>
+    near.cand(E, K) :-
+        ex_out(E, P, Col), params.echo(Col), within(E, P), seed(E, S),  // an echoed cell in the cone
+        relative(P, S, V), mirror_corner(MD), corner_dist(V, MD, K).
 
-    // The cells a candidate period echoes.
-    .decl striped(e: Example, p: Position, k: number)
-    striped(E, P, Per) :-
-        cand(Per), within(E, P), seed(E, S),
-        mirror_corner(MD), corner_dist(P, MD, Kp), corner_dist(S, MD, Ks),
-        stride(Kp, Per, 0, _, R), stride(Ks, Per, 0, _, R).
-
-    // A candidate that echoes a cell the pair does not, or misses one it does.
-    .decl mismatch(k: number)
-    mismatch(Per) :- striped(E, P, Per), !echoed(E, P).
-    mismatch(Per) :- cand(Per), echoed(E, P), !striped(E, P, Per).
-
+    // The echo nearest the seed lies one period from it.
     .decl period(k: number)
-    period(Per) :- cand(Per), !mismatch(Per).
+    period(Per) :- near.low(_, Per).
 }

@@ -137,12 +137,14 @@ out(P, Col, Ch) :- frame.cell(Ch, P), !seated(P, _, Ch), params.filler(Col).
     slab_disp(A, P_tile, Delta) :-
         occ.occurrence([_, A, P_tile], Delta), !broken(A, P_tile, Delta).
 
-    // A candidate axis with a slab that no relative places.
+    // An axis some slab's relative places, with a slab that no relative
+    // places.
     .decl axis_broken(a: Axis)
-    axis_broken(A) :- slab_cell(_, A, P_tile, _, _), !slab_disp(A, P_tile, _).
+    axis_broken(A) :-
+        slab_disp(A, _, _), slab_cell(_, A, P_tile, _, _), !slab_disp(A, P_tile, _).
 
     .decl axis(a: Axis)
-    axis(A) :- axis_elem(A), !axis_broken(A).
+    axis(A) :- slab_disp(A, _, _), !axis_broken(A).
 
     .decl disp(p_tile: Position, delta: Position)
     disp(P_tile, Delta) :- axis(A), slab_disp(A, P_tile, Delta).
@@ -152,8 +154,14 @@ out(P, Col, Ch) :- frame.cell(Ch, P), !seated(P, _, Ch), params.filler(Col).
     sep_dim(A, N) :- disp(_, Delta), axis_of(D, A), dist(Delta, D, N), N != 0.
 
     // A slab seats at the corner whose two edges its relative leaves alone.
+    .decl seat(p_tile: Position, diag: DiagDir)
+    seat(P_tile, Diag) :- disp(P_tile, Delta), diag_dist(Delta, Diag, _, 0, 0).
+
     .decl seat_of(d: Dir, diag: DiagDir)
     seat_of(D, Diag) :-
-        disp(P_tile, Delta), diag_dist(Delta, Diag, _, 0, 0),   // the slab's corner
-        axis(A), axis_of(D, A), dist(P_tile, D, 0).             // the slab's side of the stack
+        seat(P_tile, Diag),
+        axis(A), axis_of(D, A), dist(P_tile, D, 0).   // the slab's side of the stack
+
+    .decl diag(da: DiagAxis)
+    diag(DA) :- seat(_, Diag), diag_axis_of(Diag, DA).
 }

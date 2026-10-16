@@ -79,17 +79,22 @@ out(P_grid, Col, $Unfold()) :-
     .decl axial(d: D4)
     axial(D) :- d4_elem(D), !across_moved(D).
 
-    .decl placed(e: Example, p_tile: Position, d: D4, p_grid: Position, col: Color)
-    placed(E, P_tile, D, P_grid, Col) :-
-        ex_in(E, P, Col), ex_out(E, _, _),              // cell of a train pair's input
-        axial(D), apply(D, P, P_intile),                // its image under an axial transform
-        arr.cell($U(), A, P_tile), tile_gap(G),         // tile position and gap
-        concat_slab(P_tile, P_intile, A, G, P_grid).    // recompose with passthrough
+    // Each output tile against the input, per train pair.
+    .type ET = [e: Example, p_tile: Position]
 
-    // A transform that lands some cell of its tile off the output's color.
-    .decl mismatch(p_tile: Position, d: D4)
-    mismatch(P_tile, D) :- placed(E, P_tile, D, P_grid, Col), !ex_out(E, P_grid, Col).
+    .init tile_map = D4Map<ET, Color>
+    tile_map.src([E, P_tile], P, Col) :-
+        ex_in(E, P, Col), ex_out(E, _, _), arr.cell($U(), _, P_tile).
+    tile_map.dst([E, P_tile], P_intile, Col) :-
+        ex_in(E, P_intile, _), arr.cell($U(), A, P_tile), tile_gap(G),
+        concat_slab(P_tile, P_intile, A, G, P_grid),        // the tile's cell in the output
+        ex_out(E, P_grid, Col).
 
+    // An axial transform that some pair's tile breaks.
+    .decl broken(p_tile: Position, d: D4)
+    broken(P_tile, D) :- tile_map.mismatch([_, P_tile], D), axial(D).
+
+    // The axial transform that takes the input onto the tile, in every pair.
     .decl tile(p: Position, d: D4)
-    tile(P_tile, D) :- arr.cell($U(), _, P_tile), axial(D), !mismatch(P_tile, D).
+    tile(P_tile, D) :- tile_map.map([_, P_tile], D), axial(D), !broken(P_tile, D).
 }

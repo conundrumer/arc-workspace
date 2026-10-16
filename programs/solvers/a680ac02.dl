@@ -367,9 +367,12 @@ sq_before([[Sq, R, $OrderColumnMajor()], D], B1, B2) :-
         spread.box([E, _], B), ex_in(E, P, _),
         perp(A, A2), box_extent(B, P, A, N), box_extent(B, P, A2, N).
 
-    .decl contradicted(a: Axis)
-    contradicted(A) :- tie(E), out_axis(E, A2), axis_elem(A), A != A2.
+    .decl tied_pair(e: Example)
+    tied_pair(E) :- tie(E), ex_out(E, _, _).
 
+    // The longer axis of each tied output, and either axis where no train
+    // pair ties.
     .decl tie_axis(a: Axis)
-    tie_axis(A) :- axis_elem(A), !contradicted(A).
+    tie_axis(A) :- tied_pair(E), out_axis(E, A).
+    tie_axis(A) :- axis_elem(A), !tied_pair(_).
 }

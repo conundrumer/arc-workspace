@@ -127,6 +127,11 @@ out(P_grid_out, Col, Impl) :-
 
     .decl out_label(p: Position, id: Ident)
     out_label(P_out, Id) :- pair(P_in, P_out), ident.id(P_in, Id).
+
+    // The input's center cell pairs with the output center.
+    .decl out_center(p: Position)
+    out_center(P_out) :- pair(P_in, P_out), centered(P_in).
+
     // The output ring: the output frame's border cells.
     .decl ring_cell(p: Position)
     ring_cell(P) :- ex_out(_, P, _), dir_elem(D), dist(P, D, 0).

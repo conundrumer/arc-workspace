@@ -106,8 +106,9 @@ out(P, Col, Ch) :- paint(P, Ch), params.ink(Col).
 .comp Determine {
     .type Interior = [e: Example, id: Ident]
 
+    // The walls pass through, so each output's interiors are its input's.
     .init parse = Parse<Example>
-    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+    parse.cell(E, P, Col) :- ex_out(E, P, Col).
 
     // Each finished pattern, in its interior's frame.
     .decl ink_out(i: Interior, p_inner: Position)

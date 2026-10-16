@@ -96,15 +96,9 @@ out(P, Col, C) :-
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
 
-    // A corner pair some square contradicts: the output at the seat of D_to
-    // is not the input at the seat of D_from.
-    .decl contradicted(d_to: DiagDir, d_from: DiagDir)
-    contradicted(D_to, D_from) :-
-        parse.seat(E, Id, D_to, Q), ex_out(E, Q, Col_out),
-        parse.seat(E, Id, D_from, Q_from), ex_in(E, Q_from, Col_in),
-        Col_out != Col_in.
-
+    // The output at the seat of D_to holds the input at the seat of D_from.
     .decl corner_from(d_to: DiagDir, d_from: DiagDir)
     corner_from(D_to, D_from) :-
-        diag_dir_elem(D_to), diag_dir_elem(D_from), !contradicted(D_to, D_from).
+        parse.seat(E, Id, D_to, Q), ex_out(E, Q, Col),
+        parse.seat(E, Id, D_from, Q_from), ex_in(E, Q_from, Col).
 }

@@ -75,15 +75,10 @@ out(P, Col) :-
     .init entry = Canon<Line>
     entry.equiv(Ln, Ln2) :- same.equals(Ln, Ln2).
 
-    // The marks a line's output holds.
-    .decl out_mark(e: Example, l: Position, p: Position, col: Color)
-    out_mark(E, L, P, Col) :- ex_out(E, P, Col), !params.bg(Col), parse.line_of(E, P, L).
-
-    // An entry a line refutes: that line's output marks are not its marks at rest.
-    .decl refuted(pair: Ident)
-    refuted(Id) :- entry.id([E, L], Id), parse.rest(E, L, P, Col), !out_mark(E, L, P, Col).
-    refuted(Id) :- entry.id([E, L], Id), out_mark(E, L, P, Col), !parse.rest(E, L, P, Col).
+    // A line some cell of which the output changes: its marks moved.
+    .decl moved(e: Example, l: Position)
+    moved(E, L) :- parse.line_of(E, P, L), ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
 
     .decl attract(pair: Ident, col: Color)
-    attract(Id, Col) :- entry.id([E, L], Id), parse.mark(E, L, _, Col), !refuted(Id).
+    attract(Id, Col) :- entry.id([E, L], Id), moved(E, L), parse.mark(E, L, _, Col).
 }

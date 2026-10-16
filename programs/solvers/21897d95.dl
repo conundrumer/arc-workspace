@@ -305,20 +305,6 @@ out(P_out, Col, [A, B]) :-
     .init ex = Parse<Example>
     ex.cell(E, P, Col) :- ex_in(E, P, Col).
 
-    // The turn carries the regions along, so every color boundary of the
-    // output stands over one of the input.
-    .decl broken(e: Example, d: C4)
-    broken(E, D) :-
-        ex_out(E, P_out, Col), dir_elem(Dir),                 // an output cell
-        neighbor(P_out, Dir, Q_out), ex_out(E, Q_out, Col2),  // and its neighbor
-        Col != Col2,                                          // across a boundary
-        rotation(_, D), d4_inverse(D, D_back),                // a candidate turn
-        apply(D_back, P_out, P), apply(D_back, Q_out, Q),     // where the pair came from
-        ex_in(E, P, C_in), ex_in(E, Q, C_in).                 // one color there
-
-    .decl example_turn(e: Example, s: Sense)
-    example_turn(E, S) :- ex_out(E, _, _), rotation(S, D), !broken(E, D).
-
     // Each arrow chart comes from one marker, read in its own pose; the
     // runner compares up to pose, with id renaming. One arrow of each kind
     // — a payload center and a blank one — arbitrarily; ids from the
@@ -380,7 +366,4 @@ out(P_out, Col, [A, B]) :-
 
     .decl bracket_glyph(id: Ident, p: Position, col: Color)
     bracket_glyph(Id, P_i, Col) :- bpick.id([E, K], Id), bracket_pic(E, K, P_i, Col).
-
-    .decl bracket_sense(id: Ident, s: Sense)
-    bracket_sense(Id, S) :- bpick.id([E, _], Id), example_turn(E, S).
 }

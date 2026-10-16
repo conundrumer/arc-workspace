@@ -94,11 +94,8 @@ out(P_grid_out, Col, C) :-
     .decl pair_cell(e: Example, p: Position, col: Color)
     pair_cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
 
-    .decl ink(e: Example, p: Position, col: Color)
-    ink(E, P, Col) :- pair_cell(E, P, Col), !params.bg(Col).
-
     .init slab = Bbox<Example>
-    slab.cell(E, P) :- ink(E, P, _).
+    slab.cell(E, P) :- pair_cell(E, P, Col), !params.bg(Col).
 
     // The data slab hugs one edge and stops short of the opposite one.
     .decl data_dir(d: Dir)
@@ -121,32 +118,28 @@ out(P_grid_out, Col, C) :-
         divide_by_size(P_grid, A, K, 0, P_outer, _),
         axis_dim(P_outer, A, N).            // tile count: the arrangement's extent
 
-    // Each example's ink must stamp onto its output.
+    // The stamps: the transforms each output is invariant under.
     .init stamp = D4Map<Example, Color>
-    stamp.src(E, P, Col) :- ink(E, P, Col).
+    stamp.src(E, P, Col) :- ex_out(E, P, Col).
     stamp.dst(E, P, Col) :- ex_out(E, P, Col).
 
     .decl stamps(d: D4)
     stamps(D) :- d4_elem(D), !stamp.mismatch(_, D).
 
-    // The data tile: the input tile at the data edge.
-    .decl data_cell(e: Example, p_intile: Position, col: Color)
-    data_cell(E, P_intile, Col) :-
-        pair_cell(E, P_grid, Col), slab_cut(A, K),
-        divide_by_size_slab(P_grid, A, K, 0, P_tile, P_intile),
-        data_dir(D), dist(P_tile, D, 0).
-
+    // Each output cell in its tile, under the stored cut.
     .decl out_cell(e: Example, p_tile: Position, p_intile: Position, col: Color)
     out_cell(E, P_tile, P_intile, Col) :-
-        ex_out(E, P_grid, Col), slab_cut(A, K),
+        ex_out(E, P_grid, Col), params.tile_axis(A), params.slab_depth(K),
         divide_by_size_slab(P_grid, A, K, 0, P_tile, P_intile).
 
     .type TileK = [e: Example, p_tile: Position]
 
-    // The data tile must map onto each output tile's content.
+    // The output keeps the data tile at the data edge, and each output
+    // tile is an image of it.
     .init tile = D4Map<TileK, Color>
     tile.src([E, P_tile], P_intile, Col) :-
-        data_cell(E, P_intile, Col), out_cell(E, P_tile, _, _).
+        out_cell(E, P_data, P_intile, Col), params.data_dir(D), dist(P_data, D, 0),
+        out_cell(E, P_tile, _, _).
     tile.dst([E, P_tile], P_intile, Col) :- out_cell(E, P_tile, P_intile, Col).
 
     .decl tile_mismatch(p_tile: Position, d: D4)

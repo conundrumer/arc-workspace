@@ -374,19 +374,10 @@ landed([$Clamp(), Bp, R], M, Q) :-
     ex.cell(E, P) :- ex_in(E, P, Col), params.block_color(Col).
     ex.order(C, A) :- diag_dir_elem(C), axis_elem(A).
 
-    // Output marker P touches the square that scan order (C, A) picks, by
-    // side or by corner.
-    .decl touching(e: Example, c: DiagDir, a: Axis, p: Position)
-    touching(E, C, A, P) :-
-        ex.last_square.box([E, C, A], B), ex_out(E, P, Col), params.marker_color(Col),
-        !inside(P, B), neighbor(P, _, Q), inside(Q, B).
-
-    // Some output marker does not touch that square.
-    .decl astray(c: DiagDir, a: Axis)
-    astray(C, A) :-
-        ex.last_square.box([E, C, A], _), ex_out(E, P, Col), params.marker_color(Col),
-        !touching(E, C, A, P).
+    // Some train input holds no square in scan order (C, A).
+    .decl unpicked(c: DiagDir, a: Axis)
+    unpicked(C, A) :- ex.order(C, A), ex_out(E, _, _), !ex.last_square.box([E, C, A], _).
 
     .decl scan_order(c: DiagDir, a: Axis)
-    scan_order(C, A) :- ex.order(C, A), !astray(C, A).
+    scan_order(C, A) :- ex.order(C, A), !unpicked(C, A).
 }

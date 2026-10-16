@@ -68,16 +68,11 @@ out(P, Col) :-
     seating.shape([E, K], P, Col) :- parse.figure(E, P, Col), parse.phase(E, P, K).
     seating.cell([E, K], P, Col)  :- parse.phase(E, _, K), ex_out(E, P, Col).
 
-    // A turn some solved example refutes: the phase's lines, stepped that
-    // way, do not seat on the output.
-    .decl broken(k: number, s: Sense)
-    broken(K, S) :-
-        parse.phase(E, _, K), ex_out(E, _, _),                        // a phase on a solved example
-        params.anchor(D), turn(S, D, D_step), step_offset(D_step, V),  // a step across the anchor axis
-        !seating.occurrence([E, K], V).                               // that does not seat the phase
-
+    // The turn of each phase: the step across the anchor axis that seats
+    // the phase's lines on the output.
     .decl wave(k: number, s: Sense)
     wave(K, S) :-
-        parse.phase(E, _, K), ex_out(E, _, _),  // a phase on a solved example
-        sense_elem(S), !broken(K, S).
+        seating.occurrence([_, K], V),                           // a seat of the phase
+        params.anchor(D), sense_elem(S), turn(S, D, D_step),     // a step across the anchor axis
+        step_offset(D_step, V).                                  // that is the seat
 }

@@ -103,6 +103,9 @@ key(Id, $Wall()) :- shapes.label($U(), P, Id), walled_off.reach($U(), P).
     .init panel_box = Bbox<Example>
     panel_box.cell(E, P) :- painted.node(E, P), !painted.reach(E, P).
 
+    // @workaround: no determination of panel, so that a proposer and the fit
+    //  give it, once the joint enumeration of panel and corner is within the
+    //  plan's limit
     .decl panel(b: Box)
     panel(B) :- panel_box.box(_, B).
 }

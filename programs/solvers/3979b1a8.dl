@@ -100,26 +100,30 @@ out(P, Col, Ch) :-
         ex_in(E, P_in, _), ex_out(E, P_grid, _),
         diag_dir_elem(Diag), corner_anchor(Diag, P_in, P_grid).
 
-    // A corner seating some input cell on a different color.
-    .decl anchor_mismatch(diag: DiagDir)
-    anchor_mismatch(Diag) :-
-        anchored(E, Diag, P_in, P_grid),
-        ex_in(E, P_in, Col), !ex_out(E, P_grid, Col).
+    // Where each train input occurs in its output, as the box of the input's
+    // frame in the output's.
+    .init occ = Occurrences<Example, Color>
+    occ.cell(E, P, Col) :- ex_out(E, P, Col).
+    occ.shape(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    // An occurrence at corner Diag.
+    .decl seated(e: Example, diag: DiagDir)
+    seated(E, Diag) :- occ.occurrence(E, B), diag_dir_elem(Diag), diag_dist(B, Diag, _, 0, 0).
+
+    // A corner some train output holds no occurrence at.
+    .decl anchor_defect(diag: DiagDir)
+    anchor_defect(Diag) :- seated(_, Diag), ex_out(E, _, _), !seated(E, Diag).
 
     .decl anchor(d: DiagDir)
-    anchor(Diag) :- diag_dir_elem(Diag), !anchor_mismatch(Diag).
+    anchor(Diag) :- seated(_, Diag), !anchor_defect(Diag).
 
     // The output region the input covers.
     .decl in_region(e: Example, p_grid: Position)
     in_region(E, P_grid) :- anchor(Diag), anchored(E, Diag, _, P_grid).
 
-    // A corner the input reaches an edge of.
-    .decl growth_mismatch(diag: DiagDir)
-    growth_mismatch(Diag) :- in_region(_, P), dir_of(Diag, _, D), dist(P, D, 0).
-
-    // The frame grows toward the corner the input stays clear of.
+    // The frame grows toward the corner opposite the input's seat.
     .decl growth(d: DiagDir)
-    growth(Diag) :- diag_dir_elem(Diag), !growth_mismatch(Diag).
+    growth(Diag) :- anchor(A), diag_opposite(A, Diag).
 
     .decl diag_cell(e: Example, p: Position)
     diag_cell(E, P) :- ex_out(E, P, _), growth(Diag), diag_dist(P, Diag, _, K, K).
@@ -144,13 +148,16 @@ out(P, Col, Ch) :-
     .init tiles = Frame2D<Unit>
     tiles.extent($U(), A, S) :- params.scale(S), axis_elem(A).
 
-    // A tile placing some input cell on a different color.
-    .decl tile_mismatch(p_tile: Position)
-    tile_mismatch(P_tile) :-
-        tiles.cell($U(), P_tile),
-        ex_in(E, P_in, Col), ex_out(E, _, _),
-        concat_2d(P_tile, P_in, 0, P_grid), !ex_out(E, P_grid, Col).
+    // An occurrence that fills tile P_tile of the arrangement.
+    .decl tile_seated(e: Example, p_tile: Position)
+    tile_seated(E, P_tile) :-
+        occ.occurrence(E, B), ex_in(E, P_in, _), compose(B, P_in, P_grid),
+        tiles.cell($U(), P_tile), concat_2d(P_tile, P_in, 0, P_grid).
+
+    // A tile some train output holds no occurrence at.
+    .decl tile_defect(p_tile: Position)
+    tile_defect(P_tile) :- tile_seated(_, P_tile), ex_out(E, _, _), !tile_seated(E, P_tile).
 
     .decl in_tile(p_tile: Position)
-    in_tile(P_tile) :- tiles.cell($U(), P_tile), !tile_mismatch(P_tile).
+    in_tile(P_tile) :- tile_seated(_, P_tile), !tile_defect(P_tile).
 }

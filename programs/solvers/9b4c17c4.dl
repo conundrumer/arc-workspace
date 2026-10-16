@@ -113,10 +113,14 @@ out(P, Col, Ch) :- impl_choice(Ch), region(F, P), !moved(P, Ch), field_color(F, 
         vacated(E, P, Col), inked(E, Q, Col),
         axis_of(D, A), same_line(A, P, Q), nearer(D, Q, P).
 
+    // Some vacated cell on a field of color c left toward d.
+    .decl cand(c: Color, d: Dir)
+    cand(Col, D) :- vacated(E, P, Col), led(E, P, D).
+
     // Some shape on a field of color c did not leave toward d.
     .decl stranded(c: Color, d: Dir)
-    stranded(Col, D) :- vacated(E, P, Col), dir_elem(D), !led(E, P, D).
+    stranded(Col, D) :- cand(Col, D), vacated(E, P, Col), !led(E, P, D).
 
     .decl slide(c: Color, d: Dir)
-    slide(Col, D) :- vacated(_, _, Col), dir_elem(D), !stranded(Col, D).
+    slide(Col, D) :- cand(Col, D), !stranded(Col, D).
 }

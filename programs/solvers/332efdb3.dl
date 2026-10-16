@@ -116,4 +116,12 @@ out(P, Col, $Inset()) :-
     motif(Pm, Col) :-
         window([E, Dg], Q), wframe.box([E, Dg], B), crop(Q, B, Pm),
         ex_out(E, Q, Col).
+
+    // The dots span the interior frame, so their distance to a grid edge is
+    // the border's width there.
+    .init bbox = Bbox<Example>
+    bbox.cell(E, P) :- ex_out(E, P, Col), params.dot(Col).
+
+    .decl border_width(k: number)
+    border_width(K) :- bbox.box(_, B), dir_elem(D), dist(B, D, K).
 }

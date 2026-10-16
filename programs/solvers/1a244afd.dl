@@ -97,7 +97,8 @@ out(P, Col, Ch) :-
     // The direction a pair's mark sits in.
     .decl turn_map(d: Dir, d_out: Dir)
     turn_map(D, D_out) :-
-        parse.pair(E, [P, _], D, K), dir_elem(D_out),  // a pair pointing toward D
-        jump(P, D_out, K, P_mark),                     // as far off the pivot toward D_out
-        ex_out(E, P_mark, Col), params.mark(Col).      // a mark sits there
+        parse.pair(E, [P, _], D, K),                   // a pair pointing toward D
+        ex_out(E, Q, Col), params.mark(Col),           // a mark in the output
+        relative(P, Q, V),                             // its offset from the pivot
+        dir_elem(D_out), jump_offset(D_out, K, V).     // as far off the pivot toward D_out
 }

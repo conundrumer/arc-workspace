@@ -152,3 +152,26 @@ block_tally.item([P_sec, Col], Blk) :- block_col(P_sec, Blk, Col).
 rarest.cand(P_sec, Col, N) :- block_tally.tally([P_sec, Col], N).
 
 fill(P_sec, Col, $Rarest()) :- rarest.low(P_sec, Col, _).
+
+.type ExLine = [e: Example, a: Axis, l: Position]
+.type ExPart = [e: Example, p_part: Position]
+
+.comp Determine {
+    // The color a grid line holds, when it holds just one.
+    .init line_col = Unanimous<ExLine, Color>
+    line_col.item([E, A, L], Col) :- ex_in(E, P, Col), axis_elem(A), split(P, A, L, _).
+
+    // The separator lines cut the grid into parts.
+    .init parts = DividerTiles<Example>
+    parts.cell(E, P) :- ex_in(E, P, _).
+    parts.divider(E, A, L) :- line_col.value([E, A, L], Col), !params.bg(Col).
+
+    .init part_box = Bbox<ExPart>
+    part_box.cell([E, P_part], P) :- parts.tile_of(E, P, P_part).
+
+    // A section is a square part.
+    .decl section(k: number)
+    section(K) :-
+        part_box.cell(Ky, P), part_box.box(Ky, B),                     // the box a part spans
+        perp(A, A2), box_extent(B, P, A, K), box_extent(B, P, A2, K).  // of equal extents
+}

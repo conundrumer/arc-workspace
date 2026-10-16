@@ -35,3 +35,14 @@ out(P, Col) :-
     ( moved(P, Col)                   // a block cell lands here
     ; !moved(P, _), params.bg(Col)    // nothing lands here
     ).
+
+.comp Determine {
+    .type EP = [e: Example, p: Position]
+
+    // The color that covers most of the grid.
+    .init common = Mode<Unit, Color, EP>
+    common.item($U(), Col, [E, P]) :- ex_in(E, P, Col).
+
+    .decl bg(c: Color)
+    bg(Col) :- common.mode($U(), Col).
+}

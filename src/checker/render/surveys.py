@@ -603,6 +603,10 @@ def render_determination_plan(solver: Solver, result: PlanResult,
                      "these determination relations give the stored values "
                      "is not known") + _make_run(differing),
                 [printed(p) for p in by_parameter(classes.unknown)])
+    section(mctx("undecided: no proposer covers the value, and its stored "
+                 "value holds more than one fact, so the values at which "
+                 "the model fits every train pair give it"),
+            [_value_text(p, printed) for p in classes.undecided])
     section(mctx("the value is covered on this task's examples; write a "
                  "determination relation for each value here that a "
                  "proposer derives from a fact other than the one the "

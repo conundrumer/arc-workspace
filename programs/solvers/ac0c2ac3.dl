@@ -57,9 +57,6 @@
 // A ring under one scan order.
 .type Scan = [ring: Ring, c: DiagDir, a: Axis]
 
-// The marks of one example, in one scan order.
-.type ExScan = [e: Example, c: DiagDir, a: Axis]
-
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
@@ -200,26 +197,3 @@ frame(G, $RankRings(), P) :- canvas(G, P).
 blank(G, U, S) :- frame(G, U, P), shared_choice(S), !draw(G, U, S, P, _).
 
 out(P, Col, [G, U, S]) :- impl_choice([G, U, S]), draw(G, U, S, P, Col), !blank(G, U, S).
-
-.comp Determine {
-    // The marks of each example, in each scan order.
-    .init order = LexOrder<ExScan>
-    order.cell([E, C, A], P) :-
-        ex_in(E, P, Col), !params.bg(Col), diag_dir_elem(C), axis_elem(A).
-    order.corner([E, C, A], C) :- order.cell([E, C, A], _).
-    order.axis([E, C, A], A) :- order.cell([E, C, A], _).
-
-    // A mark of color Col comes after mark Q.
-    .decl later(e: Example, c: DiagDir, a: Axis, q: Position, col: Color)
-    later(E, C, A, Q, Col) :- order.before([E, C, A], Q, R), ex_in(E, R, Col).
-
-    // The output gives mark Q another color, and no mark of that color comes
-    // after Q.
-    .decl scan_clash(c: DiagDir, a: Axis)
-    scan_clash(C, A) :-
-        order.cell([E, C, A], Q), ex_in(E, Q, Col_in), ex_out(E, Q, Col), Col != Col_in,
-        !later(E, C, A, Q, Col).
-
-    .decl scan_order(d: DiagDir, a: Axis)
-    scan_order(C, A) :- diag_dir_elem(C), axis_elem(A), !scan_clash(C, A).
-}

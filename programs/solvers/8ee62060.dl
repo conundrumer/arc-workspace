@@ -38,16 +38,24 @@ out(P_out, Col, [[D]]) :-
 .comp Determine {
     .type BlockK = [e: Example, p_local: Position]
 
-    // At each within-block offset, the input's block-grid must map onto the
-    // output's.
+    // At each within-block offset, each train input's block-grid, matched
+    // against itself.
     .init block = D4Map<BlockK, Color>
     block.src([E, P_local], P_block, Col) :-
         ex_in(E, P_grid, Col), ex_out(E, _, _),                                    // cell of a train input
         params.block_size(K), divide_by_size_2d(P_grid, K, 0, P_block, P_local).   // decompose
-    block.dst([E, P_local], P_block, Col) :-
-        ex_out(E, P_grid, Col),                                                    // cell of a train output
-        params.block_size(K), divide_by_size_2d(P_grid, K, 0, P_block, P_local).   // decompose
+    block.dst(Ky, P_block, Col) :- block.src(Ky, P_block, Col).
+
+    // An element that moves some block of train input E onto a block of
+    // other content.
+    .decl moved(e: Example, d: D4)
+    moved(E, D) :- block.mismatch([E, _], D).
+
+    // An element that keeps some train input's block-grid in place: it fixes
+    // the diagonal the content lies on.
+    .decl kept(d: D4)
+    kept(D) :- ex_in(E, _, _), ex_out(E, _, _), d4_elem(D), !moved(E, D).
 
     .decl block_d4(d: D4)
-    block_d4(D) :- d4_elem(D), !block.mismatch(_, D).
+    block_d4(D) :- d4_elem(D), !kept(D).
 }

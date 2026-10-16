@@ -62,3 +62,21 @@ out(P_tile, Col, [$Vote(), Dc]) :- vote.mode([Dc, P_tile], Col).
 solid.item([Dc, P_tile], Col) :- tile(P_grid, P_tile, Dc), in(P_grid, Col), !params.noise(Col).
 
 out(P_tile, Col, [$Solid(), Dc]) :- solid.value([Dc, P_tile], Col).
+
+.comp Determine {
+    // The arrangement is the output frame.
+    .decl divisor(n: number)
+    divisor(N) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, N).
+
+    // The extent of a tile of that arrangement.
+    .decl tile_size(k: number)
+    tile_size(K) :-
+        ex_in(_, P_grid, _), divisor(N), divide_2d(P_grid, N, 0, _, P_intile),
+        axis_elem(A), axis_dim(P_intile, A, K).
+
+    .decl noise(c: Color)
+    noise(C) :-
+        ex_in(E, P_grid, C),                             // an input cell
+        divisor(N), divide_2d(P_grid, N, 0, P_tile, _),  // its tile
+        ex_out(E, P_tile, Col), Col != C.                // holds another color
+}

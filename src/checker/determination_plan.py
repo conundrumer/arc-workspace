@@ -198,6 +198,12 @@ class Enumerable:
     position: bool
 
 
+@dataclass(frozen=True)
+class MultiFact:
+    """A parameter value whose stored value holds more than one fact, so
+    the plan gives it no domain of its own."""
+
+
 type Candidates = Narrowed | Enumerable
 type Covering = Exact | Candidates
 
@@ -205,16 +211,18 @@ type Covering = Exact | Candidates
 @dataclass(frozen=True)
 class ProbeResult:
     """Each proposer's verdict on one subject, in proposer name order, and
-    a single-fact parameter's own domain."""
+    a single-fact parameter's own domain; `None` where the subject is a
+    single-fact value of types that are not enumerable, or a keyed
+    table."""
 
     subject: Subject
     verdicts: tuple[tuple[str, Verdict], ...]
-    domain: Enumerable | None
+    domain: Enumerable | MultiFact | None
 
     def entries(self) -> list[tuple[str, Verdict | Enumerable]]:
         """The verdicts, then the domain under its name."""
         out: list[tuple[str, Verdict | Enumerable]] = list(self.verdicts)
-        if self.domain is not None:
+        if isinstance(self.domain, Enumerable):
             out.append((DomainName.POSITION if self.domain.position
                         else DomainName.DOMAIN, self.domain))
         return out
@@ -381,6 +389,7 @@ class Classes:
     done: list[PlanValue]
     exact: list[PlanValue]
     unknown: list[PlanValue]
+    undecided: list[PlanValue]
 
 
 @quotes("solver-file.md", "Determination",
@@ -388,22 +397,25 @@ class Classes:
         "the rows of every case.")
 def classify(results: Sequence[ProbeResult], determined: frozenset[str],
              differing: frozenset[PlanValue] | RunFailure) -> Classes:
-    """A value is exact when a proposer reads it exactly, settles when a
-    candidate set covers it, needs a determination relation when neither,
-    and is done when a determination relation gives it. A value of a
-    determined parameter that its relation gives other than as stored
-    (`differing`) needs the relation, a value the parameter does not store
-    among them; where the determination run gave no result, a value of a
-    determined parameter is unknown. A keyed table a proposer reads
-    exactly makes both its tables exact. A parameter has one determination
-    relation, which gives the rows of every case: where one of its values
-    needs it, each of its values needs it."""
+    """A value is exact when a proposer reads it exactly, and settles when a
+    candidate set covers it; when neither does, it needs a determination
+    relation where its stored value is one fact, and is undecided where
+    that value holds more, since the fit gives it; and it is done when a
+    determination relation gives it. A value of a determined parameter
+    that its relation gives other than as stored (`differing`) needs the
+    relation, a value the parameter does not store among them; where the
+    determination run gave no result, a value of a determined parameter is
+    unknown. A keyed table a proposer reads exactly makes both its tables
+    exact. A parameter has one determination relation, which gives the
+    rows of every case: where one of its values needs it, each of its
+    values needs it."""
     differs = differing if isinstance(differing, frozenset) else None
     determine: list[PlanValue] = []
     settle: list[tuple[PlanValue, Candidates]] = []
     done: list[PlanValue] = []
     exact: list[PlanValue] = []
     unknown: list[PlanValue] = []
+    undecided: list[PlanValue] = []
     for r in results:
         p = r.subject
         if isinstance(p, KeyedTable):
@@ -414,7 +426,8 @@ def classify(results: Sequence[ProbeResult], determined: frozenset[str],
             continue
         cov = covering(r)
         if cov is None:
-            determine.append(p)
+            (undecided if isinstance(r.domain, MultiFact)
+             else determine).append(p)
         elif isinstance(cov[1], Exact):
             exact.append(p)
         else:
@@ -424,21 +437,25 @@ def classify(results: Sequence[ProbeResult], determined: frozenset[str],
         if isinstance(t, KeyedTable) and any(isinstance(v, Exact)
                                              for _, v in r.verdicts):
             for part in (t.child, t.parent):
-                if part in determine:
-                    determine.remove(part)
-                    exact.append(part)
+                for held in (determine, undecided):
+                    if part in held:
+                        held.remove(part)
+                        exact.append(part)
     determine += [v for v in differs or () if v not in determine]
     whole = by_parameter(determine)
-    determine += [v for v in (*exact, *(v for v, _c in settle), *done)
+    determine += [v for v in (*exact, *(v for v, _c in settle), *done,
+                              *undecided)
                   if parameter_of(v) in whole]
     exact = [v for v in exact if v not in determine]
     settle = [e for e in settle if e[0] not in determine]
     done = [v for v in done if v not in determine]
+    undecided = [v for v in undecided if v not in determine]
     settle.sort(key=lambda e: (-e[1].count, value_order(e[0])))
     return Classes(sorted(determine, key=value_order), settle,
                    sorted(done, key=value_order),
                    sorted(exact, key=value_order),
-                   sorted(unknown, key=value_order))
+                   sorted(unknown, key=value_order),
+                   sorted(undecided, key=value_order))
 
 
 @quotes("procedure.md", "Determine",
@@ -480,8 +497,10 @@ def survey_determination_plan(solver: Solver, runs: Runs) -> PlanResult:
                 fact[key] = (pc.value_types, set(pc.values(at)))
     results: list[ProbeResult] = []
     for name, (types, stored) in fact.items():
+        single = len(stored) == 1
         if not enumerable(types, lib):
-            results.append(ProbeResult(name, (), None))
+            results.append(ProbeResult(name, (),
+                                       None if single else MultiFact()))
             continue
         domains = param_domains(types, sorted(stored, key=row_key), task, lib)
         verdicts: list[tuple[str, Verdict]] = []
@@ -493,12 +512,10 @@ def survey_determination_plan(solver: Solver, runs: Runs) -> PlanResult:
                                                    len(domains[0]))
                              if len(types) == 1
                              else _table_verdict(cand, stored)))
-        domain = None
-        if len(stored) == 1:
-            domain = Enumerable(
-                math.prod(len(d) for d in domains),
-                any(column_domain(t, lib) == ColumnDomain.POSITION
-                    for t in types))
+        domain = Enumerable(
+            math.prod(len(d) for d in domains),
+            any(column_domain(t, lib) == ColumnDomain.POSITION
+                for t in types)) if single else MultiFact()
         results.append(ProbeResult(name, tuple(verdicts), domain))
     for table, types, rows in _keyed_tables(solver, fact):
         tv = tuple((prop, _table_verdict(set(proposals.values[prop]), rows))

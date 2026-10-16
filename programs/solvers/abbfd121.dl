@@ -458,29 +458,37 @@ pick(S, Sel, X, $TieFirst(), [Av, [C, A]], B) :-
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
     parse.occluder(E, B) :- parse.color_fill(E, _, B).
 
-    // A block that differs from the example's output in extent on some axis.
-    .decl unframed(e: Example, b: Box)
-    unframed(E, B) :- parse.extent(E, B, A, N), ex_out(E, Q, _), axis_dim(Q, A, M), N != M.
+    // A block of the extents of the example's output, on both axes.
+    .decl framed(e: Example, b: Box)
+    framed(E, B) :-
+        parse.extent(E, B, A, N), perp(A, A2), parse.extent(E, B, A2, N2),
+        ex_out(E, Q, _), axis_dims(Q, A, N, N2).
 
     // Under axis x, the concept's tie reading picks a block of the output's
     // extents.
     .decl axis_fits(e: Example, x: Axis)
-    axis_fits(E, X) :- parse.sole.value([E, $AxisThenCross(), X], B), !unframed(E, B).
+    axis_fits(E, X) :- parse.sole.value([E, $AxisThenCross(), X], B), framed(E, B).
 
-    .decl axis_contradicted(x: Axis)
-    axis_contradicted(X) :- ex_out(E, _, _), axis_elem(X), !axis_fits(E, X).
+    // An axis under which one example's pick fits and another's does not.
+    .decl axis_missed(x: Axis)
+    axis_missed(X) :- axis_fits(_, X), ex_out(E, _, _), !axis_fits(E, X).
 
     .decl primary_axis(a: Axis)
-    primary_axis(X) :- axis_elem(X), !axis_contradicted(X).
+    primary_axis(X) :- axis_fits(_, X), !axis_missed(X).
 
-    // Under scan (c, a), the tie among the largest blocks goes to one whose
-    // extents differ from the output's.
-    .decl scan_contradicted(c: DiagDir, a: Axis)
-    scan_contradicted(C, A) :-
-        parse.first_pick([E, $Area(), _], C, A, B), unframed(E, B).
+    // Under scan (c, a), the tie among the largest blocks goes to one of the
+    // output's extents.
+    .decl scan_fits(e: Example, c: DiagDir, a: Axis)
+    scan_fits(E, C, A) :- parse.first_pick([E, $Area(), _], C, A, B), framed(E, B).
+
+    // A scan under which some example's pick has other extents.
+    .decl scan_missed(c: DiagDir, a: Axis)
+    scan_missed(C, A) :-
+        scan_fits(_, C, A), parse.first_pick([E, $Area(), _], C, A, _), ex_out(E, _, _),
+        !scan_fits(E, C, A).
 
     .decl scan(c: DiagDir, a: Axis)
-    scan(C, A) :- diag_dir_elem(C), axis_elem(A), !scan_contradicted(C, A).
+    scan(C, A) :- scan_fits(_, C, A), !scan_missed(C, A).
 
     // The colors the examples hold.
     .decl palette(col: Color)

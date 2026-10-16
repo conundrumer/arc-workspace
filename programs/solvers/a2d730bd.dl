@@ -496,18 +496,12 @@ painted([U, O, S, T, R, $ScanOrder(), Co], Bo, [C2, A2], X, Col) :-
 .comp Determine {
     // A dot of one example.
     .type Sighting = [e: Example, p: Position]
-    // A scan order over one example's dots.
-    .type Scan = [e: Example, corner: DiagDir, axis: Axis]
-
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
     parse.foot_at(D, V) :-
         draw_aim(D0), apply_dir(G, D0, D), draw_foot_offsets(V0), apply(G, V0, V).
     parse.head_at(D, V) :-
         draw_aim(D0), apply_dir(G, D0, D), draw_head_offsets(V0), apply(G, V0, V).
-
-    .decl trained(e: Example)
-    trained(E) :- ex_out(E, _, _).
 
     // A color with more than one block under reading T.
     .decl twin(e: Example, t: Thin, col: Color)
@@ -517,7 +511,8 @@ painted([U, O, S, T, R, $ScanOrder(), Co], Bo, [C2, A2], X, Col) :-
     // aligned with it toward D.
     .decl plain(e: Example, p: Position, id: Ident, d: Dir)
     plain(E, P, Id, D) :-
-        trained(E), parse.single(E, P, Col), parse.block(E, $ThickBlock(), Id, Col),
+        ex_out(E, _, _), parse.single(E, P, Col),  // a train pair's dot
+        parse.block(E, $ThickBlock(), Id, Col),
         !twin(E, $ThickBlock(), Col), parse.aligned(E, P, Id, D).
 
     // A cell the output gives a non-background color, background in the
@@ -556,44 +551,4 @@ painted([U, O, S, T, R, $ScanOrder(), Co], Bo, [C2, A2], X, Col) :-
 
     .decl draw_head_offsets(v: Offset)
     draw_head_offsets(V) :- head.reach([E, P], X), X != P, relative(P, X, V).
-
-    // Under the scan order from C along A, an example dot's color has several
-    // blocks, the dot is aligned with the first, and the output leaves the
-    // foot's center without the dot's color.
-    .decl block_contradicted(c: DiagDir, a: Axis)
-    block_contradicted(C, A) :-
-        trained(E), parse.loose(E, P, Col), twin(E, $ThinBlock(), Col),
-        parse.first_block(E, $ThinBlock(), Col, C, A, Id), parse.aligned(E, P, Id, D),
-        parse.foot(E, P, Id, D, F), ex_out(E, F, Col2), Col2 != Col.
-
-    .decl block_order(c: DiagDir, a: Axis)
-    block_order(C, A) :- diag_dir_elem(C), axis_elem(A), !block_contradicted(C, A).
-
-    // Cell X as a plain dot draws it.
-    .decl drawn(e: Example, p: Position, x: Position, col: Color)
-    drawn(E, P, X, Col) :- plain(E, P, Id, D), parse.stroke(E, P, Id, D, X, Col).
-
-    // Two plain dots give cell X different colors.
-    .decl clash(e: Example, x: Position)
-    clash(E, X) :- drawn(E, P, X, Col), drawn(E, P2, X, Col2), P != P2, Col != Col2.
-
-    .init scan = LexOrder<Scan>
-    scan.corner([E, C, A], C) :- scan.cell([E, C, A], _).
-    scan.axis([E, C, A], A) :- scan.cell([E, C, A], _).
-    scan.cell([E, C, A], P) :- plain(E, P, _, _), diag_dir_elem(C), axis_elem(A).
-
-    // A later dot in the scan order from C along A also draws the clash cell.
-    .decl overdrawn(e: Example, c: DiagDir, a: Axis, p: Position, x: Position)
-    overdrawn(E, C, A, P, X) :-
-        clash(E, X), drawn(E, P, X, _), drawn(E, P2, X, _), scan.before([E, C, A], P, P2).
-
-    // Under the scan order from C along A, the last dot to draw a clash cell
-    // gives it a color the output does not show.
-    .decl scan_contradicted(c: DiagDir, a: Axis)
-    scan_contradicted(C, A) :-
-        clash(E, X), drawn(E, P, X, Col), scan.cell([E, C, A], P), !overdrawn(E, C, A, P, X),
-        ex_out(E, X, Col2), Col2 != Col.
-
-    .decl scan_order(c: DiagDir, a: Axis)
-    scan_order(C, A) :- diag_dir_elem(C), axis_elem(A), !scan_contradicted(C, A).
 }

@@ -418,17 +418,28 @@ palette(Fs, $DerivedPointer(), F, Ptr) :- derived_pointer(F, Ptr), field_of(Fs, 
     cast(E, P, D) :-
         parse.head(E, P), changed(E, Q), same_line(A, P, Q), axis4_of(D, A), nearer(D, Q, P).
 
-    // Under order (C, A), the first head cell casts nowhere.
-    .decl head_contradicted(c: DiagDir, a: Axis)
-    head_contradicted(C, A) :- parse.scan.first([E, C, A], P), ex_out(E, _, _), !cast(E, P, _).
+    // The orders whose first head cell is one that casts, per pair.
+    .decl head_first(e: Example, c: DiagDir, a: Axis)
+    head_first(E, C, A) :- cast(E, P, _), parse.scan.first([E, C, A], P).
+
+    // An order whose first head cell casts in one pair and not in another.
+    .decl head_missed(c: DiagDir, a: Axis)
+    head_missed(C, A) :- head_first(_, C, A), ex_out(E, _, _), !head_first(E, C, A).
 
     .decl head_order(c: DiagDir, a: Axis)
-    head_order(C, A) :- diag_dir_elem(C), axis_elem(A), !head_contradicted(C, A).
+    head_order(C, A) :- head_first(_, C, A), !head_missed(C, A).
 
-    // Under order (C, A), a head cell's step casts nowhere.
-    .decl tie_contradicted(c: DiagDir, a: Axis)
-    tie_contradicted(C, A) :- parse.tie_step(E, P, C, A, D), ex_out(E, _, _), !cast(E, P, D).
+    // The orders under which a head cell's step is a direction it casts.
+    .decl tie_cast(e: Example, p: Position, c: DiagDir, a: Axis)
+    tie_cast(E, P, C, A) :- cast(E, P, D), parse.tie_step(E, P, C, A, D).
+
+    // An order under which some head cell's step casts nowhere.
+    .decl tie_missed(c: DiagDir, a: Axis)
+    tie_missed(C, A) :-
+        tie_cast(_, _, C, A),                               // an order some step casts under
+        parse.tie_step(E, P, C, A, _), ex_out(E, _, _),     // a head cell's step under it
+        !tie_cast(E, P, C, A).                              // that casts nowhere
 
     .decl tie_order(c: DiagDir, a: Axis)
-    tie_order(C, A) :- diag_dir_elem(C), axis_elem(A), !tie_contradicted(C, A).
+    tie_order(C, A) :- tie_cast(_, _, C, A), !tie_missed(C, A).
 }

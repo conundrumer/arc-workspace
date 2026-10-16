@@ -162,6 +162,13 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), params.bg(Col).
     offset(E, P, Delta) :-
         mark(E, P, Col), ex_out(E, Q, Col), relative(P, Q, Delta).
 
+    // An edge some marker sits off.
+    .decl off_edge(d: Dir)
+    off_edge(D) :- mark(_, P, _), dir_elem(D), !dist(P, D, 0).
+
+    .decl dir(d: Dir)
+    dir(D) :- dir_elem(D), !off_edge(D).
+
     .decl radius(e: Example, p: Position, i: number, r: number)
     radius(E, P, I, R) :-
         offset(E, P, Delta),
@@ -185,6 +192,9 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), params.bg(Col).
 
     .decl period(n: number)
     period(N) :- unbroken.low($U(), N).
+
+    .decl step_cells(k: number)
+    step_cells(N) :- period(N).
 
     .decl slot(k: number)
     slot(K) :- radius(_, _, K, _), period(N), K < N.

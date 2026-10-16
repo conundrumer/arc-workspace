@@ -102,7 +102,7 @@ out(P, Col, Ch) :-
 
     .decl slide_map(d: Dir, d_out: Dir)
     slide_map(D_side, D) :-
-        parse.side(E, Id, D_side),                          // a part, on its side of the seam
-        dir_elem(D), params.shift(K), jump_offset(D, K, M),  // a slide
-        seating.occurrence([E, Id], M).                     // that fits the output
+        parse.side(E, Id, D_side),                           // a part, on its side of the seam
+        seating.occurrence([E, Id], M),                      // where it seats on the output
+        params.shift(K), dir_elem(D), jump_offset(D, K, M).  // that translation's direction
 }

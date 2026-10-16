@@ -156,23 +156,29 @@ out(P, Col, [S, $Cover()]) :-
         piece_cell([E, Col, Id], P), diag_dir_elem(D),  // a piece cell, each direction
         neighbor(P, D, Q), ex_in(E, Q, _).              // one step, inside the frame
 
-    // Some cell of the copy toward D is not repainted, so the piece did not
-    // step that way.
-    .decl off_step(o: ExObj, dir: DiagDir)
-    off_step([E, Col, Id], D) :- copy_land([E, Col, Id], D, Q), !painted(E, Q, _).
+    // The piece's shape among the repainted cells: its copy. A copy cell past
+    // the frame drops, so each cell just past the frame counts as a copy cell.
+    .init copy = Occurrences<ExObj, Unit>
+    copy.shape(O, P, $U()) :- piece_cell(O, P).
+    copy.cell([E, Col, Id], Q, $U()) :-
+        piece_cell([E, Col, Id], P),
+        ( painted(E, Q, _)                                      // a repainted cell
+        ; diag_dir_elem(D), neighbor(P, D, Q), !ex_in(E, Q, _)  // past the frame
+        ).
 
     .decl step(src: Color, open: DiagDir, dir: DiagDir)
     step(Col, Diag, D) :-
-        parse.open_diag([E, Col, Id], Diag),                        // a piece's open corner
-        copy_land([E, Col, Id], D, _), !off_step([E, Col, Id], D).  // its whole copy repainted
+        parse.open_diag([E, Col, Id], Diag),       // a piece's open corner
+        copy.occurrence([E, Col, Id], V),          // where its copy lies
+        diag_dir_elem(D), step_offset(D, V).       // one diagonal step away
 
-    // Candidates range over the rotations, the domain params.rot names.
-    .decl rot_off(src: Color, d: D4)
-    rot_off(Col, Rot) :-
-        step(Col, Diag, D), c4_elem(Rot), apply_diag_dir(Rot, Diag, D2), D2 != D.
+    // The rotation that turns a piece's open corner to its step, one per
+    // step: the rotations act on the corners freely and transitively.
+    .init turn = Unanimous<Color, D4>
+    turn.item(Col, Rot) :- step(Col, Diag, D), c4_elem(Rot), apply_diag_dir(Rot, Diag, D).
 
     .decl rot(src: Color, d: D4)
-    rot(Col, Rot) :- step(Col, _, _), c4_elem(Rot), !rot_off(Col, Rot).
+    rot(Col, Rot) :- turn.value(Col, Rot).
 
     // The piece's copy, under the determined step.
     .decl copy_cell(o: ExObj, p: Position)

@@ -168,137 +168,17 @@ line_rule_choice($ClearLine()). line_rule_choice($SideEmpty()).
 .decl edge_rule_choice(eg: EdgeRule)
 edge_rule_choice($OpenEdge()). edge_rule_choice($BandEdgeMargin()).
 
-.comp Parse<Key> {
-    .decl cell(key: Key, p: Position, col: Color)  // input
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.background(Col).
 
-    // The open values of the quorum to read the grid at.
-    .decl quorum(key: Key, q: number)  // input
+.decl blank(p: Position)
+blank(P) :- in(P, Col), params.background(Col).
 
-    .decl ink(key: Key, p: Position)
-    ink(K, P) :- cell(K, P, Col), !params.background(Col).
-
-    .decl blank(key: Key, p: Position)
-    blank(K, P) :- cell(K, P, Col), params.background(Col).
-
-    // The runs of blank cells.
-    // @claim band channel-fill
-    .init open_run = Slide<Key>
-    open_run.node(K, P) :- blank(K, P).
-    open_run.dir(K, D) :- blank(K, _), dir_elem(D).
-
-    // --- $EmptyLineBands ---
-    .type Lines = [key: Key, a: Axis]
-
-    // A line along A, by its cell's component across A, that holds ink.
-    .decl inked_line(k: Lines, l: Position)
-    inked_line([K, A], L) :- ink(K, P), perp(A, A2), split(P, A2, L, _).
-
-    .decl empty_line(k: Lines, p: Position)
-    empty_line([K, A], P) :-
-        cell(K, P, _), perp(A, A2), split(P, A2, L, _), !inked_line([K, A], L).
-
-    // The span across A from the first empty line to the last.
-    // @claim band
-    .init span = Bbox<Lines>
-    span.cell(L, P) :- empty_line(L, P).
-
-    // A cell on a middle line of the span: equally far from the span's two
-    // sides, or one of the two lines that are.
-    .decl middle(k: Lines, p: Position)
-    middle([K, A], P) :-
-        span.box([K, A], S), cell(K, P, _), crop(P, S, P_rel),
-        perp(A, A2), axis_of(D, A2), opposite(D, O), dist(P_rel, D, N),
-        ( dist(P_rel, O, N)
-        ; neighbor(P, D, Q), crop(Q, S, Q_rel), dist(Q_rel, O, N)
-        ).
-
-    // A line across A, by its component along A.
-    .type Row = [k: Lines, r: Position]
-
-    // A line across A whose middle cell is ink.
-    .decl broken(r: Row)
-    broken([[K, A], R]) :- middle([K, A], P), ink(K, P), split(P, A, R, _).
-
-    // A middle cell P of line R, where the middle is blank.
-    .decl mid(r: Row, p: Position)
-    mid([[K, A], R], P) :- middle([K, A], P), split(P, A, R, _), !broken([[K, A], R]).
-
-    // The end toward D of the blank run through the middle of line R.
-    .decl mid_end(r: Row, d: Dir, e: Position)
-    mid_end([[K, A], R], D, E) :-
-        mid([[K, A], R], P), perp(A, A2), axis_of(D, A2), open_run.rest(K, P, D, E).
-
-    // @claim band
-    .init run_width = Tally<Row, Position>
-    run_width.item([[K, A], R], Q) :-
-        mid([[K, A], R], P),
-        ( Q = P ; perp(A, A2), axis_of(D, A2), open_run.run(K, P, D, Q) ).
-
-    .type Width = [k: Lines, w: number]
-
-    // @claim band
-    .init width_count = Tally<Width, Position>
-    width_count.item([L, W], R) :- run_width.tally([L, R], W).
-
-    // Each axis read at one quorum value.
-    .type Tier = [k: Lines, q: number]
-
-    // The narrowest width that the quorum of lines shares.
-    // @claim band
-    .init shared = Extremes<Tier>
-    shared.cand([[K, A], Q], W) :-
-        width_count.tally([[K, A], W], N), quorum(K, Q), N >= Q.
-
-    .decl wide_run(t: Tier, r: Position)
-    wide_run([L, Q], R) :- run_width.tally([L, R], W), shared.low([L, Q], W0), W >= W0.
-    wide_run([[K, A], Q], R) :-
-        run_width.tally([[K, A], R], _), quorum(K, Q), !shared.low([[K, A], Q], _).
-
-    .type Side = [t: Tier, d: Dir]
-
-    // The cross-section: the intersection of the wide runs.
-    // @claim band
-    .init cut = Extremes<Side>
-    cut.cand([[L, Q], D], N) :- wide_run([L, Q], R), mid_end([L, R], D, E), dist(E, D, N).
-
-    .decl short_run(t: Tier, r: Position)
-    short_run([L, Q], R) :-
-        mid_end([L, R], D, E), cut.high([[L, Q], D], N), dist(E, D, N2), N2 > N.
-
-    // @claim band
-    .init stretch = Components<Tier>
-    stretch.node([[K, A], Q], P) :- mid([[K, A], R], P), quorum(K, Q), !short_run([[K, A], Q], R).
-
-    .type Stretch = [t: Tier, id: Ident]
-
-    // @claim band
-    .init stretch_len = Tally<Stretch, Position>
-    stretch_len.item([[[K, A], Q], Id], R) :- stretch.label([[K, A], Q], P, Id), split(P, A, R, _).
-
-    // @claim band
-    .init longest = ArgExtremes<Tier, Ident>
-    longest.cand(T, Id, N) :- stretch_len.tally([T, Id], N).
-
-    // @claim band
-    .init stretch_box = Bbox<Stretch>
-    stretch_box.cell([T, Id], P) :- stretch.label(T, P, Id).
-
-    .init line_box = DirPack<Stretch>
-    line_box.edge([[[K, A], Q], Id], D, N) :-
-        longest.high([[K, A], Q], Id, _), stretch_box.box([[[K, A], Q], Id], B),
-        axis_of(D, A), dist(B, D, N).
-    line_box.edge([[[K, A], Q], Id], D, N) :-
-        longest.high([[K, A], Q], Id, _), perp(A, A2), axis_of(D, A2),
-        cut.high([[[K, A], Q], D], N).
-
-    // The bands at each quorum value.
-    .decl line_band(key: Key, q: number, b: Box)
-    line_band(K, Q, B) :- line_box.box([[[K, _], Q], _], B).
-}
-
-.init parse = Parse<Unit>
-parse.cell($U(), P, Col) :- in(P, Col).
-parse.quorum($U(), Q) :- params.quorum(Q).
+// The runs of blank cells.
+// @claim band channel-fill
+.init open_run = Slide<Unit>
+open_run.node($U(), P) :- blank(P).
+open_run.dir($U(), D) :- blank(_), dir_elem(D).
 
 // Q lies within the margin of P on both axes.
 .decl near(p: Position, q: Position) inline
@@ -310,14 +190,14 @@ near_side(B, P, D) :- crop(P, B, P_rel), dist(P_rel, D, K), params.margin(M), K 
 
 // Some ink cell lies within the margin of P.
 .decl crowded(p: Position)
-crowded(P) :- in(P, _), parse.ink(_, Q), near(P, Q).
+crowded(P) :- in(P, _), ink(Q), near(P, Q).
 
 // ---------------------------------------------------------------------------
 // Empty rectangles
 
 // The blank run from P toward D ends K cells from edge D.
 .decl reach(d: Dir, p: Position, k: number)
-reach(D, P, K) :- parse.open_run.rest(_, P, D, E), dir_elem(D), dist(E, D, K).
+reach(D, P, K) :- open_run.rest(_, P, D, E), dir_elem(D), dist(E, D, K).
 
 .type Base = [d: Dir, p: Position]
 
@@ -333,11 +213,11 @@ base.seed([D, P], P) :- reach(D, P, _).
 // @claim band
 .init hull = Bbox<Base>
 hull.cell(B, Q) :- base.reach(B, Q).
-hull.cell([D, P], E) :- parse.open_run.rest(_, P, D, E), dir_elem(D).
+hull.cell([D, P], E) :- open_run.rest(_, P, D, E), dir_elem(D).
 
 // @claim band
 .init area = Tally<Box, Position>
-area.item(B, P) :- hull.box(_, B), parse.blank(_, P), inside(P, B).
+area.item(B, P) :- hull.box(_, B), blank(P), inside(P, B).
 
 // ---------------------------------------------------------------------------
 // Bands
@@ -385,8 +265,110 @@ band_value($TiedBands(), [nil]).
 band_box([$TiedBands(), [nil]], B) :- by_area.high(_, B, _).
 
 // --- $EmptyLineBands ---
+// A line along A, by its cell's component across A, that holds ink.
+.decl inked_line(a: Axis, l: Position)
+inked_line(A, L) :- ink(P), perp(A, A2), split(P, A2, L, _).
+
+.decl empty_line(a: Axis, p: Position)
+empty_line(A, P) :-
+    in(P, _), perp(A, A2), split(P, A2, L, _), !inked_line(A, L).
+
+// The span across A from the first empty line to the last.
+// @claim band
+.init span = Bbox<Axis>
+span.cell(L, P) :- empty_line(L, P).
+
+// A cell on a middle line of the span: equally far from the span's two
+// sides, or one of the two lines that are.
+.decl middle(a: Axis, p: Position)
+middle(A, P) :-
+    span.box(A, S), in(P, _), crop(P, S, P_rel),
+    perp(A, A2), axis_of(D, A2), opposite(D, O), dist(P_rel, D, N),
+    ( dist(P_rel, O, N)
+    ; neighbor(P, D, Q), crop(Q, S, Q_rel), dist(Q_rel, O, N)
+    ).
+
+// A line across A, by its component along A.
+.type Row = [a: Axis, r: Position]
+
+// A line across A whose middle cell is ink.
+.decl broken(r: Row)
+broken([A, R]) :- middle(A, P), ink(P), split(P, A, R, _).
+
+// A middle cell P of line R, where the middle is blank.
+.decl mid(r: Row, p: Position)
+mid([A, R], P) :- middle(A, P), split(P, A, R, _), !broken([A, R]).
+
+// The end toward D of the blank run through the middle of line R.
+.decl mid_end(r: Row, d: Dir, e: Position)
+mid_end([A, R], D, E) :-
+    mid([A, R], P), perp(A, A2), axis_of(D, A2), open_run.rest($U(), P, D, E).
+
+// @claim band
+.init run_width = Tally<Row, Position>
+run_width.item([A, R], Q) :-
+    mid([A, R], P),
+    ( Q = P ; perp(A, A2), axis_of(D, A2), open_run.run($U(), P, D, Q) ).
+
+.type Width = [a: Axis, w: number]
+
+// @claim band
+.init width_count = Tally<Width, Position>
+width_count.item([L, W], R) :- run_width.tally([L, R], W).
+
+// Each axis read at one quorum value.
+.type Tier = [a: Axis, q: number]
+
+// The narrowest width that the quorum of lines shares.
+// @claim band
+.init shared = Extremes<Tier>
+shared.cand([A, Q], W) :-
+    width_count.tally([A, W], N), params.quorum(Q), N >= Q.
+
+.decl wide_run(t: Tier, r: Position)
+wide_run([L, Q], R) :- run_width.tally([L, R], W), shared.low([L, Q], W0), W >= W0.
+wide_run([A, Q], R) :-
+    run_width.tally([A, R], _), params.quorum(Q), !shared.low([A, Q], _).
+
+.type Side = [t: Tier, d: Dir]
+
+// The cross-section: the intersection of the wide runs.
+// @claim band
+.init cut = Extremes<Side>
+cut.cand([[L, Q], D], N) :- wide_run([L, Q], R), mid_end([L, R], D, E), dist(E, D, N).
+
+.decl short_run(t: Tier, r: Position)
+short_run([L, Q], R) :-
+    mid_end([L, R], D, E), cut.high([[L, Q], D], N), dist(E, D, N2), N2 > N.
+
+// @claim band
+.init stretch = Components<Tier>
+stretch.node([A, Q], P) :- mid([A, R], P), params.quorum(Q), !short_run([A, Q], R).
+
+.type Stretch = [t: Tier, id: Ident]
+
+// @claim band
+.init stretch_len = Tally<Stretch, Position>
+stretch_len.item([[A, Q], Id], R) :- stretch.label([A, Q], P, Id), split(P, A, R, _).
+
+// @claim band
+.init longest = ArgExtremes<Tier, Ident>
+longest.cand(T, Id, N) :- stretch_len.tally([T, Id], N).
+
+// @claim band
+.init stretch_box = Bbox<Stretch>
+stretch_box.cell([T, Id], P) :- stretch.label(T, P, Id).
+
+.init line_box = DirPack<Stretch>
+line_box.edge([[A, Q], Id], D, N) :-
+    longest.high([A, Q], Id, _), stretch_box.box([[A, Q], Id], B),
+    axis_of(D, A), dist(B, D, N).
+line_box.edge([[A, Q], Id], D, N) :-
+    longest.high([A, Q], Id, _), perp(A, A2), axis_of(D, A2),
+    cut.high([[A, Q], D], N).
+
 band_value($EmptyLineBands(), [[Q]]) :- params.quorum(Q).
-band_box([$EmptyLineBands(), [[Q]]], B) :- parse.line_band(_, Q, B).
+band_box([$EmptyLineBands(), [[Q]]], B) :- line_box.box([[_, Q], _], B).
 
 // ---------------------------------------------------------------------------
 // Pieces
@@ -502,7 +484,7 @@ cross([K, D, Id], Q) :-
 // The far end F of the blank run from a cross-section cell, N from the edge.
 .decl cross_end(c: Channel, f: Position, n: number)
 cross_end([K, D, Id], F, N) :-
-    cross([K, D, Id], Q), opposite(D, D2), parse.open_run.rest(_, Q, D2, F), dist(F, D, N).
+    cross([K, D, Id], Q), opposite(D, D2), open_run.rest(_, Q, D2, F), dist(F, D, N).
 
 // How far from the edge every line of the cross-section stays blank.
 // @claim channel-fill
@@ -531,8 +513,8 @@ edge_cell(D, E) :- in(E, _), dir_elem(D), dist(E, D, 0).
 .decl open_line(d: Dir, k: number, e: Position)
 open_line(D, K, E) :-
     edge_cell(D, E), opposite(D, D2),
-    ( parse.open_run.run(_, E, D2, P), dist(P, D, K)          // a blank cell past E
-    ; parse.open_run.rest(_, E, D2, F), neighbor(F, D2, N),
+    ( open_run.run(_, E, D2, P), dist(P, D, K)          // a blank cell past E
+    ; open_run.rest(_, E, D2, F), neighbor(F, D2, N),
       in(N, _), dist(N, D, K)                                 // the first ink cell
     ).
 
@@ -572,7 +554,7 @@ arm_span.cell(G, E) :- arm_line(G, E).
 // The far end F of the blank run on a line of the group, N from the edge.
 .decl line_end(g: Group, f: Position, n: number)
 line_end([D, K, Id], F, N) :-
-    arm_group.label([D, K], E, Id), opposite(D, D2), parse.open_run.rest(_, E, D2, F), dist(F, D, N).
+    arm_group.label([D, K], E, Id), opposite(D, D2), open_run.rest(_, E, D2, F), dist(F, D, N).
 
 // How far from the edge every line of the group stays blank.
 // @claim channel-fill
@@ -711,24 +693,3 @@ out(P, Col, [Bd, An, Ex, Hd, Ln, Eg], V) :-
     ( green([Bd, An, Ex, Hd, Ln, Eg], V, P), params.fill(Col)
     ; !green([Bd, An, Ex, Hd, Ln, Eg], V, P), Col = Col_in
     ).
-
-.comp Determine {
-    .init ex = Parse<Example>
-    ex.cell(E, P, Col) :- ex_in(E, P, Col).
-    // Each count of lines between a cell and an edge.
-    ex.quorum(E, N) :- ex_in(E, P, _), dir_elem(D), dist(P, D, N), N > 0.
-
-    // A cell of the output's fill lies within the margin of P.
-    .decl near_fill(e: Example, p: Position)
-    near_fill(E, P) :- ex_in(E, P, _), ex_out(E, Q, Col), params.fill(Col), near(P, Q).
-
-    // At quorum Q the example has no line band, or a band cell with no
-    // filled cell near it.
-    .decl misread(q: number)
-    misread(Q) :- ex.quorum(E, Q), ex_out(E, _, _), !ex.line_band(E, Q, _).
-    misread(Q) :-
-        ex.line_band(E, Q, B), ex_out(E, _, _), ex_in(E, P, _), inside(P, B), !near_fill(E, P).
-
-    .decl quorum(n: number)
-    quorum(Q) :- ex.quorum(E, Q), ex_out(E, _, _), !misread(Q).
-}

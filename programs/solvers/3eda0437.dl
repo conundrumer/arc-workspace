@@ -28,51 +28,28 @@
 
 .init params = Params
 
-.comp Parse<Key> {
-    .decl cell(key: Key, p: Position, col: Color)  // input
+.decl hole(p: Position)
+hole(P) :- in(P, Col), params.bg(Col).
 
-    .decl hole(key: Key, p: Position)
-    hole(Ky, P) :- cell(Ky, P, Col), params.bg(Col).
+// Every box two holes span.
+.type Corners = [p: Position, q: Position]
 
-    // Every box two holes span.
-    .type Corners = [key: Key, p: Position, q: Position]
+.init span = Bbox<Corners>
+span.cell([P, Q], P) :- hole(P), hole(Q).
+span.cell([P, Q], Q) :- hole(P), hole(Q).
 
-    .init span = Bbox<Corners>
-    span.cell([Ky, P, Q], P) :- hole(Ky, P), hole(Ky, Q).
-    span.cell([Ky, P, Q], Q) :- hole(Ky, P), hole(Ky, Q).
+.decl box(b: Box)
+box(B) :- span.box(_, B).
 
-    .decl box(key: Key, b: Box)
-    box(Ky, B) :- span.box([Ky, _, _], B).
+.decl box_ink(b: Box)
+box_ink(B) :- box(B), in(P, _), !hole(P), inside(P, B).
 
-    .decl box_ink(key: Key, b: Box)
-    box_ink(Ky, B) :- box(Ky, B), cell(Ky, P, _), !hole(Ky, P), inside(P, B).
+// A box of pure background, and the cells it holds.
+.decl hole_box(b: Box)
+hole_box(B) :- box(B), !box_ink(B).
 
-    // A box of pure background, and the cells it holds.
-    .decl hole_box(key: Key, b: Box)
-    hole_box(Ky, B) :- box(Ky, B), !box_ink(Ky, B).
-
-    .decl hole_cell(key: Key, b: Box, p: Position)
-    hole_cell(Ky, B, P) :- hole_box(Ky, B), hole(Ky, P), inside(P, B).
-
-    // A hole box of side K.
-    .decl square(key: Key, b: Box, k: number)
-    square(Ky, B, K) :-
-        hole_box(Ky, B), span.box([Ky, P, Q], B),
-        axis_elem(A), perp(A, A2),
-        box_extent(B, P, A, K), box_extent(B, P, A2, K).    // side K on both axes
-
-    // How many squares of side K a box holds.
-    .type SeatKey = [key: Key, b: Box, k: number]
-
-    .init seat = Tally<SeatKey, Box>
-    seat.item([Ky, B, K], B_sq) :- hole_box(Ky, B), square(Ky, B_sq, K), inside(B_sq, B).
-
-    .decl seats(key: Key, b: Box, k: number, n: number)
-    seats(Ky, B, K, N) :- seat.tally([Ky, B, K], N).
-}
-
-.init parse = Parse<Unit>
-parse.cell($U(), P, Col) :- in(P, Col).
+.decl hole_cell(b: Box, p: Position)
+hole_cell(B, P) :- hole_box(B), hole(P), inside(P, B).
 
 // --- The box the score picks ---
 
@@ -82,7 +59,7 @@ parse.cell($U(), P, Col) :- in(P, Col).
 best.cand(Ch, B, N) :- score(B, N, Ch).
 
 .decl filled(p: Position, ch: Choice)
-filled(P, Ch) :- best.high(Ch, B, _), parse.hole_cell($U(), B, P).
+filled(P, Ch) :- best.high(Ch, B, _), hole_cell(B, P).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Area()). impl_choice($Block()).
@@ -92,47 +69,31 @@ impl_choice($Area()). impl_choice($Block()).
 // A box holding two cells a diagonal step apart is a region, not a line.
 .decl region(b: Box)
 region(B) :-
-    parse.hole_cell($U(), B, P),                       // a cell of the box
-    diag_dir_elem(D), neighbor(P, D, Q),               // and the cell across a corner
-    parse.hole_cell($U(), B, Q).
+    hole_cell(B, P),                         // a cell of the box
+    diag_dir_elem(D), neighbor(P, D, Q),     // and the cell across a corner
+    hole_cell(B, Q).
 
 .init size = Tally<Box, Position>
-size.item(B, P) :- region(B), parse.hole_cell($U(), B, P).
+size.item(B, P) :- region(B), hole_cell(B, P).
 
 score(B, N, $Area()) :- size.tally(B, N).
 
 // --- $Block ---
 
-score(B, N, $Block()) :- params.block(K), parse.seats($U(), B, K, N).
+// A hole box of side params.block.
+.decl square(b: Box)
+square(B) :-
+    params.block(K), hole_box(B), span.box([P, _], B),
+    perp(A, A2), box_extent(B, P, A, K), box_extent(B, P, A2, K).   // side K on both axes
+
+// How many such squares a box holds.
+.init seat = Tally<Box, Box>
+seat.item(B, B_sq) :- hole_box(B), square(B_sq), inside(B_sq, B).
+
+score(B, N, $Block()) :- seat.tally(B, N).
 
 // --- Output ---
 
 out(P, Col, Ch) :- filled(P, Ch), params.paint(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !filled(P, Ch).
 
-.comp Determine {
-    .init parse = Parse<Example>
-    parse.cell(E, P, Col) :- ex_in(E, P, Col).
-
-    // The cells the example repaints, and the box they fill.
-    .decl painted(e: Example, p: Position)
-    painted(E, P) :- ex_in(E, P, C1), ex_out(E, P, C2), C1 != C2.
-
-    .init pbox = Bbox<Example>
-    pbox.cell(E, P) :- painted(E, P).
-
-    // Every side some hole box shows.
-    .decl cand(k: number)
-    cand(K) :- parse.square(_, _, K).
-
-    .decl refuted(k: number)
-    refuted(K) :-
-        cand(K), pbox.box(E, B),                     // an example's painted box
-        ( !parse.seats(E, B, K, _)                      // holds no such block
-        ; parse.seats(E, B, K, N),                      // or a rival matches its count
-          parse.seats(E, B2, K, N2), B2 != B, N2 >= N
-        ).
-
-    .decl block(k: number)
-    block(K) :- cand(K), !refuted(K).
-}

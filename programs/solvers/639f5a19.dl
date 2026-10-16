@@ -81,9 +81,18 @@ out(P, Col, Ch) :-
 
 .comp Determine {
     .type ObjKey = [e: Example, id: Ident]
+    .type EP = [e: Example, p: Position]
 
+    .init bg_count = Mode<Unit, Color, EP>
+    bg_count.item($U(), Col, [E, P]) :- ex_in(E, P, Col).
+
+    .decl bg(col: Color)
+    bg(Col) :- bg_count.mode($U(), Col).
+
+    // Each object is repainted in place, so each output's objects are its
+    // input's.
     .init objs = Components<Example>
-    objs.node(E, P) :- ex_in(E, P, Col), !params.bg(Col).
+    objs.node(E, P) :- ex_out(E, P, Col), !params.bg(Col).
 
     .init bbox = Bbox<ObjKey>
     bbox.cell([E, Id], P) :- objs.label(E, P, Id).

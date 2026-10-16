@@ -100,5 +100,6 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
     .decl cast_dir(col: Color, side: Dir, d: Dir)
     cast_dir(Col, D_side, D) :-
         ex.mark(E, P, Col), ex.side(E, P, D_side),
-        dir_elem(D), neighbor(P, D, Q), ex_out(E, Q, Col).
+        ex_out(E, Q, Col), relative(P, Q, V),          // an output cell of the mark's color
+        dir_elem(D), step_offset(D, V).                // one step from the mark toward D
 }

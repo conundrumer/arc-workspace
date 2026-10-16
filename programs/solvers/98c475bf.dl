@@ -234,6 +234,21 @@ out(P, Col, Ch) :-
     .decl border_dir(e: Example, d: Dir)
     border_dir(E, D) :- edge.value([E, D], Col), !params.bg(Col).
 
+    .decl border_cell(e: Example, p: Position)
+    border_cell(E, P) :- ex_in(E, P, _), border_dir(E, D), dist(P, D, 0).
+
+    // Those edges give the axis the border stands across.
+    .decl line_axis(a: Axis)
+    line_axis(A) :- border_dir(_, D), axis_of(D, A).
+
+    // The canvas is what the border leaves.
+    .init cbox = Bbox<Example>
+    cbox.cell(E, P) :- ex_in(E, P, _), !border_cell(E, P).
+
+    // The canvas's margin on a border edge is the border's width.
+    .decl border_width(k: number)
+    border_width(K) :- cbox.box(E, B), border_dir(E, D), dist(B, D, K).
+
     // A drawn figure's ink: its place across the canvas, and its row.
     .decl fig(e: Example, col: Color, p_col: Position, p_row: Box)
     fig(E, Col, P_col, P_row) :-

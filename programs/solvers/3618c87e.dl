@@ -106,10 +106,14 @@ out(P, Col, $SliceMap()) :-
         parse.cell_split(E, _, Col, P_inner, P_across), ex_out(E, _, _),
         !out_slice(E, P_across, P_inner, Col).
 
+    // @ignore: determine prediction — the test runs no step of the program at
+    //  the slice: it reads the input content of each slice the output changes
     .decl slice_in(p: Position, col: Color)
     slice_in(P_inner, Col) :-
         replaced(E, P_across), parse.cell_split(E, _, Col, P_inner, P_across).
 
+    // @ignore: determine prediction — the test runs no step of the program at
+    //  the slice: it reads the output content of each slice the output changes
     .decl slice_out(p: Position, col: Color)
     slice_out(P_inner, Col) :- replaced(E, P_across), out_slice(E, P_across, P_inner, Col).
 }
