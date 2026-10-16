@@ -1,4 +1,4 @@
-+ budget: 22900
++ budget: 23000
 * comment: when editing this doc
     - The ticket analyst loads this document by the links of its step documents, before it writes the Intent of a `change` to the agents' processes and at the process assessment; the ticket reviewer loads it by a link of its Checks, for such a `change`. Each serves judging a change to the processes against what they must achieve.
     - Acts, each with its section, one process each, giving its outcomes and how it can fail:
@@ -93,7 +93,7 @@
         * comment: The user's words, request 9-143, session 129de8fc, 2026-10-14T18:08:21Z: "ok file that item checkers do not apply to solver things since solver things require handbook to judge".
     - For a document change that alters what an agent does, there is evidence before the merge that its reader acts as the requirement states, from a trial that read nothing that reveals its case's outcome.
     - The lines in force in the agents' documents get a standing review, as the code in the tree gets the code review.
-    - A finding in a later round of the ticket review or the doc review falls only on text or a ground that changed since the earlier round, or still stands from it.
+    - A finding in a later round of the doc review, or by Checks in a round of the ticket review after one that checked the draft by Checks, falls only on text or a ground that changed since such an earlier round, or still stands from it.
 - Owner: the ticket reviewer for the `change` ticket, the item checker for the built change outside the lib and the solvers, the doc reviewer for the form of the documents and, by its trials, for the evidence of a reader's behavior, a standing doc review for the lines in force in the agents' documents, and the code reviewer and the gate for the code.
 - Takes from: implementation and requirements. Gives to: merge.
 - How it can fail:
@@ -197,6 +197,6 @@
     * comment: The user's words, request 9-143, session 129de8fc, 2026-10-14T18:08:21Z: "ok file that item checkers do not apply to solver things since solver things require handbook to judge".
 - A built document change, the text of each `mctx` fragment a change adds or changes included: the doc editor builds it, from a code editor's draft for a fragment's text. Its reviews: the doc reviewer's, the item checker's check of its items, and the `controlled_markdown` check.
 - A solver: the Create pass writes it, and each Refine pass reconciles it with the latest report. Its review: the transcript review of each pass that writes it.
-- A pass's report: the pass writes it, and a ticket analyst takes the tickets it lists. Its review: the transcript review of that pass.
+- A pass's report: the pass writes it, a ticket analyst takes the tickets it lists, and the coordinator gets the concept faults it gives. Its review: the transcript review of that pass.
 - A `refactor` ticket whose title ends in `many ideas in one place`: a code reviewer files it, the code editor that next edits the module it cites splits that module, and the merge of that editor's change closes the ticket or logs the part left unsplit. Its reviews: the gate at that merge and the code review that follows it.
 - Each other ticket of a fault: a ticket analyst settles it. Its review: the ticket analyst's check of it against the state that produced it.
