@@ -22,6 +22,7 @@ from dataclasses import replace
 from enum import StrEnum
 from pathlib import Path
 
+import script_calls
 from arc import task
 from controlled_markdown import mctx
 from handbook.paths import console_importable, scripts_importable
@@ -273,6 +274,7 @@ def arm_watchdog(me: str) -> None:
     once `LIMIT_SECONDS` have passed, as `--help next` gives it."""
     def expire(_signum: int, _frame: object) -> None:
         print(printed(Poll(), me, Path()), flush=True)
+        script_calls.record()
         os._exit(0)
     signal.signal(signal.SIGALRM, expire)
     signal.alarm(LIMIT_SECONDS)
@@ -424,4 +426,6 @@ if __name__ == "__main__":
     kept_reads.flush()
     sys.stdout.flush()
     sys.stderr.flush()
+    # `os._exit` skips the `atexit` call that writes the record's line.
+    script_calls.record()
     os._exit(code)

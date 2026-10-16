@@ -17,6 +17,11 @@ and no call of it on the runs of the batch that profile launch closed, the
 runs the profile's brief gives, was made since that launch. No batch
 holds it, so no profile launch waits on it.
 
+The check of the script calls (`scripts/check_script_calls.py`) runs
+once a profile launch closes a batch, where no call of it was made since
+that launch, on the calls since the closed batch's start. No batch holds
+it, so no profile launch waits on it.
+
 A process assessment, a ticket analyst, launches at the end of a batch
 once `ASSESS_AFTER` commits of `master` that change the agents' processes
 stand since the launch of the last one an operator of the session
@@ -44,6 +49,8 @@ import re
 import shlex
 from dataclasses import dataclass
 
+import script_calls
+
 from controlled_markdown import mctx
 from operations import briefs
 from operations.taking import release
@@ -54,6 +61,7 @@ from operations.state import DOC_REVIEW, Agent, Merge, State, code_review_tag
 from operations.handled import bash_calls
 from operations.steps import Bash, Launch, Step, Undecided
 from operations.log_commands import FILE_TICKET
+from ticketing.times import utc_stamp
 from ticketing.vocabulary import Kind, Status
 
 OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER, Role.COST_AUDIT})
@@ -108,6 +116,8 @@ def merged(state: State, since: float) -> bool:
 
 def step(state: State) -> Step | None:
     if (s := validation(state)) is not None:
+        return s
+    if (s := script_check(state)) is not None:
         return s
     since = start(state)
     batch = members(state, since)
@@ -188,6 +198,25 @@ def validation(state: State) -> Step | None:
     if any(c.time > closing for c in bash_calls(state, command)):
         return None
     return Bash(command)
+
+
+def script_check(state: State) -> Step | None:
+    """The check of the script calls since the start of the batch the last
+    profile launch closed, where one is due; where that batch has no start,
+    of the calls of the window before that launch."""
+    profiles = state.agents_of(Role.BATCH_PROFILE)
+    if not profiles:
+        return None
+    closing = profiles[-1].launched
+    since = start(state, closing) or closing - script_calls.WINDOW_SECONDS
+    command = check_command(since)
+    if any(c.time > closing for c in bash_calls(state, command)):
+        return None
+    return Bash(command)
+
+
+def check_command(since: float) -> str:
+    return f"uv run python scripts/check_script_calls.py --since {utc_stamp(since)}"
 
 
 def sweep_command(runs: list[str]) -> str:

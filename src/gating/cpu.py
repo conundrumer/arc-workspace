@@ -3,11 +3,12 @@ interval, from two samples of the machine's and the tree's CPU."""
 
 import ctypes
 import os
-import resource
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+import script_calls
 
 _TICKS = 2 ** 32
 """The modulus of the CPU tick counters, which on darwin are 32-bit and
@@ -20,7 +21,7 @@ _PROC_STAT_BUSY = (0, 1, 2, 5, 6)
 `/proc/stat`; its user and nice fields include its guest fields."""
 
 
-def _busy_ticks() -> tuple[int, ...]:
+def busy_ticks() -> tuple[int, ...]:
     """The machine's CPU ticks spent not idle, summed over its CPUs, one
     counter per CPU state."""
     if sys.platform == "darwin":
@@ -39,11 +40,11 @@ def _busy_ticks() -> tuple[int, ...]:
     raise NotImplementedError(f"no system-wide CPU total on {sys.platform}")
 
 
-def _tree_cpu() -> float:
-    """The CPU seconds of the gate's process and of its children it has
-    waited for, with theirs."""
-    return sum(r.ru_utime + r.ru_stime for r in (resource.getrusage(resource.RUSAGE_SELF),
-                                                 resource.getrusage(resource.RUSAGE_CHILDREN)))
+def busy_seconds(start: tuple[int, ...], end: tuple[int, ...]) -> float:
+    """The machine's CPU seconds spent not idle, summed over its CPUs,
+    from the `busy_ticks` sample `start` to the later one `end`."""
+    ticks = sum((b - a) % _TICKS for a, b in zip(start, end, strict=True))
+    return ticks / os.sysconf("SC_CLK_TCK")
 
 
 @dataclass(frozen=True)
@@ -56,15 +57,13 @@ class CpuSample:
 
     @classmethod
     def now(cls) -> "CpuSample":
-        return cls(_busy_ticks(), _tree_cpu(), time.monotonic())
+        return cls(busy_ticks(), script_calls.cpu_seconds(), time.monotonic())
 
     def outside(self, end: "CpuSample") -> "OutsideCpu":
         """The CPU that processes outside the gate's process tree used from
         this sample to `end`, where the gate has waited for each child it
         started since this sample."""
-        ticks = sum((b - a) % _TICKS for a, b in zip(self.busy, end.busy, strict=True))
-        busy = ticks / os.sysconf("SC_CLK_TCK")
-        return OutsideCpu(busy - (end.tree - self.tree), end.at - self.at)
+        return OutsideCpu(busy_seconds(self.busy, end.busy) - (end.tree - self.tree), end.at - self.at)
 
 
 @dataclass(frozen=True)
