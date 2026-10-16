@@ -425,7 +425,7 @@ def filed_in_main(args: list[str]) -> int | None:
     """Runs the main tree's copy of this script with `args` and this
     process's stdin, and returns its exit status, where this copy is
     another one; None where this copy is the main tree's."""
-    main = checkout.main_worktree(checkout.ROOT)
+    main = main_tree()
     copy = main / "scripts" / SCRIPT
     if (checkout.scripts() / SCRIPT).resolve() == copy.resolve():
         return None

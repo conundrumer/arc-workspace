@@ -24,6 +24,7 @@ from run_reads import agent_type
 from ticketing.vocabulary import Kind, Status, Verdict, last_move_into
 from transcripts import chain, find
 from transcript_entries import Refused, own_range, snapshot
+from tree_reads import main_tree
 
 UNEXERCISED_DAYS = 7
 """The days since its last move into `deferred` from which a `validation`
@@ -145,7 +146,7 @@ def run_command(command: str) -> tuple[Status, str]:
     its ticket moves into, with the note of that line. The command runs in
     a session of its own, so that its whole process group ends at the
     timeout."""
-    with subprocess.Popen(command, shell=True, cwd=checkout.main_worktree(checkout.ROOT),
+    with subprocess.Popen(command, shell=True, cwd=main_tree(),
                           env=checkout.tree_env(), stdin=subprocess.DEVNULL,
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                           start_new_session=True) as process:

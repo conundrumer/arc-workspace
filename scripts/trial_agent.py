@@ -26,6 +26,7 @@ from ticket_numbers import SESSION_VAR, TicketNumber, matched_number, ticket_num
 from ticketing.vocabulary import TICKET_NUMBER, Status  # noqa: E402
 from transcript_entries import Refused, entries_forward  # noqa: E402
 from transcripts import find  # noqa: E402
+from tree_reads import main_tree  # noqa: E402
 
 HELP = mctx("""
     - Usage:
@@ -142,10 +143,6 @@ def definition(number: TicketNumber, reader: str, args: list[str]) -> tuple[str,
     digest = hashlib.sha256(text(fields).encode()).hexdigest()[:HASH_DIGITS]
     name = f"{stem(number, reader, args)}-{digest}"
     return name, text([f"name: {name}", *fields])
-
-
-def main_tree() -> Path:
-    return checkout.main_worktree(checkout.ROOT)
 
 
 def closed_trials(agents: Path, tickets: Path) -> list[Path]:

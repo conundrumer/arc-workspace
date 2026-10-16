@@ -25,6 +25,7 @@ scripts_importable()
 from file_ticket import file_ticket, main_tickets  # noqa: E402
 from ticket_files import ticket_files  # noqa: E402
 from ticket_form import title  # noqa: E402
+from tree_reads import main_tree  # noqa: E402
 
 DAY = 24 * 3600
 FREQUENT = 20
@@ -128,7 +129,7 @@ def check(since: float, records: Path, tickets: Path) -> list[Path]:
 
 
 def records_dir() -> Path:
-    return checkout.main_worktree(checkout.ROOT) / script_calls.RECORDS
+    return main_tree() / script_calls.RECORDS
 
 
 def main(argv: list[str]) -> int:

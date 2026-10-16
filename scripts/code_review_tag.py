@@ -21,6 +21,7 @@ scripts_importable()
 from run_reads import tool_results  # noqa: E402
 from transcripts import transcripts_of  # noqa: E402
 from transcript_entries import Entry, Refused, blocks, read_entries  # noqa: E402
+from tree_reads import main_tree  # noqa: E402
 
 HELP = mctx("""
     - The usage form:
@@ -44,7 +45,7 @@ NO_READ = mctx("the transcripts of `{agent}` show no read of the second stage as
 
 
 def second_stage() -> Path:
-    return next_file(Role.CODE_REVIEWER, checkout.claude_of(checkout.main_worktree(checkout.ROOT)))
+    return next_file(Role.CODE_REVIEWER, checkout.claude_of(main_tree()))
 
 
 def read_whole(entries: Iterable[Entry], name: str, text: str) -> bool:
