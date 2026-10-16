@@ -195,10 +195,10 @@ def main_transcripts_in(dirs: tuple[Path, ...]) -> dict[str, list[Path]]:
     return out
 
 
-def find(ident: str, *, recheck: bool = False) -> Path:
+def find(ident: str) -> Path:
     """The transcript `ident` names, and for a run of more than one
-    transcript, its last. `recheck` reads the agent index again on a miss,
-    for an id taken from a read later than the index."""
+    transcript, its last. A miss reads the agent index again before it
+    refuses, for a transcript born after the held index was read."""
     if ident.endswith(".jsonl"):
         path = Path(ident).expanduser()
         if not is_file(path):
@@ -208,11 +208,10 @@ def find(ident: str, *, recheck: bool = False) -> Path:
         path = one_of(ident, found)
         if path:
             return path
-    if recheck:
-        fresh = agent_index(tuple(project_dirs()), listed.__wrapped__)
-        path = one_of(ident, fresh.get(bare_id(ident), []))
-        if path:
-            return path
+    fresh = agent_index(tuple(project_dirs()), listed.__wrapped__)
+    path = one_of(ident, fresh.get(bare_id(ident), []))
+    if path:
+        return path
     raise Refused(mctx("no transcript of session or agent `{ident}` under "
                        "{dirs}").format(ident=ident, dirs=", ".join(
                            str(d) for d in project_dirs())))

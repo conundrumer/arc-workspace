@@ -157,7 +157,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
                and t.holder == me and (w := worktree_in(t, tree.worktrees)) is not None}
     main_path = find(session)
     session_dir = main_path.parent / session
-    found = {h: find(h, recheck=True) for h in sorted(holders)}
+    found = {h: find(h) for h in sorted(holders)}
     sessions_running = running(session)
     open_paths = {h: p for h, p in found.items()
                   if (h in sessions_running if sessions_running is not None and not is_subagent(p)
@@ -209,7 +209,7 @@ def with_quiet(a: Agent, listing: list[Listed], now: float) -> Agent:
     if not a.pending or a.agent_id is None or a.limited is not None:
         return a
     try:
-        path = find(a.agent_id, recheck=True)
+        path = find(a.agent_id)
     except Refused:
         return a
     return replace(a, quiet=quiet_since(a.agent_id, path, listing, now))
