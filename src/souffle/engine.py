@@ -67,7 +67,7 @@ class SouffleEngine(TextMethods):
                   kept: frozenset[int]) -> Program | ParseFailure:
         cols = ", ".join(f"c{i}: {t.text}" for i, t in enumerate(types))
         poses = frozenset(i for i, t in enumerate(types)
-                          if t.text == parser.RIGID_POSE[0])
+                          if t.text == parser.RIGID_POSE)
         text = "\n".join([
             render.include(lib.name),
             f".decl {D4_SOURCE.name}({cols})",

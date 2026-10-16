@@ -38,9 +38,7 @@ from souffle.layout import (
 )
 from souffle.lexer import lex
 from souffle.parser import (
-    RIGID_ACTIONS,
-    RIGID_AXIS_ACTIONS,
-    RIGID_POSE,
+    RIGID_PLACEMENTS,
     chart_prefix,
     grid_layout,
     placed_name,
@@ -55,26 +53,13 @@ def rigid_rule(head: str, src: str, types: list[TypeName],
     `src`, each column of `kept` placed as it stands."""
     heads, srcs, atoms = [], [], []
     for i, t in enumerate(type_name.text for type_name in types):
-        if i in kept:
-            heads.append(f"A{i}")
+        atom = None if i in kept else RIGID_PLACEMENTS.get(t)
+        heads.append(f"A{i}")
+        if atom is None:
             srcs.append(f"A{i}")
-        elif t in RIGID_ACTIONS:
-            heads.append(f"A{i}")
-            srcs.append(f"B{i}")
-            atoms.append(f"{RIGID_ACTIONS[t]}(D4, B{i}, A{i})")
-        elif t in RIGID_AXIS_ACTIONS:
-            member, act = RIGID_AXIS_ACTIONS[t]
-            heads.append(f"A{i}")
-            srcs.append(f"B{i}")
-            atoms.append(f"{member}(Bd{i}, B{i}), {act}(D4, Bd{i}, Ad{i}), "
-                         f"{member}(Ad{i}, A{i})")
-        elif t == RIGID_POSE[0]:
-            heads.append(f"A{i}")
-            srcs.append(f"B{i}")
-            atoms.append(f"{RIGID_POSE[1]}(A{i}, B{i}, D4)")
         else:
-            heads.append(f"A{i}")
-            srcs.append(f"A{i}")
+            srcs.append(f"B{i}")
+            atoms.append(atom.format(src=f"B{i}", img=f"A{i}", i=i))
     body = ", ".join([f"{src}({', '.join(srcs)})", "d4_elem(D4)", *atoms])
     return f"{head}(D4, {', '.join(heads)}) :- {body}."
 

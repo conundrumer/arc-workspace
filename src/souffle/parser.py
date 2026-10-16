@@ -104,32 +104,38 @@ def placed_name(block: str, rel: str) -> str:
     """The relation a RIGID block places its relation `rel`'s rows in."""
     return f"{block}_{rel}"
 
-RIGID_ACTIONS = {
-    "Box": "apply", "Position": "apply", "Offset": "apply",
-    "Dir": "apply_dir", "DiagDir": "apply_diag_dir", "Dir8": "apply_dir8",
+RIGID_POSE = "D4"
+"""The column type of a stored pose."""
+RIGID_PLACEMENTS: dict[str, str | None] = {
+    "Box": "apply(D4, {src}, {img})",
+    "Position": "apply(D4, {src}, {img})",
+    "Offset": "apply(D4, {src}, {img})",
+    "Dir": "apply_dir(D4, {src}, {img})",
+    "DiagDir": "apply_diag_dir(D4, {src}, {img})",
+    "Dir8": "apply_dir8(D4, {src}, {img})",
+    "Axis": "axis_of(Bd{i}, {src}), apply_dir(D4, Bd{i}, Ad{i}), "
+            "axis_of(Ad{i}, {img})",
+    "DiagAxis": "diag_axis_of(Bd{i}, {src}), "
+                "apply_diag_dir(D4, Bd{i}, Ad{i}), "
+                "diag_axis_of(Ad{i}, {img})",
+    RIGID_POSE: "d4_compose({img}, {src}, D4)",
+    "Color": None, "number": None, "Ident": None, "symbol": None,
+    "Example": None,
 }
-"""The D4 action of each RIGID column type that acts through its type's
-action relation."""
-RIGID_AXIS_ACTIONS = {
-    "Axis": ("axis_of", "apply_dir"),
-    "DiagAxis": ("diag_axis_of", "apply_diag_dir"),
-}
-"""The column types that act through the swap they induce on a member
-direction: the member relation and the direction's action."""
-RIGID_POSE = ("D4", "d4_compose")
-"""The column type of a stored pose and the composition it is placed by:
-placed at the placement's pose D, the stored pose S becomes the P with
-`d4_compose(P, S, D)`, the element that takes S onto D, which is the
-same in every frame of the block."""
-RIGID_IDENTITY = frozenset({"Color", "number", "Ident", "symbol", "Example"})
-"""The column types a D4 action leaves as they are."""
+"""How the D4 element `D4` places a column of each type a RIGID block
+accepts: the atoms that relate the stored value `{src}` to its image
+`{img}`, with `{i}` the column's index, or `None` for a type the action
+leaves as it is.
+
+A type acts through its type's action relation, or, for an axis, through
+the swap it induces on a member direction. A stored pose S, placed at
+the placement's pose D, becomes the P with `d4_compose(P, S, D)`, the
+element that takes S onto D, which is the same in every frame of the
+block."""
 
 
 def rigid_type_acts(type_name: TypeName) -> bool:
-    text = type_name.text
-    return (text in RIGID_ACTIONS or text in RIGID_AXIS_ACTIONS
-            or text == RIGID_POSE[0]
-            or text in RIGID_IDENTITY)
+    return type_name.text in RIGID_PLACEMENTS
 
 
 DIRECTIVE_WORDS = frozenset({"comp", "decl", "init", "type", "functor", "plan",
