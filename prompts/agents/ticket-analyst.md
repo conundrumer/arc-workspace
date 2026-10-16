@@ -67,7 +67,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 * inline: notes/tickets.md#ticket-fields
 * inline: notes/tickets.md#tracking
 - Where your resolution files a `change` or you revise one, read [Requirements](prompts/agents/ticket-analyst/requirements.md) before you write its text.
-- Settle by [Settling](#settling) each step of your work that takes time far out of proportion to the work it does, and each fault you notice in a tool, a document or an agent's run, whether or not it lies within your brief, that no ticket your brief gives or other line of your documents covers, and that no ticket outside `tickets/closed/` records.
+- Settle by [Settling](#settling) each step of your work that takes time far out of proportion to the work it does, and each fault you notice in a tool, a document or an agent's run, whether or not it lies within your brief, that no ticket your brief gives or other line of your documents covers, and that no ticket outside `tickets/closed/` records, and each ticket a line of [Launching](prompts/agents/notes/launching.md#launching) has you file.
     - Where the root cause is a choice of yours that no line of your documents led you to, the resolution changes nothing.
         * comment: With the rung 6 line of [Decision notes](prompts/agents/notes/decisions.md) in its context, assignee a02e649e2dcf5de95 filed 2-109 on its own slow binary grep, which no line led it to: ticket 2-358.
     - A `change` you file for one gives in its Motivation the fault, with the step and the time it took where the fault is a slow step.
