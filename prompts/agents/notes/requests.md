@@ -1,4 +1,4 @@
-+ budget: 7350
++ budget: 7452
 * comment: when editing this doc
     - The coordinator loads each section by a link of its document: Routes before it acts on a user's message that asks for work, and Tickets at the ticket triggers its document gives.
     - Acts, each with its section:
@@ -11,11 +11,11 @@
 ## Routes
 - A user's message may open or end with a route directive: `direct`, `send`, `hotfix`, `expedite <number>`, `file`, `draft`, `scratch`, or `re <number>`, a follow-up on that `request`.
 - Where a user's message that asks for work gives no route directive, infer its route, the `request` a follow-up concerns, and the span.
-- On a route other than `scratch`, write, read back each write and each route you infer, then act: in the same turn on a route the user states, and on an inferred one only once the user replies to it.
+- On a route other than `scratch`, write, read back each write and each route you infer, then act: in the same turn on a route the user states, and on an inferred one at the user's next message, unless that message changes or cancels it.
     - To write is to run the command of `uv run python scripts/spans.py` that writes the route's `request` or brief. To act is to launch an agent with that brief, make or merge the change, send an operator an `Expedite:` line, or tell an operator that tickets are open.
         - The goal you give that command is the point of the work, the outcome the user wants, from the user's words, with no means you proposed and no elaboration.
     - Read back right after the write: give the route, the goal word for word as the command prints it where you ran one, and the work in your own words.
-        - On an inferred route, open the readback with `**Inferred route: <route>.**`, and end it with the act the user's reply sets off, as `Once you reply, I <act>.`, or, where it sets off none, with a sentence that says so. Give it as no decision.
+        - On an inferred route, open the readback with `**Inferred route: <route>.**`, and end it with the act the user's next message sets off, as `Once you reply, I <act>.`, or, where it sets off none, with a sentence that says so. Give it as no decision.
             * comment: Ticket 6-1167: the coordinator gave a readback again as a labelled decision with a default.
 - `scratch` is work after which nothing under version control has changed, nothing has left the session, and nothing later depends on it. Do it with no readback, no ticket and no brief. Where that work would change a tracked file or send something out of the session, read back a route before that step.
 - `direct`: file the change's `request`, write its brief, and carry the change as [Changes](prompts/agents/notes/coordinator.md#changes) gives.
@@ -30,7 +30,7 @@
 - File and track a ticket by [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Tracking](prompts/agents/notes/tickets.md#tracking) and [Change tickets](prompts/agents/notes/tickets.md#change-tickets).
 - Where you run no solver pass, file each fault you notice, and each fault an agent's report gives, by [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults), where no ticket analyst has found its cause, in place of a change that fixes it.
 - Where you run no solver pass, the route is `file`, `draft` or `send`, and no `request` of the change stands under `tickets/draft/`, file the change as a `request` with `uv run python scripts/spans.py file`.
-- Where you run no solver pass and a `request` of the change stands under `tickets/draft/`, file no other `request` of the change. Once the user states `file`, `send`, `direct` or `hotfix`, or replies to your readback of an inferred route other than `draft`, append to that `request` the span from the message after its last span to that message, with `uv run python scripts/spans.py append --route <route>` and that route.
+- Where you run no solver pass and a `request` of the change stands under `tickets/draft/`, file no other `request` of the change. Once the user states `file`, `send`, `direct` or `hotfix`, or sends the next message after your readback of an inferred route other than `draft`, and that message does not change or cancel it, append to that `request` the span from the message after its last span to that message, with `uv run python scripts/spans.py append --route <route>` and that route.
 - Tell the user what each ticket the lines above have you file does, in your own words, without quoting its text, and the number of each `request` you move to `tickets/draft/`.
 - A `request`'s first span runs from the user's first message on the change to the user's message that gives its route, or on an inferred route to the user's last one on it, or to an earlier message where the user asks for one.
 - Write each line under `Grounds` of a `request` or of a brief as one addition of yours to what the spans give, with its source: a line of a file quoted with its path, a command with its output, or a ticket's log line. Write no other line there.
