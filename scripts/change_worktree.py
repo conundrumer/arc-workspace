@@ -81,14 +81,34 @@ def copy_in(main: Path, path: Path, rel: str) -> None:
     shutil.copy2(main / rel, target)
 
 
+def include_pathspec(patterns: str) -> list[str]:
+    """The pathspec that bounds where git walks to the paths the gitignore
+    `patterns` can match; `--exclude-from` still decides which match. A
+    glob pathspec with a wildcard matches a file under a directory it
+    matches only by the `/**` form."""
+    spec: list[str] = []
+    for line in patterns.splitlines():
+        pattern = line.rstrip()
+        if not pattern or pattern.startswith(("#", "!")):
+            continue
+        anchored = "/" in pattern[:-1]
+        stem = pattern.strip("/")
+        glob = stem if anchored else f"**/{stem}"
+        spec += [f":(top,glob){glob}", f":(top,glob){glob}/**"]
+    return spec
+
+
 def copy_included(main: Path, path: Path) -> None:
     """Copy in from `main` each untracked file the patterns of its
     `.worktreeinclude` match."""
     include = main / INCLUDE
     if not include.is_file():
         return
+    spec = include_pathspec(include.read_text())
+    if not spec:
+        return
     listed = checkout.git_out(main, "ls-files", "-z", "--others", "--ignored",
-                              f"--exclude-from={include}")
+                              f"--exclude-from={include}", "--", *spec)
     for rel in sorted(filter(None, listed.split("\0"))):
         copy_in(main, path, rel)
 
