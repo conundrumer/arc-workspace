@@ -51,7 +51,7 @@ from ticketing.times import TIME_FORM  # noqa: E402
 from ticket_vocabulary import ticked  # noqa: E402
 from ticketing.vocabulary import (DEFECT_SECTIONS, MANY_IDEAS, Domain, Kind,  # noqa: E402
                                   Note, Resolution, Status, Verdict)
-from transcript_entries import Refused  # noqa: E402
+from transcript_entries import Refused, print_refused  # noqa: E402
 
 HELP = mctx("""
     - `{invocation} <domain> <subject> <agent>` files the ticket on its stdin under the main tree's `tickets/`, and prints the path it wrote.
@@ -456,7 +456,7 @@ def run(args: Sequence[str | None], help_text: str, count: int | None,
             return status
         print(act(*args))
     except Refused as e:
-        print(mctx("refused: {reason}").format(reason=e), file=sys.stderr)
+        print_refused(e)
         return 1
     return 0
 

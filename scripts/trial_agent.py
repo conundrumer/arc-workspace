@@ -25,7 +25,7 @@ from state_reads import new_state  # noqa: E402
 from ticket_files import ticket_path, ticket_status  # noqa: E402
 from ticket_numbers import SESSION_VAR, TicketNumber, matched_number, ticket_number  # noqa: E402
 from ticketing.vocabulary import TICKET_NUMBER, Status  # noqa: E402
-from transcript_entries import Refused, entries_forward  # noqa: E402
+from transcript_entries import Refused, entries_forward, print_refused  # noqa: E402
 from transcripts import find  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 
@@ -204,7 +204,7 @@ def main(args: list[str]) -> int:
             print(HELP, file=sys.stderr)
             return 2
     except Refused as e:
-        print(mctx("refused: {reason}").format(reason=e), file=sys.stderr)
+        print_refused(e)
         return 1
     return 0
 

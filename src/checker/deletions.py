@@ -52,7 +52,7 @@ from solver.dependence import (
     Dependence,
     dependence,
 )
-from solver.determine import Determined, KeysOff, NoDetermine
+from solver.determine import Determined, NotRun
 from solver.variations import Remove, variation
 from solver.group_runs import at_once, case_groups
 from solver.variant_limits import variant_bound, variant_limits
@@ -141,7 +141,7 @@ class DeletionReport:
     judged: int
     rows: tuple[DeletionRow, ...]
     timed_out: tuple[TimedOutDeletion, ...]
-    unchecked: NoDetermine | KeysOff | None = None
+    unchecked: NotRun | None = None
     """Why no deletion's determination was checked, so that its rows hold
     on the pairs alone: the solver has no Determine comp, or its
     determination does not run; None where it was checked."""
@@ -438,6 +438,6 @@ def survey_deletions(solver: Solver, runs: Runs) -> DeletionResult:
               - sum(r.kind == DeletionKind.UNGROUNDED for r in rows)
               - sum(isinstance(r, _LeftOut) for r in outcomes))
     return DeletionReport(judged, tuple(rows), timed,
-                          base if isinstance(base, NoDetermine | KeysOff)
+                          base if isinstance(base, NotRun)
                           else None)
 

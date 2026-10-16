@@ -38,7 +38,7 @@ from help_parts import print_help  # noqa: E402
 from ticketing.times import utc_stamp  # noqa: E402
 from token_prices import PRICES  # noqa: E402
 from transcripts import agent_id, agent_transcripts, bare_id, find, is_subagent, transcripts
-from transcript_entries import Entry, Refused, epoch, read_entries
+from transcript_entries import Entry, Refused, epoch, print_refused, read_entries
 
 from profile_runs_help import HELP_VALUES, ISO_TIME, PARTS, PURPOSES, REPRICED, USAGE, HelpPart  # noqa: E402
 from operations.batches import LEFT_OPEN, NO_RUN, RUNS_TAKEN, lines, read_under  # noqa: E402
@@ -205,26 +205,23 @@ def main(argv: list[str]) -> int:
     listed: list[Listed] = []
     if [bool(args.ids), bool(args.under), bool(args.running), bool(args.pending),
             bool(args.open)].count(True) != 1:
-        print(mctx("refused: give one of IDs, `--under ID`, `--running ID`, "
-                   "`--pending ID` and `--open ID`"),
-              file=sys.stderr)
+        print_refused(mctx("give one of IDs, `--under ID`, `--running ID`, "
+                           "`--pending ID` and `--open ID`"))
         return 2
     if args.under and args.type is not None:
-        print(mctx("refused: `--under` takes no `--type`"), file=sys.stderr)
+        print_refused(mctx("`--under` takes no `--type`"))
         return 2
     if args.price_at is not None and not (args.ids or args.under):
-        print(mctx("refused: `--price-at` goes with IDs or `--under ID`"),
-              file=sys.stderr)
+        print_refused(mctx("`--price-at` goes with IDs or `--under ID`"))
         return 2
     if args.calls_since is not None and not args.running:
-        print(mctx("refused: `--calls-since` goes with `--running ID` alone"),
-              file=sys.stderr)
+        print_refused(mctx("`--calls-since` goes with `--running ID` alone"))
         return 2
     if args.each and not args.ids:
-        print(mctx("refused: `--each` goes with IDs alone"), file=sys.stderr)
+        print_refused(mctx("`--each` goes with IDs alone"))
         return 2
     if args.split is not None and not args.ids:
-        print(mctx("refused: `--split` goes with IDs alone"), file=sys.stderr)
+        print_refused(mctx("`--split` goes with IDs alone"))
         return 2
     if args.price_at is not None:
         print(mctx("price at {model}: {repriced}").format(
@@ -252,12 +249,12 @@ def main(argv: list[str]) -> int:
             if args.under:
                 runs.sort(key=lambda r: (r.start is None, r.start or 0.0))
     except Refused as e:
-        print(mctx("refused: {reason}").format(reason=e), file=sys.stderr)
+        print_refused(e)
         return 2
     if args.running:
         print_running(listed, time.time(), args.calls_since, undecided)
     elif not runs and not args.pending and not args.open and not args.under:
-        print(mctx("refused: no run to profile"), file=sys.stderr)
+        print_refused(mctx("no run to profile"))
         return 2
     elif runs and (len(runs) == 1 or args.runs or args.each or args.under):
         budgets = group_budgets(undecided) if len(runs) == 1 or args.each else None

@@ -14,7 +14,7 @@ from checker.payloads.branches import DerivedDataPayload, DeterminationDiffPaylo
 from checker.runs import NoTask, Runs
 from engine.quotes import quotes
 from solver.aggregate import Solver
-from solver.determine import Determined, KeysOff, NoDetermine
+from solver.determine import Determined, NotRun
 
 
 @quotes("principles.md", "Stored or derived",
@@ -108,7 +108,7 @@ def check_stored_assignment(solver: Solver, runs: Runs) -> list[Finding]:
         return out
     if isinstance(result, NoTask):
         out.append(NO_TASK)
-    elif not isinstance(result, NoDetermine | KeysOff):
+    elif not isinstance(result, NotRun):
         out.append(no_result(result, RunKind.DETERMINATION, None,
                              AtFile(WholeFile.SOLVER)))
     return out

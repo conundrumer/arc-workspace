@@ -39,6 +39,7 @@ from solver.determine import (
     Determined,
     KeysOff,
     NoDetermine,
+    NotRun,
     determine,
     rigid_charts,
     stored_facts,
@@ -626,7 +627,7 @@ def _differing(solver: Solver, runs: Runs, determined: frozenset[str],
     if not determined:
         return frozenset()
     got = runs.determined
-    if isinstance(got, (NoDetermine, KeysOff, NoTask)):
+    if isinstance(got, (NotRun, NoTask)):
         raise ValueError(f"{solver.stem}: a determined parameter and no "
                          "determination run")
     if not isinstance(got, Determined):

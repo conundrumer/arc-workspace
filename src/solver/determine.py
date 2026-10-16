@@ -84,12 +84,18 @@ class Determined:
 
 
 @dataclass(frozen=True)
-class NoDetermine:
+class NotRun:
+    """A determination result under which the determination does not run,
+    so no determined value is checked."""
+
+
+@dataclass(frozen=True)
+class NoDetermine(NotRun):
     """The solver has no `Determine` comp."""
 
 
 @dataclass(frozen=True)
-class KeysOff:
+class KeysOff(NotRun):
     """The determination relations of each of `blocks`, RIGID blocks, do
     not lead with the same key columns (`off_key_blocks`), so no copy of a
     block's assembly is known and the determination does not run."""

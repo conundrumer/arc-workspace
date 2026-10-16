@@ -11,6 +11,7 @@ from array import array
 from dataclasses import dataclass
 import os
 import re
+import sys
 from collections.abc import Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
@@ -27,6 +28,10 @@ type Entry = dict[str, Any]
 
 class Refused(Exception):
     """A call the command does not carry out, with the reason."""
+
+
+def print_refused(reason: object) -> None:
+    print(mctx("refused: {reason}").format(reason=reason), file=sys.stderr)
 
 
 HEX = bytes(ord("1") if chr(c) in "0123456789abcdef" else ord("0") for c in range(256))

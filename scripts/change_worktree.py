@@ -20,7 +20,7 @@ from ticket_files import ticket_path  # noqa: E402
 from ticket_log import log_moves  # noqa: E402
 from ticket_numbers import ticket_number  # noqa: E402
 from ticket_reads import read_ticket  # noqa: E402
-from transcript_entries import Refused  # noqa: E402
+from transcript_entries import Refused, print_refused  # noqa: E402
 from tree_reads import main_tree, worktrees  # noqa: E402
 
 from operations.state import Ticket  # noqa: E402
@@ -199,7 +199,7 @@ def main() -> int:
         print(named(args.name) if args.name is not None
               else of_change(args.number, args.agent, args.agent_id))
     except Refused as e:
-        print(mctx("refused: {reason}").format(reason=e), file=sys.stderr)
+        print_refused(e)
         return 1
     return 0
 

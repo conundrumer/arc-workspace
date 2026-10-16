@@ -20,7 +20,7 @@ scripts_importable()
 
 from run_reads import tool_results  # noqa: E402
 from transcripts import transcripts_of  # noqa: E402
-from transcript_entries import Entry, Refused, blocks, read_entries  # noqa: E402
+from transcript_entries import Entry, Refused, blocks, print_refused, read_entries  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 
 HELP = mctx("""
@@ -33,8 +33,6 @@ HELP = mctx("""
     - Where it finds none, it makes no tag, exits non-zero, and prints that the second stage is to be read, and its places found and filed, before the command is run again.
         - Where it finds no transcript of `<agent id>`, it prints that, and that `<agent id>` is the code reviewer's own agent id.
     """)
-
-REFUSED = mctx("refused: {reason}")
 
 NO_TRANSCRIPT = mctx("no transcript of the agent `{agent}` is found: give your own agent "
                      "id as `<agent id>`")
@@ -98,7 +96,7 @@ def main() -> int:
     try:
         print(code_review_tag(args.n, args.commit, args.agent_id))
     except Refused as e:
-        print(REFUSED.format(reason=e), file=sys.stderr)
+        print_refused(e)
         return 1
     return 0
 

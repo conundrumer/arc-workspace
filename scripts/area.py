@@ -16,7 +16,7 @@ scripts_importable()
 
 from ticket_paths import names, scope_paths  # noqa: E402
 from ticket_reads import read_tickets  # noqa: E402
-from transcript_entries import Refused  # noqa: E402
+from transcript_entries import Refused, print_refused  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 
 from operations.state import Ticket  # noqa: E402
@@ -85,7 +85,7 @@ def main() -> int:
     try:
         print(area(args.paths))
     except Refused as e:
-        print(mctx("refused: {reason}").format(reason=e), file=sys.stderr)
+        print_refused(e)
         return 1
     return 0
 

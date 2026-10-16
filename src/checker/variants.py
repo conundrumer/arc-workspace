@@ -27,8 +27,7 @@ from engine.program import as_grid
 from solver.determine import (
     Determined,
     DetermineResult,
-    KeysOff,
-    NoDetermine,
+    NotRun,
     determine,
 )
 from solver.pair_runs import (
@@ -314,7 +313,7 @@ def ungrounded(result: ProfileResult) -> bool:
 
 def determines(engine: Engine, solver: Solver, limits: Limits,
                measured: float | None = None
-               ) -> bool | NoDetermine | KeysOff | NoTask | TimedOut:
+               ) -> bool | NotRun | NoTask | TimedOut:
     """`reproduces` of the solver's determination run; of a variant's,
     where the stored program's determination spent `measured` CPU seconds
     (`solver.determine.determine`)."""
@@ -325,7 +324,7 @@ def determines(engine: Engine, solver: Solver, limits: Limits,
 
 def reproduces(got: DetermineResult | NoTask,
                bound: VariantBound | None = None
-               ) -> bool | NoDetermine | KeysOff | NoTask | TimedOut:
+               ) -> bool | NotRun | NoTask | TimedOut:
     """Whether the determination run `got` reproduces every determined
     parameter's stored value; `NoDetermine` where the solver has no
     Determine comp, `KeysOff` where its determination does not run, and
@@ -335,7 +334,7 @@ def reproduces(got: DetermineResult | NoTask,
     match got:
         case Determined():
             return not got.diffs
-        case NoDetermine() | KeysOff() | NoTask():
+        case NotRun() | NoTask():
             return got
         case _:
             if is_timeout(got):
