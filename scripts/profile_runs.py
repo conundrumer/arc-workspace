@@ -7,7 +7,6 @@ budget of a brief of one role, as more than one run prints it,
 over every run under the project directories."""
 
 import argparse
-from collections import Counter
 import sys
 import time
 from dataclasses import dataclass
@@ -27,19 +26,19 @@ from budgets import (budget_group, print_budgets, role_group,  # noqa: E402
                      type_budget)
 from command_labels import programs  # noqa: E402
 from context_bound_hook import OPERATOR  # noqa: E402
-from open_agents import Listed, hung_time, running_agents, work_open  # noqa: E402
+from open_agents import Listed, call_times, running_agents, work_open  # noqa: E402
 from run_prints import (print_messages,  # noqa: E402
                         print_report, print_running)
-from run_profile import (COMMAND_WIDTH, clock, dollars, minutes,  # noqa: E402
+from run_profile import (clock, dollars, minutes,  # noqa: E402
                          part_split, print_groups, print_split,
                          print_types)
 from run_profiler import profile  # noqa: E402
 from run_records import Run  # noqa: E402
-from run_reads import (BACKGROUND_TASK, agent_type, bash_spans, blocks, refused_at,  # noqa: E402
+from run_reads import (BACKGROUND_TASK, agent_type, blocks,  # noqa: E402
                        result_text, run_entries, run_type)
+from run_readings import print_readings  # noqa: E402
 from run_store import RunStore  # noqa: E402
 from help_parts import print_help  # noqa: E402
-from operations.alerts import AlertKind, opening  # noqa: E402
 from operations.roles import Role  # noqa: E402
 from ticketing.times import utc_stamp  # noqa: E402
 from token_prices import PRICES  # noqa: E402
@@ -180,28 +179,6 @@ def budget_of(role: Role, items: int | None, undecided: list[str]) -> float | No
     return b.seconds if items is None else b.seconds * items
 
 
-def print_readings(r: Run, runs: list[Run]) -> None:
-    """The burn readings of `r`, as `PARTS` gives them."""
-    entries = run_entries(r.path)
-    counts = Counter(s.command for s in bash_spans(r.spans, entries))
-    hung = sum(1 for s in r.spans
-               if hung_time(r, runs, s) <= (s.end if s.end is not None else time.time()))
-    me = agent_id(r.path)
-    given = {opening(k, me): k for k in AlertKind}
-    alerted = Counter(given[line.strip()] for m in (*r.messages, *r.others)
-                      for line in m.text.splitlines() if line.strip() in given)
-    print("  " + mctx("repeated: {repeated}").format(repeated="; ".join(
-        f"{n}x {c[:COMMAND_WIDTH]}" for c, n in sorted(counts.items()) if n > 1) or NONE))
-    print("  " + mctx("refused: {refused}  hung: {hung}  alerts: {alerts}").format(
-        refused=len(refused_at(entries)), hung=hung,
-        alerts=", ".join(f"{k.value} {n}" for k, n in sorted(alerted.items(),
-                                                             key=lambda e: e[0].value))
-        or NONE))
-
-
-NONE = mctx("none")
-
-
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(add_help=False, usage=argparse.SUPPRESS)
     ap.add_argument("ids", nargs="*", metavar="ID")
@@ -307,11 +284,12 @@ def main(argv: list[str]) -> int:
         return 2
     elif runs and (len(runs) == 1 or args.runs or args.each or args.under):
         whole = len(runs) == 1 or args.each
+        among = call_times(runs)
         for r in runs:
             print(f"{r.label} {r.agent_type} {clock(r.start)}: {r.description}\n"
                   f"  wall {minutes(r.wall)}  {part_split(r.parts)}  "
                   f"cost {dollars(r.cost)}")
-            print_readings(r, runs)
+            print_readings(r, call_times([r]), among)
             if whole:
                 print_messages(r, undecided)
                 print_report(r, undecided)

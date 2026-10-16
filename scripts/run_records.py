@@ -80,6 +80,9 @@ class Run:
     unknown: list[str]
     cwd: str | None
     path: Path
+    # The command of each Bash span, and the time of each refused call.
+    bash_commands: list[str]
+    refused: list[float]
 
     @property
     def active(self) -> float:

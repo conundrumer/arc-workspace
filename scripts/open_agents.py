@@ -1,7 +1,8 @@
 """The agents under a run whose work is open, as `--running` of
 `profile_runs` lists them."""
 
-import statistics
+from bisect import bisect_left
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -43,14 +44,48 @@ class Listed:
     running: list[Span] = field(default_factory=list)
 
 
-def usual(run: Run, runs: list[Run], call: Span) -> float:
-    """The usual time of `call` of `run`, among the runs `runs`, as
-    `profile_runs.py --help one` gives it."""
-    def ended(among: list[Run]) -> list[float]:
-        return [s.end - s.start for r in among for s in r.spans
-                if s.label == call.label and s.end is not None and s.call != call.call]
-    durations = ended([run]) or ended(runs)
-    return statistics.median(durations) if durations else BLOCK_SECONDS
+type CallTimes = dict[str, list[float]]
+"""The durations of the ended calls of some runs by label, each list
+sorted."""
+
+
+def call_times(runs: Iterable[Run]) -> CallTimes:
+    times: CallTimes = {}
+    for r in runs:
+        for s in r.spans:
+            if s.end is not None:
+                times.setdefault(s.label, []).append(s.end - s.start)
+    for durations in times.values():
+        durations.sort()
+    return times
+
+
+def median_without(times: CallTimes, call: Span) -> float | None:
+    """The median of the durations `times` gives the label of `call`, with
+    the duration of `call` itself left out, or None where none is left."""
+    durations = times.get(call.label, [])
+    n = len(durations)
+    if call.end is None:
+        skip = n
+    else:
+        skip = bisect_left(durations, call.end - call.start)
+        n -= 1
+    if n == 0:
+        return None
+
+    def at(i: int) -> float:
+        return durations[i if i < skip else i + 1]
+    return at(n // 2) if n % 2 else (at(n // 2 - 1) + at(n // 2)) / 2
+
+
+def usual(own: CallTimes, among: CallTimes, call: Span) -> float:
+    """The usual time of `call`, with `own` the `call_times` of its run and
+    `among` those of the runs profiled, as `profile_runs.py --help one`
+    gives it."""
+    found = median_without(own, call)
+    if found is None:
+        found = median_without(among, call)
+    return BLOCK_SECONDS if found is None else found
 
 
 HUNG_FACTOR = 10
@@ -65,9 +100,10 @@ def hung_from(start: float, usual: float) -> float:
     return start + HUNG_FACTOR * usual
 
 
-def hung_time(run: Run, runs: list[Run], s: Span) -> float:
-    """The time the call `s` of `run` counts as hung (`hung_from`)."""
-    return hung_from(s.start, usual(run, runs, s))
+def hung_time(own: CallTimes, among: CallTimes, s: Span) -> float:
+    """The time the call `s` counts as hung (`hung_from`), with `own` and
+    `among` as `usual` takes them."""
+    return hung_from(s.start, usual(own, among, s))
 
 
 @state_cache(DERIVED, notes="undecided")
