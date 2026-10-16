@@ -150,7 +150,8 @@
     - When a hint appears, judge it, and put that judgment in the review.
     - Flag performance issues in the review.
     - When a performance issue prevents the principled form, make a temporary workaround, marked with the `@workaround` directive.
-3. Form each claim under the Analyze report's Not formed as a branch, with each reading of an item that gives several as a claim of its own, and add as cases the combinations that take it and meet Fit and Relational form.
+3. Form as a branch each reading that an item under the Analyze report's Not formed gives and that states one model, and add as cases the combinations that take it and meet Fit and Relational form.
+    * comment: The Create pass on b9b7f026, agent a439e0b4a10625696, read this step as having it form the item "A rank among several holed rectangles", which names no order, and chose rank by cell count as branches, as ticket 10-507 records.
 4. Hold as a branch each built-in derivation that fits a parameter, and each stored reading of a derived value on which a `@store` line stands, for which `store` prints a `@store` line to add, or that the Analyze report gives a witness, whatever `store` reports.
     - `uv run python scripts/run_dl.py derive <task_id>` lists the built-in derivations that fit.
     - `uv run python scripts/run_dl.py store <task_id>` lists the derived values that are the same on every input.
