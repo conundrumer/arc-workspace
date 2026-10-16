@@ -88,9 +88,9 @@ PARTS = {
     - A poll is a Bash call that runs `sleep` and none of the known commands.
     - A command the harness moves to the background on its timeout counts under its own label up to then, and under `bg LABEL` after.
     - A command the run backgrounded runs until a notification of it in the run's transcripts, other than in an assistant entry.
-        - Where none follows, it runs while a process holds open the output file its result names, and where no process holds that file, it ended when the file was last written.
-        - Where its result names no file, or that file is gone, whether it runs is unknown, and it counts as running.
-        - Where `lsof` writes to stderr when it lists the files open in that file's directory, which files a process holds open is unknown, and the ID is refused.
+        - Where none follows, it runs while a process holds open the output file its result names, and where no process holds that file, it ended when the file was last written, or, where that file is gone, at the run's last entry.
+        - Where its result names no file, whether it runs is unknown, and it counts as running.
+        - Where `lsof` writes to stderr when it lists the files open in that file's directory, or the open files that are gone, which files a process holds open is unknown, and the ID is refused.
     - A run's token cost is the list price of the tokens its requests used, from the price table of `token_prices`, each request priced once at the full usage its entries give.
         - A run with a request whose model or usage the table does not price has an unknown cost, printed `?`, and an `undecided` line on stderr names the model or the field.
     - `--price-at MODEL` prices each request at the prices the table gives MODEL, in place of those of the model that made it, and a MODEL the table does not price is refused.
