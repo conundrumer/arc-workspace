@@ -16,11 +16,13 @@ from controlled_markdown import mctx
 from command_labels import AGENT_TOOLS
 from run_backgrounds import background_ends, backgrounds
 from run_profiler import profile
+from senders import is_interrupt_note
 from run_records import Run, Span
 from run_reads import (BACKGROUND_TASK, LaunchStatus, blocks, is_prompt, parent_label,
                        run_entries, tool_calls)
 from file_reads import mtime
 from state_reads import DERIVED, Kept, state_cache
+from transcript_entries import Entry
 from transcripts import agent_id, is_subagent
 
 from operations.constants import BLOCK_SECONDS, STUCK_SECONDS
@@ -225,15 +227,22 @@ def by_rule(n: Node, parent_open: bool, undecided: list[str]) -> Listed | None:
         return Listed(n.parent, child, a, profiled(child, undecided), False, None, None)
     if not parent_open:
         return None
-    received = last_time(child, is_prompt)
+    received = last_time(child, is_received)
     if received is not None and (
             reported_since(a, received, frozenset(ReportKind))
-            or stopped_after(a.entries, received, undecided)):
+            or stopped_after(a.entries, received, undecided)
+            or (stop := last_time(child, is_interrupt_note)) is not None and stop > received):
         return None
     if handed_back(child):
         return None
     listed = turn_ended(n, undecided)
     return None if listed.found else listed
+
+
+def is_received(entry: Entry) -> bool:
+    """Whether an entry is a message the agent received, as
+    `profile_runs.py --help running` gives one."""
+    return is_prompt(entry) and not is_interrupt_note(entry)
 
 
 def unknown_work(n: Node, undecided: list[str]) -> Listed | None:
