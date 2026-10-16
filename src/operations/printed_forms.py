@@ -44,7 +44,7 @@ def filed_path(m: re.Match[str]) -> Path:
     return Path(m["path"] or m["commanded"])
 
 
-REPORT_SUFFIX = "-report.md"
+REPORT_SUFFIX = "-reply.txt"
 
 
 REPORT_NAME = re.compile(rf"(?:{STEP_KEY.pattern})(?:-[0-9]+)?{re.escape(REPORT_SUFFIX)}")

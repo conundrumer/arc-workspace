@@ -41,7 +41,7 @@ def file_path(step: Step, scratch: Path) -> Path:
 
 def report_path(step: Launch, scratch: Path) -> Path:
     """The report file of the launch `step`: the first name of
-    `<key>-report.md`, `<key>-2-report.md`, `<key>-3-report.md`, ... whose
+    `<key>-reply.txt`, `<key>-2-reply.txt`, `<key>-3-reply.txt`, ... whose
     file does not exist. The path stays the same at each print of the step
     until the launched agent writes the file, and a later launch of the same
     step gets the next free name, so no run writes over an earlier run's
