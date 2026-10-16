@@ -38,7 +38,8 @@ from relay_reads import read_relay, session_id  # noqa: E402
 from usage_limit import USAGE_STALE  # noqa: E402
 from agent_reports import RATE_LIMIT, parent_type  # noqa: E402
 from budgets import budget_of  # noqa: E402
-from run_reads import parent_id  # noqa: E402
+from run_reads import agent_type, parent_id  # noqa: E402
+from context_bound_hook import ACTIONS  # noqa: E402
 from transcripts import find  # noqa: E402
 from transcript_entries import Refused  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
@@ -110,6 +111,7 @@ PARTS = {
     - `next` prints the next step of the operator whose agent id it is given: one call to make, with its parameters, or the final reply.
         - Before the final reply, it prints a SendMessage call that sends the reply's text to the agent that launched the operator.
         - It then prints the SubagentHandback call whose message is the line that says so.
+        - Where the agent is no `{operator}`, it prints only that no step is printed and that the agent gives its final reply, and writes no file.
         - It writes the brief of a launch, and a message to an agent other than the coordinator, to a file under the session's scratchpad, and the call's prompt or message gives that file's path.
         - The value of a prompt or a message parameter it prints stands between two lines of three backticks, and the value to pass is the text between those lines, without them.
         - A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items.
@@ -194,6 +196,7 @@ PARTS = {
     """),
     HelpPart.RELAY: mctx("""
     - `relay` prints the next step of the operator launcher whose agent id it is given, in the forms of `next`.
+        - Where the agent is no `{launcher}`, it prints only that no step is printed and that the agent gives its final reply, and writes no file.
         - Where an operator of the launcher's runs and no line of the coordinator's waits for it, it prints at once, with no block, that the launcher ends its turn with no call.
             - Where a message to the launcher waits that the harness accepted during the call, as the block of `next` reads one, it prints instead that the launcher runs the command again.
         - Its first step launches an operator whose brief is the launcher's brief.
@@ -301,6 +304,27 @@ def arm_watchdog(me: str) -> None:
     signal.alarm(LIMIT_SECONDS)
 
 
+NOT_SERVED = mctx("{agent} is no {kind} of the session, so no step is printed: give your final "
+                  "reply.")
+"""The line `served` prints to an agent of another type than the one an
+action serves."""
+
+
+def serving(action: Action) -> str:
+    """The agent type `action` serves, as `context_bound_hook.ACTIONS` gives it."""
+    return next(k for k, a in ACTIONS.items() if a is action)
+
+
+def served(me: str, action: Action) -> bool:
+    """Whether the agent `me` is of the type `action` serves; where it is
+    not, print `NOT_SERVED`."""
+    kind = serving(action)
+    if agent_type(find(me)) == kind:
+        return True
+    print(NOT_SERVED.format(agent=me, kind=kind))
+    return False
+
+
 def block(me: str, action: Action, step_at: Callable[[float], tuple[Step, Path]]) -> int:
     """Print the step `step_at` gives, with the scratchpad its files go
     under, by the deadline it is given, as `--help next` gives the block of `next`
@@ -396,7 +420,8 @@ def main(argv: list[str]) -> int:
                               retry=plan.RETRY_SECONDS,
                               write=round(WRITE_SECONDS), stale=USAGE_STALE, rate_limit=RATE_LIMIT,
                               script=runs.SCRIPT_SECONDS, factor=f"{pacing.EVEN_FACTOR:g}",
-                              window=pacing.DEFAULT_WINDOW))
+                              window=pacing.DEFAULT_WINDOW, operator=serving(Action.NEXT),
+                              launcher=serving(Action.RELAY)))
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
     parser.add_argument("action", choices=list(OperateAction))
     runs.add_arguments(parser)
@@ -404,8 +429,12 @@ def main(argv: list[str]) -> int:
     try:
         match OperateAction(args.action):
             case OperateAction.NEXT:
+                if not served(args.ident, Action.NEXT):
+                    return 0
                 return block(args.ident, Action.NEXT, lambda deadline: operator_step(args.ident, deadline))
             case OperateAction.RELAY:
+                if not served(args.ident, Action.RELAY):
+                    return 0
                 return block(args.ident, Action.RELAY, lambda deadline: relay_step(args.ident, deadline))
             case OperateAction.REVIEW:
                 if args.rest:
