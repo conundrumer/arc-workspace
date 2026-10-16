@@ -26,6 +26,16 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --project \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/scripts/idle_user_hook.py\""
+          }
+        ]
+      }
+    ],
     "SubagentStop": [
       {
         "hooks": [
