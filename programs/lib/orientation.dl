@@ -217,3 +217,71 @@ d4_inverse(D4_LR, D4_LR).
 d4_inverse(D4_TB, D4_TB).
 d4_inverse(D4_DG, D4_DG).
 d4_inverse(D4_AD, D4_AD).
+
+/// c is a after b: apply(c, p) is apply(a, apply(b, p)), so a takes the
+/// image under b onto the image under c.
+.decl d4_compose(a: D4, b: D4, c: D4)
+d4_compose(D4_ID, D4_ID, D4_ID).
+d4_compose(D4_ID, D4_CW, D4_CW).
+d4_compose(D4_ID, D4_HT, D4_HT).
+d4_compose(D4_ID, D4_CC, D4_CC).
+d4_compose(D4_ID, D4_LR, D4_LR).
+d4_compose(D4_ID, D4_TB, D4_TB).
+d4_compose(D4_ID, D4_DG, D4_DG).
+d4_compose(D4_ID, D4_AD, D4_AD).
+d4_compose(D4_CW, D4_ID, D4_CW).
+d4_compose(D4_CW, D4_CW, D4_HT).
+d4_compose(D4_CW, D4_HT, D4_CC).
+d4_compose(D4_CW, D4_CC, D4_ID).
+d4_compose(D4_CW, D4_LR, D4_AD).
+d4_compose(D4_CW, D4_TB, D4_DG).
+d4_compose(D4_CW, D4_DG, D4_LR).
+d4_compose(D4_CW, D4_AD, D4_TB).
+d4_compose(D4_HT, D4_ID, D4_HT).
+d4_compose(D4_HT, D4_CW, D4_CC).
+d4_compose(D4_HT, D4_HT, D4_ID).
+d4_compose(D4_HT, D4_CC, D4_CW).
+d4_compose(D4_HT, D4_LR, D4_TB).
+d4_compose(D4_HT, D4_TB, D4_LR).
+d4_compose(D4_HT, D4_DG, D4_AD).
+d4_compose(D4_HT, D4_AD, D4_DG).
+d4_compose(D4_CC, D4_ID, D4_CC).
+d4_compose(D4_CC, D4_CW, D4_ID).
+d4_compose(D4_CC, D4_HT, D4_CW).
+d4_compose(D4_CC, D4_CC, D4_HT).
+d4_compose(D4_CC, D4_LR, D4_DG).
+d4_compose(D4_CC, D4_TB, D4_AD).
+d4_compose(D4_CC, D4_DG, D4_TB).
+d4_compose(D4_CC, D4_AD, D4_LR).
+d4_compose(D4_LR, D4_ID, D4_LR).
+d4_compose(D4_LR, D4_CW, D4_DG).
+d4_compose(D4_LR, D4_HT, D4_TB).
+d4_compose(D4_LR, D4_CC, D4_AD).
+d4_compose(D4_LR, D4_LR, D4_ID).
+d4_compose(D4_LR, D4_TB, D4_HT).
+d4_compose(D4_LR, D4_DG, D4_CW).
+d4_compose(D4_LR, D4_AD, D4_CC).
+d4_compose(D4_TB, D4_ID, D4_TB).
+d4_compose(D4_TB, D4_CW, D4_AD).
+d4_compose(D4_TB, D4_HT, D4_LR).
+d4_compose(D4_TB, D4_CC, D4_DG).
+d4_compose(D4_TB, D4_LR, D4_HT).
+d4_compose(D4_TB, D4_TB, D4_ID).
+d4_compose(D4_TB, D4_DG, D4_CC).
+d4_compose(D4_TB, D4_AD, D4_CW).
+d4_compose(D4_DG, D4_ID, D4_DG).
+d4_compose(D4_DG, D4_CW, D4_TB).
+d4_compose(D4_DG, D4_HT, D4_AD).
+d4_compose(D4_DG, D4_CC, D4_LR).
+d4_compose(D4_DG, D4_LR, D4_CC).
+d4_compose(D4_DG, D4_TB, D4_CW).
+d4_compose(D4_DG, D4_DG, D4_ID).
+d4_compose(D4_DG, D4_AD, D4_HT).
+d4_compose(D4_AD, D4_ID, D4_AD).
+d4_compose(D4_AD, D4_CW, D4_LR).
+d4_compose(D4_AD, D4_HT, D4_DG).
+d4_compose(D4_AD, D4_CC, D4_TB).
+d4_compose(D4_AD, D4_LR, D4_CW).
+d4_compose(D4_AD, D4_TB, D4_CC).
+d4_compose(D4_AD, D4_DG, D4_HT).
+d4_compose(D4_AD, D4_AD, D4_ID).

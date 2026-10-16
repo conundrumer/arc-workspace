@@ -369,7 +369,9 @@ class Engine(Protocol):
         """A program that includes the lib file `lib` and gives in
         `D4_IMAGE` each D4 image of each row of `D4_SOURCE`, a relation of
         columns of `types`, by the transform a RIGID block places its
-        charts by, each column of `kept` as it stands."""
+        charts by, each column of `kept` and each `D4` column as it stands:
+        a block places a pose as its difference with the placement's pose,
+        which is no image of a lone pose."""
         ...
 
     def index(self, program: Program) -> Index:

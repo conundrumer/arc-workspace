@@ -36,7 +36,7 @@
 // how the rotation is found and what it carries
 .type Choice =
     // the task as one stored exemplar pair: the rotation matching
-    // params.pair_in onto the input applies to params.pair_out
+    // params.pair_input onto the input applies to params.pair_output
     Pair {}
     // a box or mask run located from the block
   | Loc {l: Locate, r: Render, f: Paint}
@@ -60,45 +60,67 @@
     .decl ink(c: Color) ink(3).
 
     // --- $Grow, $Fit ---
-    .decl box_anchor(d: DiagDir) box_anchor(DIAG_TL).
+    // The first box, as its margin at each edge, with the corner it seats at
+    // and the pose of the training instance it is drawn from.
+    RIGID(box,
+        .decl anchor(d: DiagDir) anchor(DIAG_TL).
+        .decl margin(d: Dir, k: number)
+        margin(DIR_T, 0). margin(DIR_B, 5). margin(DIR_L, 0). margin(DIR_R, 5).
+        .decl pose(d: D4) pose(D4_ID).
+    )
 
-    // The first box, as its margin at each edge.
-    .decl box(d: Dir, k: number)
-    box(DIR_T, 0). box(DIR_B, 5). box(DIR_L, 0). box(DIR_R, 5).
+    // The first box's margin at each edge, seated at each corner by a
+    // rotation of the training pose.
+    .decl box_seated(c: DiagDir, d: Dir, k: number)
+    box_seated(Diag, D, K) :-
+        box_anchor(P, Diag), box_pose(P, R), c4_elem(R), box_margin(P, D, K).
 
     // --- $Stamp ---
-    .decl mask_corner(d: DiagDir) mask_corner(DIAG_TL).
+    // The output picture, whose member cells take the paint, with the corner
+    // it seats at and the pose of the training instance it is drawn from.
+    RIGID(mask,
+        .decl corner(d: DiagDir) corner(DIAG_TL).
+        .decl cell(p: Position)
+        GRID_MASK_9x9(cell,
+            1, 1, 1, 1, _, _, _, _, _,
+            1, 1, 1, 1, _, _, _, _, _,
+            1, 1, 1, 1, _, _, _, _, _,
+            1, 1, 1, 1, _, _, _, _, _,
+            _, _, _, _, 1, 1, 1, 1, _,
+            _, _, _, _, 1, 1, 1, 1, _,
+            _, _, _, _, 1, 1, 1, 1, _,
+            _, _, _, _, 1, 1, 1, 1, _,
+            _, _, _, _, _, _, _, _, _)
+        .decl pose(d: D4) pose(D4_ID).
+    )
 
-    .decl mask(p: Position)   // output picture; member cells take the paint
-    GRID_MASK_9x9(mask,
-        1, 1, 1, 1, _, _, _, _, _,
-        1, 1, 1, 1, _, _, _, _, _,
-        1, 1, 1, 1, _, _, _, _, _,
-        1, 1, 1, 1, _, _, _, _, _,
-        _, _, _, _, 1, 1, 1, 1, _,
-        _, _, _, _, 1, 1, 1, 1, _,
-        _, _, _, _, 1, 1, 1, 1, _,
-        _, _, _, _, 1, 1, 1, 1, _,
-        _, _, _, _, _, _, _, _, _)
+    // The picture's cells, seated at each corner by a rotation of the
+    // training pose.
+    .decl mask_seated(c: DiagDir, p: Position)
+    mask_seated(Diag, Q) :- mask_corner(P, Diag), mask_pose(P, R), c4_elem(R), mask_cell(P, Q).
 
     // --- $Pair ---
-    .decl pair_in(p: Position, col: Color)    // exemplar input
-    GRID_3x3(pair_in,
-        3, 3, 0,
-        3, 2, 0,
-        0, 0, 0)
+    // The exemplar pair, with the pose of the training instance it is.
+    RIGID(pair,
+        .decl input(p: Position, col: Color)
+        GRID_3x3(input,
+            3, 3, 0,
+            3, 2, 0,
+            0, 0, 0)
 
-    .decl pair_out(p: Position, col: Color)   // exemplar output
-    GRID_9x9(pair_out,
-        3, 3, 3, 3, 0, 0, 0, 0, 0,
-        3, 3, 3, 3, 0, 0, 0, 0, 0,
-        3, 3, 3, 3, 0, 0, 0, 0, 0,
-        3, 3, 3, 3, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 3, 3, 3, 3, 0,
-        0, 0, 0, 0, 3, 3, 3, 3, 0,
-        0, 0, 0, 0, 3, 3, 3, 3, 0,
-        0, 0, 0, 0, 3, 3, 3, 3, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0)
+        .decl output(p: Position, col: Color)
+        GRID_9x9(output,
+            3, 3, 3, 3, 0, 0, 0, 0, 0,
+            3, 3, 3, 3, 0, 0, 0, 0, 0,
+            3, 3, 3, 3, 0, 0, 0, 0, 0,
+            3, 3, 3, 3, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 3, 3, 3, 3, 0,
+            0, 0, 0, 0, 3, 3, 3, 3, 0,
+            0, 0, 0, 0, 3, 3, 3, 3, 0,
+            0, 0, 0, 0, 3, 3, 3, 3, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0)
+        .decl pose(d: D4) pose(D4_ID).
+    )
 }
 
 .init params = Params
@@ -135,16 +157,9 @@ diag($Mark(), Diag) :-
 .decl render_choice(r: Render)
 render_choice($Grow()). render_choice($Fit()). render_choice($Stamp()).
 
-// The rotation carrying drawn corner Dm to the located corner.
-.decl rot_to(l: Locate, dm: DiagDir, r: D4)
-rot_to(L, Dm, R) :- diag(L, Diag), c4_elem(R), apply_diag_dir(R, Dm, Diag).
-
-// The first box: params.box's margins, rotated to the located corner.
+// The first box, seated at the located corner.
 .init sq = DirPack<Locate>
-sq.edge(L, D2, K) :-
-    params.box(D, K),                                     // a stored margin
-    params.box_anchor(Db), rot_to(L, Db, R),              // the rotation to the located corner
-    apply_dir(R, D, D2).                                  // the edge it carries that margin to
+sq.edge(L, D, K) :- diag(L, Diag), params.box_seated(Diag, D, K).
 
 // Shift by one box: flush by the box's own extents.
 .decl sq_jump(l: Locate, v: Offset)
@@ -191,9 +206,7 @@ paint(Col, $Ink())   :- params.ink(Col).
 lit(P, Col, $Loc(L, $Grow(), F)) :- grow_box(L, B), params.canvas(P), inside(P, B), paint(Col, F).
 lit(P, Col, $Loc(L, $Fit(), F))  :- fit_cell(L, P), paint(Col, F).
 lit(Q, Col, $Loc(L, $Stamp(), F)) :-
-    params.mask_corner(Dm), rot_to(L, Dm, R),         // the mask's rotation
-    params.mask(Pm), apply(R, Pm, Q),                 // its cells, rotated
-    paint(Col, F).
+    diag(L, Diag), params.mask_seated(Diag, Q), paint(Col, F).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Loc(L, R, F)) :- locate_choice(L), render_choice(R), paint_choice(F).
@@ -202,36 +215,49 @@ out(P, Col, Ch) :- lit(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), params.canvas(P), !lit(P, _, Ch), params.bg(Col).
 
 // --- $Pair ---
-// The stored input against the observed input.
-.init pair = D4Map<Unit, Color>
-pair.src($U(), P, Col) :- params.pair_in(P, Col).
-pair.dst($U(), P, Col) :- in(P, Col).
+// A cell of a grid, with its color.
+.type Cell = [p: Position, col: Color]
+
+// The placements of the stored input that equal the observed input.
+.init pair_match = KeyedSetCompare<Unit, D4, Cell>
+pair_match.pattern_member(P, [Q, Col]) :- params.pair_input(P, Q, Col).
+pair_match.observed_member($U(), [Q, Col]) :- in(Q, Col).
 
 // Canvas and colors both come from the stored output.
 out(Q, Col, $Pair()) :-
-    c4_elem(R), !pair.mismatch($U(), R),   // a matching rotation
-    params.pair_out(Pm, Col), apply(R, Pm, Q).
+    pair_match.equals($U(), P),
+    params.pair_pose(P, R), c4_elem(R),    // a rotation of the training pose
+    params.pair_output(P, Q, Col).
 
 .comp Determine {
     // The stored pictures all come from one train pair.
     .init first = Canon<Example>
     first.equiv(E, E2) :- ex_out(E, _, _), ex_out(E2, _, _).
 
-    .decl pair_in(p: Position, col: Color)
-    pair_in(P, Col) :- first.rep(E, E), ex_in(E, P, Col).
+    .decl pair_input(p: Position, col: Color)
+    pair_input(P, Col) :- first.rep(E, E), ex_in(E, P, Col).
 
-    .decl pair_out(p: Position, col: Color)
-    pair_out(P, Col) :- first.rep(E, E), ex_out(E, P, Col).
+    .decl pair_output(p: Position, col: Color)
+    pair_output(P, Col) :- first.rep(E, E), ex_out(E, P, Col).
 
-    .decl mask(p: Position)
-    mask(P) :- first.rep(E, E), ex_out(E, P, Col), !params.bg(Col).
+    .decl pair_pose(d: D4)
+    pair_pose(D) :- d4_compose(D, D, D).    // the identity: that pair's own pose
+
+    .decl mask_cell(p: Position)
+    mask_cell(P) :- first.rep(E, E), ex_out(E, P, Col), !params.bg(Col).
+
+    .decl mask_pose(d: D4)
+    mask_pose(D) :- d4_compose(D, D, D).    // the identity: that pair's own pose
+
+    .decl box_pose(d: D4)
+    box_pose(D) :- d4_compose(D, D, D).     // the identity: that pair's own pose
 
     .decl ink(c: Color)
     ink(Col) :- ex_out(_, _, Col), !params.bg(Col).
 
     // The corner the picture seats against.
     .init pbox = Bbox<Unit>
-    pbox.cell($U(), P) :- mask(P).
+    pbox.cell($U(), P) :- mask_cell(P).
 
     .decl corner(d: DiagDir)
     corner(Diag) :- pbox.box($U(), B), corner_anchor(Diag, B, ZERO).
@@ -244,13 +270,13 @@ out(Q, Col, $Pair()) :-
 
     // The boxes as separate objects; the stored one seats at the corner.
     .init sq = Components<Unit>
-    sq.node($U(), P) :- mask(P).
+    sq.node($U(), P) :- mask_cell(P).
 
     .init sqbox = Bbox<Ident>
     sqbox.cell(Id, P) :- sq.label($U(), P, Id).
 
-    .decl box(d: Dir, k: number)
-    box(D, K) :-
+    .decl box_margin(d: Dir, k: number)
+    box_margin(D, K) :-
         sqbox.box(_, B), corner(Diag), corner_anchor(Diag, B, ZERO),  // the box at the corner
         dir_elem(D), dist(B, D, K).                                   // its margin at each edge
 }

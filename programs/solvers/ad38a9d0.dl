@@ -81,54 +81,73 @@
     .decl bg(c: Color) bg(7).
 
     // --- $ShapeKey ---
-    // The keyed shapes, each in its own box, and the color each one paints.
-    .decl shape(id: Ident, p: Position)
+    // The keyed shapes, each in its own box, with the pose of the training
+    // pieces it is drawn from.
+    RIGID(shape,
+        .decl member(id: Ident, p: Position)
+        .decl pose(id: Ident, d: D4)
+
+        GRID_MASK_3x3(member, 0,
+            _, 1, _,
+            1, 1, 1,
+            _, 1, _)
+        pose(0, D4_ID).
+
+        GRID_MASK_3x1(member, 1,
+            1,
+            1,
+            1)
+        pose(1, D4_ID).
+
+        GRID_MASK_2x1(member, 2,
+            1,
+            1)
+        pose(2, D4_ID).
+
+        GRID_MASK_2x2(member, 3,
+            1, 1,
+            _, 1)
+        pose(3, D4_ID).
+
+        GRID_MASK_2x3(member, 4,
+            1, 1, _,
+            _, 1, 1)
+        pose(4, D4_ID).
+
+        GRID_MASK_2x3(member, 5,
+            1, 1, 1,
+            1, 1, 1)
+        pose(5, D4_ID).
+    )
+
+    // The color each keyed shape paints.
     .decl shape_color(id: Ident, col: Color)
-
-    GRID_MASK_3x3(shape, 0,
-        _, 1, _,
-        1, 1, 1,
-        _, 1, _)
-    shape_color(0, 3).
-
-    GRID_MASK_3x1(shape, 1,
-        1,
-        1,
-        1)
-    shape_color(1, 2).
-
-    GRID_MASK_2x1(shape, 2,
-        1,
-        1)
-    shape_color(2, 9).
-
-    GRID_MASK_2x2(shape, 3,
-        1, 1,
-        _, 1)
-    shape_color(3, 4).
-
-    GRID_MASK_2x3(shape, 4,
-        1, 1, _,
-        _, 1, 1)
-    shape_color(4, 8).
-
-    GRID_MASK_2x3(shape, 5,
-        1, 1, 1,
-        1, 1, 1)
-    shape_color(5, 5).
+    shape_color(0, 3). shape_color(1, 2). shape_color(2, 9).
+    shape_color(3, 4). shape_color(4, 8). shape_color(5, 5).
 
     // --- $SizeBoxKey ---
-    // The keys as a cell count and a bounding-box extent on each axis, and
-    // the color each one paints.
+    // The keys' bounding-box extent on each axis, with the pose of the
+    // training pieces each is read from.
+    RIGID(box_key,
+        .decl extent(id: Ident, a: Axis, k: number)
+        .decl pose(id: Ident, d: D4)
+        extent(0, AXIS_V, 3). extent(0, AXIS_H, 3). pose(0, D4_ID).
+        extent(1, AXIS_V, 3). extent(1, AXIS_H, 1). pose(1, D4_ID).
+        extent(2, AXIS_V, 2). extent(2, AXIS_H, 1). pose(2, D4_ID).
+        extent(3, AXIS_V, 2). extent(3, AXIS_H, 2). pose(3, D4_ID).
+        extent(4, AXIS_V, 2). extent(4, AXIS_H, 3). pose(4, D4_ID).
+        extent(5, AXIS_V, 2). extent(5, AXIS_H, 3). pose(5, D4_ID).
+    )
+
+    // The keys' cell counts, and the color each one paints.
     .decl box_key_size(id: Ident, n: number)
-    .decl box_key_extent(id: Ident, a: Axis, k: number)
     .decl box_key_color(id: Ident, col: Color)
-    box_key_size(0, 5). box_key_extent(0, AXIS_V, 3). box_key_extent(0, AXIS_H, 3). box_key_color(0, 3).
-    box_key_size(1, 3). box_key_extent(1, AXIS_V, 3). box_key_extent(1, AXIS_H, 1). box_key_color(1, 2).
-    box_key_size(2, 2). box_key_extent(2, AXIS_V, 2). box_key_extent(2, AXIS_H, 1). box_key_color(2, 9).
-    box_key_size(3, 3). box_key_extent(3, AXIS_V, 2). box_key_extent(3, AXIS_H, 2). box_key_color(3, 4).
-    box_key_size(4, 4). box_key_extent(4, AXIS_V, 2). box_key_extent(4, AXIS_H, 3). box_key_color(4, 8).
-    box_key_size(5, 6). box_key_extent(5, AXIS_V, 2). box_key_extent(5, AXIS_H, 3). box_key_color(5, 5).
+    box_key_size(0, 5). box_key_color(0, 3).
+    box_key_size(1, 3). box_key_color(1, 2).
+    box_key_size(2, 2). box_key_color(2, 9).
+    box_key_size(3, 3). box_key_color(3, 4).
+    box_key_size(4, 4). box_key_color(4, 8).
+    box_key_size(5, 6). box_key_color(5, 5).
 }
 
 .init params = Params
@@ -218,29 +237,31 @@ parse.one_color($NonBgCells($PerColorPieces())).
 // A piece under one reading of the cells.
 .type Piece = [s: Cells, id: Ident]
 
-// A keyed shape under one transform.
+// A keyed shape in one placement.
 .type Pose = [id: Ident, d: D4]
 
 // @claim known-shapes recolor-by-shape
 .init shape_match = KeyedSetCompare<Piece, Pose, Position>
-shape_match.pattern_member([Id, D], Q) :- params.shape(Id, S), d4_elem(D), apply(D, S, Q).
+shape_match.pattern_member([Id, D], Q) :- params.shape_member(D, Id, Q).
 shape_match.observed_member([S, Id], P) :- parse.shape_cell(S, Id, P).
 
 keyed(Sym, S, Id, Col, $ShapeKey()) :-
-    params.shape_sym(Sym), sym_member(Sym, D),
-    shape_match.equals([S, Id], [Key, D]), params.shape_color(Key, Col).
+    shape_match.equals([S, Id], [Key, D]),
+    params.shape_pose(D, Key, R), params.shape_sym(Sym), sym_member(Sym, R),  // R takes a training pose onto the placement
+    params.shape_color(Key, Col).
 
 // --- $SizeBoxKey ---
 
-// The piece turned by D has an extent other than the key's on some axis.
+// The piece has an extent other than the key's in placement D on some axis.
 .decl box_mismatch(s: Cells, id: Ident, key: Ident, d: D4)
 box_mismatch(S, Id, Key, D) :-
-    parse.shape_cell(S, Id, P), d4_elem(D), apply(D, P, Q),
-    params.box_key_extent(Key, A, K), axis_dim(Q, A, K2), K != K2.
+    parse.shape_cell(S, Id, P), params.box_key_extent(D, Key, A, K),
+    axis_dim(P, A, K2), K != K2.
 
 keyed(Sym, S, Id, Col, $SizeBoxKey()) :-
     parse.cell_count.tally([S, Id], N), params.box_key_size(Key, N),
-    params.shape_sym(Sym), sym_member(Sym, D), !box_mismatch(S, Id, Key, D),
+    params.box_key_pose(D, Key, R), params.shape_sym(Sym), sym_member(Sym, R),  // R takes a training pose onto the placement
+    !box_mismatch(S, Id, Key, D),
     params.box_key_color(Key, Col).
 
 // --- $KeepUnknown ---
@@ -266,8 +287,13 @@ paint(Sym, P, Col, [S, K, $KeepUnknown()]) :-
     .init shape_class = Canon<ExPiece>
     shape_class.equiv(A, B) :- same.equals(A, B).
 
-    .decl shape(id: Ident, p: Position)
-    shape(Key, P) :- shape_class.id([E, Id], Key), parse.shape_cell(E, Id, P).
+    .decl shape_member(id: Ident, p: Position)
+    shape_member(Key, P) :- shape_class.id([E, Id], Key), parse.shape_cell(E, Id, P).
+
+    // Each key is drawn in the pose of its training pieces: the identity, the
+    // element that composed with itself gives itself.
+    .decl shape_pose(id: Ident, d: D4)
+    shape_pose(Key, D) :- shape_class.id(_, Key), d4_compose(D, D, D).
 
     .decl shape_color(id: Ident, col: Color)
     shape_color(Key, Col) :- shape_class.id([E, Id], Key), parse.piece(E, Id, P), ex_out(E, P, Col).
@@ -291,6 +317,10 @@ paint(Sym, P, Col, [S, K, $KeepUnknown()]) :-
 
     .decl box_key_extent(id: Ident, a: Axis, k: number)
     box_key_extent(Key, A, K) :- box_class.id(Pc, Key), extent(Pc, A, K).
+
+    // Each key is read in the pose of its training pieces, as shape_pose is.
+    .decl box_key_pose(id: Ident, d: D4)
+    box_key_pose(Key, D) :- box_class.id(_, Key), d4_compose(D, D, D).
 
     .decl box_key_color(id: Ident, col: Color)
     box_key_color(Key, Col) :- box_class.id([E, Id], Key), parse.piece(E, Id, P), ex_out(E, P, Col).

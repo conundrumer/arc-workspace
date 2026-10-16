@@ -66,12 +66,14 @@ class SouffleEngine(TextMethods):
     def d4_images(self, lib: Path, types: Sequence[TypeName],
                   kept: frozenset[int]) -> Program | ParseFailure:
         cols = ", ".join(f"c{i}: {t.text}" for i, t in enumerate(types))
+        poses = frozenset(i for i, t in enumerate(types)
+                          if t.text == parser.RIGID_POSE[0])
         text = "\n".join([
             render.include(lib.name),
             f".decl {D4_SOURCE.name}({cols})",
             f".decl {D4_IMAGE.name}(d: D4, {cols})",
             expand.rigid_rule(D4_IMAGE.name, D4_SOURCE.name, list(types),
-                              kept), ""])
+                              kept | poses), ""])
         return self.parse(text, lib.parent)
 
     def index(self, program: Program) -> Index:

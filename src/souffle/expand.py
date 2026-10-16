@@ -40,6 +40,7 @@ from souffle.lexer import lex
 from souffle.parser import (
     RIGID_ACTIONS,
     RIGID_AXIS_ACTIONS,
+    RIGID_POSE,
     chart_prefix,
     grid_layout,
     placed_name,
@@ -67,6 +68,10 @@ def rigid_rule(head: str, src: str, types: list[TypeName],
             srcs.append(f"B{i}")
             atoms.append(f"{member}(Bd{i}, B{i}), {act}(D4, Bd{i}, Ad{i}), "
                          f"{member}(Ad{i}, A{i})")
+        elif t == RIGID_POSE[0]:
+            heads.append(f"A{i}")
+            srcs.append(f"B{i}")
+            atoms.append(f"{RIGID_POSE[1]}(A{i}, B{i}, D4)")
         else:
             heads.append(f"A{i}")
             srcs.append(f"A{i}")

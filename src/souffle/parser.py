@@ -116,6 +116,11 @@ RIGID_AXIS_ACTIONS = {
 }
 """The column types that act through the swap they induce on a member
 direction: the member relation and the direction's action."""
+RIGID_POSE = ("D4", "d4_compose")
+"""The column type of a stored pose and the composition it is placed by:
+placed at the placement's pose D, the stored pose S becomes the P with
+`d4_compose(P, S, D)`, the element that takes S onto D, which is the
+same in every frame of the block."""
 RIGID_IDENTITY = frozenset({"Color", "number", "Ident", "symbol", "Example"})
 """The column types a D4 action leaves as they are."""
 
@@ -123,6 +128,7 @@ RIGID_IDENTITY = frozenset({"Color", "number", "Ident", "symbol", "Example"})
 def rigid_type_acts(type_name: TypeName) -> bool:
     text = type_name.text
     return (text in RIGID_ACTIONS or text in RIGID_AXIS_ACTIONS
+            or text == RIGID_POSE[0]
             or text in RIGID_IDENTITY)
 
 
