@@ -278,10 +278,10 @@ def witness_lines(solver: Solver, f: Finding) -> list[str]:
                              "output: {case}").format(entry=at, case=case),
                         *_side(solver, mctx("the judged output"), actual)]
             return [mctx("{entry}: case {case} gives an output the witness "
-                         "does not name").format(entry=at, case=case)
+                         "does not hold").format(entry=at, case=case)
                     if one else
                     mctx("{entry}: these cases give an output the witness "
-                         "does not name: {case}").format(entry=at, case=case),
+                         "does not hold: {case}").format(entry=at, case=case),
                     *_side(solver, mctx("the witness's output"), expected),
                     *_side(solver, mctx("the solver's output"), actual)]
         case UnlistedPayload(cases=cases, actual=actual):

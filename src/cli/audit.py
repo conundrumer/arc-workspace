@@ -256,7 +256,8 @@ def derive_or_store(run: Callable[..., int], args) -> int:
     if args.stem is not None:
         return run(args.stem, args.witness_file)
     if args.witness_file is not None:
-        print(text.WITNESS_FILE_NEEDS_STEM, file=sys.stderr)
+        print(text.WITNESS_FILE_NEEDS_STEM.format(command=args.cmd),
+              file=sys.stderr)
         return 2
     code = 0
     for s in all_stems():

@@ -50,8 +50,8 @@ def not_written(id: str, names: Sequence[str], kind: Section, lineless: bool
                     "line for `{id}`; once the line is written with a "
                     "verdict other than `other`, `{kind}` writes the "
                     "witness").format(id=id, kind=kind.value)
-    return mctx("wrote no witness `{id}`: its groups name {names}, which "
-                "denote no case of the solver").format(
+    return mctx("wrote no witness `{id}`: its groups give the names "
+                "{names}, which denote no case of the solver").format(
         id=id, names=_ticked(names))
 
 
@@ -89,9 +89,9 @@ def wrote_lineless(engine: Engine, id: str, path: object, proposer: str,
     """The line of a witness the `derive` survey wrote for a derivation
     with no `@derive` line: its groups name the branch, which the solver
     denotes once the line stands above the parameter's declaration."""
-    return mctx("wrote witness `{id}` to {path}; its groups name `{id}`, so "
-                "add `{line}` above `{decl}`, its verdict read from this "
-                "witness").format(
+    return mctx("wrote witness `{id}` to {path}; its groups give the name "
+                "`{id}`, so add `{line}` above `{decl}`, its verdict read "
+                "from this witness").format(
         id=id, path=path, decl=engine.text(decl),
         line=derive_line_to_add(engine, proposer))
 

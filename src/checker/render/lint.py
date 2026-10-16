@@ -159,7 +159,7 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
         "solver declares; see [Cases](docs/handbook/solver-file.md#cases)"
         ).format(*n),
     LintSentence.OPEN_VALUE_NO_COLUMN: lambda n, m: mctx(
-        "`{0}`, the record of the `OpenValue` field `{1}`, names {missing}, "
+        "`{0}`, the record of the `OpenValue` field `{1}`, gives {missing}, "
         "which `{1}` has no column of; see "
         "[Cases](docs/handbook/solver-file.md#cases)").format(
             *n, missing=", ".join(f"`{x}`" for x in m)),

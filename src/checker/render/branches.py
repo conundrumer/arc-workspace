@@ -124,8 +124,11 @@ def needs_witness(word: str, id: str) -> str:
 
 
 def diff_line(parameters: Sequence[str]) -> str:
-    """The determination line naming the parameters whose rows differ."""
-    return mctx("determination: DIFF on ") + ", ".join(parameters)
+    """The determination line on the parameters whose rows differ."""
+    return mctx("determination: the rows the determination relation of "
+                "each of these parameters gives differ from its stored "
+                "rows: {parameters}").format(
+        parameters=", ".join(parameters))
 
 
 def differing(solver: Solver, p: DeterminationDiffPayload) -> list[str]:
@@ -314,10 +317,12 @@ def finding_text(solver: Solver, f: Finding) -> str:
         case Kind.DETERMINATION_DIFF, DeterminationDiffPayload() as d:
             return diff_line(differing(solver, d))
         case Kind.DETERMINATION_OF_DERIVED, DerivedDataPayload(relation=r):
-            return mctx("determination: ERROR determination relation "
-                        "'{name}' matches derived Params data, which carries "
-                        "no determination relation; rename the helper or "
-                        "store {name} as a parameter").format(name=r)
+            return mctx("determination: the determination relation "
+                        "`{name}` has the name of a relation that `Params` "
+                        "derives, and a derived relation has no "
+                        "determination relation; rename that determination "
+                        "relation, or store `{name}` as a "
+                        "parameter").format(name=r)
         case Kind.NO_TASK, NoTaskPayload():
             return mctx("not run: the task has no task file")
         case Kind.NOT_CHECKED, NotCheckedPayload():

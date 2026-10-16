@@ -247,8 +247,11 @@ def unexercised_line(solver: Solver, at: str, p: UnexercisedPayload) -> str:
                     at=at, fact=_fact_text(solver, p.fact))
 
 
-UNCHECKED_TRAIN_FAILS = mctx("{at}: {check} not checked: the stored "
-                             "program fails a train pair")
+def train_fails(check: str) -> str:
+    """The line of the check `check`, which the stored program's failure on
+    a train pair keeps from running."""
+    return mctx("{check} not checked: the stored program fails a train "
+                "pair").format(check=check)
 
 
 def render_drop_one(solver: Solver, result: DropOneResult) -> list[str]:
@@ -256,8 +259,7 @@ def render_drop_one(solver: Solver, result: DropOneResult) -> list[str]:
     pairs do not need and the test pairs do, the facts no test pair can
     judge, and each fact whose run timed out."""
     if isinstance(result, TrainFails):
-        return [mctx("drop-one baseline fails: stored source does not pass "
-                     "train")]
+        return [train_fails("drop-one")]
     if isinstance(result, TimedOut):
         return finding_lines(solver, result.finding)
     if not result.tested:

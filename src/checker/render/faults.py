@@ -181,8 +181,8 @@ OFF_PART_TEXT: dict[FormPart, str] = {
                          "one"),
     FormPart.REPRESENTATIVE: mctx("`{read}` is not a task id with at most one "
                                   "case name after it"),
-    FormPart.DERIVE_RELATION: mctx("an `@ignore: derive` line names no "
-                                   "relation, and this one names `{read}`"),
+    FormPart.DERIVE_RELATION: mctx("an `@ignore: derive` line gives no "
+                                   "relation, and this one gives `{read}`"),
 }
 """The sentence of each part of an annotation line off its form, from the
 part as the line writes it."""

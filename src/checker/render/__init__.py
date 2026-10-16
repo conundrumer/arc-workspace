@@ -158,9 +158,8 @@ def finding_lines(solver: Solver, f: Finding,
             from checker.render.surveys import unexercised_line
             return [unexercised_line(solver, at, p)]
         case TrainFails():
-            from checker.render.surveys import UNCHECKED_TRAIN_FAILS
-            return [UNCHECKED_TRAIN_FAILS.format(
-                at=at, check=UNCHECKED_SECTION[f.kind].value)]
+            from checker.render.surveys import train_fails
+            return [f"{at}: {train_fails(UNCHECKED_SECTION[f.kind].value)}"]
         case UnobservedPayload():
             from checker.render.relabeling import unobserved_line
             return [unobserved_line(at, p)]

@@ -7,7 +7,7 @@ bg: DominantColor — each color whose cell count in every input is the highest 
 
 4 witnessed cases of 8, 2 distinct grid(s)
 
-wrote witness `bg=DominantColor` to <out>/gate/wit/cur/9b2a60aa.wit.json; its groups name `bg=DominantColor`, so add `// @derive DominantColor: <plausibility> <verdict>` above `.decl bg(col: Color)`, its verdict read from this witness
+wrote witness `bg=DominantColor` to <out>/gate/wit/cur/9b2a60aa.wit.json; its groups give the name `bg=DominantColor`, so add `// @derive DominantColor: <plausibility> <verdict>` above `.decl bg(col: Color)`, its verdict read from this witness
 
 input:
   1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1

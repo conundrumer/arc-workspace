@@ -53,9 +53,9 @@ REMOVE_ALONE = mctx("`--remove` takes a witness id alone, and no grid, "
 # `witness`, `derive` and `store`
 
 BOTH_FILES = mctx("witness: give `--file` or `--witness-file`, not both")
-WITNESS_FILE_STEM = mctx("witness: `--witness-file` takes a task id")
+WITNESS_FILE_STEM = mctx("witness: `--witness-file` takes a stem")
 WITNESS_NEEDS = mctx("witness: give a task id, `--file`, or both")
-WITNESS_FILE_NEEDS_STEM = mctx("`--witness-file` takes a stem")
+WITNESS_FILE_NEEDS_STEM = mctx("{command}: `--witness-file` takes a stem")
 TRY_ALONE = mctx("witness: `--try` takes a task id and no `--file` or "
                  "`--every-case`")
 TRY_ONE_GRID = mctx("witness: `--try` takes one grid")
