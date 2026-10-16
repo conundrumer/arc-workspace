@@ -91,7 +91,9 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
     with `no finding stands` and `r` sent each of them a message or is a
     launch of theirs, since its reply reaches its launcher, or where it
     opens so and gives the change's worktree `w` in the state it is in,
-    and otherwise the message that asks `r` to review the change again."""
+    and otherwise the message that asks `r` to review the change again,
+    or, where `r` is of `TranscriptsRead.elsewhere`, the step `unreplied`
+    gives."""
     if no_finding(r):
         if shows_current(r, w):
             return False
@@ -104,7 +106,8 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
         if all(i in r.messaged or i == r.operator for i in ids):
             return False
     message = messages.review_again(since)
-    if r.agent_id is not None and not sent(state, r.agent_id, message):
+    if r.agent_id is not None and r not in state.transcripts.elsewhere \
+            and not sent(state, r.agent_id, message):
         return Send(r.agent_id, message)
     return unreplied(state, t, w, here, r)
 

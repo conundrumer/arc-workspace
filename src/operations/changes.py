@@ -65,8 +65,8 @@ from typing import Literal
 
 from controlled_markdown import mctx
 from operations import briefs, merging, messages
-from operations.change_agents import (change_editors, editors_in, latest_editors, launched_on,
-                                      of_change, unstaffed)
+from operations.change_agents import (change_editors, editors_in, elsewhere_on, latest_editors,
+                                      launched_on, of_change, unstaffed, with_elsewhere)
 from operations.change_fragments import drafter_ids, fragments_step
 from operations.change_overrun import over_budget
 from operations.doc_review import doc_review, with_ids
@@ -173,25 +173,47 @@ def carry(state: State, t: Ticket) -> Step | None:
         return step
     here = editors_in(agents, w)
     if missing := unstaffed(editors, here):
-        role = missing[0]
+        theirs = editors_in(elsewhere_on(state, t.number), w)
+        free = [r for r in missing if not any(a.pending and a.role is r for a in theirs)]
+        if not free:
+            return None
+        role = free[0]
         drafters = drafter_ids(here)
         if isinstance(drafters, Undecided):
             return drafters
+        before = editor_before([a for a in theirs if a.role is role])
         return Launch(role, t.number, briefs.editor(
             role, t.number, len(editors) > 1, w,
             editor_scratch(t.number, role, state.scratch), state.me,
-            state.held.fragments.get(w, ()), tuple(drafters)), model=t.model(role))
+            state.held.fragments.get(w, ()), tuple(drafters), before=before),
+            model=t.model(role))
     if any(a.pending for a in here):
         return None
     if (step := fragments_step(state, t, w, here)) is not None:
         return step
     latest = latest_editors(here)
-    if (step := leftover(state, t, w, latest, agents)) is not False:
+    reviewed = with_elsewhere(state, t.number, agents,
+                              (Role.ITEM_CHECKER, Role.DOC_REVIEWER))
+    if (step := leftover(state, t, w, latest, reviewed)) is not False:
         return step
     if Role.DOC_EDITOR in editors and (
-            step := doc_review(state, t, w, here, agents)) is not False:
+            step := doc_review(state, t, w, here, reviewed)) is not False:
         return step
     return merging.merge(state, t, w, latest)
+
+
+def editor_before(theirs: list[Agent]) -> tuple[str, Path, str] | None:
+    """The agent id, the scratch directory and the latest report of the
+    last of `theirs`, the editors of one role in a change's worktree that
+    an operator of another session launched, that gives all three, for
+    the brief of the editor launched in its place (`briefs.editor`), or
+    None where none of them does."""
+    for a in reversed(theirs):
+        scratch = briefs.scratch_of(a.brief)
+        report = a.last_report
+        if a.agent_id is not None and scratch is not None and report is not None:
+            return a.agent_id, scratch, report.text
+    return None
 
 
 LEFT_CHOICES = {

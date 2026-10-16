@@ -1,6 +1,7 @@
 """The state the operator's procedures read, as `scripts/operate.py` reads
-it from the ticket tracker, git, the worktrees and the transcripts of the
-session's operators.
+it from the ticket tracker, git, the worktrees, the transcripts of the
+session's operators, and those of the operators of another session on a
+change `me` holds.
 """
 
 from collections.abc import Callable, Iterable, Iterator, Mapping
@@ -109,9 +110,9 @@ class LateResume:
 
 @dataclass(frozen=True)
 class Agent:
-    """An agent an operator of the session launched with a description the
-    command gave, or a doc reviewer that a doc editor such an operator
-    launched launched, which is read as a launch of that doc editor's, with
+    """An agent an operator of any session launched with a description the
+    command gave, or a doc reviewer that a doc editor an operator launched
+    launched, which is read as a launch of that doc editor's, with
     the doc editor as its `operator`. `pending` holds where that operator holds neither the
     result of a launch in the foreground nor a sign since its launch or
     its last resume, in any transcript of the session, that its turn
@@ -376,7 +377,12 @@ class TranscriptsRead:
     and each watched agent whose `Watched.stuck` holds. `pass_reports` gives, for each
     solver pass with an agent id, the read of the report file it wrote
     under the task's work directory since its launch (`PassReport`),
-    whatever its reply."""
+    whatever its reply. `elsewhere` holds, for each change `State.me`
+    holds whose log gives a line of an operator of another session since
+    its last move out of `tickets/draft/`, the agents that operator
+    launched on it since then, with the doc reviewers of its doc editors,
+    in the order of their launch. No step sends to one of them: a
+    subagent of another session reports to that session."""
     agents: tuple[Agent, ...]
     calls: tuple[Call, ...]
     messages: tuple[Message, ...]
@@ -385,6 +391,7 @@ class TranscriptsRead:
     stalled: Mapping[str, Report]
     pass_reports: Mapping[str, PassReport]
     stuck: Mapping[str, Stuck]
+    elsewhere: tuple[Agent, ...]
 
 
 @dataclass(frozen=True)

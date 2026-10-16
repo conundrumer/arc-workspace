@@ -3,10 +3,11 @@
 brief gives the agent id of the operator that launches the agent, which
 the agent replies to."""
 
+import re
 import shlex
 from pathlib import Path
 
-from controlled_markdown import mctx
+from controlled_markdown import form, mctx
 from operations.reports import LEFT_FOR_DECISION, WORKTREE
 from operations.roles import Role, description
 from operations.state import Agent, Place, code_review_tag
@@ -17,6 +18,7 @@ TICKET_PATH = shlex.join([*FILE_TICKET, "path"]) + " {number}"
 WORK_IN = mctx("Work in the worktree {worktree}.")
 TESTS = mctx("Tests directory: `tests/`.")
 SCRATCH = mctx("Scratch directory: {scratch}.")
+SCRATCH_LINE = re.compile(form(SCRATCH, {"scratch": r"(?P<scratch>\S.*)"}))
 LAUNCHER = mctx("The agent that launches you: {operator}.")
 MAY_EDIT = mctx("The files you may edit: {files}.")
 FILE_AS = mctx("with {domain_subject} as `<domain>` and `<subject>`, and {agent} as `<agent>`")
@@ -81,11 +83,15 @@ def part_of(agent: Agent) -> str:
 
 def editor(role: Role, number: str, part: bool, worktree: Path, scratch: Path,
            operator: str, fragments: tuple[Place, ...] = (),
-           code_editors: tuple[str, ...] = (), of_fragments: bool = False) -> str:
+           code_editors: tuple[str, ...] = (), of_fragments: bool = False,
+           before: tuple[str, Path, str] | None = None) -> str:
     """The brief of an editor of the change `number`, with its part where
     `part`, or `FRAGMENTS_PART` where `of_fragments`, in the change's
     worktree `worktree`. A doc editor's brief gives the `fragments`, and
-    the agent ids of the change's `code_editors`."""
+    the agent ids of the change's `code_editors`. `before` gives the agent
+    id, the scratch directory and the latest report of the last editor of
+    the role in that worktree that an operator of another session
+    launched, where there is one."""
     lines = [read_ticket(number)]
     if of_fragments:
         lines.append(FRAGMENTS_PART)
@@ -103,7 +109,24 @@ def editor(role: Role, number: str, part: bool, worktree: Path, scratch: Path,
         lines.append(TESTS)
     lines.append(SCRATCH.format(scratch=scratch))
     lines.append(LAUNCHER.format(operator=operator))
+    if before is not None:
+        agent, theirs, report = before
+        lines += [BEFORE.format(agent=agent, scratch=theirs), report]
     return "\n".join(lines)
+
+
+BEFORE = mctx("An editor of your role that another session launched, {agent}, worked in this "
+              "worktree before you, with the scratch directory {scratch}, and its latest report "
+              "follows.")
+
+
+def scratch_of(brief: str) -> Path | None:
+    """The scratch directory the first `SCRATCH` line of `brief` gives, or
+    None where it gives none: a report that `BEFORE` leads, at the end of
+    the brief, may give lines of its own."""
+    found = [m.group("scratch") for line in brief.split("\n")
+             if (m := SCRATCH_LINE.fullmatch(line))]
+    return Path(found[0]) if found else None
 
 
 FRAGMENTS = mctx("Judge whether the text of each `mctx` fragment below, which a code editor "

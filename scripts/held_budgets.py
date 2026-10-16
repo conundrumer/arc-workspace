@@ -12,10 +12,13 @@ from operations.worktrees import worktree
 
 
 def change_spend(state: State, undecided: list[str]) -> dict[str, Spend]:
-    """The spend of each change `state.me` holds whose spend reads."""
+    """The spend of each change `state.me` holds whose spend reads, that of
+    the agents of `change_agents.elsewhere_on` included."""
     out: dict[str, Spend] = {}
     for t in changes.held(state):
-        ids = [a.agent_id for a in change_agents.of_change(state, t.number) if a.agent_id is not None]
+        ids = [a.agent_id for a in (*change_agents.of_change(state, t.number),
+                                    *change_agents.elsewhere_on(state, t.number))
+               if a.agent_id is not None]
         if (s := spend(ids, undecided)) is not None:
             out[t.number] = s
     return out

@@ -52,6 +52,9 @@ from operations import pacing
 from operations.directives import named, pace
 from operations.final_reply import final_sends_in, for_context, sent_final_text
 from operations.handled import made
+from operations.change_agents import on_change
+from operations.change_budget import left_draft
+from operations.log_commands import AGENT
 from operations.monitor import MonitorState
 from operations.plan import elsewhere, taken_up, unknown_line
 from operations.roles import Role
@@ -70,11 +73,12 @@ from operations.state import (
     SessionsRead,
     State,
     Stuck,
+    Ticket,
     TrackerRead,
     TranscriptsRead,
 )
 from operations.worktrees import worktree_in
-from ticketing.vocabulary import Status
+from ticketing.vocabulary import Kind, Status
 
 DEPRECATED = frozenset({ReaderName.ROLE, ReaderName.CONSOLE, ReaderName.SURVEY,
                         ReaderName.WORKFLOW})
@@ -87,7 +91,8 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     monitor's steps read. Where `since` is given, the transcripts read for
     launches, calls, messages and late resumes are only those of `me` and
     of the operators whose last entry is at or after `since`: an agent
-    launched since then is launched by one of those."""
+    launched since then is launched by one of those. `elsewhere_agents`
+    gives `TranscriptsRead.elsewhere`."""
     opened = new_state()
     session = session_id()
     main = main_tree()
@@ -139,7 +144,12 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
              for aid, q in [*((a.agent_id, a.quiet) for a in agents),
                             *((w.agent_id, w.stuck) for w in now_watched)]
              if aid is not None and q is not None}
-    known = {a.agent_id for a in agents if a.agent_id} | {aid for aid, _ in runs}
+    tickets, unread = read_tickets(tickets_dir)
+    elsewhere_read = elsewhere_agents(
+        [t for t in tickets.values() if t.kind is Kind.CHANGE and t.status is Status.ASSIGNED
+         and t.holder == me], me, frozenset(dict(runs)), main, undecided)
+    known = {a.agent_id for a in (*agents, *elsewhere_read) if a.agent_id} \
+        | {aid for aid, _ in runs}
     given = given_lines(runs, me, calls)
     sorted_calls = tuple(sorted(calls, key=lambda c: c.time))
     parents = {aid: parent_id(p) for aid, p in runs}
@@ -149,7 +159,6 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     watching.extend(line for line in dict.fromkeys(undecided)
                     if (where := line.split(":", 1)[0]) in known and unknown_line(line) not in given
                     and (where in readers or not gone_line(line)))
-    tickets, unread = read_tickets(tickets_dir)
     index = session_index(tickets_dir, session)
     holders = {t.holder for t in tickets.values() if t.status is Status.ASSIGNED and t.holder}
     my_path = dict(runs)[me]
@@ -178,7 +187,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
             agents=tuple(sorted(agents, key=lambda a: a.launched)),
             calls=sorted_calls, messages=tuple(messages),
             made=made(calls), late_resumes=late, stalled=stalled, stuck=stuck,
-            pass_reports=passes),
+            pass_reports=passes, elsewhere=elsewhere_read),
         git=tree, taken_up=took_up,
         held=read_held(holding),
         readers=Deferred(lambda: tuple(Reader(name, tuple(args)) for name, args in reader_calls()
@@ -282,6 +291,37 @@ def editor_reviewers(agents: list[Agent], main: Path, undecided: list[str]) -> l
         theirs = read_operator(a.agent_id, find(a.agent_id), main, undecided, {}).agents
         out += [r for r in theirs if r.role is Role.DOC_REVIEWER]
     return out
+
+
+def elsewhere_agents(held: list[Ticket], me: str, operators: frozenset[str], main: Path,
+                     undecided: list[str]) -> tuple[Agent, ...]:
+    """`TranscriptsRead.elsewhere` over the changes `held`, where
+    `operators` gives the operators of the session. Each agent kept whose
+    work is no longer open ends with its final reply, as `ended_elsewhere`
+    gives it. Where the transcript of such an operator is not found, an
+    `undecided` line names it."""
+    out: list[Agent] = []
+    for t in held:
+        since = left_draft(t)
+        others = dict.fromkeys(ln.agent_id for ln in t.log
+                               if ln.time > since and ln.agent == AGENT and ln.agent_id
+                               and ln.agent_id not in operators)
+        for oid in others:
+            try:
+                path = find(oid)
+            except Refused:
+                undecided.append(mctx("{run}: no transcript of operator {agent} of another "
+                                      "session is found, so its agents on change {number} are "
+                                      "not read").format(run=me, agent=oid, number=t.number))
+                continue
+            theirs = [a for a in read_operator(oid, path, main, undecided, {}).agents
+                      if a.launched > since and on_change(a, t.number)]
+            theirs += [r for r in editor_reviewers(theirs, main, undecided)
+                       if r.launched > since and on_change(r, t.number)]
+            ended = ended_elsewhere(theirs, me, undecided)
+            out += [ended_with(a, ended[a.agent_id]) if a.pending and a.agent_id in ended else a
+                    for a in theirs]
+    return tuple(sorted(out, key=lambda a: a.launched))
 
 
 def read_held(holding: dict[str, Path]) -> HeldRead:

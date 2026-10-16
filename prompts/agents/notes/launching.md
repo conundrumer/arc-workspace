@@ -52,6 +52,7 @@
 ### An editor's brief
 - An editor's brief gives the change's worktree, and the agent id of the agent that launches it, where that is not the coordinator.
 - It gives the accepted gate outputs under `tests/gate/accepted/` the editor may write, where its items change or add one, with a scratch directory.
+- Where an editor of its role that another session launched worked in that worktree before it, it gives the agent id and the scratch directory of the last such editor that left a report, and its latest report.
 
 ### A code editor's brief
 - A code editor's brief gives as well its tests directory and a scratch directory.
