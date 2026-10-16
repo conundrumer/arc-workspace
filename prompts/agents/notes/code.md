@@ -1,4 +1,4 @@
-+ budget: 3533
++ budget: 3600
 * comment: when editing this doc
     - [Code editor](prompts/agents/code-editor.md), with [code-editor-next.md](prompts/agents/code-editor-next.md), and [Code reviewer](prompts/agents/code-reviewer.md), with [code-reviewer-next.md](prompts/agents/code-reviewer-next.md), inline its sections, for editing and reviewing the code under `src/` and `scripts/`.
     - Acts, each with its section:
@@ -16,9 +16,11 @@
 - Keep `progress.md` in your scratch directory, with what is done and what is next. After your context is compacted, read it before anything else.
 
 ## unit-kinds
-- Defects of a whole unit: each well-known anti-pattern of software design, and each break of a well-known principle of it, which include:
-    * comment: The user's words, session 7fd429fb-e3be-4173-9b0e-df52f507d6a2, 2026-10-15T22:44:57Z: "Let's try it. Principles are short and well known in training set", on naming the well-known principles and anti-patterns in place of a narrow rule per fault; 22:46:49Z, on the code editor of ticket 6-1148 sharing `run_store`'s `SOURCES` under "One idea in two places": "Reusing code in an inappropriate way, I forgot the term , was it high coupling?".
+- Defects of a whole unit:
+    - One idea in two places: a computation, selection, rule, rendering or sentence written twice, in one module or across modules.
+        - A place of this kind stands where a package boundary forces the second copy.
     - Many ideas in one place: a module whose docstring has to describe more than one subject.
+    - A unit grown by accretion: a function, a record or a class that has taken a branch, a flag, a field or a parameter for each case it was extended to cover, where a restructure into units of one subject each, or one general rule over those cases, would hold them.
 
 ## line-kinds
 - Defects of a line:
