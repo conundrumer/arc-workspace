@@ -100,8 +100,12 @@ class Note(StrEnum):
     LAST_REVISION = "last revision"
     """The draft opens with no further ticket review."""
     RERUN = "rerun"
-    """The line gives the worktree of a run of the change that the command
-    left, which `worktrees.logged_worktree` passes over."""
+    """The line gave the worktree of a run of the change that the command
+    left after a conflict in the change's rebase. No step writes such a
+    line now."""
+    CONFLICT = "conflict"
+    """The line gives the paths in which a merge call's rebase of the
+    change onto `master` conflicts."""
     RECURS = "recurs"
     """`recurs <number>`: the `bug` `<number>` is a recurrence of the
     defect the ticket records, its root cause."""

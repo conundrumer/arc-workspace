@@ -114,10 +114,21 @@ The script refuses a change, and says why, where:
   that submodule's repository lacks. The removal of the worktree deletes
   the worktree's own copies of the submodules' repositories, so the commit
   would then exist nowhere. The refusal puts the index back as it was.
-- the rebase onto `master` conflicts, or fails where git leaves no path
-  unmerged, in which case it aborts the rebase and leaves the worktree as
-  it was before the commit, and names the paths it conflicts in, where git
-  leaves any;
+- the rebase onto `master` fails where git leaves no path unmerged, in
+  which case it aborts the rebase and leaves the worktree as it was before
+  the commit;
+- the rebase onto `master` conflicts, in which case it aborts the rebase
+  and names the paths it conflicts in. Where the stack holds that change
+  alone, the script then puts the change onto that `master` in its
+  worktree: it moves the branch to that `master` commit and applies the
+  diff of the change against its base with `git apply --3way`, which
+  leaves git's conflict markers in each path that conflicts, and it leaves
+  the change uncommitted with nothing staged and names that commit. Where
+  any part of that step fails, it puts the branch, the index and the files
+  back as the abort left them, and says so;
+- `git diff --check` reports a leftover conflict marker in the change
+  once it is staged, in which case the script puts the index back as it
+  was and commits nothing;
 - another merge holds the merge lock, and the script runs under a hold of
   the heavy commands' lock it inherited, under which it does not wait
   (`engine.rwlock.MergeHeld`), in which case every change is refused, and
@@ -168,16 +179,29 @@ from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
                                  submodules, locked_update, SetupFailed)
 
 from operations.merging import (CONTEXT_WRITE, DOCUMENT_CHECKS, PATHS_SEP,  # noqa: E402
-                                PREFIX, REFUSED, REFUSED_TREE, split_paths)
+                                NOT_PUT_ON, PREFIX, REFUSED, REFUSED_TREE, split_paths)
 from operations.worktrees import BASE  # noqa: E402
 
 
 def say(text: str, file: TextIO | None = None, flush: bool = False) -> None:
     print(PREFIX + text, file=file, flush=flush)
 
-CONFLICT = mctx("rebasing {branch} onto {onto} conflicts in {paths}; the rebase is aborted "
-                "and the worktree is as it was:")
-"""The refusal of a change whose rebase onto `master` conflicts."""
+CONFLICT = mctx("rebasing {branch} onto {onto} conflicts in {paths}; {outcome}")
+"""The refusal of a change whose rebase onto `master` conflicts, with what
+the script did after it."""
+
+ABORTED = mctx("the rebase is aborted and the worktree is as it was:")
+
+PUT_ON = mctx("the rebase is aborted, and {branch} is moved to {onto}'s commit {commit}, "
+              "with the change uncommitted in {worktree} and git's conflict markers in each of "
+              "those paths that still conflicts:")
+
+MARKERS = mctx("`git diff --check` reports a leftover conflict marker in the change of {branch}, "
+               "so the index is put back as it was and nothing is committed:")
+
+MARKER_LINE = "leftover conflict marker"
+"""The end of a line of `git diff --check` that reports a conflict
+marker."""
 
 UNMERGED_NONE = mctx("the rebase of {branch} onto {onto} fails with no unmerged path; the "
                      "rebase is aborted and the worktree is as it was:")
@@ -204,7 +228,8 @@ def conflict_paths(output: str) -> tuple[str, ...] | None:
     """The paths in which `output` gives that a change's rebase conflicts,
     or None where it refuses no change for a conflict."""
     m = re.search(form(REFUSED + CONFLICT, {"branch": r"\S+", "onto": r"\S+",
-                                            "paths": r"(?P<paths>.*?)"}), output)
+                                            "paths": r"(?P<paths>.*?)", "outcome": r""}),
+                  output)
     return None if m is None else split_paths(m["paths"])
 
 
@@ -373,18 +398,29 @@ def index_file(worktree: Path) -> Path:
                         "--git-path", "index").strip())
 
 
-def stage(worktree: Path, main: Path, backup: Path) -> None:
+def stage(worktree: Path, main: Path, backup: Path, base: str) -> None:
     """Stage every uncommitted change of the worktree outside `work`
     (`outside_work`), with a copy of its
-    index kept at `backup` first, and refuse where `refuse_gitlinks` does,
-    with the index put back."""
+    index kept at `backup` first, and refuse where `refuse_gitlinks` or
+    `refuse_markers` against the commit `base` does, with the index put
+    back."""
     shutil.copy2(index_file(worktree), backup)
     checkout.git_out(worktree, "add", "-A", "--", *outside_work())
     try:
         refuse_gitlinks(worktree, main)
+        refuse_markers(worktree, base)
     except Refused:
         shutil.copy2(backup, index_file(worktree))
         raise
+
+
+def refuse_markers(worktree: Path, base: str) -> None:
+    """Refuse where `git diff --check` reports a leftover conflict marker
+    in the staged change against the commit `base`."""
+    done = checkout.git(worktree, "diff", "--cached", "--check", base, "--", *outside_work())
+    found = [ln for ln in done.stdout.splitlines() if ln.endswith(MARKER_LINE)]
+    if found:
+        raise Refused(MARKERS.format(branch=branch_of(worktree)) + "\n" + "\n".join(found))
 
 
 @dataclass(frozen=True)
@@ -402,27 +438,63 @@ class Change:
     committed: str
 
 
+def unmerged_paths(worktree: Path) -> list[str]:
+    """The paths git leaves unmerged in `worktree`."""
+    return checkout.git_out(worktree, "diff", "--name-only", "--diff-filter=U").splitlines()
+
+
 def rebase(change: Change, onto: str, onto_name: str, restore: bool) -> None:
     """Rebase the change's branch onto the commit `onto`, which `onto_name`
     names. On a conflict, abort the rebase, which leaves the branch at
-    `committed`; with `restore`, move it back to `before` and put back the
-    index at `backup`; and refuse, with the paths git leaves unmerged, or,
-    where it leaves none, as a failure that is no conflict."""
+    `committed`; with `restore`, move it back to `before`, put back the
+    index at `backup`, and put the change onto `onto` (`put_on`); and
+    refuse, with the paths git leaves unmerged, or, where it leaves none,
+    as a failure that is no conflict."""
     say(mctx("rebasing {branch} onto {onto}").format(
         branch=change.branch, onto=onto_name), flush=True)
     with timed(mctx("the rebase of {branch}").format(branch=change.branch)):
         done = checkout.git(change.worktree, "rebase", onto)
     if done.returncode == 0:
         return
-    unmerged = checkout.git_out(change.worktree, "diff", "--name-only",
-                                "--diff-filter=U").splitlines()
+    unmerged = unmerged_paths(change.worktree)
     checkout.git_out(change.worktree, "rebase", "--abort")
     if restore and change.backup is not None:
         checkout.git_out(change.worktree, "reset", "-q", "--soft", change.before)
         shutil.copy2(change.backup, index_file(change.worktree))
-    refusal = (CONFLICT.format(branch=change.branch, onto=onto_name, paths=PATHS_SEP.join(unmerged))
-               if unmerged else UNMERGED_NONE.format(branch=change.branch, onto=onto_name))
-    raise Refused(refusal + "\n" + said(done))
+    if not unmerged:
+        raise Refused(UNMERGED_NONE.format(branch=change.branch, onto=onto_name) + "\n"
+                      + said(done))
+    outcome = put_on(change, onto, onto_name) if restore else ABORTED
+    raise Refused(CONFLICT.format(branch=change.branch, onto=onto_name,
+                                  paths=PATHS_SEP.join(unmerged), outcome=outcome)
+                  + "\n" + said(done))
+
+
+def put_on(change: Change, onto: str, onto_name: str) -> str:
+    """Put the change, aborted out of its rebase onto the commit `onto`,
+    onto `onto`, as the module docstring gives it, or put the branch, the
+    index and the files back as the abort left them; the outcome a
+    `CONFLICT` refusal gives."""
+    w = change.worktree
+    head = checkout.git_out(w, "rev-parse", "HEAD").strip()
+    with tempfile.TemporaryDirectory(prefix="merge-change-put-on-") as tmp:
+        index = Path(tmp) / "index"
+        patch = Path(tmp) / "change.patch"
+        shutil.copy2(index_file(w), index)
+        base = checkout.git_out(w, "merge-base", onto, change.committed).strip()
+        patch.write_text(checkout.git_out(w, "diff", "--binary", base, change.committed))
+        try:
+            checkout.git_out(w, "reset", "-q", "--hard", onto)
+            applied = checkout.git(w, "apply", "--3way", str(patch))
+            if applied.returncode != 0 and not unmerged_paths(w):
+                raise checkout.GitFailed(w, ("apply", "--3way", str(patch)), applied.stderr)
+            checkout.git_out(w, "reset", "-q")
+        except checkout.GitFailed:
+            checkout.git_out(w, "reset", "-q", "--hard", change.committed)
+            checkout.git_out(w, "reset", "-q", "--soft", head)
+            shutil.copy2(index, index_file(w))
+            return NOT_PUT_ON.format(onto=onto_name, commit=onto[:12])
+    return PUT_ON.format(branch=change.branch, onto=onto_name, commit=onto[:12], worktree=w)
 
 
 def commit(worktree: Path, message: str, main: Path, backup: Path) -> Change:
@@ -447,7 +519,7 @@ def commit(worktree: Path, message: str, main: Path, backup: Path) -> Change:
     refuse_dirty_submodules(worktree)
     before = checkout.git_out(worktree, "rev-parse", "HEAD").strip()
     committing = bool(changed_outside_work(worktree, "HEAD"))
-    stage(worktree, main, backup)
+    stage(worktree, main, backup, base)
     if committing:
         say(f"committing on {branch}", flush=True)
         with timed(mctx("the commit on {branch}").format(branch=branch)):

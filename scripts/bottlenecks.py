@@ -1,6 +1,6 @@
 """Print what held ready work up, by cause: per file that `change`
-tickets' Scopes name, the waits on `depends-on` links and the reruns after
-a conflict in a rebase; per ticket, the waits on the user and the hours a
+tickets' Scopes name, the waits on `depends-on` links and the conflicts in
+a change's rebase; per ticket, the waits on the user and the hours a
 change stood open and ready; per change, the waits of other changes on it;
 and beside each file, its churn. `HELP`, which `--help` prints, gives the
 usage form and the counting rules."""
@@ -26,7 +26,7 @@ from ticket_reads import read_tickets  # noqa: E402
 from spends import union_seconds  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 
-from operations.merging import RERUN_OPENING, rerun_paths  # noqa: E402
+from operations.merging import CONFLICT_OPENING, RERUN_OPENING, conflict_note_paths  # noqa: E402
 from operations.task_work import task_paths  # noqa: E402
 from solver.vocabulary import SOLVER_SUFFIX  # noqa: E402
 from operations.state import LogLine, Ticket  # noqa: E402
@@ -38,19 +38,15 @@ from ticketing.vocabulary import Kind, Status  # noqa: E402
 NO_SHARED_FILE = "(no shared file)"
 PATHS_NOT_RECORDED = "(paths not recorded)"
 
-RERUN_COST = 2.20
-"""The dollars of one build of a change, the estimate the log of ticket
-6-702 gives for a rerun."""
-
 HELP = mctx("""
     - Usage: `uv run python scripts/bottlenecks.py [--since <time>]`
     - The command reads the ticket tracker of the main tree and prints, for each cause below, a heading with the cause's sum and then its rows, the largest first.
-    - `--since <time>`, with `<time>` in the form `{form}` in UTC, sets the window from that time to now: each span is cut to the window, and only the rerun lines in it count. With no `--since`, the window is the whole log.
+    - `--since <time>`, with `<time>` in the form `{form}` in UTC, sets the window from that time to now: each span is cut to the window, and only the conflict lines in it count. With no `--since`, the window is the whole log.
     - `depends-on` waits: one row per path that a `change` ticket's `## Scope` gives, with the hours changes waited on it and the number of changes that waited on it.
         - The paths a Scope gives are each path it gives with a `/` or at the root of the main tree, and the witness file of each solver it gives.
         - A wait is a span in which a `change` ticket stood under `tickets/open/` and a ticket its `depends-on` gives stood outside `tickets/closed/`, charged to each path both Scopes give, or to the row `{no_shared}` where they give none in common.
         - The wait hours of a path are change-hours: the overlapping spans of one change count once, and those of different changes add up.
-    - Reruns: each log line of a `change` ticket whose note opens with `{opening}`, charged to each path it gives, or to the row `{not_recorded}` where it gives none, at ${cost} each, an estimate of the cost of one build of a change.
+    - Rebase conflicts: each log line of a `change` ticket whose note opens with `{opening}` or `{rerun}`, charged to each path it gives, or to the row `{not_recorded}` where it gives none.
     - A `blocked` span opens at a line that moves a ticket into `blocked` or whose note opens with a wait while it stands blocked, takes its cause from that line's wait, and runs to the next line of the ticket's log that moves it out of `blocked` or whose note opens with a wait.
     - Waits on the user: one row per ticket of any kind, with the hours of its `blocked` spans whose wait is `user`.
     - Waits on another change: one row per change number, with the hours of the `blocked` spans of `change` tickets whose wait is `change <number>`.
@@ -60,16 +56,15 @@ HELP = mctx("""
 
 HEADING = mctx("{cause}: {total}")
 DEPENDS_ON = mctx("depends-on waits")
-RERUNS = mctx("reruns")
+CONFLICTS = mctx("rebase conflicts")
 ON_USER = mctx("waits on the user")
 ON_CHANGE = mctx("waits on another change")
 READY = mctx("ready and not taken")
 WAIT_ROW = mctx("{hours} h  {waiting} waiting  {churn}  {path}")
-RERUN_ROW = mctx("{reruns} reruns  ${cost}  {churn}  {path}")
+CONFLICT_ROW = mctx("{conflicts} conflicts  {churn}  {path}")
 TICKET_ROW = mctx("{hours} h  {number}")
 NO_TICKET = mctx("{number} {link} {d}, and no ticket the read finds has that number")
 CHURN = mctx("churn {commits}")
-RERUN_TOTAL = mctx("{count} reruns  ${cost}")
 WAITS_ON_CHANGE = mctx("waits on change")
 DEPENDS_ON_LINK = mctx("depends on")
 NO_WAIT = mctx("{number} moves into `blocked` at {time} with a note that opens with no wait")
@@ -133,11 +128,12 @@ def blocked_spans(t: Ticket, now: float) -> list[tuple[Span, LogLine]]:
 @dataclass(frozen=True)
 class Costs:
     """What held ready work up in a window, by cause: per file, the
-    `depends-on` wait hours and the waiting changes, and the reruns; per
+    `depends-on` wait hours and the waiting changes, and the rebase
+    conflicts; per
     ticket, the hours it waited on the user and the hours it stood open and
     ready; per change number, the hours other changes waited on it."""
     depends_on: dict[str, tuple[float, int]]
-    reruns: dict[str, int]
+    conflicts: dict[str, int]
     on_user: dict[str, float]
     on_change: dict[str, float]
     ready: dict[str, float]
@@ -186,16 +182,16 @@ def changes(tickets: dict[str, Ticket]) -> list[tuple[str, Ticket]]:
     return [(n, t) for n, t in sorted(tickets.items()) if t.kind is Kind.CHANGE]
 
 
-def rerun_counts(tickets: dict[str, Ticket], start: float) -> dict[str, int]:
-    """The number of reruns of each path from `start` on."""
-    reruns: dict[str, int] = defaultdict(int)
+def conflict_counts(tickets: dict[str, Ticket], start: float) -> dict[str, int]:
+    """The number of rebase conflicts of each path from `start` on."""
+    conflicts: dict[str, int] = defaultdict(int)
     for _, t in changes(tickets):
         for line in t.log:
-            paths = rerun_paths(line.note)
+            paths = conflict_note_paths(line.note)
             if paths is not None and line.time >= start:
                 for p in paths or (PATHS_NOT_RECORDED,):
-                    reruns[p] += 1
-    return dict(sorted(reruns.items()))
+                    conflicts[p] += 1
+    return dict(sorted(conflicts.items()))
 
 
 def dependency_waits(tickets: dict[str, Ticket], root: Path, window: Window,
@@ -233,9 +229,9 @@ def bottlenecks(tickets: dict[str, Ticket], root: Path, start: float, now: float
                 undecided: list[str]) -> Costs:
     """The costs of each cause over the window from `start` to `now`."""
     on_user, on_change = blocked_waits(tickets, (start, now), undecided)
-    reruns = rerun_counts(tickets, start)
+    conflicts = conflict_counts(tickets, start)
     depends_on, ready = dependency_waits(tickets, root, (start, now), undecided)
-    return Costs(depends_on=depends_on, reruns=reruns, on_user=on_user,
+    return Costs(depends_on=depends_on, conflicts=conflicts, on_user=on_user,
                  on_change=on_change, ready=ready)
 
 
@@ -255,8 +251,8 @@ def touching(commits: list[frozenset[str]], path: str) -> int:
 
 def main() -> int:
     help_text = textwrap.dedent(HELP).format(
-        no_shared=NO_SHARED_FILE, opening=RERUN_OPENING, not_recorded=PATHS_NOT_RECORDED,
-        cost=f"{RERUN_COST:.2f}", form=TIME_FORM)
+        no_shared=NO_SHARED_FILE, opening=CONFLICT_OPENING, rerun=RERUN_OPENING,
+        not_recorded=PATHS_NOT_RECORDED, form=TIME_FORM)
     ap = argparse.ArgumentParser(description=help_text,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--since", type=stamp_time)
@@ -281,11 +277,9 @@ def main() -> int:
     for path, (h, waiting) in rows:
         print(WAIT_ROW.format(hours=f"{h:8.1f}", waiting=f"{waiting:3}", churn=churn_of(path),
                               path=path))
-    count = sum(costs.reruns.values())
-    print(HEADING.format(cause=RERUNS, total=RERUN_TOTAL.format(count=count, cost=f"{count * RERUN_COST:.2f}")))
-    for path, n in sorted(costs.reruns.items(), key=lambda r: (-r[1], r[0])):
-        print(RERUN_ROW.format(reruns=f"{n:3}", cost=f"{n * RERUN_COST:7.2f}",
-                               churn=churn_of(path), path=path))
+    print(HEADING.format(cause=CONFLICTS, total=sum(costs.conflicts.values())))
+    for path, n in sorted(costs.conflicts.items(), key=lambda r: (-r[1], r[0])):
+        print(CONFLICT_ROW.format(conflicts=f"{n:3}", churn=churn_of(path), path=path))
     for cause, per in ((ON_USER, costs.on_user), (ON_CHANGE, costs.on_change),
                        (READY, costs.ready)):
         print(HEADING.format(cause=cause, total=f"{sum(per.values()):.1f} h"))

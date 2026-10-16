@@ -47,8 +47,7 @@
 - Merge a change only once it passes, with `uv run python scripts/merge_change.py <worktree> -m <message>`, and commit in no other way.
 - Where that script exits with status 1, leave the worktree as it is.
 - Where that script does not merge the change, act on what it reports:
-    - Where it reports that the rebase conflicts, write on the change's ticket, where it has one, a log line whose note is `rerun: the rebase conflicts in <paths>; the old worktree is <worktree> on branch <branch>`, run the change again in a new worktree that `change_worktree.py` makes, under a new name where the change has no ticket, and give the old worktree and its branch in your reply.
-    - Where it reports a failed check, send what it reports to the change's editor as a finding of its checks.
+    - Where it reports that the rebase conflicts and that it moved the branch onto `master`, or a failed check, send what it reports to the change's editor as a finding of its checks.
         - Where the failed check is the gate, give in that finding, for each `DIFF` line that the change's briefs ask for, the accepted output under `tests/gate/accepted/` to update.
     - Where it reports anything else, give the worktree and the script's message in your reply.
 - Once a change is merged, and before you close its ticket, run each step and each check its ticket's Scope places at or after the merge, and file each one that fails as a `bug` ticket on the change. Give each such check whose subject is an event that has not happened at the merge in your reply as unfinished, with that reason. Run a check of what a running Claude Code session reads only at its start, such as its hooks, in a `claude -p` session you start in the main worktree after the merge, and not in an agent you launch.

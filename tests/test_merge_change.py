@@ -70,7 +70,7 @@ def test_submodule_commit_the_main_tree_lacks_is_refused(merge_change, trees, tm
     main, worktree = trees
     commit_file(worktree / "s", "b")
     with pytest.raises(merge_change.Refused, match="lack"):
-        merge_change.stage(worktree, main, tmp_path / "index")
+        merge_change.stage(worktree, main, tmp_path / "index", "HEAD")
     assert git(worktree, "diff", "--cached", "--name-only") == ""
 
 
@@ -81,7 +81,7 @@ def test_unlisted_gitlink_is_refused(merge_change, trees, tmp_path):
     git(nested, "init", "-q", "-b", "master")
     commit_file(nested, "n")
     with pytest.raises(merge_change.Refused, match="does not list"):
-        merge_change.stage(worktree, main, tmp_path / "index")
+        merge_change.stage(worktree, main, tmp_path / "index", "HEAD")
     assert git(worktree, "diff", "--cached", "--name-only") == ""
 
 
@@ -154,7 +154,7 @@ def test_work_is_never_staged(merge_change, trees, tmp_path):
     (main / "work").mkdir()
     (worktree / "work").symlink_to(main / "work")
     (worktree / "b").write_text("b")
-    merge_change.stage(worktree, main, tmp_path / "index")
+    merge_change.stage(worktree, main, tmp_path / "index", "HEAD")
     assert git(worktree, "diff", "--cached", "--name-only").split() == ["b"]
 
 

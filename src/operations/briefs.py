@@ -492,7 +492,7 @@ COST_AUDIT = mctx("""
     - Leave out what a process covers and did not miss: the checks that [Quality assurance (quality assurance, incident management, problem management)](prompts/agents/notes/process.md#quality-assurance-quality-assurance-incident-management-problem-management) gives cover each run, and file nothing on a cause that a ticket outside `tickets/closed/` records.
     - File one `performance` ticket per finding, {filing}. Give in it the cost in dollars, the agent type, the evidence as agent ids, ticket numbers and times, the cause in one line, each figure labeled measured or estimated with the basis of each estimate, and what a cut of its step would trade off.
     - Edit no tracked file and launch no agent.
-    - Reply with the tickets you filed, and the files of highest churn in the `bottlenecks.py` output, with their waits and reruns.
+    - Reply with the tickets you filed, and the files of highest churn in the `bottlenecks.py` output, with their waits and rebase conflicts.
     """)
 
 

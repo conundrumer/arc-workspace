@@ -14,18 +14,25 @@ script's own forms and by `master` (`state.Merge`,
   user and gives the call, the first line of its result and the worktree;
   once a line moves the change from `tickets/blocked/` back to
   `tickets/assigned/` after that call, the merge call is given again;
-- a conflict in the rebase runs the change again with a new first editor:
-  the command writes the paths the rebase conflicts in, the old worktree
-  and its branch on the ticket in a line whose note opens with `rerun`,
-  which no read of the change's worktree takes, and the final reply gives
-  that line;
+- a conflict in the rebase leaves the change in its worktree, put by the
+  script onto `master` with git's conflict markers in the paths that
+  conflict: the command writes those paths on the ticket in a line whose
+  note opens with `conflict`, once per such call, and the refusal then
+  goes as a finding as any other refusal goes;
+- a conflict where the script could not put the change onto `master`
+  (`NOT_PUT_ON`) moves the change to `tickets/blocked/` with a line whose
+  note opens with the wait on the user and gives the call, the script's
+  refusal line and the worktree, since no editor may move the branch; the
+  line that moves it back gives the merge call again, as for a call that
+  never ran;
 - a refusal whose output reports a `quotes` call a change to the documents
   broke goes to a new code editor in the change's worktree, with those
   calls as its items and their files as the files it may edit;
 - any other refusal goes as a finding of its checks to the change's doc
-  editor, where the check its refusal line gives as failed is a check of
-  the documents (`DOCUMENT_CHECKS`) and the change has one, and otherwise
-  to the change's first editor;
+  editor, where the change has one and the check its refusal line gives
+  as failed is a check of the documents (`DOCUMENT_CHECKS`), or each path
+  its rebase conflicts in is a document (`DOCUMENT_SUFFIX`), and
+  otherwise to the change's first editor;
 - two refusals that give one tree (`REFUSED_TREE`) give one finding
   message, with the output of the first refused merge call on that
   worktree that gives that tree. Whether two refusals give one message
@@ -116,24 +123,53 @@ to `tickets/blocked/`."""
 
 RERUN_CONFLICT = mctx("{rerun}: the rebase conflicts in {paths}; the old worktree is {worktree} "
                       "on branch {branch}")
-"""The note of the line that runs a change again after a conflict in its
-rebase. A note of that line written before the note gave the paths opens
-with `RERUN_OPENING` and gives none."""
+"""The note of a line that ran a change again after a conflict in its
+rebase. No step writes such a line now. A note of that line written before
+the note gave the paths opens with `RERUN_OPENING` and gives none."""
 
 RERUN_OPENING = mctx("{rerun}: the rebase conflicts").format(rerun=Note.RERUN)
+"""The opening of a note of `RERUN_CONFLICT`. No step writes such a note
+now."""
+
+CONFLICT_NOTE = mctx("{conflict}: the rebase onto `master` conflicts in {paths}")
+"""The note of the line that gives the paths a merge call's rebase
+conflicts in."""
+
+CONFLICT_OPENING = mctx("{conflict}: the rebase onto `master` conflicts").format(
+    conflict=Note.CONFLICT)
+
+NOT_PUT_ON = mctx("the rebase is aborted, putting the change onto {onto}'s commit {commit} "
+                  "failed, and the worktree is as it was:")
+"""The outcome a `CONFLICT` refusal of `scripts/merge_change.py` gives
+where it could not put the change onto `master`."""
+
+NOT_PUT = re.compile(form(NOT_PUT_ON, {"onto": r"\S+", "commit": r"[0-9a-f]+"}))
+
+NOT_PUT_ON_NOTE = mctx("{wait}: the merge call `{command}` could not put the change onto "
+                       "`master`: {refusal}; worktree {worktree}")
+"""The note of the line that moves a change to `tickets/blocked/` where
+its merge call conflicts and could not put it onto `master`."""
 
 PATHS_SEP = ", "
-"""What stands between two paths of `RERUN_CONFLICT` and of the `CONFLICT`
-refusal of `scripts/merge_change.py`."""
+"""What stands between two paths of `RERUN_CONFLICT`, of `CONFLICT_NOTE`
+and of the `CONFLICT` refusal of `scripts/merge_change.py`."""
+
+DOCUMENT_SUFFIX = ".md"
+"""The suffix of a document's path."""
 
 
 def split_paths(text: str) -> tuple[str, ...]:
     return tuple(p for p in text.split(PATHS_SEP) if p)
 
 
-def rerun_paths(note: str) -> tuple[str, ...] | None:
-    """The paths a note that opens with `RERUN_OPENING` gives the rebase
-    conflicts in, empty where it gives none, or None for any other note."""
+def conflict_note_paths(note: str) -> tuple[str, ...] | None:
+    """The paths a note that opens with `RERUN_OPENING` or with
+    `CONFLICT_OPENING` gives the rebase conflicts in, empty where it gives
+    none, or None for any other note."""
+    if note.startswith(CONFLICT_OPENING):
+        m = re.match(form(CONFLICT_NOTE.format(conflict=Note.CONFLICT, paths="{paths}"),
+                          {"paths": r"(?P<paths>.*)"}) + "$", note)
+        return () if m is None else split_paths(m["paths"])
     if not note.startswith(RERUN_OPENING):
         return None
     m = re.match(form(RERUN_CONFLICT.format(rerun=Note.RERUN, paths="{paths}",
@@ -253,11 +289,17 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
             return Bash(log(t.number, Status.BLOCKED, Status.ASSIGNED, NOT_RUN.format(
                 wait=Wait.USER, command=command, first=first[0] if first else "no result text",
                 worktree=w), state.me))
+        case Merge.CONFLICT if NOT_PUT.search(last.result or "") is not None:
+            refusal = next(ln for ln in (last.result or "").splitlines()
+                           if NOT_PUT.search(ln) is not None)
+            return Bash(log(t.number, Status.BLOCKED, Status.ASSIGNED, NOT_PUT_ON_NOTE.format(
+                wait=Wait.USER, command=command, refusal=refusal, worktree=w), state.me))
         case Merge.CONFLICT:
-            branch = state.git.branches[w]
-            return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED, RERUN_CONFLICT.format(
-                rerun=Note.RERUN, paths=PATHS_SEP.join(last.conflicts), worktree=w,
-                branch=branch), state.me))
+            if not any(ln.time > last.time and ln.note.startswith(CONFLICT_OPENING)
+                       for ln in t.log):
+                return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED, CONFLICT_NOTE.format(
+                    conflict=Note.CONFLICT, paths=PATHS_SEP.join(last.conflicts)), state.me))
+            return message
         case Merge.REFUSED:
             return refused(state, t, w, last, latest) or message
         case Merge.LEFT_EDITS:
@@ -301,19 +343,22 @@ def documents_failed(output: str) -> bool:
 def finding(t: Ticket, last: Call, calls: list[Call], latest: list[Agent]) -> Send | None:
     """The message that gives the refusal of the merge call `last`, one of
     `calls`, the merge calls on its worktree in order, where `last` was
-    refused on no `quotes` call."""
+    refused for a conflict in its rebase or on no `quotes` call."""
     text = last.result or ""
-    to = finding_recipient(text, latest)
-    if (last.merge is not Merge.REFUSED or QUOTE_LINE.search(text) is not None
+    to = finding_recipient(last, latest)
+    if (last.merge not in (Merge.REFUSED, Merge.CONFLICT) or QUOTE_LINE.search(text) is not None
             or to is None or to.agent_id is None):
         return None
     return Send(to.agent_id, messages.merge_finding(t.number, finding_output(last, calls)))
 
 
-def finding_recipient(output: str, latest: list[Agent]) -> Agent | None:
-    """The agent of `latest` that the finding on the refusal `output` goes
-    to."""
-    docs = [a for a in latest if a.role is Role.DOC_EDITOR] if documents_failed(output) else []
+def finding_recipient(last: Call, latest: list[Agent]) -> Agent | None:
+    """The agent of `latest` that the finding on the refused merge call
+    `last` goes to."""
+    on_documents = (documents_failed(last.result or "")
+                    or (last.merge is Merge.CONFLICT
+                        and all(p.endswith(DOCUMENT_SUFFIX) for p in last.conflicts)))
+    docs = [a for a in latest if a.role is Role.DOC_EDITOR] if on_documents else []
     return docs[0] if docs else latest[0] if latest else None
 
 

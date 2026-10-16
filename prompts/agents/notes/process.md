@@ -176,7 +176,7 @@
     - Each worktree belongs to one live change.
 - Owner: the ticket analyst for `depends-on`, and [merge_change.py](scripts/merge_change.py) for the worktrees.
 - Takes from: the Scopes. Gives to: merge.
-- How it can fail: two changes in flight at once that edit one part of a file may conflict in the rebase, and where they do, the later change runs again with a new first editor.
+- How it can fail: two changes in flight at once that edit one part of a file may conflict in the rebase, and where they do, the later change's editor resolves them in its worktree.
 
 ## Solver passes (implementation)
 - Purpose: solve a task by the Analyze, Create and Refine passes on it.

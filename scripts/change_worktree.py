@@ -36,7 +36,7 @@ HELP = mctx("""
         ```
     - The first form makes the worktree of the change whose ticket has the number `<number>`, writes on the ticket the line `worktree <path>` in the status the ticket stands in, and prints its path.
         - `<agent>` and `--id` are the agent and the agent id of that log line, as `file_ticket.py log` takes them.
-        - Where the latest line of the ticket's log that gives a path under `{worktrees}/` gives a worktree that `git worktree list` lists, and no line whose note opens with `{rerun}` is that line or follows it, that worktree is the change's, and the command adds none.
+        - Where the latest line of the ticket's log that gives a path under `{worktrees}/` gives a worktree that `git worktree list` lists, that worktree is the change's, and the command adds none.
         - Otherwise `<name>` is `change-<number>`, and after `k` lines whose note opens with `{rerun}`, `change-<number>-run-<k + 1>`.
     - The second form makes the worktree of a change that has no ticket, writes no log line, and prints its path. `<name>` is a branch name with no `/`.
     - The third form prints a digest of the diff of `<worktree>` from its merge base with `master` and of each untracked file there that git does not ignore, and makes or changes nothing.

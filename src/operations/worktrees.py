@@ -8,7 +8,6 @@ from pathlib import Path
 from engine import checkout
 
 from operations.state import State, Ticket
-from ticketing.vocabulary import Note
 
 BASE = "master"
 """The branch a change's worktree branches from and merges into."""
@@ -20,12 +19,8 @@ WORKTREE = re.compile(rf"(/\S+/{re.escape(WORKTREES)}/[^\s,;:)]+)")
 
 
 def logged_worktree(t: Ticket) -> Path | None:
-    """The worktree the latest line of `t`'s log that gives one gives,
-    past each line whose note opens with `rerun`. A line whose note opens
-    with `rerun` and stands after the worktree's line leaves none."""
+    """The worktree the latest line of `t`'s log that gives one gives."""
     for line in reversed(t.log):
-        if line.note.startswith(Note.RERUN):
-            return None
         m = WORKTREE.search(line.note)
         if m is not None:
             return Path(m[1])
