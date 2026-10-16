@@ -1,22 +1,29 @@
-"""The check `pending_wait_hook` runs on the Bash call of a subagent that is
-a doc reviewer's trial: a subagent whose first message opens or ends with the
-line `Trial bounds: <case time> <case commit>`. It denies a call that reads past
-the trial's case: a transcript read other than `transcripts.py window` with
-an end no later than the case time, a command that names a transcript file,
-and a git read of history or of a diff at a revision other than the case
-commit, or at none. The check allows the call of any other subagent.
+"""The PreToolUse hook on Bash of a doc reviewer's trial, which
+`trial_agent.py run` gives the trial's `claude -p` run, as
+`uv run python scripts/trial_bounds_check.py <case time> <case commit>`. It
+denies a call that reads past the trial's case: a transcript read other than
+`transcripts.py window` with an end no later than the case time, a command
+that names a transcript file, and a git read of history or of a diff at a
+revision other than the case commit, or at none. Where its arguments are no
+case time and case commit, it denies every Bash call.
 
 A read through the `Read` tool, a variable or a script file that holds a
 denied path passes the check, and the doc reviewer's reading of the trial's
-transcript is what finds it."""
+calls is what finds it."""
 
 import re
+import sys
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
 
-BOUNDS = re.compile(r"Trial bounds: (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|\+00:00)) "
-                    r"([0-9a-f]{7,40})")
+from command_labels import programs
+from controlled_markdown import mctx
+from hook_entry import Hook, Update, not_registered, run_pre_tool_use
+
+HOOK = "trial_bounds_check"
+
+CASE_TIME = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|\+00:00)")
+CASE_COMMIT = re.compile(r"[0-9a-f]{7,40}")
 STAMP = 19
 """The length of an entry's time as `transcripts.py window` compares it,
 `YYYY-MM-DDTHH:MM:SS`."""
@@ -30,7 +37,9 @@ GIT_VALUED = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace"})
 """The options of `git` before its subcommand that take the next word as
 their value."""
 HISTORY = frozenset({"log", "diff", "show", "rev-list", "status", "blame", "grep",
-                     "ls-tree", "cat-file"})
+                     "ls-tree", "cat-file", "archive", "reflog", "for-each-ref", "branch",
+                     "rev-parse", "shortlog", "describe", "name-rev", "whatchanged",
+                     "format-patch"})
 REF_OPTIONS = ("--all", "--branches", "--remotes", "--glob", "--reflog")
 VALUED = {
     "log": frozenset({"-n", "--max-count", "--author", "--committer", "--grep",
@@ -40,6 +49,7 @@ VALUED = {
     "show": frozenset({"-S", "-G"}),
     "diff": frozenset({"-S", "-G"}),
     "blame": frozenset({"-L"}),
+    "archive": frozenset({"-o", "--output", "--prefix", "--format", "--remote"}),
     "grep": frozenset({"-e", "-f", "-A", "-B", "-C", "-m", "--max-depth"}),
 }
 """By subcommand, its options that take the next word as their value. An
@@ -54,21 +64,12 @@ class Bounds:
     commit: str
 
 
-def bounds(path: Path) -> Bounds | None:
-    """The trial's bounds, or None where the caller is no trial."""
-    from run_reads import message_text
-    from transcript_entries import entries_forward
-
-    first = next((e for e in entries_forward(path) if e.get("type") == "user"), None)
-    if first is None:
+def bounds(time: str, commit: str) -> Bounds | None:
+    """The bounds the case time `time` and the case commit `commit` give,
+    or None where either is not of its form."""
+    if not (CASE_TIME.fullmatch(time) and CASE_COMMIT.fullmatch(commit)):
         return None
-    text = message_text(first).strip()
-    m = None
-    for line in (text.split("\n", 1)[0], text.rsplit("\n", 1)[-1]):
-        m = BOUNDS.fullmatch(line.strip())
-        if m:
-            break
-    return Bounds(m.group(1)[:STAMP], m.group(2)) if m else None
+    return Bounds(time[:STAMP], commit)
 
 
 def window_late(args: list[str], time: str) -> bool:
@@ -104,7 +105,8 @@ def git_subcommand(args: list[str]) -> tuple[str | None, list[str]]:
 def at_case(word: str, commit: str) -> bool:
     """Whether `word` is the case commit `commit`, or `<commit>:<path>`."""
     rev = word.split(":", 1)[0]
-    return len(rev) >= 7 and (rev.startswith(commit) or commit.startswith(rev))
+    return CASE_COMMIT.fullmatch(rev) is not None and (rev.startswith(commit)
+                                                       or commit.startswith(rev))
 
 
 def git_past(sub: str, args: list[str], commit: str) -> bool:
@@ -134,7 +136,7 @@ def git_past(sub: str, args: list[str], commit: str) -> bool:
             pattern = False
         elif sub == "cat-file" and a in CAT_FILE_TYPES and not revisions:
             pass
-        elif sub == "ls-tree" and revisions:
+        elif sub in ("ls-tree", "archive") and revisions:
             pass
         else:
             revisions.append(a)
@@ -145,9 +147,6 @@ def git_past(sub: str, args: list[str], commit: str) -> bool:
 def past_case(command: str, b: Bounds) -> str | None:
     """What the Bash command `command` reads past the case `b` gives, or
     None where it reads nothing past it."""
-    from command_labels import programs
-    from controlled_markdown import mctx
-
     if TRANSCRIPT_PATH.search(command):
         return mctx("it names a `.jsonl` file or a path under `.claude/projects/` or "
                     "`.claude-console/projects/`")
@@ -164,11 +163,10 @@ def past_case(command: str, b: Bounds) -> str | None:
 
 
 def reason(what: str, b: Bounds) -> str:
-    from controlled_markdown import mctx
-
     return "\n".join([
-        mctx("Blocked: this call reads past the case's time or the case's commit that "
-             "the `Trial bounds` line of your brief gives, since {what}.").format(what=what),
+        mctx("Blocked: this call reads past the case's time, {time}, or the case's "
+             "commit, {commit}, since {what}.").format(time=b.time, commit=b.commit,
+                                                      what=what),
         mctx("In its place, read a transcript with `python3 "
              "~/.claude/skills/retrieve/transcripts.py window <start> <end> <session id>`, "
              "with an end no later than {time}, and a file the change under review does not "
@@ -178,15 +176,30 @@ def reason(what: str, b: Bounds) -> str:
     ])
 
 
-def check(hook: dict[str, Any]) -> str | None:
-    """The reason to deny the Bash call `hook` gives where its caller is a
-    trial and the call reads past the trial's case, and None otherwise."""
-    from run_reads import caller_id, caller_transcript
-
-    if caller_id(hook) is None:
-        return None
-    b = bounds(caller_transcript(hook))
-    if b is None:
-        return None
+def check(hook: Hook, b: Bounds) -> str | None:
+    """The reason to deny the Bash call `hook` gives where it reads past the
+    case `b`, and None otherwise."""
+    if hook["tool_name"] != "Bash":
+        raise not_registered("Bash", "tool", hook["tool_name"])
     what = past_case(hook["tool_input"]["command"], b)
     return None if what is None else reason(what, b)
+
+
+def no_update(_: Hook) -> AbstractContextManager[Update | None]:
+    return nullcontext(None)
+
+
+def unbounded(_: Hook) -> str:
+    return mctx("Blocked: this trial's hook was given no valid case time and case commit, "
+                "so it denies every Bash call.")
+
+
+def main(args: list[str]) -> int:
+    b = bounds(*args) if len(args) == 2 else None
+    if b is None:
+        return run_pre_tool_use(HOOK, unbounded, no_update)
+    return run_pre_tool_use(HOOK, lambda hook: check(hook, b), no_update)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

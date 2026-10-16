@@ -145,7 +145,6 @@ PARTS = {
     HelpPart.BUDGET: mctx("""
     - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over.
         - In place of a budget of type `{general}`, it prints one for each role of `operations.roles.GENERAL_ROLES`, taken over the runs of type `{general}` whose description `operations.roles.described` gives that role, and a run of that type whose description gives no such role joins no budget.
-        - A run of an agent type that `scripts/trial_agent.py write` writes joins no budget.
         - The budget `operate.py next` gives a code editor's brief is the budget of the type `code-editor`.
     - That median is taken over the runs an operator launched alone.
         - An operator launched a run where its parent, as `--running` gives it, is an agent of type `{operator}`.

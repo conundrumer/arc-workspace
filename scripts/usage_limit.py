@@ -3,10 +3,10 @@ directory, as `operate.py --help next` gives it, and the `pacing.Usage`
 that file gives."""
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 
+from claude_config import config_dir
 from controlled_markdown import mctx
 from operations.pacing import Usage, Window
 
@@ -17,8 +17,7 @@ usage limit as lifted, or a window to a `Usage`."""
 
 def usage_file() -> Path:
     """The usage file `operate.py --help next` gives."""
-    home = os.environ.get("CLAUDE_CONFIG_DIR")
-    return (Path(home) if home else Path.home() / ".claude") / "usage.json"
+    return config_dir() / "usage.json"
 
 
 def read_usage(now: float, undecided: list[str]) -> tuple[float | None, Usage]:
