@@ -48,7 +48,7 @@ from ticket_numbers import parsed_number  # noqa: E402
 from ticket_reads import read_ticket  # noqa: E402
 from help_parts import print_help  # noqa: E402
 
-from operations import briefs, concept_faults, doc_review, pacing, plan, relay, runs  # noqa: E402
+from operations import briefs, concept_faults, doc_review, order, pacing, plan, relay, runs  # noqa: E402
 from operations.decisions import WRITE_SECONDS  # noqa: E402
 from operations.monitor import ALERTS  # noqa: E402
 from operations.command_words import Action  # noqa: E402
@@ -268,10 +268,10 @@ def print_step(step: Step, scratch: Path, me: str) -> None:
 
 def reloading(step: Launch, state: State) -> float:
     """The seconds left until the launch `step` is made: where
-    `plan.unloaded` gives its last call, until `plan.RETRY_SECONDS` after
+    `order.unloaded` gives its last call, until `order.RETRY_SECONDS` after
     that call."""
-    failed = plan.unloaded(state, step)
-    return 0.0 if failed is None else max(0.0, failed.time + plan.RETRY_SECONDS - time.time())
+    failed = order.unloaded(state, step)
+    return 0.0 if failed is None else max(0.0, failed.time + order.RETRY_SECONDS - time.time())
 
 
 def single_instance(me: str) -> None:
@@ -365,7 +365,7 @@ def block(me: str, action: Action,
 def operator_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
     """The operator's next step, with a launch held until `reloading` gives
     no wait, or the wait, where the hold runs past `deadline`, and a
-    launch given with the launches after it (`plan.batch`).
+    launch given with the launches after it (`order.batch`).
     `steps.Undecided.reread` gives why the command reads the state again
     before it launches an analyst on a step marked `reread`."""
     while True:
@@ -380,7 +380,7 @@ def operator_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
             time.sleep(left)
             continue
         if isinstance(step, Launch):
-            return plan.batch(state, watch, step), state.scratch
+            return order.batch(state, watch, step), state.scratch
         return (step,), state.scratch
 
 
@@ -431,8 +431,8 @@ def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("--help", "-h"):
         return print_help(argv[1:], HelpPart, lambda parts: USAGE.format(parts=parts), PURPOSES,
                           lambda part: PARTS[part].format(
-                              block=BLOCK_SECONDS, limit=LIMIT_SECONDS, load=plan.LOAD_SECONDS,
-                              retry=plan.RETRY_SECONDS,
+                              block=BLOCK_SECONDS, limit=LIMIT_SECONDS, load=order.LOAD_SECONDS,
+                              retry=order.RETRY_SECONDS,
                               write=round(WRITE_SECONDS), stale=USAGE_STALE, rate_limit=RATE_LIMIT,
                               script=runs.SCRIPT_SECONDS, factor=f"{pacing.EVEN_FACTOR:g}",
                               window=pacing.DEFAULT_WINDOW, operator=serving(Action.NEXT),

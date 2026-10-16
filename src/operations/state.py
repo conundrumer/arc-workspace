@@ -567,7 +567,7 @@ class State:
     `usage_limit.read_usage` gives it. `sessions` is the read of the
     tracker's sessions, and `computed` the values computed over the
     reads. `aside` holds the keys (`steps.key`) of the steps that
-    `plan.batch` set aside on this state, each as its procedure gave it,
+    `order.batch` set aside on this state, each as its procedure gave it,
     and is empty in each state the read gives."""
     me: str
     now: float
