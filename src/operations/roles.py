@@ -161,6 +161,17 @@ def launched_model(role: Role, subject: str) -> Model | None:
     return document_model(agent_type)
 
 
+def launch_parameters(role: Role, subject: str, model: Model | None) -> dict[str, str]:
+    """The parameters of the Agent call of a launch of `role` on `subject`
+    other than its prompt, each as the printed launch gives it, where
+    `model` is the model its step gives."""
+    out = {"description": description(role, subject), "subagent_type": launched_type(role, subject),
+           "run_in_background": "true"}
+    if (given := model or launched_model(role, subject)) is not None:
+        out["model"] = str(given)
+    return out
+
+
 def analyst_subject(purpose: Purpose, subject: str) -> str:
     return f"{purpose}:{subject}"
 

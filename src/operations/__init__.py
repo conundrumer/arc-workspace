@@ -53,7 +53,8 @@ what follows it), `alerts` (the alerts and the other agents' messages),
 solver pipelines), `runs` (the pipelines a run script starts),
 `task_work` (the work a pipeline sets aside), `batches` (After a batch),
 `order` (the order of the procedures' steps, and the batch of launches
-of one output), `plan` (the operator's next step, the block and the final
-reply),
+of one output), `plan` (the operator's next step and the block),
+`standing` (the step that ends the operator and the lines of what stands
+at its end),
 and `monitor` (the monitor's steps: the alerts on the watched agents' runs).
 `ticketing.exits` gives what takes a ticket out of each status."""

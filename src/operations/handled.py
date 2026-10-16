@@ -33,6 +33,12 @@ def decided_by(state: State, step: Undecided) -> list[Agent]:
     return [a for a, purpose, keys in state.analysts() if purpose is Purpose.STEP and keys == [k]]
 
 
+def held_aside(state: State, step: Step) -> bool:
+    """Whether `State.aside`, the set of the keys of the steps `order.batch`
+    set aside, holds `step`."""
+    return bool(state.aside) and key(step) in state.aside
+
+
 def repeated(step: Step, state: State) -> bool:
     """Whether `step` is a step `state.aside` holds, a message an operator
     already sent, or an
@@ -40,7 +46,7 @@ def repeated(step: Step, state: State) -> bool:
     launched on it, or an operator gave it to the coordinator, as
     `steps.UNDECIDED` and its `what`, or in a message that holds each of its
     `given`. Its procedure then waits on the answer."""
-    if state.aside and key(step) in state.aside:
+    if held_aside(state, step):
         return True
     match step:
         case Undecided(what, given):

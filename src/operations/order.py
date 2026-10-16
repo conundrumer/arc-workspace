@@ -45,10 +45,10 @@ from operations.directives import (
     passed,
     unread,
 )
-from operations.roles import PASSES, Purpose, description, launched_type
+from operations.roles import PASSES, Purpose, description, launch_parameters, launched_type
 from operations.state import Agent, Call, State, Tool, Waits
 from operations.final_reply import failure
-from operations.handled import bash_calls, repeated
+from operations.handled import bash_calls, held_aside, repeated
 from operations.constants import COORDINATOR, SUBAGENT_LIMIT
 from operations.pacing import Unknown
 from operations.steps import (Bash, Launch, Send, Step, Undecided, key,
@@ -78,7 +78,7 @@ def placed(state: State, procedure: Callable[[State], Step | None]
     procedure whose step, as it gives it, `State.aside` holds gives no
     step."""
     s = procedure(state)
-    if s is not None and state.aside and key(s) in state.aside:
+    if s is not None and held_aside(state, s):
         return None, None
     while s is not None:
         if isinstance(s, Launch):
@@ -175,8 +175,7 @@ def made(state: State, step: Launch) -> State:
     step, with no result, and a pending agent of `state.me` with no agent
     id."""
     call = Call(operator=state.me, time=state.now, tool=Tool.AGENT, result=None, error=False,
-                input={"description": description(step.role, step.subject),
-                       "subagent_type": launched_type(step.role, step.subject), "prompt": step.brief})
+                input=launch_parameters(step.role, step.subject, step.model) | {"prompt": step.brief})
     agent = Agent(agent_id=None, operator=state.me, role=step.role, subject=step.subject,
                   brief=step.brief, launched=state.now, waits=Waits.AT_WORK, reports=(),
                   notifies=True)

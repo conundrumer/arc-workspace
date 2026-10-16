@@ -17,7 +17,7 @@ from operations.constants import FOREGROUND_MS
 from operations.filing import filed_line, split_message
 from operations.pacing import Pace, Scripted, Until
 from operations.printed_forms import SENT
-from operations.roles import description, launched_model, launched_type
+from operations.roles import launch_parameters
 from ticketing.times import utc_stamp
 from operations.steps import Bash, EndTurn, Launch, Poll, Reply, Send, Step, Undecided, key
 
@@ -214,12 +214,7 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
     id is `agent`, with the files `filing.filed` gives under `scratch`."""
     match step:
         case Launch(role, subject, _, model):
-            fields = {"description": description(role, subject),
-                      "subagent_type": launched_type(role, subject),
-                      "run_in_background": parameter(True)}
-            model = model or launched_model(role, subject)
-            return launch_text(fields | ({"model": model} if model is not None else {}),
-                               filed_line(step, scratch))
+            return launch_text(launch_parameters(role, subject, model), filed_line(step, scratch))
         case Send(to):
             head, rest = split_message(step)
             line = filed_line(step, scratch) if rest else ""
