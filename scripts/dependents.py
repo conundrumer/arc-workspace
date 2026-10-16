@@ -54,8 +54,8 @@ its path is computed at run time."""
 
 class Reach(Enum):
     """The edges a check follows: `IMPORTS`, the `import` statements, which
-    are all a type checker reads; `RUN`, those and every load of code a run
-    can make."""
+    are all a type checker reads; `RUN`, those and the loads of code by a path
+    or a name that the module docstring gives."""
 
     IMPORTS = "imports"
     RUN = "run"
