@@ -70,7 +70,7 @@
 - A document or a section that more than one entry point includes, inlines or links says nothing that holds for one of them and not another, and no default that a line of one of them overrides.
 - An entry point inlines each operation it runs, in order, under a heading of its name.
     - A session's entry point inlines [Every pass](docs/handbook/procedure.md#every-pass) as well.
-- The prompt of each agent whose `tools` include `Bash`, other than one whose documents give it no call but a command and the calls that command prints, has `TaskStop` in its `tools` too, and inlines each line of [commands](prompts/agents/notes/commands.md#commands).
+- The prompt of each agent whose `tools` include `Bash`, other than one whose documents give it no call but a command and the calls that command prints, has `TaskStop` in its `tools` too.
 - An entry point's `+ lib:` attribute says how it reads the lib.
     - A reader whose `+ lib:` is `index` reads a declaration's interface when it needs one.
 - A document mentions a file under [src](src) only where its reader runs or reads the file.

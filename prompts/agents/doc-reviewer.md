@@ -19,7 +19,7 @@ tools: Read, Grep, Glob, Bash, Write, Agent, SendMessage, TaskStop
         - Sending findings, later reviews and its reply: [Doc reviewer](#doc-reviewer) and [final-report](prompts/agents/notes/commands.md#final-report).
     - Acts, each with its section:
         - Judging a design's cost and gain: [The user's goals](#the-users-goals).
-        - Filing tickets: [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [performance-tickets](prompts/agents/notes/tickets.md#performance-tickets), [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults) and [Doc reviewer](#doc-reviewer).
+        - Filing tickets: [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Ticket subjects](prompts/agents/notes/tickets.md#ticket-subjects), [performance-tickets](prompts/agents/notes/tickets.md#performance-tickets), [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults) and [Doc reviewer](#doc-reviewer).
         - Running commands: [Commands](#commands).
 
 - Read [Prose in code](src/controlled_markdown/writing.md#prose-in-code) before you review text in a code file.

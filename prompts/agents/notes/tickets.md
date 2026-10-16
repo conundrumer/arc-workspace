@@ -1,9 +1,9 @@
-+ budget: 9400
++ budget: 10800
 * comment: when editing this doc
     - Readers: each agent that files tickets inlines the sections for its work; the coordinator links them from [Tickets](prompts/agents/notes/requests.md#tickets); the ticket analyst, the draft analyst and the ticket reviewer link Change tickets.
     - Acts, each with its section:
         - A solver pass's tickets: [pass-tickets](#pass-tickets).
-        - Filing a ticket: [Ticket files](#ticket-files), [Ticket fields](#ticket-fields).
+        - Filing a ticket: [Ticket files](#ticket-files), [Ticket fields](#ticket-fields), and [Ticket subjects](#ticket-subjects) where no other line of its reader's documents gives its `<domain>` and `<subject>`.
         - A `performance` ticket: [performance-tickets](#performance-tickets).
         - A noticed fault: [Noticed faults](#noticed-faults).
         - Finding, moving and closing a ticket: [Tracking](#tracking).
@@ -23,7 +23,7 @@
 - File a `delay` ticket for each step of your work whose run time is far out of proportion to the work the step does.
 
 ## Ticket files
-- Where your instructions, your brief or a later message ask you to file a ticket, file it with `uv run python scripts/file_ticket.py`, in the form its `--help` gives.
+- Where your instructions, your brief or a later message ask you to file a ticket, file it with `uv run python scripts/file_ticket.py`, in the form its `--help` gives, and, where no other line of your documents gives its `<domain>` and `<subject>`, with those that [Ticket subjects](prompts/agents/notes/tickets.md#ticket-subjects) gives.
     - Where the ticket has an `Evidence` section, write under it the line quoted, or the command and its output, or the grid, as you saw it, and leave out what the fix should be.
 
 ## performance-tickets
@@ -34,14 +34,16 @@
 
 ## Ticket fields
 - `<agent>` is your agent's name, or `coordinator` where you are the coordinator.
+- A subagent's own agent id is the one the line `Your agent id is <id>.` in its context gives, or, where its context holds no such line, the agent id of its own entry in the listing `uv run python scripts/profile_runs.py --running <session id>` prints, with the id `echo $CLAUDE_CODE_SESSION_ID` prints as `<session id>`: the entry whose call in flight is that listing's command.
+- The coordinator's own agent id is the session id `echo $CLAUDE_CODE_SESSION_ID` prints.
+
+## Ticket subjects
 - `<domain>` and `<subject>` give what a ticket of another kind than `change` and `request` is about:
     - `task` and the task id: a solver pass's ticket, and a transcript review's ticket on a pass.
     - `change` and the number of the change's ticket: an editor's or a doc reviewer's ticket on its change where its brief gives that number, the ticket the agent that merges a change files on that change, and a transcript review's ticket on such an editor's run.
     - `commit` and the commit's hash: a code reviewer's ticket, on its code review's commit, and a ticket a brief has its agent file on a commit of `master` that the brief gives.
     - `ticket` and the ticket's number: a ticket on another ticket.
     - `agent` and the agent's id: every ticket no entry above fits, on the agent whose run it concerns, or, where it concerns no agent's run, the agent in whose run the fault showed, your own included.
-- A subagent's own agent id is the one the line `Your agent id is <id>.` in its context gives, or, where its context holds no such line, the agent id of its own entry in the listing `uv run python scripts/profile_runs.py --running <session id>` prints, with the id `echo $CLAUDE_CODE_SESSION_ID` prints as `<session id>`: the entry whose call in flight is that listing's command.
-- The coordinator's own agent id is the session id `echo $CLAUDE_CODE_SESSION_ID` prints.
 
 ## Tracking
 - `tickets/` is in the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints, and in no other worktree. Git ignores it.

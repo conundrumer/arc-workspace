@@ -1,10 +1,10 @@
-+ budget: 9800
++ budget: 10900
 * comment: when editing this doc
     - Each agent whose tools include `Bash` inlines [commands](#commands), for running, waiting on and ending its commands; each agent that gives a final reply to its launcher inlines [final-report](#final-report), and the code reviewer [report-file](#report-file). The doc editor, the ticket analyst, the draft analyst and the decision analyst load Background agents by a link, where a command prints an Agent call.
     - Acts, each with its section:
         - Running a command: [commands](#commands).
         - Waiting on a command: [waiting-on-commands](#waiting-on-commands).
-        - Ending a command: [ending-commands](#ending-commands).
+        - Ending a command: [ending-commands](#ending-commands), and [process-trees](#process-trees) where it calls `TaskStop` or starts a process with `&` or `nohup`.
         - Launching a background agent a command prints: [Background agents](#background-agents).
         - Reporting a denied call: [denied-calls](#denied-calls).
         - Waiting on an agent resumed by SendMessage: [resumed-agents](#resumed-agents).
@@ -27,6 +27,9 @@
 
 ## ending-commands
 - End a command of yours that runs in the background with the command a line of your documents gives to end it, and where none does, with `TaskStop` and the ID the harness gave that command. Call `TaskStop` on nothing else, and signal no process that you pick by its name or by its command line.
+- Before you call `TaskStop`, or start a process with `&` or `nohup`, read [process-trees](prompts/agents/notes/commands.md#process-trees).
+
+## process-trees
 - The process tree of a process ID is that process ID, and each process ID that `pgrep -P <process ID>` prints for a process ID of the tree.
 - Before you call `TaskStop`, take the process tree of each process ID that `lsof -t <the command's output file>` prints. Once `TaskStop` returns, end each process of those trees that still runs with `kill <process ID>`.
 - Where you start a process with `&` or `nohup`, print its process ID with `echo $!` in that Bash call. To end it, take the process tree of that process ID, and end each process of that tree with `kill <process ID>`.

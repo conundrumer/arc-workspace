@@ -11,7 +11,7 @@
     - Does the reader need it at all?
     - Can a rule at a higher level say it in fewer words? Dropping words from the line is no answer.
 - Look first for these classes of bloat:
-    - A shared note inlined whole where its reader acts on part of it, as [What goes where](docs/handbook/editing.md#what-goes-where) has each agent with `Bash` inline every line of [commands](prompts/agents/notes/commands.md#commands).
+    - A shared note inlined whole where its reader acts on part of it.
     - A harness or tool quirk written as a standing rule, such as the `unattended-wait:` lead of a wait in [commands](prompts/agents/notes/commands.md#commands).
     - A line that stacks a clause for each incident it was to stop.
     - A rule that a check or a generator enforces, restated in prose, such as the markup rules that `uv run python -m controlled_markdown check` reports with their messages.

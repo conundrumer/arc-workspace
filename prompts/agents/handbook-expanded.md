@@ -14,7 +14,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
         - Carrying a change or solver work that a brief gives: [Carrying a change](#carrying-a-change), from its brief through its worktree and gate to its final report.
     - Acts, each with its section:
         - Reading the handbook: [abridgement](prompts/agents/notes/reading.md#abridgement), [citations](prompts/agents/notes/reading.md#citations).
-        - Filing a ticket: [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults).
+        - Filing a ticket: [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Ticket subjects](prompts/agents/notes/tickets.md#ticket-subjects), [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults).
         - Running a command: [commands](prompts/agents/notes/commands.md#commands).
         - A part its brief leaves out: [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out).
 

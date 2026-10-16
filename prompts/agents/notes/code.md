@@ -1,4 +1,4 @@
-+ budget: 3840
++ budget: 4300
 * comment: when editing this doc
     - [Code editor](prompts/agents/code-editor.md), with [code-editor-next.md](prompts/agents/code-editor-next.md), and [Code reviewer](prompts/agents/code-reviewer.md), with [code-reviewer-next.md](prompts/agents/code-reviewer-next.md), inline its sections, for editing and reviewing the code under `src/` and `scripts/`.
     - Acts, each with its section:
@@ -31,7 +31,7 @@
         - A lookup that defaults stands where the absent value has a known meaning.
     - An iteration whose order reaches output, run in hash order.
     - A value that crosses a package boundary as a string the other side parses.
-    - A test that [Tests](CLAUDE.md#tests) does not keep.
+    - A test that [Tests](prompts/agents/notes/tests.md#tests) does not keep.
     - Prose in code that breaks a rule on prose in code.
     - A name the diff gives a thing, where practitioners of the thing's discipline use a conventional name for it that the diff does not use.
 - A defect place of any kind stands where a rule requires it.

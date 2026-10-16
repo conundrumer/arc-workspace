@@ -135,7 +135,7 @@
 - A doc reviewer's brief on a standing doc review gives the reader with its arguments, the commit of `master` it reviews, and the tag `doc-review/<reader>` that records that review in git, in place of a change, a worktree and editors.
 
 ### A transcript review's brief
-- A transcript review's brief gives the run's agent id, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), the `<domain>` and `<subject>` [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields) gives a transcript review of that run, and `transcript-review` as `<agent>`. It has the review file a ticket of kind `delay` for each place where the run explored to find what a docstring or a document line could have led it to.
+- A transcript review's brief gives the run's agent id, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), the `<domain>` and `<subject>` [Ticket subjects](prompts/agents/notes/tickets.md#ticket-subjects) gives a transcript review of that run, and `transcript-review` as `<agent>`. It has the review file a ticket of kind `delay` for each place where the run explored to find what a docstring or a document line could have led it to.
 
 ### Solver work
 - Solver work is a solver pass, or an edit of a solver or of the lib for one task.

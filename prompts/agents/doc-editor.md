@@ -19,7 +19,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
         - Its reply: [Doc editor](#doc-editor), [An editor's report on a change](prompts/agents/notes/launching.md#an-editors-report-on-a-change) and [final-report](prompts/agents/notes/commands.md#final-report).
     - Acts, each with its section:
         - Messages to other agents: [editor-messages](prompts/agents/notes/worktree.md#editor-messages) and [Doc editor](#doc-editor).
-        - Filing tickets: [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults) and [Doc editor](#doc-editor).
+        - Filing tickets: [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Ticket subjects](prompts/agents/notes/tickets.md#ticket-subjects), [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults) and [Doc editor](#doc-editor).
         - Running commands: [Commands](#commands).
         - A whole-document pass, which the `Design` of its ticket links: [Whole-document pass](prompts/agents/doc-editor/whole-document.md#whole-document-pass).
 
