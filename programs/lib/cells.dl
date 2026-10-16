@@ -559,11 +559,13 @@
     min_period(Ky, A, K) <= min_period(Ky, A, K2) :- K > K2.
 }
 
-/// The isometries of a valued cell set interpreted as a periodic pattern: each
-/// candidate is a D4 transform composed with a shift whose component on each
-/// axis is less than one period where the axis has a `period` row, and zero
-/// where it has none. A candidate is a symmetry when it takes some cell onto
-/// another cell and takes no cell onto a cell of another value.
+/// The isometries of a valued cell set interpreted as a periodic pattern,
+/// each taken with every translation of its lattice: a candidate is a D4
+/// transform composed with each shift of one coset of the lattice, the
+/// translations by a multiple of the period on each axis that has a
+/// `period` row, and by none on an axis that has none. A candidate is a
+/// symmetry when its shifts together take some cell onto another cell and
+/// none of them takes a cell onto a cell of another value.
 .comp Wallpaper<Key, Val> {
     /// The candidates include those whose transform is d.
     .decl transform(d: D4)  // @input
@@ -574,68 +576,92 @@
     /// p is a position of the frame.
     .decl grid(key: Key, p: Position)  // @input
 
-    /// k is the pattern's translation period along axis a. An axis with no
-    /// row has no period.
+    /// k is the pattern's translation period along axis a, one per axis. An
+    /// axis with no row has no period.
     .decl period(key: Key, a: Axis, k: number)  // @input
 
-    // d is the edge of the bottom-right corner on axis a.
-    .decl _canon(a: Axis, d: Dir)
-    _canon(A, D) :- dir_of(DIAG_BR, A, D).
-
-    // delta is a shift along axis a that lies in the fundamental domain:
-    // zero, or, on an axis with a period, less than one period toward the
-    // bottom or right edge.
+    // delta is a shift along axis a that stands for one coset of the
+    // lattice on that axis: zero, or, on an axis with a period, less than
+    // one period toward the bottom or right edge. The output takes every
+    // shift of the coset, so it does not depend on this choice.
     .decl _dom_ax(key: Key, a: Axis, delta: Offset)
     _dom_ax(Key, A, Delta) :-
         grid(Key, P), axis_elem(A),
         ( Delta = ZERO
         ; sub_extent(P, A, K), period(Key, A, Kp), K < Kp,
-          _canon(A, D), jump_offset(D, K, Delta)
+          dir_of(DIAG_BR, A, D), jump_offset(D, K, Delta)
         ).
 
-    // delta is a shift in the fundamental domain.
+    // delta stands for one coset of the lattice.
     .decl _dom(key: Key, delta: Offset)
     _dom(Key, Delta) :-
         _dom_ax(Key, A, D1), _dom_ax(Key, A2, D2), perp(A, A2),
         compose(D1, D2, Delta).
 
-    // delta is a translation along axis a that a self-inverse candidate's
-    // square may be when that square lies along a: zero, or one period
-    // toward the bottom or right edge. Along an axis with a period, the
-    // lattice holds the multiples of the period and no other translation,
-    // and a square less than two periods long is a multiple only at these
-    // two; along an axis with none, the lattice holds zero alone.
-    .decl _lat_ax(key: Key, a: Axis, delta: Offset)
-    _lat_ax(Key, A, Delta) :-
-        grid(Key, _), axis_elem(A),
-        ( Delta = ZERO
-        ; period(Key, A, K), _canon(A, D), jump_offset(D, K, Delta)
+    // The translation s lies in the lattice along axis a: its component on
+    // a is a multiple of the period there, or zero where a has none.
+    .decl _lat_ax(key: Key, a: Axis, s: Offset) inline
+    _lat_ax(Key, A, S) :-
+        axis_of(D, A), dist(S, D, K),
+        ( period(Key, A, Kp), K % Kp = 0
+        ; !period(Key, A, _), K = 0
         ).
 
-    // Transform d followed by shift delta is a candidate isometry. Where d
-    // is its own inverse, the candidate squares to a translation. Where that
-    // translation lies along an axis, it must be a row of `_lat_ax`; where it
-    // lies off both axes, the periods do not determine whether the lattice
-    // holds it, and the cell tests decide.
+    // Transform d followed by the coset of shift delta is a candidate
+    // isometry. Where d is its own inverse, the candidate squares to the
+    // translations of one coset, which holds the lattice exactly where the
+    // square of delta lies in it. Where that square lies along an axis, it
+    // must lie in the lattice; where it lies off both axes, the periods do
+    // not determine whether the lattice holds it, and the cell tests decide.
     .decl _cand(key: Key, d: D4, delta: Offset)
     _cand(Key, D, Delta) :-
         transform(D), _dom(Key, Delta),
         ( !d4_inverse(D, D)
         ; d4_inverse(D, D),
           apply(D, Delta, DD), compose(Delta, DD, S),
-          ( _lat_ax(Key, _, S)
+          ( axis_elem(A), perp(A, A2), _lat_ax(Key, A, S), _lat_ax(Key, A2, S)
           ; axis_elem(A), split(S, A, Along, Across),
             Along != ZERO, Across != ZERO
           )
         ).
+
+    // The candidate (d, delta) takes the frame position p onto x, a box of
+    // p's extent that may lie off the frame.
+    .decl _image(key: Key, d: D4, delta: Offset, p: Position, x: Box)
+    _image(Key, D, Delta, P, X) :-
+        _cand(Key, D, Delta), grid(Key, P), apply(D, P, P1),
+        compose(P1, Delta, X).
+
+    // The class of x under the lattice: on each axis, the margin from the
+    // top or left edge modulo the period where the axis has one, and the
+    // margin itself where it has none, with the margins' sum. Two boxes are
+    // in one class exactly where a translation of the lattice takes one onto
+    // the other.
+    .decl _class(key: Key, x: Box, rv: number, sv: number, rh: number,
+                 sh: number)
+    _class(Key, X, Rv, T + B, Rh, L + R) :-
+        ( grid(Key, X) ; _image(Key, _, _, _, X) ),
+        X = [T, B, L, R],
+        ( period(Key, AXIS_V, Kv), Rv = ((T % Kv) + Kv) % Kv
+        ; !period(Key, AXIS_V, _), Rv = T
+        ),
+        ( period(Key, AXIS_H, Kh), Rh = ((L % Kh) + Kh) % Kh
+        ; !period(Key, AXIS_H, _), Rh = L
+        ).
+
+    // Some shift of the coset of the candidate (d, delta) takes the frame
+    // position p onto the frame position q.
+    .decl _reach(key: Key, d: D4, delta: Offset, p: Position, q: Position)
+    _reach(Key, D, Delta, P, Q) :-
+        _image(Key, D, Delta, P, X), _class(Key, X, Rv, Sv, Rh, Sh),
+        _class(Key, Q, Rv, Sv, Rh, Sh), grid(Key, Q).
 
     // The candidate (d, delta) takes the cell at p, holding v1, onto the
     // cell at q, holding v2.
     .decl _pair(key: Key, d: D4, delta: Offset, p: Position, q: Position,
                 v1: Val, v2: Val)
     _pair(Key, D, Delta, P, Q, V1, V2) :-
-        cell(Key, P, V1), _cand(Key, D, Delta), apply(D, P, P1),
-        compose(P1, Delta, Q), cell(Key, Q, V2).
+        cell(Key, P, V1), _reach(Key, D, Delta, P, Q), cell(Key, Q, V2).
 
     // The candidate (d, delta) takes some cell onto a cell of another value.
     .decl _mismatch(key: Key, d: D4, delta: Offset)
@@ -645,20 +671,20 @@
     .decl _witnessed(key: Key, d: D4, delta: Offset)
     _witnessed(Key, D, Delta) :- _pair(Key, D, Delta, P, Q, _, _), P != Q.
 
-    /// Transform d followed by shift delta is a symmetry of the pattern.
-    .decl symmetry(key: Key, d: D4, delta: Offset)
-    symmetry(Key, D, Delta) :-
+    // Transform d followed by the coset of shift delta is a symmetry of the
+    // pattern.
+    .decl _symmetry(key: Key, d: D4, delta: Offset)
+    _symmetry(Key, D, Delta) :-
         _witnessed(Key, D, Delta), !_mismatch(Key, D, Delta).
 
-    /// A symmetry or a period shift takes the frame position p onto the frame
-    /// position q.
+    /// A symmetry, or a translation of the lattice, takes the frame position
+    /// p onto the frame position q.
     .decl action(key: Key, p: Position, q: Position)
     action(Key, P, Q) :-
-        symmetry(Key, D, Delta), grid(Key, P), apply(D, P, P1),
-        compose(P1, Delta, Q), grid(Key, Q).
+        _symmetry(Key, D, Delta), _reach(Key, D, Delta, P, Q).
     action(Key, P, Q) :-
-        period(Key, A, K), axis_of(D, A),
-        grid(Key, P), jump(P, D, K, Q), grid(Key, Q).
+        grid(Key, P), _class(Key, P, Rv, Sv, Rh, Sh),
+        _class(Key, Q, Rv, Sv, Rh, Sh), grid(Key, Q), P != Q.
 }
 
 /// Occurrences of one valued cell set, the shape, among another: a placement

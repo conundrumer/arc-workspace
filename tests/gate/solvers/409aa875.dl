@@ -131,7 +131,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
 // The chart is read off the marks whose shot repainted a background cell:
 // tracing the shot back gives the apex and the aim, and the mark's own cells
 // give the footprint. Marks whose footprints are D4 images of each other
-// share an id, and one of each serves as the chart, in its own pose.
+// share an id, and each is one copy of the chart, in its own pose.
 .comp Determine {
     .decl ink_in(e: Example, p: Position)
     ink_in(E, P) :- ex_in(E, P, Col), !params.bg(Col).
@@ -140,11 +140,21 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
     .decl landed(e: Example, p: Position)
     landed(E, P) :- ex_out(E, P, Col), !params.bg(Col), ex_in(E, P, Bg), params.bg(Bg).
 
-    // The mark a landing traces back to, and the direction its shot ran.
+    // An ink cell with no ink on some flank of g, the corner's two
+    // cardinals or the cardinal's two corners: no apex whose arms lie
+    // toward g.
+    .decl unarmed(e: Example, a: Position, g: Dir8)
+    unarmed(E, A, G) :-
+        ink_in(E, A), dir8_elem(G),
+        ( dir_of(G, _, F) ; dir_of(F, _, G) ), neighbor(A, F, Q), !ink_in(E, Q).
+
+    // The apex a landing traces back to, and the direction its shot ran: an
+    // ink cell the reach behind the landing, with an arm on each flank of
+    // the way back.
     .decl launch(e: Example, a: Position, d: Dir8)
     launch(E, A, D) :-
         landed(E, P), dir8_opposite(D, D_back),
-        params.reach(K), jump(P, D_back, K, A), ink_in(E, A).
+        params.reach(K), jump(P, D_back, K, A), ink_in(E, A), !unarmed(E, A, D_back).
 
     .init comps = Components8<Example>
     comps.node(E, P) :- ink_in(E, P).
@@ -165,19 +175,17 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
     same.src([K, K2], P_inner, $U()) :- mark_view(K, _, P_inner), bbox.cell(K2, _).
     same.dst([K, K2], P_inner, $U()) :- bbox.cell(K, _), mark_view(K2, _, P_inner).
 
-    .init pick = Canon<EA>
-    pick.equiv(K, K2) :- same.map([K, K2], _).
+    // Each launching mark is one copy of its class's chart, in its own pose;
+    // the classes are the marks that are D4 images of each other.
+    .init cls = Canon<EA>
+    cls.equiv(K, K2) :- same.map([K, K2], _).
 
-    // The mark standing for its id.
-    .decl chart(id: Ident, k: EA)
-    chart(Id, K) :- pick.rep(K, K), pick.id(K, Id).
+    .decl glyph_shape(e: Example, a: Position, id: Ident, p: Position)
+    glyph_shape(E, A, Id, P_inner) :- cls.id([E, A], Id), mark_view([E, A], _, P_inner).
 
-    .decl glyph_shape(id: Ident, p: Position)
-    glyph_shape(Id, P_inner) :- chart(Id, K), mark_view(K, _, P_inner).
+    .decl glyph_apex(e: Example, a: Position, id: Ident, p: Position)
+    glyph_apex(E, A, Id, P_inner) :- cls.id([E, A], Id), mark_view([E, A], A, P_inner).
 
-    .decl glyph_apex(id: Ident, p: Position)
-    glyph_apex(Id, P_inner) :- chart(Id, [E, A]), mark_view([E, A], A, P_inner).
-
-    .decl glyph_aim(id: Ident, d: Dir8)
-    glyph_aim(Id, D) :- chart(Id, [E, A]), launch(E, A, D).
+    .decl glyph_aim(e: Example, a: Position, id: Ident, d: Dir8)
+    glyph_aim(E, A, Id, D) :- cls.id([E, A], Id), launch(E, A, D).
 }

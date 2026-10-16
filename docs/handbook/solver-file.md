@@ -202,7 +202,7 @@
 - A `.comp Parse<Key>` contains a derivation that the program and the Determine comp share.
 
 ## Determination
-- `Determine` contains the determination's clauses as one relation per parameter whose value they give, with the parameter's name and schema, derived from `ex_in` and `ex_out`.
+- `Determine` contains the determination's clauses as one relation per parameter whose value they give, with the parameter's name and schema, derived from `ex_in` and `ex_out`. The determination relations of a `RIGID` block's parameters may lead with the same key columns, before each parameter's schema. Their rows at one value of those columns are one copy of the block's assembly.
 - The determination relation of a parameter with a case column gives the rows of every case.
 - A determination relation that mirrors no parameter is a helper and takes no parameter's name.
 - A derived relation has no determination relation.

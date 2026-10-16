@@ -497,9 +497,9 @@ painted([U, O, S, T, R, $ScanOrder(), Co], Bo, [C2, A2], X, Col) :-
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
     parse.foot_at(D, V) :-
-        draw_aim(D0), apply_dir(G, D0, D), draw_foot_offsets(V0), apply(G, V0, V).
+        draw_aim(E, P, D0), apply_dir(G, D0, D), draw_foot_offsets(E, P, V0), apply(G, V0, V).
     parse.head_at(D, V) :-
-        draw_aim(D0), apply_dir(G, D0, D), draw_head_offsets(V0), apply(G, V0, V).
+        draw_aim(E, P, D0), apply_dir(G, D0, D), draw_head_offsets(E, P, V0), apply(G, V0, V).
 
     // A color with more than one block under reading T.
     .decl twin(e: Example, t: Thin, col: Color)
@@ -518,17 +518,13 @@ painted([U, O, S, T, R, $ScanOrder(), Co], Bo, [C2, A2], X, Col) :-
     .decl inked(e: Example, p: Position, col: Color)
     inked(E, P, Col) :- ex_in(E, P, Bg), parse.ground.mode(E, Bg), ex_out(E, P, Col), Col != Bg.
 
-    // One plain dot stands for all, in its own pose.
-    .init pick = Canon<Sighting>
-    pick.equiv([E, P], [E2, P2]) :- plain(E, P, _, _), plain(E2, P2, _, _).
-
+    // Each plain dot is one copy of the chart, in its own pose.
     .decl chosen(e: Example, p: Position, id: Ident, d: Dir, f: Position, col: Color)
     chosen(E, P, Id, D, F, Col) :-
-        pick.rep([E, P], [E, P]), plain(E, P, Id, D), parse.foot(E, P, Id, D, F),
-        parse.single(E, P, Col).
+        plain(E, P, Id, D), parse.foot(E, P, Id, D, F), parse.single(E, P, Col).
 
-    .decl draw_aim(d: Dir)
-    draw_aim(D) :- chosen(_, _, _, D, _, _).
+    .decl draw_aim(e: Example, p: Position, d: Dir)
+    draw_aim(E, P, D) :- chosen(E, P, _, D, _, _).
 
     // The foot: the inked cells of the dot's color on the foot center's line
     // across D, joined to the center.
@@ -536,8 +532,8 @@ painted([U, O, S, T, R, $ScanOrder(), Co], Bo, [C2, A2], X, Col) :-
     across.node([E, P], X) :- chosen(E, P, _, D, F, Col), inked(E, X, Col), same_dist(D, X, F).
     across.dir([E, P], D2) :- chosen(E, P, _, D, _, _), perp_dir(D, D2).
 
-    .decl draw_foot_offsets(v: Offset)
-    draw_foot_offsets(V) :-
+    .decl draw_foot_offsets(e: Example, p: Position, v: Offset)
+    draw_foot_offsets(E, P, V) :-
         chosen(E, P, _, _, F, _), ( X = F ; across.run([E, P], F, _, X) ), relative(F, X, V).
 
     // The head: the inked cells of the dot's color no nearer the block than
@@ -547,6 +543,6 @@ painted([U, O, S, T, R, $ScanOrder(), Co], Bo, [C2, A2], X, Col) :-
     head.node([E, P], X) :- chosen(E, P, _, D, _, Col), inked(E, X, Col), !nearer(D, P, X).
     head.seed([E, P], P) :- chosen(E, P, _, _, _, _).
 
-    .decl draw_head_offsets(v: Offset)
-    draw_head_offsets(V) :- head.reach([E, P], X), X != P, relative(P, X, V).
+    .decl draw_head_offsets(e: Example, p: Position, v: Offset)
+    draw_head_offsets(E, P, V) :- head.reach([E, P], X), X != P, relative(P, X, V).
 }

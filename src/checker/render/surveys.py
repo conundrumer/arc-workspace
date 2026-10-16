@@ -91,8 +91,8 @@ from controlled_markdown import mctx
 from engine import Engine, RecordValue, Row, RunFailure, checkout
 from engine.quotes import quotes
 from solver.model import Case
-from solver.aggregate import Solver, has_determine
-from solver.determine import rigid_charts
+from solver.aggregate import Solver
+from solver.determine import NoDetermine, rigid_charts
 from solver.names import cover
 from solver.names import name as case_name
 from solver.value_order import row_key
@@ -150,7 +150,8 @@ def _section(name: str, **values: object) -> list[str]:
 
 ROW = " " * 4
 DETERMINED_CLAUSE = " " + mctx("and no determined value")
-"""The `noop` note's clause for a solver with a Determine comp."""
+"""The `noop` note's clause where the deletions' determination was
+checked."""
 NO_DETERMINE = mctx("the solver has no Determine comp, so no deletion's "
                     "effect on a determined value was checked")
 
@@ -183,7 +184,7 @@ def render_deletions(solver: Solver, result: DeletionResult) -> list[str]:
     if noop:
         lines += _section("noop", count=len(noop), judged=judged,
                           determined=DETERMINED_CLAUSE
-                          if has_determine(solver) else "")
+                          if report.unchecked is None else "")
         lines += entries(noop)
     elif not enumerators:
         lines += _section("none", judged=judged)
@@ -198,7 +199,7 @@ def render_deletions(solver: Solver, result: DeletionResult) -> list[str]:
         lines += _section(
             "ungrounded", count=len(ungrounded),
             noun=noun(len(ungrounded), "deletion"))
-    if report.no_determine:
+    if isinstance(report.unchecked, NoDetermine):
         lines += ["", NO_DETERMINE]
     if report.timed_out:
         lines.append("")

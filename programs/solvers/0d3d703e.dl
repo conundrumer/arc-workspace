@@ -6,15 +6,15 @@
 .decl out(p: Position, col: Color)
 
 .comp Params {
-    // the color pairs that trade places
-    .decl swap(c1: Color, c2: Color)
-    swap(1, 5).
-    swap(2, 6).
-    swap(3, 4).
-    swap(8, 9).
+    // the color pairs that trade places, each pair one class
+    .decl swap(col: Color, k: Ident)
+    swap(1, 0). swap(5, 0).
+    swap(2, 1). swap(6, 1).
+    swap(3, 2). swap(4, 2).
+    swap(8, 3). swap(9, 3).
 
     .decl mapping(c_from: Color, c_to: Color)
-    mapping(A, B) :- ( swap(A, B) ; swap(B, A) ).
+    mapping(A, B) :- swap(A, K), swap(B, K), A != B.
 }
 
 .init params = Params
@@ -27,7 +27,6 @@ out(P, Col)     :- in(P, Col), !params.mapping(Col, _).
     .init pair = Canon<Color>
     pair.edge(Col_in, Col_out) :- ex_in(E, P, Col_in), ex_out(E, P, Col_out), Col_in != Col_out.
 
-    // Each pair once: its representative first.
-    .decl swap(c1: Color, c2: Color)
-    swap(A, B) :- pair.rep(B, A), A != B.
+    .decl swap(col: Color, k: Ident)
+    swap(Col, K) :- pair.id(Col, K).
 }

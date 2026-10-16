@@ -93,13 +93,11 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !mark(P, Ch).
     piece.node([E, P], Q) :- marked(E, P), ex_in(E, Q, Col), !params.bg(Col).
     piece.seed([E, P], Q) :- marked(E, P), dir_elem(D), neighbor(P, D, Q).
 
-    // One witness piece serves as the chart, in its own pose.
-    .init pick = Canon<EP>
-    pick.equiv([E, P], [E2, P2]) :- marked(E, P), marked(E2, P2).
-
     .init bbox = Bbox<EP>
-    bbox.cell(K, Q) :- pick.rep(K, K), piece.reach(K, Q).
+    bbox.cell(K, Q) :- piece.reach(K, Q).
 
-    .decl piece_glyph(p: Position)
-    piece_glyph(P_inner) :- bbox.cell(K, P), bbox.box(K, B), crop(P, B, P_inner).
+    // Each mark's piece is one copy of the chart, in its own pose.
+    .decl piece_glyph(e: Example, p_mark: Position, p: Position)
+    piece_glyph(E, P_mark, P_inner) :-
+        bbox.cell([E, P_mark], P), bbox.box([E, P_mark], B), crop(P, B, P_inner).
 }

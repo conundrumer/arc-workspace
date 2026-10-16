@@ -27,6 +27,7 @@ from engine.program import as_grid
 from solver.determine import (
     Determined,
     DetermineResult,
+    KeysOff,
     NoDetermine,
     determine,
 )
@@ -313,7 +314,7 @@ def ungrounded(result: ProfileResult) -> bool:
 
 def determines(engine: Engine, solver: Solver, limits: Limits,
                measured: float | None = None
-               ) -> bool | NoDetermine | NoTask | TimedOut:
+               ) -> bool | NoDetermine | KeysOff | NoTask | TimedOut:
     """`reproduces` of the solver's determination run; of a variant's,
     where the stored program's determination spent `measured` CPU seconds
     (`solver.determine.determine`)."""
@@ -324,16 +325,17 @@ def determines(engine: Engine, solver: Solver, limits: Limits,
 
 def reproduces(got: DetermineResult | NoTask,
                bound: VariantBound | None = None
-               ) -> bool | NoDetermine | NoTask | TimedOut:
+               ) -> bool | NoDetermine | KeysOff | NoTask | TimedOut:
     """Whether the determination run `got` reproduces every determined
     parameter's stored value; `NoDetermine` where the solver has no
-    Determine comp, and `NoTask` where its task has no task file, so no
-    determination is checked; where its run reached a limit, that run's
+    Determine comp, `KeysOff` where its determination does not run, and
+    `NoTask` where its task has no task file, so no determination is
+    checked; where its run reached a limit, that run's
     finding, with `bound`, the rule that set a variant's CPU limit."""
     match got:
         case Determined():
             return not got.diffs
-        case NoDetermine() | NoTask():
+        case NoDetermine() | KeysOff() | NoTask():
             return got
         case _:
             if is_timeout(got):

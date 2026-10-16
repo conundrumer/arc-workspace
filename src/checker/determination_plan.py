@@ -37,6 +37,7 @@ from checker.judged import concept_case, verdict_case
 from solver.annotations import VerdictWord
 from solver.determine import (
     Determined,
+    KeysOff,
     NoDetermine,
     determine,
     rigid_charts,
@@ -574,7 +575,9 @@ def _moved_by_witnesses(solver: Solver, runs: Runs
                         ) -> tuple[Moved, ...] | RunFailure:
     """The determination run with every concept pair (`_concept_pairs`)
     added to the train pairs; where it moves a determined value, one run
-    per pair, each pair and parameter whose value it moves."""
+    per pair, each pair and parameter whose value it moves. Raises
+    `ValueError` where the determination does not run (`KeysOff`), which
+    the command's refusal rules out."""
     pairs = _concept_pairs(solver, runs)
     if not pairs:
         return ()
@@ -583,6 +586,10 @@ def _moved_by_witnesses(solver: Solver, runs: Runs
         got = determine(runs.engine, solver, runs.limits, added=added)
         if isinstance(got, NoDetermine):
             return None
+        if isinstance(got, KeysOff):
+            raise ValueError(f"{solver.stem}: a determination that does "
+                             "not run, which the command's refusal rules "
+                             "out")
         if not isinstance(got, Determined):
             return got
         return [d.parameter for d in got.diffs]
@@ -613,12 +620,13 @@ def _differing(solver: Solver, runs: Runs, determined: frozenset[str],
     failure of the run that enumerates the solver's cases, which those
     bases are read from, where that run gives none. Raises
     `ValueError` where a determined parameter stands and the run reports
-    no `Determine` comp or no task file, which the parameter and the
-    command's refusal rule out."""
+    no `Determine` comp, no task file, or a determination that does not
+    run (`KeysOff`), which the parameter and the command's refusal rule
+    out."""
     if not determined:
         return frozenset()
     got = runs.determined
-    if isinstance(got, (NoDetermine, NoTask)):
+    if isinstance(got, (NoDetermine, KeysOff, NoTask)):
         raise ValueError(f"{solver.stem}: a determined parameter and no "
                          "determination run")
     if not isinstance(got, Determined):

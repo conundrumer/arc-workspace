@@ -13,7 +13,9 @@ from arc.task import task_file
 from arc.task import GridFormError, read_grid
 from checker.finding import Finding
 from checker.judged import parse_fault
+from checker.lint.form.components import check_determine_schema
 from checker.lint.form.open_value_fields import check_open_value_field
+from checker.render.determination import determination_lines
 from checker.readable import finding_of
 from checker.render import commands, finding_lines
 from checker.render.no_result import run_failed
@@ -29,6 +31,7 @@ from engine import (
     checkout,
 )
 from engine.program import as_grid
+from solver.determine import KeysOff, off_key_blocks
 from solver.load import load
 from solver.aggregate import Solver, solver_file
 from solver.problems import Fault
@@ -169,6 +172,19 @@ def open_value_off(eng: SouffleEngine, solver: Solver) -> list[Finding]:
     (`checker.lint.form.open_value_fields`): a run reads its grids
     through those fields, so a command runs nothing where one stands."""
     return check_open_value_field(solver, Runs(eng, solver, LIMITS))
+
+
+def keys_off_lines(runs: Runs) -> list[str]:
+    """Where a RIGID block's relations of `Determine` do not lead with the
+    same key columns (`solver.determine.off_key_blocks`), the line that
+    reports the determination as not run and the lint section of the
+    `check_determine_schema` findings; none elsewhere."""
+    solver = runs.solver
+    off = off_key_blocks(solver)
+    if not off:
+        return []
+    return determination_lines(solver, KeysOff(off), []) \
+        + commands.lint_section(solver, check_determine_schema(solver, runs))
 
 
 def failed_lines(solver: Solver,

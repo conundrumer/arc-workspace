@@ -305,47 +305,30 @@ out(P_out, Col, [A, B]) :-
     .init ex = Parse<Example>
     ex.cell(E, P, Col) :- ex_in(E, P, Col).
 
-    // Each arrow chart comes from one marker, read in its own pose; the
-    // runner compares up to pose, with id renaming. One arrow of each kind
-    // — a payload center and a blank one — arbitrarily; ids from the
-    // center colors.
+    // Each arrow is one copy of its kind's chart, in its own pose; ids from
+    // the center colors.
     .type EP = [e: Example, p: Position]
-    .init payload_pick = Canon<EP>
-    payload_pick.equiv([E1, P1], [E2, P2]) :-
-        ex.arrow(E1, P1, _), ex_in(E1, P1, C1), !params.arrow_color(C1),
-        ex.arrow(E2, P2, _), ex_in(E2, P2, C2), !params.arrow_color(C2).
-
-    .init blank_pick = Canon<EP>
-    blank_pick.equiv([E1, P1], [E2, P2]) :-
-        ex.arrow(E1, P1, _), ex_in(E1, P1, C1), params.arrow_color(C1),
-        ex.arrow(E2, P2, _), ex_in(E2, P2, C2), params.arrow_color(C2).
-
-    // Each chosen arrow's id, from its center color.
     .init color_id = IdentOf<Color>
-    color_id.value(Col) :-
-        ( payload_pick.rep([E, P], [E, P]) ; blank_pick.rep([E, P], [E, P]) ),
-        ex_in(E, P, Col).
+    color_id.value(Col) :- ex.arrow(E, P, _), ex_in(E, P, Col).
 
-    .decl chosen(ep: EP, id: Ident)
-    chosen([E, P], I) :-
-        ( payload_pick.rep([E, P], [E, P]) ; blank_pick.rep([E, P], [E, P]) ),
-        ex_in(E, P, Col), color_id.id(Col, I).
+    .decl arrow_id(ep: EP, id: Ident)
+    arrow_id([E, P], I) :- ex.arrow(E, P, _), ex_in(E, P, Col), color_id.id(Col, I).
 
     .init abox = Bbox<EP>
-    abox.cell([E, K], P) :- chosen([E, K], _), ( P = K ; ex.marked(E, K, _, P) ).
+    abox.cell([E, K], P) :- arrow_id([E, K], _), ( P = K ; ex.marked(E, K, _, P) ).
 
-    .decl arrow_glyph(id: Ident, p: Position, col: Color)
-    arrow_glyph(Id, P_i, Col) :-
-        chosen([E, K], Id), abox.box([E, K], B),
+    .decl arrow_glyph(e: Example, k: Position, id: Ident, p: Position, col: Color)
+    arrow_glyph(E, K, Id, P_i, Col) :-
+        arrow_id([E, K], Id), abox.box([E, K], B),
         ex_in(E, Q, Col), crop(Q, B, P_i),   // a cell of the box, in its frame
         ( ex.marked(E, K, _, Q)              // a marked cell
         ; Q = K, params.arrow_color(Col) ).  // the center, when blank
 
-    .decl arrow_center(id: Ident, p: Position)
-    arrow_center(Id, P_i) :- chosen([E, K], Id), abox.box([E, K], B), crop(K, B, P_i).
+    .decl arrow_center(e: Example, k: Position, id: Ident, p: Position)
+    arrow_center(E, K, Id, P_i) :- arrow_id([E, K], Id), abox.box([E, K], B), crop(K, B, P_i).
 
-    .decl arrow_tip(id: Ident, d: Dir)
-    arrow_tip(Id, D) :- chosen([E, K], Id), ex.arrow(E, K, D).
+    .decl arrow_tip(e: Example, k: Position, id: Ident, d: Dir)
+    arrow_tip(E, K, Id, D) :- arrow_id([E, K], Id), ex.arrow(E, K, D).
 
     // The bracket shapes: brackets grouped by their pictures in their own
     // boxes, ids from the groups, each shape's turn from its examples.

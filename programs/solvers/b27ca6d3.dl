@@ -180,23 +180,17 @@ frame_cell(Q, [S, C, $FrameOverMarks()]) :-
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
 
-    .type EI = [e: Example, id: Ident]
-
     // A cell that touches the group and is not in it keeps its color.
-    .decl kept_beside(g: EI)
-    kept_beside([E, Id]) :-
+    .decl kept_beside(e: Example, id: Ident)
+    kept_beside(E, Id) :-
         parse.group([E, Id], P), dir8_elem(D), neighbor(P, D, Q),
         !parse.group([E, Id], Q), ex_in(E, Q, Col), ex_out(E, Q, Col).
 
     // The shapes of the groups the output frames: every cell that touches
-    // such a group changes color.
-    .decl shape(g: EI, p: Position)
-    shape([E, Id], P) :- parse.shape([E, Id], P), !kept_beside([E, Id]).
-
-    // One framed group serves as the chart, in its own pose.
-    .init pick = Canon<EI>
-    pick.equiv(G, G2) :- shape(G, _), shape(G2, _).
-
-    .decl pair_footprint(p: Position)
-    pair_footprint(P) :- pick.rep(G, G), shape(G, P).
+    // such a group changes color. Each is one copy of the chart, in its own
+    // pose.
+    // @ignore: determine prediction — the test runs no step of the program at
+    //  the footprint: it reads the shape of each group the output frames
+    .decl pair_footprint(e: Example, id: Ident, p: Position)
+    pair_footprint(E, Id, P) :- parse.shape([E, Id], P), !kept_beside(E, Id).
 }

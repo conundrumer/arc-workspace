@@ -14,7 +14,7 @@ from checker.payloads.branches import DerivedDataPayload, DeterminationDiffPaylo
 from checker.runs import NoTask, Runs
 from engine.quotes import quotes
 from solver.aggregate import Solver
-from solver.determine import Determined, NoDetermine
+from solver.determine import Determined, KeysOff, NoDetermine
 
 
 @quotes("principles.md", "Stored or derived",
@@ -87,7 +87,9 @@ def check_stored_assignment(solver: Solver, runs: Runs) -> list[Finding]:
     the checks read (`checker.runs.Runs.differing_bases`), since each case
     reads its own rows. A
     `Determine` relation that mirrors a relation `Params` derives is a
-    finding too."""
+    finding too. A determination that does not run (`KeysOff`) gives no
+    finding here, since the lint finding of `check_determine_schema`
+    states its fault."""
     result = runs.determined
     out: list[Finding] = []
     for d in solver.params.derived:
@@ -106,7 +108,7 @@ def check_stored_assignment(solver: Solver, runs: Runs) -> list[Finding]:
         return out
     if isinstance(result, NoTask):
         out.append(NO_TASK)
-    elif not isinstance(result, NoDetermine):
+    elif not isinstance(result, NoDetermine | KeysOff):
         out.append(no_result(result, RunKind.DETERMINATION, None,
                              AtFile(WholeFile.SOLVER)))
     return out

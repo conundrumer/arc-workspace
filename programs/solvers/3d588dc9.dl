@@ -150,20 +150,17 @@ out(P, Col) :-
     .decl key_shed(k: EP, p: Position)
     key_shed([E, P0], P) :- flood.reach([E, P0], P), shed(E, P).
 
-    // One witness key serves as the chart, in its own pose.
-    .init pick = Canon<EP>
-    pick.equiv([E, P0], [E2, P02]) :- shed(E, P0), shed(E2, P02).
-
+    // Each shed key is one copy of the chart, in its own pose.
     .init bbox = Bbox<EP>
-    bbox.cell(K, P) :- pick.rep(K, K), flood.reach(K, P).
+    bbox.cell(K, P) :- flood.reach(K, P).
 
-    // The chart key's cells, read in its own box.
+    // A key's cells, read in its own box.
     .decl chart_view(k: EP, p: Position, p_inner: Position)
     chart_view(K, P, P_inner) :- bbox.cell(K, P), bbox.box(K, B), crop(P, B, P_inner).
 
-    .decl key_stem(p: Position)
-    key_stem(P_inner) :- key_shed(K, P), chart_view(K, P, P_inner).
+    .decl key_stem(e: Example, p0: Position, p: Position)
+    key_stem(E, P0, P_inner) :- key_shed([E, P0], P), chart_view([E, P0], P, P_inner).
 
-    .decl key_block(p: Position)
-    key_block(P_inner) :- chart_view(K, P, P_inner), !key_shed(K, P).
+    .decl key_block(e: Example, p0: Position, p: Position)
+    key_block(E, P0, P_inner) :- chart_view([E, P0], P, P_inner), !key_shed([E, P0], P).
 }

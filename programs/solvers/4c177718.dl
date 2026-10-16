@@ -163,16 +163,10 @@ out(P_intile, Col, Ch) :-
     cell(P_intile, Col), impl_choice(Ch), !stamp(P_intile, _, Ch).
 
 .comp Determine {
-    .decl arrow_cell(e: Example, p: Position)
-    arrow_cell(E, P) :- ex_in(E, P, Col), params.arrow(Col).
-
-    // One example's arrow serves as the chart, in its own pose.
-    .init pick = Canon<Example>
-    pick.equiv(E, E2) :- arrow_cell(E, _), arrow_cell(E2, _).
-
+    // Each example's arrow is one copy of the chart, in its own pose.
     .init bbox = Bbox<Example>
-    bbox.cell(E, P) :- pick.rep(E, E), arrow_cell(E, P).
+    bbox.cell(E, P) :- ex_in(E, P, Col), params.arrow(Col).
 
-    .decl chart_glyph(p: Position)
-    chart_glyph(P_inner) :- bbox.cell(E, P), bbox.box(E, B), crop(P, B, P_inner).
+    .decl chart_glyph(e: Example, p: Position)
+    chart_glyph(E, P_inner) :- bbox.cell(E, P), bbox.box(E, B), crop(P, B, P_inner).
 }

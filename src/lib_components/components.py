@@ -172,7 +172,6 @@ def IdentOf(T: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, value: I
 class CanonRows(NamedTuple):
     """The output relations of `Canon` (programs/lib/sets.dl)."""
 
-    rep: Relation
     id: Relation
 
 
@@ -180,10 +179,10 @@ def Canon(T: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, equiv: Ite
     """Runs `Canon` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Canon', [T],
                GridTypes(LibType.POSITION, LibType.OFFSET),
-               {'equiv': Columns((T, T, ), False), 'edge': Columns((T, T, ), False), 'rep': Columns((T, T, ), False), 'id': Columns((T, LibType.IDENT, ), False)},
+               {'equiv': Columns((T, T, ), False), 'edge': Columns((T, T, ), False), 'id': Columns((T, LibType.IDENT, ), False)},
                {'equiv': equiv, 'edge': edge},
-               ['rep', 'id'], sizes)
-    return CanonRows(got['rep'], got['id'])
+               ['id'], sizes)
+    return CanonRows(got['id'])
 
 
 class DemonstrationConsistencyRows(NamedTuple):
@@ -771,7 +770,6 @@ def OffsetInvariance(Key: TypeArg, Val: TypeArg, *, sizes: Mapping[PyValue, Size
 class WallpaperRows(NamedTuple):
     """The output relations of `Wallpaper` (programs/lib/cells.dl)."""
 
-    symmetry: Relation
     action: Relation
 
 
@@ -779,10 +777,10 @@ def Wallpaper(Key: TypeArg, Val: TypeArg, *, sizes: Mapping[PyValue, Size] | Non
     """Runs `Wallpaper` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Wallpaper', [Key, Val],
                GridTypes(LibType.POSITION, LibType.OFFSET),
-               {'transform': Columns((LibType.D4, ), False), 'cell': Columns((Key, LibType.POSITION, Val, ), True), 'grid': Columns((Key, LibType.POSITION, ), True), 'period': Columns((Key, LibType.AXIS, Primitive.NUMBER, ), True), 'symmetry': Columns((Key, LibType.D4, LibType.OFFSET, ), True), 'action': Columns((Key, LibType.POSITION, LibType.POSITION, ), True)},
+               {'transform': Columns((LibType.D4, ), False), 'cell': Columns((Key, LibType.POSITION, Val, ), True), 'grid': Columns((Key, LibType.POSITION, ), True), 'period': Columns((Key, LibType.AXIS, Primitive.NUMBER, ), True), 'action': Columns((Key, LibType.POSITION, LibType.POSITION, ), True)},
                {'transform': transform, 'cell': cell, 'grid': grid, 'period': period},
-               ['symmetry', 'action'], sizes)
-    return WallpaperRows(got['symmetry'], got['action'])
+               ['action'], sizes)
+    return WallpaperRows(got['action'])
 
 
 class OccurrencesRows(NamedTuple):

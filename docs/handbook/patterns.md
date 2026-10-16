@@ -117,8 +117,8 @@
 - An id-keyed chart holds one independent assembly per id, the id passing through by identity (150deff5 `piece_member`).
 - The transform is type-directed: `Box`, `Position`, and `Offset` via `apply`; `Dir`, `DiagDir`, and `Dir8` via the direction actions; `Axis` and `DiagAxis` via the induced swap; `Color`, `number`, and `Ident` by identity.
 - Scope is orientation only: translation freedom stays with `Occurrences` placement anchors, color freedom with instantiation keying.
-- The determination writes the chart under its placed name, in a pose of its own, and the runner compares up to pose.
-    - An ident-free block must be one joint D4 image of the stored assembly.
+- The determination writes the chart under its placed name, as the copies of the assembly that [Determination](docs/handbook/solver-file.md#determination) gives, each in a pose of its own, and the runner compares each copy up to pose.
+    - Each copy of an ident-free block must be one joint D4 image of the stored assembly.
     - An id-keyed chart is compared per id, composed with id renaming.
 
 ## Position remapping via `GRID` id join

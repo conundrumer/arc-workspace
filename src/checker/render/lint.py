@@ -89,6 +89,10 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
         "fold it into the program"),
     LintSentence.DETERMINE_SCHEMA: lambda n, _: mctx(
         "declare the determination relation as `{0}`").format(*n),
+    LintSentence.DETERMINE_KEYS: lambda n, _: mctx(
+        "the determination relations {1} of the `RIGID` block `{0}` lead "
+        "with different key columns; give them the same key columns, or "
+        "none").format(n[0], _ticked(n[1:])),
     LintSentence.DETERMINE_PREDICTION: lambda n, _: mctx(
         "the clauses of `{0}` keep a guessed value by the test `{1}`, which "
         "reads facts of the inputs and of the outputs together; see "

@@ -7,12 +7,18 @@ from checker.judged import NO_TASK
 from checker.payloads.branches import DeterminationDiffPayload
 from checker.render import finding_lines, in_line_order
 from checker.render.locations import line_text
+from checker.render.values import _ticked
 from checker.render.branches import diff_line, differing, finding_text
 from checker.runs import NoTask
 from controlled_markdown import mctx
 from engine.program import dotted
 from solver.aggregate import Solver
-from solver.determine import Determined, DetermineResult, NoDetermine
+from solver.determine import (
+    Determined,
+    DetermineResult,
+    KeysOff,
+    NoDetermine,
+)
 
 
 def determination_lines(solver: Solver, result: DetermineResult | NoTask,
@@ -25,6 +31,12 @@ def determination_lines(solver: Solver, result: DetermineResult | NoTask,
         return [mctx("determination: no Determine comp")]
     if isinstance(result, NoTask):
         return [mctx("determination: ") + finding_text(solver, NO_TASK)]
+    if isinstance(result, KeysOff):
+        return [mctx("determination: not run, since the determination "
+                     "relations of a `RIGID` block do not lead with the "
+                     "same key columns ({blocks}); see the `determine "
+                     "schema` lint finding").format(
+            blocks=_ticked(result.blocks))]
     lines: list[str] = []
     if isinstance(result, Determined):
         scopes = {u.id: u.scope for u in solver.program.units}

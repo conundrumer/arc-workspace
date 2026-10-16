@@ -122,7 +122,7 @@
 }
 
 /// One id per class of an equivalence relation, given whole or as a relation
-/// that generates it. The representative is arbitrary but deterministic.
+/// that generates it.
 ///
 /// Requires: an element stands in only one of `equiv` and `edge`; the two
 /// classes of an element in both do not merge.
@@ -143,18 +143,17 @@
     _label(B, L) :- _label(A, L), ( edge(A, B) ; edge(B, A) ).
     _label(A, L) <= _label(A, L2) :- ord(L) > ord(L2).
 
-    /// The representative of each element's class; a self-paired row marks a
-    /// representative.
-    .decl rep(a: T, b: T)
-    rep(A, B) :- equiv(A, B).
-    rep(A, B) :- _label(A, B).
-    rep(A, B) <= rep(A, B2) :- ord(B) > ord(B2).
+    // The member of least `ord` of each element's class.
+    .decl _rep(a: T, b: T)
+    _rep(A, B) :- equiv(A, B).
+    _rep(A, B) :- _label(A, B).
+    _rep(A, B) <= _rep(A, B2) :- ord(B) > ord(B2).
 
     .init _ident = IdentOf<T>
-    _ident.value(B) :- rep(_, B).
+    _ident.value(B) :- _rep(_, B).
 
     .decl id(a: T, id: Ident)
-    id(A, Id) :- rep(A, B), _ident.id(B, Id).
+    id(A, Id) :- _rep(A, B), _ident.id(B, Id).
 }
 
 /// The alternatives of each key's catalog that a demonstrated pair

@@ -76,8 +76,6 @@
 .type Seed = [w: Way, a: Position]
 
 // Two endpoints.
-.type Ends = [a: Position, b: Position]
-
 // A route search from endpoint a to endpoint b.
 .type Pair = [w: Way, a: Position, b: Position]
 
@@ -145,12 +143,8 @@ end(P) :- in(P, Col), params.endpoint_color(Col).
 .decl open(pa: Passable, p: Position)
 
 // Each two endpoints, in both orders.
-.init pairing = Canon<Ends>
-pairing.edge([A, B], [B, A]) :- end(A), end(B), A != B.
-
-// Each two endpoints, taken once.
 .decl pair(a: Position, b: Position)
-pair(A, B) :- pairing.rep([A, B], [A, B]).
+pair(A, B) :- end(A), end(B), A != B.
 
 // A third endpoint.
 .decl crowded()
@@ -284,12 +278,21 @@ broken_walk(W, Res) :-
     ties.assign(W, Res, [A, B, N], [A, B, V]), ties.assign(W, Res, [A, B, N2], [A, B, V2]),
     next([W, A, B], N, N2), !steps.pred([W, A, B], V2, V).
 
+// A cell a resolution's walk from a to b crosses.
+.decl walk_cell(w: Way, res: TiebreakResolution, a: Position, b: Position, x: Position)
+walk_cell(W, Res, A, B, X) :- ties.assign(W, Res, [A, B, _], [A, B, [X, _]]).
+
+// A resolution whose walk from a to b crosses a cell its walk from b to a
+// does not: the two orders of one pair take two walks.
+.decl split_pair(w: Way, res: TiebreakResolution)
+split_pair(W, Res) :- walk_cell(W, Res, A, B, X), !walk_cell(W, Res, B, A, X).
+
 .decl walked(w: Way)
 walked(W) :- stop([W, _, _], _, _).
 
 resolved([C, Pa, $TieAny(), G, E], Res) :-
     impl_choice([C, Pa, $TieAny(), G, E]), !undefined([C, Pa, $TieAny(), G, E]),
-    ( ties.resolution([C, Pa], Res), !broken_walk([C, Pa], Res)
+    ( ties.resolution([C, Pa], Res), !broken_walk([C, Pa], Res), !split_pair([C, Pa], Res)
     ; !walked([C, Pa]), Res = $End()        // no walk has an inner cell
     ).
 

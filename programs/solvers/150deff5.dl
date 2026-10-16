@@ -74,23 +74,19 @@ out(P, Col) :-
     small.cand(C, N) :- size.tally([_, C, _], N).
 
     // A color's smallest regions are lone pieces — a merged region holds at
-    // least two. One witness region per color serves as the chart, in its
+    // least two. Each lone piece is one copy of its color's chart, in its
     // own pose.
-    .init pick = Canon<Region>
-    pick.equiv([E, C, Id], [E2, C, Id2]) :-
-        size.tally([E, C, Id], N), small.low(C, N),
-        size.tally([E2, C, Id2], N2), small.low(C, N2).
-
     .init bbox = Bbox<Region>
-    bbox.cell(R, P) :- pick.rep(R, R), region_cell(R, P).
+    bbox.cell([E, C, Id], P) :-
+        size.tally([E, C, Id], N), small.low(C, N), region_cell([E, C, Id], P).
 
     // Each piece's id, from the color it paints.
     .init color_id = IdentOf<Color>
     color_id.value(C) :- changed(_, _, C).
 
-    .decl piece_member(id: Ident, p: Position)
-    piece_member(I, P_inner) :-
-        bbox.cell([E, C, Id], P), bbox.box([E, C, Id], B), crop(P, B, P_inner),
+    .decl piece_member(e: Example, col: Color, region: Ident, id: Ident, p: Position)
+    piece_member(E, C, R, I, P_inner) :-
+        bbox.cell([E, C, R], P), bbox.box([E, C, R], B), crop(P, B, P_inner),
         color_id.id(C, I).
 
     .decl piece_color(id: Ident, col: Color)

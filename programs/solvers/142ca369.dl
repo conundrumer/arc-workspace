@@ -171,26 +171,23 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
         diag_opposite(D, D_back), neighbor(Q, D_back, P_l),  // one step back along the ray
         ex_in(E, P_l, Col).                                  // the ink behind it
 
-    // The launching marker: the launch cell's same-color component. One
-    // witness marker serves as the chart, in its own pose.
+    // The launching marker: the launch cell's same-color component. Each
+    // launching marker is one copy of the chart, in its own pose.
     .type EP = [e: Example, p: Position]
     .init flood = Reach<EP>
     flood.node([E, P_l], P) :- launch_cell(E, P_l, _, Col), ex_in(E, P, Col).
     flood.seed([E, P_l], P_l) :- launch_cell(E, P_l, _, _).
 
-    .init pick = Canon<EP>
-    pick.equiv([E, P_l], [E2, P_l2]) :-
-        launch_cell(E, P_l, _, _), launch_cell(E2, P_l2, _, _).
-
     .init bbox = Bbox<EP>
-    bbox.cell(K, P) :- pick.rep(K, K), flood.reach(K, P).
+    bbox.cell(K, P) :- flood.reach(K, P).
 
-    .decl marker_glyph(p: Position)
-    marker_glyph(P_inner) :- bbox.cell(K, P), bbox.box(K, B), crop(P, B, P_inner).
+    .decl marker_glyph(e: Example, p_l: Position, p: Position)
+    marker_glyph(E, P_l, P_inner) :-
+        bbox.cell([E, P_l], P), bbox.box([E, P_l], B), crop(P, B, P_inner).
 
-    .decl marker_launch(p: Position)
-    marker_launch(P_inner) :- bbox.box([_, P_l], B), crop(P_l, B, P_inner).
+    .decl marker_launch(e: Example, p_l: Position, p: Position)
+    marker_launch(E, P_l, P_inner) :- bbox.box([E, P_l], B), crop(P_l, B, P_inner).
 
-    .decl marker_aim(d: DiagDir)
-    marker_aim(D) :- pick.rep([E, P_l], [E, P_l]), launch_cell(E, P_l, D, _).
+    .decl marker_aim(e: Example, p_l: Position, d: DiagDir)
+    marker_aim(E, P_l, D) :- launch_cell(E, P_l, D, _).
 }

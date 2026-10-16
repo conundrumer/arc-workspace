@@ -21,7 +21,7 @@ from checker.lint.view import (
 from checker.runs import Runs
 from engine import Resolved
 from engine.program import (
-    POSE_COLUMN,
+    Column,
     FunctorDecl,
     RelationDecl,
     own,
@@ -31,7 +31,12 @@ from solver.category import Category
 from solver.aggregate import (
     Solver,
 )
-from solver.determine import rigid_parameters
+from solver.determine import (
+    block_key_columns,
+    determine_columns,
+    off_key_blocks,
+    rigid_parameters,
+)
 from solver.vocabulary import (
     DETERMINE,
     DETERMINE_SCOPE,
@@ -98,13 +103,16 @@ def _reads_parse(v: View) -> bool:
         "`Determine` contains the determination's clauses as one relation "
         "per parameter whose value they give, with the parameter's name and "
         "schema")
+@quotes("solver-file.md", "Determination",
+        "The determination relations of a `RIGID` block's parameters may "
+        "lead with the same key columns, before each parameter's schema.")
 def check_determine_schema(solver: Solver, runs: Runs) -> list[Finding]:
     """A relation of `Determine` that takes a Params parameter's name and
-    whose columns differ from that parameter's in name or type, the pose
-    column of a parameter a RIGID call stores left out: the determination
-    writes such a parameter's chart in a pose of its own (patterns.md, under
-    "`RIGID` — parameter relations coupled as a rigid assembly"). Serves the
-    purest form."""
+    whose columns, after the key columns that may lead it where a RIGID call
+    stores the parameter, differ from `determine_columns` in name or type;
+    and each RIGID block whose relations of `Determine` do not lead with
+    the same key columns, at its first such relation. Serves the purest
+    form."""
     v = view(solver, runs)
     params = {p.name: p for p in solver.params.parameters}
     rigid = rigid_parameters(solver)
@@ -113,16 +121,29 @@ def check_determine_schema(solver: Solver, runs: Runs) -> list[Finding]:
         p = params.get(d.name)
         if d.scope != DETERMINE_SCOPE or not own(d.span) or p is None:
             continue
-        want = tuple(c for i, c in enumerate(p.columns)
-                     if p.name not in rigid or i != POSE_COLUMN)
-        if [(c.name, c.type.text) for c in d.columns] \
-                == [(c.name, c.type.text) for c in want]:
+        want = determine_columns(p, rigid)
+        width = len(d.columns) - len(want) if p.name in rigid else 0
+        if width >= 0 and _named(d.columns[width:]) == _named(want):
             continue
         stored = v.decls.get(p.declaration)
         if not isinstance(stored, RelationDecl):
             raise ValueError(f"the parameter `{p.name}` has no relation "
                              "declaration")
+        lead = d.columns[:max(width, 0)]
         out.append(lint(d.span.first, LintNamed(
             Category.DETERMINE_SCHEMA, LintSentence.DETERMINE_SCHEMA,
-            (solver.engine.text(replace(stored, columns=want)),))))
+            (solver.engine.text(replace(stored, columns=lead + want)),))))
+    keys = block_key_columns(solver)
+    for block in off_key_blocks(solver):
+        decls = [d for d in v.program.relations
+                 if d.scope == DETERMINE_SCOPE and d.name in keys[block]]
+        first = min(decls, key=lambda d: d.span.first)
+        out.append(lint(first.span.first, LintNamed(
+            Category.DETERMINE_SCHEMA, LintSentence.DETERMINE_KEYS,
+            (block, *sorted(keys[block])))))
     return out
+
+
+def _named(columns: tuple[Column, ...]) -> tuple[tuple[str, str], ...]:
+    """Each column's name and type."""
+    return tuple((c.name, c.type.text) for c in columns)

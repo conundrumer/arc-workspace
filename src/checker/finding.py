@@ -229,6 +229,7 @@ class LintSentence(StrEnum):
     LIB_CODE = "lib code"
     PARSE_UNREAD = "parse unread"
     DETERMINE_SCHEMA = "determine schema"
+    DETERMINE_KEYS = "determine keys"
     DETERMINE_PREDICTION = "determine prediction"
     FAMILY_NOT_PARSED = "family not parsed"
     FAMILY_RECORD = "family record"

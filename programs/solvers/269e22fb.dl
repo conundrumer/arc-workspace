@@ -74,17 +74,11 @@ out(P, Col) :-
     chart(R, P, Col).      // shown whole
 
 .comp Determine {
-    // Every output is the whole chart, so one of them serves, in its own pose.
-    .init pick = Canon<Example>
-    pick.equiv(E, E2) :- ex_out(E, _, _), ex_out(E2, _, _).
-
-    .decl witness(p: Position, col: Color)
-    witness(P, Col) :- pick.rep(E, E), ex_out(E, P, Col).
-
-    // Each of the witness's two colors gives one class of cells.
+    // Every output is the whole chart, each one copy of it, in its own pose.
+    // Each of an output's two colors gives one class of cells.
     .init class_id = IdentOf<Color>
-    class_id.value(Col) :- witness(_, Col).
+    class_id.value(Col) :- ex_out(_, _, Col).
 
-    .decl chart_cell_class(p: Position, k: Ident)
-    chart_cell_class(P, K) :- witness(P, Col), class_id.id(Col, K).
+    .decl chart_cell_class(e: Example, p: Position, k: Ident)
+    chart_cell_class(E, P, K) :- ex_out(E, P, Col), class_id.id(Col, K).
 }

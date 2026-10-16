@@ -113,7 +113,7 @@ spread.edge([Pan, P], [Pan, Q]) :-
 
 .init canvas = Unanimous<PanelCell, Color>
 canvas.item([Pan, P_inner], Col) :-
-    mark(Pan, P_mark, Col), spread.rep([Pan, P_mark], R), spread.rep([Pan, P_inner], R).
+    mark(Pan, P_mark, Col), spread.id([Pan, P_mark], Id), spread.id([Pan, P_inner], Id).
 
 predict($Extend(), Pan, P_inner, Col) :-
     pval(Pan, P_inner, V), params.hole(H),

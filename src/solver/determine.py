@@ -13,11 +13,12 @@ from engine import (
     Row,
     Rows,
     RunFailure,
+    RunResult,
     Tuples,
     UnitId,
     Value,
 )
-from engine.program import POSE_COLUMN, RigidCall
+from engine.program import POSE_COLUMN, Column, RelationDecl, RigidCall
 from engine.quotes import quotes
 from solver.aggregate import Solver, has_determine
 from solver.cycles import cyclic_components
@@ -29,6 +30,7 @@ from solver.value_order import row_key
 from solver.variant_limits import over_examples, variant_limits
 from solver.vocabulary import (
     DETERMINE,
+    DETERMINE_SCOPE,
     IDENT,
     INPUT,
     PARAMS,
@@ -86,7 +88,16 @@ class NoDetermine:
     """The solver has no `Determine` comp."""
 
 
-type DetermineResult = Determined | NoDetermine | RunFailure
+@dataclass(frozen=True)
+class KeysOff:
+    """The determination relations of each of `blocks`, RIGID blocks, do
+    not lead with the same key columns (`off_key_blocks`), so no copy of a
+    block's assembly is known and the determination does not run."""
+
+    blocks: tuple[str, ...]
+
+
+type DetermineResult = Determined | NoDetermine | KeysOff | RunFailure
 
 
 @dataclass(frozen=True)
@@ -142,8 +153,10 @@ def determine(engine: Engine, solver: Solver, limits: Limits,
     Determine relations stand in for the block's charts, the program places
     them, and the parameters agree where some pose of one side gives the
     rows of every parameter of the block that the other side gives at some
-    pose (`_same_pose_orbits`). A diff of such a parameter holds its placed
-    rows.
+    pose (`_same_pose_orbits`). A block whose Determine relations lead with
+    key columns gives one copy of the assembly per key, each placed and
+    compared on its own (`_compare_copies`). A diff of such a parameter
+    holds its placed rows.
     The runs take `limits` once per example; a variant's runs, where the
     solver's own determination spent `measured` CPU seconds, take
     `variant_limits` of those. A solver whose task has no task file is a
@@ -163,6 +176,9 @@ def determine(engine: Engine, solver: Solver, limits: Limits,
     determined = [p for p in solver.params.parameters if p.determined]
     if params_inst is None or not determined:
         return Determined((), (), (), 0.0)
+    off = off_key_blocks(solver)
+    if off:
+        return KeysOff(off)
     outputs: list[RelationName] = []
     for p in determined:
         outputs += [RelationName((det_name,), p.name),
@@ -185,38 +201,49 @@ def determine(engine: Engine, solver: Solver, limits: Limits,
                   for p in determined
                   if IDENT in [c.type.text for c in p.columns]}
     charts = _charts(solver, [p.name for p in determined if p.name in rigid])
-    if charts:
-        placed = program
-        for name, chart in charts.items():
-            placed = engine.fix_relation(
-                placed, parameter(solver, chart),
-                derived[name])
-        again = engine.run(placed, inputs, [
-            parameter(solver, n) for n in charts], each)
+    keys = block_key_columns(solver)
+    blocks = rigid_blocks(solver)
+    widths = {n: len(keys[blocks[n]][n]) for n in charts}
+    keyed = {n: c for n, c in charts.items() if widths[n]}
+    whole = {n: c for n, c in charts.items() if not widths[n]}
+    if whole:
+        again = _place(engine, solver, program, inputs, each, whole, derived)
         if not isinstance(again, Tuples):
             return again
         spent += again.cpu_seconds
-        for name in charts:
-            derived[name] = again.relations[
-                parameter(solver, name)]
-    placed_ids = frozenset(n for n in charts if n in ident_cols)
-    ids_agree = _signatures(stored, ident_cols, placed_ids) \
-        == _signatures(derived, ident_cols, placed_ids)
+        for name in whole:
+            derived[name] = again.relations[parameter(solver, name)]
+    rest = {n: c for n, c in ident_cols.items() if n not in keyed}
+    placed_ids = frozenset(n for n in whole if n in ident_cols)
+    ids_agree = _signatures(stored, rest, placed_ids) \
+        == _signatures(derived, rest, placed_ids)
     posed = _same_pose_orbits(
-        solver, {n: c for n, c in charts.items() if n not in ident_cols},
+        solver, {n: c for n, c in whole.items() if n not in ident_cols},
         stored, derived)
     diffs: list[ParamDiff] = []
     reproduced: list[str] = []
+    copied = _copies(solver, keyed, widths, derived)
+    for block in copied.values():
+        got_block = _compare_copies(engine, solver, program, inputs, each,
+                                    block, stored, ident_cols)
+        if not isinstance(got_block, _Compared):
+            return got_block
+        spent += got_block.cpu_seconds
+        diffs += got_block.diffs
+        reproduced += got_block.reproduced
     for p in determined:
+        if p.name in keyed:
+            continue
         s, d = set(stored[p.name]), set(derived[p.name])
         if p.name in ident_cols and ids_agree or s == d \
                 or p.name in posed:
             reproduced.append(p.name)
             continue
-        diffs.append(ParamDiff(
-            p.name, tuple(r for r in stored[p.name] if r not in d),
-            tuple(r for r in derived[p.name] if r not in s),
-            p.name in rigid))
+        diffs.append(_diff(p.name, stored[p.name], derived[p.name],
+                           p.name in rigid))
+    order = [p.name for p in determined]
+    diffs.sort(key=lambda d: order.index(d.parameter))
+    reproduced.sort(key=order.index)
     return Determined(tuple(diffs), tuple(reproduced),
                       cycles(Graph(program, engine), params_inst.name,
                              det_name, [p.name for p in determined]), spent)
@@ -270,6 +297,12 @@ def _blocks(solver: Solver) -> dict[str, tuple[str, str]]:
     return out
 
 
+def rigid_blocks(solver: Solver) -> dict[str, str]:
+    """Each relation a RIGID call in `Params` binds, with its block
+    (`_blocks`)."""
+    return {n: block for n, (block, _chart) in _blocks(solver).items()}
+
+
 def rigid_charts(solver: Solver) -> dict[str, str]:
     """Each relation a RIGID call in `Params` binds, with the chart
     relation that holds its facts (`_blocks`)."""
@@ -280,6 +313,162 @@ def _charts(solver: Solver, names: Sequence[str]) -> dict[str, str]:
     """The chart relation of each of `names` that a RIGID call binds."""
     blocks = _blocks(solver)
     return {n: blocks[n][1] for n in names if n in blocks}
+
+
+def determine_columns(p: Parameter, rigid: frozenset[str]
+                      ) -> tuple[Column, ...]:
+    """The columns of `p`'s determination relation after its key columns:
+    its own, the pose column of a parameter of `rigid` left out, since the
+    determination writes such a parameter's chart in a pose of its own
+    (patterns.md, under "`RIGID` — a stored shape and its attached parts,
+    in every orientation")."""
+    return tuple(c for i, c in enumerate(p.columns)
+                 if p.name not in rigid or i != POSE_COLUMN)
+
+
+def determine_relation(solver: Solver, name: str) -> RelationDecl | None:
+    """The relation `Determine` declares under `name`, None where it
+    declares none."""
+    return next((d for d in solver.program.relations
+                 if d.scope == DETERMINE_SCOPE and d.name == name), None)
+
+
+def block_key_columns(solver: Solver
+                      ) -> dict[str, dict[str, tuple[Column, ...]]]:
+    """Each RIGID block's relations of `Determine`, with the key columns
+    that lead each: the columns before as many as the parameter's columns,
+    the pose column left out, count (`determine_columns`); none where the
+    relation has no more columns than those (solver-file.md, under
+    "Determination")."""
+    rigid = rigid_parameters(solver)
+    blocks = rigid_blocks(solver)
+    params = {p.name: p for p in solver.params.parameters}
+    out: dict[str, dict[str, tuple[Column, ...]]] = {}
+    for d in solver.program.relations:
+        if d.scope != DETERMINE_SCOPE or d.name not in blocks \
+                or d.name not in params:
+            continue
+        width = len(d.columns) - len(determine_columns(params[d.name], rigid))
+        out.setdefault(blocks[d.name], {})[d.name] = d.columns[:max(0, width)]
+    return out
+
+
+def off_key_blocks(solver: Solver) -> tuple[str, ...]:
+    """The RIGID blocks whose relations of `Determine` do not lead with the
+    same key columns, by name and type (`block_key_columns`), in name
+    order."""
+    return tuple(sorted(
+        block for block, keys in block_key_columns(solver).items()
+        if len({tuple((c.name, c.type.text) for c in k)
+                for k in keys.values()}) > 1))
+
+
+type _Copy = dict[str, Rows]
+
+
+def _copies(solver: Solver, keyed: Mapping[str, str],
+            widths: Mapping[str, int], derived: Mapping[str, Rows]
+            ) -> dict[str, list[_Copy]]:
+    """The copies of the assembly each block of `keyed` determines, in key
+    order, copies with equal rows once: the rows of the block's relations
+    at one key, the key columns left out. A block with no row gives one
+    copy with no rows, which compares as an empty relation does."""
+    blocks = _blocks(solver)
+    by_block: dict[str, list[str]] = {}
+    for name in keyed:
+        by_block.setdefault(blocks[name][0], []).append(name)
+    out: dict[str, list[_Copy]] = {}
+    for block, names in by_block.items():
+        at: dict[tuple[object, ...], dict[str, list[Row]]] = {}
+        for name in names:
+            w = widths[name]
+            for row in derived[name]:
+                at.setdefault(row_key(row[:w]), {n: [] for n in names})[
+                    name].append(row[w:])
+        copies: list[_Copy] = []
+        for key in sorted(at):
+            copy = {n: tuple(sorted(rows, key=row_key))
+                    for n, rows in at[key].items()}
+            if copy not in copies:
+                copies.append(copy)
+        out[block] = copies or [{n: () for n in names}]
+    return out
+
+
+@dataclass(frozen=True)
+class _Compared:
+    """The parameters of a block whose copies are compared, and the CPU
+    seconds of the runs that placed them."""
+
+    diffs: tuple[ParamDiff, ...]
+    reproduced: tuple[str, ...]
+    cpu_seconds: float
+
+
+def _place(engine: Engine, solver: Solver, program: Program,
+           inputs: Mapping[RelationName, InputValue], limits: Limits,
+           charts: Mapping[str, str], rows: Mapping[str, Rows]
+           ) -> RunResult:
+    """The placed rows of each of `charts`, where each chart holds the rows
+    `rows` gives for its parameter."""
+    placed = program
+    for name, chart in charts.items():
+        placed = engine.fix_relation(placed, parameter(solver, chart),
+                                     rows[name])
+    return engine.run(placed, inputs, [parameter(solver, n) for n in charts],
+                      limits)
+
+
+def _compare_copies(engine: Engine, solver: Solver, program: Program,
+                    inputs: Mapping[RelationName, InputValue],
+                    limits: Limits, copies: Sequence[_Copy],
+                    stored: Mapping[str, Rows], ident_cols: Mapping[str, int]
+                    ) -> _Compared | RunFailure:
+    """Each copy of a block's assembly placed and compared with the stored
+    assembly, up to pose, and per id with id renaming for an id-keyed chart:
+    the block is reproduced where every copy agrees and each stored id's
+    signature is that of an id of some copy. The runs stop at the first copy
+    that does not agree, whose placed rows its diffs hold."""
+    names = list(copies[0])
+    charts = _charts(solver, names)
+    ids = {n: c for n, c in ident_cols.items() if n in charts}
+    placed_ids = frozenset(ids)
+    poseable = {n: c for n, c in charts.items() if n not in ids}
+    want = _id_signatures(stored, ids, placed_ids)
+    seen: set[tuple[_Key, ...]] = set()
+    spent = 0.0
+    for copy in copies:
+        again = _place(engine, solver, program, inputs, limits, charts, copy)
+        if not isinstance(again, Tuples):
+            return again
+        spent += again.cpu_seconds
+        placed = {n: again.relations[parameter(solver, n)] for n in names}
+        mine = set(_id_signatures(placed, ids, placed_ids).values())
+        ids_agree = mine <= set(want.values())
+        posed = _same_pose_orbits(solver, poseable, stored, placed)
+        bad = [n for n in names
+               if not (n in ids and ids_agree or n in posed
+                       or set(stored[n]) == set(placed[n]))]
+        if bad:
+            return _Compared(
+                tuple(_diff(n, stored[n], placed[n], True) for n in bad),
+                tuple(n for n in names if n not in bad), spent)
+        seen |= mine
+    unseen = {id_ for id_, sig in want.items() if sig not in seen}
+    bad = [n for n in ids if any(r[ids[n]] in unseen for r in stored[n])]
+    return _Compared(
+        tuple(ParamDiff(n, tuple(r for r in stored[n]
+                                 if r[ids[n]] in unseen), (), True)
+              for n in bad),
+        tuple(n for n in names if n not in bad), spent)
+
+
+def _diff(name: str, stored: Rows, derived: Rows, rigid: bool
+          ) -> ParamDiff:
+    """The rows each side holds that the other does not."""
+    s, d = set(stored), set(derived)
+    return ParamDiff(name, tuple(r for r in stored if r not in d),
+                     tuple(r for r in derived if r not in s), rigid)
 
 
 def _same_pose_orbits(solver: Solver, charts: Mapping[str, str],
@@ -317,6 +506,14 @@ type _Key = tuple[object, ...]
 def _signatures(rows_by_param: Mapping[str, Rows],
                 ident_cols: Mapping[str, int],
                 placed: frozenset[str]) -> list[tuple[_Key, ...]]:
+    """The sorted signatures of `_id_signatures`."""
+    return sorted(_id_signatures(rows_by_param, ident_cols, placed).values())
+
+
+def _id_signatures(rows_by_param: Mapping[str, Rows],
+                   ident_cols: Mapping[str, int],
+                   placed: frozenset[str]
+                   ) -> dict[Value, tuple[_Key, ...]]:
     """Each id's rows across the parameters, the id left out, as a sorted
     multiset: two sides with equal signatures differ by a renaming of ids
     alone. A parameter of `placed`, stored by a RIGID call, holds placed rows,
@@ -341,7 +538,7 @@ def _signatures(rows_by_param: Mapping[str, Rows],
         for id_, at in poses.items():
             orbit = sorted({tuple(sorted(rows)) for rows in at.values()})
             by_id.setdefault(id_, []).append((name, tuple(orbit)))
-    return sorted(tuple(sorted(rows)) for rows in by_id.values())
+    return {id_: tuple(sorted(rows)) for id_, rows in by_id.items()}
 
 
 def cycles(graph: Graph, params_instance: str, determine_instance: str,

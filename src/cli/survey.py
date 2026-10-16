@@ -33,6 +33,7 @@ from cli.common import (
     command_solver,
     compiles,
     engine,
+    keys_off_lines,
     missing,
     solver_path,
     stamp,
@@ -71,7 +72,8 @@ def cmd_sweep(arg: str, cap: int = MAX_CANDIDATES,
     if runs is None:
         return 2
     report = survey_sweep(runs.solver, runs, cap, sweep_limit)
-    print("\n".join(render_sweep(runs.solver, report)))
+    print("\n".join(keys_off_lines(runs)
+                    + render_sweep(runs.solver, report)))
     return 0
 
 
@@ -80,7 +82,8 @@ def cmd_deletions(arg: str) -> int:
     if runs is None:
         return 2
     result = survey_deletions(runs.solver, runs)
-    print("\n".join(render_deletions(runs.solver, result)))
+    print("\n".join(keys_off_lines(runs)
+                    + render_deletions(runs.solver, result)))
     return 0 if isinstance(result, DeletionReport) else 1
 
 
@@ -110,6 +113,10 @@ def cmd_determination_plan(arg: str, verdicts: bool = False) -> int:
     runs = _runs(arg, task=True)
     if runs is None:
         return 2
+    off = keys_off_lines(runs)
+    if off:
+        print("\n".join(off))
+        return 1
     print("\n".join(plan_lines(runs, solver_path(arg), stamp(), verdicts)))
     return 0
 
