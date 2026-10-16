@@ -10,6 +10,7 @@
     - The order of instructions that edit the same part of a file.
     - The outcome of [Process notes](prompts/agents/notes/process.md) in the Motivation.
     - The `Design` of a `change` to code or to the agent-facing documents, with the Scope covering each file it gives.
+    - The `Interactions:` list of a `Design`.
     - The readers a rule's stated scope covers.
     - The Intent items as requirements, and their traces.
     - Each part's estimated cost and gain, on each model an agent the design acts on runs on from the merge, where the model changes the estimate.

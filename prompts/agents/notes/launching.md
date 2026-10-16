@@ -24,7 +24,8 @@
 - Before you give another agent a draft `change` ticket that you filed or revised, in your reply or otherwise, cut from each of its sections each claim the draft's outcome does not rest on, and give each claim left no more precision than that outcome rests on. Then check each claim left about the current state against that state.
     * inline: #draft-outcome
     * comment: On draft 2-525, ticket analyst a040f7b84d2e02209 wrote two such claims that a docstring and a help text it had printed before it wrote the draft disprove, and each took a ticket reviewer's round: the Intent of ticket 2-530.
-- Split work between agents where the split saves at least 30 minutes of wall-clock per about $5 of token cost of its overhead.
+- Split work off to another agent where what the split saves outweighs its overhead. A split can save wall-clock, tokens, or your own context; its overhead is the documents the new agent loads before it starts, and the brief.
+    * comment: The user's words, session 7fd429fb, 2026-10-16, on a fixed ratio of wall-clock to token cost: "that seems overly rigid", "also saves on context rot", and on the overhead: "that sounds right": ticket 6-1416.
     - Token cost is the list price of the tokens a run uses: each request's uncached input, cache writes, cache reads and output, each at its own price on the model that ran the request. `uv run python scripts/profile_runs.py <agent id>` prints a run's token cost, and `--price-at <model>` reprices it at another model.
 - Take each token cost you give or write into a brief from `profile_runs`, and give a repriced token cost as repriced. Take each price you give from the price table of [token_prices.py](scripts/token_prices.py).
 - Act on each item that an agent you launched gives as unfinished, by its reason:

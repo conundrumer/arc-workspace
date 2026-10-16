@@ -6,7 +6,6 @@ and beside each file, its churn. `HELP`, which `--help` prints, gives the
 usage form and the counting rules."""
 
 import argparse
-import re
 import sys
 import textwrap
 import time
@@ -21,14 +20,12 @@ from handbook.paths import scripts_importable
 scripts_importable()
 
 from file_ticket import print_undecided  # noqa: E402
-from ticket_form import section, section_head  # noqa: E402
+from ticket_paths import scope_paths  # noqa: E402
 from ticket_reads import read_tickets  # noqa: E402
 from spends import union_seconds  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 
 from operations.merging import CONFLICT_OPENING, RERUN_OPENING, conflict_note_paths  # noqa: E402
-from operations.task_work import task_paths  # noqa: E402
-from solver.vocabulary import SOLVER_SUFFIX  # noqa: E402
 from operations.state import LogLine, Ticket  # noqa: E402
 from operations.tracker import runs  # noqa: E402
 from operations.worktrees import BASE  # noqa: E402
@@ -43,7 +40,7 @@ HELP = mctx("""
     - The command reads the ticket tracker of the main tree and prints, for each cause below, a heading with the cause's sum and then its rows, the largest first.
     - `--since <time>`, with `<time>` in the form `{form}` in UTC, sets the window from that time to now: each span is cut to the window, and only the conflict lines in it count. With no `--since`, the window is the whole log.
     - `depends-on` waits: one row per path that a `change` ticket's `## Scope` gives, with the hours changes waited on it and the number of changes that waited on it.
-        - The paths a Scope gives are each path it gives with a `/` or at the root of the main tree, and the witness file of each solver it gives.
+        - The paths a Scope gives are each path it gives with a `/` or at the root of the main tree, with no `:<line>` or `:<first>-<last>` after it, and the witness file of each solver it gives.
         - A wait is a span in which a `change` ticket stood under `tickets/open/` and a ticket its `depends-on` gives stood outside `tickets/closed/`, charged to each path both Scopes give, or to the row `{no_shared}` where they give none in common.
         - The wait hours of a path are change-hours: the overlapping spans of one change count once, and those of different changes add up.
     - Rebase conflicts: each log line of a `change` ticket whose note opens with `{opening}` or `{rerun}`, charged to each path it gives, or to the row `{not_recorded}` where it gives none.
@@ -69,24 +66,6 @@ WAITS_ON_CHANGE = mctx("waits on change")
 DEPENDS_ON_LINK = mctx("depends on")
 NO_WAIT = mctx("{number} moves into `{status}` at {time} with a note that opens with no wait")
 NEITHER = mctx("{number} waits at {time} on neither the user nor a change")
-
-
-def scope_paths(t: Ticket, root: Path) -> frozenset[str]:
-    """The paths the `Scope` of `t` gives, in backticks or as link targets:
-    each that is not absolute and holds a `/` or stands at the root of the
-    tree `root`, and,
-    for each solver it gives, that solver's witness file, since a solver
-    and its witness file are edited together. A ticket with no `Scope`
-    gives none."""
-    text = t.path.read_text()
-    if section_head(text, "Scope") is None:
-        return frozenset()
-    body = section(text, "Scope")
-    words = re.findall(r"`([^`\s]+)`", body) + re.findall(r"\]\(([^)\s]+)\)", body)
-    paths = {w.split("#", 1)[0].rstrip(":") for w in words}
-    given = {p for p in paths if p and not Path(p).is_absolute() and ("/" in p or (root / p).exists())}
-    pairs = (task_paths(Path(p).name.removesuffix(SOLVER_SUFFIX)) for p in given)
-    return frozenset(given | {str(w) for s, w in pairs if str(s) in given})
 
 
 type Span = tuple[float, float]

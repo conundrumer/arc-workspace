@@ -1,4 +1,4 @@
-+ budget: 8700
++ budget: 9100
 * comment: when editing this doc
     - The ticket reviewer loads this document from [The Goal](prompts/agents/ticket-reviewer.md#the-goal), once a draft meets its request's Goal.
     - Acts, each with its section:
@@ -30,6 +30,8 @@
         * comment: The user's words, session 7fd429fb, 2026-10-15T22:44:57Z: "Let’s try it. Principles are short and well known in training set"; 2026-10-16T02:19:36Z: "almost seems liek a regression".
     - A `change` that adds or changes a rule or a fact in the agent-facing documents has a `Design` that gives, for each rule or fact, each rule and fact of the documents on the same act that its reader loads for the part of its work the design gives, no rule that design leaves standing beside the new one is an exception to it, no existing line states what a line that design gives states, each such line stands, by the rules of [Editing the agent-facing documents](docs/handbook/editing.md), in the section whose subject it is, and each of its readers loads that section for the part of its work the design gives, each line, or words in a line, that the design adds to stop a reader's failure meets the observed-failure test of [What a file holds](docs/handbook/editing.md#what-a-file-holds) by the failure the `change` cites under its `Grounds`, and the Scope covers each file that design gives.
         - For a rule or fact in a document under [agents](prompts/agents), the `Design` leaves no rule standing beside it, and gives the act it falls under of the spec in that document's editing notes, which you read in the file, or, where that spec gives no such act, a revision of that spec that gives the part of the reader's work that needs a new act and why no act's rule covers it.
+    - The `Design` of a `change` to code or to the agent-facing documents gives under `Interactions:` each part of the system that reads, calls, orders or is ordered by what the files it touches hold, with what the change does to it.
+        * comment: Without it, the `Design` of change 6-1210 put `alerts.ticket_stalls` ahead of the steps of the changes in `plan.EARLY`, and since the operator takes one step per call, operator adc8eb58fcc132a15 spent 7 calls of about 2 minutes on stall messages while a take was ready: bug 6-1404.
     - The operator can carry out each instruction under its documents: each agent, tool, permission and name the instruction relies on exists.
     - A rule's stated scope covers the readers the draft means it for, and no others.
     - Each item of the Intent is a requirement, as [Launching](prompts/agents/notes/launching.md#launching) gives it.

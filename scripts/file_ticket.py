@@ -26,10 +26,13 @@ from handbook.paths import scripts_importable
 
 scripts_importable()
 
-from ticket_files import FIELD, NAME_FORM, TicketName, ticket_path, ticket_status  # noqa: E402
+from ticket_files import (FIELD, NAME_FORM, TicketName, listed_tickets, ticket_name,  # noqa: E402
+                          ticket_path, ticket_status)
+from ticket_paths import SCOPE, names, section_paths  # noqa: E402
+from tree_reads import main_tree  # noqa: E402
 from ticket_form import (DESIGN, LOG, LOG_SECTION, MECHANICAL,  # noqa: E402
                          RETIRED, VALIDATES, checked_kind, front, section, sections_example, ticket_kind,
-                         title_line)
+                         title, title_line)
 from ticket_log import (AGENT_ID, CLOSED_BY, DUPLICATE_OF, SESSION_ID, UNBLOCKED_BY, VALIDATED, Wait,  # noqa: E402
                         log_lines, log_moves, logged, read_ticket, resolution_of, status_of)
 from ticket_numbers import (SESSION_VAR, SESSIONS, TicketNumber, reserve, session_id,  # noqa: E402
@@ -255,6 +258,38 @@ EDITORS_RULES = mctx("""
 
 EMPTY = mctx("the list is empty")
 
+CLOSED_ON_HELP = mctx("""
+    - `<name>` is a word or a path from the root of the tree, as the title of a ticket gives it.
+    - The command prints, for each ticket under `tickets/{closed}/` whose title names a `<name>`, or a path that a `<name>` that is a path had before, as `git log --follow --name-only` gives it on `master`, its number and title, and under them its last log line, in the order of numbers, or `{empty}` where no title names one.
+    - A title names a path, which holds a `/`, where it holds the path, the path's file name as a whole word, or, for a `.py` file under `src/` or `scripts/`, its dotted module name from that directory as a whole word, such as `operations.plan` for `src/operations/plan.py`. It names any other `<name>` where it holds it as a whole word.
+    """)
+
+NAMES = mctx("names: {names}")
+
+GROUND_HELP = mctx("""
+    - `<path>:<first>-<last>` is a file from the root of the tree, and the first and the last line of a span of it, from 1.
+    - The command prints the `{grounds}` line of that span, as the file stands at `master`: its path and span in backticks, the hash of `master`, and the span's lines, each with no indent, joined by spaces, in quotes.
+    - With `--command`, it runs `<command>` with the shell in the main tree, for at most {ground_seconds} seconds, and prints the `{grounds}` line of the command: the command in backticks, the hash of `master`, its exit code where it is not 0, and its output and its errors, in a fence under that line, or that it prints nothing.
+    """)
+
+GROUND_SPAN = mctx('- `{path}:{first}-{last}` (master {hash}): "{quote}"')
+GROUND_COMMAND = mctx("- `{command}` (master {hash}){exits} prints:")
+GROUND_SILENT = mctx("- `{command}` (master {hash}){exits} prints nothing.")
+GROUND_EXITS = mctx(", exits {code},")
+
+GROUND_SECONDS = 200
+
+SPAN = re.compile(r"(?P<path>[^:\s]+):(?P<first>[1-9]\d*)-(?P<last>[1-9]\d*)")
+
+SCOPE_CHECK_HELP = mctx("""
+    - `<number>` is the number of a `{change_kind}` ticket. With no `<number>`, the command reads the text of a draft on its stdin, in the form a filing takes: `{invocation} scope-check <<'EOF'`, the text, and `EOF`.
+    - The command prints each path the ticket's `{design}` gives that its `{scope}` gives neither as a path nor as a directory that holds it, one per line, or `{covered}` where none.
+        - The paths a section gives are those `uv run python scripts/bottlenecks.py --help` gives a Scope.
+    - It exits 0 whatever it prints, so judge each path it prints: a path the `{design}` cites and the change does not edit stays out of the Scope.
+    """)
+
+COVERED = mctx("the Scope covers each path the Design gives")
+
 
 COMMIT = re.compile(r"[0-9a-f]{7,40}")
 
@@ -377,7 +412,7 @@ def case_command(ref: str, agent: str, run: str, start: str, end: str) -> Path:
 
 
 def main_tickets() -> Path:
-    return checkout.main_worktree(checkout.ROOT) / "tickets"
+    return main_tree() / "tickets"
 
 
 SCRIPT = "file_ticket.py"
@@ -548,6 +583,72 @@ def sweep_command(*runs: str) -> str:
     return "\n".join(map(str, moved)) if moved else NONE_MOVED
 
 
+def closed_on_command(*targets: str) -> str:
+    """Each closed ticket whose title holds one of `targets`, or a path one of
+    them had before, with its last log line."""
+    if not targets:
+        raise Refused(mctx("the call gives no name: run `{invocation} closed-on --help`").format(
+            invocation=INVOCATION))
+    main = main_tree()
+    known = set(targets) | {line for n in targets for line in checkout.git_out(
+        main, "log", "--follow", "--name-only", "--format=", "master", "--", n).splitlines() if line}
+    tickets = main_tickets()
+    paths = sorted(listed_tickets(tickets, Status.CLOSED), key=lambda p: ticket_name(p).number.order)
+    rows = [f"{ticket_name(p).number} {title(p, text)}\n    {log_lines(text)[-1].group()}"
+            for p in paths if (text := read_ticket(p)) and any(names(title(p, text), n) for n in known)]
+    return "\n".join([NAMES.format(names=", ".join(sorted(known))), *(rows or [EMPTY])])
+
+
+def master_hash(main: Path) -> str:
+    return checkout.git_out(main, "rev-parse", "--short=8", "master").strip()
+
+
+def ground_command(*given: str) -> str:
+    """The `Grounds` line of the span or of the command `given` gives, as
+    `GROUND_HELP` gives it."""
+    main = main_tree()
+    retry = mctx("run `{invocation} ground --help`").format(invocation=INVOCATION)
+    if len(given) == 2 and given[0] == "--command":
+        try:
+            done = subprocess.run(given[1], shell=True, cwd=main, capture_output=True, text=True,
+                                  timeout=GROUND_SECONDS)
+        except subprocess.TimeoutExpired:
+            raise Refused(mctx("`{command}` ran past {seconds} seconds: give its Grounds line by hand").format(
+                command=given[1], seconds=GROUND_SECONDS))
+        exits = "" if done.returncode == 0 else GROUND_EXITS.format(code=done.returncode)
+        out = (done.stdout + done.stderr).rstrip("\n")
+        values = dict(command=given[1], hash=master_hash(main), exits=exits)
+        if not out:
+            return GROUND_SILENT.format(**values)
+        return f"{GROUND_COMMAND.format(**values)}\n{textwrap.indent(f'```\n{out}\n```', '    ')}"
+    span = SPAN.fullmatch(given[0]) if len(given) == 1 else None
+    if span is None:
+        raise Refused(mctx("the call gives neither `<path>:<first>-<last>` nor `--command <command>`: "
+                           "{retry}").format(retry=retry))
+    first, last = int(span["first"]), int(span["last"])
+    shown = checkout.git(main, "show", f"master:{span['path']}")
+    lines = shown.stdout.splitlines()
+    if shown.returncode != 0 or not first <= last <= len(lines):
+        raise Refused(mctx("`master` holds no file `{path}` with lines {first} to {last}: {retry}").format(
+            path=span["path"], first=first, last=last, retry=retry))
+    quote = " ".join(line.strip() for line in lines[first - 1:last])
+    return GROUND_SPAN.format(path=span["path"], first=first, last=last, hash=master_hash(main), quote=quote)
+
+
+def scope_check_command(*given: str) -> str:
+    """Each path the `Design` of the ticket `given` gives, or of the text on
+    stdin where it gives none, that its Scope does not cover."""
+    if len(given) > 1:
+        raise Refused(mctx("the call gives more than one number: run `{invocation} scope-check --help`").format(
+            invocation=INVOCATION))
+    text = read_ticket(ticket_path(main_tickets(), ticket_number(given[0]))) if given else sys.stdin.read()
+    root = main_tree()
+    scope = section_paths(text, SCOPE, root)
+    missing = sorted(p for p in section_paths(text, DESIGN, root)
+                     if not any(Path(p).is_relative_to(s) for s in scope))
+    return "\n".join(missing) if missing else COVERED
+
+
 def main_command(session: str) -> Path:
     tickets = main_tickets()
     name_main(tickets, session)
@@ -595,6 +696,13 @@ SUBCOMMANDS = {
                        " <number> [<section> ...]", SHOW_HELP, "", None, show_command, False),
     "await-close": Subcommand(mctx("ends once a ticket closes, and prints how it closed"),
                               " <number> [<number> ...]", AWAIT_CLOSE_HELP, "", None, await_close_command, False),
+    "closed-on": Subcommand(mctx("prints the closed tickets whose title names a target, with how each closed"),
+                            " <name> [<name> ...]", CLOSED_ON_HELP, "", None, closed_on_command, False),
+    "ground": Subcommand(mctx("prints the `Grounds` line of a span of a file or of a command"),
+                         " <path>:<first>-<last> | --command <command>", GROUND_HELP, "", None,
+                         ground_command, False),
+    "scope-check": Subcommand(mctx("prints each path a change's `Design` gives that its `Scope` does not"),
+                              " [<number>]", SCOPE_CHECK_HELP, "", None, scope_check_command, False),
 }
 """Each subcommand, by the word that calls it, in the order `HELP` gives
 their lines."""
@@ -633,6 +741,7 @@ def help_values() -> dict[str, str]:
                 command_field=COMMAND_FIELD, agent_field=AGENT_FIELD, none_moved=NONE_MOVED,
                 assigned=Status.ASSIGNED, open=Status.OPEN, closed=Status.CLOSED, wontfix=Resolution.WONTFIX, changes=str(CHANGES), cap=str(CAP),
                 hour_price=f"{SECOND_PRICE * 3600:g}",
+                grounds=SECTIONS[Kind.CHANGE][-1], ground_seconds=str(GROUND_SECONDS), scope=heading(SCOPE), covered=COVERED,
                 subcommands="\n".join(SUBCOMMAND_LINE.format(
                     invocation=INVOCATION, name=name, purpose=sub.purpose)
                     for name, sub in SUBCOMMANDS.items()))

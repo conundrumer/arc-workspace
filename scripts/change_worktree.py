@@ -15,7 +15,7 @@ from handbook.paths import scripts_importable
 
 scripts_importable()
 
-from bottlenecks import scope_paths  # noqa: E402
+from ticket_paths import scope_paths  # noqa: E402
 from ticket_files import ticket_path  # noqa: E402
 from ticket_log import log_moves  # noqa: E402
 from ticket_numbers import ticket_number  # noqa: E402
