@@ -74,19 +74,25 @@ def judged(key: str, recent: list[Call], earlier: list[Call]) -> str | None:
     usual_peak = statistics.median(c.peak for c in earlier)
     peak = max(c.peak for c in recent)
     if cpu >= CPU_RATIO * usual_cpu + CPU_MARGIN:
-        what, ratio = mctx("CPU time"), cpu / usual_cpu if usual_cpu else float("inf")
+        ratio = cpu / usual_cpu if usual_cpu else float("inf")
+        name = mctx("{subject}: its calls take {n:.1f} times their usual CPU time").format(
+            subject=subject_of(key), n=ratio)
+        impact_text = mctx("Each call of `scripts/{key}` takes more of the machine than its usual calls "
+                           "took, which the work of every session on the machine goes without.").format(key=key)
         slowest = sorted(recent, key=lambda c: (-c.cpu, c.start))[:SHOWN]
     elif peak >= PEAK_RATIO * usual_peak + PEAK_MARGIN:
-        what, ratio = mctx("peak memory"), peak / usual_peak if usual_peak else float("inf")
+        ratio = peak / usual_peak if usual_peak else float("inf")
+        name = mctx("{subject}: a recent call took {n:.1f} times the median peak memory "
+                    "of its earlier calls").format(subject=subject_of(key), n=ratio)
+        impact_text = mctx("A recent call of `scripts/{key}` took more memory than its usual calls "
+                           "took, which the work of every session on the machine went without at that "
+                           "time.").format(key=key)
         slowest = sorted(recent, key=lambda c: (-c.peak, c.start))[:SHOWN]
     else:
         return None
     impact, evidence = DEFECT_SECTIONS
-    name = mctx("{subject}: its calls take {n:.1f} times their usual {what}").format(
-        subject=subject_of(key), n=ratio, what=what)
     return ticket_text(Kind.PERFORMANCE, name, {
-        impact: mctx("Each call of `scripts/{key}` takes more of the machine than its usual calls "
-                     "took, which the work of every session on the machine goes without.").format(key=key),
+        impact: impact_text,
         evidence: "\n".join([
             mctx("- Recent calls: {figures}.").format(figures=figures(recent)),
             mctx("- Earlier calls: {figures}, 25th percentile CPU {p25:.2f} s.").format(
