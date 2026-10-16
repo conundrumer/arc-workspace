@@ -83,7 +83,7 @@ GOAL_LINE = mctx("- Goal: {goal}")
 
 NO_GOAL_LINE = mctx("- The request holds no goal.")
 
-INFERRED_NOTE = mctx(", inferred, so wait for the user's reply before you act")
+INFERRED_NOTE = mctx(", inferred")
 
 
 SPAN_NOTE = mctx("span added: {span}")
