@@ -3,6 +3,6 @@ no actions
 determined:
   corner_quadrant
 
-the value is covered on this task's examples, so no determination relation is needed:
+the value is covered on this task's examples:
   bg (DominantColor exact)
   side (TileCount narrowed(5))

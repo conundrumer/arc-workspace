@@ -20,9 +20,9 @@ PARAMS: Annotated[str,
 """The component of the parameterization."""
 DETERMINE: Annotated[str,
     quotes("solver-file.md", "Determination",
-           "`Determine` contains the determination as one relation per "
-           "determined parameter, with the parameter's name and "
-           "schema")] = "Determine"
+           "`Determine` contains the determination's clauses as one "
+           "relation per parameter whose value they give, with the "
+           "parameter's name and schema")] = "Determine"
 """The component of the determination."""
 PARAMS_SCOPE = Scope((PARAMS,))
 """The scope of what `Params` declares and holds."""

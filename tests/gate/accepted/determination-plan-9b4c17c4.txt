@@ -3,5 +3,5 @@ no actions
 determined:
   slide
 
-the value is covered on this task's examples, so no determination relation is needed:
+the value is covered on this task's examples:
   ink (RarestColor exact)

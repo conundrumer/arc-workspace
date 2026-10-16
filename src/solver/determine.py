@@ -3,6 +3,7 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from arc.task import Example, Task
 from engine import (
     Engine,
     InputValue,
@@ -61,8 +62,9 @@ class CycleRead:
 
 
 @quotes("solver-file.md", "Determination",
-        "`Determine` contains the determination as one relation per "
-        "determined parameter, with the parameter's name and schema")
+        "`Determine` contains the determination's clauses as one relation "
+        "per parameter whose value they give, with the parameter's name and "
+        "schema")
 @dataclass(frozen=True)
 class Determined:
     """The `Determine` component's run against the stored values: the diffs,
@@ -126,7 +128,8 @@ def run_program(solver: Solver) -> RunProgram:
 
 
 def determine(engine: Engine, solver: Solver, limits: Limits,
-              measured: float | None = None) -> DetermineResult:
+              measured: float | None = None,
+              added: Sequence[Example] = ()) -> DetermineResult:
     """The Determine comp over the examples, diffed against the stored values
     (solver-file.md, under "Determination"). The parameters with an `Ident`
     column compare together modulo a renaming of ids (solver-file.md, under
@@ -144,7 +147,9 @@ def determine(engine: Engine, solver: Solver, limits: Limits,
     The runs take `limits` once per example; a variant's runs, where the
     solver's own determination spent `measured` CPU seconds, take
     `variant_limits` of those. A solver whose task has no task file is a
-    caller's error: `ValueError`."""
+    caller's error: `ValueError`.
+    Each pair of `added` joins the train examples, after the task's own and
+    before the test inputs."""
     run = run_program(solver)
     if run.determine is None:
         return NoDetermine()
@@ -153,6 +158,7 @@ def determine(engine: Engine, solver: Solver, limits: Limits,
     if task is None:
         raise ValueError("a determination runs over the task's examples, "
                          "and the solver's task has no task file")
+    task = Task([*task.train, *added], task.test)
     params_inst = instance_of(program, PARAMS)
     determined = [p for p in solver.params.parameters if p.determined]
     if params_inst is None or not determined:

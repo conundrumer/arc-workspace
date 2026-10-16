@@ -5,5 +5,8 @@ train 3: PASS (2 witnessed cases)
 test 0: PASS (2 witnessed cases)
 test 1: PASS (2 witnessed cases)
 
-lint: ok
+--- 1 hint(s) ---
+  9b4c17c4.dl:120: determine prediction: the clauses of `slide` keep a guessed value by the test `stranded`, which reads facts of the inputs and of the outputs together; see [Models and tasks](docs/handbook/principles.md#models-and-tasks); an `@ignore` directive can keep the relation it fires on
+
+lint: ok, 1 hint
 determination: ok (slide)

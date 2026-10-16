@@ -299,8 +299,9 @@ class Parameter:
     stored: Rows | StoredGrid
     determined: Annotated[bool,
         quotes("solver-file.md", "Determination",
-               "`Determine` contains the determination as one relation per "
-               "determined parameter, with the parameter's name and schema")]
+               "`Determine` contains the determination's clauses as one "
+               "relation per parameter whose value they give, with the "
+               "parameter's name and schema")]
     """A `Determine` relation mirrors it."""
     open: Annotated[bool,
         quotes("solver-file.md", "Params", "**`@open` directive.**")]

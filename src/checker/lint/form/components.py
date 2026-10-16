@@ -95,8 +95,9 @@ def _reads_parse(v: View) -> bool:
 
 
 @quotes("solver-file.md", "Determination",
-        "`Determine` contains the determination as one relation per "
-        "determined parameter, with the parameter's name and schema")
+        "`Determine` contains the determination's clauses as one relation "
+        "per parameter whose value they give, with the parameter's name and "
+        "schema")
 def check_determine_schema(solver: Solver, runs: Runs) -> list[Finding]:
     """A relation of `Determine` that takes a Params parameter's name and
     whose columns differ from that parameter's in name or type, the pose

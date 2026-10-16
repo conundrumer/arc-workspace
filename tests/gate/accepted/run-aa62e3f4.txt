@@ -2,8 +2,9 @@ train 0: PASS (13 witnessed cases)
 train 1: PASS (13 witnessed cases)
 test 0: PASS (13 witnessed cases)
 
---- 1 hint(s) ---
+--- 2 hint(s) ---
   aa62e3f4.dl:265: common-subexpr: 3 literals shared with `seed` (line 261); an `@ignore` directive can keep the relation it fires on
+  aa62e3f4.dl:302: determine prediction: the clauses of `scan_order` keep a guessed value by the test `order_contradicted`, which reads facts of the inputs and of the outputs together; see [Models and tasks](docs/handbook/principles.md#models-and-tasks); an `@ignore` directive can keep the relation it fires on
 
-lint: ok, 1 hint
+lint: ok, 2 hints
 determination: ok (scan_order)

@@ -68,9 +68,9 @@ def check_color_structure_stored(solver: Solver, runs: Runs
         "For each model, the solver stores an assignment determined by the "
         "evidence.")
 @quotes("solver-file.md", "Determination",
-        "`Determine` contains the determination as one relation per "
-        "determined parameter, with the parameter's name and schema, derived "
-        "from `ex_in` and `ex_out`.")
+        "`Determine` contains the determination's clauses as one relation "
+        "per parameter whose value they give, with the parameter's name and "
+        "schema, derived from `ex_in` and `ex_out`.")
 @quotes("solver-file.md", "Determination",
         "The determination relation of a parameter with a case column gives "
         "the rows of every case.")

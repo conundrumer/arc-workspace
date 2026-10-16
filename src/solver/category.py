@@ -22,6 +22,7 @@ class Category(StrEnum):
     LIB_CODE = "lib code"
     PARSE_UNSHARED_WITH_DETERMINE = "parse unshared with determine"
     DETERMINE_SCHEMA = "determine schema"
+    DETERMINE_PREDICTION = "determine prediction"
     FAMILY_CASE = "family case"
     HEADER = "header"
     CLAIM = "claim"
@@ -76,7 +77,7 @@ HINTS = frozenset({
     Category.CASE_SECTION, Category.PASS_THROUGH, Category.CHAIN_JOIN,
     Category.SINGLE_CONSUMER, Category.DOMAIN_ENUMERATOR, Category.ARGMAX,
     Category.COMMON_SUBEXPR, Category.CONST_JOIN, Category.COMP_IDIOM,
-    Category.HEAD_ZERO, Category.HEAD_REPEAT,
+    Category.HEAD_ZERO, Category.HEAD_REPEAT, Category.DETERMINE_PREDICTION,
 })
 """The categories whose findings are hints: a hint changes neither the
 verdict nor the exit code."""

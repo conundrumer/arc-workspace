@@ -27,11 +27,22 @@ from checker.variants import (
     with_program,
 )
 from engine import Program, Row, RunFailure, Value
+from engine.program import grid_lists
 from engine.quotes import quotes
 from solver.model import Base, Case, base_case
 from solver.aggregate import Solver
 from solver.readers import proposers_program
-from solver.determine import rigid_charts, stored_facts, Determined, NoDetermine
+from arc.task import Example
+from checker.judged import concept_case, verdict_case
+from solver.annotations import VerdictWord
+from solver.determine import (
+    Determined,
+    NoDetermine,
+    determine,
+    rigid_charts,
+    stored_facts,
+)
+from solver.outcome import Grids
 from solver.probe import Proposals, probe
 from solver.variations import FixParam, variation
 from solver.pair_runs import TaskSection
@@ -255,6 +266,10 @@ class Plan:
     (`_differing`); the run's failure where it gives no result."""
     types: tuple[tuple[PlanValue, tuple[str, ...]], ...]
     joint: Joint | TimedOut | None
+    moved: "tuple[Moved, ...] | RunFailure"
+    """The witnesses whose pair moves a determined value
+    (`_moved_by_witnesses`); the failure of a determination run where one
+    gives no result."""
 
 
 @dataclass(frozen=True)
@@ -503,7 +518,70 @@ def survey_determination_plan(solver: Solver, runs: Runs) -> PlanResult:
     all_types = tuple((n, t) for n, (t, _) in fact.items())
     joint = _joint(solver, runs, results, determined, differing, fact)
     return Plan(tuple(results), tuple(embedded), determined, differing,
-                all_types, joint)
+                all_types, joint, _moved_by_witnesses(solver, runs))
+
+
+@dataclass(frozen=True)
+class Moved:
+    """A witness whose pair, added to the train pairs, gives `parameter`'s
+    determination a value other than the stored one."""
+
+    witness: str
+    parameter: str
+
+
+def _concept_pairs(solver: Solver, runs: Runs) -> list[tuple[str, Example]]:
+    """Each witness, once, in the order of its first line, that stands at
+    the stored assignment (no `assign`), whose verdict on some line
+    denotes the concept case's model or is `any`, and on whose input the
+    concept case gives one grid: its id, and its input with that grid."""
+    concept = concept_case(solver, runs.cases_or_none)
+    if concept is None:
+        return []
+    out: list[tuple[str, Example]] = []
+    for w in solver.annotations.witnesses:
+        entry = runs.entry(w.id)
+        if entry is None or entry.assign or any(i == w.id for i, _ in out):
+            continue
+        if w.verdict != VerdictWord.ANY and verdict_case(
+                solver, w.verdict, runs.cases_or_none, None) != concept:
+            continue
+        got = runs.outcome(entry, concept)
+        if isinstance(got, Grids) and len(got.grids) == 1:
+            out.append((w.id, Example(grid_lists(entry.input),
+                                            grid_lists(got.grids[0]))))
+    return out
+
+
+def _moved_by_witnesses(solver: Solver, runs: Runs
+                        ) -> tuple[Moved, ...] | RunFailure:
+    """The determination run with every concept pair (`_concept_pairs`)
+    added to the train pairs; where it moves a determined value, one run
+    per pair, each pair and parameter whose value it moves."""
+    pairs = _concept_pairs(solver, runs)
+    if not pairs:
+        return ()
+
+    def diffs(added: Sequence[Example]) -> list[str] | RunFailure | None:
+        got = determine(runs.engine, solver, runs.limits, added=added)
+        if isinstance(got, NoDetermine):
+            return None
+        if not isinstance(got, Determined):
+            return got
+        return [d.parameter for d in got.diffs]
+
+    every = diffs([p for _, p in pairs])
+    if not isinstance(every, list):
+        return () if every is None else every
+    if not every:
+        return ()
+    moved: list[Moved] = []
+    for wid, pair in pairs:
+        one = diffs([pair])
+        if not isinstance(one, list):
+            return () if one is None else one
+        moved += [Moved(wid, param) for param in one]
+    return tuple(moved)
 
 
 def _differing(solver: Solver, runs: Runs, determined: frozenset[str],

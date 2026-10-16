@@ -3,7 +3,7 @@ no actions
 determined:
   start_edge
 
-the value is covered on this task's examples, so no determination relation is needed:
+the value is covered on this task's examples:
   bg (DominantColor exact)
   line_dir (domain enumerable(4), pairs-exact: (DIAG_BR))
   mark (AnyOutNewColor exact)

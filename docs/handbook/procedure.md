@@ -161,6 +161,7 @@
 
 ### Determine
 - Run the sweep (`uv run python scripts/run_dl.py sweep <task_id>`), and store a value it reports for a parameter beyond the stored values only where the concept leaves that parameter's value free, as [Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) defines an open parameter, unless [Principles](docs/handbook/principles.md) make that parameter a choice point.
+    - Where it reports that a parameter's determination keeps fewer values than those at which the model fits every train pair, and the concept fixes that parameter's value, derive that value in the program, as [Stored or derived](docs/handbook/principles.md#stored-or-derived) gives a derivation.
 - Run the plan (`uv run python scripts/run_dl.py determination-plan <task_id>`).
 - When the plan lists actions and a different parameterization would give a simpler or more principled model, change the parameterization, run [Develop](#develop) again over the changed solver, and put the change in the review.
 - Otherwise, do the actions the plan lists.

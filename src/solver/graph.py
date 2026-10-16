@@ -592,34 +592,42 @@ class Graph:
         return [(u, at) for u in self.units for at in self.paths_of(u)]
 
     def reading_input(self) -> frozenset[RelationName]:
-        """The relations whose rows depend on `in` by dataflow, each by
-        its instance path and its name: a relation read by a unit that
-        reads `in`, or that reads such a relation, at the instance path
-        the unit runs at. The units of the lib's components count as the
-        solver's own do, so each relation of a lib instance stands on its
-        own: a relation of it that its units feed from constants or from
-        stored parameters alone does not read `in` although another
-        relation of the instance does. A relation stands at the innermost
-        path around the reading unit's whose component declares it."""
+        """The relations whose rows depend on `in` by dataflow
+        (`depending`)."""
         if self._reach is None:
-            readers: dict[RelationName, list[tuple[Unit, InstancePath]]] = {}
-            for u in self.program.units:
-                for at in self.paths_of(u):
-                    for atom, _negated in body_atoms(u.body or ()):
-                        got = self.place(at, atom.relation)
-                        if got is not None:
-                            readers.setdefault(got, []).append((u, at))
-            start = RelationName((), INPUT.name)
-            seen = {start}
-            work = [start]
-            while work:
-                for u, at in readers.get(work.pop(), ()):
-                    head = self.place(at, u.head.relation)
-                    if head is not None and head not in seen:
-                        seen.add(head)
-                        work.append(head)
-            self._reach = frozenset(seen)
+            self._reach = self.depending(RelationName((), INPUT.name),
+                                         lambda _atom: True)
         return self._reach
+
+    def depending(self, start: RelationName, counts: Callable[[Atom], bool]
+                  ) -> frozenset[RelationName]:
+        """The relations whose rows depend on the relation at `start` by
+        dataflow, `start` among them, each by its instance path and its
+        name: a relation read by a unit that reads `start` by an atom
+        `counts` admits, or that reads such a relation, at the instance
+        path the unit runs at. The units of the lib's components count as
+        the solver's own do, so each relation of a lib instance stands on
+        its own: a relation of it that its units feed from constants or
+        from stored parameters alone does not depend on `start` although
+        another relation of the instance does. A relation stands at the
+        innermost path around the reading unit's whose component declares
+        it."""
+        readers: dict[RelationName, list[tuple[Unit, InstancePath]]] = {}
+        for u in self.program.units:
+            for at in self.paths_of(u):
+                for atom, _negated in body_atoms(u.body or ()):
+                    got = self.place(at, atom.relation)
+                    if got is not None and counts(atom):
+                        readers.setdefault(got, []).append((u, at))
+        seen = {start}
+        work = [start]
+        while work:
+            for u, at in readers.get(work.pop(), ()):
+                head = self.place(at, u.head.relation)
+                if head is not None and head not in seen:
+                    seen.add(head)
+                    work.append(head)
+        return frozenset(seen)
 
     def reads_input(self, rel: RelationName) -> bool:
         """Whether the relation a top-level clause names by `rel` depends

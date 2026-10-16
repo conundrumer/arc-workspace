@@ -89,6 +89,11 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
         "fold it into the program"),
     LintSentence.DETERMINE_SCHEMA: lambda n, _: mctx(
         "declare the determination relation as `{0}`").format(*n),
+    LintSentence.DETERMINE_PREDICTION: lambda n, _: mctx(
+        "the clauses of `{0}` keep a guessed value by the test `{1}`, which "
+        "reads facts of the inputs and of the outputs together; see "
+        "[Models and tasks](docs/handbook/principles.md#models-and-tasks)"
+        ).format(*n),
     LintSentence.MARKER_SLASH: lambda n, _: mctx(
         "the marker separates its cases with `/`; see the case markers in "
         "[Cases](docs/handbook/solver-file.md#cases)"),

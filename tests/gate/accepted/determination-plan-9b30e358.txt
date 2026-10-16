@@ -1,6 +1,6 @@
 no actions
 
-the value is covered on this task's examples, so no determination relation is needed:
+the value is covered on this task's examples:
   axis (domain enumerable(2), pairs-exact: (AXIS_V))
   dir (domain enumerable(4), pairs-exact: (DIR_T))
 1 of 8 joint assignments of the enumerated parameters reproduce every train pair

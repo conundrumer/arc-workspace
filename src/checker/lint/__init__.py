@@ -40,6 +40,7 @@ from checker.lint.form import (
     declared_types,
     open_value_fields,
     header,
+    prediction,
     sections,
     witnesses,
 )
@@ -75,7 +76,8 @@ PROGRAM_CHECKS: tuple[Check, ...] = (
     names.check_lib_internal, names.check_enumerator_name,
     components.check_lib_code,
     components.check_parse_unshared_with_determine,
-    components.check_determine_schema, declared_types.check_banned_type,
+    components.check_determine_schema, prediction.check_determine_prediction,
+    declared_types.check_banned_type,
     open_value_fields.check_open_value_field,
     case_type.check_gloss, declared_types.check_unread_field, sections.check_case_section,
     sections.check_case_section_read,

@@ -552,12 +552,19 @@ def render_determination_plan(solver: Solver, result: PlanResult,
     unjudged = baseline is not None \
         or not isinstance(differing, frozenset) \
         or any(s.unjudged for s in surviving.values())
+    moved = result.moved
     if (not determine and not over and not result.embedded
-            and not open_valued and not unjudged):
+            and not open_valued and not unjudged and not moved):
         lines.append(mctx("no actions"))
     section(mctx("write a determination relation"),
             _by_parameter(determine, state, mctx(
                 "{param}, giving the rows of each case: {cases}"), printed))
+    if isinstance(moved, tuple):
+        section(MOVED, [mctx("{param} at witness `{witness}`").format(
+            param=printed(m.parameter), witness=m.witness) for m in moved])
+    else:
+        lines += [""] if lines else []
+        lines.append(MOVED_UNKNOWN + _make_run(moved))
     section(JUDGE_FREE,
             [f"{_value_text(p, printed)}: " + _also_admits(
                 surviving[p].stored, surviving[p].extras(), types[p], solver)
@@ -576,8 +583,7 @@ def render_determination_plan(solver: Solver, result: PlanResult,
                      "these determination relations give the stored values "
                      "is not known") + _make_run(differing),
                 [printed(p) for p in by_parameter(classes.unknown)])
-    section(mctx("the value is covered on this task's examples, so no "
-                 "determination relation is needed"),
+    section(mctx("the value is covered on this task's examples"),
             _by_parameter(covered, covered_note, "{param}: {cases}",
                           printed))
     if surviving and enumerated is not None:
@@ -607,6 +613,21 @@ def render_determination_plan(solver: Solver, result: PlanResult,
     return lines
 
 
+# The form of the clauses restates Principles' determination: Create
+# a6c6527b222939b7c and Refine a87e305652de9cb00 met this action with a test
+# that reads `ex_in` and `ex_out` together.
+MOVED = mctx("change the determination relation so that it reads its value "
+             "from the evidence, or keeps each value at which a fact of the "
+             "inputs alone, or of the outputs alone, holds, and gives the "
+             "stored value with the pair of the witness added to the train "
+             "pairs, where it now gives another: the witness stands at the "
+             "stored assignment, and its output is the one the concept case "
+             "gives there")
+MOVED_UNKNOWN = mctx("the determination run with the witnesses' pairs added "
+                     "gives no result, so whether they move a determined "
+                     "value is not known")
+
+
 # The sweep
 
 
@@ -622,8 +643,12 @@ UNPINNED = mctx("{not_pinned}: single-row changes of it that give every "
                 "train output: {count}")
 UNCOMPARED = mctx("the cases that read it were not compared, since the time "
                   "limit cut the sweep")
-REFUTES = mctx("test refutes {shown} — {note}")
+REFUTES = mctx("test refutes {shown}")
+NOTED = mctx("{clause} — {note}")
 DETERMINED = mctx("the determination picks the stored value")
+NARROWER = mctx("the determination keeps fewer values than those at which "
+                "the model fits every train pair, the other parameters at "
+                "their stored values, whatever the test pairs give")
 UNDETERMINED = mctx("a determination from train alone could pick it")
 PASSING = mctx("{shown} reproduce the stored outputs on test too")
 UNJUDGED = mctx("{shown} did not run on test — the solver fails a test pair "
@@ -677,13 +702,15 @@ def _below(e: Row, s: Row, types: Sequence[str]) -> bool:
             and any(a < b for a, b in zip(em, sm)))
 
 
-def _test_clauses[V](extras: Extras[V], undetermined: bool,
+def _test_clauses[V](extras: Extras[V], note: str | None,
                      shown: Callable[[list[V]], str]) -> list[str]:
+    """The extras' test verdicts, the refuted ones with `note` where it is
+    given."""
     parts: list[str] = []
     if refuted := extras.group(OnTest.REFUTED):
-        parts.append(REFUTES.format(
-            shown=shown(refuted),
-            note=UNDETERMINED if undetermined else DETERMINED))
+        clause = REFUTES.format(shown=shown(refuted))
+        parts.append(clause if note is None
+                     else NOTED.format(clause=clause, note=note))
     if passing := extras.group(OnTest.PASSED):
         parts.append(PASSING.format(shown=shown(passing)))
     if unjudged := extras.group(OnTest.UNJUDGED):
@@ -754,7 +781,7 @@ def _also_admits(stored: Sequence[Row], extras: Sequence[Row],
                          shown=rows_list(extras, types, solver))
 
 
-def _value_line(solver: Solver, r: ValueSweep, undetermined: bool) -> str:
+def _value_line(solver: Solver, r: ValueSweep, determined: bool) -> str:
     types = r.types
     clause = _scope_clause(r)
     scope = "" if clause is None else f" ({clause})"
@@ -781,8 +808,12 @@ def _value_line(solver: Solver, r: ValueSweep, undetermined: bool) -> str:
                                  shown=listed(r.stored), mark=mark,
                                  scope=scope)
         return "; ".join([head] + gap_parts)
+    # A sweep that ran the whole domain holds every value the fit keeps.
+    narrower = determined and r.scope is None and bool(r.extras.values)
+    note = None if narrower else DETERMINED if determined else UNDETERMINED
     parts = [_also_admits(r.stored, r.extras.values, types, solver),
-             *_test_clauses(r.extras, undetermined, listed)]
+             *([NARROWER] if narrower else []),
+             *_test_clauses(r.extras, note, listed)]
     passing = r.extras.group(OnTest.PASSED)
     if kind := [e for e in passing
                 if not any(_peer(e, s, types) for s in r.stored)]:
@@ -998,7 +1029,7 @@ def sweep_lines(solver: Solver, entry: SweepEntry,
     match entry:
         case ValueSweep(per_case=per_case):
             return [_value_line(solver, entry,
-                                entry.parameter not in determined),
+                                entry.parameter in determined),
                     *([] if per_case is None
                       else [_cases_line(solver, per_case)])]
         case SetSweep():

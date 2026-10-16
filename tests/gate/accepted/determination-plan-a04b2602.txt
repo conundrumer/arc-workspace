@@ -1,6 +1,6 @@
 no actions
 
-the value is covered on this task's examples, so no determination relation is needed:
+the value is covered on this task's examples:
   background (SharedColor narrowed(3))
   block_color (SharedColor narrowed(3))
   halo_color (AnyOutNewColor exact)
