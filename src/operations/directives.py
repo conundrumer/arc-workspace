@@ -6,7 +6,7 @@ word of its kind and a colon, past a list marker:
   after a task id to start its pipeline at that pass;
 - `Run: <path>`, a run script, as `runs` gives it;
 - `Drafts to review: <number>, ...`;
-- `Expedite: <number>, ...`;
+- `Expedite: <number>, ...`, for every operator of the session;
 - `Allow: <number>, ...`, the tickets that pass a pause for every operator
   of the session, and the changes a chain of links reaches from them;
 - `Merged: <number>, ...`, the changes the coordinator gives as merged;

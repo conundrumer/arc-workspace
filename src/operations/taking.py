@@ -24,7 +24,8 @@ from collections.abc import Callable
 from controlled_markdown import form, mctx
 from operations import pacing, rank
 from operations.change_budget import TAKE_NOTE
-from operations.directives import Directive, allow_named, named, NUMBER, numbers, paused
+from operations.directives import (Directive, allow_named, named, NUMBER, numbers, numbers_in, paused,
+                                   session_lines)
 from operations.final_reply import live_holder
 from operations.log_commands import log
 from operations.pacing import Pace
@@ -68,9 +69,10 @@ def links(t: Ticket) -> list[str]:
 
 def expedited(state: State) -> set[str]:
     """The tickets a chain of links reaches from a ticket an `Expedite:`
-    line to the operator gives, which the operator takes ahead of the
-    others."""
-    return reached(state, {n for n, _ in numbers(state, Directive.EXPEDITE)})
+    line to any operator of the session gives, which the operator takes
+    ahead of the others, so that an expedite outlives the operator it was
+    sent to."""
+    return reached(state, {n for n, _ in numbers_in(session_lines(state), Directive.EXPEDITE)})
 
 
 def admits(state: State) -> Callable[[str], bool]:
