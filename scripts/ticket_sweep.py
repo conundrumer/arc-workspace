@@ -20,7 +20,7 @@ from ticket_log import VALIDATED, Moved, line_time, log_lines, log_moves
 from ticket_watch import Thresholds, deferred, route
 from ticketing.text import VALIDATION
 from ticketing.times import utc_stamp
-from ticketing.vocabulary import Kind, Status, Verdict
+from ticketing.vocabulary import Kind, Status, Verdict, last_move_into
 from transcripts import chain, find
 from transcript_entries import Refused, own_range, snapshot
 
@@ -114,8 +114,8 @@ def own_lines(path: Path) -> list[str]:
 
 def exercisers(check: Check, runs: dict[str, list[str]]) -> list[str] | None:
     """The runs of `runs`, by agent id with the lines of their transcripts,
-    that exercise `check`, each of them where it gives no pattern, or None
-    where `runs` is empty or no run matches a pattern it gives."""
+    that exercise `check`, or None where none does. Which runs exercise a
+    check, `file_ticket.py sweep --help-all` states."""
     if not runs:
         return None
     if not check.patterns:
@@ -129,12 +129,11 @@ def deferred_since(path: Path, text: str) -> float:
     """The time of the last line of the log of the ticket at `path` with
     text `text` that moves it into `deferred`."""
     lines = log_lines(text)
-    moves = [m for i, m in enumerate(lines) if m["status"] == Status.DEFERRED
-             and (i == 0 or lines[i - 1]["status"] != Status.DEFERRED)]
-    if not moves:
+    i = last_move_into([Status(m["status"]) for m in lines], Status.DEFERRED)
+    if i is None:
         raise Refused(mctx("{path} has no log line that moves it into `{deferred}`").format(
             path=path, deferred=Status.DEFERRED))
-    return line_time(moves[-1])
+    return line_time(lines[i])
 
 
 def run_command(command: str) -> tuple[Status, str]:

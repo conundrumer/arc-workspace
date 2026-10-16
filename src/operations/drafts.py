@@ -52,7 +52,7 @@ from operations.directives import Decision, Directive, decided, named, numbers
 from operations.roles import Purpose, Role, analyst_subject, joined, subjects
 from operations.reports import left_for_decision
 from operations.state import Agent, LogLine, State, Ticket
-from ticketing.vocabulary import Note, Status
+from ticketing.vocabulary import Note, Status, last_move_into
 from operations.handled import repeated, sent
 from operations.steps import Bash, Launch, Send, Step, Undecided, decision_key
 from operations.log_commands import AGENT, log
@@ -174,10 +174,7 @@ def rounds_since_draft(t: Ticket) -> int:
     lines whose note opens with `finding` or `suggestion` after one `filed`
     or `revised` line, or after that start line before any, whatever agent
     id they give."""
-    start = 0
-    for i in range(1, len(t.log)):
-        if t.log[i].status is Status.DRAFT and t.log[i - 1].status is not Status.DRAFT:
-            start = i
+    start = last_move_into([ln.status for ln in t.log], Status.DRAFT) or 0
     rounds: set[int] = set()
     opened = start
     for i in range(start, len(t.log)):

@@ -1,11 +1,13 @@
 """The ticket vocabulary that the ticket tools under `scripts/` and the
 operator's command (`operations`) share: the statuses a ticket moves
-between, the resolutions it closes with, the domains of its subject, its
-kinds, the note of the line that files it and the route of a request, and the end of the title of a
-`refactor` ticket on a module that holds more than one subject. What
+between and the last line of a log that moves it into one, the
+resolutions it closes with, the domains of its subject, its kinds, the
+note of the line that files it and the route of a request, and the end
+of the title of a `refactor` ticket on a module that holds more than one subject. What
 takes a ticket out of each status, `exits` gives."""
 
 import re
+from collections.abc import Sequence
 from enum import StrEnum
 
 class Status(StrEnum):
@@ -153,3 +155,12 @@ than one subject."""
 def note_opening(*alternatives: str) -> re.Pattern[str]:
     """The opening of a log note from the closed vocabulary `alternatives`."""
     return re.compile(rf"(?:{'|'.join(alternatives)})(?![\w-])")
+
+
+def last_move_into(statuses: Sequence[Status], into: Status) -> int | None:
+    """The index of the last of the statuses of a log's lines, in order,
+    whose line moves the ticket into `into` from another status, the first
+    line counting as such a move, or None where no line does."""
+    moves = [i for i, s in enumerate(statuses)
+             if s is into and (i == 0 or statuses[i - 1] is not into)]
+    return moves[-1] if moves else None

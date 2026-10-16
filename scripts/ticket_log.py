@@ -394,5 +394,9 @@ def unblock(tickets: Path, change: TicketNumber, agent: str, agent_id: str | Non
 
 
 def line_time(line: re.Match[str]) -> float:
-    """The time of a match of `ticket_log.LOG_LINE`."""
-    return stamp_time(line.group().split(" ", 1)[0])
+    """The time of a match of `LOG_LINE`."""
+    text = line.group().split(" ", 1)[0]
+    try:
+        return stamp_time(text)
+    except ValueError:
+        raise Refused(mctx("`{text}` is no log line's time").format(text=text)) from None

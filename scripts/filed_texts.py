@@ -8,7 +8,7 @@ leaves its text unknown, and an `undecided` line of `GONE_FILE` or
 import re
 from pathlib import Path
 
-from controlled_markdown import mctx
+from controlled_markdown import form, mctx
 
 from noted_reads import note_read
 from operations.filing import FILED_LINE, REPORT_NAME, filed_path
@@ -16,9 +16,8 @@ from state_reads import file_text, is_file
 
 GONE_FILE = mctx("{where}: the file {path} its text gives is gone, so that text is unknown")
 GONE_REPORT = mctx("{where}: its report file {path} is gone, so its report is unknown")
-GONE = tuple(re.compile(re.escape(form).replace(re.escape("{where}"), ".*")
-                        .replace(re.escape("{path}"), ".*"))
-             for form in (GONE_FILE, GONE_REPORT))
+GONE = tuple(re.compile(form(template, {"where": ".*", "path": ".*"}))
+             for template in (GONE_FILE, GONE_REPORT))
 
 
 def gone_line(line: str) -> bool:

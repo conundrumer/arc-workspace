@@ -54,9 +54,7 @@ def drafter_reports(here: list[Agent]) -> list[float]:
 
 def fragments_due(here: list[Agent]) -> bool:
     """Whether the fragments of the change whose agents in its worktree are
-    `here` are due a doc editor: no agent of `here` is pending, a drafter
-    has reported, and no doc editor of `here` was launched with fragments
-    (`briefs.gives_fragments`). `held_budgets.doc_budgets` reads a change's
+    `here` are due a doc editor. `held_budgets.doc_budgets` reads a change's
     doc budget only where this holds, so it reads `HeldRead.fragments` only
     where `fragments_step` may need the budget."""
     return (not any(a.pending for a in here) and bool(drafter_reports(here))

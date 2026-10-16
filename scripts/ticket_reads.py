@@ -10,23 +10,14 @@ from controlled_markdown import mctx
 from ticket_files import listed_tickets, ticket_files, ticket_name
 from ticket_form import FRONT, front_fields, list_items, title
 from state_reads import DERIVED, Kept, state_cache
-from ticket_log import (CLOSED_BY_LINE, DUPLICATE_OF_LINE, WAIT, Wait, held_log, holder_of, log_lines, resolution_of,
-                        waited, waited_change)
+from ticket_log import (CLOSED_BY_LINE, DUPLICATE_OF_LINE, WAIT, Wait, held_log, holder_of,
+                        line_time, log_lines, resolution_of, waited, waited_change)
 from ticket_numbers import matched_number
 from transcript_entries import Refused
 
 from operations.roles import Role, editors_of
 from operations.state import LogLine, Ticket, Unread
-from ticketing.times import stamp_time
 from ticketing.vocabulary import Domain, Kind, Status
-
-
-def log_time(text: str) -> float:
-    """The time of a log line, which the log gives to the second."""
-    try:
-        return stamp_time(text)
-    except ValueError:
-        raise Refused(mctx("`{text}` is no log line's time").format(text=text)) from None
 
 
 def log_line(m: re.Match[str]) -> LogLine:
@@ -35,7 +26,7 @@ def log_line(m: re.Match[str]) -> LogLine:
     change = None if wait is None else waited_change(wait)
     closed = CLOSED_BY_LINE.match(note)
     duplicate = DUPLICATE_OF_LINE.match(note)
-    return LogLine(log_time(m.group().split(" ", 1)[0]), Status(m["status"]), m["agent"],
+    return LogLine(line_time(m), Status(m["status"]), m["agent"],
                    m["id"], note, wait is not None and waited(wait) is Wait.USER,
                    None if change is None else str(change), wait is not None, resolution_of(note),
                    None if closed is None else str(matched_number(closed)),

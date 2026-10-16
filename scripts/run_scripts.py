@@ -110,6 +110,17 @@ def pace_reads(path: Path, usage: Usage) -> Pace:
     return Scripted(path, given)
 
 
+def entry_read[T](read: Callable[[], T]) -> T | str:
+    """What `read`, a call of an entry point of a run script, gives, or the
+    text of its fault."""
+    try:
+        return read()
+    except ScriptTimeout:
+        raise
+    except (Exception, SystemExit) as e:
+        return fault_text(e)
+
+
 def script_reads(path: Path, run: runs.Run,
                  tickets: Callable[[], tuple[runs.RunTicket, ...]]) -> tuple[Starts, Takes]:
     """What the run script at `path`, loaded afresh as a module, gives from
@@ -122,22 +133,11 @@ def script_reads(path: Path, run: runs.Run,
     module: ModuleType | None = None
     try:
         with bounded(runs.SCRIPT_SECONDS, mctx("the calls of `starts` and `takes`")):
-            module = load(path, name)
-            try:
-                starts = runs.read_starts(module.starts(run))
-            except ScriptTimeout:
-                raise
-            except (Exception, SystemExit) as e:
-                starts = fault_text(e)
+            module = loaded = load(path, name)
+            starts = entry_read(lambda: runs.read_starts(loaded.starts(run)))
             takes = getattr(module, "takes", None)
-            if takes is None:
-                return starts, None
-            try:
-                return starts, runs.read_takes(takes, tickets())
-            except ScriptTimeout:
-                raise
-            except (Exception, SystemExit) as e:
-                return starts, fault_text(e)
+            return starts, None if takes is None else entry_read(
+                lambda: runs.read_takes(takes, tickets()))
     except (Exception, SystemExit) as e:
         fault = fault_text(e)
         return fault, (None if module is not None and not hasattr(module, "takes") else fault)

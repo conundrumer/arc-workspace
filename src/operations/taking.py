@@ -83,8 +83,15 @@ def admits(state: State) -> Callable[[str], bool]:
     or of `through_pause` always, and any other only while no `Pause.`
     line stands and the usage pace admits one (`Computed.pace`)."""
     passes, held = passing(state)
-    free = not paused(state) and pacing.admits(state.computed.pace, state.now)
-    return lambda n: passes(n) and (free or held(n))
+    clear = past_pause(state, held)
+    paced = pacing.admits(state.computed.pace, state.now)
+    return lambda n: passes(n) and clear(n) and (paced or held(n))
+
+
+def past_pause(state: State, through: Callable[[str], bool]) -> Callable[[str], bool]:
+    """Whether a ticket passes a pause, where `through` gives the tickets
+    that pass one."""
+    return through if paused(state) else lambda _: True
 
 
 def passing(state: State) -> tuple[Callable[[str], bool], Callable[[str], bool]]:
@@ -163,9 +170,14 @@ def boosted(state: State) -> set[str]:
 
 def ready(state: State) -> list[Ticket]:
     """The open changes of `scope` whose `depends-on` are closed."""
-    return [t for n in sorted(scope(state)) if (t := state.tracker.tickets.get(n)) is not None
-            and Exit.TAKE in exits(state, t).by
-            and all(closed(state, d) for d in t.depends_on)]
+    return [t for t, awaited in awaiting(state) if not awaited]
+
+
+def awaiting(state: State) -> list[tuple[Ticket, list[str]]]:
+    """Each ticket of `scope` that `Exit.TAKE` takes out of its status,
+    with the tickets of its `depends-on` that are not closed."""
+    return [(t, [d for d in t.depends_on if not closed(state, d)]) for n in sorted(scope(state))
+            if (t := state.tracker.tickets.get(n)) is not None and Exit.TAKE in exits(state, t).by]
 
 
 def lead(state: State) -> set[str]:
@@ -186,9 +198,7 @@ def takeable(state: State) -> list[Ticket]:
 def waiting(state: State) -> list[tuple[str, list[str]]]:
     """Each open `change` of `scope` not taken for its `depends-on`, with
     the tickets it waits for."""
-    return [(n, [d for d in t.depends_on if not closed(state, d)]) for n in sorted(scope(state))
-            if (t := state.tracker.tickets.get(n)) is not None
-            and Exit.TAKE in exits(state, t).by and not all(closed(state, d) for d in t.depends_on)]
+    return [(t.number, awaited) for t, awaited in awaiting(state) if awaited]
 
 
 STALL_FINDING = mctx("finding: {number} waits on the user")

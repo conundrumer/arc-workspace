@@ -18,6 +18,7 @@ import re
 import shlex
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import TypeGuard
 
@@ -270,14 +271,19 @@ def read_starts(result: object) -> Starts:
     return tuple(out)
 
 
-STARTS_NOTHING = mctx("starts nothing")
-TAKES_NOTHING = mctx("takes no ticket")
+class Stopped(StrEnum):
+    """What a fault stops a run from doing."""
+    STARTS_NOTHING = mctx("starts nothing")
+    TAKES_NOTHING = mctx("takes no ticket")
 
 
-def fault_message(ln: Line, stopped: str, fault: str) -> Send:
+STARTS_NOTHING = Stopped.STARTS_NOTHING
+TAKES_NOTHING = Stopped.TAKES_NOTHING
+
+
+def fault_message(ln: Line, stopped: Stopped, fault: str) -> Send:
     """The message that gives the coordinator the fault that stops the run
-    of its line `ln`, where `stopped` is `STARTS_NOTHING` or
-    `TAKES_NOTHING`."""
+    of its line `ln`."""
     return Send(COORDINATOR, mctx("The run of the line `{line}` {stopped}: "
                                   "{fault}").format(
         line=ln.text, stopped=stopped, fault=fault))

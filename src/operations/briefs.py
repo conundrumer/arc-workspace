@@ -53,7 +53,7 @@ splits it."""
 
 FRAGMENTS_PART = mctx("Your part: the text of the `mctx` fragments below, with the moves "
                       "that text needs.")
-"""The part of the doc editor `changes` launches on a change's fragments,
+"""The part of the doc editor `change_fragments` launches on a change's fragments,
 which keys that editor apart from the change's doc editor of the
 documents."""
 

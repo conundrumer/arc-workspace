@@ -64,7 +64,6 @@ from operations.roles import Purpose, Role, analyst_subject, joined
 from operations.state import Agent, LogLine, State, Ticket
 from ticketing.vocabulary import SETTLED, Status
 from operations.constants import COORDINATOR
-from operations.directives import paused
 from operations.final_reply import carrier, nested, replies_by_operator
 from operations.handled import repeated, sent
 from operations.steps import DECISION, Bash, Launch, Send, Step, Undecided
@@ -138,8 +137,8 @@ def unsettled_open(state: State) -> list[str]:
 
 def settle(state: State) -> Step | None:
     admitted = taking.admits(state)
-    passing = taking.through_pause(state) if paused(state) else None
-    numbers = [n for n in unsettled_open(state) if admitted(n) and (passing is None or n in passing)]
+    clear = taking.past_pause(state, taking.through_pause(state).__contains__)
+    numbers = [n for n in unsettled_open(state) if admitted(n) and clear(n)]
     if not numbers:
         return None
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.TRIAGE, joined(numbers)),

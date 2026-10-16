@@ -273,7 +273,8 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
     command = merge_command(t, w)
     calls = [c for c in merge_calls(state, t) if names_any(c, {str(w)})]
     last = calls[-1] if calls else None
-    message = None if last is None else finding(t, last, calls, latest)
+    quotes = [] if last is None else list(QUOTE_LINE.finditer(last.result or ""))
+    message = None if last is None else finding(t, last, calls, latest, quotes)
     on_step = [] if message is None else decided_by(state, unmoved(t, message))
     reported = [r.time for a in [*of_change(state, t.number), *on_step]
                 if (r := a.last_report) is not None]
@@ -301,25 +302,24 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
                     conflict=Note.CONFLICT, paths=PATHS_SEP.join(last.conflicts)), state.me))
             return message
         case Merge.REFUSED:
-            return refused(state, t, w, last, latest) or message
+            return refused(state, t, w, last, latest, quotes) or message
         case Merge.LEFT_EDITS:
             return Bash(command)
         case Merge.MERGED:
             return None
 
 
-def refused(state: State, t: Ticket, w: Path, last: Call, latest: list[Agent]) -> Step | None:
+def refused(state: State, t: Ticket, w: Path, last: Call, latest: list[Agent],
+            quotes: list[re.Match[str]]) -> Step | None:
     """The launch of a code editor that fixes the `quotes` calls the
-    refusal `last` reports, or None where it reports none or such an
-    editor launched after it."""
-    text = last.result or ""
-    quotes = [m.group(0) for m in QUOTE_LINE.finditer(text)]
+    refusal `last` reports, whose `QUOTE_LINE` matches are `quotes`, or
+    None where it reports none or such an editor launched after it."""
     if quotes:
         if any(a.role is Role.CODE_EDITOR and a.launched > last.time for a in latest):
             return None
-        files = sorted({m["path"] for m in QUOTE_LINE.finditer(text)})
+        files = sorted({m["path"] for m in quotes})
         return Launch(Role.CODE_EDITOR, t.number, briefs.quotes_fix(
-            t.number, w, quotes, files,
+            t.number, w, [m.group(0) for m in quotes], files,
             editor_scratch(t.number, Role.CODE_EDITOR, state.scratch), state.me),
             model=t.model(Role.CODE_EDITOR))
     return None
@@ -340,13 +340,14 @@ def documents_failed(output: str) -> bool:
     return m is not None and m["s"] in {check_name(argv) for argv in DOCUMENT_CHECKS}
 
 
-def finding(t: Ticket, last: Call, calls: list[Call], latest: list[Agent]) -> Send | None:
+def finding(t: Ticket, last: Call, calls: list[Call], latest: list[Agent],
+            quotes: list[re.Match[str]]) -> Send | None:
     """The message that gives the refusal of the merge call `last`, one of
-    `calls`, the merge calls on its worktree in order, where `last` was
-    refused for a conflict in its rebase or on no `quotes` call."""
-    text = last.result or ""
+    `calls`, the merge calls on its worktree in order, whose `QUOTE_LINE`
+    matches are `quotes`, where `last` was refused for a conflict in its
+    rebase or on no `quotes` call."""
     to = finding_recipient(last, latest)
-    if (last.merge not in (Merge.REFUSED, Merge.CONFLICT) or QUOTE_LINE.search(text) is not None
+    if (last.merge not in (Merge.REFUSED, Merge.CONFLICT) or quotes
             or to is None or to.agent_id is None):
         return None
     return Send(to.agent_id, messages.merge_finding(t.number, finding_output(last, calls)))
