@@ -14,6 +14,7 @@ from file_reads import Named, is_file, listed, stat_of  # noqa: F401
 from state_reads import DERIVED, Kept, new_state, state_cache  # noqa: F401
 
 from controlled_markdown import mctx
+from subagent_paths import SUBAGENTS, is_subagent  # noqa: F401
 from handbook.paths import console_importable
 from transcript_entries import Refused, entries_back, parse, snapshot
 
@@ -58,11 +59,6 @@ def one_of(ident: str, found: list[Path]) -> Path | None:
     raise Refused(mctx("`{ident}` names more than one transcript, and they "
                        "differ; give the path of one of {paths}").format(
         ident=ident, paths=", ".join(str(p) for p in found)))
-
-
-SUBAGENTS = "subagents"
-"""The directory, under a session's, whose tree holds the session's
-subagent transcripts, each named `agent-*.jsonl`."""
 
 
 def subdirectories(d: Path, depth: int,
@@ -224,10 +220,6 @@ def find(ident: str) -> Path:
     raise Refused(mctx("no transcript of session or agent `{ident}` under "
                        "{dirs}").format(ident=ident, dirs=", ".join(
                            str(d) for d in project_dirs())))
-
-
-def is_subagent(path: Path) -> bool:
-    return "subagents" in path.parts
 
 
 def transcripts(ident: str) -> list[Path]:

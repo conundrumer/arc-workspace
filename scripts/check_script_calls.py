@@ -8,6 +8,7 @@ import statistics
 import sys
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import Path
 
 from controlled_markdown import mctx
@@ -68,6 +69,14 @@ def figures(calls: list[Call]) -> str:
                     top=max(c.peak for c in calls) // MB)
 
 
+def ratio(figure: float, usual: float) -> float:
+    return figure / usual if usual else float("inf")
+
+
+def largest(recent: list[Call], figure: Callable[[Call], float]) -> list[Call]:
+    return sorted(recent, key=lambda c: (-figure(c), c.start))[:SHOWN]
+
+
 def judged(key: str, recent: list[Call], earlier: list[Call]) -> str | None:
     """The text of the ticket on `key`, where its recent calls grew."""
     usual_cpu = statistics.quantiles([c.cpu for c in earlier], n=4, method="inclusive")[0]
@@ -75,20 +84,18 @@ def judged(key: str, recent: list[Call], earlier: list[Call]) -> str | None:
     usual_peak = statistics.median(c.peak for c in earlier)
     peak = max(c.peak for c in recent)
     if cpu >= CPU_RATIO * usual_cpu + CPU_MARGIN:
-        ratio = cpu / usual_cpu if usual_cpu else float("inf")
         name = mctx("{subject}: its calls take {n:.1f} times their usual CPU time").format(
-            subject=subject_of(key), n=ratio)
+            subject=subject_of(key), n=ratio(cpu, usual_cpu))
         impact_text = mctx("Each call of `scripts/{key}` takes more of the machine than its usual calls "
                            "took, which the work of every session on the machine goes without.").format(key=key)
-        slowest = sorted(recent, key=lambda c: (-c.cpu, c.start))[:SHOWN]
+        slowest = largest(recent, lambda c: c.cpu)
     elif peak >= PEAK_RATIO * usual_peak + PEAK_MARGIN:
-        ratio = peak / usual_peak if usual_peak else float("inf")
         name = mctx("{subject}: a recent call took {n:.1f} times the median peak memory "
-                    "of its earlier calls").format(subject=subject_of(key), n=ratio)
+                    "of its earlier calls").format(subject=subject_of(key), n=ratio(peak, usual_peak))
         impact_text = mctx("A recent call of `scripts/{key}` took more memory than its usual calls "
                            "took, which the work of every session on the machine went without at that "
                            "time.").format(key=key)
-        slowest = sorted(recent, key=lambda c: (-c.peak, c.start))[:SHOWN]
+        slowest = largest(recent, lambda c: c.peak)
     else:
         return None
     impact, evidence = DEFECT_SECTIONS

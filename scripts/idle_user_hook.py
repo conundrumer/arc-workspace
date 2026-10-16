@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from typing import NamedTuple
 
 from hook_entry import Hook, not_registered, run_subagent_stop
+from subagent_paths import is_subagent
 
 HOOK = "idle_user_hook"
 MARK = "**Blocked on you.**"
@@ -119,7 +120,7 @@ def check(hook: Hook) -> str | None:
     if event != "Stop":
         raise not_registered("Stop", "event", event)
     path = hook["transcript_path"]
-    if hook.get("agent_id") or hook.get("stop_hook_active") or "/subagents/" in path:
+    if hook.get("agent_id") or hook.get("stop_hook_active") or is_subagent(path):
         return None
     found = scan(path)
     count, last = found.marked, found.last
