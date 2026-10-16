@@ -20,6 +20,8 @@ TESTS = mctx("Tests directory: `tests/`.")
 SCRATCH = mctx("Scratch directory: {scratch}.")
 SCRATCH_LINE = re.compile(form(SCRATCH, {"scratch": r"(?P<scratch>\S.*)"}))
 LAUNCHER = mctx("The agent that launches you: {operator}.")
+LEFT_REPLY = mctx("The item checker's reply on {number}, from after its last `{heading}` line "
+                  "where it has one; judge what it leaves for a decision:")
 MAY_EDIT = mctx("The files you may edit: {files}.")
 FILE_AS = mctx("with {domain_subject} as `<domain>` and `<subject>`, and {agent} as `<agent>`")
 """The clause of a brief that gives its agent the domain, the subject and
@@ -256,9 +258,7 @@ def revise(numbers: list[str], last: list[str], operator: str,
                               number=number))
         lines.append(f"\n{line}\n")
         if left is not None:
-            lines.append(mctx(
-                "That item checker's reply, from after its last `{heading}` line where it has "
-                "one; judge what it leaves for a decision:").format(heading=LEFT_FOR_DECISION))
+            lines.append(LEFT_REPLY.format(number=number, heading=LEFT_FOR_DECISION))
             lines.append(f"\n{left}\n")
     return "\n".join([*lines, LAUNCHER.format(operator=operator)])
 
@@ -350,10 +350,7 @@ def findings(number: str, worktree: Path, left: str | None, questions: list[str]
     earlier holds of the change a ruling gave `merge`."""
     lines = [*change_lines(number, worktree), *editor_lines(editors)]
     if left is not None:
-        lines.append(mctx(
-            "The item checker's latest reply on the change, from after its last `{heading}` "
-            "line where it has one; judge what it leaves for a decision:").format(
-                heading=LEFT_FOR_DECISION))
+        lines.append(LEFT_REPLY.format(number=number, heading=LEFT_FOR_DECISION))
         lines.append(f"\n{left}\n")
     lines.extend(editor_reports(reports))
     if questions:
