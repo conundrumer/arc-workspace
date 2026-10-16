@@ -97,10 +97,12 @@ def pass_line(section: Section, findings: Sequence[Finding]) -> str | None:
     and for the pairs and determination sections, which have none.
     The lint's names the hints that stand, and the witness section's the
     findings that stand and fail nothing. A section with a check that did
-    not run (`NOT_CHECKED`) has none: its finding's line stands alone."""
+    not run (`NOT_CHECKED`), or a group whose grid is not checked
+    (`MODEL_NOT_CASE`), has none: its finding's line stands alone."""
     if not passes(findings) or section in (Section.PAIRS,
                                            Section.DETERMINATION) \
-            or any(f.kind == Kind.NOT_CHECKED for f in findings):
+            or any(f.kind in (Kind.NOT_CHECKED, Kind.MODEL_NOT_CASE)
+                   for f in findings):
         return None
     ok = f"{section.value}: ok"
     if section == Section.LINT:

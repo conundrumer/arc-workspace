@@ -27,6 +27,7 @@ from checker.payloads.witness import (  # noqa: F401  (re-exported)
     SubsumedPayload,
     TaskAssignPayload,
     ListsNoCasePayload,
+    ModelNotCasePayload,
     UnjustifiedDropPayload,
     UnlistedPayload,
     UnseparatedPayload,
@@ -63,6 +64,10 @@ class Kind(StrEnum):
     """No principle stands behind it (`check_separates`); outside
     `FAILING`."""
     LISTS_NO_CASE = "lists-no-case"
+    MODEL_NOT_CASE = "model-not-case"
+    """A given file's group name whose model is no case of the solver,
+    while some case takes its branches: its group's grid is not checked;
+    outside `FAILING`."""
     DROPPED = "dropped"
     """A case `impl_choice` drops, and a case condition it fails; outside
     `FAILING`."""
@@ -553,7 +558,7 @@ def is_hint(f: "Finding") -> bool:
 FAILING = frozenset(Kind) - {
     Kind(ProblemKind.UNDECIDED), Kind.HINT, Kind.STORE_ROW_CAP, Kind.UNLISTED,
     Kind.CONCEPT, Kind.SEPARATES, Kind.DROPPED, Kind.TASK_ASSIGN,
-    Kind.NOT_CHECKED,
+    Kind.NOT_CHECKED, Kind.MODEL_NOT_CASE,
 }
 """The kinds that fail a command's check, from which every command's pass
 line and exit code come (`checker.render.passes`). `LINT` is among them,

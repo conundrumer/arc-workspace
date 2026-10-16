@@ -67,8 +67,8 @@ def defined(o: object) -> bool:
 
 
 def records(expected: GroupGrid, got: Outcome) -> bool:
-    """A group's grid records the outcome: its grid, its list of grids, one
-    per resolution (history 1119; a set, whatever the order), or null for
+    """A group's grid records the outcome: its grid, its list of distinct
+    grids (history 1119; a set, whatever the order), or null for
     undefined."""
     match expected:
         case Undefined():

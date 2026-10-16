@@ -37,20 +37,14 @@ def resolved(solver: Solver) -> bool:
 def pass_suffix(solver: Solver, cases: Sequence[CaseOnPair]) -> str:
     """What a passing pair gave: the count of cases where more than one
     gave grids, and for a solver whose `out` holds resolutions, the count
-    of resolutions and of distinct grids where the grids carry more than
-    one resolution value (`solver.outcome.Grids`)."""
-    given = [c for c in cases if isinstance(c.outcome, Grids)]
+    of distinct grids where some case gives more than one."""
+    given = [c.outcome for c in cases if isinstance(c.outcome, Grids)]
     parts: list[str] = []
     if len(given) > 1:
         parts.append(counted(len(given), mctx("witnessed case")))
-    if resolved(solver):
-        n_res = max((len(c.outcome.resolutions) for c in given
-                     if isinstance(c.outcome, Grids)), default=1)
-        if n_res > 1:
-            parts.append(counted(n_res, mctx("resolution")))
-            grids = {g for c in given if isinstance(c.outcome, Grids)
-                     for g in c.outcome.grids}
-            parts.append(counted(len(grids), mctx("grid")))
+    if resolved(solver) and any(len(g.grids) > 1 for g in given):
+        grids = {grid for g in given for grid in g.grids}
+        parts.append(counted(len(grids), mctx("grid")))
     return f" ({', '.join(parts)})" if parts else ""
 
 

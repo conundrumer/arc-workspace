@@ -33,10 +33,10 @@ class Assignment:
         "`out` column of type `TiebreakResolution`.")
 @dataclass(frozen=True)
 class Grids:
-    """The grids a case gives (`solver.out_grids.case_grids`), and the
-    resolution value of each where `out` has resolution columns and the
-    case has one combination of open values and rules
-    (`solver.out_grids.open_union`), the grid's identity."""
+    """The distinct grids a case gives (`solver.out_grids.case_grids`),
+    and the resolution value each first stands at where `out` has
+    resolution columns and the case has one combination of open values
+    and rules (`solver.out_grids.open_union`), the grid's identity."""
 
     grids: tuple[Grid, ...]
     resolutions: tuple[Resolution, ...] = field(default=(), compare=False)
@@ -67,7 +67,8 @@ def first_failure(outcomes: Iterable[Outcome]) -> RunFailure | None:
 
 def group_grid(outcome: Grids | Undefined) -> GroupGrid:
     """An outcome as a witness file's group holds it: one grid as a grid,
-    more than one as a grid per resolution (history 1119), undefined as
+    more than one as its distinct grids, each with its resolution value
+    (history 1119), undefined as
     it is."""
     if isinstance(outcome, Undefined):
         return outcome

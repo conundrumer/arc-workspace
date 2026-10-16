@@ -1,5 +1,5 @@
 train 0: PASS
-train 1: PASS (2 resolutions, 2 grids)
+train 1: PASS (2 grids)
 train 2: PASS
 test 0: PASS
 

@@ -273,7 +273,7 @@ def results(got: Sequence[tuple[Case, Outcome | Fault]]
 def entry_outcomes(runs: Runs, entry: Entry) -> Outcomes | RunFailure | Fault:
     """What each case the checks read (`Runs.cases`) gives on the entry's
     input at its `assign`, in the order the cases come in (`results`): a
-    grid, a list of grids per resolution (history 1119), or undefined. The
+    grid, a list of its distinct grids (history 1119), or undefined. The
     failure of the run that enumerates the cases, the problem that stops
     the entry's assignment, or the first run with no result, in its
     place."""

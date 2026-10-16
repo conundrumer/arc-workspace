@@ -421,18 +421,18 @@ def open_union(per_value: Iterable[Grids | Undefined]) -> Grids | Undefined:
 def resolution_grids(res_cols: tuple[ResolutionColumn, ...],
                      mine: Sequence[Row],
                      margins: dict[int, Place | None]) -> Grids | Undefined:
-    """The grids of `mine`, the rows of one combination of open values and
-    rule choice (`rule_grids`), one per resolution in the order of the
-    resolution values (solver-file.md, under "Cases"), each with its
-    resolution value where `out` has resolution columns `res_cols`; or
+    """The distinct grids of `mine`, the rows of one combination of open
+    values and rule choice (`rule_grids`), in the order of the resolution
+    values (solver-file.md, under "Cases"), each with the resolution value
+    it first stands at where `out` has resolution columns `res_cols`; or
     undefined, with the reason of the first resolution that gives no total
     grid."""
     by_res = by_values(mine, [c.index for c in res_cols])
-    grids: list[Grid] = []
+    first: dict[Grid, Resolution] = {}
     keys = sorted(by_res, key=lambda k: tuple(value_key(v) for v in k))
     for key in keys:
         grid = _grid_of(by_res[key], margins)
         if not isinstance(grid, tuple):
             return Undefined(grid)
-        grids.append(grid)
-    return Grids(tuple(grids), tuple(keys) if res_cols else ())
+        first.setdefault(grid, key)
+    return Grids(tuple(first), tuple(first.values()) if res_cols else ())

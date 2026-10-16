@@ -36,6 +36,7 @@ from checker.payloads.witness import (
     DriftPayload,
     ForeignUnderApproximated,
     ListsNoCasePayload,
+    ModelNotCasePayload,
     NoDivergence,
     ReassignedMismatch,
     RelaxedNoClaim,
@@ -140,7 +141,8 @@ def check_entry_outputs(solver: Solver, runs: Runs) -> list[Finding]:
     """Per entry of the witness file: the cases a group names whose output
     is not the group's grid (`drift`), the solver's cases no group names
     (`unlisted`), the group names that denote none of the solver's cases
-    (`lists-no-case`), an `assign` whose rows do not have the columns of the
+    (`lists-no-case`), a given file's group names whose model is no case of
+    the solver (`model-not-case`), an `assign` whose rows do not have the columns of the
     parameter or `@store` relation it names (`assign`), and the runs that
     give no result. An entry whose id names a case of the solver need not
     list it. A given file is an Analyze file, which lists no case of the
@@ -232,7 +234,8 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
     given file's name is read as the model of the branches it names, where
     that model is one of `solver_cases` (`_model_set`), and a name whose
     model is not one of them, while some case takes its branches, is
-    compared with no case and names none: the file gives each branch's
+    compared with no case, names none, and is reported `model-not-case`:
+    the file gives each branch's
     output, the output of its model alone, and no other case is compared
     with it (procedure.md, under "Analyze after the concept" and "Witness";
     solver-file.md, under "Witness file").
@@ -247,6 +250,7 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
     drift: list[tuple[Case, object, Outcome]] = []
     problems: list[Finding] = []
     listing_none: list[str] = []
+    unchecked: list[str] = []
     named: set[Case] = set()
     for group in entry.output.groups:
         in_group: set[Case] = set()
@@ -255,6 +259,7 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
             cases = denoted_cases(solver, n, solver_cases) \
                 if task_file else _model_set(solver, n, solver_cases)
             if cases is None:
+                unchecked.append(n)
                 continue
             if isinstance(cases, NameFault):
                 # The task's file's names are read with the model; a given
@@ -283,6 +288,10 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
     if listing_none:
         out.append(Finding(Kind.LISTS_NO_CASE, where,
                            ListsNoCasePayload(tuple(listing_none))))
+    if unchecked:
+        out.append(Finding(Kind.MODEL_NOT_CASE, where,
+                           ModelNotCasePayload(tuple(unchecked),
+                                               entry.assign)))
     if runs.given is not None or _unread_names(solver, entry):
         return out
     own = _own(solver, entry, solver_cases)

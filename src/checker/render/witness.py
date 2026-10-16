@@ -28,6 +28,7 @@ from checker.payloads.witness import (
     SubsumedPayload,
     TaskAssignPayload,
     ListsNoCasePayload,
+    ModelNotCasePayload,
     UnjustifiedDropPayload,
     UnlistedPayload,
     UnseparatedPayload,
@@ -35,6 +36,7 @@ from checker.payloads.witness import (
     WitnessEntryMissing,
 )
 from checker.render import _no_sentence
+from checker.render.recording import grid_command
 from checker.render.cases import names_text
 from checker.render.faults import NO_ASSIGN_VALUE
 from checker.render.locations import where_text
@@ -63,6 +65,7 @@ if TYPE_CHECKING:
 WITNESS_KINDS = frozenset({
     Kind.DRIFT, Kind.UNLISTED, Kind.ANNOTATION, Kind.UNSEPARATED,
     Kind.SUBSUMED, Kind.CONCEPT, Kind.SEPARATES, Kind.LISTS_NO_CASE,
+    Kind.MODEL_NOT_CASE,
     Kind.DROPPED, Kind.DROP_UNJUSTIFIED, Kind.TASK_ASSIGN,
     Kind.CONCEPT_UNENUMERATED,
 })
@@ -308,6 +311,20 @@ def witness_lines(solver: Solver, f: Finding) -> list[str]:
                 mctx("these names denote no case of the solver, "
                      "so the grids of the groups that list them are not "
                      "checked: {names}")).format(names=_ticked(names))]
+        case ModelNotCasePayload(names=names, assign=assign):
+            line = (mctx("{entry}: {names} denotes a model that is no case "
+                         "of the solver, so the run does not check the grid "
+                         "of the group that lists it; check that grid against "
+                         "what this command prints with the entry's input "
+                         "grid on stdin:")
+                    if len(names) == 1 else
+                    mctx("{entry}: these names denote models that are no "
+                         "cases of the solver, so the run does not check the "
+                         "grids of the groups that list them; check each such "
+                         "grid against what this command prints for its name "
+                         "with the entry's input grid on stdin: {names}"))
+            return [line.format(entry=at, names=_ticked(names)),
+                    f"  {grid_command(solver.stem, names, assign)}"]
         case DroppedPayload():
             return [_dropped_line(solver, p)]
         case UnjustifiedDropPayload():

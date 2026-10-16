@@ -218,6 +218,15 @@ class ListsNoCasePayload:
     names: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class ModelNotCasePayload:
+    """A given file's group names, as written, whose model is no case of
+    the solver, and the `assign` of their entry."""
+
+    names: tuple[str, ...]
+    assign: tuple[tuple[str, AssignValue], ...]
+
+
 class Condition(StrEnum):
     """The case condition a dropped case fails (principles.md, under "Cases")."""
 
@@ -276,6 +285,7 @@ class ConceptUnenumeratedPayload:
 type WitnessPayload = (DriftPayload | UnlistedPayload | AnnotationPayload
                        | UnseparatedPayload | SubsumedPayload
                        | ConceptPayload | SeparatesPayload | ListsNoCasePayload
+                       | ModelNotCasePayload
                        | DroppedPayload | UnjustifiedDropPayload
                        | ConceptUnenumeratedPayload
                        | TaskAssignPayload)
