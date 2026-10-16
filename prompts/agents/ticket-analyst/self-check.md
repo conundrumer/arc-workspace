@@ -5,7 +5,7 @@
         - Checking the draft by the ticket reviewer's checks: [Checking a draft](#checking-a-draft).
 
 # Checking a draft
-- Check the draft by each check of [Checks](prompts/agents/ticket-reviewer.md#checks) on these, and fix each fault a check shows, before you file the draft or log its revision:
+- Check the draft by each check of [Checks](prompts/agents/ticket-reviewer/review.md#checks) on these, and fix each fault a check shows, before you file the draft or log its revision:
     - `depends-on`.
     - The order of instructions that edit the same part of a file.
     - The outcome of [Process notes](prompts/agents/notes/process.md) in the Motivation.

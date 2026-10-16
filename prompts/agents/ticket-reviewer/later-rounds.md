@@ -1,9 +1,9 @@
 + budget: 1200
 * comment: when editing this doc
-    - The ticket reviewer loads this document from [Ticket reviewer](prompts/agents/ticket-reviewer.md#ticket-reviewer), when an earlier round reviewed the draft.
+    - The ticket reviewer loads this document from [Reviewing a draft](prompts/agents/ticket-reviewer/review.md#reviewing-a-draft), when an earlier round checked the draft by [Checks](prompts/agents/ticket-reviewer/review.md#checks).
     - Acts, each with its section:
-        - Limiting a later round's findings, and taking the draft's text at the earlier round: [A later round](#a-later-round).
+        - Limiting a later round's findings, and taking the draft's text at that round: [A later round](#a-later-round).
 
 # A later round
-- In a round after the first on a draft, make by [Checks](prompts/agents/ticket-reviewer.md#checks) only a finding the earlier round could not have made: one on text that changed since that round, one on a claim whose ground, in the tree or this session's state, changed since that round, or a finding of an earlier round that still stands.
-    - Take the draft's text at the earlier round from the transcript of the ticket reviewer whose agent id that round's log lines give, which `python3 ~/.claude/skills/retrieve/transcripts.py` reads by agent id. Where you cannot read that text, take the whole draft as changed since that round.
+- In a round after one that checked the draft by [Checks](prompts/agents/ticket-reviewer/review.md#checks), make by [Checks](prompts/agents/ticket-reviewer/review.md#checks) only a finding the last such round could not have made: one on text that changed since that round, one on a claim whose ground, in the tree or this session's state, changed since that round, or a finding of an earlier round that still stands.
+    - Take the draft's text at that round from the transcript of the ticket reviewer whose agent id that round's log lines give, which `python3 ~/.claude/skills/retrieve/transcripts.py` reads by agent id. Where you cannot read that text, take the whole draft as changed since that round.
