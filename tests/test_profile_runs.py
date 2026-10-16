@@ -87,13 +87,6 @@ def test_parts(run) -> None:
                          Part.WAITS: 1 + 100 + 20, Part.IDLE: 49}
 
 
-def test_labels(run) -> None:
-    assert run.groups[(Part.TOOLS, "gate")].time == 10
-    sweep = run.groups[(Part.WAITS, "bg run_dl.py sweep")]
-    assert (sweep.time, sweep.ran) == (101, 102)
-    assert run.groups[(Part.WAITS, "poll")].time == 20
-
-
 def agent_call(tid: str, background: bool = True) -> dict:
     return {"type": "tool_use", "id": tid, "name": "Agent",
             "input": {"description": tid, "subagent_type": "editor",

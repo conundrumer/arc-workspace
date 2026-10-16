@@ -17,7 +17,7 @@ A change to `.comp ShiftInvariance<Key, Val>`: expose the exact reading's set un
 
 Not: `period`, the damage-tolerant set. Not `min_period`, nor the proposed `shortest` (`ShiftInvariance-shortest.md`): those are the two minima, one over each set, and this is a set.
 
-Match: a rule that negates a `ShiftInvariance` instance's `mismatch`, or negates a helper relation derived from it, and binds that atom's axis and amount from a positive atom, wherever the atoms sit. Match with the parser (`tests/test_ast_match.py`), resolving each negated `mismatch` reference through its qualifier to its instance, and each negated helper back through the rule that derives it.
+Match: a rule that negates a `ShiftInvariance` instance's `mismatch`, or negates a helper relation derived from it, and binds that atom's axis and amount from a positive atom, wherever the atoms sit. Match with the parser, resolving each negated `mismatch` reference through its qualifier to its instance, and each negated helper back through the rule that derives it.
 
 Survey: 2026-09-11 13:29 — the whole corpus.
 

@@ -9,7 +9,7 @@ shift_opposite(V, V_inv) :- displacement(V, ORIGIN, V_inv).
 
 Not: `opposite` and its Dir8 peers, which reverse a direction and carry no amount; `d4_inverse`, the inverse of a D4 element; `displacement` between two cells, which is the shift itself.
 
-Match: a `displacement` atom with `ORIGIN` as one of its two Position arguments; or two `displacement` atoms in one rule with their two Position arguments exchanged, so one binds the shift and the other its inverse. Grep finds the first shape (`displacement(.*ORIGIN`); the parser (`tests/test_ast_match.py`) matches both.
+Match: a `displacement` atom with `ORIGIN` as one of its two Position arguments; or two `displacement` atoms in one rule with their two Position arguments exchanged, so one binds the shift and the other its inverse. Grep finds the first shape (`displacement(.*ORIGIN`); the parser matches both.
 
 Survey: 2026-09-11 02:54 — the whole corpus.
 

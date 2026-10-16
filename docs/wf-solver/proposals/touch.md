@@ -18,7 +18,7 @@ touch(H, W) :- box.reach(H, P), beside(P, Q, _), !box.reach(H, Q), object.label(
 
 Not: `Abut` (the direction from the anchor to the cell is kept); `lone` (one set against itself); `Surround` (every neighbor lies in the second set); `Closed.wall` (the closing set beside a `Closed` region, a special case of the second set); `Rim.rim_dir` (a set's own outside); a contact at range through `Ray` or `jump`; a step whose direction is bound before the step, which constructs a neighbor rather than testing contact.
 
-Match: a rule whose body joins two different cell relations through one `neighbor` atom whose direction ranges over `dir_elem` or `dir8_elem`, with no Dir column in the head. The head keeps a key of each side, or a key of one side and a cell of the other. Grep `dir_elem(D), neighbor(` and `dir8_elem(D), neighbor(` in `programs/solvers/*.dl` and keep the rules whose two cell atoms are different relations; match with the parser (`tests/test_ast_match.py`).
+Match: a rule whose body joins two different cell relations through one `neighbor` atom whose direction ranges over `dir_elem` or `dir8_elem`, with no Dir column in the head. The head keeps a key of each side, or a key of one side and a cell of the other. Grep `dir_elem(D), neighbor(` and `dir8_elem(D), neighbor(` in `programs/solvers/*.dl` and keep the rules whose two cell atoms are different relations; match with the parser.
 
 Survey: 2026-09-10 21:59 — the whole corpus.
 

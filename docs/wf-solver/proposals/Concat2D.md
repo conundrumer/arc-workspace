@@ -31,7 +31,7 @@ cell(P_grid_out, P_tile, P_intile, $Crop()) :-
 
 Not: `Divide2D` and `Tile2D`, which read the tile index and intile position off a frame the input already has; `concat_2d` in a rule whose outer or inner position is bound by a correspondence rather than a cell set (a divide, an `apply` image, a position table with a payload the rule reads, as `params.tile_d4`), which states where a cell lands, not a frame — a per-outer inner set, each tile taking the content its color, marker, or object names, is the keyed instance, not an exclusion; the 1D `concat` and `concat_slab` forms; `ConcatPipeline`, whose tiles differ in size.
 
-Match: a rule with a `concat_2d` atom whose outer and inner positions are each bound by a positive atom over a cell set — `in`, a `Params` frame relation, a `BoxFrame` or `Reframe` inner read, or a plain solver relation — and whose grid position is the rule's head position or feeds it. The two binding atoms may be one relation twice (the self-product) or two relations. Grep `concat_2d(`; match the binding shape with the parser (`tests/test_ast_match.py`).
+Match: a rule with a `concat_2d` atom whose outer and inner positions are each bound by a positive atom over a cell set — `in`, a `Params` frame relation, a `BoxFrame` or `Reframe` inner read, or a plain solver relation — and whose grid position is the rule's head position or feeds it. The two binding atoms may be one relation twice (the self-product) or two relations. Grep `concat_2d(`; match the binding shape with the parser.
 
 Survey: 2026-09-11 02:07 — the whole corpus.
 

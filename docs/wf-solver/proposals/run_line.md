@@ -11,7 +11,7 @@ run_line(K, A, L) :-
 
 Not: `Runs` (every maximal segment, individuated); `multi_cell` (two members anywhere under one key); `flanked` (a cell between two members); `LineCover` and `LineColor` (a line the set covers whole); a count of a line's members against a threshold or against its gaps (`Tally`, `Excess`); a pair of members on one line with no adjacency (`same_line`).
 
-Match: a rule with two atoms of one cell set joined by one `neighbor` step, whose head or a following atom names the line one of them lies on — the along or across component of `split` on that cell, an axis with it. Either line convention matches: the position on the axis read across (`DividerFrame`'s), or the axis the line runs along with the across component (`same_line`'s). The signature has no lexical anchor; match it with the parser (`tests/test_ast_match.py`).
+Match: a rule with two atoms of one cell set joined by one `neighbor` step, whose head or a following atom names the line one of them lies on — the along or across component of `split` on that cell, an axis with it. Either line convention matches: the position on the axis read across (`DividerFrame`'s), or the axis the line runs along with the across component (`same_line`'s). The signature has no lexical anchor; match it with the parser.
 
 Survey: 2026-09-09 21:07, over the whole corpus.
 

@@ -29,7 +29,7 @@ The cells of a keyed domain whose every neighbor lies in a second keyed set, the
 
 Not: `Rim.interior` (a member of the set it is judged by); `flanked` and `bend` (two sides, not every side); `Closed` and `Reach` (enclosure by flood from the grid edge, at any distance); a fold over a caller-supplied subset of directions that keeps the direction.
 
-Match: a rule that negates a defect over every direction of `dir_elem` or `dir8_elem`, where the defect is `neighbor` from a cell of one set landing on a cell that is not in a second set, and the tested cell's set differs from the second set. The defect may be stated positively as a count of neighbors in the set equal to the class size. Coarse grep: `dir_elem(D), neighbor(` and `dir8_elem(D), neighbor(` beside a negated set atom; match with the parser (`tests/test_ast_match.py`).
+Match: a rule that negates a defect over every direction of `dir_elem` or `dir8_elem`, where the defect is `neighbor` from a cell of one set landing on a cell that is not in a second set, and the tested cell's set differs from the second set. The defect may be stated positively as a count of neighbors in the set equal to the class size. Coarse grep: `dir_elem(D), neighbor(` and `dir8_elem(D), neighbor(` beside a negated set atom; match with the parser.
 
 Survey: 2026-09-10 01:17
 

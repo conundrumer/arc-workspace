@@ -47,7 +47,7 @@ Members sharing a score share a row and leave the rows past it without a member,
 
 Not: the rank alone (`ScoreOrder`, `Ordinal`, `Order`); the frame alone (`Frame2D`); a per-line count drawn in place on the input frame, where the rows are the input's own lines and no member is ranked; a bar whose length is read from the input as a run rather than counted; a stack of members with no bar (`OrderFrame`); a chart whose rows follow an order other than the score.
 
-Match: a `Frame2D` instance whose two extents are a member count (`Tally`) and a score maximum (`Extremes.high`, or the rank-0 score of a descending rank), with a paint rule that reads a rank off `dist` toward one edge, reaches the member through its score, and compares `dist` toward the perpendicular edge against that score (`K < N`). Also the seated form, where a tiebreak assigns members to rows before the paint rule. Grep: `Frame2D<` in a file that also holds `Extremes<` or `rank_desc(.*, 0)` and `Ordinal<` or `Order<`, then the `dist(P, D, K), K < N` shape read with the parser (`tests/test_ast_match.py`).
+Match: a `Frame2D` instance whose two extents are a member count (`Tally`) and a score maximum (`Extremes.high`, or the rank-0 score of a descending rank), with a paint rule that reads a rank off `dist` toward one edge, reaches the member through its score, and compares `dist` toward the perpendicular edge against that score (`K < N`). Also the seated form, where a tiebreak assigns members to rows before the paint rule. Grep: `Frame2D<` in a file that also holds `Extremes<` or `rank_desc(.*, 0)` and `Ordinal<` or `Order<`, then the `dist(P, D, K), K < N` shape read with the parser.
 
 Survey: 2026-09-10 07:45
 

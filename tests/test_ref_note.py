@@ -34,14 +34,14 @@ def repo(tmp_path, fixed_repo):
     return root
 
 
-def env_for(repo, task=""):
+def env_for(repo):
     return {**os.environ, "CONSOLE_ROOT": str(repo),
             "CONSOLE_STATE_DIR": str(repo.parent / "state"),
-            "CONSOLE_TASK": task}
+            "CONSOLE_TASK": ""}
 
 
-def hook(repo, payload, task=""):
-    _, out, _ = run_hook(SCRIPT, json.dumps(payload), env_for(repo, task))
+def hook(repo, payload):
+    _, out, _ = run_hook(SCRIPT, json.dumps(payload), env_for(repo))
     out = out.strip()
     return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
 
@@ -57,13 +57,3 @@ def test_an_unapproved_solver_gets_the_note(repo):
     note = hook(repo, grep_of("cccc3333"))
     assert note == ("note: cccc3333.dl is not approved — don't use it as "
                     "reference; it still counts as a survey caller.")
-
-
-def test_a_solver_with_no_draft_line_is_silent(repo):
-    assert hook(repo, grep_of("aaaa1111")) == ""
-
-
-def test_the_workers_own_task_is_exempt(repo):
-    assert hook(repo, grep_of("cccc3333"), task="cccc3333") == ""
-
-

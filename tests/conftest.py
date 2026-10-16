@@ -1,6 +1,5 @@
-"""The hold of the heavy commands' lock a run takes, the checkout a test
-runs the commands in, and the `data/upstream/` submodules a test of the
-upstream tasks reads."""
+"""The hold of the heavy commands' lock a run takes, and the checkout a test
+runs the commands in."""
 
 import contextlib
 import importlib.util
@@ -30,18 +29,6 @@ def script(name: str) -> ModuleType:
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
-
-
-@pytest.fixture(scope="session")
-def upstream() -> None:
-    """The checkout's `data/upstream/` submodules, set up. A worktree starts
-    with them empty. Where the setup fails, the test fails with its cause."""
-    subs = script("worktree_submodules")
-    root = checkout.ROOT
-    try:
-        subs.set_up(root)
-    except subs.SetupFailed as exc:
-        pytest.fail(str(exc), pytrace=False)
 
 
 @pytest.fixture

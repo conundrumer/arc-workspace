@@ -11,7 +11,7 @@ A box flush at two opposite edges faces both ways, and a corner cell faces the t
 
 Not: a plain border test (`dir_elem(D), dist(P, D, 0)`), which states contact and carries no heading; `edge_depth`, the fold of the four edge distances; `near_edge`, the nearer edge of one axis with its distance, which reads a half and not a contact; `opposite` alone, which reverses a direction with no placement; `Abut`, the heading a cell takes off another set rather than off the frame; `Rim.rim_dir`, the direction a set's own boundary faces.
 
-Match: one rule holding an `opposite` atom and a zero-distance `dist` atom that share a direction variable, over a Box, a Position, or a Bbox box; and the same pairing written with `diag_dirs`, `dir_of`, or `perp_dir` in place of `opposite` where the head keeps a cardinal. State the shape in prose and match it with the parser (`tests/test_ast_match.py`).
+Match: one rule holding an `opposite` atom and a zero-distance `dist` atom that share a direction variable, over a Box, a Position, or a Bbox box; and the same pairing written with `diag_dirs`, `dir_of`, or `perp_dir` in place of `opposite` where the head keeps a cardinal. State the shape in prose and match it with the parser.
 
 Survey: 2026-09-14 02:10 — every solver.
 

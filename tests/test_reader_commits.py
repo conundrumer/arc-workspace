@@ -10,11 +10,14 @@ from pathlib import Path
 from typing import Any
 
 from engine import checkout
-from handbook.coordinator_document import SESSION_READER_ENV
+from engine.rwlock import HOLD_ENV
 
 BEFORE = "9902f864930978d057225b591ef940510bfa6543"
 OPERATOR_ID = "a0123456789abcdef"
 GENERAL_ID = "afedcba9876543210"
+KEPT_ENV = ("PATH", "HOME", HOLD_ENV)
+"""The variables of the run's environment a hook is given. A variable of
+the session, such as its reader, changes what a hook writes."""
 
 
 def head() -> str:
@@ -31,7 +34,7 @@ def command(event: str, matcher: str | None = None, script: str = "") -> str:
 def ran(cmd: str, hook: dict[str, Any]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, shell=True, input=json.dumps(hook),
                           capture_output=True, text=True, check=True,
-                          env={**{k: v for k, v in os.environ.items() if k != SESSION_READER_ENV},
+                          env={**{k: os.environ[k] for k in KEPT_ENV if k in os.environ},
                                "CLAUDE_PROJECT_DIR": str(checkout.ROOT),
                                "CLAUDE_CODE_ENTRYPOINT": "cli"})
 

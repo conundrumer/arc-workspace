@@ -9,7 +9,7 @@ ahead(D, P, Q) :- axis_of(D, A), same_line(A, P, Q), nearer(D, Q, P).
 
 Not: `nearer` alone (which side of p q lies on, with no line test); `neighbor` and `jump` (a step of a fixed length); `Ray.ray` and `Slide.run` (a cast from a keyed mark set, which a blocker stops and which reports the step count and the source); `toward` (the king heading from p to a goal, diagonals included); `same_line` alone (no order); `Between.between` (a fold of two sightings against a mark set).
 
-Match: a rule that states `same_line` on an axis beside `nearer` on a direction of that axis, over the same two positions, in either argument order. The direction may be free, may come from `axis_of` on a stored axis, or may be read from a parameter; the two atoms may sit in different lines or in a helper rule. The `dist`-written form also states it: one `dist` pair equal across the perpendicular axis beside a `<` comparison of the two `dist` values on the direction's axis. Match with the parser (`tests/test_ast_match.py`).
+Match: a rule that states `same_line` on an axis beside `nearer` on a direction of that axis, over the same two positions, in either argument order. The direction may be free, may come from `axis_of` on a stored axis, or may be read from a parameter; the two atoms may sit in different lines or in a helper rule. The `dist`-written form also states it: one `dist` pair equal across the perpendicular axis beside a `<` comparison of the two `dist` values on the direction's axis. Match with the parser.
 
 Survey: 2026-09-14 02:54 — every solver.
 

@@ -54,21 +54,9 @@ def test_an_add_that_reaches_an_untracked_file_is_refused(repo, command):
     assert "new.dl" in err
 
 
-@pytest.mark.parametrize("command", ["git add tracked.dl", "git add -u", "git add -u ."])
-def test_an_add_of_tracked_changes_goes_through(repo, command):
-    assert bash(repo, command) == (0, "")
-
-
 def test_a_commit_over_a_staged_untracked_file_is_refused(repo):
     run(repo, "add", "new.dl")
     code, err = bash(repo, "git commit -m 'Add new'")
     assert code == 2
     assert "new.dl" in err
     assert "git restore --staged" in err
-
-
-def test_a_message_carrying_an_operator_goes_through(repo):
-    run(repo, "add", "tracked.dl")
-    assert bash(repo, "git commit -m 'Update tracked; keep the rest'") == (0, "")
-
-

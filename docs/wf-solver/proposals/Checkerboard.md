@@ -35,7 +35,7 @@ The closure reaches the seed's connected part of the set. A parity test over cor
 
 Not: a lattice of stored period reached by period-sized jumps (`LatticeOrbit`), whose period-2 class on both axes is a quarter of the cells, not a half; alternation along one line (d492a647, 834ec97d, 3ac3eb23 `$Parity`); the residue of one distance read into a table (`stride`); a tiling of 2×2 blocks (`divide_by_size_2d`).
 
-Match: a recursive relation over positions whose step is one cardinal `neighbor` and whose head value or membership swaps each step — a payload swapped through an `alt` relation or a `!=` over a two-element class, or two heads that feed each other. Also a rule testing two cells' corner distances for equal residue at period 2, through `stride` or `same_phase`. Grep `neighbor(` in rules whose head the rule reads, and `stride(.*2,`; match the shape with the parser (`tests/test_ast_match.py`).
+Match: a recursive relation over positions whose step is one cardinal `neighbor` and whose head value or membership swaps each step — a payload swapped through an `alt` relation or a `!=` over a two-element class, or two heads that feed each other. Also a rule testing two cells' corner distances for equal residue at period 2, through `stride` or `same_phase`. Grep `neighbor(` in rules whose head the rule reads, and `stride(.*2,`; match the shape with the parser.
 
 Survey: 2026-09-10 06:44
 

@@ -10,7 +10,7 @@ The union of the 8-connected components a key's seeds select: `Reach` over the f
 
 Not: `Components8` (the components under the same steps, with no seed to select among them); `Reach` (the cardinal steps).
 
-Match: a `Reach` instance whose `step` relation is fed from `dir8_elem`, in any layout of the feeding rule, and through any comp that inherits `Reach`; also the same flood written over `Components8`, where a distinguished cell picks the component and its id reaches nothing else. Match with the parser (`tests/test_ast_match.py`): an instance of `Reach` or of a comp extending it, beside a rule whose head is that instance's `step` with `dir8_elem` in its body; and a `Components8` instance whose `label` or `conn` carries a cell of a distinguished relation to a domain cell, with the component id in neither the rule head nor another atom.
+Match: a `Reach` instance whose `step` relation is fed from `dir8_elem`, in any layout of the feeding rule, and through any comp that inherits `Reach`; also the same flood written over `Components8`, where a distinguished cell picks the component and its id reaches nothing else. Match with the parser: an instance of `Reach` or of a comp extending it, beside a rule whose head is that instance's `step` with `dir8_elem` in its body; and a `Components8` instance whose `label` or `conn` carries a cell of a distinguished relation to a domain cell, with the component id in neither the rule head nor another atom.
 
 Survey: 2026-09-11 08:36 — the whole corpus.
 

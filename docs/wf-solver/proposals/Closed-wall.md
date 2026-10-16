@@ -10,7 +10,7 @@ wall(Ky, P, Id) :- region(Ky, Q, Id), dir_elem(D), neighbor(Q, D, P), !cell(Ky, 
 
 Not: `Reach` seeded from a set (the cells the set reaches, not the cells beside it); `Surround` (a cell walled at every neighbor, with no region); `Rim.rim_dir` (the set's own boundary and the direction it faces); `Abut` (contact that keeps the direction); a one-step band around an arbitrary set with no closed region behind it; `Bbox.edge_cell` contact.
 
-Match: a rule joining `Closed.region` (or a `Reach` negation that states enclosure from the grid edge) with one `neighbor` step over `dir_elem` onto a cell of the closing set, its component label, or its color, with no direction in the head. Grep `region(` beside `neighbor(` in `programs/solvers/*.dl`, and `!.*reach(` beside `neighbor(`; match with the parser (`tests/test_ast_match.py`).
+Match: a rule joining `Closed.region` (or a `Reach` negation that states enclosure from the grid edge) with one `neighbor` step over `dir_elem` onto a cell of the closing set, its component label, or its color, with no direction in the head. Grep `region(` beside `neighbor(` in `programs/solvers/*.dl`, and `!.*reach(` beside `neighbor(`; match with the parser.
 
 Survey: 2026-09-10 07:26
 

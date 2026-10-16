@@ -22,7 +22,7 @@ Code form (comp, since the tested set and the flanking set differ at most sites)
 
 Not: `bend` (the two cardinals of a corner); `Between.between` and `Between.strict` (marks anywhere along the line, by ray reach); `Rim.interior` (a member no step of the adjacency leaves, which is every side at once); a chain, whose second step leaves the first step's target; `opposite` reversing a walk's heading; two `neighbor` atoms whose directions are not an opposite pair.
 
-Match: a rule with two `neighbor` atoms out of one cell whose directions are an opposite pair — from `opposite`, from `dir8_opposite`, from `axis_of` or `axis4_of` twice, or from `dist_pair` — each landing on a cell of one set. The step may be mediated by a helper relation that itself reaches `neighbor`. The signature has no lexical anchor; match it with the parser (`tests/test_ast_match.py`).
+Match: a rule with two `neighbor` atoms out of one cell whose directions are an opposite pair — from `opposite`, from `dir8_opposite`, from `axis_of` or `axis4_of` twice, or from `dist_pair` — each landing on a cell of one set. The step may be mediated by a helper relation that itself reaches `neighbor`. The signature has no lexical anchor; match it with the parser.
 
 Survey: 2026-09-09 14:20, over the whole corpus.
 

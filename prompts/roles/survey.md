@@ -7,7 +7,7 @@
 # Procedure
 - Survey every solver in the scope the brief gives, not a sample.
 - Start from the spec's search signature, add the patterns the code form implies, and read each hit in its clause.
-- A shape signature has no lexical anchor; match it with the parser, per [test_ast_match.py](tests/test_ast_match.py).
+- A shape signature has no lexical anchor; match it with the parser.
 - A caller is a solver the lib operation would serve.
 - A near-miss looks close, and the spec's exclusions rule it out. Name the one that does.
 - When the spec has a surfacing solver, read its call site: that is the evidence for the spec question.

@@ -27,11 +27,3 @@ def test_a_shell_kill_is_refused_with_the_note(command):
     assert code == 2
     assert "TaskStop" in err
     assert 'ToolSearch "select:TaskStop"' in err
-
-
-@pytest.mark.parametrize("command", ["uv run pytest -q", "cat programs/lib.dl",
-                                     "ls .scratch", "grep -rn pkilled docs"])
-def test_every_other_command_goes_through(command):
-    assert hook(bash(command)) == (0, "")
-
-

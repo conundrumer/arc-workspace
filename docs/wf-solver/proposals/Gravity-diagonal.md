@@ -11,7 +11,7 @@ The way contact combines is not task data, so one comp that builds in one readin
 
 Not: a cast that paints the cells along a diagonal (`Ray`); a single mover whose heading is chosen by which ray meets a target; markers of several headings that stack at one cell, which one heading per key does not state.
 
-Match: a single mover or body that travels toward a `DiagDir` or `Dir8` heading and stops at the first contact with a blocked cell or a body, by a diagonal `Ray.stop`, a `Slide.rest` over diagonal steps, or a walk over `neighbor` toward a diagonal halted on a contact test. Match with the parser (`tests/test_ast_match.py`): a rule holding `neighbor`, `jump`, `Ray` or `Slide` whose direction argument is bound to a `DiagDir` or `Dir8` heading, and whose result is read as a body's rest or travel; then read each hit in its rule set.
+Match: a single mover or body that travels toward a `DiagDir` or `Dir8` heading and stops at the first contact with a blocked cell or a body, by a diagonal `Ray.stop`, a `Slide.rest` over diagonal steps, or a walk over `neighbor` toward a diagonal halted on a contact test. Match with the parser: a rule holding `neighbor`, `jump`, `Ray` or `Slide` whose direction argument is bound to a `DiagDir` or `Dir8` heading, and whose result is read as a body's rest or travel; then read each hit in its rule set.
 
 Survey: 2026-09-30 18:17 — every solver.
 

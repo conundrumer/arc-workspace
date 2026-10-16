@@ -27,7 +27,7 @@ The line families under which every member of a keyed cell set shares one line: 
 
 Not: `LineCover` and `LineColor` (a line the set covers or colors whole); `run_line` (the line two adjacent members trace, with no test on the rest of the set); `Runs` (maximal segments inside lines); `flanked` and `bend` (one cell's neighbors); a set against a frame edge (`dist(P, D, 0)` over every member, as 3bd67248 `off_edge`), which is collinearity with the edge line fixed; two members on one line with no universal over the set (`same_line` alone); `OrderFrame`, which orders members along an axis it is given, and its precondition that distinct members share no line (50aad11f `shared_line`), a separation across members rather than a set inside a line.
 
-Match: a defect relation over two atoms of one cell set and an axis, negating `same_line` (through a materialized helper) or comparing the across components of `split` (or `corner_dist` for a diagonal) for inequality, negated in a second rule over the same set and axis. Grep signature: `grep -ln 'same_line(\|split(' programs/solvers/*.dl`, then read for a per-set defect relation that a later rule negates. The hand-written shape is matched with the parser (`tests/test_ast_match.py`).
+Match: a defect relation over two atoms of one cell set and an axis, negating `same_line` (through a materialized helper) or comparing the across components of `split` (or `corner_dist` for a diagonal) for inequality, negated in a second rule over the same set and axis. Grep signature: `grep -ln 'same_line(\|split(' programs/solvers/*.dl`, then read for a per-set defect relation that a later rule negates. The hand-written shape is matched with the parser.
 
 Survey: 2026-09-10 07:05 — over the whole corpus.
 

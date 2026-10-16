@@ -25,7 +25,7 @@ The candidate seats of a footprint at which some member of the footprint, compos
 
 Not: `Occurrences.mismatch` (a member off its value or off the frame refutes; here only an obstacle refutes, and off-frame is silent); `Slide.rim_dir` (a point mover's next step, no footprint); `Ray.blocked` (a cast's blocked cells, no footprint); a contact test between two footprints both placed (the pair conflict of `PlacementPruning`).
 
-Match: a rule whose body composes each member of a footprint set at a candidate seat and joins the landed cell with a second cell set, deriving the seat (and its key), where a consumer negates that rule's head — including the form whose seat set is implicit (every cell of the grid, or every displacement of a `shift` domain) and the form whose landed-cell test is a negated membership in a free set. Grep: `compose(` beside a negated head in a `Slide.node`, `Ray.blocked`, or output rule; `obstructed`, `covering`, `blocked`, `halted`. Match with the parser (`tests/test_ast_match.py`).
+Match: a rule whose body composes each member of a footprint set at a candidate seat and joins the landed cell with a second cell set, deriving the seat (and its key), where a consumer negates that rule's head — including the form whose seat set is implicit (every cell of the grid, or every displacement of a `shift` domain) and the form whose landed-cell test is a negated membership in a free set. Grep: `compose(` beside a negated head in a `Slide.node`, `Ray.blocked`, or output rule; `obstructed`, `covering`, `blocked`, `halted`. Match with the parser.
 
 Survey: 2026-09-10 04:32
 

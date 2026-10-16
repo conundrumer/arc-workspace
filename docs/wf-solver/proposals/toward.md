@@ -13,7 +13,7 @@ toward(P, G, D8) :-
 
 Not: the strict quadrant of g about p (the diagonal half alone, with no cardinal fallback — af902bf9 `quad_mark`, 4938f0c2 `obj_quad`); the quadrant about the frame's midlines (`DiagPlacement.quadrant`); a heading read off contact (`Abut`); a heading fixed by a stored direction and carried along a walk (`Ray`, `Slide`); a heading turned by a rule at each step (212895b5 `turtle`); the fewest-hop route over an edge relation (`MinHops`).
 
-Match: a rule that binds a direction from `nearer` with the goal as the nearer position, and either tests `same_line` on that direction's axis over the same two positions or pairs it with a second `nearer` on the same two positions through `diag_dirs`; and the walk form, where that direction feeds `neighbor` out of p in a recursive rule whose goal is carried in the head. Grep `nearer(` beside `diag_dirs` and beside `same_line`, then confirm the two positions are the same pair with the parser (`tests/test_ast_match.py`).
+Match: a rule that binds a direction from `nearer` with the goal as the nearer position, and either tests `same_line` on that direction's axis over the same two positions or pairs it with a second `nearer` on the same two positions through `diag_dirs`; and the walk form, where that direction feeds `neighbor` out of p in a recursive rule whose goal is carried in the head. Grep `nearer(` beside `diag_dirs` and beside `same_line`, then confirm the two positions are the same pair with the parser.
 
 Survey: 2026-09-10 20:43 — the whole corpus.
 

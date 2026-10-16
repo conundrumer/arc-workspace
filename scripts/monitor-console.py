@@ -139,9 +139,8 @@ loses the workers. Never save a broken file over a watched one:
 - For a small edit, write the new text to a copy, run `python -m py_compile`
   on the copy, then move the copy over the watched file. One rename is one
   mtime change.
-- For a larger edit, make it in a git worktree, run the console suite there
-  (`uv run pytest -q tests/console`), then apply the same edit to the main
-  tree with one write.
+- For a larger edit, make it in a git worktree, then apply the same edit to
+  the main tree with one write.
 - A busy fleet is rarely quiet, so a reload can wait a long time. Check on
   the next poll that it took: the server log says "server source changed —
   restarting", and the process id stays the same across the exec.

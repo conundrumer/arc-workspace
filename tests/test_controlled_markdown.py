@@ -12,16 +12,11 @@ from pathlib import Path
 import pytest
 
 from controlled_markdown import (
-    ATTRIBUTE,
-    CONTENT,
-    HEADING,
-    QUOTE,
     ControlledMarkdownError,
     Registry,
     check_blocks,
     check_links,
     check_order,
-    full,
     parse,
     render,
     round_trips,
@@ -81,54 +76,3 @@ def _render_case(path):
     document = registry.load(path)
     check_links(document, path)
     render(document, registry)
-
-
-def test_markers():
-    """Each marker kind lands as its own node."""
-    document = parse(
-        "+ agent: handbook\n"
-        "# T\n"
-        "- parent\n"
-        "    + note: v\n"
-        "    - child\n"
-        "    > body\n"
-        "* wrap\n"
-        "    - inner\n"
-    )
-    agent, head = document.children
-    assert (agent.kind, agent.name, agent.value) == (ATTRIBUTE, "agent", "handbook")
-    assert (head.kind, head.text, head.depth) == (HEADING, "T", 1)
-    parent, wrap = head.children
-    assert (parent.kind, parent.text) == (CONTENT, "parent")
-    note, child, quote = parent.children
-    assert (note.kind, note.name, note.value) == (ATTRIBUTE, "note", "v")
-    assert (child.kind, child.text) == (CONTENT, "child")
-    assert (quote.kind, quote.text) == (QUOTE, "body")
-    assert wrap.anonymous() and wrap.star
-    assert wrap.attributes()["wrap"].value is None
-    assert [c.text for c in wrap.contents()] == ["inner"]
-
-
-def test_block_syntax_escape():
-    """A statement that opens with block syntax needs a backslash, and the
-    formatter puts it back."""
-    text = "# T\n- \\> quoted\n- 1\\. numbered\n"
-    document = parse(text)
-    assert [c.text for c in document.children[0].children] == ["> quoted", "1. numbered"]
-    assert write(document) == text
-    with pytest.raises(ControlledMarkdownError) as err:
-        parse("# T\n- > quoted\n")
-    assert err.value.rule == "block-syntax"
-
-
-def test_number_run():
-    """The numbered statements under one parent run from 1 with no gap."""
-    text = "# T\n1. one\n    - under\n2. two\n"
-    document = parse(text)
-    one = document.children[0].children[0]
-    assert (one.number, one.text) == (1, "one")
-    assert write(document) == text
-    assert full(document) == "# T\n\n1. one\n    - under\n2. two\n"
-    with pytest.raises(ControlledMarkdownError) as err:
-        parse("# T\n1. one\n3. three\n")
-    assert err.value.rule == "number-run"

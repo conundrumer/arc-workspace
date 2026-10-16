@@ -14,7 +14,7 @@ An equivalent statement is the ring form: the one-step ring around each set cell
 
 Not: `Components` and `Components8` (no gap); `Dilate` and `Rim.depth` (a distance, no closure); `Transitive` (the closure alone, over a caller's edge); `Reach` seeded across a gap through bg cells (the bg cells are nodes, so the gap is not bounded); a join of like-valued tiles across a lattice (33067df9, whose nearness is the tile arrangement's, not the grid's).
 
-Match: a `Components` or `Components8` instance with a `step` fed by two `step_delta` atoms composed; a two-atom self-join of a one-step ring relation (`ring(A, R), ring(B, R)`) fed to `Canon.equiv` or closed transitively; a `Canon.equiv` or `Components.node` feed whose edge is `jump` or `neighbor` at distance two over the set; any closure over a "within two steps" or "at most one cell between" relation. Match with the parser (`tests/test_ast_match.py`).
+Match: a `Components` or `Components8` instance with a `step` fed by two `step_delta` atoms composed; a two-atom self-join of a one-step ring relation (`ring(A, R), ring(B, R)`) fed to `Canon.equiv` or closed transitively; a `Canon.equiv` or `Components.node` feed whose edge is `jump` or `neighbor` at distance two over the set; any closure over a "within two steps" or "at most one cell between" relation. Match with the parser.
 
 Survey: 2026-09-10 02:35
 

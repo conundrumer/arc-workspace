@@ -4,7 +4,7 @@ A change to `.comp TiebreakResolutions<Key, Slot, Item>`: a readout beside `reso
 
 Not: `resolution` as it stands, the injective assignment across every slot. Not a caller that keys its items by slot to avoid collisions: that keying stands in the caller, and it states the need for the change, not the change.
 
-Match: a `TiebreakResolutions` instance whose `Item` type carries a field equal to its `Slot` type, or whose `cand` rule builds the item from the slot. Match with the parser (`tests/test_ast_match.py`): every `TiebreakResolutions` instantiation, read for its `Slot` and `Item` type arguments, with the `Item` record's field types and the instance's `cand` rules — a field whose type is the `Slot` type, or a `cand` head whose item argument holds the rule's slot variable.
+Match: a `TiebreakResolutions` instance whose `Item` type carries a field equal to its `Slot` type, or whose `cand` rule builds the item from the slot. Match with the parser: every `TiebreakResolutions` instantiation, read for its `Slot` and `Item` type arguments, with the `Item` record's field types and the instance's `cand` rules — a field whose type is the `Slot` type, or a `cand` head whose item argument holds the rule's slot variable.
 
 Spec: what the non-injective readout reports.
 

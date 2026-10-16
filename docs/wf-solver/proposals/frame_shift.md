@@ -8,7 +8,7 @@ shift(Delta) :- in(P, _), move_dir(D), axis_of(D, A), sub_extent(P, A, K), jump_
 
 Not: `AxisFrame`, which yields the positions of an extent, not the shifts across it; `Slide`, which runs inside a node set the caller supplies and stops at that set's edge; `jump_offset` alone, which carries one amount that the caller already holds.
 
-Match: a `sub_extent` whose amount reaches a `jump` or a `jump_offset` toward a Dir, directly or through one head column, where that Dir's axis is the `sub_extent`'s axis, tied by an `axis_of` atom or by a relation pairing an axis with a Dir on it, in the same rule or in a rule deriving one of the two; the amount reaches no `divide` atom. Grep `sub_extent`, then follow each amount's head column one hop; the parser (`tests/test_ast_match.py`) matches both hops.
+Match: a `sub_extent` whose amount reaches a `jump` or a `jump_offset` toward a Dir, directly or through one head column, where that Dir's axis is the `sub_extent`'s axis, tied by an `axis_of` atom or by a relation pairing an axis with a Dir on it, in the same rule or in a rule deriving one of the two; the amount reaches no `divide` atom. Grep `sub_extent`, then follow each amount's head column one hop; the parser matches both hops.
 
 Survey: 2026-09-11 08:36 — the whole corpus.
 

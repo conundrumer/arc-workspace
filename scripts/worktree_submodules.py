@@ -1,8 +1,8 @@
-"""The git submodules of a worktree that `merge_change.py`, `materialize.py`,
-`patch_stub.py` and the `upstream` fixture of `tests/conftest.py` set up: the
-submodules a tree's `.gitmodules` lists, the main tree's copy of each one's
-repository, whether one is checked out, and the setup of a worktree's
-submodules from those copies with no network."""
+"""The git submodules of a worktree that `merge_change.py`, `materialize.py`
+and `patch_stub.py` set up: the submodules a tree's `.gitmodules` lists,
+the main tree's copy of each one's repository, whether one is checked out,
+and the setup of a worktree's submodules from those copies with no
+network."""
 
 import fcntl
 import os

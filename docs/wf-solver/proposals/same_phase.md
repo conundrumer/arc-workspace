@@ -16,8 +16,8 @@ which holds under no period.
 
 Match: two positive `stride` atoms of one rule sharing their offset variable,
 with their inputs differing and the quotient discarded. The atoms need not
-share a source line, so match over a whole rule with the parser
-(`tests/test_ast_match.py`); the grep `stride\(.*stride\(` finds only the
+share a source line, so match over a whole rule with the parser;
+the grep `stride\(.*stride\(` finds only the
 one-line sites.
 
 Survey: 2026-09-09 03:30

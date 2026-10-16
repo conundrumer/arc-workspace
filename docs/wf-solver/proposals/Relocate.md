@@ -32,7 +32,7 @@ Match: three exclusive branches over the input cells — a landing set with its 
 - two-stage: a rule that blanks the vacated set over the scene (`in(P, Col), !<vacated>(P)` beside `<vacated>(P), <blank>(Col)` on one head), and `out` paints the landing over it;
 - folded: the vacated-to-blank rule written inside the paint relation (`<paint>(P, Bg) :- <vacated>(P), <blank>(Bg).`), and `out` overlays that relation over the scene (`out(P, Col) :- in(P, Col), !<paint>(P, _)`). The landing gets no precedence over the vacated cells, so a caller in this form has the two sets disjoint.
 
-Coarse grep: a blank atom in a rule that also negates a placement relation, beside `Col = C_in` or `Col = Col_in`; the two-stage head; or a rule of an overlaid relation whose value is a blank atom, beside the overlay `out`. Match with the parser (`tests/test_ast_match.py`), with the scene fixed to `in`/`ex_in`: a landing relation whose own body reads `in` under a negation is still a landing.
+Coarse grep: a blank atom in a rule that also negates a placement relation, beside `Col = C_in` or `Col = Col_in`; the two-stage head; or a rule of an overlaid relation whose value is a blank atom, beside the overlay `out`. Match with the parser, with the scene fixed to `in`/`ex_in`: a landing relation whose own body reads `in` under a negation is still a landing.
 
 Survey: 2026-09-10 03:01
 
