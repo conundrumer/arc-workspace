@@ -6,7 +6,7 @@
         - Forming every other branch and giving each its standing: [Analyze after the concept](#analyze-after-the-concept).
         - Writing the witness file: [Witness file](#witness-file).
     - Acts, each with its section:
-        - Writing a keyword: [Keywords](#keywords).
+        - Choosing the keywords whose solvers step 1 lists: [Keywords](#keywords).
 
 # Analyze after the concept
 * inline: ../../docs/handbook/procedure.md#analyze-after-the-concept
