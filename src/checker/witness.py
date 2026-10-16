@@ -112,13 +112,12 @@ from solver.problems import (
     WitnessFileRole,
 )
 from solver.witnessed_cases import constructor_denoted
-from solver.undefined import Undefined
 from solver.witness import (
     AssignRows,
     Entry,
+    Group,
     Groups,
     RejectedOutput,
-    Resolutions,
 )
 
 
@@ -278,10 +277,10 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
             if not is_result(got):
                 continue
             if not records(group.grid, got):
-                drift.append((case, group.grid, got))
+                drift.append((case, group, got))
     out: list[Finding] = []
     for cases, want, got in _merged(drift):
-        assert isinstance(want, (tuple, Resolutions, Undefined))
+        assert isinstance(want, Group)
         out.append(Finding(Kind.DRIFT, where, DriftPayload(
             case_set(runs, cases), want, got)))
     out += problems

@@ -280,12 +280,15 @@ def witness_lines(solver: Solver, f: Finding) -> list[str]:
                         mctx("{entry}: these cases give the witness's judged "
                              "output: {case}").format(entry=at, case=case),
                         *_side(solver, mctx("the judged output"), actual)]
-            return [mctx("{entry}: case {case} gives an output the witness "
-                         "does not hold").format(entry=at, case=case)
+            group = _ticked(expected.cases)
+            return [mctx("{entry}: group {group} denotes case {case}, whose "
+                         "output is not that group's grid").format(
+                             entry=at, group=group, case=case)
                     if one else
-                    mctx("{entry}: these cases give an output the witness "
-                         "does not hold: {case}").format(entry=at, case=case),
-                    *_side(solver, mctx("the witness's output"), expected),
+                    mctx("{entry}: group {group} denotes these cases, whose "
+                         "output is not that group's grid: {case}").format(
+                             entry=at, group=group, case=case),
+                    *_side(solver, mctx("that group's grid"), expected.grid),
                     *_side(solver, mctx("the solver's output"), actual)]
         case UnlistedPayload(cases=cases, actual=actual):
             case = _cases(cases)

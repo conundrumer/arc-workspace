@@ -9,7 +9,7 @@ from solver.annotations import ClaimKind, Verdict
 from solver.model import Branch, Case, ConstructorBranch, DerivedAtStore
 from solver.outcome import Outcome
 from solver.pair_runs import PairId
-from solver.witness import AssignValue, GroupGrid, RejectedOutput
+from solver.witness import AssignValue, Group, RejectedOutput
 
 type BranchRef = ConstructorBranch | Branch
 """A branch of any choice point: a constructor, or a `@derive` or `@store`
@@ -29,11 +29,12 @@ class CaseSet:
 @dataclass(frozen=True)
 class DriftPayload:
     """The cases that give `actual` on an entry where the entry records
-    `expected`: a group's grid, or the judged output of an `other`
-    verdict, which no case gives (principles.md, under "Witnesses")."""
+    `expected`: the group whose name denotes the cases, or the judged
+    output of an `other` verdict, which no case gives (principles.md, under
+    "Witnesses")."""
 
     cases: CaseSet
-    expected: GroupGrid | RejectedOutput
+    expected: Group | RejectedOutput
     actual: Outcome
 
 
