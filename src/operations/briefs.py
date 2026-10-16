@@ -5,6 +5,8 @@ the agent replies to."""
 
 import re
 import shlex
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -75,9 +77,69 @@ QUOTES_PART = mctx("the repair of each `quotes` call that editor's brief gives")
 WHOLE_CHANGE = mctx("the whole change")
 
 
+def _whole(role: Role) -> tuple[Role, str | None, str]:
+    return role, None, WHOLE_CHANGE
+
+
+def _own(role: Role) -> tuple[Role, str | None, str]:
+    return role, YOUR_PART.format(part=PARTS[role]), PARTS[role]
+
+
+class Part(Enum):
+    """The role of an editor of a change with the part of it that editor
+    takes: the line that gives its brief that part (`line`), or None where
+    it takes the whole change, and the part as `part_of` reads it
+    (`part`)."""
+    role: Role
+    line: str | None
+    part: str
+
+    def __init__(self, role: Role, line: str | None, part: str) -> None:
+        self.role, self.line, self.part = role, line, part
+
+
+class EditorPart(Part):
+    """The parts of an editor whose brief gives no fragments."""
+    CODE_EDITOR = _whole(Role.CODE_EDITOR)
+    CODE_EDITOR_PART = _own(Role.CODE_EDITOR)
+    HANDBOOK_EXPANDED = _whole(Role.HANDBOOK_EXPANDED)
+    HANDBOOK_EXPANDED_PART = _own(Role.HANDBOOK_EXPANDED)
+
+
+class DocEditorPart(Part):
+    """The parts of a doc editor, the fragments part included."""
+    DOC_EDITOR = _whole(Role.DOC_EDITOR)
+    DOC_EDITOR_PART = _own(Role.DOC_EDITOR)
+    FRAGMENTS = Role.DOC_EDITOR, FRAGMENTS_PART, OF_FRAGMENTS
+
+
+def part_taken(role: Role, split: bool) -> EditorPart | DocEditorPart:
+    """The part an editor of `role` takes of a change split between
+    editors where `split`, and otherwise the whole change."""
+    taken = _own(role) if split else _whole(role)
+    return next(p for p in (*EditorPart, *DocEditorPart) if p.value == taken)
+
+
+@dataclass(frozen=True)
+class DocEditor:
+    """A doc editor by its part, with the fragments its brief gives and the
+    agent ids of the change's code editors."""
+    part: DocEditorPart
+    fragments: tuple[Place, ...]
+    code_editors: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Before:
+    """The agent id and the scratch directory of the last editor of a role
+    in a change's worktree that an operator of another session launched."""
+    agent: str
+    scratch: Path
+
+
 BRIEF_PARTS: tuple[tuple[str, str], ...] = (
-    (FRAGMENTS_PART, OF_FRAGMENTS), (QUOTES_ITEMS, QUOTES_PART),
-    *((YOUR_PART.format(part=part), part) for part in PARTS.values()))
+    (QUOTES_ITEMS, QUOTES_PART),
+    *((p.line, p.part) for p in (*DocEditorPart, *EditorPart) if p.line is not None))
 """Each line that gives an editor's brief its part, beside the part as
 another brief gives it."""
 
@@ -88,52 +150,32 @@ def part_of(agent: Agent) -> str:
     return next((part for line, part in BRIEF_PARTS if line in agent.brief), WHOLE_CHANGE)
 
 
-def part_line(role: Role, part: bool, of_fragments: bool) -> str | None:
-    """The line that gives the brief `editor` builds with `role`, `part`
-    and `of_fragments` its part, or None where that editor takes the whole
-    change."""
-    if of_fragments:
-        return FRAGMENTS_PART
-    return YOUR_PART.format(part=PARTS[role]) if part else None
-
-
-def editor_part(role: Role, part: bool, of_fragments: bool = False) -> str:
-    """The part, as `part_of` reads it, of the editor whose brief `editor`
-    builds with `role`, `part` and `of_fragments`."""
-    line = part_line(role, part, of_fragments)
-    return WHOLE_CHANGE if line is None else dict(BRIEF_PARTS)[line]
-
-
-def editor(role: Role, number: str, part: bool, worktree: Path, scratch: Path,
-           operator: str, settled: "Settled", fragments: tuple[Place, ...] = (),
-           code_editors: tuple[str, ...] = (), of_fragments: bool = False,
-           before: tuple[str, Path] | None = None) -> str:
-    """The brief of an editor of the change `number`, with its part where
-    `part`, or `FRAGMENTS_PART` where `of_fragments`, in the change's
-    worktree `worktree`, with what the agents before it settled
-    (`settled_lines`). A doc editor's brief gives the `fragments`, and
-    the agent ids of the change's `code_editors`. `before` gives the agent
-    id and the scratch directory of the last editor of the role in that
-    worktree that an operator of another session launched, where there is
-    one, whose latest report that block gives."""
+def editor(editor: EditorPart | DocEditor, number: str, worktree: Path, scratch: Path,
+           operator: str, settled: "Settled", before: Before | None = None) -> str:
+    """The brief of the editor `editor` of the change `number`, in the
+    change's worktree `worktree`, with what the agents before it settled
+    (`settled_lines`). A doc editor's brief gives its fragments, and the
+    agent ids of the change's code editors. `before` gives the last editor
+    of the role in that worktree that an operator of another session
+    launched, where there is one, whose latest report that block gives."""
+    part = editor.part if isinstance(editor, DocEditor) else editor
     lines = [read_ticket(number)]
-    if (given := part_line(role, part, of_fragments)) is not None:
-        lines.append(given)
+    if part.line is not None:
+        lines.append(part.line)
     lines.append(WORK_IN.format(worktree=worktree))
-    if role is Role.DOC_EDITOR and fragments:
+    if isinstance(editor, DocEditor) and editor.fragments:
         lines.append(FRAGMENTS)
-        lines += [FRAGMENT.format(file=f.file, line=f.line) for f in fragments]
-        if code_editors:
-            lines.append(CODE_EDITORS.format(ids=", ".join(code_editors)))
+        lines += [FRAGMENT.format(file=f.file, line=f.line) for f in editor.fragments]
+        if editor.code_editors:
+            lines.append(CODE_EDITORS.format(ids=", ".join(editor.code_editors)))
     lines.append(mctx("Accepted gate outputs under `tests/gate/accepted/` you may write: each "
                       "that a `DIFF` of the gate your items cause names."))
-    if role is Role.CODE_EDITOR:
+    if part.role is Role.CODE_EDITOR:
         lines.append(TESTS)
     lines.append(SCRATCH.format(scratch=scratch))
     lines.append(LAUNCHER.format(operator=operator))
     if before is not None:
-        agent, theirs = before
-        lines.append(BEFORE.format(agent=agent, scratch=theirs))
+        lines.append(BEFORE.format(agent=before.agent, scratch=before.scratch))
     return "\n".join(lines + settled_lines(settled))
 
 

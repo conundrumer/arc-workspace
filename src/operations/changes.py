@@ -194,17 +194,18 @@ def carry(state: State, t: Ticket) -> Step | None:
         drafters = drafter_ids(here)
         if isinstance(drafters, Undecided):
             return drafters
-        part = len(editors) > 1
-        own = briefs.editor_part(role, part)
-        known = settled(state, t.number, role, own)
-        before = editor_before([a for a in theirs if a.role is role and briefs.part_of(a) == own])
+        part = briefs.part_taken(role, len(editors) > 1)
+        known = settled(state, t.number, role, part.part)
+        before = editor_before([a for a in theirs
+                                if a.role is role and briefs.part_of(a) == part.part])
         if before is not None:
             known = with_before(known, before[0])
+        editor = part if isinstance(part, briefs.EditorPart) else briefs.DocEditor(
+            part, state.held.fragments.get(w, ()), tuple(drafters))
         return Launch(role, t.number, briefs.editor(
-            role, t.number, part, w,
+            editor, t.number, w,
             editor_scratch(t.number, role, state.scratch), state.me, known,
-            state.held.fragments.get(w, ()), tuple(drafters),
-            before=None if before is None else (before[0].agent_id, before[1])),
+            before=None if before is None else briefs.Before(before[0].agent_id, before[1])),
             model=t.model(role))
     if any(a.pending for a in here):
         return None

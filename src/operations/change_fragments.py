@@ -80,9 +80,9 @@ def fragments_step(state: State, t: Ticket, w: Path,
     drafters = drafter_ids(here)
     if isinstance(drafters, Undecided):
         return drafters
+    editor = briefs.DocEditor(briefs.DocEditorPart.FRAGMENTS, places, tuple(drafters))
     return Launch(Role.DOC_EDITOR, t.number, briefs.editor(
-        Role.DOC_EDITOR, t.number, True, w,
+        editor, t.number, w,
         editor_scratch(t.number, Role.DOC_EDITOR, state.scratch), state.me,
-        settled(state, t.number, Role.DOC_EDITOR,
-                briefs.editor_part(Role.DOC_EDITOR, True, of_fragments=True)),
-        places, tuple(drafters), of_fragments=True), model=t.model(Role.DOC_EDITOR))
+        settled(state, t.number, Role.DOC_EDITOR, editor.part.part)),
+        model=t.model(Role.DOC_EDITOR))
