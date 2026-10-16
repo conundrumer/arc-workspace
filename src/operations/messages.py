@@ -66,6 +66,8 @@ DECISION_FORM = mctx("a reply that gives, on a line of its own, the ruling on th
                      "form that `uv run python scripts/operate.py --help rulings` gives; or, where the "
                      "decision goes to the user, a `decision:` item under `{heading}`.").format(
                          heading=FOR_COORDINATOR)
+SPLIT_FORM = mctx("your report, with each list item that opens with `split:` in the form that "
+                  "[A split](prompts/agents/code-editor/split.md#a-split) gives.")
 ALERT_FORM = mctx("where it is an alert, a message that opens with the line `alert: <kind> "
                   "<agent id>`; where it is no alert, a reply that says so.")
 

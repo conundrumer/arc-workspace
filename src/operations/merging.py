@@ -63,11 +63,11 @@ from operations import briefs, messages
 from operations.change_agents import of_change
 from operations.change_budget import TIME_NOTE, TIME_OPENING, left_draft, taken
 from operations.filing import editor_scratch
-from operations.reports import splits
+from operations.reports import splits, unread_split
 from operations.roles import Role
 from operations.state import Agent, Call, Commit, Merge, State, Ticket, Tool
 from operations.command_words import simple_commands
-from operations.handled import bash_calls, decided_by, unmoved
+from operations.handled import ask_again, bash_calls, decided_by, unmoved
 from operations.steps import Bash, Launch, Send, Step
 from operations.log_commands import log
 from operations.worktrees import WORKTREE
@@ -261,7 +261,12 @@ def merged(state: State, t: Ticket) -> bool:
 
 def merge(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
     """The line that gives the change's agent-running time since its take,
-    where none follows that take and that time reads, and then the merge."""
+    where none follows that take and that time reads; then, for each code
+    editor whose latest report holds a `split:` item that `reports.SPLIT`
+    does not read, the request to send that report again, and the wait for
+    its reply, while the change's worktree, which the merge removes, still
+    stands; and then the merge. A reply that still holds such an item goes
+    on to the merge."""
     take_line = taken(t)
     start = take_line.time if take_line is not None else left_draft(t)
     spent = state.computed.spent.get(t.number)
@@ -269,6 +274,16 @@ def merge(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
                                      for ln in t.log):
         return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED,
                         TIME_NOTE.format(seconds=spent.seconds), state.me))
+    for a in latest:
+        if a.agent_id is None or not unread_split(a):
+            continue
+        match ask_again(state, a.agent_id, [r.time for r in a.reports], messages.SPLIT_FORM):
+            case Send() as asked:
+                return asked
+            case False:
+                return None
+            case True:
+                pass
     return merge_steps(state, t, w, latest)
 
 

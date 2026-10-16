@@ -33,11 +33,15 @@ CONCEPT_FAULTS = "## Concept faults"
 """The heading of a solver pass's report over the concept faults the pass
 gives, one list item each, or `none`."""
 
-SPLIT = re.compile(r"^\s*[-*]\s+split: `(?P<path>[^`]+)`(?:; left unsplit: (?P<part>.+))?$",
+SPLIT_OPENING = r"^\s*[-*]\s+split:"
+SPLIT = re.compile(SPLIT_OPENING + r" `(?P<path>[^`]+)`(?:; left unsplit: (?P<part>.+))?$",
                    re.MULTILINE)
 """An item of a code editor's report that gives a module it split, by the
 path a `refactor` ticket cites, with the part it left unsplit, where one
 is."""
+SPLIT_ITEM = re.compile(SPLIT_OPENING + r".*$", re.MULTILINE)
+"""An item of a code editor's report that opens as a `SPLIT` item does,
+in any form."""
 
 FOR_COORDINATOR = "## For the coordinator"
 """The heading at the end of a ticket analyst's reply, over the part of it
@@ -167,13 +171,23 @@ def shows_current(a: Agent, w: Path) -> bool:
     return seen is not None and seen == fingerprint(w)
 
 
+def editor_report(a: Agent) -> str:
+    """The text of a code editor's latest report, or none where `a` is no
+    code editor or has no report."""
+    r = a.last_report
+    return "" if a.role is not Role.CODE_EDITOR or r is None else r.text
+
+
 def splits(a: Agent) -> dict[str, str | None]:
     """The modules a code editor's latest report gives as split, each with
     the part it left unsplit, or None where it left none."""
-    r = a.last_report
-    if a.role is not Role.CODE_EDITOR or r is None:
-        return {}
-    return {m["path"]: m["part"] for m in SPLIT.finditer(r.text)}
+    return {m["path"]: m["part"] for m in SPLIT.finditer(editor_report(a))}
+
+
+def unread_split(a: Agent) -> bool:
+    """Whether a code editor's latest report holds a `SPLIT_ITEM` that
+    `SPLIT` does not read."""
+    return any(SPLIT.fullmatch(m[0]) is None for m in SPLIT_ITEM.finditer(editor_report(a)))
 
 
 def coordinator_part(a: Agent) -> tuple[list[tuple[Label, list[str]]], list[str]]:
