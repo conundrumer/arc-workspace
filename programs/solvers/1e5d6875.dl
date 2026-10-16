@@ -9,28 +9,15 @@
 //  past the frame drops, and where two copies land on one cell, stored
 //  precedence picks the color.
 
-// the step direction
-.type Step =
-    // a stored rotation per piece color turns the open corner
-    Rotate {}
-    // a stored table keyed by piece color and open corner
-  | Lookup {}
-
 // a copy landing on a piece cell
-.type Paint =
+.type Choice =
     // the piece keeps its cell
     Keep {}
     // the copy paints over it
   | Cover {}
 
-// the step direction crossed with whether a copy covers the piece it lands on
-.type Choice = [s: Step, p: Paint]
-
 // A piece: its color and its component id.
 .type Obj = [col: Color, id: Ident]
-
-// A cell under one step hypothesis — the key copies contend on.
-.type MarkKey = [p: Position, s: Step]
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -47,7 +34,6 @@
     mark_rank(3, 0).
     mark_rank(4, 1).
 
-    // --- $Rotate ---
     // The rotation carrying a piece's open corner to its step direction.
     // Reflections are outside the domain: each piece is symmetric about the
     // diagonal of its own open corner, so a reflection only repeats a
@@ -55,21 +41,9 @@
     .decl rot(src: Color, d: D4)
     rot(5, D4_ID).
     rot(2, D4_HT).
-
-    // --- $Lookup ---
-    .decl step(src: Color, open: DiagDir, dir: DiagDir)
-    step(5, DIAG_TR, DIAG_TR).
-    step(5, DIAG_BL, DIAG_BL).
-    step(2, DIAG_TL, DIAG_BR).
-    step(2, DIAG_TR, DIAG_BL).
-    step(2, DIAG_BL, DIAG_TR).
 }
 
 .init params = Params
-
-.decl step_choice(s: Step)
-step_choice($Rotate()).
-step_choice($Lookup()).
 
 .comp Parse<Key> {
     // A piece's cells.
@@ -96,41 +70,35 @@ piece_cell([Col, Id], P) :- parts.label(Col, P, Id).
 .init parse = Parse<Obj>
 parse.cell(O, P) :- piece_cell(O, P).
 
-.decl step_dir(o: Obj, dir: DiagDir, s: Step)
-
-// --- $Rotate ---
-step_dir([Col, Id], D, $Rotate()) :-
-    parse.open_diag([Col, Id], Diag),                   // the piece's open corner
-    params.rot(Col, Rot), apply_diag_dir(Rot, Diag, D). // turned by the piece color's rotation
-
-// --- $Lookup ---
-step_dir([Col, Id], D, $Lookup()) :- parse.open_diag([Col, Id], Diag), params.step(Col, Diag, D).
-
-// --- shared ---
+// The piece's step direction: its open corner turned by the piece color's
+// rotation.
+.decl step_dir(o: Obj, dir: DiagDir)
+step_dir([Col, Id], D) :-
+    parse.open_diag([Col, Id], Diag), params.rot(Col, Rot), apply_diag_dir(Rot, Diag, D).
 
 // The piece's copy, one step along its step direction.
-.decl mark_cell(p: Position, col: Color, s: Step)
-mark_cell(Q, M, S) :-
-    piece_cell([Col, Id], P), step_dir([Col, Id], D, S),  // a piece cell and its step
-    params.mark(Col, M),                                  // the copy's color
-    neighbor(P, D, Q), in(Q, _).                          // one step, inside the frame
+.decl mark_cell(p: Position, col: Color)
+mark_cell(Q, M) :-
+    piece_cell([Col, Id], P), step_dir([Col, Id], D),  // a piece cell and its step
+    params.mark(Col, M),                               // the copy's color
+    neighbor(P, D, Q), in(Q, _).                       // one step, inside the frame
 
-.init win = ArgExtremes<MarkKey, Color>
-win.cand([P, S], M, R) :- mark_cell(P, M, S), params.mark_rank(M, R).
+.init win = ArgExtremes<Position, Color>
+win.cand(P, M, R) :- mark_cell(P, M), params.mark_rank(M, R).
 
 // --- $Keep ---
-out(P, Col, [S, $Keep()]) :- in(P, Col), !params.bg(Col), step_choice(S).
-out(P, Col, [S, $Keep()]) :-
-    in(P, Bg), params.bg(Bg), step_choice(S),  // background cell
-    ( win.low([P, S], Col, _)                  // the winning copy lands on it
-    ; !mark_cell(P, _, S), Col = Bg            // no copy reaches it
+out(P, Col, $Keep()) :- in(P, Col), !params.bg(Col).
+out(P, Col, $Keep()) :-
+    in(P, Bg), params.bg(Bg),           // background cell
+    ( win.low(P, Col, _)                // the winning copy lands on it
+    ; !mark_cell(P, _), Col = Bg        // no copy reaches it
     ).
 
 // --- $Cover ---
-out(P, Col, [S, $Cover()]) :-
-    in(P, Col_in), step_choice(S),       // input cell
-    ( win.low([P, S], Col, _)            // the winning copy lands on it
-    ; !mark_cell(P, _, S), Col = Col_in  // no copy reaches it
+out(P, Col, $Cover()) :-
+    in(P, Col_in),                      // input cell
+    ( win.low(P, Col, _)                // the winning copy lands on it
+    ; !mark_cell(P, _), Col = Col_in    // no copy reaches it
     ).
 
 .type ExColor = [e: Example, col: Color]
@@ -166,8 +134,9 @@ out(P, Col, [S, $Cover()]) :-
         ; diag_dir_elem(D), neighbor(P, D, Q), !ex_in(E, Q, _)  // past the frame
         ).
 
-    .decl step(src: Color, open: DiagDir, dir: DiagDir)
-    step(Col, Diag, D) :-
+    // The step a piece color takes from an open corner.
+    .decl piece_step(src: Color, open: DiagDir, dir: DiagDir)
+    piece_step(Col, Diag, D) :-
         parse.open_diag([E, Col, Id], Diag),       // a piece's open corner
         copy.occurrence([E, Col, Id], V),          // where its copy lies
         diag_dir_elem(D), step_offset(D, V).       // one diagonal step away
@@ -175,7 +144,7 @@ out(P, Col, [S, $Cover()]) :-
     // The rotation that turns a piece's open corner to its step, one per
     // step: the rotations act on the corners freely and transitively.
     .init turn = Unanimous<Color, D4>
-    turn.item(Col, Rot) :- step(Col, Diag, D), c4_elem(Rot), apply_diag_dir(Rot, Diag, D).
+    turn.item(Col, Rot) :- piece_step(Col, Diag, D), c4_elem(Rot), apply_diag_dir(Rot, Diag, D).
 
     .decl rot(src: Color, d: D4)
     rot(Col, Rot) :- turn.value(Col, Rot).
@@ -184,7 +153,7 @@ out(P, Col, [S, $Cover()]) :-
     .decl copy_cell(o: ExObj, p: Position)
     copy_cell([E, Col, Id], Q) :-
         copy_land([E, Col, Id], D, Q),
-        parse.open_diag([E, Col, Id], Diag), step(Col, Diag, D).
+        parse.open_diag([E, Col, Id], Diag), piece_step(Col, Diag, D).
 
     // The colors a piece's copy shows. A copy overrun by a higher-precedence
     // one shows that color too, so a color's own mark is the one every piece
