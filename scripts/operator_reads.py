@@ -339,7 +339,7 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
                   notifies=launch.since <= max(use[0], own.get(launch.agent or "", 0.0)),
                   messaged=sent_to(launch.path) if d.role in MESSAGING and launch.path
                   else None)
-        if launch.pending and not a.pending and launch.agent:
+        if not a.pending and launch.agent:
             a = ended_with(a, None if any(r.time > launch.since for r in reports)
                            else reply_to(a, launch.since, undecided))
         agents.append(a)
