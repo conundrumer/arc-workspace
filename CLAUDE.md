@@ -59,6 +59,6 @@
 - A test does not read `data/upstream/`, the live transcripts, or the session's environment variables. It builds what it reads in `tmp_path` and clears the environment it passes to a subprocess.
 - A concurrency test does not depend on timing. It forces the interleaving with a barrier or a held lock.
 - A test written to fail before the code exists is not by that fact a test that stays.
-- Ask the same of a test your change broke. When it is not of a kind above, delete it; don't update it.
+- When a test your change broke is not of a kind above, delete it; don't update it.
 - Assertions you need while you work go under `tests/scratch/`.
 - It is collected and not committed.
