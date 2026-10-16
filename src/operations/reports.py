@@ -8,7 +8,7 @@ from collections.abc import Iterable
 from enum import StrEnum
 from pathlib import Path
 
-from operations.roles import AGENT_ID, Role
+from operations.roles import Role
 from operations.state import Agent
 from operations.worktrees import fingerprint
 
@@ -84,18 +84,23 @@ def worktree_line(ln: str) -> bool:
 
 
 def left_for_decision(a: Agent) -> str | None:
-    """The part of an item checker's latest reply under
-    `LEFT_FOR_DECISION`, or None where it has no such part or no line of
-    that part is a list item that holds an agent id: a part such as
-    `None.` or `- None.` leaves nothing for a decision. The reply's
-    closing `Worktree:` line is not an item left for a decision."""
+    """What an item checker's latest reply leaves for a decision, or None
+    where that reply holds nothing back. The reply holds nothing back only
+    where it has a line `LEFT_FOR_DECISION` alone and the text after the
+    last such line, less each `worktree_line` and each blank line, is the
+    one line `none`, with or without a list marker, a closing `.` and
+    capitals. For each other reply the result is the text after that line,
+    or, where the reply has no such line, the whole reply, in each case
+    less each `worktree_line`."""
     r = a.last_report
     if a.role is not Role.ITEM_CHECKER or r is None:
         return None
     part = heading_part(r.text, LEFT_FOR_DECISION)
-    if part is None or not ITEM_WITH_AGENT.search(part):
+    kept = [ln for ln in (r.text if part is None else part).splitlines()
+            if not worktree_line(ln)]
+    lines = [ln.strip() for ln in kept if ln.strip()]
+    if part is not None and len(lines) == 1 and NONE_ITEM.match(lines[0]):
         return None
-    kept = [ln for ln in part.splitlines() if not worktree_line(ln)]
     return "\n".join(kept).strip("\n")
 
 
@@ -119,7 +124,8 @@ opening of a line."""
 TOP_ITEM = re.compile(rf"^{LIST_MARKER}[ \t]+")
 """The opening of a list item at the top level of a section."""
 
-ITEM_WITH_AGENT = re.compile(rf"^[ \t]*{LIST_MARKER}[ \t]+.*\b{AGENT_ID}\b", re.MULTILINE)
+NONE_ITEM = re.compile(rf"(?:{LIST_MARKER}[ \t]+)?none[ \t]*\.?$", re.IGNORECASE)
+"""The one line of a part that holds nothing back."""
 
 LABEL_OPENING = rf"^(?P<indent>[ \t]*)(?:{LIST_MARKER}[ \t]+)?[*_`]*{LABELS}"
 """The opening of an item of the part for the coordinator by one of

@@ -222,9 +222,9 @@ def revise(numbers: list[str], last: list[str], operator: str,
            overruns: list[tuple[str, str, str | None]]) -> str:
     """The brief of a ticket analyst that revises the drafts `numbers`,
     with, for each draft `overruns` gives by its number, the line of the
-    operator's that moved it past its cost budget to `tickets/draft/`, and the
-    part of the item checker's reply that line names that gives what it
-    leaves for a decision."""
+    operator's that moved it past its cost budget to `tickets/draft/`, and
+    the item checker's reply that line names, from after its last
+    `LEFT_FOR_DECISION` line, or the whole reply where it has none."""
     lines = revise_lines(numbers, last)
     for number, line, left in overruns:
         lines.append(mctx("The findings of draft {number} include the operator's line below, "
@@ -232,7 +232,9 @@ def revise(numbers: list[str], last: list[str], operator: str,
                               number=number))
         lines.append(f"\n{line}\n")
         if left is not None:
-            lines.append(mctx("What that item checker leaves for a decision:"))
+            lines.append(mctx(
+                "That item checker's reply, from after its last `{heading}` line where it has "
+                "one; judge what it leaves for a decision:").format(heading=LEFT_FOR_DECISION))
             lines.append(f"\n{left}\n")
     return "\n".join([*lines, LAUNCHER.format(operator=operator)])
 
@@ -313,16 +315,20 @@ def findings(number: str, worktree: Path, left: str | None, questions: list[str]
              editors: list[tuple[Agent, str]], reports: list[tuple[str, str]],
              unfinished: list[str], operator: str) -> str:
     """The brief of a ticket analyst that judges what a change's editors
-    leave for a decision, by the part of the latest item checker's reply
-    that gives it, the `question` tickets filed on the change, and the
+    leave for a decision, by the latest item checker's reply from after
+    its last `LEFT_FOR_DECISION` line, or the whole reply where it has none,
+    the `question` tickets filed on the change, and the
     items the latest report of each editor of `unfinished`, by agent id,
     gives as unfinished, with
     the agent id and part of each of its editors, each beside its record
     in `editors`, and each editor's agent id and latest report in
-    `reports`, which that part refers to."""
+    `reports`, which that reply refers to."""
     lines = [*change_lines(number, worktree), *editor_lines(editors)]
     if left is not None:
-        lines.append(mctx("What the item checker on the change leaves for a decision:"))
+        lines.append(mctx(
+            "The item checker's latest reply on the change, from after its last `{heading}` "
+            "line where it has one; judge what it leaves for a decision:").format(
+                heading=LEFT_FOR_DECISION))
         lines.append(f"\n{left}\n")
     lines.extend(editor_reports(reports))
     if questions:
