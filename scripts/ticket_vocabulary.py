@@ -11,7 +11,7 @@ from transcript_entries import Refused
 
 
 class Filer(StrEnum):
-    """A filing agent, by its name."""
+    """A filer by its name: an agent, or a script that files a ticket."""
     ANALYZE = Role.ANALYZE.value
     CREATE = Role.CREATE.value
     REFINE = Role.REFINE.value
@@ -26,6 +26,9 @@ class Filer(StrEnum):
     CODE_REVIEWER = Role.CODE_REVIEWER.value
     COORDINATOR = COORDINATOR
     TICKET_ANALYST = Role.TICKET_ANALYST.value
+    MERGE_CHANGE = "merge-change"
+    """`scripts/merge_change.py`, which files a whole-document pass
+    (`document_pass.py`)."""
 
 
 FILER_KINDS: dict[Filer, frozenset[Kind]] = {
@@ -43,6 +46,7 @@ FILER_KINDS: dict[Filer, frozenset[Kind]] = {
     Filer.CODE_REVIEWER: REVIEW_KINDS | {Kind.REFACTOR, Kind.QUESTION},
     Filer.COORDINATOR: frozenset({Kind.REQUEST, Kind.BUG}),
     Filer.TICKET_ANALYST: frozenset({Kind.CHANGE, Kind.BUG}),
+    Filer.MERGE_CHANGE: frozenset({Kind.CHANGE}),
 }
 """The kinds each filing agent, by its name, may file."""
 
@@ -61,5 +65,5 @@ def filer_kinds(agent: str) -> frozenset[Kind]:
     for name in sorted(Filer, key=len, reverse=True):
         if is_agent(agent, name):
             return FILER_KINDS[name]
-    raise Refused(mctx("the document of `{agent}` gives it no ticket kinds: the agents that file are {names}").format(
+    raise Refused(mctx("the document of `{agent}` gives it no ticket kinds: the filers, by their names, are {names}").format(
         agent=agent, names=ticked(Filer)))

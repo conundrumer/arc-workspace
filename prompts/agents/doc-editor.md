@@ -21,6 +21,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
         - Messages to other agents: [editor-messages](prompts/agents/notes/worktree.md#editor-messages) and [Doc editor](#doc-editor).
         - Filing tickets: [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults) and [Doc editor](#doc-editor).
         - Running commands: [Commands](#commands).
+        - A whole-document pass, which the `Design` of its ticket links: [Whole-document pass](prompts/agents/doc-editor/whole-document.md#whole-document-pass).
 
 - Read [Prose in code](src/controlled_markdown/writing.md#prose-in-code) before you edit or review text in a code file.
 

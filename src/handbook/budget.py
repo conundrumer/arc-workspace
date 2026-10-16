@@ -3,7 +3,8 @@ hold, given by the document's `budget` attribute, and the band below the
 budget, from `BAND` of it, in which a size draws a warning. What each
 command prints for a size within the band, past the budget, or for a
 document with no budget is as `uv run python scripts/context.py --help`
-gives it."""
+gives it, and the pass the merge files on a document past its budget as
+`uv run python scripts/merge_change.py --help` gives it."""
 
 from __future__ import annotations
 
@@ -73,8 +74,9 @@ WITHIN_BAND = mctx("Warning: {text} holds {size} characters, near the "
                    "budget of {budget} that {path} gives.")
 PAST_BUDGET = mctx(
     "Warning: {text} holds {size} characters, past the budget of {budget} "
-    "that {path} gives. Budgets are not enforced for now: cut no text for "
-    "this, and leave the `+ budget:` line as it is.")
+    "that {path} gives. A merge files a whole-document pass on it where no "
+    "such pass stands open. Outside that pass, cut no text for this, and "
+    "leave the `+ budget:` line as it is.")
 NO_BUDGET = mctx("{path} has no `+ budget:` line.")
 NOT_A_NUMBER = mctx("`{attr}: {value}` in {doc} is no number of characters")
 

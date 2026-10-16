@@ -192,7 +192,7 @@
 
 ## Work products
 - A `request`: a ticket analyst writes the `change` tickets that serve it. Its reviews: the ticket reviewer's check of each requirement's trace to its spans or Grounds, and validation.
-- A `change` ticket with its design: a ticket analyst writes it. Its review: a ticket reviewer's, before the build.
+- A `change` ticket with its design: a ticket analyst writes it, or a merge files a whole-document pass. Its review: a ticket reviewer's, before the build, or, for a whole-document pass, the doc review of its fixed text.
 - A built code change: a code editor builds it, and the `handbook-expanded` agent the part in the lib and the solvers. Its reviews: the item checker's check of its items outside the lib and the solvers, which the handbook judges, the gate at its merge, and the code review that follows its merge.
     * comment: The user's words, request 9-143, session 129de8fc, 2026-10-14T18:08:21Z: "ok file that item checkers do not apply to solver things since solver things require handbook to judge".
 - A built document change, the text of each `mctx` fragment a change adds or changes included: the doc editor builds it, from a code editor's draft for a fragment's text. Its reviews: the doc reviewer's, the item checker's check of its items, and the `controlled_markdown` check.

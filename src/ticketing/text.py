@@ -12,6 +12,12 @@ SECTIONS = {Kind.CHANGE: ("Intent", "Motivation", "Scope", "Grounds"),
 `DEFECT_SECTIONS`."""
 
 
+DESIGN = "Design"
+"""The section a `change` that adds a mechanism to code, or adds or
+changes a rule or a fact in the agent-facing documents, adds after its
+Intent, which `body_form` lets stand between its sections."""
+
+
 VALIDATION = "Validation"
 """The section of a `request` that a `change` serves that gives what a
 later run must show for its need to count as met. `ticket_form.body_form`
@@ -29,11 +35,16 @@ def heading(section: str) -> str:
     return f"{HEADING_MARK}{section}"
 
 
-def ticket_text(kind: Kind, title: str, lines: Mapping[str, str]) -> str:
-    """The text of a `kind` ticket with no front matter field besides
-    `kind`, whose sections, each with its `lines`, are the kind's own."""
+def ticket_text(kind: Kind, title: str, lines: Mapping[str, str],
+                fields: Mapping[str, str] | None = None) -> str:
+    """The text of a `kind` ticket with the front matter fields `fields`
+    after `kind`, whose sections, each with its `lines`, are the kind's
+    own, with a `DESIGN` section after the first where `lines` gives one."""
     sections = kind_sections(kind)
+    if DESIGN in lines and kind is Kind.CHANGE:
+        sections = (sections[0], DESIGN, *sections[1:])
     if set(lines) != set(sections):
         raise ValueError(f"the sections {sorted(lines)} are not those of a `{kind}`")
+    front = "".join(f"{k}: {v}\n" for k, v in (fields or {}).items())
     body = "\n\n".join(f"{heading(s)}\n{lines[s]}" for s in sections)
-    return f"---\nkind: {kind.value}\n---\n# {title}\n\n{body}\n"
+    return f"---\nkind: {kind.value}\n{front}---\n# {title}\n\n{body}\n"

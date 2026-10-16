@@ -61,11 +61,20 @@ commit into its directory.
 
 When every check passes, the script fast-forwards `master` in the main tree
 to the top of the stack, and runs in the main tree
-`uv run python scripts/context.py --write` and
+`uv run python scripts/context.py --write`,
+`uv run python scripts/document_pass.py` and
 `uv run python scripts/gate.py --adopt-record <out>`, with `<out>` the
 directory of the gate that checked the stack, so that a record the gate
 wrote stands as the dependency record of the new `master`. It then removes
 each worktree and its branch.
+
+`document_pass.py` reads the size of each document against its
+budget on the new `master`. Where some document stands past its budget
+and no whole-document pass stands outside `tickets/closed/`, it files one
+pass, a `change` for a doc editor on every document then past its budget,
+under `tickets/open/` with no ticket review, and the script prints its
+path. A document that goes past its budget while a pass stands open gets
+the next pass, which the first merge after that pass closes files.
 
 A carried file is a file the main tree holds untracked at a path a change
 touches, where the worktree of each change that touches that path holds a
@@ -189,6 +198,9 @@ from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
 from operations.merging import (CONTEXT_WRITE, DOCUMENT_CHECKS, PATHS_SEP,  # noqa: E402
                                 NOT_PUT_ON, PREFIX, REFUSED, REFUSED_TREE, split_paths)
 from operations.worktrees import BASE  # noqa: E402
+
+DOCUMENT_PASS = ("scripts/document_pass.py",)
+"""The command, after `uv run python`, that files a whole-document pass."""
 
 
 def say(text: str, file: TextIO | None = None, flush: bool = False) -> None:
@@ -677,8 +689,8 @@ def remove(main: Path, change: Change) -> None:
 
 def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
     """Fast-forward `master` to the top of `changes`, write the context in
-    the main tree, adopt the dependency record the gate wrote into
-    `gate_out`, and remove each change's worktree and branch."""
+    the main tree, file a whole-document pass where one is due, adopt the
+    dependency record the gate wrote into `gate_out`, and remove each change's worktree and branch."""
     replaced = refuse_main_touched(main, {c.worktree: c.touched for c in changes})
     modes = {p: (main / p).stat().st_mode for p in replaced}
     for p in sorted(replaced):
@@ -694,7 +706,7 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
         raise Failed(f"fast-forwarding {BASE} failed; {top} is committed and "
                      f"rebased in {changes[-1].worktree}:\n{said(done)}")
 
-    for argv in (CONTEXT_WRITE,
+    for argv in (CONTEXT_WRITE, DOCUMENT_PASS,
                  ("scripts/gate.py", "--adopt-record", str(gate_out))):
         shown = " ".join(argv)
         say(mctx("running {shown} in the main tree").format(shown=shown),

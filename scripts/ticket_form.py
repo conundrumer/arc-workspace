@@ -9,7 +9,7 @@ from operations.roles import EDITORS
 from ticket_files import ticket_path
 from ticket_numbers import ticket_number
 from ticket_vocabulary import filer_kinds, ticked
-from ticketing.text import HEADING_MARK, heading, kind_sections
+from ticketing.text import DESIGN, HEADING_MARK, heading, kind_sections
 from ticketing.vocabulary import Kind
 from transcript_entries import Refused
 
@@ -52,12 +52,6 @@ def title_line(path: Path, text: str) -> str:
 RETIRED = {Kind.REQUEST: "Words"}
 """The section each kind may no longer hold, which `checked_kind`
 refuses."""
-
-DESIGN = "Design"
-"""The section a `change` that adds a mechanism to code, or adds or
-changes a rule or a fact in the agent-facing documents, adds after its
-Intent, which `body_form` lets stand between its sections."""
-
 
 def sections_example(sections: tuple[str, ...]) -> str:
     """`sections` as the form in the `HELP` of `file_ticket` shows them
