@@ -15,7 +15,7 @@ HELP = mctx("""
         uv run python scripts/step.py --help | -h              # print this text
         ```
     - An item is given by its heading's text or by its id, the slug of that text.
-    - [What goes where](docs/handbook/editing.md#what-goes-where) gives the form of a checklist and what each call prints.
+    - [Checklists](prompts/agents/notes/checklists.md#checklists) gives the form of a checklist and what each call prints.
     """)
 
 

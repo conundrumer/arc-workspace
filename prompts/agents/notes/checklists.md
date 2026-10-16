@@ -1,6 +1,6 @@
 + budget: 4458
 * comment: when editing this doc
-    - Readers: each reader of [Editing the agent-facing documents](docs/handbook/editing.md), by the link of its [What goes where](docs/handbook/editing.md#what-goes-where), before it writes or reviews the documents of an agent with a checklist, or gives an agent one.
+    - Readers: each reader of [Editing the agent-facing documents](docs/handbook/editing.md), by the link of its [What goes where](docs/handbook/editing.md#what-goes-where), before it writes or reviews the documents of an agent with a checklist, or gives an agent one, and each reader of `uv run python scripts/step.py --help` or of the module docstring of `handbook.checklist`, by the link there, for the form of a checklist and what each call of the step command prints.
     - Acts, each with its section:
         - Writing the documents of an agent with a checklist, and reviewing a change to them: [Checklists](#checklists).
 

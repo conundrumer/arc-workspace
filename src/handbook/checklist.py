@@ -1,7 +1,7 @@
 """An agent's checklist, `prompts/agents/<agent>/checklist.md`, and the
 step command's walk of it. The form of a checklist and what the command
 prints for each call are as
-[What goes where](docs/handbook/editing.md#what-goes-where) gives them."""
+[Checklists](prompts/agents/notes/checklists.md#checklists) gives them."""
 
 from __future__ import annotations
 
