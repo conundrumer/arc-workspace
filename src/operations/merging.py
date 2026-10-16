@@ -92,9 +92,16 @@ CONTEXT_WRITE = ("scripts/context.py", "--write")
 """The command, after `uv run python`, that writes the generated files."""
 
 
-def check_name(argv: Sequence[str]) -> str:
-    """The name a merge's lines give the check whose command is `argv`."""
-    return " ".join(argv)
+def check_name(argv: Sequence[str], files: Sequence[str] = ()) -> str:
+    """The name a merge's lines give the check whose command is `argv`
+    with `files` after it."""
+    command = " ".join(argv)
+    return CHECK_FILES.format(command=command, n=len(files)) if files else command
+
+
+CHECK_FILES = mctx("{command} on {n} files")
+"""The name of a check that takes files, which the files would make too
+long for a line."""
 
 
 CHECK_FAILED = mctx("the check `{s}` failed:")

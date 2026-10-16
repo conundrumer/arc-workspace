@@ -167,8 +167,13 @@ module it names, and, for `from ... import`, the names it takes."""
 
 def imports_of(source: bytes) -> list[Import]:
     """Each `import` statement of `source`, at any depth."""
+    return imports_in(ast.parse(source))
+
+
+def imports_in(tree: ast.AST) -> list[Import]:
+    """Each `import` statement of the parsed `tree`, at any depth."""
     out: list[Import] = []
-    for node in ast.walk(ast.parse(source)):
+    for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             out.extend((0, a.name, ()) for a in node.names)
         elif isinstance(node, ast.ImportFrom):

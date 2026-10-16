@@ -33,15 +33,23 @@ they will merge:
     uv run python scripts/context.py --write       always
     uv run python scripts/gate.py --outputs-only --affected <base> <out>
                                                    always
-    uv run pyright                                 where a change touches
-    uv run pytest -q                               a path whose content
+    uv run pyright [<file> ...]                    where a change touches
+    uv run pytest -q [<file> ...]                  a path whose content
                                                    their results can depend on
 
 The checks run concurrently. A check passes when it exits 0, and a refusal
 names every check that fails. The paths whose content the results of
 pyright and pytest can depend on are those under src/, scripts/, tests/
 and data/tasks/, those `cli.common.SOURCES` matches, pyproject.toml and
-uv.lock. The gate's dependency record decides which of its commands a
+uv.lock. Pyright checks each file of its `include` from which a Python
+file the changes touch is reached along `import` statements, and pytest
+runs each test file from which one is reached along the loads of code a
+run can make (`dependents`). Pyright checks the whole tree where the
+changes touch pyproject.toml, uv.lock, or a `.pyi` or `py.typed` file, and
+pytest runs every test where they touch one of those paths that is no
+Python file. A check with no file to take does not run, and the lines of
+the script name a check that takes files by its command and the number of
+its files. The gate's dependency record decides which of its commands a
 change affects, so the gate runs on every change, with `<base>` the
 `master` commit the stack is rebased onto. It writes into a new
 temporary directory, which a failing gate names. Its `--help` says which
@@ -172,7 +180,7 @@ from handbook.paths import scripts_importable
 
 scripts_importable()
 
-from change_checks import (Check, code_paths,  # noqa: E402
+from change_checks import (Check, code_checks,  # noqa: E402
                            failures, run_in, said, timed)
 from change_worktree import carried  # noqa: E402
 from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
@@ -293,9 +301,7 @@ def check(tree: Path, main: Path, base: str, touched: set[str]) -> Path:
     gate_out = tempfile.mkdtemp(prefix="merge-change-gate-")
     gate = Check(("uv", "run", "python", "scripts/gate.py", "--outputs-only", "--affected",
                   base, gate_out))
-    code = ([Check(("uv", "run", "pyright")), Check(("uv", "run", "pytest", "-q"))]
-            if code_paths(tree, main, touched) else [])
-    run_checks(tree, [*map(Check, DOCUMENT_CHECKS), gate, *code])
+    run_checks(tree, [*map(Check, DOCUMENT_CHECKS), gate, *code_checks(tree, main, touched)])
     return Path(gate_out)
 
 
