@@ -10,7 +10,7 @@ of the key (`_key`).
 
 A result that holds a run that reached the wall limit is not kept, as the
 run cache keeps no such run. A kept result is written whole or not at all
-(`engine.memo.write_whole`)."""
+(`engine.memo.read_or_make`)."""
 
 import hashlib
 import pickle
@@ -24,7 +24,7 @@ from checker.finding import Finding, is_hint
 from checker.plan_cache import hash_solver_files, reaches_wall
 from checker.render.commands import gathered_lint
 from engine import Engine, Limits, checkout
-from engine.memo import write_whole
+from engine.memo import read_or_make
 from solver.aggregate import Solver
 
 LINT_DIR = "lint"
@@ -67,20 +67,19 @@ def kept_lint(source: Path, task_id: str, engine: Engine, limits: Limits,
     """The lint result of the solver file `source`, of the task `task_id`:
     the one kept under the key of what it is made from, else the one `make`
     gives now."""
-    path = checkout.cache() / LINT_DIR / _key(source, task_id, engine,
-                                              limits, hints)
-    try:
-        kept = pickle.loads(path.read_bytes())
-    except FileNotFoundError:
-        pass
-    else:
-        if isinstance(kept, LintResult):
-            return kept
-    result = make()
-    if not reaches_wall(result.findings):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        write_whole(path, pickle.dumps(result))
-    return result
+    def made() -> tuple[LintResult, bool]:
+        result = make()
+        return result, not reaches_wall(result.findings)
+
+    return read_or_make(
+        checkout.cache() / LINT_DIR / _key(source, task_id, engine, limits,
+                                           hints),
+        _decode, pickle.dumps, made)
+
+
+def _decode(data: bytes) -> LintResult | None:
+    kept = pickle.loads(data)
+    return kept if isinstance(kept, LintResult) else None
 
 
 def _key(source: Path, task_id: str, engine: Engine, limits: Limits,

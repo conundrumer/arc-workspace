@@ -1,6 +1,7 @@
 """Values computed once and kept: per object while the object lives, once
 per key however many threads ask, the most recently used under a cap, a
-file written whole or not at all, and a file's part in the hash a kept
+file written whole or not at all, a value read from a file or made and
+kept there, and a file's part in the hash a kept
 value is keyed on. Every package may import it."""
 
 import functools
@@ -187,6 +188,25 @@ def write_whole(path: Path, data: bytes) -> None:
         os.replace(tmp, path)
     finally:
         Path(tmp).unlink(missing_ok=True)
+
+
+def read_or_make[V](path: Path, decode: Callable[[bytes], V | None],
+                    encode: Callable[[V], bytes],
+                    make: Callable[[], tuple[V, bool]]) -> V:
+    """The value `decode` gives of the file at `path`; where there is no
+    file, or `decode` gives None, the value `make` gives, written whole to
+    `path` where `make` gives that it is kept."""
+    try:
+        kept = decode(path.read_bytes())
+    except FileNotFoundError:
+        kept = None
+    if kept is not None:
+        return kept
+    value, keep = make()
+    if keep:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_whole(path, encode(value))
+    return value
 
 
 def hash_file(h: "hashlib._Hash", path: str, body: bytes | None) -> None:

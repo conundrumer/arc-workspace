@@ -4,7 +4,7 @@ no run.
 
 A plan that holds a run that reached the wall limit is not kept, as the run
 cache keeps no such run: the wall limit depends on the machine's load. A
-kept plan is written whole or not at all (`engine.memo.write_whole`)."""
+kept plan is written whole or not at all (`engine.memo.read_or_make`)."""
 
 import hashlib
 from dataclasses import fields, is_dataclass
@@ -15,7 +15,7 @@ from checker.determination_plan import survey_determination_plan
 from checker.render.surveys import render_determination_plan
 from checker.runs import Runs
 from engine import WallLimit, checkout
-from engine.memo import hash_file, write_whole
+from engine.memo import hash_file, read_or_make
 from solver import witness
 
 PLAN_DIR = "determination-plan"
@@ -29,19 +29,15 @@ def plan_lines(runs: Runs, source: Path, stamp: str, verdicts: bool
     made from, else those the survey makes now. `stamp` is the hash
     of the code and the Souffle sources the run loads
     (`cli.common.stamp`)."""
-    key = _key(runs, source, stamp, verdicts)
-    path = checkout.cache() / PLAN_DIR / key
-    try:
-        return path.read_text().split("\n")
-    except FileNotFoundError:
-        pass
-    result = survey_determination_plan(runs.solver, runs)
-    lines = render_determination_plan(runs.solver, result, verdicts)
-    if not reaches_wall(result):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        write_whole(path, "\n".join(lines).encode())
-    return lines
+    def made() -> tuple[list[str], bool]:
+        result = survey_determination_plan(runs.solver, runs)
+        return (render_determination_plan(runs.solver, result, verdicts),
+                not reaches_wall(result))
 
+    return read_or_make(
+        checkout.cache() / PLAN_DIR / _key(runs, source, stamp, verdicts),
+        lambda data: data.decode().split("\n"),
+        lambda lines: "\n".join(lines).encode(), made)
 
 def _key(runs: Runs, source: Path, stamp: str, verdicts: bool) -> str:
     """The hash of what the plan's lines are made from, what runs the

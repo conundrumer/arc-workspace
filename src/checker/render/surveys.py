@@ -521,13 +521,24 @@ def render_determination_plan(solver: Solver, result: PlanResult,
     covered = sorted(exact + ([] if over else [p for p, _ in settle]),
                      key=value_order)
     by_subject = {r.subject: r for r in result.results}
-    lines: list[str] = []
+    lines = [mctx("no actions")]
+    acted = False
+    """Whether an action is written, which takes `no actions` out."""
+    gap_after_none = False
+    """Whether the first line written after `no actions` is a blank line
+    that its presence caused, which goes out with it."""
 
-    def section(header: str, items: list[str], note: str = "") -> None:
+    def open_block(action: bool) -> None:
+        nonlocal acted, gap_after_none
+        acted = acted or action
+        gap_after_none = gap_after_none or len(lines) == 1
+        lines.append("")
+
+    def section(header: str, items: list[str], note: str = "",
+                action: bool = False) -> None:
         if not items:
             return
-        if lines:
-            lines.append("")
+        open_block(action)
         lines.append(f"{header}:")
         if note:
             lines.append(note)
@@ -572,30 +583,28 @@ def render_determination_plan(solver: Solver, result: PlanResult,
         or not isinstance(differing, frozenset) \
         or any(s.unjudged for s in surviving.values())
     moved = result.moved
-    if (not determine and not over and not result.embedded
-            and not open_valued and not unjudged and not moved
-            and not covered):
-        lines.append(mctx("no actions"))
     section(mctx("write a determination relation"),
             _by_parameter(determine, state, mctx(
-                "{param}, giving the rows of each case: {cases}"), printed))
+                "{param}, giving the rows of each case: {cases}"), printed),
+            action=True)
     if isinstance(moved, tuple):
         section(MOVED, [mctx("{param} at witness `{witness}`").format(
-            param=printed(m.parameter), witness=m.witness) for m in moved])
+            param=printed(m.parameter), witness=m.witness) for m in moved],
+            action=True)
     else:
-        lines += [""] if lines else []
+        open_block(True)
         lines.append(MOVED_UNKNOWN + _make_run(moved))
     section(JUDGE_FREE,
             [f"{_value_text(p, printed)}: " + _also_admits(
                 surviving[p].stored, surviving[p].extras(), types[p], solver)
-             for p in open_valued])
+             for p in open_valued], action=True)
     if over:
         section(mctx("over the enumeration limit ({joint} > {limit}); "
                      "determine the parameters simplest to determine until "
                      "the product of the remaining candidate counts goes "
                      "under the limit").format(
             joint=product, limit=ENUMERATION_LIMIT),
-            _over_lines(settle, printed))
+            _over_lines(settle, printed), action=True)
     section(mctx("determined"), [printed(p)
                                  for p in by_parameter(classes.done)])
     if not isinstance(differing, frozenset):
@@ -612,7 +621,7 @@ def render_determination_plan(solver: Solver, result: PlanResult,
                  "proposer derives from a fact other than the one the "
                  "concept derives it from"),
             _by_parameter(covered, covered_note, "{param}: {cases}",
-                          printed))
+                          printed), action=True)
     if surviving and enumerated is not None:
         lines.append(mctx("{survived} of {tried} joint assignments of the "
                           "enumerated parameters reproduce every train "
@@ -629,7 +638,7 @@ def render_determination_plan(solver: Solver, result: PlanResult,
     if baseline is not None:
         lines += finding_lines(solver, baseline.finding)
     section(mctx("move data from clauses to fact parameters"),
-            list(result.embedded))
+            list(result.embedded), action=True)
     if verdicts:
         detail = [f"{_subject_text(r.subject, printed)}: " + ", ".join(
             f"{name} {verdict_text(v)}" for name, v in entries)
@@ -637,6 +646,8 @@ def render_determination_plan(solver: Solver, result: PlanResult,
         if detail:
             lines += ["", mctx("each proposer's verdict on each parameter:")]
             lines += [f"  {d}" for d in detail]
+    if acted or unjudged:
+        del lines[:2 if gap_after_none else 1]
     return lines
 
 
