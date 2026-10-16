@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 + lib: none
 + message: brief
-+ budget: 21100
++ budget: 21032
 * comment: when editing this doc
     - The entry point of the ticket reviewer, launched with a brief that gives draft `change` tickets to review.
     - Parts of the work, in order:
@@ -50,7 +50,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
         - The draft's `Grounds` give where the source of each claim lies, as read at the hash of `master` they give.
         * comment: With the line without its list in its context, ticket reviewer a283a71c0cf18c9ba passed two such claims of draft 2-527, on the lines of `CLAUDE.md` and `prompts/agents/notes/coordinator.md` that mention launching and on the hooks of `.claude/settings.json`, whose disproof its own calls had printed: the Intent of ticket 2-530.
     - A `change` to the agents' processes, as [Process notes](prompts/agents/notes/process.md) gives it, gives in its Motivation an outcome of those notes, and serves it.
-    - A `change` that adds a mechanism to code has a `Design`, each existing operation that design gives does in the code what the design uses it for, no operation in the code computes what a new one it gives computes, and the Scope covers each file that design gives.
+    - A `change` that adds a mechanism to code has a `Design`, the design follows the well-known principles of software design and is no instance of a well-known anti-pattern, each existing operation that design gives does in the code what the design uses it for, and the Scope covers each file that design gives.
+        * comment: The user's words, session 7fd429fb-e3be-4173-9b0e-df52f507d6a2, 2026-10-15T22:44:57Z: "Let's try it. Principles are short and well known in training set", on naming the well-known principles and anti-patterns in place of a narrow rule per fault.
     - A `change` that adds or changes a rule or a fact in the agent-facing documents has a `Design` that gives, for each rule or fact, each rule and fact of the documents on the same act that its reader loads for the part of its work the design gives, no rule that design leaves standing beside the new one is an exception to it, no existing line states what a line that design gives states, each such line stands, by the rules of [Editing the agent-facing documents](docs/handbook/editing.md), in the section whose subject it is, and each of its readers loads that section for the part of its work the design gives, each line, or words in a line, that the design adds to stop a reader's failure meets the observed-failure test of [What a file holds](docs/handbook/editing.md#what-a-file-holds) by the failure the `change` cites under its `Grounds`, and the Scope covers each file that design gives.
         - For a rule or fact in a document under [agents](prompts/agents), the `Design` leaves no rule standing beside it, and gives the act it falls under of the spec in that document's editing notes, which you read in the file, or, where that spec gives no such act, a revision of that spec that gives the part of the reader's work that needs a new act and why no act's rule covers it.
     - The operator can carry out each instruction under its documents: each agent, tool, permission and name the instruction relies on exists.
