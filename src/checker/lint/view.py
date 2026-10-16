@@ -1,8 +1,8 @@
 """The views of a solver's parsed program the lint checks read: its own
 parts, the scopes program style applies to, the case enumeration, the
-units that feed and read each relation, and walks over terms and
-literals. A lint compares terms and literals by these walks, never by the
-renderer's text."""
+units that feed and read each relation, the choice constructors and the
+section of a unit, and walks over terms and literals. A lint compares
+terms and literals by these walks, never by the renderer's text."""
 
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, fields, is_dataclass, replace
@@ -14,11 +14,13 @@ from checker.runs import Runs
 from engine import Index, Resolved, Role
 from engine.memo import ByIdentity
 from engine.program import (
+    AdtType,
     Aggregate,
     Atom,
     AtomLiteral,
     BodyLiteral,
     Comparison,
+    ComparisonOperator,
     Component,
     ConstructorTerm,
     DeclId,
@@ -42,9 +44,11 @@ from engine.program import (
 from engine.program import literal_terms as top_terms
 from engine.program import subterms as direct_subterms
 from solver.annotations import CaseMarker
+from solver.case_types import compared
 from solver.category import HINTS
 from solver.aggregate import TOP, Solver
-from solver.readers import marker_at
+from solver.model import Section
+from solver.readers import marker_at, section_at
 from solver.vocabulary import (
     DETERMINE,
     ENUMERATOR,
@@ -505,3 +509,48 @@ def view(solver: Solver, runs: Runs) -> View:
     if v is None or v.solver is not solver:
         v = _VIEWS.put(runs, View(solver, runs.index))
     return v
+
+
+# Choices and sections
+
+
+def choice_tags(solver: Solver, v: View) -> dict[str, int]:
+    """The constructors of the choice ADTs, each with its field count."""
+    out: dict[str, int] = {}
+    if solver.choice is None:
+        return out
+    for p in solver.choice.points:
+        td = v.program.declaration(p.declaration)
+        if isinstance(td, AdtType):
+            for c in td.constructors:
+                out[c.name] = len(c.fields)
+    return out
+
+
+def head_ctors(unit: Unit) -> set[str]:
+    """The constructors a clause's head carries: the ones its arguments
+    spell, and the ones a body equality `V = <term>` sets a head variable
+    to."""
+    bound: dict[str, list[Term]] = {}
+    for var, term in compared(unit, ComparisonOperator.EQ):
+        bound.setdefault(var, []).append(term)
+    out: set[str] = set()
+    seen: set[str] = set()
+    work: list[Term] = list(unit.head.args)
+    while work:
+        for t in subterms(work.pop()):
+            if isinstance(t, ConstructorTerm):
+                out.add(t.name)
+            elif isinstance(t, Variable) and t.name not in seen:
+                seen.add(t.name)
+                work += bound.get(t.name, [])
+    return out
+
+
+def unit_line(u: Unit) -> int:
+    return u.span.first if u.span is not None else u.head.line
+
+
+def unit_section(v: View, u: Unit) -> Section:
+    """The section a unit stands in (`solver.readers.section_at`)."""
+    return section_at(v.solver, u.scope, unit_line(u))

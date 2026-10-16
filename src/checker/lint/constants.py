@@ -5,7 +5,6 @@ reading it rests on."""
 from dataclasses import dataclass
 
 from checker.finding import Finding, LintNamed, LintSentence
-from checker.lint.rewrites import EXAMPLE_SOURCES
 from checker.lint.view import View, atoms_read, flatten, lint, literal_vars, view
 from checker.runs import Runs
 from engine import Resolved
@@ -13,8 +12,10 @@ from engine.program import Atom, AtomLiteral, DeclId, Instance, RelationDecl, Un
 from engine.quotes import quotes
 from solver.aggregate import Solver
 from solver.category import Category
-from solver.vocabulary import PARAMS
+from solver.vocabulary import EX_IN, EX_OUT, INPUT, PARAMS
 
+EXAMPLE_SOURCES = frozenset({INPUT.name, EX_IN.name, EX_OUT.name})
+"""The relations the runner fills per example."""
 
 
 @dataclass(frozen=True)

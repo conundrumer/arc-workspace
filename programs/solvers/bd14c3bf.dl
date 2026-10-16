@@ -1,0 +1,293 @@
+// bd14c3bf
+// @draft
+// @keywords: objects congruent scale
+// @scene reference-shape: one 4-connected shape of params.ref_color touches
+//  the top-left corner of the grid, and no other cell has that color
+// @scene mark-shapes: the other non-background (0) cells are
+//  params.mark_color, in 4-connected shapes that do not touch one another,
+//  even at a corner
+// @rule stretch-match: a mark shape matches the reference shape when each
+//  shape, cut down to its bounding box and with each run of identical
+//  adjacent rows and each run of identical adjacent columns cut to one line,
+//  gives the same grid up to a transform of params.match_group
+// @rule recolor-match: each mark shape that matches turns params.ref_color
+// @rule keep-rest: every other cell keeps its input color
+
+// when a mark shape counts as the reference shape
+.type ShapeMatch =
+    // @claim stretch-match
+    Stretch {}
+    // @rule stretch-match: a mark shape matches the reference shape when its
+    //  bounding box holds as many enclosed background parts, and as many
+    //  background parts that reach the box edge, as the reference's box
+    // @witness t-shape: ordinary concept
+  | Topology {}
+
+// which cells join into one shape
+.type Adjacency =
+    // @claim mark-shapes
+    Adjacency4 {}
+    // @scene mark-shapes: the other non-background (0) cells are
+    //  params.mark_color, in 8-connected shapes
+    // @witness corner-touch: borderline concept
+    //     @relaxed mark-shapes
+  | Adjacency8 {}
+
+// which shapes are tested against the reference
+.type Candidates =
+    // @claim mark-shapes
+    MarkColor {}
+    // @scene mark-shapes: the other cells of a color other than
+    //  params.background are in 4-connected shapes that do not touch one
+    //  another, even at a corner
+    // @rule recolor-match: each shape of a color other than params.background
+    //  and params.ref_color that matches turns params.ref_color
+    // @witness green-shape: borderline $AnyColor
+    //     @relaxed mark-shapes
+  | AnyColor {}
+
+// how the reference color is found
+.type RefSource =
+    // @claim reference-shape
+    StoredRef {}
+    // @scene reference-shape: one 4-connected shape touches the
+    //  params.ref_corner corner of the grid, and its color, the color of the
+    //  corner cell, is the reference color, which no other cell has;
+    //  undefined where the corner cell is params.background
+    // @witness green-reference: borderline $CornerReference
+    //     @relaxed reference-shape
+  | CornerReference {}
+
+.type Choice = [shape: ShapeMatch, adj: Adjacency, cand: Candidates, ref: RefSource]
+
+// A shape: a component under one adjacency.
+.type Fig = [adj: Adjacency, id: Ident]
+
+// A line of a shape's box, across axis a.
+.type Line = [f: Fig, a: Axis, l: Position]
+
+.type FigAxis = [f: Fig, a: Axis]
+
+// A reference shape under one transform.
+.type Pattern = [f: Fig, d: D4]
+
+.type GroupValue = [s: Sym]
+.type OpenValue = [match_group: GroupValue]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+
+.comp Params {
+    // --- $StoredRef ---
+    // @derive RarestColor: borderline concept
+    .decl ref_color(c: Color) ref_color(2).
+
+    // --- $MarkColor ---
+    // @derive SharedColor: variant derived
+    //     @relaxed mark-shapes
+    // @ignore: derive VanishedColor — equivalent to SharedColor: on one input
+    //  with no output, each gives every color of the input
+    .decl mark_color(c: Color) mark_color(1).
+
+    // --- $Stretch ---
+    // The transforms under which two reduced shapes count as the same. Every
+    // reference in the evidence has a mirror axis, so the pairs fix neither.
+    // @open
+    .decl match_group(s: Sym) match_group(SYM_C4). match_group(SYM_D4).
+
+    // --- $AnyColor, $CornerReference ---
+    // @derive DominantColor: foreign $AnyColor
+    // @derive RarestColor: borderline concept
+    // @ignore: derive $CornerReference — fails Fit: the rarest color is the
+    //  reference's red, so the corner cell is background and every pair is
+    //  undefined
+    .decl background(c: Color) background(0).
+
+    // --- $CornerReference ---
+    .decl ref_corner(d: DiagDir) ref_corner(DIAG_TL).
+}
+
+.init params = Params
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($Adjacency4()). adjacency_choice($Adjacency8()).
+
+.decl candidates_choice(s: Candidates)
+candidates_choice($MarkColor()). candidates_choice($AnyColor()).
+
+// The reference color under each reading.
+.decl ref_color(r: RefSource, c: Color)
+
+// The colors of the shapes tested against the reference.
+.decl cand_color(s: Candidates, r: RefSource, c: Color)
+
+// The cells of each shape, with its color.
+.decl figure(f: Fig, c: Color, p: Position)
+
+// The 4-connected shapes of each color.
+// @claim reference-shape mark-shapes
+.init shape4 = Components<Color>
+shape4.node(C, P) :- in(P, C).
+
+figure([$Adjacency4(), Id], C, P) :- shape4.label(C, P, Id).
+
+// The reference shapes.
+.decl ref_fig(r: RefSource, f: Fig)
+ref_fig(R, [$Adjacency4(), Id]) :- ref_color(R, C), shape4.label(C, _, Id).
+
+// The shapes tested against the reference.
+.decl cand_fig(s: Candidates, r: RefSource, f: Fig)
+cand_fig(S, R, F) :- cand_color(S, R, C), figure(F, C, _).
+
+// The color a matching shape takes: the reference shape's color.
+// @store: foreign concept
+.decl paint_color(r: RefSource, c: Color)
+paint_color(R, C) :- ref_color(R, C).
+
+// @claim stretch-match
+.init bbox = Bbox<Fig>
+bbox.cell(F, P) :- figure(F, _, P).
+
+// Each cell of a shape's box, in the box's frame.
+.decl box_cell(f: Fig, p: Position, p_rel: Position)
+box_cell(F, P, P_rel) :- bbox.box(F, B), in(P, _), crop(P, B, P_rel).
+
+// A box cell the shape holds.
+.decl held(f: Fig, p_rel: Position)
+held(F, P_rel) :- figure(F, _, P), box_cell(F, P, P_rel).
+
+// A candidate that matches a reference under each case, at open value v.
+.decl matched(ch: Choice, id: Ident, v: OpenValue)
+
+// The open value each reading of the match holds.
+.decl open_of(m: ShapeMatch, v: OpenValue)
+
+// A cell that turns the paint color.
+.decl painted(ch: Choice, v: OpenValue, p: Position)
+painted([M, A, S, R], V, P) :- matched([M, A, S, R], Id, V), figure([A, Id], _, P).
+
+out(P, Col, [M, A, S, R], V) :-
+    adjacency_choice(A), candidates_choice(S), open_of(M, V), ref_fig(R, _),
+    in(P, Col_in),
+    ( painted([M, A, S, R], V, P), paint_color(R, Col)
+    ; !painted([M, A, S, R], V, P), Col = Col_in
+    ).
+
+// --- $Stretch ---
+// The line of a box cell across axis a: its component on a.
+.decl line_of(f: Fig, a: Axis, p_rel: Position, l: Position)
+line_of(F, A, P, L) :- box_cell(F, _, P), axis_elem(A), split(P, A, L, _).
+
+// Adjacent lines l and l2 of a box, where l holds a cell that l2 lacks.
+.decl differ(f: Fig, a: Axis, l: Position, l2: Position)
+differ(F, A, L, L2) :-
+    held(F, P), neighbor(P, D, Q), axis_of(D, A), !held(F, Q),
+    line_of(F, A, P, L), line_of(F, A, Q, L2).
+
+// The runs of identical adjacent lines.
+.init run = Canon<Line>
+run.edge([F, A, L], [F, A, L]) :- line_of(F, A, _, L).
+run.edge([F, A, L], [F, A, L2]) :-
+    line_of(F, A, P, L), neighbor(P, _, Q), line_of(F, A, Q, L2),
+    !differ(F, A, L, L2), !differ(F, A, L2, L).
+
+// Each run's line in the reduced shape.
+// @claim stretch-match
+.init runs = OrderFrame<FigAxis, Ident>
+runs.axis([F, A], A) :- line_of(F, A, _, _).
+runs.member([F, A], R, L) :- run.id([F, A, L], R).
+
+// The cell of the reduced shape that box cell p falls in.
+.decl reduced(f: Fig, p_rel: Position, p_red: Position)
+reduced(F, P, P_red) :-
+    line_of(F, A, P, L), run.id([F, A, L], R), runs.pos([F, A], R, Q),
+    perp(A, A2),
+    line_of(F, A2, P, L2), run.id([F, A2, L2], R2), runs.pos([F, A2], R2, Q2),
+    compose(Q, Q2, P_red).
+
+// The reduced shape.
+.decl reduced_held(f: Fig, p_red: Position)
+reduced_held(F, P_red) :- held(F, P), reduced(F, P, P_red).
+
+// The shapes equal to a transform of a 4-connected shape, after reduction.
+// @claim stretch-match
+.init same = KeyedSetCompare<Fig, Pattern, Position>
+same.pattern_member([[$Adjacency4(), Id], D], P_img) :-
+    reduced_held([$Adjacency4(), Id], P), d4_elem(D), apply(D, P, P_img).
+same.observed_member(F, P) :- reduced_held(F, P).
+
+open_of($Stretch(), [[G]]) :- params.match_group(G).
+
+matched([$Stretch(), A, S, R], Id, [[G]]) :-
+    cand_fig(S, R, [A, Id]), ref_fig(R, F_ref),
+    same.equals([A, Id], [F_ref, D]), params.match_group(G), sym_member(G, D).
+
+// --- $Topology ---
+// The background parts of each shape's box.
+// @claim stretch-match
+.init parts = Components<Fig>
+parts.node(F, P) :- box_cell(F, P, P_rel), !held(F, P_rel).
+
+// A part that reaches the box edge.
+.decl open_part(f: Fig, id: Ident)
+open_part(F, Id) :- parts.label(F, P, Id), box_cell(F, P, P_rel), !interior(P_rel, ZERO).
+
+// @claim stretch-match
+.init open_parts = Tally<Fig, Ident>
+open_parts.item(F, Id) :- open_part(F, Id).
+open_parts.domain(F) :- bbox.box(F, _).
+
+// @claim stretch-match
+.init closed_parts = Tally<Fig, Ident>
+closed_parts.item(F, Id) :- parts.label(F, _, Id), !open_part(F, Id).
+closed_parts.domain(F) :- bbox.box(F, _).
+
+open_of($Topology(), [nil]).
+
+matched([$Topology(), A, S, R], Id, [nil]) :-
+    cand_fig(S, R, [A, Id]), ref_fig(R, F_ref),
+    open_parts.tally([A, Id], N1), open_parts.tally(F_ref, N1),
+    closed_parts.tally([A, Id], N2), closed_parts.tally(F_ref, N2).
+
+// --- $Adjacency8 ---
+// The 8-connected shapes of each color.
+// @claim mark-shapes
+.init shape8 = Components8<Color>
+shape8.node(C, P) :- in(P, C).
+
+figure([$Adjacency8(), Id], C, P) :- shape8.label(C, P, Id).
+
+// --- $MarkColor ---
+cand_color($MarkColor(), R, C) :- ref_color(R, _), params.mark_color(C).
+
+// --- $AnyColor ---
+cand_color($AnyColor(), R, C) :-
+    ref_color(R, _), in(_, C), !params.background(C), !ref_color(R, C).
+
+// --- $StoredRef ---
+ref_color($StoredRef(), C) :- params.ref_color(C).
+
+// --- $CornerReference ---
+ref_color($CornerReference(), C) :-
+    in(P, C), params.ref_corner(D), box_corner(P, ZERO, D), !params.background(C).
+
+.comp Determine {
+    // A cell the output recolors, with its input and output colors.
+    .decl recolored(e: Example, p: Position, c_in: Color, c_out: Color)
+    recolored(E, P, C_in, C_out) :- ex_in(E, P, C_in), ex_out(E, P, C_out), C_in != C_out.
+
+    .decl ref_color(c: Color)
+    ref_color(C) :- recolored(_, _, _, C).
+
+    .decl mark_color(c: Color)
+    mark_color(C) :- recolored(_, _, C, _).
+
+    // The color of a cell the output keeps beside a recolored cell.
+    .decl background(c: Color)
+    background(C) :-
+        recolored(E, P, _, _), neighbor(P, _, Q), ex_in(E, Q, C), ex_out(E, Q, C).
+
+    // The corner whose input cell has the color recolored cells take.
+    .decl ref_corner(d: DiagDir)
+    ref_corner(D) :-
+        recolored(E, _, _, C), ex_in(E, P, C), diag_dir_elem(D), box_corner(P, ZERO, D).
+}

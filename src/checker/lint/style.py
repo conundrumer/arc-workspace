@@ -1,6 +1,8 @@
 """The lint checks that read the style doc beside the checks on shapes
-the corpus's edits rewrite away (`checker.lint.rewrites`):
-`choice-domain`, `shared-read` and `decl-placement`."""
+the corpus's edits rewrite away (`checker.lint.relations`,
+`checker.lint.rewrites`, `checker.lint.subexpr`,
+`checker.lint.comp_idiom`): `choice-domain`, `shared-read` and
+`decl-placement`."""
 
 from dataclasses import dataclass
 
@@ -15,6 +17,7 @@ from checker.lint.form.sections import case_column_facts
 from checker.lint.view import (
     TOP,
     lint,
+    unit_section,
     view,
 )
 from checker.runs import Runs
@@ -31,7 +34,6 @@ from solver.per_case import per_case
 from solver.vocabulary import (
     OUTPUT,
 )
-from checker.lint.rewrites import unit_section
 
 
 @quotes("principles.md", "Choice points and open parameters",

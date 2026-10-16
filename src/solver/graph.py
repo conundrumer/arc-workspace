@@ -63,6 +63,25 @@ def by_innermost[D: (Instance, RelationDecl)](decls: Sequence[D]
     return out
 
 
+def chain_declared[D: (Instance, RelationDecl)](
+        declared: Mapping[str | None, Mapping[str, D]],
+        components: Mapping[str, Component], comp: str | None, name: str
+) -> D | None:
+    """The declaration under `name` of a component, or of the first
+    component along its chain (`component_chain`) that declares one, from
+    the declarations `by_innermost` gives; None where none does."""
+    return next((declared[c][name] for c in component_chain(components, comp)
+                 if name in declared.get(c, {})), None)
+
+
+def chain_relation(program: Program, comp: str, name: str
+                   ) -> RelationDecl | None:
+    """The relation an instance of `comp` holds under `name`
+    (`chain_declared`)."""
+    return chain_declared(by_innermost(program.relations),
+                          {c.name: c for c in program.components}, comp, name)
+
+
 MAX_DEPTH = 8
 """How many instances deep an instance path the model follows goes."""
 
@@ -308,12 +327,10 @@ class Graph:
                 for n in self.instances.get(c, {})]
 
     def _instance(self, comp: str | None, name: str) -> Instance | None:
-        return next((self.instances[c][name] for c in self._chain(comp)
-                     if name in self.instances.get(c, {})), None)
+        return chain_declared(self.instances, self.components, comp, name)
 
     def _relation(self, comp: str | None, name: str) -> RelationDecl | None:
-        return next((self.relations[c][name] for c in self._chain(comp)
-                     if name in self.relations.get(c, {})), None)
+        return chain_declared(self.relations, self.components, comp, name)
 
     def paths_of(self, unit: Unit) -> list[InstancePath]:
         """The instance paths a unit runs at, in the order of the

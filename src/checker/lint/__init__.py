@@ -26,13 +26,16 @@ from checker.judged import (
 )
 from checker.lint import (
     bans,
+    comp_idiom,
     constants,
     heads,
     idioms,
     names,
     recursion,
+    relations,
     rewrites,
     style,
+    subexpr,
 )
 from checker.lint.form import (
     case_type,
@@ -86,18 +89,18 @@ PROGRAM_CHECKS: tuple[Check, ...] = (
 """The checks on the solver's form and its bans."""
 
 REWRITE_CHECKS: tuple[Check, ...] = (
-    rewrites.check_dead, rewrites.check_alias_inline,
-    rewrites.check_negated_use, style.check_choice_domain,
+    relations.check_dead, relations.check_alias_inline,
+    relations.check_negated_use, style.check_choice_domain,
     style.check_shared_read, rewrites.check_choice_tag,
     bans.check_typed_order, rewrites.check_cross_choice,
     bans.check_raw_aggregate, rewrites.check_subsumed_atom,
     rewrites.check_named_complement, rewrites.check_negated_value,
-    bans.check_long_clause, style.check_decl_placement, rewrites.check_pass_through,
-    rewrites.check_chain_join, rewrites.check_single_consumer,
+    bans.check_long_clause, style.check_decl_placement, relations.check_pass_through,
+    relations.check_chain_join, relations.check_single_consumer,
     rewrites.check_argmax, constants.check_const_join,
-    rewrites.check_comp_idiom, idioms.check_lib_idiom,
+    comp_idiom.check_comp_idiom, idioms.check_lib_idiom,
     idioms.check_domain_enumerator,
-    rewrites.check_common_subexpr,
+    subexpr.check_common_subexpr,
     heads.check_head_zero, heads.check_head_repeat,
 )
 """The checks on shapes the corpus's edits rewrite away."""

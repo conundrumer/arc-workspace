@@ -37,6 +37,7 @@ from engine.program import (
 )
 from solver.graph import (
     by_innermost,
+    chain_relation,
     component_chain,
     followed,
 )
@@ -472,13 +473,6 @@ def _decl(program: Program, id: DeclId) -> RelationDecl | Instance | None:
     return got if isinstance(got, RelationDecl | Instance) else None
 
 
-def _relations_of(program: Program, component: str) -> set[str]:
-    """The relations a component declares, its bases' included."""
-    by_scope = by_innermost(program.relations)
-    return {r for name in _chain(program, component)
-            for r in by_scope.get(name, {})}
-
-
 def _chain(program: Program, component: str) -> list[str]:
     """The component and the components it extends, in order."""
     return [n for n in component_chain(
@@ -579,7 +573,7 @@ def read_branches(program: Program, annotations: Annotations,
                               decl.name)))
                 continue
         elif isinstance(decl, Instance) and s.relation is not None:
-            if s.relation not in _relations_of(program, decl.component):
+            if chain_relation(program, decl.component, s.relation) is None:
                 problems.append(Fault(
                     ProblemKind.STORE_NAMES_NOTHING, InSolver(s.line),
                     Named(RelationName((decl.name,), s.relation))))
