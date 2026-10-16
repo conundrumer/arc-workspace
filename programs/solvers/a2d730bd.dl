@@ -55,7 +55,6 @@
     //  order.
     // @witness two-blocks: borderline $AlignedBlock
     //     @relaxed blocks
-    //     @reassigned block_order
   | FirstBlock {}
     // @rule connect: the dot connects to the nearest block of its color that
     //  it is aligned with. Undefined when two tie on the gap. When none is
@@ -92,7 +91,6 @@
     //  params.scan_order, and a later drawing paints over an earlier one.
     //  The output holds the grid of each open order.
     // @witness crossing-lines: variant any
-    //     @reassigned scan_order
   | ScanOrder {}
 
 // what a drawing does to a cell that is not background in the input

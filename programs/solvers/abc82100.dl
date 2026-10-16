@@ -63,7 +63,6 @@
     //  colors.
     // @witness two-keys: borderline concept
     //     @relaxed legend-domino
-    //     @reassigned key_order
   | FirstKey {}
 
 // which color a cell takes when stamps of two target colors write it
@@ -75,7 +74,6 @@
     //  their shape, then by their near cell, in params.layer_order.
     // @witness stamp-clash: variant any
     //     @relaxed clear-stamps
-    //     @reassigned layer_order
   | ScanOrder {}
 
 // whether a stamp covers a kept cell

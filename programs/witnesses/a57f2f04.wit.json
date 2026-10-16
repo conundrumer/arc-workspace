@@ -2,7 +2,7 @@
   "id": "a57f2f04",
   "witnesses": [{
     "id": "off-lattice",
-    "separates": "A 7x6 panel with a 3x3 motif at its top-left: the motif's height does not divide the panel's. The concept lays the lattice through the motif and cuts the last row short; $CornerAnchor, with its open corners narrowed to the bottom two, lays the lattice from the panel's bottom and puts the cut row at the top.",
+    "separates": "A 7x6 panel with a 3x3 motif at its top-left: the motif's height does not divide the panel's. The concept lays the lattice through the motif and cuts the last row short. $CornerAnchor gives a grid for each open corner: from a top corner the concept's grid, and from a bottom corner the lattice laid from the panel's bottom, with the cut row at the top.",
     "input": [
       [8,8,8,8,8,8,8,8,8,8,8,8],
       [8,8,8,8,8,8,8,8,8,8,8,8],
@@ -18,12 +18,6 @@
       [8,8,8,8,8,8,8,8,8,8,8,8],
       [8,8,8,8,8,8,8,8,8,8,8,8]
     ],
-    "assign": {
-      "anchor": [
-        ["DIAG_BL"],
-        ["DIAG_BR"]
-      ]
-    },
     "output": [{
       "cases": ["$TileLattice"],
       "grid": [
@@ -44,19 +38,36 @@
     }, {
       "cases": ["$CornerAnchor"],
       "grid": [
-        [8,8,8,8,8,8,8,8,8,8,8,8],
-        [8,8,8,8,8,8,8,8,8,8,8,8],
-        [8,8,8,8,8,8,8,8,8,8,8,8],
-        [8,8,8,2,0,2,2,0,2,8,8,8],
-        [8,8,8,2,2,0,2,2,0,8,8,8],
-        [8,8,8,0,2,2,0,2,2,8,8,8],
-        [8,8,8,2,0,2,2,0,2,8,8,8],
-        [8,8,8,2,2,0,2,2,0,8,8,8],
-        [8,8,8,0,2,2,0,2,2,8,8,8],
-        [8,8,8,2,0,2,2,0,2,8,8,8],
-        [8,8,8,8,8,8,8,8,8,8,8,8],
-        [8,8,8,8,8,8,8,8,8,8,8,8],
-        [8,8,8,8,8,8,8,8,8,8,8,8]
+        [
+          [8,8,8,8,8,8,8,8,8,8,8,8],
+          [8,8,8,8,8,8,8,8,8,8,8,8],
+          [8,8,8,8,8,8,8,8,8,8,8,8],
+          [8,8,8,2,2,0,2,2,0,8,8,8],
+          [8,8,8,0,2,2,0,2,2,8,8,8],
+          [8,8,8,2,0,2,2,0,2,8,8,8],
+          [8,8,8,2,2,0,2,2,0,8,8,8],
+          [8,8,8,0,2,2,0,2,2,8,8,8],
+          [8,8,8,2,0,2,2,0,2,8,8,8],
+          [8,8,8,2,2,0,2,2,0,8,8,8],
+          [8,8,8,8,8,8,8,8,8,8,8,8],
+          [8,8,8,8,8,8,8,8,8,8,8,8],
+          [8,8,8,8,8,8,8,8,8,8,8,8]
+        ],
+        [
+          [8,8,8,8,8,8,8,8,8,8,8,8],
+          [8,8,8,8,8,8,8,8,8,8,8,8],
+          [8,8,8,8,8,8,8,8,8,8,8,8],
+          [8,8,8,2,0,2,2,0,2,8,8,8],
+          [8,8,8,2,2,0,2,2,0,8,8,8],
+          [8,8,8,0,2,2,0,2,2,8,8,8],
+          [8,8,8,2,0,2,2,0,2,8,8,8],
+          [8,8,8,2,2,0,2,2,0,8,8,8],
+          [8,8,8,0,2,2,0,2,2,8,8,8],
+          [8,8,8,2,0,2,2,0,2,8,8,8],
+          [8,8,8,8,8,8,8,8,8,8,8,8],
+          [8,8,8,8,8,8,8,8,8,8,8,8],
+          [8,8,8,8,8,8,8,8,8,8,8,8]
+        ]
       ]
     }]
   }, {

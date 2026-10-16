@@ -86,7 +86,6 @@
     //  output holds each anchor's grid
     // @witness off-lattice: borderline concept
     //     @relaxed tile
-    //     @reassigned anchor
     // @witness inset-even: variant $CornerBox
   | CornerAnchor {}
 

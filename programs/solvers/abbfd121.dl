@@ -82,10 +82,8 @@
   | Perimeter {}
     // @rule select: the selected occluder has the greatest extent along
     //  params.primary_axis, then the greatest extent across it
-    // @witness tall-thin-v: ordinary concept
-    //     @reassigned primary_axis
-    // @witness wide-thin-h: ordinary concept
-    //     @reassigned primary_axis
+    // @witness tall-thin: ordinary concept
+    // @witness wide-thin: ordinary concept
   | AxisThenCross {}
     // @rule select: the selected occluder has the longest side, then the
     //  longest short side
@@ -103,10 +101,8 @@
     //  corner of params.scan comes first along that scan order wins
     // @witness area-tie: borderline any
     //     @relaxed unique-largest
-    //     @reassigned scan
     // @witness equal-blocks: borderline any
     //     @relaxed unique-largest
-    //     @reassigned scan
   | TieFirst {}
 
 .type Choice = [occluder: Occluder, recovery: Recovery, orbit: HiddenOrbit,

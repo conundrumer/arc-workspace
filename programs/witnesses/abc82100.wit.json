@@ -60,7 +60,7 @@
     }]
   }, {
     "id": "two-keys",
-    "separates": "$FirstKey from the concept: one vertical key line carries two dominoes, 4 1 on its left and 7 5 on its right. The concept uses both, so the 4 cell stamps the line in 1 and the 5 cell stamps it in 7. In reading order, $FirstKey uses only the left domino and keeps the right domino and the 5 cell.",
+    "separates": "$FirstKey from the concept: one vertical key line carries two dominoes, 4 1 on its left and 7 5 on its right. The concept uses both, so the 4 cell stamps the line in 1 and the 5 cell stamps it in 7. $FirstKey gives a grid for each open key order and uses only the first domino in that order: at some orders the left domino, keeping the right domino and the 5 cell, and at others the right domino, keeping the left domino and the 4 cell.",
     "input": [
       [0,0,0,0,0,0,0,0,0,0],
       [0,4,0,0,0,0,0,0,0,0],
@@ -73,11 +73,6 @@
       [0,0,0,0,0,0,0,0,5,0],
       [0,0,0,0,0,0,0,0,0,0]
     ],
-    "assign": {
-      "key_order": [
-        ["DIAG_TL","AXIS_V"]
-      ]
-    },
     "output": [{
       "cases": ["$EveryKey"],
       "grid": [
@@ -95,21 +90,35 @@
     }, {
       "cases": ["$FirstKey"],
       "grid": [
-        [0,1,0,0,0,0,0,0,0,0],
-        [0,1,0,0,0,0,0,0,0,0],
-        [0,1,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,7,5,0,0],
-        [0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,5,0],
-        [0,0,0,0,0,0,0,0,0,0]
+        [
+          [0,1,0,0,0,0,0,0,0,0],
+          [0,1,0,0,0,0,0,0,0,0],
+          [0,1,0,0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,7,5,0,0],
+          [0,0,0,0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,0,0,5,0],
+          [0,0,0,0,0,0,0,0,0,0]
+        ],
+        [
+          [0,0,0,0,0,0,0,0,0,0],
+          [0,4,0,0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,0,0,0,0],
+          [0,0,0,4,1,0,0,0,0,0],
+          [0,0,0,0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,0,0,7,0],
+          [0,0,0,0,0,0,0,0,7,0],
+          [0,0,0,0,0,0,0,0,7,0]
+        ]
       ]
     }]
   }, {
     "id": "stamp-clash",
-    "separates": "$ScanOrder from the concept: the stamps of a 1 cell (in 2) and a 3 cell (in 4) overlap on two cells. The concept writes two colors there and is undefined. In reading order, $ScanOrder lets the legend of the later shape, the 3 4 legend, cover.",
+    "separates": "$ScanOrder from the concept: the stamps of a 1 cell (in 2) and a 3 cell (in 4) overlap on two cells. The concept writes two colors there and is undefined. $ScanOrder gives a grid for each open layer order, and the legend of the later shape in that order covers: the 3 4 legend at some orders and the 1 2 legend at others.",
     "input": [
       [1,2,8,8,8,0,0],
       [0,0,0,0,0,0,0],
@@ -119,24 +128,30 @@
       [0,0,1,3,0,0,0],
       [0,0,0,0,0,0,0]
     ],
-    "assign": {
-      "layer_order": [
-        ["DIAG_TL","AXIS_V"]
-      ]
-    },
     "output": [{
       "cases": ["concept"],
       "grid": null
     }, {
       "cases": ["$ScanOrder"],
       "grid": [
-        [0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0],
-        [0,0,2,4,4,4,0],
-        [0,0,0,0,0,0,0]
+        [
+          [0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,0],
+          [0,0,2,4,4,4,0],
+          [0,0,0,0,0,0,0]
+        ],
+        [
+          [0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,0],
+          [0,0,2,2,2,4,0],
+          [0,0,0,0,0,0,0]
+        ]
       ]
     }]
   }, {

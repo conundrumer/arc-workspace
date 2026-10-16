@@ -72,7 +72,6 @@
     // @witness spread-rows: ordinary concept
     // @witness diagonal: borderline $AxisSpread
     // @witness spread-tie: ordinary concept
-    //     @reassigned tie_axis
   | AxisSpread {}
     // @rule axis: the longer axis of the kept squares' joint bounding box;
     //  undefined when the box is square

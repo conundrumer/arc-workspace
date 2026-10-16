@@ -133,7 +133,7 @@
     }]
   }, {
     "id": "four-in-row",
-    "separates": "A 6x19 grid of noise with four 2x2 blocks of 8 on rows 2-3 at cols 0, 5, 10 and 15, three columns apart, read with band_sense CW. The concept is undefined on more than two blocks on one band; $OuterSpan takes one 2x13 window through the middle blocks, $PairLeftRight takes the windows of blocks 1-2 and 3-4, and $ConsecutiveWindows takes all three gaps, the leftmost on top.",
+    "separates": "A 6x19 grid of noise with four 2x2 blocks of 8 on rows 2-3 at cols 0, 5, 10 and 15, three columns apart. The concept is undefined on more than two blocks on one band; $OuterSpan takes one 2x13 window through the middle blocks; $PairLeftRight takes the windows of blocks 1-2 and 3-4, and $ConsecutiveWindows takes all three gaps, each giving a grid for each open band sense, with the leftmost window on top at one sense and at the bottom at the other.",
     "input": [
       [3,0,4,9,0,0,6,0,3,7,0,6,1,0,0,4,4,0,1],
       [0,6,4,0,7,0,1,9,9,7,0,7,7,4,0,1,0,6,0],
@@ -142,11 +142,6 @@
       [2,6,5,3,5,2,7,0,0,6,4,0,3,0,5,4,0,9,0],
       [6,7,3,3,3,7,5,7,5,0,0,2,5,9,0,0,2,9,7]
     ],
-    "assign": {
-      "band_sense": [
-        ["SENSE_CW"]
-      ]
-    },
     "output": [{
       "cases": ["concept"],
       "grid": null
@@ -159,20 +154,38 @@
     }, {
       "cases": ["$PairLeftRight"],
       "grid": [
-        [0,6,0],
-        [7,1,5],
-        [7,9,1],
-        [3,2,1]
+        [
+          [0,6,0],
+          [7,1,5],
+          [7,9,1],
+          [3,2,1]
+        ],
+        [
+          [7,9,1],
+          [3,2,1],
+          [0,6,0],
+          [7,1,5]
+        ]
       ]
     }, {
       "cases": ["$ConsecutiveWindows"],
       "grid": [
-        [0,6,0],
-        [7,1,5],
-        [6,9,0],
-        [4,3,5],
-        [7,9,1],
-        [3,2,1]
+        [
+          [0,6,0],
+          [7,1,5],
+          [6,9,0],
+          [4,3,5],
+          [7,9,1],
+          [3,2,1]
+        ],
+        [
+          [7,9,1],
+          [3,2,1],
+          [6,9,0],
+          [4,3,5],
+          [0,6,0],
+          [7,1,5]
+        ]
       ]
     }]
   }, {

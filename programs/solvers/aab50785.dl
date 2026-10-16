@@ -83,9 +83,7 @@
     // @witness four-in-row: foreign any
     //     @relaxed block-pairs
     //     @relaxed disjoint-rows
-    //     @reassigned band_sense
     // @witness big-blocks: variant $DerivedShape
-    // @witness wide-pair: borderline $DerivedShape
   | OuterSpan {}
     // @scene block-pairs: the blocks of a band pair off in their order along
     //  params.pair_axis; undefined on an odd count

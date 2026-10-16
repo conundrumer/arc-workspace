@@ -313,7 +313,7 @@
     }]
   }, {
     "id": "spread-tie",
-    "separates": "Three hollow squares with pairwise disjoint columns whose top-left corners spread 10 on both axes. With the tie resolved to vertical, $AxisSpread stacks them; $AxisBbox finds a square joint box and is undefined; the concept lines them up left to right.",
+    "separates": "Three hollow squares with pairwise disjoint columns whose top-left corners spread 10 on both axes. $AxisSpread gives a grid for each open tie axis: it stacks them along V and lines them up left to right along H; $AxisBbox finds a square joint box and is undefined; the concept lines them up left to right.",
     "input": [
       [2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0],
       [2,0,0,2,0,4,4,4,4,0,0,0,0,0,0,0],
@@ -331,11 +331,6 @@
       [0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0],
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
-    "assign": {
-      "tie_axis": [
-        ["AXIS_V"]
-      ]
-    },
     "output": [{
       "cases": ["$SeparatingAxis"],
       "grid": [
@@ -350,18 +345,26 @@
     }, {
       "cases": ["$AxisSpread"],
       "grid": [
-        [2,2,2,2],
-        [2,0,0,2],
-        [2,0,0,2],
-        [2,2,2,2],
-        [4,4,4,4],
-        [4,0,0,4],
-        [4,0,0,4],
-        [4,4,4,4],
-        [1,1,1,1],
-        [1,0,0,1],
-        [1,0,0,1],
-        [1,1,1,1]
+        [
+          [2,2,2,2],
+          [2,0,0,2],
+          [2,0,0,2],
+          [2,2,2,2],
+          [4,4,4,4],
+          [4,0,0,4],
+          [4,0,0,4],
+          [4,4,4,4],
+          [1,1,1,1],
+          [1,0,0,1],
+          [1,0,0,1],
+          [1,1,1,1]
+        ],
+        [
+          [2,2,2,2,4,4,4,4,1,1,1,1],
+          [2,0,0,2,4,0,0,4,1,0,0,1],
+          [2,0,0,2,4,0,0,4,1,0,0,1],
+          [2,2,2,2,4,4,4,4,1,1,1,1]
+        ]
       ]
     }]
   }, {

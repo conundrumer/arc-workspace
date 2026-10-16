@@ -22,9 +22,7 @@
     // @scene seed: one or more non-background cells, each a seed.
     // @rule diamond-rings: each cell's ring is its Manhattan distance to the
     //  last seed in the scan order params.scan_order, a corner and an axis.
-    // @witness two-seeds-scan: variant $NearestSeed
-    //     @relaxed seed
-    //     @reassigned scan_order
+    // @witness two-seeds: variant $NearestSeed
   | LastSeed {}
 
 .type ScanValue = [d: DiagDir, a: Axis]

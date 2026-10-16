@@ -84,7 +84,6 @@
     //  mirror takes the color of the class params.first_axis
     // @witness plus-priority: borderline any
     //     @relaxed figures
-    //     @reassigned first_axis
   | AxisPriority {}
     // @rule recolor-by-symmetry: a shape that is in no class and has an axis
     //  mirror takes the background color
