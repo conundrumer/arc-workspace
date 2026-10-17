@@ -169,17 +169,35 @@ def decided(state: State, what: str, choices: dict[Decision, str]) -> Decision |
     held step. Where no such ruling came, the step held on `what` with its
     choices, and where the last such ruling gives none of them, the
     undecided step on that line."""
+    ruling = last_decision(state, what)
+    if ruling is None:
+        return held_on(what, choices)
+    ln, m = ruling
+    if m["choice"] not in choices:
+        listed = ", ".join(choices)
+        return Undecided(mctx("the line `{line}` gives step {k} none of the choices "
+                              "{listed}").format(line=ln.text, k=m["key"], listed=listed))
+    return Decision(m["choice"])
+
+
+def ruled(state: State, what: str) -> float:
+    """The time of the ruling `decided` takes its choice on the held step
+    `what` from, or 0.0 where none came. A launch on that ruling takes it
+    into its occasion, so a second launch on one held step has a key of its
+    own."""
+    ruling = last_decision(state, what)
+    return ruling[0].message.time if ruling is not None else 0.0
+
+
+def last_decision(state: State, what: str) -> tuple[Line, re.Match[str]] | None:
+    """The last `Decision:` ruling that gives the decision key of the held
+    step `what`, with its match of `DECISION`, or None."""
     k = decision_key(what)
     for ln in reversed(rulings(state)):
         m = DECISION.fullmatch(ln.rest)
-        if ln.kind is not Directive.DECISION or m is None or m["key"] != k:
-            continue
-        if m["choice"] not in choices:
-            listed = ", ".join(choices)
-            return Undecided(mctx("the line `{line}` gives step {k} none of the choices "
-                                  "{listed}").format(line=ln.text, k=k, listed=listed))
-        return Decision(m["choice"])
-    return held_on(what, choices)
+        if ln.kind is Directive.DECISION and m is not None and m["key"] == k:
+            return ln, m
+    return None
 
 
 def rulings(state: State) -> list[Line]:

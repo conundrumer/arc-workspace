@@ -33,7 +33,7 @@ from controlled_markdown import mctx
 from operations import briefs, messages
 from operations.change_agents import change_editors, editors_in, of_change, settled, unstaffed
 from operations.change_holds import Hold, findings_hold, unreplied_hold
-from operations.directives import Decision, decided
+from operations.directives import Decision, decided, ruled
 from operations.handled import sent
 from operations.reports import no_finding, shows_current
 from operations.roles import Role
@@ -58,7 +58,7 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
     has passed."""
     r = latest_reviewer(agents, w)
     if r is None:
-        return review_launch(state, t, w, here, state.me)
+        return review_launch(state, t, w, here, state.me, 0.0)
     if r.pending:
         return None
     reply = r.last_report
@@ -119,7 +119,7 @@ def review_decided(state: State, t: Ticket, w: Path, here: list[Agent],
         return choice
     if choice is Decision.PASSES:
         return False
-    return review_launch(state, t, w, here, state.me)
+    return review_launch(state, t, w, here, state.me, ruled(state, hold.text))
 
 
 def with_ids(agents: list[Agent]) -> list[tuple[Agent, str]] | Undecided:
@@ -132,15 +132,17 @@ def with_ids(agents: list[Agent]) -> list[tuple[Agent, str]] | Undecided:
     return list(zip(agents, ids, strict=True))
 
 
-def review_launch(state: State, t: Ticket, w: Path, here: list[Agent], launcher: str) -> Step:
+def review_launch(state: State, t: Ticket, w: Path, here: list[Agent], launcher: str,
+                  ruled: float) -> Step:
     """The launch of a doc reviewer on the change, with its editors and
     what the agents before it settled (`change_agents.settled`), by
-    `launcher`."""
+    `launcher`, on the ruling at `ruled` (`directives.ruled`), or 0.0 on
+    none."""
     editors = with_ids(here)
     if isinstance(editors, Undecided):
         return editors
     return Launch(Role.DOC_REVIEWER, t.number, briefs.doc_review(
-        t.number, w, editors, launcher, settled(state, t, Role.DOC_REVIEWER, None)), occasion=str(last_reported(here)))
+        t.number, w, editors, launcher, settled(state, t, Role.DOC_REVIEWER, None)), occasion=str(max(last_reported(here), ruled)))
 
 
 NO_OPERATOR = mctx("{agent} is no doc editor that an operator of the session launched: give "
@@ -182,4 +184,4 @@ def editor_review(state: State, editor: str) -> Step | str:
             or any(a.pending for a in here if a.agent_id != editor)):
         return mctx("Another editor of change {number} has not reported, so the operator "
                     "launches the review: give your final reply.").format(number=t.number)
-    return review_launch(state, t, w, here, editor)
+    return review_launch(state, t, w, here, editor, 0.0)

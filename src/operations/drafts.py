@@ -48,7 +48,7 @@ from controlled_markdown import mctx
 from operations import briefs, messages
 from operations.change_budget import OVERRUN_FINDING
 from operations.taking import STALLED, scope
-from operations.directives import Decision, Directive, decided, named, numbers
+from operations.directives import Decision, Directive, decided, named, numbers, ruled
 from operations.roles import Purpose, Role, analyst_subject, joined, subjects
 from operations.reports import left_for_decision
 from operations.state import Agent, LogLine, State, Ticket
@@ -195,22 +195,30 @@ def step(state: State) -> Step | None:
     holds that draft alone."""
     ready: list[Ticket] = []
     waiting: list[Ticket] = []
+    at: dict[str, float] = {}
     for t in drafts(state):
-        s = draft_step(state, t, ready, waiting)
+        s = draft_step(state, t, ready, waiting, at)
         if s is not None and not repeated(s, state):
             return s
     if ready:
         nums = [t.number for t in ready]
         return Launch(Role.TICKET_REVIEWER, joined(nums), briefs.ticket_review(nums, state.me),
-                      items=len(nums), occasion=str(max(t.last_time for t in ready)))
+                      items=len(nums), occasion=occasion(ready, at))
     if waiting:
         group = linked(waiting[0], waiting)
         nums = [t.number for t in group]
         last = [t.number for t in group if at_cap(t)]
         overruns = [o for t in group if (o := overrun(state, t)) is not None]
         return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.DRAFT, joined(nums)),
-                      briefs.revise(nums, last, state.me, overruns), items=len(nums), occasion=str(max(t.last_time for t in group)))
+                      briefs.revise(nums, last, state.me, overruns), items=len(nums),
+                      occasion=occasion(group, at))
     return None
+
+
+def occasion(group: list[Ticket], at: dict[str, float]) -> str:
+    """The occasion of a launch on the drafts `group`, which joined
+    `ready` or `waiting` with the ruling times `at` (`draft_step`)."""
+    return str(max(max(t.last_time, at[t.number]) for t in group))
 
 
 def due(state: State) -> set[str]:
@@ -218,16 +226,18 @@ def due(state: State) -> set[str]:
     ready: list[Ticket] = []
     waiting: list[Ticket] = []
     out = {t.number for t in drafts(state)
-           if (s := draft_step(state, t, ready, waiting)) is not None
+           if (s := draft_step(state, t, ready, waiting, {})) is not None
            and not isinstance(s, Undecided)}
     return out | {t.number for t in [*ready, *waiting]}
 
 
 def draft_step(state: State, t: Ticket, ready: list[Ticket],
-               waiting: list[Ticket]) -> Step | None:
+               waiting: list[Ticket], at: dict[str, float]) -> Step | None:
     """The step on the draft `t` alone, or None where it waits or joins
     `ready`, the drafts ready for a ticket reviewer, or `waiting`, those
-    waiting for a ticket analyst."""
+    waiting for a ticket analyst. Where it joins one, `at` gives under its
+    number the time of the ruling it joins on (`directives.ruled`), or
+    0.0."""
     agents = on(state, t)
     last_line = t.log[-1]
     for a in agents:
@@ -255,13 +265,15 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
             if not sent(state, writer.agent_id, message):
                 return Send(writer.agent_id, message, f"suggestions {t.number} {t.last_time}")
             analyst_done = [writer]
+        at[t.number] = 0.0
         if analyst_done:
-            choice = decided(state, mctx("the revision of draft {number} by ticket analyst "
-                                       "{agent} is unfinished").format(
-                               number=t.number, agent=analyst_done[-1].agent_id),
-                           {Decision.AGAIN: mctx("launch another ticket analyst to revise it")})
+            what = mctx("the revision of draft {number} by ticket analyst {agent} is "
+                        "unfinished").format(number=t.number, agent=analyst_done[-1].agent_id)
+            choice = decided(state, what,
+                             {Decision.AGAIN: mctx("launch another ticket analyst to revise it")})
             if isinstance(choice, Undecided):
                 return choice
+            at[t.number] = ruled(state, what)
         waiting.append(t)
         return None
     if log_ready(t) and t.log[last_i].note.startswith(Note.REVISED) and at_cap(t):
@@ -272,6 +284,7 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
     given = since if by_log else t.log[-1].time
     reviewed = [a for a in agents if a.role is Role.TICKET_REVIEWER and a.launched > since
                 and a.launched >= given]
+    at[t.number] = 0.0
     if reviewed:
         what = mctx("ticket reviewer {agent} left draft {number} under `tickets/draft/` with "
                     "no finding").format(agent=reviewed[-1].agent_id, number=t.number)
@@ -283,6 +296,7 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
             return Bash(log(t.number, Status.OPEN, Status.DRAFT,
                             f"opened by the decision {decision_key(what)}", None),
                         f"{t.number} open", occasion=str(t.last_time))
+        at[t.number] = ruled(state, what)
     ready.append(t)
     return None
 

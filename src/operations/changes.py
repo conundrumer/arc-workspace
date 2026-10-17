@@ -84,7 +84,7 @@ from operations.change_fragments import drafter_ids, fragments_step
 from operations.change_overrun import over_budget
 from operations.design_review import design_review, open_questions, reviewing
 from operations.doc_review import doc_review, with_ids
-from operations.directives import Decision, decided, held_on
+from operations.directives import Decision, decided, held_on, ruled
 from operations.item_check import check_items, is_checked, latest_reports, unfinished
 from operations.reports import Label, items_of, left_for_decision, shows_current
 from operations.roles import Purpose, Role, analyst_of, analyst_subject
@@ -293,6 +293,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
             return None if on_user else choice
         if choice is Decision.MERGE:
             return False
+    at = ruled(state, hold.text) if hold is not None else 0.0
     reports = latest_reports(latest)
     if isinstance(reports, Undecided):
         return reports
@@ -300,7 +301,8 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
         t.number, w, parts, [q.number for q in questions], editors, reports,
         [i for a, i in editors if a in left_open], state.me,
         settled(state, t, Role.TICKET_ANALYST, None)),
-        occasion=str(max([last_reported([*latest, *checkers]), *(q.filed for q in questions)])))
+        occasion=str(max([last_reported([*latest, *checkers]), at,
+                          *(q.filed for q in questions)])))
 
 
 def step(state: State) -> Step | None:
