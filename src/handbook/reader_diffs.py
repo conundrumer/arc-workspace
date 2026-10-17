@@ -7,19 +7,24 @@ may hold them at, or from the texts it was given at its launch."""
 from __future__ import annotations
 
 import difflib
+import fcntl
+import hashlib
 import os
 import re
+import shutil
 import subprocess
 import sys
-import tempfile
+import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
+from typing import IO
 
 from engine import checkout
+from engine.memo import read_or_make
 from controlled_markdown import form, markdown_heading_lines, mctx
 from handbook.linked import (Link, LinkedChange, LinkTarget, WalkStart, _Side, folded,
                             link_lines, linked_changes, sides)
@@ -44,29 +49,138 @@ before side, in place of a commit."""
 _MARKER_LINE = re.compile(form(MARKER, {"what": "(.+)"}))
 
 
+TREES = "reader-trees"
+"""The directory under `checkout.cache()` that holds the kept trees
+(`_tree_at`)."""
+
+UNUSED_SECONDS = 30 * 60
+"""How long a kept tree stays after its last use (`_tree_at`)."""
+
+
+@contextmanager
+def _flocked(path: Path, op: int) -> Iterator[IO[str]]:
+    """The lock file at `path`, held through `flock` with `op`. A file that
+    a holder removed while this one waited for it is opened again, so that
+    each hold is on the file that stands at `path`."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    while True:
+        with path.open("a+") as f:
+            fcntl.flock(f, op)
+            try:
+                standing = os.stat(path).st_ino == os.fstat(f.fileno()).st_ino
+            except FileNotFoundError:
+                standing = False
+            if standing:
+                yield f
+                return
+
+
+def _remove_tree(tree: Path) -> None:
+    """Removes `tree` and its entry in `git worktree list`, where either
+    stands."""
+    try:
+        checkout.git_out(REPO_ROOT, "worktree", "remove", "--force", str(tree))
+    except checkout.GitFailed:
+        shutil.rmtree(tree, ignore_errors=True)
+
+
+def _sweep(trees: Path) -> None:
+    """Removes each kept tree under `trees` that no block has used for
+    `UNUSED_SECONDS` and whose locks are free at once (`_tree_at`)."""
+    for use in sorted(trees.glob("*.use")):
+        make = use.with_suffix(".make")
+        try:
+            if time.time() - use.stat().st_mtime < UNUSED_SECONDS:
+                continue
+            with (_flocked(make, fcntl.LOCK_EX | fcntl.LOCK_NB),
+                  _flocked(use, fcntl.LOCK_EX | fcntl.LOCK_NB)):
+                if time.time() - use.stat().st_mtime < UNUSED_SECONDS:
+                    continue
+                use.with_suffix(".whole").unlink(missing_ok=True)
+                _remove_tree(use.with_suffix(""))
+                use.unlink()
+                make.unlink(missing_ok=True)
+        except (BlockingIOError, FileNotFoundError):
+            continue
+
+
 @contextmanager
 def _tree_at(commit: str) -> Iterator[Path]:
-    """The tree of `commit`, checked out as a detached git worktree of the
-    repository in a temporary directory, so that the checkout stays as it
-    is and the commit's own code finds the main worktree as in any other
-    checkout. The worktree is removed on every exit of the block and leaves
-    no entry in `git worktree list`."""
-    with tempfile.TemporaryDirectory() as tmp:
-        tree = Path(tmp) / "tree"
-        try:
-            checkout.git_out(REPO_ROOT, "worktree", "add", "--detach",
-                             str(tree), commit)
-        except checkout.GitFailed as e:
-            raise SystemExit(e.stderr.strip())
-        try:
-            yield tree
-        finally:
-            checkout.git_out(REPO_ROOT, "worktree", "remove", "--force", str(tree))
+    """The tree of `commit`, a detached git worktree of the repository kept
+    under `checkout.cache()`, one per commit, so that the checkout stays as
+    it is, the commit's own code finds the main worktree as in any other
+    checkout, and the updates after one merge make the tree of the old
+    commit once.
+
+    The first block that needs the tree makes it under an exclusive lock on
+    the commit, and marks it whole once `git worktree add` has succeeded; a
+    block that finds that lock held waits for it, and a tree with no whole
+    mark is removed and made again under it. Each make first prunes the
+    entries of `git worktree list` whose directory is gone, such as those
+    of the trees of a run cache that was deleted, which no sweep reads
+    again. Each block holds a lock on the
+    tree shared while it reads the tree, and a block takes it exclusively
+    to remove the tree, so that no process removes a tree in use. On its
+    exit, a block removes each kept tree that no block has used for
+    `UNUSED_SECONDS` and whose locks are free at once, with its entry in
+    `git worktree list` (`_sweep`). A commit git does not know is a
+    fault."""
+    try:
+        full = checkout.git_out(REPO_ROOT, "rev-parse", "--verify", "--end-of-options",
+                                f"{commit}^{{commit}}").strip()
+    except checkout.GitFailed as e:
+        raise SystemExit(e.stderr.strip())
+    trees = checkout.cache() / TREES
+    tree = trees / full
+    use, make, whole = (tree.with_suffix(s) for s in (".use", ".make", ".whole"))
+    try:
+        while True:
+            with _flocked(use, fcntl.LOCK_SH):
+                if whole.exists():
+                    os.utime(use)
+                    yield tree
+                    return
+            with _flocked(make, fcntl.LOCK_EX):
+                if whole.exists():
+                    continue
+                with _flocked(use, fcntl.LOCK_EX):
+                    os.utime(use)
+                    _remove_tree(tree)
+                    checkout.git_out(REPO_ROOT, "worktree", "prune")
+                    try:
+                        checkout.git_out(REPO_ROOT, "worktree", "add", "--force",
+                                         "--detach", str(tree), full)
+                    except checkout.GitFailed as e:
+                        raise SystemExit(e.stderr.strip())
+                    whole.touch()
+    finally:
+        _sweep(trees)
+
+
+RUNS = "reader-runs"
+"""The directory under `checkout.cache()` that holds the kept outputs of
+the runs in kept trees (`_run_in`)."""
 
 
 def _run_in(tree: Path, commit: str, argv: list[str]) -> str:
     """The output of `scripts/context.py` with `argv`, run in `tree`, the
-    tree of `commit`, with that tree's own code."""
+    tree of `commit`, with that tree's own code. Where `tree` is a kept
+    tree (`_tree_at`), the output is kept under `checkout.cache()` by the
+    tree's commit and `argv`, since it never changes for that commit, and
+    one run makes it however many ask for it at once; the checkout's output
+    is not kept, since its files may differ from its `HEAD`."""
+    if tree.parent != checkout.cache() / TREES:
+        return _run(tree, commit, argv)
+    h = hashlib.sha256()
+    for part in [tree.name, *argv]:
+        h.update(part.encode() + b"\0")
+    key = checkout.cache() / RUNS / h.hexdigest()
+    with _flocked(key.with_suffix(".lock"), fcntl.LOCK_EX):
+        return read_or_make(key.with_suffix(".txt"), bytes.decode, str.encode,
+                            lambda: (_run(tree, commit, argv), True))
+
+
+def _run(tree: Path, commit: str, argv: list[str]) -> str:
     paths = [str(tree / "src"), os.environ.get("PYTHONPATH", "")]
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(p for p in paths if p)}
     done = subprocess.run([sys.executable, str(tree / CONTEXT_SCRIPT), *argv],
