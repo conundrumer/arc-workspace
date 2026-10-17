@@ -649,27 +649,56 @@
         ; !period(Key, AXIS_H, _), Rh = L
         ).
 
+    // The candidate (d, delta) takes the frame position p into the lattice
+    // class (rv, sv, rh, sh).
+    .decl _image_class(key: Key, d: D4, delta: Offset, p: Position, rv: number,
+                       sv: number, rh: number, sh: number) inline
+    _image_class(Key, D, Delta, P, Rv, Sv, Rh, Sh) :-
+        _image(Key, D, Delta, P, X), _class(Key, X, Rv, Sv, Rh, Sh).
+
     // Some shift of the coset of the candidate (d, delta) takes the frame
     // position p onto the frame position q.
-    .decl _reach(key: Key, d: D4, delta: Offset, p: Position, q: Position)
+    .decl _reach(key: Key, d: D4, delta: Offset, p: Position, q: Position) inline
     _reach(Key, D, Delta, P, Q) :-
-        _image(Key, D, Delta, P, X), _class(Key, X, Rv, Sv, Rh, Sh),
+        _image_class(Key, D, Delta, P, Rv, Sv, Rh, Sh),
         _class(Key, Q, Rv, Sv, Rh, Sh), grid(Key, Q).
 
-    // The candidate (d, delta) takes the cell at p, holding v1, onto the
-    // cell at q, holding v2.
-    .decl _pair(key: Key, d: D4, delta: Offset, p: Position, q: Position,
-                v1: Val, v2: Val)
-    _pair(Key, D, Delta, P, Q, V1, V2) :-
-        cell(Key, P, V1), _reach(Key, D, Delta, P, Q), cell(Key, Q, V2).
+    // The frame position q holds a cell, in the lattice class
+    // (rv, sv, rh, sh).
+    .decl _class_cell(key: Key, rv: number, sv: number, rh: number,
+                      sh: number, q: Position)
+    _class_cell(Key, Rv, Sv, Rh, Sh, Q) :-
+        cell(Key, Q, _), grid(Key, Q), _class(Key, Q, Rv, Sv, Rh, Sh).
+
+    // A cell of the lattice class (rv, sv, rh, sh) holds v.
+    .decl _class_val(key: Key, rv: number, sv: number, rh: number,
+                     sh: number, v: Val)
+    _class_val(Key, Rv, Sv, Rh, Sh, V) :-
+        _class_cell(Key, Rv, Sv, Rh, Sh, Q), cell(Key, Q, V).
+
+    // The lattice class (rv, sv, rh, sh) holds cells at n frame positions.
+    .decl _class_n(key: Key, rv: number, sv: number, rh: number, sh: number,
+                   n: number)
+    _class_n(Key, Rv, Sv, Rh, Sh, N) :-
+        _class_cell(Key, Rv, Sv, Rh, Sh, _),
+        N = count : { _class_cell(Key, Rv, Sv, Rh, Sh, _) }.
 
     // The candidate (d, delta) takes some cell onto a cell of another value.
     .decl _mismatch(key: Key, d: D4, delta: Offset)
-    _mismatch(Key, D, Delta) :- _pair(Key, D, Delta, _, _, V1, V2), V1 != V2.
+    _mismatch(Key, D, Delta) :-
+        cell(Key, P, V1), _image_class(Key, D, Delta, P, Rv, Sv, Rh, Sh),
+        _class_val(Key, Rv, Sv, Rh, Sh, V2), V1 != V2.
 
-    // The candidate (d, delta) takes some cell onto a different cell.
+    // The candidate (d, delta) takes some cell onto a different cell: the
+    // class of the cell's image holds cells at two positions or more, or
+    // at one that is not the cell's.
     .decl _witnessed(key: Key, d: D4, delta: Offset)
-    _witnessed(Key, D, Delta) :- _pair(Key, D, Delta, P, Q, _, _), P != Q.
+    _witnessed(Key, D, Delta) :-
+        cell(Key, P, _), _image_class(Key, D, Delta, P, Rv, Sv, Rh, Sh),
+        _class_n(Key, Rv, Sv, Rh, Sh, N),
+        ( N > 1
+        ; N = 1, _class_cell(Key, Rv, Sv, Rh, Sh, Q), P != Q
+        ).
 
     // Transform d followed by the coset of shift delta is a symmetry of the
     // pattern.
