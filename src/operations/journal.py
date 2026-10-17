@@ -4,7 +4,7 @@ key (`steps.key`), from the time `next` gave it to its outcome, which `next` rea
 `scripts/operate.py --help journal` gives (`due`);
 `scripts/step_journal.py` writes it and reads it back."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -64,6 +64,14 @@ class Journal:
     """The entries of the session's journal, in the order they were given."""
     entries: tuple[Entry, ...] = ()
 
+    def since(self, cuts: Mapping[str, float]) -> "Journal":
+        """The journal less each entry, of the step or retiring the step
+        whose key `cuts` gives, that closed before that key's time: the
+        journal as `next` reads it past the `Override: give again` rulings
+        (`directives.given_again`). An entry in flight stays, so no step in
+        flight is given twice."""
+        return Journal(tuple(e for e in self.entries if not cut(e, cuts)))
+
     def of(self, key: str) -> list[Entry]:
         return [e for e in self.entries if e.key == key]
 
@@ -76,6 +84,12 @@ class Journal:
         """The commands that filed the bug on a retired step, of those
         given to `operator`."""
         return [e for e in self.entries if e.retires is not None and e.operator == operator]
+
+
+def cut(e: Entry, cuts: Mapping[str, float]) -> bool:
+    """Whether `Journal.since` leaves `e` out at `cuts`."""
+    return e.close is not None and any(
+        k is not None and k in cuts and e.close.time < cuts[k] for k in (e.key, e.retires))
 
 
 class Due(StrEnum):

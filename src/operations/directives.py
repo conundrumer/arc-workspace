@@ -20,7 +20,7 @@ word of its kind and a colon, past a list marker:
   for every operator of the session (`pace`), as `pacing` gives it;
 - the rulings, `Decision:` and `Override:` lines in the forms that
   `scripts/operate.py --help rulings` gives, which the command applies (`decided`,
-  `passed_over`, `overrides`).
+  `passed_over`, `given_again`, `overrides`).
 
 A line of the coordinator's in no such form, a ruling among them, goes
 back to the coordinator once as undecided, since only its writer knows
@@ -78,6 +78,7 @@ class Directive(StrEnum):
 RULINGS = frozenset({Directive.OVERRIDE, Directive.DECISION})
 
 PASS_OVER = re.compile(rf"pass over (?P<key>{STEP_KEY.pattern})")
+GIVE_AGAIN = re.compile(rf"give again (?P<key>{STEP_KEY.pattern})")
 OVERRIDE = re.compile(rf"(?P<task>{TASK_ID})\s+(?P<role>{'|'.join(PASSES)})\s+(?P<text>\S.*)")
 DECISION = re.compile(rf"(?P<key>{STEP_KEY.pattern})\s+(?P<choice>[a-z]+)")
 
@@ -210,14 +211,30 @@ def ruling_form(ln: Line) -> re.Match[str] | None:
     """The fixed form `ln`, a ruling, is in, or None."""
     if ln.kind is Directive.DECISION:
         return DECISION.fullmatch(ln.rest)
-    return PASS_OVER.fullmatch(ln.rest) or OVERRIDE.fullmatch(ln.rest)
+    return (PASS_OVER.fullmatch(ln.rest) or GIVE_AGAIN.fullmatch(ln.rest)
+            or OVERRIDE.fullmatch(ln.rest))
 
 
 def passed_over(state: State) -> dict[str, Line]:
     """The step keys the `Override: pass over` rulings give, each with the
-    last ruling that gives it."""
-    return {m["key"]: ln for ln in rulings(state)
-            if ln.kind is Directive.OVERRIDE and (m := PASS_OVER.fullmatch(ln.rest))}
+    last ruling that gives it, less each key a later `Override: give again`
+    ruling gives."""
+    out: dict[str, Line] = {}
+    for ln in rulings(state):
+        if ln.kind is not Directive.OVERRIDE:
+            continue
+        if m := PASS_OVER.fullmatch(ln.rest):
+            out[m["key"]] = ln
+        elif m := GIVE_AGAIN.fullmatch(ln.rest):
+            out.pop(m["key"], None)
+    return out
+
+
+def given_again(state: State) -> dict[str, float]:
+    """The step keys the `Override: give again` rulings give, each with the
+    message time of the last ruling that gives it."""
+    return {m["key"]: ln.message.time for ln in rulings(state)
+            if ln.kind is Directive.OVERRIDE and (m := GIVE_AGAIN.fullmatch(ln.rest))}
 
 
 def passed(step: Step, state: State) -> Line | None:

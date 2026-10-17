@@ -232,7 +232,8 @@ def subject(step: Journaled) -> str:
 def key(step: Step) -> str:
     """The key of `step`, which is the same at each read of the state that
     gives the same step: the key an `Override: pass over` ruling gives
-    (`directives.passed_over`), and the one the journal records it under
+    (`directives.passed_over`), the key an `Override: give again` ruling
+    gives (`directives.given_again`), and the one the journal records it under
     (`journal`). It is taken over the step's kind, its `origin` and its
     `subject`, and, for a step the journal does not record, over the step
     as given (`digest`). A solver pass's key is its task id and its

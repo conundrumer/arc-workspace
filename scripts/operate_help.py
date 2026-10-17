@@ -87,7 +87,7 @@ PARTS = {
         - Before it reads the state, it waits for each Bash step of the session that runs, that of another operator of the session included, for up to {block} seconds from its start, and where one still runs then, it prints that the operator runs it again.
         - A Bash step runs with the environment of `next`, which `uv run` sets, with no input, and its output goes to a file under the session's scratchpad, which `next` reads once the step ends.
         - It ends a Bash step that runs past {foreground} seconds, and that step counts as failed.
-    - `next` records each step it gives, by its key, in the session's step journal, `{journal}` under the session's scratchpad, and tells from that journal alone whether a step is in flight, done or failed.
+    - `next` records each step it gives, by its key, in the session's step journal, `{journal}` under the session's scratchpad, and tells from that journal alone whether a step is in flight, done or failed, with each outcome that an `Override: give again` ruling counts for nothing left out.
         - A printed message counts as made by a SendMessage call to its recipient that holds its text, and a printed launch by an Agent call that gives its description, that the operator made after the call of `next` that printed it and before its next call of `next`, and the step's outcome is that call's.
         - Where the operator ran `next` again first, or its work ended with no such call, the step counts as failed.
         - A step in flight is not given again, to that operator or to one that takes over.
@@ -95,7 +95,7 @@ PARTS = {
         - A step that is done is not given again.
         - The times a step was given in a row are the times it was given and failed.
         - An end of turn that `next` prints with the launch of an agent whose end resumes the operator counts as a time the launch it holds back was given and failed.
-        - Once a step was given {bound} times in a row, `next` gives it no more: it retires the step for the session, files one `bug` on it with its key and the function that gives it, and goes on to the next step, and the final reply gives the step.
+        - Once a step was given {bound} times in a row, `next` gives it no more: it retires the step for each operator of the session, files one `bug` on it with its key and the function that gives it, and goes on to the next step, and the final reply gives the step.
     """),
     HelpPart.RULINGS: mctx("""
     - `next` applies the rulings that the coordinator gives an operator of the session, and that the reply of a ticket analyst on a held step gives, each a line in one of these forms, matched whole, past a list marker:
@@ -107,6 +107,7 @@ PARTS = {
             - A ruling on a solver pass holds for each pipeline on its task, unless the work set aside for an earlier pipeline on that task went back (`restore`) after the ruling and before that pipeline's line or `start` call.
             - A solver pass's key is `<task id>-<pass>`, its task id and its pass (`analyze`, `create` or `refine`).
                 - A ruling can name a pass that was never printed.
+        - `Override: give again <step key>` makes the step whose key it gives due again, for each operator: `next` counts for nothing the outcomes of that step that came before the ruling, its retirement among them, and an earlier `pass over` ruling on it.
     - A coordinator's line that opens with `Override:` or `Decision:` in none of these forms goes back to the coordinator once, as undecided.
     - A ticket analyst's reply on a step that gives its decision key, with no ruling in these forms, goes back to it once.
         - Where its answer gives none either, the step stays held.

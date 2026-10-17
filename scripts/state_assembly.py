@@ -46,7 +46,7 @@ from handbook.reader_names import ReaderName
 from handbook.readers import reader_calls
 from operations import pacing
 from operations.pacing import Usage
-from operations.directives import named, pace
+from operations.directives import given_again, named, pace
 from operations.monitor import MonitorState
 from operations.plan import taken_up
 from operations.state import (
@@ -139,6 +139,7 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
         limit_lifted=lifted,
         sessions=sessions(tickets_dir, index, session, now, sessions_running),
         journal=journal, listing=ops.listing)
+    state = replace(state, journal=state.journal.since(given_again(state)))
     state = with_quiet_holders(state, holders.found, listing, running_work)
     state = replace(state, computed=computed_read(state, tickets_dir, undecided, usage))
     return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(ends.stalled),

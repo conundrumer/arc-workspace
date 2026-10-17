@@ -116,6 +116,8 @@
     - `Pace: <preset> [<argument> ...]` or `Pace: <path>`: the usage pace, as `uv run python scripts/operate.py --help pace` gives it. Past that pace, the operators of the session admit no ticket that a pause holds back.
     - `Override: <task id> <pass> <override>`: an override that the brief of the next launch of that pass on that task gives.
     - `Override: pass over <step key>`: passes over the solver pass whose step key it gives: that pass's task id and its pass, in the form `uv run python scripts/operate.py --help rulings` gives.
+    - `Override: give again <step key>`: makes the step whose key it gives due again, past its retirement, its outcomes and a pass-over, in the form `uv run python scripts/operate.py --help rulings` gives.
+        * comment: The user's words, session 19c17548, 2026-10-17T13:59:40Z: "10-947 feels like would be better to have escape hatch for exceptions? Like you can modify op state or intervene or whatever", and 14:01:05Z: "2 The most robust thing": ticket 10-950.
     - `Decision: <decision key> <choice>`: rules the held step that gives that decision key with one of the choices that step gives, as the whole rest of the line.
 - The operator gives each line of its brief or of a later message from the coordinator in no other form back to the coordinator as undecided.
 
