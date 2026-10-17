@@ -8,7 +8,6 @@ from enum import Enum
 from checker.finding import Code, Finding, LintCode, LintSentence
 from checker.lint.view import (
     View,
-    bare,
     flatten,
     lint,
     literal_vars,
@@ -292,17 +291,12 @@ class Chain:
     """A lib relation's defining body as the two atoms a hand-written
     clause carries: each atom's relation, arity and linking slot (the
     second's, the slots the link may take where the relation is
-    commutative there), the replacement's arguments, and the guards:
-    slot pairs that must or must not read alike, and slots that must be
-    wildcards."""
+    commutative there), and the replacement's arguments."""
 
     prim: str
     a: tuple[str, int, int]
     b: tuple[str, int, tuple[int, ...]]
     out: tuple[Slot, ...]
-    equal: tuple[tuple[Slot, Slot], ...] = ()
-    wild: tuple[Slot, ...] = ()
-    distinct: tuple[tuple[Slot, Slot], ...] = ()
 
 
 CHAINS = (
@@ -310,10 +304,6 @@ CHAINS = (
           (PARTNER, InA(0), InB(2))),
     Chain("jump", ("jump_offset", 3, 2), (COMPOSE, 3, (0, 1)),
           (PARTNER, InA(0), InA(1), InB(2))),
-    Chain("same_line", ("split", 4, 3), ("split", 4, (3,)),
-          (InA(1), InA(0), InB(0)),
-          equal=((InA(1), InB(1)),), wild=(InA(2), InB(2)),
-          distinct=((InA(0), InB(0)),)),
 )
 """The lib relations whose defining chain the check reads."""
 
@@ -414,8 +404,6 @@ def _pairs(ext: list[Atom], deltas: set[str]
                 if at_b == at_a or b.relation.name != rel_b \
                         or len(b.args) != ar_b:
                     continue
-                if rel_a == rel_b and at_b < at_a:
-                    continue
                 slot_b = next((i for i in slots_b if var_at(b, i) == link),
                               None)
                 if slot_b is None:
@@ -432,14 +420,6 @@ def _pairs(ext: list[Atom], deltas: set[str]
                             (i,) = [i for i in spec.b[2] if i != slot_b]
                             return b.args[i]
 
-                if any(bare(slot(x)) != bare(slot(y))
-                       for x, y in spec.equal):
-                    continue
-                if any(not isinstance(slot(s), Wildcard) for s in spec.wild):
-                    continue
-                if any(bare(slot(x)) == bare(slot(y))
-                       for x, y in spec.distinct):
-                    continue
                 if PARTNER in spec.out and term_vars(slot(PARTNER)) & deltas:
                     continue
                 args = tuple(slot(r) for r in spec.out)
