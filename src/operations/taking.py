@@ -23,7 +23,7 @@ from collections.abc import Callable
 
 from controlled_markdown import form, mctx
 from operations import pacing, rank
-from operations.change_budget import TAKE_NOTE
+from operations.change_budget import TAKE_NOTE, UNBUDGETED_TAKE_NOTE
 from operations.directives import (Directive, allow_named, named, NUMBER, numbers, numbers_in, paused,
                                    session_lines)
 from operations.final_reply import live_holder
@@ -242,6 +242,10 @@ def take(state: State) -> Step | None:
     commands: list[str] = []
     taken: list[str] = []
     for t in batch(state):
+        if not t.cost_budget:
+            commands.append(log(t.number, Status.ASSIGNED, Status.OPEN, UNBUDGETED_TAKE_NOTE,
+                                state.me))
+            continue
         b = state.computed.budgets.get(t.number)
         if b is None:
             if not commands:
