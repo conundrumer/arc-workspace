@@ -1,10 +1,23 @@
-+ budget: 7410
++ budget: 11479
 * comment: when editing this doc
-    - The ticket analyst and the draft analyst load this document from [Requirements](prompts/agents/ticket-analyst/requirements.md), once the Intent of a `change` it files or revises covers the need, to write the rest of that `change`'s text.
+    - The ticket analyst and the draft analyst receive this document from the step command as they enter the part of their work that writes the text of a `change` they file or revise, once they have chosen that resolution.
     - Acts, each with its section:
+        - Writing the Intent, its items' traces and its coverage of the need: [Requirements](#requirements).
         - Writing the `change`'s Motivation, its `Design`, the Scope that design gives, and its `Grounds`: [Design](#design).
+        - Checking the draft by the ticket reviewer's checks: [Checking a draft](#checking-a-draft).
 
-# Design
+# Writing a change ticket
+
+## Requirements
+- In a `change` for speed where no profile exists, ask for one as its first deliverable.
+- Before you write the Intent of a `change` to the agents' processes, a `change` whose Scope touches `prompts/agents/` or `src/operations/`, read [Process notes](prompts/agents/notes/process.md).
+- Give with each Intent item of a `change` that serves a `request`, and that you file or revise, what it traces to: the user's words in a span of that request, quoted, or a line of that request's Grounds, for what that line itself asks for or states. The user's words are the text of the user's own messages, and an item with no trace but the coordinator's text is no Intent item.
+    - Where the user's words choose an option the coordinator proposed, they are that choice alone: the trace quotes that choice and gives the option it picks as the coordinator's. The item states as its requirement the goal that option serves, in terms that hold for any design, and no means the option gives, such as a number, a bound or a mechanism, and no range or ceiling a number of the option sets, that the user's words do not themselves state, whatever a line of the request's Grounds states about it. Each such means goes in the `Design` alone, as a candidate that the `Design` may take or change.
+        * comment: Trials of the ticket analyst where the user's reply "1" chose the coordinator's option 1, a 100,000-token bound on the operator. With this rule as a clause of the line above, trial af69a9d000e72d8c7, on change 6-482's Intent item 5, called that option the user's words and stated its bound as the requirement: finding 1 of doc reviewer afcae52beb2a651c8 on change 6-482. Trial ae412b205171e826f, on the same item, stated the bound as the requirement with no goal, and traced another item to the coordinator's text alone: finding 2 of doc reviewer a5dc7383329340bf6 on change 6-482. Trial af819ed27cf316f08, in its revision of 6-453, stated the bound with no goal, traced as well to the request's Grounds line on Haiku 5.5's price, which asks for no bound: its transcript, in session 7fd429fb-e3be-4173-9b0e-df52f507d6a2. Trial a2162605bb068a162, under this rule with no clause on terms that hold for any design or on a range or ceiling, on change 6-482's Intent item 5, gave the option as the coordinator's and stated as its requirement that the operator's context bound gives a token cost no higher than the cost of each bound from 60,000 to 100,000 tokens, the option's mechanism with its 100k as the ceiling: finding 1 of doc reviewer ac169657861c854eb on change 6-482.
+- Make the Intent's items, with each decline you carry, cover each part of the need that the Goal and spans of the request, or the Impact and Evidence of each ticket the change settles, give, over each reader, file and case their words name.
+    * comment: The user's "File", session 7fd429fb-e3be-4173-9b0e-df52f507d6a2, 2026-10-12T16:36:16Z, which chose the coordinator's option of 16:36:02Z, "The stage ends with a coverage check that the requirements cover the whole goal". Change 6-690 covered only the coordinator's document of 6-685's need for the agent documents, and 6-685 closed `fixed` with the rest unmet.
+
+## Design
 - In a `change` for speed, give in its Scope the profile that exists.
 - A `change` to the agents' processes that changes what an agent reads or does gives in its Motivation the outcome of [Process notes](prompts/agents/notes/process.md) that it serves.
 - For a `change` to code or to the agent-facing documents, run `uv run python scripts/area.py` on the files its design touches, and launch an `Explore` agent with `model: "haiku"` whose brief gives those files and the change's Intent, and asks for each part of the system that reads, calls, orders or is ordered by what they hold, and each ticket on a failure there, each as a path with line numbers or a ticket number and one line on how it bears, with no summary of the source. Read each source it returns. Give under a line `Interactions:` in the `Design` each part those two and your reading find, with what the change does to it.
@@ -18,3 +31,14 @@
     4. Keep a part only where its estimated gain exceeds its estimated cost in each estimate step 2 gives. Where its gain exceeds its cost summed over the models step 2 gives and falls short of it on one, reframe it to apply only on the models where it gains, and where no reframe does that, bring the user the decision on it. Leave out each other part, or bring the user the decision on it. Bring each such decision as [The user's part](prompts/agents/notes/decisions.md#the-users-part) gives, as a `decision:` item, and not as your own decision with a `tell:`.
     5. Cover in its Scope each file that design gives that the change edits. `uv run python scripts/file_ticket.py scope-check <number>`, or with the draft's text on its stdin before you file it, prints each path of that design the Scope leaves out.
 - Give under `Grounds` of each `change` you file or revise each ground its design rests on: each line quoted with its file's path, each command with its output, each transcript span with its session and times, and the hash of `master` at which they hold. `uv run python scripts/file_ticket.py ground` prints that line for a span of a file or for a command.
+
+## Checking a draft
+- Check a draft by each check of [Checks](prompts/agents/ticket-reviewer/review.md#checks) on these, and fix each fault a check shows:
+    - `depends-on`.
+    - The order of instructions that edit the same part of a file.
+    - The outcome of [Process notes](prompts/agents/notes/process.md) in the Motivation.
+    - The `Design` of a `change` to code or to the agent-facing documents, with the Scope covering each file it gives.
+    - The `Interactions:` list of a `Design`.
+    - The readers a rule's stated scope covers.
+    - The Intent items as requirements, and their traces.
+    - Each part's estimated cost and gain, on each model an agent the design acts on runs on from the merge, where the model changes the estimate.
