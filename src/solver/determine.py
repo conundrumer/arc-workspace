@@ -351,7 +351,6 @@ def key_width(d: RelationDecl, p: Parameter, rigid: frozenset[str]) -> int:
 
 def column_signature(columns: tuple[Column, ...]
                      ) -> tuple[tuple[str, str], ...]:
-    """Each column's name and type."""
     return tuple((c.name, c.type.text) for c in columns)
 
 

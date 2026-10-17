@@ -3,6 +3,8 @@ stands at its end (`reply_lines`, `final`). `held` is the
 set of decision keys of the undecided steps the procedures wait on, which
 `plan.holding` gives."""
 
+from collections.abc import Callable, Iterable
+
 from controlled_markdown import mctx
 from operations import changes, decisions, drafts, passes, runs, taking, triage
 from operations.directives import NUMBER, TASK, Directive, Line, Pipeline, lines
@@ -47,45 +49,64 @@ def stands_under(t: Ticket) -> str:
 REASON = mctx("{of}: {reason}")
 
 
-def line_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Outcome]]) -> str:
+type Outcomes = list[tuple[Pipeline, passes.Outcome]]
+
+
+def line_state(state: State, ln: Line, outcomes: Outcomes) -> str:
     """A line of the coordinator's to the operator, as done or as
     unfinished with its reasons."""
-    numbers = NUMBER.findall(ln.rest)
-    reasons: list[str] = []
-    match ln.kind:
-        case Directive.SOLVE:
-            by_task = {p.task: o for p, o in outcomes}
-            reasons = [REASON.format(of=m["task"], reason=r) for m in TASK.finditer(ln.rest)
-                       if (r := pipeline_state(by_task.get(m["task"]))) is not None]
-        case Directive.RUN:
-            reasons = run_state(state, ln, outcomes)
-        case Directive.DRAFTS:
-            under = {t.number for t in drafts.unended(state)}
-            reasons = [draft_stands(n) for n in numbers if n in under]
-        case Directive.EXPEDITE:
-            reasons = [mctx("ticket {n} {stands}").format(n=n, stands=stands_under(t))
-                       for n in sorted(taking.reached(state, set(numbers)))
-                       if (t := state.tracker.tickets.get(n)) is not None and t.status is not Status.CLOSED]
-        case Directive.MERGED:
-            if not any(a.launched > ln.message.time for a in state.agents_of(Role.BATCH_PROFILE)):
-                reasons = [mctx("After a batch has not run since it was given")]
-        case Directive.MERGE:
-            reasons = [mctx("change {n} {stands}").format(n=n, stands=stands_under(t))
-                       for n in numbers
-                       if (t := state.tracker.tickets.get(n)) is not None and t.status is not Status.CLOSED]
-        case Directive.OPEN:
-            reasons = [settled_open(n) for n in triage.unsettled(state)]
-        case None:
-            reasons = [mctx("it is in no form the command reads, and went to the coordinator")]
-        case _:
-            pass
+    reasons = REASONS[ln.kind](state, ln, outcomes)
     if not reasons:
         return mctx("- `{line}`: done").format(line=ln.text)
     return mctx("- `{line}`: unfinished: {reasons}").format(line=ln.text,
                                                              reasons="; ".join(reasons))
 
 
-def run_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Outcome]]) -> list[str]:
+def outside_closed(state: State, numbers: Iterable[str], word: str) -> list[str]:
+    return [mctx("{word} {n} {stands}").format(word=word, n=n, stands=stands_under(t))
+            for n in numbers
+            if (t := state.tracker.tickets.get(n)) is not None and t.status is not Status.CLOSED]
+
+
+def solve_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
+    by_task = {p.task: o for p, o in outcomes}
+    return [REASON.format(of=m["task"], reason=r) for m in TASK.finditer(ln.rest)
+            if (r := pipeline_state(by_task.get(m["task"]))) is not None]
+
+
+def drafts_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
+    under = {t.number for t in drafts.unended(state)}
+    return [draft_stands(n) for n in NUMBER.findall(ln.rest) if n in under]
+
+
+def expedite_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
+    return outside_closed(state, sorted(taking.reached(state, set(NUMBER.findall(ln.rest)))),
+                          mctx("ticket"))
+
+
+def merged_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
+    if any(a.launched > ln.message.time for a in state.agents_of(Role.BATCH_PROFILE)):
+        return []
+    return [mctx("After a batch has not run since it was given")]
+
+
+def merge_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
+    return outside_closed(state, NUMBER.findall(ln.rest), mctx("change"))
+
+
+def open_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
+    return [settled_open(n) for n in triage.unsettled(state)]
+
+
+def unread_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
+    return [mctx("it is in no form the command reads, and went to the coordinator")]
+
+
+def no_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
+    return []
+
+
+def run_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
     """The reasons the `Run:` line `ln` stands unfinished: each pipeline of
     its run that runs, the start its script gives, and a standing fault,
     with, where any of these stands, the reason each stopped pipeline
@@ -107,6 +128,16 @@ def run_state(state: State, ln: Line, outcomes: list[tuple[Pipeline, passes.Outc
                    else None if (why := by_pipeline[s.pipeline].standing.stopped) is None
                    else STOPPED.format(why=why)) is not None]
     return [*going, *stopped]
+
+
+REASONS: dict[Directive | None, Callable[[State, Line, Outcomes], list[str]]] = {
+    Directive.SOLVE: solve_state, Directive.RUN: run_state, Directive.DRAFTS: drafts_state,
+    Directive.EXPEDITE: expedite_state, Directive.ALLOW: no_state,
+    Directive.MERGED: merged_state, Directive.MERGE: merge_state, Directive.OPEN: open_state,
+    Directive.PAUSE: no_state, Directive.RESUME: no_state, Directive.PACE: no_state,
+    Directive.OVERRIDE: no_state, Directive.DECISION: no_state, None: unread_state}
+"""The reasons a line of each directive stands unfinished, by its
+directive, None for a line in no form the command reads."""
 
 
 def draft_stands(number: str) -> str:

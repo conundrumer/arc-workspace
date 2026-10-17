@@ -9,7 +9,6 @@ not compared. An operator launcher is held the same way to the result of
 tell the caller's agent type, it allows the call and says why on stderr."""
 
 import sys
-from contextlib import nullcontext
 from typing import Any
 
 from hook_entry import not_registered, run_pre_tool_use
@@ -63,7 +62,7 @@ def check(hook: dict[str, Any]) -> str | None:
 
 
 def main() -> int:
-    return run_pre_tool_use(HOOK, check, lambda hook: nullcontext(None))
+    return run_pre_tool_use(HOOK, check)
 
 
 if __name__ == "__main__":

@@ -143,11 +143,6 @@ PROMPT = mctx("prompt")
 FIELD = mctx("{name}: {value}")
 
 
-def parameter(value: object) -> str:
-    """A parameter of a call as the command prints it."""
-    return str(value).lower() if isinstance(value, bool) else str(value)
-
-
 def launch_text(fields: dict[str, str], prompt: str) -> str:
     """The text of a launch whose parameters other than its prompt are
     `fields`, in their order, which `printed_launch` reads back."""

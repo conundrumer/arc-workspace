@@ -14,17 +14,16 @@ calls is what finds it."""
 
 import re
 import sys
-from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 
 from cli import HELP_FLAGS
 from command_labels import programs
 from controlled_markdown import mctx
-from hook_entry import Hook, Update, not_registered, run_pre_tool_use
+from hook_entry import Hook, not_registered, run_pre_tool_use
 
 HOOK = "trial_bounds_check"
 
-CASE_TIME = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|\+00:00)")
+CASE_TIME = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
 CASE_COMMIT = re.compile(r"[0-9a-f]{7,40}")
 STAMP = 19
 """The length of an entry's time as `transcripts.py window` compares it,
@@ -190,10 +189,6 @@ def check(hook: Hook, b: Bounds) -> str | None:
     return None if what is None else reason(what, b)
 
 
-def no_update(_: Hook) -> AbstractContextManager[Update | None]:
-    return nullcontext(None)
-
-
 def unbounded(_: Hook) -> str:
     return mctx("Blocked: this trial's hook was given no valid case time and case commit, "
                 "so it denies every Bash call.")
@@ -202,8 +197,8 @@ def unbounded(_: Hook) -> str:
 def main(args: list[str]) -> int:
     b = bounds(*args) if len(args) == 2 else None
     if b is None:
-        return run_pre_tool_use(HOOK, unbounded, no_update)
-    return run_pre_tool_use(HOOK, lambda hook: check(hook, b), no_update)
+        return run_pre_tool_use(HOOK, unbounded)
+    return run_pre_tool_use(HOOK, lambda hook: check(hook, b))
 
 
 if __name__ == "__main__":

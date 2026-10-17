@@ -18,6 +18,7 @@ from engine import checkout
 from tests.conftest import script
 
 profile_runs = script("profile_runs")
+under_runs = sys.modules["under_runs"]
 transcripts = sys.modules["transcripts"]
 transcript_entries = sys.modules["transcript_entries"]
 Part = sys.modules["run_records"].Part
@@ -221,14 +222,14 @@ def test_under(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         (agents / f"agent-{aid}.meta.json").write_text(json.dumps(
             {"agentType": kind, **({"parentAgentId": parent} if parent else {})}))
     monkeypatch.setattr(transcripts, "project_dirs", lambda: [tmp_path])
-    monkeypatch.setattr(profile_runs, "work_open",
+    monkeypatch.setattr(under_runs, "work_open",
                         lambda p, undecided: transcripts.agent_id(p) == busy)
     transcripts.new_state()
     try:
-        taken = profile_runs.runs_since(agents / f"agent-{op}.jsonl", op, [])
-        previous = profile_runs.previous_call(agents / f"agent-{op}.jsonl", op, [])
+        taken = under_runs.runs_since(agents / f"agent-{op}.jsonl", op, [])
+        previous = under_runs.previous_call(agents / f"agent-{op}.jsonl", op, [])
     finally:
         transcripts.new_state()
-    assert previous == profile_runs.Previous(transcript_entries.epoch(at(30)), op,
+    assert previous == under_runs.Previous(transcript_entries.epoch(at(30)), op,
                                              frozenset([late]))
     assert sorted(transcripts.agent_id(p) for p in taken) == sorted([c2, g, late])

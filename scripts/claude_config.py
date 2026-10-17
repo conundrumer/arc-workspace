@@ -6,6 +6,5 @@ from pathlib import Path
 
 
 def config_dir() -> Path:
-    """`$CLAUDE_CONFIG_DIR`, or `~/.claude` where that is unset or empty."""
     home = os.environ.get("CLAUDE_CONFIG_DIR")
     return Path(home) if home else Path.home() / ".claude"

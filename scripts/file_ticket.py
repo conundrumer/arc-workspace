@@ -442,29 +442,38 @@ class ArgumentsRefused(Refused):
     pointer to the `--help` of the call."""
 
 
-def run(args: Sequence[str | None], help_text: str, count: int | None,
-        act: Callable[..., Path | int | str], in_main: bool, argv: list[str],
-        call: str, full_text: str | None = None) -> int:
-    """`call` is the invocation of the command or subcommand that runs.
-    `argv` is the call's arguments as given, which the main tree's copy
-    takes in place of `args` where `in_main` holds. `full_text` is what
-    `FULL_FLAG` prints, None where the call has no further rules."""
+@dataclass(frozen=True)
+class Call:
+    """A call `run` runs: `invocation` is that of the command or subcommand,
+    `argv` the call's arguments as given, which the main tree's copy takes
+    in place of the parsed arguments where `in_main` holds, and `full_text`
+    what `FULL_FLAG` prints, None where the call has no further rules."""
+    invocation: str
+    argv: list[str]
+    help_text: str
+    count: int | None
+    act: Callable[..., Path | int | str]
+    in_main: bool
+    full_text: str | None = None
+
+
+def run(args: Sequence[str | None], call: Call) -> int:
     if args and args[0] in ("--help", "-h"):
-        print(help_text)
+        print(call.help_text)
         return 0
-    if args and full_text is not None and args[0] == FULL_FLAG:
-        print(full_text)
+    if args and call.full_text is not None and args[0] == FULL_FLAG:
+        print(call.full_text)
         return 0
-    if count is not None and len(args) != count:
-        print(help_text, file=sys.stderr)
+    if call.count is not None and len(args) != call.count:
+        print(call.help_text, file=sys.stderr)
         return 2
     try:
-        status = filed_in_main(argv) if in_main else None
+        status = filed_in_main(call.argv) if call.in_main else None
         if status is not None:
             return status
-        print(act(*args))
+        print(call.act(*args))
     except ArgumentsRefused as e:
-        print_refused(HELP_RETRY.format(reason=e, call=call))
+        print_refused(HELP_RETRY.format(reason=e, call=call.invocation))
         return 1
     except Refused as e:
         print_refused(e)
@@ -778,16 +787,16 @@ def main(args: list[str]) -> int:
     if args[:1] and (sub := SUBCOMMANDS.get(args[0])):
         call = f"{values['invocation']} {args[0]}"
         short, full = subcommand_help(call, sub, values)
-        return run(sub.parse(args[1:]), short, sub.count, sub.act, sub.in_main, args, call, full)
+        return run(sub.parse(args[1:]), Call(call, args, short, sub.count, sub.act, sub.in_main, full))
     given: list[str | None] = list(args)
     if args[3:4] == ["--case"]:
         given = [*args[:3], " ".join(args[4:])] if len(args) == 7 else list(args)
     short, full = helps(values["invocation"], lambda further: HELP.format(**values, further=further),
                         RULES.format(**values))
-    return run(given, short, 4 if len(given) == 4 else 3,
-               lambda domain, subject, agent, case=None: file_ticket(
-                   main_tickets(), domain, subject, agent, sys.stdin.read(),
-                   None if case is None else case.split()), True, args, values["invocation"], full)
+    return run(given, Call(values["invocation"], args, short, 4 if len(given) == 4 else 3,
+                           lambda domain, subject, agent, case=None: file_ticket(
+                               main_tickets(), domain, subject, agent, sys.stdin.read(),
+                               None if case is None else case.split()), True, full))
 
 
 if __name__ == "__main__":

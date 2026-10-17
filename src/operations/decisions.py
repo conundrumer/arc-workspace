@@ -84,7 +84,8 @@ def launch(state: State, step: Undecided) -> Launch:
     """The launch of a ticket analyst on the held step `step`, whose brief
     gives, where the step is of a change, what the agents launched on it
     settled (`change_agents.settled`)."""
-    known = None if step.change is None else settled(state, step.change, Role.TICKET_ANALYST, None)
+    known = None if step.change is None else settled(
+        state, state.tracker.tickets[step.change], Role.TICKET_ANALYST, None)
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.STEP, decision_key(step.what)),
                   briefs.held_step(step.what, state.me, rulable(step.what), known),
                   reread=step.reread, change=step.change, occasion=decision_key(step.what))

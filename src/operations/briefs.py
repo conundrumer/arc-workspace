@@ -89,7 +89,7 @@ def _own(role: Role) -> tuple[Role, str | None, str]:
 class Part(Enum):
     """The role of an editor of a change with the part of it that editor
     takes: the line that gives its brief that part (`line`), or None where
-    it takes the whole change, and the part as `part_of` reads it
+    it takes the whole change, and the part as another brief gives it
     (`part`)."""
     role: Role
     line: str | None
@@ -100,7 +100,9 @@ class Part(Enum):
 
 
 class EditorPart(Part):
-    """The parts of an editor whose brief gives no fragments."""
+    """The parts of an editor whose brief gives no fragments, the repair of
+    the `quotes` calls a merge refusal reports included."""
+    QUOTES = Role.CODE_EDITOR, QUOTES_ITEMS, QUOTES_PART
     CODE_EDITOR = _whole(Role.CODE_EDITOR)
     CODE_EDITOR_PART = _own(Role.CODE_EDITOR)
     HANDBOOK_EXPANDED = _whole(Role.HANDBOOK_EXPANDED)
@@ -138,17 +140,12 @@ class Before:
     scratch: Path
 
 
-BRIEF_PARTS: tuple[tuple[str, str], ...] = (
-    (QUOTES_ITEMS, QUOTES_PART),
-    *((p.line, p.part) for p in (*DocEditorPart, *EditorPart) if p.line is not None))
-"""Each line that gives an editor's brief its part, beside the part as
-another brief gives it."""
-
-
-def part_of(agent: Agent) -> str:
+def part_of(agent: Agent) -> Part:
     """The part of a change its editor `agent` takes, as its own brief
     gave it."""
-    return next((part for line, part in BRIEF_PARTS if line in agent.brief), WHOLE_CHANGE)
+    own = [p for p in (*EditorPart, *DocEditorPart) if p.role is agent.role]
+    return next((p for p in own if p.line is not None and p.line in agent.brief),
+                next(p for p in own if p.line is None))
 
 
 def editor(editor: EditorPart | DocEditor, number: str, worktree: Path, scratch: Path,
@@ -225,7 +222,7 @@ def editor_lines(editors: list[tuple[Agent, str]]) -> list[str]:
     """The line of each editor of a change, with its agent id beside its
     record, that gives its part."""
     return [mctx("Its {role}: {aid}, whose part is {part}.").format(
-        role=agent.role, aid=aid, part=part_of(agent)) for agent, aid in editors]
+        role=agent.role, aid=aid, part=part_of(agent).part) for agent, aid in editors]
 
 
 def doc_review(number: str, worktree: Path, editors: list[tuple[Agent, str]],

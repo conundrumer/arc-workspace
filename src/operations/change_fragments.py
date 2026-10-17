@@ -84,5 +84,5 @@ def fragments_step(state: State, t: Ticket, w: Path,
     return Launch(Role.DOC_EDITOR, t.number, briefs.editor(
         editor, t.number, w,
         editor_scratch(t.number, Role.DOC_EDITOR, state.scratch), state.me,
-        settled(state, t.number, Role.DOC_EDITOR, editor.part.part)),
+        settled(state, t, Role.DOC_EDITOR, editor.part)),
         model=t.model(Role.DOC_EDITOR), occasion=str(last_reported(here)))

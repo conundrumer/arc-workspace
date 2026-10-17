@@ -13,7 +13,7 @@ from handbook.paths import scripts_importable
 
 scripts_importable()
 
-from file_ticket import file_ticket, main_tickets, run  # noqa: E402
+from file_ticket import Call, file_ticket, main_tickets, run  # noqa: E402
 from run_reads import blocks, message_text  # noqa: E402
 from senders import Origin, origin  # noqa: E402
 from ticket_files import ticket_name, ticket_path, ticket_status  # noqa: E402
@@ -373,8 +373,8 @@ def main(args: list[str]) -> int:
                        goal=heading(GOAL), goal_flag=GOAL_FLAG, goal_words=GOAL_WORDS, transcript=heading(TRANSCRIPT), follow_up=FOLLOW_UP.format(number="<number>"), grounds=heading(GROUNDS))
     act = SUBCOMMANDS.get(args[0]) if args else None
     if act is None:
-        return run(args, text, 1, unknown, False, args, INVOCATION)
-    return run(args[1:], text, None, act, False, args, INVOCATION)
+        return run(args, Call(INVOCATION, args, text, 1, unknown, False))
+    return run(args[1:], Call(INVOCATION, args, text, None, act, False))
 
 
 if __name__ == "__main__":

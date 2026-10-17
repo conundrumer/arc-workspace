@@ -1,15 +1,14 @@
 """The harness's delivery of a message and of a report: the forms of a
-SendMessage result and of a SubagentHandback result, whether a run has
-handed back its report, and whether a message to a run that the harness
-accepted waits for delivery."""
+SendMessage result and of a SubagentHandback result, and whether a message
+to a run that the harness accepted waits for delivery."""
 
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from run_reads import (blocks, is_prompt, read_meta, run_sessions)
-from transcripts import agent_id, chain
-from transcript_entries import entries_back, epoch, read_entries
+from run_reads import (blocks, read_meta, run_sessions)
+from transcripts import agent_id
+from transcript_entries import epoch, read_entries
 from session_changes import changed_since, timed_entries
 
 
@@ -47,19 +46,6 @@ def handback_accepted(result: dict[str, Any]) -> bool:
     """Whether `result`, a tool result, is that of a SubagentHandback call
     whose report the harness accepted."""
     return succeeded(result) and report_delivered(result)
-
-
-def handed_back(path: Path) -> bool:
-    """Whether the run at `path` holds, after the latest message to it, a
-    result of `handback_accepted`."""
-    for p in reversed(chain(path)):
-        for e in entries_back(p):
-            if is_prompt(e):
-                return False
-            r = e.get("toolUseResult")
-            if e.get("type") == "user" and isinstance(r, dict) and handback_accepted(r):
-                return True
-    return False
 
 
 def last_delivered(path: Path) -> float:

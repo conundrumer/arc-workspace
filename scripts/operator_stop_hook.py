@@ -23,7 +23,6 @@ transcript holds no result of `next`, it lets the stop or the call pass and
 says why on stderr."""
 
 import sys
-from contextlib import nullcontext
 from typing import Any
 
 from hook_entry import not_registered, run_pre_tool_use, run_subagent_stop
@@ -75,7 +74,7 @@ def main() -> int:
     if not args:
         return run_subagent_stop(HOOK, check)
     if args == [PRE_TOOL_USE]:
-        return run_pre_tool_use(HOOK, check, lambda hook: nullcontext(None))
+        return run_pre_tool_use(HOOK, check)
     raise SystemExit(f"{HOOK}: usage: operator_stop_hook.py [{PRE_TOOL_USE}]")
 
 

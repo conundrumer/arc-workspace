@@ -30,6 +30,7 @@ from checker.determination_plan import (
     ENUMERATION_LIMIT,
     AtCase,
     Candidates,
+    Classes,
     Covering,
     Empty,
     Enumerable,
@@ -40,9 +41,11 @@ from checker.determination_plan import (
     Narrowed,
     Open,
     Partial,
+    Plan,
     PlanResult,
     PlanValue,
     ProbeFails,
+    ProbeResult,
     Settled,
     Subject,
     Superset,
@@ -518,6 +521,198 @@ def _plan_lines(parts: list[PlanPart], unjudged: bool) -> list[str]:
     return lines
 
 
+@dataclass(frozen=True)
+class _PlanValues:
+    """What a determination plan's sections are computed from: the plan
+    `plan` of `solver`, and the values its sections share."""
+    solver: Solver
+    plan: Plan
+    verdicts: bool
+    types: dict[PlanValue, tuple[str, ...]]
+    printed: Printed
+    baseline: TimedOut | None
+    enumerated: Joint | None
+    surviving: dict[PlanValue, Settled]
+    by_subject: dict[Subject, ProbeResult]
+    classes: Classes
+    product: int
+    over: bool
+    covered: list[PlanValue]
+    open_valued: list[PlanValue]
+    unjudged: bool
+
+    def shown_of(self, param: PlanValue) -> Callable[[Row], str]:
+        return lambda r: row_text(r, self.types[param], self.solver)
+
+    def best_of(self, param: PlanValue) -> tuple[str, Covering] | None:
+        best = covering(self.by_subject[param])
+        if best is None:
+            for r in self.plan.results:
+                t = r.subject
+                if isinstance(t, KeyedTable) and param in (t.child, t.parent):
+                    best = covering(r)
+        return best
+
+    def covered_note(self, param: PlanValue) -> str:
+        best = self.best_of(param)
+        if best is None:
+            return ""
+        note = f"{best[0]} {verdict_text(best[1])}"
+        if param in self.surviving:
+            settled = _settled_note(self.surviving[param], self.types[param], self.solver)
+            note += f", {settled}"
+        return f"({note})"
+
+    def state(self, param: PlanValue) -> str:
+        """A value's state in a relation to write: where its parameter is
+        determined, whether the relation gives it; else its cover, which
+        a parameter's one value, listed there for want of one, omits."""
+        differing = self.plan.differing
+        if parameter_of(param) in self.plan.determined:
+            return (mctx("differs from its stored rows")
+                    if isinstance(differing, frozenset)
+                    and param in differing else mctx("determined"))
+        note = self.covered_note(param)
+        if note:
+            return mctx("covered {note}").format(note=note)
+        return mctx("covered by no proposer") \
+            if isinstance(param, AtCase) else ""
+
+
+def _plan_values(solver: Solver, plan: Plan, verdicts: bool) -> _PlanValues:
+    joint = plan.joint
+    baseline = joint if isinstance(joint, TimedOut) else None
+    enumerated = joint if isinstance(joint, Joint) else None
+    surviving = dict(enumerated.values) if enumerated else {}
+    classes = classify(plan.results, plan.determined, plan.differing)
+    product = math.prod(v.count for _, v in classes.settle)
+    over = product > ENUMERATION_LIMIT
+    covered = sorted(classes.exact + ([] if over else [p for p, _ in classes.settle]),
+                     key=value_order)
+    open_valued = [p for p in sorted(surviving, key=value_order)
+                   if not surviving[p].unjudged and surviving[p].extras()]
+    unjudged = baseline is not None \
+        or not isinstance(plan.differing, frozenset) \
+        or any(s.unjudged for s in surviving.values())
+    return _PlanValues(solver, plan, verdicts, dict(plan.types), printed_name(solver), baseline,
+                       enumerated, surviving, {r.subject: r for r in plan.results}, classes,
+                       product, over, covered, open_valued, unjudged)
+
+
+def _write_part(v: _PlanValues) -> list[PlanPart]:
+    return _plan_section(mctx("write a determination relation"),
+                         _by_parameter(v.classes.determine, v.state, mctx(
+                             "{param}, giving the rows of each case: {cases}"), v.printed),
+                         action=True)
+
+
+def _moved_part(v: _PlanValues) -> list[PlanPart]:
+    moved = v.plan.moved
+    if not isinstance(moved, tuple):
+        return [PlanPart((MOVED_UNKNOWN + _make_run(moved),), True)]
+    return _plan_section(MOVED, [mctx("{param} at witness `{witness}`").format(
+        param=v.printed(m.parameter), witness=m.witness) for m in moved], action=True)
+
+
+def _judge_free_part(v: _PlanValues) -> list[PlanPart]:
+    return _plan_section(JUDGE_FREE,
+                         [f"{_value_text(p, v.printed)}: " + _also_admits(
+                             v.surviving[p].stored, v.surviving[p].extras(), v.types[p], v.solver)
+                          for p in v.open_valued], action=True)
+
+
+def _over_part(v: _PlanValues) -> list[PlanPart]:
+    if not v.over:
+        return []
+    return _plan_section(mctx("over the enumeration limit ({joint} > {limit}); "
+                              "determine the parameters simplest to determine until "
+                              "the product of the remaining candidate counts goes "
+                              "under the limit").format(
+                                  joint=v.product, limit=ENUMERATION_LIMIT),
+                         _over_lines(v.classes.settle, v.printed), action=True)
+
+
+def _determined_part(v: _PlanValues) -> list[PlanPart]:
+    return _plan_section(mctx("determined"), [v.printed(p)
+                                              for p in by_parameter(v.classes.done)])
+
+
+def _unknown_part(v: _PlanValues) -> list[PlanPart]:
+    differing = v.plan.differing
+    if isinstance(differing, frozenset):
+        return []
+    return _plan_section(mctx("the determination run gives no result, so whether "
+                              "these determination relations give the stored values "
+                              "is not known") + _make_run(differing),
+                         [v.printed(p) for p in by_parameter(v.classes.unknown)])
+
+
+def _undecided_part(v: _PlanValues) -> list[PlanPart]:
+    return _plan_section(mctx("undecided: no proposer covers the value, and its stored "
+                              "value holds more than one fact, so the values at which "
+                              "the model fits every train pair give it"),
+                         [_value_text(p, v.printed) for p in v.classes.undecided])
+
+
+def _covered_part(v: _PlanValues) -> list[PlanPart]:
+    return _plan_section(mctx("the value is covered on this task's examples; write a "
+                              "determination relation for each value here that a "
+                              "proposer derives from a fact other than any the "
+                              "concept derives it from"),
+                         _by_parameter(v.covered, v.covered_note, "{param}: {cases}",
+                                       v.printed), action=True)
+
+
+def _survived_part(v: _PlanValues) -> list[PlanPart]:
+    if not v.surviving or v.enumerated is None:
+        return []
+    return [PlanPart((mctx(
+        "{survived} of {tried} joint assignments of the enumerated "
+        "parameters reproduce every train pair").format(
+            survived=v.enumerated.survived, tried=v.enumerated.tried),),
+        blank_before=False)]
+
+
+def _timed_out_part(v: _PlanValues) -> list[PlanPart]:
+    if v.enumerated is None or not v.enumerated.timed_out:
+        return []
+    return [PlanPart((
+        mctx("{count} joint assignment(s) whose run timed out:").format(
+            count=len(v.enumerated.timed_out)),
+        *("  " + ", ".join(f"{_value_text(n, v.printed)}={v.shown_of(n)(r)}"
+                           for n, r in a)
+          + f": {' '.join(finding_lines(v.solver, t.finding))}"
+          for a, t in v.enumerated.timed_out)), blank_before=False)]
+
+
+def _baseline_part(v: _PlanValues) -> list[PlanPart]:
+    if v.baseline is None:
+        return []
+    return [PlanPart(tuple(finding_lines(v.solver, v.baseline.finding)), blank_before=False)]
+
+
+def _embedded_part(v: _PlanValues) -> list[PlanPart]:
+    return _plan_section(mctx("move data from clauses to fact parameters"),
+                         list(v.plan.embedded), action=True)
+
+
+def _verdicts_part(v: _PlanValues) -> list[PlanPart]:
+    if not v.verdicts:
+        return []
+    detail = [f"{_subject_text(r.subject, v.printed)}: " + ", ".join(
+        f"{name} {verdict_text(x)}" for name, x in entries)
+        for r in v.plan.results if (entries := r.entries())]
+    return _plan_section(mctx("each proposer's verdict on each parameter"), detail)
+
+
+PLAN_PARTS: tuple[Callable[[_PlanValues], list[PlanPart]], ...] = (
+    _write_part, _moved_part, _judge_free_part, _over_part, _determined_part, _unknown_part,
+    _undecided_part, _covered_part, _survived_part, _timed_out_part, _baseline_part,
+    _embedded_part, _verdicts_part)
+"""The function of each section kind of a determination plan, in the
+plan's order."""
+
+
 def render_determination_plan(solver: Solver, result: PlanResult,
                               verdicts: bool = False) -> list[str]:
     """The plan's sections; with `verdicts`, each proposer's verdict on
@@ -530,130 +725,8 @@ def render_determination_plan(solver: Solver, result: PlanResult,
                      "this plan is not made, since {failed}").format(
                          failed=CASES_RUN_FAILED)
                 + _make_run(result.failure)]
-    types = dict(result.types)
-    printed = printed_name(solver)
-
-    def shown_of(param: PlanValue) -> Callable[[Row], str]:
-        return lambda r: row_text(r, types[param], solver)
-
-    joint = result.joint
-    baseline = joint if isinstance(joint, TimedOut) else None
-    enumerated = joint if isinstance(joint, Joint) else None
-    surviving = dict(enumerated.values) if enumerated else {}
-    differing = result.differing
-    classes = classify(result.results, result.determined, differing)
-    determine, settle, exact = classes.determine, classes.settle, \
-        classes.exact
-    product = math.prod(v.count for _, v in settle)
-    over = product > ENUMERATION_LIMIT
-    covered = sorted(exact + ([] if over else [p for p, _ in settle]),
-                     key=value_order)
-    by_subject = {r.subject: r for r in result.results}
-    parts: list[PlanPart] = []
-
-    def best_of(param: PlanValue) -> tuple[str, Covering] | None:
-        best = covering(by_subject[param])
-        if best is None:
-            for r in result.results:
-                t = r.subject
-                if isinstance(t, KeyedTable) and param in (t.child, t.parent):
-                    best = covering(r)
-        return best
-
-    def covered_note(param: PlanValue) -> str:
-        best = best_of(param)
-        if best is None:
-            return ""
-        note = f"{best[0]} {verdict_text(best[1])}"
-        if param in surviving:
-            settled = _settled_note(surviving[param], types[param], solver)
-            note += f", {settled}"
-        return f"({note})"
-
-    def state(param: PlanValue) -> str:
-        """A value's state in a relation to write: where its parameter is
-        determined, whether the relation gives it; else its cover, which
-        a parameter's one value, listed there for want of one, omits."""
-        if parameter_of(param) in result.determined:
-            return (mctx("differs from its stored rows")
-                    if isinstance(differing, frozenset)
-                    and param in differing else mctx("determined"))
-        note = covered_note(param)
-        if note:
-            return mctx("covered {note}").format(note=note)
-        return mctx("covered by no proposer") \
-            if isinstance(param, AtCase) else ""
-
-    open_valued = [p for p in sorted(surviving, key=value_order)
-                   if not surviving[p].unjudged and surviving[p].extras()]
-    unjudged = baseline is not None \
-        or not isinstance(differing, frozenset) \
-        or any(s.unjudged for s in surviving.values())
-    moved = result.moved
-    parts += _plan_section(mctx("write a determination relation"),
-            _by_parameter(determine, state, mctx(
-                "{param}, giving the rows of each case: {cases}"), printed),
-            action=True)
-    if isinstance(moved, tuple):
-        parts += _plan_section(MOVED, [mctx("{param} at witness `{witness}`").format(
-            param=printed(m.parameter), witness=m.witness) for m in moved],
-            action=True)
-    else:
-        parts.append(PlanPart((MOVED_UNKNOWN + _make_run(moved),), True))
-    parts += _plan_section(JUDGE_FREE,
-            [f"{_value_text(p, printed)}: " + _also_admits(
-                surviving[p].stored, surviving[p].extras(), types[p], solver)
-             for p in open_valued], action=True)
-    if over:
-        parts += _plan_section(mctx("over the enumeration limit ({joint} > {limit}); "
-                     "determine the parameters simplest to determine until "
-                     "the product of the remaining candidate counts goes "
-                     "under the limit").format(
-            joint=product, limit=ENUMERATION_LIMIT),
-            _over_lines(settle, printed), action=True)
-    parts += _plan_section(mctx("determined"), [printed(p)
-                                 for p in by_parameter(classes.done)])
-    if not isinstance(differing, frozenset):
-        parts += _plan_section(mctx("the determination run gives no result, so whether "
-                     "these determination relations give the stored values "
-                     "is not known") + _make_run(differing),
-                [printed(p) for p in by_parameter(classes.unknown)])
-    parts += _plan_section(mctx("undecided: no proposer covers the value, and its stored "
-                 "value holds more than one fact, so the values at which "
-                 "the model fits every train pair give it"),
-            [_value_text(p, printed) for p in classes.undecided])
-    parts += _plan_section(mctx("the value is covered on this task's examples; write a "
-                 "determination relation for each value here that a "
-                 "proposer derives from a fact other than any the "
-                 "concept derives it from"),
-            _by_parameter(covered, covered_note, "{param}: {cases}",
-                          printed), action=True)
-    if surviving and enumerated is not None:
-        parts.append(PlanPart((mctx(
-            "{survived} of {tried} joint assignments of the enumerated "
-            "parameters reproduce every train pair").format(
-                survived=enumerated.survived, tried=enumerated.tried),),
-            blank_before=False))
-    if enumerated is not None and enumerated.timed_out:
-        parts.append(PlanPart((
-            mctx("{count} joint assignment(s) whose run timed out:").format(
-                count=len(enumerated.timed_out)),
-            *("  " + ", ".join(f"{_value_text(n, printed)}={shown_of(n)(r)}"
-                               for n, r in a)
-              + f": {' '.join(finding_lines(solver, t.finding))}"
-              for a, t in enumerated.timed_out)), blank_before=False))
-    if baseline is not None:
-        parts.append(PlanPart(tuple(finding_lines(solver, baseline.finding)),
-                              blank_before=False))
-    parts += _plan_section(mctx("move data from clauses to fact parameters"),
-            list(result.embedded), action=True)
-    if verdicts:
-        detail = [f"{_subject_text(r.subject, printed)}: " + ", ".join(
-            f"{name} {verdict_text(v)}" for name, v in entries)
-            for r in result.results if (entries := r.entries())]
-        parts += _plan_section(mctx("each proposer's verdict on each parameter"),
-                         detail)
-    return _plan_lines(parts, unjudged)
+    values = _plan_values(solver, result, verdicts)
+    return _plan_lines([p for part in PLAN_PARTS for p in part(values)], values.unjudged)
 
 
 # The form of the clauses restates Principles' determination: Create

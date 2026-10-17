@@ -24,7 +24,7 @@ hook's docstring."""
 import json
 import sys
 from collections.abc import Callable
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, nullcontext
 from typing import Any, NamedTuple
 
 type Hook = dict[str, Any]
@@ -92,9 +92,13 @@ def _give(reason: str | None, update: Update | None) -> None:
             "hookEventName": "PreToolUse", **out}}), flush=True)
 
 
+def no_update(_: Hook) -> AbstractContextManager[Update | None]:
+    return nullcontext(None)
+
+
 def run_pre_tool_use(
         hook: str, check: Callable[[Hook], str | None],
-        update: Callable[[Hook], AbstractContextManager[Update | None]]) -> int:
+        update: Callable[[Hook], AbstractContextManager[Update | None]] = no_update) -> int:
     """Run the PreToolUse hook `hook` on the input on stdin: `check` gives
     the reason to deny the call, and `update` the caller's update, inside a
     block that the printed output ends."""

@@ -19,7 +19,6 @@ allows the call and says why on stderr."""
 
 import sys
 from collections.abc import Iterable
-from contextlib import nullcontext
 from typing import Any, NamedTuple
 
 from context_bound_hook import ACTIONS, reply_only
@@ -39,7 +38,7 @@ def differing(printed: dict[str, str], inp: dict[str, Any]) -> list[tuple[str, s
     the call input `inp`, with its printed and its given value, None where
     one gives none, in the printed order, then each other parameter of the
     call by name, other than an `UNSEEN` the call input does not give."""
-    from operations.printing import parameter
+    from operations.roles import parameter
 
     names = [*printed, *sorted(k for k in inp if k not in printed)]
     out: list[tuple[str, str | None, str | None]] = []
@@ -181,7 +180,7 @@ def check(hook: dict[str, Any]) -> str | None:
 
 
 def main() -> int:
-    return run_pre_tool_use(HOOK, check, lambda hook: nullcontext(None))
+    return run_pre_tool_use(HOOK, check)
 
 
 if __name__ == "__main__":

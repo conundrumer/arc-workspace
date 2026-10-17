@@ -82,4 +82,4 @@ def check_items(state: State, t: Ticket, w: Path, needing: list[Agent],
         return gate
     return Launch(Role.ITEM_CHECKER, t.number, briefs.item_check(
         t.number, w, reports, gate, [(a, i) for a, i in editors if is_checked(a)], state.me,
-        settled(state, t.number, Role.ITEM_CHECKER, None), past), occasion=str(last_reported(needing)))
+        settled(state, t, Role.ITEM_CHECKER, None), past), occasion=str(last_reported(needing)))

@@ -32,7 +32,7 @@ from typing import Literal
 from controlled_markdown import mctx
 from operations import briefs, messages
 from operations.change_agents import change_editors, editors_in, of_change, settled, unstaffed
-from operations.change_holds import REVIEW_CHOICES, findings_hold, unreplied_hold
+from operations.change_holds import Hold, findings_hold, unreplied_hold
 from operations.directives import Decision, decided
 from operations.handled import sent
 from operations.reports import no_finding, shows_current
@@ -111,10 +111,10 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
 
 
 def review_decided(state: State, t: Ticket, w: Path, here: list[Agent],
-                 what: str) -> Step | Literal[False]:
-    """The step on a review held for `what`, by its decision:
+                 hold: Hold) -> Step | Literal[False]:
+    """The step on a review held on `hold`, by its decision:
     False where the review passes."""
-    choice = decided(state, what, REVIEW_CHOICES)
+    choice = decided(state, hold.text, hold.choices)
     if isinstance(choice, Undecided):
         return choice
     if choice is Decision.PASSES:
@@ -140,7 +140,7 @@ def review_launch(state: State, t: Ticket, w: Path, here: list[Agent], launcher:
     if isinstance(editors, Undecided):
         return editors
     return Launch(Role.DOC_REVIEWER, t.number, briefs.doc_review(
-        t.number, w, editors, launcher, settled(state, t.number, Role.DOC_REVIEWER, None)), occasion=str(last_reported(here)))
+        t.number, w, editors, launcher, settled(state, t, Role.DOC_REVIEWER, None)), occasion=str(last_reported(here)))
 
 
 NO_OPERATOR = mctx("{agent} is no doc editor that an operator of the session launched: give "
@@ -170,7 +170,7 @@ def editor_review(state: State, editor: str) -> Step | str:
     w = worktree(t, state)
     if w is None:
         return Undecided(mctx("change {number} gives no worktree").format(number=t.number))
-    agents = of_change(state, t.number)
+    agents = of_change(state, t)
     if (reviewer := latest_reviewer(agents, w)) is not None:
         ids = agent_ids([reviewer])
         if isinstance(ids, Undecided):

@@ -71,7 +71,7 @@ from operations import briefs, merging, messages
 from operations.change_agents import (change_editors, editors_in, elsewhere_on, latest_editors,
                                       launched_on, of_change, Reported, reported, settled,
                                       unstaffed, with_before, with_elsewhere)
-from operations.change_holds import LEFT_CHOICES, left_hold, questions_hold
+from operations.change_holds import Hold, left_hold, questions_hold
 from operations.change_fragments import drafter_ids, fragments_step
 from operations.change_overrun import over_budget
 from operations.doc_review import doc_review, with_ids
@@ -92,7 +92,6 @@ from ticketing.vocabulary import Domain, Kind, Note, Status
 
 
 def holds(t: Ticket, me: str) -> bool:
-    """Whether `t` is a change that the operator `me` holds."""
     return t.kind is Kind.CHANGE and t.status is Status.ASSIGNED and t.holder == me
 
 
@@ -168,11 +167,11 @@ def carry(state: State, t: Ticket) -> Step | None:
     """The next step on the change `t` the operator holds, or None where it
     waits on an agent."""
     if merging.merged(state, t):
-        return merging.close(state, t, of_change(state, t.number))
+        return merging.close(state, t, of_change(state, t))
     editors = change_editors(t)
     if not isinstance(editors, tuple):
         return editors
-    agents = of_change(state, t.number)
+    agents = of_change(state, t)
     w = worktree(t, state)
     if w is None or revised_since_worktree(t):
         return Bash(make_worktree(t.number, state.me), f"{t.number} worktree", occasion=str(t.last_time))
@@ -189,9 +188,9 @@ def carry(state: State, t: Ticket) -> Step | None:
         if isinstance(drafters, Undecided):
             return drafters
         part = briefs.part_taken(role, len(editors) > 1)
-        known = settled(state, t.number, role, part.part)
+        known = settled(state, t, role, part)
         before = editor_before([a for a in theirs
-                                if a.role is role and briefs.part_of(a) == part.part])
+                                if a.role is role and briefs.part_of(a) is part])
         if before is not None:
             known = with_before(known, before[0])
         editor = part if isinstance(part, briefs.EditorPart) else briefs.DocEditor(
@@ -234,7 +233,7 @@ def left_decision(a: Agent, number: str) -> str | None:
     that rules it, which goes to the coordinator with the `decision:` items
     of `a`."""
     hold = left_hold(a, number)
-    return None if hold is None else held_on(hold, LEFT_CHOICES).what
+    return None if hold is None else held_on(hold.text, hold.choices).what
 
 
 def unchanged_since(state: State, checkers: list[Agent], w: Path) -> bool:
@@ -268,7 +267,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     fresh = left if left is not None and (r := checkers[-1].last_report) is not None \
         and r.time > judged else None
     parts = fresh
-    hold: str | None = None
+    hold: Hold | None = None
     on_user = False
     if analysts and judged > checked and (hold := left_hold(analysts[-1], t.number)):
         on_user = items_of(analysts[-1], [Label.DECISION]) is not None
@@ -278,7 +277,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     elif fresh is None and not left_open and judged > max(q.filed for q in questions):
         hold = questions_hold(analysts[-1], t.number)
     if hold is not None:
-        choice = decided(state, hold, LEFT_CHOICES)
+        choice = decided(state, hold.text, hold.choices)
         if isinstance(choice, Undecided):
             return None if on_user else choice
         if choice is Decision.MERGE:
@@ -289,7 +288,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
         t.number, w, parts, [q.number for q in questions], editors, reports,
         [i for a, i in editors if a in left_open], state.me,
-        settled(state, t.number, Role.TICKET_ANALYST, None)), occasion=str(last_reported(latest)))
+        settled(state, t, Role.TICKET_ANALYST, None)), occasion=str(last_reported(latest)))
 
 
 def step(state: State) -> Step | None:

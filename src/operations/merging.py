@@ -308,7 +308,7 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
     quotes = [] if last is None else list(QUOTE_LINE.finditer(last.result or ""))
     message = None if last is None else finding(t, last, calls, latest, quotes)
     on_step = [] if message is None else decided_by(state, unmoved(t, message))
-    reported = [r.time for a in [*of_change(state, t.number), *on_step]
+    reported = [r.time for a in [*of_change(state, t), *on_step]
                 if (r := a.last_report) is not None]
     at = f"{t.last_time} {max(reported, default=0.0)} {'' if last is None else last.time}"
     if (last is None or (reported and max(reported) > last.time)
@@ -400,7 +400,7 @@ def refused(state: State, t: Ticket, w: Path, last: Call, latest: list[Agent],
         return Launch(Role.CODE_EDITOR, t.number, briefs.quotes_fix(
             t.number, w, [m.group(0) for m in quotes], files,
             editor_scratch(t.number, Role.CODE_EDITOR, state.scratch), state.me,
-            settled(state, t.number, Role.CODE_EDITOR, briefs.QUOTES_PART)),
+            settled(state, t, Role.CODE_EDITOR, briefs.EditorPart.QUOTES)),
             model=t.model(Role.CODE_EDITOR), occasion=str(last.time))
     return None
 

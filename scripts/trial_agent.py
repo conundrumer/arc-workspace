@@ -136,11 +136,15 @@ def slug(reader: str, args: list[str]) -> str:
     return "-".join([reader, *args])
 
 
+def must_exist(path: Path) -> None:
+    if not path.is_file():
+        raise Refused(mctx("{path} does not exist").format(path=path))
+
+
 def shared_part(reader: str, args: list[str]) -> str:
     """The text that each trial of the reader at the change shares."""
     user = config_dir() / "CLAUDE.md"
-    if not user.is_file():
-        raise Refused(mctx("{path} does not exist").format(path=user))
+    must_exist(user)
     context = context_text(reader_named(reader), args)
     lead = mctx("Below, the user's global instructions are between the lines "
                 "`<user-claude-md>` and `</user-claude-md>`, and the project's instructions "
@@ -218,8 +222,7 @@ def indented(text: str) -> str:
 
 
 def calls(path: Path) -> list[str]:
-    if not path.is_file():
-        raise Refused(mctx("{path} does not exist").format(path=path))
+    must_exist(path)
     found = list(events(path))
     results = {i: text for e in found for i, _, text in tool_results(e)}
     lines: list[str] = []
@@ -228,8 +231,8 @@ def calls(path: Path) -> list[str]:
             continue
         for b in blocks(e, "tool_use"):
             lines.append(mctx("call {name} {input}").format(
-                name=b.get("name"), input=json.dumps(b.get("input"))))
-            lines.append(indented(results.get(b.get("id", ""), mctx("no result"))))
+                name=b["name"], input=json.dumps(b.get("input"))))
+            lines.append(indented(results.get(b["id"], mctx("no result"))))
     reply = next((e for e in reversed(found) if e.get("type") == "result"), None)
     lines.append(mctx("reply"))
     lines.append(indented(text_of(reply.get("result")) if reply else mctx("no reply")))
@@ -241,8 +244,7 @@ def calls(path: Path) -> list[str]:
 
 
 def check_bounds(time_: str, commit: str) -> None:
-    b = bounds(time_, commit)
-    if b is None or time_ != f"{b.time}Z":
+    if bounds(time_, commit) is None:
         raise Refused(mctx("`{time} {commit}` is not a case time in UTC as `YYYY-MM-DDTHH:MM:SSZ` "
                            "followed by a case commit of 7 to 40 hex digits").format(time=time_, commit=commit))
 

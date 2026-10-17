@@ -2,11 +2,11 @@
 `profile_runs` lists them."""
 
 from bisect import bisect_left
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from agent_deliveries import handed_back
+from agent_deliveries import handback_accepted
 from agent_launches import Launch, children_of, launch_of, launches
 from agents_pending import notified_after
 from agent_reports import (TURN_ENDED, Report, ReportKind, parent_transcripts, reports,
@@ -22,8 +22,8 @@ from run_reads import (BACKGROUND_TASK, LaunchStatus, blocks, is_prompt, parent_
                        run_entries, tool_calls)
 from file_reads import mtime
 from state_reads import DERIVED, Kept, state_cache
-from transcript_entries import Entry
-from transcripts import agent_id, is_subagent
+from transcript_entries import Entry, entries_back
+from transcripts import agent_id, chain, is_subagent
 
 from operations.constants import BLOCK_SECONDS, stuck_reached
 
@@ -228,12 +228,7 @@ def by_rule(n: Node, parent_open: bool, undecided: list[str]) -> Listed | None:
     if not parent_open:
         return None
     received = last_time(child, is_received)
-    if received is not None and (
-            reported_since(a, received, frozenset(ReportKind))
-            or stopped_after(a.entries, received, undecided)
-            or (stop := last_time(child, is_interrupt_note)) is not None and stop > received):
-        return None
-    if handed_back(child):
+    if any(closes(n, received, undecided) for closes in CLOSING_SIGNS):
         return None
     listed = turn_ended(n, undecided)
     return None if listed.found else listed
@@ -243,6 +238,40 @@ def is_received(entry: Entry) -> bool:
     """Whether an entry is a message the agent received, as
     `profile_runs.py --help running` gives one."""
     return is_prompt(entry) and not is_interrupt_note(entry)
+
+
+def reported_after(n: Node, received: float | None, undecided: list[str]) -> bool:
+    return reported_since(n.launch, received, frozenset(ReportKind))
+
+
+def stopped(n: Node, received: float | None, undecided: list[str]) -> bool:
+    return received is not None and stopped_after(n.launch.entries, received, undecided)
+
+
+def interrupted(n: Node, received: float | None, undecided: list[str]) -> bool:
+    return received is not None and (stop := last_time(n.path, is_interrupt_note)) is not None \
+        and stop > received
+
+
+def handed_back(n: Node, received: float | None, undecided: list[str]) -> bool:
+    """Whether the run of `n` holds, after the latest message it received,
+    a result of `handback_accepted`."""
+    for p in reversed(chain(n.path)):
+        for e in entries_back(p):
+            if is_received(e):
+                return False
+            r = e.get("toolUseResult")
+            if e.get("type") == "user" and isinstance(r, dict) and handback_accepted(r):
+                return True
+    return False
+
+
+type ClosingSign = Callable[[Node, float | None, list[str]], bool]
+"""A condition on an agent and the time of the latest message it received,
+None where it received none, under which its work closed after that
+message."""
+
+CLOSING_SIGNS: tuple[ClosingSign, ...] = (reported_after, stopped, interrupted, handed_back)
 
 
 def unknown_work(n: Node, undecided: list[str]) -> Listed | None:

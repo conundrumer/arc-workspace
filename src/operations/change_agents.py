@@ -16,8 +16,8 @@ from pathlib import Path
 from controlled_markdown import mctx
 from operations import briefs
 from operations.change_budget import left_draft
-from operations.change_holds import (LEFT_CHOICES, REVIEW_CHOICES, findings_hold, left_hold,
-                                     questions_hold, unreplied_hold)
+from operations.change_holds import (Hold, findings_hold, left_hold, questions_hold,
+                                     unreplied_hold)
 from operations.directives import Decision, decided
 from operations.roles import EDITORS, Purpose, Role, analyst_of, subjects
 from operations.state import Agent, Report, State, Ticket
@@ -53,18 +53,11 @@ def with_elsewhere(state: State, number: str, agents: list[Agent],
                   key=lambda a: a.launched)
 
 
-def out_of_draft(state: State, number: str) -> float:
-    """The time of the last move of the change `number` out of
-    `tickets/draft/`, or 0.0 where its ticket is not read."""
-    t = state.tracker.tickets.get(number)
-    return 0.0 if t is None else left_draft(t)
-
-
-def of_change(state: State, number: str) -> list[Agent]:
-    """The agents `launched_on` gives for the change `number` since its
-    last move out of `tickets/draft/`."""
-    since = out_of_draft(state, number)
-    return [a for a in launched_on(state, number) if a.launched > since]
+def of_change(state: State, t: Ticket) -> list[Agent]:
+    """The agents `launched_on` gives for the change `t` since its last
+    move out of `tickets/draft/`."""
+    since = left_draft(t)
+    return [a for a in launched_on(state, t.number) if a.launched > since]
 
 
 def in_worktree(a: Agent, w: Path) -> bool:
@@ -133,18 +126,18 @@ class Settled:
 
 
 def reported(agents: list[Agent]) -> tuple[Reported, ...]:
-    """Each of `agents` with an agent id and a report, in their order."""
     return tuple(Reported(a.agent_id, r) for a in agents
                  if a.agent_id is not None and (r := a.last_report) is not None)
 
 
-def settled(state: State, number: str, role: Role, part: str | None) -> Settled:
-    """What the agents launched on the change `number` since its last move
-    out of `tickets/draft/` settled, for the brief of an agent of `role`
+def settled(state: State, t: Ticket, role: Role, part: briefs.Part | None) -> Settled:
+    """What the agents launched on the change `t` since its last move out
+    of `tickets/draft/` settled, for the brief of an agent of `role`
     launched on it, and, for an editor, of the part `part` as
     `briefs.part_of` gives it."""
-    agents = of_change(state, number)
-    since = out_of_draft(state, number)
+    number = t.number
+    agents = of_change(state, t)
+    since = left_draft(t)
 
     def of_roles(roles: tuple[Role, ...]) -> list[Agent]:
         return [a for a in with_elsewhere(state, number, agents, roles)
@@ -154,24 +147,24 @@ def settled(state: State, number: str, role: Role, part: str | None) -> Settled:
     earlier: tuple[Reported, ...] = ()
     if role is not Role.TICKET_ANALYST:
         earlier = reported([a for a in of_roles((role,))
-                            if role not in EDITORS or briefs.part_of(a) == part])
-    holds: list[tuple[str, dict[Decision, str], Agent | None]] = []
+                            if role not in EDITORS or briefs.part_of(a) is part])
+    holds: list[tuple[Hold, Agent | None]] = []
     for a in analysts:
         if a.agent_id is None:
             continue
         if (hold := left_hold(a, number)) is not None:
-            holds.append((hold, LEFT_CHOICES, a))
-        holds.append((questions_hold(a, number), LEFT_CHOICES, a))
+            holds.append((hold, a))
+        holds.append((questions_hold(a, number), a))
     for r in of_roles((Role.DOC_REVIEWER,)):
         if r.agent_id is not None:
-            holds += [(findings_hold(r, number), REVIEW_CHOICES, r),
-                      (unreplied_hold(r, number), REVIEW_CHOICES, None)]
+            holds += [(findings_hold(r, number), r), (unreplied_hold(r, number), None)]
     ruled: list[Ruled] = []
-    for hold, choices, on in holds:
-        choice = decided(state, hold, choices)
+    for hold, on in holds:
+        choice = decided(state, hold.text, hold.choices)
         if isinstance(choice, Decision) and choice is not Decision.AGAIN:
             reply = reported([on]) if on is not None else ()
-            ruled.append(Ruled(hold, choice, choices[choice], reply[0] if reply else None))
+            ruled.append(Ruled(hold.text, choice, hold.choices[choice],
+                               reply[0] if reply else None))
     return Settled(number, role, tuple(reported(analysts)), earlier, tuple(ruled))
 
 

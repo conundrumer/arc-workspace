@@ -16,7 +16,7 @@ def change_spend(state: State, undecided: list[str]) -> dict[str, Spend]:
     the agents of `change_agents.elsewhere_on` included."""
     out: dict[str, Spend] = {}
     for t in changes.held(state):
-        ids = [a.agent_id for a in (*change_agents.of_change(state, t.number),
+        ids = [a.agent_id for a in (*change_agents.of_change(state, t),
                                     *change_agents.elsewhere_on(state, t.number))
                if a.agent_id is not None]
         if (s := spend(ids, undecided)) is not None:
@@ -59,7 +59,7 @@ def doc_budgets(state: State, tickets: Path, undecided: list[str]) -> dict[str, 
     for t in changes.held(state):
         w = worktree(t, state)
         if w is None or not change_fragments.fragments_due(
-                change_agents.editors_in(change_agents.of_change(state, t.number), w)):
+                change_agents.editors_in(change_agents.of_change(state, t), w)):
             continue
         editors = change_fragments.lacking_doc_editor(t, w, state)
         if editors is None:
