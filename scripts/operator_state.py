@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from agent_turns import first_time, last_time
+from audit_window import window
 from context_bound_hook import past_bound
 from filed_texts import gone_line
 from held_budgets import change_budgets, change_spend, doc_budgets
@@ -66,12 +67,14 @@ from operations.plan import elsewhere, taken_up, unknown_line
 from operations.roles import Role
 from operations.state import (
     Agent,
+    AuditWindow,
     Call,
     Computed,
     Deferred,
     GitRead,
     HeldRead,
     LateResume,
+    NotComputed,
     Reader,
     ReadOnUse,
     Report,
@@ -349,7 +352,17 @@ def computed_read(state: State, tickets_dir: Path, undecided: list[str],
         doc_budgets=doc_budgets(state, tickets_dir, undecided),
         run_starts=run_starts, run_takes=run_takes,
         pace=(pace_reads(given_pace, usage) if isinstance(given_pace, Path)
-              else (given_pace or pacing.DEFAULT)(usage)))
+              else (given_pace or pacing.DEFAULT)(usage)),
+        audit_window=audit_window_read(state, undecided))
+
+
+def audit_window_read(state: State, undecided: list[str]) -> AuditWindow | NotComputed:
+    """The window of the next cost audit under the session's transcript
+    directory, or why it does not read."""
+    try:
+        return window(state.transcripts_dir, state.started, undecided)
+    except Refused as exc:
+        return NotComputed(str(exc))
 
 
 def with_quiet_holders(state: State, found: Mapping[str, Path], listing: list[Listed],

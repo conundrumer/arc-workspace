@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from controlled_markdown import form, mctx
 from operations.reports import LEFT_FOR_DECISION, WORKTREE
-from operations.roles import Role, description
+from operations.roles import Role
 from operations.state import SETTLED, Agent, Place, Ticket, code_review_tag
 from operations.log_commands import AGENT, FILE_TICKET
 from ticketing.times import utc_stamp
@@ -621,8 +621,7 @@ def process_assessment(operator: str) -> str:
 
 
 COST_AUDIT = mctx("""
-    - Audit the cost of the runs of each session in `{transcripts}` that were active in the window from {since}, or from the launch of the latest other cost audit of any session where that launch is later, to now.
-        - Another cost audit is a run under that directory whose `.meta.json` gives a `description` of the form `{description}`, and its launch is that run's first entry.
+    - Audit the cost of the runs of each session in `{transcripts}` that were active in the window from {since} to now.
     - Profile the runs with `uv run python scripts/profile_runs.py` and its `--each`, `--runs`, `--type` and `--top` options, read a run's transcript where a line of its profile looks suspect, and read a ticket's log for what an agent was launched for.
     - Where a run has entries before the window's start, count only the share of its cost from its entries in the window, as an estimated figure with that basis.
     - Find each kind of step whose summed cost over the window exceeds what it finds, and each cost that bought no work or that a cheaper path would have cut.
@@ -635,8 +634,7 @@ COST_AUDIT = mctx("""
 
 
 def cost_audit(since: float, transcripts: Path, operator: str) -> str:
-    return (COST_AUDIT.format(since=utc_stamp(since), transcripts=transcripts,
-                              description=description(Role.COST_AUDIT, "<n>"), filing=AT_MASTER)
+    return (COST_AUDIT.format(since=utc_stamp(since), transcripts=transcripts, filing=AT_MASTER)
             + "\n" + LAUNCHER.format(operator=operator))
 
 

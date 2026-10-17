@@ -28,11 +28,10 @@ stand since the launch of the last one an operator of the session
 launched, or since the session's start where none was, and none runs. No
 batch holds it, so no profile launch waits on its run.
 
-A cost audit launches at the step after each launch of a process
-assessment: once a process assessment launched since the launch of the
-last cost audit an operator of the session launched, or since the
-session's start where none was, and none runs. No batch holds it, so no
-profile launch waits on its run.
+A cost audit launches at any step, with no wait on a batch's end, once
+the spend of its window (`state.AuditWindow`) is at least `AUDIT_AFTER`, and
+the last cost audit an operator of the session launched does not run.
+No batch holds it, so no profile launch waits on its run.
 
 A standing doc review is a doc reviewer on one reader's whole context at
 the head of `master`: the first reader of `State.readers` that no tag
@@ -57,7 +56,7 @@ from operations.taking import release
 from operations.filing import scratch_dir
 from operations.directives import Directive, numbers
 from operations.roles import AGENT_ID, Purpose, Role, analyst_of, analyst_subject
-from operations.state import DOC_REVIEW, Agent, Merge, State, code_review_tag
+from operations.state import DOC_REVIEW, Agent, Merge, State, NotComputed, code_review_tag
 from operations.handled import bash_calls
 from operations.steps import Bash, Launch, Step, Undecided
 from operations.log_commands import FILE_TICKET
@@ -151,8 +150,6 @@ def step(state: State) -> Step | None:
     if not isinstance(runs, list):
         return runs
     if (s := assessment(state)) is not None:
-        return s
-    if (s := audit(state)) is not None:
         return s
     ids = {a.agent_id for a in batch}
     return Launch(Role.BATCH_PROFILE, str(n),
@@ -261,13 +258,22 @@ def opened(state: State, past: list[Agent]) -> float | None:
     return past[-1].launched if past else state.started
 
 
+AUDIT_AFTER = 200.0
+"""The spend, in dollars, of a cost audit's window at which it launches."""
+
+
 def audit(state: State) -> Step | None:
     """The launch of a cost audit, where one is due."""
     past = state.agents_of(Role.COST_AUDIT)
-    since = opened(state, past)
-    if since is None or not any(assesses(a.role, a.subject) and a.launched > since for a in state.transcripts.agents):
+    if opened(state, past) is None:
         return None
-    return Launch(Role.COST_AUDIT, str(len(past) + 1), briefs.cost_audit(since, state.transcripts_dir, state.me))
+    window = state.computed.audit_window
+    if isinstance(window, NotComputed):
+        return Undecided(mctx("the window of the next cost audit is unknown: {why}").format(why=window.why))
+    if window.spend < AUDIT_AFTER:
+        return None
+    return Launch(Role.COST_AUDIT, str(len(past) + 1),
+                  briefs.cost_audit(window.start, state.transcripts_dir, state.me))
 
 
 def under_command(operator: str) -> str:

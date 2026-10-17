@@ -152,37 +152,45 @@ def priced_requests(entries: list[dict[str, Any]],
 def run_cost(entries: list[dict[str, Any]], undecided: list[str],
              at: str | None = None) -> float | None:
     """The token cost in dollars of the requests `priced_requests` gives,
-    each at the prices of the model that made it, at the tier of its largest
-    `request_input`, or of the model `at` where one is given, or None where a
-    request that used tokens has no price, with an `undecided` line for it."""
+    each as `request_cost` prices it, or None where a request that used
+    tokens has no price, with an `undecided` line for it."""
     groups = priced_requests(entries, undecided)
     if groups is None:
         return None
-    total = 0.0
+    costs = [request_cost(group, undecided, at) for group in groups.values()]
+    return None if None in costs else sum(c for c in costs if c is not None)
+
+
+def request_cost(group: list[dict[str, Any]], undecided: list[str],
+                 at: str | None = None) -> float | None:
+    """The token cost in dollars of the request whose entries are `group`,
+    at the prices of the model that made it, at the tier of its largest
+    `request_input`, or of the model `at` where one is given, or None where
+    an entry that used tokens has no price, with an `undecided` line for
+    it."""
+    used: Usage | None = None
+    size = 0.0
+    table: Price | None = None
     known = True
-    for group in groups.values():
-        used: Usage | None = None
-        size = 0.0
-        table: Price | None = None
-        for entry in group:
-            message = entry["message"]
-            usage = message["usage"]
-            got = entry_counts(usage)
-            if not got.total():
-                continue
-            table = model_price(message.get("model") if at is None else at, undecided)
-            field = unpriced(usage)
-            if field is not None:
-                unknown(undecided, mctx("no price for {field} of model {model}").format(
-                    field=field, model=message.get("model")))
-            if table is None or field is not None:
-                known = False
-                continue
-            used = got if used is None else used.most(got)
-            size = max(size, request_input(usage))
-        if used is not None and table is not None:
-            total += used.cost(table.at(size))
-    return total if known else None
+    for entry in group:
+        message = entry["message"]
+        usage = message["usage"]
+        got = entry_counts(usage)
+        if not got.total():
+            continue
+        table = model_price(message.get("model") if at is None else at, undecided)
+        field = unpriced(usage)
+        if field is not None:
+            unknown(undecided, mctx("no price for {field} of model {model}").format(
+                field=field, model=message.get("model")))
+        if table is None or field is not None:
+            known = False
+            continue
+        used = got if used is None else used.most(got)
+        size = max(size, request_input(usage))
+    if not known:
+        return None
+    return used.cost(table.at(size)) if used is not None and table is not None else 0.0
 
 
 def span_cost(entries: list[dict[str, Any]], start: float, end: float,

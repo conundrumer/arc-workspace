@@ -513,6 +513,20 @@ class HeldRead:
 
 
 @dataclass(frozen=True)
+class AuditWindow:
+    """The window of the next cost audit: its start, and its spend in
+    dollars."""
+    start: float
+    spend: float
+
+
+@dataclass(frozen=True)
+class NotComputed:
+    """A value of `Computed` the read did not give, with the text of why."""
+    why: str
+
+
+@dataclass(frozen=True)
 class Computed:
     """The values `operator_state.read_state` computes over the `State` of
     the reads. `to_settle` is the list `file_ticket.py to-settle` prints
@@ -529,7 +543,8 @@ class Computed:
     `run_starts` gives what the script of each `Run:` line gave at this
     read, by its run (`runs.run_id`), and `run_takes` what its `takes`
     gave. `pace` is the usage pace at `State.now` (`pacing`), Unknown
-    until the read computes it."""
+    until the read computes it. `audit_window` is the window of the next
+    cost audit (`audit_window`), NotComputed until the read computes it."""
     to_settle: tuple[str, ...] = ()
     spent: Mapping[str, Spend] = field(default_factory=dict)
     budgets: Mapping[str, Budget] = field(default_factory=dict)
@@ -537,6 +552,8 @@ class Computed:
     run_starts: Mapping[str, Starts] = field(default_factory=dict)
     run_takes: Mapping[str, Takes] = field(default_factory=dict)
     pace: Pace = field(default_factory=lambda: Unknown(mctx("the read of the state did not compute it")))
+    audit_window: AuditWindow | NotComputed = field(
+        default_factory=lambda: NotComputed(mctx("the read of the state did not compute it")))
 
     def admitted(self) -> frozenset[str] | None:
         """The tickets each run whose script defines `takes` admits, a run

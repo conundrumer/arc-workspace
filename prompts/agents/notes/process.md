@@ -143,7 +143,7 @@
 - Outcomes:
     - Each figure of cost or time in a decision cites the command that produced it.
     - The summed cost of each kind of step over a window, against what it finds, reaches a ticket with no word of the user.
-- Owner: the agent that gives the figure, and, for the summed cost, the cost audit, a `general-purpose` agent an operator launches after each process assessment's launch, and, for each script's calls, [check_script_calls.py](scripts/check_script_calls.py), which an operator runs at each batch's end.
+- Owner: the agent that gives the figure, and, for the summed cost, the cost audit, a `general-purpose` agent an operator launches once the spend of the project's runs since the latest cost audit passes a set amount, and, for each script's calls, [check_script_calls.py](scripts/check_script_calls.py), which an operator runs at each batch's end.
 - Takes from: the transcripts, and the record of each script call under `.cache/script-calls/`. Gives to: each decision on cost or time.
 - How it can fail:
     - A cited figure rests on a wrong price table: the table cites its source and its date.
