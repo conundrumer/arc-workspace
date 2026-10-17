@@ -25,7 +25,7 @@
     // @scene box-outline: the frame color is the one color whose cells are
     //  exactly the border of their bounding box, at least 3×3; undefined
     //  where no color or more than one color does so
-    // @witness frame-color-swapped: variant $FrameOutline
+    // @witness frame-color-swapped: variant $FrameCommonest
   | FrameOutline {}
 
 // where the dot color comes from

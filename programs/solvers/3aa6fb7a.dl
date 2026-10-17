@@ -1,6 +1,6 @@
 // 3aa6fb7a
 // @draft
-// @keywords: objects stamp lookup bbox
+// @keywords: objects bbox
 // input: Ink lies on params.bg in L-triominoes: three cells of a 2x2 square,
 //  the fourth empty.
 // output: That empty cell takes params.fill; the rest passes through.
@@ -9,8 +9,6 @@
 .type Choice =
     // ink on both dirs of one corner and across it
     Corner {}
-    // the gap of a stored L, matched in any pose
-  | Glyph {}
     // a bg cell inside an object's bounding bbox
   | Box {}
 
@@ -20,22 +18,12 @@
     // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl fill(col: Color) fill(1).
-
-    // --- $Glyph ---
-    // The L and the cell completing it, in one frame.
-    RIGID(piece,
-        .decl glyph(p: Position)
-        GRID_MASK_2x2(glyph,
-            1, 1,
-            1, _)
-        .decl gap(p: Position) gap([1, 0, 1, 0]).
-    )
 }
 
 .init params = Params
 
 .decl impl_choice(ch: Choice)
-impl_choice($Corner()). impl_choice($Glyph()). impl_choice($Box()).
+impl_choice($Corner()). impl_choice($Box()).
 
 .decl ink(p: Position)
 ink(P) :- in(P, Col), !params.bg(Col).
@@ -46,6 +34,9 @@ empty(P) :- in(P, Col), params.bg(Col).
 // The cell a case marks.
 .decl mark(p: Position, ch: Choice)
 
+out(P, Col, Ch) :- mark(P, Ch), params.fill(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !mark(P, Ch).
+
 // --- $Corner ---
 
 mark(P, $Corner()) :-
@@ -53,18 +44,6 @@ mark(P, $Corner()) :-
     neighbor(P, D1, Q1), ink(Q1),       // with ink on both of the corner's dirs
     neighbor(P, D2, Q2), ink(Q2),
     neighbor(P, G, Q3), ink(Q3).        // and across it
-
-// --- $Glyph ---
-
-// One key per pose: an L placed by D4.
-.init occ = Occurrences<D4, Unit>
-occ.cell(D, P, $U())  :- d4_elem(D), ink(P).
-occ.shape(D, S, $U()) :- params.piece_glyph(D, S).
-
-mark(P_grid, $Glyph()) :-
-    occ.occurrence(D, A),                           // a placed L
-    params.piece_gap(D, S), compose(A, S, P_grid),  // the cell completing it
-    empty(P_grid).                                  // still empty
 
 // --- $Box ---
 
@@ -75,29 +54,3 @@ parts.node($U(), P) :- ink(P).
 part_box.cell(Id, P) :- parts.label($U(), P, Id).
 
 mark(P, $Box()) :- empty(P), part_box.box(_, B), inside(P, B).
-
-out(P, Col, Ch) :- mark(P, Ch), params.fill(Col).
-out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !mark(P, Ch).
-
-.comp Determine {
-    // A mark: empty in the input, colored in the output.
-    .decl marked(e: Example, p: Position)
-    marked(E, P) :-
-        ex_in(E, P, Bg), params.bg(Bg),      // empty in
-        ex_out(E, P, Col), !params.bg(Col).  // marked out
-
-    .type EP = [e: Example, p: Position]
-
-    // The ink the mark completes: the component it touches.
-    .init piece = Reach<EP>
-    piece.node([E, P], Q) :- marked(E, P), ex_in(E, Q, Col), !params.bg(Col).
-    piece.seed([E, P], Q) :- marked(E, P), dir_elem(D), neighbor(P, D, Q).
-
-    .init bbox = Bbox<EP>
-    bbox.cell(K, Q) :- piece.reach(K, Q).
-
-    // Each mark's piece is one copy of the chart, in its own pose.
-    .decl piece_glyph(e: Example, p_mark: Position, p: Position)
-    piece_glyph(E, P_mark, P_inner) :-
-        bbox.cell([E, P_mark], P), bbox.box([E, P_mark], B), crop(P, B, P_inner).
-}

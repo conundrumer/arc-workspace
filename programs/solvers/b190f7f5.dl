@@ -41,7 +41,7 @@
     // @scene template-half: the shape is the half with fewer
     //  non-`background` colors, and its non-`background` cells are the shape;
     //  undefined where the two halves have equally many colors
-    // @witness template-in-other-color: variant $FewerColorsTemplate
+    // @witness template-in-other-color: variant $MonoTemplate
   | FewerColorsTemplate {}
 
 // the frame of the shape that each block copies

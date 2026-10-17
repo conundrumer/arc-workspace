@@ -4,6 +4,7 @@
 //  class's symbol: one color — the top edge row; two — the TL diagonal;
 //  three — the TR diagonal.
 
+// the frame the figure is drawn in
 .type Canvas =
     Input {}
   | Fixed {}

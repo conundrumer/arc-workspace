@@ -4,6 +4,7 @@
 //  one color, side cells another — and erases to bg. The cases are
 //  data-equivalent on this task.
 
+// the color a ring's corner cells take
 .type Corner =
     Fixed {}
   | Prop {}

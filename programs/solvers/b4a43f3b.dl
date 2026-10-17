@@ -34,7 +34,7 @@
     //  mask is the one whose non-background cells have one color, and the
     //  picture is the other; undefined where both halves or neither half has
     //  one color
-    // @witness picture-below: variant $PictureByColors
+    // @witness picture-below: variant $PictureByBlocks
   | PictureByColors {}
 
 // what fixes the block side the picture is read at
