@@ -40,7 +40,7 @@ HELP = mctx("""
     - The command reads the ticket tracker of the main tree and prints, for each cause below, a heading with the cause's sum and then its rows, the largest first.
     - `--since <time>`, with `<time>` in the form `{form}` in UTC, sets the window from that time to now: each span is cut to the window, and only the conflict lines in it count. With no `--since`, the window is the whole log.
     - `depends-on` waits: one row per path that a `change` ticket's `## Scope` gives, with the hours changes waited on it and the number of changes that waited on it.
-        - The paths a Scope gives are each path it gives with a `/` or at the root of the main tree, with no `:<line>` or `:<first>-<last>` after it, and the witness file of each solver it gives.
+        - The paths a Scope gives are those `uv run python scripts/file_ticket.py --help-all` gives.
         - A wait is a span in which a `change` ticket stood under `tickets/open/` and a ticket its `depends-on` gives stood outside `tickets/closed/`, charged to each path both Scopes give, or to the row `{no_shared}` where they give none in common.
         - The wait hours of a path are change-hours: the overlapping spans of one change count once, and those of different changes add up.
     - Rebase conflicts: each log line of a `change` ticket whose note opens with `{opening}` or `{rerun}`, charged to each path it gives, or to the row `{not_recorded}` where it gives none.

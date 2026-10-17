@@ -48,6 +48,7 @@ USAGE = mctx("""
         uv run python scripts/profile_runs.py --pending ID
         uv run python scripts/profile_runs.py --open ID
         ```
+    - An `undecided` line on stderr gives each value the tool cannot give and each fact it cannot decide, with its reason, and each distinct line is printed once.
     {parts}
     """)
 """The help the bare `--help` prints."""
@@ -92,13 +93,13 @@ PARTS = {
         - Where its result names no file, whether it runs is unknown, and it counts as running.
         - Where `lsof` writes to stderr when it lists the files open in that file's directory, or the open files that are gone, which files a process holds open is unknown, and the ID is refused.
     - A run's token cost is the list price of the tokens its requests used, from the price table of `token_prices`, each request priced once at the full usage its entries give.
-        - A run with a request whose model or usage the table does not price has an unknown cost, printed `?`, and an `undecided` line on stderr names the model or the field.
+        - A run with a request whose model or usage the table does not price has an unknown cost, printed `?`.
     - `--price-at MODEL` prices each request at the prices the table gives MODEL, in place of those of the model that made it, and a MODEL the table does not price is refused.
         - Where it is given, the tool first prints `price at MODEL:` and that {repriced}.
     - A run whose agent type is unknown is refused, and so is an ID that names transcripts that differ and are not the transcripts of one run.
     """),
     HelpPart.ONE: mctx("""
-    - One run, and each run `--runs` prints, prints its wall time and its token cost, then its burn readings:
+    - One run, and each run `--runs` prints, prints its wall time and its token cost, then these lines:
         - after `repeated:`, each Bash command it ran more than once, with the number of times, or `none`;
         - after `refused:`, the number of its calls whose result gives a refusal;
         - after `hung:`, the number of its calls that ran, or are in flight and have run, past {hung} times the usual time of their label;
@@ -109,7 +110,7 @@ PARTS = {
         - A message's active time is the run's wall time less `idle` over that message's period.
         - Its self time is its active time less the run's waits on agents over that period.
         - A wait on agents is an interval in which an Agent call of the run is in flight, in the foreground or the background, and the run is not generating and blocks on no `tools` call.
-        - A run's budget is the budget of its type or role, as `--help budget` gives it over every run under the project directories: the budget per item times the number of items its brief gives where its brief gives items, and the budget per run otherwise.
+        - A run's budget is the budget `--help budget` gives its brief, as a brief of the run's type or role, over every run under the project directories.
         - A message whose self time is past the run's budget is marked `past budget`.
         - A run with no budget prints none, and a run with an unknown message prints no active time and no self time.
     - One run of a subagent also prints, after `report to the parent:`, the latest entry of its parent's transcripts after the parent's latest message to it that gives a report of it, with the entry's time, its kind and the start of its text.
@@ -122,12 +123,10 @@ PARTS = {
     - A report's text is the entry's text, and of a message that delivers the agent's SubagentHandback, that text without the harness's preamble and indent.
         - An entry whose text is the harness's pointer to such a message, or the line an agent gives after it sent its final reply by SendMessage, gives no report.
         - A report whose text is the path alone of a report file that `operate.py next` gives in a brief is that file's text, where it is the latest report that gives that path.
-            - An earlier report that gives that path keeps the path as its text.
-            - Where the file is gone, an `undecided` line on stderr names it.
+            - An earlier report that gives that path, and a report whose file is gone, keep the path as its text.
     - Where the latest message from the parent is unknown, or no transcript of the parent is found, it prints `?`.
     - A notification or a launch result whose status is of no known form gives no report, and where no `.meta.json` of the run gives a `toolUseId`, no launch result is matched to it.
     - A launch result whose status is of no known form counts as not in the background, wherever it is read.
-    - An `undecided` line on stderr names each of these, and each distinct line is printed once.
     """),
     HelpPart.MANY: mctx("""
     - `--each` prints, for each run the IDs bring, in their order, what one run prints, and then, where it profiles more than one run, what more than one run prints.
@@ -139,19 +138,18 @@ PARTS = {
         - A request is one that `token_prices.requests` gives, and its context is what `token_prices.request_input` gives for its usage.
         - A type with no run on one side prints `-` for that side.
         - A median over no value prints `?`.
-        - A run whose start is unknown joins neither side, and an `undecided` line on stderr names it.
-        - A cut of an agent type's context held where `--split`, with the merge time of the change that cut it as TIME and as IDs the sessions that ran that type on both sides, gives that type's median context per request and median cost per run both lower after than before.
+        - A run whose start is unknown joins neither side.
     """),
     HelpPart.BUDGET: mctx("""
     - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over.
         - In place of a budget of type `{general}`, it prints one for each role of `operations.roles.GENERAL_ROLES`, taken over the runs of type `{general}` whose description `operations.roles.described` gives that role, and a run of that type whose description gives no such role joins no budget.
-        - The budget `operate.py next` gives a code editor's brief is the budget of the type `code-editor`.
     - That median is taken over the runs an operator launched alone.
         - An operator launched a run where its parent, as `--running` gives it, is an agent of type `{operator}`.
-        - A run whose parent's type no transcript of the sessions of the run gives is left out, and an `undecided` line on stderr names it.
+        - A run whose parent's type no transcript of the sessions of the run gives is left out.
     - A brief gives items where its first line is one of the lines `operations.briefs` gives for a brief of several items of the same work, each item a ticket number.
         - Where the brief of some run of a type or a role gives items, it also prints, on a line led by `per item`, the budget per item of that type or role, which is {factor} times the median of the wall time per item, a run's wall time over the number of items its brief gives.
         - That median is taken by the lines below over the runs an operator launched whose brief gives items.
+    - The budget of a brief is the budget per item of its type or role times the number of items it gives, where it gives items, and the budget of its type or role otherwise.
     - The lines below narrow the runs each median of this part is taken over.
         - The window of a role of `operations.roles.GENERAL_ROLES` is the runs whose first entry is at or after the last commit that changed `src/operations/briefs.py`.
         - The window of a type that has an agent document under `prompts/agents/` is the runs whose first entry is at or after the last commit that changed one of its prompt's sources.
@@ -160,9 +158,9 @@ PARTS = {
         - `--since DATE` sets the window of every type to the runs whose first entry is at or after DATE.
         - Where the window holds at least {median_runs} of the runs the median is taken over, it is taken over them.
         - A type with no agent document has a window only with `--since`.
-        - A type or role whose paths no commit changed has no window, and an `undecided` line on stderr names it.
+        - A type or role whose paths no commit changed has no window.
         - Otherwise it is taken over those of these runs whose `waits` and `idle` together are under {low_wait_pct}% of wall time, where at least {median_runs} runs are such.
-            - A type or role with fewer such runs gets no budget, and a brief of it gets no `Budget:` line, and an `undecided` line on stderr names it with their count as its reason.
+            - A type or role with fewer such runs gets no budget, and a brief of it gets no `Budget:` line.
     """),
     HelpPart.UNDER: mctx("""
     - `--under ID` profiles the runs under the run ID, where ID is a session id or an agent id: the agents whose `.meta.json` gives the run ID as `parentAgentId`, or for a session gives none, the agents whose `.meta.json` gives one of those, and so on.
@@ -176,7 +174,7 @@ PARTS = {
             - A step's result is its output.
             - An operator's call's lines are read from its result's content, or, where that content is the harness's `<persisted-output>` preview of a large output and the result gives a `stdout`, from that `stdout`.
             - A line counts only where a line break ends it.
-            - A call whose result holds more than one `left open:` line counts as none, and an `undecided` line on stderr names that call.
+            - A call whose result holds more than one `left open:` line counts as none.
         - Where a previous call stands, it considers the runs whose last timestamped entry is after that call's time and each run that call's `left open:` line gives, and where none stands, every run under the ID.
             - Of those, it takes each run whose work is not open, by the rule by which `--running` lists an agent, as `--help running` gives it, and leaves out the others.
         - It prints, in order:
@@ -189,14 +187,19 @@ PARTS = {
     - `--running ID` lists the agents under the run ID whose work is open, where ID is a session id or an agent id.
         - A run that goes on under a later session is listed under that session's id.
         - The agents are listed in launch order, each parent's agents after it.
-    - Of the agents the run launched, the agents those launched, and so on, an agent's work is open where its turn is in progress, whether or not its parent's work is open, or where its turn has ended, its parent's work is open, and no report of it reached its parent after the parent's latest message to it.
-        - A report is one as `--help one` gives it, read here from each transcript of the parent's run.
+    - Of the agents the run launched, the agents those launched, and so on, an agent's work is open where its turn is in progress, whether or not its parent's work is open, or where its turn has ended, its parent's work is open, and its work is not closed.
         - A parent's work is open where the parent is `main` or listed, and the run ID's work is open where it is `main` or would be listed under `main`.
-        - Where no transcript of the parent of the run ID, or of a parent above it, gives its launch, whether its work is open is unknown, it counts as open, and an `undecided` line on stderr names it.
         - An agent's turn counts as ended where it has ended, as `--help runs` gives when a turn ends, or where its parent has its result, or a transcript of the sessions of its run or of its parent's run holds a notification of it, and its transcript holds no `user` or `assistant` entry timestamped after the latest of those.
-        - Each of these after the latest message the agent received from anyone closes its work, whether or not the parent's latest message to it is known: a report; a result of the agent's own SubagentHandback call that says the harness delivered its report; a notification of it of any status but `running`, other than one whose note says the agent stopped with background work of its own still running; the harness's note that the user interrupted the run, which is itself no message the agent received.
-        - Otherwise, an agent whose turn has ended is listed where the parent's latest message to it is unknown.
-        - Where these rules give the work of an agent, of the run ID or of a run above it as not open, and its turn has ended while work of its own still runs, whether its work is open is unknown: it counts as open, and an `undecided` line on stderr names it with that work.
+    - A report of an agent that reached its parent after the parent's latest message to it closes its work.
+        - A report is one as `--help one` gives it, read here from each transcript of the parent's run.
+    - Each of these after the latest message the agent received from anyone closes its work:
+        - a report;
+        - a result of the agent's own SubagentHandback call that says the harness delivered its report;
+        - a notification of it whose status is not `running` and whose note does not say that the agent stopped with background work of its own still running;
+        - the harness's note that the user interrupted the run, which is itself no message the agent received.
+    - Where the parent's latest message to an agent is unknown, only the entries of that list close its work.
+    - Where no transcript of the parent of the run ID, or of a parent above it, gives its launch, whether its work is open is unknown, and it counts as open.
+    - Where the rules above give the work of an agent, of the run ID or of a run above it as not open, while its turn has ended and work of its own still runs, whether its work is open is unknown, and it counts as open.
         - An agent's work of its own is:
             - each command it backgrounded that is still running;
             - each agent it launched in the background that this rule does not reach, as `running:` gives such an agent, and whose launch no notification has followed;
@@ -216,7 +219,6 @@ PARTS = {
         - each call it has in flight, with its label, its command and the time since the call;
         - after `running:`, each command it backgrounded that is still running, and each agent it launched in the background that is itself listed and whose launch no notification in the transcripts of the run that launched it has followed, each with its label, its command and the time since the call;
             - an agent this rule does not reach, because no transcript gives its launch or because no `.meta.json` of the sessions of the run that launched it gives that run as the parent of any agent, is printed there as well;
-                - an `undecided` line on stderr names such an agent where the call that launched it has its result;
         - its last {recent} calls in order, each with its label, its command and its duration, or `pending`.
     - `--calls-since TIME` keeps of each listed agent's last {recent} calls only those that ended at or after TIME, and those that are pending.
         - It prints them after `recent since` and TIME, as `YYYY-MM-DDTHH:MM:SSZ`, and where it keeps none, prints `none` after TIME.
@@ -225,7 +227,7 @@ PARTS = {
             - the run holds the result of that Agent call, and the result does not say the agent runs in the background;
             - any transcript of the sessions of the run or of the agent's run holds a notification of the agent, a notification that it stopped with work of its own still running among them.
         - A SendMessage call that the run or any agent of the run's sessions, main among them, makes resumes the agent.
-        - A SendMessage call to an agent whose result says neither that it resumed the agent nor that it queued the message resumes none, and an `undecided` line on stderr names it.
+        - A SendMessage call to an agent whose result says neither that it resumed the agent nor that it queued the message resumes none.
     - `--open ID` prints `open` where the work of the run ID is open, by the rule by which `--running` lists an agent, applied to the run ID, and `not open` otherwise, where ID is an agent id.
         - An ID that names a session's main transcript is refused.
     """),
@@ -234,8 +236,8 @@ PARTS = {
         - The origin the harness gives a queued message is the one its attachment gives.
         - A notification of the agent's own backgrounded work, a message from an agent it launched, from the user, from another agent, or, for an agent `main` did not launch, from the coordinator or queued with no tag, and a note of the harness are none.
         - A message from another agent is one the harness gives as from an agent id other than the parent's and those of the agents it launched.
-        - A later message whose sender is none of these, or from an agent no transcript of the sessions of the run gives the type of, is unknown, and an `undecided` line on stderr names it.
-        - A line of a message from the parent that gives a file `operate.py next` wrote for the message is read as that file's text, and where the file is gone, an `undecided` line on stderr names it.
+        - A later message whose sender is none of these, or from an agent no transcript of the sessions of the run gives the type of, is unknown.
+        - A line of a message from the parent that gives a file `operate.py next` wrote for the message is read as that file's text, or as the line itself where the file is gone.
     - The period of a message from the parent runs from it to the next message from the parent or from another agent, or to the run's last entry.
     - A listed agent's active time is its wall time less `idle` over the period of the latest message from its parent, with its wall time running to now where that period and its turn have not ended.
     - Its self time is that active time less its waits on agents over that period, as `--help one` defines them, with the time since its last entry a wait where it waits on agents at that entry.
@@ -253,7 +255,6 @@ PARTS = {
     - A call whose agent type is unknown is labelled `agent ?`.
     - A Bash call with no command is labelled `shell`.
     - A call whose input lacks a field its command reads, of those above but a SendMessage call's message, is printed without that field.
-    - An `undecided` line on stderr names each of these calls.
     """),
 }
 """The text of each part of the help but `OPTIONS`, which argparse

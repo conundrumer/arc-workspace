@@ -77,6 +77,7 @@ HELP = mctx("""
                 - A transcript line is a JSON line, so the expression matches a quote or a backslash in its JSON escape, and the sweep refuses an expression that matches its own text in that escape, applied once or twice.
             - It may hold lines `- {agent_field} <agent type>`, `main` for a session's main run. Where it holds one or more, a run of a type none of them gives does not exercise the change, so neither does a run of another type that reads other runs' transcripts.
             - Where a command exits 0 only where the need is met, it holds one line `- {command_field} <command>`, the command in backticks with nothing after them, and otherwise a statement that an agent judges against a run.
+            - Where the need is to cut an agent type's context, the need is met where `uv run python scripts/profile_runs.py ID [ID ...] --split TIME`, with the merge time of the change as TIME and as the IDs the sessions that ran that type before and after it, gives that type's median context per request and median cost per run both lower after TIME than before.
     - `<domain>` is one of {domains}, and `<subject>` is the id of the thing it names: a task id for `task`, a ticket's number for `change` and `ticket`, a commit hash for `commit`, an agent id for `agent`.
         - A `change` or a `request` takes `change` as `<domain>` and `<namespace>-<short-title>` as `<subject>`, with `-` in place of each `_`.
     - `<agent>` is your agent's name.
@@ -98,6 +99,7 @@ RULES = mctx("""
         - It writes the ticket in the main tree, under `tickets/draft/` for a `change`, where `case {full_flag}` gives for a `{delay}` that gives a case, and under `tickets/open/` for any other, with the filing time in the first line of its `## Log`.
     - Run from a worktree, the command files with the main tree's copy of `scripts/file_ticket.py`, and refuses where the main tree has none.
     - Each `<number>` in `depends-on` is the number of a ticket the ticket tracker holds.
+    - The paths a section of a `change` gives are each path it gives with a `/` or at the root of the main tree, with no `:<line>` or `:<first>-<last>` after it, and the witness file of each solver it gives.
     - The command refuses, and writes nothing, where the text on stdin does not have the form above.
     """)
 """The rules of numbers, sessions and filing, which `--help-all` with no
@@ -286,7 +288,7 @@ SPAN = re.compile(r"(?P<path>[^:\s]+):(?P<first>[1-9]\d*)-(?P<last>[1-9]\d*)")
 SCOPE_CHECK_HELP = mctx("""
     - `<number>` is the number of a `{change_kind}` ticket. With no `<number>`, the command reads the text of a draft on its stdin, in the form a filing takes: `{invocation} scope-check <<'EOF'`, the text, and `EOF`.
     - The command prints each path the ticket's `{design}` gives that its `{scope}` gives neither as a path nor as a directory that holds it, one per line, or `{covered}` where none.
-        - The paths a section gives are those `uv run python scripts/bottlenecks.py --help` gives a Scope.
+        - The paths a section gives are those `uv run python scripts/file_ticket.py --help-all` gives.
     - It exits 0 whatever it prints, so judge each path it prints: a path the `{design}` cites and the change does not edit stays out of the Scope.
     """)
 

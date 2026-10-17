@@ -304,7 +304,7 @@ def interface_renderings(lib: Path = LIB_SRC) -> list[Rendering]:
     """The interface file beside each of the lib's sources, each under a
     line saying it's generated."""
     return [Rendering(interface_path(path), mctx(
-        "<!-- Generated from {name} by scripts/context.py. -->").format(
+        "<!-- Generated from {name} by [context.py](scripts/context.py). -->").format(
             name=path.name) + "\n\n" + lib_doc(text))
         for path, text in lib_sources(lib)]
 

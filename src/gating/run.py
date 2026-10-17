@@ -380,7 +380,7 @@ class Gate:
             no_data = [s for s, d in (*own_deps.items(), *dropped_deps.items())
                        if not d.exists()]
             if no_data:
-                out.append(mctx("coverage: {cmd}: its runs on {stems} gave no coverage data, "
+                out.append(mctx("coverage: {cmd}: its runs on {stems} wrote no dependencies, "
                                 "and count as covering no line").format(
                     cmd=c.name, stems=", ".join(no_data)))
             own = lines_of(own_deps.values())

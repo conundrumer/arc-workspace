@@ -32,6 +32,7 @@ USAGE = mctx("""
         uv run python scripts/operate.py set-aside <task id> analyze|create
         uv run python scripts/operate.py restore <task id> [<reason>]
         ```
+    - Where `next`, `relay` or `review` is given the agent id of an agent other than the one its part of this help gives, it prints that the agent is none that form serves, and what that agent does.
     {parts}
     - `claim` claims a task for the session, and, where a claim on the task stands, fails and prints the session that holds it.
     - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass, as [Passes on a task](prompts/agents/notes/launching.md#passes-on-a-task) gives.
@@ -56,17 +57,20 @@ PURPOSES = {
 PARTS = {
     HelpPart.NEXT: mctx("""
     - `next` prints the next step of the operator whose agent id it is given: one call to make, or several launches to make in one message, with their parameters, or the final reply.
-        - With a launch, it prints each launch that it gives on the state with the launches before it made, past each step that is no launch, which a later call gives, other than a launch on a held step that a reply landing during its read of the state can end.
-            - It prints no further launch once a step that `next` prints ahead of every launch is ready and the output does not hold it, the operator is past its context bound, or the running agents of the session's operators, the launches included, number {subagents}.
+        - With a launch, it also prints each further launch that it gives on the state with the launches before it made, until one of these holds:
+            - A step that `next` prints ahead of every launch is ready and the output does not hold it.
+            - The operator is past its context bound.
+            - The running agents of the session's operators, the launches included, number {subagents}.
+            - It gives no further launch.
+        - Among those further launches, it passes over each step that is no launch, and each launch on a held step that a reply landing during its read of the state can end, and a later call gives each step it passes over.
         - Before the final reply, it prints a SendMessage call that sends the reply's text to the agent that launched the operator.
         - It then prints the SubagentHandback call whose message is the line that says so.
-        - Where the agent is no `{operator}`, it prints only that no step is printed and that the agent gives its final reply, and writes no file.
         - It writes the brief of a launch, and a message to an agent other than the coordinator, to a file under the session's scratchpad, and the call's prompt or message gives that file's path.
         - The value of a prompt or a message parameter it prints stands between two lines of three backticks, and the value to pass is the text between those lines, without them.
         - A message to the coordinator that gives labeled items keeps its first line and gives the path of the file that holds its items.
         - The brief of a launch other than a solver pass's gives the file the agent writes its final reply to.
-        - The brief of a code editor's launch ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where `profile_runs.py --help budget` gives a budget for the brief over every run under the project directories.
-            - N is that budget in minutes, rounded up: the budget per item times the number of items for a brief that gives items, as that help gives them, and the budget per run for any other brief.
+        - The brief of a code editor's launch ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where `profile_runs.py --help budget` gives a budget for the brief, as a brief of the type `code-editor`, over every run under the project directories.
+            - N is that budget in minutes, rounded up.
         - An agent whose latest notification has the status `failed` and a summary that gives `{rate_limit}` was stopped by the usage limit.
             - `next` counts such an agent as running, and takes nothing from that notification as its report.
             - Once the usage file of the Claude config directory (`$CLAUDE_CONFIG_DIR/usage.json`, or `~/.claude/usage.json` where that is unset) was written after that stop, less than {stale} seconds ago, with a `used_pct` under 100 in each window, `next` prints, ahead of every other step, a SendMessage call that asks the agent to carry on its work, once for each such stop.
@@ -127,7 +131,6 @@ PARTS = {
         - `next` gives as a step the `start` of the first item `starts` gives whose task no pipeline of the session runs and that matches no pipeline of the run by task and passes, and passes over each other item.
             - That `start` has as `<run>` the time of the line's message and its path.
         - A `start` on a task whose claim file stands ends that pipeline, with the failure's text as its reason.
-        - Where `starts` raises or gives a result in no form above, the run starts nothing while that fault stands.
         - The line is done once no pipeline of the run runs, no fault of the load or of `starts` stands, and `starts` gives nothing to start.
         - The script may define `takes(ticket: RunTicket) -> bool`, with `RunTicket` from the module `operations.runs`, which the same load calls on each ticket outside `tickets/closed/` and `tickets/deferred/`.
             - A `RunTicket` gives:
@@ -137,8 +140,10 @@ PARTS = {
                 - `reached_by_run`: whether a chain of `depends_on` and `waits_on` links reaches it from a ticket such a pipeline filed.
             - From the line on, also once it is done, the operator launches a ticket analyst on an open ticket, and takes an open change, only where the `takes` of each run whose script defines one gives `True` for it.
                 - A ticket an `Expedite:` line gives passes, and so does a change that an operator took before and that went back to `tickets/open/`.
-            - Where `takes` raises or gives a result that is no `bool`, the run takes no ticket while that fault stands.
-        - Where the script fails to load, or the load and the calls of `starts` and `takes` run past {script} seconds, the run starts nothing, and takes no ticket unless the script loaded and defines no `takes`, while that fault stands.
+    - A fault of a script that a `Run:` or a `Pace:` line gives is a load that fails, a call of one of its functions that raises or gives a result in no form this help or `--help pace` gives for it, or a load and calls that run past {script} seconds.
+        - While a fault stands, the result of each call it touches is held back: a fault of a call touches that call, and a fault of the load or of the time touches each call.
+        - With `starts` held back, the run starts nothing.
+        - With `takes` held back, the run takes no ticket, unless the script loaded and defines no `takes`.
         - The coordinator gets the text of each fault, once for each distinct text.
     """),
     HelpPart.PACE: mctx("""
@@ -156,12 +161,10 @@ PARTS = {
     - `Pace: <path>` gives the Python script at `<path>`, absolute or relative to the main tree, which `next` loads at each read of the state.
         - It defines `paces(usage: Usage) -> bool`, with `Usage` from the module `operations.pacing`, which gives `True` where the pace admits a ticket now.
         - `usage.now` is the time in seconds since the epoch, and `usage.windows` maps the name of each window of which the usage file holds a reading written less than {stale} seconds ago to a `Window` with `used_pct`, `elapsed_pct` and `resets_at`, the last in seconds since the epoch.
-        - Where the script fails to load, `paces` raises or gives a result that is no `bool`, or the load and the call run past {script} seconds, the pace counts as past while that fault stands.
-        - The coordinator gets the text of each fault, once for each distinct text.
+        - With `paces` held back by a fault of the script, as `--help run` gives it, the pace counts as past.
     """),
     HelpPart.RELAY: mctx("""
     - `relay` prints the next step of the operator launcher whose agent id it is given, in the forms of `next`.
-        - Where the agent is no `{launcher}`, it prints only that no step is printed and that the agent gives its final reply, and writes no file.
         - Where an operator of the launcher's runs and no line of the coordinator's waits for it, it prints at once, with no block, that the launcher ends its turn with no call.
             - Where a message to the launcher waits that the harness accepted during the call, as the block of `next` reads one, it prints instead that the launcher runs the command again.
         - Its first step launches an operator whose brief is the launcher's brief.
@@ -175,7 +178,6 @@ PARTS = {
     - `review` prints, to the doc editor whose agent id it is given, which an operator of the session launched, the launch of its change's doc reviewer, in the form of `next`'s, with the brief `next` gives a doc reviewer, the doc editor as its launcher, and each editor of the change in its worktree.
         - Where the change already has a doc reviewer, whoever launched it, it prints that reviewer's agent id and that the doc editor launches no other.
         - Where an editor the change's ticket gives has no agent in the worktree, or another editor of the change there has not reported, it prints instead that the operator launches the review, and that the doc editor gives its final reply.
-        - Where the agent is no doc editor that an operator of the session launched, it prints that no launch is printed, and that the agent gives its final reply.
         - It reads the state as the doc editor's operator's `next` reads it.
     """),
     HelpPart.ALERTS: ALERTS + "\n" + concept_faults.HELP,

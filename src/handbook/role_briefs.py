@@ -79,4 +79,4 @@ def spawn_line(name: str) -> str:
     if docs:
         return mctx("Brief: built by the session that spawns it per "
                     "{docs}.").format(docs=docs)
-    return mctx("Brief: briefed by the session that spawns it.")
+    return mctx("Brief: written by the session that spawns it.")

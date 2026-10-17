@@ -1,4 +1,4 @@
-"""Generated from the lib by scripts/context.py."""
+"""Generated from the lib by [context.py](scripts/context.py)."""
 
 from collections.abc import Iterable, Mapping
 from enum import StrEnum

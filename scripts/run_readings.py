@@ -1,5 +1,4 @@
-"""The burn readings of a run, as `profile_runs.py --help one` gives
-them."""
+"""The lines `profile_runs.py --help one` gives after a run's token cost, as it gives them."""
 
 import time
 from collections import Counter
@@ -15,7 +14,7 @@ NONE = mctx("none")
 
 
 def print_readings(r: Run, own: CallTimes, among: CallTimes) -> None:
-    """The burn readings of `r`, with `own` and `among` as
+    """Those lines of `r`, with `own` and `among` as
     `open_agents.usual` takes them."""
     counts = Counter(r.bash_commands)
     hung = sum(1 for s in r.spans

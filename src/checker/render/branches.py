@@ -45,6 +45,7 @@ from controlled_markdown import mctx
 from engine import AdtValue, RecordValue
 from solver.annotations import DirectiveWord, IgnoreForm, at_word, ignore_text
 from solver.model import DeriveBranch, StoreBranch
+from solver.vocabulary import RUN_RELATIONS
 from solver.aggregate import Solver
 from solver.names import branch_text
 from solver.pair_runs import PairId, TaskSection
@@ -180,9 +181,10 @@ def cases_suffix(names: Sequence[str]) -> str:
 def _no_value_text(rel: str, why: NoValue) -> str:
     match why:
         case NotBetween():
-            return mctx("`{rel}` is no relation the derivation of `out` "
-                        "reads, other than an inline one or one of the "
-                        "run's own").format(rel=rel)
+            return mctx("`{rel}` is none of the relations the derivation of "
+                        "`out` reads, less those declared `inline` and {run}, "
+                        "which the run writes or reads around the solver").format(
+                rel=rel, run=_ticked(sorted(r.name for r in RUN_RELATIONS)))
         case Unread():
             return mctx("`{rel}` is no relation a case reads").format(rel=rel)
         case NoAnchor():

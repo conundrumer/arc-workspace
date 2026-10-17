@@ -29,7 +29,7 @@ HELP = mctx("""
     - `<path>` is the path of a file or a directory from the root of the tree.
     - The command reads the ticket tracker of the main tree and prints two lists, each under its heading, in the order of numbers, with `{none}` under a heading whose list is empty.
     - Open changes: each `{change}` outside `tickets/{closed}/` whose `## Scope` gives a path that is a `<path>`, or stands under one, or that a `<path>` stands under, with its number, its status and its title.
-        - The paths a Scope gives are those `uv run python scripts/bottlenecks.py --help` gives.
+        - The paths a Scope gives are those `uv run python scripts/file_ticket.py --help-all` gives.
     - Recent tickets: each ticket filed or closed in the last {days} days whose text names a `<path>`, as `uv run python scripts/file_ticket.py closed-on --help` gives, with its number, its kind, its status and its title.
     - The command refuses an absolute `<path>`.
     """)

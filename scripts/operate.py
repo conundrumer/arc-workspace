@@ -46,7 +46,7 @@ from operations.roles import Role  # noqa: E402
 from operations.constants import BLOCK_SECONDS, FOREGROUND_MS, LIMIT_SECONDS, SUBAGENT_LIMIT  # noqa: E402
 from operations.steps import Launch, Step, Undecided  # noqa: E402
 from operations.task_work import CLAIM_HELD, claim, restore, set_aside  # noqa: E402
-from operate_loop import block, operator_step, prepared, print_step, serving  # noqa: E402
+from operate_loop import block, operator_step, prepared, print_step  # noqa: E402
 from operate_help import PARTS, PURPOSES, USAGE, HelpPart  # noqa: E402
 
 TASK_ID = re.compile(task.TASK_ID)
@@ -125,8 +125,7 @@ def main(argv: list[str]) -> int:
                               bound=journal.BOUND,
                               write=round(WRITE_SECONDS), stale=USAGE_STALE, rate_limit=RATE_LIMIT,
                               script=runs.SCRIPT_SECONDS, factor=f"{pacing.EVEN_FACTOR:g}",
-                              window=pacing.DEFAULT_WINDOW, operator=serving(Action.NEXT),
-                              launcher=serving(Action.RELAY), subagents=SUBAGENT_LIMIT))
+                              window=pacing.DEFAULT_WINDOW, subagents=SUBAGENT_LIMIT))
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
     parser.add_argument("action", choices=list(OperateAction))
     runs.add_arguments(parser)

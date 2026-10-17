@@ -87,7 +87,7 @@ def wrappers_text(lib: Path = LIB_SRC) -> str:
             elif isinstance(it, Comp) and not _hidden(it):
                 comps[it.name] = (it, text.splitlines())
                 order.append((path, it))
-    out = [mctx("\"\"\"Generated from the lib by scripts/context.py.\"\"\""), "",
+    out = [mctx("\"\"\"Generated from the lib by [context.py](scripts/context.py).\"\"\""), "",
            "from collections.abc import Iterable, Mapping",
            "from enum import StrEnum",
            "from typing import NamedTuple", "",

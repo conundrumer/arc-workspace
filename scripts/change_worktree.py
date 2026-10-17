@@ -41,7 +41,7 @@ HELP = mctx("""
     - The second form makes the worktree of a change that has no ticket, writes no log line, and prints its path. `<name>` is a branch name with no `/`.
     - The third form prints a digest of the diff of `<worktree>` from its merge base with `master` and of each untracked file there that git does not ignore, and makes or changes nothing.
     - The worktree `<name>` is `<main tree>/{worktrees}/<name>`, on the branch `<name>` from `master`, and the command adds it where it does not stand there.
-    - The command copies into the worktree from the main tree each untracked file that the patterns of the main tree's `.worktreeinclude` match, and, in the first form, each untracked file that git does not ignore at a path that the ticket's `## Scope` gives or at the path of the witness file of a solver it gives, where the worktree holds no file at that path.
+    - The command copies into the worktree from the main tree each untracked file that the patterns of the main tree's `.worktreeinclude` match, and, in the first form, each untracked file that git does not ignore at a path that the ticket's `## Scope` gives, as `uv run python scripts/file_ticket.py --help-all` gives those paths, where the worktree holds no file at that path.
     - The command refuses, adds nothing and writes no line, where a worktree stands at that path on another branch, or where that path or that branch exists with no worktree of that branch at that path.
     """)
 

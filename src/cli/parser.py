@@ -274,6 +274,11 @@ def parser() -> argparse.ArgumentParser:
             - The report checks the file's shape first.
             - With --file and no stem, the shape check is the whole report, and it needs no solver.
             - A `stem` given as a path reads the witness file of its task id too.
+            - With `--try`, the command runs on the grid file the cases `record` would, those witnessed with it added to the witness file, writes nothing, and prints:
+                - the groups of the grid file;
+                - the unseparated branch differences whose pairs it separates;
+                - the subsumed ones whose pairs it shows defined and differing;
+                - the subsumed ones that the cases it newly witnesses bring.
             """),
     )
     witness.add_argument("stem", nargs="?",
@@ -289,16 +294,7 @@ def parser() -> argparse.ArgumentParser:
                                    "task's, with the report the task's "
                                    "file gets"))
     witness.add_argument("--try", metavar="PATH", dest="try_path",
-                         help=mctx("a grid file read as a candidate "
-                                   "witness: run on it the cases `record` "
-                                   "would, those witnessed with it added "
-                                   "to the witness file, and print its "
-                                   "groups, the unseparated branch "
-                                   "differences whose pairs it separates, "
-                                   "the subsumed ones whose pairs it "
-                                   "shows defined and differing, and the "
-                                   "subsumed ones that the cases it newly "
-                                   "witnesses bring, writing nothing"))
+                         help=mctx("a grid file read as a candidate witness"))
     file_or_every.add_argument(
         "--every-case", action="store_true",
         help=mctx("run with `impl_choice` holding every case of `Choice`, "
@@ -322,7 +318,7 @@ def parser() -> argparse.ArgumentParser:
         # rebuilt it by hand, and a later run (ticket 6-963) grepped src,
         # scripts, docs and prompts for what "the stored value there" means.
         description=mctx("""
-            - Each built-in derivation of a stored parameter, a proposer of `programs/proposers.dl`, for which some case of the solver that takes its branch fits the task, with the witness that separates the cases that take the branch from the cases that take the stored value there and the same branches elsewhere, at the assignment that changes the fewest parameters at which they differ.
+            - Each built-in derivation of a stored parameter, a proposer of [proposers.dl](programs/proposers.dl), for which some case of the solver that takes its branch fits the task, with the witness that separates the cases that take the branch from the cases that take the stored value there and the same branches elsewhere, at the assignment that changes the fewest parameters at which they differ.
             - A derivation is listed with no witness where its `@ignore: derive <Proposer> — <reason>` line or its parameter's `@ignore: derive — <reason>` line stands, where the `@ignore: derive <name>` lines exclude every case that takes its branch, and, where the concept case fits, where no case takes its branch.
             - The command writes each witness it builds into the task's witness file, as `record` writes one, with the `@derive` line standing, and keeps a witness the file already holds for the branch.
             """)
@@ -373,10 +369,12 @@ def parser() -> argparse.ArgumentParser:
 
     keywords = command(
         Command.KEYWORDS, lambda a: survey.cmd_keywords(a.stem),
-        help=mctx("how many solvers carry each keyword of the Keywords doc"),
-        description=mctx("Count, for each keyword of the Keywords doc, the "
+        help=mctx("how many solvers carry each keyword of "
+                  "[Keywords](docs/handbook/keywords.md)"),
+        description=mctx("Count, for each keyword of "
+                         "[Keywords](docs/handbook/keywords.md), the "
                          "solvers whose `// @keywords:` line carries it, and "
-                         "list each header keyword the doc does not."),
+                         "list each header keyword that doc does not."),
     )
     keywords.add_argument("stem", nargs="*",
                           help=mctx("solvers to read, or all of them when "

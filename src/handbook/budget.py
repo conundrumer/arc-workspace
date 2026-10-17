@@ -99,6 +99,10 @@ class Size:
 
 WITHIN_BAND = mctx("Warning: {text} holds {size} characters, near the "
                    "budget of {budget} that {path} gives.")
+# The sentence that tells the reader to cut no text and keep the `+ budget:`
+# line comes from the user's words, session 7fd429fb-e3be-4173-9b0e-df52f507d6a2,
+# 2026-10-16 (request 6-1476): "Hot fix budget rule so we do not enforce it
+# until we have a proper resolution".
 PAST_BUDGET = mctx(
     "Warning: {text} holds {size} characters, past the budget of {budget} "
     "that {path} gives. A merge files a whole-document pass on it where no "

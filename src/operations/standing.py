@@ -87,7 +87,7 @@ def expedite_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
 def merged_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
     if any(a.launched > ln.message.time for a in state.agents_of(Role.BATCH_PROFILE)):
         return []
-    return [mctx("After a batch has not run since it was given")]
+    return [mctx("no batch profile has launched since the line was given")]
 
 
 def merge_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
