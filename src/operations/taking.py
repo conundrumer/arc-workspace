@@ -243,19 +243,16 @@ def take(state: State) -> Step | None:
     taken: list[str] = []
     for t in batch(state):
         if not t.cost_budget:
-            commands.append(log(t.number, Status.ASSIGNED, Status.OPEN, UNBUDGETED_TAKE_NOTE,
-                                state.me))
-            continue
-        b = state.computed.budgets.get(t.number)
-        if b is None:
-            if not commands:
-                return Undecided(mctx("the budget of change {number} is unknown").format(
-                    number=t.number))
-            break
-        commands.append(log(t.number, Status.ASSIGNED, Status.OPEN,
-                            TAKE_NOTE.format(dollars=f"{b.dollars:.2f}",
-                                             seconds=f"{b.seconds:.0f}"),
-                            state.me))
+            note = UNBUDGETED_TAKE_NOTE
+        else:
+            b = state.computed.budgets.get(t.number)
+            if b is None:
+                if not commands:
+                    return Undecided(mctx("the budget of change {number} is unknown").format(
+                        number=t.number))
+                break
+            note = TAKE_NOTE.format(dollars=f"{b.dollars:.2f}", seconds=f"{b.seconds:.0f}")
+        commands.append(log(t.number, Status.ASSIGNED, Status.OPEN, note, state.me))
         taken.append(t.number)
     if commands:
         return moves(commands, f"take {' '.join(taken)}", str(max(
