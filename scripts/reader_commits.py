@@ -1,5 +1,6 @@
-"""The commits whose documents each running reader last had, and the update
-that gives a reader the diff of its documents since those commits.
+"""The commits whose documents each running reader last had, and the text
+of the update that gives a reader the diff of its documents since those
+commits.
 
 A reader is the coordinator, the session the user talks with, or a
 subagent whose type has a document under `prompts/agents/`. The
@@ -39,37 +40,22 @@ the held texts, as below, of the latest launch before this one, in the
 hook's session, of the subagent's agent type, among those whose transcript
 holds both and that have a `.meta.json`, with launches taken newest first
 by the creation time of their transcript, since the harness rewrites a
-subagent's `.meta.json` when it finishes. The type is the `agent_type` of the hook input, or the
-subagent's `.meta.json` where the input gives none. Where the subagent's
-type has a reader and the prediction gives texts, the hook gives the
-subagent, after its agent id, the held diff from the predicted texts to the
-launch commit, as below, and once that output is printed, it writes the
-digest of the predicted texts beside the launch commit. Where any part of
-the prediction fails, the `context --update --held` run among them, the
-hook gives the agent id alone, writes the launch commit alone, and says the
-failure on stderr.
+subagent's `.meta.json` when it finishes. The type is the `agent_type` of
+the hook input, or the subagent's `.meta.json` where the input gives none.
+Where the subagent's type has a reader and the prediction gives texts, the
+hook gives the subagent, after its agent id, the held diff from the
+predicted texts to the launch commit, as below, and once that output is
+printed, it writes the digest of the predicted texts beside the launch
+commit. Where any part of the prediction fails, the
+`context --update --held` run among them, the hook gives the agent id
+alone, writes the launch commit alone, and says the failure on stderr.
 
-Before and after each call of a tool, and with each prompt of the user and
-each task notification, `reader_update` gives the reader its update, and
-records `HEAD` as both commits once the hook's output is printed. For a
-record of two commits, it compares them with its tree's `HEAD`, and where
-both are the same it gives nothing. Otherwise it gives the reader, under a
-head that says it may already hold some of the changes and how to read
-them, the diff of its documents since its commits, as
-`scripts/context.py context --update` prints it in the reader's tree, or
-the failure of that run. That diff runs for the context from the context's
-commit, for `CLAUDE.md` from the instructions' commit, and for the sections
-links from `CLAUDE.md` reach from the context's commit where it descends
-from the instructions' commit, and from the instructions' commit otherwise.
-That run is skipped where the context's commit is `HEAD`, `CLAUDE.md` does
-not differ between the instructions' commit and `HEAD`, and no file of the
-document set `[tool.controlled_markdown]` names differs between the linked
-sections' commit and `HEAD`.
-
-For a launch record with a digest, the update reads the subagent's held
-texts, as below. Where their digest is the record's, the update is that of
-a record that holds the launch commit twice; otherwise it is that of a
-launch record with no digest.
+`scripts/reader_delivery.py` gives when a hook gives a reader its update,
+and which of `update_text` and `held_update_text` gives its text. A text
+longer than the hook text Claude Code puts in a context whole
+(`handbook.coordinator_document.HOOK_TEXT_CAP`) reaches the reader as a
+preview and the path of a file that holds it, and its head, which stands in
+that preview, has the reader read that file whole.
 
 For a launch record with no digest, the held texts date the subagent's
 documents in place of a commit, since the harness may give a subagent an agent
@@ -85,19 +71,6 @@ tree, or the failure of that run. A transcript of a subagent whose type has
 a document, that holds either text in no such form, is a fault, and its
 record does not move.
 
-A reader whose diff holds nothing, and a caller that is no reader, get
-nothing, and the record moves all the same. A caller with no record, such
-as a `claude -p` session, gets nothing, and so does a session started
-before its session-start hook wrote one. A caller of unknown type is a
-fault, and its record does not move.
-
-The update holds a lock on the record while it runs, so of two calls of one
-reader at once, the second waits for the first, and gives nothing once the
-first has given the diff. A text longer than the hook text Claude Code puts
-in a context whole (`handbook.coordinator_document.HOOK_TEXT_CAP`) reaches
-the reader as a preview and the path of a file that holds it, and its head,
-which stands in that preview, has the reader read that file whole.
-
 A `context --update` run that succeeds is kept under `checkout.cache()`,
 keyed by its arguments, the held texts it reads, its tree's `HEAD`, and the
 path and content of each file `git status` lists in that tree, so that a
@@ -109,7 +82,6 @@ ignores is not in the key."""
 import fcntl
 import hashlib
 import json
-import os
 import re
 import subprocess
 import sys
@@ -119,7 +91,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import IO, Any, NamedTuple
 
-from hook_entry import Update, run_part
+from hook_entry import run_part
 
 RECORDS = "reader-commits"
 """The directory of the records, in a session directory or in the
@@ -222,7 +194,7 @@ class LaunchRecord(NamedTuple):
 type Record = ReadRecord | LaunchRecord
 
 
-def _record(f: IO[str]) -> Record:
+def read_record(f: IO[str]) -> Record:
     """The record `f` holds, one value per line. Any other text is a
     fault."""
     lines = f.read().split()
@@ -237,7 +209,7 @@ def _record(f: IO[str]) -> Record:
                      "neither two commits nor a launch commit with or without a digest")
 
 
-def _write(f: IO[str], record: Record) -> None:
+def write_record(f: IO[str], record: Record) -> None:
     f.seek(0)
     f.truncate()
     f.write("".join(f"{line}\n" for line in record.lines()))
@@ -263,7 +235,7 @@ def start_session(hook: dict[str, Any], coordinator: bool) -> None:
         head = tree_head(hook)[1]
         with _locked(record_path(hook)) as f:
             if source in FRESH_SOURCES or not f.read().strip():
-                _write(f, ReadRecord(head, head))
+                write_record(f, ReadRecord(head, head))
 
 
 PREDICTION_FAILED = "gave no start diff"
@@ -337,11 +309,11 @@ def start_agent(hook: dict[str, Any]) -> Iterator[str | None]:
             yield None
             return
         tree, launch = tree_head(hook)
-        _write(f, LaunchRecord(launch, None))
+        write_record(f, LaunchRecord(launch, None))
         diff = run_part(UPDATE, PREDICTION_FAILED, lambda: _start_diff(hook, tree, launch))
         yield None if diff is None else diff[0]
         if diff is not None:
-            _write(f, LaunchRecord(launch, diff[1]))
+            write_record(f, LaunchRecord(launch, diff[1]))
 
 
 def type_reader(kind: str) -> tuple[str, list[str]] | None:
@@ -352,26 +324,6 @@ def type_reader(kind: str) -> tuple[str, list[str]] | None:
     from handbook.reader_names import ReaderName
 
     return (ReaderName.AGENT, [kind]) if kind in agent_names() else None
-
-
-def reader_call(hook: dict[str, Any]) -> tuple[str, list[str]] | None:
-    """The reader of the `context` command whose context the caller of the
-    hook input `hook` has, with its arguments, or None where the caller is
-    a subagent whose type has no document. A caller of unknown type, and a
-    reader name in `SESSION_READER_ENV` that no `ReaderName` gives, are
-    faults."""
-    from handbook.coordinator_document import SESSION_READER_ENV
-    from handbook.reader_names import ReaderName
-    from run_reads import MAIN, UNKNOWN_TYPE, agent_type, caller_transcript
-
-    path = caller_transcript(hook)
-    kind = agent_type(path)
-    if kind is None:
-        raise ValueError(UNKNOWN_TYPE.format(path=path))
-    if kind == MAIN:
-        name = os.environ.get(SESSION_READER_ENV)
-        return (ReaderName.COORDINATOR if name is None else ReaderName(name)), []
-    return type_reader(kind)
 
 
 def _documents_differ(tree: Path, before: str, after: str,
@@ -593,57 +545,3 @@ def _held_text(done: _Run, after: str, launch: str) -> str | None:
              "given at your launch for your own context and the project instructions, "
              "`CLAUDE.md`, and from commit {launch}, your tree's `HEAD` at your launch, "
              "for each section that links from them reach."))
-
-
-def _update(text: str | None) -> Update | None:
-    from controlled_markdown import mctx
-
-    if text is None:
-        return None
-    return Update(text, mctx(
-        "This call was not run, since your documents may have changed: the hook "
-        "additional context of this call gives how. Make the call again only where "
-        "your documents, as that context leaves them, still give it."))
-
-
-@contextmanager
-def reader_update(hook: dict[str, Any]) -> Iterator[Update | None]:
-    """The update that gives the caller of the hook input `hook` the diff of
-    its documents since its record, as the module docstring gives it, or
-    None, held under the lock of its record. Where the block ends without
-    an error, the record moves to the tree's `HEAD`. A record that
-    `_record` does not read is a fault."""
-    try:
-        f = record_path(hook).open("r+")
-    except FileNotFoundError:
-        yield None
-        return
-    with f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        record = _record(f)
-        tree, after = tree_head(hook)
-        if record == ReadRecord(after, after):
-            yield None
-            return
-        call = reader_call(hook)
-        if call is None:
-            yield None
-        else:
-            yield _update(_record_update(hook, record, tree, after, call))
-        _write(f, ReadRecord(after, after))
-
-
-def _record_update(hook: dict[str, Any], record: Record, tree: Path, after: str,
-                   call: tuple[str, list[str]]) -> str | None:
-    """The text of `reader_update` for `record`, as the module docstring
-    gives it."""
-    from run_reads import caller_transcript
-
-    match record:
-        case ReadRecord(context, instructions):
-            return update_text(tree, after, context, instructions, call)
-        case LaunchRecord(launch, predicted):
-            held = held_texts(caller_transcript(hook))
-            if predicted == texts_digest(held):
-                return update_text(tree, after, launch, launch, call)
-            return held_update_text(tree, after, launch, call, held)

@@ -9,7 +9,7 @@ the standard library.
 A PreToolUse hook runs two parts, each of which fails open alone: its check,
 which gives the reason to deny the call or None, and the update of the
 caller's documents, which gives the text the caller gets in its context or
-None (`reader_commits.reader_update`). Claude Code reads one output of a
+None (`reader_delivery.reader_update`). Claude Code reads one output of a
 hook, and puts its `additionalContext` in the caller's context whether or
 not the output denies the call, so the entry prints one output that holds
 both parts. Claude Code puts that text in the caller's context after the
@@ -20,9 +20,8 @@ documents.
 A PostToolUse, a PostToolUseFailure or a UserPromptSubmit hook runs the
 update alone (`run_context`), and prints its text with no decision. Claude
 Code puts that text in the caller's context with the call's result, or
-with the user's prompt or a task notification, before the caller's next
-call, so a PreToolUse hook gives an update only where it is pending at a
-call's start, since no such hook has given it.
+with the user's prompt or a task notification. `reader_delivery` gives
+what a PreToolUse hook gives after such a delivery.
 
 The update records the delivery only where its block ends without an
 error, after the output is printed.
@@ -32,16 +31,21 @@ hook's docstring."""
 
 import json
 import sys
+import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
 from typing import Any, NamedTuple
 
 type Hook = dict[str, Any]
 
+STARTED = time.time()
+"""The time this process imported the entry, which each hook script does
+before its other imports and its check."""
+
 
 class Update(NamedTuple):
-    """The text the caller of a hook gets in its context, and the reason a
-    PreToolUse hook denies its call for it."""
+    """The text the caller of a hook gets in its context, empty where it gets
+    none, and the reason a PreToolUse hook denies its call for it."""
 
     text: str
     reason: str
@@ -93,7 +97,8 @@ def _give(reason: str | None, update: Update | None) -> None:
     out: dict[str, str] = {}
     if update is not None:
         reason = update.reason if reason is None else f"{reason}\n{update.reason}"
-        out["additionalContext"] = update.text
+        if update.text:
+            out["additionalContext"] = update.text
     if reason is not None:
         out |= {"permissionDecision": "deny", "permissionDecisionReason": reason}
     if out:

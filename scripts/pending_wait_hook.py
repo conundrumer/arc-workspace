@@ -113,7 +113,7 @@ def check(hook: dict[str, Any]) -> str | None:
 
 
 def main() -> int:
-    from reader_commits import reader_update
+    from reader_delivery import reader_update
 
     return run_pre_tool_use(HOOK, check, reader_update)
 

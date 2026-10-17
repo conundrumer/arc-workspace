@@ -6,6 +6,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -73,6 +74,19 @@ def record(main: Path, who: str) -> Path:
     return where / "reader-commits" / who
 
 
+def delivered(main: Path, who: str = "main") -> Path:
+    """The delivery file of `who`: its record's path with the suffix
+    `reader_delivery.DELIVERED`."""
+    return record(main, who).with_name(f"{who}.delivered")
+
+
+def aged(path: Path, seconds: float) -> None:
+    """Set the modification time of `path` to `seconds` ago, or ahead where
+    negative, so that a check of its age needs no timing."""
+    when = time.time() - seconds
+    os.utime(path, (when, when))
+
+
 def both(commit: str) -> str:
     return f"{commit}\n{commit}\n"
 
@@ -101,6 +115,7 @@ def test_coordinator_gets_the_diff_once(tmp_path: Path) -> None:
     text = out["hookSpecificOutput"]["additionalContext"]
     assert f"context --update {BEFORE} {BEFORE} coordinator`" in text
     assert record(main, "main").read_text() == both(head())
+    aged(delivered(main), 1)
     assert run(bash, call(main, "Bash", {"command": "ls"})) == ""
 
 
@@ -121,6 +136,7 @@ def test_subagents(tmp_path: Path) -> None:
     assert out["permissionDecision"] == "deny"
     assert "context agent operator" in out["additionalContext"]
     assert record(main, OPERATOR_ID).read_text() == both(head())
+    aged(delivered(main, OPERATOR_ID), 1)
     agent = command("PreToolUse", "Agent", "context_bound_hook")
     assert run(agent, call(main, "Agent", {"subagent_type": "operator"}, OPERATOR_ID)) == ""
     assert run(agent, call(main, "Agent", {"subagent_type": "operator"}, GENERAL_ID)) == ""
@@ -272,6 +288,7 @@ def test_fast_path_reads_the_record_of_record_path(
         tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.syspath_prepend(str(checkout.scripts()))
     record_path = script("reader_commits").record_path
+    delivery_path = script("reader_delivery").delivery_path
 
     main = session(tmp_path)
     started = tmp_path / "started"
@@ -284,6 +301,11 @@ def test_fast_path_reads_the_record_of_record_path(
         path.write_text(both(head()))
         assert run(cmd, hook) == ""
         assert not started.exists()
+        delivery_path(hook).touch()
+        run(cmd, hook)
+        assert started.exists()
+        started.unlink()
+        delivery_path(hook).unlink()
         path.write_text(both(BEFORE))
         run(cmd, hook)
         assert started.exists()
@@ -313,7 +335,36 @@ def test_update_after_a_call_and_with_a_prompt(tmp_path: Path) -> None:
         assert out["hookEventName"] == hook["hook_event_name"]
         assert f"context --update {BEFORE} {BEFORE} coordinator`" in out["additionalContext"]
         assert record(main, "main").read_text() == both(head())
+        assert delivered(main).exists() == (hook["hook_event_name"] != "UserPromptSubmit")
+        if delivered(main).exists():
+            aged(delivered(main), 1)
         assert run(bash, call(main, "Bash", {"command": "ls"})) == ""
+        assert not delivered(main).exists()
+
+
+def test_call_within_the_bound_after_a_delivery_is_denied(tmp_path: Path) -> None:
+    main = session(tmp_path)
+    bash = command("PreToolUse", "Bash|Monitor")
+    record(main, "main").parent.mkdir(parents=True)
+    record(main, "main").write_text(both(BEFORE))
+    run(command("PostToolUse"), after_call(main, "PostToolUse"))
+    aged(delivered(main), -60)
+    out = json.loads(run(bash, call(main, "Bash", {"command": "ls"})))["hookSpecificOutput"]
+    assert out["permissionDecision"] == "deny"
+    assert out["permissionDecisionReason"]
+    assert "additionalContext" not in out
+    assert record(main, "main").read_text() == both(head())
+    assert delivered(main).stat().st_mtime < time.time() + 30
+
+
+def test_an_update_at_pre_tool_use_records_its_delivery(tmp_path: Path) -> None:
+    main = session(tmp_path)
+    bash = command("PreToolUse", "Bash|Monitor")
+    record(main, "main").parent.mkdir(parents=True)
+    record(main, "main").write_text(both(BEFORE))
+    out = json.loads(run(bash, call(main, "Bash", {"command": "ls"})))["hookSpecificOutput"]
+    assert out["permissionDecision"] == "deny" and out["additionalContext"]
+    assert delivered(main).exists()
 
 
 def matches(matcher: str | None, tool: str) -> bool:
@@ -346,6 +397,7 @@ def test_pre_tool_use_form_on_other_tools(tmp_path: Path) -> None:
     assert out["permissionDecision"] == "deny"
     assert f"context --update {BEFORE} {BEFORE} coordinator`" in out["additionalContext"]
     assert record(main, "main").read_text() == both(head())
+    aged(delivered(main), 1)
     assert run(read, hook) == ""
 
 
