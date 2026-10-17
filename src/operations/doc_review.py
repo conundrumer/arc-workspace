@@ -17,7 +17,11 @@ the review is held where it has not replied since, unless that reply
 opens with `no finding stands` and its `reports.WORKTREE` line gives the
 `worktrees.fingerprint` the worktree has now, as then the worktree is in
 the state that reply read. `steps.Undecided.reread` gives why the
-command reads the state again before it launches an analyst on that hold. A reply in any other form holds the review. The command launches no editor for a reviewer's findings: that
+command reads the state again before it launches an analyst on that hold.
+A reply that opens with `reports.AT_CAP` holds the review until a ticket
+analyst launched on it since it has replied, which `changes.leftover`
+launches, and then the review passes, whatever editors report after it, and
+that reviewer is asked to review the change no more. A reply in any other form holds the review. The command launches no editor for a reviewer's findings: that
 reviewer sends them to the editors of its brief.
 
 A doc editor that `change_fragments` launches on a change's `mctx` fragments after
@@ -35,7 +39,7 @@ from operations.change_agents import change_editors, editors_in, of_change, sett
 from operations.change_holds import Hold, findings_hold, unreplied_hold
 from operations.directives import Decision, decided, ruled
 from operations.handled import sent
-from operations.reports import no_finding, shows_current
+from operations.reports import at_cap, no_finding, shows_current
 from operations.roles import Role
 from operations.state import Agent, State, Ticket, last_reported
 from operations.steps import Launch, Send, Step, Undecided, agent_ids
@@ -62,6 +66,10 @@ def doc_review(state: State, t: Ticket, w: Path, here: list[Agent],
     if r.pending:
         return None
     reply = r.last_report
+    if reply is not None and at_cap(r):
+        judged = any(a.role is Role.TICKET_ANALYST and a.launched > reply.time
+                     and briefs.on_cap_reply(a) and a.last_report is not None for a in agents)
+        return False if judged else None
     if reply is not None and (late := [a for a in here if (rep := a.last_report) is not None
                                        and rep.time > reply.time]):
         return review_stale(state, t, w, here, r, reply.time, late)
@@ -134,15 +142,18 @@ def with_ids(agents: list[Agent]) -> list[tuple[Agent, str]] | Undecided:
 
 def review_launch(state: State, t: Ticket, w: Path, here: list[Agent], launcher: str,
                   ruled: float) -> Step:
-    """The launch of a doc reviewer on the change, with its editors and
-    what the agents before it settled (`change_agents.settled`), by
+    """The launch of a doc reviewer on the change, with its editors, what
+    the agents before it settled (`change_agents.settled`), and its rounds
+    (`briefs.review_rounds`), by
     `launcher`, on the ruling at `ruled` (`directives.ruled`), or 0.0 on
     none."""
     editors = with_ids(here)
     if isinstance(editors, Undecided):
         return editors
+    known = settled(state, t, Role.DOC_REVIEWER, None)
     return Launch(Role.DOC_REVIEWER, t.number, briefs.doc_review(
-        t.number, w, editors, launcher, settled(state, t, Role.DOC_REVIEWER, None)), occasion=str(max(last_reported(here), ruled)))
+        t.number, w, editors, launcher, known, briefs.review_rounds(known.launched_before)),
+        occasion=str(max(last_reported(here), ruled)))
 
 
 NO_OPERATOR = mctx("{agent} is no doc editor that an operator of the session launched: give "

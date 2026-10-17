@@ -14,7 +14,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
         - Its brief: [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out) and [A design reviewer's brief](prompts/agents/notes/launching.md#a-design-reviewers-brief).
         - Reading the change and the code it builds on: [What you read](#what-you-read), and [Principles](docs/handbook/principles.md) by its link there, where the diff touches `programs/`.
         - Judging the design: [Judging the design](#judging-the-design).
-        - Filing each finding: [Findings](#findings).
+        - Sorting and filing each finding: [Findings](#findings), with [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change).
         - Its reply: [Your reply](#your-reply).
     - Acts, each with its section:
         - Reading and running code: [Working rules](#working-rules).
@@ -45,7 +45,8 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 - Judge no place on its maintainability, and no item of the change on whether it holds: the code review and the item checker judge those.
 
 ## Findings
-- File each finding as a ticket of kind `question`, with `change` as `<domain>` and the number of the change's ticket as `<subject>`.
+* inline: notes/launching.md#findings-that-block-a-change
+- File each finding as a ticket of kind `question`, with the number of the change's ticket as `<subject>`, and with `change` as `<domain>` where it blocks the change, and otherwise `ticket`.
     - Give under its `Evidence` the case, and the lines it rests on, each quoted with its path.
 
 ## Your reply

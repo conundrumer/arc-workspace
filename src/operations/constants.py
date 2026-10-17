@@ -2,8 +2,9 @@
 runs hold: the address of the coordinator, the interval of the keep-alive
 timer, the bound on a stretch with no progress, the bound on a foreground
 Bash call's timeout, the bounds on a call of the command's `next`, the
-harness's limit of concurrent subagents, and the waits of the step journal
-(`journal.due`). This module
+harness's limit of concurrent subagents, the waits of the step journal
+(`journal.due`), and the cap on the rounds of each kind of review of a
+built change. This module
 imports nothing, so a hook loads it at no cost."""
 
 COORDINATOR = "main"
@@ -61,3 +62,8 @@ BACKOFF_SECONDS = 60
 BACKOFF_CAP = 960
 """The longest wait after a launch the harness refused at
 `SUBAGENT_LIMIT`."""
+
+REVIEW_ROUNDS = 3
+"""The cap on the rounds of each kind of review of a built change since its
+last move out of `tickets/draft/`. It is provisional: the validation of
+request 9-844 judges it."""

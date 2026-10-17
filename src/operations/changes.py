@@ -32,7 +32,9 @@ for a decision.
 Where no item checker is due, that part of the latest checker's reply,
 where it follows the last ticket analyst's launch on the change, the
 latest report of the `handbook-expanded` agent, where it follows that
-launch and does not open with `reports.DONE`, and the
+launch and does not open with `reports.DONE`, the reply of the change's
+doc reviewer that opens with `reports.AT_CAP`, where it follows that
+launch, which a `merge` ruling on that analyst's items does not settle, and the
 open `question` tickets filed on the change go to one ticket analyst.
 A change whose only editor is that agent gets no item checker.
 That analyst's reply leaves nothing more, unless its part for the
@@ -87,12 +89,12 @@ from operations.change_holds import Hold, left_hold, questions_hold
 from operations.change_fragments import drafter_ids, fragments_step
 from operations.change_overrun import over_budget
 from operations.design_review import design_review, open_questions, reviewing
-from operations.doc_review import doc_review, with_ids
+from operations.doc_review import doc_review, latest_reviewer, with_ids
 from operations.directives import Decision, decided, give_again_line, held_on, ruled
 from operations.item_check import check_items, is_checked, latest_reports, unfinished
-from operations.reports import Label, items_of, left_for_decision, shows_current
+from operations.reports import Label, at_cap, items_of, left_for_decision, shows_current
 from operations.roles import Purpose, Role, analyst_of, analyst_subject
-from operations.state import Agent, State, Ticket, last_reported
+from operations.state import Agent, Report, State, Ticket, last_reported
 from operations.filing import editor_scratch
 from operations.final_reply import live_holder
 from operations.handled import answered, held_aside, repeated, sent, unmoved
@@ -265,13 +267,15 @@ class Left:
     each with the time it was last given: the item checker's part
     (`reports.left_for_decision`), given by that checker's latest report,
     the editors' latest reports, which give the editors that leave items
-    unfinished (`item_check.unfinished`), and the open `question` tickets
-    on the change."""
+    unfinished (`item_check.unfinished`), the open `question` tickets
+    on the change, and the agent id and reply of its doc reviewer at the
+    round cap (`cap_reply`)."""
     part: str | None
     part_given: float
     unfinished: tuple[Agent, ...]
     reported: float
     questions: tuple[Ticket, ...]
+    capped: tuple[str, Report] | None
 
     @property
     def questions_given(self) -> float:
@@ -279,22 +283,24 @@ class Left:
 
     @property
     def given(self) -> float:
-        return max(self.part_given, self.reported, self.questions_given)
+        return max(self.part_given, self.reported, self.questions_given,
+                   0.0 if self.capped is None else self.capped[1].time)
 
     def fresh(self, judged: float) -> str | None:
         return self.part if self.part_given > judged else None
 
 
 def left(state: State, t: Ticket, latest: list[Agent], checkers: list[Agent],
-         judged: float) -> Left:
-    """`Left` of the change `t`, with the unfinished items given after
-    `judged`, the launch of the last analyst on it."""
+         reviewer: Agent | None, judged: float) -> Left:
+    """`Left` of the change `t`, with the unfinished items and the reply
+    of its doc reviewer `reviewer` at the round cap given after `judged`,
+    the launch of the last analyst on it."""
     checker = checkers[-1] if checkers else None
     report = checker.last_report if checker is not None else None
     return Left(left_for_decision(checker) if checker is not None else None,
                 report.time if report is not None else 0.0,
                 tuple(unfinished(latest, judged)), last_reported(latest),
-                tuple(open_questions(state, t.number)))
+                tuple(open_questions(state, t.number)), cap_reply(reviewer, judged))
 
 
 def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
@@ -314,7 +320,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     if needing and not unchanged_since(state, checkers, w):
         return check_items(state, t, w, needing, editors)
     judged = max((a.launched for a in analysts), default=0.0)
-    given = left(state, t, latest, checkers, judged)
+    given = left(state, t, latest, checkers, latest_reviewer(agents, w), judged)
     fresh = given.fresh(judged)
     parts = fresh
     hold: Hold | None = None
@@ -322,16 +328,20 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     if analysts and judged > checked and (hold := left_hold(analysts[-1], t.number)):
         on_user = items_of(analysts[-1], [Label.DECISION]) is not None
         parts = given.part
-    elif fresh is None and not given.questions and not given.unfinished:
+    elif fresh is None and given.capped is None and not given.questions \
+            and not given.unfinished:
         return False
-    elif fresh is None and not given.unfinished and judged > given.questions_given:
+    elif fresh is None and given.capped is None and not given.unfinished \
+            and judged > given.questions_given:
         hold = questions_hold(analysts[-1], t.number)
     if hold is not None:
         choice = decided(state, hold.text, hold.choices)
         if isinstance(choice, Undecided):
             return None if on_user else choice
         if choice is Decision.MERGE:
-            return False
+            if given.capped is None:
+                return False
+            parts = fresh
     at = ruled(state, hold.text) if hold is not None else 0.0
     reports = latest_reports(latest)
     if isinstance(reports, Undecided):
@@ -339,8 +349,20 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
         t.number, w, parts, [q.number for q in given.questions], editors, reports,
         [i for a, i in editors if a in given.unfinished], state.me,
-        settled(state, t, Role.TICKET_ANALYST, None)),
+        settled(state, t, Role.TICKET_ANALYST, None),
+        briefs.round_of(checkers[-1], t.number) if checkers else briefs.Round.OPEN,
+        None if given.capped is None else (given.capped[0], given.capped[1].text)),
         occasion=str(max(given.given, at)))
+
+
+def cap_reply(reviewer: Agent | None, judged: float) -> tuple[str, Report] | None:
+    """The agent id and reply of the change's doc reviewer `reviewer`,
+    where that reply opens with `reports.AT_CAP` and follows `judged`, the
+    last ticket analyst's launch on the change."""
+    if reviewer is None or reviewer.agent_id is None or not at_cap(reviewer):
+        return None
+    r = reviewer.last_report
+    return (reviewer.agent_id, r) if r is not None and r.time > judged else None
 
 
 def step(state: State) -> Step | None:

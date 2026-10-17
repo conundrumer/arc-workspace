@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from controlled_markdown import form, mctx
+from operations.constants import REVIEW_ROUNDS
 from operations.reports import LEFT_FOR_DECISION, WORKTREE
 from operations.roles import Role
 from operations.state import SETTLED, Agent, Place, Review, Ticket
@@ -44,6 +45,53 @@ with that file."""
 REPORT_RULE = mctx("Write your final reply to the file `{path}`, in place of what it holds, "
                    "and give that file's path alone, on one line, as your final reply itself.")
 """That line for an agent no document gives (`roles.GENERAL_ROLES`)."""
+
+
+ROUNDS = mctx("Review rounds you have on change {number}: {rounds}.")
+"""The line of the brief of a doc reviewer or an editor of a change that
+gives the rounds it has of the review it makes, or an item has it make."""
+
+
+def review_rounds(earlier: bool) -> int:
+    """The rounds a doc reviewer or an editor of a change has, where
+    `earlier` gives that an earlier agent of its kind was launched on the
+    change since its last move out of `tickets/draft/`: the review of the
+    one before it ran inside that agent's run, which the operator does not
+    read, so the later one has one round."""
+    return 1 if earlier else REVIEW_ROUNDS
+
+
+LAST_ROUND = mctx("The item check of change {number} is at its last review round.")
+AFTER_CAP = mctx("The item check of change {number} is the check after the change's review round cap.")
+
+
+class Round(Enum):
+    """The round of an item check of a change: one below the cap, the last
+    one, or the check after the cap, by the line its brief gives, or None
+    where it gives none."""
+    OPEN = None
+    LAST = LAST_ROUND
+    AFTER_CAP = AFTER_CAP
+
+    def lines(self, number: str) -> list[str]:
+        return [] if self.value is None else [self.value.format(number=number)]
+
+
+def round_of(agent: Agent, number: str) -> Round:
+    """The round an item checker `agent` of the change `number` was
+    launched on, as its brief gave it."""
+    return next((r for r in Round if r.value is not None
+                 and r.value.format(number=number) in agent.brief), Round.OPEN)
+
+
+CAP_REPLY = mctx("The reply of doc reviewer {agent} on change {number} at the round cap:")
+CAP_REPLY_LINE = re.compile(form(CAP_REPLY, {"agent": r"\S+", "number": r"\S+"}))
+
+
+def on_cap_reply(agent: Agent) -> bool:
+    """Whether the brief of the ticket analyst `agent` gives a doc
+    reviewer's reply at the round cap."""
+    return CAP_REPLY_LINE.search(agent.brief) is not None
 
 
 def read_ticket(number: str) -> str:
@@ -153,7 +201,9 @@ def editor(editor: EditorPart | DocEditor, number: str, worktree: Path, scratch:
            operator: str, settled: "Settled", before: Before | None = None) -> str:
     """The brief of the editor `editor` of the change `number`, in the
     change's worktree `worktree`, with what the agents before it settled
-    (`settled_lines`). A doc editor's brief gives its fragments, and the
+    (`settled_lines`), and the rounds it has of a review an item has it
+    make, by whether `settled` gives an earlier editor of its part
+    launched. A doc editor's brief gives its fragments, and the
     agent ids of the change's code editors. `before` gives the last editor
     of the role in that worktree that an operator of another session
     launched, where there is one, whose latest report that block gives."""
@@ -172,6 +222,7 @@ def editor(editor: EditorPart | DocEditor, number: str, worktree: Path, scratch:
     if part.role is Role.CODE_EDITOR:
         lines.append(TESTS)
     lines.append(SCRATCH.format(scratch=scratch))
+    lines.append(ROUNDS.format(number=number, rounds=review_rounds(settled.launched_before)))
     lines.append(LAUNCHER.format(operator=operator))
     if before is not None:
         lines.append(BEFORE.format(agent=before.agent, scratch=before.scratch))
@@ -227,12 +278,13 @@ def editor_lines(editors: list[tuple[Agent, str]]) -> list[str]:
 
 
 def doc_review(number: str, worktree: Path, editors: list[tuple[Agent, str]],
-               operator: str, settled: "Settled") -> str:
+               operator: str, settled: "Settled", rounds: int) -> str:
     lines = [mctx("Review the change to the documents of change {number}: the diff that "
                   "`git -C {worktree} diff --merge-base master` prints, and each file that "
                   "`git -C {worktree} ls-files --others --exclude-standard` prints.").format(
                       number=number, worktree=worktree)]
     lines.extend(editor_lines(editors))
+    lines.append(ROUNDS.format(number=number, rounds=rounds))
     lines.append(fingerprint_line(worktree))
     lines.append(LAUNCHER.format(operator=operator))
     return "\n".join(lines + settled_lines(settled))
@@ -370,16 +422,17 @@ def editor_reports(reports: list[tuple[str, str]]) -> list[str]:
 
 def item_check(number: str, worktree: Path, reports: list[tuple[str, str]], gate: list[str],
                editors: list[tuple[Agent, str]], operator: str, settled: "Settled",
-               past: bool = False) -> str:
+               round: Round, past: bool = False) -> str:
     """The brief of an item checker that checks the items of the editors
     of a change it checks, by each editor's agent id and latest report,
     and the accepted gate outputs `gate` it reads, with the agent id and
     part of each of those editors, each beside its record in `editors`,
-    and what the agents before it settled (`settled_lines`). `past` gives
-    that the change is past its cost budget."""
+    and what the agents before it settled (`settled_lines`), on the round
+    `round`. `past` gives that the change is past its cost budget."""
     lines = [*change_lines(number, worktree), *editor_lines(editors)]
     if past:
         lines.append(OVER_BUDGET.format(number=number))
+    lines.extend(round.lines(number))
     lines.extend(editor_reports(reports))
     if gate:
         lines.append(mctx(
@@ -394,7 +447,8 @@ def item_check(number: str, worktree: Path, reports: list[tuple[str, str]], gate
 
 def findings(number: str, worktree: Path, left: str | None, questions: list[str],
              editors: list[tuple[Agent, str]], reports: list[tuple[str, str]],
-             unfinished: list[str], operator: str, settled: "Settled") -> str:
+             unfinished: list[str], operator: str, settled: "Settled", round: Round,
+             cap_reply: tuple[str, str] | None) -> str:
     """The brief of a ticket analyst that judges what a change's editors
     leave for a decision, by the latest item checker's reply from after
     its last `LEFT_FOR_DECISION` line, or the whole reply where it has none,
@@ -404,11 +458,17 @@ def findings(number: str, worktree: Path, left: str | None, questions: list[str]
     the agent id and part of each of its editors, each beside its record
     in `editors`, and each editor's agent id and latest report in
     `reports`, which that reply refers to, and what the agents before it
-    settled (`settled_lines`)."""
-    lines = [*change_lines(number, worktree), *editor_lines(editors)]
+    settled (`settled_lines`). `round` is the round of the item checker
+    whose reply it gives, and `cap_reply` the agent id and reply of a doc
+    reviewer at the round cap, where one stands since the last such
+    analyst's launch."""
+    lines = [*change_lines(number, worktree), *editor_lines(editors), *round.lines(number)]
     if left is not None:
         lines.append(LEFT_REPLY.format(number=number, heading=LEFT_FOR_DECISION))
         lines.append(f"\n{left}\n")
+    if cap_reply is not None:
+        lines.append(CAP_REPLY.format(agent=cap_reply[0], number=number))
+        lines.append(f"\n{cap_reply[1]}\n")
     lines.extend(editor_reports(reports))
     if questions:
         lines.append(mctx("Decide, as items left for a decision, the `question` tickets filed "

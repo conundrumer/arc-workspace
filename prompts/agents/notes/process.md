@@ -96,6 +96,7 @@
     - For a document change whose misread by an agent other than the doc reviewer, doc editor and ticket reviewer would be silent in use, a trial that read nothing that reveals its case's outcome shows before the merge that this agent acts as the requirement states.
     - The lines in force in the agents' documents get a standing review, as the code in the tree gets the code review.
     - The lib's code merged to `master` gets a review by a handbook agent other than its builder.
+    - A finding blocks a built change only as [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change) gives, and each kind of review of a built change runs at most a cap of rounds, at which a ticket analyst judges the findings that block the change.
     - A finding in a later round of the doc review, or by Checks in a round of the ticket review after one that checked the draft by Checks, falls only on text or a ground that changed since such an earlier round, or still stands from it.
 - Owner: the ticket reviewer for the `change` ticket, the item checker for the built change outside the lib and the solvers, the doc reviewer for the form of the documents and, by its trials, for the evidence of a reader's behavior, a standing doc review for the lines in force in the agents' documents, the design reviewer for the design of a built change to code, the code reviewer and the gate for the code, and the lib reviewer for the lib's code.
 - Takes from: implementation and requirements. Gives to: merge.

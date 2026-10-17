@@ -1,6 +1,7 @@
 """The launch of an item checker on a change: the latest reports of the
 editors it checks, what the agents before it settled
-(`change_agents.settled`), and the accepted gate outputs it reads. No item checker checks the `UNCHECKED` editor,
+(`change_agents.settled`), the accepted gate outputs it reads, and its
+round (`check_round`). No item checker checks the `UNCHECKED` editor,
 whose report goes to the ticket analyst on what the editors leave where
 it leaves items unfinished (`unfinished`)."""
 
@@ -9,7 +10,8 @@ from pathlib import Path
 from controlled_markdown import mctx
 from gating.commands import Command, command_of
 from operations import briefs
-from operations.change_agents import change_editors, settled
+from operations.change_agents import change_editors, of_roles_since_draft, settled
+from operations.constants import REVIEW_ROUNDS
 from operations.reports import done
 from operations.roles import Role
 from operations.state import Agent, State, Ticket, last_reported
@@ -56,6 +58,20 @@ def checked_outputs(t: Ticket, outputs: tuple[str, ...]) -> list[str] | Undecide
     return kept
 
 
+def check_round(state: State, t: Ticket) -> briefs.Round:
+    """The round of the launch of an item checker on the change `t`. The
+    round of a launch is one more than the count of item checkers launched
+    on `t` since its last move out of `tickets/draft/`, those of other
+    sessions included: `REVIEW_ROUNDS` is its last round, and each launch
+    after it is the check after the cap. The cap of another kind of review
+    ends no round of the item check, so the decided edits at that cap get
+    the next round."""
+    launched = len(of_roles_since_draft(state, t, (Role.ITEM_CHECKER,)))
+    if launched >= REVIEW_ROUNDS:
+        return briefs.Round.AFTER_CAP
+    return briefs.Round.LAST if launched + 1 == REVIEW_ROUNDS else briefs.Round.OPEN
+
+
 def latest_reports(agents: list[Agent]) -> list[tuple[str, str]] | Undecided:
     """The agent id and latest report text of each of `agents` that has a
     report."""
@@ -87,4 +103,5 @@ def check_items(state: State, t: Ticket, w: Path, needing: list[Agent],
         occasion = max(occasion, past)
     return Launch(Role.ITEM_CHECKER, t.number, briefs.item_check(
         t.number, w, reports, gate, [(a, i) for a, i in editors if is_checked(a)], state.me,
-        settled(state, t, Role.ITEM_CHECKER, None), past is not None), occasion=str(occasion))
+        settled(state, t, Role.ITEM_CHECKER, None), check_round(state, t), past is not None),
+        occasion=str(occasion))

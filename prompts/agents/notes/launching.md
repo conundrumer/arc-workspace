@@ -1,10 +1,11 @@
 + budget: 25786
 * comment: when editing this doc
-    - Each Claude Code session and agent loads [Launching](#launching) by the link of [arc-workspace](CLAUDE.md), before it launches an agent by a call no command printed, and A transcript review's brief by its link, at a transcript review's launch. Each reader of Launching loads A draft's outcome by the link at the cut of a draft's claims, and each reader of the Checks of [Reviewing a draft](prompts/agents/ticket-reviewer/review.md) by the link at the check of a draft's claims about the current state. Each agent inlines the sections under [Briefs](#briefs) that give its own brief's form, which its `description` links for each launcher, and the editors An editor's report on a change. The coordinator loads Passes on a task, Operators and While the user gives feedback by the links of its Changes section.
+    - Each Claude Code session and agent loads [Launching](#launching) by the link of [arc-workspace](CLAUDE.md), before it launches an agent by a call no command printed, and A transcript review's brief by its link, at a transcript review's launch. Each reader of Launching loads A draft's outcome by the link at the cut of a draft's claims, and each reader of the Checks of [Reviewing a draft](prompts/agents/ticket-reviewer/review.md) by the link at the check of a draft's claims about the current state. Each agent inlines the sections under [Briefs](#briefs) that give its own brief's form, which its `description` links for each launcher, and the editors An editor's report on a change. The doc reviewer and the design reviewer inline Findings that block a change, the editors load it by the link of An editor's brief, for a review an item has them make, and the decision analyst by the links of [An editor's findings](prompts/agents/decision-analyst/findings.md). The coordinator loads Passes on a task, Operators and While the user gives feedback by the links of its Changes section.
     - Acts, each with its section:
         - Launching an agent and acting on what it leaves unfinished: [Launching](#launching).
         - Writing a brief, and reading one's own: [Briefs](#briefs), one section per form.
         - Giving what shows a change's item holds: [An editor's report on a change](#an-editors-report-on-a-change).
+        - Sorting a review's findings into those that block a change and those filed as tickets: [Findings that block a change](#findings-that-block-a-change).
         - Launching a pass on a task: [Passes on a task](#passes-on-a-task).
         - Sending an operator a line and taking its reply: [Operators](#operators).
         - Batching the user's feedback: [While the user gives feedback](#while-the-user-gives-feedback).
@@ -54,6 +55,7 @@
 - An editor's brief gives the change's worktree, and the agent id of the agent that launches it, where that is not the coordinator.
 - It gives the accepted gate outputs under `tests/gate/accepted/` the editor may write, where its items change or add one, with a scratch directory.
 - Where an editor of its role that another session launched worked in that worktree before it, it gives the agent id and the scratch directory of the last such editor that left a report, and its latest report.
+- It gives the rounds the editor has of each review of the change that an item has it make. The editor makes at most that many rounds of such a review, sorts its findings as [Findings that block a change](#findings-that-block-a-change) gives, and gives in its report each finding of the last round that blocks the change as left for a decision, with a reason that opens with `at the round cap`.
 
 ### A code editor's brief
 - A code editor's brief gives as well its tests directory and a scratch directory.
@@ -85,7 +87,8 @@
 
 ### A decision analyst's brief
 - A decision analyst's brief gives one of these:
-    - The findings an editor left on a review of its change, the items an editor left unfinished for a decision, and the places a code editor's report gives as standing, each with the editor's reasons.
+    - The findings an editor left on a review of its change, the items an editor left unfinished for a decision, the places a code editor's report gives as standing, each with the editor's reasons, and the findings of a doc reviewer's reply that opens with `at the round cap`.
+        - Where what it gives comes from the item checker's last review round of the change, or from the check after its review round cap, it gives that.
         - With those, it gives the agent id of each editor of the change, with the part that editor's brief gave it, or the whole change where its brief gave none.
         - It gives the change's worktree, and the number of the change's ticket, or, where the change has none, its intent and what is already settled about it.
     - A step that an operator's command cannot decide, which the operator holds.
@@ -97,6 +100,7 @@
 - It gives the latest report of each editor of the change other than the `handbook-expanded` agent that has reported since the last item checker launched on the change.
 - Where ticket analysts already decided items on the change, it gives their agent ids and latest reports.
 - Where the change is past its cost budget, it gives that it is.
+- Where the check is the change's last review round, or the check after its review round cap, it gives that it is.
 - Where the change writes accepted gate outputs, it gives them, other than those a `run_dl.py` command writes where the change has the `handbook-expanded` agent.
 - Where the operator launches it, it gives the command whose output its final reply ends with.
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
@@ -135,6 +139,7 @@
 ### A doc reviewer's brief
 - A doc reviewer's brief gives a change to the agent-facing documents, as the files or a diff, and the number of its ticket, or, where it has none, what is already settled about it.
 - It gives the change's worktree, and the agent id of each editor of the change, with the part that editor's brief gave it, or the whole change where its brief gave none.
+- On a change with a ticket, it gives the rounds of review the reviewer has.
 - Where the operator launches it on a change, it gives the command whose output its final reply ends with.
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 - A doc reviewer's brief on a commit of `master` that the coordinator merged with no `change` ticket gives that commit's hash in place of a worktree and editors.
@@ -158,6 +163,10 @@
 
 ## An editor's report on a change
 - An editor's report on a change gives, for each item of its brief, and of each request a later message adds, that it gives as done, what shows it holds: a command it ran with the output that shows it, the line of a rendered context that states it, the check its ticket's Scope places after the merge where only that check can show it, or, where none of these can, the reason it holds.
+
+## Findings that block a change
+- A finding of a review of a built change before its merge blocks the change only where it is a defect in what an item of the change asks for, an edit that carries out an item wrongly, or a defect that an edit made to fix an earlier finding of the change.
+- File each other finding as a ticket, in the form your documents give a ticket, and have no editor fix it: that ticket does not block the change.
 
 ## Passes on a task
 - Before you launch a pass on a task whose claim you do not hold, claim the task: run `uv run python scripts/operate.py claim <task_id>`. Where it fails, launch no pass on that task.

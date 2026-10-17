@@ -12,7 +12,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     - The code editor's entry point: its system prompt, for its run on the part of a change outside the documents, the lib and the solvers.
     - Its checklist: [checklist.md](prompts/agents/code-editor/checklist.md).
     - Acts, each with its section:
-        - Reading its brief, messages to other agents, and taking its steps: [Code editor](#code-editor).
+        - Reading its brief, messages to other agents, and taking its steps: [Code editor](#code-editor), with [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change) by the link of [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), for a review an item has it make.
         - Writing the code against the spec: [Writing the code](#writing-the-code) and [code-working-rules](prompts/agents/notes/code.md#code-working-rules).
         - Reading its diff for defect places: [Your diff](#your-diff).
         - Its report and the end of its turn: [Your report](#your-report).

@@ -61,6 +61,15 @@ def of_change(state: State, t: Ticket) -> list[Agent]:
     return [a for a in launched_on(state, t.number) if a.launched > since]
 
 
+def of_roles_since_draft(state: State, t: Ticket, roles: tuple[Role, ...]) -> list[Agent]:
+    """The agents of `roles` launched on the change `t` since its last move
+    out of `tickets/draft/`, those of other sessions included, in the order
+    of their launch."""
+    since = left_draft(t)
+    return [a for a in with_elsewhere(state, t.number, of_change(state, t), roles)
+            if a.role in roles and a.launched > since]
+
+
 def in_worktree(a: Agent, w: Path) -> bool:
     return briefs.WORK_IN.format(worktree=w) in a.brief
 
@@ -116,13 +125,16 @@ class Settled:
     of `role` is launched on it: the latest report of each of its ticket
     analysts, those of the other sessions' operators included
     (`analysts`); the latest report of each earlier agent of `role` there,
-    for an editor only of its own part (`earlier`); and each hold of the
-    change that a ruling decided with a choice that goes on past it
+    for an editor only of its own part (`earlier`); whether an earlier
+    agent of `role` there, for an editor only of its own part, was
+    launched, whether or not it reported (`launched_before`); and each hold
+    of the change that a ruling decided with a choice that goes on past it
     (`ruled`)."""
     number: str
     role: Role
     analysts: tuple[Reported, ...]
     earlier: tuple[Reported, ...]
+    launched_before: bool
     ruled: tuple[Ruled, ...]
 
 
@@ -137,18 +149,17 @@ def settled(state: State, t: Ticket, role: Role, part: briefs.Part | None) -> Se
     launched on it, and, for an editor, of the part `part` as
     `briefs.part_of` gives it."""
     number = t.number
-    agents = of_change(state, t)
-    since = left_draft(t)
 
     def of_roles(roles: tuple[Role, ...]) -> list[Agent]:
-        return [a for a in with_elsewhere(state, number, agents, roles)
-                if a.role in roles and a.launched > since]
+        return of_roles_since_draft(state, t, roles)
 
     analysts = of_roles((Role.TICKET_ANALYST,))
     earlier: tuple[Reported, ...] = ()
+    before: list[Agent] = []
     if role is not Role.TICKET_ANALYST:
-        earlier = reported([a for a in of_roles((role,))
-                            if role not in EDITORS or briefs.part_of(a) is part])
+        before = [a for a in of_roles((role,))
+                  if role not in EDITORS or briefs.part_of(a) is part]
+        earlier = reported(before)
     holds: list[tuple[Hold, Agent | None]] = []
     for a in analysts:
         if a.agent_id is None:
@@ -166,7 +177,8 @@ def settled(state: State, t: Ticket, role: Role, part: briefs.Part | None) -> Se
             reply = reported([on]) if on is not None else ()
             ruled.append(Ruled(hold.text, choice, hold.choices[choice],
                                reply[0] if reply else None))
-    return Settled(number, role, tuple(reported(analysts)), earlier, tuple(ruled))
+    return Settled(number, role, tuple(reported(analysts)), earlier, bool(before),
+                   tuple(ruled))
 
 
 def with_before(s: Settled, before: Reported) -> Settled:

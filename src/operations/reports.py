@@ -20,6 +20,12 @@ NO_FINDING = "no finding stands"
 """The opening, in any case, of a doc reviewer's reply where no finding
 stands and none is held back."""
 
+AT_CAP = "at the round cap"
+"""The opening, in any case, of a doc reviewer's reply at the last round
+its brief gives, over the findings that hold the change, and of the reason
+an editor's report gives for each finding of the last round of a review
+an item has it make that it leaves for a decision."""
+
 WORKTREE = "Worktree:"
 """The opening of the line that ends a doc reviewer's or an item
 checker's reply, before the `worktrees.fingerprint` of the change's
@@ -156,6 +162,10 @@ def done(a: Agent) -> bool:
 
 def no_finding(a: Agent) -> bool:
     return opens(a, NO_FINDING)
+
+
+def at_cap(a: Agent) -> bool:
+    return opens(a, AT_CAP)
 
 
 def reviewed_state(a: Agent) -> str | None:
