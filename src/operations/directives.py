@@ -13,8 +13,9 @@ prefix `Op`, the word of its kind and a colon, past a list marker:
 - `Op merge: <number>`, a change under `tickets/blocked/` whose merge that line rules;
 - `Op tickets are open.`, which ends no pause;
 - `Op pause.`, after which no operator of the session settles an open
-  ticket or takes a change outside the work held and the tickets an
-  `Op allow:` or an `Op expedite:` line gives (`paused`), and
+  ticket or takes a change outside the work held, the tickets an
+  `Op allow:` or an `Op expedite:` line gives and the work the session's
+  coordinator filed (`paused`), and
   `Op resume.`, which ends that pause;
 - `Op pace: <preset> [<argument> ...]` or `Op pace: <path>`, the usage pace
   for every operator of the session (`pace`), as `pacing` gives it;

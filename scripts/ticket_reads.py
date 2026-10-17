@@ -8,7 +8,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from ticket_files import listed_tickets, ticket_files, ticket_name
-from ticket_form import FRONT, front_fields, list_items, title
+from ticket_form import FRONT, front_fields, list_items, section, section_head, title
 from state_reads import DERIVED, Kept, state_cache
 from ticket_log import (CLOSED_BY_LINE, DUPLICATE_OF_LINE, WAIT, Wait, held_log, holder_of,
                         line_time, log_lines, resolution_of, waited, waited_change)
@@ -17,7 +17,14 @@ from transcript_entries import Refused
 
 from operations.roles import Role, editors_of
 from operations.state import LogLine, Ticket, Unread
-from ticketing.vocabulary import Domain, Kind, Status
+from ticketing.vocabulary import TICKET_NUMBER, Domain, Kind, Status
+
+
+MOTIVATION = "Motivation"
+
+CITED_NUMBER = re.compile(rf"(?<![\w.:-]){TICKET_NUMBER.pattern}(?![\w:-]|\.\d)")
+"""A ticket number in a ticket's prose, apart from the parts of a date, a
+time or a decimal."""
 
 
 def log_line(m: re.Match[str]) -> LogLine:
@@ -39,6 +46,14 @@ def editors_field(fields: Mapping[str, str]) -> tuple[Role, ...] | None:
     no role."""
     value = fields.get("editors")
     return None if value is None else editors_of(list_items(value))
+
+
+def motivation(text: str) -> tuple[str, ...]:
+    """The ticket numbers the `## Motivation` section of a ticket's `text`
+    gives, in their order, none where it has no such section."""
+    if section_head(text, MOTIVATION) is None:
+        return ()
+    return tuple(str(matched_number(m)) for m in CITED_NUMBER.finditer(section(text, MOTIVATION)))
 
 
 def read_ticket(path: Path) -> Ticket:
@@ -69,6 +84,7 @@ def ticket_of(path: Path, text: str, found: list[re.Match[str]]) -> Ticket:
         subject=name.subject, filer=name.agent, filed=lines[0].time,
         title=title(path, text),
         depends_on=tuple(list_items(fields["depends-on"])) if "depends-on" in fields else (),
+        motivation=motivation(text),
         editors=editors_field(fields),
         after_merge=fields.get("after-merge"), mechanical="mechanical" in fields,
         log=lines,

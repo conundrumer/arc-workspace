@@ -8,10 +8,12 @@ idle, `idle_sessions.read_sessions` gives.
 
 While an `Op pause.` line stands (`directives.paused`), the operator takes,
 of the changes it would take with no pause, only those of `held_work`, so
-the work already held reaches its end, and those of `through_pause`, the
-tickets an `Op allow:` or an `Op expedite:` line gives, and each other change
-waits for an `Op resume.` line. Past the usage pace (`pacing`), the same
-changes are taken, and each other one waits until the pace admits it.
+the work already held reaches its end, those of `through_pause`, the
+tickets an `Op allow:` or an `Op expedite:` line gives, and those of
+`filed_work`, the work the session's coordinator filed, and each other change
+waits for an `Op resume.` line. Past the usage pace (`pacing`), the changes
+of `held_work` and of `through_pause` are taken, and each other one waits
+until the pace admits it.
 
 A change that waits for a ticket that holds it up moves to
 `tickets/draft/` with a line whose note is `STALL_FINDING` on that ticket,
@@ -29,11 +31,11 @@ from operations.directives import (Directive, allow_named, named, NUMBER, number
 from operations.final_reply import live_holder
 from operations.log_commands import log
 from operations.pacing import Pace
-from operations.state import State, Ticket
+from operations.state import State, Ticket, memoized
 from operations.steps import Bash, Step, Undecided
 from operations.tracker import closed, exits, final_run, wait_line
 from ticketing.exits import Exit
-from ticketing.vocabulary import Kind, Status
+from ticketing.vocabulary import COORDINATOR, Domain, Kind, Status
 
 
 def scope(state: State) -> set[str]:
@@ -48,13 +50,20 @@ def reached(state: State, start: set[str]) -> set[str]:
     tickets, a link as
     [Change tickets](prompts/agents/notes/tickets.md#change-tickets) defines
     one."""
+    return closure(state, start, links)
+
+
+def closure(state: State, start: set[str], step: Callable[[Ticket], list[str]]) -> set[str]:
+    """`start` and each ticket a chain of steps reaches from one of its
+    tickets, where `step` gives the tickets one step reaches from a ticket
+    the tracker holds."""
     out = set(start)
     todo = sorted(out)
     while todo:
         t = state.tracker.tickets.get(todo.pop())
         if t is None:
             continue
-        for d in links(t):
+        for d in step(t):
             if d not in out:
                 out.add(d)
                 todo.append(d)
@@ -79,18 +88,21 @@ def admits(state: State) -> Callable[[str], bool]:
     """Whether the operator may admit an open ticket: one the `takes` of
     the run scripts admit (`Computed.admitted`), or one of `expedited`,
     or any where no script defines `takes`; of those, one of `held_work`
-    or of `through_pause` always, and any other only while no `Op pause.`
-    line stands and the usage pace admits one (`Computed.pace`)."""
+    or of `through_pause` always, and any other only while the usage pace
+    admits one (`Computed.pace`) and, where an `Op pause.` line stands,
+    only one of `filed_work`."""
     passes, held = passing(state)
-    clear = past_pause(state, held)
+    clear = past_pause(state)
     paced = pacing.admits(state.computed.pace, state.now)
-    return lambda n: passes(n) and clear(n) and (paced or held(n))
+    return lambda n: passes(n) and (held(n) or (paced and clear(n)))
 
 
-def past_pause(state: State, through: Callable[[str], bool]) -> Callable[[str], bool]:
-    """Whether a ticket passes a pause, where `through` gives the tickets
-    that pass one."""
-    return through if paused(state) else lambda _: True
+def past_pause(state: State) -> Callable[[str], bool]:
+    """Whether a ticket passes a pause: one of `through_pause` or of
+    `filed_work`, or any while no `Op pause.` line stands."""
+    if not paused(state):
+        return lambda _: True
+    return (through_pause(state) | filed_work(state)).__contains__
 
 
 def passing(state: State) -> tuple[Callable[[str], bool], Callable[[str], bool]]:
@@ -105,12 +117,13 @@ def passing(state: State) -> tuple[Callable[[str], bool], Callable[[str], bool]]
 
 def pace_held(state: State, numbers: list[str]) -> Pace | None:
     """The pace, where it alone holds back one of `numbers`: one `admits`
-    would pass but for the pace, with no `Op pause.` line standing."""
+    would pass but for the pace."""
     pace = state.computed.pace
-    if pacing.admits(pace, state.now) or paused(state):
+    if pacing.admits(pace, state.now):
         return None
     passes, held = passing(state)
-    return pace if any(passes(n) and not held(n) for n in numbers) else None
+    clear = past_pause(state)
+    return pace if any(passes(n) and clear(n) and not held(n) for n in numbers) else None
 
 
 def taken_before(t: Ticket) -> bool:
@@ -131,6 +144,34 @@ def through_pause(state: State) -> set[str]:
     """The tickets that pass a pause: each ticket a chain of links reaches
     from a ticket of `directives.allow_named`, and those of `expedited`."""
     return reached(state, allow_named(state)) | expedited(state)
+
+
+@memoized
+def filed_work(state: State) -> set[str]:
+    """The work the session's coordinator filed: each ticket of `State.mine`
+    whose filer is the coordinator, and each ticket a chain of steps reaches
+    from one, a step from a ticket to each ticket of its `links`, to each
+    `change` or `ticket` ticket filed on it, and to each `change` whose
+    Motivation gives its number."""
+    tickets = state.tracker.tickets
+    start = {n for n, t in tickets.items() if state.mine(t) and t.filer == COORDINATOR}
+    below = filed_for(state)
+    return closure(state, start, lambda t: [*links(t), *below.get(t.number, ())]) & tickets.keys()
+
+
+@memoized
+def filed_for(state: State) -> dict[str, list[str]]:
+    """The tickets filed on each ticket, by its number: those of domain
+    `change` or `ticket` whose subject is that number, and each `change`
+    whose Motivation gives it."""
+    out: dict[str, list[str]] = {}
+    for n, t in state.tracker.tickets.items():
+        on = {t.subject} if t.domain in (Domain.CHANGE, Domain.TICKET) else set()
+        if t.kind is Kind.CHANGE:
+            on |= set(t.motivation)
+        for p in on:
+            out.setdefault(p, []).append(n)
+    return out
 
 
 RELEASED = mctx("released: holder {holder} is not live")

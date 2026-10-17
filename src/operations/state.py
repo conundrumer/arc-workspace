@@ -64,8 +64,9 @@ class Unread:
 class Ticket:
     """A ticket of the tracker. `editors` is None where a `change` gives no
     `editors` field, `mechanical` is whether a `change` gives the
-    `mechanical` field, and `holder` is the holder `file_ticket.py
-    log --help-all` defines."""
+    `mechanical` field, `motivation` holds the ticket numbers its
+    `## Motivation` section gives, and `holder` is the holder
+    `file_ticket.py log --help-all` defines."""
     number: str
     order: tuple[int, int]
     session: int | None
@@ -77,6 +78,7 @@ class Ticket:
     filed: float
     title: str
     depends_on: tuple[str, ...]
+    motivation: tuple[str, ...]
     editors: tuple[Role, ...] | None
     after_merge: str | None
     mechanical: bool
