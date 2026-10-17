@@ -183,10 +183,10 @@ class Store(StoreFile):
         self.close()
 
     def write(self, used: set[str]) -> None:
-        """Write the records and the parses held, in one transaction with
-        `mark_used` of each code of `used`, drop, where it writes parses,
-        those written more than `KEEP_SECONDS` ago, and hold none of them
-        after."""
+        """Write the records and the parses held, and hold none of them
+        after. Where it writes parses, drop those written more than
+        `KEEP_SECONDS` ago. The writes, the drop and `mark_used` of each code
+        of `used` run in one transaction."""
         written = [(code_of(module_of(r)), r, k, v) for (r, k), v in self.new.items()]
         now = time.time()
         parsed = [(d, pickle.dumps(s, pickle.HIGHEST_PROTOCOL), now)
