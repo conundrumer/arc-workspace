@@ -22,7 +22,8 @@
 - A later message may add a request to the change, and that request is part of what the change is to do.
 
 ## worktree-commands
-- Run each command in the worktree of your change, and take each path in the repo from it, apart from a path under `tickets/`, which you take from the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints.
+- Run each command in the worktree of your change, and take each path in the repo from it, apart from a path under `tickets/`, which you take from the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints, and each call of `scripts/step.py` on your own checklist and of `scripts/operate.py`, which you run there.
+    * comment: "each call of `scripts/step.py` on your own checklist and of `scripts/operate.py`" stays: run in their worktrees, whose `HEAD` lacked commits of master, doc editors a894fe01f2adcad6a and a56de92c024ebbb7a ran `operate.py review`, whose copy printed a report file of a name form master no longer reads, so each doc review was held for an analyst (tickets 9-694, 9-696), and code editor a4f7e3c9cc0837cd0 ran `step.py code-editor write-the-code`, whose copy printed `no agent has a checklist` for a step its context gave (ticket 9-697), session 129de8fc.
 
 ## Re-invoked in another agent's worktree
 - From an environment update that gives as your primary working directory a linked worktree other than the one you run your commands in, until one gives your working directory at start as your primary working directory, a command of yours runs in that other worktree, so a relative path resolves against it and a script runs from its copy, and an agent you launch starts in it and can run no command once it is removed. Until then, whatever another line of your documents gives, make no call but these:
