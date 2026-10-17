@@ -83,7 +83,7 @@ pub struct ReachedSessionBound {
 impl TaskSession {
     /// A session with an empty intern table and an empty result cache.
     pub fn new(bound: SessionBound) -> Self {
-        todo!()
+        TaskSession { intern: InternTable::default(), results: ResultCache::default(), bound }
     }
 
     /// Whether the session's bytes, the intern table's and the result

@@ -30,12 +30,12 @@ impl TermId {
     /// The 32 bits of the term id, for a writer's fixed order of encodings
     /// and for packing.
     pub(crate) fn encoding(self) -> u32 {
-        todo!()
+        self.0
     }
 
     /// The term id whose 32 bits are `bits`.
     pub(crate) fn from_encoding(bits: u32) -> Self {
-        todo!()
+        TermId(bits)
     }
 }
 
@@ -54,13 +54,13 @@ pub struct Color(u8);
 impl Color {
     /// The color written as `digit` in a task file, or `None` outside `0..=9`.
     pub fn from_digit(digit: u8) -> Option<Color> {
-        todo!()
+        (digit <= 9).then_some(Color(digit))
     }
 
     /// The digit a task file writes for the color, for the crate's readers
     /// and writers alone, so no code outside the crate orders colors by it.
     pub(crate) fn digit(self) -> u8 {
-        todo!()
+        self.0
     }
 }
 
@@ -77,7 +77,7 @@ pub struct Example(u16);
 impl Example {
     /// The example at `index` in the task file.
     pub fn at(index: u16) -> Example {
-        todo!()
+        Example(index)
     }
 }
 
@@ -113,14 +113,43 @@ pub struct OrientationConstant {
 impl OrientationConstant {
     /// The constant at `index` of `ty`, as the registry numbers them.
     pub(crate) fn new(ty: OrientationType, index: u8) -> Self {
-        todo!()
+        OrientationConstant { ty, index }
     }
 
     /// The constant's type.
     pub fn ty(self) -> OrientationType {
-        todo!()
+        self.ty
+    }
+
+    /// The constant's 16 bits: its type in the high byte and its index in the
+    /// low byte, so a `Dir8` or an `Axis4` column, which holds the constants
+    /// of two types, holds each with an id of its own.
+    fn encoding(self) -> u32 {
+        let ty = ORIENTATION_TYPES.iter().position(|&ty| ty == self.ty).expect("each orientation type");
+        ((ty as u32) << 8) | u32::from(self.index)
+    }
+
+    /// The constant whose encoding the low 16 bits of `bits` are, read as a
+    /// constant of one of `admitted`: of the type the high byte gives, where
+    /// that is one of them, and otherwise of the first of them.
+    fn decode(bits: u32, admitted: &[OrientationType]) -> Self {
+        let ty = ORIENTATION_TYPES.get(((bits >> 8) & 0xff) as usize).copied();
+        let ty = ty.filter(|ty| admitted.contains(ty)).unwrap_or(admitted[0]);
+        OrientationConstant { ty, index: bits as u8 }
     }
 }
+
+/// Each orientation type, at the position that the high byte of its
+/// constants' encodings gives.
+const ORIENTATION_TYPES: [OrientationType; 7] = [
+    OrientationType::Dir,
+    OrientationType::DiagDir,
+    OrientationType::Axis,
+    OrientationType::DiagAxis,
+    OrientationType::D4,
+    OrientationType::Sym,
+    OrientationType::Sense,
+];
 
 /// A constant term: a Color, an Example, an orientation value, or the one
 /// Unit value. A pose is the constant of its D4 element, which the pose rule
@@ -141,6 +170,24 @@ pub struct Margins {
     pub bottom: i32,
     pub left: i32,
     pub right: i32,
+}
+
+impl Margins {
+    /// The margins packed as four signed bytes, t, b, l and r from the low
+    /// byte up.
+    fn pack(self) -> Result<u32, ReachedMarginBound> {
+        let byte = |margin: i32| i8::try_from(margin).map(|m| u32::from(m as u8));
+        match (byte(self.top), byte(self.bottom), byte(self.left), byte(self.right)) {
+            (Ok(t), Ok(b), Ok(l), Ok(r)) => Ok(t | (b << 8) | (l << 16) | (r << 24)),
+            _ => Err(ReachedMarginBound { margins: self }),
+        }
+    }
+
+    /// The margins that `bits` packs, as [`Margins::pack`] packs them.
+    fn unpack(bits: u32) -> Margins {
+        let byte = |shift: u32| i32::from((bits >> shift) as u8 as i8);
+        Margins { top: byte(0), bottom: byte(8), left: byte(16), right: byte(24) }
+    }
 }
 
 /// A Box with a margin outside a signed byte, which no term id holds: a
@@ -174,7 +221,16 @@ impl Term {
     ///
     /// Fails only for a Box with a margin outside a signed byte.
     pub fn encode(self) -> Result<TermId, ReachedMarginBound> {
-        todo!()
+        let bits = match self {
+            Term::Number(Number(n)) => n as u32,
+            Term::Constant(Constant::Color(color)) => u32::from(color.0),
+            Term::Constant(Constant::Example(example)) => u32::from(example.0),
+            Term::Constant(Constant::Orientation(constant)) => constant.encoding(),
+            Term::Constant(Constant::Unit) => 0,
+            Term::Box(margins) => margins.pack()?,
+            Term::Ident(Ident(index)) => index,
+        };
+        Ok(TermId(bits))
     }
 
     /// The term that `id` stands for at a column of type `ty`.
@@ -184,8 +240,32 @@ impl Term {
     /// as [`crate::types::ProgramTypes`] holds it, the term is the one the id
     /// stands for, and at another type it is a term the id does not stand
     /// for, such as an encoding read as a `Number`.
+    ///
+    /// A record's value takes one column per field, so no one id stands for
+    /// it, and this panics at a [`ValueType::Record`].
     pub fn decode(id: TermId, ty: &ValueType) -> Term {
-        todo!()
+        let bits = id.0;
+        let orientation = |admitted: &[OrientationType]| {
+            Term::Constant(Constant::Orientation(OrientationConstant::decode(bits, admitted)))
+        };
+        match ty {
+            ValueType::Number => Term::Number(Number(bits as i32)),
+            ValueType::Color => Term::Constant(Constant::Color(Color(bits as u8))),
+            ValueType::Example => Term::Constant(Constant::Example(Example(bits as u16))),
+            ValueType::Unit => Term::Constant(Constant::Unit),
+            ValueType::Box => Term::Box(Margins::unpack(bits)),
+            ValueType::Ident => Term::Ident(Ident(bits)),
+            ValueType::C4 | ValueType::D4 | ValueType::Pose(_) => orientation(&[OrientationType::D4]),
+            ValueType::Dir => orientation(&[OrientationType::Dir]),
+            ValueType::DiagDir => orientation(&[OrientationType::DiagDir]),
+            ValueType::Dir8 => orientation(&[OrientationType::Dir, OrientationType::DiagDir]),
+            ValueType::Axis => orientation(&[OrientationType::Axis]),
+            ValueType::DiagAxis => orientation(&[OrientationType::DiagAxis]),
+            ValueType::Axis4 => orientation(&[OrientationType::Axis, OrientationType::DiagAxis]),
+            ValueType::Sym => orientation(&[OrientationType::Sym]),
+            ValueType::Sense => orientation(&[OrientationType::Sense]),
+            ValueType::Record(_) => panic!("a record's value takes one column per field"),
+        }
     }
 }
 
@@ -212,7 +292,7 @@ pub struct WrittenIdent(pub(crate) u32);
 impl WrittenIdent {
     /// The Ident a file writes as `number`.
     pub fn new(number: u32) -> Self {
-        todo!()
+        WrittenIdent(number)
     }
 }
 
@@ -231,25 +311,65 @@ impl MemberSet {
     /// id, or, where `member` is a record, one term id per field, as the
     /// record's column group holds it.
     pub fn new(member: ValueType, members: impl IntoIterator<Item = Box<[TermId]>>) -> Self {
-        todo!()
+        let mut members: Vec<Box<[TermId]>> = members.into_iter().collect();
+        members.sort_unstable_by(|a, b| MemberSet::order(a, b));
+        members.dedup();
+        MemberSet { member, members: members.into_boxed_slice() }
+    }
+
+    /// The canonical order of members: the lexicographic order of their
+    /// encodings.
+    fn order(a: &[TermId], b: &[TermId]) -> std::cmp::Ordering {
+        a.iter().map(|id| id.0).cmp(b.iter().map(|id| id.0))
     }
 
     /// The type of the members.
     pub fn member_type(&self) -> &ValueType {
-        todo!()
+        &self.member
     }
 
     /// Whether `member`, one term id per field of the member type, is a
     /// member.
     pub fn contains(&self, member: &[TermId]) -> bool {
-        todo!()
+        self.members.binary_search_by(|m| MemberSet::order(m, member)).is_ok()
     }
 
     /// Each member, in an order of encodings and no order of the content.
-    #[allow(unreachable_code)]
     pub fn each(&self) -> impl Iterator<Item = &[TermId]> + '_ {
-        todo!();
-        std::iter::empty()
+        self.members.iter().map(|m| &**m)
+    }
+
+    /// The positions within a member of the columns that hold an Ident.
+    ///
+    /// A field of a record type takes the columns of its own fields, side by
+    /// side in field order, at every depth.
+    fn ident_fields(&self) -> Vec<usize> {
+        let mut positions = Vec::new();
+        ident_columns(&self.member, 0, &mut positions);
+        positions
+    }
+
+    /// The bytes the set holds on the heap.
+    fn bytes(&self) -> usize {
+        self.members
+            .iter()
+            .map(|m| std::mem::size_of::<Box<[TermId]>>() + std::mem::size_of_val(&**m))
+            .sum()
+    }
+}
+
+/// Adds to `positions` the columns from `start` on that hold an Ident in a
+/// value of type `ty`, and gives the count of columns the value takes.
+fn ident_columns(ty: &ValueType, start: usize, positions: &mut Vec<usize>) -> usize {
+    match ty {
+        ValueType::Ident => {
+            positions.push(start);
+            1
+        }
+        ValueType::Record(fields) => {
+            fields.iter().fold(0, |taken, (_, field)| taken + ident_columns(field, start + taken, positions))
+        }
+        _ => 1,
     }
 }
 
@@ -299,13 +419,28 @@ pub struct InternTable {
 impl InternTable {
     /// The Ident of `content`, interned on first use.
     pub fn intern(&mut self, content: Content) -> Ident {
-        todo!()
+        let hash = {
+            let mut hasher = crate::hash::StableHasher::new();
+            std::hash::Hash::hash(&content, &mut hasher);
+            hasher.finish128()
+        };
+        let idents = self.by_hash.entry(hash).or_default();
+        if let Some(&ident) =
+            idents.iter().find(|ident| self.contents[ident.0 as usize].as_ref() == Some(&content))
+        {
+            return ident;
+        }
+        let number = u32::try_from(self.contents.len()).expect("fewer than 2^32 Idents in a session");
+        let ident = Ident(number);
+        self.contents.push(Some(content));
+        idents.push(ident);
+        ident
     }
 
     /// The content that `ident` labels. A freed Ident is a fault of its
     /// holder, so this panics on one.
     pub fn content(&self, ident: Ident) -> &Content {
-        todo!()
+        self.contents[ident.0 as usize].as_ref().expect("an Ident that is not freed")
     }
 
     /// Frees each entry whose Ident `held` lacks and that no kept entry's
@@ -314,12 +449,50 @@ impl InternTable {
     /// every Ident that a cached relation, a decode state or an event log
     /// holds. A freed number is not given again in the session.
     pub fn free_unheld(&mut self, held: &crate::hash::StableHashSet<Ident>) {
-        todo!()
+        let mut kept = vec![false; self.contents.len()];
+        let mut pending: Vec<Ident> = held.iter().copied().collect();
+        while let Some(ident) = pending.pop() {
+            if std::mem::replace(&mut kept[ident.0 as usize], true) {
+                continue;
+            }
+            if let Content::Set(set) = self.content(ident) {
+                for field in set.ident_fields() {
+                    pending.extend(set.each().map(|member| Ident(member[field].0)));
+                }
+            }
+        }
+        for (number, keep) in kept.into_iter().enumerate() {
+            if !keep {
+                self.contents[number] = None;
+            }
+        }
+        let contents = &self.contents;
+        self.by_hash.retain(|_, idents| {
+            idents.retain(|ident| contents[ident.0 as usize].is_some());
+            !idents.is_empty()
+        });
     }
 
     /// The bytes the table holds, which count toward the task session's
     /// bound.
     pub fn bytes(&self) -> usize {
-        todo!()
+        let contents = self.contents.capacity() * std::mem::size_of::<Option<Content>>()
+            + self
+                .contents
+                .iter()
+                .flatten()
+                .map(|content| match content {
+                    Content::Set(set) => set.bytes(),
+                    Content::FromFile { .. } => 0,
+                })
+                .sum::<usize>();
+        let by_hash = self.by_hash.capacity()
+            * (std::mem::size_of::<StableHash>() + std::mem::size_of::<Vec<Ident>>())
+            + self
+                .by_hash
+                .values()
+                .map(|idents| idents.capacity() * std::mem::size_of::<Ident>())
+                .sum::<usize>();
+        contents + by_hash
     }
 }

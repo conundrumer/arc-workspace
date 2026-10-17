@@ -8,8 +8,6 @@
 //! A relation is a set: each function here that gives its rows gives them
 //! in an order of encodings and no order of the content.
 
-#![allow(unused_variables, dead_code)]
-
 use crate::hash::{StableHashMap, StableHashSet};
 use crate::terms::TermId;
 
@@ -40,40 +38,39 @@ pub struct RowSet {
 impl RowSet {
     /// An empty set of rows of `arity` columns.
     pub fn empty(arity: u16) -> Self {
-        todo!()
+        RowSet { arity, rows: StableHashSet::default() }
     }
 
     /// The arity of the rows.
     pub fn arity(&self) -> u16 {
-        todo!()
+        self.arity
     }
 
     /// Adds `row`. The row's length is the set's arity.
     pub fn insert(&mut self, row: Row) -> bool {
-        todo!()
+        assert_eq!(row.len(), usize::from(self.arity), "a row of the set's arity");
+        self.rows.insert(row)
     }
 
     /// Whether the set holds `row`.
     pub fn contains(&self, row: &[TermId]) -> bool {
-        todo!()
+        self.rows.contains(row)
     }
 
     /// Each row of the set, in an order of encodings and no order of the
     /// content.
-    #[allow(unreachable_code)]
     pub fn rows(&self) -> impl Iterator<Item = &[TermId]> + '_ {
-        todo!();
-        std::iter::empty()
+        self.rows.iter().map(|row| &**row)
     }
 
     /// The count of rows.
     pub fn len(&self) -> usize {
-        todo!()
+        self.rows.len()
     }
 
     /// Whether the set holds no row.
     pub fn is_empty(&self) -> bool {
-        todo!()
+        self.rows.is_empty()
     }
 }
 
@@ -105,25 +102,70 @@ impl Relation {
     /// The relation that `parts` hold. The parts' columns are disjoint and
     /// cover `0..arity`.
     pub fn from_parts(arity: u16, parts: Box<[RelationPart]>) -> Self {
-        todo!()
+        let mut covered = vec![false; usize::from(arity)];
+        for part in &parts {
+            assert_eq!(part.columns.len(), usize::from(part.rows.arity()), "a part's rows hold its columns");
+            for column in &part.columns {
+                let seen = covered.get_mut(usize::from(column.0)).expect("a column within the arity");
+                assert!(!std::mem::replace(seen, true), "parts with disjoint columns");
+            }
+        }
+        assert!(covered.iter().all(|&c| c), "parts that cover every column");
+        Relation { arity, parts, indexes: Default::default() }
     }
 
     /// The count of rows, the product of the parts' counts.
     pub fn len(&self) -> u64 {
-        todo!()
+        self.parts.iter().map(|part| part.rows.len() as u64).product()
     }
 
     /// Whether the relation holds no row: some part is empty.
     pub fn is_empty(&self) -> bool {
-        todo!()
+        self.parts.iter().any(|part| part.rows.is_empty())
     }
 
     /// The index of the relation in `order`, built on first use and kept
     /// with the relation.
     pub fn index(&self, order: &ColumnOrder) -> std::sync::Arc<Index> {
-        todo!()
+        if let Some(index) = self.indexes.read().expect(UNPOISONED).get(order) {
+            return index.clone();
+        }
+        let mut indexes = self.indexes.write().expect(UNPOISONED);
+        indexes.entry(order.clone()).or_insert_with(|| std::sync::Arc::new(self.build_index(order))).clone()
+    }
+
+    fn build_index(&self, order: &ColumnOrder) -> Index {
+        for column in &order.0 {
+            assert!(column.0 < self.arity, "an order of the relation's columns");
+        }
+        let mut index = Index::default();
+        let mut row = vec![TermId::from_encoding(0); usize::from(self.arity)];
+        self.each_row(0, &mut row, &mut |row| {
+            let mut level = &mut index;
+            for column in &order.0 {
+                level = level.children.entry(row[usize::from(column.0)]).or_default();
+            }
+        });
+        index
+    }
+
+    /// Calls `visit` on each row of the product of the parts from `part` on,
+    /// with the columns of the parts before it as `row` holds them.
+    fn each_row(&self, part: usize, row: &mut [TermId], visit: &mut impl FnMut(&[TermId])) {
+        let Some(this) = self.parts.get(part) else {
+            visit(row);
+            return;
+        };
+        for part_row in this.rows.rows() {
+            for (column, &value) in this.columns.iter().zip(part_row) {
+                row[usize::from(column.0)] = value;
+            }
+            self.each_row(part + 1, row, visit);
+        }
     }
 }
+
+const UNPOISONED: &str = "an index lock that no panic of a builder poisoned";
 
 /// An order of a relation's columns, in which an [`Index`] is built: the
 /// order that a clause's variable order asks for.
@@ -142,24 +184,22 @@ impl Index {
     /// The subtrie at `value` of the first column, or `None` where no row
     /// holds it.
     pub fn child(&self, value: TermId) -> Option<&Index> {
-        todo!()
+        self.children.get(&value)
     }
 
     /// Each value at this level, with its subtrie, for a join that walks
     /// the level, in an order of encodings and no order of the content.
-    #[allow(unreachable_code)]
     pub fn entries(&self) -> impl Iterator<Item = (TermId, &Index)> + '_ {
-        todo!();
-        std::iter::empty()
+        self.children.iter().map(|(&value, child)| (value, child))
     }
 
     /// The count of values at this level.
     pub fn len(&self) -> usize {
-        todo!()
+        self.children.len()
     }
 
     /// Whether no value stands at this level.
     pub fn is_empty(&self) -> bool {
-        todo!()
+        self.children.is_empty()
     }
 }
