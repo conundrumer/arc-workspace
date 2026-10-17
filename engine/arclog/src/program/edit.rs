@@ -27,13 +27,26 @@ pub enum Edit {
     RemoveConjunct { at: NodePath },
     /// Replaces the conjunct at `at` with `conjunct`.
     ReplaceConjunct { at: NodePath, conjunct: Conjunct },
-    /// Adds `site` to the atom at `atom`, at `index` of its source order.
+    /// Adds `site` to the node at `node`, at `index` of its sites in source
+    /// order: an atom, a negated atom, a `RIGID_DET` part, an input, whose
+    /// head takes it, or a site that reads a record, whose fields take it.
     AddSite {
-        atom: NodePath,
+        node: NodePath,
         index: u32,
         site: Site,
     },
-    /// Removes the site at `at`.
+    /// Inserts `part` into the `RIGID_DET` form at `form`, at `index` of its
+    /// parts in source order.
+    AddPart {
+        form: NodePath,
+        index: u32,
+        part: Node<Atom>,
+    },
+    /// Removes the part at `at`.
+    RemovePart { at: NodePath },
+    /// Replaces the part at `at` with `part`.
+    ReplacePart { at: NodePath, part: Node<Atom> },
+    /// Removes the site at `at`, of any node that `AddSite` names.
     RemoveSite { at: NodePath },
     /// Replaces the site at `at` with `site`.
     ReplaceSite { at: NodePath, site: Site },
@@ -47,12 +60,13 @@ pub struct EditPathError {
     pub path: NodePath,
 }
 
-impl Program {
+impl Node<Program> {
     /// The program that `edit` gives. `self` is left as it was, and the new
-    /// value shares every node the edit does not change.
+    /// value shares every node the edit does not change. The paths of `edit`
+    /// name nodes as [`super::path::node_at`] walks them.
     ///
     /// Implements `work/engine/reader.md`, Programs as values: "An edit adds, removes or replaces an atom or a site."
-    pub fn apply(&self, edit: &Edit) -> Result<Program, EditPathError> {
+    pub fn apply(&self, edit: &Edit) -> Result<Node<Program>, EditPathError> {
         todo!()
     }
 }

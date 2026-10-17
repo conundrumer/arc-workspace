@@ -47,17 +47,46 @@ impl ResultCache {
 /// The engine's state for one task.
 ///
 /// Implements `work/engine/reader.md`, Terms: "A task session is the engine's state for one task: its result cache and its intern table."
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct TaskSession {
     pub intern: InternTable,
     pub results: ResultCache,
+    /// The bound on the session's bytes, which the intern table's bytes
+    /// count toward.
+    pub bound: SessionBound,
+}
+
+/// The bound on a task session's bytes. Reaching it is an alert, as Bounds
+/// gives.
+///
+/// Implements `work/engine/reader.md`, How each decision can fail: "the table's bytes count toward the session's bound ... and the bound reached is an alert".
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct SessionBound {
+    pub bytes: usize,
+}
+
+/// A task session whose bytes reached its bound.
+///
+/// Implements `work/engine/reader.md`, How each decision can fail: "the bound reached is an alert".
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ReachedSessionBound {
+    pub bytes: usize,
+    pub bound: SessionBound,
 }
 
 impl TaskSession {
     /// A session with an empty intern table and an empty result cache.
     ///
     /// Implements `work/engine/reader.md`, Terms: "A task session is the engine's state for one task: its result cache and its intern table."
-    pub fn new() -> Self {
+    pub fn new(bound: SessionBound) -> Self {
+        todo!()
+    }
+
+    /// Whether the session's bytes, the intern table's and the result
+    /// cache's, lie within its bound.
+    ///
+    /// Implements `work/engine/reader.md`, How each decision can fail: "the table's bytes count toward the session's bound".
+    pub fn within_bound(&self) -> Result<(), ReachedSessionBound> {
         todo!()
     }
 }

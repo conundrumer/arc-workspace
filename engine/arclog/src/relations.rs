@@ -17,7 +17,7 @@ use crate::terms::TermId;
 
 /// A row: a fixed-arity array of term ids, with no type tag.
 ///
-/// Implements "A row is a fixed-arity array of term ids."
+/// Implements `work/engine/reader.md`: "A row is a fixed-arity array of term ids."
 pub type Row = Box<[TermId]>;
 
 /// The position of a column in a relation's rows.
@@ -25,6 +25,17 @@ pub type Row = Box<[TermId]>;
 /// Implements `work/engine/reader.md`, Relations: "A relation is a set of rows of one arity."
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ColumnIndex(pub u16);
+
+/// The columns of a key or a type parameter bound to several fields: one
+/// column per field, side by side in the row, so a component reads the
+/// group as a short array of term ids, `&row[start..start + len]`.
+///
+/// Implements `work/engine/reader.md`, Terms: "A key or a type parameter bound to several fields takes one column per field ... A component works over a short array of term ids at each such column group."
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct ColumnGroup {
+    pub start: ColumnIndex,
+    pub len: u16,
+}
 
 /// A set of rows of one arity, stored row by row with a hash set over the
 /// rows.
@@ -65,6 +76,15 @@ impl RowSet {
         todo!()
     }
 
+    /// Each row of the set. No output may read the order they come in.
+    ///
+    /// Implements `work/engine/reader.md`, Relations: "each part is stored row by row with a hash set over the rows".
+    #[allow(unreachable_code)]
+    pub fn rows(&self) -> impl Iterator<Item = &[TermId]> + '_ {
+        todo!();
+        std::iter::empty()
+    }
+
     /// The count of rows.
     ///
     /// Implements `work/engine/reader.md`, Relations: "A relation is a set of rows of one arity."
@@ -84,7 +104,7 @@ impl RowSet {
 /// body's atoms, where two atoms are connected when they share a variable, as
 /// `work/engine/synthesis.md`, Factorized bodies, gives.
 #[derive(Clone, Debug)]
-pub struct Part {
+pub struct RelationPart {
     /// The body's columns that the part holds, in the order of its rows.
     pub columns: Box<[ColumnIndex]>,
     pub rows: RowSet,
@@ -101,8 +121,10 @@ pub struct Part {
 #[derive(Clone, Debug)]
 pub struct Relation {
     pub arity: u16,
-    pub parts: Box<[Part]>,
-    indexes: std::sync::OnceLock<StableHashMap<ColumnOrder, std::sync::Arc<Index>>>,
+    pub parts: Box<[RelationPart]>,
+    /// The indexes built so far, one per column order, each added on its
+    /// first use and kept, shared by the clones of the relation.
+    indexes: std::sync::Arc<std::sync::RwLock<StableHashMap<ColumnOrder, std::sync::Arc<Index>>>>,
 }
 
 impl Relation {
@@ -110,7 +132,7 @@ impl Relation {
     /// cover `0..arity`.
     ///
     /// Implements `work/engine/synthesis.md`, Factorized bodies.
-    pub fn from_parts(arity: u16, parts: Box<[Part]>) -> Self {
+    pub fn from_parts(arity: u16, parts: Box<[RelationPart]>) -> Self {
         todo!()
     }
 
@@ -160,6 +182,16 @@ impl Index {
     /// Implements `work/engine/reader.md`, Relations: "An index is a trie over the columns in one order".
     pub fn child(&self, value: TermId) -> Option<&Index> {
         todo!()
+    }
+
+    /// Each value at this level, with its subtrie, for a join that walks
+    /// the level. No output may read the order they come in.
+    ///
+    /// Implements `work/engine/reader.md`, Relations: "An index is a trie over the columns in one order, as a hash trie of Free Join is".
+    #[allow(unreachable_code)]
+    pub fn entries(&self) -> impl Iterator<Item = (TermId, &Index)> + '_ {
+        todo!();
+        std::iter::empty()
     }
 
     /// The count of values at this level.

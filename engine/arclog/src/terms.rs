@@ -13,9 +13,10 @@
 //! `number`, as `work/engine/reader.md`, Checker, gives, and
 //! `work/engine/equivariance.md`, "The types refuse order", makes that rule
 //! hold by construction: a Color, an orientation value, an Ident, a Box or an
-//! Example has no order an engine function could read. A writer that gives a
-//! set in a fixed order of the encodings, as `work/engine/equivariance.md`,
-//! Determinism, gives, reads `TermId::encoding`, which is crate-private.
+//! Example has no public order. Within the crate, a writer that gives a set
+//! in a fixed order of the encodings, as `work/engine/equivariance.md`,
+//! Determinism, gives, reads `TermId::encoding`, which is crate-private, as
+//! `Color::digit` is.
 
 
 #![allow(unused_variables, dead_code)]
@@ -25,7 +26,7 @@ use crate::types::ValueType;
 
 /// A column value: 32 bits whose meaning the column's type gives.
 ///
-/// Implements "Every column value is a 32-bit term id".
+/// Implements `work/engine/reader.md`: "Every column value is a 32-bit term id".
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct TermId(u32);
 
@@ -48,7 +49,7 @@ impl TermId {
 
 /// A `number`: a count, as `docs/handbook/encoding.md`, Numbers, gives.
 ///
-/// Implements "A number is its two's-complement value". The one column type
+/// Implements `work/engine/reader.md`: "A number is its two's-complement value". The one column type
 /// with an order.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Number(pub i32);
@@ -68,10 +69,11 @@ impl Color {
         todo!()
     }
 
-    /// The digit a task file writes for the color.
+    /// The digit a task file writes for the color, for the crate's readers
+    /// and writers alone, so no code outside the crate orders colors by it.
     ///
     /// Implements `docs/handbook/principles.md`, Color, and `work/engine/reader.md`, Terms: "A Color ... is its constant".
-    pub fn digit(self) -> u8 {
+    pub(crate) fn digit(self) -> u8 {
         todo!()
     }
 }
@@ -115,20 +117,36 @@ pub enum OrientationType {
 ///
 /// The constants and their names are the lib's: the registry
 /// ([`crate::registry::Registry::orientation_constant`]) maps each name to its
-/// constant, so this crate fixes no list of them. The index is an encoding
-/// and has no order.
+/// constant, so this crate fixes no list of them. The index is an encoding,
+/// private to the crate, so no code outside it can order constants by it.
 ///
 /// Implements `docs/lib-spec.md`, The orientation algebra: "The constants of each type, `DIR_T` through `SYM_D4`."
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct OrientationConstant {
-    pub ty: OrientationType,
-    pub index: u8,
+    ty: OrientationType,
+    index: u8,
+}
+
+impl OrientationConstant {
+    /// The constant at `index` of `ty`, as the registry numbers them.
+    ///
+    /// Implements `docs/lib-spec.md`, The orientation algebra: "The constants of each type".
+    pub(crate) fn new(ty: OrientationType, index: u8) -> Self {
+        todo!()
+    }
+
+    /// The constant's type.
+    ///
+    /// Implements `docs/lib-spec.md`, The orientation algebra: "The constants of each type".
+    pub fn ty(self) -> OrientationType {
+        todo!()
+    }
 }
 
 /// A constant term: a Color, an Example, an orientation value, or the one
 /// Unit value.
 ///
-/// Implements "A Color, Example or orientation value is its constant. A pose
+/// Implements `work/engine/reader.md`: "A Color, Example or orientation value is its constant. A pose
 /// is the constant of its D4 element, which the pose rule of Checker keeps
 /// from every read. The Unit value is one constant."
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -142,7 +160,7 @@ pub enum Constant {
 /// A Box: its four margins (t, b, l, r), as `docs/lib-spec.md`, The box
 /// algebra, gives. A Position and an Offset are Boxes.
 ///
-/// Implements "A Box is its four margins, as four signed bytes in one term
+/// Implements `work/engine/reader.md`: "A Box is its four margins, as four signed bytes in one term
 /// id". A Box has no order.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Margins {
@@ -154,7 +172,7 @@ pub struct Margins {
 
 /// A Box with a margin outside a signed byte, which no term id holds.
 ///
-/// Implements "A margin outside a byte is a reached bound, as Bounds gives".
+/// Implements `work/engine/reader.md`: "A margin outside a byte is a reached bound, as Bounds gives".
 /// An algebra relation computes in 32-bit integers and packs only the Boxes
 /// it binds, so only a Box that reaches a row raises this.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -164,7 +182,7 @@ pub struct ReachedMarginBound {
 
 /// An Ident: the index of a content in the task session's [`InternTable`].
 ///
-/// Implements "An Ident is the index of the content it labels in the task
+/// Implements `work/engine/reader.md`: "An Ident is the index of the content it labels in the task
 /// session's intern table ... The number depends on the order of interning,
 /// and only equality on it reaches an output." So an Ident has equality and
 /// no order.
@@ -183,6 +201,11 @@ pub enum Term {
     Ident(Ident),
 }
 
+/// `Term::encode` and `Term::decode` are the public way between a term and
+/// its id, which a construction of `arclog-constructions` takes. A caller
+/// decodes an id only at the type the checker gives its column, as
+/// [`crate::types::ProgramTypes`] holds it: a decode at another type would
+/// read an encoding as a `Number`, an order that the order rule forbids.
 impl Term {
     /// The term id of the term.
     ///
@@ -205,42 +228,126 @@ impl Term {
     }
 }
 
-/// What an Ident labels: a set of terms of one type, a constructed term such
-/// as a tiebreak resolution, or a value read from a file.
+/// What an Ident labels: a set of terms of one type, or a value read from a
+/// file.
 ///
-/// Implements "keyed by the whole content with the type of its members, so
+/// Implements `work/engine/reader.md`: "keyed by the whole content with the type of its members, so
 /// two contents never share an id, and neither do the colors `{1, 2}` and the
 /// numbers `{1, 2}`" and "An Ident read from a file ... is interned by its
 /// type and its written value".
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Content {
-    /// A set of terms of the member type `member`. The members are held in
-    /// one canonical order of their term ids, so that equal sets are equal
-    /// contents.
-    Set {
-        member: ValueType,
-        members: Box<[TermId]>,
-    },
-    /// A constructed term: its constructor's name in the registry, and its
-    /// fields with their types.
-    Constructed {
-        constructor: crate::registry::LibName,
-        fields: Box<[(ValueType, TermId)]>,
-    },
+    /// A set of terms of one member type.
+    Set(MemberSet),
     /// An Ident written in a file, such as one of an arcdata record: its type
     /// and its written number.
-    Read { ty: ValueType, written: u32 },
+    FromFile { ty: ValueType, written: WrittenIdent },
+}
+
+/// The number a file writes for an Ident, as an arcdata record does. It has
+/// equality and no public order and no public value, so no code outside the
+/// crate orders Idents by the file's numbers.
+///
+/// Implements `work/engine/reader.md`, Terms: "An Ident read from a file ... is interned by its type and its written value" and "only equality on it reaches an output".
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct WrittenIdent(pub(crate) u32);
+
+impl WrittenIdent {
+    /// The Ident a file writes as `number`.
+    ///
+    /// Implements `work/engine/reader.md`, Terms: "An Ident read from a file ... is interned by its type and its written value".
+    pub fn new(number: u32) -> Self {
+        todo!()
+    }
+}
+
+/// A set of terms of one member type, the content of an Ident. It holds its
+/// members in one canonical order of their term ids, so that equal sets are
+/// equal contents, and that order is private: the set gives membership and
+/// each member, and no output may read the order they come in, as
+/// `work/engine/equivariance.md`, Determinism, gives.
+///
+/// Implements `work/engine/reader.md`: "keyed by the whole content with the type of its members".
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct MemberSet {
+    member: ValueType,
+    members: Box<[Box<[TermId]>]>,
+}
+
+impl MemberSet {
+    /// The set of `members`, values of type `member`. A member is one term
+    /// id, or, where `member` is a record, one term id per field, as the
+    /// record's column group holds it.
+    ///
+    /// Implements `work/engine/reader.md`: "keyed by the whole content with the type of its members" and `work/engine/reader.md`, Terms: "A component works over a short array of term ids at each such column group".
+    pub fn new(member: ValueType, members: impl IntoIterator<Item = Box<[TermId]>>) -> Self {
+        todo!()
+    }
+
+    /// The type of the members.
+    ///
+    /// Implements `work/engine/reader.md`: "keyed by the whole content with the type of its members".
+    pub fn member_type(&self) -> &ValueType {
+        todo!()
+    }
+
+    /// Whether `member`, one term id per field of the member type, is a
+    /// member.
+    ///
+    /// Implements `work/engine/reader.md`, Terms: "An Ident is the index of the content it labels".
+    pub fn contains(&self, member: &[TermId]) -> bool {
+        todo!()
+    }
+
+    /// Each member. No output may read the order they come in.
+    ///
+    /// Implements `work/engine/reader.md`, Terms: "An Ident is the index of the content it labels".
+    #[allow(unreachable_code)]
+    pub fn each(&self) -> impl Iterator<Item = &[TermId]> + '_ {
+        todo!();
+        std::iter::empty()
+    }
+}
+
+/// The term ids of `value` at a column of type `ty`: one term id, or, at a
+/// record's column group, one per field. A Color's digit, a number and a
+/// Box's margins are encoded as `ty` reads them, and an Ident's written
+/// number is interned in `table` as a [`Content::FromFile`]. The caller
+/// gives the type the `param` form writes, or the type check infers, as
+/// [`crate::program::DataValue`] gives. `registry` gives which constants a
+/// type such as `C4` admits.
+///
+/// Implements `work/engine/reader.md`, Terms: "An arcdata value written as a list is read into the same columns" and "An Ident read from a file ... is interned by its type and its written value".
+pub fn encode_data_value(
+    value: &crate::program::DataValue,
+    ty: &ValueType,
+    registry: &crate::registry::Registry,
+    table: &mut InternTable,
+) -> Result<Box<[TermId]>, DataValueError> {
+    todo!()
+}
+
+/// An arcdata value that its column's type cannot read, such as a digit
+/// outside `0..=9` at a Color column or a list of three at a Box column, or
+/// a Box whose margin lies outside a byte.
+///
+/// Implements `work/engine/reader.md`, Terms: "A margin outside a byte is a reached bound".
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum DataValueError {
+    NotOfType { value: crate::program::DataValue, ty: ValueType },
+    MarginBound(ReachedMarginBound),
 }
 
 /// The task session's table from contents to Idents.
 ///
-/// Implements "The table finds a content by its hash, and compares contents
+/// Implements `work/engine/reader.md`: "The table finds a content by its hash, and compares contents
 /// only where two hashes match." The table's bytes count toward the task
 /// session's bound, and a freed number is not used again in the session, as
 /// the first row of Reader and checker's "How each decision can fail" gives.
 #[derive(Debug, Default)]
 pub struct InternTable {
-    contents: Vec<Content>,
+    /// The content of each number given, `None` once freed.
+    contents: Vec<Option<Content>>,
     by_hash: crate::hash::StableHashMap<StableHash, Vec<Ident>>,
 }
 
@@ -252,10 +359,20 @@ impl InternTable {
         todo!()
     }
 
-    /// The content that `ident` labels.
+    /// The content that `ident` labels. A freed Ident is a fault of its
+    /// holder, so this panics on one.
     ///
     /// Implements `work/engine/reader.md`, Terms: "An Ident is the index of the content it labels in the task session's intern table".
     pub fn content(&self, ident: Ident) -> &Content {
+        todo!()
+    }
+
+    /// Frees each entry whose Ident `held` lacks. The caller gives every
+    /// Ident that a cached relation, a decode state or an event log holds.
+    /// A freed number is not given again in the session.
+    ///
+    /// Implements `work/engine/reader.md`, How each decision can fail: "an entry is freed once no cached relation, decode state or event log holds its id, a freed number is not used again in the session".
+    pub fn free_unheld(&mut self, held: &crate::hash::StableHashSet<Ident>) {
         todo!()
     }
 

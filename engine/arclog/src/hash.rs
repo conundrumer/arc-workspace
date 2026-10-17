@@ -75,9 +75,11 @@ impl BuildHasher for StableState {
 
 /// A hash map under the engine's fixed hash function.
 ///
-/// Its iteration order is fixed from run to run, and it is still an order of
-/// encodings: no output may depend on it, as `work/engine/equivariance.md`,
-/// Determinism, gives.
+/// Its iteration order follows from its keys and the order they were
+/// inserted in, so it is the same from run to run only where both are, and
+/// not where the keys hold an Ident, whose number depends on the order of
+/// interning. It is an order of encodings either way: no output may
+/// depend on it, as `work/engine/equivariance.md`, Determinism, gives.
 pub type StableHashMap<K, V> = std::collections::HashMap<K, V, StableState>;
 
 /// A hash set under the engine's fixed hash function, with the iteration rule
