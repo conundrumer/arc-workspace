@@ -14,7 +14,8 @@ from state_reads import state_cache
 from controlled_markdown import ControlledMarkdownError
 from controlled_markdown.prose import Fragment, text_fragments
 from engine import checkout
-from operations.state import CODE_REVIEW, DOC_REVIEW, Commit, Place, code_review_number
+from operations.state import (CODE_REVIEW, DOC_REVIEW, CodeReview, Commit, NoBaseline, Place, code_review_number,
+                              code_review_tag)
 from operations.task_work import CLAIM, tasks_work
 from operations.worktrees import BASE
 
@@ -84,21 +85,39 @@ def worktrees(main: Path) -> dict[Path, str | None]:
 @state_cache(lambda main: refs_stamp(main, "heads"))
 def commits(main: Path) -> tuple[Commit, ...]:
     out: list[Commit] = []
-    for chunk in git(main, "log", BASE, f"-n{COMMITS}", "--format=%x00%H %ct %s",
-                     "--name-only").split("\0")[1:]:
-        head, _, names = chunk.partition("\n")
+    for head, files in logged(main, BASE, f"-n{COMMITS}", "--format=%x00%H %ct %s"):
         sha, ct, subject = (head.split(" ", 2) + [""])[:3]
-        files = names.split()
-        out.append(Commit(sha, float(ct), any(n.startswith(CODE_DIRS) for n in files), subject,
+        out.append(Commit(sha, float(ct), changes_code(files), subject,
                           any(n.startswith(PROCESS_DIRS) for n in files)))
     return tuple(out)
 
 
-@state_cache(lambda main: refs_stamp(main, "tags"))
-def code_review(main: Path) -> int | None:
+def logged(main: Path, *argv: str) -> list[tuple[str, list[str]]]:
+    """The `git log --name-only` of `argv`, whose format leads each commit
+    with a NUL: each commit's first line, with the files it changes."""
+    out: list[tuple[str, list[str]]] = []
+    for chunk in git(main, "log", *argv, "--name-only").split("\0")[1:]:
+        head, _, names = chunk.partition("\n")
+        out.append((head, names.split()))
+    return out
+
+
+def changes_code(files: list[str]) -> bool:
+    return any(n.startswith(CODE_DIRS) for n in files)
+
+
+@state_cache(lambda main: (refs_stamp(main, "tags"), refs_stamp(main, "heads")))
+def code_review(main: Path) -> CodeReview | NoBaseline:
     tags = [n for t in git(main, "tag", "-l", f"{CODE_REVIEW}*").split()
             if (n := code_review_number(t)) is not None]
-    return max(tags) if tags else None
+    if not tags:
+        return NoBaseline.NO_TAG
+    n = max(tags)
+    try:
+        unreviewed = logged(main, f"{code_review_tag(n)}..{BASE}", "--format=%x00%H")
+    except checkout.GitFailed:
+        return NoBaseline.GIT_FAILED
+    return CodeReview(n, tuple(sha for sha, files in unreviewed if changes_code(files)))
 
 
 @state_cache(lambda main: refs_stamp(main, "tags"))

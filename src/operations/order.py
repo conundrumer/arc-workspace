@@ -16,7 +16,9 @@ under `tickets/blocked/`, `tickets/waiting/` or `tickets/closed/`; the coordinat
 lines to the ticket analysts that run on their tickets; the ticket
 analysts on open tickets; the move to `tickets/draft/` of the changes
 that a ticket holds up (`ticket_stall.stall`); the review
-of drafts; the changes; the solver pipelines; After a batch; the
+of drafts; the changes; the solver pipelines; the cost audit, the code
+review, the standing doc review, the gate and the process assessment
+(`batches`); After a batch; the
 messages and the tickets on the stalled tickets of the operators
 (`alerts.ticket_stalls`), last, so that a step that would end a stall
 comes before the message on it. A step that
@@ -281,7 +283,8 @@ EARLY: tuple[Callable[[State], Step | None], ...] = (
 LATE: tuple[Callable[[State], Step | None], ...] = (
     launching, triage.reopen, triage.later_lines, triage.settle, ticket_stall.stall, drafts.step,
     changes.step,
-    pipelines, batches.audit, batches.step, alerts.ticket_stalls)
+    pipelines, batches.audit, batches.code_review, batches.standing_review, batches.gate,
+    batches.assessment, batches.step, alerts.ticket_stalls)
 PROCEDURES = EARLY + LATE
 
 

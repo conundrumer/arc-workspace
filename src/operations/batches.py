@@ -1,16 +1,17 @@
-"""After a batch: once every agent of a batch has returned, or once the
+"""After a batch, and the reviews, the gate, the process assessment and
+the cost audit, which no batch holds.
+
+After a batch: once every agent of a batch has returned, or once the
 batch has stood `BATCH_SPAN` since its first launch, the release of
-tickets, a code review where the batch merged a change to the code, a
-standing doc review where the batch merged a change, and two agents
-launched for the rest, one on the profile of the batch's runs and one,
-where the batch merged a change, on the gate's timings and outputs.
+tickets, and an agent on the profile of the batch's runs.
 
 A batch is the agents the session's operators launched since the launch
 of the previous batch's profile agent, other than the agents of After a
-batch, the standing doc reviews, the process assessments and the cost
-audits, with the changes merged since: those an operator's merge call merged, as
-`state.Merge` reads it, and those the coordinator gives as merged. The
-launch of the profile agent opens the next batch.
+batch, the code reviews, the gates, the standing doc reviews, the process
+assessments and the cost audits, with the changes merged since: those an
+operator's merge call merged, as `state.Merge` reads it, and those the
+coordinator gives as merged. The launch of the profile agent opens the
+next batch.
 
 The sweep (`file_ticket.py sweep`) runs once a profile launch closes a
 batch, where a `validation` ticket of the session stands under `tickets/deferred/`,
@@ -23,16 +24,35 @@ once a profile launch closes a batch, where no call of it was made since
 that launch, on the calls since the closed batch's start. No batch holds
 it, so no profile launch waits on it.
 
-A process assessment, a ticket analyst, launches at the end of a batch
-once `ASSESS_AFTER` commits of `master` that change the agents' processes
-stand since the launch of the last one an operator of the session
-launched, or since the session's start where none was, and none runs. No
-batch holds it, so no profile launch waits on its run.
+A code review launches at any step where a commit of `master` that
+changes the code is one the last code review's tag does not reach, and
+no code reviewer of the session runs. Its occasion is the newest such
+commit, so a review that ended with no tag launches again only once
+newer code merges. Where the read gives no baseline (`NoBaseline`), the
+unreviewed commits are unknown, and the step is undecided on the newest
+commit of `master` that changes the code, so that an operator hands it
+on once for each such commit.
 
-A cost audit launches at any step, with no wait on a batch's end, once
-the spend of its window (`state.AuditWindow`) is at least `AUDIT_AFTER`, and
-the last cost audit an operator of the session launched does not run.
-No batch holds it, so no profile launch waits on its run.
+A standing doc review launches at any step where a change merged since
+the last one an operator of the session launched, or since the session's
+start where none was, and none runs.
+
+A gate agent, on the gate's timings and outputs, launches at any step
+where a change merged since the last one an operator of the session
+launched, or since the session's start where none was, none runs, and
+that last launch stands at least `BATCH_SPAN` back.
+
+A process assessment, a ticket analyst, launches at any step once
+`ASSESS_AFTER` commits of `master` that change the agents' processes
+stand since the launch of the last one an operator of the session
+launched, or since the session's start where none was, and none runs.
+
+A cost audit launches at any step once the spend of its window
+(`state.AuditWindow`) is at least `AUDIT_AFTER`, and the last cost audit
+an operator of the session launched does not run.
+
+No batch holds a code review, a gate, a standing doc review, a process
+assessment or a cost audit, so no profile launch waits on its run.
 
 A standing doc review is a doc reviewer on one reader's whole context at
 the head of `master`: the first reader of `State.readers` that no tag
@@ -57,7 +77,8 @@ from operations.taking import release
 from operations.filing import scratch_dir
 from operations.directives import Directive, numbers
 from operations.roles import AGENT_ID, Purpose, Role, analyst_of, analyst_subject
-from operations.state import DOC_REVIEW, Agent, Call, Merge, State, NotComputed, code_review_tag
+from operations.state import (DOC_REVIEW, Agent, Call, Merge, NoBaseline, NotComputed, State,
+                              code_review_tag)
 from operations.handled import bash_calls, done
 from operations.steps import Bash, Launch, Step, Undecided
 from operations.log_commands import FILE_TICKET
@@ -65,11 +86,12 @@ from ticketing.times import utc_stamp
 from ticketing.vocabulary import Kind, Status
 
 OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER, Role.COST_AUDIT})
-"""The roles of After a batch and the cost audit, which no batch holds."""
+"""The roles of After a batch, the code review, the gate and the cost
+audit, which no batch holds."""
 
 BATCH_SPAN = 3600
 """The seconds since a batch's first launch after which the batch closes
-with members pending."""
+with members pending, and the least span between two gate launches."""
 
 
 def start(state: State, before: float | None = None) -> float:
@@ -129,42 +151,56 @@ def step(state: State) -> Step | None:
         return s
     since = start(state)
     batch = members(state, since)
-    merges = merged(state, since)
-    if not batch and not merges:
+    if not batch and not merged(state, since):
         return None
     if any(a.pending for a in batch) and state.now - min(a.launched for a in batch) < BATCH_SPAN:
         return None
     if (s := release(state)) is not None:
         return s
-    if merges and any(c.code and c.time > since for c in state.git.commits):
-        reviewers = [a for a in state.agents_of(Role.CODE_REVIEWER) if a.launched > since]
-        if not reviewers:
-            if state.git.code_review is None:
-                return Undecided("no `code-review/<n>` tag gives the last code review's baseline")
-            return Launch(Role.CODE_REVIEWER, code_review_tag(state.git.code_review + 1),
-                          briefs.code_review(state.git.code_review, scratch_dir("code-review", state.scratch)),
-                          occasion=str(since))
-        if reviewers[-1].pending:
-            return None
-    if merges:
-        reviews = [a for a in state.transcripts.agents if standing(a.role, a.subject) and a.launched > since]
-        if not reviews:
-            return doc_review(state)
-        if reviews[-1].pending:
-            return None
-    n = len(state.agents_of(Role.BATCH_PROFILE)) + 1
-    head = state.git.commits[0].hash
-    if merges and not any(a.launched > since for a in state.agents_of(Role.BATCH_GATE)):
-        return Launch(Role.BATCH_GATE, str(n), briefs.batch_gate(scratch_dir(f"batch-{n}", state.scratch)),
-                      occasion=str(since))
     runs = batch_runs(state, batch, since, None)
     if not isinstance(runs, list):
         return runs
-    if (s := assessment(state)) is not None:
-        return s
+    n = len(state.agents_of(Role.BATCH_PROFILE)) + 1
     ids = {a.agent_id for a in batched(state)}
     return Launch(Role.BATCH_PROFILE, str(n),
-                  briefs.batch_profile(runs, [r for r in runs if r in ids], head), occasion=str(since))
+                  briefs.batch_profile(runs, [r for r in runs if r in ids], state.git.commits[0].hash),
+                  occasion=str(since))
+
+
+def code_review(state: State) -> Step | None:
+    """The launch of a code review, where one is due."""
+    if any(a.pending for a in state.agents_of(Role.CODE_REVIEWER)):
+        return None
+    baseline = state.git.code_review
+    if isinstance(baseline, NoBaseline):
+        newest = next((c.hash for c in state.git.commits if c.code), None)
+        if newest is None:
+            return None
+        return Undecided(mctx("the last code review's baseline is unknown, with `{commit}` the newest "
+                              "commit of `master` that changes the code: {why}").format(
+            commit=newest, why=baseline.value))
+    if not baseline.unreviewed:
+        return None
+    return Launch(Role.CODE_REVIEWER, code_review_tag(baseline.number + 1),
+                  briefs.code_review(baseline.number, scratch_dir("code-review", state.scratch)),
+                  occasion=baseline.unreviewed[0])
+
+
+def standing_review(state: State) -> Step | None:
+    """The launch of a standing doc review, where one is due."""
+    past = [a for a in state.transcripts.agents if standing(a.role, a.subject)]
+    return None if merged_since(state, past) is None else doc_review(state)
+
+
+def gate(state: State) -> Step | None:
+    """The launch of a gate agent, where one is due."""
+    past = state.agents_of(Role.BATCH_GATE)
+    since = merged_since(state, past)
+    if since is None or (past and state.now - since < BATCH_SPAN):
+        return None
+    n = len(past) + 1
+    return Launch(Role.BATCH_GATE, str(n), briefs.batch_gate(scratch_dir(f"batch-{n}", state.scratch)),
+                  occasion=str(since))
 
 
 def batch_runs(state: State, batch: list[Agent], since: float,
@@ -274,6 +310,13 @@ def opened(state: State, past: list[Agent]) -> float | None:
     if past and past[-1].pending:
         return None
     return past[-1].launched if past else state.started
+
+
+def merged_since(state: State, past: list[Agent]) -> float | None:
+    """`opened` of `past`, where the session merged a change since that
+    time; None otherwise."""
+    since = opened(state, past)
+    return since if since is not None and merged(state, since) else None
 
 
 AUDIT_AFTER = 200.0

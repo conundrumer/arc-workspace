@@ -305,6 +305,21 @@ def code_review_number(tag: str) -> int | None:
 
 
 @dataclass(frozen=True)
+class CodeReview:
+    """The last code review's baseline: the highest `<n>` of a
+    `code-review/<n>` tag, and the hashes of the commits of `master` that
+    change the code and that tag's commit does not reach, newest first."""
+    number: int
+    unreviewed: tuple[str, ...]
+
+
+class NoBaseline(Enum):
+    """Why the read gives no `CodeReview`."""
+    NO_TAG = mctx("no `code-review/<n>` tag exists")
+    GIT_FAILED = mctx("`git log <tag>..master` failed on the `code-review/<n>` tag of the highest `<n>`")
+
+
+@dataclass(frozen=True)
 class Reader:
     """A reader the `context` command knows, with one argument list it
     takes. `tag` is the tag of its last standing doc review."""
@@ -455,7 +470,8 @@ class GitRead:
     commits `tree_reads.COMMITS` gives, `worktrees` the worktrees of the repo, and
     `branches` the branch of each worktree that stands on one. `claims`
     gives the session id each claimed task's claim file holds.
-    `code_review` is the highest number of a `code-review/<n>` tag.
+    `code_review` is the last code review's baseline, or why the read
+    gives none.
     `doc_reviews` gives the time of the commit each `Reader.tag` points
     at, by that tag, or is None where the tags do not read. `definitions` gives the
     `st_mtime` of each rendered definition `.claude/agents/<agent
@@ -464,7 +480,7 @@ class GitRead:
     worktrees: frozenset[Path]
     branches: Mapping[Path, str]
     claims: Mapping[str, str]
-    code_review: int | None
+    code_review: CodeReview | NoBaseline
     doc_reviews: Mapping[str, float] | None
     definitions: Mapping[str, float]
 
