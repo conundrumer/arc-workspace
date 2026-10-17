@@ -59,8 +59,8 @@ from engine.quotes import quotes
 from solver.annotations import DeriveLine, IgnoreForm
 from solver.model import Case, DeriveBranch, Parameter
 from solver.aggregate import Solver
-from solver.readers import declaration_of, proposer_names, proposers_program
-from solver.graph import Graph
+from solver.readers import (Proposer, declaration_of, proposers,
+                            proposers_program)
 from solver.names import branch_text
 from solver.problems import (
     Fault,
@@ -73,38 +73,8 @@ from solver.probe import Proposals, probe, probe_failure
 from solver.pair_runs import examples
 from solver.group_runs import at_once
 from solver.per_case import parameter_reading
-from solver.vocabulary import COLOR, PROPOSE
+from solver.vocabulary import COLOR
 from solver.witness import Entry
-
-
-@dataclass(frozen=True)
-class Proposer:
-    """A proposer of `programs/proposers.dl`: the column types of its
-    `propose` relation with every alias resolved, and the comment above
-    its component, as the `derive` report states it."""
-
-    name: str
-    types: tuple[str, ...]
-    comment: str
-
-
-def proposers(engine: Engine, program: Program) -> dict[str, Proposer]:
-    """Each proposer of the proposers program by name
-    (`solver.readers.proposer_names`)."""
-    out: dict[str, Proposer] = {}
-    graph = Graph(program, engine)
-    for name in proposer_names(program):
-        comp = next(c for c in program.components if c.name == name)
-        decl = next(r for r in program.relations
-                    if r.name == PROPOSE and r.scope.components[-1:] == (name,))
-        lines = sorted((c.line, c.text.strip()) for c in program.comments
-                       if c.above == comp.id and not c.block)
-        text = " ".join(t for _l, t in lines if t).rstrip(".")
-        out[name] = Proposer(
-            name, tuple(graph.resolve_type(c.type, decl.scope.components)
-                        for c in decl.columns),
-            text[:1].lower() + text[1:])
-    return out
 
 
 # How a derivation's model meets Fit, where it is not judged

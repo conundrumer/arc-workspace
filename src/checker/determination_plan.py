@@ -7,7 +7,6 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
-from checker.derive import proposers
 from checker.domains import (
     ColumnDomain,
     candidate_rows,
@@ -31,7 +30,7 @@ from engine.program import grid_lists
 from engine.quotes import quotes
 from solver.model import Base, Case, base_case
 from solver.aggregate import Solver
-from solver.readers import proposers_program
+from solver.readers import proposers, proposers_program
 from arc.task import Example
 from checker.judged import concept_case, verdict_case
 from solver.annotations import VerdictWord

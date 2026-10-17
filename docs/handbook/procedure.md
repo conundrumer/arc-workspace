@@ -78,7 +78,7 @@
     - A branch is formed whether or not another branch's model subsumes it, and whatever its witnesses' plausibility.
     - A branch that derives a parameter's value, or stores a value the program derives, is stated as that derivation or that stored value, and by the claim it replaces.
         - The `@derive` directive in [Params](docs/handbook/solver-file.md#params) states the values a parameter takes on an input under a `@derive` branch, and where that branch is undefined.
-    - Form them from these sources alone: the pairs, the headers of the solvers under `programs/solvers/`, the lib, the proposers in `programs/proposers.dl`, probes over the pairs, and variant tasks.
+    - Form them from these sources alone: the pairs, the headers of the solvers under `programs/solvers/`, the lib, the proposers, which [Proposers](prompts/agents/analyze-next.md#proposers) lists, probes over the pairs, and variant tasks.
         - `grep -l '^// @keywords:.*<keyword>' programs/solvers/*.dl` lists the solvers under a keyword, and `awk '/^$/{exit} 1' programs/solvers/<id>.dl` prints one solver's header.
         - A probe is a script you write under `work/task/<task_id>/` that runs an interpretation over grids and prints the outputs.
             - A probe whose interpretations are all written in Souffle, and that needs only each interpretation's output grid, can be a Souffle file under `work/task/<task_id>/`, its name starting with the task id, that declares a `Choice` with one constructor per interpretation, `impl_choice` containing each, and `out(p: Position, col: Color, ch: Choice)`. `uv run python scripts/run_dl.py grid <that file> <grid file>` prints each interpretation's output as a grid, one grid for the interpretations that give the same one.

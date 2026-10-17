@@ -22,6 +22,7 @@ from handbook.generated import (Regenerated, Rendering, regenerate,
                                 write_generated, write_whole_text)
 from handbook.lib import (LIB_SRC, LibForm, interface_renderings,
                           lib_component, lib_form, lib_part, lib_sources)
+from handbook.listings import Values, listings
 from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT, document, repo_label
 from handbook.wrappers import wrappers_text
 
@@ -51,20 +52,25 @@ def role_file(name: str, roles: Path = ROLE_DIR) -> Path:
     return roles / f"{name}.md"
 
 
-def entry_text(doc: Path, lib: Path = LIB_SRC) -> str:
-    """One entry document as its reader gets it: the document rendered, then
-    the lib as the document's `lib` attribute says."""
-    return composed(doc, lib)[0]
+def entry_text(doc: Path, lib: Path = LIB_SRC,
+               values: Values = listings) -> str:
+    """One entry document as its reader gets it: the document rendered, with
+    the values `values` gives, by default the list each variable it reads
+    names (`handbook.listings`), then the lib as the document's `lib`
+    attribute says."""
+    return composed(doc, lib, values)[0]
 
 
-def composed(doc: Path, lib: Path) -> tuple[str, nm.Registry, LibForm]:
+def composed(doc: Path, lib: Path, values: Values = listings
+             ) -> tuple[str, nm.Registry, LibForm]:
     """`entry_text` of `doc`, the registry that holds each document the
     render read, and the form the lib renders in after it."""
     registry = nm.Registry(DOCUMENTS_ROOT)
     document = registry.load(doc)
     form = lib_form(document)
     after = lib_part(lib, form)
-    return nm.render(document, registry, after=after) + after, registry, form
+    return (nm.render(document, registry, values(document, registry),
+                      after=after) + after, registry, form)
 
 
 def session_text(doc: Path = SESSION_DOC, lib: Path = LIB_SRC) -> str:

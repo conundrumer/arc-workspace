@@ -9,6 +9,7 @@ gives it, and the pass the merge files on a document past its budget as
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -31,12 +32,38 @@ class Standing(Enum):
 
 
 @dataclass(frozen=True)
+class WithoutLists:
+    """A rendering's text without the lists its render computes
+    (`handbook.listings`), which is not the text its file holds."""
+
+    rendering: Path
+
+
+type Measured = Path | WithoutLists
+"""What a size measures: the text of a file, `doc` or its rendering, or a
+rendering without its lists."""
+
+
+WITHOUT_LISTS = mctx("{path} without the lists its render computes")
+
+
+def measured_text(measured: Measured,
+                  shown: Callable[[Path], str] = repo_label) -> str:
+    """The words that name the text `measured` gives, with each path as
+    `shown` gives it."""
+    match measured:
+        case WithoutLists(rendering=path):
+            return WITHOUT_LISTS.format(path=shown(path))
+        case Path():
+            return shown(measured)
+
+
+@dataclass(frozen=True)
 class Size:
     """The size of the text a document bounds, against its budget."""
 
     doc: Path
-    measured: Path
-    """The file whose text the size measures: `doc`, or its rendering."""
+    measured: Measured
     size: int
     budget: int | None
 
@@ -53,7 +80,7 @@ class Size:
     def message(self) -> str | None:
         """What a command prints for this size, or None below the band."""
         fields = dict(path=repo_label(self.doc),
-                      text=repo_label(self.measured), size=self.size,
+                      text=measured_text(self.measured), size=self.size,
                       budget=self.budget)
         match self.standing:
             case Standing.BELOW:
@@ -94,9 +121,10 @@ def budget_of(doc: Path) -> int | None:
                                              doc=repo_label(doc))) from None
 
 
-def size(doc: Path, text: str, measured: Path | None = None) -> Size:
+def size(doc: Path, text: str, measured: Measured | None = None) -> Size:
     """The size of `text`, which `doc` bounds, against `doc`'s budget:
-    the text of `measured`, or of `doc` itself where `measured` is None."""
+    the text `measured` gives, or that of `doc` itself where `measured` is
+    None."""
     return Size(doc, doc if measured is None else measured, len(text),
                 budget_of(doc))
 

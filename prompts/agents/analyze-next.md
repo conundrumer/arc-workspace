@@ -1,15 +1,20 @@
 + lib: none
-+ budget: 16700
++ budget: 16800
 * comment: when editing this doc
     - The `analyze` agent loads this document, rendered to `.claude/analyze-next.md`, once it has written the concept, by the step of [Analyze](docs/handbook/procedure.md#analyze) that gives it.
     - Parts of the work, in order:
         - Forming every other branch and giving each its standing: [Analyze after the concept](#analyze-after-the-concept).
         - Writing the witness file: [Witness file](#witness-file).
     - Acts, each with its section:
+        - Choosing the proposers from which step 1 forms `@derive` branches: [Proposers](#proposers).
         - Choosing the keywords whose solvers step 1 lists: [Keywords](#keywords).
 
 # Analyze after the concept
 * inline: ../../docs/handbook/procedure.md#analyze-after-the-concept
+
+## Proposers
+- Each proposer of [proposers.dl](programs/proposers.dl), with the column types of its `propose` relation and what it derives.
+* text: proposers
 
 ## Keywords
 * inline: ../../docs/handbook/keywords.md#keywords

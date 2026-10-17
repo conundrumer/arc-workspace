@@ -29,6 +29,7 @@ from handbook.context import (HANDBOOK_AGENT, ROLE_DIR, WRAPPERS_PATH,
                               composed, entry_text, write_lib_output)
 from handbook.generated import Rendering, in_checkout, read_manifest
 from handbook.lib import LIB_SRC, LibForm, lib_sources
+from handbook.listings import unlisted
 from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT, document, repo_label
 
 
@@ -245,6 +246,12 @@ def next_file(agent: str, out: Path = NEXT_OUT) -> Path:
 
 def next_text(agent: str, agents: Path = AGENT_DIR) -> str:
     return render(next_name(agent), agents=agents)
+
+
+def next_unlisted_text(agent: str, agents: Path = AGENT_DIR) -> str:
+    """`next_text` with no list its render computes
+    (`handbook.listings.unlisted`)."""
+    return entry_text(agent_doc(next_name(agent), agents), values=unlisted)
 
 
 def next_renderings(out: Path = NEXT_OUT,

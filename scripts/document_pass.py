@@ -13,7 +13,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from engine import checkout
-from handbook.budget import Size, Standing
+from handbook.budget import Size, Standing, measured_text
 from handbook.budgeted import rendered_texts, sizes
 from handbook.context import composed
 from handbook.lib import LIB_SRC
@@ -59,15 +59,19 @@ GROUNDS = mctx("""
     - The sizes `handbook.budgeted.sizes()` gives at `master` `{commit}`: {sizes}.
 """)
 
-SIZE = mctx("`{path}` {size} of {budget}")
+SIZE = mctx("{text} {size} of {budget}")
 
 OPENED = mctx("opens with no ticket review: its text is fixed")
 """The note of the line that moves a pass from `tickets/draft/` to
 `tickets/open/`."""
 
 
+def _ticked(path: Path) -> str:
+    return f"`{repo_label(path)}`"
+
+
 def listed(paths: list[Path]) -> str:
-    return ", ".join(f"`{repo_label(p)}`" for p in paths)
+    return ", ".join(_ticked(p) for p in paths)
 
 
 def read_by(docs: list[Path]) -> list[Path]:
@@ -92,7 +96,8 @@ def pass_text(past: list[Size], commit: str) -> str:
         scope: SCOPE.format(documents=listed(docs),
                               read=listed(read) if read else mctx("none")),
         grounds: GROUNDS.format(commit=commit, sizes=", ".join(
-            SIZE.format(path=repo_label(s.measured), size=s.size, budget=s.budget)
+            SIZE.format(text=measured_text(s.measured, _ticked), size=s.size,
+                        budget=s.budget)
             for s in past)),
     }, {"editors": EDITORS})
 

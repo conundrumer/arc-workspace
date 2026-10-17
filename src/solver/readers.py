@@ -4,6 +4,7 @@ case sections and markers, the branches and the proposers. `solver.load`
 and the checks read them."""
 
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 
 from engine.memo import ByIdentity
 from engine import (
@@ -36,6 +37,7 @@ from engine.program import (
     TypeName,
 )
 from solver.graph import (
+    Graph,
     by_innermost,
     chain_relation,
     component_chain,
@@ -667,3 +669,33 @@ def proposer_names(program: Program) -> tuple[str, ...]:
     return tuple(c.name for c in program.components
                  if any(r.name == PROPOSE and r.scope.components[-1:]
                          == (c.name,) for r in program.relations))
+
+
+@dataclass(frozen=True)
+class Proposer:
+    """A proposer of `programs/proposers.dl`: the column types of its
+    `propose` relation with every alias resolved, and the comment above
+    its component, as the `derive` report states it."""
+
+    name: str
+    types: tuple[str, ...]
+    comment: str
+
+
+def proposers(engine: Engine, program: Program) -> dict[str, Proposer]:
+    """Each proposer of the proposers program by name
+    (`proposer_names`)."""
+    out: dict[str, Proposer] = {}
+    graph = Graph(program, engine)
+    for name in proposer_names(program):
+        comp = next(c for c in program.components if c.name == name)
+        decl = next(r for r in program.relations
+                    if r.name == PROPOSE and r.scope.components[-1:] == (name,))
+        lines = sorted((c.line, c.text.strip()) for c in program.comments
+                       if c.above == comp.id and not c.block)
+        text = " ".join(t for _l, t in lines if t).rstrip(".")
+        out[name] = Proposer(
+            name, tuple(graph.resolve_type(c.type, decl.scope.components)
+                        for c in decl.columns),
+            text[:1].lower() + text[1:])
+    return out

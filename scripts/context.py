@@ -51,7 +51,7 @@ HELP = mctx("""
             - `.claude/coordinator.md`, the coordinator's document, rendered from `prompts/agents/notes/coordinator.md`.
             - The files a codex session on the repo reads: `AGENTS.md`, [Codex on arc-workspace](prompts/codex.md) rendered, and `.codex/config.toml`, with the main tree's `docs/codex-style.md` as its developer instructions.
     - Before it writes, `--write` checks `CLAUDE.md` and each `.md` file under `docs/handbook/` and `prompts/agents/` against the budget its `+ budget:` line gives.
-        - The budget bounds the rendering `--write` writes from the file, where the file is the coordinator's document, a `<name>-next.md`, or an agent's prompt whose `+ lib:` is `none`, and otherwise the file's own text.
+        - The budget bounds the rendering `--write` writes from the file, where the file is the coordinator's document or an agent's prompt whose `+ lib:` is `none`, that rendering with none of the lists its render computes from other files, where the file is a `<name>-next.md`, and otherwise the file's own text.
         - For each file whose bounded text holds 90 % of its budget or more, it prints a warning on stderr and goes on.
             - Where the bounded text is past the budget, `scripts/merge_change.py` files a whole-document pass on the file, as its `--help` gives.
         - For each file with no `+ budget:` line, it prints the failure, writes nothing and exits 1.
