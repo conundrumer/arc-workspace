@@ -1,0 +1,8 @@
++ budget: 800
+* comment: when editing this doc
+    - The code reviewer reads this document by the link of the item `Make the baseline tag` of its [checklist](prompts/agents/code-reviewer/checklist.md).
+    - Acts, each with its section:
+        - Making this code review's baseline tag: [The baseline tag](#the-baseline-tag).
+
+# The baseline tag
+- `uv run python scripts/review_tag.py code-reviewer <n> <commit> <agent id>`, with this code review's commit as `<commit>` and your own agent id as `<agent id>`, makes this code review's baseline tag. Where it refuses, do what it prints.

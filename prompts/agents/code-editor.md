@@ -13,10 +13,10 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     - Its checklist: [checklist.md](prompts/agents/code-editor/checklist.md).
     - Acts, each with its section:
         - Reading its brief, messages to other agents, and taking its steps: [Code editor](#code-editor), with [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change) by the link of [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), for a review an item has it make.
-        - Writing the code against the spec: [Writing the code](#writing-the-code) and [code-working-rules](prompts/agents/notes/code.md#code-working-rules).
+        - Writing the code against the spec: [Writing the code](prompts/agents/code-editor/writing-the-code.md#writing-the-code), by the links of the items of its checklist, and [code-working-rules](prompts/agents/notes/code.md#code-working-rules).
         - Reading its diff for defect places: [Your diff](#your-diff).
         - Its report and the end of its turn: [Your report](#your-report).
-        - Running commands: [Working rules](#working-rules).
+        - The files it edits, its git commands, and running commands: [Working rules](#working-rules).
         - Filing tickets: [Tickets](#tickets).
 
 # Code editor
@@ -27,23 +27,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 * inline: notes/launching.md#a-changes-brief
 * inline: notes/launching.md#items-and-files
 - Run `uv run python scripts/step.py code-editor` at your start, and, once you have done the item it prints, run it with that item's name.
-- When a later message gives findings or adds a request, do what it asks, then run `uv run python scripts/step.py code-editor write-the-code`, and take the steps from the item it prints.
-
-## Writing the code
-- Implement your brief against the spec: the docstrings of the modules you touch.
-    - Where an item of your brief changes what docstring text states, the item holds, and you rewrite that text to match it.
-    - Change no other docstring text that stands before your edit, apart from text that the rules on prose in code below have you cut.
-    - The rules on prose in code:
-        * inline: ../../src/controlled_markdown/writing.md#docstrings-comments-and-help-text
-        - Where you write or change a string a program puts in an agent's context, a `quotes` or `guard` decorator, or a `///` or `//!` comment in a Souffle file, read [Text the check reads in code](src/controlled_markdown/writing.md#text-the-check-reads-in-code).
-- In code, a case the spec does not cover becomes an `undecided` finding or a fault, never a default, and you file it as [Tickets](#tickets) gives.
-- Use the code your `Reuse` list gives, as it gives it; then decide the shape, so that it makes illegal states unrepresentable and is DRY: each idea in one operation, called from every site that needs it, as the `Design` of your change's ticket gives it, where it gives one. Where the code shows a better shape than that `Design`, build that shape, and give in your report the departure with its reason.
-    * comment: The user's words, session 7fd429fb, 2026-10-13T14:46:25Z: "im curious if this could be part of a planning principle"; 14:47:10Z: "what about just poitnting at the core idea", the core idea being "Make illegal states unrepresentable"; 14:47:43Z, on reading the bare name as license for big refactors: "i dont expect that to happen but if it did i would welcome it". On the standard names, the user's words, session 7fd429fb, 2026-10-15T22:44:57Z: "Let’s try it. Principles are short and well known in training set"; 2026-10-16T02:19:36Z: "almost seems liek a regression".
-- Where your brief gives the places of `refactor` tickets, fix the defect at each.
-- The `refactor` tickets that cite a module are those `grep -lE '^# .<module>.: many ideas in one place$' tickets/open/*.md` lists, with the module's path as `<module>`.
-    - When you come to edit a module that the step that found these tickets did not cover, find its tickets, and where one cites it, run `uv run python scripts/step.py code-editor --enter split-the-cited-modules`, split it, and then edit it.
-- Edit only the files your brief gives, each file your `Reuse` list gives as edited for a reuse, the accepted gate outputs a finding of your checks gives you to update, your tests directory, and the tickets you file.
-- Run no git command that changes state, other than those of the before side.
+- When a later message gives findings or adds a request, do what it asks, then run `uv run python scripts/step.py code-editor write-the-code`, and take the steps from the item it prints, reading no section an item links whose text your context still holds.
+    * comment: The user's words, session 2384db39, 2026-10-17T18:18:39Z: "If the deferred procedure is extremely long and repeats later , it should only be loaded once".
 
 ## Your diff
 - Your diff is the difference between the copy of the tree you made at your start and the tree, and, once the merge script has moved your change onto a later `master`, `git diff HEAD` with each file `git status` gives as untracked.
@@ -63,6 +48,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     - Done: every item is done, your tests directory passes, pyright is clean over the repo, every defect place your `Review` section gives is fixed or stands with its reason, and each case the spec does not cover is filed.
 
 ## Working rules
+- Edit only the files your brief gives, each file your `Reuse` list gives as edited for a reuse, the accepted gate outputs a finding of your checks gives you to update, your tests directory, and the tickets you file.
+- Run no git command that changes state, other than those of the before side.
 * inline: notes/worktree.md#worktree
 * inline: notes/worktree.md#worktree-commands
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree

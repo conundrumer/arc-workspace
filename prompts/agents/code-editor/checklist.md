@@ -11,7 +11,7 @@
     * comment: The user's words, session 7fd429fb-e3be-4173-9b0e-df52f507d6a2, 2026-10-15T16:10:02Z: "i think the scope thing is a fundamental problem that makes code editors not reliably stay DRY?"; 16:11:25Z: "1 yes but stage disc"; 16:13:07Z: "misaligned. purpose of stagedisc is to increas instruct compliance". Without this line, code editors wrote a second copy of code that already computed what they needed: tickets 6-1059, 6-1025 and 6-1026. Code editor a3fa90721fd524e00, on hotfix 6-1138, listed under `Reuse` the move of `run_store`'s `SOURCES` into `scripts/kept_reads.py`, whose kept reads need a different file set (ticket 6-1148).
 
 # Find the refactor tickets on your modules
-- For each module your brief gives, and each your `Reuse` list gives as edited, find the `refactor` tickets that cite it, as [Writing the code](prompts/agents/code-editor.md#writing-the-code) gives.
+- For each module your brief gives, and each your `Reuse` list gives as edited, find the `refactor` tickets that cite it, as [Writing the code](prompts/agents/code-editor/writing-the-code.md#writing-the-code) gives.
 
 # Split the cited modules
 - This part applies where a ticket the step before this one found cites a module you are to edit: [A split](prompts/agents/code-editor/split.md).
@@ -20,7 +20,7 @@
 - Split each module such a ticket cites.
 
 # Write the code
-- Write the code your items need, as [Writing the code](prompts/agents/code-editor.md#writing-the-code) gives.
+- Write the code your items need, as [Writing the code](prompts/agents/code-editor/writing-the-code.md#writing-the-code) gives.
 
 # Review your diff
 - Read your diff for each kind of place [Your diff](prompts/agents/code-editor.md#your-diff) gives, other than many ideas in one place, and fix each defect place that does not stand.

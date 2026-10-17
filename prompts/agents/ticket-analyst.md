@@ -23,8 +23,10 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 * inline: notes/launching.md#a-part-a-brief-leaves-out
 * inline: notes/launching.md#a-ticket-analysts-brief
 - Run `uv run python scripts/step.py ticket-analyst` at your start, and, once you have done the item it prints, run it with that item's name.
-- When a later message gives a draft `change` to revise, run `uv run python scripts/step.py ticket-analyst --enter revise-the-draft`, and take the steps from the item it prints.
-- When a resolution you choose files a `change` or revises one once you have passed the item `Write the change ticket`, run `uv run python scripts/step.py ticket-analyst --enter write-the-change-ticket`, and take the steps from the item it prints.
+- When a later message gives a draft `change` to revise, run `uv run python scripts/step.py ticket-analyst --enter revise-the-draft`, or, where your context still holds that part's file from an earlier entry, `uv run python scripts/step.py ticket-analyst --reenter revise-the-draft`, and take the steps from the item it prints, reading no section an item links whose text your context still holds.
+    * comment: The user's words, session 2384db39, 2026-10-17T18:18:39Z: "If the deferred procedure is extremely long and repeats later , it should only be loaded once".
+- When a resolution you choose files a `change` or revises one once you have passed the item `Write the change ticket`, run `uv run python scripts/step.py ticket-analyst --enter write-the-change-ticket`, or, where your context still holds that part's file from an earlier entry, `uv run python scripts/step.py ticket-analyst --reenter write-the-change-ticket`, and take the steps from the item it prints, reading no section an item links whose text your context still holds.
+    * comment: The user's words, session 2384db39, 2026-10-17T18:18:39Z: "If the deferred procedure is extremely long and repeats later , it should only be loaded once".
 - Where a line links a section, read that section, and no other part of its document: its lines run from its heading to the next heading of its depth or a shallower one, and `grep -n '^#' <path>` prints the line of each heading.
 
 ## Decisions

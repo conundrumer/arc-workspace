@@ -15,6 +15,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
         - Reading its brief and its request, messages to other agents, and taking its steps: [Doc editor](#doc-editor), with [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out), [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), [A change's brief](prompts/agents/notes/launching.md#a-changes-brief), [A doc editor's brief](prompts/agents/notes/launching.md#a-doc-editors-brief) and [editor-messages](prompts/agents/notes/worktree.md#editor-messages).
         - Sorting the findings of a review an item has it make: [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change), by the link of [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief).
         - Its worktree: [worktree](prompts/agents/notes/worktree.md#worktree), [worktree-commands](prompts/agents/notes/worktree.md#worktree-commands) and [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
+        - Building its ticket's `Design`, and sending the code change a move of an `mctx` fragment needs: [Building the Design](prompts/agents/doc-editor/design.md#building-the-design), by the link of the item `Write the edit` of its checklist.
         - Writing the edit: [Writing the edit](#writing-the-edit), with [What a file holds](docs/handbook/editing.md#what-a-file-holds), and the included [Editing the agent-facing documents](docs/handbook/editing.md) and [Writing a document](src/controlled_markdown/writing.md).
         - Checking and reviewing the edit: [Reviewing your edit](#reviewing-your-edit), with [Reviewing a change](docs/handbook/editing.md#reviewing-a-change).
         - Its reply: [Your reply](#your-reply), with [An editor's report on a change](prompts/agents/notes/launching.md#an-editors-report-on-a-change) and [final-report](prompts/agents/notes/commands.md#final-report).
@@ -32,8 +33,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 * inline: notes/worktree.md#editor-messages
 - Run no git command that changes state.
 - Run `uv run python scripts/step.py doc-editor` at your start, and, once you have done the item it prints, run it with that item's name.
-- When a later message gives findings or adds a request, run `uv run python scripts/step.py doc-editor make-the-whole-document-pass`, and take the steps from the item it prints.
-    * comment: With "After you edit" in its context, doc editor `a463cddaf6d2c10a9` answered four later messages of findings in change 17 by running only `context.py --write` and the check, and each fix brought the next finding: ~/.claude/projects/-Users-davidlu-code-arc-workspace/dc433af1-cf87-408d-ab9d-9a1ede6b1b2a/subagents/agent-a463cddaf6d2c10a9.jsonl, lines 75 to 155, and ticket 2 refers to that run as change 17.
+- When a later message gives findings or adds a request, run `uv run python scripts/step.py doc-editor make-the-whole-document-pass`, and take the steps from the item it prints, reading no section an item links whose text your context still holds.
+    * comment: With "After you edit" in its context, doc editor `a463cddaf6d2c10a9` answered four later messages of findings in change 17 by running only `context.py --write` and the check, and each fix brought the next finding: ~/.claude/projects/-Users-davidlu-code-arc-workspace/dc433af1-cf87-408d-ab9d-9a1ede6b1b2a/subagents/agent-a463cddaf6d2c10a9.jsonl, lines 75 to 155, and ticket 2 refers to that run as change 17. "reading no section an item links whose text your context still holds": the user's words, session 2384db39, 2026-10-17T18:18:39Z: "If the deferred procedure is extremely long and repeats later , it should only be loaded once".
 * inline: notes/worktree.md#worktree
 * inline: notes/worktree.md#worktree-commands
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
@@ -50,8 +51,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 ## Writing the edit
 - The request is written from what the sending session knows. Decide where each thing goes and which lines change, put what the documents' readers need above what the request asks, state the Intent at the minimum those readers need, in its general form where one exists, and trace each line you write to the Intent or to a Justification entry.
-- Build the `Design` of your change's ticket, where it gives one for the documents. Where the documents show a better place or a better existing line to extend, build that, and give in your report the departure with its reason.
-- Where you move the text of an `mctx` fragment, send the code change that move needs, with SendMessage, to a code editor of your change that your brief or a message gives.
 - Put in only what each reader of a place you edit needs to know there, by these rules:
     * inline: ../../docs/handbook/editing.md#what-a-file-holds
 - Judge each line you write or keep as each of its readers. Put in a reason or a premise from the request only where it is true for each reader at that place, and a term only where each reader knows it there.

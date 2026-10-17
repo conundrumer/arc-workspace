@@ -4,7 +4,7 @@
     - Acts, each with its section: each step of its work, under the item of that step.
 
 # Judge each draft by its Goal
-- Judge each draft of your brief by [The Goal](prompts/agents/ticket-reviewer.md#the-goal).
+- Judge each draft of your brief by [The Goal](prompts/agents/ticket-reviewer/goal.md#the-goal).
 
 # Review the drafts that meet their Goal
 - This part applies where a draft of your brief meets its request's Goal: [Reviewing a draft](prompts/agents/ticket-reviewer/review.md).

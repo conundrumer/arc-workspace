@@ -28,10 +28,10 @@
 - Where you launched trials in this review, judge each trial's reply once its run has ended, as [Trials](prompts/agents/doc-reviewer/trials.md) gives.
 
 # File the tickets
-- File each finding of this review that [Findings](prompts/agents/doc-reviewer.md#findings), or, in a review of a commit or a standing doc review, [A review of a commit](prompts/agents/doc-reviewer/commit-review.md), gives as a ticket.
+- File each finding of this review that [Filing and sending findings](prompts/agents/doc-reviewer/findings.md#filing-and-sending-findings), or, in a review of a commit or a standing doc review, [A review of a commit](prompts/agents/doc-reviewer/commit-review.md), gives as a ticket.
 
 # Send the findings
-- Send each other finding of this review, as [Findings](prompts/agents/doc-reviewer.md#findings) gives.
+- Send each other finding of this review, as [Filing and sending findings](prompts/agents/doc-reviewer/findings.md#filing-and-sending-findings) gives.
 
 # Reply
 - Give your reply, as [Your reply](prompts/agents/doc-reviewer.md#your-reply) gives.

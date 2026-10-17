@@ -13,7 +13,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     - Its checklist: [checklist.md](prompts/agents/ticket-reviewer/checklist.md).
     - Acts, each with its section:
         - Reading its brief, taking its steps, writing findings and suggestions: [Ticket reviewer](#ticket-reviewer).
-        - Judging a draft against its request's Goal: [The Goal](#the-goal).
+        - Judging a draft against its request's Goal: [The Goal](prompts/agents/ticket-reviewer/goal.md#the-goal), by the link of the item of its checklist.
         - Weighing a design: [The user's goals](#the-users-goals).
         - Writing suggestions: [Reviewing a draft](prompts/agents/ticket-reviewer/review.md#reviewing-a-draft).
         - Checking a draft as an execution plan: [Checks](prompts/agents/ticket-reviewer/review.md#checks).
@@ -26,10 +26,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 - Run `uv run python scripts/step.py ticket-reviewer` at your start, and, once you have done the item it prints, run it with that item's name.
 - Change no word of a draft.
 - Write each finding that stands on a ticket, and each suggestion, as a line of its log with `uv run python scripts/file_ticket.py log`, in the form its `--help` gives, with `draft` as its status, your own agent id as `--id`, and a note that opens with `finding:` or `suggestion:`.
-
-## The Goal
-- Judge whether the change, merged as its Intent and its `Design` give it, meets the Goal of the request it serves, over every case that Goal covers. `uv run python scripts/spans.py brief <number>` prints that request's Goal and spans. For a change that serves no request, judge it against the Impact of each ticket it settles in place of a Goal.
-- Where it does not, log one finding that gives the part of the Goal the design does not meet and a case it leaves out, and check that draft no further in this round.
 
 ## The user's goals
 * inline: notes/decisions.md#the-users-goals

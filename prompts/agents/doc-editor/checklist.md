@@ -13,7 +13,7 @@
 - Judge each line of each document your change's Scope gives, as [Whole-document pass](prompts/agents/doc-editor/whole-document.md#whole-document-pass) gives.
 
 # Write the edit
-- Write the edit your request and each later message need, as [Writing the edit](prompts/agents/doc-editor.md#writing-the-edit) gives.
+- Write the edit your request and each later message need, as [Writing the edit](prompts/agents/doc-editor.md#writing-the-edit) and [Building the Design](prompts/agents/doc-editor/design.md#building-the-design) give.
 
 # Check and review the edit
 - Check and review the edit, as [Reviewing your edit](prompts/agents/doc-editor.md#reviewing-your-edit) gives.

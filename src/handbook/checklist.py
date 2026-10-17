@@ -64,7 +64,7 @@ def checklist_agents(root: Path = DOCUMENTS_ROOT) -> list[str]:
 NO_CHECKLIST = mctx("no agent has a checklist")
 
 ENTER = mctx("""
-    - Where the condition above holds, run `uv run python scripts/step.py {agent} --enter {item}`.
+    - Where the condition above holds, run `uv run python scripts/step.py {agent} --enter {item}`, or, where your context still holds this part's file from an earlier entry, `uv run python scripts/step.py {agent} --reenter {item}`.
     - Where it does not hold, run `uv run python scripts/step.py {agent} {item}`.
     """)
 
@@ -166,16 +166,20 @@ class Checklist:
         return out
 
     def _walked(self, items: tuple[Item, ...], held: Callable[[str], bool],
-                args: tuple[str, ...]) -> Iterator[tuple[Item, tuple[str, ...]]]:
+                args: tuple[str, ...], opens: PartCall | None = None
+                ) -> Iterator[tuple[Item, tuple[str, ...], PartCall | None]]:
         """Each item of the walk of `items`, with the arguments of the step
-        call that prints it, where `args` prints the first of `items`; a
+        call that prints it, where `args` prints the first of `items`, and
+        the part call `opens` for the first of `items`, None for the rest; a
         part's items are in the walk where `held` holds the text of its
         first item. Returns the arguments that print the item after."""
         for item in items:
-            yield item, args
+            yield item, args, opens
+            opens = None
             args = (nm.slug(item.heading.text),)
             if isinstance(item, PartCall) and held(self.text(item.items[0])):
-                args = yield from self._walked(item.items, held, ("--enter", *args))
+                args = yield from self._walked(item.items, held,
+                                               ("--enter", *args), item)
         return args
 
     def gap(self, results: Iterable[str], upto: str | None = None) -> Gap | None:
@@ -187,8 +191,10 @@ class Checklist:
         that holds an earlier item of the walk, so a later round that
         prints an item again needs each item after it printed again. A
         part's items are in the walk where a result holds its first item by
-        the same rule. Raises `ValueError` where the walk skips the part
-        that holds `upto`."""
+        the same rule, and a result at or before the last result that holds
+        that item holds the part's file as `enter` renders it; where none
+        does, the gap is that first item. Raises `ValueError` where the walk
+        skips the part that holds `upto`."""
         texts = [r.rstrip() for r in results]
         # The index of the last result that holds an item of the walk so far.
         last = -1
@@ -201,9 +207,10 @@ class Checklist:
             return bool(holding(text))
 
         target = None if upto is None else self.named(upto)[0]
-        for item, args in self._walked(self.items, held, ()):
+        for item, args, opens in self._walked(self.items, held, ()):
             found = holding(self.text(item))
-            if not found:
+            if not found or (opens is not None and not any(
+                    self._file(opens) in t for t in texts[:found[-1] + 1])):
                 return Gap(item, " ".join([STEP, self.agent, *args]))
             last = found[-1]
             if item is target:
@@ -224,12 +231,22 @@ class Checklist:
             return LAST.format(path=self._label(), item=item.heading.text)
         return self.text(after)
 
-    def enter(self, name: str) -> str:
-        """The conditional part's file that the item `name` calls, rendered,
-        then the first item of that part."""
+    def _part(self, name: str) -> PartCall:
         item, _ = self.named(name)
         if not isinstance(item, PartCall):
             raise SystemExit(NOT_A_CALL.format(item=item.heading.text))
-        part = self.registry.load(item.file)
-        return (nm.render(part, self.registry).rstrip("\n") + "\n\n"
-                + self.text(item.items[0]))
+        return item
+
+    def _file(self, item: PartCall) -> str:
+        return nm.render(self.registry.load(item.file), self.registry).rstrip()
+
+    def enter(self, name: str) -> str:
+        """The conditional part's file that the item `name` calls, rendered,
+        then the first item of that part."""
+        item = self._part(name)
+        return self._file(item) + "\n\n" + self.text(item.items[0])
+
+    def reenter(self, name: str) -> str:
+        """The first item of the conditional part that the item `name`
+        calls, without that part's file."""
+        return self.text(self._part(name).items[0])

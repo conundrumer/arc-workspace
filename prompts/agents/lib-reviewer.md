@@ -15,10 +15,9 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
         - Reading the handbook: [abridgement](prompts/agents/notes/reading.md#abridgement), [citations](prompts/agents/notes/reading.md#citations).
         - Reading its brief, and taking its steps: [Lib reviewer](#lib-reviewer).
         - Recording this lib review's commit, reading the trees and diffing them: [This lib review's commit and diff](#this-lib-reviews-commit-and-diff).
-        - Finding places: [Finding places](#finding-places).
-        - Judging places: [Judging places](#judging-places).
-        - Filing tickets on places: [Tickets on places](#tickets-on-places).
-        - Making the baseline tag, and the final reply: [The baseline tag and your reply](#the-baseline-tag-and-your-reply).
+        - Finding places, judging them and filing their tickets, by the links of the items of its checklist: [Finding places](prompts/agents/lib-reviewer/places.md#finding-places), [place-judgment](prompts/agents/notes/code.md#place-judgment), [review-tickets](prompts/agents/notes/code.md#review-tickets) and [place-tickets](prompts/agents/notes/code.md#place-tickets).
+        - Making the baseline tag: [The baseline tag](prompts/agents/lib-reviewer/baseline-tag.md#the-baseline-tag), by the link of the item of its checklist.
+        - The final reply: [Your reply](#your-reply).
         - Reading and running code: [Working rules](#working-rules).
         - Filing tickets: [Tickets](#tickets).
 
@@ -41,24 +40,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 * inline: notes/code.md#review-trees
 - The diff is that of the pathspecs that command prints, of the earlier baseline against this lib review's commit.
 
-## Finding places
-- Read each relation, rule, functor, component and module the diff touches whole, as it stands at this lib review's commit, to find its places. Where its growth over earlier commits decides whether it is a place, run `git log -L` on it in the worktree of that commit.
-- Find the places of each kind below that Datalog or C++ code can hold, other than many ideas in one place.
-* inline: notes/code.md#unit-kinds
-- The line-level places are the places in the diff of each kind below, in the code that no place of a whole unit is to restructure or remove.
-    * inline: notes/code.md#line-kinds
-    - A rule on prose in code is one of these:
-        * inline: ../../src/controlled_markdown/writing.md#docstrings-comments-and-help-text
-- A line in the diff that breaks a line of the handbook is a line-level defect place too.
-
-## Judging places
-* inline: notes/code.md#place-judgment
-
-## Tickets on places
-* inline: notes/code.md#review-tickets
-
-## The baseline tag and your reply
-- `uv run python scripts/review_tag.py lib-reviewer <n> <commit> <agent id>`, with this lib review's commit as `<commit>` and your own agent id as `<agent id>`, makes this lib review's baseline tag. Where it refuses, do what it prints.
+## Your reply
 * inline: notes/code.md#review-reply
 * inline: notes/commands.md#report-file
 

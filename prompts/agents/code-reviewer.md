@@ -14,11 +14,9 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
     - Acts, each with its section:
         - Reading its brief, and taking its steps: [Code reviewer](#code-reviewer).
         - Recording this code review's commit, reading the trees and diffing them: [This code review's commit and diff](#this-code-reviews-commit-and-diff).
-        - Judging places: [Judging places](#judging-places).
-        - Finding places: [Finding places](#finding-places).
-        - Judging a module of many ideas in one place, and filing its ticket, where the command of Finding places lists one: [Many ideas in one place](prompts/agents/code-reviewer/many-ideas.md).
-        - Filing tickets on places: [Tickets on places](#tickets-on-places).
-        - Making the baseline tag, and the final reply: [The baseline tag and your reply](#the-baseline-tag-and-your-reply).
+        - Finding places, judging them and filing their tickets, by the links of the items of its checklist: [Places of a whole unit](prompts/agents/code-reviewer/whole-units.md#places-of-a-whole-unit), [Places of many ideas in one place](prompts/agents/code-reviewer/module-sizes.md#places-of-many-ideas-in-one-place), [Many ideas in one place](prompts/agents/code-reviewer/many-ideas.md), where the command of Places of many ideas in one place lists a module, [Line-level places](prompts/agents/code-reviewer/line-places.md#line-level-places), [place-judgment](prompts/agents/notes/code.md#place-judgment), [review-tickets](prompts/agents/notes/code.md#review-tickets) and [place-tickets](prompts/agents/notes/code.md#place-tickets).
+        - Making the baseline tag: [The baseline tag](prompts/agents/code-reviewer/baseline-tag.md#the-baseline-tag), by the link of the item of its checklist.
+        - The final reply: [Your reply](#your-reply).
         - Reading and running code: [Working rules](#working-rules).
         - Filing tickets: [Tickets](#tickets).
 
@@ -33,26 +31,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 * inline: notes/code.md#review-trees
 - The diff is that of the pathspecs that command prints, of the earlier baseline against this code review's commit.
 
-## Finding places
-- Read each function, record, class and module the diff touches whole, as it stands at this code review's commit, to find its places. Where its growth over earlier commits decides whether it is a place, run `git log -L` on it in the worktree of that commit.
-* inline: notes/code.md#unit-kinds
-- The places of many ideas in one place are the modules this command lists, run in the worktree of this code review's commit:
-    ```
-    { find src scripts -name '*.py' -exec wc -l {} +; find engine -name '*.rs' -not -path 'engine/target/*' -exec wc -l {} +; } | awk '$1 > 500 && $2 != "total"' | sort -rn
-    ```
-- The line-level places are the places in the diff of each kind below, in the code that no place of a whole unit is to restructure or remove.
-    * inline: notes/code.md#line-kinds
-    - A rule on prose in code is one of these:
-        * inline: ../../src/controlled_markdown/writing.md#prose-in-code
-
-## Judging places
-* inline: notes/code.md#place-judgment
-
-## Tickets on places
-* inline: notes/code.md#review-tickets
-
-## The baseline tag and your reply
-- `uv run python scripts/review_tag.py code-reviewer <n> <commit> <agent id>`, with this code review's commit as `<commit>` and your own agent id as `<agent id>`, makes this code review's baseline tag. Where it refuses, do what it prints.
+## Your reply
 * inline: notes/code.md#review-reply
 * inline: notes/commands.md#report-file
 

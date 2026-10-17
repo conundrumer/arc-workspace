@@ -9,10 +9,11 @@ from handbook.checklist import Checklist
 HELP = mctx("""
     - Usage:
         ```
-        uv run python scripts/step.py <agent>                  # print the first item of the agent's checklist
-        uv run python scripts/step.py <agent> <item>           # print the item after <item>
-        uv run python scripts/step.py <agent> --enter <item>   # print the file of the conditional part <item> calls, then the first item under <item>
-        uv run python scripts/step.py --help | -h              # print this text
+        uv run python scripts/step.py <agent>                    # print the first item of the agent's checklist
+        uv run python scripts/step.py <agent> <item>             # print the item after <item>
+        uv run python scripts/step.py <agent> --enter <item>     # print the file of the conditional part <item> calls, then the first item under <item>
+        uv run python scripts/step.py <agent> --reenter <item>   # print the first item under <item>, without the file of the part it calls
+        uv run python scripts/step.py --help | -h                # print this text
         ```
     - An item is given by its heading's text or by its id, the slug of that text.
     - [Checklists](prompts/agents/notes/checklists.md#checklists) gives the form of a checklist and what each call prints.
@@ -29,6 +30,8 @@ def main(argv: list[str]) -> None:
             print(Checklist(agent).first())
         case ["--enter", item]:
             print(Checklist(agent).enter(item))
+        case ["--reenter", item]:
+            print(Checklist(agent).reenter(item))
         case [item]:
             print(Checklist(agent).after(item))
         case _:

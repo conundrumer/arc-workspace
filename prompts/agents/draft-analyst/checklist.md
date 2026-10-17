@@ -4,10 +4,10 @@
     - Acts, each with its section: each step of its work, under the item of that step.
 
 # Read the Grounds
-- Read each draft's `Grounds` before you explore, as [Revising a draft](prompts/agents/draft-analyst.md#revising-a-draft) gives.
+- Read each draft's `Grounds` before you explore, as [Revising a draft](prompts/agents/ticket-analyst/drafts.md#revising-a-draft) gives.
 
 # Choose the resolutions
-- Settle whether each draft's change is needed, and choose its resolution, as [Revising a draft](prompts/agents/draft-analyst.md#revising-a-draft) gives.
+- Settle whether each draft's change is needed, and choose its resolution, as [Revising a draft](prompts/agents/ticket-analyst/drafts.md#revising-a-draft) gives.
 
 # Write the change ticket
 - This part applies where a resolution you chose revises a draft or files a `change`: [Writing a change ticket](prompts/agents/ticket-analyst/change.md).
@@ -22,7 +22,7 @@
 - Write or revise the rest of each `change`'s text, as [Design](prompts/agents/ticket-analyst/change.md#design) and [Change tickets](prompts/agents/notes/tickets.md#change-tickets) give.
 
 ## Think the revised design through
-- Think each revised design through, as [Revising a draft](prompts/agents/draft-analyst.md#revising-a-draft) gives.
+- Think each revised design through, as [Revising a draft](prompts/agents/ticket-analyst/drafts.md#revising-a-draft) gives.
 
 ## Check the draft
 - Check the text of each `change` before you file it or log its revision, as [Checking a draft](prompts/agents/ticket-analyst/change.md#checking-a-draft) gives.

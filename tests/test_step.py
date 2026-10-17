@@ -48,6 +48,36 @@ def test_refuses_to_enter_an_item_that_calls_no_part(root: Path) -> None:
         Checklist("a", root).enter("read-the-ticket")
 
 
+def test_refuses_to_reenter_an_item_that_calls_no_part(root: Path) -> None:
+    with pytest.raises(SystemExit):
+        Checklist("a", root).reenter("read-the-ticket")
+
+
+def test_reenter_prints_the_first_item_without_the_part_file(root: Path) -> None:
+    c = Checklist("a", root)
+    out = c.reenter("review-a-split")
+    assert "Check it." in out
+    assert "How to split." not in out
+    assert "How to split." in c.enter("review-a-split")
+
+
+def test_a_later_round_that_reenters_a_part_leaves_no_gap(root: Path) -> None:
+    c = Checklist("a", root)
+    later = [c.first(), c.after("read-the-ticket"), c.reenter("review-a-split"),
+             c.after("check-the-split")]
+    assert c.gap([*walk_results(c, True), *later]) is None
+
+
+def test_a_part_reentered_but_never_entered_leaves_a_gap(root: Path) -> None:
+    c = Checklist("a", root)
+    out = [c.first(), c.after("read-the-ticket"), c.reenter("review-a-split"),
+           c.after("check-the-split")]
+    gap = c.gap(out)
+    assert gap is not None
+    assert gap.item.heading.text == "Check the split"
+    assert gap.call == "uv run python scripts/step.py a --enter review-a-split"
+
+
 def test_refuses_a_call_that_links_no_part_file(root: Path) -> None:
     path = root / "prompts" / "agents" / "a" / "checklist.md"
     path.write_text(CHECKLIST.replace(" [Split](prompts/agents/a/split.md)", ""))

@@ -109,6 +109,7 @@
 - [Writing a document](src/controlled_markdown/writing.md) states a rule where the message is not enough, or where the file shows no instance of the construct you need.
 
 ## Reviewing a change
++ review steps
 - A reader's context is everything it receives, from its entry point to the last message, in the order it arrives.
 - `uv run python scripts/context.py contexts` lists the readers, and `uv run python scripts/context.py context <reader> [args]` prints one reader's context, with the argument the listing gives for that reader.
 - The `context` output leaves out [arc-workspace](CLAUDE.md) and each `comment` directive with the lines under it.

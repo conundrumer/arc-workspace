@@ -10,16 +10,16 @@
 - Add the worktrees of the earlier baseline and of this lib review's commit, and make the diff, as [This lib review's commit and diff](prompts/agents/lib-reviewer.md#this-lib-reviews-commit-and-diff) gives.
 
 # Find the places
-- Find every place in the units and the lines the diff touches, as [Finding places](prompts/agents/lib-reviewer.md#finding-places) gives.
+- Find every place in the units and the lines the diff touches, as [Finding places](prompts/agents/lib-reviewer/places.md#finding-places) gives.
 
 # Judge the places
-- Judge each defect place, as [Judging places](prompts/agents/lib-reviewer.md#judging-places) gives.
+- Judge each defect place, as [place-judgment](prompts/agents/notes/code.md#place-judgment) gives.
 
 # File the tickets
-- File the tickets on the places, as [Tickets on places](prompts/agents/lib-reviewer.md#tickets-on-places) gives.
+- File the tickets on the places, as [review-tickets](prompts/agents/notes/code.md#review-tickets) and [place-tickets](prompts/agents/notes/code.md#place-tickets) give.
 
 # Make the baseline tag
-- Make this lib review's baseline tag, as [The baseline tag and your reply](prompts/agents/lib-reviewer.md#the-baseline-tag-and-your-reply) gives.
+- Make this lib review's baseline tag, as [The baseline tag](prompts/agents/lib-reviewer/baseline-tag.md#the-baseline-tag) gives.
 
 # Report
-- Remove each worktree you added, then end your turn with your final reply, as [The baseline tag and your reply](prompts/agents/lib-reviewer.md#the-baseline-tag-and-your-reply) gives.
+- Remove each worktree you added, then end your turn with your final reply, as [Your reply](prompts/agents/lib-reviewer.md#your-reply) gives.
