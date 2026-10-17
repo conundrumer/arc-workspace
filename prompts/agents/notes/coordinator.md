@@ -46,10 +46,10 @@
 - Where an environment update gives as your primary working directory another agent's worktree, act by [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
 
 ## Machine watcher
-- Keep `uv run python scripts/machine_watch.py` running in the background: start it where none of yours runs, and again once you have acted on the alert it ends with.
-    * comment: The user's words, session 7fd429fb, 2026-10-15T21:49:39Z: "maybe a monitor for unusual cpu/memory usage bc that affects work regardless?", 21:51:19Z: "alert is an urgent matter, not sure if ticket is right?", and 21:52:17Z: "why do i need to be paged?".
-- Act on that alert by your judgment, apart from the processes it gives of another session: in place of acting on those, send a message that gives them, with their session ids, to each other live session of the repository.
-    * comment: The user's words, session 7fd429fb, 2026-10-15T21:53:21Z: "how about just using judgment and  messaging the sessions".
+- Keep `uv run python scripts/machine_watch.py` running in the background: start it where none of yours runs, and again once you have acted on the alert it ends with. Only the main session watches the machine, as the watcher's `--help` gives.
+    * comment: The user's words, session 7fd429fb, 2026-10-15T21:49:39Z: "maybe a monitor for unusual cpu/memory usage bc that affects work regardless?", 21:51:19Z: "alert is an urgent matter, not sure if ticket is right?", and 21:52:17Z: "why do i need to be paged?"; and session 2384db39, 2026-10-17T15:00:04Z: "only the main session watches", and 15:07:00Z: "you are main in btoh ways, main is one thing".
+- Act on that alert by your judgment, on the processes it gives of each session, and send no message about them to another session.
+    * comment: The user's words, session 2384db39, 2026-10-17T15:01:12Z: "go", which picks the coordinator's option at 15:00:17Z: "That session acts on processes of other sessions too, and it doesn't send them on."
 
 ## Reports to the user
 - While an operator launcher of yours runs, and you report to the user an agent's message, a completion notification or a harness event that reached you meanwhile, open that report with a bold label that gives the agent the message is from or the notification concerns, by the full name of its kind and whether it is yours or runs under your operator launcher, or else the harness, and the route by which what you report reached you. Give no agent by its id.
