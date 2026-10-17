@@ -23,6 +23,7 @@ from checker.variants import TimedOut, with_program
 from engine import Grid
 from engine.quotes import quotes
 from solver.aggregate import Solver
+from solver.group_runs import at_once
 from solver.outcome import Assignment, first_failure
 from solver.witnessed_cases import entry_assignments, placed_inputs
 
@@ -61,20 +62,21 @@ def check_open_values(solver: Solver, runs: Runs) -> list[Finding]:
     if not isinstance(cases, tuple):
         return [no_result(cases, RunKind.CASE, None, AtFile(WholeFile.SOLVER))] \
             if got.dropped else []
+    inputs = {name: inputs_without(solver, runs, {name})
+              for name in dict.fromkeys(d.fact.parameter for d in got.dropped)}
+    before = {name: runs.outcomes_on(solver, cases, at)
+              for name, at in inputs.items()}
+    afters = at_once(lambda d: runs.outcomes_on(
+        with_program(solver, removal(runs.engine, solver, d.fact)),
+        cases, inputs[d.fact.parameter]), got.dropped)
     out: list[Finding] = []
-    for d in got.dropped:
+    for d, after in zip(got.dropped, afters, strict=True):
         f = d.fact
-        inputs = inputs_without(solver, runs, {f.parameter})
-        before = runs.outcomes_on(solver, cases, inputs)
-        after = runs.outcomes_on(
-            with_program(solver, removal(runs.engine, solver, f)),
-            cases, inputs)
         failed = first_failure(o for got in after for o in got.values())
         if failed is not None:
             out.append(no_result(failed, RunKind.DELETION, None,
                                  AtParameter(f.parameter)))
-        elif before == after:
+        elif before[f.parameter] == after:
             out.append(Finding(Kind.UNEXERCISED, AtParameter(f.parameter),
                                UnexercisedPayload(f)))
     return out
-
