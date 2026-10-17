@@ -1,4 +1,4 @@
-+ budget: 1800
++ budget: 1819
 * comment: when editing this doc
     - Reader: the coordinator, by a link, when a decline reaches it.
     - Acts: judging and acting on a decline, [Declines](#declines).
@@ -7,7 +7,7 @@
 - The statements on a ticket analyst's decline, that the coordinator reads when a decline reaches it.
 
 ## Declines
-- A `decision:` item whose text opens with `decline` or `user decline` gives a ticket analyst's decline: the part of a need the user stated that its resolution leaves unmet, with its defense.
+- A decline gives the part of a need the user stated that a ticket analyst's resolution leaves unmet, with its defense.
 - Judge each decline with what you know of what the user asked for:
     - Where the user asked for the declined part and the defense does not hold, veto the decline.
     - Where the defense holds, bring the decline to the user as a decision: the declined part, the defense and your own view. What it settles waits on the user's ruling.
