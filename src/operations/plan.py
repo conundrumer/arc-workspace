@@ -5,20 +5,20 @@ later one of the session runs ends at once, and the later one carries on
 from the state, so two operators never act on one ticket. The coordinator's
 lines, and the other agents' messages other than the alerts `alerts` acts
 on for the operator that carries the work on, give steps only to the
-operator they reached, so the work a line to an earlier operator left
-unfinished reaches a later one only where the coordinator gives it again
-(`passes.every`);
+operator they reached or to one that takes them up (`taken_up`);
 an `Op decision:` line that rules a held step holds for every operator
 (`directives`), and the items for the coordinator of a ticket analyst's
 reply go to the final reply of the operator that carries that reply
 (`final_reply.carrier`). An operator past its context bound ends at once
 too, and asks its parent, the coordinator or an operator launcher, for a
-fresh operator with no lines; the operator launched next takes up from the state each line
-that the operators before it in a row that ended so received
-(`taken_up`), and, once their work is no longer open, through
+fresh operator with no lines. The operator launched next takes up from the state each line
+that the operators before it in a row, each ended for its context or for a later operator,
+received (`taken_up`), and, once their work is no longer open, through
 `taking.release`, the changes of the session and of the tickets the
 coordinator gives it in a line, and of each ticket a chain of links
-reaches from one of those.
+reaches from one of those. An operator also takes up each line that an
+operator that ended for it by name received, with the lines that
+operator took up (`taken_up`).
 
 Where no step is ready and a launch waits on the operator's agent
 listing (`order.lacked`), the operator ends its turn, so that the resume
@@ -42,13 +42,10 @@ from operations.state import Call, State
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Status
 from operations.journal import backing_off
-from operations.final_reply import FOR_CONTEXT, final_sends_in, for_context, live_holder, sent_final_text
+from operations.final_reply import FOR_CONTEXT, FOR_LATER, final_sends_in, hands_over, hands_to, live_holder, sent_final_text
 from operations.standing import ending, final, holding, reply_lines
 from operations.order import EARLY, LATE, first, lacked, listing_wait, monitor_step
 from operations.steps import EndTurn, ListingHold, Poll, Step
-
-GIVEN_AGAIN = mctx("a line below that stands unfinished reaches it only where it is given to it "
-                   "again")
 
 
 def elsewhere(state: State) -> list[str]:
@@ -75,8 +72,7 @@ def next_step(state: State, watch: monitor.MonitorState) -> Step:
     later = [o for o in state.operators[mine + 1:] if o in state.open_operators]
     if later:
         return ending(state,
-                      mctx("Operator {operator} carries the work on, from the state; {given}.").format(
-                          operator=later[-1], given=GIVEN_AGAIN)
+                      FOR_LATER.format(operator=later[-1])
                       + "\n" + "\n".join([*reply_lines(state, holding(state)), *unknown]))
     s = first(state, *EARLY)
     if s is not None:
@@ -107,14 +103,23 @@ def next_step(state: State, watch: monitor.MonitorState) -> Step:
 
 def taken_up(me: str, operators: Sequence[str], calls: Sequence[Call],
              parents: Mapping[str, str]) -> frozenset[str]:
-    """The operators of `operators` launched right before `me`, in a row,
-    each of which `next` printed the final reply `FOR_CONTEXT`, as their
-    `calls` to their `parents` give it."""
+    """The operators of `operators` before `me` whose lines `me` takes up,
+    by the last final send of each to its parent, of its `calls` to its
+    `parents`, as a final reply sent again after a later message stands in
+    place of the one before it: those launched right before `me`, in a row,
+    each of whose last final send hands its lines over (`hands_over`), each
+    whose last final send hands its lines to `me` by name (`hands_to`), and
+    those each of these takes up, whose lines its reply gives."""
     mine = operators.index(me) if me in operators else 0
-    out: set[str] = set()
-    for o in reversed(operators[:mine]):
-        if not any(for_context(sent_final_text(c) or "")
-                   for c in final_sends_in(calls, o, parents[o])):
-            break
-        out.add(o)
-    return frozenset(out)
+    texts = {o: sent_final_text(sends[-1]) or "" for o in operators[:mine]
+             if (sends := final_sends_in(calls, o, parents[o]))}
+    ups: dict[str, frozenset[str]] = {}
+    for i, op in enumerate([*operators[:mine], me]):
+        row: list[str] = []
+        for o in reversed(operators[:i]):
+            if o not in texts or not hands_over(texts[o]):
+                break
+            row.append(o)
+        named = [o for o in operators[:i] if o in texts and hands_to(texts[o], op)]
+        ups[op] = frozenset({*row, *named}.union(*(ups[o] for o in [*row, *named])))
+    return ups[me]

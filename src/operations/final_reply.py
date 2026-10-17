@@ -1,16 +1,18 @@
 """The operator's final reply: the text of the message that sends it
 (`final_text`, `sent_final_text`), whose form `printing.final_message`
 gives, whether that text ends the operator for
-its context (`for_context`), the calls that sent its text to its parent
+its context (`for_context`) or hands its lines to the operator launched
+after it (`hands_over`) or to one operator by name (`hands_to`), the calls that sent its text to its parent
 (`final_sends`), whether a holder of a change is live (`live_holder`),
 the operator whose final reply carries what
 reached an earlier one (`carrier`), and the lines the reply nests.
 `live_holder` and `carrier` read the calls of
 `next` by `handled.next_call`."""
 
+import re
 from collections.abc import Iterable, Mapping
 
-from controlled_markdown import mctx
+from controlled_markdown import form, mctx
 from operations.constants import COORDINATOR
 from operations.handled import sends_in
 from operations.journal import next_call
@@ -21,6 +23,11 @@ from operations.steps import Reply, Send
 
 FOR_CONTEXT = mctx("I ended for my context: launch a fresh operator with no lines, which "
                    "takes up from the state each line below that stands unfinished.")
+
+FOR_LATER = mctx("Operator {operator} carries the work on, and takes up from the state each "
+                 "line below that stands unfinished.")
+"""The first line of the final reply of an operator that ends because a
+later operator of the session is open."""
 
 
 def final_text(message: str) -> str | None:
@@ -34,10 +41,29 @@ def sent_final_text(call: Call) -> str | None:
     return final_text(call.message)
 
 
+def first_line(text: str) -> str:
+    return text.split("\n", 1)[0]
+
+
 def for_context(text: str) -> bool:
     """Whether the final reply whose text is `text` ends the operator for
     its context."""
-    return text.split("\n", 1)[0] == FOR_CONTEXT
+    return first_line(text) == FOR_CONTEXT
+
+
+def hands_over(text: str) -> bool:
+    """Whether the final reply whose text is `text` hands the operator's
+    lines to the operator launched after it: its first line is
+    `FOR_CONTEXT` or has the form of `FOR_LATER`."""
+    return for_context(text) or re.fullmatch(form(FOR_LATER, {"operator": r"\S+"}),
+                                              first_line(text)) is not None
+
+
+def hands_to(text: str, operator: str) -> bool:
+    """Whether the final reply whose text is `text` hands the operator's
+    lines to `operator` by name: its first line is `FOR_LATER` for
+    `operator`."""
+    return first_line(text) == FOR_LATER.format(operator=operator)
 
 
 def final_sends(state: State, operator: str) -> list[Call]:
