@@ -9,7 +9,6 @@
 # Writing a change ticket
 
 ## Requirements
-- In a `change` for speed where no profile exists, ask for one as its first deliverable.
 - Before you write the Intent of a `change` to the agents' processes, a `change` whose Scope touches `prompts/agents/` or `src/operations/`, read [Process notes](prompts/agents/notes/process.md).
 - Give with each Intent item of a `change` that serves a `request`, and that you file or revise, what it traces to: the user's words in a span of that request, quoted, or a line of that request's Grounds, for what that line itself asks for or states. The user's words are the text of the user's own messages, and an item with no trace but the coordinator's text is no Intent item.
     - Where the user's words choose an option the coordinator proposed, they are that choice alone: the trace quotes that choice and gives the option it picks as the coordinator's. The item states as its requirement the goal that option serves, in terms that hold for any design, and no means the option gives, such as a number, a bound or a mechanism, and no range or ceiling a number of the option sets, that the user's words do not themselves state, whatever a line of the request's Grounds states about it. Each such means goes in the `Design` alone, as a candidate that the `Design` may take or change.

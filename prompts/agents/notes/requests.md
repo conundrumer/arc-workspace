@@ -13,7 +13,8 @@
 
 ## Routes
 - A user's message may open or end with a route directive: `direct`, `send`, `hotfix`, `expedite <number>`, `file`, `draft`, `scratch`, or `re <number>`, a follow-up on that `request`.
-- Where a user's message that asks for work gives no route directive, infer its route, the `request` a follow-up concerns, and the span.
+- Where a user's message that asks for work gives no route directive, infer its route, the `request` a follow-up concerns, and the span, and infer `hotfix` for a small edit with low risk.
+    * comment: The user's words, session 129de8fc-2a0d-4d4d-b950-3a0194c762e2, 2026-10-17T15:51:41Z, on a one-line TODO comment inferred `send`: "man. it's just a one line comment. dont burn tokens on it"; session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-17T15:53:22Z: "i asked to add a TODO comment and it inferred route `direct`". Ticket 11-70.
 - On a route other than `scratch`, write, read back each write and each route you infer, then act: in the same turn on a route the user states, and on an inferred one at the user's next message, unless that message changes or cancels it.
     - To write is to run the command of `uv run python scripts/spans.py` that writes the route's `request` or brief. To act is to launch an agent with that brief, make or merge the change, send an operator an `Expedite:` line, or tell an operator that tickets are open.
         - The goal you give that command is the point of the work, the outcome the user wants, from the user's words, with no means you proposed and no elaboration.
