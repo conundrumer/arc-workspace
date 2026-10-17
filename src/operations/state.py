@@ -273,13 +273,13 @@ class Message:
 
 @dataclass(frozen=True)
 class Commit:
-    """A commit of `master`: its hash, its time, whether it changes
-    `src/`, `scripts/` or `tests/`, its subject, and whether it changes
-    a directory of `tree_reads.PROCESS_DIRS`, a change to the agents'
-    processes."""
+    """A commit of `master`: its hash, its time, the reviews whose paths,
+    as `tree_reads.REVIEW_PATHS` gives them, it changes, its subject, and
+    whether it changes a directory of `tree_reads.PROCESS_DIRS`, a change
+    to the agents' processes."""
     hash: str
     time: float
-    code: bool
+    reviews: frozenset["Review"]
     subject: str
     process: bool
 
@@ -288,35 +288,52 @@ DOC_REVIEW = "doc-review/"
 """What leads the tag of a reader's last standing doc review, and the
 subject of a standing doc review's launch."""
 
-CODE_REVIEW = "code-review/"
-"""What leads the tag of a code review's baseline, and the subject of a
-code review's launch."""
+class Review(Enum):
+    """A review of the code merged to `master` that a tag records, by what
+    leads the tag of its baseline and the subject of its launch."""
+    CODE = "code-review/"
+    LIB = "lib-review/"
+
+    @property
+    def role(self) -> Role:
+        return REVIEWERS[self]
+
+    @property
+    def noun(self) -> str:
+        return NOUNS[self]
+
+    @property
+    def stem(self) -> str:
+        """Its prefix with no `/`, the name of its scratch directory."""
+        return self.value.removesuffix("/")
+
+    def tag(self, n: int) -> str:
+        return f"{self.value}{n}"
+
+    def number(self, tag: str) -> int | None:
+        """The `<n>` of a tag of its baseline, `<prefix><n>`, or None where
+        `tag` is no such tag."""
+        n = tag.removeprefix(self.value)
+        return int(n) if tag.startswith(self.value) and n.isdigit() else None
 
 
-def code_review_tag(n: int) -> str:
-    return f"{CODE_REVIEW}{n}"
-
-
-def code_review_number(tag: str) -> int | None:
-    """The `<n>` of a `code-review/<n>` tag, or None where `tag` is no such
-    tag."""
-    n = tag.removeprefix(CODE_REVIEW)
-    return int(n) if tag.startswith(CODE_REVIEW) and n.isdigit() else None
+REVIEWERS = {Review.CODE: Role.CODE_REVIEWER, Review.LIB: Role.LIB_REVIEWER}
+NOUNS = {Review.CODE: mctx("code review"), Review.LIB: mctx("lib review")}
 
 
 @dataclass(frozen=True)
-class CodeReview:
-    """The last code review's baseline: the highest `<n>` of a
-    `code-review/<n>` tag, and the hashes of the commits of `master` that
-    change the code and that tag's commit does not reach, newest first."""
+class Baseline:
+    """A review's last baseline: the highest `<n>` of a tag of its
+    baseline, and the hashes of the commits of `master` that change the
+    paths it reviews and that tag's commit does not reach, newest first."""
     number: int
     unreviewed: tuple[str, ...]
 
 
 class NoBaseline(Enum):
-    """Why the read gives no `CodeReview`."""
-    NO_TAG = mctx("no `code-review/<n>` tag exists")
-    GIT_FAILED = mctx("`git log <tag>..master` failed on the `code-review/<n>` tag of the highest `<n>`")
+    """Why the read gives no `Baseline`."""
+    NO_TAG = mctx("no such tag exists")
+    GIT_FAILED = mctx("`git log <tag>..master` failed on that tag")
 
 
 @dataclass(frozen=True)
@@ -470,8 +487,8 @@ class GitRead:
     commits `tree_reads.COMMITS` gives, `worktrees` the worktrees of the repo, and
     `branches` the branch of each worktree that stands on one. `claims`
     gives the session id each claimed task's claim file holds.
-    `code_review` is the last code review's baseline, or why the read
-    gives none.
+    `reviews` gives each review's last baseline, or why the read gives
+    none.
     `doc_reviews` gives the time of the commit each `Reader.tag` points
     at, by that tag, or is None where the tags do not read. `definitions` gives the
     `st_mtime` of each rendered definition `.claude/agents/<agent
@@ -480,7 +497,7 @@ class GitRead:
     worktrees: frozenset[Path]
     branches: Mapping[Path, str]
     claims: Mapping[str, str]
-    code_review: CodeReview | NoBaseline
+    reviews: Mapping[Review, Baseline | NoBaseline]
     doc_reviews: Mapping[str, float] | None
     definitions: Mapping[str, float]
 

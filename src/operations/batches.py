@@ -7,10 +7,10 @@ tickets, and an agent on the profile of the batch's runs.
 
 A batch is the agents the session's operators launched since the launch
 of the previous batch's profile agent, other than the agents of After a
-batch, the code reviews, the gates, the standing doc reviews, the process
-assessments and the cost audits, with the changes merged since: those an
-operator's merge call merged, as `state.Merge` reads it, and those the
-coordinator gives as merged. The launch of the profile agent opens the
+batch, the code reviews, the lib reviews, the gates, the standing doc
+reviews, the process assessments and the cost audits, with the changes
+merged since: those an operator's merge call merged, as `state.Merge`
+reads it, and those the coordinator gives as merged. The launch of the profile agent opens the
 next batch.
 
 The sweep (`file_ticket.py sweep`) runs once a profile launch closes a
@@ -24,18 +24,27 @@ once a profile launch closes a batch, where no call of it was made since
 that launch, on the calls since the closed batch's start. No batch holds
 it, so no profile launch waits on it.
 
-A code review launches at any step where a commit of `master` that
-changes the code is one the last code review's tag does not reach, and
-no code reviewer of the session runs. Its occasion is the newest such
-commit, so a review that ended with no tag launches again only once
-newer code merges. Where the read gives no baseline (`NoBaseline`), the
-unreviewed commits are unknown, and the step is undecided on the newest
-commit of `master` that changes the code, so that an operator hands it
-on once for each such commit.
+Each review of `state.Review`, the code review and the lib review,
+launches at any step where a commit of `master` that changes the paths it reviews is one
+the tag of its last baseline does not reach, and no reviewer of its role
+of the session runs. Its occasion is the newest such commit, so a review
+that ended with no tag launches again only once newer code of its paths
+merges. Where the read gives no baseline (`NoBaseline`), the unreviewed
+commits are unknown, and the step is undecided on the newest commit of
+`master` that changes its paths, so that an operator hands it on once
+for each such commit.
 
 A standing doc review launches at any step where a change merged since
 the last one an operator of the session launched, or since the session's
 start where none was, and none runs.
+
+A standing doc review also launches at any step on an overdue reader: one
+that no tag records, or whose tag points at a commit older than
+`STANDING_SPAN` that a later commit of `master` follows, where no
+standing doc review of the session on that reader runs or launched after
+the head commit of `master`. Each step launches the first overdue reader
+of `State.readers`, so the overdue readers launch in turn, with no wait
+on each other's runs.
 
 A gate agent, on the gate's timings and outputs, launches at any step
 where a change merged since the last one an operator of the session
@@ -51,13 +60,15 @@ A cost audit launches at any step once the spend of its window
 (`state.AuditWindow`) is at least `AUDIT_AFTER`, and the last cost audit
 an operator of the session launched does not run.
 
-No batch holds a code review, a gate, a standing doc review, a process
-assessment or a cost audit, so no profile launch waits on its run.
+No batch holds a code review, a lib review, a gate, a standing doc
+review, a process assessment or a cost audit, so no profile launch waits
+on its run.
 
 A standing doc review is a doc reviewer on one reader's whole context at
-the head of `master`: the first reader of `State.readers` that no tag
-records, or, where each has one, the reader whose tag points at the
-oldest commit.
+the head of `master`. The one that launches after a merge is on the
+first of the readers of `State.readers` that no standing doc review of
+the session runs on that no tag records, or, where each of those has
+one, on the one whose tag points at the oldest commit.
 
 The profile agent profiles each run `profile_runs.py --under` takes, and
 may launch a transcript review only of those that no batch holds: a
@@ -77,21 +88,27 @@ from operations.taking import release
 from operations.filing import scratch_dir
 from operations.directives import Directive, numbers
 from operations.roles import AGENT_ID, Purpose, Role, analyst_of, analyst_subject
-from operations.state import (DOC_REVIEW, Agent, Call, Merge, NoBaseline, NotComputed, State,
-                              code_review_tag)
+from operations.state import (DOC_REVIEW, Agent, Call, Merge, NoBaseline, NotComputed, Reader, Review,
+                              State)
 from operations.handled import bash_calls, done
 from operations.steps import Bash, Launch, Step, Undecided
 from operations.log_commands import FILE_TICKET
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Kind, Status
 
-OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER, Role.COST_AUDIT})
-"""The roles of After a batch, the code review, the gate and the cost
-audit, which no batch holds."""
+OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER, Role.LIB_REVIEWER,
+                 Role.COST_AUDIT})
+"""The roles of After a batch, the code review, the lib review, the gate
+and the cost audit, which no batch holds."""
 
 BATCH_SPAN = 3600
 """The seconds since a batch's first launch after which the batch closes
 with members pending, and the least span between two gate launches."""
+
+STANDING_SPAN = 86400
+"""The age, in seconds, of the commit a reader's standing doc review tag
+points at, past which the reader is overdue where a later commit of
+`master` follows that commit."""
 
 
 def start(state: State, before: float | None = None) -> float:
@@ -168,28 +185,61 @@ def step(state: State) -> Step | None:
 
 
 def code_review(state: State) -> Step | None:
-    """The launch of a code review, where one is due."""
-    if any(a.pending for a in state.agents_of(Role.CODE_REVIEWER)):
+    return review(state, Review.CODE)
+
+
+def lib_review(state: State) -> Step | None:
+    return review(state, Review.LIB)
+
+
+def review(state: State, of: Review) -> Step | None:
+    """The launch of the review `of`, where one is due."""
+    if any(a.pending for a in state.agents_of(of.role)):
         return None
-    baseline = state.git.code_review
+    baseline = state.git.reviews[of]
     if isinstance(baseline, NoBaseline):
-        newest = next((c.hash for c in state.git.commits if c.code), None)
+        newest = next((c.hash for c in state.git.commits if of in c.reviews), None)
         if newest is None:
             return None
-        return Undecided(mctx("the last code review's baseline is unknown, with `{commit}` the newest "
-                              "commit of `master` that changes the code: {why}").format(
-            commit=newest, why=baseline.value))
+        return Undecided(mctx("the last {name}'s baseline, its `{prefix}<n>` tag of the highest `<n>`, is "
+                              "unknown, with `{commit}` the newest "
+                              "commit of `master` that changes the paths it reviews: {why}").format(
+            name=of.noun, prefix=of.value, commit=newest, why=baseline.value))
     if not baseline.unreviewed:
         return None
-    return Launch(Role.CODE_REVIEWER, code_review_tag(baseline.number + 1),
-                  briefs.code_review(baseline.number, scratch_dir("code-review", state.scratch)),
+    return Launch(of.role, of.tag(baseline.number + 1),
+                  briefs.review(of, baseline.number, scratch_dir(of.stem, state.scratch)),
                   occasion=baseline.unreviewed[0])
+
+
+def standing_reviews(state: State) -> list[Agent]:
+    return [a for a in state.transcripts.agents if standing(a.role, a.subject)]
 
 
 def standing_review(state: State) -> Step | None:
     """The launch of a standing doc review, where one is due."""
-    past = [a for a in state.transcripts.agents if standing(a.role, a.subject)]
-    return None if merged_since(state, past) is None else doc_review(state)
+    return None if merged_since(state, standing_reviews(state)) is None else doc_review(state)
+
+
+def overdue_review(state: State) -> Step | None:
+    """The launch of a standing doc review on an overdue reader, where one
+    is due."""
+    readers = state.readers.value
+    if not readers:
+        return None
+    times = state.git.doc_reviews
+    if times is None:
+        return Undecided(UNREAD_TAGS)
+    head = state.git.commits[0]
+    past = standing_reviews(state)
+    left = {a.subject for a in past if a.pending or a.launched > head.time}
+
+    def overdue(r: Reader) -> bool:
+        t = times.get(r.tag)
+        return t is None or (t < state.now - STANDING_SPAN and any(c.time > t for c in state.git.commits))
+
+    reader = next((r for r in readers if r.tag not in left and overdue(r)), None)
+    return None if reader is None else standing_launch(state, reader)
 
 
 def gate(state: State) -> Step | None:
@@ -273,16 +323,28 @@ def sweep_command(runs: list[str]) -> str:
     return shlex.join([*FILE_TICKET, "sweep", *runs])
 
 
-def doc_review(state: State) -> Step:
+UNREAD_TAGS = mctx("a `doc-review/<reader>` tag does not read as a commit")
+
+
+def doc_review(state: State) -> Step | None:
     """The launch of a standing doc review, on the reader it is due on."""
     readers = state.readers.value
     if not readers:
         return Undecided(mctx("no reader is listed for a standing doc review"))
     if state.git.doc_reviews is None:
-        return Undecided(mctx("a `doc-review/<reader>` tag does not read as a commit"))
+        return Undecided(UNREAD_TAGS)
     times = state.git.doc_reviews
-    unreviewed = [r for r in readers if r.tag not in times]
-    reader = unreviewed[0] if unreviewed else min(readers, key=lambda r: times[r.tag])
+    running = {a.subject for a in standing_reviews(state) if a.pending}
+    free = [r for r in readers if r.tag not in running]
+    if not free:
+        return None
+    unreviewed = [r for r in free if r.tag not in times]
+    return standing_launch(state, unreviewed[0] if unreviewed else min(free, key=lambda r: times[r.tag]))
+
+
+def standing_launch(state: State, reader: Reader) -> Launch:
+    """The launch of a standing doc review on `reader`, at the head of
+    `master`."""
     return Launch(Role.DOC_REVIEWER, reader.tag,
                   briefs.standing_doc_review(" ".join((reader.name, *reader.args)), reader.tag,
                                              state.git.commits[0].hash, state.me),

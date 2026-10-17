@@ -3,10 +3,10 @@
     - Readers: each agent that files tickets inlines the sections for its work; the coordinator links them from [Tickets](prompts/agents/notes/requests.md#tickets); the ticket analyst, the draft analyst and the ticket reviewer link Change tickets.
     - Acts, each with its section:
         - A solver pass's tickets: [pass-tickets](#pass-tickets).
-        - Filing a ticket: [Ticket files](#ticket-files), [Ticket fields](#ticket-fields) with its part [Agent names and ids](#agent-names-and-ids), which the code reviewer inlines in place of Ticket fields, and [Ticket subjects](#ticket-subjects) where no other line of its reader's documents gives its `<domain>` and `<subject>`.
+        - Filing a ticket: [Ticket files](#ticket-files), [Ticket fields](#ticket-fields) with its part [Agent names and ids](#agent-names-and-ids), which the code reviewer and the lib reviewer inline in place of Ticket fields, and [Ticket subjects](#ticket-subjects) where no other line of its reader's documents gives its `<domain>` and `<subject>`.
         - A `performance` ticket: [performance-tickets](#performance-tickets).
         - A noticed fault: [Noticed faults](#noticed-faults).
-        - Finding, moving and closing a ticket: [Tracking](#tracking) with its part [Reading and logging tickets](#reading-and-logging-tickets), which the code reviewer inlines in place of Tracking.
+        - Finding, moving and closing a ticket: [Tracking](#tracking) with its part [Reading and logging tickets](#reading-and-logging-tickets), which the code reviewer and the lib reviewer inline in place of Tracking.
         - A `change` ticket's fields: [Change tickets](#change-tickets).
 
 # Ticket notes
@@ -44,7 +44,7 @@
 - `<domain>` and `<subject>` give what a ticket of another kind than `change` and `request` is about:
     - `task` and the task id: a solver pass's ticket, and a transcript review's ticket on a pass.
     - `change` and the number of the change's ticket: an editor's or a doc reviewer's ticket on its change where its brief gives that number, the ticket the agent that merges a change files on that change, and a transcript review's ticket on such an editor's run.
-    - `commit` and the commit's hash: a code reviewer's ticket, on its code review's commit, and a ticket a brief has its agent file on a commit of `master` that the brief gives.
+    - `commit` and the commit's hash: a code reviewer's or a lib reviewer's ticket, on its review's commit, and a ticket a brief has its agent file on a commit of `master` that the brief gives.
     - `ticket` and the ticket's number: a ticket on another ticket.
     - `agent` and the agent's id: every ticket no entry above fits, on the agent whose run it concerns, or, where it concerns no agent's run, the agent in whose run the fault showed, your own included.
 

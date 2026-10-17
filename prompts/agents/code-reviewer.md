@@ -29,20 +29,19 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 - Edit under the tree only the tickets you file.
 
 ## This code review's commit and diff
-- This code review's commit is the tree recorded as a commit, untracked files under `src/`, `scripts/` and `tests/` included, by this one Bash call, with this code review's number as `<n>`, and its hash is the one the call prints:
+- This code review's commit is the tree recorded as a commit, untracked files under `src/`, `scripts/`, `tests/` and `engine/` and the working state of `.claude/settings.json` included, by this one Bash call, with this code review's number as `<n>`, and its hash is the one the call prints:
     ```
-    export GIT_INDEX_FILE=<scratch directory>/index && git read-tree HEAD && git add -A src scripts tests && git commit-tree $(git write-tree) -p HEAD -m code-review<n>
+    export GIT_INDEX_FILE=<scratch directory>/index && git read-tree HEAD && git add -A src scripts tests engine .claude/settings.json && git commit-tree $(git write-tree) -p HEAD -m code-review<n>
     ```
-- Read the earlier baseline and this code review's commit through `git worktree add` on the baseline's tag and on that commit, in your scratch directory, and remove each such worktree with `git worktree remove`.
-- Run no other git command that changes state.
-- The diff is that of `src/`, `scripts/` and `tests/` of the earlier baseline against this code review's commit.
+* inline: notes/code.md#review-trees
+- The diff is that of `src/`, `scripts/`, `tests/`, `engine/` and `.claude/settings.json` of the earlier baseline against this code review's commit.
 
 ## Finding places
 - Read each function, record, class and module the diff touches whole, as it stands at this code review's commit, to find its places. Where its growth over earlier commits decides whether it is a place, run `git log -L` on it in the worktree of that commit.
 * inline: notes/code.md#unit-kinds
 - The places of many ideas in one place are the modules this command lists, run in the worktree of this code review's commit:
     ```
-    find src scripts -name '*.py' -exec wc -l {} + | awk '$1 > 500 && $2 != "total"' | sort -rn
+    { find src scripts -name '*.py' -exec wc -l {} +; find engine -name '*.rs' -not -path 'engine/target/*' -exec wc -l {} +; } | awk '$1 > 500 && $2 != "total"' | sort -rn
     ```
 - The line-level places are the places in the diff of each kind below, in the code that no place of a whole unit is to restructure or remove.
     * inline: notes/code.md#line-kinds
@@ -50,18 +49,14 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
         * inline: ../../src/controlled_markdown/writing.md#prose-in-code
 
 ## Judging places
-- Judge each defect place on whether it is a defect, and, where it is one, on whether it stands, by the lines on its kind.
+* inline: notes/code.md#place-judgment
 
 ## Tickets on places
-- Leave out a place that an earlier `refactor` or `question` ticket cites, where that ticket is not closed `fixed`.
-- File each defect as a ticket of kind `refactor`, and each place that poses a question as a ticket of kind `question`, with `commit` as `<domain>`, and as `<subject>` the hash `git rev-parse --short <commit>` prints, with this code review's commit as `<commit>`.
-    - Cite each place as below.
-        * inline: notes/code.md#place-tickets
-- Close with `wontfix` the ticket of each defect place that stands, and give the judgment in the note after it.
+* inline: notes/code.md#review-tickets
 
 ## The baseline tag and your reply
-- `uv run python scripts/code_review_tag.py <n> <commit> <agent id>`, with this code review's commit as `<commit>` and your own agent id as `<agent id>`, makes this code review's baseline tag. Where it refuses, do what it prints.
-- Your final reply goes to the agent that launched you, in at most six lines: the pattern that matches the names of the tickets you left under `tickets/open/`, and the count of tickets under each kind of place.
+- `uv run python scripts/review_tag.py code-reviewer <n> <commit> <agent id>`, with this code review's commit as `<commit>` and your own agent id as `<agent id>`, makes this code review's baseline tag. Where it refuses, do what it prints.
+* inline: notes/code.md#review-reply
 * inline: notes/commands.md#report-file
 
 ## Working rules

@@ -283,7 +283,8 @@ EARLY: tuple[Callable[[State], Step | None], ...] = (
 LATE: tuple[Callable[[State], Step | None], ...] = (
     launching, triage.reopen, triage.later_lines, triage.settle, ticket_stall.stall, drafts.step,
     changes.step,
-    pipelines, batches.audit, batches.code_review, batches.standing_review, batches.gate,
+    pipelines, batches.audit, batches.code_review, batches.lib_review, batches.standing_review,
+    batches.overdue_review, batches.gate,
     batches.assessment, batches.step, alerts.ticket_stalls)
 PROCEDURES = EARLY + LATE
 

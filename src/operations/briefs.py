@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from controlled_markdown import form, mctx
 from operations.reports import LEFT_FOR_DECISION, WORKTREE
 from operations.roles import Role
-from operations.state import SETTLED, Agent, Place, Ticket, code_review_tag
+from operations.state import SETTLED, Agent, Place, Review, Ticket
 from operations.log_commands import AGENT, FILE_TICKET
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import TICKET_NUMBER
@@ -545,10 +545,13 @@ def solver_pass(task: str, overrides: list[str]) -> str:
                       *(OVERRIDE.format(text=text) for text in overrides)])
 
 
-def code_review(baseline: int, scratch: Path) -> str:
-    return mctx("The earlier code review's baseline is the tag `{tag}`, and "
-                "this code review's number is {number}.").format(
-        tag=code_review_tag(baseline), number=baseline + 1) + "\n" + SCRATCH.format(scratch=scratch)
+def review(of: Review, baseline: int, scratch: Path) -> str:
+    """The brief of the review `of` after the one whose baseline is
+    numbered `baseline`."""
+    return mctx("The earlier {name}'s baseline is the tag `{tag}`, and "
+                "this {name}'s number is {number}.").format(
+        name=of.noun, tag=of.tag(baseline), number=baseline + 1) + "\n" + SCRATCH.format(
+        scratch=scratch)
 
 
 STANDING_DOC_REVIEW = mctx("""

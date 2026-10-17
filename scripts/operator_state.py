@@ -11,12 +11,13 @@ from pathlib import Path
 
 import kept_reads
 import step_journal
-from agent_turns import first_time, last_time
+from agent_turns import last_time
 from audit_window import window
 from context_bound_hook import past_bound
 from filed_texts import gone_line
+from git_session_reads import given_lines, read_git, sessions, started
 from held_budgets import change_budgets, change_spend, doc_budgets
-from idle_sessions import main_wanted, read_sessions, running, take_main, want_main
+from idle_sessions import running
 from monitor_reads import late_resumes, watched
 from open_agents import Listed, quiet_since, running_agents, work_open
 from operator_reads import (
@@ -40,26 +41,19 @@ from ticket_settle import to_settle
 from transcripts import find, is_subagent
 from transcript_entries import Refused, entries_back
 from tree_reads import (
-    claims,
-    code_review,
-    commits,
-    doc_reviews,
     fragments,
     gate_outputs,
     main_tree,
     scratch,
-    worktrees,
 )
 from usage_limit import read_usage
 
 from controlled_markdown import mctx
-from engine.checkout import agents_of
 from handbook.reader_names import ReaderName
 from handbook.readers import reader_calls
 from operations import pacing
 from operations.pacing import Usage
 from operations.directives import named, pace
-from operations.final_reply import final_sends_in, for_context, sent_final_text
 from operations.change_agents import on_change
 from operations.change_budget import left_draft
 from operations.changes import holds
@@ -81,7 +75,6 @@ from operations.state import (
     ReadOnUse,
     Report,
     Waits,
-    SessionsRead,
     State,
     Stuck,
     Ticket,
@@ -422,33 +415,6 @@ def text_readers(me: str, took_up: frozenset[str], ended: Mapping[str, Report | 
     return frozenset(out)
 
 
-def read_git(main: Path) -> GitRead:
-    """The read of git and of the main tree `main`."""
-    trees = worktrees(main)
-    return GitRead(commits(main), frozenset(trees),
-                   {w: b for w, b in trees.items() if b is not None}, claims(main),
-                   code_review(main), doc_reviews(main),
-                   {d.stem: d.stat().st_mtime for d in sorted(agents_of(main).glob("*.md"))})
-
-
-def sessions(tickets: Path, index: int, session: str, now: float,
-             sessions_running: frozenset[str] | None) -> SessionsRead:
-    """The read of `idle_sessions`. Where an index is idle and the session
-    is not the main, the read first lets the session take the main role
-    (`take_main`), and reads again, so that it adopts the idle indexes at
-    once. Where after that an index is idle and no main is live, the read
-    creates `tickets/main-wanted` with the session's id where no file holds
-    that name, so that one session asks the user to pick a main
-    (`triage.main_wanted`)."""
-    read = read_sessions(tickets, index, now)
-    if read.idle and not read.main:
-        take_main(tickets, session, sessions_running)
-        read = read_sessions(tickets, index, now)
-    if read.idle and not read.main and not read.main_live:
-        want_main(tickets, session)
-    return SessionsRead(read.idle, read.adopted, read.main_live, main_wanted(tickets))
-
-
 def editor_reviewers(agents: Sequence[Agent], main: Path, undecided: list[str]) -> AgentsRead:
     """The doc reviewers that the doc editors among `agents` launched, read
     from those editors' transcripts as an operator's launches are read,
@@ -503,23 +469,3 @@ def read_held(tickets: Mapping[str, Ticket], me: str, tree: GitRead) -> HeldRead
              and (w := worktree_in(t, tree.worktrees)) is not None}
     return HeldRead(gate_outputs=ReadOnUse(sorted(trees), gate_outputs),
                     fragments=ReadOnUse(sorted(trees), fragments))
-
-
-def given_lines(runs: list[tuple[str, Path]], me: str, calls: list[Call]) -> set[str]:
-    """The lines of each final reply that an operator of `runs` before `me`
-    sent its parent, other than one that ends it for its context: a line
-    one of them gave reaches the coordinator in no later reply."""
-    out: set[str] = set()
-    for aid, path in runs[:run_index(runs, me)]:
-        for c in final_sends_in(calls, aid, parent_id(path)):
-            text = sent_final_text(c)
-            if text is not None and not for_context(text):
-                out.update(text.split("\n"))
-    return out
-
-
-def started(aid: str) -> float:
-    t = first_time(find(aid))
-    if t is None:
-        raise Refused(mctx("the transcript of {agent} gives no time").format(agent=aid))
-    return t

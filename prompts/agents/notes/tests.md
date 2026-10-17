@@ -1,6 +1,6 @@
 + budget: 3100
 * comment: when editing this doc
-    - Readers: each Claude Code session on the repo and each agent launched in one, by the link of [arc-workspace](CLAUDE.md), before it writes, changes, deletes or judges a test; the code editor and the code reviewer also by the link of [code.md](prompts/agents/notes/code.md).
+    - Readers: each Claude Code session on the repo and each agent launched in one, by the link of [arc-workspace](CLAUDE.md), before it writes, changes, deletes or judges a test; the code editor, the code reviewer and the lib reviewer also by the link of [code.md](prompts/agents/notes/code.md).
     - Acts, each with its section:
         - Writing, changing, deleting or judging a test: [Tests](#tests).
 

@@ -1,6 +1,6 @@
 """The reads of git and of the main worktree that the operator's procedures
 take their state from: the worktrees, the commits of `master`, the code
-review tags, the standing doc review tags, the task claims, the accepted
+and lib review tags, the standing doc review tags, the task claims, the accepted
 gate outputs a change writes, the `mctx` fragments a change adds or
 changes, and the session's scratchpad directory."""
 
@@ -14,15 +14,18 @@ from state_reads import state_cache
 from controlled_markdown import ControlledMarkdownError
 from controlled_markdown.prose import Fragment, text_fragments
 from engine import checkout
-from operations.state import (CODE_REVIEW, DOC_REVIEW, CodeReview, Commit, NoBaseline, Place, code_review_number,
-                              code_review_tag)
+from operations.state import DOC_REVIEW, Baseline, Commit, NoBaseline, Place, Review
 from operations.task_work import CLAIM, tasks_work
 from operations.worktrees import BASE
 
 COMMITS = 300
 """The commits of `master` read for After a batch, newest first."""
 
-CODE_DIRS = ("src/", "scripts/", "tests/")
+CODE_PATHS = ("src/", "scripts/", "tests/", "engine/", ".claude/settings.json")
+LIB_PATHS = ("programs/lib.dl", "programs/lib/", "programs/proposers.dl", "programs/lib_functors.cpp")
+REVIEW_PATHS = {Review.CODE: CODE_PATHS, Review.LIB: LIB_PATHS}
+"""The prefixes of the paths each review covers, which a commit's file
+paths are matched against."""
 PROCESS_DIRS = ("prompts/agents/", "src/operations/")
 ACCEPTED = "tests/gate/accepted"
 
@@ -87,7 +90,7 @@ def commits(main: Path) -> tuple[Commit, ...]:
     out: list[Commit] = []
     for head, files in logged(main, BASE, f"-n{COMMITS}", "--format=%x00%H %ct %s"):
         sha, ct, subject = (head.split(" ", 2) + [""])[:3]
-        out.append(Commit(sha, float(ct), changes_code(files), subject,
+        out.append(Commit(sha, float(ct), frozenset(r for r in Review if changes(files, r)), subject,
                           any(n.startswith(PROCESS_DIRS) for n in files)))
     return tuple(out)
 
@@ -102,22 +105,22 @@ def logged(main: Path, *argv: str) -> list[tuple[str, list[str]]]:
     return out
 
 
-def changes_code(files: list[str]) -> bool:
-    return any(n.startswith(CODE_DIRS) for n in files)
+def changes(files: list[str], review: Review) -> bool:
+    return any(n.startswith(REVIEW_PATHS[review]) for n in files)
 
 
-@state_cache(lambda main: (refs_stamp(main, "tags"), refs_stamp(main, "heads")))
-def code_review(main: Path) -> CodeReview | NoBaseline:
-    tags = [n for t in git(main, "tag", "-l", f"{CODE_REVIEW}*").split()
-            if (n := code_review_number(t)) is not None]
+@state_cache(lambda main, review: (refs_stamp(main, "tags"), refs_stamp(main, "heads")))
+def baseline(main: Path, review: Review) -> Baseline | NoBaseline:
+    tags = [n for t in git(main, "tag", "-l", f"{review.value}*").split()
+            if (n := review.number(t)) is not None]
     if not tags:
         return NoBaseline.NO_TAG
     n = max(tags)
     try:
-        unreviewed = logged(main, f"{code_review_tag(n)}..{BASE}", "--format=%x00%H")
+        unreviewed = logged(main, f"{review.tag(n)}..{BASE}", "--format=%x00%H")
     except checkout.GitFailed:
         return NoBaseline.GIT_FAILED
-    return CodeReview(n, tuple(sha for sha, files in unreviewed if changes_code(files)))
+    return Baseline(n, tuple(sha for sha, files in unreviewed if changes(files, review)))
 
 
 @state_cache(lambda main: refs_stamp(main, "tags"))

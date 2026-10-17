@@ -1,12 +1,16 @@
 + budget: 4421
 * comment: when editing this doc
-    - [Code editor](prompts/agents/code-editor.md) and [Code reviewer](prompts/agents/code-reviewer.md) inline its sections, for editing and reviewing the code under `src/` and `scripts/`.
+    - [Code editor](prompts/agents/code-editor.md), [Code reviewer](prompts/agents/code-reviewer.md) and [Lib reviewer](prompts/agents/lib-reviewer.md) inline its sections, for editing and reviewing code.
     - Acts, each with its section:
         - The rules every run of the code editor keeps: [code-working-rules](#code-working-rules).
-        - The rules every run of either agent keeps: [reads-and-progress](#reads-and-progress), which code-working-rules inlines, and which the code reviewer inlines in place of code-working-rules.
+        - The rules every run of each of them keeps: [reads-and-progress](#reads-and-progress), which code-working-rules inlines, and which the code reviewer and the lib reviewer inline in place of code-working-rules.
         - Judging a whole unit: [unit-kinds](#unit-kinds).
         - Judging a line: [line-kinds](#line-kinds).
-        - Filing a ticket on a place: [place-tickets](#place-tickets).
+        - Reading the trees of a review: [review-trees](#review-trees), inlined by the code reviewer and the lib reviewer, as is each section below on a review.
+        - Judging a review's places: [place-judgment](#place-judgment).
+        - Filing a review's tickets on places: [review-tickets](#review-tickets).
+        - Filing a ticket on a place: [place-tickets](#place-tickets), which review-tickets inlines.
+        - Giving a review's final reply: [review-reply](#review-reply).
 
 # Code notes
 - The statements on editing and reviewing the code that more than one entry point inlines.
@@ -44,6 +48,23 @@
 - Places that pose a question:
     - A condition on one solver, one command or one shape of input.
     - A change in the diff that makes false the premise of any line but its own lines, in a document or in prose in code.
+
+## review-trees
+- Read the earlier baseline and this review's commit through `git worktree add` on the baseline's tag and on that commit, in your scratch directory, and remove each such worktree with `git worktree remove`.
+- Run no other git command that changes state.
+
+## place-judgment
+- Judge each defect place on whether it is a defect, and, where it is one, on whether it stands, by the lines on its kind.
+
+## review-tickets
+- Leave out a place that an earlier `refactor` or `question` ticket cites, where that ticket is not closed `fixed`.
+- File each defect as a ticket of kind `refactor`, and each place that poses a question as a ticket of kind `question`, with `commit` as `<domain>`, and as `<subject>` the hash `git rev-parse --short <commit>` prints, with this review's commit as `<commit>`.
+    - Cite each place as below.
+        * inline: #place-tickets
+- Close with `wontfix` the ticket of each defect place that stands, and give the judgment in the note after it.
+
+## review-reply
+- Your final reply goes to the agent that launched you, in at most six lines: the pattern that matches the names of the tickets you left under `tickets/open/`, and the count of tickets under each kind of place.
 
 ## place-tickets
 - Cite a place's target as every location of the place.

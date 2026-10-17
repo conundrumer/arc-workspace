@@ -24,12 +24,16 @@ class Filer(StrEnum):
     DOC_REVIEWER = Role.DOC_REVIEWER.value
     TICKET_REVIEWER = Role.TICKET_REVIEWER.value
     CODE_REVIEWER = Role.CODE_REVIEWER.value
+    LIB_REVIEWER = Role.LIB_REVIEWER.value
     COORDINATOR = COORDINATOR
     TICKET_ANALYST = Role.TICKET_ANALYST.value
     MERGE_CHANGE = "merge-change"
     """`scripts/merge_change.py`, which files a whole-document pass
     (`document_pass.py`)."""
 
+
+CODE_REVIEW_KINDS = REVIEW_KINDS | {Kind.REFACTOR, Kind.QUESTION}
+"""The kinds a reviewer of code merged to `master` files."""
 
 FILER_KINDS: dict[Filer, frozenset[Kind]] = {
     Filer.ANALYZE: PASS_KINDS,
@@ -43,7 +47,8 @@ FILER_KINDS: dict[Filer, frozenset[Kind]] = {
     Filer.OPERATOR: REVIEW_KINDS | {Kind.DELAY},
     Filer.DOC_REVIEWER: REVIEW_KINDS,
     Filer.TICKET_REVIEWER: REVIEW_KINDS,
-    Filer.CODE_REVIEWER: REVIEW_KINDS | {Kind.REFACTOR, Kind.QUESTION},
+    Filer.CODE_REVIEWER: CODE_REVIEW_KINDS,
+    Filer.LIB_REVIEWER: CODE_REVIEW_KINDS,
     Filer.COORDINATOR: frozenset({Kind.REQUEST, Kind.BUG}),
     Filer.TICKET_ANALYST: frozenset({Kind.CHANGE, Kind.BUG}),
     Filer.MERGE_CHANGE: frozenset({Kind.CHANGE}),

@@ -33,6 +33,7 @@ class Role(StrEnum):
     HANDBOOK_EXPANDED = "handbook-expanded"
     DOC_REVIEWER = "doc-reviewer"
     CODE_REVIEWER = "code-reviewer"
+    LIB_REVIEWER = "lib-reviewer"
     BATCH_PROFILE = "batch-profile"
     BATCH_GATE = "batch-gate"
     COST_AUDIT = "cost-audit"
