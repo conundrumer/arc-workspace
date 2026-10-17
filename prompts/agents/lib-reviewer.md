@@ -11,9 +11,6 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 * comment: when editing this doc
     - The lib reviewer's entry point: its system prompt, for its run on a lib review of the lib's diff since the last baseline.
     - Its checklist: [checklist.md](prompts/agents/lib-reviewer/checklist.md).
-    - Parts of the work, in order:
-        - Reading the handbook and the lib's interface: the lead and the handbook it includes.
-        - Reviewing the lib's diff: [Lib reviewer](#lib-reviewer), and the section that each item of its checklist links.
     - Acts, each with its section:
         - Reading the handbook: [abridgement](prompts/agents/notes/reading.md#abridgement), [citations](prompts/agents/notes/reading.md#citations).
         - Reading its brief, and taking its steps: [Lib reviewer](#lib-reviewer).
