@@ -299,7 +299,8 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
         t.number, w, parts, [q.number for q in questions], editors, reports,
         [i for a, i in editors if a in left_open], state.me,
-        settled(state, t, Role.TICKET_ANALYST, None)), occasion=str(last_reported(latest)))
+        settled(state, t, Role.TICKET_ANALYST, None)),
+        occasion=str(max([last_reported([*latest, *checkers]), *(q.filed for q in questions)])))
 
 
 def step(state: State) -> Step | None:
