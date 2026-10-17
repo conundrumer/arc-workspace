@@ -14,7 +14,6 @@ from engine import (
     Rows,
     RunFailure,
     RunResult,
-    Scope,
     Tuples,
     UnitId,
     Value,
@@ -22,7 +21,7 @@ from engine import (
 from engine.engine import resolved
 from engine.program import POSE_COLUMN, Column, RelationDecl, RigidCall
 from engine.quotes import quotes
-from solver.aggregate import Solver, has_determine
+from solver.aggregate import TOP, Solver, has_determine
 from solver.cycles import cyclic_components
 from solver.graph import Graph, InstancePath, Node, NodeKind
 from solver.model import Parameter
@@ -257,12 +256,10 @@ def determine(engine: Engine, solver: Solver, limits: Limits,
 
 
 class ProgramFacts:
-    """The facts of each parameter in `solver.program`, as `engine.expand`
-    gives it, a GRID call's cells among them: the bodiless units that feed
-    the declaration `params.<name>` resolves to from the top level, in
-    unit order, so a `Params` fact and a top-level one that
-    `engine.fix_relation` writes both count. The program is expanded and
-    indexed once."""
+    """The facts of each parameter in `solver.program`: read from the
+    program `engine.expand` gives, by the declaration `params.<name>`
+    resolves to from the top level, so that a GRID call's cells and the
+    top-level facts `engine.fix_relation` writes count."""
 
     def __init__(self, engine: Engine, solver: Solver) -> None:
         self.solver = solver
@@ -272,7 +269,7 @@ class ProgramFacts:
 
     def of(self, p: Parameter) -> list[Row]:
         decl = resolved(self.index, parameter(self.solver, p.name),
-                        Scope(())).declaration
+                        TOP).declaration
         out: list[Row] = []
         for o in self.index.feeding(decl):
             u = self.units[o.unit]
