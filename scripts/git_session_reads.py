@@ -30,17 +30,17 @@ def read_git(main: Path) -> GitRead:
 
 def sessions(tickets: Path, index: int, session: str, now: float,
              sessions_running: frozenset[str] | None) -> SessionsRead:
-    """The read of `idle_sessions`. Where an index is idle and the session
-    is not the main, the read first lets the session take the main role
+    """The read of `idle_sessions`. Where the session is not the main, the
+    read first lets the session take the main role
     (`take_main`), and reads again, so that it adopts the idle indexes at
     once. Where after that an index is idle and no main is live, the read
     creates `tickets/main-wanted` with the session's id where no file holds
     that name, so that one session asks the user to pick a main
     (`triage.main_wanted`)."""
-    read = read_sessions(tickets, index, now)
-    if read.idle and not read.main:
+    read = read_sessions(tickets, index, session, now)
+    if not read.main:
         take_main(tickets, session, sessions_running)
-        read = read_sessions(tickets, index, now)
+        read = read_sessions(tickets, index, session, now)
     if read.idle and not read.main and not read.main_live:
         want_main(tickets, session)
     return SessionsRead(read.idle, read.adopted, read.main, read.main_live, main_wanted(tickets))

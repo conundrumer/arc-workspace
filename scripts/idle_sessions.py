@@ -114,14 +114,14 @@ def named_main(tickets: Path) -> str | None:
     return held[0] if held else None
 
 
-def read_sessions(tickets: Path, index: int, now: float) -> Sessions:
+def read_sessions(tickets: Path, index: int, session: str, now: float) -> Sessions:
     ids = indexes(tickets)
     held = {ticket_name(p).number.session for s in Status if s not in SETTLED
             for p in listed_tickets(tickets, s)}
     idle = frozenset(i for i in held if i is not None and i != index
                      and not any(live(sid, now) for sid in ids.get(i, [])))
     main = named_main(tickets)
-    return Sessions(idle=idle, main=main is not None and main in ids.get(index, []),
+    return Sessions(idle=idle, main=main == session,
                     main_live=main is not None and live(main, now))
 
 

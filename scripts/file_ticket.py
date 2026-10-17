@@ -179,7 +179,7 @@ MAIN_HELP = mctx("""
 
 MAIN_RULES = mctx("""
     - The command writes `<session id>` to `tickets/main`, in place of what it holds, and removes `tickets/main-wanted`, the mark that a session has asked the user to pick a main session.
-    - Where `tickets/main` holds no session id, or the id of a session whose process has ended, the first session to read it, by its machine watcher, or by its operator where another session in which no agent runs has an unsettled ticket, writes its own id there, and is the main session until this command sets another.
+    - Where `tickets/main` holds no session id, or the id of a session whose process has ended, the first session to read it, by its machine watcher or by its operator, writes its own id there, and is the main session until this command sets another.
     """)
 
 CASE_HELP = mctx("""
@@ -499,8 +499,9 @@ def log_args(args: list[str]) -> list[str | None]:
 
 def settle_command(*given: str) -> str:
     tickets = main_tickets()
-    index = session_index(tickets, session_id())
-    adopted = read_sessions(tickets, index, time.time()).adopted
+    session = session_id()
+    index = session_index(tickets, session)
+    adopted = read_sessions(tickets, index, session, time.time()).adopted
     numbers = to_settle(tickets, index, adopted, map(ticket_number, given))
     return "\n".join(map(str, numbers)) if numbers else EMPTY
 
