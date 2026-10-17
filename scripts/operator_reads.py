@@ -27,7 +27,7 @@ from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks
                        message_text, notifications, output_file, parent_id, run_entries,
                        run_sessions, session_agents, tool_results)
 from run_reads import Status as TaskStatus
-from senders import Sender, sender
+from senders import Origin, Sender, origin, sender
 from file_reads import file_text, is_dir, is_file, listed, mtime
 from state_reads import DERIVED, Kept, state_cache
 from ticket_numbers import TICKET_NUMBER
@@ -210,10 +210,12 @@ def unwrapped(text: str) -> str:
 
 
 def from_parent(aid: str, e: dict[str, Any], parent: str, undecided: list[str]) -> str:
-    """The text of the brief or the message from its parent that the entry
-    `e` of the operator `aid` gives. An operator launcher's brief and
-    messages are files the command wrote, read in place of the line that
-    gives each, and a message of its arrives in the form of any agent's."""
+    """The text of the brief, or of the message from `parent`, that the
+    entry `e` of the operator `aid` gives, where `parent` is the operator's
+    parent, or `main` for a message of the coordinator's. An operator
+    launcher's brief and messages are files the command wrote, read in
+    place of the line that gives each, and a message of its arrives in the
+    form of any agent's."""
     text = unwrapped(message_text(e))
     if parent == MAIN:
         return text
@@ -272,7 +274,8 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
                   subjects: Mapping[str, float]) -> OperatorRead:
     """What the transcript at `path` of the operator `aid` gives. A message
     from the operator's parent, the coordinator or the operator launcher
-    that launched it, is read as a message of the coordinator's."""
+    that launched it, or from the coordinator where the parent is an
+    operator launcher, is read as a message of the coordinator's."""
     merged = merge_subjects(path)
     return operator_read(aid, path, main, undecided,
                          frozenset((m, t) for m, t in subjects.items() if m in merged))
@@ -327,10 +330,11 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
                 for v in n.ids:
                     tasks[v] = n.status
         if stamp and is_prompt(e):
-            if not briefed or sender(e, parent, frozenset(), sessions) is Sender.PARENT:
+            direct = origin(e)[1] is Origin.COORDINATOR
+            if not briefed or direct or sender(e, parent, frozenset(), sessions) is Sender.PARENT:
                 briefed = True
                 messages.append(Message(aid, epoch(stamp), None, from_parent(
-                    aid, e, parent, undecided)))
+                    aid, e, MAIN if direct else parent, undecided)))
             else:
                 where = MESSAGE_FROM.format(run=aid)
                 messages += [Message(aid, epoch(stamp), s, unfiled(
