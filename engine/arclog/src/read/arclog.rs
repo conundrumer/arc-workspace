@@ -907,6 +907,9 @@ impl Reader {
         let name = match list.items.get(1) {
             Some(head @ SExpr::List { .. }) => {
                 let head = self.list(head, "a demonstrated rule's name and fields")?;
+                if head.items.len() == 1 {
+                    return self.refuse("a demonstrated rule with no field is named by its bare name", head.place);
+                }
                 record.token(head.open);
                 let name = self.dollar_name(head.items.first(), "a demonstrated rule's name", head.place, &mut record)?;
                 for item in &head.items[1..] {

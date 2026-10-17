@@ -82,7 +82,7 @@ impl<'l> Out<'l> {
 
     fn put(&mut self, text: &str) {
         self.text.push_str(text);
-        self.column += text.chars().count() as u32;
+        (self.line, self.column) = crate::read::line_column_after(text, self.line, self.column);
     }
 
     /// Writes `text` at `place`, or, where the layout gives no place, one

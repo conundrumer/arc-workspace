@@ -67,13 +67,18 @@ fn check_error(check: CheckId, message: impl Into<Box<str>>, place: SourcePlace)
 
 /// The place of the end of `text`, of no width.
 fn end_place(text: &str, file: SourceFile) -> SourcePlace {
-    let last_line = text.rsplit('\n').next().unwrap_or_default();
-    SourcePlace {
-        file,
-        start: text.len() as u32,
-        end: text.len() as u32,
-        line: text.matches('\n').count() as u32 + 1,
-        column: last_line.chars().count() as u32 + 1,
+    let (line, column) = line_column_after(text, 1, 1);
+    SourcePlace { file, start: text.len() as u32, end: text.len() as u32, line, column }
+}
+
+/// The line and column after `text`, where `text` starts at `line` and
+/// `column`, counted as the s-expression reader counts them: a newline
+/// starts the next line at column 1, and each other character takes one
+/// column.
+pub(crate) fn line_column_after(text: &str, line: u32, column: u32) -> (u32, u32) {
+    match text.rsplit_once('\n') {
+        Some((_, last_line)) => (line + text.matches('\n').count() as u32, last_line.chars().count() as u32 + 1),
+        None => (line, column + text.chars().count() as u32),
     }
 }
 
