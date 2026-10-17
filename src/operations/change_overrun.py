@@ -114,8 +114,7 @@ def over_budget(state: State, t: Ticket, w: Path,
     checked = [a for a in latest if is_checked(a)]
     leaving: list[Agent] = []
     if checked:
-        reported = max((r.time for a in checked if (r := a.last_report) is not None),
-                       default=0.0)
+        reported = last_reported(checked)
         checkers = [a for a in agents if a.role is Role.ITEM_CHECKER
                     and a.launched > trip.filed and a.launched > reported]
         if not checkers:

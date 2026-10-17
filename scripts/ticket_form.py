@@ -2,6 +2,7 @@
 matter, its title and its sections."""
 
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 from controlled_markdown import mctx
@@ -161,6 +162,23 @@ def check_depends_on(tickets: Path, value: str) -> None:
         ticket_path(tickets, ticket_number(text))
 
 
+def check_mechanical(value: str) -> None:
+    """Refuses a `mechanical` value that is not `MECHANICAL`."""
+    if value != MECHANICAL:
+        raise Refused(mctx("`mechanical` `{value}` is not `{yes}`").format(
+            value=value, yes=MECHANICAL))
+
+
+VALUE_CHECKS: dict[str, Callable[[Path, str], None]] = {
+    "depends-on": check_depends_on,
+    "editors": lambda _tickets, value: check_editors(value),
+    "fix": lambda _tickets, value: check_fix(value),
+    "mechanical": lambda _tickets, value: check_mechanical(value)}
+"""The check of each front matter field that has a value rule, given the
+ticket tracker's path and the field's value; a field with no entry has no
+value rule."""
+
+
 def checked_kind(tickets: Path, agent: str, text: str) -> Kind:
     """The kind of the ticket `text`, refused where `text` does not have
     the form the `HELP` of `file_ticket` shows or `agent` may not file
@@ -180,15 +198,9 @@ def checked_kind(tickets: Path, agent: str, text: str) -> Kind:
         keys.append(key)
         if key not in FIELDS.get(kind, frozenset()):
             raise Refused(mctx("a `{kind}` gives no `{key}`").format(kind=kind, key=key))
-        if key == "depends-on":
-            check_depends_on(tickets, value)
-        if key == "editors":
-            check_editors(value)
-        if key == "fix":
-            check_fix(value)
-        if key == "mechanical" and value != MECHANICAL:
-            raise Refused(mctx("`mechanical` `{value}` is not `{yes}`").format(
-                value=value, yes=MECHANICAL))
+        check = VALUE_CHECKS.get(key)
+        if check is not None:
+            check(tickets, value)
     for key in sorted(REQUIRED.get(kind, frozenset()) - set(keys)):
         raise Refused(mctx("a `{kind}` gives `{key}`").format(kind=kind, key=key))
     if not body_form(kind).match(text, head.end()):
