@@ -6,7 +6,6 @@
 
 # Design
 - In a `change` for speed, give in its Scope the profile that exists.
-- The kind of a ticket you file is `change`.
 - A `change` to the agents' processes that changes what an agent reads or does gives in its Motivation the outcome of [Process notes](prompts/agents/notes/process.md) that it serves.
 - For a `change` to code or to the agent-facing documents, run `uv run python scripts/area.py` on the files its design touches, and launch an `Explore` agent with `model: "haiku"` whose brief gives those files and the change's Intent, and asks for each part of the system that reads, calls, orders or is ordered by what they hold, and each ticket on a failure there, each as a path with line numbers or a ticket number and one line on how it bears, with no summary of the source. Read each source it returns. Give under a line `Interactions:` in the `Design` each part those two and your reading find, with what the change does to it.
     * comment: Without it, the `Design` of change 6-1210 put `alerts.ticket_stalls` ahead of the steps of the changes in `plan.EARLY`, and since the operator takes one step per call, operator adc8eb58fcc132a15 spent 7 calls of about 2 minutes on stall messages while a take was ready: bug 6-1404.
