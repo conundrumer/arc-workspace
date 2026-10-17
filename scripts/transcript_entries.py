@@ -71,8 +71,9 @@ class Snapshot:
     again of a file that is not, or whose bytes at either end of the
     snapshot's whole lines (`edges`) changed, is refused.
 
-    At its read, one search indexes every substring of the form of an agent
-    id, overlapping ones too, by the lines that hold it.
+    At the first word asked of it of the form of an agent id, one search
+    indexes every substring of that form, overlapping ones too, by the
+    lines that hold it.
 
     A snapshot read on from an earlier one (`extended`) keeps what that one
     found in its whole lines."""
@@ -85,7 +86,7 @@ class Snapshot:
         self.breaks_cr = b"\r" in text
         self.starts = line_starts(text, 0, array("q"))
         self.found: dict[str, frozenset[int]] = {}
-        self.agent_ids = self.index_agent_ids(text, 0)
+        self.agent_ids: dict[str, tuple[int, ...]] | None = None
         self.edges = edges(text, self.settled_end())
 
     @property
@@ -93,14 +94,30 @@ class Snapshot:
         """The number of its lines."""
         return len(self.starts)
 
+    def end(self, i: int) -> int:
+        """The offset after the `i`-th line."""
+        return self.starts[i + 1] if i + 1 < len(self.starts) else self.size
+
     def line(self, i: int) -> bytes:
         """The `i`-th line, without the line break that ends it, as
         `bytes.splitlines` gives it."""
-        end = self.starts[i + 1] if i + 1 < len(self.starts) else self.size
-        line = read_at(self, self.starts[i], end - self.starts[i])
-        if line.endswith(b"\r\n"):
-            return line[:-2]
-        return line[:-1] if line.endswith((b"\n", b"\r")) else line
+        return unbroken(read_at(self, self.starts[i], self.end(i) - self.starts[i]))
+
+    def lines(self, found: list[int]) -> Iterator[bytes]:
+        """Each line of `found`, indices in order, as `line` gives it. Each
+        run of consecutive lines up to `SPAN` bytes is read in one read of
+        its file."""
+        k = 0
+        while k < len(found):
+            first = j = found[k]
+            while (k + 1 < len(found) and found[k + 1] == j + 1
+                   and self.end(j + 1) - self.starts[first] <= SPAN):
+                k, j = k + 1, j + 1
+            base = self.starts[first]
+            chunk = read_at(self, base, self.end(j) - base)
+            for i in range(first, j + 1):
+                yield unbroken(chunk[self.starts[i] - base:self.end(i) - base])
+            k += 1
 
     def text(self) -> bytes:
         """The bytes it covers, read again from its file."""
@@ -122,12 +139,20 @@ class Snapshot:
     def line_of(self, offset: int) -> int:
         return bisect.bisect_right(self.starts, offset) - 1
 
-    def holding(self, word: str) -> frozenset[int]:
-        if re.fullmatch(AGENT_ID_FORM, word):
-            return frozenset(self.agent_ids.get(word, ()))
-        if word not in self.found:
-            self.found[word] = self.lines_holding(self.text(), 0, word.encode())
-        return self.found[word]
+    def holding(self, words: frozenset[str]) -> frozenset[int]:
+        """The lines that hold a word of `words`. The words not searched
+        before are searched in one read of the text again."""
+        ids = {w for w in words if re.fullmatch(AGENT_ID_FORM, w)}
+        new = [w for w in words - ids if w not in self.found]
+        if new or (ids and self.agent_ids is None):
+            text = self.text()
+            if ids and self.agent_ids is None:
+                self.agent_ids = self.index_agent_ids(text, 0)
+            for w in new:
+                self.found[w] = self.lines_holding(text, 0, w.encode())
+        indexed = self.agent_ids or {}
+        return frozenset[int]().union(*(indexed.get(w, ()) for w in ids),
+                                      *(self.found[w] for w in words - ids))
 
     def lines_holding(self, chunk: bytes, base: int, w: bytes) -> frozenset[int]:
         """The lines of `chunk`, the bytes of its file from offset `base`, a
@@ -168,16 +193,36 @@ class Snapshot:
         out.found = {w: frozenset(i for i in lines if i < whole)
                      | out.lines_holding(more, offset, w.encode())
                      for w, lines in self.found.items()}
-        kept = {aid: tuple(i for i in lines if i < whole) if whole < self.count else lines
-                for aid, lines in self.agent_ids.items()}
-        for aid, lines in out.index_agent_ids(more, offset).items():
-            kept[aid] = kept.get(aid, ()) + lines
-        out.agent_ids = {aid: lines for aid, lines in kept.items() if lines}
+        out.agent_ids = (None if self.agent_ids is None
+                         else self.agent_ids_on(self.agent_ids, out, more))
         end = out.settled_end()
         head = read_at(out, 0, min(CHECKED, end))
         tail_at = max(len(head), end - CHECKED)
         out.edges = Edges.of(head, read_at(out, tail_at, end - tail_at))
         return out
+
+    def agent_ids_on(self, index: dict[str, tuple[int, ...]], out: "Snapshot",
+                     more: bytes) -> dict[str, tuple[int, ...]]:
+        """The index of agent ids of `out`, this snapshot's whole lines
+        followed by `more`, with `index`, this one's, kept for those lines."""
+        whole = self.settled()
+        kept = {aid: tuple(i for i in lines if i < whole) if whole < self.count else lines
+                for aid, lines in index.items()}
+        for aid, lines in out.index_agent_ids(more, self.settled_end()).items():
+            kept[aid] = kept.get(aid, ()) + lines
+        return {aid: lines for aid, lines in kept.items() if lines}
+
+
+SPAN = 1 << 22
+"""How many bytes of consecutive lines `Snapshot.lines` reads at most in
+one read."""
+
+
+def unbroken(line: bytes) -> bytes:
+    """`line` without the line break that ends it."""
+    if line.endswith(b"\r\n"):
+        return line[:-2]
+    return line[:-1] if line.endswith((b"\n", b"\r")) else line
 
 
 LINE_BREAK = re.compile(rb"\r\n|\r|\n")
@@ -307,7 +352,7 @@ def read_entries(path: Path, naming: Iterable[str] | None = None) -> list[Entry]
     # The snapshot `entries_naming` read, taken from `_read` so that the
     # caller rests on the lines it gives and not on each change of the file.
     snap = _read[path]
-    return [e for i in lines for e in snap.entry(i)]
+    return [e for line in snap.lines(lines) for e in parse(line)]
 
 
 @state_cache(DERIVED)
@@ -324,8 +369,7 @@ def entries_naming(path: Path, naming: frozenset[str] | None) -> list[int]:
 def named_lines(snap: Snapshot, own: range, naming: frozenset[str]) -> list[int]:
     """The lines of `snap` within `own` that hold a word of `naming`, in
     their order."""
-    return sorted(i for i in frozenset[int]().union(*(snap.holding(w) for w in naming))
-                  if i in own)
+    return sorted(i for i in snap.holding(naming) if i in own)
 
 
 def entries_forward(path: Path) -> Iterator[Entry]:
@@ -352,7 +396,7 @@ def meta_path(path: Path) -> Path:
 @state_cache(lambda path: stat_of(meta_path(path)))
 def transcript_meta(path: Path) -> dict[str, Any] | None:
     m = meta_path(path)
-    return json.loads(m.read_text()) if m.is_file() else None
+    return json.loads(m.read_bytes()) if m.is_file() else None
 
 
 def blocks(entry: Entry, kind: str) -> list[dict[str, Any]]:
@@ -376,7 +420,7 @@ def own_range(path: Path) -> range:
     snap = snapshot(path)
     if meta.get("isFork") is not True or not isinstance(call, str):
         return range(snap.count)
-    start = next((i for i in sorted(snap.holding(call))
+    start = next((i for i in sorted(snap.holding(frozenset({call})))
                   if any(b.get("tool_use_id") == call
                          for e in snap.entry(i) for b in blocks(e, "tool_result"))), None)
     return range(0) if start is None else range(start, snap.count)

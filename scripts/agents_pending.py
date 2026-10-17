@@ -1,6 +1,7 @@
 """The agents pending to a run, and the latest sign of the turn of each
 agent a run launched."""
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +12,8 @@ from transcript_entries import Entry, epoch, named_lines, own_range, parse, snap
 from agent_launches import Launch, launched
 from agent_resumes import note_latest
 from session_changes import changed_with
+
+from operations.roles import AGENT_ID
 
 
 def pending_agents(path: Path, undecided: list[str]) -> list[str]:
@@ -98,8 +101,8 @@ def sign_entries(path: Path) -> tuple[SignEntry, ...]:
         for e in parse(snap.line(i)):
             if not may_sign(e):
                 continue
-            told = tuple(v for v in notified(e) if v in snap.agent_ids)
-            signs = tuple((v, sign) for v, sign in entry_signs(e) if v in snap.agent_ids)
+            told = tuple(v for v in notified(e) if re.fullmatch(AGENT_ID, v))
+            signs = tuple((v, sign) for v, sign in entry_signs(e) if re.fullmatch(AGENT_ID, v))
             if told or signs:
                 out.append(SignEntry(epoch(e["timestamp"]), told, signs))
     return tuple(out)
