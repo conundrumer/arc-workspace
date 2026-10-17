@@ -1,6 +1,6 @@
 """The reads of git and of the main worktree that the operator's procedures
 take their state from: the worktrees, the commits of `master`, the code
-and lib review tags, the standing doc review tags, the task claims, the accepted
+and lib review tags, the standing doc review tags, the task claims and restores, the accepted
 gate outputs a change writes, the `mctx` fragments a change adds or
 changes, and the session's scratchpad directory."""
 
@@ -14,8 +14,8 @@ from state_reads import state_cache
 from controlled_markdown import ControlledMarkdownError
 from controlled_markdown.prose import Fragment, text_fragments
 from engine import checkout
-from operations.state import DOC_REVIEW, Baseline, Commit, NoBaseline, Place, Review
-from operations.task_work import CLAIM, tasks_work
+from operations.state import DOC_REVIEW, Baseline, Commit, NoBaseline, Place, Restore, Review
+from operations.task_work import CLAIM, restore_records, restores_file, tasks_work
 from operations.worktrees import BASE
 
 COMMITS = 300
@@ -138,6 +138,11 @@ def claims(main: Path) -> dict[str, str]:
     work = tasks_work(main)
     return {e.name: file_text(work / e.name / CLAIM).strip()
             for e in listed(work) if e.is_dir and stat_read(work / e.name / CLAIM) is not None}
+
+
+def restores(main: Path) -> dict[str, tuple[Restore, ...]]:
+    path = restores_file(main)
+    return restore_records(file_text(path)) if stat_read(path) is not None else {}
 
 
 def gate_outputs(tree: Path) -> tuple[str, ...]:

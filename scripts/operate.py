@@ -159,7 +159,7 @@ def main(argv: list[str]) -> int:
             case OperateAction.RESTORE:
                 if len(args.rest) > 1:
                     parser.error(mctx("restore takes a task id and, optionally, the reason its pipeline stopped"))
-                restore(main_tree(), args.ident)
+                restore(main_tree(), args.ident, args.rest[0] if args.rest else None)
                 return 0
     except Refused as exc:
         print(f"operate: {exc}", file=sys.stderr)

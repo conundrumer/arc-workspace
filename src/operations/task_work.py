@@ -2,16 +2,20 @@
 before an Analyze or a Create pass, and puts back with the release of the
 task's claim once the pipeline ends, as the section `Passes on a task` of
 [Launching notes](prompts/agents/notes/launching.md#passes-on-a-task)
-gives. `scripts/operate.py set-aside` and `restore` run these, as steps
+gives. Each `restore` call, by any agent, is recorded in one file
+outside every task's work directory, which no set-aside moves. `scripts/operate.py set-aside` and `restore` run these, as steps
 `passes` prints; this is the one module of the package that writes."""
 
+import json
 import re
 import shutil
+import time
 from pathlib import Path
 
 from controlled_markdown import mctx
 from engine import checkout
 from operations.roles import Role
+from operations.state import Restore
 from solver.vocabulary import SOLVER_SUFFIX, WITNESS_SUFFIX
 
 BEFORE_CREATE = ("create.md", "progress.md")
@@ -24,6 +28,7 @@ def refine_report(name: str) -> bool:
 
 CLAIM = "claim"
 
+
 CLAIM_HELD = mctx("the claim on task {task} fails: session {holder} holds it")
 
 
@@ -31,6 +36,12 @@ def tasks_work(main: Path) -> Path:
     """The directory of each task's work and claim, in the main worktree
     `main`."""
     return main / "work" / "task"
+
+
+def restores_file(main: Path) -> Path:
+    """The file that records each `restore` call on any task, one JSON
+    object per line, in the main worktree `main`."""
+    return tasks_work(main).parent / "restores"
 
 
 def claim(main: Path, task: str, session: str) -> str | None:
@@ -80,10 +91,11 @@ def set_aside(main: Path, task: str, role: Role) -> Path:
     return target
 
 
-def restore(main: Path, task: str) -> None:
+def restore(main: Path, task: str, argument: str | None) -> None:
     """Move back the solver and the witness file the latest set-aside that
     holds each took, where nothing stands at its path, clear their marks,
-    and remove the claim."""
+    remove the claim, and record the call, with `argument`, the argument
+    it gave after the task id, in `restores_file`."""
     work = tasks_work(main) / task
     for p in task_paths(task):
         if not (main / p).exists():
@@ -95,3 +107,14 @@ def restore(main: Path, task: str) -> None:
         if checkout.git_out(main, "ls-files", str(p)).strip():
             checkout.git_out(main, "update-index", "--no-skip-worktree", str(p))
     (work / CLAIM).unlink(missing_ok=True)
+    with restores_file(main).open("a") as f:
+        f.write(json.dumps({"task": task, "time": time.time(), "argument": argument}) + "\n")
+
+
+def restore_records(text: str) -> dict[str, tuple[Restore, ...]]:
+    """The `restore` calls the text of `restores_file` records, by task,
+    each task's in order."""
+    out: dict[str, list[Restore]] = {}
+    for r in map(json.loads, text.splitlines()):
+        out.setdefault(r["task"], []).append(Restore(float(r["time"]), r["argument"]))
+    return {task: tuple(found) for task, found in out.items()}

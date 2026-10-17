@@ -30,12 +30,13 @@ pipeline started.
 Once it ends or stops, the work set aside goes back, as
 `scripts/operate.py restore` does, with the reason it stopped, or an empty
 argument where it ran to its end. Once the first `restore` call on its
-task that did not fail at or after its start gives that argument, the
-pipeline has ended with that reason, and no later work on its task
+task that did not fail at or after its start, by any agent, gives that
+argument, the pipeline has ended with that reason, and no later work on its task
 changes that. Where the first such call gives the task id
 alone, the pipeline's outcome is read from its passes, reviews and
 tickets, as for a pipeline whose work has not gone back."""
 
+import math
 import shlex
 from dataclasses import dataclass
 
@@ -44,7 +45,7 @@ from operations import briefs, messages, runs
 from operations.directives import Line, Pipeline, lines, overrides, passed, pipelines, session_lines
 from operations.reports import TICKETS_FILED
 from operations.roles import PASSES, Purpose, Role, analyst_subject, joined
-from operations.state import Agent, Call, State, Ticket, last_reported
+from operations.state import Agent, Call, Restore, State, Ticket, last_reported
 from ticketing.vocabulary import Domain, Kind, Status
 from operations.command_words import RUN_COMMAND, simple_commands
 from operations.handled import bash_calls, done, repeated, send_again
@@ -83,15 +84,13 @@ def restore_step(task: str, reason: str | None) -> str:
     return f"{restore_command(task)} {shlex.quote(reason or '')}"
 
 
-def restore_reason(c: Call, task: str) -> tuple[str | None] | None:
-    """The reason the `restore` call `c` on `task` gives, None where it
-    gives an empty argument, or None in place of the tuple where it gives
-    the task id alone."""
-    command = str(c.input.get("command", ""))
+def restore_argument(c: Call, task: str) -> str | None:
+    """The argument the `restore` call `c` on `task` gives after the task
+    id, None where it gives the task id alone."""
     lead = restore_command(task).split()
-    for words in simple_commands(command):
+    for words in simple_commands(str(c.input.get("command", ""))):
         if words[:len(lead)] == lead and len(words) == len(lead) + 1:
-            return (words[-1] or None,)
+            return words[-1]
     return None
 
 
@@ -202,10 +201,9 @@ def run(state: State, p: Pipeline) -> Outcome:
     call on its task that did not fail since its start gives the argument
     after the task id, its end with that argument as the reason, or None
     where it is empty."""
-    first = next(iter(restores(state, p.task, p.since, float("inf"))), None)
-    given = restore_reason(first, p.task) if first is not None else None
-    if given is not None:
-        return Outcome(None, True, runs.Standing(stopped=given[0]))
+    first = next(iter(restores(state, p.task, p.since, math.inf)), None)
+    if first is not None and first.argument is not None:
+        return Outcome(None, True, runs.Standing(stopped=first.argument or None))
     ended: list[Ended] = []
     hold = interference(state, p)
     held = hold is True
@@ -309,9 +307,16 @@ def end(state: State, p: Pipeline, reason: str | None) -> Outcome:
     """The end of the pipeline `p` with `reason`, the reason it stopped,
     or None where it ran to its end: the `restore` step that gives
     `reason`, until a `restore` call on its task, with or without that
-    argument, came since the pipeline's start."""
+    argument, came at or after the latest claim or set-aside of its task
+    the operators' steps made since the pipeline's start, or that start
+    where they made none: one the operator made, pending or failed
+    included, or one `restores` gives. A second call would move back the
+    files of a later set-aside and remove a later claim; a call before
+    that claim or set-aside leaves the work they took for the pipeline."""
     restore = restore_step(p.task, reason)
-    if not (ran(state, restore_command(p.task), p.since) or ran(state, restore, p.since)):
+    bound = taken_at(state, p.task, p.since)
+    if not (ran(state, restore_command(p.task), bound) or ran(state, restore, bound)
+            or restored(state, p.task, bound, math.inf)):
         return Outcome(Bash(restore, f"{p.task} restore",
                             occasion=str(set_aside_at(state, p.task, p.since))))
     return Outcome(None, True, runs.Standing(stopped=reason))
@@ -330,7 +335,20 @@ def set_aside_at(state: State, task: str, since: float) -> float:
     """The time of the latest set-aside of `task`'s work since `since`, by
     any pass, the occasion of the restore that puts it back (`steps.key`),
     or `since` where none came."""
-    return max((c.time for role in SETS_ASIDE for c in bash_calls(state, aside_command(task, role))
+    return latest_call(state, [aside_command(task, role) for role in SETS_ASIDE], since)
+
+
+def taken_at(state: State, task: str, since: float) -> float:
+    """The time of the latest claim or set-aside of `task` since `since`,
+    or `since` where none came."""
+    return latest_call(state, [claim_command(task), *(aside_command(task, role) for role in SETS_ASIDE)],
+                       since)
+
+
+def latest_call(state: State, commands: list[str], since: float) -> float:
+    """The time of the latest Bash call of the operators that ran one of
+    `commands` since `since`, or `since` where none came."""
+    return max((c.time for command in commands for c in bash_calls(state, command)
                 if c.time >= since), default=since)
 
 
@@ -347,9 +365,15 @@ def restored(state: State, task: str, start: float, stop: float) -> bool:
     return bool(restores(state, task, start, stop))
 
 
-def restores(state: State, task: str, start: float, stop: float) -> list[Call]:
-    return [c for c in bash_calls(state, restore_command(task))
-            if start <= c.time < stop and not c.error]
+def restores(state: State, task: str, start: float, stop: float) -> list[Restore]:
+    """The `restore` calls on `task` that did not fail, at or after `start`
+    and before `stop`, in time order: those `GitRead.restores` records, by
+    any agent, and the operators' own, which a record may not yet hold. An
+    operator's own call stands in both with one argument."""
+    own = [Restore(c.time, restore_argument(c, task)) for c in bash_calls(state, restore_command(task))
+           if not c.error]
+    return sorted((r for r in [*state.git.restores.get(task, ()), *own] if start <= r.time < stop),
+                  key=lambda r: r.time)
 
 
 def started(state: State, given: list[Line]) -> list[Pipeline]:

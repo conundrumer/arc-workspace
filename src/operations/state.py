@@ -480,11 +480,22 @@ class TrackerRead:
 
 
 @dataclass(frozen=True)
+class Restore:
+    """A `restore` call on a task that did not fail, by any agent: its
+    time, and the argument it gave after the task id, None where it gave
+    the task id alone."""
+    time: float
+    argument: str | None
+
+
+@dataclass(frozen=True)
 class GitRead:
     """What the operator reads of git and the main tree. `commits` holds the
     commits `tree_reads.COMMITS` gives, `worktrees` the worktrees of the repo, and
     `branches` the branch of each worktree that stands on one. `claims`
-    gives the session id each claimed task's claim file holds.
+    gives the session id each claimed task's claim file holds, and
+    `restores` the `restore` calls on each task, in order, as
+    `task_work.restores_file` records them.
     `reviews` gives each review's last baseline, or why the read gives
     none.
     `doc_reviews` gives the time of the commit each `Reader.tag` points
@@ -495,6 +506,7 @@ class GitRead:
     worktrees: frozenset[Path]
     branches: Mapping[Path, str]
     claims: Mapping[str, str]
+    restores: Mapping[str, tuple[Restore, ...]]
     reviews: Mapping[Review, Baseline | NoBaseline]
     doc_reviews: Mapping[str, float] | None
     definitions: Mapping[str, float]

@@ -11,7 +11,7 @@ from relay_reads import run_index
 from run_reads import parent_id
 from transcripts import find
 from transcript_entries import Refused
-from tree_reads import baseline, claims, commits, doc_reviews, worktrees
+from tree_reads import baseline, claims, commits, doc_reviews, restores, worktrees
 
 from controlled_markdown import mctx
 from engine.checkout import agents_of
@@ -23,7 +23,7 @@ def read_git(main: Path) -> GitRead:
     """The read of git and of the main tree `main`."""
     trees = worktrees(main)
     return GitRead(commits(main), frozenset(trees),
-                   {w: b for w, b in trees.items() if b is not None}, claims(main),
+                   {w: b for w, b in trees.items() if b is not None}, claims(main), restores(main),
                    {r: baseline(main, r) for r in Review}, doc_reviews(main),
                    {d.stem: d.stat().st_mtime for d in sorted(agents_of(main).glob("*.md"))})
 
