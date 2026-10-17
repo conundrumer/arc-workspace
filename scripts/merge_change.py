@@ -199,7 +199,7 @@ from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
                                  submodules, locked_update, SetupFailed)
 
 from operations.merging import (CONTEXT_WRITE, DOCUMENT_CHECKS, PATHS_SEP,  # noqa: E402
-                                NOT_PUT_ON, PREFIX, REFUSED, REFUSED_TREE)
+                                NOT_PUT_ON, PREFIX, REFUSED, REFUSED_TREE, TOOL)
 from operations.merge_outcomes import CONFLICT, LEFT_AFTER, STAYS  # noqa: E402
 from operations.worktrees import BASE  # noqa: E402
 
@@ -786,7 +786,7 @@ def land_all(main: Path, changes: Sequence[Change]) -> bool:
 
 
 def main(argv: Sequence[str]) -> int:
-    with footer("merge_change"):
+    with footer(TOOL):
         return merge_main(argv)
 
 

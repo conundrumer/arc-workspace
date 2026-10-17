@@ -4,11 +4,15 @@
 The merge is `scripts/merge_change.py`, whose checks cover the
 `controlled_markdown` check. What a merge call did is read by that
 script's own forms and by `master` (`state.Merge`,
-`operator_reads.merge_outcome`, `merged`):
+`merge_reads.merge_outcome`, `merged`):
 
 - a call that left edits in the worktree after its commit leaves the
   change unmerged, and once no editor of the change runs, the merge call
   on that worktree is given again;
+- a call that ran and was stopped before the script wrote its footer, as
+  where the step journal ended it, has no outcome, reaches no agent of
+  the change, and the merge call is given again with the key of the step
+  that was stopped, which the step journal counts as a failure of it;
 - a call that never ran, as where the harness denied it, hands the change
   to the coordinator (`HANDED_OFF`), with a note that gives the call, the
   first line of its result and the worktree;
@@ -80,7 +84,11 @@ from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Note, Resolution, Sta
 
 MERGE_SCRIPT = "scripts/merge_change.py"
 
-PREFIX = "merge_change: "
+TOOL = "merge_change"
+"""The name `merge_change.py` gives itself in its lines and its footer
+(`engine.duration.footer`)."""
+
+PREFIX = TOOL + ": "
 """The opening of each line `merge_change.py` prints, on stdout and on
 stderr."""
 

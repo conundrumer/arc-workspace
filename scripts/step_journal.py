@@ -22,7 +22,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from operator_reads import merge_outcome
+from merge_reads import merge_outcome
 
 from controlled_markdown import mctx
 from operations.constants import FOREGROUND_MS

@@ -220,7 +220,9 @@ class Merge(Enum):
     its exit status; and otherwise, by the forms of its output that
     script gives (`merge_outcomes.ran`, `merge_outcomes.conflict_paths`), never
     ran, as where the harness denied the call, refused for a conflict in
-    its rebase, or refused otherwise."""
+    its rebase, or refused otherwise. A call whose output holds a line of
+    that script and not its footer (`merge_outcomes.ended`) was stopped,
+    and has no outcome."""
     LEFT_EDITS = "left edits"
     MERGED = "merged"
     NOT_RUN = "not run"

@@ -5,7 +5,6 @@ the agents it launched, with their reports and the agents each doc
 reviewer sent a message, the outcome of its merge
 calls, and the tickets its solver passes filed."""
 
-import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -18,6 +17,7 @@ from agents_pending import turn_signs
 from agent_reports import ENDED, Sign, last_sign
 from agent_turns import first_time, has_ended, turns
 from controlled_markdown import mctx
+from merge_reads import merge_outcome, merge_subjects
 from filed_texts import brief_report_file, report_file, report_text, unfiled, written_report
 from open_agents import work_open
 from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks, is_prompt,
@@ -30,10 +30,8 @@ from state_reads import DERIVED, Kept, state_cache
 from ticket_numbers import TICKET_NUMBER
 from transcripts import find, session_directory
 from transcript_entries import epoch, read_entries
-from wait_bound import bound_denied
 
-from operations.merge_outcomes import conflict_paths, left_edits, ran
-from operations.merging import MERGE_SCRIPT, merge_messages
+from operations.merge_outcomes import conflict_paths
 from operations.reports import CONCEPT_FAULTS, TICKETS_FILED, section, section_items
 from operations.roles import PASSES, Role, described
 from operations.state import (
@@ -42,50 +40,6 @@ from operations.state import (
 from operations.task_dirs import refine_report, tasks_work
 from operations.command_words import COMMAND, is_next
 from operations.printing import unfenced
-
-
-def merge_outcome(aid: str, command: str, time: float, result: str | None, error: bool,
-                  subjects: Mapping[str, float], denied: set[str],
-                  undecided: list[str]) -> Merge | None:
-    """What a Bash call of the operator `aid` of `command` at `time` that
-    `merge_change.py` runs did, or None for any other call, one that
-    merges no change, as a call of its `--help`, and one still pending. A
-    call the harness refused, an error with no line of the script's own,
-    never ran. A call that `pending_wait_hook` denied for its timeout has
-    no outcome either, so the merge call is given again, unless the
-    operator's last merge call of `command` was denied so too: `denied`
-    holds each command whose last merge call was, read in the order of
-    the calls, and that second denial never ran. A call whose output gives that `master` is fast-forwarded
-    and the worktree stays for changes made after the commit left edits.
-    Otherwise it merged where `master` holds, by `subjects`, the
-    time of the latest commit of `master` with each subject, a commit made
-    at or after the call with the message of each change it merges,
-    whatever its exit status, as through a pipe; and otherwise the
-    output's own forms give what it did. A call whose quoting cannot be
-    read has no outcome, and an `undecided` line names it."""
-    if MERGE_SCRIPT not in command or result is None:
-        return None
-    messages = merge_messages(command)
-    if messages is None:
-        undecided.append(mctx("{run}: the quoting of the merge call `{command}` cannot be "
-                              "read").format(run=aid, command=command))
-        return None
-    if not messages:
-        return None
-    if error and not ran(result):
-        if bound_denied(result) and command not in denied:
-            denied.add(command)
-            return None
-        denied.discard(command)
-        return Merge.NOT_RUN
-    denied.discard(command)
-    if left_edits(result):
-        return Merge.LEFT_EDITS
-    if all(subjects.get(m, -math.inf) >= math.floor(time) for m in messages):
-        return Merge.MERGED
-    if not ran(result):
-        return Merge.NOT_RUN
-    return Merge.REFUSED if conflict_paths(result) is None else Merge.CONFLICT
 
 
 def pass_report(task: str, role: Role, launched: float, main: Path) -> Path | None:
@@ -309,18 +263,6 @@ def agent_listing(path: Path) -> frozenset[str] | None:
         listing = (listing or set()) | set(a.get("addedTypes") or ())
         listing -= set(a.get("removedTypes") or ())
     return None if listing is None else frozenset(listing)
-
-
-@state_cache(DERIVED, kept=Kept.DISK)
-def merge_subjects(path: Path) -> frozenset[str]:
-    """The commit messages the merge calls of the run at `path` give
-    (`operations.merging.merge_messages`), the subjects `merge_outcome`
-    looks up."""
-    return frozenset(m for e in run_entries(path, naming={MERGE_SCRIPT})
-                     if e.get("type") == "assistant" for b in blocks(e, "tool_use")
-                     if b.get("name") == Tool.BASH
-                     and MERGE_SCRIPT in (command := str((b.get("input") or {}).get("command", "")))
-                     for m in merge_messages(command) or ())
 
 
 @state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
