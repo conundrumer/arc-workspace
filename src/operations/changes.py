@@ -1,11 +1,11 @@
-"""A change the operator holds, from its take to its merge: the editors, the review of the documents, the item checker
+"""A change the operator holds, from its take to its merge: the editors, the review of the documents, the design review, the item checker
 and the ticket analyst on what the editors leave; `doc_review` gives the
 review of the documents. The steps carry out
 [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change);
 `taking` gives the release of tickets and the take of open changes,
 `merging` the merge and what follows it. `change_agents` gives the
 agents of a change and the editors it needs, `item_check` the launch of
-its item checker, `change_fragments` the doc editor of its `mctx`
+its item checker, `design_review` the launch of its design reviewer, `change_fragments` the doc editor of its `mctx`
 fragments, and `change_overrun` a change past its cost budget.
 
 A change with no worktree gets one from
@@ -50,6 +50,14 @@ which gets those items with the line that rules the step
 (`triage.for_coordinator`), and otherwise it goes to a ticket analyst
 (`decisions`).
 
+Once no editor of a change with an editor that builds code runs, and
+after the doc editor of its fragments is launched where `change_fragments`
+gives one, a design reviewer is launched on it where `design_review` gives
+one due, before the step on what the editors leave, so that the item
+checker is launched while it runs. While a design reviewer of the change
+runs, the change does not merge. Its findings are `question` tickets on
+the change, which go to the ticket analyst above.
+
 A change whose `editors` field gives a doc editor, the one
 `change_fragments` adds included, merges once its review passes as
 `doc_review` gives.
@@ -74,6 +82,7 @@ from operations.change_agents import (change_editors, editors_in, elsewhere_on, 
 from operations.change_holds import Hold, left_hold, questions_hold
 from operations.change_fragments import drafter_ids, fragments_step
 from operations.change_overrun import over_budget
+from operations.design_review import design_review, open_questions, reviewing
 from operations.doc_review import doc_review, with_ids
 from operations.directives import Decision, decided, held_on
 from operations.item_check import check_items, is_checked, latest_reports, unfinished
@@ -88,7 +97,7 @@ from operations.log_commands import AGENT
 from operations.taking import take
 from operations.tracker import last_index
 from operations.worktrees import WORKTREE, worktree
-from ticketing.vocabulary import Domain, Kind, Note, Status
+from ticketing.vocabulary import Kind, Note, Status
 
 
 def holds(t: Ticket, me: str) -> bool:
@@ -206,12 +215,16 @@ def carry(state: State, t: Ticket) -> Step | None:
         return step
     latest = latest_editors(here)
     reviewed = with_elsewhere(state, t.number, agents,
-                              (Role.ITEM_CHECKER, Role.DOC_REVIEWER))
+                              (Role.ITEM_CHECKER, Role.DOC_REVIEWER, Role.DESIGN_REVIEWER))
+    if (step := design_review(state, t, w, editors, here, reviewed)) is not False:
+        return step
     if (step := leftover(state, t, w, latest, reviewed)) is not False:
         return step
     if Role.DOC_EDITOR in editors and (
             step := doc_review(state, t, w, here, reviewed)) is not False:
         return step
+    if reviewing(reviewed):
+        return None
     return merging.merge(state, t, w, latest)
 
 
@@ -258,9 +271,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
                and r.time > checked]
     if needing and not unchanged_since(state, checkers, w):
         return check_items(state, t, w, needing, editors)
-    questions = [q for q in state.tracker.tickets.values() if q.kind is Kind.QUESTION
-                 and q.domain is Domain.CHANGE and q.subject == t.number
-                 and q.status in (Status.OPEN, Status.ASSIGNED)]
+    questions = open_questions(state, t.number)
     judged = max((a.launched for a in analysts), default=0.0)
     left_open = unfinished(latest, judged)
     left = left_for_decision(checkers[-1]) if checkers else None

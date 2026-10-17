@@ -237,6 +237,19 @@ def doc_review(number: str, worktree: Path, editors: list[tuple[Agent, str]],
     return "\n".join(lines + settled_lines(settled))
 
 
+DESIGN_REVIEW = mctx("Review the design of change {number}, in the worktree {worktree}.")
+"""The opening line of a design reviewer's brief, which gives no read of
+the whole ticket: its document gives the sections it reads."""
+
+
+def design_review(number: str, worktree: Path, scratch: Path, operator: str,
+                  settled: "Settled") -> str:
+    return "\n".join([DESIGN_REVIEW.format(number=number, worktree=worktree),
+                      SCRATCH.format(scratch=scratch),
+                      fingerprint_line(worktree), LAUNCHER.format(operator=operator),
+                      *settled_lines(settled)])
+
+
 def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], scratch: Path,
                operator: str, settled: "Settled") -> str:
     """The brief of a code editor on the `quotes` calls a change to the

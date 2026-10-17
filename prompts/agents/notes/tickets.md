@@ -3,10 +3,10 @@
     - Readers: each agent that files tickets inlines the sections for its work; the coordinator links them from [Tickets](prompts/agents/notes/requests.md#tickets); the ticket analyst, the draft analyst and the ticket reviewer link Change tickets.
     - Acts, each with its section:
         - A solver pass's tickets: [pass-tickets](#pass-tickets).
-        - Filing a ticket: [Ticket files](#ticket-files), [Ticket fields](#ticket-fields) with its part [Agent names and ids](#agent-names-and-ids), which the code reviewer and the lib reviewer inline in place of Ticket fields, and [Ticket subjects](#ticket-subjects) where no other line of its reader's documents gives its `<domain>` and `<subject>`.
+        - Filing a ticket: [Ticket files](#ticket-files), [Ticket fields](#ticket-fields) with its part [Agent names and ids](#agent-names-and-ids), which the code reviewer, the lib reviewer and the design reviewer inline in place of Ticket fields, and [Ticket subjects](#ticket-subjects) where no other line of its reader's documents gives its `<domain>` and `<subject>`.
         - A `performance` ticket: [performance-tickets](#performance-tickets).
         - A noticed fault: [Noticed faults](#noticed-faults).
-        - Finding, moving and closing a ticket: [Tracking](#tracking) with its part [Reading and logging tickets](#reading-and-logging-tickets), which the code reviewer and the lib reviewer inline in place of Tracking.
+        - Finding, moving and closing a ticket: [Tracking](#tracking) with its part [Reading and logging tickets](#reading-and-logging-tickets), which the code reviewer, the lib reviewer and the design reviewer inline in place of Tracking.
         - A `change` ticket's fields: [Change tickets](#change-tickets).
 
 # Ticket notes

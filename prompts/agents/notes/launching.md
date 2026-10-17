@@ -129,6 +129,11 @@
 ### A lib reviewer's brief
 - A lib reviewer's brief gives the earlier lib review's baseline, as a `lib-review/<n>` tag, this lib review's number and a scratch directory.
 
+### A design reviewer's brief
+- A design reviewer's brief gives the change's worktree, the number of its ticket and a scratch directory.
+- Where the operator launches it, it gives the command whose output its final reply ends with.
+- It gives the agent id of the agent that launches it, where that is not the coordinator.
+
 ### A doc reviewer's brief
 - A doc reviewer's brief gives a change to the agent-facing documents, as the files or a diff, and the number of its ticket, or, where it has none, what is already settled about it.
 - It gives the change's worktree, and the agent id of each editor of the change, with the part that editor's brief gave it, or the whole change where its brief gave none.

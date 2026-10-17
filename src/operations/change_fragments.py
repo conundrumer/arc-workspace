@@ -20,20 +20,16 @@ from controlled_markdown import mctx
 from operations import briefs
 from operations.change_agents import latest_editors, settled
 from operations.filing import editor_scratch
-from operations.roles import Role
+from operations.roles import BUILDERS, Role
 from operations.state import Agent, State, Ticket, last_reported
 from operations.steps import Bash, Launch, Step, Undecided, agent_ids
 from operations.log_commands import add_editor
-
-DRAFTERS = (Role.CODE_EDITOR, Role.HANDBOOK_EXPANDED)
-"""The editors that draft the text of the fragments their code needs."""
-
 
 def drafter_ids(here: list[Agent]) -> list[str] | Undecided:
     """The agent ids of the latest drafters of `here`, which the brief of a
     doc editor gives for the code changes a move of a fragment's text
     needs."""
-    return agent_ids([a for a in latest_editors(here) if a.role in DRAFTERS])
+    return agent_ids([a for a in latest_editors(here) if a.role in BUILDERS])
 
 
 def lacking_doc_editor(t: Ticket, w: Path | None,
@@ -49,7 +45,7 @@ def lacking_doc_editor(t: Ticket, w: Path | None,
 
 def drafter_reports(here: list[Agent]) -> list[float]:
     """The times of the latest reports of the drafters of `here`."""
-    return [r.time for a in here if a.role in DRAFTERS and (r := a.last_report) is not None]
+    return [r.time for a in here if a.role in BUILDERS and (r := a.last_report) is not None]
 
 
 def fragments_due(here: list[Agent]) -> bool:

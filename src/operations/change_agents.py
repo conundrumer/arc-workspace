@@ -25,13 +25,14 @@ from operations.steps import Undecided
 
 
 def on_change(a: Agent, number: str) -> bool:
-    """Whether `a` is an editor, a doc reviewer, an item checker or a
-    ticket analyst launched on the change `number`."""
+    """Whether `a` is an editor, a doc reviewer, a design reviewer, an item
+    checker or a ticket analyst launched on the change `number`."""
     if a.role is Role.TICKET_ANALYST:
         parsed = analyst_of(a.subject)
         return parsed is not None and parsed[0] is Purpose.CHANGE \
             and number in subjects(parsed[1])
-    return a.role in (*EDITORS, Role.DOC_REVIEWER, Role.ITEM_CHECKER) and a.subject == number
+    return a.role in (*EDITORS, Role.DOC_REVIEWER, Role.DESIGN_REVIEWER,
+                      Role.ITEM_CHECKER) and a.subject == number
 
 
 def launched_on(state: State, number: str) -> list[Agent]:

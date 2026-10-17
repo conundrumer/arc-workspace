@@ -1,9 +1,9 @@
 + budget: 4421
 * comment: when editing this doc
-    - [Code editor](prompts/agents/code-editor.md), [Code reviewer](prompts/agents/code-reviewer.md) and [Lib reviewer](prompts/agents/lib-reviewer.md) inline its sections, for editing and reviewing code.
+    - [Code editor](prompts/agents/code-editor.md), [Code reviewer](prompts/agents/code-reviewer.md), [Lib reviewer](prompts/agents/lib-reviewer.md) and [Design reviewer](prompts/agents/design-reviewer.md) inline its sections, for editing the code under `src/` and `scripts/`, reviewing it, and judging a change's design.
     - Acts, each with its section:
         - The rules every run of the code editor keeps: [code-working-rules](#code-working-rules).
-        - The rules every run of each of them keeps: [reads-and-progress](#reads-and-progress), which code-working-rules inlines, and which the code reviewer and the lib reviewer inline in place of code-working-rules.
+        - The rules every run of each of those agents keeps: [reads-and-progress](#reads-and-progress), which code-working-rules inlines, and which the code reviewer, the lib reviewer and the design reviewer inline in place of code-working-rules.
         - Judging a whole unit: [unit-kinds](#unit-kinds).
         - Judging a line: [line-kinds](#line-kinds).
         - Reading the trees of a review: [review-trees](#review-trees), inlined by the code reviewer and the lib reviewer, as is each section below on a review.

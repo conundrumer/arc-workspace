@@ -72,6 +72,7 @@
     - The design gives a file outside the Scope: the ticket reviewer checks the Scope against the files the design gives.
     - The design is worse than a shape the code or the documents show: the editor builds that shape, and gives the departure with its reason in its report.
     - The design adds a step before each change: only a change that adds a mechanism to code, or adds or changes a rule or a fact in the documents, has one.
+    - A design misses a case that shows only in the code written, across changes, or in the architecture it builds on: the design reviewer judges the built change before its merge.
 
 ## Implementation
 - Purpose: build the change to its design and its requirements.
@@ -90,14 +91,16 @@
     - Each revision of a `change` ticket before the one at the operator's cap of ticket reviews is checked before the build: each requirement traces to the request's spans or Grounds and can be checked, each claim about the current state holds, and the Scope covers the design.
     - An agent other than its editor checks the built change against each requirement, for documents as for code, outside the lib and the solvers, which the handbook judges.
         * comment: The user's words, request 9-143, session 129de8fc, 2026-10-14T18:08:21Z: "ok file that item checkers do not apply to solver things since solver things require handbook to judge".
+    - Each change to code, the lib and the solvers included, other than a hotfix, gets before its merge a judgment of its design by an agent other than its editors, against the code as `master` stands, the commits landed on `master` since its merge base, and the closed tickets on its targets.
+        * comment: The user's words, request 6-1629, session 7fd429fb, 2026-10-17T04:50:17Z: "Before merge??", on when design flaws shared across changes are to be caught.
     - For a document change whose misread by an agent other than the doc reviewer, doc editor and ticket reviewer would be silent in use, a trial that read nothing that reveals its case's outcome shows before the merge that this agent acts as the requirement states.
     - The lines in force in the agents' documents get a standing review, as the code in the tree gets the code review.
     - The lib's code merged to `master` gets a review by a handbook agent other than its builder.
     - A finding in a later round of the doc review, or by Checks in a round of the ticket review after one that checked the draft by Checks, falls only on text or a ground that changed since such an earlier round, or still stands from it.
-- Owner: the ticket reviewer for the `change` ticket, the item checker for the built change outside the lib and the solvers, the doc reviewer for the form of the documents and, by its trials, for the evidence of a reader's behavior, a standing doc review for the lines in force in the agents' documents, the code reviewer and the gate for the code, and the lib reviewer for the lib's code.
+- Owner: the ticket reviewer for the `change` ticket, the item checker for the built change outside the lib and the solvers, the doc reviewer for the form of the documents and, by its trials, for the evidence of a reader's behavior, a standing doc review for the lines in force in the agents' documents, the design reviewer for the design of a built change to code, the code reviewer and the gate for the code, and the lib reviewer for the lib's code.
 - Takes from: implementation and requirements. Gives to: merge.
 - How it can fail:
-    - Each review adds cost to every change: the reviews a work product gets are set by its reader.
+    - Each review adds cost to every change: the reviews a work product gets are set by its reader, and the design review by the change's editors, a code editor or the `handbook-expanded` agent.
     - A reviewer checks that a form is filled in: each requirement is checked against the worktree or a run, and not against text.
     - Evidence of a reader's behavior is costly, and one run proves little: it is evidence for the reviewer of the change, and no pass or fail on its own.
     - The standing review files many small findings: they go through the fault options of [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
@@ -193,7 +196,7 @@
 ## Work products
 - A `request`: a ticket analyst writes the `change` tickets that serve it. Its reviews: the ticket reviewer's check of each requirement's trace to its spans or Grounds, and validation.
 - A `change` ticket with its design: a ticket analyst writes it, or a merge files a whole-document pass. Its review: a ticket reviewer's, before the build, or, for a whole-document pass, the doc review of its fixed text.
-- A built code change: a code editor builds it, and the `handbook-expanded` agent the part in the lib and the solvers. Its reviews: the item checker's check of its items outside the lib and the solvers, which the handbook judges, the gate at its merge, the code review that follows its merge, and, for its part in the lib, the lib review that follows its merge.
+- A built code change: a code editor builds it, and the `handbook-expanded` agent the part in the lib and the solvers. Its reviews: the item checker's check of its items outside the lib and the solvers, which the handbook judges, the design reviewer's judgment of its design before its merge, other than for a hotfix, the gate at its merge, the code review that follows its merge, and, for its part in the lib, the lib review that follows its merge.
     * comment: The user's words, request 9-143, session 129de8fc, 2026-10-14T18:08:21Z: "ok file that item checkers do not apply to solver things since solver things require handbook to judge".
 - A built document change, the text of each `mctx` fragment a change adds or changes included: the doc editor builds it, from a code editor's draft for a fragment's text. Its reviews: the doc reviewer's, the item checker's check of its items, and the `controlled_markdown` check.
 - A solver: the Create pass writes it, and each Refine pass reconciles it with the latest report. Its review: the transcript review of each pass that writes it.

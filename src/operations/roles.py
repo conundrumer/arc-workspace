@@ -32,6 +32,7 @@ class Role(StrEnum):
     DOC_EDITOR = "doc-editor"
     HANDBOOK_EXPANDED = "handbook-expanded"
     DOC_REVIEWER = "doc-reviewer"
+    DESIGN_REVIEWER = "design-reviewer"
     CODE_REVIEWER = "code-reviewer"
     LIB_REVIEWER = "lib-reviewer"
     BATCH_PROFILE = "batch-profile"
@@ -89,6 +90,10 @@ EDITORS = (Role.CODE_EDITOR, Role.HANDBOOK_EXPANDED, Role.DOC_EDITOR)
 """The editors a change's `editors` field may give, in the order the
 command launches them, each in the change's worktree, which its brief
 gives."""
+
+BUILDERS = (Role.CODE_EDITOR, Role.HANDBOOK_EXPANDED)
+"""The editors that build code: each drafts the text of the `mctx`
+fragments its code needs, and a change with one gets a design review."""
 
 
 def editors_of(names: Iterable[str]) -> tuple[Role, ...]:
