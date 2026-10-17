@@ -14,16 +14,18 @@ from engine import (
     Rows,
     RunFailure,
     RunResult,
+    Scope,
     Tuples,
     UnitId,
     Value,
 )
+from engine.engine import resolved
 from engine.program import POSE_COLUMN, Column, RelationDecl, RigidCall
 from engine.quotes import quotes
 from solver.aggregate import Solver, has_determine
 from solver.cycles import cyclic_components
 from solver.graph import Graph, InstancePath, Node, NodeKind
-from solver.model import Parameter, StoredGrid
+from solver.model import Parameter
 from solver.probe import example_inputs
 from solver.readers import instance_of, parameter, row_value
 from solver.value_order import row_key
@@ -254,21 +256,38 @@ def determine(engine: Engine, solver: Solver, limits: Limits,
                              det_name, [p.name for p in determined]), spent)
 
 
-def stored_facts(engine: Engine, solver: Solver, p: Parameter) -> list[Row]:
-    """The parameter's stored facts, a GRID call's cells among them."""
-    if not isinstance(p.stored, StoredGrid):
-        return list(p.stored)
-    expanded = engine.expand(solver.program)
-    out: list[Row] = []
-    for u in expanded.units:
-        if u.scope == PARAMS_SCOPE and u.body is None \
-                and u.head.relation == RelationName((), p.name):
-            row = row_value(u.head.args, solver.lib.constants)
+class ProgramFacts:
+    """The facts of each parameter in `solver.program`, as `engine.expand`
+    gives it, a GRID call's cells among them: the bodiless units that feed
+    the declaration `params.<name>` resolves to from the top level, in
+    unit order, so a `Params` fact and a top-level one that
+    `engine.fix_relation` writes both count. The program is expanded and
+    indexed once."""
+
+    def __init__(self, engine: Engine, solver: Solver) -> None:
+        self.solver = solver
+        expanded = engine.expand(solver.program)
+        self.index = engine.index(expanded)
+        self.units = {u.id: u for u in expanded.units}
+
+    def of(self, p: Parameter) -> list[Row]:
+        decl = resolved(self.index, parameter(self.solver, p.name),
+                        Scope(())).declaration
+        out: list[Row] = []
+        for o in self.index.feeding(decl):
+            u = self.units[o.unit]
+            if u.body is not None:
+                continue
+            row = row_value(u.head.args, self.solver.lib.constants)
             if row is None:
-                raise ValueError(f"a fact of `{p.name}` the GRID expansion "
-                                 "wrote states no constant")
+                raise ValueError(f"a fact of `{p.name}` states no constant")
             out.append(row)
-    return out
+        return out
+
+
+def stored_facts(engine: Engine, solver: Solver, p: Parameter) -> list[Row]:
+    """The parameter's facts in `solver.program` (`ProgramFacts`)."""
+    return ProgramFacts(engine, solver).of(p)
 
 
 def rigid_parameters(solver: Solver) -> frozenset[str]:

@@ -53,6 +53,7 @@ from solver.columns import (
     column_names,
 )
 from solver.dependence import dependence
+from solver.determine import ProgramFacts
 from solver.probe import Proposals, probe
 from solver.model import (
     Base,
@@ -258,7 +259,7 @@ class _FieldsAt:
     `@derive` branch's proposer, as `group_program` fixes them."""
 
     def __init__(self, engine: Engine, solver: Solver) -> None:
-        self.engine = engine
+        self.facts = ProgramFacts(engine, solver)
         self.solver = solver
         self.readings = field_readings(solver)
         self.got: dict[tuple[Case, int], FieldValues] = {}
@@ -271,7 +272,7 @@ class _FieldsAt:
             derived = {} if not isinstance(proposals, Proposals) else {
                 b.parameter: proposals.values.get(b.proposer, ())
                 for b in case.branches if isinstance(b, DeriveBranch)}
-            got = self.got[key] = open_fields(self.engine, self.solver,
+            got = self.got[key] = open_fields(self.facts, self.solver,
                                               self.readings, case, assign,
                                               derived)
         return got

@@ -1,19 +1,19 @@
 """The values a case takes at each field of `OpenValue` on a run: the
 values of the field's `@open` relation that the derivation gives on the
 run's input where the case takes a `@derive` branch on it, else that the
-run's assignment gives it, else that the case stores, each projected onto
-the columns the field's record names, which tell one open value from
-another (solver-file.md, under "Cases")."""
+run's assignment gives it, else the facts of the run's program, each
+projected onto the columns the field's record names, which tell one open
+value from another (solver-file.md, under "Cases")."""
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 
-from engine import Engine, RecordValue, Row, Rows, Value
+from engine import RecordValue, Row, Rows, Value
 from engine.quotes import quotes
 from engine.program import RecordType, first_line, own
 from solver.aggregate import TOP, Solver
-from solver.determine import stored_facts
+from solver.determine import ProgramFacts
 from solver.model import Case, Parameter
 from solver.out_grids import FieldValues
 from solver.outcome import Assignment
@@ -110,7 +110,7 @@ def field_readings(solver: Solver) -> tuple[FieldReading | FieldOff, ...]:
         "A relation's values at that case are those the case stores, or "
         "those that the `@derive` branch the case takes on it derives on "
         "that input.")
-def open_fields(engine: Engine, solver: Solver,
+def open_fields(facts: ProgramFacts, solver: Solver,
                 readings: Sequence[FieldReading | FieldOff], case: Case,
                 assign: Assignment, derived: Mapping[str, Rows]
                 ) -> FieldValues:
@@ -119,10 +119,11 @@ def open_fields(engine: Engine, solver: Solver,
     `field_readings` and `derived` the values each parameter the case
     derives takes on the run's input, as the run fixes them
     (`solver.group_runs.group_program`): those, else the values the
-    assignment gives, else those the case stores, each projected onto the
-    field's record. Raises ValueError where a field is off its form, which
-    the lint reports (`checker.lint.form.open_value_fields`), and where the
-    assignment gives the relation a grid."""
+    assignment gives, else the relation's facts in the program of
+    `solver`, which `facts` reads, each projected onto the field's record. Raises ValueError
+    where a field is off its form, which the lint reports
+    (`checker.lint.form.open_value_fields`), and where the assignment gives
+    the relation a grid."""
     given = dict(assign.values)
     out: list[tuple[Value, ...]] = []
     for r in readings:
@@ -138,7 +139,7 @@ def open_fields(engine: Engine, solver: Solver,
             raise ValueError(f"the `@open` relation `{p.name}` is assigned "
                              f"a grid")
         rows = list(assigned) if assigned is not None \
-            else stored_facts(engine, solver, p)
+            else facts.of(p)
         pc = parameter_reading(solver, p.name)
         values = pc.values(rows) if case.base is None or not pc.case \
             else rows_at(solver, pc, rows, case.base)
