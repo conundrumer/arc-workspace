@@ -35,6 +35,8 @@ def ran(cmd: str, hook: dict[str, Any]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, shell=True, input=json.dumps(hook),
                           capture_output=True, text=True, check=True,
                           env={**{k: os.environ[k] for k in KEPT_ENV if k in os.environ},
+                               checkout.CACHE_ENV: str(
+                                   Path(hook["transcript_path"]).parent / "cache"),
                                "CLAUDE_PROJECT_DIR": str(checkout.ROOT),
                                "CLAUDE_CODE_ENTRYPOINT": "cli"})
 

@@ -74,9 +74,19 @@ reader at once, the second waits for the first, and gives nothing once the
 first has given the diff. A text longer than the hook text Claude Code puts
 in a context whole (`handbook.coordinator_document.HOOK_TEXT_CAP`) reaches
 the reader as a preview and the path of a file that holds it, and its head,
-which stands in that preview, has the reader read that file whole."""
+which stands in that preview, has the reader read that file whole.
+
+A `context --update` run that succeeds is kept under `checkout.cache()`,
+keyed by its arguments, the held texts it reads, its tree's `HEAD`, and the
+path and content of each file `git status` lists in that tree, so that a
+later update with the same key, of any reader in any session, gives the
+kept output in place of a run. Of two updates with one key at once, the
+second waits for the first's run and gives what it kept. A file git
+ignores is not in the key."""
 
 import fcntl
+import hashlib
+import json
 import os
 import re
 import subprocess
@@ -85,13 +95,17 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from enum import StrEnum
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, Any, NamedTuple
 
 from hook_entry import Update
 
 RECORDS = "reader-commits"
 """The directory of the records, in a session directory or in the
 directory of the project's sessions."""
+
+UPDATE_CACHE = "reader-updates"
+"""The directory of the kept `context --update` runs under
+`checkout.cache()`."""
 
 COMMIT = re.compile(r"[0-9a-f]{40}")
 
@@ -231,21 +245,79 @@ def _documents_differ(tree: Path, before: str, after: str,
                                *(paths or configured(tree))).returncode == 1
 
 
-def _run_update(tree: Path, argv: list[str], fields: dict[str, Any],
+class _Run(NamedTuple):
+    """A `context --update` run."""
+
+    command: str
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _status_digest(h: "hashlib._Hash", tree: Path) -> None:
+    """Adds to `h` the path and content of each file `git status` lists in
+    `tree` as differing from its `HEAD` or untracked."""
+    from engine import checkout
+    from engine.memo import hash_file
+
+    listed = checkout.git_out(tree, "status", "--porcelain=v1", "-z",
+                              "--untracked-files=all", "--no-renames")
+    for name in sorted(entry[3:] for entry in listed.split("\0") if entry):
+        try:
+            body: bytes | None = (tree / name).read_bytes()
+        except OSError:
+            body = None
+        hash_file(h, name, body)
+
+
+def _cached_run(tree: Path, after: str, args: list[str],
+              held: tuple[str, str] | None = None) -> _Run:
+    """The `context --update` run with `args` in `tree`, whose `HEAD` is
+    `after`, as the module docstring gives the kept runs; with `held`, the
+    texts the `--held` form reads from its two files."""
+    import tempfile
+
+    from engine import checkout
+    from engine.memo import read_or_make
+    from handbook.reader_diffs import CONTEXT_SCRIPT, PROJECT_INSTRUCTIONS
+
+    h = hashlib.sha256()
+    for part in [after, *args, *(held or ())]:
+        h.update(part.encode() + b"\0")
+    h.update(b"\1" if held else b"\0")
+    _status_digest(h, tree)
+    key = checkout.cache() / UPDATE_CACHE / h.hexdigest()
+
+    def made() -> tuple[_Run, bool]:
+        with tempfile.TemporaryDirectory() as tmp:
+            files = [Path(tmp) / "context", Path(tmp) / PROJECT_INSTRUCTIONS]
+            for file, text in zip(files, held or (), strict=False):
+                file.write_text(text)
+            argv = ["uv", "run", "python", str(CONTEXT_SCRIPT), "context", "--update",
+                    *(["--held", *map(str, files)] if held else []), *args]
+            done = subprocess.run(argv, cwd=tree, env=checkout.tree_env(),
+                                  capture_output=True, text=True)
+        run = _Run(" ".join(argv), done.returncode, done.stdout, done.stderr)
+        return run, run.returncode == 0
+
+    with _locked(key.with_suffix(".lock")):
+        return read_or_make(key.with_suffix(".json"),
+                            lambda data: _Run(*json.loads(data)),
+                            lambda run: json.dumps(run).encode(), made)
+
+
+def _run_update(done: _Run, fields: dict[str, Any],
                 failed: str, head: str) -> str | None:
-    """The text that gives a reader the output of `argv`, a `context --update`
-    run in `tree`, under `head`; `failed`, then the stderr of the run, where
+    """The text that gives a reader the output of `done`, a `context --update`
+    run, under `head`; `failed`, then the stderr of the run, where
     it fails; or None where it prints nothing. `fields`, with the run's
     `command` and its exit `code`, fill both texts. `failed` goes on to the
     step that has the reader read its documents again, from the commit
     `fields` gives as `since`, in the place it gives as `where`."""
     from controlled_markdown import mctx
-    from engine import checkout
     from handbook.coordinator_document import HOOK_TEXT_CAP
 
-    done = subprocess.run(argv, cwd=tree, env=checkout.tree_env(),
-                          capture_output=True, text=True)
-    fields = {**fields, "command": " ".join(argv), "code": done.returncode}
+    fields = {**fields, "command": done.command, "code": done.returncode}
     opening = mctx("Your working tree is at commit {after}, and your documents there may "
                    "differ from the ones you hold.")
     if done.returncode != 0:
@@ -273,12 +345,6 @@ def _run_update(tree: Path, argv: list[str], fields: dict[str, Any],
     return f"{text}\n\n{done.stdout}"
 
 
-def _update_argv(*args: str) -> list[str]:
-    from handbook.reader_diffs import CONTEXT_SCRIPT
-
-    return ["uv", "run", "python", str(CONTEXT_SCRIPT), "context", "--update", *args]
-
-
 def update_text(tree: Path, after: str, context: str, instructions: str,
                 call: tuple[str, list[str]]) -> str | None:
     """The text that gives the reader `call` the diff of its context from
@@ -299,7 +365,7 @@ def update_text(tree: Path, after: str, context: str, instructions: str,
         return None
     reader, args = call
     return _run_update(
-        tree, _update_argv(context, instructions, reader, *args),
+        _cached_run(tree, after, [context, instructions, reader, *args]),
         {"after": after, "context": context, "instructions": instructions,
          "since": "<commit>",
          "where": mctx("in your working tree with each of those two commits")},
@@ -359,29 +425,22 @@ def held_update_text(tree: Path, after: str, launch: str,
     and of the sections they reach by links from `launch`, to `after`, the
     `HEAD` of `tree`, as `context --update --held` prints it in `tree`; the
     failure of that run; or None where the diff holds nothing."""
-    import tempfile
-
     from controlled_markdown import mctx
-    from handbook.reader_diffs import PROJECT_INSTRUCTIONS
 
     reader, args = call
-    with tempfile.TemporaryDirectory() as tmp:
-        files = [Path(tmp) / "context", Path(tmp) / PROJECT_INSTRUCTIONS]
-        for file, text in zip(files, held, strict=True):
-            file.write_text(text)
-        return _run_update(
-            tree, _update_argv("--held", *map(str, files), launch, reader, *args),
-            {"after": after, "launch": launch, "since": launch,
-             "where": mctx("in your working tree")},
-            "\n".join([
-                mctx("Your own context and the project instructions, `CLAUDE.md`, are "
-                     "the ones you were given at your launch, at commit {launch}."),
-                mctx("The diff of your documents since then could not be computed: "
-                     "`{command}` exited {code} and wrote what follows.")]),
-            mctx("The diff below, which `{command}` prints, runs from the texts you were "
-                 "given at your launch for your own context and the project instructions, "
-                 "`CLAUDE.md`, and from commit {launch}, your tree's `HEAD` at your launch, "
-                 "for each section that links from them reach."))
+    return _run_update(
+        _cached_run(tree, after, [launch, reader, *args], held),
+        {"after": after, "launch": launch, "since": launch,
+         "where": mctx("in your working tree")},
+        "\n".join([
+            mctx("Your own context and the project instructions, `CLAUDE.md`, are "
+                 "the ones you were given at your launch, at commit {launch}."),
+            mctx("The diff of your documents since then could not be computed: "
+                 "`{command}` exited {code} and wrote what follows.")]),
+        mctx("The diff below, which `{command}` prints, runs from the texts you were "
+             "given at your launch for your own context and the project instructions, "
+             "`CLAUDE.md`, and from commit {launch}, your tree's `HEAD` at your launch, "
+             "for each section that links from them reach."))
 
 
 def _update(text: str | None) -> Update | None:
