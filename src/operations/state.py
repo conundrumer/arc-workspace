@@ -63,8 +63,7 @@ class Unread:
 class Ticket:
     """A ticket of the tracker. `editors` is None where a `change` gives no
     `editors` field, `mechanical` is whether a `change` gives the
-    `mechanical` field, `cost_budget` is whether a `change` carries a
-    cost budget, which its `budget: none` field denies, and `holder` is the holder `file_ticket.py
+    `mechanical` field, and `holder` is the holder `file_ticket.py
     log --help-all` defines."""
     number: str
     order: tuple[int, int]
@@ -80,7 +79,6 @@ class Ticket:
     editors: tuple[Role, ...] | None
     after_merge: str | None
     mechanical: bool
-    cost_budget: bool
     log: tuple[LogLine, ...]
     holder: str | None
     path: Path

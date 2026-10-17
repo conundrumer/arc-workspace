@@ -4,9 +4,7 @@ its spend is counted over, the test of that spend against it, and the
 
 A take writes in its log line the change's cost budget and time budget,
 taken over the changes closed `fixed` before it with the same `editors`
-(`scripts/spends.py`), or, for a change whose `budget: none` field
-gives it no cost budget, that it carries none, and no spend is past it.
-A line that gives the held change a new
+(`scripts/spends.py`). A line that gives the held change a new
 `editors` field writes the budgets of that field's set, which stand in
 place of the take's from then on. The agents of a change are those launched
 since its last move out of `tickets/draft/`, and its spend is theirs and
@@ -33,13 +31,8 @@ TAKE_NOTE = "taking: budget {dollars} dollars, {seconds} s"
 """The note of the log line of a take, with the change's cost budget and
 time budget."""
 
-UNBUDGETED_TAKE_NOTE = "taking: no cost budget"
-"""The note of the log line of a take of a change that carries no cost
-budget."""
-
 TAKEN = re.compile(form(TAKE_NOTE, {"dollars": r"(?P<dollars>[0-9.]+)",
-                                    "seconds": r"(?P<seconds>[0-9]+)"})
-                   + "|" + re.escape(UNBUDGETED_TAKE_NOTE))
+                                    "seconds": r"(?P<seconds>[0-9]+)"}))
 
 EDITORS_NOTE = "editors: {editors}; budget {dollars} dollars, {seconds} s"
 """The note of the log line that gives a held change a new `editors`
@@ -69,10 +62,9 @@ before its merge."""
 class Take(NamedTuple):
     """What a take line gives: its time, the cost budget of the change,
     and the time of the line that gives that budget, the take line or an
-    `editors` line since it. `dollars` is None for a change that carries
-    no cost budget, whatever line gives one."""
+    `editors` line since it."""
     time: float
-    dollars: float | None
+    dollars: float
     budgeted: float
 
 
@@ -88,21 +80,14 @@ def taken(t: Ticket) -> Take | None:
         if rebudget is None and (m := REBUDGETED.fullmatch(ln.note)) is not None:
             rebudget = (float(m["dollars"]), ln.time)
         if (m := TAKEN.fullmatch(ln.note)) is not None:
-            dollars, budgeted = ((None if m["dollars"] is None else float(m["dollars"]), ln.time)
-                                 if rebudget is None else rebudget)
-            return Take(ln.time, dollars if t.cost_budget else None, budgeted)
+            dollars, budgeted = (float(m["dollars"]), ln.time) if rebudget is None else rebudget
+            return Take(ln.time, dollars, budgeted)
     return None
-
-
-def passed_budget(take: Take, spent: Spend) -> float | None:
-    """The cost budget `take` gives, where `spent` is past it, and
-    otherwise None."""
-    return take.dollars if take.dollars is not None and spent.dollars > take.dollars else None
 
 
 def past_budget(take: Take, spent: Spend) -> bool:
     """Whether `spent` is past the cost budget `take` gives."""
-    return passed_budget(take, spent) is not None
+    return spent.dollars > take.dollars
 
 
 def overrun_ticket(state: State, t: Ticket, since: float) -> Ticket | None:

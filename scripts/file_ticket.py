@@ -30,7 +30,7 @@ from ticket_files import (FIELD, NAME_FORM, TicketName, listed_tickets, ticket_n
                           ticket_path, ticket_status)
 from ticket_paths import SCOPE, names, section_paths  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
-from ticket_form import (DESIGN, LOG, LOG_SECTION, MECHANICAL, NO_BUDGET,  # noqa: E402
+from ticket_form import (DESIGN, LOG, LOG_SECTION, MECHANICAL,  # noqa: E402
                          RETIRED, VALIDATES, checked_kind, front, section, sections_example, ticket_kind,
                          title, title_line)
 from ticket_log import (AGENT_ID, CLOSED_BY, DUPLICATE_OF, SESSION_ID, UNBLOCKED_BY, VALIDATED, Wait,  # noqa: E402
@@ -66,9 +66,8 @@ HELP = mctx("""
         EOF
         ```
     - A `change` takes `kind: change` and `editors: <editor>, <editor>`, with each editor whose part, as [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change) gives it, holds a file of its Scope, among {editors}.
-        - It may add `depends-on: <number>, <number>`, `after-merge: <the steps and checks its Scope places at or after the merge>`, `mechanical: {mechanical}` and `budget: {no_budget}` to the front matter.
+        - It may add `depends-on: <number>, <number>`, `after-merge: <the steps and checks its Scope places at or after the merge>` and `mechanical: {mechanical}` to the front matter.
         - It gives `mechanical` only where its Intent gives each edit of the code editor's part outright.
-        - It gives `budget` only where the user's words give the change no cost budget.
         - It has `# <title>` as its title, and the sections {change_sections} in place of {defect_headings}.
         - Where it adds a mechanism to code, it has a `{design}` section after `## Intent` that gives the existing operations the change uses or extends and each new operation with its module.
         - Where it adds or changes a rule or a fact in the agent-facing documents, it has that section.
@@ -729,7 +728,7 @@ their lines."""
 def help_values() -> dict[str, str]:
     """The values each help text of `file_ticket.py` is formatted with."""
     return dict(domains=ticked(Domain), editors=ticked(map(str, EDITORS)),
-                mechanical=MECHANICAL, no_budget=NO_BUDGET,
+                mechanical=MECHANICAL,
                 defect_sections=sections_example(DEFECT_SECTIONS),
                 defect_headings=ticked(map(heading, DEFECT_SECTIONS)),
                 change_sections=ticked(map(heading, SECTIONS[Kind.CHANGE])), design=heading(DESIGN),

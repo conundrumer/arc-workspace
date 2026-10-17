@@ -71,21 +71,14 @@ VALIDATES = "validates"
 """The field of a `validation` ticket that gives the number of the
 `request` it checks."""
 
-BUDGET = "budget"
-"""The field of a `change` that gives it no cost budget."""
-
 FIELDS = {Kind.CHANGE: frozenset({"depends-on", "editors", "after-merge",
-                                       "mechanical", BUDGET}),
+                                       "mechanical"}),
           Kind.DELAY: frozenset({"fix"}),
           Kind.VALIDATION: frozenset({VALIDATES})}
 """The front matter fields besides `kind` that each kind may give."""
 
 MECHANICAL = "yes"
 """The one value of a `change`'s `mechanical` field, whose condition the
-`HELP` of `file_ticket` gives."""
-
-NO_BUDGET = "none"
-"""The one value of a `change`'s `budget` field, whose condition the
 `HELP` of `file_ticket` gives."""
 
 REQUIRED = {Kind.CHANGE: frozenset({"editors"}), Kind.VALIDATION: frozenset({VALIDATES})}
@@ -196,9 +189,6 @@ def checked_kind(tickets: Path, agent: str, text: str) -> Kind:
         if key == "mechanical" and value != MECHANICAL:
             raise Refused(mctx("`mechanical` `{value}` is not `{yes}`").format(
                 value=value, yes=MECHANICAL))
-        if key == BUDGET and value != NO_BUDGET:
-            raise Refused(mctx("`budget` `{value}` is not `{none}`").format(
-                value=value, none=NO_BUDGET))
     for key in sorted(REQUIRED.get(kind, frozenset()) - set(keys)):
         raise Refused(mctx("a `{kind}` gives `{key}`").format(kind=kind, key=key))
     if not body_form(kind).match(text, head.end()):

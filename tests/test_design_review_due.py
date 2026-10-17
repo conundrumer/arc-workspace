@@ -8,7 +8,7 @@ from tests.conftest import script
 
 LOG = ("## Log\n2026-10-17T02:14:06Z draft [ticket-analyst]: filed\n"
        "2026-10-17T02:23:18Z open [ticket-reviewer ab225add95550521a]: reviewed\n"
-       "2026-10-17T02:23:56Z assigned [operator aef519b953a4e20ed]: taking: no cost budget\n"
+       "2026-10-17T02:23:56Z assigned [operator aef519b953a4e20ed]: taking: budget 2.43 dollars, 1951 s\n"
        "{conflict}")
 CONFLICT = ("2026-10-17T03:00:00Z assigned [operator aef519b953a4e20ed]: "
             "conflict: the rebase onto `master` conflicts in {paths}\n")

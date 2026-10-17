@@ -26,7 +26,7 @@ from controlled_markdown import mctx
 from operations import messages
 from operations.change_agents import editors_in, latest_editors
 from operations.change_budget import (OVERRUN_FINDING, by_role, file_overrun, left_draft,
-                                      overrun_ticket, passed_budget, taken)
+                                      overrun_ticket, past_budget, taken)
 from operations.change_holds import questions_hold
 from operations.design_review import design_launch, open_questions
 from operations.directives import Decision, decided
@@ -83,7 +83,7 @@ def design_left(state: State, t: Ticket, w: Path, latest: list[Agent], agents: l
 def over_budget(state: State, t: Ticket, w: Path,
                 agents: list[Agent]) -> Step | None | Literal[False]:
     """The step on the change `t` past the budget its take gives, or False
-    where it is not past it or no take gives a budget."""
+    where it is not past it or no take line gives one."""
     take_line = taken(t)
     if take_line is None:
         return False
@@ -91,9 +91,9 @@ def over_budget(state: State, t: Ticket, w: Path,
     if spent is None:
         return Undecided(mctx("the spend of change {number} since its take is unknown").format(
             number=t.number))
-    limit = passed_budget(take_line, spent)
-    if limit is None:
+    if not past_budget(take_line, spent):
         return False
+    limit = take_line.dollars
     trip = overrun_ticket(state, t, left_draft(t))
     if trip is None:
         budget = state.computed.budgets.get(t.number)
