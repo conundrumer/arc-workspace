@@ -150,6 +150,7 @@ PARTS = {
     - A coordinator's line that opens with `Override:` or `Decision:` in none of these forms goes back to the coordinator once, as undecided.
     - A ticket analyst's reply on a step that gives its decision key, with no ruling in these forms, goes back to it once.
         - Where its answer gives none either, the step stays held.
+        - Where the first line of the step gives one ticket or more, each as `change <number>` or `draft <number>`, and each stands under `tickets/closed/`, the reply does not go back.
     - A step `next` cannot place gives no decision key: its ticket analyst makes the act it needs and gives no ruling.
     """),
     HelpPart.RUN: mctx("""

@@ -16,6 +16,7 @@ from operations.roles import Role
 from operations.state import SETTLED, Agent, Place, Ticket, code_review_tag
 from operations.log_commands import AGENT, FILE_TICKET
 from ticketing.times import utc_stamp
+from ticketing.vocabulary import TICKET_NUMBER
 
 if TYPE_CHECKING:
     from operations.change_agents import Reported, Settled
@@ -473,10 +474,25 @@ def held_step(what: str, operator: str, rulable: bool, settled: "Settled | None"
     """The brief of a ticket analyst on the undecided step `what`, which
     gives the `Decision:` line that rules it where `rulable`, with, where
     the step is of a change, what the agents launched on it settled
-    (`settled_lines`)."""
+    (`settled_lines`).
+
+    `step_tickets` reads the step as the line after the brief's first
+    blank line, and relies on a step of a ticket giving that ticket in its
+    first line as `change <number>` or `draft <number>`."""
     head = HELD_STEP if rulable else UNPLACED_STEP
     block = [] if settled is None else settled_lines(settled)
     return "\n".join([head, "", what, "", LAUNCHER.format(operator=operator), *block])
+
+
+STEP_TICKET = re.compile(rf"\b(?:change|draft) (?P<number>{TICKET_NUMBER.pattern})\b")
+
+
+def step_tickets(brief: str) -> list[str]:
+    """The ticket numbers that the first line of the step of `brief`, a
+    `held_step` brief, gives."""
+    _, blank, rest = brief.partition("\n\n")
+    first = rest.split("\n", 1)[0] if blank else ""
+    return [m.group("number") for m in STEP_TICKET.finditer(first)]
 
 
 # "read no ticket's body to match": the user's words, "if there's a brief

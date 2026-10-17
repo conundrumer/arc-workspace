@@ -33,6 +33,11 @@ itself given to another analyst: its step stays held, and the final reply
 of the operator that made that call gives the step, with the call and the
 text of its failure (`failed`).
 
+Where the first line of a step, placed or not, gives one ticket or more,
+each under `tickets/closed/` (`briefs.step_tickets`), the reply of its
+analyst neither goes back nor is given, since nothing reads it once they
+closed.
+
 A ticket file the read of the tracker left out (`TrackerRead.unread`) is a step
 the command cannot place, one for each content the file has
 (`unread_steps`), once its last write is `WRITE_SECONDS` old, so that a
@@ -48,6 +53,7 @@ from operations.state import Agent, State, Tool, Unread, own
 from operations.final_reply import failure, final_replies, nested
 from operations.handled import ask_again, decided_by, repeated
 from operations.steps import Launch, Send, Step, Undecided, decision_key, rulable
+from operations.tracker import closed
 
 
 WRITE_SECONDS = 30.0
@@ -106,10 +112,18 @@ def decides(a: Agent) -> bool:
 
 def returned(state: State) -> list[Agent]:
     """The ticket analysts on held steps that returned, whose replies the
-    operator `me` answers."""
+    operator `me` answers, other than each whose step gives tickets that
+    all stand under `tickets/closed/` (`briefs.step_tickets`)."""
     return [a for a, purpose, _ in state.analysts()
             if purpose is Purpose.STEP and not a.pending and a.agent_id is not None
-            and a.reports and applier(state, a) == state.me]
+            and a.reports and applier(state, a) == state.me and not tickets_closed(state, a)]
+
+
+def tickets_closed(state: State, a: Agent) -> bool:
+    """Whether the step of `a`, an analyst on a held step, gives one ticket
+    or more, each under `tickets/closed/`."""
+    numbers = briefs.step_tickets(a.brief)
+    return bool(numbers) and all(closed(state, n) for n in numbers)
 
 
 def asks(state: State) -> Step | None:
