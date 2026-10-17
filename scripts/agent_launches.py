@@ -4,6 +4,7 @@ them: the launches of a session's agents by the Agent call of each, the
 launches of a run with the time each was last resumed, and the agents a
 run launched or resumed."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -88,17 +89,25 @@ def children_of(path: Path, label: str) -> frozenset[str]:
     return run_launches(path)[1].get(label, frozenset())
 
 
-def runs_under(path: Path) -> list[Path]:
+def found(aid: str, _parent: Path) -> Path:
+    """The transcript `find` gives the agent id `aid`."""
+    return find(aid)
+
+
+def runs_under(path: Path, look: Callable[[str, Path], Path | None] = found) -> list[Path]:
     """The last transcript of each run under the run at `path`: the agents
-    it launched, the agents those launched, and so on, by `run_launches`."""
+    it launched, the agents those launched, and so on, by `run_launches`,
+    each as `look` gives it from its agent id and the transcript of the run
+    that launched it, leaving out a run for which `look` gives None, and
+    the runs under it."""
     out: dict[str, Path] = {}
     todo = [path]
     while todo:
         p = todo.pop()
         for aid in sorted(children_of(p, parent_label(p))):
-            if aid not in out:
-                out[aid] = find(aid)
-                todo.append(out[aid])
+            if aid not in out and (q := look(aid, p)) is not None:
+                out[aid] = q
+                todo.append(q)
     return list(out.values())
 
 

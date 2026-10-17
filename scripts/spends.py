@@ -5,6 +5,7 @@ it."""
 import json
 import re
 import statistics
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -18,7 +19,7 @@ from ticket_form import front, ticket_kind
 from ticket_log import held_log, line_time, log_lines, read_ticket, resolution_of
 from ticket_reads import editors_field
 from token_prices import run_cost
-from transcripts import chain, held_find
+from transcripts import chain, find, held_find
 from transcript_entries import Refused, entries_back
 
 from controlled_markdown import mctx
@@ -45,24 +46,44 @@ one JSON file per ticket number. It is no status directory, so no reader
 of tickets takes a record for a ticket."""
 
 
-def owners(runs: list[str]) -> dict[Path, str] | None:
+def owners(runs: list[str], pending: Mapping[str, str]) -> dict[Path, str] | None:
     """The transcript of each of the runs `runs` and of the runs under them,
     with the agent type it counts under, or None where a run has no
     transcript or no agent type. Each transcript counts once, under the
     agent type of the nearest run of `runs` at or above it, so a run of
-    `runs` launched under another keeps its own type."""
+    `runs` launched under another keeps its own type.
+    `pending` gives each run that is still running with the agent type its
+    launch gives. Such a run, and each run under it, is read from the agent
+    index this state holds (`held_find`) alone: one whose transcript that
+    index does not give is left out, as having spent nothing so far, and
+    such a run whose transcript gives no agent type yet counts under the
+    type of its launch."""
+    held: set[Path] = set()
+
+    def look(aid: str, parent: Path) -> Path | None:
+        if aid not in pending and parent not in held:
+            return find(aid)
+        if (p := held_find(aid)) is not None:
+            held.add(p)
+        return p
+
     trees: list[tuple[str, list[Path]]] = []
     for run in runs:
         try:
             top = held_find(run)
         except Refused:
             return None
+        launch = pending.get(run)
         if top is None:
-            return None
-        role = agent_type(top)
+            if launch is None:
+                return None
+            continue
+        role = agent_type(top) or launch
         if role is None:
             return None
-        trees.append((role, [top, *runs_under(top)]))
+        if launch is not None:
+            held.add(top)
+        trees.append((role, [top, *runs_under(top, look)]))
     owner: dict[Path, tuple[int, str]] = {}
     for role, tree in trees:
         for p in tree:
@@ -80,14 +101,17 @@ def cost_of(path: Path, undecided: list[str]) -> float | None:
 
 def priced(owner: dict[Path, str], undecided: list[str]) -> Spend | None:
     """The spend of the transcripts `owner` gives, each under its agent
-    type, or None where one has no price or no time."""
+    type, or None where one has no price. A transcript with no timed entry
+    spent nothing and adds no time."""
     total = 0.0
     spans: list[tuple[float, float]] = []
     by_role: dict[str, float] = {}
     for p, role in owner.items():
-        cost = cost_of(p, undecided)
         start, end = first_time(p), last_time(p)
-        if cost is None or start is None or end is None:
+        if start is None or end is None:
+            continue
+        cost = cost_of(p, undecided)
+        if cost is None:
             return None
         total += cost
         by_role[role] = by_role.get(role, 0.0) + cost
@@ -95,10 +119,10 @@ def priced(owner: dict[Path, str], undecided: list[str]) -> Spend | None:
     return Spend(total, union_seconds(spans), by_role)
 
 
-def spend(runs: list[str], undecided: list[str]) -> Spend | None:
-    """The spend of the runs `runs` and of the runs under them, as `owners`
-    and `priced` give it."""
-    owner = owners(runs)
+def spend(runs: list[str], pending: Mapping[str, str], undecided: list[str]) -> Spend | None:
+    """The spend of the runs `runs` and of the runs under them, those that
+    `pending` gives still running, as `owners` and `priced` give it."""
+    owner = owners(runs, pending)
     return None if owner is None else priced(owner, undecided)
 
 
@@ -124,7 +148,7 @@ def change_spend(path: Path, undecided: list[str]) -> Spend | None:
     closing = [m for m in held_ticket_log(path)[1] if m["status"] == Status.CLOSED
                and resolution_of(m["note"]) is Resolution.FIXED]
     runs = (closing[-1]["note"] or "").split()[3:] if closing else []
-    owner = owners(runs) if runs else None
+    owner = owners(runs, {}) if runs else None
     if owner is None:
         return None
     lines = len(undecided)
