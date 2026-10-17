@@ -4,8 +4,9 @@
 denies a call that reads past the trial's case: a transcript read other than
 `transcripts.py window` with an end no later than the case time, a command
 that names a transcript file, and a git read of history or of a diff at a
-revision other than the case commit, or at none. Where its arguments are no
-case time and case commit, it denies every Bash call.
+revision other than the case commit, or at none. A `transcripts.py` call with
+`-h` or `--help` before any `--` prints help and reads no transcript. Where
+its arguments are no case time and case commit, it denies every Bash call.
 
 A read through the `Read` tool, a variable or a script file that holds a
 denied path passes the check, and the doc reviewer's reading of the trial's
@@ -16,6 +17,7 @@ import sys
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 
+from cli import HELP_FLAGS
 from command_labels import programs
 from controlled_markdown import mctx
 from hook_entry import Hook, Update, not_registered, run_pre_tool_use
@@ -151,10 +153,13 @@ def past_case(command: str, b: Bounds) -> str | None:
         return mctx("it names a `.jsonl` file or a path under `.claude/projects/` or "
                     "`.claude-console/projects/`")
     for prog, args in programs(command):
-        if prog == "transcripts.py" and (not args or args[0] != "window"
-                                         or window_late(args[1:], b.time)):
-            return mctx("it runs `transcripts.py` other than as `window` with an end no later "
-                        "than the case's time")
+        if prog == "transcripts.py":
+            options = args[:args.index("--")] if "--" in args else args
+            if any(a in HELP_FLAGS for a in options):
+                continue
+            if not args or args[0] != "window" or window_late(args[1:], b.time):
+                return mctx("it runs `transcripts.py` other than as `window` with an end no "
+                            "later than the case's time")
         if prog == "git":
             sub, rest = git_subcommand(args)
             if sub in HISTORY and git_past(sub, rest, b.commit):
