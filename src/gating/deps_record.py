@@ -12,7 +12,7 @@ from controlled_markdown import mctx
 from engine import checkout
 from engine.memo import write_whole
 from gating.commands import COMMANDS, GateCommand, keys_of
-from gating.deps import PY_SUFFIXES, Deps, affects, moved, touched_from
+from gating.deps import PY_SUFFIXES, Deps, affects, moved, text_at, touched_from
 from gating.records import deps_file
 
 RECORD_OUT = "record.json"
@@ -100,7 +100,7 @@ def affected(cmds: Sequence[GateCommand], base: str) -> tuple[set[str], str | No
     if record is None:
         return keys, None, len(keys)
     touched = touched_from(base, record.commit)
-    recorded = {t.path: checkout.git_out(checkout.ROOT, "show", f"{record.commit}:{t.path}")
+    recorded = {t.path: text_at(record.commit, t.path)
                 for t in touched if Path(t.path).suffix in PY_SUFFIXES
                 and not (t.status.added or t.unrecorded)}
     run = {k for c in cmds for s in c.stems for k in [c.key(s)]

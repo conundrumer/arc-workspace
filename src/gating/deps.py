@@ -9,6 +9,7 @@ import runpy
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 from typing import NamedTuple
 
@@ -16,8 +17,9 @@ import coverage
 from coverage.sysmon import SysMonitor
 
 import souffle.run
+from cli import HELP_FLAGS
 from engine import checkout
-from gating.commands import ACCEPTED, GateCommand
+from gating.commands import ACCEPTED, COMMANDS, GateCommand
 
 TRACE = "--trace"
 """The first argument of the gate's own call that runs one traced command
@@ -209,11 +211,23 @@ class Touched:
     first line and its count, a count of 0 an insertion after the first
     line, with the new side of each. `unrecorded` is a Python file that stands at the change's base
     and not at the recorded commit, whose lines no command's record
-    holds."""
+    holds. `passed` holds the index in `hunks` of each hunk `inert`
+    passes."""
     path: str
     status: checkout.Change
     hunks: tuple[Hunk, ...] = ()
     unrecorded: bool = False
+    passed: frozenset[int] = frozenset()
+
+    @property
+    def live(self) -> tuple[Hunk, ...]:
+        return tuple(h for i, h in enumerate(self.hunks) if i not in self.passed)
+
+    @property
+    def inert(self) -> bool:
+        """Whether the file has hunks and `inert` passes each of them. A
+        file with no hunk is run whole (`runs_hunks`)."""
+        return bool(self.hunks) and not self.live
 
 
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.M)
@@ -263,7 +277,9 @@ def touched_from(base: str, recorded: str) -> list[Touched]:
     differs between the two commits, `renumbered` numbers them. The hunks
     from `recorded` to `base` count only where a hunk of the change meets
     them: the commits that wrote them passed their own merge's gate, whose
-    accepted outputs this gate compares against."""
+    accepted outputs this gate compares against. Each hunk of a path that
+    stands at `base` is classified by `inert` against the `base` text, since the rules it applies are
+    properties of the change's own edit."""
     moved = between(recorded, base)
     absent = between(recorded, base, "--diff-filter=A")
     gone = between(recorded, base, "--diff-filter=D")
@@ -279,12 +295,141 @@ def touched_from(base: str, recorded: str) -> list[Touched]:
         elif c.path in gone:
             status = checkout.Change.MODIFIED
         hunks: tuple[Hunk, ...] = ()
+        passed: frozenset[int] = frozenset()
         if status is checkout.Change.MODIFIED and Path(c.path).suffix in PY_SUFFIXES:
             hunks = _diff_hunks(c.path, base)
+            if c.change is checkout.Change.MODIFIED:
+                old = text_at(base, c.path)
+                new = (checkout.ROOT / c.path).read_text().splitlines(keepends=True)
+                passed = frozenset(i for i, h in enumerate(hunks) if inert(
+                    c.path, old, new[h.new_start - 1:h.new_start - 1 + h.new_count], h))
             if c.path in moved:
                 hunks = renumbered(hunks, _diff_hunks(c.path, recorded, base))
-        out.append(Touched(c.path, status, hunks))
+        out.append(Touched(c.path, status, hunks, passed=passed))
     return out
+
+
+HELP_KEYWORDS = frozenset({"help", "description", "epilog"})
+"""The keywords of an argparse parser builder whose text argparse prints
+only for a help flag."""
+
+HELP_CALLEES = frozenset({"ArgumentParser", "add_argument", "add_parser", "add_subparsers",
+                          "add_argument_group", "add_mutually_exclusive_group"})
+"""The argparse parser builders, by the name a call gives them."""
+
+HELP_HELPERS = {"src/cli/parser.py": frozenset({"command"})}
+"""By file, the functions that pass their `HELP_KEYWORDS` on to an argparse
+parser builder."""
+
+
+@cache
+def _help_printed() -> bool:
+    """Whether some gate command's arguments hold a help flag."""
+    return any(a in HELP_FLAGS for c in COMMANDS.values() for s in c.stems
+               for a in c.argv(s, Path()))
+
+
+def _callee(call: ast.Call) -> str | None:
+    f = call.func
+    return f.attr if isinstance(f, ast.Attribute) else f.id if isinstance(f, ast.Name) else None
+
+
+def _import_bindings(tree: ast.Module) -> tuple[set[str], dict[str, tuple[str, str | None]]]:
+    """The modules the module-level imports of `tree` name, and each name
+    they bind, with the module and the original name it is bound to."""
+    modules: set[str] = set()
+    binds: dict[str, tuple[str, str | None]] = {}
+    for n in tree.body:
+        modules.update(_modules(n))
+        if isinstance(n, ast.Import):
+            for a in n.names:
+                binds[a.asname or a.name.split(".")[0]] = (
+                    a.name if a.asname else a.name.split(".")[0], None)
+        elif isinstance(n, ast.ImportFrom):
+            for a in n.names:
+                binds[a.asname or a.name] = ("." * n.level + (n.module or ""), a.name)
+    return modules, binds
+
+
+def _modules(n: ast.stmt) -> list[str]:
+    """The modules the statement `n` imports, in order, where it is an
+    import statement."""
+    if isinstance(n, ast.Import):
+        return [a.name for a in n.names]
+    if isinstance(n, ast.ImportFrom):
+        return ["." * n.level + (n.module or "")]
+    return []
+
+
+def _first_imports(body: list[ast.stmt]) -> list[ast.stmt]:
+    """`body` with each import statement replaced, in its place, by one
+    that imports only the modules no statement before it imports, and
+    dropped where it imports none: the order and place in which modules
+    are first imported decide what an import cycle or a `sys.path` edit
+    gives."""
+    seen: set[str] = set()
+    out: list[ast.stmt] = []
+    for n in body:
+        if not isinstance(n, (ast.Import, ast.ImportFrom)):
+            out.append(n)
+            continue
+        first = [m for m in dict.fromkeys(_modules(n)) if m not in seen]
+        seen.update(first)
+        if first:
+            out.append(ast.Import(names=[ast.alias(name=m) for m in first]))
+    return out
+
+
+def _same_imports(old: ast.Module, new: ast.Module) -> bool:
+    (om, ob), (nm, nb) = _import_bindings(old), _import_bindings(new)
+    return om == nm and all(ob[k] == nb[k] for k in ob.keys() & nb.keys())
+
+
+def _normalized(tree: ast.Module, path: str, imports: bool) -> str:
+    """`tree` dumped without its bare string statements, with the value of
+    each `HELP_KEYWORDS` keyword of a parser builder made one placeholder
+    where no gate command prints help, and with its module-level imports
+    reduced to the modules each imports first (`_first_imports`) where
+    `imports`."""
+    callees = HELP_CALLEES | HELP_HELPERS.get(path, frozenset())
+    for n in ast.walk(tree):
+        for field, value in ast.iter_fields(n):
+            if isinstance(value, list):
+                setattr(n, field, [v for v in value if not (
+                    isinstance(v, ast.Expr) and isinstance(v.value, ast.Constant)
+                    and isinstance(v.value.value, str))])
+        if isinstance(n, ast.Call) and not _help_printed() and _callee(n) in callees:
+            for k in n.keywords:
+                if k.arg in HELP_KEYWORDS:
+                    k.value = ast.Constant(None)
+    if imports:
+        tree.body = _first_imports(tree.body)
+    return ast.dump(tree)
+
+
+def inert(path: str, old: str, new_lines: Sequence[str], hunk: Hunk) -> bool:
+    """Whether the hunk `hunk` of the Python file `path`, whose old side is
+    numbered in the text `old` and whose new side is `new_lines`, applied
+    alone, changes nothing a gate command runs: whether it changes nothing
+    but comments, blank lines and bare string statements, the
+    `HELP_KEYWORDS` values of parser builders, and module-level imports
+    where both sides import the same modules, first in the same order and
+    places, and bind no name both bind to another module or original
+    name. A gate command reads no `__doc__`.
+    A hunk whose applied text does not parse is not inert."""
+    lines = old.splitlines(keepends=True)
+    at = hunk.old_start if not hunk.old_count else hunk.old_start - 1
+    applied = "".join([*lines[:at], *new_lines, *lines[at + hunk.old_count:]])
+    try:
+        a, b = ast.parse(old), ast.parse(applied)
+    except SyntaxError:
+        return False
+    imports = _same_imports(a, b)
+    return _normalized(a, path, imports) == _normalized(b, path, imports)
+
+
+def text_at(commit: str, path: str) -> str:
+    return checkout.git_out(checkout.ROOT, "show", f"{commit}:{path}")
 
 
 def _diff_hunks(path: str, *commits: str) -> tuple[Hunk, ...]:
@@ -383,14 +528,20 @@ def affects(cmd: GateCommand, stem: str, deps: Deps, touched: Sequence[Touched],
     affects it through the lines it runs alone (`PY_SUFFIXES`), so a Python
     file the change adds affects it through the lines that import it. An
     `unrecorded` file affects every command, since the record cannot say
-    which commands run it."""
+    which commands run it. A hunk `inert` passes affects no command, and a
+    modified Python file of `GATE_READS` is run whole by every command
+    through each other hunk."""
     accepted = ACCEPTED.relative_to(checkout.ROOT)
     own = {str(accepted / f"{cmd.key(stem)}.{e}") for e in cmd.exts}
-    under = [*map(Path, GATE_READS), *(p.relative_to(checkout.ROOT) for p in cmd.copied(stem))]
+    copied = [p.relative_to(checkout.ROOT) for p in cmd.copied(stem)]
     for t in touched:
         if t.unrecorded:
             return True
-        if t.path in own or any(Path(t.path).is_relative_to(p) for p in under):
+        if t.path in own or any(Path(t.path).is_relative_to(p) for p in copied):
+            return True
+        if t.inert:
+            continue
+        if any(Path(t.path).is_relative_to(p) for p in GATE_READS):
             return True
         if Path(t.path).suffix not in PY_SUFFIXES:
             if t.path in deps.reads or ((t.status.added or t.status is checkout.Change.DELETED)
@@ -398,7 +549,7 @@ def affects(cmd: GateCommand, stem: str, deps: Deps, touched: Sequence[Touched],
                 return True
         elif t.path in deps.lines and not t.status.added:
             if runs_hunks(recorded[t.path],
-                          t.hunks if t.status is checkout.Change.MODIFIED else (),
+                          t.live if t.status is checkout.Change.MODIFIED else (),
                           deps.lines[t.path]):
                 return True
     return False

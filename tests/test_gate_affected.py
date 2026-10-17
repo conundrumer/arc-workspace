@@ -84,3 +84,77 @@ def test_the_old_side_of_each_hunk_is_read_from_a_git_diff():
 def test_a_line_outside_every_hunk_moves_by_the_lines_the_hunks_before_it_add():
     hunks = (deps.Hunk(9, 1, 9, 1), deps.Hunk(13, 0, 14, 2), deps.Hunk(20, 3, 22, 1))
     assert deps.moved(frozenset({8, 10, 13, 14, 19, 23}), hunks) == {8, 10, 13, 16, 21, 23}
+
+
+INERT_OLD = '''"""Module."""
+import os
+from a import b, c
+
+p = parser.add_argument("x", help="old")
+
+
+def f(x):
+    """Doc."""
+    # note
+    return x + 1
+'''
+"""Lines: the imports at 2 and 3, the `add_argument` call at 5, `f` from
+8 to 11."""
+
+
+@pytest.mark.parametrize(("hunk", "new", "passed"), [
+    (deps.Hunk(9, 1, 9, 1), ['    """Other doc."""\n'], True),
+    (deps.Hunk(10, 1, 10, 2), ["    # other\n", "\n"], True),
+    (deps.Hunk(1, 1, 1, 0), [], True),
+    (deps.Hunk(5, 1, 5, 1), ['p = parser.add_argument("x", help="new")\n'], True),
+    (deps.Hunk(5, 1, 5, 1), ['p = parser.add_argument("y", help="old")\n'], False),
+    (deps.Hunk(3, 1, 3, 1), ["from a import b\n"], True),
+    (deps.Hunk(3, 1, 3, 1), ["from a import b, c, d\n"], True),
+    (deps.Hunk(3, 1, 3, 1), ["from a import b\nfrom e import c\n"], False),
+    (deps.Hunk(3, 1, 3, 1), ["from a import b, d as c\n"], False),
+    (deps.Hunk(2, 1, 2, 0), [], False),
+    (deps.Hunk(11, 1, 11, 1), ["    return x + 2\n"], False),
+    (deps.Hunk(11, 1, 11, 1), ["    return (x\n"], False),
+])
+def test_a_hunk_is_inert_where_it_changes_only_docstrings_comments_help_or_imports(
+        hunk, new, passed):
+    assert deps.inert("src/m.py", INERT_OLD, new, hunk) is passed
+
+
+def test_the_help_of_the_command_helper_is_inert_in_its_own_file_alone():
+    old = 'command("x", f, help="old")\n'
+    new = ['command("x", f, help="new")\n']
+    assert deps.inert("src/cli/parser.py", old, new, H(1, 1))
+    assert not deps.inert("src/m.py", old, new, H(1, 1))
+
+
+def test_an_inert_hunk_affects_no_command_and_a_gate_file_runs_whole():
+    cmd = COMMANDS["lint"]
+    ran = deps.Deps({"src/m.py": RAN}, frozenset(), frozenset())
+
+    def affects(*touched):
+        return deps.affects(cmd, "ac0c5833", ran, touched, {"src/m.py": SOURCE})
+
+    S = checkout.Change
+    T = deps.Touched
+    assert not affects(T("src/m.py", S.MODIFIED, (H(3, 1), H(9, 1)), passed=frozenset({0, 1})))
+    assert not affects(T("src/m.py", S.MODIFIED, (H(3, 1), H(14, 1)), passed=frozenset({0})))
+    assert affects(T("src/m.py", S.MODIFIED, (H(3, 1),), passed=frozenset()))
+    assert not affects(T("src/gating/run.py", S.MODIFIED, (H(3, 1),), passed=frozenset({0})))
+    assert affects(T("src/gating/run.py", S.MODIFIED, (H(3, 1), H(5, 1)), passed=frozenset({0})))
+    assert affects(T("src/gating/run.py", S.MODIFIED))
+
+
+@pytest.mark.parametrize(("old", "new", "hunk"), [
+    ("from x import a\nfrom y import b\nfrom x import c\n",
+     ["from y import b\n", "from x import a, c\n"], deps.Hunk(1, 3, 1, 2)),
+    ("import sys\nsys.path.insert(0, 'p')\nimport foo\n",
+     ["import foo\n", "sys.path.insert(0, 'p')\n"], H(2, 2)),
+])
+def test_a_hunk_that_moves_where_a_module_is_first_imported_is_not_inert(old, new, hunk):
+    assert deps.inert("src/m.py", old, new, hunk) is False
+
+
+def test_a_later_import_of_a_module_imported_before_is_inert():
+    old = "import os\nfrom x import a\nfrom x import c\n"
+    assert deps.inert("src/m.py", old, ["from x import c, d\n"], H(3, 1))
