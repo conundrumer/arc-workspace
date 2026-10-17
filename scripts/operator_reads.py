@@ -271,14 +271,20 @@ class OperatorRead:
 
 
 def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
-                  subjects: Mapping[str, float]) -> OperatorRead:
+                  subjects: Mapping[str, float], calls: bool = True) -> OperatorRead:
     """What the transcript at `path` of the operator `aid` gives. A message
     from the operator's parent, the coordinator or the operator launcher
     that launched it, or from the coordinator where the parent is an
-    operator launcher, is read as a message of the coordinator's."""
+    operator launcher, is read as a message of the coordinator's.
+
+    Where `calls` is False, a read taken only for the agents the operator
+    launched, no call's outcome is read: the read gives no `Call`, and no
+    `undecided` line of such a read, and reads of each `Agent` call only
+    the filed text of its `prompt`, which the agent it gives takes as its
+    brief."""
     merged = merge_subjects(path)
     return operator_read(aid, path, main, undecided,
-                         frozenset((m, t) for m, t in subjects.items() if m in merged))
+                         frozenset((m, t) for m, t in subjects.items() if m in merged), calls)
 
 
 @state_cache(DERIVED, kept=Kept.DISK)
@@ -295,9 +301,9 @@ def merge_subjects(path: Path) -> frozenset[str]:
 
 @state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
 def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
-                  commits: frozenset[tuple[str, float]]) -> OperatorRead:
+                  commits: frozenset[tuple[str, float]], calls_read: bool) -> OperatorRead:
     """`read_operator`, with `subjects` as the pairs `commits` gives, those
-    of `merge_subjects`."""
+    of `merge_subjects`, and `calls` as `calls_read`."""
     subjects = dict(commits)
     agents: list[Agent] = []
     calls: list[Call] = []
@@ -342,6 +348,10 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
                              for s, text in agent_messages(e) if s not in children]
     denied: set[str] = set()
     for call, (t, inp, tool) in uses.items():
+        if not calls_read:
+            if tool == Tool.AGENT:
+                uses[call] = (t, unfiled_call(aid, tool, inp, None, undecided)[0], tool)
+            continue
         text, error = results.get(call, (None, False))
         if call in moved:
             text, error = background_output(aid, call, *moved[call], tasks, undecided)

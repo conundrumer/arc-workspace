@@ -14,6 +14,7 @@ import step_journal
 from agent_turns import last_time
 from audit_window import window
 from context_bound_hook import past_bound
+from elsewhere_reads import editor_reviewers, elsewhere_agents
 from filed_texts import gone_line
 from git_session_reads import given_lines, read_git, sessions, started
 from held_budgets import change_budgets, change_spend, doc_budgets
@@ -27,7 +28,6 @@ from operator_reads import (
     ended_elsewhere,
     operator_runs,
     joined,
-    kept,
     read_operator,
     stalled_reports,
 )
@@ -48,19 +48,14 @@ from tree_reads import (
 )
 from usage_limit import read_usage
 
-from controlled_markdown import mctx
 from handbook.reader_names import ReaderName
 from handbook.readers import reader_calls
 from operations import pacing
 from operations.pacing import Usage
 from operations.directives import named, pace
-from operations.change_agents import on_change
-from operations.change_budget import left_draft
 from operations.changes import holds
-from operations.log_commands import AGENT
 from operations.monitor import MonitorState, Watched
 from operations.plan import elsewhere, taken_up, unknown_line
-from operations.roles import Role
 from operations.state import (
     Agent,
     AuditWindow,
@@ -413,53 +408,6 @@ def text_readers(me: str, took_up: frozenset[str], ended: Mapping[str, Report | 
                     if a.agent_id and a.agent_id not in out and a.operator in out}:
         out |= added
     return frozenset(out)
-
-
-def editor_reviewers(agents: Sequence[Agent], main: Path, undecided: list[str]) -> AgentsRead:
-    """The doc reviewers that the doc editors among `agents` launched, read
-    from those editors' transcripts as an operator's launches are read,
-    with the doc editor as their `operator`."""
-    out: list[Agent] = []
-    reads: list[AgentsRead] = []
-    for a in agents:
-        if a.role is not Role.DOC_EDITOR or a.agent_id is None:
-            continue
-        theirs = read_operator(a.agent_id, find(a.agent_id), main, undecided, {})
-        out += [r for r in theirs.agents if r.role is Role.DOC_REVIEWER]
-        reads.append(theirs.launched)
-    return kept(out, reads)
-
-
-def elsewhere_agents(tickets: Mapping[str, Ticket], me: str, operators: frozenset[str],
-                     main: Path, undecided: list[str]) -> AgentsRead:
-    """`TranscriptsRead.elsewhere` over the changes of `tickets` `me` holds, where
-    `operators` gives the operators of the session. Each agent kept whose
-    work is no longer open ends with its final reply, as `ended_elsewhere`
-    gives it. Where the transcript of such an operator is not found, an
-    `undecided` line names it."""
-    out: list[Agent] = []
-    reads: list[AgentsRead] = []
-    for t in (t for t in tickets.values() if holds(t, me)):
-        since = left_draft(t)
-        others = dict.fromkeys(ln.agent_id for ln in t.log
-                               if ln.time > since and ln.agent == AGENT and ln.agent_id
-                               and ln.agent_id not in operators)
-        for oid in others:
-            try:
-                path = find(oid)
-            except Refused:
-                undecided.append(mctx("{run}: no transcript of operator {agent} of another "
-                                      "session is found, so its agents on change {number} are "
-                                      "not read").format(run=me, agent=oid, number=t.number))
-                continue
-            one = read_operator(oid, path, main, undecided, {})
-            theirs = [a for a in one.agents if a.launched > since and on_change(a, t.number)]
-            reviewers = editor_reviewers(theirs, main, undecided)
-            reads += [one.launched, reviewers]
-            theirs += [r for r in reviewers.agents
-                       if r.launched > since and on_change(r, t.number)]
-            out += ended_by(theirs, ended_elsewhere(theirs, me, undecided))
-    return kept(sorted(out, key=lambda a: a.launched), reads)
 
 
 def read_held(tickets: Mapping[str, Ticket], me: str, tree: GitRead) -> HeldRead:
