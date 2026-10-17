@@ -7,10 +7,10 @@ gives the step's decision key, so no operator of the session launches a
 second analyst on it, and its procedure waits on that analyst while it
 runs and once it returned (`handled.repeated`). A step an operator already
 gave the coordinator goes to no analyst, and its procedure waits on the
-coordinator's decision (`handled.repeated`). The analyst's reply rules
-the step by a ruling in a fixed form, which the command applies as it
-applies the coordinator's, for every operator of the session
-(`directives.rulings`). Where the analyst brings that decision to the user,
+coordinator's decision (`handled.repeated`). The rulings an analyst's
+reply gives, and which replies go back to their analyst, are as
+`scripts/operate.py --help rulings` gives them (`directives.rulings`).
+Where the analyst brings that decision to the user,
 its `decision:` item goes to the coordinator (`triage`), and the
 coordinator gives the user's decision in a `Decision:` line.
 
@@ -19,24 +19,16 @@ launched it, while that operator has printed no final reply since the
 launch, and otherwise the operator `me`. Since one operator carries the
 session's work at a time (`plan`), one operator answers each reply.
 
-A step the command cannot place (`steps.rulable`) has no decision key: its
-analyst makes the act the step needs and gives no ruling, the command
-does not send its reply back to it for a form, and where the step still holds once it returned,
-the final reply of its applier gives it (`undecided`).
-
-On a step `steps.held` made, a reply that gives neither a ruling in a fixed form nor a `decision:` item goes back
-to the analyst once, from its applier, with a request to send it again in
-that form (`messages.DECISION_FORM`). Where the answer is still in neither
-form, the step stays held, and the final reply of its applier gives it
-(`undecided`). A launch of an analyst on a held step that failed is not
+A step the command cannot place is `steps.rulable`. A reply that goes
+back goes from its applier, with a request to send it again in the form
+the command reads (`messages.DECISION_FORM`); a `decision:` item counts as
+that form. Where the step still holds once its analyst returned, the final
+reply of its applier gives it (`undecided`), other than where its tickets
+closed (`briefs.step_tickets`), since nothing reads the reply once they
+closed. A launch of an analyst on a held step that failed is not
 itself given to another analyst: its step stays held, and the final reply
 of the operator that made that call gives the step, with the call and the
 text of its failure (`failed`).
-
-Where the first line of a step, placed or not, gives one ticket or more,
-each under `tickets/closed/` (`briefs.step_tickets`), the reply of its
-analyst neither goes back nor is given, since nothing reads it once they
-closed.
 
 A ticket file the read of the tracker left out (`TrackerRead.unread`) is a step
 the command cannot place, one for each content the file has
@@ -113,8 +105,8 @@ def decides(a: Agent) -> bool:
 
 def returned(state: State) -> list[Agent]:
     """The ticket analysts on held steps that returned, whose replies the
-    operator `me` answers, other than each whose step gives tickets that
-    all stand under `tickets/closed/` (`briefs.step_tickets`)."""
+    operator `me` answers, other than those `tickets_closed` gives, whose
+    replies do not go back, as `scripts/operate.py --help rulings` gives."""
     return [a for a, purpose, _ in state.analysts()
             if purpose is Purpose.STEP and not a.pending and a.agent_id is not None
             and a.reports and applier(state, a) == state.me and not tickets_closed(state, a)]

@@ -39,13 +39,12 @@ analyst on a held step, is set aside, and comes at a later call, in this
 order (`batch`)."""
 
 
-import shlex
 from collections.abc import Callable
 from dataclasses import replace
 
 from controlled_markdown import mctx
 from operations import (alerts, batches, changes, concept_faults, decisions, drafts, limit_resume, lineage, merging,
-                        monitor, passes, runs, ticket_stall, triage, taking)
+                        monitor, passes, reviews, runs, ticket_stall, triage, taking)
 from operations.directives import (
     lines,
     passed,
@@ -57,7 +56,7 @@ from operations.state import Agent, Call, State, Tool, Waits
 from operations.handled import held_aside, repeated
 from operations.constants import COORDINATOR, SUBAGENT_LIMIT
 from operations.journal import BOUND, Due, due
-from operations.log_commands import AGENT, FILE_TICKET
+from operations.log_commands import file_ticket
 from operations.pacing import Unknown
 from operations.steps import (Bash, Journaled, Launch, Send, Step, Undecided, key,
                               unread_line)
@@ -81,15 +80,14 @@ def placed(state: State, procedure: Callable[[State], Step | None]
     launch of a ticket analyst on it (`decisions`) and a launch whose chain
     of causes holds it is the step held on it (`lineage.held`), and the undecided step
     the procedure waits on, where it waits on one. A procedure whose step
-    a ruling passed over waits until the state changes. A step passed
-    over is undecided, once, as one its procedure waits on, other than the
-    launch of an analyst on an undecided step: where the line that passed
-    it over answered that step, the step stays held. A procedure whose
-    step, as it gives it, `State.aside` holds gives no step. A step the
-    journal gives as in flight or retired gives no step either, and
-    one it gives as reaching `journal.BOUND` gives the step that retires
-    it (`retire`). A launch the operator's agent listing lacks (`unlisted`)
-    gives no step where it is due."""
+    a ruling passed over waits until the state changes. A step a ruling passed
+    over goes as `scripts/operate.py --help rulings` gives it; where the
+    line that passed it over answered that step, the step stays held. A
+    procedure whose step, as it gives it, `State.aside` holds gives no
+    step. Which step the journal holds back or retires is as
+    `scripts/operate.py --help journal` gives it (`journal.due`, `retire`).
+    A launch the operator's agent listing lacks (`unlisted`) gives no step
+    where it is due."""
     s = procedure(state)
     if s is not None and held_aside(state, s):
         return None, None
@@ -138,8 +136,7 @@ def retire(state: State, step: Journaled) -> Bash:
                             for e in given)])
     impact_section, evidence_section = DEFECT_SECTIONS
     text = ticket_text(Kind.BUG, title, {impact_section: impact, evidence_section: evidence})
-    return Bash(shlex.join([*FILE_TICKET, Domain.AGENT.value, state.me, AGENT])
-                + " <<'TICKET'\n" + text + "TICKET", k, retires=k, occasion=k)
+    return file_ticket(Domain.AGENT, state.me, text, k, retires=k, occasion=k)
 
 
 GIVE_LINE = mctx("- {time}, to {operator}: {outcome} {why}")
@@ -275,7 +272,7 @@ EARLY: tuple[Callable[[State], Step | None], ...] = (
 LATE: tuple[Callable[[State], Step | None], ...] = (
     launching, triage.reopen, triage.later_lines, triage.settle, ticket_stall.stall, drafts.step,
     changes.step,
-    pipelines, batches.audit, batches.code_review, batches.lib_review, batches.standing_review,
+    pipelines, batches.audit, reviews.code_review, reviews.lib_review, batches.standing_review,
     batches.overdue_review, batches.gate,
     batches.assessment, batches.step, alerts.ticket_stalls)
 PROCEDURES = EARLY + LATE

@@ -18,7 +18,7 @@ from operations import briefs
 from operations.change_agents import settled
 from operations.change_budget import left_draft
 from operations.filing import editor_scratch
-from operations.merging import CONFLICT_OPENING, DOCUMENT_SUFFIX, conflict_note_paths
+from operations.merging import CONFLICT_OPENING, conflict_note_paths, documents_only
 from operations.roles import BUILDERS, Role
 from operations.state import Agent, State, Ticket
 from operations.steps import Launch, Step, Undecided
@@ -34,8 +34,6 @@ def open_questions(state: State, number: str) -> list[Ticket]:
 
 
 def code_conflicts(t: Ticket) -> list[float] | Undecided:
-    """The times of the lines of `t`'s log that give a rebase conflict in a
-    path that is no document."""
     times: list[float] = []
     for ln in t.log:
         if not ln.note.startswith(CONFLICT_OPENING):
@@ -45,7 +43,7 @@ def code_conflicts(t: Ticket) -> list[float] | Undecided:
             return Undecided(mctx("the `conflict` line of change {number} at {time} gives no "
                                   "path in the form the operator reads").format(
                                       number=t.number, time=utc_stamp(ln.time)))
-        if any(not p.endswith(DOCUMENT_SUFFIX) for p in paths):
+        if not documents_only(paths):
             times.append(ln.time)
     return times
 

@@ -1,7 +1,6 @@
 """The sessions in which no agent runs, and the main session, whose
 operators act on the tickets of those sessions as on its own, and alone
-launch the code review, the lib review, the standing doc reviews, the
-process assessment and the cost audit (`operations.batches`).
+make the launches `operations.main_session.main_only` gives.
 
 A session id is live where its main transcript, or a subagent transcript
 under its `subagents/` directory, was modified within `constants.FOREGROUND_MS`, the

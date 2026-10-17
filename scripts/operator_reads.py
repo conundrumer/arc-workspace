@@ -280,7 +280,7 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
     operator launcher, is read as a message of the coordinator's.
 
     Where `calls` is False, a read taken only for the agents the operator
-    launched, no call's outcome is read: the read gives no `Call`, and no
+    launched, whose calls no step reads, no call's outcome is read: the read gives no `Call`, and no
     `undecided` line of such a read, and reads of each `Agent` call only
     the filed text of its `prompt`, which the agent it gives takes as its
     brief."""

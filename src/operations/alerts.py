@@ -44,7 +44,6 @@ ticket is recorded the same way, in one `bug` ticket of its own kind
 that kind, on a ticket."""
 
 import re
-import shlex
 from dataclasses import dataclass
 from enum import Enum
 
@@ -55,7 +54,7 @@ from operations.roles import AGENT_ID
 from operations.state import Agent, LateResume, Message, Report, State, Stuck, Ticket
 from operations.handled import ask_again, repeated
 from operations.steps import Bash, Send, Step, Undecided
-from operations.log_commands import AGENT, FILE_TICKET, log
+from operations.log_commands import AGENT, file_ticket, log
 from ticketing.text import ticket_text
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import DEFECT_SECTIONS, Domain, Kind, Status
@@ -222,8 +221,7 @@ def ticket_step(state: State, kind: BugKind, domain: Domain, subject: str, since
     title, impact_text = TICKETS[kind]
     impact, evidence_section = DEFECT_SECTIONS
     text = ticket_text(Kind.BUG, title, {impact: impact_text, evidence_section: evidence})
-    return Bash(shlex.join([*FILE_TICKET, domain.value, subject, AGENT])
-                + " <<'TICKET'\n" + text + "TICKET", about, occasion=str(since))
+    return file_ticket(domain, subject, text, about, occasion=str(since))
 
 
 def stall_step(state: State, agent: str, since: float, reply: Report) -> Step | None:

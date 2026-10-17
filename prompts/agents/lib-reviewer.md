@@ -37,13 +37,9 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 - Edit under the tree only the tickets you file.
 
 ## This lib review's commit and diff
-- The lib's code is `programs/lib.dl`, `programs/lib/`, `programs/proposers.dl` and `programs/lib_functors.cpp`.
-- This lib review's commit is the tree recorded as a commit, untracked files of the lib's code included, by this one Bash call, with this lib review's number as `<n>`, and its hash is the one the call prints:
-    ```
-    export GIT_INDEX_FILE=<scratch directory>/index && git read-tree HEAD && git add -A programs/lib.dl programs/lib programs/proposers.dl programs/lib_functors.cpp && git commit-tree $(git write-tree) -p HEAD -m lib-review<n>
-    ```
+- This lib review's commit is the commit `uv run python scripts/review_tag.py commit lib-reviewer <n>` records, with this lib review's number as `<n>`, and its hash is the one the command prints.
 * inline: notes/code.md#review-trees
-- The diff is that of the lib's code of the earlier baseline against this lib review's commit.
+- The diff is that of the paths that command prints, of the earlier baseline against this lib review's commit.
 
 ## Finding places
 - Read each relation, rule, functor, component and module the diff touches whole, as it stands at this lib review's commit, to find its places. Where its growth over earlier commits decides whether it is a place, run `git log -L` on it in the worktree of that commit.
@@ -51,7 +47,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 * inline: notes/code.md#unit-kinds
 - The line-level places are the places in the diff of each kind below, in the code that no place of a whole unit is to restructure or remove.
     * inline: notes/code.md#line-kinds
-    - A rule on prose in code, in the lib's code, is a rule on a statement's text, which each `///` or `//!` comment keeps: when you judge such a comment, read [Writing a file](docs/handbook/editing.md#writing-a-file) for those rules.
+    - A rule on prose in code is a rule on a statement's text, which each `///` or `//!` comment keeps: when you judge such a comment, read [Writing a file](docs/handbook/editing.md#writing-a-file) for those rules.
 - A line in the diff that breaks a line of the handbook is a line-level defect place too.
 
 ## Judging places

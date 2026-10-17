@@ -7,14 +7,14 @@ import hashlib
 import re
 import sys
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from controlled_markdown import mctx
 from operations.constants import COORDINATOR
 from operations.pacing import Pace
 from operations.printed_forms import KEY_LENGTH, STEP_KEY
 from operations.roles import PASSES, Model, Role
-from operations.state import Agent
+from operations.state import Agent, Ticket
 
 
 @dataclass(frozen=True)
@@ -258,6 +258,15 @@ def digest(step: Step) -> str:
     return with_change(step, hashlib.sha1(repr(step).encode()).hexdigest()[:KEY_LENGTH])
 
 
+OF_CHANGE = (Launch, Send, Bash, Undecided)
+"""The steps that carry the number of the change they serve."""
+
+
+def served[S: Step | None](s: S, t: Ticket) -> S:
+    """`s`, a step of the change `t`, with the number of `t` (`key`)."""
+    return replace(s, change=t.number) if isinstance(s, OF_CHANGE) else s
+
+
 def with_change(step: Step, digest: str) -> str:
-    change = step.change if isinstance(step, Launch | Send | Bash | Undecided) else None
+    change = step.change if isinstance(step, OF_CHANGE) else None
     return digest if change is None else f"{change}-{digest}"

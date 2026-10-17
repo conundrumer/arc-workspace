@@ -71,8 +71,8 @@ until a `Decision:` line rules it with one of the choices the step gives
 (`directives.decided`)."""
 
 import shlex
-from dataclasses import replace
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Literal
 
 from operations import briefs, merging, messages
@@ -92,7 +92,7 @@ from operations.state import Agent, State, Ticket, last_reported
 from operations.filing import editor_scratch
 from operations.final_reply import live_holder
 from operations.handled import answered, repeated, sent, unmoved
-from operations.steps import Bash, Launch, Send, Step, Undecided
+from operations.steps import Bash, Launch, Send, Step, Undecided, served
 from operations.log_commands import AGENT
 from operations.taking import take
 from operations.tracker import last_index
@@ -255,6 +255,44 @@ def unchanged_since(state: State, checkers: list[Agent], w: Path) -> bool:
     return shows_current(checkers[-1], w)
 
 
+@dataclass(frozen=True)
+class Left:
+    """The inputs of the ticket analyst on what a change's editors leave,
+    each with the time it was last given: the item checker's part
+    (`reports.left_for_decision`), given by that checker's latest report,
+    the editors' latest reports, which give the editors that leave items
+    unfinished (`item_check.unfinished`), and the open `question` tickets
+    on the change."""
+    part: str | None
+    part_given: float
+    unfinished: tuple[Agent, ...]
+    reported: float
+    questions: tuple[Ticket, ...]
+
+    @property
+    def questions_given(self) -> float:
+        return max((q.filed for q in self.questions), default=0.0)
+
+    @property
+    def given(self) -> float:
+        return max(self.part_given, self.reported, self.questions_given)
+
+    def fresh(self, judged: float) -> str | None:
+        return self.part if self.part_given > judged else None
+
+
+def left(state: State, t: Ticket, latest: list[Agent], checkers: list[Agent],
+         judged: float) -> Left:
+    """`Left` of the change `t`, with the unfinished items given after
+    `judged`, the launch of the last analyst on it."""
+    checker = checkers[-1] if checkers else None
+    report = checker.last_report if checker is not None else None
+    return Left(left_for_decision(checker) if checker is not None else None,
+                report.time if report is not None else 0.0,
+                tuple(unfinished(latest, judged)), last_reported(latest),
+                tuple(open_questions(state, t.number)))
+
+
 def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
              agents: list[Agent]) -> Step | None | Literal[False]:
     """The step on what the editors leave, or False where they leave
@@ -271,21 +309,18 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
                and r.time > checked]
     if needing and not unchanged_since(state, checkers, w):
         return check_items(state, t, w, needing, editors)
-    questions = open_questions(state, t.number)
     judged = max((a.launched for a in analysts), default=0.0)
-    left_open = unfinished(latest, judged)
-    left = left_for_decision(checkers[-1]) if checkers else None
-    fresh = left if left is not None and (r := checkers[-1].last_report) is not None \
-        and r.time > judged else None
+    given = left(state, t, latest, checkers, judged)
+    fresh = given.fresh(judged)
     parts = fresh
     hold: Hold | None = None
     on_user = False
     if analysts and judged > checked and (hold := left_hold(analysts[-1], t.number)):
         on_user = items_of(analysts[-1], [Label.DECISION]) is not None
-        parts = left
-    elif fresh is None and not questions and not left_open:
+        parts = given.part
+    elif fresh is None and not given.questions and not given.unfinished:
         return False
-    elif fresh is None and not left_open and judged > max(q.filed for q in questions):
+    elif fresh is None and not given.unfinished and judged > given.questions_given:
         hold = questions_hold(analysts[-1], t.number)
     if hold is not None:
         choice = decided(state, hold.text, hold.choices)
@@ -298,11 +333,10 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     if isinstance(reports, Undecided):
         return reports
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
-        t.number, w, parts, [q.number for q in questions], editors, reports,
-        [i for a, i in editors if a in left_open], state.me,
+        t.number, w, parts, [q.number for q in given.questions], editors, reports,
+        [i for a, i in editors if a in given.unfinished], state.me,
         settled(state, t, Role.TICKET_ANALYST, None)),
-        occasion=str(max([last_reported([*latest, *checkers]), at,
-                          *(q.filed for q in questions)])))
+        occasion=str(max(given.given, at)))
 
 
 def step(state: State) -> Step | None:
@@ -331,6 +365,3 @@ def next_step(state: State, t: Ticket) -> Step | None:
     return s
 
 
-def served(s: Step | None, t: Ticket) -> Step | None:
-    """`s`, a step of the change `t`, with the number of `t` (`steps.key`)."""
-    return replace(s, change=t.number) if isinstance(s, Launch | Send | Bash | Undecided) else s

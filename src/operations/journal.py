@@ -146,12 +146,8 @@ ENDED = mctx("the operator can no longer make the call: its work ended, or it ra
 def closing(e: Entry, calls: Sequence[Call], live: bool, now: float) -> Close | None:
     """The outcome of `e`, an Agent call or a message in flight, at `now`,
     from `calls`, the operators' calls, where `live` is whether its
-    operator may still make its call: the outcome of that operator's call
-    of the step, an Agent call that gives the launch's description or a
-    SendMessage call to its recipient, made after `next` gave it and before its
-    next call of `next`; failed where that call of `next` came first, or
-    where no such call came and the operator may make it no longer; and
-    None, in flight, otherwise."""
+    operator may still make its call, as `scripts/operate.py --help journal`
+    gives it, or None, in flight."""
     after = sorted((c for c in calls if c.operator == e.operator and c.time > e.given),
                    key=lambda c: c.time)
     nexts = [c for c in after if next_call(c, e.operator)]

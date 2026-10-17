@@ -578,8 +578,6 @@ STANDING_COMMIT = re.compile(form(STANDING_DOC_REVIEW, {"reader": ".*", "commit"
 
 
 def standing_commit(brief: str) -> str | None:
-    """The commit the standing doc review brief `brief` gives, or None
-    where it gives none."""
     m = STANDING_COMMIT.search(brief)
     return m.group("commit") if m else None
 

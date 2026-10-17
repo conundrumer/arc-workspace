@@ -14,7 +14,8 @@ out of `tickets/draft/`, as where the agent that filed or revised it
 records its decision on a line of its own below it; or once the
 coordinator gives it to review after its last line, as after the
 coordinator moves it back into `tickets/draft/` and revises it. A draft
-waits while an agent of the operators' that wrote a line of its log runs.
+waits while an agent of the operators' whose agent id a line of its log
+gives runs.
 
 A draft waits for a ticket analyst where its log holds findings after its
 last `filed` or `revised` line, and no ticket reviewer or ticket analyst

@@ -35,7 +35,7 @@ script's own forms and by `master` (`state.Merge`,
 - any other refusal goes as a finding of its checks to the change's doc
   editor, where the change has one and the check its refusal line gives
   as failed is a check of the documents (`DOCUMENT_CHECKS`), or each path
-  its rebase conflicts in is a document (`DOCUMENT_SUFFIX`), and
+  its rebase conflicts in is a document (`documents_only`), and
   otherwise to the change's first editor;
 - two refusals that give one tree (`REFUSED_TREE`) give one finding
   message, with the output of the first refused merge call on that
@@ -58,7 +58,7 @@ change, then the change's own ticket."""
 
 import re
 import shlex
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from controlled_markdown import form, mctx
@@ -73,7 +73,7 @@ from operations.constants import COORDINATOR
 from operations.state import Agent, Call, Commit, LogLine, Merge, State, Ticket, Tool
 from operations.command_words import simple_commands
 from operations.handled import ask_again, decided_by, done, sent, unmoved
-from operations.steps import Bash, Launch, Send, Step, labeled
+from operations.steps import Bash, Launch, Send, Step, labeled, served
 from operations.log_commands import log
 from operations.worktrees import WORKTREE
 from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Note, Resolution, Status
@@ -172,6 +172,10 @@ and of the `CONFLICT` refusal of `scripts/merge_change.py`."""
 
 DOCUMENT_SUFFIX = ".md"
 """The suffix of a document's path."""
+
+
+def documents_only(paths: Iterable[str]) -> bool:
+    return all(p.endswith(DOCUMENT_SUFFIX) for p in paths)
 
 
 def split_paths(text: str) -> tuple[str, ...]:
@@ -439,7 +443,7 @@ def finding_recipient(last: Call, latest: list[Agent]) -> Agent | None:
     `last` goes to."""
     on_documents = (documents_failed(last.result or "")
                     or (last.merge is Merge.CONFLICT
-                        and all(p.endswith(DOCUMENT_SUFFIX) for p in last.conflicts)))
+                        and documents_only(last.conflicts)))
     docs = [a for a in latest if a.role is Role.DOC_EDITOR] if on_documents else []
     return docs[0] if docs else latest[0] if latest else None
 
@@ -459,8 +463,7 @@ def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
     """The steps after a change's merge, or None while its `after-merge`
     agent runs. A split step carries the change's number, so the journal's
     record of it, which is under the key of the step with that number,
-    reads; its occasion is the time the change left
-    `tickets/draft/`."""
+    reads."""
     head = state.git.commits[0].hash
     if t.after_merge is not None:
         runs = state.agents_of(Role.AFTER_MERGE, t.number)
@@ -483,8 +486,8 @@ def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
         command = (log(r.number, Status.CLOSED, r.status, note, None) if part is None else
                    log(r.number, r.status, r.status,
                        f"left unsplit by change {t.number}: {part}", None))
-        step = Bash(command, f"{r.number} split by {t.number}", change=t.number,
-                    occasion=str(left_draft(t)))
+        step = served(Bash(command, f"{r.number} split by {t.number}",
+                           occasion=str(left_draft(t))), t)
         if not done(state, step):
             return step
     for q in sorted(state.tracker.tickets.values(), key=lambda q: q.order):

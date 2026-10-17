@@ -8,10 +8,9 @@ from collections.abc import Callable, Iterable
 from controlled_markdown import mctx
 from operations import changes, decisions, drafts, passes, runs, taking, triage
 from operations.directives import NUMBER, TASK, Directive, Line, Pipeline, lines
-from operations.final_reply import ending_step, nested
+from operations.final_reply import ending_step, final_text, nested
 from operations.handled import repeated, sends_to
 from operations.journal import BOUND
-from operations.printing import final_message
 from operations.roles import Role
 from operations.state import State, Ticket
 from operations.order import PROCEDURES, placed
@@ -28,7 +27,7 @@ def ending(state: State, text: str) -> Step:
     since = max((m.time for m in state.received), default=0.0)
     return ending_step(parent, text, since, any(
         e.operator == state.me and e.close is not None and e.close.time > since
-        and e.text.startswith(final_message("")) for e in sends_to(state, parent)))
+        and final_text(e.text) is not None for e in sends_to(state, parent)))
 
 
 def pipeline_state(o: passes.Outcome | None) -> str | None:

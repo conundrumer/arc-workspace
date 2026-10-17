@@ -24,16 +24,14 @@ FOR_CONTEXT = mctx("I ended for my context: launch a fresh operator with no line
 
 
 def final_text(message: str) -> str | None:
-    """The text of the final reply that `message` sends, or None where
-    `message` sends none."""
-    head, newline, text = message.partition("\n")
+    """The text of the final reply that `message`, with or without the
+    fence lines, sends, or None where `message` sends none."""
+    head, newline, text = unfenced(message).partition("\n")
     return text if head == FINAL_REPLY and newline else None
 
 
 def sent_final_text(call: Call) -> str | None:
-    """The text of the final reply that the SendMessage call `call` sends,
-    with or without the fence lines, or None where it sends none."""
-    return final_text(unfenced(call.message))
+    return final_text(call.message)
 
 
 def for_context(text: str) -> bool:

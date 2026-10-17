@@ -1,12 +1,16 @@
-"""Makes the tag of a review's baseline once the reviewer's run shows the
-step call that completes the item of its checklist that the tag needs.
-`HELP`, which `--help` prints, gives the usage form and the rules."""
+"""Records a review's commit, and makes the tag of a review's baseline once
+the reviewer's run shows the step call that completes the item of its
+checklist that the tag needs. `HELP`, which `--help` prints, gives the
+usage forms and the rules."""
 
 import argparse
+import os
 import re
 import sys
+import tempfile
 import textwrap
 from collections.abc import Iterable
+from pathlib import Path
 
 from controlled_markdown import mctx, slug
 from engine import checkout
@@ -20,7 +24,7 @@ scripts_importable()
 from run_reads import tool_results  # noqa: E402
 from transcripts import transcripts_of  # noqa: E402
 from transcript_entries import Entry, Refused, blocks, print_refused, read_entries  # noqa: E402
-from tree_reads import main_tree  # noqa: E402
+from tree_reads import REVIEW_PATHS, main_tree  # noqa: E402
 
 ITEMS = {Review.CODE: "Find the line-level places", Review.LIB: "Find the places"}
 """The item of each reviewer's checklist whose completion the tag needs."""
@@ -28,17 +32,21 @@ ITEMS = {Review.CODE: "Find the line-level places", Review.LIB: "Find the places
 REVIEWS = {r.role.value: r for r in Review}
 
 HELP = mctx("""
-    - The usage form:
+    - The usage forms:
         ```
+        uv run python scripts/review_tag.py commit <reviewer> <n>
         uv run python scripts/review_tag.py <reviewer> <n> <commit> <agent id>
         ```
     - `<reviewer>` is one of the reviewers this list gives, each with the item of its checklist the tag needs and the prefix of its tag:
         {table}
-    - The command reads the transcripts of the reviewer `<agent id>`, and looks for a Bash call whose command runs `scripts/step.py <reviewer>` with that item, and whose tool result holds the text of the item that follows it in the checklist of the main tree as it stands at the command's call, with trailing whitespace stripped from both.
-        - Where that checklist holds no such item, the command fails and names the item it wants.
-    - Where it finds such a call, it runs `git tag <prefix><m> <commit>` for the least `<m>` from `<n>` up that git accepts, and prints the tag.
-    - Where it finds none, it makes no tag, exits non-zero, and prints the step call that completes that item, to be run once that item is done, before the command is run again.
-        - Where it finds no transcript of `<agent id>`, it prints that, and that `<agent id>` is the reviewer's own agent id.
+    - `commit` records the review's commit, with `<n>`, the review's number, in its message: the tree of `HEAD` with the paths `<reviewer>` reviews as the working tree it runs from holds them, untracked files included, as a commit whose parent is `HEAD`.
+        - It prints the commit's hash on one line, then each of those paths on a line of its own.
+    - The form with `<commit>` makes the tag of the review's baseline.
+        - It reads the transcripts of the reviewer `<agent id>`, and looks for a Bash call whose command runs `scripts/step.py <reviewer>` with that item, and whose tool result holds the text of the item that follows it in the checklist of the main tree as it stands at the command's call, with trailing whitespace stripped from both.
+            - Where that checklist holds no such item, the command fails and names the item it wants.
+        - Where it finds such a call, it runs `git tag <prefix><m> <commit>` for the least `<m>` from `<n>` up that git accepts, and prints the tag.
+        - Where it finds none, it makes no tag, exits non-zero, and prints the step call that completes that item, to be run once that item is done, before the command is run again.
+            - Where it finds no transcript of `<agent id>`, it prints that, and that `<agent id>` is the reviewer's own agent id.
     """)
 
 ROW = mctx("- `{reviewer}`: the item `{item}`, the prefix `{prefix}`.")
@@ -91,6 +99,20 @@ def tag(review: Review, n: int, commit: str) -> str:
         m += 1
 
 
+def review_commit(review: Review, n: int) -> str:
+    """The hash of the commit `HELP` gives for `commit`. Its index is a
+    file of its own, so the repo's index stays as it was."""
+    root = checkout.ROOT
+    paths = REVIEW_PATHS[review]
+    with tempfile.TemporaryDirectory() as scratch:
+        env = {**os.environ, "GIT_INDEX_FILE": str(Path(scratch) / "index")}
+        checkout.git_out(root, "read-tree", "HEAD", env=env)
+        checkout.git_out(root, "add", "-A", "--", *paths, env=env)
+        tree = checkout.git_out(root, "write-tree", env=env).strip()
+        return checkout.git_out(root, "commit-tree", tree, "-p", "HEAD",
+                                "-m", review.tag(n), env=env).strip()
+
+
 def review_tag(review: Review, n: int, commit: str, agent: str) -> str:
     paths = transcripts_of(agent)
     if not paths:
@@ -107,7 +129,20 @@ def help_text() -> str:
     return textwrap.dedent(HELP).format(table=textwrap.indent(rows, " " * 4).lstrip())
 
 
+def commit_main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="review_tag.py commit", description=help_text(),
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("reviewer", choices=sorted(REVIEWS))
+    parser.add_argument("n", type=int)
+    args = parser.parse_args(argv)
+    review = REVIEWS[args.reviewer]
+    print("\n".join([review_commit(review, args.n), *REVIEW_PATHS[review]]))
+    return 0
+
+
 def main() -> int:
+    if sys.argv[1:2] == ["commit"]:
+        return commit_main(sys.argv[2:])
     parser = argparse.ArgumentParser(description=help_text(),
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("reviewer", choices=sorted(REVIEWS))

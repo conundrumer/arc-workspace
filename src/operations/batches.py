@@ -1,5 +1,5 @@
-"""After a batch, and the reviews, the gate, the process assessment and
-the cost audit, which no batch holds.
+"""After a batch, and the standing doc reviews, the gate, the process
+assessment and the cost audit, which no batch holds.
 
 After a batch: once every agent of a batch has returned, or once the
 batch has stood `BATCH_SPAN` since its first launch, the release of
@@ -24,21 +24,9 @@ once a profile launch closes a batch, where no call of it was made since
 that launch, on the calls since the closed batch's start. No batch holds
 it, so no profile launch waits on it.
 
-The code review, the lib review, the standing doc reviews, the process
-assessment and the cost audit launch only at a step of an operator of
-the main session, as `file_ticket.py main --help-all` gives it, so that
-concurrent sessions launch each of them once. An operator of another
-session launches none of them.
-
-Each review of `state.Review`, the code review and the lib review,
-launches at any step where a commit of `master` that changes the paths it reviews is one
-the tag of its last baseline does not reach, and no reviewer of its role
-of the session runs. Its occasion is the newest such commit, so a review
-that ended with no tag launches again only once newer code of its paths
-merges. Where the read gives no baseline (`NoBaseline`), the unreviewed
-commits are unknown, and the step is undecided on the newest commit of
-`master` that changes its paths, so that an operator hands it on once
-for each such commit.
+The launches that only an operator of the main session makes are those
+`main_session.main_only` gives. The code review and the lib review are
+`reviews`.
 
 A standing doc review launches at any step where none runs and a change
 merged after the launch of the last one an operator of the session
@@ -88,9 +76,7 @@ batch filed is the one `triage` launches on any open ticket."""
 
 import re
 import shlex
-from collections.abc import Callable
 from dataclasses import dataclass
-from functools import wraps
 
 import script_calls
 
@@ -100,7 +86,8 @@ from operations.taking import release
 from operations.filing import scratch_dir
 from operations.directives import Directive, numbers
 from operations.roles import AGENT_ID, Purpose, Role, analyst_of, analyst_subject
-from operations.state import (DOC_REVIEW, Agent, Call, Merge, NoBaseline, NotComputed, Reader, Review,
+from operations.main_session import main_only
+from operations.state import (DOC_REVIEW, Agent, Call, Merge, NotComputed, Reader,
                               State)
 from operations.handled import bash_calls, done
 from operations.steps import Bash, Launch, Step, Undecided
@@ -194,44 +181,6 @@ def step(state: State) -> Step | None:
     return Launch(Role.BATCH_PROFILE, str(n),
                   briefs.batch_profile(runs, [r for r in runs if r in ids], state.git.commits[0].hash),
                   occasion=str(since))
-
-
-def main_only(procedure: Callable[[State], Step | None]) -> Callable[[State], Step | None]:
-    """`procedure`, giving no step where the session is not the main."""
-    @wraps(procedure)
-    def guarded(state: State) -> Step | None:
-        return procedure(state) if state.sessions.main else None
-    return guarded
-
-
-@main_only
-def code_review(state: State) -> Step | None:
-    return review(state, Review.CODE)
-
-
-@main_only
-def lib_review(state: State) -> Step | None:
-    return review(state, Review.LIB)
-
-
-def review(state: State, of: Review) -> Step | None:
-    """The launch of the review `of`, where one is due."""
-    if any(a.pending for a in state.agents_of(of.role)):
-        return None
-    baseline = state.git.reviews[of]
-    if isinstance(baseline, NoBaseline):
-        newest = next((c.hash for c in state.git.commits if of in c.reviews), None)
-        if newest is None:
-            return None
-        return Undecided(mctx("the last {name}'s baseline, its `{prefix}<n>` tag of the highest `<n>`, is "
-                              "unknown, with `{commit}` the newest "
-                              "commit of `master` that changes the paths it reviews: {why}").format(
-            name=of.noun, prefix=of.value, commit=newest, why=baseline.value))
-    if not baseline.unreviewed:
-        return None
-    return Launch(of.role, of.tag(baseline.number + 1),
-                  briefs.review(of, baseline.number, scratch_dir(of.stem, state.scratch)),
-                  occasion=baseline.unreviewed[0])
 
 
 def standing_reviews(state: State) -> list[Agent]:

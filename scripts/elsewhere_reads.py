@@ -21,8 +21,7 @@ from operations.state import Agent, Ticket
 def editor_reviewers(agents: Sequence[Agent], main: Path, undecided: list[str]) -> AgentsRead:
     """The doc reviewers that the doc editors among `agents` launched, read
     from those editors' transcripts as an operator's launches are read,
-    with the doc editor as their `operator`. No step reads a doc editor's
-    calls, so the read takes none (`read_operator`)."""
+    with the doc editor as their `operator`."""
     out: list[Agent] = []
     reads: list[AgentsRead] = []
     for a in agents:
@@ -40,8 +39,7 @@ def elsewhere_agents(tickets: Mapping[str, Ticket], me: str, operators: frozense
     `operators` gives the operators of the session. Each agent kept whose
     work is no longer open ends with its final reply, as `ended_elsewhere`
     gives it. Where the transcript of such an operator is not found, an
-    `undecided` line names it. No step reads the calls of such an
-    operator, so its read takes none (`read_operator`)."""
+    `undecided` line names it."""
     out: list[Agent] = []
     reads: list[AgentsRead] = []
     for t in (t for t in tickets.values() if holds(t, me)):

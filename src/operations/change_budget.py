@@ -15,14 +15,13 @@ merge gives the change's agent-running time since its take; neither time
 figure stops anything."""
 
 import re
-import shlex
 from collections.abc import Mapping
 from typing import NamedTuple
 
 from controlled_markdown import form, mctx
 from operations.state import Agent, Budget, Spend, State, Ticket
-from operations.steps import Bash, Step
-from operations.log_commands import AGENT, FILE_TICKET
+from operations.steps import Step
+from operations.log_commands import AGENT, file_ticket
 from ticketing.text import ticket_text
 from ticketing.vocabulary import DEFECT_SECTIONS, Domain, Kind, Note, Status
 
@@ -138,8 +137,8 @@ def file_overrun(t: Ticket, spent: Spend, budget: Budget, limit: float,
                  "{medians}.").format(medians=by_role(budget.role_medians)),
             mctx("Agents of {role} on the change: {ids}.").format(
                 role=role, ids=", ".join(ids) or "none")])})
-    return Bash(shlex.join([*FILE_TICKET, Domain.CHANGE.value, t.number, AGENT])
-                + " <<'TICKET'\n" + text + "TICKET", f"{t.number} past its budget", occasion=str(t.last_time))
+    return file_ticket(Domain.CHANGE, t.number, text, f"{t.number} past its budget",
+                       occasion=str(t.last_time))
 
 
 OVERRUN_FINDING = f"{Note.FINDING}: past its cost budget"

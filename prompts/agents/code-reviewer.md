@@ -29,12 +29,9 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 - Edit under the tree only the tickets you file.
 
 ## This code review's commit and diff
-- This code review's commit is the tree recorded as a commit, untracked files under `src/`, `scripts/`, `tests/` and `engine/` and the working state of `.claude/settings.json` included, by this one Bash call, with this code review's number as `<n>`, and its hash is the one the call prints:
-    ```
-    export GIT_INDEX_FILE=<scratch directory>/index && git read-tree HEAD && git add -A src scripts tests engine .claude/settings.json && git commit-tree $(git write-tree) -p HEAD -m code-review<n>
-    ```
+- This code review's commit is the commit `uv run python scripts/review_tag.py commit code-reviewer <n>` records, with this code review's number as `<n>`, and its hash is the one the command prints.
 * inline: notes/code.md#review-trees
-- The diff is that of `src/`, `scripts/`, `tests/`, `engine/` and `.claude/settings.json` of the earlier baseline against this code review's commit.
+- The diff is that of the paths that command prints, of the earlier baseline against this code review's commit.
 
 ## Finding places
 - Read each function, record, class and module the diff touches whole, as it stands at this code review's commit, to find its places. Where its growth over earlier commits decides whether it is a place, run `git log -L` on it in the worktree of that commit.
