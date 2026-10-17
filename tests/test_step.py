@@ -53,3 +53,54 @@ def test_refuses_a_call_that_links_no_part_file(root: Path) -> None:
     path.write_text(CHECKLIST.replace(" [Split](prompts/agents/a/split.md)", ""))
     with pytest.raises(SystemExit):
         Checklist("a", root)
+
+
+def walk_results(c: Checklist, enter: bool) -> list[str]:
+    """The results of the step calls of a whole walk, the part entered or
+    skipped."""
+    out = [c.first(), c.after("read-the-ticket")]
+    if enter:
+        return [*out, c.enter("review-a-split"), c.after("check-the-split")]
+    return [*out, c.after("review-a-split")]
+
+
+@pytest.mark.parametrize("enter", [True, False])
+def test_a_whole_walk_leaves_no_gap(root: Path, enter: bool) -> None:
+    c = Checklist("a", root)
+    assert c.gap(walk_results(c, enter)) is None
+
+
+def test_a_gap_gives_the_first_unprinted_item_and_its_call(root: Path) -> None:
+    c = Checklist("a", root)
+    gap = c.gap([c.first(), c.after("read-the-ticket")])
+    assert gap is not None
+    assert gap.item.heading.text == "Report"
+    assert gap.call == "uv run python scripts/step.py a review-a-split"
+
+
+def test_an_entered_part_puts_its_items_in_the_walk(root: Path) -> None:
+    c = Checklist("a", root)
+    gap = c.gap(walk_results(c, True)[:3])
+    assert gap is not None
+    assert gap.call == "uv run python scripts/step.py a check-the-split"
+
+
+def test_a_result_cut_short_leaves_its_item_unprinted(root: Path) -> None:
+    c = Checklist("a", root)
+    results = walk_results(c, False)
+    results[0] = results[0].splitlines()[0]
+    gap = c.gap(results)
+    assert gap is not None and gap.call == "uv run python scripts/step.py a"
+
+
+def test_a_walk_up_to_an_item_ignores_the_rest(root: Path) -> None:
+    c = Checklist("a", root)
+    assert c.gap([c.first()], "read-the-ticket") is None
+
+
+def test_a_later_round_that_stops_early_leaves_a_gap(root: Path) -> None:
+    c = Checklist("a", root)
+    gap = c.gap([*walk_results(c, False), c.after("read-the-ticket")])
+    assert gap is not None
+    assert gap.item.heading.text == "Report"
+    assert gap.call == "uv run python scripts/step.py a review-a-split"

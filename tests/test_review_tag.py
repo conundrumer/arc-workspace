@@ -1,46 +1,80 @@
-"""The step call that lets a review make its tag: a check that accepts a
-call that did not complete the item the tag needs would tag a review that
-never did it, and nothing in a run would show it."""
+"""The step calls that let a review make its tag: a check that accepts a
+walk that left an item unprinted would tag a review that never did it, and
+nothing in a run would show it."""
+
+from pathlib import Path
 
 import pytest
 
+from handbook.checklist import Checklist
 from tests.conftest import script
 
 review_tag = script("review_tag")
 
-FOLLOWING = "# Judge the places\n- Judge each defect place.\n"
+CHECKLIST = """+ budget: 1000
+
+# Diff the trees
+- Diff them.
+
+# Find the line-level places
+- Find them.
+
+# Judge the places
+- Judge each defect place.
+
+# Report
+- Report.
+"""
 
 
-def run(tool, command, result):
-    return [{"type": "assistant", "message": {"content": [
-                {"type": "tool_use", "id": "t1", "name": tool, "input": {"command": command}}]}},
-            {"type": "user", "toolUseResult": {"stdout": result}, "message": {"content": [
-                {"type": "tool_result", "tool_use_id": "t1", "content": result}]}}]
+@pytest.fixture
+def checklist(tmp_path: Path) -> Checklist:
+    agents = tmp_path / "prompts" / "agents"
+    (agents / "code-reviewer").mkdir(parents=True)
+    (agents / "code-reviewer.md").write_text("---\nname: code-reviewer\n---\n- R.\n")
+    (agents / "code-reviewer" / "checklist.md").write_text(CHECKLIST)
+    return Checklist("code-reviewer", tmp_path)
 
 
-CODE = [
-    ("Bash", "cd /m && uv run python scripts/step.py code-reviewer find-the-line-level-places",
-     FOLLOWING + "\n\n", True),
-    ("Bash", 'uv run python scripts/step.py code-reviewer "Find the line-level places"',
-     FOLLOWING, True),
-    ("Bash", "uv run python scripts/step.py code-reviewer find-the-line-level-places",
-     "no item named `find-the-line-level-places`; the items are a, b", False),
-    ("Bash", "uv run python scripts/step.py code-reviewer judge-the-places", FOLLOWING, False),
-    ("Bash", "uv run python scripts/step.py code-editor find-the-line-level-places",
-     FOLLOWING, False),
-    ("Bash", "grep -A3 'Find the line-level places' prompts/agents/code-reviewer/checklist.md",
-     FOLLOWING, False),
-    ("Read", "/m/prompts/agents/code-reviewer/checklist.md", FOLLOWING, False),
-]
-LIB = [
-    ("Bash", "uv run python scripts/step.py lib-reviewer find-the-places", FOLLOWING, True),
-    ("Bash", "uv run python scripts/step.py code-reviewer find-the-places", FOLLOWING, False),
-    ("Bash", "uv run python scripts/step.py lib-reviewer find-the-line-level-places", FOLLOWING, False),
-]
+def run(calls: list[tuple[str, str, str]]) -> list[dict]:
+    out: list[dict] = []
+    for n, (tool, command, result) in enumerate(calls):
+        out += [{"type": "assistant", "message": {"content": [
+                    {"type": "tool_use", "id": f"t{n}", "name": tool,
+                     "input": {"command": command}}]}},
+                {"type": "user", "toolUseResult": {"stdout": result}, "message": {"content": [
+                    {"type": "tool_result", "tool_use_id": f"t{n}", "content": result}]}}]
+    return out
 
 
-@pytest.mark.parametrize("review, tool, command, result, done",
-                         [(review_tag.Review.CODE, *c) for c in CODE] + [(review_tag.Review.LIB, *c) for c in LIB])
-def test_step_done(review, tool, command, result, done):
-    assert review_tag.step_done(run(tool, command, result), review.role, review_tag.ITEMS[review],
-                                FOLLOWING) is done
+def walk(c: Checklist) -> list[str]:
+    return [c.first(), c.after("diff-the-trees"), c.after("find-the-line-level-places")]
+
+
+STEP = "cd /m && uv run python scripts/step.py code-reviewer"
+
+
+def test_a_walk_to_the_item_after_lets_the_tag_be_made(checklist: Checklist) -> None:
+    calls = [("Bash", STEP, r + "\n\n") for r in walk(checklist)]
+    assert review_tag.step_gap(run(calls), checklist, "Find the line-level places") is None
+
+
+@pytest.mark.parametrize("tool, command", [
+    ("Bash", "uv run python scripts/step.py code-editor find-the-line-level-places"),
+    ("Bash", "grep -A3 'Judge the places' prompts/agents/code-reviewer/checklist.md"),
+    ("Read", "/m/prompts/agents/code-reviewer/checklist.md"),
+])
+def test_a_result_of_no_step_call_of_the_reviewer_is_refused(
+        checklist: Checklist, tool: str, command: str) -> None:
+    results = walk(checklist)
+    calls = [("Bash", STEP, r) for r in results[:2]] + [(tool, command, results[2])]
+    gap = review_tag.step_gap(run(calls), checklist, "Find the line-level places")
+    assert gap is not None and gap.item.heading.text == "Judge the places"
+
+
+def test_an_item_cut_short_is_refused(checklist: Checklist) -> None:
+    results = walk(checklist)
+    results[1] = results[1].splitlines()[0]
+    gap = review_tag.step_gap(run([("Bash", STEP, r) for r in results]), checklist,
+                              "Find the line-level places")
+    assert gap is not None and gap.item.heading.text == "Find the line-level places"

@@ -5,6 +5,7 @@ prints for each call are as
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -36,6 +37,18 @@ class PartCall:
 
 
 type Item = Step | PartCall
+
+
+STEP = "uv run python scripts/step.py"
+
+
+@dataclass(frozen=True)
+class Gap:
+    """The first item of a walk whose text no step-call result holds, and
+    the step call that prints it."""
+
+    item: Item
+    call: str
 
 
 def checklist_file(agent: str, root: Path = DOCUMENTS_ROOT) -> Path:
@@ -151,6 +164,54 @@ class Checklist:
             out = out.rstrip("\n") + "\n\n" + ENTER.format(
                 agent=self.agent, item=nm.slug(item.heading.text))
         return out
+
+    def _walked(self, items: tuple[Item, ...], held: Callable[[str], bool],
+                args: tuple[str, ...]) -> Iterator[tuple[Item, tuple[str, ...]]]:
+        """Each item of the walk of `items`, with the arguments of the step
+        call that prints it, where `args` prints the first of `items`; a
+        part's items are in the walk where `held` holds the text of its
+        first item. Returns the arguments that print the item after."""
+        for item in items:
+            yield item, args
+            args = (nm.slug(item.heading.text),)
+            if isinstance(item, PartCall) and held(self.text(item.items[0])):
+                args = yield from self._walked(item.items, held, ("--enter", *args))
+        return args
+
+    def gap(self, results: Iterable[str], upto: str | None = None) -> Gap | None:
+        """The first item of the walk, up to the item `upto` names or else
+        up to the last item, that no result of `results` holds, or None.
+        `results` are the results of the agent's step calls, in order. A
+        result holds an item where it holds the item's text, both with
+        trailing whitespace stripped, and it comes after the last result
+        that holds an earlier item of the walk, so a later round that
+        prints an item again needs each item after it printed again. A
+        part's items are in the walk where a result holds its first item by
+        the same rule. Raises `ValueError` where the walk skips the part
+        that holds `upto`."""
+        texts = [r.rstrip() for r in results]
+        # The index of the last result that holds an item of the walk so far.
+        last = -1
+
+        def holding(text: str) -> list[int]:
+            want = text.rstrip()
+            return [n for n, t in enumerate(texts) if n > last and want in t]
+
+        def held(text: str) -> bool:
+            return bool(holding(text))
+
+        target = None if upto is None else self.named(upto)[0]
+        for item, args in self._walked(self.items, held, ()):
+            found = holding(self.text(item))
+            if not found:
+                return Gap(item, " ".join([STEP, self.agent, *args]))
+            last = found[-1]
+            if item is target:
+                return None
+        if target is not None:
+            raise ValueError(f"the walk of {self._label()} skips the part that "
+                             f"holds `{target.heading.text}`")
+        return None
 
     def first(self) -> str:
         if not self.items:

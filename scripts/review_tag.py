@@ -1,6 +1,6 @@
 """Records a review's commit, and makes the tag of a review's baseline once
-the reviewer's run shows the step call that completes the item of its
-checklist that the tag needs. `HELP`, which `--help` prints, gives the
+the reviewer's step calls have printed its checklist's walk up to the
+item after the one the tag needs. `HELP`, which `--help` prints, gives the
 usage forms and the rules."""
 
 import argparse
@@ -12,18 +12,18 @@ import textwrap
 from collections.abc import Iterable
 from pathlib import Path
 
-from controlled_markdown import mctx, slug
+from controlled_markdown import mctx
 from engine import checkout
-from handbook.checklist import Checklist
+from handbook.checklist import Checklist, Gap
 from handbook.paths import scripts_importable
-from operations.roles import AGENT_ID, Role
+from operations.roles import AGENT_ID
 from operations.state import Review
 
 scripts_importable()
 
-from run_reads import tool_results  # noqa: E402
+from checklist_walk_hook import step_calls  # noqa: E402
+from transcript_entries import Entry, Refused, print_refused, read_entries  # noqa: E402
 from transcripts import transcripts_of  # noqa: E402
-from transcript_entries import Entry, Refused, blocks, print_refused, read_entries  # noqa: E402
 from tree_reads import REVIEW_PATHS, main_tree  # noqa: E402
 
 ITEMS = {Review.CODE: "Find the line-level places", Review.LIB: "Find the places"}
@@ -42,10 +42,10 @@ HELP = mctx("""
     - `commit` records the review's commit, with `<n>`, the review's number, in its message: the tree of `HEAD` with the paths `<reviewer>` reviews as the working tree it runs from holds them, untracked files included, as a commit whose parent is `HEAD`.
         - It prints the commit's hash on one line, then the git pathspecs that select those paths, one on a line.
     - The form with `<commit>` makes the tag of the review's baseline.
-        - It reads the transcripts of the reviewer `<agent id>`, and looks for a Bash call whose command runs `scripts/step.py <reviewer>` with that item, and whose tool result holds the text of the item that follows it in the checklist of the main tree as it stands at the command's call, with trailing whitespace stripped from both.
+        - It reads the transcripts of the reviewer `<agent id>`, and checks that the tool results of its Bash calls whose command runs `scripts/step.py <reviewer>` hold, whole, each item the step command gives from the first item of the checklist of the main tree, as it stands at the command's call, up to the item after that item, each in a result after the last result that holds an earlier item.
             - Where that checklist holds no such item, the command fails and names the item it wants.
-        - Where it finds such a call, it runs `git tag <prefix><m> <commit>` for the least `<m>` from `<n>` up that git accepts, and prints the tag.
-        - Where it finds none, it makes no tag, exits non-zero, and prints the step call that completes that item, to be run once that item is done, before the command is run again.
+        - Where the results hold each of those items, it runs `git tag <prefix><m> <commit>` for the least `<m>` from `<n>` up that git accepts, and prints the tag.
+        - Where they do not, it makes no tag, exits non-zero, and prints the step call that prints the first item they do not hold, to be run, with each item from the one it prints up to this command done, before the command is run again.
             - Where it finds no transcript of `<agent id>`, it prints that, and that `<agent id>` is the reviewer's own agent id.
     """)
 
@@ -54,33 +54,23 @@ ROW = mctx("- `{reviewer}`: the item `{item}`, the prefix `{prefix}`.")
 NO_TRANSCRIPT = mctx("no transcript of the agent `{agent}` is found: give your own agent "
                      "id as `<agent id>`")
 
-NO_STEP = mctx("the transcripts of `{agent}` show no step call that completes the item "
-               "`{item}` of the checklist as it stands now: once you have done that "
-               "item, run `uv run python scripts/step.py {reviewer} {id}`, "
+NO_STEP = mctx("the step-call results in the transcripts of `{agent}` do not hold, whole, "
+               "the item `{missing}` of the checklist as it stands now in a result after "
+               "the last result that holds an earlier item, and the tag needs "
+               "each item the step command gives up to the item after `{item}`: run `{call}`, "
                "do each item from the one it prints up to this command, then run this "
                "command again")
 
-STEP_CALL = re.compile(r"""scripts/step\.py\s+(\S+)\s+("[^"]*"|'[^']*'|[^\s;|&)]+)""")
-"""A call of the step command in a Bash command: its agent and its first
-argument."""
 
-
-def runs_step(command: str, agent: Role, item: str) -> bool:
-    return any(m[1] == agent.value and slug(m[2].strip("'\"")) == slug(item)
-               for m in STEP_CALL.finditer(command))
-
-
-def step_done(entries: Iterable[Entry], agent: Role, item: str, following: str) -> bool:
-    """The step call `HELP` gives, of `item` of the checklist of `agent`,
-    whose result holds `following`, the text the step command prints for
-    the item after it."""
-    entries = list(entries)
-    calls = {str(b.get("id")) for e in entries if e.get("type") == "assistant"
-             for b in blocks(e, "tool_use") if b.get("name") == "Bash"
-             and runs_step(str((b.get("input") or {}).get("command", "")), agent, item)}
-    want = following.rstrip()
-    return any(call in calls and want in result.rstrip()
-               for e in entries for call, _, result in tool_results(e))
+def step_gap(entries: Iterable[Entry], checklist: Checklist, item: str) -> Gap | None:
+    """The first item of the walk of `checklist` up to the item after
+    `item` that the step-call results among `entries` do not hold, as
+    `HELP` gives it, or None."""
+    _, after = checklist.named(item)
+    if after is None:
+        raise ValueError(f"`{item}` is the last item of the checklist of {checklist.agent}")
+    results = (r for _, r in step_calls(entries, checklist.agent))
+    return checklist.gap(results, after.heading.text)
 
 
 def tag(review: Review, n: int, commit: str) -> str:
@@ -117,10 +107,12 @@ def review_tag(review: Review, n: int, commit: str, agent: str) -> str:
     paths = transcripts_of(agent)
     if not paths:
         raise Refused(NO_TRANSCRIPT.format(agent=agent))
-    reviewer, item = review.role, ITEMS[review]
-    following = Checklist(reviewer.value, main_tree()).after(item)
-    if not step_done((e for p in paths for e in read_entries(p)), reviewer, item, following):
-        raise Refused(NO_STEP.format(agent=agent, item=item, reviewer=reviewer.value, id=slug(item)))
+    item = ITEMS[review]
+    checklist = Checklist(review.role.value, main_tree())
+    gap = step_gap((e for p in paths for e in read_entries(p)), checklist, item)
+    if gap is not None:
+        raise Refused(NO_STEP.format(agent=agent, missing=gap.item.heading.text, item=item,
+                                     call=gap.call))
     return tag(review, n, commit)
 
 

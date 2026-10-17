@@ -1,0 +1,66 @@
+"""The hook that holds an agent with a checklist to its walk: a handback
+that passes with items unprinted ends a review on items the reviewer never
+received, and nothing in the run shows it."""
+
+import json
+from pathlib import Path
+
+from engine import checkout
+from handbook.checklist import Checklist
+from handbook.paths import scripts_importable
+from tests.hookrun import run_hook
+
+scripts_importable()
+
+AGENT = "a0000000000000001"
+HOOK = checkout.scripts() / "checklist_walk_hook.py"
+STEP = "uv run python scripts/step.py code-reviewer"
+
+
+def session(tmp_path: Path, results: list[str]) -> str:
+    """A session whose code reviewer `AGENT` made one step call for each
+    of `results`, and the hook input of its SubagentHandback call."""
+    agents = tmp_path / "s" / "subagents"
+    agents.mkdir(parents=True)
+    (agents / f"agent-{AGENT}.meta.json").write_text(json.dumps({"agentType": "code-reviewer"}))
+    lines: list[dict] = []
+    for n, result in enumerate(results):
+        lines += [{"type": "assistant", "message": {"content": [
+                      {"type": "tool_use", "id": f"t{n}", "name": "Bash",
+                       "input": {"command": f"{STEP} | head -3"}}]}},
+                  {"type": "user", "toolUseResult": {"stdout": result}, "message": {"content": [
+                      {"type": "tool_result", "tool_use_id": f"t{n}", "content": result}]}}]
+    (agents / f"agent-{AGENT}.jsonl").write_text("".join(json.dumps(e) + "\n" for e in lines))
+    (tmp_path / "s.jsonl").write_text("")
+    return json.dumps({"tool_name": "SubagentHandback", "agent_id": AGENT,
+                       "transcript_path": str(tmp_path / "s.jsonl"), "tool_input": {}})
+
+
+def whole_walk() -> list[str]:
+    c = Checklist("code-reviewer")
+    out = [c.first()]
+    for item in c.items:
+        if item is not c.items[-1]:
+            out.append(c.after(item.heading.text))
+    return out
+
+
+def denied(stdin: str) -> bool:
+    code, out, err = run_hook(HOOK, stdin)
+    assert code == 0 and "failed" not in err, err
+    return bool(out) and json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_a_whole_walk_is_allowed(tmp_path: Path) -> None:
+    assert not denied(session(tmp_path, whole_walk()))
+
+
+def test_a_walk_cut_short_is_denied_once(tmp_path: Path) -> None:
+    stdin = session(tmp_path, whole_walk()[:3])
+    assert denied(stdin)
+    assert not denied(stdin)
+
+
+def test_a_later_round_that_stops_early_is_denied(tmp_path: Path) -> None:
+    walk = whole_walk()
+    assert denied(session(tmp_path, [*walk, walk[2]]))
