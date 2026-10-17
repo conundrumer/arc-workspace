@@ -5,10 +5,10 @@ run cache.
 An input `Position` value is the `(row, column)` of a cell, and its place
 in the lib (`engine.program.cell_place`) is computed from the size of the
 grid of the row's key. In a relation with no key column, a cell lies in the
-one grid the call is given a size for. An output `Position` value is read
-as the cell its place gives, `(place[0], place[2])`, in the frame the
-component's own declaration gives that column, which need not be the grid
-of the row's key.
+one grid the call is given a size for. An output `Position` value crosses
+as the first and third ints of its place, `(place[0], place[2])`, negative
+ones included, in the frame the component's own declaration gives that
+column, which need not be the grid of the row's key.
 
 An `Offset` value crosses as its `(row, column)` displacement."""
 
@@ -150,9 +150,8 @@ def _row_out(name: str, columns: Columns, row: Sequence[Value],
     for i, t in enumerate(columns.types):
         if t == grid.position:
             place = _ints(out[i], 4)
-            if place is None or min(place) < 0:
-                raise CallError(f"`{name}` gives {out[i]!r}, which is no place "
-                                f"of a cell")
+            if place is None:
+                raise CallError(f"`{name}` gives {out[i]!r}, which is no place")
             out[i] = (place[0], place[2])
         elif t == grid.offset:
             place = _ints(out[i], 4)
@@ -171,9 +170,9 @@ def call(component: str, type_args: Sequence[StrEnum], grid: GridTypes,
     of `component` instantiated at `type_args` over the rows of each of its
     relations `inputs` that is not None. An input column whose type is
     `grid.position` is placed in the grid of its row's key (`_size`), an
-    output one is read as the cell its place gives, in the frame the
-    component's declaration gives it, and a column whose type is
-    `grid.offset` crosses as a displacement. Raises `CallError` where
+    output one crosses as the first and third ints of its place, negative
+    ones included, in the frame the component's declaration gives it, and
+    a column whose type is `grid.offset` crosses as a displacement. Raises `CallError` where
     the program fails to parse, the run fails, or a value cannot cross."""
     engine = _engine()
     program = engine.lib_instance(LIB_SRC, INSTANCE, component,
