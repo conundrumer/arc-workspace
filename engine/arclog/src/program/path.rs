@@ -62,7 +62,7 @@ use super::{
 };
 
 /// One step of a path: the index of a node among its parent's children.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct PathStep(pub u32);
 
 /// The path of a node: the index of its top-level form, then its index
@@ -71,13 +71,18 @@ pub struct PathStep(pub u32);
 /// A path is relative to the node it starts from: a program's path starts
 /// at the program, and the path of a [`crate::check::Refusal`] at the form
 /// the check read.
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
 pub struct NodePath(pub Box<[PathStep]>);
 
 impl NodePath {
     /// The path of the node at `relative` below the node at `self`.
     pub fn join(&self, relative: &NodePath) -> NodePath {
-        todo!()
+        NodePath(self.0.iter().chain(relative.0.iter()).copied().collect())
+    }
+
+    /// The path of the child at `index` of the node at `self`.
+    pub fn child(&self, index: u32) -> NodePath {
+        NodePath(self.0.iter().copied().chain(std::iter::once(PathStep(index))).collect())
     }
 }
 

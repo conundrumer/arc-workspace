@@ -268,29 +268,25 @@ pub struct Site {
     pub value: SiteValue,
 }
 
-/// What stands at a site.
+/// What stands at a site, as the file writes it: its arguments in source
+/// order. `(:key C A)` and `(:key (:C C) (:A A))` are two values, and a
+/// column of a type parameter is written alike whether it reads a record or
+/// one label: whether it reads a record, and the resolved content of each
+/// such site, are the resolver's.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub enum SiteValue {
-    /// One label, on a column of a fixed type, or on a column of a type
-    /// parameter, other than `key`, that the instance binds to one label's
-    /// type.
+pub struct SiteValue {
+    /// Never empty.
+    pub args: Arc<[SiteArg]>,
+}
+
+/// One argument of a site.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum SiteArg {
+    /// A bare label with its mark: `*V` of `(:C *V)`, or `A` of `(:key C A)`.
     Label(LabelUse),
-    /// A site on each field of a record that the site reads, in source
-    /// order: each `(:<Field> <label>)` argument, and each bare label at a
-    /// record's column, which is the site on the field the label names. So
-    /// `(:key C A)` is the value of `(:key (:C C) (:A A))`, and the layout
-    /// records the elision.
-    ///
-    /// `Key` is always a record, whose fields the key clause's `^` labels
-    /// name, a key of one `^` label included, so `(:key *P_across)` is
-    /// `(:key (:P_across *P_across))`. Another type parameter is a record
-    /// where the instance binds it by a projection of several sites, as
-    /// `docs/arclog/arclog.md#instance` gives. The reader reads that binding
-    /// from the file's `INIT` forms and the key clauses of its
-    /// `DEMONSTRATED` and `RIGID_DET` forms, which bind a key as an instance
-    /// does, and which columns are of the parameter from the component's
-    /// declaration in the registry.
-    Fields(Arc<[Site]>),
+    /// A site on a field of a record, `(:<Field> ...)`: `(:A *A1)` of
+    /// `(:key (:C C) (:A *A1))`.
+    Field(Site),
 }
 
 /// One label at a site, with its mark.

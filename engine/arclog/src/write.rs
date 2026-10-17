@@ -1,10 +1,14 @@
 //! The writer of arclog and arcdata files. Reading a file of the corpus and
 //! writing it again gives the same bytes.
 //!
-//! The reader and writer stage writes the bodies.
+//! The arcdata writer, [`write_solver`] and [`write_synthesized`] stay
+//! `todo!()` for later stages.
 
 #![allow(unused_variables, dead_code)]
 
+mod arclog;
+
+use crate::layout::Layout;
 use crate::program::{Node, Program};
 use crate::registry::Registry;
 use crate::solver::Solver;
@@ -15,6 +19,17 @@ use crate::terms::InternTable;
 pub struct SolverText {
     pub arclog: String,
     pub arcdata: String,
+}
+
+/// The text of the arclog file that `program` and `layout`, as
+/// [`crate::read::read_arclog`] reads them, give: each token at the place
+/// its node's layout gives, each comment of the layout, and each site the
+/// layout elides as its bare label. A token whose node has no layout stands
+/// one space after the token before it. Each name and column of `program`
+/// is written as a file writes it, and each label is named in the layout of
+/// its scope; a slot of a decode is a fault.
+pub fn write_arclog(program: &Node<Program>, layout: &Layout) -> String {
+    arclog::write(program.value(), layout)
 }
 
 /// The two files of `solver`, laid out as the converter lays out each form,

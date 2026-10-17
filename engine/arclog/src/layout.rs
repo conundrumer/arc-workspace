@@ -8,15 +8,14 @@
 //! has no layout, and the writer names its labels as
 //! [`crate::write::write_synthesized`] gives.
 
-#![allow(unused_variables, dead_code)]
+use std::collections::BTreeMap;
 
-use crate::hash::StableHashMap;
 use crate::program::path::NodePath;
 use crate::program::LabelId;
 
 /// A file the s-expression reader reads: one of a solver's two files, or one
 /// of the lib files under `engine/lib/`, as [`crate::registry`] gives.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum SourceFile {
     Arclog,
     Arcdata,
@@ -51,19 +50,27 @@ pub struct FilePlace {
     pub place: SourcePlace,
 }
 
-/// A comment of a file, `;;` to the line's end, and where it stands.
+/// A comment of a file, `;;` to the line's end, and where it stands. `text`
+/// is the comment as written, from its first `;`.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Comment {
     pub place: SourcePlace,
     pub text: Box<str>,
 }
 
-/// The layout of one node: where it stands, the names of the labels it
-/// makes, and which of its sites the file elides.
+/// The layout of one node: where it stands, where each of its own tokens
+/// stands, the names of the labels it makes, and which of its sites the
+/// file elides.
 #[derive(Clone, Debug, Default)]
 pub struct NodeLayout {
     pub place: Option<SourcePlace>,
-    /// The name the file writes for each label the node makes.
+    /// The place of each token the node writes outside its children, in the
+    /// order the file writes them: its parentheses, keywords, names and
+    /// strings, and the labels of a site or a constraint. The root of a
+    /// file, the empty path, holds one: the place of the file's end.
+    pub tokens: Box<[SourcePlace]>,
+    /// The name the file writes for each label the node makes. A label is
+    /// made by the form that is its scope, as [`LabelId`] gives.
     pub label_names: Box<[(LabelId, Box<str>)]>,
     /// The indexes of the node's sites that the file writes as the bare
     /// label, as `docs/arclog/arclog.md#sites` gives.
@@ -76,7 +83,7 @@ pub struct NodeLayout {
 /// walks it.
 #[derive(Clone, Debug, Default)]
 pub struct Layout {
-    pub nodes: StableHashMap<(SourceFile, NodePath), NodeLayout>,
+    pub nodes: BTreeMap<(SourceFile, NodePath), NodeLayout>,
     /// Each comment of the two files.
     pub comments: Box<[Comment]>,
 }
@@ -84,6 +91,6 @@ pub struct Layout {
 impl Layout {
     /// The layout of the node at `path` of `file`, if the file holds it.
     pub fn node(&self, file: SourceFile, path: &NodePath) -> Option<&NodeLayout> {
-        todo!()
+        self.nodes.get(&(file, path.clone()))
     }
 }

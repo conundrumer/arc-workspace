@@ -5,17 +5,28 @@
 //! under `engine/lib/` is read by the same s-expression reader, as
 //! [`crate::registry`] gives.
 //!
-//! The reader and writer stage writes the bodies.
+//! The arcdata reader and [`read_solver`] stay `todo!()` for the arcdata
+//! stage.
 
 #![allow(unused_variables, dead_code)]
 
+mod arclog;
+mod labels;
+mod sexpr;
+pub(crate) mod spelling;
+
 use std::sync::Arc;
 
-use crate::diagnostic::{Diagnostic, WithDiagnostics};
-use crate::layout::{Layout, SourceFile, SourcePlace};
-use crate::program::{Arcdata, Node, Program};
+use crate::check::CheckId;
+use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity, WithDiagnostics};
+use crate::layout::{FilePlace, Layout, SourceFile, SourcePlace};
+use crate::program::path::NodePath;
+use crate::program::{Arcdata, Form, Node, Program};
 use crate::registry::Registry;
 use crate::solver::Solver;
+
+use self::arclog::Reader;
+use self::labels::LabelScope;
 
 /// An s-expression as the fixed reader gives it, before node kinds.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -24,7 +35,41 @@ pub enum SExpr {
     Symbol { text: Box<str>, place: SourcePlace },
     /// A quoted string, its content unescaped.
     String { text: Box<str>, place: SourcePlace },
-    List { items: Box<[SExpr]>, place: SourcePlace },
+    /// A list: its items, its place from its `(` to its `)`, and the place
+    /// of its `)`.
+    List { items: Box<[SExpr]>, place: SourcePlace, close: SourcePlace },
+}
+
+impl SExpr {
+    /// Where the s-expression stands.
+    pub fn place(&self) -> SourcePlace {
+        match self {
+            SExpr::Symbol { place, .. } | SExpr::String { place, .. } | SExpr::List { place, .. } => *place,
+        }
+    }
+}
+
+/// A diagnostic of the grammar at `place`, of a file the reader reads alone.
+fn grammar(message: impl Into<Box<str>>, place: SourcePlace) -> Diagnostic {
+    Diagnostic {
+        kind: DiagnosticKind::Check(CheckId::Grammar),
+        severity: Severity::Error,
+        message: message.into(),
+        location: Location::Places(Box::new([FilePlace { task_id: None, place }])),
+        cases: Box::new([]),
+    }
+}
+
+/// The place of the end of `text`, of no width.
+fn end_place(text: &str, file: SourceFile) -> SourcePlace {
+    let last_line = text.rsplit('\n').next().unwrap_or_default();
+    SourcePlace {
+        file,
+        start: text.len() as u32,
+        end: text.len() as u32,
+        line: text.matches('\n').count() as u32 + 1,
+        column: last_line.chars().count() as u32 + 1,
+    }
 }
 
 /// The s-expressions of `text` and its comments.
@@ -32,7 +77,7 @@ pub enum SExpr {
 /// Fails with a diagnostic of the grammar at each unbalanced list or
 /// unterminated string.
 pub fn read_sexprs(text: &str, file: SourceFile) -> Result<(Vec<SExpr>, Vec<crate::layout::Comment>), Vec<Diagnostic>> {
-    todo!()
+    sexpr::read(text, file)
 }
 
 /// The names of the labels of a node that one s-expression gives, in the
@@ -48,8 +93,11 @@ pub type LabelNames = Box<[(Box<str>, crate::program::LabelId)]>;
 ///
 /// Fails where an s-expression of `exprs` matches no node kind of its
 /// format, with a diagnostic of the grammar at each such s-expression.
-pub fn read_body(exprs: &[SExpr], registry: &Registry) -> Result<(Node<crate::program::Body>, LabelNames), Vec<Diagnostic>> {
-    todo!()
+pub fn read_body(exprs: &[SExpr]) -> Result<(Node<crate::program::Body>, LabelNames), Vec<Diagnostic>> {
+    let scope = LabelScope::new(exprs, &|_| false);
+    let mut reader = Reader::new(exprs, true);
+    let body = reader.body(exprs, &scope);
+    if reader.diagnostics.is_empty() { Ok((body, scope.names_in_order())) } else { Err(reader.diagnostics) }
 }
 
 /// The `INIT` form that `expr` writes, and the names of its labels, for the
@@ -59,8 +107,18 @@ pub fn read_body(exprs: &[SExpr], registry: &Registry) -> Result<(Node<crate::pr
 ///
 /// Fails where an s-expression of `expr` matches no node kind of its format,
 /// with a diagnostic of the grammar at each such s-expression.
-pub fn read_instance(expr: &SExpr, registry: &Registry) -> Result<(Node<crate::program::Instance>, LabelNames), Vec<Diagnostic>> {
-    todo!()
+pub fn read_instance(expr: &SExpr) -> Result<(Node<crate::program::Instance>, LabelNames), Vec<Diagnostic>> {
+    let exprs = std::slice::from_ref(expr);
+    let scope = LabelScope::new(exprs, &|_| false);
+    let mut reader = Reader::new(exprs, true);
+    let form = reader.form(expr, &NodePath::default(), Some(&scope));
+    match form {
+        Ok(Form::Instance(instance)) if reader.diagnostics.is_empty() => Ok((instance, scope.names_in_order())),
+        Ok(_) if reader.diagnostics.is_empty() => {
+            Err(vec![grammar("the definition is an `INIT` form", expr.place())])
+        }
+        _ => Err(reader.diagnostics),
+    }
 }
 
 /// The values of one row that `expr` writes, as an arcdata row is written
@@ -73,35 +131,28 @@ pub fn read_data_row(expr: &SExpr, registry: &Registry) -> Result<Box<[crate::pr
     todo!()
 }
 
-/// The program of an arclog file and its layout. `representative` is the
-/// program of the solver that a `representative` line names, whose claims
-/// declare names the file may read, such as the instance of a read
-/// `&x.y`: the reader takes each read's owner and each binding of a type
-/// parameter from the file and from it. `file` names the file in the
-/// places of the layout and of each diagnostic, a solver's
-/// [`SourceFile::Arclog`]. `registry`
-/// declares which columns of a component are of a type parameter, which,
-/// with the file's `INIT` forms and the key clauses of its `DEMONSTRATED`
-/// and `RIGID_DET` forms, gives whether a site reads a record, as
-/// [`crate::program::SiteValue`] gives.
+/// The program of an arclog file and its layout, read from the file alone.
+/// `file` names the file in the places of the layout and of each
+/// diagnostic, a solver's [`SourceFile::Arclog`]. Each site holds what the
+/// file writes, as [`crate::program::SiteValue`] gives, and each read
+/// `&x.y` names the outputs of the file's `INIT` or `RIGID_DET` form `&x`.
 ///
 /// Where a node matches no node kind, the program leaves out the least node
 /// that holds it, a site, a conjunct or a form, with a diagnostic of the
 /// grammar at it, and holds the rest. It fails only where
 /// [`read_sexprs`] does.
-pub fn read_arclog(
-    text: &str,
-    file: SourceFile,
-    representative: Option<&Node<Program>>,
-    registry: &Registry,
-) -> Result<WithDiagnostics<(Node<Program>, Layout)>, Vec<Diagnostic>> {
-    todo!()
+pub fn read_arclog(text: &str, file: SourceFile) -> Result<WithDiagnostics<(Node<Program>, Layout)>, Vec<Diagnostic>> {
+    let (exprs, comments) = read_sexprs(text, file)?;
+    let mut reader = Reader::new(&exprs, false);
+    let program = reader.program(&exprs, end_place(text, file));
+    let diagnostics = std::mem::take(&mut reader.diagnostics);
+    Ok(WithDiagnostics { value: (program, reader.layout(file, comments)), diagnostics })
 }
 
 /// The forms of an arcdata file, with the layout of the arclog file it
 /// stands beside extended by its own. `program` is that arclog file's
-/// program, and `representative` the representative's, as [`read_arclog`]
-/// takes it, whose forms give what each name declares, such as whether
+/// program, and `representative` the program of the solver its
+/// `representative` line names, whose forms give what each name declares, such as whether
 /// `&piece` of `&piece.member` is an `INIT` or a `RIGID_DET` form, and
 /// `registry` gives the orientation constants by their names. A node that matches no node kind is left out,
 /// as [`read_arclog`] gives.

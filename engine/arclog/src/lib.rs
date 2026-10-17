@@ -16,8 +16,7 @@
 //! - registry and resolver: [`registry`], [`resolver`], the files of
 //!   `engine/lib/`, the example `resolve`, and the test `registry_file`
 //! - `cases()`: [`solver`], and the example `cases`
-//! - programs as values: [`program`] and its submodules, and the test
-//!   `syntax_tree`
+//! - programs as values: [`program`] and its submodules
 //! - checker: [`types`], [`diagnostic`], [`check`] and its submodules, the
 //!   example `lint`, and the tests under `engine/arclog/tests/` that feed a
 //!   check a file that breaks it, such as the order rule's and the pose
