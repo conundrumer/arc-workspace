@@ -81,6 +81,13 @@ pub struct CanonicalForm {
     pub bytes: std::sync::Arc<[u8]>,
 }
 
+impl std::hash::Hash for CanonicalForm {
+    /// Hashes `hash` alone, so a lookup hashes no bytes.
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        todo!()
+    }
+}
+
 /// Each name as the file writes it.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AsWritten;

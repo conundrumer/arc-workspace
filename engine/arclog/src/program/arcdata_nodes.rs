@@ -107,7 +107,10 @@ pub struct DataField {
 
 /// A value written in an arcdata file, held as the file writes it, with no
 /// type. [`crate::terms::encode_data_value`] gives its typed value, such as
-/// a Box or one column per member of a list.
+/// a Box or one column per member of a list, by its column's type, for a
+/// row of a `param` form and of an `assign` form alike: the type a `param`
+/// form writes, or, for a relation that no `param` form gives, the type the
+/// type check infers for the column, so the typed value follows the check.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum DataValue {
     /// An integer as the file writes it: a number, a Color's digit or an

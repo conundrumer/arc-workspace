@@ -73,6 +73,8 @@ pub struct RelationColumn {
 #[derive(Clone, Debug)]
 pub struct KeyBody {
     pub body: Node<Body>,
+    /// After an edit, the columns of the new body, as
+    /// [`crate::program::Node::apply`] gives.
     pub columns: Arc<[RelationColumn]>,
 }
 

@@ -134,6 +134,8 @@ pub struct Clause {
     /// which map onto one another by position, each named as the line's
     /// first proposer names it. A line with no proposer and no body derives
     /// a fact, a relation of no columns.
+    /// After an edit, the columns of the new body, as
+    /// [`crate::program::Node::apply`] gives.
     pub columns: Arc<[RelationColumn]>,
 }
 
@@ -339,6 +341,8 @@ pub struct Choose {
     pub rows: Option<KeyBody>,
     /// The candidate's columns, which follow the row's in the chosen
     /// relation.
+    /// After an edit, the columns of the new body, as
+    /// [`crate::program::Node::apply`] gives.
     pub candidate_columns: Arc<[RelationColumn]>,
     /// The `from` clause: inside `for` where it reads the row's labels.
     pub from: Node<Body>,
@@ -346,7 +350,10 @@ pub struct Choose {
     pub never: Arc<[Node<Body>]>,
 }
 
-/// A `RIGID_DET` form, as `docs/arclog/rigid.md#form` gives.
+/// A `RIGID_DET` form, as `docs/arclog/rigid.md#form` gives. Where the form
+/// has a `key` clause, the rest of the form stands inside it after its body,
+/// as the keyed inputs of an `INIT` do: the `instance` clause where the form
+/// has one, and the parts otherwise.
 #[derive(Clone, Debug)]
 pub struct RigidDet {
     pub name: RigidDetName,
@@ -378,6 +385,8 @@ pub struct Demonstrated {
 pub struct DemoRule {
     pub name: DemoRuleName,
     /// The rule's fields, each a column of its `&prediction`.
+    /// After an edit, the columns of the new body, as
+    /// [`crate::program::Node::apply`] gives.
     pub fields: Arc<[RelationColumn]>,
     pub text: Option<Text>,
     pub forms: Arc<[Form]>,

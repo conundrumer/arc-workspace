@@ -14,7 +14,6 @@
 pub mod lint;
 
 use crate::diagnostic::Diagnostic;
-use crate::hash::StableHash;
 use crate::program::path::NodePath;
 use crate::program::{Form, LabelId};
 use crate::registry::Registry;
@@ -207,8 +206,11 @@ pub fn check_cycles(graph: &DependencyGraph, program: &ResolvedProgram) -> Check
     todo!()
 }
 
-/// The key of the check cache: the form's canonical hash and the signatures
-/// of the names it reads, so the cases that share a form share its check.
+/// The key of the check cache: the check, the form's canonical form, with
+/// each name as the file writes it, and the signatures of the names it
+/// reads, so the cases that share a form share its check. Two keys are equal
+/// where their checks, their canonical forms and their signatures are, so
+/// two forms or two reads whose hashes collide take two checks.
 /// The signatures stand in a fixed order: those of the names the form
 /// reads, in the order of each name's first read in the form's canonical
 /// order, then, where a label's type comes from other clauses of a
@@ -217,7 +219,7 @@ pub fn check_cycles(graph: &DependencyGraph, program: &ResolvedProgram) -> Check
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct CheckCacheKey {
     pub check: CheckId,
-    pub canonical_hash: StableHash,
+    pub canonical_form: crate::program::canonical::CanonicalForm,
     pub signatures: Box<[Signature]>,
 }
 

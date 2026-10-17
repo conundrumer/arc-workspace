@@ -121,16 +121,18 @@ pub enum Resolution {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ColumnPosition(pub u16);
 
-/// The signature of a name a form reads: the hash of what the name resolves
-/// to, its columns and their types.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct Signature(pub StableHash);
+/// The signature of a name a form reads: the canonical form of what the
+/// name resolves to, its columns and their types. Two signatures are equal
+/// where those canonical forms are, so two reads whose hashes collide have
+/// unequal signatures.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Signature(pub crate::program::canonical::CanonicalForm);
 
 /// The resolved content of a node of a case program: its canonical form,
 /// with each name it reads standing for the resolved content of what it
 /// resolves to. Two contents are equal when their hashes match and then
 /// their canonical forms do, whatever file or decode they came from.
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ResolvedContent {
     form: crate::program::canonical::CanonicalForm,
 }
@@ -138,20 +140,6 @@ pub struct ResolvedContent {
 impl ResolvedContent {
     /// The hash of the content's canonical form.
     pub fn content_hash(&self) -> StableHash {
-        todo!()
-    }
-}
-
-impl PartialEq for ResolvedContent {
-    fn eq(&self, other: &Self) -> bool {
-        todo!()
-    }
-}
-
-impl Eq for ResolvedContent {}
-
-impl std::hash::Hash for ResolvedContent {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         todo!()
     }
 }
@@ -194,7 +182,7 @@ impl ResolvedProgram {
     }
 
     /// The signature of the name read at `path`.
-    pub fn signature(&self, path: &NodePath) -> Option<Signature> {
+    pub fn signature(&self, path: &NodePath) -> Option<&Signature> {
         todo!()
     }
 

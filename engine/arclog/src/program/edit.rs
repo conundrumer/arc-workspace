@@ -8,7 +8,8 @@
 use super::path::NodePath;
 use super::{Atom, Conjunct, Node, Program, Site};
 
-/// An edit of a program, at the node its path names.
+/// An edit of a program, at the node its path names. Each node the edit
+/// changes takes the columns of its new body, as [`Node::apply`] gives.
 #[derive(Clone, Debug)]
 pub enum Edit {
     /// Inserts `conjunct` into the body at `body`, at `index` of its source
@@ -57,6 +58,14 @@ impl Node<Program> {
     /// The program that `edit` gives. `self` is left as it was, and the new
     /// value shares every node the edit does not change. The paths of `edit`
     /// name nodes as [`super::path::node_at`] walks them.
+    ///
+    /// Each node the edit changes, a clause, a key body, a `CHOOSE` form or
+    /// a `DEMO_RULE` form, takes the columns of its new body: the labels the
+    /// body keeps, in order of first appearance. A column whose label the
+    /// edit removes is dropped. A column whose label the node keeps keeps its
+    /// written name, and each other column is named by its slot, its position
+    /// among the columns. The edit gives no diagnostic for a read elsewhere
+    /// of a dropped column, which the resolver reports.
     pub fn apply(&self, edit: &Edit) -> Result<Node<Program>, EditPathError> {
         todo!()
     }

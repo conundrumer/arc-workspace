@@ -8,20 +8,22 @@
 #![allow(unused_variables, dead_code)]
 
 /// One `RIGID_DET` assembly of a case program, which has its own Pose type:
-/// its form, by the form's name and canonical hash, and, for a keyed form,
-/// its key row, by the labels that a read gives at the key's columns.
+/// its form, by the form's name and canonical form, and, for a keyed form,
+/// its key row, by the labels that a read gives at the key's columns. Two
+/// ids are equal where their names, canonical forms and key rows are, so two
+/// forms whose hashes collide take two types.
 ///
-/// The form's name and hash stay the same in every case that holds the
-/// form, so the cases that share a form that reads a pose share its types
-/// and its check, whatever alts come before it, and two forms of one name
-/// with different parts, in two programs of one task session, take two
-/// types. Each key row is an assembly of its own, aligned and posed on its
+/// The form's name and canonical form stay the same in every case that
+/// holds the form, so the cases that share a form that reads a pose share
+/// its types and its check, whatever alts come before it, and two forms of
+/// one name with different parts, in two programs of one task session, take
+/// two types. Each key row is an assembly of its own, aligned and posed on its
 /// own (`docs/arclog/rigid.md#form`), so two pose reads meet only where they
 /// read the same key labels. The key row is named as [`KeyRow`] gives.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct AssemblyId {
     pub name: crate::program::RigidDetName,
-    pub canonical_hash: crate::hash::StableHash,
+    pub canonical_form: crate::program::canonical::CanonicalForm,
     /// The key row, or [`KeyRow::Unkeyed`] for a form with no key.
     pub key: KeyRow,
 }
