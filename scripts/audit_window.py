@@ -210,29 +210,31 @@ def own_offset(path: Path) -> int | None:
 def folded(path: Path, fold: Fold) -> Fold:
     """`fold` with the whole lines of the transcript at `path` past its
     offset folded in."""
-    with path.open("rb") as fh:
-        fh.seek(fold.offset)
-        text = fh.read()
-    end = text.rfind(b"\n") + 1
     lines = list(fold.lines)
     cost = fold.cost
     last = list(fold.last)
-    for line in text[:end].split(b"\n"):
-        if USAGE not in line:
-            continue
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        stamp = entry.get("timestamp") if isinstance(entry, dict) else None
-        if not isinstance(stamp, str) or epoch(stamp) < fold.start:
-            continue
-        groups = priced_requests([entry], lines)
-        if not groups:
-            continue
-        if last and last[0]["message"]["id"] != next(iter(groups)):
-            cost += request_cost(last, lines) or 0.0
-            last = []
-        message = entry["message"]
-        last.append({"message": {k: message.get(k) for k in ("id", "model", "usage")}})
-    return Fold(fold.start, fold.offset + end, cost, tuple(dict.fromkeys(lines)), tuple(last))
+    end = fold.offset
+    with path.open("rb") as fh:
+        fh.seek(fold.offset)
+        for line in fh:
+            if not line.endswith(b"\n"):
+                break
+            end += len(line)
+            if USAGE not in line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            stamp = entry.get("timestamp") if isinstance(entry, dict) else None
+            if not isinstance(stamp, str) or epoch(stamp) < fold.start:
+                continue
+            groups = priced_requests([entry], lines)
+            if not groups:
+                continue
+            if last and last[0]["message"]["id"] != next(iter(groups)):
+                cost += request_cost(last, lines) or 0.0
+                last = []
+            message = entry["message"]
+            last.append({"message": {k: message.get(k) for k in ("id", "model", "usage")}})
+    return Fold(fold.start, end, cost, tuple(dict.fromkeys(lines)), tuple(last))

@@ -348,11 +348,26 @@ def read_entries(path: Path, naming: Iterable[str] | None = None) -> list[Entry]
     """The entries of the transcript at `path` as it stands at the state this
     process is in, or with `naming` only those whose line holds one of its
     words, which spares parsing the rest."""
+    return [e for _, e in numbered_entries(path, naming)]
+
+
+def numbered_entries(path: Path, naming: Iterable[str] | None = None
+                     ) -> Iterator[tuple[int, Entry]]:
+    """Each entry `read_entries` gives, with the index of its line, each
+    line parsed only when it is reached."""
     lines = entries_naming(path, None if naming is None else frozenset(naming))
     # The snapshot `entries_naming` read, taken from `_read` so that the
     # caller rests on the lines it gives and not on each change of the file.
     snap = _read[path]
-    return [e for line in snap.lines(lines) for e in parse(line)]
+    for i, line in zip(lines, snap.lines(lines)):
+        for e in parse(line):
+            yield i, e
+
+
+def line_entries(path: Path, i: int) -> list[Entry]:
+    """The entries of line `i` of the snapshot of the transcript at `path`
+    that `numbered_entries` read at this state."""
+    return _read[path].entry(i)
 
 
 @state_cache(DERIVED)

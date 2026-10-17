@@ -6,6 +6,7 @@ run launched or resumed."""
 
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 from agent_reports import AgentEntry, Report, agent_entries, report_ids, reports_after
 from command_labels import AGENT_TOOLS
@@ -14,9 +15,8 @@ from run_reads import (blocks, in_background, meta_parent, notified, parent_labe
                        results_by_call, run_sessions, session_agents)
 from state_reads import DERIVED, Kept, state_cache
 from transcripts import agent_id, chain, find
-from transcript_entries import Entry, epoch
+from transcript_entries import Entry, epoch, line_entries, numbered_entries
 from agent_resumes import note_latest, resumes, session_resumes
-from session_changes import timed_entries
 
 
 @state_cache(DERIVED)
@@ -137,44 +137,57 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
     background. An Agent call whose result is an error launched no agent,
     unless a transcript gives it as its launch or its result gives an
     `agentId`."""
-    entries = timed_entries(path)
-    results = results_by_call(entries)
-    replies = [(e, b) for e in entries if e.get("type") == "user"
-               for b in blocks(e, "tool_result")]
-    answered = {b.get("tool_use_id"): epoch(e["timestamp"]) for e, b in replies}
-    failed: set[str] = {b.get("tool_use_id", "") for _, b in replies
-                        if b.get("is_error")}
-    told = {v: epoch(e["timestamp"]) for e in entries
-            if e.get("type") != "assistant" for v in notified(e)}
-    naming: dict[str, list[Entry]] = {}
-    for e in entries:
-        for v in report_ids(e):
-            naming.setdefault(v, []).append(e)
+    # Each entry is parsed in one pass and dropped, and of the entries that
+    # give a result or that `report_ids` names only their lines are kept,
+    # so that no call holds the entries of a long transcript parsed at once.
+    calls: list[tuple[str, dict[str, Any]]] = []
+    results: dict[str, tuple[Path, int]] = {}
+    answered: dict[str | None, float] = {}
+    failed: set[str] = set()
+    told: dict[str, float] = {}
+    naming: dict[str, list[tuple[Path, int]]] = {}
+    for p in chain(path):
+        for i, e in numbered_entries(p):
+            if not e.get("timestamp"):
+                continue
+            kind = e.get("type")
+            if kind == "assistant":
+                for b in blocks(e, "tool_use"):
+                    if b.get("name") in AGENT_TOOLS:
+                        calls.append((e["timestamp"], b))
+                continue
+            if kind == "user":
+                for b in blocks(e, "tool_result"):
+                    answered[b.get("tool_use_id")] = epoch(e["timestamp"])
+                    if b.get("is_error"):
+                        failed.add(b.get("tool_use_id", ""))
+                results.update(dict.fromkeys(results_by_call([e]), (p, i)))
+            for v in notified(e):
+                told[v] = epoch(e["timestamp"])
+            for v in report_ids(e):
+                naming.setdefault(v, []).append((p, i))
     out: list[Launch] = []
-    for e in entries:
-        if e.get("type") != "assistant":
+    for at, b in calls:
+        tid = b.get("id", "")
+        given = (results_by_call(line_entries(*results[tid])).get(tid) if tid in results
+                 else None)
+        background = given is not None and in_background(given, undecided, tid)
+        result = given or {}
+        child = launched_by(path, tid)
+        if tid in failed and child is None and "agentId" not in result:
             continue
-        for b in blocks(e, "tool_use"):
-            if b.get("name") not in AGENT_TOOLS:
-                continue
-            tid = b.get("id", "")
-            given = results.get(tid)
-            background = given is not None and in_background(given, undecided, tid)
-            result = given or {}
-            child = launched_by(path, tid)
-            if tid in failed and child is None and "agentId" not in result:
-                continue
-            signs = [told.get(tid), told.get(result.get("agentId", "")),
-                     None if background else answered.get(tid)]
-            done = max((t for t in signs if t is not None), default=None)
-            aid = agent_id(child) if child else result.get("agentId")
-            if child is None and done is None and given is not None:
-                undecided.append(mctx("{run}: no transcript gives call {call} as "
-                                      "its launch").format(run=path.stem, call=tid))
-            named = {id(n): n for v in (tid, *([aid] if aid else []))
-                     for n in naming.get(v, [])}
-            out.append(Launch(aid, child, epoch(e["timestamp"]), done, tid,
-                              agent_entries(named.values(), aid, tid)))
+        signs = [told.get(tid), told.get(result.get("agentId", "")),
+                 None if background else answered.get(tid)]
+        done = max((t for t in signs if t is not None), default=None)
+        aid = agent_id(child) if child else result.get("agentId")
+        if child is None and done is None and given is not None:
+            undecided.append(mctx("{run}: no transcript gives call {call} as "
+                                  "its launch").format(run=path.stem, call=tid))
+        named = dict.fromkeys(line for v in (tid, *([aid] if aid else []))
+                              for line in naming.get(v, []))
+        out.append(Launch(aid, child, epoch(at), done, tid,
+                          agent_entries((n for p, i in named for n in line_entries(p, i)),
+                                        aid, tid)))
     return out
 
 
