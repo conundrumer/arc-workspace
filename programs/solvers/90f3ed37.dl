@@ -63,16 +63,17 @@
     anchor_corner(Diag) :-
         grow_dir(D), opposite(D, Back), align_sense(S), turn(S, D, D_align),
         diag_dirs(Diag, _, Back, D_align).
+
+    // --- $Lines, $Across ---
+    // The axis the shapes run along.
+    .decl grow_axis(a: Axis)
+    grow_axis(A) :- grow_dir(D), axis_of(D, A).
 }
 
 .init params = Params
 
 .decl fg(p: Position)
 fg(P) :- in(P, Col), !params.bg(Col).
-
-// The line a cell sits on, axis-only across the growth.
-.decl line_of(p: Position, l: Position) inline
-line_of(P, L) :- params.grow_dir(D), axis_of(D, A), split(P, A, _, L).
 
 .decl parse_choice(pa: Parse)
 parse_choice($Lines()).
@@ -83,9 +84,12 @@ parse_choice($Objects()).
 // --- $Lines ---
 
 .init runs = Components<Unit>
-runs.node($U(), L) :- fg(P), line_of(P, L).
+runs.node($U(), L) :-
+    fg(P), params.grow_axis(A), split(P, A, _, L).  // the cell's line across the growth
 
-shape($Lines(), Id, P) :- fg(P), line_of(P, L), runs.label($U(), L, Id).
+shape($Lines(), Id, P) :-
+    fg(P), params.grow_axis(A), split(P, A, _, L),  // the cell's line across the growth
+    runs.label($U(), L, Id).
 
 // --- $Objects ---
 
@@ -168,7 +172,7 @@ seat(Id, P_out, [Pa, S, An, $Corner()]) :-
 
 seat(Id, P_out, [Pa, S, An, $Across()]) :-
     shift(Pa, Id_full, Id, V, S, An), shape(Pa, Id_full, P_full),
-    params.grow_dir(D), axis_of(D, A), split(V, A, _, V_across),   // the move across
+    params.grow_axis(A), split(V, A, _, V_across),                 // the move across
     compose(P_full, V_across, P_out).
 
 // --- shared ---

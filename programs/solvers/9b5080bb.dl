@@ -32,7 +32,14 @@
 
 .decl out(p: Position, col: Color, ch: Choice)
 
-.comp Params {}
+.comp Params {
+    // --- $Body ---
+    // The 2×2 square a body cell lies in.
+    .decl square(p: Position)
+    GRID_MASK_2x2(square,
+        1, 1,
+        1, 1)
+}
 
 .init params = Params
 
@@ -91,17 +98,15 @@ rect(Id, B, $Majority()) :- majority_rect.box(Id, B).
 
 // --- $Body ---
 
-// The three cells that complete P's 2×2 square on corner Diag's side.
-.decl quad(p: Position, diag: DiagDir, q1: Position, q2: Position, q3: Position) inline
-quad(P, Diag, Q1, Q2, Q3) :-
-    diag_dirs(Diag, _, D1, D2),
-    neighbor(P, D1, Q1), neighbor(P, D2, Q2), neighbor(P, Diag, Q3).
+// The 2×2 blocks of each figure.
+// @claim figure
+.init block = Occurrences<Ident, Unit>
+block.cell(Id, P, $U()) :- figure(Id, P).
+block.shape(Id, S, $U()) :- figure(Id, _), params.square(S).
 
 // A figure cell in a 2×2 block of the figure.
 .decl body(id: Ident, p: Position)
-body(Id, P) :-
-    figure(Id, P), quad(P, _, Q1, Q2, Q3),
-    figure(Id, Q1), figure(Id, Q2), figure(Id, Q3).
+body(Id, P) :- block.occurrence(Id, M), params.square(S), compose(M, S, P).
 
 // @claim figure
 .init body_box = Bbox<Ident>

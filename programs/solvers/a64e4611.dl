@@ -180,17 +180,11 @@ blank(P) :- in(P, Col), params.background(Col).
 open_run.node($U(), P) :- blank(P).
 open_run.dir($U(), D) :- blank(_), dir_elem(D).
 
-// Q lies within the margin of P on both axes.
-.decl near(p: Position, q: Position) inline
-near(P, Q) :- params.margin(M), uniform_outset(M, O), compose(P, O, B), inside(Q, B).
-
-// Cell P of box B lies within the margin of B's side D.
-.decl near_side(b: Box, p: Position, d: Dir) inline
-near_side(B, P, D) :- crop(P, B, P_rel), dist(P_rel, D, K), params.margin(M), K < M.
-
-// Some ink cell lies within the margin of P.
+// Some ink cell lies within the margin of P on both axes.
 .decl crowded(p: Position)
-crowded(P) :- in(P, _), ink(Q), near(P, Q).
+crowded(P) :-
+    in(P, _), ink(Q),
+    params.margin(M), uniform_outset(M, O), compose(P, O, B), inside(Q, B).
 
 // ---------------------------------------------------------------------------
 // Empty rectangles
@@ -397,7 +391,9 @@ kept_side($BandEdgeMargin(), B, D) :-
 
 // @claim band-fill
 .decl band_rim(eg: EdgeRule, b: Box, p: Position)
-band_rim(Eg, B, P) :- kept_side(Eg, B, D), in(P, _), near_side(B, P, D).
+band_rim(Eg, B, P) :-
+    kept_side(Eg, B, D), in(P, _),
+    crop(P, B, P_rel), dist(P_rel, D, K), params.margin(M), K < M.  // within the margin of side D
 
 .decl band_green(r: Reading, eg: EdgeRule, b: Box, p: Position)
 band_green(R, Eg, B, P) :-
@@ -497,7 +493,9 @@ chan_box.cell(C, Q) :- cross(C, Q).
 chan_box.cell(C, F) :- depth.low(C, N), cross_end(C, F, N).
 
 .decl chan_rim(c: Channel, p: Position)
-chan_rim(C, P) :- chan_box.box(C, B), in(P, _), dir_elem(D), !dist(B, D, 0), near_side(B, P, D).
+chan_rim(C, P) :-
+    chan_box.box(C, B), in(P, _), dir_elem(D), !dist(B, D, 0),
+    crop(P, B, P_rel), dist(P_rel, D, K), params.margin(M), K < M.  // within the margin of side D
 
 channel_green(K, $ChannelRect(), P) :-
     chan_box.box([K, D, Id], B), in(P, _), inside(P, B), !chan_rim([K, D, Id], P).
@@ -534,7 +532,7 @@ group_box.cell([D, K, Id], E) :- arm_group.label([D, K], E, Id).
 .decl group_end(g: Group, e: Position, d_p: Dir)
 group_end([D, K, Id], E, D_p) :-
     arm_group.label([D, K], E, Id), group_box.box([D, K, Id], B), perp_dir(D, D_p),
-    near_side(B, E, D_p).
+    crop(E, B, E_rel), dist(E_rel, D_p, K_p), params.margin(M), K_p < M.
 
 // An arm's line: a line of a group with a line past the margin at each end,
 // less the margin at each end off the grid edge.

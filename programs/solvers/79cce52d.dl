@@ -18,6 +18,10 @@
 .comp Params {
     .decl corner(d: DiagDir) corner(DIAG_TL).   // the border bands meet here
 
+    // The edge opposite the corner on axis a.
+    .decl far_edge(a: Axis, d: Dir)
+    far_edge(A, FE) :- corner(Diag), dir_of(Diag, A, D), opposite(D, FE).
+
     // --- $Marked ---
     .decl marker_col(c: Color) marker_col(2).
 
@@ -33,15 +37,11 @@ kept(P, Col) :-
     in(P, Col), params.corner(Diag),
     diag_dirs(Diag, _, D1, D2), !dist(P, D1, 0), !dist(P, D2, 0).
 
-// Line index along axis a: distance from the edge opposite the corner —
-// unchanged by the border drop, so input cells and output lines share it.
-.decl line_idx(a: Axis, p: Position, k: number) inline
-line_idx(A, P, K) :-
-    params.corner(Diag), dir_of(Diag, A, D), opposite(D, FE), dist(P, FE, K).
-
+// A line's index along axis a is its distance from the far edge, which the
+// border drop leaves unchanged, so input cells and output lines share it.
 // Each payload line, by index, is a node of the cycle.
 .decl line_set(a: Axis, k: number)
-line_set(A, K) :- kept(P, _), line_idx(A, P, K).
+line_set(A, K) :- kept(P, _), params.far_edge(A, FE), dist(P, FE, K).
 
 .init line_cycle = IndexCycle<Axis>
 line_cycle.idx(A, K) :- line_set(A, K).
@@ -82,9 +82,9 @@ turns.step(A, N) :- line_count.tally(A, N).
 .decl shift(a: Axis, n: number, ch: Choice)
 shift(A, N, Ch) :-
     in(P_cn, _), params.corner(Diag), corner_dist(P_cn, Diag, 0),      // the corner cell
-    dir_of(Diag, A, D), opposite(D, O),                                // inward along a
-    neighbor(P_cn, O, P_a), line_idx(A, P_a, K_ca),                    // the line beside it
-    marker(A, P_mk, Ch), line_idx(A, P_mk, K_mk),                      // the marker's line
+    params.far_edge(A, FE),                                            // inward along a
+    neighbor(P_cn, FE, P_a), dist(P_a, FE, K_ca),                      // the line beside it
+    marker(A, P_mk, Ch), dist(P_mk, FE, K_mk),                         // the marker's line
     turns.walk(A, K_ca, N, K_mk).
 
 // The output frame — the payload's per-axis extents.
@@ -94,9 +94,9 @@ frame.extent($U(), A, N) :- line_count.tally(A, N).
 // Along-axis output seat of each payload cell: its line, rotated.
 .decl out_along(a: Axis, p: Position, q: Position, ch: Choice)
 out_along(A, P, Q, Ch) :-
-    kept(P, _), line_idx(A, P, K_in),
+    kept(P, _), params.far_edge(A, FE), dist(P, FE, K_in),
     shift(A, N, Ch), turns.walk(A, K_in, N, K_out),     // its line, rotated by the shift
-    frame.cell($U(), A, Q), line_idx(A, Q, K_out).   // the output line at that index
+    frame.cell($U(), A, Q), dist(Q, FE, K_out).      // the output line at that index
 
 out(P_out, Col, Ch) :-
     kept(P, Col),

@@ -16,6 +16,13 @@
 
 .comp Params {
     .decl bg(c: Color) bg(0).
+
+    // --- $Thick ---
+    // The 2x2 square a thick cell lies in.
+    .decl square(p: Position)
+    GRID_MASK_2x2(square,
+        1, 1,
+        1, 1)
 }
 
 .init params = Params
@@ -58,11 +65,9 @@ keep(P, Col, $Rect()) :- biggest.mode($U(), B), rect_cell(B, Col, P).
 
 // --- $Thick ---
 
-.decl quad(p: Position, diag: DiagDir, q1: Position, q2: Position, q3: Position) inline
-quad(P, G, Q1, Q2, Q3) :-
-    diag_dirs(G, _, D1, D2),
-    neighbor(P, D1, Q1), neighbor(P, D2, Q2), neighbor(P, G, Q3).
+// The 2x2 squares of each color.
+.init block = Occurrences<Color, Unit>
+block.cell(Col, P, $U()) :- ink(P, Col).
+block.shape(Col, S, $U()) :- ink(_, Col), params.square(S).
 
-keep(P, Col, $Thick()) :-
-    ink(P, Col), quad(P, _, Q1, Q2, Q3),           // a cell and a 2x2 square it anchors
-    ink(Q1, Col), ink(Q2, Col), ink(Q3, Col).      // the square is all its color
+keep(P, Col, $Thick()) :- block.occurrence(Col, M), params.square(S), compose(M, S, P).

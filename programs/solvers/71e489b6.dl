@@ -13,6 +13,12 @@
 .comp Params {
     .decl ground(c: Color) ground(0).
     .decl halo(c: Color) halo(7).
+
+    // The 2x2 square a solid cell lies in.
+    .decl square(p: Position)
+    GRID_MASK_2x2(square,
+        1, 1,
+        1, 1)
 }
 
 .init params = Params
@@ -35,15 +41,14 @@ continued(P) :- figure_nbr(P, D1), figure_nbr(P, D2), D1 != D2.
 .decl ground(p: Position)
 ground(P) :- in(P, _), !continued(P).
 
-// The three cells that complete P's 2x2 square on corner Diag's side.
-.decl quad(p: Position, diag: DiagDir, q1: Position, q2: Position, q3: Position) inline
-quad(P, Diag, Q1, Q2, Q3) :-
-    diag_dirs(Diag, _, D1, D2),
-    neighbor(P, D1, Q1), neighbor(P, D2, Q2), neighbor(P, Diag, Q3).
+// The 2x2 blocks of ground.
+.init block = Occurrences<Unit, Unit>
+block.cell($U(), P, $U()) :- ground(P).
+block.shape($U(), S, $U()) :- params.square(S).
 
 // Ground in a 2x2 block of ground.
 .decl solid(p: Position)
-solid(P) :- ground(P), quad(P, _, Q1, Q2, Q3), ground(Q1), ground(Q2), ground(Q3).
+solid(P) :- block.occurrence($U(), M), params.square(S), compose(M, S, P).
 
 // The clusters of thin ground.
 .init cluster = Components<Unit>

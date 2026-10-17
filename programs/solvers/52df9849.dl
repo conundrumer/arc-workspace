@@ -19,17 +19,10 @@
 .decl obj(p: Position, col: Color)
 obj(P, Col) :- in(P, Col), !params.bg(Col).
 
-// `nearer` allowing equality: p sits at q's level toward d, or nearer
-// that side.
-.decl nearer_eq(d: Dir8, p: Position, q: Position) inline
-nearer_eq(D, P, Q) :- dir_elem(D), dist(P, D, K), dist(Q, D, K2), K <= K2.
-nearer_eq(D, P, Q) :-
-    diag_dir_elem(D), corner_dist(P, D, K), corner_dist(Q, D, K2), K <= K2.
-
 // The color reaches p's level toward d: some cell of it lies at that level
 // or nearer that side.
 .decl reaches(col: Color, d: Dir8, p: Position)
-reaches(Col, D, P) :- obj(Q, Col), in(P, _), nearer_eq(D, Q, P).
+reaches(Col, D, P) :- obj(Q, Col), in(P, _), dir8_elem(D), !nearer(D, P, Q).
 
 // The color's segment swept along axis a.
 .decl sweep(col: Color, a: Axis4, p: Position)
