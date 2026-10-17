@@ -400,8 +400,7 @@ def findings(number: str, worktree: Path, left: str | None, questions: list[str]
     lines.extend(editor_reports(reports))
     if questions:
         lines.append(mctx("Decide, as items left for a decision, the `question` tickets filed "
-                          "on the change, {questions}, and send each decision to its "
-                          "editors.").format(questions=", ".join(questions)))
+                          "on the change, {questions}.").format(questions=", ".join(questions)))
     if unfinished:
         lines.append(mctx("Decide, as items left for a decision, the items that the latest "
                           "report above of each of {editors} gives as "

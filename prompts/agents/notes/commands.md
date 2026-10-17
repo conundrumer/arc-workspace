@@ -1,6 +1,6 @@
 + budget: 10900
 * comment: when editing this doc
-    - Each agent whose tools include `Bash` inlines [commands](#commands), for running, waiting on and ending its commands; each agent that gives a final reply to its launcher inlines [final-report](#final-report), and the code reviewer [report-file](#report-file). The doc editor, the ticket analyst, the draft analyst and the decision analyst load Background agents by a link, where a command prints an Agent call.
+    - Each agent whose tools include `Bash` inlines [commands](#commands), for running, waiting on and ending its commands; each agent that gives a final reply to its launcher inlines [final-report](#final-report), and the code reviewer [report-file](#report-file). The doc editor, the ticket analyst, the draft analyst and the decision analyst load Background agents by a link.
     - Acts, each with its section:
         - Running a command: [commands](#commands).
         - Waiting on a command: [waiting-on-commands](#waiting-on-commands).
