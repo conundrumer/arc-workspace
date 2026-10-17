@@ -1,4 +1,5 @@
-"""After a batch: once every agent of a batch has returned, the release of
+"""After a batch: once every agent of a batch has returned, or once the
+batch has stood `BATCH_SPAN` since its first launch, the release of
 tickets, a code review where the batch merged a change to the code, a
 standing doc review where the batch merged a change, and two agents
 launched for the rest, one on the profile of the batch's runs and one,
@@ -39,9 +40,9 @@ records, or, where each has one, the reader whose tag points at the
 oldest commit.
 
 The profile agent profiles each run `profile_runs.py --under` takes, and
-may launch a transcript review only of those that are members of the
-batch: a review of After a batch's own runs files tickets whose triage
-opens the next batch. The ticket analyst on the tickets the
+may launch a transcript review only of those that no batch holds: a
+review of After a batch's own runs files tickets whose triage opens the
+next batch. The ticket analyst on the tickets the
 batch filed is the one `triage` launches on any open ticket."""
 
 import re
@@ -56,7 +57,7 @@ from operations.taking import release
 from operations.filing import scratch_dir
 from operations.directives import Directive, numbers
 from operations.roles import AGENT_ID, Purpose, Role, analyst_of, analyst_subject
-from operations.state import DOC_REVIEW, Agent, Merge, State, NotComputed, code_review_tag
+from operations.state import DOC_REVIEW, Agent, Call, Merge, State, NotComputed, code_review_tag
 from operations.handled import bash_calls
 from operations.steps import Bash, Launch, Step, Undecided
 from operations.log_commands import FILE_TICKET
@@ -66,6 +67,9 @@ from ticketing.vocabulary import Kind, Status
 OWN = frozenset({Role.BATCH_PROFILE, Role.BATCH_GATE, Role.CODE_REVIEWER, Role.COST_AUDIT})
 """The roles of After a batch and the cost audit, which no batch holds."""
 
+BATCH_SPAN = 3600
+"""The seconds since a batch's first launch after which the batch closes
+with members pending."""
 
 
 def start(state: State, before: float | None = None) -> float:
@@ -76,7 +80,12 @@ def start(state: State, before: float | None = None) -> float:
 
 
 def members(state: State, since: float) -> list[Agent]:
-    return [a for a in state.transcripts.agents if a.launched > since and not follows(a.role, a.subject)]
+    return [a for a in batched(state) if a.launched > since]
+
+
+def batched(state: State) -> list[Agent]:
+    """The agents of the session that a batch holds."""
+    return [a for a in state.transcripts.agents if not follows(a.role, a.subject)]
 
 
 def followed(state: State, at: float) -> list[Agent]:
@@ -123,7 +132,7 @@ def step(state: State) -> Step | None:
     merges = merged(state, since)
     if not batch and not merges:
         return None
-    if any(a.pending for a in batch):
+    if any(a.pending for a in batch) and state.now - min(a.launched for a in batch) < BATCH_SPAN:
         return None
     if (s := release(state)) is not None:
         return s
@@ -151,28 +160,32 @@ def step(state: State) -> Step | None:
         return runs
     if (s := assessment(state)) is not None:
         return s
-    ids = {a.agent_id for a in batch}
+    ids = {a.agent_id for a in batched(state)}
     return Launch(Role.BATCH_PROFILE, str(n),
                   briefs.batch_profile(runs, [r for r in runs if r in ids], head))
 
 
 def batch_runs(state: State, batch: list[Agent], since: float,
                until: float | None) -> list[str] | Step:
-    """The runs the last call of `--under` of each operator of `batch`, or
-    of this operator where `batch` is empty, made after `since`, and
-    before `until` where it is given, takes, or the step that stands in
-    their place."""
+    """The runs the last call of `--under` of each operator made after
+    `since`, and before `until` where it is given, takes, or the step that
+    stands in their place. The operators are those of `batch`, or this
+    operator where `batch` is empty, and each operator of an agent of the
+    session whose last call of `--under` before `since` left a run open,
+    so that a run still at work at one batch's close is taken at a later
+    one, whether or not that operator still runs."""
+    ops = {a.operator for a in batch} or {state.me}
+    ops |= {op for op in {a.operator for a in state.transcripts.agents}
+            if (last := last_under(state, op, None, since)) is not None and last[1].left}
     runs: list[str] = []
-    for op in sorted({a.operator for a in batch} or {state.me}):
+    for op in sorted(ops):
         command = under_command(op)
-        calls = [(c, u) for c in bash_calls(state, command)
-                 if c.time > since and (until is None or c.time < until)
-                 and c.result is not None and (u := read_under(c.result)) is not None]
-        if not calls:
+        last = last_under(state, op, since, until)
+        if last is None:
             return Bash(command)
-        if calls[-1][0].error:
+        if last[0].error:
             return Undecided(mctx("`{command}` failed").format(command=command))
-        runs += calls[-1][1].taken
+        runs += last[1].taken
     return runs
 
 
@@ -326,3 +339,14 @@ def read_under(output: str) -> Under | None:
     if len(ids) != int(took[0][0]) or not all(RUN.fullmatch(i) for i in open_ids + ids):
         return None
     return Under(frozenset(open_ids), tuple(ids))
+
+
+def last_under(state: State, operator: str, since: float | None,
+               until: float | None) -> tuple[Call, Under] | None:
+    """The last call of `--under` on `operator`, of those made after
+    `since` and before `until`, each where it is given, whose output
+    `read_under` reads, with what it reads; None where there is none."""
+    calls = [(c, u) for c in bash_calls(state, under_command(operator))
+             if (since is None or c.time > since) and (until is None or c.time < until)
+             and c.result is not None and (u := read_under(c.result)) is not None]
+    return calls[-1] if calls else None
