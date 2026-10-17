@@ -59,7 +59,10 @@ The top of the stack holds every change committed, so where the gate runs
 every command, it traces them and writes a dependency record of that
 commit into its directory.
 
-When every check passes, the script fast-forwards `master` in the main tree
+When every check passes, the script runs in the main tree
+`uv run python scripts/context.py context --keep-tree HEAD`, so that the
+readers' updates after the merge find the tree of the old `master` made,
+and goes on where it fails. It then fast-forwards `master` in the main tree
 to the top of the stack, and runs in the main tree
 `uv run python scripts/context.py --write`,
 `uv run python scripts/document_pass.py` and
@@ -202,6 +205,10 @@ from operations.worktrees import BASE  # noqa: E402
 
 DOCUMENT_PASS = ("scripts/document_pass.py",)
 """The command, after `uv run python`, that files a whole-document pass."""
+
+TREE_KEEP = ("scripts/context.py", "context", "--keep-tree", "HEAD")
+"""The command, after `uv run python`, that makes the tree of the main
+tree's `HEAD` that the readers' updates read."""
 
 
 def say(text: str, file: TextIO | None = None, flush: bool = False) -> None:
@@ -689,11 +696,25 @@ def remove(main: Path, change: Change) -> None:
     checkout.git_out(main, "branch", "-q", "-d", branch)
 
 
+def run_step(main: Path, argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+    """`uv run python` with `argv` run in the main tree `main`, said and
+    timed as a step of the merge."""
+    shown = " ".join(argv)
+    say(mctx("running {shown} in the main tree").format(shown=shown), flush=True)
+    with timed(shown):
+        return run_in(main, ("uv", "run", "python", *argv))
+
+
 def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
-    """Fast-forward `master` to the top of `changes`, write the context in
+    """Make the tree of the old `master` for the readers' updates,
+    fast-forward `master` to the top of `changes`, write the context in
     the main tree, file a whole-document pass where one is due, adopt the
     dependency record the gate wrote into `gate_out`, and remove each change's worktree and branch."""
     replaced = refuse_main_touched(main, {c.worktree: c.touched for c in changes})
+    done = run_step(main, TREE_KEEP)
+    if done.returncode != 0:
+        say(mctx("{shown} failed in {main}; the merge goes on:").format(
+            shown=" ".join(TREE_KEEP), main=main) + "\n" + said(done), flush=True)
     modes = {p: (main / p).stat().st_mode for p in replaced}
     for p in sorted(replaced):
         (main / p).unlink()
@@ -711,10 +732,7 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
     for argv in (CONTEXT_WRITE, DOCUMENT_PASS,
                  ("scripts/gate.py", "--adopt-record", str(gate_out))):
         shown = " ".join(argv)
-        say(mctx("running {shown} in the main tree").format(shown=shown),
-              flush=True)
-        with timed(shown):
-            done = run_in(main, ("uv", "run", "python", *argv))
+        done = run_step(main, argv)
         if done.returncode != 0:
             raise Failed(mctx("{master} is fast-forwarded, and {shown} failed in {main}; the "
                               "worktrees and branches of {branches} stay:").format(

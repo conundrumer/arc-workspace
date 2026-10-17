@@ -7,7 +7,8 @@ hold. Before the removal, the script also moves the files under its
 taken. A file the main tree holds untracked and a change carries keeps
 its main-tree content where a pass edited it after the carry, which the
 merge refuses, and where the fast-forward fails after its removal, which
-writes it back."""
+writes it back. The merge makes the readers' tree of the old `master`
+before the fast-forward, and fast-forwards where that make fails."""
 
 import os
 import subprocess
@@ -210,3 +211,26 @@ def test_carried_file_is_written_back_where_the_fast_forward_fails(
     with pytest.raises(merge_change.Failed):
         merge_change.merge([(worktree, "m")])
     assert (main / "p" / "u").read_text() == "pass"
+
+
+def test_the_tree_is_made_before_the_fast_forward_and_its_failure_merges(
+        merge_change, carrying, monkeypatch):
+    main, worktree = carrying
+    steps: list[str] = []
+    git_ = merge_change.checkout.git
+
+    def run_in(tree, argv):
+        steps.append(" ".join(argv))
+        return subprocess.CompletedProcess(argv, 0 if "--keep-tree" not in argv else 1, "", "")
+
+    def recorded(tree, *argv, **kw):
+        if argv[:1] == ("merge",):
+            steps.append("merge")
+        return git_(tree, *argv, **kw)
+
+    monkeypatch.setattr(merge_change, "run_in", run_in)
+    monkeypatch.setattr(merge_change.checkout, "git", recorded)
+    merge_change.merge([(worktree, "m")])
+    keep = " ".join(("uv", "run", "python", *merge_change.TREE_KEEP))
+    assert steps[:2] == [keep, "merge"]
+    assert (main / "p" / "u").read_text() == "edited"

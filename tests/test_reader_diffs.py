@@ -97,3 +97,20 @@ def test_a_make_prunes_the_trees_of_a_deleted_cache(repo: tuple[Path, str],
     with rd._tree_at(commit):
         pass
     assert len(_worktrees(root)) == 2
+
+
+def test_a_kept_tree_is_entered_with_no_worktree_add(repo: tuple[Path, str],
+                                                     monkeypatch: pytest.MonkeyPatch) -> None:
+    _, commit = repo
+    rd.keep_tree(commit)
+    calls: list[tuple[str, ...]] = []
+    git_out = checkout.git_out
+
+    def recorded(tree: Path, *argv: str) -> str:
+        calls.append(argv)
+        return git_out(tree, *argv)
+
+    monkeypatch.setattr(checkout, "git_out", recorded)
+    with rd._tree_at(commit) as tree:
+        assert (tree / "scripts" / "context.py").exists()
+    assert not [c for c in calls if c[:2] == ("worktree", "add")]

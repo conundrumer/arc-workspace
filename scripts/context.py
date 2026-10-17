@@ -19,7 +19,7 @@ from handbook.generated import MANIFEST
 from handbook.libcheck import check
 from handbook.paths import REPO_ROOT
 from handbook.reader_diffs import (context_at, context_diff, contexts_diff,
-                                   held_update_diff, update_diff)
+                                   held_update_diff, keep_tree, update_diff)
 from handbook.readers import context_text, contexts_text, reader_named
 
 HELP = mctx("""
@@ -39,6 +39,7 @@ HELP = mctx("""
         uv run python scripts/context.py context --diff <commit> <reader> [args]  # its diff since a commit
         uv run python scripts/context.py context --update <commit> <commit> <reader> [args]  # what a running reader gets
         uv run python scripts/context.py context --update --held <file> <file> <commit> <reader> [args]  # what a subagent gets at its first update
+        uv run python scripts/context.py context --keep-tree <commit>  # make the commit's tree the forms above render in
         ```
     - The items below say what each form does.
     - With no argument, the command prints the handbook, the passes a session runs, and the lib.
@@ -103,6 +104,7 @@ HELP = mctx("""
         - The context's before side is that reader's context at the commit, with its first marked section, the reader's own definition, holding the first file's text.
         - The second file's text gets a final newline where it has none, as `CLAUDE.md` has.
         - Each section links from either lead to runs from the commit.
+    - `context --keep-tree <commit>` makes the commit's tree, in which each form above that takes a commit renders, where none stands, and prints nothing.
     - Each hunk header line of the diffs `context --diff` and `context --update` print ends in the heading lines whose sections hold the hunk's first line, outermost first and joined by ` > `, as the text that line stands in renders them.
         - A heading line in the hunk starts a section that holds each line after it up to the next heading line with as many `#` or fewer.
     """)
@@ -162,6 +164,8 @@ if __name__ == "__main__":
         print(contexts_text(), end="")
     elif len(args) == 3 and args[:2] == ["contexts", "--diff"]:
         print(contexts_diff(args[2]), end="")
+    elif len(args) == 3 and args[:2] == ["context", "--keep-tree"]:
+        keep_tree(args[2])
     elif (len(args) >= 4 and args[0] == "context"
           and args[1] in AT_COMMIT):
         print(AT_COMMIT[args[1]](args[2], args[3], args[4:]), end="")

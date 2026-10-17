@@ -109,8 +109,8 @@ def _tree_at(commit: str) -> Iterator[Path]:
     """The tree of `commit`, a detached git worktree of the repository kept
     under `checkout.cache()`, one per commit, so that the checkout stays as
     it is, the commit's own code finds the main worktree as in any other
-    checkout, and the updates after one merge make the tree of the old
-    commit once.
+    checkout, and the tree of the old commit of one merge is made once,
+    by the merge (`keep_tree`) or by the first update after it.
 
     The first block that needs the tree makes it under an exclusive lock on
     the commit, and marks it whole once `git worktree add` has succeeded; a
@@ -155,6 +155,13 @@ def _tree_at(commit: str) -> Iterator[Path]:
                     whole.touch()
     finally:
         _sweep(trees)
+
+
+def keep_tree(commit: str) -> None:
+    """Makes the kept tree of `commit` (`_tree_at`) where none stands, so
+    that the blocks that need it later enter it whole."""
+    with _tree_at(commit):
+        pass
 
 
 RUNS = "reader-runs"
