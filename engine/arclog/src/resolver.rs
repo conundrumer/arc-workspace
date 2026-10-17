@@ -18,7 +18,11 @@ use crate::registry::{LibName, Registry};
 /// other lib names, into its definition. A program runs in either form.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MacroExpansion {
+    /// Each macro stays an atom of its lib name.
     Keep,
+    /// The atom of a macro gives way to the macro's definition, with the
+    /// label at each of the atom's sites in the place of its column's label
+    /// in the definition.
     Expand,
 }
 
@@ -118,8 +122,7 @@ pub enum Resolution {
 pub struct ColumnPosition(pub u16);
 
 /// The signature of a name a form reads: the hash of what the name resolves
-/// to, its columns and their types. A form's check result is cached on its
-/// canonical hash and the signatures of the names it reads.
+/// to, its columns and their types.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Signature(pub StableHash);
 

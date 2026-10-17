@@ -5,11 +5,17 @@
 //! its check.
 //!
 //! The lint maps each [`super::Refusal`] to the places of its node: the
-//! form's path in the case program joined with the refusal's path, then
-//! [`crate::solver::Case::file_path`], then each place that the
-//! [`crate::layout::Layout`] of the solver that owns the file gives that
-//! path, the solver's own or its representative's. Each diagnostic's location is
-//! [`crate::diagnostic::Location::Places`].
+//! refusal's path mapped from the form's canonical order to its source order
+//! through [`crate::program::canonical::CanonicalOrder`], joined to the
+//! form's path in the case program, then [`crate::solver::Case::file_path`],
+//! then each place that the [`crate::layout::Layout`] of the solver that
+//! owns the file gives that path, the solver's own or its representative's.
+//! Each diagnostic's location is [`crate::diagnostic::Location::Places`].
+//!
+//! A second spelling, such as `NOT` before a form or `(= Y *X)`, is a
+//! suggestion and no rule of the language
+//! (`docs/arclog/arclog.md#second-spellings`), so no check of the lint
+//! refuses one.
 
 #![allow(unused_variables, dead_code)]
 

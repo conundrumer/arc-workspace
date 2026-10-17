@@ -67,9 +67,10 @@ impl Color {
 /// An Example constant: the index of one example of the task, train or
 /// test.
 ///
-/// The index is the position of the example in the task file, an order of
-/// the task file that no output may read, as
-/// `docs/handbook/encoding.md#fidelity` gives, so it has no order.
+/// The index is the position of the example in the task file, which is how
+/// the task file encodes it and no part of the task's concept
+/// (`docs/handbook/encoding.md#fidelity`), so an Example has equality and no
+/// order.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Example(u16);
 
@@ -151,8 +152,8 @@ pub struct ReachedMarginBound {
 }
 
 /// An Ident: the index of a content in the task session's [`InternTable`].
-/// The number depends on the order of interning, so only equality on it
-/// reaches an output: an Ident has equality and no order.
+/// The number depends on the order of interning, so an Ident has equality
+/// and no order.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Ident(u32);
 
@@ -167,10 +168,7 @@ pub enum Term {
 }
 
 /// `Term::encode` and `Term::decode` are the public way between a term and
-/// its id, which a construction of `arclog-constructions` takes. A caller
-/// decodes an id only at the type the checker gives its column, as
-/// [`crate::types::ProgramTypes`] holds it: a decode at another type would
-/// read an encoding as a `Number`, an order that the order rule forbids.
+/// its id, which a construction of `arclog-constructions` takes.
 impl Term {
     /// The term id of the term.
     ///
@@ -182,7 +180,10 @@ impl Term {
     /// The term that `id` stands for at a column of type `ty`.
     ///
     /// A row has no type tag, so the column's static type is the one source
-    /// of the interpretation.
+    /// of the interpretation: at the type the checker gives the id's column,
+    /// as [`crate::types::ProgramTypes`] holds it, the term is the one the id
+    /// stands for, and at another type it is a term the id does not stand
+    /// for, such as an encoding read as a `Number`.
     pub fn decode(id: TermId, ty: &ValueType) -> Term {
         todo!()
     }
@@ -218,7 +219,7 @@ impl WrittenIdent {
 /// A set of terms of one member type, the content of an Ident. It holds its
 /// members in one canonical order of their term ids, so that equal sets are
 /// equal contents, and that order is private: the set gives membership and
-/// each member, and no output may read the order they come in.
+/// each member, as [`MemberSet::each`] gives them.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct MemberSet {
     member: ValueType,
@@ -244,7 +245,7 @@ impl MemberSet {
         todo!()
     }
 
-    /// Each member. No output may read the order they come in.
+    /// Each member, in an order of encodings and no order of the content.
     #[allow(unreachable_code)]
     pub fn each(&self) -> impl Iterator<Item = &[TermId]> + '_ {
         todo!();
@@ -256,10 +257,15 @@ impl MemberSet {
 /// record's column group, one per field, so a value written as a list is
 /// read into the same columns. A Color's digit, a number and a
 /// Box's margins are encoded as `ty` reads them, and an Ident's written
-/// number is interned in `table` as a [`Content::FromFile`]. The caller
-/// gives the type the `param` form writes, or the type check infers, as
-/// [`crate::program::DataValue`] gives. `registry` gives which constants a
-/// type such as `C4` admits.
+/// number is interned in `table` as a [`Content::FromFile`]. `registry`
+/// gives which constants a type such as `C4` admits.
+///
+/// This is the one step from a written value to its term ids, after the type
+/// check, for `param` rows and `assign` rows alike. `ty` is the type of the
+/// value's column: the one the `param` form writes, or, for a relation with
+/// no `param` form, such as a `RULE_OR_DET` relation, the one the type check
+/// infers. A field of a derivation's row takes the type that the registry's
+/// [`crate::registry::Derivation`] gives.
 pub fn encode_data_value(
     value: &crate::program::DataValue,
     ty: &ValueType,
@@ -286,6 +292,7 @@ pub enum DataValueError {
 pub struct InternTable {
     /// The content of each number given, `None` once freed.
     contents: Vec<Option<Content>>,
+    /// The Idents of the contents of each hash.
     by_hash: crate::hash::StableHashMap<StableHash, Vec<Ident>>,
 }
 
@@ -301,9 +308,11 @@ impl InternTable {
         todo!()
     }
 
-    /// Frees each entry whose Ident `held` lacks. The caller gives every
-    /// Ident that a cached relation, a decode state or an event log holds.
-    /// A freed number is not given again in the session.
+    /// Frees each entry whose Ident `held` lacks and that no kept entry's
+    /// content holds: it keeps each Ident in `held`, and each member of a set
+    /// of Idents that a kept entry's content holds, at every depth. `held` is
+    /// every Ident that a cached relation, a decode state or an event log
+    /// holds. A freed number is not given again in the session.
     pub fn free_unheld(&mut self, held: &crate::hash::StableHashSet<Ident>) {
         todo!()
     }

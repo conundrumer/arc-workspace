@@ -11,8 +11,8 @@ use std::hash::{BuildHasher, Hasher};
 
 /// A 128-bit hash of a content, computed by [`StableHasher`].
 ///
-/// Two equal contents have equal hashes. Two contents whose hashes match are
-/// compared by content before they are taken as equal.
+/// Two equal contents have equal hashes. Two unequal contents can have
+/// equal hashes.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct StableHash(pub u128);
 
@@ -64,8 +64,8 @@ impl BuildHasher for StableState {
 /// Its iteration order follows from its keys and the order they were
 /// inserted in, so it is the same from run to run only where both are, and
 /// not where the keys hold an Ident, whose number depends on the order of
-/// interning. It is an order of encodings either way, so no output may
-/// depend on it.
+/// interning. It is an order of encodings either way, and no order of the
+/// content.
 pub type StableHashMap<K, V> = std::collections::HashMap<K, V, StableState>;
 
 /// A hash set under the engine's fixed hash function, with the iteration rule

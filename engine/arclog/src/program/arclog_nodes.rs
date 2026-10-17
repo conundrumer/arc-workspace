@@ -129,7 +129,11 @@ pub struct Clause {
     /// labels: the labels the clause keeps, or the
     /// labels an `OR` that is the whole body exports. A `DET` with a proposer
     /// and no body takes the proposer's columns, which the registry gives,
-    /// and holds none here.
+    /// and holds none here. So does a `DET_OR_RULE` or `RULE_OR_DET` line
+    /// with proposers and no body: its relation has its proposers' columns,
+    /// which map onto one another by position, each named as the line's
+    /// first proposer names it. A line with no proposer and no body derives
+    /// a fact, a relation of no columns.
     pub columns: Arc<[RelationColumn]>,
 }
 
@@ -155,8 +159,8 @@ pub struct Body {
 pub enum Conjunct {
     Atom(Node<Atom>),
     /// `NOT` before an atom, where every site of the atom joins, or before a
-    /// form, a second spelling that the lint never refuses, as
-    /// `docs/arclog/arclog.md#second-spellings` gives.
+    /// form, a second spelling, as `docs/arclog/arclog.md#second-spellings`
+    /// gives.
     Not(Negated),
     Constraint(Constraint),
     /// An `OR` form: its branches, as `docs/arclog/arclog.md#disjunction`
@@ -212,9 +216,7 @@ pub enum Operand {
 }
 
 /// A constraint over two labels. `=` makes its first label in `(= *X Y)`,
-/// and its second in `(= Y *X)`, a second spelling that the decoder blocks
-/// and the lint never refuses, since a second spelling is a suggestion and
-/// no rule of the language.
+/// and its second in `(= Y *X)`, a second spelling.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Constraint {
     pub op: ConstraintOp,

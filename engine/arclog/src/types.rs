@@ -17,8 +17,7 @@
 /// with different parts, in two programs of one task session, take two
 /// types. Each key row is an assembly of its own, aligned and posed on its
 /// own (`docs/arclog/rigid.md#form`), so two pose reads meet only where they
-/// read the same key labels, and the type check refuses a join of poses at
-/// different key labels. The key row is named as [`KeyRow`] gives.
+/// read the same key labels. The key row is named as [`KeyRow`] gives.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct AssemblyId {
     pub name: crate::program::RigidDetName,
@@ -81,8 +80,7 @@ pub enum ValueType {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FieldName(pub Box<str>);
 
-/// The result of the meet of two types. The check refuses a label, and a
-/// branch, whose meet is empty.
+/// The result of the meet of two types.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Meet {
     /// The greatest type below both.
@@ -114,9 +112,7 @@ impl ValueType {
 /// The types the type check infers for the labels of one form, which the
 /// check cache keeps beside the form's type check, so that the cases that
 /// share a form share its types. In the check cache a label is its canonical
-/// position, as `LabelId(position)`, and a key row's labels are the same;
-/// [`crate::check::check_program`] maps them to each form's own labels
-/// through [`crate::program::canonical::CanonicalOrder`], and
+/// position, as `LabelId(position)`, and a key row's labels are the same.
 /// [`ProgramTypes`] holds the form's own labels.
 #[derive(Clone, Debug, Default)]
 pub struct FormTypes {
@@ -124,7 +120,7 @@ pub struct FormTypes {
 }
 
 impl FormTypes {
-    /// The type of `label`.
+    /// The type of `label`, or `None` where the form has no such label.
     pub fn label(&self, label: crate::program::LabelId) -> Option<&ValueType> {
         todo!()
     }

@@ -11,10 +11,10 @@
 //!
 //! A path step is an index into the children of a node, which
 //! [`NodeRef::children`] gives: the nodes it holds, in the order the file
-//! writes them, each member of a list field counted in turn. Every stage
-//! walks an arclog path through [`node_at`] alone, and an arcdata path
-//! through [`data_node_at`] alone, so the layout, the edits, the resolver
-//! and the case programs number the children of a node alike.
+//! writes them, each member of a list field counted in turn. [`node_at`] is
+//! the one walk of an arclog path, and [`data_node_at`] the one walk of an
+//! arcdata path, so the layout, the edits, the resolver and the case
+//! programs number the children of a node alike.
 //!
 //! | Node | Children |
 //! | --- | --- |

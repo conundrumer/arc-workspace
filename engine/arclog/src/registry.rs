@@ -1,6 +1,7 @@
 //! The lib registry: the names of the lib, and what each declares. It is
-//! embedded from a tracked file under `engine/lib/` when the engine is
-//! compiled, so the wheel reads no file for it. A new lib element adds a
+//! embedded from the registry file and the proposers file, as
+//! [`REGISTRY_TEXT`] and [`PROPOSERS_TEXT`], when the engine is compiled, so
+//! the wheel reads no file for it. A new lib element adds a
 //! registry entry and changes no checker code.
 //!
 //! # The file
@@ -74,12 +75,10 @@ use crate::program::{Body, ColumnName, Node, PortName};
 use crate::terms::{OrientationConstant, OrientationType};
 use crate::types::ValueType;
 
-/// The text of the registry file, put into the crate when it is compiled,
-/// so the wheel reads no file for it.
+/// The text of the registry file, which [`Registry::get`] reads.
 pub const REGISTRY_TEXT: &str = include_str!("../../lib/registry.sexpr");
 
-/// The text of `engine/lib/proposers.arclog`, put into the crate when it is
-/// compiled, so the wheel reads no file for it, and read by
+/// The text of the proposers file, read by
 /// [`crate::read::read_sexprs`] with
 /// [`crate::layout::SourceFile::LibProposers`] and [`crate::read::read_body`].
 pub const PROPOSERS_TEXT: &str = include_str!("../../lib/proposers.arclog");
@@ -178,7 +177,8 @@ pub struct DefaultRows {
 }
 
 impl DefaultRows {
-    /// Each default row. No output may read the order they come in.
+    /// Each default row, in an order of encodings and no order of the
+    /// content.
     #[allow(unreachable_code)]
     pub fn each(&self) -> impl Iterator<Item = &[crate::program::DataValue]> + '_ {
         todo!();
@@ -239,9 +239,7 @@ pub struct Derivation {
 pub enum Macro {
     /// A lib relation: its declaration, its columns, types and modes, the
     /// label of the definition that each of its columns stands for, in the
-    /// order of the declaration's columns, and its definition. The expansion
-    /// of an atom of the macro puts the label at each of its sites in the
-    /// place of the column's label in the definition.
+    /// order of the declaration's columns, and its definition.
     Relation {
         relation: AlgebraRelation,
         labels: Box<[crate::program::LabelId]>,
@@ -298,7 +296,8 @@ impl ConstantSet {
         todo!()
     }
 
-    /// Each constant of the set. No output may read the order they come in.
+    /// Each constant of the set, in an order of encodings and no order of
+    /// the content.
     #[allow(unreachable_code)]
     pub fn each(&self) -> impl Iterator<Item = OrientationConstant> + '_ {
         todo!();

@@ -25,6 +25,7 @@ pub struct Solver {
     pub program: Node<Program>,
     /// The arcdata file.
     pub arcdata: Node<Arcdata>,
+    /// The layout of the two files.
     pub layout: Layout,
     /// The solver that the arcdata file's `representative` line names, whose
     /// claims this solver's forms are read under, as

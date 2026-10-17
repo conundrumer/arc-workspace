@@ -105,14 +105,9 @@ pub struct DataField {
     pub value: DataValue,
 }
 
-/// A value written in an arcdata file, held as the file writes it. Its typed
-/// value, such as a Box or one column per member of a list, comes after the
-/// type check, in one step for `param` rows and `assign` rows alike, by the
-/// type of its column: the one the `param` form writes, or, for a relation
-/// with no `param` form, such as a `RULE_OR_DET` relation, the one the type
-/// check infers. A field of a derivation's row takes the type that the
-/// registry's [`crate::registry::Derivation`] gives. That step is
-/// [`crate::terms::encode_data_value`].
+/// A value written in an arcdata file, held as the file writes it, with no
+/// type. [`crate::terms::encode_data_value`] gives its typed value, such as
+/// a Box or one column per member of a list.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum DataValue {
     /// An integer as the file writes it: a number, a Color's digit or an

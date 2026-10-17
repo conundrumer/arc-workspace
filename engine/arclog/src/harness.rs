@@ -34,7 +34,7 @@ pub enum CorpusError {
     MissingFile { path: PathBuf },
 }
 
-/// The solvers of `dir`, by task id.
+/// The solvers of `dir`, in the order of their task ids.
 pub fn corpus_solvers(dir: &Path) -> Result<Vec<CorpusSolver>, CorpusError> {
     todo!()
 }
@@ -53,6 +53,7 @@ pub enum SolverResult {
 /// one that compares the two lints, read it through this one parse.
 #[derive(Clone, Debug, Default)]
 pub struct LintReport {
+    /// Each error of the report, in the report's order.
     pub errors: Vec<LintError>,
 }
 
@@ -80,12 +81,15 @@ impl LintReport {
 /// The solvers of the corpus on which `check` failed, with its report.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct CorpusReport {
+    /// The number of solvers the check ran on.
     pub checked: usize,
+    /// Each solver the check failed on, with the check's report on it, in
+    /// the order of their task ids.
     pub failures: Vec<(CorpusSolver, Vec<String>)>,
 }
 
 /// Runs `check` over every solver of `dir`, on as many threads as the
-/// machine has, and gives the failures by task id.
+/// machine has, and gives the report over them.
 pub fn run_over_corpus<F>(dir: &Path, check: F) -> Result<CorpusReport, CorpusError>
 where
     F: Fn(&CorpusSolver) -> SolverResult + Sync,

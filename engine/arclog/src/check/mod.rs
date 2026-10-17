@@ -30,7 +30,17 @@ pub enum CheckId {
     Scope,
     /// The columns of each site.
     SiteColumns,
-    /// The type check, the order rule included.
+    /// The type check, the order rule included. A label that only
+    /// `(= *X 0)` gives a type takes the type of the instance input it
+    /// stands at, or else the join, as [`crate::types::ValueType::join`]
+    /// gives it, of the types that the relation's other clauses give its
+    /// column, each read from [`SolverClauses`]. Those clauses may stand in
+    /// other blocks, as an `ALT` that rederives the relation, and so in
+    /// other case programs; the check's [`CheckCacheKey`] then holds their
+    /// signatures. The check refuses the label where no type is above those
+    /// types. The check refuses a label, and a branch, whose
+    /// [`crate::types::Meet`] is empty, and a join of poses at different key
+    /// labels.
     Types,
     /// The pose rule: a Pose label stands only at the sites that
     /// `docs/arclog/rigid.md#the-pose` gives.
@@ -61,21 +71,27 @@ pub struct LabelInScope {
 /// The scope of a node: the declarations, labels and types visible at it.
 #[derive(Clone, Copy, Debug)]
 pub struct Scope<'a> {
+    /// The case program the node stands in.
     pub program: &'a ResolvedProgram,
+    /// The registry the program's names resolve against.
     pub registry: &'a Registry,
+    /// The labels visible at the node.
     pub labels: &'a [LabelInScope],
     /// The clauses of each relation across the solver's blocks.
     pub clauses: &'a SolverClauses,
 }
 
 /// Every clause of each relation that a solver declares, across its blocks
-/// and so across its cases, with the signature of each. A label that only
-/// `(= *X 0)` gives a type takes the type of the instance input it stands
-/// at, or of the column that another clause of the relation gives it, which
-/// may stand in another block, as an `ALT` that rederives the relation, and
-/// so in another case program; the check cache's key then holds that
-/// clause's signature. A synthesized program has one case, and its clauses
-/// are its own.
+/// and so across its cases. A key is a relation in the name scope it is
+/// declared in. Each entry of a key is one clause of that relation: the
+/// arclog file that holds the clause, the solver's or its representative's,
+/// the clause's path in that file, and the clause's signature. The entries
+/// of a key stand in a fixed order: the clauses of the solver's own file
+/// first, then those of its representative's, the order of the
+/// [`crate::solver::FileOwner`] variants, and within a file in the order of
+/// their paths, the index of the top-level form, then the index among the
+/// children at each step. A synthesized program has one case, and its
+/// clauses are its own.
 #[derive(Debug, Default)]
 pub struct SolverClauses {
     clauses: crate::hash::StableHashMap<(FileScope, crate::program::ProgramRelation), Box<[(crate::solver::FileOwner, NodePath, Signature)]>>,
@@ -92,7 +108,8 @@ pub enum FileScope {
 
 impl SolverClauses {
     /// The clauses of each relation of `solver`, by the arclog file that
-    /// holds each, the solver's or its representative's, and the path there.
+    /// holds each, the solver's or its representative's, and the path there,
+    /// each key's entries in the order [`SolverClauses`] gives.
     pub fn of(solver: &crate::solver::Solver, registry: &Registry) -> Self {
         todo!()
     }
@@ -103,7 +120,8 @@ impl SolverClauses {
     }
 
     /// Each clause of `relation` in the name scope `scope`, by its file and
-    /// its path there, with its signature.
+    /// its path there, with its signature, in the order [`SolverClauses`]
+    /// gives.
     pub fn of_relation(
         &self,
         scope: &FileScope,
@@ -125,9 +143,7 @@ pub struct CheckInput<'a> {
 /// the node the check read. A refusal holds no place in a file, and a cached
 /// one holds its path in the form's canonical order, so that it serves each
 /// form of equal content wherever it stands and however its lists and labels
-/// are ordered: the caller maps the path to the form's source order through
-/// [`crate::program::canonical::CanonicalOrder`], and the lint maps it then
-/// to each place of the node, as [`crate::diagnostic::Location`] gives.
+/// are ordered.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Refusal {
     pub message: Box<str>,
@@ -176,7 +192,7 @@ pub trait Check: Sync {
     /// The check's id.
     fn id(&self) -> CheckId;
 
-    /// The check over one whole node.
+    /// The check over one whole node: a pass, or each refusal it finds.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult;
 
     /// The check over a prefix. It refuses only where no completion of the
@@ -193,9 +209,11 @@ pub fn check_cycles(graph: &DependencyGraph, program: &ResolvedProgram) -> Check
 
 /// The key of the check cache: the form's canonical hash and the signatures
 /// of the names it reads, so the cases that share a form share its check.
-/// Where a label's type comes from another clause of the relation, as
-/// [`SolverClauses`] gives, that clause's signature is among the
-/// signatures.
+/// The signatures stand in a fixed order: those of the names the form
+/// reads, in the order of each name's first read in the form's canonical
+/// order, then, where a label's type comes from other clauses of a
+/// relation, as [`CheckId::Types`] gives, those clauses' signatures, in the
+/// order [`SolverClauses`] gives.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct CheckCacheKey {
     pub check: CheckId,
@@ -248,8 +266,14 @@ pub struct CheckedProgram {
 }
 
 /// Runs every check of [`checks`] over each form of `program`, and the
-/// cycle check, through `cache`. Each diagnostic's location is a
-/// [`crate::diagnostic::Location::Path`] in `program`.
+/// cycle check, through `cache`, and gives the checked program, or each
+/// diagnostic where a check refuses. It maps each refusal's path, which a
+/// [`Refusal`] holds in the form's canonical order, to the form's source
+/// order through [`crate::program::canonical::CanonicalOrder`], and the
+/// labels of each cached [`crate::types::FormTypes`], each its canonical
+/// position, to the form's own labels in the same way. Each diagnostic's
+/// location is a [`crate::diagnostic::Location::Path`] in
+/// `program`.
 pub fn check_program(
     program: ResolvedProgram,
     clauses: &SolverClauses,

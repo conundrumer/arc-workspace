@@ -45,6 +45,9 @@ pub type LabelNames = Box<[(Box<str>, crate::program::LabelId)]>;
 /// and the names of its labels: the one reader of a body that stands inside
 /// a form of the registry file, such as the definition of a lib name by
 /// other lib names, in the format [`crate::registry`] gives.
+///
+/// Fails where an s-expression of `exprs` matches no node kind of its
+/// format, with a diagnostic of the grammar at each such s-expression.
 pub fn read_body(exprs: &[SExpr], registry: &Registry) -> Result<(Node<crate::program::Body>, LabelNames), Vec<Diagnostic>> {
     todo!()
 }
@@ -53,6 +56,9 @@ pub fn read_body(exprs: &[SExpr], registry: &Registry) -> Result<(Node<crate::pr
 /// definition of a cell instance in the registry file, a lib name that a
 /// config expands into its definition, in the format [`crate::registry`]
 /// gives.
+///
+/// Fails where an s-expression of `expr` matches no node kind of its format,
+/// with a diagnostic of the grammar at each such s-expression.
 pub fn read_instance(expr: &SExpr, registry: &Registry) -> Result<(Node<crate::program::Instance>, LabelNames), Vec<Diagnostic>> {
     todo!()
 }
@@ -60,6 +66,9 @@ pub fn read_instance(expr: &SExpr, registry: &Registry) -> Result<(Node<crate::p
 /// The values of one row that `expr` writes, as an arcdata row is written
 /// (`docs/arclog/arcdata.md#params`), for a default row of an input in the
 /// registry file.
+///
+/// Fails where an s-expression of `expr` matches no node kind of its format,
+/// with a diagnostic of the grammar at each such s-expression.
 pub fn read_data_row(expr: &SExpr, registry: &Registry) -> Result<Box<[crate::program::DataValue]>, Vec<Diagnostic>> {
     todo!()
 }

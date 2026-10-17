@@ -5,8 +5,8 @@
 //! is a trie over the columns in one order, built on first use in the order
 //! that a clause's variable order asks for, and kept with the relation.
 //!
-//! A relation is a set: no function here gives its rows in an order that an
-//! output may read.
+//! A relation is a set: each function here that gives its rows gives them
+//! in an order of encodings and no order of the content.
 
 #![allow(unused_variables, dead_code)]
 
@@ -58,7 +58,8 @@ impl RowSet {
         todo!()
     }
 
-    /// Each row of the set. No output may read the order they come in.
+    /// Each row of the set, in an order of encodings and no order of the
+    /// content.
     #[allow(unreachable_code)]
     pub fn rows(&self) -> impl Iterator<Item = &[TermId]> + '_ {
         todo!();
@@ -145,7 +146,7 @@ impl Index {
     }
 
     /// Each value at this level, with its subtrie, for a join that walks
-    /// the level. No output may read the order they come in.
+    /// the level, in an order of encodings and no order of the content.
     #[allow(unreachable_code)]
     pub fn entries(&self) -> impl Iterator<Item = (TermId, &Index)> + '_ {
         todo!();

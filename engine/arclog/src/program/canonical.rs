@@ -32,8 +32,7 @@ pub trait Canonical {
     /// canonical forms are equal.
     fn write_canonical(&self, out: &mut CanonicalWriter, search: &mut SearchBudget, names: &dyn NameWriter);
 
-    /// Whether two values have equal canonical forms. Called only where
-    /// their canonical hashes match.
+    /// Whether two values have equal canonical forms.
     fn canonical_eq(&self, other: &Self) -> bool;
 }
 
@@ -123,6 +122,8 @@ impl Default for SearchBudget {
 #[derive(Clone, Debug)]
 pub struct CanonicalLabeling {
     pub positions: Box<[(super::LabelId, u32)]>,
+    /// Whether the search reached [`SEARCH_NODE_CAP`], so that the labeling
+    /// is the least one the search found.
     pub reached_cap: bool,
 }
 

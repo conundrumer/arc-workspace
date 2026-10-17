@@ -59,6 +59,8 @@ pub struct Node<T> {
 #[derive(Debug)]
 struct Shared<T> {
     value: T,
+    /// The hash of the value's canonical form, and whether its search
+    /// reached [`canonical::SEARCH_NODE_CAP`], set on first use.
     canonical_hash: OnceLock<(StableHash, bool)>,
 }
 
@@ -75,8 +77,7 @@ impl<T: canonical::Canonical> Node<T> {
     }
 
     /// Whether the search for the value's canonical form reached
-    /// [`canonical::SEARCH_NODE_CAP`], an alert that the caller reports with
-    /// the node.
+    /// [`canonical::SEARCH_NODE_CAP`], which is an alert on the node.
     pub fn reached_search_cap(&self) -> bool {
         todo!()
     }

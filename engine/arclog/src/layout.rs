@@ -63,6 +63,7 @@ pub struct Comment {
 #[derive(Clone, Debug, Default)]
 pub struct NodeLayout {
     pub place: Option<SourcePlace>,
+    /// The name the file writes for each label the node makes.
     pub label_names: Box<[(LabelId, Box<str>)]>,
     /// The indexes of the node's sites that the file writes as the bare
     /// label, as `docs/arclog/arclog.md#sites` gives.
@@ -76,6 +77,7 @@ pub struct NodeLayout {
 #[derive(Clone, Debug, Default)]
 pub struct Layout {
     pub nodes: StableHashMap<(SourceFile, NodePath), NodeLayout>,
+    /// Each comment of the two files.
     pub comments: Box<[Comment]>,
 }
 
