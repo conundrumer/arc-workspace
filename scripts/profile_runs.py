@@ -1,6 +1,6 @@
 """Profile agent runs from their Claude Code transcripts: where each run's
 wall time goes, the budget of each agent type and role, the runs under a run since
-an operator's previous call of `--under` on it (`under_runs`), the agents under a run
+the previous call of `--under` on it (`under_runs`), the agents under a run
 whose work is open, as `--running` lists them, and whether one run's work
 is open, as `--open` gives it. `--help` prints `USAGE`, and `--help PART` a part of the help, which `profile_runs_help` holds."""
 
@@ -162,8 +162,9 @@ def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(add_help=False, usage=argparse.SUPPRESS)
     ap.add_argument(IDS.dest, nargs="*", metavar="ID")
     ap.add_argument(UNDER, metavar="ID",
-                    help=mctx("profile the runs under the run ID since an "
-                              "operator's previous call of this on it"))
+                    help=mctx("profile the runs under the run ID since the "
+                              "previous call of this on it, as `--help under` "
+                              "gives it"))
     ap.add_argument(RUNNING_OPTION, metavar="ID",
                     help=mctx("list the agents under the run ID whose work "
                               "is open"))

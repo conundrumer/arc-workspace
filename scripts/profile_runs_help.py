@@ -166,19 +166,23 @@ PARTS = {
     """),
     HelpPart.UNDER: mctx("""
     - `--under ID` profiles the runs under the run ID, where ID is a session id or an agent id: the agents whose `.meta.json` gives the run ID as `parentAgentId`, or for a session gives none, the agents whose `.meta.json` gives one of those, and so on.
-        - Its previous call is the latest call of `--under` on the same ID that an agent of type `{operator}` made, in any transcript under the project directories that changed at or after the run ID's first entry, and whose result shows it ran in full.
+        - Its previous call is the latest of these calls of `--under` on the same ID that ran in full:
+            - each call an agent of type `{operator}` made, in any transcript under the project directories that changed at or after the run ID's first entry, whose time is that of the entry that makes it, and whose agent is that agent;
+            - each Bash step that `next` ran, as the step journal of the run ID's session gives it, whose time is the time `next` gave it, and whose agent is the operator `next` gave it to.
             - The call may write the ID with or without the `agent-` prefix.
-            - A result shows the call ran in full where it says the call completed in the foreground with no error and was not interrupted, and holds one `left open:` line and one `runs taken:` line, the count on the `runs taken:` line followed by as many agent ids.
-            - Those lines are read from the result's content, or, where that content is the harness's `<persisted-output>` preview of a large output and the result gives a `stdout`, from that `stdout`.
+            - A call ran in full where its result holds one `left open:` line and one `runs taken:` line, the count on the `runs taken:` line followed by as many agent ids, and:
+                - for a call an operator made, its result says the call completed in the foreground with no error and was not interrupted;
+                - for a step, it ended with exit status 0.
+            - A step's result is its output.
+            - An operator's call's lines are read from its result's content, or, where that content is the harness's `<persisted-output>` preview of a large output and the result gives a `stdout`, from that `stdout`.
             - A line counts only where a line break ends it.
             - A call whose result holds more than one `left open:` line counts as none, and an `undecided` line on stderr names that call.
-            - A call's time is the time of the entry that makes it.
         - Where a previous call stands, it considers the runs whose last timestamped entry is after that call's time and each run that call's `left open:` line gives, and where none stands, every run under the ID.
             - Of those, it takes each run whose work is not open, by the rule by which `--running` lists an agent, as `--help running` gives it, and leaves out the others.
         - It prints, in order:
             - `left open:` and the agent id of each run it left out, separated by spaces, or `none`;
             - `runs taken:`, their count, and the agent id of each run taken, separated by spaces;
-            - `previous call:` and that call's time, as `YYYY-MM-DDTHH:MM:SSZ`, with `by` and the agent id of the agent that made it, or `none`;
+            - `previous call:` and that call's time, as `YYYY-MM-DDTHH:MM:SSZ`, with `by` and the agent id of that call's agent, or `none`;
             - the line `--runs` prints for each run taken, in the order of their first entries, and what one run or more than one run prints.
     """),
     HelpPart.RUNNING: mctx("""

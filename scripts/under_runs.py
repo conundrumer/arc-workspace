@@ -1,9 +1,13 @@
 """The runs `--under` of `profile_runs.py` takes under a run: those since
-an operator's previous call of it on that run, as `profile_runs.py --help`
+the previous call of it on that run, as `profile_runs.py --help under`
 gives them."""
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+
+import step_journal
+import tree_reads
 
 from controlled_markdown import mctx
 
@@ -12,7 +16,7 @@ from agent_turns import first_time, last_time
 from command_labels import programs
 from context_bound_hook import OPERATOR
 from open_agents import work_open
-from run_reads import BACKGROUND_TASK, agent_type, blocks, result_text
+from run_reads import BACKGROUND_TASK, agent_type, blocks, result_text, session_of
 from ticketing.times import utc_stamp
 from transcripts import agent_id, agent_transcripts, bare_id
 from transcript_entries import Entry, epoch, read_entries
@@ -20,11 +24,11 @@ from transcript_entries import Entry, epoch, read_entries
 from operations.batches import LEFT_OPEN, NO_RUN, RUNS_TAKEN, lines, read_under
 
 PROFILE_SCRIPT = "profile_runs.py"
-"""The script whose `UNDER` calls an operator's previous call is read from."""
+"""The script whose `UNDER` calls the previous call is read from."""
 
 UNDER = "--under"
-"""The option of the mode that profiles the runs under a run since an
-operator's previous call of it."""
+"""The option of the mode that profiles the runs under a run since the
+previous call of it."""
 
 def calls_under(command: str, ident: str) -> bool:
     """Whether the Bash command `command` runs `PROFILE_SCRIPT` with `UNDER`
@@ -67,12 +71,10 @@ class Previous:
     left: frozenset[str]
 
 
-def previous_call(path: Path, ident: str, undecided: list[str]) -> Previous | None:
-    """The previous call of `UNDER` on the run at `path`, which `ident`
-    names, as `profile_runs_help.PARTS` gives that call, or None where
-    none stands."""
-    start = first_time(path)
-    found: Previous | None = None
+def transcript_calls(start: float | None, ident: str) -> Iterator[tuple[float, str, str]]:
+    """The time, the agent id and the result text of each operator's Bash
+    call of `UNDER` on `ident` that completed in the foreground with no
+    error, in the transcripts that changed at or after `start`."""
     for p in (p for ps in agent_transcripts().values() for p in ps):
         if start is not None and p.stat().st_mtime < start:
             continue
@@ -89,18 +91,39 @@ def previous_call(path: Path, ident: str, undecided: list[str]) -> Previous | No
         results = read_entries(p, naming=set(made))
         for call, t in made.items():
             text = under_output(results, call)
-            if text is None:
-                continue
-            if (n := len(lines(text, LEFT_OPEN))) > 1:
-                undecided.append(mctx(
-                    "the result of the call of `{under}` at {time} by {agent} "
-                    "holds {n} `{left}` lines, so it counts as no call").format(
-                        under=UNDER, time=utc_stamp(t),
-                        agent=agent_id(p), n=n, left=LEFT_OPEN))
-                continue
-            given = read_under(text)
-            if given is not None and (found is None or t > found.time):
-                found = Previous(t, agent_id(p), given.left)
+            if text is not None:
+                yield t, agent_id(p), text
+
+
+def journal_calls(path: Path, ident: str,
+                  undecided: list[str]) -> Iterator[tuple[float, str, str]]:
+    """The time `next` gave it, the operator and the output of each Bash
+    step of `UNDER` on `ident` in the step journal of the session of the
+    run at `path` that closed with no error."""
+    found = [r for r in step_journal.records(tree_reads.scratch(session_of(path).name))
+             if calls_under(r.entry.text, ident)]
+    for c in step_journal.run_calls(found, {}, undecided):
+        if not c.error and c.result is not None:
+            yield c.time, c.operator, c.result
+
+
+def previous_call(path: Path, ident: str, undecided: list[str]) -> Previous | None:
+    """The previous call of `UNDER` on the run at `path`, which `ident`
+    names, as `profile_runs_help.PARTS` gives that call, or None where
+    none stands."""
+    found: Previous | None = None
+    for t, agent, text in (*transcript_calls(first_time(path), ident),
+                           *journal_calls(path, ident, undecided)):
+        if (n := len(lines(text, LEFT_OPEN))) > 1:
+            undecided.append(mctx(
+                "the result of the call of `{under}` at {time} by {agent} "
+                "holds {n} `{left}` lines, so it counts as no call").format(
+                    under=UNDER, time=utc_stamp(t),
+                    agent=agent, n=n, left=LEFT_OPEN))
+            continue
+        given = read_under(text)
+        if given is not None and (found is None or t > found.time):
+            found = Previous(t, agent, given.left)
     return found
 
 

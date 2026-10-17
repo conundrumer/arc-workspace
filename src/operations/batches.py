@@ -339,9 +339,9 @@ def audit(state: State) -> Step | None:
 
 
 def under_command(operator: str) -> str:
-    """Step 1 of After a batch, which an operator runs itself: the
-    previous call of `--under` that `profile_runs.py --help under` defines is an
-    operator's, and `read_under` gives whether a call of it stands."""
+    """Step 1 of After a batch, a Bash step that `next` runs:
+    `profile_runs.py --help under` defines the previous call of `--under`,
+    and `read_under` gives whether a call of it stands."""
     return f"uv run python scripts/profile_runs.py --under {operator}"
 
 

@@ -21,6 +21,8 @@ profile_runs = script("profile_runs")
 under_runs = sys.modules["under_runs"]
 transcripts = sys.modules["transcripts"]
 transcript_entries = sys.modules["transcript_entries"]
+step_journal = sys.modules["step_journal"]
+tree_reads = sys.modules["tree_reads"]
 Part = sys.modules["run_records"].Part
 
 
@@ -188,7 +190,9 @@ def test_under(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     operator's previous call of it that completed in the foreground with no
     error, or that call's `left open:` line gives; a call by an agent of
     another type, one that failed, one the harness moved to the background
-    and one whose output was cut before that line count as none."""
+    and one whose output was cut before that line count as none. A later
+    Bash step of it that the session's step journal gives as done stands
+    as the previous call in place of the operator's."""
     op, c1, c2, g, editor, other, busy, late = (f"a{n:016x}" for n in range(1, 9))
     agents = tmp_path / "proj" / "s" / "subagents"
     agents.mkdir(parents=True)
@@ -221,7 +225,10 @@ def test_under(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         write_jsonl(agents / f"agent-{aid}.jsonl", entries)
         (agents / f"agent-{aid}.meta.json").write_text(json.dumps(
             {"agentType": kind, **({"parentAgentId": parent} if parent else {})}))
+    scratch = tmp_path / "scratch"
     monkeypatch.setattr(transcripts, "project_dirs", lambda: [tmp_path])
+    monkeypatch.setattr(tree_reads, "scratch",
+                        lambda session: scratch if session == "s" else tmp_path / "none")
     monkeypatch.setattr(under_runs, "work_open",
                         lambda p, undecided: transcripts.agent_id(p) == busy)
     transcripts.new_state()
@@ -233,3 +240,23 @@ def test_under(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert previous == under_runs.Previous(transcript_entries.epoch(at(30)), op,
                                              frozenset([late]))
     assert sorted(transcripts.agent_id(p) for p in taken) == sorted([c2, g, late])
+
+    given = transcript_entries.epoch(at(55))
+    run = step_journal.Run(0, scratch / "u.out", scratch / "u.status")
+    scratch.mkdir()
+    run.output.write_text("left open: none\nruns taken: 0\nprevious call: none\n")
+    run.status.write_text("0\n")
+    step = step_journal.Bash(f"uv run python scripts/profile_runs.py --under {op}",
+                             f"under {op}", occasion="0")
+    step_journal.append(scratch, [
+        step_journal.given_record("j1", step, other, given, run),
+        step_journal.closed_record("j1", step_journal.Close(step_journal.Outcome.DONE,
+                                                            given + 1, ""))])
+    transcripts.new_state()
+    try:
+        taken = under_runs.runs_since(agents / f"agent-{op}.jsonl", op, [])
+        previous = under_runs.previous_call(agents / f"agent-{op}.jsonl", op, [])
+    finally:
+        transcripts.new_state()
+    assert previous == under_runs.Previous(given, other, frozenset())
+    assert [transcripts.agent_id(p) for p in taken] == [g]
