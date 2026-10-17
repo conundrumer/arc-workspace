@@ -515,14 +515,14 @@ TRANSCRIPT_REVIEW = mctx("""
     - Review the transcript of run {run}, which `python3 ~/.claude/skills/retrieve/transcripts.py --help` reads.
     - File each ticket by the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), {filing}.
     - Find each place where the run explored to find what a docstring or a document line could have led it to.
-    - At the first such place, {deferred_titles}.
+    - Before you give your first case, {deferred_titles}.
     - At each such place:
         - Where a title of that listing, or of a ticket you filed after it, states the same place and that ticket is a `delay` under `tickets/deferred/`, append the place as a case to that ticket, by `uv run python scripts/file_ticket.py case --help`.
         - Otherwise file a ticket of kind `delay` on the place, with its case and its `fix`, by `uv run python scripts/file_ticket.py case --help`.
     """)
 
 PASS_REVIEW = mctx("""
-    - Read the pass call by call, with its timing, for what the tool and the documents did to the pass's work, and file a ticket of kind `interference` where they made the pass's output wrong, and of kind `delay` where they added only to its time or token cost.
+    - Read the pass call by call, with its timing, for what the tool and the documents did to the pass's work. File a ticket of kind `interference` where they made the pass's output wrong, and handle each place where they added only to its time or token cost by the lines under `At each such place`.
     """)
 
 PASS_DUPLICATES = mctx("""
