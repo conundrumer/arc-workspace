@@ -75,7 +75,7 @@ to wait for the lock, it says so on stderr once for the cold pass's hold,
 and once for its commands' shared holds. A `--since-timed` run waits for
 no hold of its cold pass: it takes the lock only where no holder and no
 pending writer stands, and marks itself pending only for the instant of
-its tries. Where the lock is not free at once, it prints one `timed:` line
+its tries. Where the lock is not free at once, it prints one `skipped:` line
 that says it skips timing, runs no command, writes no accepted time, keeps
 no commit in `timed.json`, leaves `loaded.json` as it stands, and exits 0.
 

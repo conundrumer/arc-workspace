@@ -84,7 +84,7 @@ WAITS = {
                          "until they are done."),
 }
 
-SKIP = mctx("timed: another heavy command holds {path} or waits for it, so this timed "
+SKIP = mctx("skipped: another heavy command holds {path} or waits for it, so this timed "
             "run skips timing, runs no command, and leaves the records of timed runs as "
             "they are")
 
