@@ -13,7 +13,7 @@
 * inline: ../../docs/handbook/procedure.md#analyze-after-the-concept
 
 ## Proposers
-- Each proposer of [proposers.dl](programs/proposers.dl), with the column types of its `propose` relation and what it derives.
+- Each proposer, with the column types of its `propose` relation and what it derives.
 * text: proposers
 
 ## Keywords
