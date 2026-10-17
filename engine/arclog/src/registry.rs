@@ -19,11 +19,15 @@
 //!   an algebra relation, the group relations and `pose_difference`
 //!   included. Each mode lists the columns, other than an orientation
 //!   type's, that must be grounded for the relation to ground the others; a
-//!   relation over a finite domain has no `modes` form.
+//!   relation over a finite domain has no `modes` form, and no mode is empty.
 //! - `(component <name> <construction|detector|task-structure> (type-parameters <t> ...)
-//!   (inputs (<input> (<column> <type>) ... [(default <row> ...)] [reads-outputs]) ...)
+//!   (inputs (<input> (<column> <type>) ... [(default <rows>)] [reads-outputs]) ...)
 //!   (outputs (<output> (<column> <type>) ...) ...))`: a construction, a
 //!   detector or a task-structure component, its inputs in the order the component declares them. An
+//!   input's `default` writes its rows as a `param` form writes them after
+//!   its types (`docs/arclog/arcdata.md#params`): each row as a list of its
+//!   values, and the rows of a relation with a Position or an Offset column
+//!   as a grid. An
 //!   input marked `reads-outputs` reads the instance's outputs, as
 //!   `Unfold`'s `step`, `skip` and `take` do.
 //! - `(proposer <name> native (columns (<Column> <type>) ...))`: a native
@@ -172,21 +176,24 @@ pub struct InputPort {
     pub reads_outputs: bool,
 }
 
-/// The default rows of an input, as a set: it gives membership and each row,
-/// and no position of a row, so no caller can pick one default by its place
-/// in the file, and no lib interface makes a free choice.
-#[derive(Clone, Debug, Default)]
+/// The default rows of an input, as the file writes them, read by
+/// [`crate::read::read_param_value`]. It gives its rows as a set, and no
+/// position of a row, so no caller can pick one default by its place in the
+/// file, and no lib interface makes a free choice.
+#[derive(Clone, Debug)]
 pub struct DefaultRows {
-    rows: crate::hash::StableHashSet<Box<[crate::program::DataValue]>>,
+    written: crate::program::ParamValue,
 }
 
 impl DefaultRows {
-    /// Each default row, in an order of encodings and no order of the
-    /// content.
-    #[allow(unreachable_code)]
-    pub fn each(&self) -> impl Iterator<Item = &[crate::program::DataValue]> + '_ {
-        todo!();
-        std::iter::empty()
+    /// The default rows, typed by `types`, the types of the input's columns
+    /// in order, as the rows of a `param` form that writes those types.
+    pub fn rows(
+        &self,
+        types: &[ValueType],
+        registry: &Registry,
+    ) -> Result<crate::hash::StableHashSet<Box<[crate::terms::TermId]>>, crate::terms::DataValueError> {
+        todo!()
     }
 }
 

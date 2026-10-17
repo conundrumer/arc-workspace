@@ -147,7 +147,7 @@ impl Reader {
 
     /// The rows of a `param` form or an `assign` form, all of one kind: rows
     /// of values, grids, or a derivation.
-    fn param_value(&mut self, rows: &[SExpr], record: &mut Record) -> R<ParamValue> {
+    pub(super) fn param_value(&mut self, rows: &[SExpr], record: &mut Record) -> R<ParamValue> {
         if let [row] = rows {
             if is_derivation(row) {
                 return self.derivation(row, record);
@@ -171,7 +171,7 @@ impl Reader {
     }
 
     /// One row of values, `(3 1)`.
-    pub(super) fn row(&mut self, expr: &SExpr, record: &mut Record) -> R<Arc<[DataValue]>> {
+    fn row(&mut self, expr: &SExpr, record: &mut Record) -> R<Arc<[DataValue]>> {
         let list = self.list(expr, "a row")?;
         record.token(list.open);
         let mut values = Vec::new();

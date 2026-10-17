@@ -131,16 +131,16 @@ pub fn read_instance(expr: &SExpr) -> Result<(Node<crate::program::Instance>, La
     }
 }
 
-/// The values of one row that `expr` writes, as an arcdata row is written
-/// (`docs/arclog/arcdata.md#params`), for a default row of an input in the
+/// The rows that `rows` write, as a `param` form writes them after its types
+/// (`docs/arclog/arcdata.md#params`), for the default of an input in the
 /// registry file.
 ///
-/// Fails where an s-expression of `expr` matches no node kind of its format,
+/// Fails where an s-expression of `rows` matches no node kind of its format,
 /// with a diagnostic of the grammar at each such s-expression.
-pub fn read_data_row(expr: &SExpr) -> Result<Box<[crate::program::DataValue]>, Vec<Diagnostic>> {
+pub fn read_param_value(rows: &[SExpr]) -> Result<crate::program::ParamValue, Vec<Diagnostic>> {
     let mut reader = Reader::with_owners(Owners::default(), false);
-    match reader.row(expr, &mut Record::new(None)) {
-        Ok(row) if reader.diagnostics.is_empty() => Ok(row.iter().cloned().collect()),
+    match reader.param_value(rows, &mut Record::new(None)) {
+        Ok(value) if reader.diagnostics.is_empty() => Ok(value),
         _ => Err(reader.diagnostics),
     }
 }

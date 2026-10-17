@@ -9,7 +9,7 @@
 (relation apply (columns (D D4) (P Box) (P_out Box)) (modes (P)))
 (relation corner_dist (columns (P Box) (Diag DiagDir) (K number)) (modes (P)))
 (relation frame_extent (columns (P Position) (A Axis) (N number)) (modes (P)))
-(relation step_offset (columns (D Dir8) (V Offset)) (modes ()))
+(relation step_offset (columns (D Dir8) (V Offset)))
 (relation sub_extent (columns (P Position) (A Axis) (K number)) (modes (P)))
 (relation gap (columns (D Dir8) (P Position) (Q Position) (K number)) (modes (P Q)))
 (relation divide (columns (T number) (Side number) (Gap number) (Part number) (Remainder number)) (modes (T Side Gap)))
@@ -340,7 +340,10 @@
   (component Flood construction (type-parameters Key)
     (inputs (node (key Key) (P Position))
       (source (key Key) (P Position))
-      (step (Delta Offset)))
+      (step (Delta Offset) (default (grid
+        (_ 1 _)
+        (1 @_ 1)
+        (_ 1 _)))))
     (outputs (reached (key Key) (P Position))))
   (INIT &propagation Propagation
     (source ((:key Ky) (:n P))
@@ -357,7 +360,10 @@
   (component CellDistance construction (type-parameters Key)
     (inputs (node (key Key) (P Position))
       (source (key Key) (P Position))
-      (step (Delta Offset)))
+      (step (Delta Offset) (default (grid
+        (_ 1 _)
+        (1 @_ 1)
+        (_ 1 _)))))
     (outputs (distance (key Key) (P Position) (K number))
       (predecessor (key Key) (Q Position) (P Position))))
   (INIT &distance Distance
