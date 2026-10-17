@@ -1,0 +1,10 @@
+[package]
+name = "arclog-constructions"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+# A construction reads and gives rows of term ids, the core crate's
+# representations.
+arclog = { path = "../arclog" }

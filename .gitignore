@@ -41,3 +41,6 @@ docs/codex-style.md
 
 # Lean build outputs
 theory/.lake/
+
+# Cargo build output
+/engine/target/

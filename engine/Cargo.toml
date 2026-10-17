@@ -1,0 +1,11 @@
+# The arclog engine: one Cargo workspace with the four crates of the engine
+# overview's Crates section (work/engine/overview.md).
+
+[workspace]
+resolver = "3"
+members = ["arclog", "arclog-constructions", "arclog-cli", "arclog-py"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false

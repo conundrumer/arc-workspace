@@ -1,0 +1,3 @@
+;; The lib registry of the arclog engine, written from docs/lib-spec.md.
+;; Its forms and their meaning: the module comment of
+;; engine/arclog/src/registry.rs.

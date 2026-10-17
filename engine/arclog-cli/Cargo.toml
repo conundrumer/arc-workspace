@@ -1,0 +1,10 @@
+[package]
+name = "arclog-cli"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The binary runs the core crate's reader, resolver and checker over solver
+# files.
+arclog = { path = "../arclog" }

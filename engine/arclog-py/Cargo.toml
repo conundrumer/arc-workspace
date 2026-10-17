@@ -1,0 +1,9 @@
+[package]
+name = "arclog-py"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The bindings expose the core crate's entry points to Python.
+arclog = { path = "../arclog" }
