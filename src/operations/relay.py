@@ -33,7 +33,7 @@ from operations.steps import EndTurn, Launch, Reply, Send, Step
 class Run:
     """An operator the launcher launched: its agent id, the time of its
     launch, whether its end has not reached the launcher (`Agent.pending`),
-    and the text of the final reply that the first message by which it
+    and the text of the final reply that the last message by which it
     sent the launcher its final reply gives (`final_reply.final_sends`,
     `final_reply.final_text`), or None where it sent none."""
     agent_id: str | None

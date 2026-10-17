@@ -21,12 +21,12 @@ from ticketing.vocabulary import Status
 def ending(state: State, text: str) -> Step:
     """The operator's final reply, whose text is `text`: the message that
     sends its parent (`State.parents`) `text`, where the journal gives no
-    such message of the operator's done since the last message that
-    reached it, then the reply."""
+    such message of the operator's done whose step was given after the
+    last message that reached it, then the reply."""
     parent = state.parents[state.me]
     since = max((m.time for m in state.received), default=0.0)
     return ending_step(parent, text, since, any(
-        e.operator == state.me and e.close is not None and e.close.time > since
+        e.operator == state.me and e.close is not None and e.given > since
         and final_text(e.text) is not None for e in sends_to(state, parent)))
 
 

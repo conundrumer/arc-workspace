@@ -44,7 +44,7 @@ def read_relay(me: str) -> tuple[Relay, Path]:
         if a.agent_id is not None:
             theirs = read_operator(a.agent_id, find(a.agent_id), main, undecided, {}).calls
             sends = [c for c in final_sends_in(theirs, a.agent_id, me) if c.time > a.launched]
-            final = sent_final_text(sends[0]) if sends else None
+            final = sent_final_text(sends[-1]) if sends else None
         runs.append(Run(a.agent_id, a.launched, a.pending, final))
     relay = Relay(me, tuple(sorted((m for m in own.messages if m.sender is None),
                                    key=lambda m: m.time)),

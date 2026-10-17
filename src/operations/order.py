@@ -10,8 +10,8 @@ alerts; the tickets on stalled agents; the messages on the concept
 faults of the solver passes that ended (`concept_faults`); the request to a ticket analyst on a held step to give its decision
 again; the decisions for the user, the changes handed to the coordinator
 (`merging.handoffs`), and the items of each ticket analyst's
-reply for the coordinator; the monitor's steps (`monitor`); at launch,
-the release of tickets; the move back to `tickets/open/` of the tickets the coordinator wrote on
+reply for the coordinator; the monitor's steps (`monitor`); the release
+of tickets; the move back to `tickets/open/` of the tickets the coordinator wrote on
 under `tickets/blocked/`, `tickets/waiting/` or `tickets/closed/`; the coordinator's later
 lines to the ticket analysts that run on their tickets; the ticket
 analysts on open tickets; the move to `tickets/draft/` of the changes
@@ -256,13 +256,6 @@ def unread_lines(state: State) -> Step | None:
     return next((s for s in found if not repeated(s, state)), None)
 
 
-def launching(state: State) -> Step | None:
-    """The release of tickets, before the operator's first launch."""
-    if any(c.operator == state.me and c.tool == Tool.AGENT for c in state.transcripts.calls):
-        return None
-    return taking.release(state)
-
-
 def pipelines(state: State) -> Step | None:
     return passes.step(state)[0]
 
@@ -271,7 +264,7 @@ EARLY: tuple[Callable[[State], Step | None], ...] = (
     limit_resume.step, unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.stuck, alerts.late_resumes, concept_faults.step, decisions.asks, triage.decisions, merging.handoffs, triage.main_wanted, triage.for_coordinator,
     triage.unfinished)
 LATE: tuple[Callable[[State], Step | None], ...] = (
-    launching, triage.reopen, triage.later_lines, triage.settle, ticket_stall.stall, drafts.step,
+    taking.release, triage.reopen, triage.later_lines, triage.settle, ticket_stall.stall, drafts.step,
     changes.step,
     pipelines, batches.audit, reviews.code_review, reviews.lib_review, batches.standing_review,
     batches.overdue_review, batches.gate,
