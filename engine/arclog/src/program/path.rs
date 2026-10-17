@@ -29,13 +29,17 @@
 //! | `IF` | the test, the then, the else |
 //! | `ALL` | the domain, the body |
 //! | constraint | none |
-//! | site | the field sites, where it reads a record |
+//! | site | the field-site arguments, each a [`super::SiteArg::Field`], in source order |
 //! | `INIT` form | the key clause where it has one, then the inputs after it |
 //! | key clause | the body, then the inputs inside it |
 //! | input | the head sites, then the body |
 //! | `CHOOSE` form | the `for` body where it has one, the `from` body, the `never` bodies |
 //! | `RIGID_DET` form | the `key` body, the `instance` body, each where it has one, then the parts |
 //! | `DEMONSTRATED` form | the key clause where it has one, the inputs after it, the `DEMO_RULE` forms |
+//!
+//! A site's children are its field-site arguments as written, whether or not
+//! it reads a record: `(:key P_intile *Col)` has no children, and
+//! `(:key (:P_intile P_intile) (:Col *Col))` has two.
 //!
 //! The arcdata file's nodes are numbered the same way, by
 //! [`DataNodeRef::children`] and walked by [`data_node_at`]:

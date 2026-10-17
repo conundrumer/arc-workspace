@@ -25,7 +25,12 @@ pub enum Edit {
     ReplaceConjunct { at: NodePath, conjunct: Conjunct },
     /// Adds `site` to the node at `node`, at `index` of its sites in source
     /// order: an atom, a negated atom, a `RIGID_DET` part, an input, whose
-    /// head takes it, or a site that reads a record, whose fields take it.
+    /// head takes it, or a site, which takes it as a field-site argument.
+    ///
+    /// On a site, `index` counts its field-site arguments alone, as the
+    /// table in `engine/arclog/src/program/path.rs` gives them. The new
+    /// argument goes just before the field-site argument at `index`, and
+    /// last where `index` is their count, so each bare label keeps its place.
     AddSite {
         node: NodePath,
         index: u32,
