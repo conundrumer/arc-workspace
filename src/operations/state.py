@@ -172,6 +172,13 @@ class Agent:
     (`TranscriptsRead.quiet`), it no longer waits, and its work ends with
     the reports it has, as for an agent of another operator whose work is
     no longer open.
+    `report_file` is the report file the brief it was launched with gives
+    (`briefs.REPORT_FILE`, `briefs.REPORT_RULE`), or None where it gives
+    none. Where that file is there, its last report, whatever its last
+    turn ended with, has that file's text, at the time it was read with,
+    whichever of the ways above ends it, and while it waits. Where no file
+    is there, as where the agent never wrote it, its reports stay as read,
+    and no `undecided` line names the file.
     `brief` is the brief it was launched with cut at its `SETTLED` line
     (`own`), so that no read of it sees the text that block quotes."""
     agent_id: str | None
@@ -183,6 +190,7 @@ class Agent:
     waits: Waits | None
     reports: tuple[Report, ...]
     notifies: bool
+    report_file: Path | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "brief", own(self.brief))

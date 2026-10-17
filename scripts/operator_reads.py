@@ -19,7 +19,7 @@ from agent_reports import ENDED, Sign, last_sign
 from agent_turns import first_time, has_ended, turns
 from context_bound_hook import OPERATOR
 from controlled_markdown import mctx
-from filed_texts import report_file, report_text, unfiled
+from filed_texts import brief_report_file, report_file, report_text, unfiled, written_report
 from merge_change import conflict_paths, left_edits, ran
 from open_agents import work_open
 from pending_wait_hook import bound_denied
@@ -402,9 +402,11 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
         reports = tuple(Report(r.time, r.text, r.file) for r in launch.reports(0.0, undecided))
         signed = (signs.get(launch.agent or "") if launch.pending else
                   last_sign(launch.entries, launch.since, {launch.agent or "", launch.call}))
-        a = Agent(launch.agent, aid, d.role, d.subject, str(use[1].get("prompt", "")),
+        prompt = str(use[1].get("prompt", ""))
+        a = Agent(launch.agent, aid, d.role, d.subject, prompt,
                   use[0], waits(signed, launch.pending), reports,
-                  notifies=launch.since <= max(use[0], own.get(launch.agent or "", 0.0)))
+                  notifies=launch.since <= max(use[0], own.get(launch.agent or "", 0.0)),
+                  report_file=brief_report_file(prompt))
         if d.role in MESSAGING and launch.path and launch.agent is not None:
             messaged[launch.agent] = sent_to(launch.path)
         if signed is not None and signed[0] is Sign.LIMITED and launch.agent is not None:
@@ -412,6 +414,7 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
         if not a.pending and launch.agent:
             a = ended_with(a, None if any(r.time > launch.since for r in reports)
                            else reply_to(a, launch.since, undecided))
+        a = filed_report(a)
         agents.append(a)
         if d.role in PASSES and launch.agent:
             passes[launch.agent] = pass_read(d.subject, d.role, use[0], main)
@@ -504,6 +507,20 @@ def reply_to(a: Agent, since: float, undecided: list[str]) -> Report | None:
     return r if text is None else replace(r, text=text, file=path)
 
 
+def filed_report(a: Agent) -> Agent:
+    """`a` with its last report read from `Agent.report_file`, at that
+    report's time, where that file is there and that report is not
+    already read from it. Where no file is there, as where the agent never
+    wrote it, its reports stay as read, and no line names the file."""
+    last = a.last_report
+    if a.report_file is None or last is None or last.file == a.report_file:
+        return a
+    text = written_report(a.report_file)
+    if text is None:
+        return a
+    return replace(a, reports=(*a.reports[:-1], replace(last, text=text, file=a.report_file)))
+
+
 def stalled_reports(agents: list[Agent], coordinators: dict[str, float],
                     stalls: list[str]) -> dict[str, Report]:
     """The final reply in the transcript of each agent of `stalls`, the
@@ -529,8 +546,8 @@ def ended_with(a: Agent, reply: Report | None) -> Agent:
 
 def ended_by(agents: Sequence[Agent], ended: Mapping[str, Report | None]) -> list[Agent]:
     """`agents`, each pending one of `ended` ended with the report it gives
-    (`ended_with`)."""
-    return [ended_with(a, ended[a.agent_id])
+    (`ended_with`), read as `filed_report` gives."""
+    return [filed_report(ended_with(a, ended[a.agent_id]))
             if a.pending and a.agent_id is not None and a.agent_id in ended else a
             for a in agents]
 
