@@ -1,7 +1,7 @@
 ---
 name: ticket-reviewer
 description: "[A ticket reviewer's brief](prompts/agents/notes/launching.md#a-ticket-reviewers-brief)"
-model: opus
+model: sonnet
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: doc-reviewer
 description: "[A doc reviewer's brief](prompts/agents/notes/launching.md#a-doc-reviewers-brief)"
-model: opus
+model: sonnet
 tools: Read, Grep, Glob, Bash, Write, Agent, SendMessage, TaskStop
 ---
 
