@@ -1,0 +1,97 @@
+"""PreToolUse hook on SubagentHandback: denies the SubagentHandback call of
+an agent whose brief gives a report file (`filed_texts.brief_report_file`)
+where the call's message is not that file's path alone
+(`filed_texts.report_file`), or no file is there, and the reason gives the
+path.
+
+The brief is the first message of the agent's own transcript, with each
+file it gives by `FILED_LINE` read in (`filed_texts.unfiled`).
+
+A denied call is recorded with the id of the last message the agent got,
+in a file named by its agent id under `STOPS` of its session directory,
+and no call is denied again while that message is still the last. A denial
+gives the agent no message, so a fault in the check cannot hold the agent
+in a loop of denials, and a message that resumes the agent after its final
+reply has a new handback checked again. Where the brief gives a file that
+is gone, the hook allows the call and says why on stderr."""
+
+import sys
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
+
+from hook_entry import Hook, not_registered, run_pre_tool_use
+
+HOOK = "report_file_hook"
+STOPS = "report-file-stops"
+
+
+def brief(entries: Iterable[dict[str, Any]], where: str, undecided: list[str]) -> str | None:
+    """The text of the first message among `entries`, with each file it
+    gives read in, or None where they hold no message."""
+    from filed_texts import unfiled
+    from run_reads import is_prompt, message_text
+
+    first = next((e for e in entries if is_prompt(e)), None)
+    return None if first is None else unfiled(message_text(first), where, undecided)
+
+
+def last_message(entries: Iterable[dict[str, Any]]) -> str:
+    """The id of the first message among `entries`, read last first."""
+    from run_reads import is_prompt
+
+    return next(str(e["uuid"]) for e in entries if is_prompt(e))
+
+
+def refusal(path: Path) -> str:
+    from controlled_markdown import mctx
+
+    return "\n".join([
+        mctx("Blocked: your brief gives the report file `{path}`, and the message of this "
+             "call is not that file's path alone, or that file does not exist."),
+        mctx("Write your final reply to that file, then give its path alone as your report."),
+    ]).format(path=path)
+
+
+def check(hook: Hook) -> str | None:
+    """The reason to deny the SubagentHandback call `hook` gives, as the
+    module docstring gives it, or None."""
+    from file_reads import is_file
+    from filed_texts import brief_report_file, report_file
+    from printed_launch_hook import first_at
+    from run_reads import caller_id, caller_transcript
+    from transcript_entries import entries_back, entries_forward
+
+    tool = hook.get("tool_name")
+    if tool is not None and tool != "SubagentHandback":
+        raise not_registered("SubagentHandback", "tool", tool)
+    agent = caller_id(hook)
+    if agent is None:
+        return None
+    path = caller_transcript(hook)
+    undecided: list[str] = []
+    text = brief(entries_forward(path), f"the brief of {agent}", undecided)
+    for line in undecided:
+        print(f"{HOOK}: allowed: {line}", file=sys.stderr)
+    if text is None or undecided:
+        return None
+    wanted = brief_report_file(text)
+    if wanted is None:
+        return None
+    given = report_file(str((hook.get("tool_input") or {}).get("message", "")))
+    if given == wanted and is_file(wanted):
+        return None
+    last = last_message(entries_back(path))
+    if not first_at(hook, STOPS, agent, last):
+        print(f"{HOOK}: allowed: a handback was denied after message {last}, "
+              "and the agent got no message since", file=sys.stderr)
+        return None
+    return refusal(wanted)
+
+
+def main() -> int:
+    return run_pre_tool_use(HOOK, check)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
