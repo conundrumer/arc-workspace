@@ -17,9 +17,9 @@
 //!
 //! - `(relation <name> (columns (<Column> <type>) ...) (modes (<Column> ...) ...))`:
 //!   an algebra relation, the group relations and `pose_difference`
-//!   included. Each mode lists the columns that must be grounded for the
-//!   relation to ground the others; a relation over a finite domain has no
-//!   `modes` form.
+//!   included. Each mode lists the columns, other than an orientation
+//!   type's, that must be grounded for the relation to ground the others; a
+//!   relation over a finite domain has no `modes` form.
 //! - `(component <name> <construction|detector|task-structure> (type-parameters <t> ...)
 //!   (inputs (<input> (<column> <type>) ... [(default <row> ...)] [reads-outputs]) ...)
 //!   (outputs (<output> (<column> <type>) ...) ...))`: a construction, a
@@ -51,6 +51,10 @@
 //!   for each of its outputs, as [`Macro::CellInstance`] gives. Within these
 //!   bodies an atom `(self.<port> <sites>)` reads the cell instance's own
 //!   input `<port>`, as [`crate::program::RelationRef::DefinedPort`] holds it.
+//!
+//! A macro's definition reads only lib names that a form of the file
+//! declares, and a definition that reads another name is a fault of the
+//! file.
 //!
 //! A `<type>` is a type name of [`crate::program::TypeName`], `Pose` for
 //! the assembly the read names, `shared-pose` for one assembly's Pose type
