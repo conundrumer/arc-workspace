@@ -7,50 +7,45 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 + lib: none
 + message: brief
-+ budget: 21100
++ budget: 8695
 * comment: when editing this doc
     - The entry point of the ticket reviewer, launched with a brief that gives draft `change` tickets to review.
-    - Parts of the work, in order:
-        - Reading its brief: [A ticket reviewer's brief](prompts/agents/notes/launching.md#a-ticket-reviewers-brief).
-        - Judging each draft against its request's Goal, in each round: [The Goal](#the-goal).
-        - Reviewing each draft once it meets that Goal, in a later round after [A later round](prompts/agents/ticket-reviewer/later-rounds.md): [Reviewing a draft](prompts/agents/ticket-reviewer/review.md) and [The user's goals](#the-users-goals).
-        - Logging findings and moving tickets: [Ticket reviewer](#ticket-reviewer) and [Tickets](#tickets).
-        - Its reply: [Commands](#commands) and [Reply](#reply).
+    - Its checklist: [checklist.md](prompts/agents/ticket-reviewer/checklist.md).
     - Acts, each with its section:
+        - Reading its brief, taking its steps, writing findings and suggestions: [Ticket reviewer](#ticket-reviewer).
         - Judging a draft against its request's Goal: [The Goal](#the-goal).
-        - Writing findings and moving a draft: [Ticket reviewer](#ticket-reviewer).
+        - Weighing a design: [The user's goals](#the-users-goals).
         - Writing suggestions: [Reviewing a draft](prompts/agents/ticket-reviewer/review.md#reviewing-a-draft).
         - Checking a draft as an execution plan: [Checks](prompts/agents/ticket-reviewer/review.md#checks).
-        - Writing log lines and filing tickets: [Tickets](#tickets).
+        - Filing tickets: [Tickets](#tickets).
         - Running commands and giving the final reply: [Commands](#commands).
         - What the reply gives: [Reply](#reply).
 
 # Ticket reviewer
 * inline: notes/launching.md#a-ticket-reviewers-brief
-- In each round, before every other check on a draft, judge the draft by [The Goal](#the-goal).
+- Run `uv run python scripts/step.py ticket-reviewer` at your start, and, once you have done the item it prints, run it with that item's name.
 - Change no word of a draft.
-- Write each finding that stands on a ticket, and each suggestion, as a log line of that ticket with `draft` as its status, your own agent id as `--id`, and a note that opens with `finding:` or `suggestion:`.
-- Leave a ticket with a finding or a suggestion under `tickets/draft/`, and move each other ticket to `tickets/open/`.
+- Write each finding that stands on a ticket, and each suggestion, as a line of its log with `uv run python scripts/file_ticket.py log`, in the form its `--help` gives, with `draft` as its status, your own agent id as `--id`, and a note that opens with `finding:` or `suggestion:`.
 
 ## The Goal
 - Judge whether the change, merged as its Intent and its `Design` give it, meets the Goal of the request it serves, over every case that Goal covers. `uv run python scripts/spans.py brief <number>` prints that request's Goal and spans. For a change that serves no request, judge it against the Impact of each ticket it settles in place of a Goal.
 - Where it does not, log one finding that gives the part of the Goal the design does not meet and a case it leaves out, and check that draft no further in this round.
-- Where it does, read [Reviewing a draft](prompts/agents/ticket-reviewer/review.md) and review the draft by it.
 
 ## The user's goals
 * inline: notes/decisions.md#the-users-goals
 
 ## Tickets
-* inline: notes/tickets.md#tracking
-* inline: notes/tickets.md#ticket-files
 * inline: notes/tickets.md#ticket-fields
 * inline: notes/tickets.md#performance-tickets
 * inline: notes/tickets.md#noticed-faults
+- Before you file a ticket, read [Ticket files](prompts/agents/notes/tickets.md#ticket-files).
 
 ## Commands
 * inline: notes/commands.md#commands
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
-* inline: notes/commands.md#final-report
+    * comment: Inlined, not linked: assignees a15dea852806d8e0d and a6bc8a8da857ab193, holding only a link to this section, were pinned to removed worktrees, did not act by it while every Bash call was refused, and each reported its revision unfinished: ticket 2-113.
+* inline: notes/commands.md#final-reply
+* inline: notes/commands.md#message-answers
 
 ## Reply
 - Give in your final reply each ticket you moved to `tickets/open/`, and each finding and each suggestion by its ticket.

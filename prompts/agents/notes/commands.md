@@ -1,6 +1,6 @@
-+ budget: 10900
++ budget: 11296
 * comment: when editing this doc
-    - Each agent whose tools include `Bash` inlines [commands](#commands), for running, waiting on and ending its commands; each agent that gives a final reply to its launcher inlines [final-report](#final-report), and the code reviewer [report-file](#report-file). The doc editor, the ticket analyst, the draft analyst and the decision analyst load Background agents by a link.
+    - Each agent whose tools include `Bash` inlines [commands](#commands), for running, waiting on and ending its commands; each agent that gives a final reply to its launcher inlines [final-report](#final-report), other than the ticket reviewer, which inlines [final-reply](#final-reply) and [message-answers](#message-answers) in its place, and the code reviewer [report-file](#report-file). The doc editor, the ticket analyst, the draft analyst and the decision analyst load Background agents by a link.
     - Acts, each with its section:
         - Running a command: [commands](#commands).
         - Waiting on a command: [waiting-on-commands](#waiting-on-commands).
@@ -8,7 +8,8 @@
         - Launching a background agent a command prints: [Background agents](#background-agents).
         - Reporting a denied call: [denied-calls](#denied-calls).
         - Waiting on an agent resumed by SendMessage: [resumed-agents](#resumed-agents).
-        - Giving the final reply: [final-report](#final-report), with [coordinator](#coordinator) and [report-file](#report-file).
+        - Sending the answer a message asks for: [message-answers](#message-answers).
+        - Giving the final reply: [final-reply](#final-reply), with [coordinator](#coordinator) and [report-file](#report-file), and [final-report](#final-report), which inlines it with the two sections above.
 
 # Command notes
 - The statements on commands, and on sending a final reply, that more than one entry point inlines.
@@ -54,6 +55,8 @@
 ## resumed-agents
 - While an agent you resumed by SendMessage runs, the harness does not deliver your report, and its completion may not reach you.
 - Where you need that agent's answer, ask it, in the message that resumes it, to send that answer to you by SendMessage. Then wait for that message or for a file it writes, and for nothing else of it.
+
+## message-answers
 - Where a message asks you to send its sender an answer by SendMessage, send that answer by SendMessage to the agent id that message came from, once you have done what it asks, with each item of that message as done or as unfinished with its reason, in a message apart from your final reply.
 
 ## coordinator
@@ -64,6 +67,11 @@
     * comment: The cases this rule covers: editors with a report file sent its path by SendMessage after a stall alert (ticket 6-710), and after messages of other agents and a refused SubagentHandback (tickets 6-646, 10-55, 10-80, 10-82, 9-70, 6-705); an item checker wrote no report file, since a note of its system prompt says to write no report files (ticket 9-562).
 
 ## final-report
+* inline: #final-reply
+* inline: #resumed-agents
+* inline: #message-answers
+
+## final-reply
 * inline: #denied-calls
 * inline: #coordinator
 - Give your final reply to the agent that launched you, at the agent id your brief gives for it, or to the coordinator where your brief gives none, and to no other agent, by the first of these that holds:
@@ -73,4 +81,3 @@
     - Otherwise, give your final reply as your report.
 - Give your report by SubagentHandback, or as plain text where the harness says SubagentHandback is not available, and call SubagentHandback with nothing else.
 - The harness delivers as your report the text of the last turn you end. Where a notification resumes you after your final reply, end that turn with your report.
-* inline: #resumed-agents

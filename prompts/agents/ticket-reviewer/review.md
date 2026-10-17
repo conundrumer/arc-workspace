@@ -1,13 +1,12 @@
-+ budget: 9100
++ budget: 9894
 * comment: when editing this doc
-    - The ticket reviewer loads this document from [The Goal](prompts/agents/ticket-reviewer.md#the-goal), once a draft meets its request's Goal.
+    - The ticket reviewer receives this document from the step command as it enters the review of its drafts, once it has judged each draft of its brief by its request's Goal.
     - Acts, each with its section:
         - Reviewing a draft that meets the Goal, and writing suggestions: [Reviewing a draft](#reviewing-a-draft).
         - Checking a draft as an execution plan: [Checks](#checks).
 
 # Reviewing a draft
-- Review the whole of each draft against the tree and this session's state as they are now, by [Checks](#checks).
-    - Where an earlier round checked the draft by [Checks](#checks), read [A later round](prompts/agents/ticket-reviewer/later-rounds.md) before you review it.
+- In a draft's review, check the whole draft against the tree and this session's state as they are now, by [Checks](#checks).
     * comment: With "Review each draft" in its context and a brief that gave the revised parts, ticket reviewer a031cd2826cb3df6e checked mainly those parts of draft 2-525 and moved it to `tickets/open/` while three findings stood on lines of the draft as first filed: the Intent of ticket 2-530.
 - Give as a suggestion each resolution you see one level above the draft's, one that meets the need of the draft's Motivation at a place where it also covers the cases the draft's mechanism leaves, or that removes the need for a mechanism the draft adds or keeps. A ticket analyst takes or leaves it.
     - Suggest no patch to the draft's own mechanism.
