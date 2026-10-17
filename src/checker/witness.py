@@ -46,6 +46,7 @@ from checker.payloads.witness import (
     UnlistedPayload,
     VerdictOutputUnknown,
     WitnessEntryMissing,
+    WitnessTextDiffers,
 )
 from checker.readable import finding_of
 from checker.runs import Runs
@@ -432,22 +433,40 @@ def check_separates(solver: Solver, runs: Runs) -> list[Finding]:
 # The `@witness` lines
 
 
+def _lines_by_id(solver: Solver) -> list[list[WitnessLine]]:
+    """The `@witness` lines of each id, in the order the annotations hold
+    them."""
+    out: dict[str, list[WitnessLine]] = {}
+    for w in solver.annotations.witnesses:
+        out.setdefault(w.id, []).append(w)
+    return list(out.values())
+
+
 def _merged_witnesses(solver: Solver) -> list[WitnessLine]:
     """The `@witness` lines, one per id, the first line's, with the
     `@reassigned` and `@relaxed` lines of every line of the id."""
-    out: dict[str, WitnessLine] = {}
-    for w in solver.annotations.witnesses:
-        if w.id in out:
-            first = out[w.id]
-            out[w.id] = replace(
+    out: list[WitnessLine] = []
+    for first, *rest in _lines_by_id(solver):
+        for w in rest:
+            first = replace(
                 first,
                 relaxed=first.relaxed + tuple(
                     s for s in w.relaxed if s not in first.relaxed),
                 reassigned=first.reassigned + tuple(
                     s for s in w.reassigned if s not in first.reassigned))
-        else:
-            out[w.id] = w
-    return list(out.values())
+        out.append(first)
+    return out
+
+
+def _differing_witness_text(solver: Solver) -> list[Finding]:
+    """A finding at each `@witness` line whose plausibility or verdict
+    differs from those of the first line of its id."""
+    return [Finding(Kind.ANNOTATION, AtLine(w.line),
+                    WitnessTextDiffers(w.id, first.line, first.plausibility,
+                                       first.verdict))
+            for first, *rest in _lines_by_id(solver) for w in rest
+            if (w.plausibility, w.verdict)
+            != (first.plausibility, first.verdict)]
 
 
 def _header_claims(solver: Solver, runs: Runs) -> tuple[Claim, ...] | Fault:
@@ -478,8 +497,13 @@ def _header_claims(solver: Solver, runs: Runs) -> tuple[Claim, ...] | Fault:
         "`@relaxed` for the scene claim it breaks, which rules out "
         "`ordinary`, and `@reassigned` for each parameter that the assignment "
         "it stands at changes.")
+@quotes("principles.md", "Witnesses",
+        "**verdict**: the annotator's judgment of the output that the "
+        "generator would pair with the witness.")
 def check_witness_lines(solver: Solver, runs: Runs) -> list[Finding]:
-    """The `@witness` lines and the witness file agree: each line's id is an
+    """Each `@witness` line gives the plausibility and verdict of the first
+    line of its id, which `_merged_witnesses` keeps.
+    The `@witness` lines and the witness file agree: each line's id is an
     entry of the file; the `@reassigned` lines of a witness name the
     parameters its `assign` changes; each `@relaxed` line of a `@witness`,
     `@derive` or `@store` line names a scene claim of the header.
@@ -487,12 +511,12 @@ def check_witness_lines(solver: Solver, runs: Runs) -> list[Finding]:
     witness file, there is nothing to compare. Where the header's claims are
     unknown (`_header_claims`), no `@relaxed` line is checked, and the fault
     that says so is `fault_findings`'s."""
+    out: list[Finding] = _differing_witness_text(solver)
     if runs.given is not None or solver.witness_file is None:
-        return []
+        return out
     claims = _header_claims(solver, runs)
     kinds = None if isinstance(claims, Fault) \
         else {c.slug: c.kind for c in claims}
-    out: list[Finding] = []
 
     def relaxed(where: Where, slugs: Sequence[str]) -> None:
         if kinds is None:

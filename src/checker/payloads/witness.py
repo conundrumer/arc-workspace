@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from engine import Grid
-from solver.annotations import ClaimKind, Verdict
+from solver.annotations import ClaimKind, Plausibility, Verdict
 from solver.model import Branch, Case, ConstructorBranch, DerivedAtStore
 from solver.outcome import Outcome
 from solver.pair_runs import PairId
@@ -112,6 +112,18 @@ class WitnessEntryMissing:
 
 
 @dataclass(frozen=True)
+class WitnessTextDiffers:
+    """A `@witness` line whose plausibility or verdict differs from those of
+    the first `@witness` line of its id, at `first_line`, which gives
+    `plausibility` and `verdict` (docs/handbook/principles.md#witnesses)."""
+
+    witness: str
+    first_line: int
+    plausibility: Plausibility
+    verdict: Verdict
+
+
+@dataclass(frozen=True)
 class BranchUnwitnessed:
     """A branch of a choice point, other than its concept branch, whose
     branch comment holds no `@witness` line (style.md, under "Cases")."""
@@ -153,9 +165,9 @@ class NoDivergence:
 type AnnotationPayload = (ApproximatedWithoutWitness | ApproximationUnwitnessed
                           | ForeignUnderApproximated | RelaxedNotScene
                           | RelaxedNoClaim | VerdictOutputUnknown
-                          | WitnessEntryMissing | ReassignedMismatch
-                          | StandsElsewhere | NoDivergence
-                          | BranchUnwitnessed)
+                          | WitnessEntryMissing | WitnessTextDiffers
+                          | ReassignedMismatch | StandsElsewhere
+                          | NoDivergence | BranchUnwitnessed)
 """A verdict that names no case is the fault
 `NAME_DENOTES_NO_CASE`, not one of these."""
 

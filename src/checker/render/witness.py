@@ -33,6 +33,7 @@ from checker.payloads.witness import (
     UnseparatedPayload,
     VerdictOutputUnknown,
     WitnessEntryMissing,
+    WitnessTextDiffers,
 )
 from checker.render import _no_sentence
 from checker.render.cases import names_text
@@ -168,6 +169,12 @@ def _annotation_text(solver: Solver, p: AnnotationPayload) -> str:
         case WitnessEntryMissing(witness=w):
             return mctx("the witness file holds no witness `{id}`").format(
                 id=w)
+        case WitnessTextDiffers(witness=w, first_line=first,
+                                plausibility=plaus, verdict=v):
+            return (mctx("the first `@witness` line of `{id}`, at line "
+                         "{line}, gives `{text}` ").format(
+                id=w, line=first, text=witness_text(w, plaus, v))
+                + _WITNESSES)
         case BranchUnwitnessed(constructor=c):
             return mctx("`{name}` is no concept branch and has no "
                         "`@witness` line; add `{line}`").format(
@@ -351,8 +358,8 @@ def witness_lines(solver: Solver, f: Finding) -> list[str]:
                 ApproximatedWithoutWitness() | ApproximationUnwitnessed()
                 | ForeignUnderApproximated() | RelaxedNotScene()
                 | RelaxedNoClaim() | VerdictOutputUnknown()
-                | WitnessEntryMissing() | ReassignedMismatch()
-                | StandsElsewhere() | NoDivergence()
+                | WitnessEntryMissing() | WitnessTextDiffers()
+                | ReassignedMismatch() | StandsElsewhere() | NoDivergence()
                 | BranchUnwitnessed()):
             line = _annotation_text(solver, p)
             return [f"{at}: {line}" if isinstance(f.where, AtLine | AtEntry)
