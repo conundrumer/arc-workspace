@@ -89,10 +89,14 @@ pub struct RelationPart {
 /// part each hold one part. The rows are the product of the parts' rows, so
 /// the count of rows is the product of the parts' counts, and the relation
 /// is empty when any part is empty.
+///
+/// A relation is a value that can't be changed once [`Relation::from_parts`]
+/// builds it, so each index it keeps holds its rows. A relation with other
+/// rows is a new relation.
 #[derive(Clone, Debug)]
 pub struct Relation {
-    pub arity: u16,
-    pub parts: Box<[RelationPart]>,
+    arity: u16,
+    parts: Box<[RelationPart]>,
     /// The indexes built so far, one per column order, each added on its
     /// first use and kept, shared by the clones of the relation.
     indexes: std::sync::Arc<std::sync::RwLock<StableHashMap<ColumnOrder, std::sync::Arc<Index>>>>,
@@ -112,6 +116,16 @@ impl Relation {
         }
         assert!(covered.iter().all(|&c| c), "parts that cover every column");
         Relation { arity, parts, indexes: Default::default() }
+    }
+
+    /// The arity of the rows.
+    pub fn arity(&self) -> u16 {
+        self.arity
+    }
+
+    /// The parts, whose product is the relation's rows.
+    pub fn parts(&self) -> &[RelationPart] {
+        &self.parts
     }
 
     /// The count of rows, the product of the parts' counts.
