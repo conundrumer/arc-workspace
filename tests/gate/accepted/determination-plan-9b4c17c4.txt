@@ -1,5 +1,5 @@
 determined:
   slide
 
-the value is covered on this task's examples; write a determination relation for each value here that a proposer derives from a fact other than the one the concept derives it from:
+the value is covered on this task's examples; write a determination relation for each value here that a proposer derives from a fact other than any the concept derives it from:
   ink (RarestColor exact)

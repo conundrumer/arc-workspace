@@ -624,7 +624,7 @@ def render_determination_plan(solver: Solver, result: PlanResult,
             [_value_text(p, printed) for p in classes.undecided])
     parts += _plan_section(mctx("the value is covered on this task's examples; write a "
                  "determination relation for each value here that a "
-                 "proposer derives from a fact other than the one the "
+                 "proposer derives from a fact other than any the "
                  "concept derives it from"),
             _by_parameter(covered, covered_note, "{param}: {cases}",
                           printed), action=True)
