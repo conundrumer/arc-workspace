@@ -491,6 +491,33 @@ PLAN_HELP = mctx("""
 verdict words mean, kept beside the code that prints them."""
 
 
+@dataclass(frozen=True)
+class PlanPart:
+    """A section of a determination plan, which a blank line leads, or a
+    run of its plain lines, which none leads."""
+    lines: tuple[str, ...]
+    action: bool = False
+    blank_before: bool = True
+
+
+def _plan_section(header: str, items: list[str], note: str = "",
+                  action: bool = False) -> list[PlanPart]:
+    if not items:
+        return []
+    return [PlanPart((f"{header}:", *([note] if note else []),
+                      *(f"  {i}" for i in items)), action)]
+
+
+def _plan_lines(parts: list[PlanPart], unjudged: bool) -> list[str]:
+    lines = [] if unjudged or any(p.action for p in parts) \
+        else [mctx("no actions")]
+    for part in parts:
+        if part.blank_before and lines:
+            lines.append("")
+        lines.extend(part.lines)
+    return lines
+
+
 def render_determination_plan(solver: Solver, result: PlanResult,
                               verdicts: bool = False) -> list[str]:
     """The plan's sections; with `verdicts`, each proposer's verdict on
@@ -522,28 +549,7 @@ def render_determination_plan(solver: Solver, result: PlanResult,
     covered = sorted(exact + ([] if over else [p for p, _ in settle]),
                      key=value_order)
     by_subject = {r.subject: r for r in result.results}
-    lines = [mctx("no actions")]
-    acted = False
-    """Whether an action is written, which takes `no actions` out."""
-    gap_after_none = False
-    """Whether the first line written after `no actions` is a blank line
-    that its presence caused, which goes out with it."""
-
-    def open_block(action: bool) -> None:
-        nonlocal acted, gap_after_none
-        acted = acted or action
-        gap_after_none = gap_after_none or len(lines) == 1
-        lines.append("")
-
-    def section(header: str, items: list[str], note: str = "",
-                action: bool = False) -> None:
-        if not items:
-            return
-        open_block(action)
-        lines.append(f"{header}:")
-        if note:
-            lines.append(note)
-        lines.extend(f"  {i}" for i in items)
+    parts: list[PlanPart] = []
 
     def best_of(param: PlanValue) -> tuple[str, Covering] | None:
         best = covering(by_subject[param])
@@ -584,72 +590,70 @@ def render_determination_plan(solver: Solver, result: PlanResult,
         or not isinstance(differing, frozenset) \
         or any(s.unjudged for s in surviving.values())
     moved = result.moved
-    section(mctx("write a determination relation"),
+    parts += _plan_section(mctx("write a determination relation"),
             _by_parameter(determine, state, mctx(
                 "{param}, giving the rows of each case: {cases}"), printed),
             action=True)
     if isinstance(moved, tuple):
-        section(MOVED, [mctx("{param} at witness `{witness}`").format(
+        parts += _plan_section(MOVED, [mctx("{param} at witness `{witness}`").format(
             param=printed(m.parameter), witness=m.witness) for m in moved],
             action=True)
     else:
-        open_block(True)
-        lines.append(MOVED_UNKNOWN + _make_run(moved))
-    section(JUDGE_FREE,
+        parts.append(PlanPart((MOVED_UNKNOWN + _make_run(moved),), True))
+    parts += _plan_section(JUDGE_FREE,
             [f"{_value_text(p, printed)}: " + _also_admits(
                 surviving[p].stored, surviving[p].extras(), types[p], solver)
              for p in open_valued], action=True)
     if over:
-        section(mctx("over the enumeration limit ({joint} > {limit}); "
+        parts += _plan_section(mctx("over the enumeration limit ({joint} > {limit}); "
                      "determine the parameters simplest to determine until "
                      "the product of the remaining candidate counts goes "
                      "under the limit").format(
             joint=product, limit=ENUMERATION_LIMIT),
             _over_lines(settle, printed), action=True)
-    section(mctx("determined"), [printed(p)
+    parts += _plan_section(mctx("determined"), [printed(p)
                                  for p in by_parameter(classes.done)])
     if not isinstance(differing, frozenset):
-        section(mctx("the determination run gives no result, so whether "
+        parts += _plan_section(mctx("the determination run gives no result, so whether "
                      "these determination relations give the stored values "
                      "is not known") + _make_run(differing),
                 [printed(p) for p in by_parameter(classes.unknown)])
-    section(mctx("undecided: no proposer covers the value, and its stored "
+    parts += _plan_section(mctx("undecided: no proposer covers the value, and its stored "
                  "value holds more than one fact, so the values at which "
                  "the model fits every train pair give it"),
             [_value_text(p, printed) for p in classes.undecided])
-    section(mctx("the value is covered on this task's examples; write a "
+    parts += _plan_section(mctx("the value is covered on this task's examples; write a "
                  "determination relation for each value here that a "
                  "proposer derives from a fact other than the one the "
                  "concept derives it from"),
             _by_parameter(covered, covered_note, "{param}: {cases}",
                           printed), action=True)
     if surviving and enumerated is not None:
-        lines.append(mctx("{survived} of {tried} joint assignments of the "
-                          "enumerated parameters reproduce every train "
-                          "pair").format(survived=enumerated.survived,
-                                         tried=enumerated.tried))
+        parts.append(PlanPart((mctx(
+            "{survived} of {tried} joint assignments of the enumerated "
+            "parameters reproduce every train pair").format(
+                survived=enumerated.survived, tried=enumerated.tried),),
+            blank_before=False))
     if enumerated is not None and enumerated.timed_out:
-        lines.append(mctx("{count} joint assignment(s) whose run timed "
-                          "out:").format(count=len(enumerated.timed_out)))
-        lines += [
-            "  " + ", ".join(f"{_value_text(n, printed)}={shown_of(n)(r)}"
-                             for n, r in a)
-            + f": {' '.join(finding_lines(solver, t.finding))}"
-            for a, t in enumerated.timed_out]
+        parts.append(PlanPart((
+            mctx("{count} joint assignment(s) whose run timed out:").format(
+                count=len(enumerated.timed_out)),
+            *("  " + ", ".join(f"{_value_text(n, printed)}={shown_of(n)(r)}"
+                               for n, r in a)
+              + f": {' '.join(finding_lines(solver, t.finding))}"
+              for a, t in enumerated.timed_out)), blank_before=False))
     if baseline is not None:
-        lines += finding_lines(solver, baseline.finding)
-    section(mctx("move data from clauses to fact parameters"),
+        parts.append(PlanPart(tuple(finding_lines(solver, baseline.finding)),
+                              blank_before=False))
+    parts += _plan_section(mctx("move data from clauses to fact parameters"),
             list(result.embedded), action=True)
     if verdicts:
         detail = [f"{_subject_text(r.subject, printed)}: " + ", ".join(
             f"{name} {verdict_text(v)}" for name, v in entries)
             for r in result.results if (entries := r.entries())]
-        if detail:
-            lines += ["", mctx("each proposer's verdict on each parameter:")]
-            lines += [f"  {d}" for d in detail]
-    if acted or unjudged:
-        del lines[:2 if gap_after_none else 1]
-    return lines
+        parts += _plan_section(mctx("each proposer's verdict on each parameter"),
+                         detail)
+    return _plan_lines(parts, unjudged)
 
 
 # The form of the clauses restates Principles' determination: Create

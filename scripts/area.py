@@ -14,7 +14,7 @@ from handbook.paths import scripts_importable
 
 scripts_importable()
 
-from ticket_paths import names, scope_paths  # noqa: E402
+from ticket_paths import names, scope_paths, ticket_text  # noqa: E402
 from ticket_reads import read_tickets  # noqa: E402
 from transcript_entries import Refused, print_refused  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
@@ -56,7 +56,7 @@ def recent(tickets: dict[str, Ticket], paths: list[str], since: float) -> list[T
     return [t for t in tickets.values()
             if (t.filed >= since or any(line.status is Status.CLOSED and line.time >= since
                                         for line in t.log))
-            and any(names(t.path.read_text(), p) for p in paths)]
+            and (text := ticket_text(t)) is not None and any(names(text, p) for p in paths)]
 
 
 def area(paths: list[str]) -> str:
