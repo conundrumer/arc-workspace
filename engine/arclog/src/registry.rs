@@ -29,7 +29,10 @@
 //!   values, and the rows of a relation with a Position or an Offset column
 //!   as a grid. An
 //!   input marked `reads-outputs` reads the instance's outputs, as
-//!   `Unfold`'s `step`, `skip` and `take` do.
+//!   `Unfold`'s `step`, `skip` and `take` do. An output may share its name
+//!   with an input of the same form: an instance's output of that name reads
+//!   the input's relation, as `Unfold`'s `take`, where the instance writes no
+//!   clause for it, holds the item of least `score`.
 //! - `(proposer <name> native (columns (<Column> <type>) ...))`: a native
 //!   proposer, such as a domain proposer.
 //! - `(proposer <name> arclog)`: a proposer written in arclog, whose clause
