@@ -457,7 +457,10 @@ def finding_output(last: Call, calls: list[Call]) -> str:
 
 def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
     """The steps after a change's merge, or None while its `after-merge`
-    agent runs."""
+    agent runs. A split step carries the change's number, so the journal's
+    record of it, which is under the key of the step with that number,
+    reads; its occasion is the time the change left
+    `tickets/draft/`."""
     head = state.git.commits[0].hash
     if t.after_merge is not None:
         runs = state.agents_of(Role.AFTER_MERGE, t.number)
@@ -480,7 +483,8 @@ def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
         command = (log(r.number, Status.CLOSED, r.status, note, None) if part is None else
                    log(r.number, r.status, r.status,
                        f"left unsplit by change {t.number}: {part}", None))
-        step = Bash(command, f"{r.number} split by {t.number}", occasion=str(t.last_time))
+        step = Bash(command, f"{r.number} split by {t.number}", change=t.number,
+                    occasion=str(left_draft(t)))
         if not done(state, step):
             return step
     for q in sorted(state.tracker.tickets.values(), key=lambda q: q.order):
