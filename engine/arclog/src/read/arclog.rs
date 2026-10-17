@@ -14,6 +14,7 @@ use crate::program::path::NodePath;
 use crate::program::*;
 use crate::registry::LibName;
 
+use super::columns::{key_labels, made_labels, relation_columns};
 use super::labels::LabelScope;
 use super::spelling::{self as sp, parse};
 use super::{grammar, SExpr};
@@ -21,12 +22,12 @@ use super::{grammar, SExpr};
 /// A node the reader leaves out, whose diagnostic it has given.
 pub(super) struct Refused;
 
-type R<T> = Result<T, Refused>;
+pub(super) type R<T> = Result<T, Refused>;
 
 /// The names of the `INIT` and `RIGID_DET` forms of a file, whose outputs a
 /// read `&x.y` names.
 #[derive(Default)]
-struct Owners {
+pub(super) struct Owners {
     instances: BTreeSet<Box<str>>,
     rigid: BTreeSet<Box<str>>,
 }
@@ -49,10 +50,57 @@ impl Owners {
             self.collect(item);
         }
     }
+
+    /// The owners that the forms of `programs` declare, at any depth.
+    pub(super) fn of_programs(programs: &[&Program]) -> Self {
+        let mut owners = Owners::default();
+        for program in programs {
+            owners.forms(&program.forms);
+        }
+        owners
+    }
+
+    fn forms(&mut self, forms: &[Form]) {
+        for form in forms {
+            match form {
+                Form::Claim(claim) => self.forms(&claim.value().forms),
+                Form::Instance(instance) => self.insert_written(&instance.value().name.0, false),
+                Form::RigidDet(rigid) => self.insert_written(&rigid.value().name.0, true),
+                Form::Demonstrated(demonstrated) => {
+                    for rule in demonstrated.value().rules.iter() {
+                        self.forms(&rule.value().forms);
+                    }
+                }
+                Form::Alts(alts) => {
+                    for alt in alts.value().alts.iter() {
+                        self.alt(alt.value());
+                    }
+                }
+                Form::Clause(_) | Form::Choose(_) => {}
+            }
+        }
+    }
+
+    fn alt(&mut self, alt: &Alt) {
+        for item in alt.items.iter() {
+            match item {
+                AltItem::Form(form) => self.forms(std::slice::from_ref(form)),
+                AltItem::Alt(nested) => self.alt(nested.value()),
+            }
+        }
+    }
+
+    fn insert_written(&mut self, name: &DeclaredName, rigid: bool) {
+        let DeclaredName::Written(text) = name else {
+            panic!("a program read from a file writes each name, and a slot is a decode's")
+        };
+        let set = if rigid { &mut self.rigid } else { &mut self.instances };
+        set.insert(text.clone());
+    }
 }
 
 /// The layout a node records as it is read.
-struct Record {
+pub(super) struct Record {
     place: Option<SourcePlace>,
     tokens: Vec<SourcePlace>,
     elided: Vec<u32>,
@@ -60,30 +108,30 @@ struct Record {
 }
 
 impl Record {
-    fn new(place: Option<SourcePlace>) -> Self {
+    pub(super) fn new(place: Option<SourcePlace>) -> Self {
         Record { place, tokens: Vec::new(), elided: Vec::new(), labels: Box::new([]) }
     }
 
-    fn token(&mut self, place: SourcePlace) {
+    pub(super) fn token(&mut self, place: SourcePlace) {
         self.tokens.push(place);
     }
 }
 
 /// The place of the `(` of a list whose place is `place`.
-fn open_of(place: SourcePlace) -> SourcePlace {
+pub(super) fn open_of(place: SourcePlace) -> SourcePlace {
     SourcePlace { end: place.start + 1, ..place }
 }
 
 /// A list's items, its place, and the places of its parentheses.
-struct List<'e> {
-    items: &'e [SExpr],
-    place: SourcePlace,
-    open: SourcePlace,
-    close: SourcePlace,
+pub(super) struct List<'e> {
+    pub(super) items: &'e [SExpr],
+    pub(super) place: SourcePlace,
+    pub(super) open: SourcePlace,
+    pub(super) close: SourcePlace,
 }
 
 /// The head symbol of `expr`, where it is a list headed by a symbol.
-fn head_of(expr: &SExpr) -> Option<&str> {
+pub(super) fn head_of(expr: &SExpr) -> Option<&str> {
     match expr {
         SExpr::List { items, .. } => match items.first() {
             Some(SExpr::Symbol { text, .. }) => Some(text),
@@ -101,7 +149,7 @@ fn never_skip(_: &SExpr) -> bool {
     false
 }
 
-fn is_name(text: &str) -> bool {
+pub(super) fn is_name(text: &str) -> bool {
     let mut chars = text.chars();
     chars.next().is_some_and(|c| c.is_ascii_alphabetic()) && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
@@ -121,6 +169,11 @@ impl Reader {
         for expr in exprs {
             owners.collect(expr);
         }
+        Reader::with_owners(owners, defined_ports)
+    }
+
+    /// A reader whose read `&x.y` names the outputs of `owners`.
+    pub(super) fn with_owners(owners: Owners, defined_ports: bool) -> Self {
         Reader { owners, defined_ports, diagnostics: Vec::new(), nodes: Vec::new() }
     }
 
@@ -129,12 +182,12 @@ impl Reader {
         Layout { nodes: self.nodes.into_iter().map(|(path, node)| ((file, path), node)).collect(), comments: comments.into() }
     }
 
-    fn refuse<T>(&mut self, message: impl Into<Box<str>>, place: SourcePlace) -> R<T> {
+    pub(super) fn refuse<T>(&mut self, message: impl Into<Box<str>>, place: SourcePlace) -> R<T> {
         self.diagnostics.push(grammar(message, place));
         Err(Refused)
     }
 
-    fn save(&mut self, path: &NodePath, record: Record) {
+    pub(super) fn save(&mut self, path: &NodePath, record: Record) {
         let Record { place, tokens, elided, labels } = record;
         self.nodes.push((
             path.clone(),
@@ -144,7 +197,7 @@ impl Reader {
 
     /// Reads one node of a list of nodes that the reader may leave out: the
     /// layout it recorded goes with it.
-    fn optional<T>(&mut self, read: impl FnOnce(&mut Self) -> R<T>) -> Option<T> {
+    pub(super) fn optional<T>(&mut self, read: impl FnOnce(&mut Self) -> R<T>) -> Option<T> {
         let mark = self.nodes.len();
         let value = read(self).ok();
         if value.is_none() {
@@ -153,14 +206,14 @@ impl Reader {
         value
     }
 
-    fn list<'e>(&mut self, expr: &'e SExpr, what: &str) -> R<List<'e>> {
+    pub(super) fn list<'e>(&mut self, expr: &'e SExpr, what: &str) -> R<List<'e>> {
         match expr {
             SExpr::List { items, place, close } => Ok(List { items, place: *place, open: open_of(*place), close: *close }),
             other => self.refuse(format!("{what} is a list"), other.place()),
         }
     }
 
-    fn symbol<'e>(&mut self, expr: Option<&'e SExpr>, what: &str, at: SourcePlace) -> R<(&'e str, SourcePlace)> {
+    pub(super) fn symbol<'e>(&mut self, expr: Option<&'e SExpr>, what: &str, at: SourcePlace) -> R<(&'e str, SourcePlace)> {
         match expr {
             Some(SExpr::Symbol { text, place }) => Ok((text, *place)),
             Some(other) => self.refuse(format!("{what} is a symbol"), other.place()),
@@ -168,7 +221,7 @@ impl Reader {
         }
     }
 
-    fn string<'e>(&mut self, expr: Option<&'e SExpr>, what: &str, at: SourcePlace) -> R<(&'e str, SourcePlace)> {
+    pub(super) fn string<'e>(&mut self, expr: Option<&'e SExpr>, what: &str, at: SourcePlace) -> R<(&'e str, SourcePlace)> {
         match expr {
             Some(SExpr::String { text, place }) => Ok((text, *place)),
             Some(other) => self.refuse(format!("{what} is a string"), other.place()),
@@ -213,7 +266,7 @@ impl Reader {
         }
     }
 
-    fn program_relation(&mut self, text: &str, place: SourcePlace) -> R<ProgramRelation> {
+    pub(super) fn program_relation(&mut self, text: &str, place: SourcePlace) -> R<ProgramRelation> {
         if text.contains('.') {
             Ok(ProgramRelation::Output(self.output(text, place)?))
         } else {
@@ -361,7 +414,7 @@ impl Reader {
         Ok(Node::new(Claim { kind, slug: Slug(slug.into()), text: Text(text.into()), approximated, forms: forms.into() }))
     }
 
-    fn dollar_name(&mut self, expr: Option<&SExpr>, what: &str, at: SourcePlace, record: &mut Record) -> R<Box<str>> {
+    pub(super) fn dollar_name(&mut self, expr: Option<&SExpr>, what: &str, at: SourcePlace, record: &mut Record) -> R<Box<str>> {
         let (text, place) = self.symbol(expr, what, at)?;
         if !text.strip_prefix('$').is_some_and(is_name) {
             return self.refuse(format!("{what} is `$` and a name"), place);
@@ -889,123 +942,3 @@ impl Reader {
     }
 }
 
-/// The columns of a relation the program declares, which `labels` give.
-fn relation_columns(labels: &[LabelId], scope: &LabelScope) -> Arc<[RelationColumn]> {
-    labels.iter().map(|&label| RelationColumn { name: ColumnName::Written(scope.name(label).into()), label }).collect()
-}
-
-fn push_new(out: &mut Vec<LabelId>, label: LabelId) {
-    if !out.contains(&label) {
-        out.push(label);
-    }
-}
-
-/// The labels a body keeps, in source order: each that a site or a `=` of
-/// its own list makes, and each that an `OR` or an `IF` of its own list
-/// exports, as `docs/arclog/arclog.md#disjunction` gives.
-fn made_labels(body: &Body) -> Vec<LabelId> {
-    let mut out = Vec::new();
-    for conjunct in body.conjuncts.iter() {
-        match conjunct {
-            Conjunct::Atom(atom) => {
-                for site in atom.value().sites.iter() {
-                    site_labels(site, &mut |use_| {
-                        if let LabelUse::Fresh(label) = use_ {
-                            push_new(&mut out, label);
-                        }
-                    });
-                }
-            }
-            Conjunct::Constraint(constraint) => {
-                for label in [Some(constraint.first), constraint_second(constraint)].into_iter().flatten() {
-                    if label.fresh {
-                        push_new(&mut out, label.label);
-                    }
-                }
-            }
-            Conjunct::Or(branches) => {
-                let later: Vec<&Body> = branches[1..].iter().map(|b| b.value()).collect();
-                exports(branches[0].value(), &later, &mut out);
-            }
-            Conjunct::If { then, otherwise, .. } => exports(then.value(), &[otherwise.value()], &mut out),
-            Conjunct::Not(_) | Conjunct::All { .. } => {}
-        }
-    }
-    out
-}
-
-fn constraint_second(constraint: &Constraint) -> Option<ConstraintLabel> {
-    match constraint.second {
-        Operand::Label(label) => Some(label),
-        Operand::Zero => None,
-    }
-}
-
-/// The labels `first` keeps that each of `later` names.
-fn exports(first: &Body, later: &[&Body], out: &mut Vec<LabelId>) {
-    let named: Vec<BTreeSet<u32>> = later.iter().map(|b| body_labels(b)).collect();
-    for label in made_labels(first) {
-        if named.iter().all(|set| set.contains(&label.0)) {
-            push_new(out, label);
-        }
-    }
-}
-
-fn site_labels(site: &Site, visit: &mut dyn FnMut(LabelUse)) {
-    for arg in site.value.args.iter() {
-        match arg {
-            SiteArg::Label(label) => visit(*label),
-            SiteArg::Field(field) => site_labels(field, visit),
-        }
-    }
-}
-
-/// Each label use of `body`, at any depth, in source order.
-fn each_label(body: &Body, visit: &mut dyn FnMut(LabelUse)) {
-    fn atom(atom: &Atom, visit: &mut dyn FnMut(LabelUse)) {
-        for site in atom.sites.iter() {
-            site_labels(site, visit);
-        }
-    }
-    fn conjunct(c: &Conjunct, visit: &mut dyn FnMut(LabelUse)) {
-        match c {
-            Conjunct::Atom(a) | Conjunct::Not(Negated::Atom(a)) => atom(a.value(), visit),
-            Conjunct::Not(Negated::Form(form)) => conjunct(form, visit),
-            Conjunct::Constraint(k) => {
-                for label in [Some(k.first), constraint_second(k)].into_iter().flatten() {
-                    visit(if label.fresh { LabelUse::Fresh(label.label) } else { LabelUse::Join(label.label) });
-                }
-            }
-            Conjunct::Or(branches) => branches.iter().for_each(|b| each_label(b.value(), visit)),
-            Conjunct::If { test, then, otherwise } => {
-                [test, then, otherwise].into_iter().for_each(|b| each_label(b.value(), visit))
-            }
-            Conjunct::All { domain, body } => [domain, body].into_iter().for_each(|b| each_label(b.value(), visit)),
-        }
-    }
-    for c in body.conjuncts.iter() {
-        conjunct(c, visit);
-    }
-}
-
-fn body_labels(body: &Body) -> BTreeSet<u32> {
-    let mut out = BTreeSet::new();
-    each_label(body, &mut |use_| match use_ {
-        LabelUse::Fresh(l) | LabelUse::Join(l) | LabelUse::Key(l) => {
-            out.insert(l.0);
-        }
-        LabelUse::Zero => {}
-    });
-    out
-}
-
-/// The `^` labels of a key body, in order of appearance.
-fn key_labels(body: &Body) -> Vec<LabelId> {
-    let mut out = Vec::new();
-    each_label(body, &mut |use_| {
-        if let LabelUse::Key(label) = use_ {
-            push_new(&mut out, label);
-        }
-    });
-    out
-}

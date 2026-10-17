@@ -377,8 +377,11 @@ fn ident_columns(ty: &ValueType, start: usize, positions: &mut Vec<usize>) -> us
 /// record's column group, one per field, so a value written as a list is
 /// read into the same columns. A Color's digit, a number and a
 /// Box's margins are encoded as `ty` reads them, and an Ident's written
-/// number is interned in `table` as a [`Content::FromFile`]. `registry`
-/// gives which constants a type such as `C4` admits.
+/// number is interned in `table` as a [`Content::FromFile`]. An
+/// orientation name maps to its constant by
+/// [`crate::registry::Registry::orientation_constant`], and a name the
+/// registry declares no constant of is a [`DataValueError::NotOfType`].
+/// `registry` gives which constants a type such as `C4` admits.
 ///
 /// This is the one step from a written value to its term ids, after the type
 /// check, for `param` rows and `assign` rows alike. `ty` is the type of the

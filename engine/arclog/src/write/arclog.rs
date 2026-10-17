@@ -1,14 +1,17 @@
 //! The writer of an arclog file from its program and its layout. It walks
 //! the nodes in the order the reader of `engine/arclog/src/read/arclog.rs`
 //! reads them, and writes each token at the place its node's layout gives.
+//! It holds the token output, [`Out`], through which each writer of the
+//! module `write` writes its tokens, spaces and comments.
 
 use crate::layout::{Comment, Layout, NodeLayout, SourceFile, SourcePlace};
 use crate::program::path::NodePath;
 use crate::program::*;
 use crate::read::spelling::{self as sp, spelling};
 
-/// The text written so far, with the line and column after it.
-struct Out<'l> {
+/// The text written so far, with the line and column after it: the token
+/// output of each writer of the module `write`.
+pub(super) struct Out<'l> {
     text: String,
     line: u32,
     column: u32,
@@ -17,7 +20,38 @@ struct Out<'l> {
     after_open: bool,
 }
 
-impl Out<'_> {
+impl<'l> Out<'l> {
+    /// The output of `file`, which writes each comment of `layout` in it.
+    pub(super) fn new(layout: &'l Layout, file: SourceFile) -> Self {
+        let mut comments: Vec<&Comment> = layout.comments.iter().filter(|c| c.place.file == file).collect();
+        comments.sort_by_key(|c| c.place.start);
+        Out { text: String::new(), line: 1, column: 1, comments, after_open: false }
+    }
+
+    /// The text, ended at `end`, the place of the file's end, after each
+    /// comment not yet written, or, where the layout gives no end, with a
+    /// newline after them.
+    pub(super) fn finish(mut self, end: Option<SourcePlace>, file: SourceFile) -> String {
+        match end {
+            Some(end) => {
+                self.comments_before(SourcePlace { line: u32::MAX, ..end });
+                self.move_to(end);
+            }
+            None => {
+                self.comments_before(SourcePlace { file, start: 0, end: 0, line: u32::MAX, column: 0 });
+                self.text.push('\n');
+            }
+        }
+        self.text
+    }
+
+    /// Writes the next token of `tokens` as `text`.
+    pub(super) fn next_token(&mut self, tokens: &mut Tokens, text: &str) {
+        let place = tokens.places.get(tokens.next).copied();
+        tokens.next += 1;
+        self.token(place, text);
+    }
+
     /// Moves to `place`: a newline per line it lies below, then a space per
     /// column it lies to the right.
     fn move_to(&mut self, place: SourcePlace) -> bool {
@@ -71,9 +105,22 @@ impl Out<'_> {
 }
 
 /// The tokens of one node, each written at its place in the node's layout.
-struct Tokens<'l> {
+pub(super) struct Tokens<'l> {
     places: &'l [SourcePlace],
     next: usize,
+}
+
+impl<'l> Tokens<'l> {
+    /// The tokens of the node at `path` of `file`, none where the layout
+    /// holds no such node.
+    pub(super) fn of(layout: &'l Layout, file: SourceFile, path: &NodePath) -> Self {
+        Tokens { places: layout.node(file, path).map_or(&[], |n| &n.tokens), next: 0 }
+    }
+
+    /// The place of the node's first token, where its layout gives one.
+    pub(super) fn first(&self) -> Option<SourcePlace> {
+        self.places.first().copied()
+    }
 }
 
 /// The labels of one scope by their names.
@@ -123,7 +170,7 @@ fn output_name(name: &OutputName) -> String {
     text
 }
 
-fn program_relation(relation: &ProgramRelation) -> String {
+pub(super) fn program_relation(relation: &ProgramRelation) -> String {
     match relation {
         ProgramRelation::Declared(RelationName(name)) => declared(name).to_owned(),
         ProgramRelation::Output(name) => output_name(name),
@@ -140,7 +187,7 @@ fn relation_ref(relation: &RelationRef) -> String {
     }
 }
 
-fn quoted(text: &str) -> String {
+pub(super) fn quoted(text: &str) -> String {
     format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
@@ -163,13 +210,11 @@ impl<'l> Writer<'l> {
     }
 
     fn tokens(&self, path: &NodePath) -> Tokens<'l> {
-        Tokens { places: self.node(path).map_or(&[], |n| &n.tokens), next: 0 }
+        Tokens::of(self.layout, SourceFile::Arclog, path)
     }
 
     fn put(&mut self, tokens: &mut Tokens, text: &str) {
-        let place = tokens.places.get(tokens.next).copied();
-        tokens.next += 1;
-        self.out.token(place, text);
+        self.out.next_token(tokens, text);
     }
 
     fn names(&self, path: &NodePath) -> Names<'l> {
@@ -179,17 +224,6 @@ impl<'l> Writer<'l> {
     fn program(&mut self, program: &Program) {
         let root = NodePath::default();
         self.forms(&program.forms, &root, 0, None);
-        let end = self.tokens(&root).places.first().copied();
-        match end {
-            Some(end) => {
-                self.out.comments_before(SourcePlace { line: u32::MAX, ..end });
-                self.out.move_to(end);
-            }
-            None => {
-                self.out.comments_before(SourcePlace { file: SourceFile::Arclog, start: 0, end: 0, line: u32::MAX, column: 0 });
-                self.out.text.push('\n');
-            }
-        }
     }
 
     fn forms(&mut self, forms: &[Form], parent: &NodePath, first: u32, scope: Option<&Names>) {
@@ -519,10 +553,8 @@ impl<'l> Writer<'l> {
 }
 
 pub(super) fn write(program: &Program, layout: &Layout) -> String {
-    let mut comments: Vec<&Comment> = layout.comments.iter().filter(|c| c.place.file == SourceFile::Arclog).collect();
-    comments.sort_by_key(|c| c.place.start);
-    let out = Out { text: String::new(), line: 1, column: 1, comments, after_open: false };
-    let mut writer = Writer { layout, out };
+    let mut writer = Writer { layout, out: Out::new(layout, SourceFile::Arclog) };
     writer.program(program);
-    writer.out.text
+    let end = writer.tokens(&NodePath::default()).first();
+    writer.out.finish(end, SourceFile::Arclog)
 }

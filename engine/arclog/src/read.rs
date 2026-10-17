@@ -5,12 +5,13 @@
 //! under `engine/lib/` is read by the same s-expression reader, as
 //! [`crate::registry`] gives.
 //!
-//! The arcdata reader and [`read_solver`] stay `todo!()` for the arcdata
-//! stage.
+//! Each node reader records the layout of each node it reads under the
+//! node's path, and leaves out a node that matches no node kind with a
+//! diagnostic of the grammar at it.
 
-#![allow(unused_variables, dead_code)]
-
+mod arcdata;
 mod arclog;
+mod columns;
 mod labels;
 mod sexpr;
 pub(crate) mod spelling;
@@ -22,10 +23,9 @@ use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity, WithDiag
 use crate::layout::{FilePlace, Layout, SourceFile, SourcePlace};
 use crate::program::path::NodePath;
 use crate::program::{Arcdata, Form, Node, Program};
-use crate::registry::Registry;
 use crate::solver::Solver;
 
-use self::arclog::Reader;
+use self::arclog::{Owners, Reader, Record};
 use self::labels::LabelScope;
 
 /// An s-expression as the fixed reader gives it, before node kinds.
@@ -51,8 +51,13 @@ impl SExpr {
 
 /// A diagnostic of the grammar at `place`, of a file the reader reads alone.
 fn grammar(message: impl Into<Box<str>>, place: SourcePlace) -> Diagnostic {
+    check_error(CheckId::Grammar, message, place)
+}
+
+/// An error of `check` at `place`, of a file the reader reads alone.
+fn check_error(check: CheckId, message: impl Into<Box<str>>, place: SourcePlace) -> Diagnostic {
     Diagnostic {
-        kind: DiagnosticKind::Check(CheckId::Grammar),
+        kind: DiagnosticKind::Check(check),
         severity: Severity::Error,
         message: message.into(),
         location: Location::Places(Box::new([FilePlace { task_id: None, place }])),
@@ -127,8 +132,12 @@ pub fn read_instance(expr: &SExpr) -> Result<(Node<crate::program::Instance>, La
 ///
 /// Fails where an s-expression of `expr` matches no node kind of its format,
 /// with a diagnostic of the grammar at each such s-expression.
-pub fn read_data_row(expr: &SExpr, registry: &Registry) -> Result<Box<[crate::program::DataValue]>, Vec<Diagnostic>> {
-    todo!()
+pub fn read_data_row(expr: &SExpr) -> Result<Box<[crate::program::DataValue]>, Vec<Diagnostic>> {
+    let mut reader = Reader::with_owners(Owners::default(), false);
+    match reader.row(expr, &mut Record::new(None)) {
+        Ok(row) if reader.diagnostics.is_empty() => Ok(row.iter().cloned().collect()),
+        _ => Err(reader.diagnostics),
+    }
 }
 
 /// The program of an arclog file and its layout, read from the file alone.
@@ -153,17 +162,66 @@ pub fn read_arclog(text: &str, file: SourceFile) -> Result<WithDiagnostics<(Node
 /// stands beside extended by its own. `program` is that arclog file's
 /// program, and `representative` the program of the solver its
 /// `representative` line names, whose forms give what each name declares, such as whether
-/// `&piece` of `&piece.member` is an `INIT` or a `RIGID_DET` form, and
-/// `registry` gives the orientation constants by their names. A node that matches no node kind is left out,
-/// as [`read_arclog`] gives.
+/// `&piece` of `&piece.member` is an `INIT` or a `RIGID_DET` form. Each
+/// orientation constant holds its name as the file writes it. A node that
+/// matches no node kind is left out, as [`read_arclog`] gives.
 pub fn read_arcdata(
     text: &str,
     program: &Node<Program>,
     representative: Option<&Node<Program>>,
     layout: Layout,
-    registry: &Registry,
 ) -> Result<WithDiagnostics<(Node<Arcdata>, Layout)>, Vec<Diagnostic>> {
-    todo!()
+    let (exprs, comments) = read_sexprs(text, SourceFile::Arcdata)?;
+    Ok(arcdata_of(&exprs, comments, end_place(text, SourceFile::Arcdata), program, representative, layout))
+}
+
+/// The arcdata file of `exprs`, as [`read_arcdata`] gives it.
+fn arcdata_of(
+    exprs: &[SExpr],
+    comments: Vec<crate::layout::Comment>,
+    end: SourcePlace,
+    program: &Node<Program>,
+    representative: Option<&Node<Program>>,
+    layout: Layout,
+) -> WithDiagnostics<(Node<Arcdata>, Layout)> {
+    let programs: Vec<&Program> = std::iter::once(program).chain(representative).map(Node::value).collect();
+    let mut reader = Reader::with_owners(Owners::of_programs(&programs), false);
+    let arcdata = reader.arcdata(exprs, end);
+    let diagnostics = std::mem::take(&mut reader.diagnostics);
+    let own = reader.layout(SourceFile::Arcdata, comments);
+    let mut layout = layout;
+    layout.nodes.extend(own.nodes);
+    layout.comments = layout.comments.iter().chain(own.comments.iter()).cloned().collect();
+    WithDiagnostics { value: (arcdata, layout), diagnostics }
+}
+
+/// The task id of the `representative` line of `exprs`, and the line's
+/// place, where the file has one.
+fn representative_line(exprs: &[SExpr]) -> Option<(&str, SourcePlace)> {
+    exprs.iter().find_map(|expr| match expr {
+        SExpr::List { items, place, .. } => match &items[..] {
+            [SExpr::Symbol { text: head, .. }, SExpr::Symbol { text: task_id, .. }, ..]
+                if &**head == spelling::REPRESENTATIVE =>
+            {
+                Some((&**task_id, *place))
+            }
+            _ => None,
+        },
+        _ => None,
+    })
+}
+
+/// `diagnostics`, each place of which names the file by `task_id`, where it
+/// names none.
+fn in_solver(mut diagnostics: Vec<Diagnostic>, task_id: &str) -> Vec<Diagnostic> {
+    for diagnostic in &mut diagnostics {
+        if let Location::Places(places) = &mut diagnostic.location {
+            for place in places.iter_mut().filter(|p| p.task_id.is_none()) {
+                place.task_id = Some(task_id.into());
+            }
+        }
+    }
+    diagnostics
 }
 
 /// The solver of `task_id` from the text of its two files.
@@ -171,14 +229,32 @@ pub fn read_arcdata(
 /// Where the arcdata file has a `representative` line, the solver is read
 /// under the representative's claims, and `representative` gives the
 /// representative's solver by its task id. A line whose task id
-/// `representative` gives no solver for is a diagnostic at the line. A node
-/// that matches no node kind is left out, as [`read_arclog`] gives.
+/// `representative` gives no solver for is a diagnostic of the scope at the
+/// line. A node
+/// that matches no node kind is left out, as [`read_arclog`] gives. Each
+/// diagnostic of the two files stands at places that name the files by
+/// `task_id`.
 pub fn read_solver(
     task_id: &str,
     arclog: &str,
     arcdata: &str,
     representative: &dyn Fn(&str) -> Option<Arc<Solver>>,
-    registry: &Registry,
 ) -> Result<WithDiagnostics<Solver>, Vec<Diagnostic>> {
-    todo!()
+    let read = read_arclog(arclog, SourceFile::Arclog).map_err(|d| in_solver(d, task_id))?;
+    let (program, layout) = read.value;
+    let mut diagnostics = read.diagnostics;
+    let (exprs, comments) = read_sexprs(arcdata, SourceFile::Arcdata).map_err(|d| in_solver(d, task_id))?;
+    let mut solver_of_line = None;
+    if let Some((line_task_id, place)) = representative_line(&exprs) {
+        match representative(line_task_id) {
+            Some(solver) => solver_of_line = Some(solver),
+            None => diagnostics.push(check_error(CheckId::Scope, format!("`{line_task_id}` names no solver of the corpus"), place)),
+        }
+    }
+    let end = end_place(arcdata, SourceFile::Arcdata);
+    let read = arcdata_of(&exprs, comments, end, &program, solver_of_line.as_ref().map(|s| &s.program), layout);
+    let (arcdata, layout) = read.value;
+    diagnostics.extend(read.diagnostics);
+    let solver = Solver { task_id: task_id.into(), program, arcdata, layout, representative: solver_of_line };
+    Ok(WithDiagnostics { value: solver, diagnostics: in_solver(diagnostics, task_id) })
 }

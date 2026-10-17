@@ -1,15 +1,16 @@
 //! The writer of arclog and arcdata files. Reading a file of the corpus and
 //! writing it again gives the same bytes.
 //!
-//! The arcdata writer, [`write_solver`] and [`write_synthesized`] stay
-//! `todo!()` for later stages.
+//! [`write_solver`] and [`write_synthesized`] stay `todo!()` for later
+//! stages.
 
 #![allow(unused_variables, dead_code)]
 
+mod arcdata;
 mod arclog;
 
 use crate::layout::Layout;
-use crate::program::{Node, Program};
+use crate::program::{Arcdata, Node, Program};
 use crate::registry::Registry;
 use crate::solver::Solver;
 use crate::terms::InternTable;
@@ -32,10 +33,19 @@ pub fn write_arclog(program: &Node<Program>, layout: &Layout) -> String {
     arclog::write(program.value(), layout)
 }
 
+/// The text of the arcdata file that `arcdata` and `layout`, as
+/// [`crate::read::read_arcdata`] reads them, give, as [`write_arclog`]
+/// writes the arclog file: each token at the place its node's layout gives,
+/// and each comment of the layout whose place is in
+/// [`crate::layout::SourceFile::Arcdata`]. A value read from the file is
+/// written as the file wrote it.
+pub fn write_arcdata(arcdata: &Node<Arcdata>, layout: &Layout) -> String {
+    arcdata::write(arcdata.value(), layout)
+}
+
 /// The two files of `solver`, laid out as the converter lays out each form,
-/// with the comments, strings and label names of its layout. `registry`
-/// gives the name of each orientation constant.
-pub fn write_solver(solver: &Solver, registry: &Registry) -> SolverText {
+/// with the comments, strings and label names of its layout.
+pub fn write_solver(solver: &Solver) -> SolverText {
     todo!()
 }
 

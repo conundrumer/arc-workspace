@@ -116,8 +116,10 @@ pub enum DataValue {
     /// An integer as the file writes it: a number, a Color's digit or an
     /// Ident's number, by the column's type.
     Integer(i32),
-    /// An orientation constant, written by its name in the registry.
-    Orientation(crate::terms::OrientationConstant),
+    /// An orientation constant, by its name as the file writes it, such as
+    /// `DIR_T`. [`crate::terms::encode_data_value`] maps the name to its
+    /// constant.
+    Orientation(Box<str>),
     /// A value written as a list: a Box as its four margins, `(1 1 10 1)`,
     /// or the members of a column group of several fields, which are read
     /// into the same columns as the fields written apart.

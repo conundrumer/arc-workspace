@@ -1,7 +1,8 @@
-//! The spellings of the closed vocabularies of an arclog file, each in one
-//! table that the reader and the writer read in the two directions.
+//! The spellings of the closed vocabularies of an arclog file and of an
+//! arcdata file, each in one table that the reader and the writer read in
+//! the two directions.
 
-use crate::program::{ClaimKind, ClauseKeyword, ConstraintOp, FactRelation};
+use crate::program::{ClaimKind, ClauseKeyword, ConstraintOp, FactRelation, Plausibility, TypeName};
 
 pub(crate) const CLAIM_KINDS: &[(ClaimKind, &str)] = &[(ClaimKind::Input, "INPUT"), (ClaimKind::Output, "OUTPUT")];
 
@@ -57,6 +58,59 @@ pub(crate) const COLUMN_MARK: char = ':';
 pub(crate) const FRESH_MARK: char = '*';
 pub(crate) const KEY_MARK: char = '^';
 pub(crate) const ZERO: &str = "0";
+
+/// The column types of an arcdata `param` form.
+pub(crate) const TYPE_NAMES: &[(TypeName, &str)] = &[
+    (TypeName::Number, "number"),
+    (TypeName::Color, "Color"),
+    (TypeName::Example, "Example"),
+    (TypeName::Unit, "Unit"),
+    (TypeName::Box, "Box"),
+    (TypeName::Position, "Position"),
+    (TypeName::Offset, "Offset"),
+    (TypeName::Ident, "Ident"),
+    (TypeName::C4, "C4"),
+    (TypeName::D4, "D4"),
+    (TypeName::Dir, "Dir"),
+    (TypeName::DiagDir, "DiagDir"),
+    (TypeName::Dir8, "Dir8"),
+    (TypeName::Axis, "Axis"),
+    (TypeName::DiagAxis, "DiagAxis"),
+    (TypeName::Axis4, "Axis4"),
+    (TypeName::Sym, "Sym"),
+    (TypeName::Sense, "Sense"),
+];
+
+pub(crate) const PLAUSIBILITIES: &[(Plausibility, &str)] = &[
+    (Plausibility::Ordinary, "ordinary"),
+    (Plausibility::Variant, "variant"),
+    (Plausibility::Borderline, "borderline"),
+    (Plausibility::Foreign, "foreign"),
+];
+
+// The head symbols of an arcdata file's forms.
+pub(crate) const REPRESENTATIVE: &str = "representative";
+pub(crate) const PARAM: &str = "param";
+pub(crate) const EXCLUDE: &str = "exclude";
+pub(crate) const ALTS_RECORD: &str = "alts";
+pub(crate) const ALT_RECORD: &str = "alt";
+pub(crate) const APPROXIMATED_RECORD: &str = "approximated";
+pub(crate) const WITNESS: &str = "witness";
+pub(crate) const RELAXED: &str = "relaxed";
+pub(crate) const SEPARATES: &str = "separates";
+pub(crate) const ASSIGN: &str = "assign";
+pub(crate) const INPUT: &str = "input";
+pub(crate) const OUTPUT: &str = "output";
+pub(crate) const GRID: &str = "grid";
+/// A grid cell that gives no row.
+pub(crate) const EMPTY_CELL: &str = "_";
+/// The mark of a grid's anchor cell, `@_` or `@1`.
+pub(crate) const ANCHOR_MARK: char = '@';
+pub(crate) const UNDEFINED: &str = "undefined";
+// The verdicts and the case name that are no alt's name.
+pub(crate) const CONCEPT: &str = "concept";
+pub(crate) const ANY: &str = "any";
+pub(crate) const OTHER: &str = "other";
 
 /// The spelling of `value` in `table`.
 pub(crate) fn spelling<T: PartialEq>(table: &[(T, &'static str)], value: &T) -> &'static str {
