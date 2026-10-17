@@ -1,0 +1,81 @@
+// b91ae062
+// @draft
+// @keywords: scale count lookup
+// @scene colored-cells-on-background: every input holds a few cells of colors
+//  other than the background 0 on a field of the background, with at least one
+//  color other than the background
+// @rule scale-factor-is-color-count: k is the number of distinct colors other
+//  than the background in the input
+// @rule scale-up: the output is the input scaled by k on both axes: each input
+//  cell becomes a k×k block of its color
+
+// how k follows from the count
+.type Choice =
+    // @claim scale-factor-is-color-count
+    Count {}
+    // @rule scale-factor-is-color-count: k is the entry a stored table gives
+    //  for the count; undefined on an input whose count has no entry
+    // @witness table-entry-off-count: ordinary concept
+    //     @reassigned scale_by_count
+  | ScaleTable {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    //     @relaxed colored-cells-on-background
+    // @ignore: derive SharedColor — equivalent to DominantColor: a derived
+    //  background is a color of the input either way
+    // @ignore: derive RarestColor — equivalent to DominantColor: a derived
+    //  background is a color of the input either way
+    .decl background(c: Color) background(0).
+
+    // --- $ScaleTable ---
+    // k for each count of colors
+    .decl scale_by_count(n: number, k: number)
+    scale_by_count(2, 2). scale_by_count(3, 3). scale_by_count(4, 4).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Count()). impl_choice($ScaleTable()).
+
+.comp Parse<Key> {
+    .decl cell(k: Key, p: Position, col: Color)
+
+    // @claim scale-factor-is-color-count
+    .init palette = Tally<Key, Color>
+    palette.item(K, Col) :- cell(K, _, Col), !params.background(Col).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The k×k block each input cell becomes.
+.init block = Frame2D<Choice>
+
+out(P_grid_out, Col, Ch) :-
+    in(P_tile, Col), block.cell(Ch, P_intile),        // input cell, cell of its block
+    concat_2d(P_tile, P_intile, 0, P_grid_out).
+
+// --- $Count ---
+block.extent($Count(), A, N) :- axis_elem(A), parse.palette.tally($U(), N).
+
+// --- $ScaleTable ---
+block.extent($ScaleTable(), A, K) :-
+    axis_elem(A), parse.palette.tally($U(), N), params.scale_by_count(N, K).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // k is the extent of one part of the output cut along an axis into as
+    // many parts as the input has lines.
+    .decl scale_by_count(n: number, k: number)
+    scale_by_count(N, K) :-
+        parse.palette.tally(E, N),
+        parse.cell(E, P_in, _), ex_out(E, P_out, _), axis_elem(A),
+        axis_dim(P_in, A, M), divide(P_out, A, M, 0, _, P_inner),
+        axis_dim(P_inner, A, K).
+}

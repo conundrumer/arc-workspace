@@ -1,0 +1,121 @@
+// bd283c4a
+// @draft
+// @keywords: color-class count rank
+// @scene distinct-counts: no two colors of an input have the same cell count
+// @rule same-size: the output has the input's size
+// @rule count-order: the colors are ranked by their cell count in the input,
+//  the highest first; colors of equal count take either order, each order
+//  one output
+// @rule raster-fill: the output cells are taken in a raster order that starts
+//  at corner params.start_corner, runs along axis params.fill_axis within a
+//  line, and then steps to the next line away from that corner; each color,
+//  in rank order, takes as many cells of that order as its input count,
+//  after the cells the colors before it took
+
+// How colors of equal count are ordered
+.type Choice =
+    // @claim count-order
+    EitherOrder {}
+    // @rule count-order: colors of equal count stand in the order their
+    //  first cells come in the input's raster order
+    // @witness tied-counts: borderline concept
+    //     @relaxed distinct-counts
+  | TieFirstCell {}
+
+.type TiebreakResolution =
+    End {} | Sit {slot: Color, item: Color, rest: TiebreakResolution}
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {
+    .decl start_corner(d: DiagDir) start_corner(DIAG_BL).
+    .decl fill_axis(a: Axis) fill_axis(AXIS_V).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($EitherOrder()). impl_choice($TieFirstCell()).
+
+// --- the raster order ---
+
+// A line runs along fill_axis, so the lines step along the other axis.
+.decl step_axis(a: Axis)
+step_axis(A) :- params.fill_axis(A0), perp(A0, A).
+
+// @store: variant concept
+.decl out_dim(a: Axis, n: number)
+out_dim(A, N) :- in(P, _), axis_elem(A), axis_dim(P, A, N).
+
+.init frame = Frame2D<Unit>
+frame.extent($U(), A, N) :- out_dim(A, N).
+
+// @claim raster-fill
+.init raster = LexOrder<Unit>
+raster.cell($U(), P) :- frame.cell($U(), P).
+raster.corner($U(), D) :- params.start_corner(D).
+raster.axis($U(), A) :- step_axis(A).
+
+// --- the colors, ranked by count ---
+
+// @claim count-order
+.init size = Tally<Color, Position>
+size.item(C, P) :- in(P, C).
+
+// The input in the same raster order, for the first cell of each color.
+// @claim count-order
+.init scan = LexOrder<Unit>
+scan.cell($U(), P) :- in(P, _).
+scan.corner($U(), D) :- params.start_corner(D).
+scan.axis($U(), A) :- step_axis(A).
+
+// @claim count-order
+.init first = Extremes<Color>
+first.cand(C, R) :- in(P, C), scan.rank($U(), P, R).
+
+// Higher count first; of equal counts, the earlier first cell.
+// @claim count-order
+.init ranked = Order<Unit, Color>
+ranked.elem($U(), C) :- in(_, C).
+ranked.before($U(), C1, C2) :- size.tally(C1, N1), size.tally(C2, N2), N1 > N2.
+ranked.before($U(), C1, C2) :-
+    size.tally(C1, N), size.tally(C2, N),
+    first.low(C1, R1), first.low(C2, R2), R1 < R2.
+
+// The rank R each color takes in each case and resolution.
+.decl place(ch: Choice, res: TiebreakResolution, c: Color, r: number)
+
+// --- $EitherOrder ---
+
+// A color takes the place in `ranked` of any color of equal count, so each
+// order of tied colors is one resolution.
+.init ties = TiebreakResolutions<Unit, Color, Color>
+ties.cand($U(), C2, C) :- size.tally(C2, N), size.tally(C, N).
+
+place($EitherOrder(), Res, C, R) :- ties.assign($U(), Res, C2, C), ranked.rank($U(), C2, R).
+
+// --- $TieFirstCell ---
+
+place($TieFirstCell(), $End(), C, R) :- ranked.rank($U(), C, R).
+
+// --- the fill ---
+
+.type Placed = [ch: Choice, res: TiebreakResolution, c: Color]
+
+// The cells of the colors placed before this one: where its run starts.
+// @claim raster-fill
+.init preceding = Tally<Placed, Position>
+preceding.domain([Ch, Res, C]) :- place(Ch, Res, C, _).
+preceding.item([Ch, Res, C], Q) :-
+    place(Ch, Res, C, R), place(Ch, Res, C2, R2), R2 < R, in(Q, C2).
+
+// Those cells and the color's own: where its run ends.
+// @claim raster-fill
+.init through = Tally<Placed, Position>
+through.item(K, Q) :- preceding.item(K, Q).
+through.item([Ch, Res, C], Q) :- place(Ch, Res, C, _), in(Q, C).
+
+out(P, C, Ch, Res) :-
+    raster.rank($U(), P, K),
+    preceding.tally([Ch, Res, C], S), S <= K,    // the color's run has started
+    through.tally([Ch, Res, C], E), K < E.       // and has not ended

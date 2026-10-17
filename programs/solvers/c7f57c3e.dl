@@ -1,0 +1,180 @@
+// c7f57c3e
+// @draft
+// @keywords: objects scale stamp
+// @scene plain-background: one color fills every cell that no figure covers
+// @scene figures: each figure is one 8-connected group of non-background cells
+// @scene scaled-copies-of-one-body: the frame-color cells of every figure are
+//  one shape, at an integer scale per figure, with one orientation, and every
+//  figure's cells are blocks of that scale
+// @scene two-decorations: a figure's cells of other colors than frame-color,
+//  put in the frame of its body and its scale, form one of exactly two
+//  patterns, and each pattern occurs on at least one figure
+// @rule swap-decorations: each figure keeps its frame-color body, loses its
+//  own decoration, and takes the other decoration, scaled to its own scale and
+//  placed at the same position relative to its body
+// @rule rest-unchanged: every other cell keeps its input color
+
+// what gives the body's colors
+.type Choice =
+    // @claim scaled-copies-of-one-body
+    StoredFrame {}
+    // @scene scaled-copies-of-one-body: the body is every color that every
+    //  figure carries in one shape up to the figure's scale; undefined where
+    //  the bodies those colors give differ between figures
+    // @witness body-color-5: variant $FrameColorsByShape
+    //     @relaxed scaled-copies-of-one-body
+    // @witness pattern-colors-shared: ordinary concept
+  | FrameColorsByShape {}
+
+// A figure at a candidate block size.
+.type FigScale = [o: Ident, k: number]
+
+// A figure and one of its colors.
+.type FigColor = [o: Ident, col: Color]
+
+// A figure under a reading of the body's colors.
+.type FigBody = [ch: Choice, o: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $StoredFrame ---
+    .decl frame_color(col: Color) frame_color(1).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($StoredFrame()). impl_choice($FrameColorsByShape()).
+
+// @claim plain-background
+.init commonest = Mode<Unit, Color, Position>
+commonest.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- commonest.mode($U(), Col).
+
+// @claim figures
+.init figs = Components8<Unit>
+figs.node($U(), P) :- in(P, Col), !bg(Col).
+
+// @claim scaled-copies-of-one-body
+.init fig_box = Bbox<Ident>
+fig_box.cell(O, P) :- figs.label($U(), P, O).
+
+// Each cell of a figure's box, in the box's own frame.
+.decl fig_frame(o: Ident, p_grid: Position, p_inner: Position)
+fig_frame(O, P_grid, P_inner) :- fig_box.box(O, B), in(P_grid, _), crop(P_grid, B, P_inner).
+
+// A figure's box cut into blocks at each candidate size.
+// @claim scaled-copies-of-one-body
+.init tiling = Tile2D<FigScale>
+tiling.cell(P_inner) :- fig_frame(_, _, P_inner).
+tiling.dim([O, K], A, K) :-
+    fig_frame(O, _, P_inner), axis_elem(A2), sub_extent(P_inner, A2, K), axis_elem(A).
+tiling.gap(0).
+
+.decl fig_tile(o: Ident, k: number, p_grid: Position, p_tile: Position, p_intile: Position)
+fig_tile(O, K, P_grid, P_tile, P_intile) :-
+    fig_frame(O, P_grid, P_inner), tiling.tile([O, K], P_inner, P_tile, P_intile).
+
+// Some block of the figure at size k holds two colors.
+.decl mixed(o: Ident, k: number)
+mixed(O, K) :- fig_tile(O, K, P, P_tile, _), fig_tile(O, K, Q, P_tile, _), in(P, Col), !in(Q, Col).
+
+// The figure's scale: the largest size at which its cells are blocks.
+// @claim scaled-copies-of-one-body
+.init block = Extremes<Ident>
+block.cand(O, K) :- fig_tile(O, K, _, _, _), !mixed(O, K).
+
+// Each block of a figure at its scale, with the block's color.
+.decl block_color(o: Ident, p_tile: Position, col: Color)
+block_color(O, P_tile, Col) :- block.high(O, K), fig_tile(O, K, P, P_tile, _), in(P, Col).
+
+// The body's colors.
+.decl frame_col(ch: Choice, col: Color)
+
+// @claim swap-decorations
+.init body_box = Bbox<FigBody>
+body_box.cell([Ch, O], P_tile) :- block_color(O, P_tile, Col), frame_col(Ch, Col).
+
+// A figure's blocks, in the frame of its body's box.
+.decl body_rel(ch: Choice, o: Ident, p_rel: Position, col: Color)
+body_rel(Ch, O, P_rel, Col) :-
+    block_color(O, P_tile, Col), body_box.box([Ch, O], B), relative(B, P_tile, P_rel).
+
+.decl body(ch: Choice, o: Ident, p_rel: Position)
+body(Ch, O, P_rel) :- body_rel(Ch, O, P_rel, Col), frame_col(Ch, Col).
+
+// Two figures' bodies differ.
+.decl body_mismatch(ch: Choice)
+body_mismatch(Ch) :- body(Ch, O, P), body_box.box([Ch, O2], _), !body(Ch, O2, P).
+
+.decl decoration(ch: Choice, o: Ident, p_rel: Position, col: Color)
+decoration(Ch, O, P_rel, Col) :- body_rel(Ch, O, P_rel, Col), !bg(Col), !frame_col(Ch, Col).
+
+// The decoration of figure o holds a block that the decoration of o2 lacks.
+.decl lacks(ch: Choice, o: Ident, o2: Ident)
+lacks(Ch, O, O2) :-
+    decoration(Ch, O, P, Col), body_box.box([Ch, O2], _), !decoration(Ch, O2, P, Col).
+
+// The decoration a figure takes: that of a figure whose decoration differs.
+.decl takes(ch: Choice, o: Ident, p_rel: Position, col: Color)
+takes(Ch, O, P_rel, Col) :-
+    ( lacks(Ch, O, O2) ; lacks(Ch, O2, O) ), decoration(Ch, O2, P_rel, Col).
+
+// A cell of the decoration a figure takes, at the figure's scale.
+.decl paint(ch: Choice, p: Position, col: Color)
+paint(Ch, P_grid, Col) :-
+    takes(Ch, O, P_rel, Col), body_box.box([Ch, O], B), compose(B, P_rel, P_tile),
+    block.high(O, K), fig_tile(O, K, _, _, P_intile),
+    concat_2d(P_tile, P_intile, 0, P_fig),
+    fig_box.box(O, B_fig), compose(B_fig, P_fig, P_grid), in(P_grid, _).
+
+out(P, Col, Ch) :- paint(Ch, P, Col).
+// A cell outside every figure, or a body cell, keeps its color while the
+// bodies agree.
+out(P, Col, Ch) :-
+    impl_choice(Ch), !body_mismatch(Ch), in(P, Col), !paint(Ch, P, _),
+    ( !figs.label($U(), P, _) ; frame_col(Ch, Col) ).
+// A cell of the figure's own decoration clears, once the figure takes another.
+out(P, Col, Ch) :-
+    figs.label($U(), P, O), in(P, C_in), !frame_col(Ch, C_in),
+    takes(Ch, O, _, _), !paint(Ch, P, _), bg(Col).
+
+// --- $StoredFrame ---
+
+frame_col($StoredFrame(), Col) :- params.frame_color(Col).
+
+// --- $FrameColorsByShape ---
+
+// Some figure lacks the color.
+.decl unshared(col: Color)
+unshared(Col) :- block_color(_, _, Col), block.high(O, _), !block_color(O, _, Col).
+
+// @claim scaled-copies-of-one-body
+.init col_box = Bbox<FigColor>
+col_box.cell([O, Col], P_tile) :- block_color(O, P_tile, Col).
+
+// The figure's blocks of one color, in the frame of their box.
+.decl col_shape(o: Ident, col: Color, p_rel: Position)
+col_shape(O, Col, P_rel) :-
+    block_color(O, P_tile, Col), col_box.box([O, Col], B), crop(P_tile, B, P_rel).
+
+// The color's blocks take different shapes on two figures.
+.decl reshaped(col: Color)
+reshaped(Col) :- col_shape(O, Col, P), col_box.box([O2, Col], _), !col_shape(O2, Col, P).
+
+frame_col($FrameColorsByShape(), Col) :-
+    block_color(_, _, Col), !bg(Col), !unshared(Col), !reshaped(Col).
+
+.comp Determine {
+    // Some cell of the color takes another color in the output.
+    .decl lost(col: Color)
+    lost(Col) :- ex_in(E, P, Col), ex_out(E, _, _), !ex_out(E, P, Col).
+
+    // The body keeps its color on every figure.
+    // @ignore: determine prediction — swap-decorations keeps the body and changes the other figure cells, so the color no pair changes is the body's color read from the pairs
+    .decl frame_color(col: Color)
+    frame_color(Col) :- ex_in(E, _, Col), ex_out(E, _, _), !lost(Col).
+}

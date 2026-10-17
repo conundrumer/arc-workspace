@@ -1,0 +1,274 @@
+{
+  "id": "bf32578f",
+  "witnesses": [{
+    "id": "top-notch",
+    "separates": "The closed outline has a notch at the top of its axis. The enclosed reading leaves the notch 0, and a span along the mirror axis fills the notch cells that lie between outline cells in their row.",
+    "input": [
+      [4,4,0,0,0,0,0,0],
+      [4,0,4,0,0,0,0,0],
+      [4,0,0,4,0,0,0,0],
+      [4,0,0,0,0,0,0,0],
+      [4,0,0,0,0,0,0,0],
+      [4,4,4,4,0,0,0,0],
+      [0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$Enclosed","$SpanAcross","$SpanBoth","$ErodeFilled"],
+      "grid": [
+        [0,0,0,0,0,0,0,0],
+        [0,4,0,0,0,0,4,0],
+        [0,4,4,0,0,4,4,0],
+        [0,4,4,4,4,4,4,0],
+        [0,4,4,4,4,4,4,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$SpanAlong","$SpanEither","$SpanAny"],
+      "grid": [
+        [0,0,4,4,4,4,0,0],
+        [0,4,0,4,4,0,4,0],
+        [0,4,4,0,0,4,4,0],
+        [0,4,4,4,4,4,4,0],
+        [0,4,4,4,4,4,4,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "left-dent",
+    "separates": "The left wall dents inward at row 3. The enclosed reading leaves the dent cell 0, and a span across the mirror axis fills it, since the wall lies above and below it.",
+    "input": [
+      [0,0,0,0,0,0,0,0],
+      [0,2,2,2,0,0,0,0],
+      [0,2,0,0,0,0,0,0],
+      [0,0,2,0,0,0,0,0],
+      [0,2,0,0,0,0,0,0],
+      [0,2,2,2,0,0,0,0],
+      [0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$Enclosed","$SpanAlong","$SpanBoth","$ErodeFilled"],
+      "grid": [
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,2,2,2,2,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,2,2,2,2,0,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$SpanAcross","$SpanEither","$SpanAny"],
+      "grid": [
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,2,2,2,2,0,0],
+        [0,2,0,2,2,0,2,0],
+        [0,0,2,2,2,2,0,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "curl-pocket",
+    "separates": "An outside pocket enters from the top and turns under a ledge. The enclosed reading leaves the pocket 0; the span readings fill the pocket cells with outline on each side, and the eroded fill keeps the thick wall cells off the rim.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [3,3,3,3,0,3,0,0,0,0,0,0],
+      [3,0,0,3,0,3,0,0,0,0,0,0],
+      [3,0,3,3,0,3,0,0,0,0,0,0],
+      [3,0,3,0,0,3,0,0,0,0,0,0],
+      [3,0,3,3,3,3,0,0,0,0,0,0],
+      [3,0,0,0,0,0,0,0,0,0,0,0],
+      [3,3,3,3,3,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$Enclosed"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,3,3,0,0,0,0,0,0,3,3,0],
+        [0,3,0,0,0,0,0,0,0,0,3,0],
+        [0,3,0,0,0,0,0,0,0,0,3,0],
+        [0,3,0,0,0,0,0,0,0,0,3,0],
+        [0,3,3,3,3,3,3,3,3,3,3,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$SpanAlong","$SpanEither","$SpanAny"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,3,0,0,3,0,0,0,0],
+        [0,3,3,0,3,0,0,3,0,3,3,0],
+        [0,3,0,0,3,0,0,3,0,0,3,0],
+        [0,3,0,3,3,0,0,3,3,0,3,0],
+        [0,3,0,0,0,0,0,0,0,0,3,0],
+        [0,3,3,3,3,3,3,3,3,3,3,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$SpanAcross","$SpanBoth"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,3,3,0,0,0,0,0,0,3,3,0],
+        [0,3,0,0,0,0,0,0,0,0,3,0],
+        [0,3,0,3,0,0,0,0,3,0,3,0],
+        [0,3,0,0,0,0,0,0,0,0,3,0],
+        [0,3,3,3,3,3,3,3,3,3,3,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$ErodeFilled"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,3,3,0,0,0,0,0,0,3,3,0],
+        [0,3,3,0,0,0,0,0,0,3,3,0],
+        [0,3,0,0,0,0,0,0,0,0,3,0],
+        [0,3,3,0,0,3,3,0,0,3,3,0],
+        [0,3,3,3,3,3,3,3,3,3,3,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "hanging-tip",
+    "separates": "The top end of the curve hangs down one cell into the inside. The enclosed reading erases the tip and its image, and the eroded fill paints them, since they are off the rim of the filled shape.",
+    "input": [
+      [0,0,0,0,0,0,0,0],
+      [0,5,5,5,0,0,0,0],
+      [0,5,0,5,0,0,0,0],
+      [0,5,0,0,0,0,0,0],
+      [0,5,0,0,0,0,0,0],
+      [0,5,5,5,0,0,0,0],
+      [0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["concept","$SpanAlong","$SpanAcross","$SpanBoth","$SpanEither","$SpanAny"],
+      "grid": [
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,5,0,0,5,0,0],
+        [0,0,5,5,5,5,0,0],
+        [0,0,5,5,5,5,0,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$MirrorDirFromEnds"],
+      "grid": null
+    }, {
+      "cases": ["$ErodeFilled"],
+      "grid": [
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,5,5,5,5,0,0],
+        [0,0,5,5,5,5,0,0],
+        [0,0,5,5,5,5,0,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "opens-left",
+    "separates": "The shape opens to the left at the right edge of the grid. At the stored direction the image leaves the grid, and the direction the ends give mirrors it to the left and fills the inside.",
+    "input": [
+      [0,0,0,0,0,0],
+      [0,0,0,6,0,0],
+      [0,0,0,0,6,0],
+      [0,0,0,0,0,6],
+      [0,0,0,0,6,0],
+      [0,0,0,6,0,0]
+    ],
+    "output": [{
+      "cases": ["$StoredDir"],
+      "grid": null
+    }, {
+      "cases": ["$MirrorDirFromEnds"],
+      "grid": [
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,6,6,0,0],
+        [0,6,6,6,6,0],
+        [0,0,6,6,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "bg=DominantColor",
+    "separates": "The field is 3 in place of 0. At the stored background the non-0 cells hold two colors, and the background the commonest color gives reads the shape and fills its inside on a field of 3.",
+    "input": [
+      [3,3,3,3,3,3],
+      [3,3,6,3,3,3],
+      [3,6,3,3,3,3],
+      [6,3,3,3,3,3],
+      [3,6,3,3,3,3],
+      [3,3,6,3,3,3]
+    ],
+    "output": [{
+      "cases": ["bg=stored"],
+      "grid": null
+    }, {
+      "cases": ["bg=DominantColor"],
+      "grid": [
+        [3,3,3,3,3,3],
+        [3,3,3,3,3,3],
+        [3,3,6,6,3,3],
+        [3,6,6,6,6,3],
+        [3,3,6,6,3,3],
+        [3,3,3,3,3,3]
+      ]
+    }]
+  }, {
+    "id": "goblet-neck",
+    "separates": "The outline narrows from a wide bowl to a neck. The enclosed reading and the row and column spans leave the cells beside the top of the neck 0, and a span along some row, column or diagonal fills them, since outline lies on both sides of each along a diagonal.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,4,4,4,4,0,0,0,0,0],
+      [4,0,0,0,0,0,0,0,0,0],
+      [0,4,4,0,0,0,0,0,0,0],
+      [0,0,0,4,0,0,0,0,0,0],
+      [0,0,0,4,0,0,0,0,0,0],
+      [0,0,0,0,4,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Enclosed",
+        "$SpanAlong",
+        "$SpanAcross",
+        "$SpanBoth",
+        "$SpanEither",
+        "$ErodeFilled"
+      ],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,4,4,4,4,4,4,4,4,0],
+        [0,0,0,4,4,4,4,0,0,0],
+        [0,0,0,0,4,4,0,0,0,0],
+        [0,0,0,0,4,4,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$SpanAny"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,4,4,4,4,4,4,4,4,0],
+        [0,0,0,4,4,4,4,0,0,0],
+        [0,0,4,0,4,4,0,4,0,0],
+        [0,0,0,0,4,4,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }]
+}

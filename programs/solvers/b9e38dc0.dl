@@ -1,0 +1,257 @@
+// b9e38dc0
+// @draft
+// @keywords: objects rank chain enclose flood wallpaper cast walk
+// @scene background: the most common color fills the rest of the grid
+// @scene cup: one outline of one color, the largest object, whose cells join
+//  at sides or corners into one chain with two ends, where its two walls end.
+//  The flow is the direction the last step into each end advances along. The
+//  cup closes off a region on every side but the flow's; the mouth is the
+//  line of the end further back along the flow.
+// @scene liquid: one or more cells of one other color lie inside the cup, and
+//  no cell of that color lies outside it
+// @scene walls-repeat: each wall, walked back from its end, has one cell on
+//  each line across the flow for at least one step, and steps outward or
+//  straight, up to where it turns inward or has two cells on a line
+// @scene obstacles: other cells of colors other than the cup's and the
+//  liquid's lie on the background, some of them inside the cup or in front of
+//  the mouth
+// @rule fill-cup: each background cell the liquid reaches by side steps,
+//  without passing a wall or the mouth line, takes the liquid color
+// @rule flow: the stream moves straight out of the mouth, away from the cup,
+//  to the grid edge
+// @rule widen: each wall is continued past its end, to the grid edge, by
+//  repeating the shortest pattern of its last steps that the steps before it
+//  repeat, as far back as `walls-repeat` walks; on each line across the flow,
+//  from the mouth line on, the stream holds the cells strictly between the
+//  two walls
+// @rule pour: a background stream cell takes the liquid color when the cell
+//  straight behind it along the flow holds the liquid; where that cell is a
+//  wall, drawn or continued, or lies beyond one, it takes the liquid color
+//  when the nearest cell between the walls on the line behind holds the
+//  liquid. An obstacle holds no liquid, so it leaves a straight shadow behind
+//  it.
+// @rule keep: every other cell keeps its color
+
+// how a stream cell takes the liquid
+.type Feed =
+    // @claim pour
+    FedStream {}
+    // @rule pour: every background stream cell takes the liquid color,
+    //  except the cells straight behind an obstacle, whether or not the
+    //  liquid reaches it
+    // @witness obstacle-at-stream-edge: ordinary concept
+  | GeometricStream {}
+
+// where a shadow starts
+.type Shadow =
+    // @claim fill-cup pour
+    CupFill {}
+    // @rule fill-cup: a cup cell straight behind an obstacle in the cup keeps
+    //  its color
+    // @rule pour: a stream cell straight behind an obstacle in the cup keeps
+    //  its color
+    // @witness obstacle-deep-in-cup: ordinary concept
+  | CupShadow {}
+
+.type Choice = [f: Feed, s: Shadow]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {}
+
+.init params = Params
+
+.decl feed_choice(f: Feed)
+feed_choice($FedStream()). feed_choice($GeometricStream()).
+
+.decl shadow_choice(s: Shadow)
+shadow_choice($CupFill()). shadow_choice($CupShadow()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([F, S]) :- feed_choice(F), shadow_choice(S).
+
+// @claim background
+.init common = Mode<Unit, Color, Position>
+common.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- common.mode($U(), Col).
+
+// The objects: same-color cells joined at sides or corners.
+// @claim cup
+.init object = Components8<Color>
+object.node(Col, P) :- in(P, Col), !bg(Col).
+
+// @claim cup
+.init object_size = Tally<Ident, Position>
+object_size.item(Id, P) :- object.label(_, P, Id).
+
+// @claim cup
+.init largest = ArgExtremes<Unit, Ident>
+largest.cand($U(), Id, N) :- object_size.tally(Id, N).
+
+.decl cup(p: Position)
+cup(P) :- largest.high($U(), Id, _), object.label(_, P, Id).
+
+.decl cup_color(col: Color)
+cup_color(Col) :- cup(P), in(P, Col).
+
+// Cup cells p and q touch at a side or a corner.
+.decl cup_touch(p: Position, q: Position)
+cup_touch(P, Q) :- cup(P), neighbor(P, _, Q), cup(Q).
+
+.decl forked(p: Position)
+forked(P) :- cup_touch(P, Q1), cup_touch(P, Q2), Q1 != Q2.
+
+// A wall's end, and the one cup cell it touches.
+.decl wall_end(e: Position, q: Position)
+wall_end(E, Q) :- cup_touch(E, Q), !forked(E).
+
+// The direction the last step into each end advances along.
+.decl flow(d: Dir)
+flow(D) :-
+    wall_end(E1, Q1), wall_end(E2, Q2), E1 != E2,
+    dir_elem(D), nearer(D, E1, Q1), nearer(D, E2, Q2).
+
+// The wall that ends at e, named by the side o it lies on across the flow.
+.decl wall(e: Position, o: Dir)
+wall(E, O) :- wall_end(E, _), wall_end(E2, _), flow(D), perp_dir(D, O), nearer(O, E, E2).
+
+// The mouth: the end that lies further back along the flow.
+.decl mouth(m: Position)
+mouth(M) :- wall(M, _), flow(D), wall(E, _), E != M, !nearer(D, M, E).
+
+// The region the cup and the mouth line close off.
+// @claim cup liquid
+.init hollow = Closed<Unit>
+hollow.cell($U(), P) :- in(P, _), !cup(P), mouth(M), flow(D), nearer(D, M, P).
+
+.decl held(p: Position)
+held(P) :- hollow.region($U(), P, _).
+
+// The one color whose every cell lies in the cup's region.
+.decl liquid_color(col: Color)
+liquid_color(Col) :- in(_, Col), !outside_color(Col).
+
+.decl outside_color(col: Color)
+outside_color(Col) :- in(P, Col), !held(P).
+
+.decl obstacle(p: Position)
+obstacle(P) :- in(P, Col), !bg(Col), !cup_color(Col), !liquid_color(Col).
+
+// b is a cup cell on the line behind cup cell c that touches it.
+.decl back_touch(c: Position, b: Position)
+back_touch(C, B) :- cup_touch(C, B), flow(D), nearer(D, C, B).
+
+.decl back_fork(c: Position)
+back_fork(C) :- back_touch(C, B1), back_touch(C, B2), B1 != B2.
+
+// Each wall walked back from its end while the line behind holds one cup cell
+// that touches it, no further out.
+// @claim walls-repeat
+.init run = Propagation<Dir, Position>
+run.source(O, E) :- wall(E, O).
+run.edge(O, C, B) :- wall(_, O), back_touch(C, B), !back_fork(C), !nearer(O, B, C).
+
+// A pattern of wall o: the steps from run cell c to the end, carried back by
+// the offset w from the end to c.
+.decl pattern_cand(o: Dir, c: Position, w: Offset)
+pattern_cand(O, C, W) :- wall(E, O), run.reached(O, C), C != E, relative(E, C, W).
+
+// Some run cell from c to the end, carried back by w, misses the run within
+// the run's lines.
+.decl pattern_break(o: Dir, c: Position)
+pattern_break(O, C) :-
+    pattern_cand(O, C, W), flow(D), run.reached(O, Q), !nearer(D, C, Q),   // Q between c and the end
+    compose(Q, W, Q2), !run.reached(O, Q2),
+    run.reached(O, S), !nearer(D, S, Q2).                                   // Q2 within the run's lines
+
+.decl pattern_fit(o: Dir, c: Position)
+pattern_fit(O, C) :- pattern_cand(O, C, _), !pattern_break(O, C).
+
+.decl pattern_longer(o: Dir, c: Position)
+pattern_longer(O, C) :- pattern_fit(O, C), pattern_fit(O, C2), flow(D), nearer(D, C2, C).
+
+// The shortest pattern: its run cells past c, and the offset v of one repeat.
+.decl pattern(o: Dir, c: Position, v: Offset)
+pattern(O, C, V) :- pattern_fit(O, C), !pattern_longer(O, C), wall(E, O), relative(C, E, V).
+
+// Each wall continued past its end by repeats of its pattern, while on the
+// grid.
+// @claim widen
+.init extend = Propagation<Dir, Position>
+extend.source(O, Q) :- pattern(O, C, _), run.reached(O, Q), flow(D), nearer(D, Q, C).
+extend.edge(O, P, Q) :- pattern(O, _, V), in(P, _), compose(P, V, Q), in(Q, _).
+
+.decl wall_cell(o: Dir, p: Position)
+wall_cell(O, P) :- run.reached(O, P).
+wall_cell(O, P) :- extend.reached(O, P).
+
+// x is on the line of a wall cell, and no further in than it.
+.decl beyond_wall(x: Position)
+beyond_wall(X) :- in(X, _), wall_cell(O, Q), flow(D), same_dist(D, Q, X), !nearer(O, Q, X).
+
+.decl between(x: Position)
+between(X) :- in(X, _), !beyond_wall(X).
+
+// The stream: the cells between the walls from the mouth line on.
+.decl stream(x: Position)
+stream(X) :- in(X, Col), bg(Col), mouth(M), flow(D), !nearer(D, M, X), between(X).
+
+// @claim fill-cup
+.init pool = Reach<Unit>
+pool.node($U(), P) :- held(P), in(P, Col), bg(Col).
+pool.node($U(), P) :- in(P, Col), liquid_color(Col).
+pool.seed($U(), P) :- in(P, Col), liquid_color(Col).
+
+// f is the cell stream cell x takes the liquid from.
+.decl feed(x: Position, f: Position)
+feed(X, F) :-
+    stream(X), flow(D), opposite(D, D_back), neighbor(X, D_back, B),
+    ( between(B), F = B
+    ; wall_cell(O, Q), same_dist(D, Q, B), !nearer(O, Q, B),    // B on or beyond wall o
+      opposite(O, D_in), neighbor(Q, D_in, F)
+    ).
+
+// The cells a case keeps dry.
+.decl dry(s: Shadow, p: Position)
+
+.decl wet_cup(s: Shadow, p: Position)
+wet_cup(S, P) :- pool.reach($U(), P), shadow_choice(S), !dry(S, P).
+
+.decl liquid(ch: Choice, p: Position)
+liquid([F, S], P) :- wet_cup(S, P), feed_choice(F).
+
+// --- $CupShadow ---
+// The cells straight behind an obstacle, through the cup and the stream.
+// @claim fill-cup pour
+.init cup_shade = Propagation<Unit, Position>
+cup_shade.source($U(), P) :- obstacle(P).
+cup_shade.edge($U(), B, X) :-
+    in(X, Col), bg(Col), ( pool.reach($U(), X) ; stream(X) ),
+    flow(D), opposite(D, D_back), neighbor(X, D_back, B).
+
+dry($CupShadow(), P) :- cup_shade.reached($U(), P), in(P, Col), bg(Col).
+
+// --- $FedStream ---
+// @claim pour
+.init pour = Propagation<Shadow, Position>
+pour.source(S, P) :- wet_cup(S, P).
+pour.edge(S, F, X) :- feed(X, F), shadow_choice(S), !dry(S, X).
+
+liquid([$FedStream(), S], X) :- pour.reached(S, X).
+
+// --- $GeometricStream ---
+// The cells straight behind an obstacle between the walls.
+// @claim pour
+.init shade = Propagation<Unit, Position>
+shade.source($U(), P) :- obstacle(P).
+shade.edge($U(), B, X) :-
+    stream(X), flow(D), opposite(D, D_back), neighbor(X, D_back, B), between(B).
+
+liquid([$GeometricStream(), S], X) :-
+    stream(X), !shade.reached($U(), X), shadow_choice(S), !dry(S, X).
+
+// --- output ---
+out(P, Col, Ch) :- liquid(Ch, P), liquid_color(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), liquid_color(_), !liquid(Ch, P).

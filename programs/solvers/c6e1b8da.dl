@@ -1,0 +1,135 @@
+// c6e1b8da
+// @draft
+// @keywords: objects color-class markers move occlude bbox
+// @scene solid-rectangles: every input holds solid rectangles on a field of
+//  params.background, each rectangle in its own color.
+// @scene tails: at least one rectangle has a tail: a straight line one cell
+//  wide, of the rectangle's color, that goes out from the middle part of one
+//  side, perpendicular to that side. The other rectangles have no tail.
+// @scene tailed-on-top: a tailed rectangle and its tail lie on top of any
+//  rectangle they overlap. Only a tailed rectangle or a tail hides part of a
+//  rectangle.
+// @rule slide-by-tail: each tailed rectangle moves in the direction its tail
+//  points, by as many cells as the tail has, so its leading side ends on the
+//  tail's tip. The tail is not drawn.
+// @rule slid-on-top: a moved rectangle covers any other rectangle where they
+//  overlap.
+// @rule restore-whole: each rectangle with no tail is drawn whole at its
+//  place, the cells a tailed rectangle or a tail hid in the input included.
+// @rule vacated-background: a cell that no rectangle covers in the output is
+//  params.background.
+
+// how a rectangle with no tail shows where a tailed one hid it
+.type Choice =
+    // @claim restore-whole
+    RestoreWhole {}
+    // @rule restore-whole: each rectangle with no tail keeps its input cells,
+    //  and a cell that a moved rectangle or its tail leaves takes the color of
+    //  the rectangle with no tail whose bounding box holds it; undefined where
+    //  two such boxes hold one left cell.
+    // @witness still-rectangles-overlap: borderline $RestoreVacatedOnly
+    //     @relaxed tailed-on-top
+  | RestoreVacatedOnly {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed solid-rectangles
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($RestoreWhole()). impl_choice($RestoreVacatedOnly()).
+
+// Q, P's neighbor toward D, has P's color.
+.decl mate(p: Position, d: Dir, q: Position)
+mate(P, D, Q) :- in(P, Col), dir_elem(D), neighbor(P, D, Q), in(Q, Col).
+
+// P has a neighbor of its color across axis A.
+.decl flanked(p: Position, a: Axis)
+flanked(P, A) :- mate(P, D, _), axis_of(D, A2), perp(A2, A).
+
+// P can lie on a tail along axis A: no neighbor of its color across A.
+.decl tail_cand(p: Position, a: Axis)
+tail_cand(P, A) :- in(P, Col), !params.background(Col), axis_elem(A), !flanked(P, A).
+
+// Q is at an end of the side of its rectangle that faces D.
+.decl side_end(q: Position, d: Dir)
+side_end(Q, D) :- in(Q, _), perp_dir(D, D2), !mate(Q, D2, _).
+
+// Q is the cell of a rectangle's side that a tail leaves toward D: the next
+// cell is a tail cell of its color, and Q is in the middle part of the side.
+.decl foot(q: Position, d: Dir)
+foot(Q, D) :- mate(Q, D, T), axis_of(D, A), tail_cand(T, A), !side_end(Q, D).
+
+// The tail of each foot: the run of its color's cells that leaves it.
+// @claim tails
+.init tail = Slide<Position>
+tail.dir(Q, D) :- foot(Q, D).
+tail.node(Q, T) :- foot(Q, _), in(Q, Col), in(T, Col).
+
+.decl tail_cell(q: Position, t: Position)
+tail_cell(Q, T) :- tail.run(Q, Q, _, T).
+
+// @claim slide-by-tail
+.init tail_size = Tally<Position, Position>
+tail_size.item(Q, T) :- tail_cell(Q, T).
+
+// The tailed rectangle of color Col moves N cells toward D.
+.decl slide(col: Color, d: Dir, n: number)
+slide(Col, D, N) :- foot(Q, D), in(Q, Col), tail_size.tally(Q, N).
+
+// Each rectangle's extent: the box of its color's cells, the tail left out.
+// @claim solid-rectangles restore-whole
+.init rect = Bbox<Color>
+rect.cell(Col, P) :- in(P, Col), !params.background(Col), !tail_cell(_, P).
+
+// The cells of each moved rectangle.
+.decl slid(p: Position, col: Color)
+slid(Q, Col) :-
+    slide(Col, D, N), rect.box(Col, B), in(P, _), inside(P, B), jump(P, D, N, Q).
+
+// The cells of each rectangle with no tail, drawn whole.
+.decl still(p: Position, col: Color)
+still(P, Col) :- rect.box(Col, B), !slide(Col, _, _), in(P, _), inside(P, B).
+
+// What shows where no moved rectangle lies.
+.decl ground(p: Position, col: Color, ch: Choice)
+
+out(P, Col, Ch) :-
+    in(P, _), impl_choice(Ch),
+    ( slid(P, Col)                       // a moved rectangle, on top
+    ; !slid(P, _), ground(P, Col, Ch)
+    ).
+
+// --- $RestoreWhole ---
+ground(P, Col, $RestoreWhole()) :-
+    in(P, _),
+    ( still(P, Col)
+    ; !still(P, _), params.background(Col)
+    ).
+
+// --- $RestoreVacatedOnly ---
+ground(P, Col, $RestoreVacatedOnly()) :-
+    in(P, Col_in),
+    ( !slide(Col_in, _, _), Col = Col_in                          // keeps its color
+    ; slide(Col_in, _, _), still(P, Col)                          // left, in a still box
+    ; slide(Col_in, _, _), !still(P, _), params.background(Col)   // left, elsewhere
+    ).
+
+.comp Determine {
+    // The field lies around the rectangles, so it reaches every edge of each
+    // input.
+    .decl edge_color(e: Example, col: Color, d: Dir)
+    edge_color(E, Col, D) :- ex_in(E, P, Col), dir_elem(D), dist(P, D, 0).
+
+    // A color that misses some edge of a train input.
+    .decl off_edge(col: Color)
+    off_edge(Col) :- ex_in(_, _, Col), ex_out(E, _, _), dir_elem(D), !edge_color(E, Col, D).
+
+    .decl background(c: Color)
+    background(Col) :- ex_in(_, _, Col), !off_edge(Col).
+}

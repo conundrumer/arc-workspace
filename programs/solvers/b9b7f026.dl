@@ -1,0 +1,182 @@
+// b9b7f026
+// @draft
+// @keywords: objects enclose select bbox color-class
+// @scene rectangles: each input holds several axis-aligned rectangles on a
+//  field of params.bg, each of its own color; two rectangles may touch.
+// @scene one-holed: exactly one rectangle has a hole: a region of bg cells
+//  inside it that no walk through bg cells reaches from the frame edge.
+// @rule holed-color: the output is a 1×1 grid whose cell is the color of the
+//  rectangle that encloses the hole.
+
+// which rectangle the output takes its color from
+.type Pick =
+    // @claim holed-color
+    Closure {walk: WalkSet, adj: WalkAdjacency}
+    // @scene one-holed: exactly one rectangle's box holds a cell that is not
+    //  one of its own.
+    // @rule holed-color: the output is the color of the rectangle whose box
+    //  holds a cell outside it. Undefined where every rectangle fills its box.
+    // @witness not-solid: borderline $NotSolid
+    //     @relaxed one-holed
+  | NotSolid {}
+
+// which cells the walk runs through, and how a closed cell picks the rectangle
+.type WalkSet =
+    // @claim one-holed
+    BgWalk {}
+    // @rule holed-color: the output is the color of the rectangle 4-adjacent
+    //  to a closed bg cell.
+    // @witness hole-neighbors: borderline concept
+  | HoleNeighbors {}
+    // @scene one-holed: exactly one rectangle closes off some cell from the
+    //  frame edge, by a walk through the cells outside it.
+    // @witness own-enclosure: borderline $OwnEnclosure
+    //     @relaxed one-holed
+  | OwnEnclosure {}
+
+// the adjacency of the walk
+.type WalkAdjacency =
+    // @claim one-holed
+    Walk4 {}
+    // @scene one-holed: the walk also steps diagonally.
+    // @witness walk8: foreign concept
+    //     @relaxed rectangles
+    //     @relaxed one-holed
+  | Walk8 {}
+
+// what one rectangle is
+.type Object =
+    // @claim rectangles
+    Component {}
+    // @scene rectangles: all the cells of one color form one rectangle.
+    // @witness color-class: variant concept
+    //     @relaxed rectangles
+  | ColorClass {}
+    // @scene rectangles: a rectangle's cells join through diagonal neighbors
+    //  as well.
+    // @witness object8: borderline concept
+    //     @relaxed rectangles
+  | Object8 {}
+
+.type Choice = [pick: Pick, object: Object]
+
+.type Obj = [o: Object, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .init helpers = ParamsHelpers
+
+    // @derive DominantColor: borderline concept
+    .decl bg(c: Color) bg(0).
+
+    .decl out_dim(a: Axis, n: number)
+    out_dim(AXIS_V, 1). out_dim(AXIS_H, 1).
+
+    .decl out_pos(p: Position)
+    out_pos(P) :- out_dim(AXIS_V, V), out_dim(AXIS_H, H), helpers.frame_pos([V, H], P).
+}
+
+.init params = Params
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+.decl bg_cell(p: Position)
+bg_cell(P) :- in(P, Col), params.bg(Col).
+
+// The cells of each rectangle, with its color.
+.decl member(o: Object, id: Ident, p: Position, col: Color)
+
+// The rectangles each pick takes, with their colors.
+.decl picked(k: Pick, o: Object, col: Color)
+
+out(P, Col, [K, O]) :- picked(K, O, Col), params.out_pos(P).
+
+// --- $Component ---
+// @claim rectangles
+.init comps = Components<Color>
+comps.node(Col, P) :- ink(P, Col).
+
+member($Component(), Id, P, Col) :- comps.label(Col, P, Id).
+
+// --- $ColorClass ---
+// @claim rectangles
+.init color_ids = IdentOf<Color>
+color_ids.value(Col) :- ink(_, Col).
+
+member($ColorClass(), Id, P, Col) :- ink(P, Col), color_ids.id(Col, Id).
+
+// --- $Object8 ---
+// @claim rectangles
+.init comps8 = Components8<Color>
+comps8.node(Col, P) :- ink(P, Col).
+
+member($Object8(), Id, P, Col) :- comps8.label(Col, P, Id).
+
+// --- $BgWalk, $HoleNeighbors ---
+// The bg cells that no walk through bg cells reaches from the frame edge.
+.decl closed(a: WalkAdjacency, p: Position)
+
+// --- $BgWalk & $Walk4, $HoleNeighbors & $Walk4 ---
+// @claim one-holed
+.init hole = Closed<Unit>
+hole.cell($U(), P) :- bg_cell(P).
+
+closed($Walk4(), P) :- hole.region($U(), P, _).
+
+// --- $BgWalk & $Walk8, $HoleNeighbors & $Walk8 ---
+// @claim one-holed
+.init flood8 = Reach<Unit>
+flood8.step(V) :- dir8_elem(D), step_offset(D, V).
+flood8.node($U(), P) :- bg_cell(P).
+flood8.seed($U(), P) :- bg_cell(P), dir_elem(D), dist(P, D, 0).
+
+closed($Walk8(), P) :- bg_cell(P), !flood8.reach($U(), P).
+
+// --- $OwnEnclosure, $NotSolid ---
+// The cells outside each rectangle.
+.decl outside(o: Object, id: Ident, p: Position)
+outside(O, Id, P) :- member(O, Id, _, _), in(P, _), !member(O, Id, P, _).
+
+// --- $BgWalk, $NotSolid ---
+// @claim holed-color
+.init box = Bbox<Obj>
+box.cell([O, Id], P) :- member(O, Id, P, _).
+
+// --- $BgWalk ---
+picked($Closure($BgWalk(), A), O, Col) :-
+    closed(A, P), box.box([O, Id], B), inside(P, B),    // a closed cell in the box
+    member(O, Id, _, Col).
+
+// --- $HoleNeighbors ---
+picked($Closure($HoleNeighbors(), A), O, Col) :-
+    closed(A, Q), dir_elem(D), neighbor(Q, D, P), member(O, Id, P, Col).
+
+// --- $OwnEnclosure ---
+// The rectangles that close off some cell from the frame edge, by a walk
+// through the cells outside them.
+.decl encloses(a: WalkAdjacency, o: Object, id: Ident)
+
+picked($Closure($OwnEnclosure(), A), O, Col) :- encloses(A, O, Id), member(O, Id, _, Col).
+
+// --- $OwnEnclosure & $Walk4 ---
+// @claim one-holed
+.init own = Closed<Obj>
+own.cell([O, Id], P) :- outside(O, Id, P).
+
+encloses($Walk4(), O, Id) :- own.region([O, Id], _, _).
+
+// --- $OwnEnclosure & $Walk8 ---
+// @claim one-holed
+.init own8 = Reach<Obj>
+own8.step(V) :- dir8_elem(D), step_offset(D, V).
+own8.node([O, Id], P) :- outside(O, Id, P).
+own8.seed([O, Id], P) :- outside(O, Id, P), dir_elem(D), dist(P, D, 0).
+
+encloses($Walk8(), O, Id) :- outside(O, Id, P), !own8.reach([O, Id], P).
+
+// --- $NotSolid ---
+picked($NotSolid(), O, Col) :-
+    box.box([O, Id], B), outside(O, Id, P), inside(P, B),   // a cell of the box outside it
+    member(O, Id, _, Col).

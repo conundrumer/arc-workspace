@@ -1,0 +1,205 @@
+{
+  "id": "c4d1a9ae",
+  "witnesses": [{
+    "id": "two-color-panel",
+    "separates": "Panel cols 0-1 holds two ink colors, 2 in col 0 and 3 in col 1, with no full background column between them. concept finds one column run with two inks and is undefined; $ColorSpan makes each color's column span its own panel, so col 0 fills with 3, col 1 with 6, cols 3-4 with 5 and cols 6-7 with 2.",
+    "input": [
+      [4,3,4,4,6,4,5,5],
+      [2,4,4,4,6,4,4,5],
+      [4,3,4,4,6,4,5,5],
+      [2,4,4,6,4,4,4,5],
+      [4,3,4,6,4,4,5,5],
+      [2,4,4,6,4,4,4,5],
+      [4,3,4,6,4,4,5,5],
+      [2,4,4,4,6,4,4,5],
+      [4,3,4,4,6,4,5,5],
+      [2,4,4,4,6,4,4,5]
+    ],
+    "output": [{
+      "cases": ["$Runs"],
+      "grid": null
+    }, {
+      "cases": ["$ColorSpan & $WrapFirst"],
+      "grid": [
+        [3,3,4,5,6,4,5,5],
+        [2,6,4,5,6,4,2,5],
+        [3,3,4,5,6,4,5,5],
+        [2,6,4,6,5,4,2,5],
+        [3,3,4,6,5,4,5,5],
+        [2,6,4,6,5,4,2,5],
+        [3,3,4,6,5,4,5,5],
+        [2,6,4,5,6,4,2,5],
+        [3,3,4,5,6,4,5,5],
+        [2,6,4,5,6,4,2,5]
+      ]
+    }, {
+      "cases": ["$ColorSpan & $WrapTwoBack"],
+      "grid": [
+        [3,3,4,5,6,4,5,5],
+        [2,6,4,5,6,4,3,5],
+        [3,3,4,5,6,4,5,5],
+        [2,6,4,6,5,4,3,5],
+        [3,3,4,6,5,4,5,5],
+        [2,6,4,6,5,4,3,5],
+        [3,3,4,6,5,4,5,5],
+        [2,6,4,5,6,4,3,5],
+        [3,3,4,5,6,4,5,5],
+        [2,6,4,5,6,4,3,5]
+      ]
+    }]
+  }, {
+    "id": "dense-panel",
+    "separates": "Panel cols 0-3 is ink 4 but for four cells, so 4 (36 cells) outnumbers the separator color 0 (34 cells). concept takes 4 as background, finds no full background column and is undefined; $BgSeparatorColor takes 0, the color of the full columns 4 and 6, and fills the three panels from their right neighbors with wrap.",
+    "input": [
+      [4,0,4,4,0,0,0,9],
+      [4,4,4,4,0,3,0,0],
+      [4,4,4,4,0,0,0,9],
+      [4,4,4,0,0,3,0,0],
+      [4,4,4,4,0,0,0,9],
+      [4,4,4,4,0,3,0,0],
+      [0,4,4,4,0,0,0,9],
+      [4,4,4,4,0,3,0,0],
+      [4,4,4,4,0,0,0,9],
+      [4,4,0,4,0,3,0,0]
+    ],
+    "output": [{
+      "cases": ["$Commonest"],
+      "grid": null
+    }, {
+      "cases": ["$BgSeparatorColor"],
+      "grid": [
+        [4,3,4,4,0,9,0,9],
+        [4,4,4,4,0,3,0,4],
+        [4,4,4,4,0,9,0,9],
+        [4,4,4,3,0,3,0,4],
+        [4,4,4,4,0,9,0,9],
+        [4,4,4,4,0,3,0,4],
+        [3,4,4,4,0,9,0,9],
+        [4,4,4,4,0,3,0,4],
+        [4,4,4,4,0,9,0,9],
+        [4,4,3,4,0,3,0,4]
+      ]
+    }]
+  }, {
+    "id": "row-separators",
+    "separates": "train0 transposed: full background rows 2 and 5 cut the panels, and no column is full background. concept at source-dir R finds one run with three inks and is undefined; $AxisFromSeparators lays the panels along the vertical axis and gives one output for each open V-axis value, B then T.",
+    "input": [
+      [4,2,4,2,4,2,4,2,4,2],
+      [2,4,2,4,2,4,2,4,2,4],
+      [4,4,4,4,4,4,4,4,4,4],
+      [4,4,4,6,6,6,6,4,4,4],
+      [6,6,6,4,4,4,4,6,6,6],
+      [4,4,4,4,4,4,4,4,4,4],
+      [5,4,5,4,5,4,5,4,5,4],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["$SourceAxis"],
+      "grid": null
+    }, {
+      "cases": ["$AxisFromSeparators"],
+      "grid": [
+        [
+          [5,2,5,2,5,2,5,2,5,2],
+          [2,5,2,5,2,5,2,5,2,5],
+          [4,4,4,4,4,4,4,4,4,4],
+          [2,2,2,6,6,6,6,2,2,2],
+          [6,6,6,2,2,2,2,6,6,6],
+          [4,4,4,4,4,4,4,4,4,4],
+          [5,6,5,6,5,6,5,6,5,6],
+          [5,5,5,5,5,5,5,5,5,5]
+        ],
+        [
+          [6,2,6,2,6,2,6,2,6,2],
+          [2,6,2,6,2,6,2,6,2,6],
+          [4,4,4,4,4,4,4,4,4,4],
+          [5,5,5,6,6,6,6,5,5,5],
+          [6,6,6,5,5,5,5,6,6,6],
+          [4,4,4,4,4,4,4,4,4,4],
+          [5,2,5,2,5,2,5,2,5,2],
+          [5,5,5,5,5,5,5,5,5,5]
+        ]
+      ]
+    }]
+  }, {
+    "id": "four-panels",
+    "separates": "train0 with a fourth panel of ink 3 after a full background col 8. concept fills cols 6-7 with 3 and wraps cols 9-10 to 2, the first panel's ink; $WrapTwoBack wraps cols 9-10 to 6, the ink of the panel two before the last; $BgSeparatorColor reads the full col 7 of 5, now with other columns on both sides, as a second separator color and is undefined.",
+    "input": [
+      [4,2,4,4,6,4,5,5,4,3,4],
+      [2,4,4,4,6,4,4,5,4,4,3],
+      [4,2,4,4,6,4,5,5,4,4,3],
+      [2,4,4,6,4,4,4,5,4,3,4],
+      [4,2,4,6,4,4,5,5,4,4,3],
+      [2,4,4,6,4,4,4,5,4,4,3],
+      [4,2,4,6,4,4,5,5,4,3,4],
+      [2,4,4,4,6,4,4,5,4,4,3],
+      [4,2,4,4,6,4,5,5,4,4,3],
+      [2,4,4,4,6,4,4,5,4,3,4]
+    ],
+    "output": [{
+      "cases": ["$Commonest & $WrapFirst"],
+      "grid": [
+        [6,2,4,5,6,4,5,5,4,3,2],
+        [2,6,4,5,6,4,3,5,4,2,3],
+        [6,2,4,5,6,4,5,5,4,2,3],
+        [2,6,4,6,5,4,3,5,4,3,2],
+        [6,2,4,6,5,4,5,5,4,2,3],
+        [2,6,4,6,5,4,3,5,4,2,3],
+        [6,2,4,6,5,4,5,5,4,3,2],
+        [2,6,4,5,6,4,3,5,4,2,3],
+        [6,2,4,5,6,4,5,5,4,2,3],
+        [2,6,4,5,6,4,3,5,4,3,2]
+      ]
+    }, {
+      "cases": ["$WrapTwoBack"],
+      "grid": [
+        [6,2,4,5,6,4,5,5,4,3,6],
+        [2,6,4,5,6,4,3,5,4,6,3],
+        [6,2,4,5,6,4,5,5,4,6,3],
+        [2,6,4,6,5,4,3,5,4,3,6],
+        [6,2,4,6,5,4,5,5,4,6,3],
+        [2,6,4,6,5,4,3,5,4,6,3],
+        [6,2,4,6,5,4,5,5,4,3,6],
+        [2,6,4,5,6,4,3,5,4,6,3],
+        [6,2,4,5,6,4,5,5,4,6,3],
+        [2,6,4,5,6,4,3,5,4,3,6]
+      ]
+    }, {
+      "cases": ["$BgSeparatorColor"],
+      "grid": null
+    }]
+  }, {
+    "id": "shared-color",
+    "separates": "train0 with the third panel's ink 5 recolored 2, so the first and third panels share ink 2. $Runs fills cols 0-1 with 6 and cols 3-4 and 6-7 with 2; $ColorSpan spans color 2 over cols 0-7, across the span of 6, and is undefined.",
+    "input": [
+      [4,2,4,4,6,4,2,2],
+      [2,4,4,4,6,4,4,2],
+      [4,2,4,4,6,4,2,2],
+      [2,4,4,6,4,4,4,2],
+      [4,2,4,6,4,4,2,2],
+      [2,4,4,6,4,4,4,2],
+      [4,2,4,6,4,4,2,2],
+      [2,4,4,4,6,4,4,2],
+      [4,2,4,4,6,4,2,2],
+      [2,4,4,4,6,4,4,2]
+    ],
+    "output": [{
+      "cases": ["$Runs"],
+      "grid": [
+        [6,2,4,2,6,4,2,2],
+        [2,6,4,2,6,4,2,2],
+        [6,2,4,2,6,4,2,2],
+        [2,6,4,6,2,4,2,2],
+        [6,2,4,6,2,4,2,2],
+        [2,6,4,6,2,4,2,2],
+        [6,2,4,6,2,4,2,2],
+        [2,6,4,2,6,4,2,2],
+        [6,2,4,2,6,4,2,2],
+        [2,6,4,2,6,4,2,2]
+      ]
+    }, {
+      "cases": ["$ColorSpan"],
+      "grid": null
+    }]
+  }]
+}

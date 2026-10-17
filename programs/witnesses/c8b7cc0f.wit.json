@@ -1,0 +1,201 @@
+{
+  "id": "c8b7cc0f",
+  "witnesses": [{
+    "id": "frame-color-swapped",
+    "separates": "The outline is color 2 and the dots color 1. With the stored frame color 1, the concept takes the dots as the frame and fills all nine cells with 2; a frame color derived from the input gives the three dots inside as 1 1 1 on the top row.",
+    "input": [
+      [0,0,1,0,0,0,0],
+      [0,2,2,2,2,2,0],
+      [0,2,1,0,0,2,1],
+      [0,2,0,0,1,2,0],
+      [1,2,0,1,0,2,0],
+      [0,2,2,2,2,2,0],
+      [0,0,0,0,0,1,0]
+    ],
+    "output": [{
+      "cases": ["$FrameStored & $BoxInterior & $CountCells"],
+      "grid": [
+        [2,2,2],
+        [2,2,2],
+        [2,2,2]
+      ]
+    }, {
+      "cases": ["$FrameCommonest","$FrameOutline"],
+      "grid": [
+        [1,1,1],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$FrameStored & $CountObjects"],
+      "grid": [
+        [2,0,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$FrameStored & $Enclosed"],
+      "grid": [
+        [0,0,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "The dots outnumber the background. The concept fills two cells with 4; a background derived as the commonest color is 4, the dot color becomes 0, and the seven 0 cells inside fill on a field of 4.",
+    "input": [
+      [4,4,0,4,4,0,4],
+      [4,1,1,1,1,1,4],
+      [0,1,4,0,0,1,4],
+      [4,1,0,0,0,1,0],
+      [4,1,0,0,4,1,4],
+      [4,1,1,1,1,1,4],
+      [4,0,4,4,0,4,4]
+    ],
+    "output": [{
+      "cases": ["$FrameOutline","$FrameStored & background=stored"],
+      "grid": [
+        [4,4,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$FrameCommonest & $BoxInterior & $CountCells"],
+      "grid": [
+        [1,1,1],
+        [1,1,1],
+        [1,1,1]
+      ]
+    }, {
+      "cases": ["$FrameCommonest & $CountObjects"],
+      "grid": [
+        [1,0,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$FrameCommonest & $Enclosed"],
+      "grid": [
+        [0,0,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": [
+        [0,0,0],
+        [0,0,0],
+        [0,4,4]
+      ]
+    }]
+  }, {
+    "id": "two-dot-colors",
+    "separates": "The dots inside are color 3 and the dots outside color 2. The concept finds no single dot color and is undefined; a dot color taken from inside the outline fills two cells with 3.",
+    "input": [
+      [0,2,0,0,0,0,0],
+      [0,1,1,1,1,1,0],
+      [0,1,3,0,0,1,2],
+      [0,1,0,3,0,1,0],
+      [2,1,0,0,0,1,0],
+      [0,1,1,1,1,1,0],
+      [0,0,0,2,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$DotGrid"],
+      "grid": null
+    }, {
+      "cases": ["$DotColorInside"],
+      "grid": [
+        [3,3,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }]
+  }, {
+    "id": "broken-outline",
+    "separates": "The top side of the outline has a one-cell gap. The concept counts the two dots inside the outline's box; a count over the region the outline closes off finds no region and gives an all-0 grid.",
+    "input": [
+      [0,4,0,0,0,0,0],
+      [0,1,1,0,1,1,0],
+      [0,1,4,0,0,1,4],
+      [0,1,0,4,0,1,0],
+      [4,1,0,0,0,1,0],
+      [0,1,1,1,1,1,0],
+      [0,0,0,4,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$FrameCommonest & $BoxInterior","$FrameStored & $BoxInterior"],
+      "grid": [
+        [4,4,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$Enclosed"],
+      "grid": [
+        [0,0,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$FrameOutline"],
+      "grid": null
+    }]
+  }, {
+    "id": "adjacent-dots",
+    "separates": "Two dots inside the outline share a side. The concept counts three cells; a count of 4-connected dot objects counts two.",
+    "input": [
+      [0,4,0,0,0,0,0],
+      [0,1,1,1,1,1,0],
+      [0,1,4,4,0,1,4],
+      [0,1,0,0,0,1,0],
+      [4,1,0,0,4,1,0],
+      [0,1,1,1,1,1,0],
+      [0,0,0,4,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$CountCells"],
+      "grid": [
+        [4,4,4],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }, {
+      "cases": ["$CountObjects"],
+      "grid": [
+        [4,4,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }]
+  }, {
+    "id": "ten-dots",
+    "separates": "Ten dots sit inside the outline, joined in one 4-connected ring. The concept counts ten cells and fills all nine output cells; a count of 4-connected dot objects counts one.",
+    "input": [
+      [0,0,0,0,0,0,0],
+      [0,1,1,1,1,1,0],
+      [0,1,4,4,4,1,0],
+      [0,1,4,0,4,1,0],
+      [0,1,4,4,0,1,0],
+      [0,1,4,4,4,1,0],
+      [0,1,1,1,1,1,0],
+      [0,0,0,0,0,0,4]
+    ],
+    "output": [{
+      "cases": ["$CountCells"],
+      "grid": [
+        [4,4,4],
+        [4,4,4],
+        [4,4,4]
+      ]
+    }, {
+      "cases": ["$CountObjects"],
+      "grid": [
+        [4,0,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }]
+  }]
+}

@@ -1,0 +1,276 @@
+// b527c5c6
+// @draft
+// @keywords: objects markers cast
+// @scene bars: the input holds solid rectangles of params.bar_color on
+//  params.background, apart from one another, each at least two cells thick
+//  and longer along one axis than across it
+// @scene one-mark-per-bar: each bar holds exactly one cell of
+//  params.mark_color, on one of its long sides, with at least the bar's
+//  thickness less one cells of that side on each side of it; the bar holds no
+//  other color
+// @scene clear-paths: the beam of each bar crosses only params.background
+//  cells, so no beam meets another bar or another beam
+// @rule beam-direction: a bar's beam leaves the side of the bar that holds its
+//  mark, toward the grid edge that side faces, and runs from the cell next to
+//  the bar up to that grid edge; where the mark sits on more than one side, the
+//  model is undefined
+// @rule beam-core: the beam's center line is the mark's line across the bar;
+//  outside the bar, each of its cells takes params.mark_color
+// @rule beam-flanks: on each side of the center line, the beam is as wide as
+//  the bar's extent across the marked side less one (the distance from the
+//  mark to the bar's far side), and each flank cell takes params.bar_color; a
+//  flank cell past the grid edge is dropped
+// @rule keep-rest: every cell outside the beams keeps its input color
+
+// which side of the bar the beam leaves
+.type Side =
+    // @claim beam-direction
+    MarkSide {}
+    // @rule beam-direction: the beam leaves the long side of the bar that holds
+    //  the mark, and the flank width is the bar's thickness less one; undefined
+    //  on a square bar, on a mark on a short side away from the corners, and on
+    //  a bar one cell thick
+    // @witness corner-mark: borderline $LongSide
+    //     @relaxed one-mark-per-bar
+  | LongSide {}
+
+// how far the flanks reach along the marked side
+.type Span =
+    // @claim beam-flanks
+    PastEnd {}
+    // @rule beam-flanks: a flank line outside the bar's span along the marked
+    //  side is dropped; undefined where the concept is
+    // @witness mark-near-end: borderline concept
+    //     @relaxed one-mark-per-bar
+  | ClipToBar {}
+
+// what a beam does at a non-background cell on its path
+.type Block =
+    // @claim clear-paths
+    PaintOver {}
+    // @rule beam-core: a beam cell takes its color only where the input is
+    //  params.background, and the beam runs on past the cell; undefined where
+    //  the concept is
+    // @rule beam-flanks: a flank cell takes params.bar_color only where the
+    //  input is params.background
+    // @witness beam-meets-bar: borderline $Blocked
+    //     @relaxed clear-paths
+  | Underlay {}
+    // @rule beam-direction: each line of the beam ends at the cell before its
+    //  first non-background cell; undefined where the concept is
+    // @witness beam-meets-bar: borderline $Blocked
+  | Blocked {}
+
+// the color of a cell where two beams give different colors
+.type Overlap =
+    // @claim clear-paths
+    NoOverlap {}
+    // @rule core-on-top: where beams overlap, a core cell covers a flank cell;
+    //  undefined where two flanks or two cores of different colors overlap
+    // @witness beams-cross: borderline $CoreOnTop
+    //     @relaxed clear-paths
+  | CoreOnTop {}
+
+// where the beam's colors come from
+.type Colors =
+    // @claim bars
+    StoredColors {}
+    // @scene bars: each non-background piece is a solid rectangle of one
+    //  color with one cell of another color; undefined where a piece is not
+    //  such a rectangle
+    // @scene one-mark-per-bar: the mark is the piece's one cell of the other
+    //  color
+    // @rule beam-core: the core takes the mark's color
+    // @rule beam-flanks: the flanks take the rectangle's color
+    // @witness other-color-bar: borderline $OwnColors
+    //     @relaxed bars
+  | OwnColors {}
+
+.type Choice = [side: Side, span: Span, block: Block, overlap: Overlap, colors: Colors]
+
+// A piece under a colors reading.
+.type Piece = [c: Colors, id: Ident]
+
+// A piece under a side reading and a colors reading.
+.type SidePiece = [s: Side, c: Colors, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    .decl background(col: Color) background(0).
+
+    // --- $StoredColors ---
+    .decl bar_color(col: Color) bar_color(3).
+    // @ignore: derive RarestColor — every case that reads mark_color takes
+    //  $StoredColors, and with the derived value each is defined only where
+    //  every piece is params.bar_color with one cell of another color, where
+    //  $OwnColors gives the same output: Subsumption
+    .decl mark_color(col: Color) mark_color(2).
+}
+
+.init params = Params
+
+.decl side_choice(s: Side)
+side_choice($MarkSide()). side_choice($LongSide()).
+
+.decl span_choice(sp: Span)
+span_choice($PastEnd()). span_choice($ClipToBar()).
+
+.decl block_choice(b: Block)
+block_choice($PaintOver()). block_choice($Underlay()). block_choice($Blocked()).
+
+.decl overlap_choice(o: Overlap)
+overlap_choice($NoOverlap()). overlap_choice($CoreOnTop()).
+
+.decl colors_choice(c: Colors)
+colors_choice($StoredColors()). colors_choice($OwnColors()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, Sp, B, O, C]) :-
+    side_choice(S), span_choice(Sp), block_choice(B), overlap_choice(O), colors_choice(C).
+
+// The pieces: the components of the non-background cells.
+// @claim bars
+.init piece = Components<Unit>
+piece.node($U(), P) :- in(P, Col), !params.background(Col).
+
+// @claim bars
+.init piece_box = Bbox<Ident>
+piece_box.cell(Id, P) :- piece.label(_, P, Id).
+
+// A piece that does not fill its box.
+.decl hollow(id: Ident)
+hollow(Id) :- piece_box.box(Id, B), in(P, _), inside(P, B), !piece.label(_, P, Id).
+
+// The cells that may be a piece's mark, and the colors that may be its body.
+.decl mark_cand(c: Colors, id: Ident, p: Position)
+.decl body_cand(c: Colors, id: Ident, col: Color)
+
+// @claim one-mark-per-bar
+.init mark = Unanimous<Piece, Position>
+mark.item([C, Id], P) :- mark_cand(C, Id, P).
+
+// @claim bars
+.init body = Unanimous<Piece, Color>
+body.item([C, Id], Col) :- body_cand(C, Id, Col).
+
+// A piece that is no bar with one mark.
+.decl bad_piece(c: Colors, id: Ident)
+bad_piece(C, Id) :- colors_choice(C), hollow(Id).
+bad_piece(C, Id) :-
+    colors_choice(C), piece_box.box(Id, _),
+    ( !mark.value([C, Id], _)
+    ; !body.value([C, Id], _)
+    ).
+
+// The sides of its bar that a mark sits on, of those the side reading allows.
+.decl mark_side(s: Side, c: Colors, id: Ident, d: Dir)
+
+// @claim beam-direction
+.init side = Unanimous<SidePiece, Dir>
+side.item([S, C, Id], D) :- mark_side(S, C, Id, D).
+
+// The readings under which some piece has no beam.
+.decl undefined(s: Side, c: Colors)
+undefined(S, C) :- side_choice(S), bad_piece(C, _).
+undefined(S, C) :- side_choice(S), mark.value([C, Id], _), !side.value([S, C, Id], _).
+
+// Each bar's mark Q, the bar's box B, and the direction D its beam heads.
+.decl beam(s: Side, c: Colors, q: Position, b: Box, d: Dir)
+beam(S, C, Q, B, D) :- side.value([S, C, Id], D), mark.value([C, Id], Q), piece_box.box(Id, B).
+
+// The foot of each line of a beam: a cell on a diagonal through the mark,
+// within the bar's thickness behind it. A flank line stands at each foot
+// other than the mark, so each flank is as wide as the bar is thick less one.
+.decl foot(s: Side, sp: Span, c: Colors, q: Position, f: Position)
+
+// Each cell P of a beam's line, beyond the bar toward D: the line through the
+// mark Q is the core, and the line through any other foot F is a flank.
+.decl beam_cell(s: Side, sp: Span, c: Colors, q: Position, f: Position, d: Dir, p: Position)
+beam_cell(S, Sp, C, Q, F, D, P) :-
+    foot(S, Sp, C, Q, F), beam(S, C, Q, _, D), axis_of(D, A),
+    in(P, _), same_line(A, F, P), nearer(D, P, Q).
+
+// The beam cells the blocking reading paints.
+.decl stroke(s: Side, sp: Span, b: Block, c: Colors, q: Position, f: Position, p: Position)
+
+// The core cells.
+.decl core(s: Side, sp: Span, b: Block, c: Colors, p: Position)
+core(S, Sp, B, C, P) :- stroke(S, Sp, B, C, Q, Q, P).
+
+// The flank cells, with the bar's color.
+.decl flank(s: Side, sp: Span, b: Block, c: Colors, p: Position, col: Color)
+flank(S, Sp, B, C, P, Col) :-
+    stroke(S, Sp, B, C, Q, F, P), F != Q, piece.label(_, Q, Id), body.value([C, Id], Col).
+
+// The beam colors of each case: a core cell takes the mark's color.
+.decl paint(ch: Choice, p: Position, col: Color)
+paint([S, Sp, B, O, C], P, Col) :-
+    overlap_choice(O), stroke(S, Sp, B, C, Q, Q, P), in(Q, Col).
+
+out(P, Col, [S, Sp, B, O, C]) :-
+    impl_choice([S, Sp, B, O, C]), !undefined(S, C), in(P, Col_in),
+    ( paint([S, Sp, B, O, C], P, Col)
+    ; !paint([S, Sp, B, O, C], P, _), Col = Col_in
+    ).
+
+// --- $MarkSide ---
+mark_side($MarkSide(), C, Id, D) :-
+    mark.value([C, Id], Q), piece_box.box(Id, B), box_edge(Q, B, D).
+
+// --- $LongSide ---
+// A long side: the bar is thinner across it than along it.
+mark_side($LongSide(), C, Id, D) :-
+    mark.value([C, Id], Q), piece_box.box(Id, B), box_edge(Q, B, D),
+    axis_of(D, A), perp(A, A2), box_extent(B, Q, A, N1), box_extent(B, Q, A2, N2), N1 < N2.
+
+// --- $PastEnd ---
+// The foot lies within the bar's rows or columns across the marked side.
+foot(S, $PastEnd(), C, Q, F) :-
+    beam(S, C, Q, B, D), axis_of(D, A), split(B, A, B_slab, _),
+    in(F, _), inside(F, B_slab), diag_axis_elem(Da), same_line(Da, Q, F).
+
+// --- $ClipToBar ---
+// The foot lies within the bar.
+foot(S, $ClipToBar(), C, Q, F) :-
+    beam(S, C, Q, B, _), in(F, _), inside(F, B), diag_axis_elem(Da), same_line(Da, Q, F).
+
+// --- $PaintOver ---
+stroke(S, Sp, $PaintOver(), C, Q, F, P) :- beam_cell(S, Sp, C, Q, F, _, P).
+
+// --- $Underlay ---
+stroke(S, Sp, $Underlay(), C, Q, F, P) :-
+    beam_cell(S, Sp, C, Q, F, _, P), in(P, Col), params.background(Col).
+
+// --- $Blocked ---
+// A beam cell at or past a non-background cell of its line.
+.decl stopped(s: Side, sp: Span, c: Colors, q: Position, f: Position, p: Position)
+stopped(S, Sp, C, Q, F, P) :-
+    beam_cell(S, Sp, C, Q, F, D, P), beam_cell(S, Sp, C, Q, F, D, P2),
+    in(P2, Col), !params.background(Col), !nearer(D, P2, P).
+
+stroke(S, Sp, $Blocked(), C, Q, F, P) :-
+    beam_cell(S, Sp, C, Q, F, _, P), !stopped(S, Sp, C, Q, F, P).
+
+// --- $NoOverlap ---
+paint([S, Sp, B, $NoOverlap(), C], P, Col) :- flank(S, Sp, B, C, P, Col).
+
+// --- $CoreOnTop ---
+paint([S, Sp, B, $CoreOnTop(), C], P, Col) :- flank(S, Sp, B, C, P, Col), !core(S, Sp, B, C, P).
+
+// --- $StoredColors ---
+mark_cand($StoredColors(), Id, P) :- piece.label(_, P, Id), in(P, Col), params.mark_color(Col).
+body_cand($StoredColors(), Id, Col) :- piece_box.box(Id, _), params.bar_color(Col).
+// A piece with a cell of neither color.
+bad_piece($StoredColors(), Id) :-
+    piece.label(_, P, Id), in(P, Col), !params.mark_color(Col), !params.bar_color(Col).
+
+// --- $OwnColors ---
+// A color that two cells of the piece hold.
+.decl repeated(id: Ident, col: Color)
+repeated(Id, Col) :-
+    piece.label(_, P1, Id), in(P1, Col), piece.label(_, P2, Id), in(P2, Col), P1 != P2.
+
+mark_cand($OwnColors(), Id, P) :- piece.label(_, P, Id), in(P, Col), !repeated(Id, Col).
+body_cand($OwnColors(), Id, Col) :- repeated(Id, Col).

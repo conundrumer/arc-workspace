@@ -1,0 +1,264 @@
+// c87289bb
+// @draft
+// @keywords: cast walk objects
+// @scene streams-from-edge: vertical streams of `stream_color` (8), each one
+//  column wide, run from the edge opposite `fall_dir` (down) toward
+//  `fall_dir` and stop short of the far edge
+// @scene bars-in-one-line: bars of `bar_color` (2), each one cell deep along
+//  `fall_dir` and one or more cells wide, lie in one line across `fall_dir`,
+//  past the end of every stream
+// @scene exits-in-grid: the cell past each end of a bar lies in the grid
+// @rule straight-fall: a stream whose line holds no bar past its end extends
+//  in `fall_dir` to the far edge
+// @rule detour-nearer-end: a stream whose line meets a bar extends to the
+//  cell before the bar, runs across along that line of cells toward the
+//  bar's nearer end to the first cell past that end, and from there falls on
+//  in `fall_dir` by these rules
+// @rule tie-side: a stream that meets a bar at a cell equally far from its
+//  two ends runs toward the side a quarter turn from `fall_dir` in
+//  `tie_sense` (counterclockwise: right, where the streams fall down)
+// @rule keep-input: a cell the streams do not cover keeps its color, and the
+//  streams cover no bar cell
+
+// the side a stream takes when it meets a bar at the bar's middle cell
+.type Tie =
+    // @claim tie-side
+    TieDir {}
+    // @rule tie-side: a stream that meets a bar at its middle cell runs
+    //  toward the grid edge nearer to its line; undefined where that line is
+    //  the grid's center line
+    // @witness tie-left-of-center: ordinary concept
+  | TieNearerEdge {}
+
+// what a stream does where the cell past the bar's end it runs toward lies
+// outside the grid
+.type EdgeExit =
+    // @claim detour-nearer-end
+    EdgeLeave {}
+    // @rule edge-other-side: where the cell past the end a stream runs
+    //  toward lies outside the grid, the stream runs toward the bar's other
+    //  end instead
+    // @witness bar-at-side-edge: borderline $EdgeOtherSide
+    //     @relaxed exits-in-grid
+  | EdgeOtherSide {}
+
+// what a stream does after a detour when its new line meets another bar
+.type LaterBars =
+    // @claim detour-nearer-end
+    EveryDetour {}
+    // @rule detour-nearer-end: after its first detour, the stream falls
+    //  straight on to the far edge, passing over bar cells, which keep their
+    //  color
+    // @witness bars-at-two-depths: variant concept
+    //     @relaxed bars-in-one-line
+  | OneDetour {}
+
+// the direction in which the streams fall
+.type Fall =
+    // @claim streams-from-edge
+    FallStored {}
+    // @scene streams-from-edge: every stream touches one edge, and the
+    //  streams fall away from it; undefined where every stream touches two
+    //  edges, or where there is no stream
+    // @witness streams-from-bottom: variant $FallFromEdge
+    //     @relaxed streams-from-edge
+  | FallFromEdge {}
+
+.type Choice = [t: Tie, e: EdgeExit, l: LaterBars, f: Fall]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl stream_color(c: Color) stream_color(8).
+    // @derive RarestColor: variant concept
+    .decl bar_color(c: Color) bar_color(2).
+
+    // --- $FallStored ---
+    .decl fall_dir(d: Dir) fall_dir(DIR_B).
+
+    // --- $TieDir ---
+    // the turn from `fall_dir` to the side a stream takes at a bar's middle
+    // cell
+    .decl tie_sense(s: Sense) tie_sense(SENSE_CC).
+}
+
+.init params = Params
+
+.decl tie_choice(t: Tie)
+tie_choice($TieDir()). tie_choice($TieNearerEdge()).
+
+.decl edge_exit_choice(e: EdgeExit)
+edge_exit_choice($EdgeLeave()). edge_exit_choice($EdgeOtherSide()).
+
+.decl later_bars_choice(l: LaterBars)
+later_bars_choice($EveryDetour()). later_bars_choice($OneDetour()).
+
+.decl fall_choice(f: Fall)
+fall_choice($FallStored()). fall_choice($FallFromEdge()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([T, E, L, F]) :-
+    tie_choice(T), edge_exit_choice(E), later_bars_choice(L), fall_choice(F).
+
+.decl stream(p: Position)
+stream(P) :- in(P, Col), params.stream_color(Col).
+
+.decl bar(p: Position)
+bar(P) :- in(P, Col), params.bar_color(Col), !stream(P).   // a stream is no bar
+
+// @claim bars-in-one-line
+.init bars = Components<Unit>
+bars.node($U(), P) :- bar(P).
+
+// @claim detour-nearer-end
+.init bar_box = Bbox<Ident>
+bar_box.cell(Id, P) :- bars.label($U(), P, Id).
+
+// The direction the streams fall in, per Fall branch.
+.decl fall(fl: Fall, d: Dir)
+
+// Cell q lies one step from cell p in the fall direction.
+.decl fall_step(fl: Fall, p: Position, q: Position)
+fall_step(Fl, P, Q) :- fall(Fl, F), in(P, _), neighbor(P, F, Q), in(Q, _).
+
+// Cell p lies just before bar cell q of bar id.
+.decl meet(fl: Fall, p: Position, q: Position, id: Ident)
+meet(Fl, P, Q, Id) :- fall_step(Fl, P, Q), bars.label($U(), Q, Id).
+
+// The bar cell met before p lies k cells from the bar's end toward d, and
+// k2 cells from its other end, with d across the fall direction.
+.decl end_dist(fl: Fall, p: Position, d: Dir, k: number, k2: number)
+end_dist(Fl, P, D, K1, K2) :-
+    meet(Fl, P, Q, Id), bar_box.box(Id, B), crop(Q, B, Q_rel),
+    fall(Fl, F), perp_dir(F, D), dist_pair(Q_rel, D, K1, K2).
+
+// The side a stream before p runs toward along the bar.
+.decl side(t: Tie, fl: Fall, p: Position, d: Dir)
+side(T, Fl, P, D) :- tie_choice(T), end_dist(Fl, P, D, K1, K2), K1 < K2.
+
+// The cell past the bar's end toward d, on p's line.
+.decl exit(fl: Fall, p: Position, d: Dir, x: Position)
+exit(Fl, P, D, X) :- end_dist(Fl, P, D, K, _), jump(P, D, K, R), neighbor(R, D, X).
+
+// The cells a stream before p crosses on p's line toward d, short of the
+// exit: the cells before the bar's other cells on that side.
+.decl run(fl: Fall, p: Position, d: Dir, r: Position)
+run(Fl, P, D, R) :- meet(Fl, P, _, Id), meet(Fl, R, _, Id), dir_elem(D), nearer(D, R, P).
+
+// The side a stream before p detours toward.
+.decl detour_side(t: Tie, e: EdgeExit, fl: Fall, p: Position, d: Dir)
+
+// The exit cell in the grid that a stream before p detours to.
+.decl flow_exit(t: Tie, e: EdgeExit, fl: Fall, p: Position, x: Position)
+flow_exit(T, E, Fl, P, X) :- detour_side(T, E, Fl, P, D), exit(Fl, P, D, X), in(X, _).
+
+// The streams' cells, and the cells their falls and detours reach.
+.init flow = Propagation<Choice, Position>
+flow.source(Ch, P) :- impl_choice(Ch), stream(P).
+flow.edge([T, E, L, Fl], P, Q) :- impl_choice([T, E, L, Fl]), fall_step(Fl, P, Q), !bar(Q).
+
+// The cells the streams cover.
+.decl painted(ch: Choice, p: Position)
+painted(Ch, P) :- flow.reached(Ch, P).
+painted([T, E, L, Fl], R) :-
+    flow.reached([T, E, L, Fl], P), detour_side(T, E, Fl, P, D), run(Fl, P, D, R).
+
+// A case with no fall direction, or with a stream that meets a bar and has
+// no side to take.
+.decl undefined(ch: Choice)
+undefined([T, E, L, Fl]) :- impl_choice([T, E, L, Fl]), !fall(Fl, _).
+undefined([T, E, L, Fl]) :-
+    flow.reached([T, E, L, Fl], P), meet(Fl, P, _, _), !side(T, Fl, P, _).
+
+out(P, Col, Ch) :- painted(Ch, P), !undefined(Ch), params.stream_color(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(Ch, P), !undefined(Ch).
+
+// --- $FallStored ---
+fall($FallStored(), D) :- params.fall_dir(D).
+
+// --- $FallFromEdge ---
+
+// @claim streams-from-edge
+.init streams = Components<Unit>
+streams.node($U(), P) :- stream(P).
+
+// Stream id has a cell on edge e.
+.decl touches(id: Ident, e: Dir)
+touches(Id, E) :- streams.label($U(), P, Id), dir_elem(E), dist(P, E, 0).
+
+// Some stream has no cell on edge e.
+// @ignore: store — stored, it fixes the one edge every stream touches, and
+//  the case is equivalent to $FallStored
+.decl misses(e: Dir)
+misses(E) :- streams.label($U(), _, Id), dir_elem(E), !touches(Id, E).
+
+// Every stream touches edge e.
+// @ignore: store — stored, it fixes the fall direction, and the case is
+//  equivalent to $FallStored
+.decl source_edge(e: Dir)
+source_edge(E) :- dir_elem(E), !misses(E).
+
+// More than one edge is touched by every stream.
+.decl two_source_edges()
+two_source_edges() :- source_edge(E), source_edge(E2), E != E2.
+
+fall($FallFromEdge(), D) :- source_edge(E), !two_source_edges(), opposite(E, D).
+
+// --- $TieDir ---
+
+// At the bar's middle cell, the stream turns from the fall direction by
+// `tie_sense`.
+side($TieDir(), Fl, P, D) :-
+    end_dist(Fl, P, _, K, K), fall(Fl, F), params.tie_sense(S), turn(S, F, D).
+
+// --- $TieNearerEdge ---
+
+// At the bar's middle cell, the stream runs toward the grid edge nearer its
+// line.
+side($TieNearerEdge(), Fl, P, D) :- end_dist(Fl, P, D, K, K), dist_pair(P, D, K1, K2), K1 < K2.
+
+// --- $EdgeLeave ---
+detour_side(T, $EdgeLeave(), Fl, P, D) :- side(T, Fl, P, D).
+
+// --- $EdgeOtherSide ---
+detour_side(T, $EdgeOtherSide(), Fl, P, D) :-
+    side(T, Fl, P, D0), exit(Fl, P, D0, X),
+    ( in(X, _), D = D0                          // the exit lies in the grid
+    ; !in(X, _), opposite(D0, D) ).             // it lies outside: the other end
+
+// --- $EveryDetour ---
+flow.edge([T, E, $EveryDetour(), Fl], P, X) :- flow_exit(T, E, Fl, P, X).
+
+// --- $OneDetour ---
+
+// After its first detour, a stream falls straight from the exit cell over
+// every cell but the bars'.
+// @claim detour-nearer-end
+.init after = Ray<Choice>
+after.dir([T, E, $OneDetour(), Fl], F) :- impl_choice([T, E, $OneDetour(), Fl]), fall(Fl, F).
+after.cell([T, E, $OneDetour(), Fl], P) :-
+    impl_choice([T, E, $OneDetour(), Fl]), in(P, _), !bar(P).
+after.mark([T, E, $OneDetour(), Fl], X) :-
+    flow.reached([T, E, $OneDetour(), Fl], P), flow_exit(T, E, Fl, P, X).
+painted(Ch, P) :- after.ray(Ch, P, _, _, _).
+
+.comp Determine {
+    // A cell the output repaints, with its input and output colors.
+    .decl changed(e: Example, p: Position, col_in: Color, col_out: Color)
+    changed(E, P, C_in, C_out) :- ex_in(E, P, C_in), ex_out(E, P, C_out), C_out != C_in.
+
+    // The streams extend in the color the output paints.
+    .decl stream_color(c: Color)
+    stream_color(Col) :- changed(_, _, _, Col).
+
+    // The cell that stops a stream in the output holds the bar's color.
+    .decl bar_color(c: Color)
+    bar_color(Col) :-
+        stream_color(S), fall_dir(F), ex_out(E, P, S), neighbor(P, F, Q), ex_out(E, Q, Col), Col != S.
+
+    // A stream cell's neighbor toward the fall direction takes the stream's
+    // color.
+    .decl fall_dir(d: Dir)
+    fall_dir(D) :-
+        stream_color(Col), ex_in(E, P, Col), dir_elem(D), neighbor(P, D, Q), changed(E, Q, _, Col).
+}

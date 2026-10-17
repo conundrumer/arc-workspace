@@ -1,0 +1,345 @@
+// b74ca5d1
+// @draft
+// @keywords: objects color-class markers match mapping bbox overlay merge rank
+// @scene background: one color fills most of the grid, and differs from pair
+//  to pair
+// @scene corner-markers: some of the four corner cells hold one
+//  non-background cell each, and the marked corners have distinct colors
+// @scene shapes: each non-background color that no corner marker has draws
+//  one shape, whose cells need not be connected
+// @scene key-cell: each shape has exactly one key, a cell of a corner
+//  marker's color that fits with the shape's cells in a box-size × box-size
+//  box, and each cell of a marker color off the corners is the key of exactly
+//  one shape
+// @scene shape-box: a shape's cells with its key span box-size on both axes
+// @rule swap-colors: in each shape, every shape cell takes the key's color,
+//  and the key cell takes the shape's color
+// @rule stamp-corner: each marked corner gets the overlay of the boxes of
+//  every shape keyed with its color, the shape cells and the key cell alike,
+//  painted in the marker's color, with each box flush against that corner
+// @rule rest-kept: every other cell keeps its input color
+
+// which cells form one shape
+.type Grouping =
+    // @claim shapes
+    ColorClass {}
+    // @scene shapes: a shape is the cells of one non-marker color that are
+    //  linked by steps between cells that fit in one box-size × box-size box;
+    //  undefined where a shape has no key or several keys
+    // @witness repeated-shape-color: variant $ShapeBySpread
+    //     @relaxed shapes
+  | ShapeBySpread {}
+
+// which cells are keys
+.type KeyIdentity =
+    // @claim key-cell
+    MarkerColor {}
+    // @scene key-cell: a key is a non-background cell off the corners that
+    //  fits in no box-size × box-size box with another cell of its color,
+    //  whatever its color; a shape whose key color is on no corner swaps
+    //  colors and stamps nowhere; undefined where a shape has no key or
+    //  several keys
+    // @witness key-without-marker: borderline $KeyWithoutMarker
+    //     @relaxed key-cell
+    //     @relaxed shapes
+  | KeyWithoutMarker {}
+
+// which shape a key belongs to
+.type Pairing =
+    // @claim key-cell
+    KeyInBox {}
+    // @scene key-cell: a key belongs to the shape with the cell nearest to it
+    //  by Chebyshev distance; undefined where two shapes tie for nearest, or a
+    //  shape gets no key or several keys
+    // @witness key-near-other-shape: borderline concept
+  | KeyByNearest {}
+
+// where box-size comes from
+.type BoxSize =
+    // @claim shape-box
+    BoxSizeStored {}
+    // @scene shape-box: box-size is the largest extent on either axis of the
+    //  cells of one non-marker color, read on each input alone; undefined on
+    //  an input with no non-marker color off the corners
+    // @witness larger-shapes: variant $BoxSizeFromShapes
+    //     @relaxed shape-box
+  | BoxSizeFromShapes {}
+
+// where a keyed box lies in its corner
+.type Alignment =
+    // @claim stamp-corner
+    StampFlush {}
+    // @rule stamp-corner: each keyed box is centered in the box-size ×
+    //  box-size box at its corner; undefined where a box's extent and
+    //  box-size differ in parity
+    // @witness small-shape: borderline concept
+    //     @relaxed shape-box
+  | StampAlignCenter {}
+
+// what becomes of the corner box outside the stamp
+.type MarkerFate =
+    // @claim rest-kept
+    MarkerKept {}
+    // @rule rest-kept: the box-size × box-size box at each marked corner turns
+    //  background before the stamp is painted
+    // @witness uncovered-corner: ordinary concept
+  | MarkerCleared {}
+
+.type Choice = [g: Grouping, i: KeyIdentity, p: Pairing, b: BoxSize, a: Alignment, m: MarkerFate]
+
+// Two cells.
+.type Span = [p: Position, q: Position]
+// A cell under a key reading.
+.type Node = [i: KeyIdentity, b: BoxSize, p: Position]
+// A shape and a key under a shape reading.
+.type Bond = [g: Grouping, i: KeyIdentity, b: BoxSize, id: Ident, k: Position]
+// A key under a shape reading.
+.type Seek = [g: Grouping, i: KeyIdentity, b: BoxSize, k: Position]
+// A marked corner under a box-size reading.
+.type Corner = [b: BoxSize, d: DiagDir]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $BoxSizeStored ---
+    // The extent on each axis of the box that holds a shape's cells and its
+    // key.
+    .decl box_size(k: number) box_size(5).
+}
+
+.init params = Params
+
+.decl key_identity_choice(i: KeyIdentity)
+key_identity_choice($MarkerColor()). key_identity_choice($KeyWithoutMarker()).
+
+.decl pairing_choice(p: Pairing)
+pairing_choice($KeyInBox()). pairing_choice($KeyByNearest()).
+
+.decl box_size_choice(b: BoxSize)
+box_size_choice($BoxSizeStored()). box_size_choice($BoxSizeFromShapes()).
+
+.decl alignment_choice(a: Alignment)
+alignment_choice($StampFlush()). alignment_choice($StampAlignCenter()).
+
+.decl marker_fate_choice(m: MarkerFate)
+marker_fate_choice($MarkerKept()). marker_fate_choice($MarkerCleared()).
+
+// A reading with $ColorClass and $KeyInBox is defined only where each
+// color's cells fit in one box with their key, and there they spread into one
+// shape, so it gives the output of the same reading with $ShapeBySpread.
+// Under $MarkerColor every color's cells fit in a box of the derived
+// box-size, so with $BoxSizeFromShapes the two groupings agree everywhere,
+// and the $ColorClass reading is the case. Under $KeyByNearest with the
+// concept branch at every other point, only the derivation reads box-size,
+// and it leaves the case undefined more often.
+.decl subsumed(ch: Choice)
+subsumed([$ColorClass(), $MarkerColor(), $KeyByNearest(), $BoxSizeFromShapes(), $StampFlush(), $MarkerKept()]).
+
+.decl equivalent(ch: Choice)
+equivalent([$ShapeBySpread(), $MarkerColor(), P, $BoxSizeFromShapes(), A, M]) :-
+    pairing_choice(P), alignment_choice(A), marker_fate_choice(M).
+
+.decl impl_choice(ch: Choice)
+impl_choice([$ColorClass(), $MarkerColor(), $KeyInBox(), $BoxSizeStored(), $StampFlush(), $MarkerKept()]).
+impl_choice([$ColorClass(), $MarkerColor(), $KeyInBox(), $BoxSizeFromShapes(), A, M]) :-
+    alignment_choice(A), marker_fate_choice(M).
+impl_choice([$ColorClass(), I, $KeyByNearest(), B, A, M]) :-
+    key_identity_choice(I), box_size_choice(B), alignment_choice(A), marker_fate_choice(M),
+    !subsumed([$ColorClass(), I, $KeyByNearest(), B, A, M]).
+impl_choice([$ShapeBySpread(), I, P, B, A, M]) :-
+    key_identity_choice(I), pairing_choice(P), box_size_choice(B), alignment_choice(A),
+    marker_fate_choice(M), !equivalent([$ShapeBySpread(), I, P, B, A, M]).
+
+// --- shared ---
+// @claim background
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+.decl background(col: Color)
+background(Col) :- bg_mode.mode($U(), Col).
+
+.decl corner(d: DiagDir, p: Position)
+corner(D, P) :- in(P, _), diag_dir_elem(D), box_corner(P, ZERO, D).
+
+.decl marker(d: DiagDir, col: Color)
+marker(D, Col) :- corner(D, P), in(P, Col), !background(Col).
+
+// A non-background cell off the corners.
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !background(Col), !corner(_, P).
+
+.decl size(b: BoxSize, k: number)
+
+// --- $BoxSizeStored ---
+size($BoxSizeStored(), K) :- params.box_size(K).
+
+// --- $BoxSizeFromShapes ---
+// @claim shape-box
+.init color_box = Bbox<Color>
+color_box.cell(Col, P) :- ink(P, Col), !marker(_, Col).
+
+// @claim shape-box
+.init widest = Extremes<Unit>
+widest.cand($U(), N) :-
+    color_box.box(Col, B), ink(P, Col), axis_elem(A), box_extent(B, P, A, N).
+
+size($BoxSizeFromShapes(), K) :- widest.high($U(), K).
+
+// --- shared ---
+// @claim shapes key-cell
+.init pair_box = Bbox<Span>
+pair_box.cell([P, Q], P) :- ink(P, _), ink(Q, _).
+pair_box.cell([P, Q], Q) :- ink(P, _), ink(Q, _).
+
+// The larger extent of the box two cells span: their Chebyshev distance, plus
+// one.
+.decl span(p: Position, q: Position, n: number)
+span(P, Q, N) :-
+    pair_box.box([P, Q], B), axis_elem(A), box_extent(B, P, A, N),
+    perp(A, A2), box_extent(B, P, A2, N2), N >= N2.
+
+// Two cells fit in one box-size × box-size box.
+.decl near(b: BoxSize, p: Position, q: Position)
+near(B, P, Q) :- span(P, Q, N), size(B, K), N <= K.
+
+.decl key(i: KeyIdentity, b: BoxSize, p: Position, col: Color)
+
+// --- $MarkerColor ---
+key($MarkerColor(), B, P, Col) :- size(B, _), ink(P, Col), marker(_, Col).
+
+// --- $KeyWithoutMarker ---
+// Another cell of p's color fits with p in one box.
+.decl crowded(b: BoxSize, p: Position)
+crowded(B, P) :- ink(P, Col), ink(Q, Col), P != Q, near(B, P, Q).
+
+key($KeyWithoutMarker(), B, P, Col) :- size(B, _), ink(P, Col), !crowded(B, P).
+
+// --- shared ---
+// A shape cell: ink that is no key.
+.decl body(i: KeyIdentity, b: BoxSize, p: Position, col: Color)
+body(I, B, P, Col) :- key_identity_choice(I), size(B, _), ink(P, Col), !key(I, B, P, _).
+
+.decl shape(g: Grouping, i: KeyIdentity, b: BoxSize, id: Ident, p: Position, col: Color)
+
+// --- $ColorClass ---
+// @claim shapes
+.init color_id = IdentOf<Color>
+color_id.value(Col) :- ink(_, Col).
+
+shape($ColorClass(), I, B, Id, P, Col) :- body(I, B, P, Col), color_id.id(Col, Id).
+
+// --- $ShapeBySpread ---
+.init spread = Canon<Node>
+spread.edge([I, B, P], [I, B, Q]) :-
+    body(I, B, P, Col), body(I, B, Q, Col), near(B, P, Q).
+
+shape($ShapeBySpread(), I, B, Id, P, Col) :- body(I, B, P, Col), spread.id([I, B, P], Id).
+
+// --- shared ---
+// The box of a shape's cells and a key.
+// @claim key-cell stamp-corner
+.init bond_box = Bbox<Bond>
+bond_box.cell([G, I, B, Id, K], P) :- shape(G, I, B, Id, P, _), key(I, B, K, _).
+bond_box.cell([G, I, B, Id, K], K) :- shape(G, I, B, Id, _, _), key(I, B, K, _).
+
+// Key k belongs to shape id.
+.decl paired(g: Grouping, i: KeyIdentity, p: Pairing, b: BoxSize, id: Ident, k: Position)
+
+// --- $KeyInBox ---
+// The box of a shape and a key is wider than box-size on some axis.
+.decl loose(g: Grouping, i: KeyIdentity, b: BoxSize, id: Ident, k: Position)
+loose(G, I, B, Id, K) :-
+    bond_box.box([G, I, B, Id, K], Bx), axis_elem(A), box_extent(Bx, K, A, N),
+    size(B, S), N > S.
+
+paired(G, I, $KeyInBox(), B, Id, K) :-
+    bond_box.box([G, I, B, Id, K], _), !loose(G, I, B, Id, K).
+
+// --- $KeyByNearest ---
+// @claim key-cell
+.init reach = Extremes<Bond>
+reach.cand([G, I, B, Id, K], N) :-
+    shape(G, I, B, Id, P, _), key(I, B, K, _), span(K, P, N).
+
+// @claim key-cell
+.init nearest = ArgExtremes<Seek, Ident>
+nearest.cand([G, I, B, K], Id, N) :- reach.low([G, I, B, Id, K], N).
+
+paired(G, I, $KeyByNearest(), B, Id, K) :- nearest.low([G, I, B, K], Id, _).
+
+// --- shared ---
+// A key or a shape that does not pair one to one.
+.decl broken(g: Grouping, i: KeyIdentity, p: Pairing, b: BoxSize)
+broken(G, I, P, B) :-                                            // a key with no shape
+    impl_choice([G, I, P, B, _, _]), key(I, B, K, _), !paired(G, I, P, B, _, K).
+broken(G, I, P, B) :-                                            // a key with two shapes
+    paired(G, I, P, B, Id, K), paired(G, I, P, B, Id2, K), Id != Id2.
+broken(G, I, P, B) :-                                            // a shape with no key
+    impl_choice([G, I, P, B, _, _]), shape(G, I, B, Id, _, _), !paired(G, I, P, B, Id, _).
+broken(G, I, P, B) :-                                            // a shape with two keys
+    paired(G, I, P, B, Id, K), paired(G, I, P, B, Id, K2), K != K2.
+
+// The color a shape cell or a key takes.
+.decl swapped(g: Grouping, i: KeyIdentity, p: Pairing, b: BoxSize, q: Position, col: Color)
+swapped(G, I, P, B, Q, Col) :-
+    paired(G, I, P, B, Id, K), shape(G, I, B, Id, Q, _), key(I, B, K, Col).
+swapped(G, I, P, B, K, Col) :- paired(G, I, P, B, Id, K), shape(G, I, B, Id, _, Col).
+
+// The move that takes a keyed box into its corner.
+.decl place(g: Grouping, i: KeyIdentity, p: Pairing, b: BoxSize, a: Alignment, id: Ident,
+            k: Position, v: Offset)
+
+// --- $StampFlush ---
+place(G, I, P, B, $StampFlush(), Id, K, V) :-
+    paired(G, I, P, B, Id, K), key(I, B, K, Col), marker(D, Col),
+    bond_box.box([G, I, B, Id, K], Bx), in(Pc, _), box_corner(Pc, Bx, D),   // the box's corner cell
+    in(Q, _), box_corner(Q, ZERO, D), relative(Pc, Q, V).                     // onto the grid's
+
+// --- $StampAlignCenter, $MarkerCleared ---
+// The box-size × box-size box at a marked corner.
+.decl corner_cell(b: BoxSize, d: DiagDir, p: Position)
+corner_cell(B, D, P) :-
+    marker(D, _), size(B, K), in(P, _), diag_dist(P, D, _, K1, K2), K1 < K, K2 < K.
+
+// --- $StampAlignCenter ---
+// @claim stamp-corner
+.init corner_box = Bbox<Corner>
+corner_box.cell([B, D], P) :- corner_cell(B, D, P).
+
+place(G, I, P, B, $StampAlignCenter(), Id, K, V) :-
+    paired(G, I, P, B, Id, K), key(I, B, K, Col), marker(D, Col),
+    bond_box.box([G, I, B, Id, K], Bx), in(Pc, _), box_corner(Pc, Bx, D),   // the box's corner cell
+    corner_cell(B, D, Q), relative(Pc, Q, V),                                 // onto a corner-box cell
+    corner_box.box([B, D], C), compose(Bx, V, Bx2), relative(C, Bx2, R), centered(R).
+
+// --- shared ---
+// A keyed box with no place in its corner.
+.decl unplaced(g: Grouping, i: KeyIdentity, p: Pairing, b: BoxSize, a: Alignment)
+unplaced(G, I, P, B, A) :-
+    impl_choice([G, I, P, B, A, _]), paired(G, I, P, B, Id, K), key(I, B, K, Col),
+    marker(_, Col), !place(G, I, P, B, A, Id, K, _).
+
+// A stamped cell, in the marker's color.
+.decl stamp(g: Grouping, i: KeyIdentity, p: Pairing, b: BoxSize, a: Alignment, q: Position,
+            col: Color)
+stamp(G, I, P, B, A, Q2, Col) :-
+    place(G, I, P, B, A, Id, K, V), key(I, B, K, Col),
+    ( shape(G, I, B, Id, Q, _)
+    ; Q = K
+    ), compose(Q, V, Q2).
+
+// A corner-box cell that turns background.
+.decl cleared(b: BoxSize, m: MarkerFate, p: Position)
+
+// --- $MarkerCleared ---
+cleared(B, $MarkerCleared(), P) :- corner_cell(B, _, P).
+
+// --- shared ---
+out(Q, Col, [G, I, P, B, A, M]) :-
+    impl_choice([G, I, P, B, A, M]), size(B, _), !broken(G, I, P, B), !unplaced(G, I, P, B, A),
+    in(Q, Col0),
+    ( stamp(G, I, P, B, A, Q, Col)
+    ; !stamp(G, I, P, B, A, Q, _), cleared(B, M, Q), background(Col)
+    ; !stamp(G, I, P, B, A, Q, _), !cleared(B, M, Q), swapped(G, I, P, B, Q, Col)
+    ; !stamp(G, I, P, B, A, Q, _), !cleared(B, M, Q), !swapped(G, I, P, B, Q, _), Col = Col0
+    ).

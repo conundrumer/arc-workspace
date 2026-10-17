@@ -1,0 +1,160 @@
+// bf89d739
+// @draft
+// @keywords: markers span cast
+// @scene scattered-dots: single cells of color 2 lie apart on a field of
+//  params.background, no two touching.
+// @scene one-aligned-pair: exactly two dots share a row or a column, and no
+//  other two dots share a row or a column.
+// @scene within-span: every other dot lies off the pair's line, level with a
+//  cell strictly between the pair's two dots.
+// @rule trunk: each two dots that share a row or a column with no dot between
+//  them form a trunk: each background cell strictly between them takes
+//  params.line_color.
+// @rule branch: a dot off a trunk's line, level with a cell strictly between
+//  the trunk's two dots, branches onto that cell: each background cell
+//  strictly between the dot and that cell takes params.line_color.
+// @rule keep: every other cell keeps its input color.
+
+// what a dot gets when its level is not strictly between the pair's two dots
+.type BeyondSpan =
+    // @claim within-span
+    WithinSpan {}
+    // @scene within-span: a dot off the pair's line may lie at any level
+    // @rule trunk: each line that holds two dots carries a trunk across the
+    //  bounding box of all the dots: each background cell of the line inside
+    //  that box takes params.line_color
+    // @rule branch: every dot off a trunk's line branches onto it
+    // @witness dot-beyond-pair: borderline $TrunkSpansAll
+    //     @relaxed within-span
+  | TrunkSpansAll {}
+    // @scene within-span: a dot off the pair's line may lie at any level
+    // @rule branch: every dot off a trunk's line branches onto that line,
+    //  past the trunk's end where its level is beyond the pair
+    // @witness dot-beyond-pair: borderline $TrunkSpansAll
+  | BranchToLine {}
+
+// which cells are dots
+.type DotReading =
+    // @claim scattered-dots
+    NonBackground {}
+    // @scene scattered-dots: only cells of params.dot_color are dots; a cell
+    //  of another color that is not the background is kept and joins nothing
+    // @witness dot-of-another-color: foreign $DotsOfOneColor
+    //     @relaxed scattered-dots
+  | DotsOfOneColor {}
+
+.type Choice = [beyond: BeyondSpan, dots: DotReading]
+
+.type ReadingAxis = [r: DotReading, a: Axis]
+
+.type Cell = [e: Example, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed scattered-dots
+    .decl background(c: Color) background(0).
+    .decl line_color(c: Color) line_color(3).
+
+    // --- $DotsOfOneColor ---
+    // @derive RarestColor: foreign $DotsOfOneColor
+    //     @relaxed scattered-dots
+    .decl dot_color(c: Color) dot_color(2).
+}
+
+.init params = Params
+
+.decl beyond_span_choice(b: BeyondSpan)
+beyond_span_choice($WithinSpan()). beyond_span_choice($TrunkSpansAll()). beyond_span_choice($BranchToLine()).
+
+.decl dot_reading_choice(r: DotReading)
+dot_reading_choice($NonBackground()). dot_reading_choice($DotsOfOneColor()).
+
+.decl dot(r: DotReading, p: Position)
+
+// A cell of the line of axis a through dot x.
+.decl dot_line(r: DotReading, a: Axis, x: Position, p: Position)
+dot_line(R, A, X, P) :- dot(R, X), axis_elem(A), in(P, _), same_line(A, X, P).
+
+// The trunk cells along axis a that a branch lands on.
+.decl landing(b: BeyondSpan, r: DotReading, a: Axis, p: Position)
+
+// The cells a model paints when they are background.
+.decl paint(b: BeyondSpan, r: DotReading, p: Position)
+paint(B, R, P) :-
+    landing(B, R, A, T), perp(A, A2), dot_line(R, A2, X, T),   // the dot level with T
+    dot_line(R, A2, X, P),
+    axis_of(D, A2), nearer(D, X, P), nearer(D, P, T).          // strictly between them
+
+// The background cells a model paints.
+.decl drawn(b: BeyondSpan, r: DotReading, p: Position)
+drawn(B, R, P) :- paint(B, R, P), in(P, C), params.background(C).
+
+out(P, Col, [B, R]) :-
+    beyond_span_choice(B), dot_reading_choice(R), in(P, C),
+    ( drawn(B, R, P), params.line_color(Col)
+    ; !drawn(B, R, P), Col = C
+    ).
+
+// --- $NonBackground ---
+dot($NonBackground(), P) :- in(P, C), !params.background(C).
+
+// --- $DotsOfOneColor ---
+dot($DotsOfOneColor(), P) :- in(P, C), params.dot_color(C).
+
+// --- $WithinSpan, $BranchToLine ---
+
+// The cells with a dot on each side along axis a.
+// @claim trunk branch
+.init span = Between<ReadingAxis>
+span.axis([R, A], A) :- dot_reading_choice(R), axis_elem(A).
+span.cell([R, A], P) :- dot_reading_choice(R), axis_elem(A), in(P, _).
+span.mark([R, A], P) :- dot(R, P), axis_elem(A).
+
+// A cell strictly between two dots of one line of axis a, with no dot
+// between them.
+.decl between_pair(r: DotReading, a: Axis, p: Position)
+between_pair(R, A, P) :- span.between([R, A], P), !dot(R, P).
+
+// --- $TrunkSpansAll, $BranchToLine ---
+
+// A cell of a line of axis a that holds two dots.
+.decl line_cell(r: DotReading, a: Axis, p: Position)
+line_cell(R, A, P) :-
+    dot(R, Q), dot(R, Q2), Q != Q2, axis_elem(A), same_line(A, Q, Q2),
+    in(P, _), same_line(A, P, Q).
+
+// --- $WithinSpan ---
+paint($WithinSpan(), R, P) :- between_pair(R, _, P).
+landing($WithinSpan(), R, A, P) :- between_pair(R, A, P).
+
+// --- $TrunkSpansAll ---
+
+// @claim trunk
+.init dots_box = Bbox<DotReading>
+dots_box.cell(R, P) :- dot(R, P).
+
+landing($TrunkSpansAll(), R, A, P) :- line_cell(R, A, P), dots_box.box(R, B), inside(P, B).
+paint($TrunkSpansAll(), R, P) :- landing($TrunkSpansAll(), R, _, P).
+
+// --- $BranchToLine ---
+paint($BranchToLine(), R, P) :- between_pair(R, _, P).
+landing($BranchToLine(), R, A, P) :- line_cell(R, A, P).
+
+.comp Determine {
+    // The field: the commonest color of the inputs.
+    .init field = Mode<Unit, Color, Cell>
+    field.item($U(), C, [E, P]) :- ex_in(E, P, C).
+
+    .decl background(c: Color)
+    background(C) :- field.mode($U(), C).
+
+    // The color of the cells the output changes.
+    .decl line_color(c: Color)
+    line_color(C) :- ex_out(E, P, C), ex_in(E, P, C0), C0 != C.
+
+    // The colors of the input cells off the field.
+    .decl dot_color(c: Color)
+    dot_color(C) :- ex_in(_, _, C), !background(C).
+}

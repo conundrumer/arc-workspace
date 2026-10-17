@@ -1,0 +1,229 @@
+// c35c1b4c
+// @draft
+// @keywords: symmetry repair objects noise rank color-class
+// @scene one-blob: one color, the blob color, forms a large connected region
+//  near the middle of the grid, and that region is the largest single-color
+//  region in the grid
+// @rule mirror-union: each cell of the blob color is copied, in the blob
+//  color, to the cell that mirrors it across the grid's midline on axis
+//  params.axis
+// @rule rest-kept: every other cell keeps its input color
+
+// which color is the blob
+.type BlobColor =
+    // @claim one-blob
+    Largest {}
+    // @scene one-blob: the blob color is the color with the most cells;
+    //  undefined where two colors tie for the most cells
+    // @witness count-beats-blob: ordinary concept
+  | CommonestColor {}
+
+// the adjacency that joins a region
+.type Adjacency =
+    // @claim one-blob
+    Adj4 {}
+    // @scene one-blob: diagonal contacts join a region as well
+    // @witness diagonal-noise-chain: borderline concept
+  | Adj8 {}
+
+// which cells are mirrored
+.type Source =
+    // @claim mirror-union
+    AllOfColor {}
+    // @rule mirror-union: only the cells of the largest region of the blob
+    //  color are mirrored; undefined where two such regions tie
+    // @witness stray-blob-cell: ordinary concept
+  | BlobOnly {}
+
+// which way the mirror copies
+.type Direction =
+    // @claim mirror-union
+    Union {}
+    // @rule mirror-union: only the blob cells on side params.source_side are
+    //  copied, to their mirror cells on the other side; the axis of
+    //  params.source_side is the mirror axis
+    // @witness damaged-left-half: variant concept
+  | OneWay {}
+
+// the axis the blob is mirrored across
+.type MirrorAxis =
+    // @claim mirror-union
+    StoredAxis {}
+    // @rule mirror-union: the mirror axis is the one axis that has a side
+    //  whose blob cells hold the mirror of every blob cell on the other side;
+    //  undefined where no axis or both axes have such a side
+    // @witness turned-blob: variant $IntactHalf
+    // @witness damaged-left-half: variant concept
+  | IntactHalf {}
+
+.type Choice = [color: BlobColor, adj: Adjacency, source: Source, dir: Direction,
+                axis: MirrorAxis]
+
+// A color under one adjacency.
+.type Tint = [adj: Adjacency, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $Union & $StoredAxis ---
+    .decl axis(a: Axis) axis(AXIS_H).
+
+    // --- $OneWay ---
+    // The side whose blob cells are copied.
+    .decl source_side(d: Dir) source_side(DIR_L).
+}
+
+.init params = Params
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($Adj4()). adjacency_choice($Adj8()).
+
+.decl source_choice(s: Source)
+source_choice($AllOfColor()). source_choice($BlobOnly()).
+
+.decl direction_choice(d: Direction)
+direction_choice($Union()). direction_choice($OneWay()).
+
+// CommonestColor reads a region only where BlobOnly picks one.
+.decl blob_choice(c: BlobColor, a: Adjacency, s: Source)
+blob_choice($Largest(), A, S) :- adjacency_choice(A), source_choice(S).
+blob_choice($CommonestColor(), $Adj4(), S) :- source_choice(S).
+blob_choice($CommonestColor(), $Adj8(), $BlobOnly()).
+
+// IntactHalf derives the side OneWay stores, and copying from that side gives
+// the union.
+.decl impl_choice(ch: Choice)
+impl_choice([C, A, S, D, $StoredAxis()]) :- blob_choice(C, A, S), direction_choice(D).
+impl_choice([C, A, S, $Union(), $IntactHalf()]) :- blob_choice(C, A, S).
+
+// The single-color regions under each adjacency.
+.decl region(a: Adjacency, p: Position, col: Color, id: Ident)
+
+// The largest regions.
+// @claim one-blob
+.init largest = Mode<Adjacency, Ident, Position>
+largest.item(A, Id, P) :- region(A, P, _, Id).
+
+// @claim one-blob
+.init largest_color = Unanimous<Adjacency, Color>
+largest_color.item(A, Col) :- largest.mode(A, Id), region(A, _, Col, Id).
+
+// The blob color under each reading of the blob color.
+.decl pick_color(c: BlobColor, a: Adjacency, col: Color)
+
+// The color each case mirrors, where the case finds its blob.
+.decl blob_color(ch: Choice, col: Color)
+
+// The cells each case mirrors.
+.decl source(ch: Choice, p: Position)
+
+// The cell across the grid's midline on axis A.
+.decl mirror(a: Axis, p: Position, q: Position)
+mirror(A, P, Q) :- in(P, _), axis_elem(A), flip_of(A, G), apply(G, P, Q).
+
+// The axis each case mirrors across.
+.decl mirror_axis(ch: Choice, a: Axis)
+
+// The cells each case paints in the blob color.
+.decl paint(ch: Choice, p: Position)
+
+out(P, Col, Ch) :- paint(Ch, P), blob_color(Ch, Col).
+out(P, Col, Ch) :-
+    in(P, Col), blob_color(Ch, _), mirror_axis(Ch, _),   // the case finds its blob and axis
+    !paint(Ch, P).
+
+// --- $Adj4 ---
+
+// @claim one-blob
+.init region4 = Components<Color>
+region4.node(Col, P) :- in(P, Col).
+
+region($Adj4(), P, Col, Id) :- region4.label(Col, P, Id).
+
+// --- $Adj8 ---
+
+// @claim one-blob
+.init region8 = Components8<Color>
+region8.node(Col, P) :- in(P, Col).
+
+region($Adj8(), P, Col, Id) :- region8.label(Col, P, Id).
+
+// --- $Largest ---
+
+pick_color($Largest(), A, Col) :- largest_color.value(A, Col).
+
+// --- $CommonestColor ---
+
+// @claim one-blob
+.init commonest = Mode<Unit, Color, Position>
+commonest.item($U(), Col, P) :- in(P, Col).
+
+// @claim one-blob
+.init commonest_color = Unanimous<Unit, Color>
+commonest_color.item($U(), Col) :- commonest.mode($U(), Col).
+
+pick_color($CommonestColor(), A, Col) :- adjacency_choice(A), commonest_color.value($U(), Col).
+
+// --- $AllOfColor ---
+
+blob_color([C, A, $AllOfColor(), D, X], Col) :-
+    impl_choice([C, A, $AllOfColor(), D, X]), pick_color(C, A, Col).
+
+source([C, A, $AllOfColor(), D, X], P) :- blob_color([C, A, $AllOfColor(), D, X], Col), in(P, Col).
+
+// --- $BlobOnly ---
+
+// The largest regions of each color.
+// @claim mirror-union
+.init color_largest = Mode<Tint, Ident, Position>
+color_largest.item([A, Col], Id, P) :- region(A, P, Col, Id).
+
+// @claim mirror-union
+.init blob_region = Unanimous<Tint, Ident>
+blob_region.item(K, Id) :- color_largest.mode(K, Id).
+
+blob_color([C, A, $BlobOnly(), D, X], Col) :-
+    impl_choice([C, A, $BlobOnly(), D, X]), pick_color(C, A, Col), blob_region.value([A, Col], _).
+
+source([C, A, $BlobOnly(), D, X], P) :-
+    blob_color([C, A, $BlobOnly(), D, X], Col), blob_region.value([A, Col], Id),
+    region(A, P, Col, Id).
+
+// --- $Union ---
+
+paint([C, A, S, $Union(), X], Q) :-
+    source([C, A, S, $Union(), X], P), mirror_axis([C, A, S, $Union(), X], Ax), mirror(Ax, P, Q).
+
+// --- $Union & $StoredAxis ---
+
+mirror_axis([C, A, S, $Union(), $StoredAxis()], Ax) :-
+    impl_choice([C, A, S, $Union(), $StoredAxis()]), params.axis(Ax).
+
+// --- $OneWay ---
+
+mirror_axis([C, A, S, $OneWay(), X], Ax) :-
+    impl_choice([C, A, S, $OneWay(), X]), params.source_side(D), axis_of(D, Ax).
+
+paint([C, A, S, $OneWay(), X], Q) :-
+    source([C, A, S, $OneWay(), X], P), mirror_axis([C, A, S, $OneWay(), X], Ax), mirror(Ax, P, Q),
+    params.source_side(D), nearer(D, P, Q).                // from the source side
+
+// --- $IntactHalf ---
+
+// A blob cell away from side D whose mirror on side D is no blob cell.
+// @ignore: store — stored, it fixes the axis as params.axis does, so the case is the concept case
+.decl unmatched(ch: Choice, d: Dir)
+unmatched([C, A, S, Dr, $IntactHalf()], D) :-
+    source([C, A, S, Dr, $IntactHalf()], P), dir_elem(D), axis_of(D, Ax), mirror(Ax, P, Q),
+    nearer(D, Q, P), !source([C, A, S, Dr, $IntactHalf()], Q).
+
+// The axes with a side that holds the mirror of the other side's blob cells.
+// @ignore item: store — stored, it is params.axis, so the case is the concept case
+// @ignore value: store — stored, it is params.axis, so the case is the concept case
+// @claim mirror-union
+.init intact = Unanimous<Choice, Axis>
+intact.item([C, A, S, Dr, $IntactHalf()], Ax) :-
+    blob_color([C, A, S, Dr, $IntactHalf()], _), dir_elem(D), axis_of(D, Ax),
+    !unmatched([C, A, S, Dr, $IntactHalf()], D).
+
+mirror_axis(Ch, Ax) :- intact.value(Ch, Ax).

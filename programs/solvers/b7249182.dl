@@ -1,0 +1,137 @@
+// b7249182
+// @draft
+// @keywords: markers cast span
+// @scene two-dots: two single cells on a field of `background`, and nothing else.
+// @scene shared-line: the two dots are on one row or on one column.
+// @scene even-span: the run of cells from one dot to the other, both dots
+//  included, has an even length, so the run splits into two equal halves.
+// @scene long-span: each half holds at least `box-depth` cells.
+// @rule halves: the run from one dot to the other splits into two equal
+//  halves, and each half takes the color of the dot at its end.
+// @rule stem: a half's cells, from the dot toward the middle, are painted in
+//  its color, except for the last `box-depth` cells.
+// @rule crossbar: the next cell of the half after the stem is the center of a
+//  crossbar across the line, which reaches `bar-reach` cells to each side, in
+//  the half's color, where those cells are in the frame.
+// @rule arms: the two ends of the crossbar extend toward the middle along the
+//  line, up to the half's last cell, in the half's color, where those cells
+//  are in the frame.
+// @rule keep: every other cell keeps its input color.
+
+// whether the two halves must meet
+.type Span =
+    // @claim even-span
+    Meet {}
+    // @scene even-span: each half is the floor of half the run, counted from
+    //  its dot, so on a run of odd length the middle cell and the box's middle
+    //  line across it stay unpainted. Undefined where the concept case is,
+    //  other than on the run's parity.
+    // @witness odd-span: borderline $OddSpanGap
+    //     @relaxed even-span
+  | OddSpanGap {}
+
+// how many dots the input holds
+.type Dots =
+    // @claim two-dots
+    Two {}
+    // @scene two-dots: the cells that are not background come in pairs, each
+    //  pair on one row or column, and no dot shares a row or column with a dot
+    //  outside its pair. Each pair gets the bracket. Undefined where a dot
+    //  shares its row and column with no other dot or with more than one, and
+    //  where two brackets paint one cell in different colors.
+    // @witness two-pairs: variant $EachPair
+    //     @relaxed two-dots
+  | EachPair {}
+
+.type Choice = [span: Span, dots: Dots]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed two-dots
+    .decl background(c: Color) background(0).
+    // the cells the crossbar reaches to each side of the line
+    .decl bar_reach(n: number) bar_reach(2).
+    // the cells of each half, at its middle end, that the box takes
+    .decl box_depth(n: number) box_depth(2).
+}
+
+.init params = Params
+
+.decl span_choice(s: Span)
+span_choice($Meet()). span_choice($OddSpanGap()).
+
+.decl dots_choice(d: Dots)
+dots_choice($Two()). dots_choice($EachPair()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, D]) :- span_choice(S), dots_choice(D).
+
+.decl dot(p: Position, col: Color)
+dot(P, Col) :- in(P, Col), !params.background(Col).
+
+// @claim shared-line halves
+.init cast = Ray<Unit>
+cast.dir($U(), D) :- dir_elem(D).
+cast.cell($U(), P) :- in(P, _).
+cast.mark($U(), P) :- dot(P, _).
+
+// Dot B lies on dot A's row or column, toward D.
+.decl partner(a: Position, d: Dir, b: Position)
+partner(A, D, B) :- cast.ray(_, B, D, _, A), dir_elem(D), dot(B, _), B != A.
+
+// P is a cell of A's half, K cells from A: on the run to A's partner, and
+// strictly nearer A.
+.decl half(a: Position, d: Dir, p: Position, k: number)
+half(A, D, P, K) :-
+    partner(A, D, B), opposite(D, D2),
+    cast.ray(_, P, D, K, A), cast.ray(_, P, D2, K2, B), K < K2.
+
+// Q is the first cell past A's half, toward its partner.
+.decl past(a: Position, d: Dir, q: Position)
+past(A, D, Q) :- half(A, D, P, _), neighbor(P, D, Q), !half(A, D, Q, _).
+
+// C, K cells from A, is the center of A's crossbar.
+.decl center(a: Position, d: Dir, c: Position, k: number)
+center(A, D, C, K) :- past(A, D, Q), params.box_depth(N), half(A, D, C, K), jump(C, D, N, Q).
+
+// @claim crossbar arms
+.init across = Ray<Unit>
+across.dir($U(), D) :- dir_elem(D).
+across.cell($U(), P) :- in(P, _).
+across.mark($U(), P) :- center(A, D, _, Kc), half(A, D, P, K), K >= Kc.   // a box cell of the line
+
+.decl paint(p: Position, col: Color)
+paint(P, Col) :-
+    dot(A, Col), center(A, D, C, Kc), perp_dir(D, D2), params.bar_reach(N),
+    ( half(A, D, P, K), K < Kc                              // stem
+    ; across.ray(_, P, D2, K, C), K <= N                    // crossbar
+    ; half(A, D, Q, K), K > Kc, across.ray(_, P, D2, N, Q)  // arms
+    ).
+
+// the cases whose model is undefined on this input
+.decl void(ch: Choice)
+void(Ch) :- impl_choice(Ch), partner(A, D, _), !center(A, D, _, _).   // a half shorter than the box
+
+out(P, Col, Ch) :-
+    impl_choice(Ch), !void(Ch),
+    ( paint(P, Col)
+    ; in(P, Col), !paint(P, _)
+    ).
+
+// --- $Meet ---
+// A's half is not followed by its partner's half.
+.decl apart(a: Position, d: Dir)
+apart(A, D) :- past(A, D, Q), partner(A, D, B), opposite(D, D2), !half(B, D2, Q, _).
+
+void([$Meet(), Dt]) :- dots_choice(Dt), apart(_, _).
+
+// --- $Two ---
+void([S, $Two()]) :- span_choice(S), !partner(_, _, _).
+void([S, $Two()]) :- span_choice(S), partner(A, _, B), dot(C, _), C != A, C != B.   // a third dot
+
+// --- $EachPair ---
+void([S, $EachPair()]) :- span_choice(S), dot(A, _), !partner(A, _, _).   // a dot with no partner
+void([S, $EachPair()]) :- span_choice(S), partner(A, _, B), partner(A, _, B2), B != B2.   // a dot with two
+

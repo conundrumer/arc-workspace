@@ -1,0 +1,198 @@
+// bf32578f
+// @draft
+// @keywords: symmetry enclose
+// @scene one-shape: the input holds one shape of one color on a field of bg
+// @scene half-outline: the shape is an open curve whose two ends lie in its
+//  column nearest mirror-dir, so that it opens toward mirror-dir
+// @scene room: the grid has room for the shape's mirror image on its
+//  mirror-dir side
+// @rule mirror: the shape and its mirror image, across the line just past the
+//  shape's edge toward mirror-dir, form one closed outline
+// @rule fill-inside: each cell the closed outline encloses takes the shape's
+//  color, and every other cell, the outline included, is bg
+
+// which cells of the closed outline's frame take the shape's color
+.type Inside =
+    // @claim fill-inside
+    Enclosed {}
+    // @rule fill-inside: each cell off the outline with outline cells on both
+    //  sides along mirror-dir's axis takes the shape's color. Undefined where
+    //  the concept is.
+    // @witness top-notch: ordinary concept
+  | SpanAlong {}
+    // @rule fill-inside: each cell off the outline with outline cells on both
+    //  sides along the axis across mirror-dir takes the shape's color.
+    //  Undefined where the concept is.
+    // @witness left-dent: ordinary concept
+  | SpanAcross {}
+    // @rule fill-inside: each cell off the outline with outline cells on both
+    //  sides along each axis takes the shape's color. Undefined where the
+    //  concept is.
+    // @witness curl-pocket: borderline concept
+  | SpanBoth {}
+    // @rule fill-inside: each cell off the outline with outline cells on both
+    //  sides along some axis takes the shape's color. Undefined where the
+    //  concept is.
+    // @witness top-notch: ordinary concept
+  | SpanEither {}
+    // @rule fill-inside: the outline with the cells it encloses, less that
+    //  set's rim, takes the shape's color, so an outline cell with all four
+    //  neighbors in the set takes it too. Undefined where the concept is.
+    // @witness hanging-tip: ordinary concept
+  | ErodeFilled {}
+    // @rule fill-inside: each cell off the outline with outline cells on both
+    //  sides along some row, column or diagonal takes the shape's color.
+    //  Undefined where the concept is.
+    // @witness goblet-neck: ordinary concept
+  | SpanAny {}
+
+// how the side the shape opens toward is found
+.type Mirror =
+    // @claim half-outline
+    StoredDir {}
+    // @scene half-outline: the shape is an open curve with two ends, each a
+    //  shape cell with one 8-neighbor in the shape, and mirror-dir is the one
+    //  side of the shape's bounding box whose line holds both ends. Undefined
+    //  where the shape has other than two ends, where no side or more than one
+    //  side holds both, and where the concept is undefined at that direction.
+    // @witness opens-left: variant $MirrorDirFromEnds
+    //     @relaxed half-outline
+    //     @relaxed room
+  | MirrorDirFromEnds {}
+
+.type Choice = [i: Inside, m: Mirror]
+
+.type Line = [m: Mirror, a: Axis4]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed one-shape
+    .decl bg(c: Color) bg(0).
+
+    // --- $StoredDir ---
+    // the direction the shape opens toward, in which its mirror image lies
+    .decl mirror_dir(d: Dir) mirror_dir(DIR_R).
+}
+
+.init params = Params
+
+.decl inside_choice(i: Inside)
+inside_choice($Enclosed()). inside_choice($SpanAlong()). inside_choice($SpanAcross()).
+inside_choice($SpanBoth()). inside_choice($SpanEither()). inside_choice($ErodeFilled()).
+inside_choice($SpanAny()).
+
+.decl shape(p: Position)
+shape(P) :- in(P, Col), !params.bg(Col).
+
+// The shape's color.
+// @claim one-shape
+.init hue = Unanimous<Unit, Color>
+hue.item($U(), Col) :- shape(P), in(P, Col).
+
+// @claim mirror
+.init shape_box = Bbox<Unit>
+shape_box.cell($U(), P) :- shape(P).
+
+// The side the shape opens toward.
+.decl open_dir(m: Mirror, d: Dir)
+
+// The shape's mirror image across the line just past the shape's edge
+// toward the open side: the shape's reflection within its box doubled toward
+// that side.
+.decl image(m: Mirror, q: Position)
+image(M, Q) :-
+    open_dir(M, D), axis_of(D, A), shape(P), shape_box.box($U(), B),
+    box_extent(B, P, A, W), edge_outset(D, W, B_out), compose(B, B_out, B2),  // the box doubled toward D
+    crop(P, B2, P_rel), flip_of(A, F), apply(F, P_rel, Q_rel), compose(B2, Q_rel, Q).
+
+.decl outline(m: Mirror, p: Position)
+outline(M, P) :- open_dir(M, _), shape(P).
+outline(M, Q) :- image(M, Q).
+
+// Some image cell lies off the grid.
+.decl spill(m: Mirror)
+spill(M) :- image(M, Q), !in(Q, _).
+
+.decl defined(m: Mirror)
+defined(M) :- open_dir(M, _), !spill(M), hue.value($U(), _).
+
+// The cells that take the shape's color.
+.decl filled(ch: Choice, p: Position)
+
+out(P, Col, [I, M]) :- filled([I, M], P), defined(M), hue.value($U(), Col).
+out(P, Col, [I, M]) :-
+    inside_choice(I), defined(M), in(P, _), !filled([I, M], P), params.bg(Col).
+
+// --- $Enclosed, $ErodeFilled ---
+// @claim fill-inside
+.init closed = Closed<Mirror>
+closed.cell(M, P) :- open_dir(M, _), in(P, _), !outline(M, P).
+
+// --- $Enclosed ---
+filled([$Enclosed(), M], P) :- closed.region(M, P, _).
+
+// --- $SpanAlong, $SpanAcross, $SpanBoth, $SpanEither, $SpanAny ---
+// @claim fill-inside
+.init span = Between<Line>
+span.axis([M, A], A) :- open_dir(M, _), axis4_elem(A).
+span.cell([M, A], P) :- open_dir(M, _), axis4_elem(A), in(P, _).
+span.mark([M, A], P) :- outline(M, P), axis4_elem(A).
+
+// A cell off the outline with outline cells on both sides along line family A.
+.decl spanned(m: Mirror, a: Axis4, p: Position)
+spanned(M, A, P) :- span.between([M, A], P), !outline(M, P).
+
+// --- $SpanAlong ---
+filled([$SpanAlong(), M], P) :- open_dir(M, D), axis_of(D, A), spanned(M, A, P).
+
+// --- $SpanAcross ---
+filled([$SpanAcross(), M], P) :- open_dir(M, D), axis_of(D, A0), perp(A0, A), spanned(M, A, P).
+
+// --- $SpanBoth ---
+filled([$SpanBoth(), M], P) :- spanned(M, A, P), perp(A, A2), spanned(M, A2, P).
+
+// --- $SpanEither ---
+filled([$SpanEither(), M], P) :- spanned(M, A, P), axis_elem(A).
+
+// --- $SpanAny ---
+filled([$SpanAny(), M], P) :- spanned(M, _, P).
+
+// --- $ErodeFilled ---
+// The outline with the cells it encloses.
+// @claim fill-inside
+.init solid = Rim<Mirror>
+solid.cell(M, P) :- outline(M, P).
+solid.cell(M, P) :- closed.region(M, P, _).
+
+filled([$ErodeFilled(), M], P) :- solid.cell(M, P), !solid.rim(M, P).
+
+// --- $StoredDir ---
+open_dir($StoredDir(), D) :- params.mirror_dir(D).
+
+// --- $MirrorDirFromEnds ---
+// A shape cell with two or more shape cells among its 8 neighbors.
+.decl threaded(p: Position)
+threaded(P) :-
+    shape(P), neighbor(P, D1, Q1), shape(Q1), neighbor(P, D2, Q2), shape(Q2), D1 != D2.
+
+// An end of the curve: a shape cell with one shape cell among its 8 neighbors.
+.decl end(p: Position)
+end(P) :- shape(P), neighbor(P, _, Q), shape(Q), !threaded(P).
+
+// The shape has three ends or more.
+.decl many_ends()
+many_ends() :- end(P1), end(P2), end(P3), P1 != P2, P1 != P3, P2 != P3.
+
+// A side of the shape's box whose line holds two ends.
+.decl end_side(d: Dir)
+end_side(D) :-
+    shape_box.box($U(), B), end(P1), end(P2), P1 != P2,
+    box_edge(P1, B, D), box_edge(P2, B, D).
+
+// Two sides each hold two ends.
+.decl sides_tie()
+sides_tie() :- end_side(D1), end_side(D2), D1 != D2.
+
+open_dir($MirrorDirFromEnds(), D) :- end_side(D), !many_ends(), !sides_tie().

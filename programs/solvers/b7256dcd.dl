@@ -1,0 +1,237 @@
+// b7256dcd
+// @draft
+// @keywords: objects markers rank
+// @scene background: every cell that is not part of a shape or a marker has
+//  the color params.background
+// @scene shapes: the shapes are the 4-connected components of the cells of
+//  color params.shape_color
+// @scene markers: each marker is a single cell whose color is neither
+//  params.background nor params.shape_color
+// @scene one-marker-per-shape: each shape has exactly one marker cell
+//  4-adjacent to it
+// @rule recolor-shape: each cell of a shape takes the color of the marker
+//  4-adjacent to that shape
+// @rule erase-markers: each marker cell takes the color params.background,
+//  whether or not it touches a shape
+// @rule keep-background: each other cell keeps its color
+
+// how the cells of the shape color group into shapes
+.type Connect =
+    // @claim shapes
+    Shapes4 {}
+    // @scene shapes: the shapes are the 8-connected components of the cells
+    //  of color params.shape_color; undefined where shapes that touch at a
+    //  corner have more than one marker cell between them
+    // @witness diagonal-touch: variant concept
+    // @witness corner-joined: borderline $Shapes8
+    //     @relaxed one-marker-per-shape
+  | Shapes8 {}
+
+// what a shape that no marker touches becomes
+.type Unmarked =
+    // @claim one-marker-per-shape
+    MarkedOnly {}
+    // @scene one-marker-per-shape: each shape has at most one marker cell
+    //  4-adjacent to it
+    // @rule keep-unmarked: a shape with no 4-adjacent marker keeps
+    //  params.shape_color
+    // @witness unmarked-shape: borderline $UnmarkedKeeps
+    //     @relaxed one-marker-per-shape
+  | UnmarkedKeeps {}
+    // @scene one-marker-per-shape: each shape has at most one marker cell
+    //  4-adjacent to it
+    // @rule nearest-marker: a shape with no 4-adjacent marker takes the
+    //  color of the marker nearest it by 4-step distance; undefined where no
+    //  marker exists, or where the nearest markers have different colors
+    // @witness unmarked-shape: borderline $UnmarkedKeeps
+  | NearestMarker {}
+    // @scene one-marker-per-shape: each shape has at most one marker cell
+    //  4-adjacent to it
+    // @rule nearest-marker: a shape with no 4-adjacent marker takes the
+    //  color of the marker nearest it by 8-step distance; undefined where no
+    //  marker exists, or where the nearest markers have different colors
+    // @witness nearest-metric: borderline $UnmarkedKeeps
+    //     @relaxed one-marker-per-shape
+  | NearestMarker8 {}
+
+// what a shape that touches more than one marker cell becomes
+.type Several =
+    // @claim one-marker-per-shape
+    OneMarkerCell {}
+    // @scene one-marker-per-shape: the marker cells 4-adjacent to a shape all
+    //  have one color, which the shape takes; undefined where those colors
+    //  differ
+    // @witness two-cell-marker: borderline $MarkerUnanimous
+    //     @relaxed markers
+    //     @relaxed one-marker-per-shape
+  | MarkerUnanimous {}
+
+// where the shape color comes from
+.type ShapeColor =
+    // @claim shapes
+    StoredShapeColor {}
+    // @scene shapes: the shapes are the 4-connected components of the
+    //  commonest color other than params.background; undefined where that
+    //  color is tied
+    // @witness single-cell-shape: borderline concept
+  | ShapeColorCommonest {}
+
+.type Choice = [c: Connect, u: Unmarked, n: Several, s: ShapeColor]
+
+// A shape under a connectivity reading and a shape color reading.
+.type Shape = [c: Connect, s: ShapeColor, id: Ident]
+
+// A shape under a reading of the color it takes when no marker touches it.
+.type Lone = [sh: Shape, u: Unmarked]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(col: Color) background(7).
+
+    // --- $StoredShapeColor ---
+    .decl shape_color(col: Color) shape_color(6).
+}
+
+.init params = Params
+
+.decl connect_choice(c: Connect)
+connect_choice($Shapes4()). connect_choice($Shapes8()).
+
+.decl unmarked_choice(u: Unmarked)
+unmarked_choice($MarkedOnly()). unmarked_choice($UnmarkedKeeps()).
+unmarked_choice($NearestMarker()). unmarked_choice($NearestMarker8()).
+
+.decl several_choice(n: Several)
+several_choice($OneMarkerCell()). several_choice($MarkerUnanimous()).
+
+.decl shape_color_choice(s: ShapeColor)
+shape_color_choice($StoredShapeColor()). shape_color_choice($ShapeColorCommonest()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([C, U, N, S]) :-
+    connect_choice(C), unmarked_choice(U), several_choice(N), shape_color_choice(S).
+
+// The cells outside the background.
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.background(Col).
+
+// The shape color under each reading.
+.decl shape_color(s: ShapeColor, col: Color)
+
+// The cells of the shape color.
+.decl shape_cell(s: ShapeColor, p: Position)
+shape_cell(S, P) :- shape_color(S, Col), in(P, Col).
+
+// The marker cells: the cells outside the background and the shape color.
+.decl marker(s: ShapeColor, p: Position, col: Color)
+marker(S, P, Col) :- shape_color(S, _), ink(P, Col), !shape_color(S, Col).
+
+// The cells of each shape.
+.decl shape(sh: Shape, p: Position)
+
+// A marker cell 4-adjacent to a shape.
+.decl touch(sh: Shape, m: Position)
+touch([C, S, Id], M) :-
+    shape([C, S, Id], P), dir_elem(D), neighbor(P, D, M), marker(S, M, _).
+
+// A shape that no marker touches.
+.decl untouched(sh: Shape)
+untouched(Sh) :- shape(Sh, _), !touch(Sh, _).
+
+// The color a shape that a marker touches takes.
+.decl touched_color(sh: Shape, n: Several, col: Color)
+
+// The color a shape that no marker touches takes.
+.decl untouched_color(sh: Shape, u: Unmarked, col: Color)
+
+out(P, Col, [C, U, N, S]) :-
+    impl_choice([C, U, N, S]), params.background(Col),
+    ( in(P, Col), !shape_cell(S, P)   // the background stays
+    ; marker(S, P, _)                 // every marker is erased
+    ).
+out(P, Col, [C, U, N, S]) :-
+    impl_choice([C, U, N, S]), shape([C, S, Id], P),
+    ( touched_color([C, S, Id], N, Col)
+    ; untouched_color([C, S, Id], U, Col)
+    ).
+
+// --- $Shapes4 ---
+// @claim shapes
+.init shapes4 = Components<ShapeColor>
+shapes4.node(S, P) :- shape_cell(S, P).
+
+shape([$Shapes4(), S, Id], P) :- shapes4.label(S, P, Id).
+
+// --- $Shapes8 ---
+// @claim shapes
+.init shapes8 = Components8<ShapeColor>
+shapes8.node(S, P) :- shape_cell(S, P).
+
+shape([$Shapes8(), S, Id], P) :- shapes8.label(S, P, Id).
+
+// --- $UnmarkedKeeps ---
+untouched_color([C, S, Id], $UnmarkedKeeps(), Col) :-
+    untouched([C, S, Id]), shape_color(S, Col).
+
+// --- $NearestMarker, $NearestMarker8 ---
+// The steps that each nearest-marker reading measures distance by.
+.decl nearest_dir(u: Unmarked, d: Dir8)
+
+// @claim nearest-marker
+.init near = GraphDistance<Lone, Position>
+near.seed([Sh, U], P) :- untouched(Sh), nearest_dir(U, _), shape(Sh, P).
+near.edge([Sh, U], P, Q) :-
+    untouched(Sh), nearest_dir(U, D), in(P, _), neighbor(P, D, Q), in(Q, _).
+
+// @claim nearest-marker
+.init nearest = ArgExtremes<Lone, Position>
+nearest.cand([[C, S, Id], U], M, K) :- near.distance([[C, S, Id], U], M, K), marker(S, M, _).
+
+// @claim nearest-marker
+.init nearest_color = Unanimous<Lone, Color>
+nearest_color.item([[C, S, Id], U], Col) :- nearest.low([[C, S, Id], U], M, _), marker(S, M, Col).
+
+untouched_color(Sh, U, Col) :- nearest_color.value([Sh, U], Col).
+
+// --- $NearestMarker ---
+nearest_dir($NearestMarker(), D) :- dir_elem(D).
+
+// --- $NearestMarker8 ---
+nearest_dir($NearestMarker8(), D) :- dir8_elem(D).
+
+// --- $OneMarkerCell ---
+// @claim one-marker-per-shape recolor-shape
+.init one_marker = Unanimous<Shape, Position>
+one_marker.item(Sh, M) :- touch(Sh, M).
+
+touched_color([C, S, Id], $OneMarkerCell(), Col) :-
+    one_marker.value([C, S, Id], M), marker(S, M, Col).
+
+// --- $MarkerUnanimous ---
+// @claim one-marker-per-shape recolor-shape
+.init one_color = Unanimous<Shape, Color>
+one_color.item([C, S, Id], Col) :- touch([C, S, Id], M), marker(S, M, Col).
+
+touched_color(Sh, $MarkerUnanimous(), Col) :- one_color.value(Sh, Col).
+
+// --- $StoredShapeColor ---
+shape_color($StoredShapeColor(), Col) :- params.shape_color(Col).
+
+// --- $ShapeColorCommonest ---
+// @ignore mode: store — Equivalence: the stored color gives the
+//  $StoredShapeColor case
+// @claim shapes
+.init commonest = Mode<Unit, Color, Position>
+commonest.item($U(), Col, P) :- ink(P, Col).
+
+// @ignore item: store — Equivalence: the stored color gives the
+//  $StoredShapeColor case
+// @ignore value: store — Equivalence: the stored color gives the
+//  $StoredShapeColor case
+// @claim shapes
+.init commonest_one = Unanimous<Unit, Color>
+commonest_one.item($U(), Col) :- commonest.mode($U(), Col).
+
+shape_color($ShapeColorCommonest(), Col) :- commonest_one.value($U(), Col).

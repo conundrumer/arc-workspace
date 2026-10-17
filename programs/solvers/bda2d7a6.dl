@@ -1,0 +1,162 @@
+// bda2d7a6
+// @draft
+// @keywords: rings rank permutation mapping count
+// @scene nested-rings: the grid is square, and every cell's color depends
+//  only on its ring, the cells at one distance from the nearest frame edge;
+//  each ring is 1 cell wide
+// @scene color-cycle: read from the outermost ring inward, the first 3 rings
+//  show 3 distinct colors, one new color each, and every ring after them
+//  repeats a color already seen
+// @rule cycle-colors: list the distinct colors in the order they first
+//  appear from the outermost ring inward; every cell of a color takes the
+//  color just before it in that list, and the first color takes the last
+
+// the order that lists the colors
+.type ListOrder =
+    // @claim cycle-colors
+    FirstSeen {}
+    // @rule cycle-colors: the colors are listed by their cell count, the
+    //  highest first; undefined where two colors have the same count
+    // @witness non-periodic-rings: variant concept
+  | CountOrder {}
+    // @rule cycle-colors: the colors are listed in the order their first
+    //  cells come in a scan from the corner and along the axis first that
+    //  params.scan gives
+    // @witness uneven-ring: foreign concept
+    //     @relaxed nested-rings
+  | ScanOrder {}
+
+// which color each color takes
+.type Predecessor =
+    // @claim cycle-colors
+    ListCycle {order: ListOrder}
+    // @rule cycle-colors: each color takes the color of the ring just
+    //  outside its outermost ring, and the outermost ring's color takes the
+    //  last color to appear; undefined where that ring holds two colors
+    // @witness repeat-before-new-color: variant concept
+    //     @relaxed color-cycle
+  | EnclosingColor {}
+
+// what the output takes from the input
+.type Choice =
+    // @claim cycle-colors
+    Recolor {pred: Predecessor}
+    // @rule cycle-colors: each ring takes the color of the ring just outside
+    //  it, and the outermost ring takes the color of the ring with as many
+    //  rings outside it as the input has colors other than the outermost
+    //  ring's
+    // @witness non-periodic-rings: variant concept
+  | RingShift {}
+
+.type ScanValue = [d: DiagDir, a: Axis]
+.type OpenValue = [scan: ScanValue]
+
+// A list of the colors: its order, and the scan it is read in.
+.type Listing = [o: ListOrder, ov: OpenValue]
+
+.type ScanColor = [s: ScanValue, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice, ov: OpenValue)
+
+.comp Params {
+    // --- $ScanOrder ---
+
+    // The corner a scan starts from, and the axis it runs along first.
+    // @open
+    .decl scan(d: DiagDir, a: Axis)
+    scan(DIAG_TL, AXIS_V). scan(DIAG_TL, AXIS_H).
+    scan(DIAG_TR, AXIS_V). scan(DIAG_TR, AXIS_H).
+    scan(DIAG_BL, AXIS_V). scan(DIAG_BL, AXIS_H).
+    scan(DIAG_BR, AXIS_V). scan(DIAG_BR, AXIS_H).
+}
+
+.init params = Params
+
+// The grid peels into rings, one per depth.
+// @claim nested-rings
+.init peel = Rim<Unit>
+peel.cell($U(), P) :- in(P, _).
+
+.decl ring_color(i: number, col: Color)
+ring_color(I, Col) :- peel.depth($U(), P, I), in(P, Col).
+
+// The depth of each color's outermost ring: where it first appears.
+// @claim cycle-colors
+.init appear = Extremes<Color>
+appear.cand(Col, I) :- ring_color(I, Col).
+
+// --- $ListCycle ---
+
+// @claim cycle-colors
+.init order = Order<Listing, Color>
+
+// A color takes the color just before it, and the first color the last.
+out(P, Col, $Recolor($ListCycle(O)), V) :-
+    in(P, C),
+    ( order.next([O, V], Col, C)
+    ; order.first([O, V], C), order.last([O, V], Col) ).
+
+// --- $FirstSeen ---
+
+order.elem([$FirstSeen(), [nil]], Col) :- in(_, Col).
+order.before([$FirstSeen(), [nil]], A, B) :- appear.low(A, I), appear.low(B, I2), I < I2.
+
+// --- $CountOrder ---
+
+// @claim cycle-colors
+.init size = Tally<Color, Position>
+size.item(Col, P) :- in(P, Col).
+
+order.elem([$CountOrder(), [nil]], Col) :- in(_, Col).
+order.before([$CountOrder(), [nil]], A, B) :- size.tally(A, N), size.tally(B, N2), N > N2.
+
+// --- $ScanOrder ---
+
+// @claim cycle-colors
+.init scan = LexOrder<ScanValue>
+scan.cell([D, A], P) :- params.scan(D, A), in(P, _).
+scan.corner([D, A], D) :- params.scan(D, A).
+scan.axis([D, A], A) :- params.scan(D, A).
+
+// The place in each scan of each color's first cell.
+// @claim cycle-colors
+.init scan_first = Extremes<ScanColor>
+scan_first.cand([S, Col], R) :- in(P, Col), scan.rank(S, P, R).
+
+order.elem([$ScanOrder(), [S]], Col) :- scan_first.low([S, Col], _).
+order.before([$ScanOrder(), [S]], A, B) :-
+    scan_first.low([S, A], R), scan_first.low([S, B], R2), R < R2.
+
+// --- $EnclosingColor, $RingShift ---
+
+// Ring i2 lies just outside ring i.
+.decl outer_ring(i: number, i2: number)
+outer_ring(I, I2) :-
+    peel.depth($U(), P, I), neighbor(P, _, Q), peel.depth($U(), Q, I2), I2 < I.
+
+// --- $EnclosingColor ---
+
+// The depth at which the last color first appears.
+// @claim cycle-colors
+.init newest = Extremes<Unit>
+newest.cand($U(), I) :- appear.low(_, I).
+
+out(P, Col, $Recolor($EnclosingColor()), [nil]) :-
+    in(P, C), appear.low(C, I),
+    ( outer_ring(I, I2), ring_color(I2, Col)                    // the ring just outside
+    ; I = 0, newest.high($U(), I2), appear.low(Col, I2) ).      // the last color to appear
+
+// --- $RingShift ---
+
+// The colors other than the outermost ring's.
+// @store tally: variant concept
+//     @relaxed color-cycle
+// @claim cycle-colors
+.init others = Tally<Unit, Color>
+others.item($U(), Col) :- in(_, Col), !ring_color(0, Col).
+others.domain($U()).
+
+out(P, Col, $RingShift(), [nil]) :-
+    peel.depth($U(), P, I),
+    ( outer_ring(I, I2), ring_color(I2, Col)                        // the ring just outside
+    ; I = 0, others.tally($U(), I2), ring_color(I2, Col) ).         // as deep as the other colors are many

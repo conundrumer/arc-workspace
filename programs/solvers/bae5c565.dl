@@ -1,0 +1,268 @@
+// bae5c565
+// @draft
+// @keywords: lines markers cast
+// @scene palette-row: the row on edge `palette_side` holds a color in every
+//  cell, and that color is `background` only in the stalk's column
+// @scene stalk: one straight line of color 8 (`stalk_color`) runs along the
+//  center column, from the edge opposite `palette_side` toward
+//  `palette_side`, and stops at least one row short of the palette row
+// @scene background-field: every cell that is not in the palette row or the
+//  stalk is `background`
+// @rule clear-palette: the palette row becomes `background`
+// @rule keep-stalk: the stalk stays as it is
+// @rule stepped-fill: in each column other than the stalk's, at distance d
+//  from the stalk's column, the cells from d rows past the stalk's end
+//  nearest the palette row to the edge opposite `palette_side` take that
+//  column's palette color
+// @rule rest-background: every other cell is `background`
+
+// which edge holds the palette row
+.type PaletteSide =
+    // @claim palette-row
+    StoredSide {}
+    // @scene palette-row: the palette row is the line on the edge that holds
+    //  the most non-`background` cells; undefined where two edges tie
+    // @witness palette-on-left: variant $PaletteSideFromInput
+    //     @relaxed palette-row
+  | PaletteSideFromInput {}
+
+// which cells off the palette row are the stalk
+.type StalkFind =
+    // @claim keep-stalk
+    NonBackground {}
+    // @rule keep-stalk: the stalk is the cells of `stalk_color` off the
+    //  palette row, and any other cell there that no rule paints becomes
+    //  `background`; undefined where those cells are not one unbroken run
+    //  along a column
+    // @witness stray-cell: foreign $StalkByColor
+    //     @relaxed background-field
+    // @witness stalk-recolored: variant concept
+    //     @relaxed stalk
+  | StalkByColor {}
+
+// where each column's run starts and stops
+.type ColumnExtent =
+    // @claim stepped-fill
+    ToFarEdge {}
+    // @rule stepped-fill: each column's run stops at the row of the stalk's
+    //  end farthest from the palette
+    // @witness floating-stalk: borderline $FillToStalkEnd
+    //     @relaxed stalk
+  | FillToStalkEnd {}
+    // @rule stepped-fill: a column at distance d less than the stalk's length
+    //  L gets L - d cells stacked from the edge opposite `palette_side`
+    // @witness floating-stalk: borderline $FillToStalkEnd
+  | HeightFromStalkLength {}
+
+// the column the distance d is measured from
+.type Origin =
+    // @claim stepped-fill
+    FromStalk {}
+    // @rule stepped-fill: d is the distance from the grid's center column;
+    //  undefined on an even width
+    // @witness off-center-stalk: borderline concept
+    //     @relaxed stalk
+  | DistanceFromCenter {}
+
+// the color the stalk keeps
+.type StalkPaint =
+    // @claim keep-stalk
+    KeepStalkColor {}
+    // @rule keep-stalk: the stalk takes the palette color of its column where
+    //  that color is not `background`
+    // @witness stalk-palette-color: borderline concept
+    //     @relaxed palette-row
+  | StalkTakesPaletteColor {}
+
+.type Choice = [side: PaletteSide, find: StalkFind, extent: ColumnExtent, origin: Origin,
+                paint: StalkPaint]
+
+// The stalk under one reading of the palette edge and of the stalk's cells.
+.type Stalk = [side: PaletteSide, find: StalkFind]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background-field
+    .decl background(c: Color) background(5).
+
+    // --- $StoredSide ---
+    .decl palette_side(d: Dir) palette_side(DIR_T).
+
+    // --- $StalkByColor ---
+    .decl stalk_color(c: Color) stalk_color(8).
+}
+
+.init params = Params
+
+.decl palette_side_choice(s: PaletteSide)
+palette_side_choice($StoredSide()). palette_side_choice($PaletteSideFromInput()).
+
+.decl stalk_find_choice(f: StalkFind)
+stalk_find_choice($NonBackground()). stalk_find_choice($StalkByColor()).
+
+.decl column_extent_choice(e: ColumnExtent)
+column_extent_choice($ToFarEdge()). column_extent_choice($FillToStalkEnd()). column_extent_choice($HeightFromStalkLength()).
+
+.decl origin_choice(o: Origin)
+origin_choice($FromStalk()). origin_choice($DistanceFromCenter()).
+
+.decl stalk_paint_choice(c: StalkPaint)
+stalk_paint_choice($KeepStalkColor()). stalk_paint_choice($StalkTakesPaletteColor()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Sd, F, E, O, C]) :-
+    palette_side_choice(Sd), stalk_find_choice(F), column_extent_choice(E), origin_choice(O),
+    stalk_paint_choice(C).
+
+// The edge that holds the palette row.
+.decl side(sd: PaletteSide, s: Dir)
+
+// The cells off the palette row that are not `background`.
+.comp Parse<Key> {
+    .decl cell(k: Key, p: Position, col: Color)
+    .decl edge(k: Key, s: Dir)
+
+    // @ignore: store — the stalk found by a stored color is the $StalkByColor branch
+    .decl ink(k: Key, p: Position, col: Color)
+    ink(K, P, Col) :- cell(K, P, Col), !params.background(Col), edge(K, S), !dist(P, S, 0).
+}
+
+.init parse = Parse<PaletteSide>
+parse.cell(Sd, P, Col) :- side(Sd, _), in(P, Col).
+parse.edge(Sd, S) :- side(Sd, S).
+
+// Cells p and q stand in one column, a line across the palette row.
+.decl same_column(sd: PaletteSide, p: Position, q: Position)
+same_column(Sd, P, Q) :- side(Sd, S), axis_of(S, A), in(P, _), in(Q, _), same_line(A, P, Q).
+
+// The palette color of the column cell p stands in.
+.decl column_color(sd: PaletteSide, p: Position, col: Color)
+column_color(Sd, P, Col) :- same_column(Sd, P, Q), side(Sd, S), dist(Q, S, 0), in(Q, Col).
+
+.decl stalk(st: Stalk, p: Position, col: Color)
+
+// The stalk's end nearest the palette; absent unless the stalk is one
+// unbroken run along a column.
+// @claim stalk
+.init stalk_end = Unanimous<Stalk, Position>
+stalk_end.item([Sd, F], P) :-
+    stalk([Sd, F], P, _), side(Sd, S), neighbor(P, S, Q), !stalk([Sd, F], Q, _).
+
+// The cells of the stalk's column.
+.decl stalk_column(st: Stalk, p: Position)
+stalk_column([Sd, F], P) :- stalk_end.value([Sd, F], T), same_column(Sd, P, T).
+
+// The cell in the stalk's column at the row the mountain's top stands in.
+.decl base(st: Stalk, e: ColumnExtent, t: Position)
+
+// The mountain's top: the cell the distance d is counted from, at the row of
+// the base.
+.decl apex(st: Stalk, e: ColumnExtent, o: Origin, q: Position)
+
+// The cells past which a column's run does not reach.
+.decl cut(st: Stalk, e: ColumnExtent, p: Position)
+
+// The mountain's slope: the cells on the two diagonals through the apex, from
+// the apex away from the palette.
+.decl slope(st: Stalk, e: ColumnExtent, o: Origin, q: Position)
+slope([Sd, F], E, O, Q) :-
+    apex([Sd, F], E, O, A), side(Sd, S),
+    in(Q, _), diag_axis_elem(Da), same_line(Da, Q, A), !nearer(S, Q, A).
+
+// The mountain: each column's cells from its slope cell away from the palette.
+.decl fill(st: Stalk, e: ColumnExtent, o: Origin, p: Position, col: Color)
+fill([Sd, F], E, O, P, Col) :-
+    slope([Sd, F], E, O, Q), same_column(Sd, P, Q), side(Sd, S), !nearer(S, P, Q),
+    !cut([Sd, F], E, P), !stalk_column([Sd, F], P),
+    column_color(Sd, P, Col).
+
+.decl stalk_paint(st: Stalk, c: StalkPaint, p: Position, col: Color)
+
+.decl painted(ch: Choice, p: Position, col: Color)
+painted([Sd, F, E, O, C], P, Col) :- impl_choice([Sd, F, E, O, C]), fill([Sd, F], E, O, P, Col).
+painted([Sd, F, E, O, C], P, Col) :- impl_choice([Sd, F, E, O, C]), stalk_paint([Sd, F], C, P, Col).
+
+out(P, Col, Ch) :- painted(Ch, P, Col).
+out(P, Col, [Sd, F, E, O, C]) :-
+    impl_choice([Sd, F, E, O, C]), apex([Sd, F], E, O, _),
+    in(P, _), !painted([Sd, F, E, O, C], P, _), params.background(Col).
+
+// --- $StoredSide ---
+side($StoredSide(), S) :- params.palette_side(S).
+
+// --- $PaletteSideFromInput ---
+// @claim palette-row
+.init edge_ink = Tally<Dir, Position>
+edge_ink.item(D, P) :- in(P, Col), !params.background(Col), dir_elem(D), dist(P, D, 0).
+
+// @claim palette-row
+.init fullest = ArgExtremes<Unit, Dir>
+fullest.cand($U(), D, N) :- edge_ink.tally(D, N).
+
+// @claim palette-row
+.init palette_edge = Unanimous<Unit, Dir>
+palette_edge.item($U(), D) :- fullest.high($U(), D, _).
+
+side($PaletteSideFromInput(), S) :- palette_edge.value($U(), S).
+
+// --- $NonBackground ---
+stalk([Sd, $NonBackground()], P, Col) :- parse.ink(Sd, P, Col).
+
+// --- $StalkByColor ---
+stalk([Sd, $StalkByColor()], P, Col) :-
+    side(Sd, S), in(P, Col), params.stalk_color(Col), !dist(P, S, 0).
+
+// --- $ToFarEdge ---
+base(St, $ToFarEdge(), T) :- stalk_end.value(St, T).
+
+// --- $FillToStalkEnd ---
+base(St, $FillToStalkEnd(), T) :- stalk_end.value(St, T).
+
+// The cells farther from the palette than the stalk's far end.
+cut([Sd, F], $FillToStalkEnd(), P) :-
+    stalk([Sd, F], B, _), side(Sd, S), opposite(S, D),
+    neighbor(B, D, Q), !stalk([Sd, F], Q, _),             // the stalk's far end
+    in(P, _), nearer(D, P, B).
+
+// --- $HeightFromStalkLength ---
+// The stalk set down on the edge opposite the palette.
+// @claim stepped-fill
+.init drop = Gravity<Stalk, Unit>
+drop.cell(St, $U(), P) :- stalk(St, P, _).
+drop.dir([Sd, F], D) :- stalk([Sd, F], _, _), side(Sd, S), opposite(S, D).
+
+base(St, $HeightFromStalkLength(), T) :-
+    stalk_end.value(St, T0), drop.travel(St, $U(), V), compose(T0, V, T).
+
+// --- $FromStalk ---
+apex(St, E, $FromStalk(), T) :- base(St, E, T).
+
+// --- $DistanceFromCenter ---
+apex([Sd, F], E, $DistanceFromCenter(), Q) :-
+    base([Sd, F], E, T), side(Sd, S), in(Q, _), same_dist(S, Q, T),
+    perp_dir(S, D), dist_pair(Q, D, K1, K2), K1 = K2.     // the center column
+
+// --- $KeepStalkColor ---
+stalk_paint(St, $KeepStalkColor(), P, Col) :- stalk(St, P, Col).
+
+// --- $StalkTakesPaletteColor ---
+stalk_paint([Sd, F], $StalkTakesPaletteColor(), P, Col) :-
+    stalk([Sd, F], P, C0), column_color(Sd, P, C1),
+    ( !params.background(C1), Col = C1
+    ; params.background(C1), Col = C0
+    ).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+    parse.edge(E, S) :- ex_in(E, _, _), params.palette_side(S).
+
+    // The color the output gives the palette row.
+    .decl background(c: Color)
+    background(Col) :- ex_out(E, P, Col), params.palette_side(S), dist(P, S, 0).
+
+    .decl stalk_color(c: Color)
+    stalk_color(Col) :- parse.ink(_, _, Col).
+}

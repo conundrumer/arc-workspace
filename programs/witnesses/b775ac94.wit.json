@@ -100,5 +100,52 @@
         [0,0,0,0,0,0,0]
       ]
     }]
+  }, {
+    "id": "quadrant_op=stored",
+    "separates": "At a table whose side entries are quarter turns, the stored table turns the copy beside the key cell; the derived rule reflects it.",
+    "input": [
+      [2,2,0,0,0,0,0],
+      [0,2,0,0,0,0,0],
+      [0,0,2,4,0,0,0],
+      [0,0,0,3,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0]
+    ],
+    "assign": {
+      "quadrant_op": [
+        ["DIAG_BL","DIAG_TL","D4_CW"],
+        ["DIAG_BL","DIAG_BR","D4_CC"],
+        ["DIAG_BL","DIAG_TR","D4_HT"],
+        ["DIAG_BR","DIAG_TL","D4_HT"],
+        ["DIAG_BR","DIAG_BL","D4_CW"],
+        ["DIAG_TL","DIAG_TR","D4_CW"],
+        ["DIAG_TL","DIAG_BL","D4_CC"],
+        ["DIAG_TL","DIAG_BR","D4_HT"]
+      ]
+    },
+    "output": [{
+      "cases": ["quadrant_op=derived"],
+      "grid": [
+        [2,2,0,0,4,4,0],
+        [0,2,0,0,4,0,0],
+        [0,0,2,4,0,0,0],
+        [0,0,0,3,0,0,0],
+        [0,0,0,0,3,0,0],
+        [0,0,0,0,3,3,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["quadrant_op=stored"],
+      "grid": [
+        [2,2,0,0,0,4,0],
+        [0,2,0,0,4,4,0],
+        [0,0,2,4,0,0,0],
+        [0,0,0,3,0,0,0],
+        [0,0,0,0,3,0,0],
+        [0,0,0,0,3,3,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }]
   }]
 }

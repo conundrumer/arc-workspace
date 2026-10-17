@@ -113,6 +113,7 @@ swaps_axes(Op) :- apply_dir(Op, D, D2), axis_of(D, A), !axis_of(D2, A).
 // The reflection of the key block that takes its corner K to its corner
 // M_corner: across one center line for corners on one side, across both
 // for opposite corners.
+// @store: variant stored
 .decl quadrant_op(key_corner: DiagDir, marker_corner: DiagDir, op: D4)
 quadrant_op(K, M_corner, Op) :- apply_diag_dir(Op, K, M_corner), !swaps_axes(Op), K != M_corner.
 

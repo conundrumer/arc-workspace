@@ -1,0 +1,69 @@
+{
+  "id": "b91ae062",
+  "witnesses": [{
+    "id": "table-entry-off-count",
+    "separates": "an input with 2 non-background colors under a stored table that maps 2 to 3: the concept scales by the count, 2, to 6x6; $ScaleTable scales by the table's entry, 3, to 9x9",
+    "input": [
+      [5,0,0],
+      [0,8,5],
+      [0,0,0]
+    ],
+    "assign": {
+      "scale_by_count": [
+        [2,3],
+        [3,3],
+        [4,4]
+      ]
+    },
+    "output": [{
+      "cases": ["concept"],
+      "grid": [
+        [5,5,0,0,0,0],
+        [5,5,0,0,0,0],
+        [0,0,8,8,5,5],
+        [0,0,8,8,5,5],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$ScaleTable"],
+      "grid": [
+        [5,5,5,0,0,0,0,0,0],
+        [5,5,5,0,0,0,0,0,0],
+        [5,5,5,0,0,0,0,0,0],
+        [0,0,0,8,8,8,5,5,5],
+        [0,0,0,8,8,8,5,5,5],
+        [0,0,0,8,8,8,5,5,5],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "an input with no cell of the stored background 0: the concept counts both colors and scales by 2 to 6x6; a background derived from the input is one of its colors, so the count drops to 1 and the output is the input",
+    "input": [
+      [1,2,1],
+      [2,1,2],
+      [1,2,1]
+    ],
+    "output": [{
+      "cases": ["background=stored"],
+      "grid": [
+        [1,1,2,2,1,1],
+        [1,1,2,2,1,1],
+        [2,2,1,1,2,2],
+        [2,2,1,1,2,2],
+        [1,1,2,2,1,1],
+        [1,1,2,2,1,1]
+      ]
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": [
+        [1,2,1],
+        [2,1,2],
+        [1,2,1]
+      ]
+    }]
+  }]
+}

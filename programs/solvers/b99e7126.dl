@@ -1,0 +1,285 @@
+// b99e7126
+// @draft
+// @keywords: decompose scale rank color-class
+// @scene tile-lattice: divider lines of one color, one cell wide, cut the
+//  grid into a 7 by 7 lattice of 3 by 3 tiles, with a divider line along
+//  each edge of the grid
+// @scene base-tile: most tiles hold one same two-color pattern, the base tile
+// @scene marked-tile: every other tile holds one same pattern, the marked
+//  tile, made of one color of the base tile and one color that the base tile
+//  does not have, the new color
+// @scene partial-shape: the marked tiles sit, at the tile scale, on cells of
+//  exactly one placement of the new color's shape in the lattice, and do not
+//  fill it
+// @rule shape-of-new-color: the shape is the set of cells of the marked tile
+//  whose color the base tile does not have, read as a mask of the tile's size
+// @rule complete-shape: the output keeps the input, and each tile at a cell
+//  of the one placement of the shape that holds the marked tiles becomes a
+//  marked tile
+
+// which tile pattern is the base tile
+.type BaseTile =
+    // @claim base-tile
+    Commoner {}
+    // @scene base-tile: the base tile is the pattern of the lattice's four
+    //  corner tiles; undefined where they hold different patterns
+    // @witness marked-outnumber-base: borderline $CornerBase
+    //     @relaxed tile-lattice
+    //     @relaxed base-tile
+  | CornerBase {}
+
+// which cells of the marked tile make the shape
+.type ShapeSource =
+    // @claim shape-of-new-color
+    NewColor {}
+    // @rule shape-of-new-color: the shape is the cells of the marked tile's
+    //  commoner color; undefined where two colors tie for commonest
+    // @witness minority-shape: variant concept
+  | MajorityColor {}
+
+// whether a placement of the shape lies wholly inside the lattice
+.type PlacementBounds =
+    // @claim partial-shape
+    InLattice {}
+    // @scene partial-shape: a placement may run past the lattice edge, and
+    //  only its part inside the lattice is drawn
+    // @witness placement-past-edge: foreign $ClippedPlacement
+    //     @relaxed partial-shape
+  | ClippedPlacement {}
+
+// what the output is where more than one placement qualifies
+.type SeveralPlacements =
+    // @claim partial-shape
+    OnePlacement {}
+    // @rule complete-shape: where several placements qualify, one grid
+    //  completes every one of them
+    // @witness two-placements: borderline $EachPlacement
+    //     @relaxed partial-shape
+  | UnionOfPlacements {}
+    // @rule complete-shape: where several placements qualify, each gives a
+    //  grid of its own
+    // @witness two-placements: borderline $EachPlacement
+  | EachPlacement {}
+
+// which placements of the shape qualify
+.type UncoveredMarked =
+    // @claim partial-shape
+    AllMarked {}
+    // @scene partial-shape: marked tiles may lie outside every placement of
+    //  the shape
+    // @rule complete-shape: the placements that hold the most marked tiles
+    //  qualify, and marked tiles outside them stay
+    // @witness stray-marked-tile: foreign $MostMarked
+    //     @relaxed partial-shape
+  | MostMarked {}
+
+.type Choice = [base: BaseTile, src: ShapeSource, bound: PlacementBounds,
+                many: SeveralPlacements, cover: UncoveredMarked]
+
+.type Line = [a: Axis, l: Position]
+.type ShapeKey = [base: BaseTile, src: ShapeSource]
+.type PlaceKey = [base: BaseTile, src: ShapeSource, bound: PlacementBounds]
+
+// The grid that draws every qualifying placement, or the grid that draws one
+// of them, by the shape's box in the tile frame.
+.type TiebreakResolution = Every {} | Placed {b: Box}
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {}
+
+.init params = Params
+
+.decl base_tile_choice(base: BaseTile)
+base_tile_choice($Commoner()). base_tile_choice($CornerBase()).
+
+.decl shape_source_choice(src: ShapeSource)
+shape_source_choice($NewColor()). shape_source_choice($MajorityColor()).
+
+.decl placement_bounds_choice(bound: PlacementBounds)
+placement_bounds_choice($InLattice()). placement_bounds_choice($ClippedPlacement()).
+
+.decl several_placements_choice(many: SeveralPlacements)
+several_placements_choice($OnePlacement()).
+several_placements_choice($UnionOfPlacements()).
+several_placements_choice($EachPlacement()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([$Commoner(), $NewColor(), $InLattice(), $OnePlacement(), $AllMarked()]).
+impl_choice([Base, Src, Bound, Many, $MostMarked()]) :-
+    base_tile_choice(Base), shape_source_choice(Src), placement_bounds_choice(Bound),
+    several_placements_choice(Many), Many != $OnePlacement().
+
+// --- the lattice ---
+
+// @claim tile-lattice
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+// @claim tile-lattice
+// @store tile_of: variant concept
+//     @relaxed tile-lattice
+.init lattice = DividerTiles<Unit>
+lattice.cell($U(), P) :- in(P, _).
+lattice.divider($U(), A, L) :- line_color.value([A, L], _).
+
+// @claim tile-lattice
+.init block = Bbox<Position>
+block.cell(T, P) :- lattice.tile_of($U(), P, T).
+
+// A grid cell, with its tile and its place in that tile.
+.decl tile_at(p: Position, t: Position, p_intile: Position)
+tile_at(P, T, P_intile) :- block.cell(T, P), block.box(T, B), crop(P, B, P_intile).
+
+.decl tile_cell(t: Position, p_intile: Position, col: Color)
+tile_cell(T, P_intile, Col) :- tile_at(P, T, P_intile), in(P, Col).
+
+// --- the tile patterns ---
+
+// Two tiles differ at some cell.
+.decl differ(t: Position, t2: Position)
+differ(T, T2) :- tile_cell(T, P, Col), tile_cell(T2, P, Col2), Col != Col2.
+
+.init pattern = Canon<Position>
+pattern.equiv(T, T2) :- block.box(T, _), block.box(T2, _), !differ(T, T2).
+
+.decl base_pattern(base: BaseTile, id: Ident)
+
+// --- $Commoner ---
+
+// @claim base-tile
+.init commoner = Mode<Unit, Ident, Position>
+commoner.item($U(), Id, T) :- pattern.id(T, Id).
+
+base_pattern($Commoner(), Id) :- commoner.mode($U(), Id).
+
+// --- $CornerBase ---
+
+// A tile with another tile next to it toward d.
+.decl tile_toward(t: Position, d: Dir)
+tile_toward(T, D) :- pattern.id(T, _), dir_elem(D), neighbor(T, D, T2), pattern.id(T2, _).
+
+// @claim base-tile
+.init corner = Unanimous<Unit, Ident>
+corner.item($U(), Id) :-
+    diag_dirs(_, _, D1, D2),
+    pattern.id(T, Id), !tile_toward(T, D1), !tile_toward(T, D2).  // a corner tile
+
+base_pattern($CornerBase(), Id) :- corner.value($U(), Id).
+
+// --- the marked tile ---
+
+.decl marked(base: BaseTile, t: Position)
+marked(Base, T) :- base_pattern(Base, _), pattern.id(T, Id), !base_pattern(Base, Id).
+
+.decl base_color(base: BaseTile, col: Color)
+base_color(Base, Col) :- base_pattern(Base, Id), pattern.id(T, Id), tile_cell(T, _, Col).
+
+// The marked tile's color at each of its cells.
+.decl mark_cell(base: BaseTile, p_intile: Position, col: Color)
+mark_cell(Base, P, Col) :- marked(Base, T), tile_cell(T, P, Col).
+
+// --- the shape ---
+
+.decl shape(k: ShapeKey, p_intile: Position)
+
+// --- $NewColor ---
+
+shape([Base, $NewColor()], P) :- mark_cell(Base, P, Col), !base_color(Base, Col).
+
+// --- $MajorityColor ---
+
+// @claim shape-of-new-color
+.init majority = Mode<BaseTile, Color, Position>
+majority.item(Base, Col, P) :- mark_cell(Base, P, Col).
+
+// Two colors tie for the marked tile's commonest.
+.decl majority_tie(base: BaseTile)
+majority_tie(Base) :- majority.mode(Base, Col), majority.mode(Base, Col2), Col != Col2.
+
+shape([Base, $MajorityColor()], P) :-
+    mark_cell(Base, P, Col), majority.mode(Base, Col), !majority_tie(Base).
+
+// --- the placements ---
+
+// The shape laid on the lattice at the tile scale.
+// @claim partial-shape complete-shape
+.init fit = Occurrences<ShapeKey, Unit>
+fit.cell(K, T, $U()) :- shape(K, _), pattern.id(T, _).
+fit.shape(K, P, $U()) :- shape(K, P).
+
+.decl placement(k: PlaceKey, b: Box)
+
+// --- $InLattice ---
+
+placement([Base, Src, $InLattice()], B) :- fit.occurrence([Base, Src], B).
+
+// --- $ClippedPlacement ---
+
+placement([Base, Src, $ClippedPlacement()], B) :- fit.placement([Base, Src], B).
+
+// --- the qualifying placements ---
+
+// The tile on which placement b lays a shape cell.
+.decl covers(k: PlaceKey, b: Box, t: Position)
+covers([Base, Src, Bound], B, T) :-
+    placement([Base, Src, Bound], B), shape([Base, Src], P),
+    compose(B, P, T), pattern.id(T, _).
+
+.decl qualifies(k: PlaceKey, cover: UncoveredMarked, b: Box)
+
+// --- $AllMarked ---
+
+// A marked tile the placement does not cover.
+.decl misses(k: PlaceKey, b: Box)
+misses([Base, Src, Bound], B) :-
+    placement([Base, Src, Bound], B), marked(Base, T), !covers([Base, Src, Bound], B, T).
+
+qualifies(K, $AllMarked(), B) :- placement(K, B), !misses(K, B).
+
+// --- $MostMarked ---
+
+// @claim partial-shape complete-shape
+.init most = Mode<PlaceKey, Box, Position>
+most.item([Base, Src, Bound], B, T) :- covers([Base, Src, Bound], B, T), marked(Base, T).
+
+qualifies(K, $MostMarked(), B) :- most.mode(K, B).
+
+// --- the drawn placements ---
+
+// The placements a case draws in the grid of each resolution.
+// @ignore: head-repeat — the grid of one placement names that placement
+.decl drawn(ch: Choice, res: TiebreakResolution, b: Box)
+
+// --- $OnePlacement ---
+
+// Another placement qualifies as well.
+.decl rival(k: PlaceKey, cover: UncoveredMarked, b: Box)
+rival(K, Cover, B) :- qualifies(K, Cover, B), qualifies(K, Cover, B2), B != B2.
+
+drawn([Base, Src, Bound, $OnePlacement(), Cover], $Every(), B) :-
+    qualifies([Base, Src, Bound], Cover, B), !rival([Base, Src, Bound], Cover, B).
+
+// --- $UnionOfPlacements ---
+
+drawn([Base, Src, Bound, $UnionOfPlacements(), Cover], $Every(), B) :-
+    qualifies([Base, Src, Bound], Cover, B).
+
+// --- $EachPlacement ---
+
+drawn([Base, Src, Bound, $EachPlacement(), Cover], $Placed(B), B) :-
+    qualifies([Base, Src, Bound], Cover, B).
+
+// --- the output ---
+
+// A cell of a tile a drawn placement covers, in the marked tile's color.
+.decl filled(ch: Choice, res: TiebreakResolution, p: Position, col: Color)
+filled(Ch, R, P, Col) :-
+    drawn(Ch, R, B), Ch = [Base, Src, Bound, _, _],
+    covers([Base, Src, Bound], B, T), tile_at(P, T, P_intile), mark_cell(Base, P_intile, Col).
+
+out(P, Col, Ch, R) :-
+    impl_choice(Ch), drawn(Ch, R, _), in(P, Col_in),
+    ( filled(Ch, R, P, Col)
+    ; !filled(Ch, R, P, _), Col = Col_in
+    ).

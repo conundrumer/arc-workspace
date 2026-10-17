@@ -1,0 +1,273 @@
+// b548a754
+// @draft
+// @keywords: objects markers bbox border
+// @scene background: every cell outside the box and the marker is
+//  params.background
+// @scene framed-box: one solid rectangle on params.background, with a 1-wide
+//  border of one color around an interior of another color
+// @scene marker: one cell of params.marker_color, outside the box, within the
+//  box's span on one axis, so that it lies straight out from one side of the
+//  box
+// @rule stretch-to-marker: the side of the box that faces the marker moves out
+//  to the marker's row or column, and the opposite side stays; the stretched
+//  box is drawn with the same 1-wide border color and the interior color fills
+//  its inside, so the marker cell becomes border
+// @rule keep-rest: every other cell keeps its input color
+
+// which cells are the box
+.type Body =
+    // @claim framed-box
+    AllInk {}
+    // @scene framed-box: the box is the one 4-connected piece of more than one
+    //  cell among the cells outside params.background and the markers;
+    //  undefined where there is no such piece or more than one
+    // @scene background: every cell outside the box, the marker and the
+    //  pieces of one cell is params.background
+    // @witness stray-cell: borderline $MultiCellPiece
+    //     @relaxed background
+  | MultiCellPiece {}
+
+// which cells are markers
+.type Marker =
+    // @claim marker
+    StoredMarker {}
+    // @scene marker: the marker is a non-background cell with no
+    //  non-background 4-neighbor, of any color; undefined where the dot
+    //  touches the box, and where there is no such cell
+    // @witness lone-marker: variant $LoneMarker
+    //     @relaxed marker
+  | LoneMarker {}
+
+// how many markers an input holds
+.type Count =
+    // @claim marker
+    OneMarker {}
+    // @scene marker: one or more marker cells, each straight out from a side
+    //  of the box
+    // @rule stretch-to-marker: each side that faces a marker moves out to the
+    //  line of the farthest marker on that side
+    // @witness two-markers: borderline $EachMarker
+    //     @relaxed marker
+  | EachMarker {}
+
+// where a marker may lie
+.type Placement =
+    // @claim marker
+    StraightOut {}
+    // @scene marker: the marker may lie outside the box's span on both axes
+    // @rule stretch-to-marker: the box stretches on both axes to the bounding
+    //  box of the box and the marker
+    // @witness diagonal-marker: foreign $CoverDiagonal
+    //     @relaxed marker
+  | CoverDiagonal {}
+
+// what fills the stretched box
+.type Content =
+    // @claim stretch-to-marker
+    Redraw {}
+    // @scene framed-box: one solid rectangle on params.background, of any
+    //  colors
+    // @rule stretch-to-marker: the box's far line moves to the marker's line,
+    //  and each line between takes a copy of the box's line next to the old
+    //  far side; undefined where the box is narrower than 3 along the stretch
+    // @witness striped-interior: borderline $RepeatInnerSlice
+    //     @relaxed framed-box
+  | RepeatInnerSlice {}
+
+.type Choice = [b: Body, m: Marker, c: Count, pl: Placement, t: Content]
+
+// A box reading under a marker reading.
+.type Reading = [b: Body, m: Marker]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    // @ignore: derive concept — Subsumption: the case of
+    //  $MultiCellPiece & $EachMarker & $CoverDiagonal & $RepeatInnerSlice that
+    //  takes the line's branch gives its output wherever it is defined
+    .decl background(col: Color) background(0).
+
+    // --- $StoredMarker ---
+    // @derive RarestColor: variant derived
+    //     @relaxed marker
+    // @ignore: derive concept — Subsumption: the case of
+    //  $MultiCellPiece & $EachMarker & $CoverDiagonal & $RepeatInnerSlice that
+    //  takes the line's branch gives its output wherever it is defined
+    .decl marker_color(col: Color) marker_color(8).
+}
+
+.init params = Params
+
+.decl body_choice(b: Body)
+body_choice($AllInk()). body_choice($MultiCellPiece()).
+
+.decl marker_choice(m: Marker)
+marker_choice($StoredMarker()). marker_choice($LoneMarker()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([$AllInk(), $StoredMarker(), $OneMarker(), $StraightOut(), $Redraw()]).
+impl_choice([$MultiCellPiece(), $StoredMarker(), $EachMarker(), $CoverDiagonal(), $RepeatInnerSlice()]).
+impl_choice([$AllInk(), $LoneMarker(), $EachMarker(), $CoverDiagonal(), $RepeatInnerSlice()]).
+
+// The cells outside the background.
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.background(Col).
+
+// The marker cells under each reading.
+.decl marker(m: Marker, p: Position)
+
+// The ink cells that are no marker.
+.decl body(m: Marker, p: Position)
+body(M, P) :- marker_choice(M), ink(P), !marker(M, P).
+
+// The box's cells under each reading.
+.decl box_cell(r: Reading, p: Position)
+
+// @claim framed-box
+.init box = Bbox<Reading>
+box.cell(R, P) :- box_cell(R, P).
+
+// The stretched box: the bounding box of the box and the markers.
+// @claim stretch-to-marker
+.init stretched = Bbox<Reading>
+stretched.cell(R, P) :- box_cell(R, P).
+stretched.cell([Bo, M], P) :- box.box([Bo, M], _), marker(M, P).
+
+// No marker, or a box that does not fill its bounding box.
+.decl broken(r: Reading)
+broken([Bo, M]) :- body_choice(Bo), marker_choice(M), !marker(M, _).
+broken(R) :- box.box(R, B), in(P, _), inside(P, B), !box_cell(R, P).
+
+// The markers break the count reading.
+.decl miscount(c: Count, m: Marker)
+
+// A marker breaks the placement reading.
+.decl misplaced(pl: Placement, r: Reading)
+
+// The box breaks the content reading.
+.decl unfit(t: Content, r: Reading)
+
+// The color each content reading gives a cell of the stretched box.
+.decl fill(t: Content, r: Reading, p: Position, col: Color)
+
+out(P, Col, [Bo, M, C, Pl, T]) :-
+    impl_choice([Bo, M, C, Pl, T]), box.box([Bo, M], _),
+    !broken([Bo, M]), !miscount(C, M), !misplaced(Pl, [Bo, M]), !unfit(T, [Bo, M]),
+    in(P, Col_in),
+    ( fill(T, [Bo, M], P, Col)
+    ; !fill(T, [Bo, M], P, _), Col = Col_in
+    ).
+
+// --- $AllInk ---
+box_cell([$AllInk(), M], P) :- body(M, P).
+
+// --- $MultiCellPiece ---
+// @claim framed-box
+.init piece = Components<Marker>
+piece.node(M, P) :- body(M, P).
+
+// A piece of more than one cell.
+.decl multi(m: Marker, id: Ident)
+multi(M, Id) :- piece.label(M, P, Id), piece.label(M, Q, Id), P != Q.
+
+// @claim framed-box
+.init the_piece = Unanimous<Marker, Ident>
+the_piece.item(M, Id) :- multi(M, Id).
+
+box_cell([$MultiCellPiece(), M], P) :- the_piece.value(M, Id), piece.label(M, P, Id).
+
+// --- $StoredMarker ---
+marker($StoredMarker(), P) :- in(P, Col), params.marker_color(Col).
+
+// --- $LoneMarker ---
+// An ink cell with an ink 4-neighbor.
+.decl touching(p: Position)
+touching(P) :- ink(P), dir_elem(D), neighbor(P, D, Q), ink(Q).
+
+marker($LoneMarker(), P) :- ink(P), !touching(P).
+
+// --- $OneMarker ---
+// @claim marker
+.init one = Unanimous<Marker, Position>
+one.item(M, P) :- marker(M, P).
+
+miscount($OneMarker(), M) :- one.clash(M).
+
+// --- $StraightOut ---
+// A marker within the box's rows or columns.
+.decl straight(r: Reading, p: Position)
+straight([Bo, M], P) :-
+    marker(M, P), box.box([Bo, M], B), axis_elem(A), split(B, A, B_band, _), inside(P, B_band).
+
+misplaced($StraightOut(), [Bo, M]) :- box.box([Bo, M], _), marker(M, P), !straight([Bo, M], P).
+
+// --- $Redraw ---
+// @claim framed-box
+.init rim_color = Unanimous<Reading, Color>
+rim_color.item(R, Col) :- box.box(R, B), box_cell(R, P), !interior(P, B), in(P, Col).
+
+// @claim framed-box
+.init core_color = Unanimous<Reading, Color>
+core_color.item(R, Col) :- box.box(R, B), box_cell(R, P), interior(P, B), in(P, Col).
+
+// A 1-wide border of one color around an interior of another.
+.decl framed(r: Reading)
+framed(R) :- rim_color.value(R, Col1), core_color.value(R, Col2), Col1 != Col2.
+
+unfit($Redraw(), R) :- box.box(R, _), !framed(R).
+
+fill($Redraw(), R, P, Col) :-
+    stretched.box(R, B), in(P, _), inside(P, B),
+    ( interior(P, B), core_color.value(R, Col)
+    ; !interior(P, B), rim_color.value(R, Col)
+    ).
+
+// --- $RepeatInnerSlice ---
+// The box's lines along each axis.
+.decl box_line(r: Reading, a: Axis, l: Position)
+box_line(R, A, L) :- box_cell(R, P), axis_elem(A), split(P, A, L, _).
+
+// The box's side toward D moves out.
+.decl grown(r: Reading, d: Dir)
+grown(R, D) :-
+    box.box(R, B), stretched.box(R, B2), dir_elem(D), dist(B, D, K), dist(B2, D, K2), K2 < K.
+
+// The box's line on its side toward D.
+.decl far_line(r: Reading, d: Dir, l: Position)
+far_line(R, D, L) :-
+    grown(R, D), box.box(R, B), dist(B, D, K), axis_of(D, A), box_line(R, A, L), dist(L, D, K).
+
+// The box's line next to its far line, inside.
+.decl slice(r: Reading, d: Dir, l: Position)
+slice(R, D, L) :- far_line(R, D, L_far), axis_of(D, A), box_line(R, A, L), neighbor(L, D, L_far).
+
+// A grown side whose slice is not the opposite side: the box is at least 3
+// wide along the stretch.
+.decl wide(r: Reading, d: Dir)
+wide(R, D) :-
+    slice(R, D, L), box.box(R, B), opposite(D, D2), dist(B, D2, K), dist(L, D2, Kl), K < Kl.
+
+unfit($RepeatInnerSlice(), R) :- grown(R, D), !wide(R, D).
+
+// The grid's lines along each axis.
+.decl grid_line(a: Axis, l: Position)
+grid_line(A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
+
+// The line of the box that each line of the stretched box copies, along the
+// line's axis.
+// @ignore: head-repeat — a line away from a grown side copies itself
+.decl line_src(r: Reading, a: Axis, l: Position, l_src: Position)
+line_src(R, A, L, L_src) :-
+    far_line(R, D, L_far), axis_of(D, A), stretched.box(R, B), dist(B, D, K),
+    grid_line(A, L), dist(L, D, Kl),
+    ( Kl = K, L_src = L_far                                  // the new side
+    ; K < Kl, !nearer(D, L_far, L), slice(R, D, L_src)       // the old side up to the new one
+    ).
+line_src(R, A, L, L) :- box_line(R, A, L), !far_line(R, _, L).
+
+fill($RepeatInnerSlice(), R, P, Col) :-
+    in(P, _), axis_elem(A), perp(A, A2), split(P, A, L1, L2),
+    line_src(R, A, L1, L1_src), line_src(R, A2, L2, L2_src),
+    compose(L1_src, L2_src, Q), in(Q, Col).

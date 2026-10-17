@@ -1,0 +1,253 @@
+// c444b776
+// @draft
+// @keywords: decompose tile-arrangement select overlay rank
+// @scene divider-lines: full rows and full columns of divider (4) cut the
+//  grid into equal panels, with no divider on the grid edge
+// @scene one-drawn-panel: exactly one panel holds cells other than
+//  background (0), and every other panel is all background
+// @rule copy-to-every-panel: each panel of the output is the drawn panel of
+//  the input, and the divider lines stay as they are
+
+// how the panels are found
+.type Panels =
+    // @claim divider-lines
+    DividerLines {}
+    // @scene divider-lines: the divider is the one color other than
+    //  background that fills a whole row or column; undefined where no such
+    //  color exists, or where several do
+    // @witness divider-color: variant $DividerFromLines
+    //     @relaxed divider-lines
+  | DividerFromLines {}
+    // @scene divider-lines: panels of panel_size (9 by 9), with lines gap (1)
+    //  wide between them, cut the grid, whatever the lines' color; undefined
+    //  where an extent of the grid is not a whole number of panels and gaps
+    // @witness small-panels: variant concept
+  | StoredLattice {}
+
+// what each panel of the output takes
+.type Source =
+    // @claim copy-to-every-panel
+    OneDrawn {}
+    // @rule copy-to-every-panel: each panel of the output is the overlay of
+    //  the input's panels, where a cell other than background in any panel
+    //  shows; undefined where two panels hold different such colors at one
+    //  place
+    // @witness two-drawn-panels: borderline $Overlay
+    //     @relaxed one-drawn-panel
+  | Overlay {}
+    // @rule copy-to-every-panel: each panel of the output is the input panel
+    //  with the most cells other than background; undefined on a tie
+    // @witness two-drawn-panels: borderline $Overlay
+  | MostDrawn {}
+
+.type Choice = [pn: Panels, s: Source]
+
+// One panel under one way of finding the panels.
+.type Tile = [pn: Panels, p_tile: Position]
+
+// One place within a panel under one way of finding the panels.
+.type PanelCell = [pn: Panels, p_intile: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed one-drawn-panel
+    .decl background(c: Color) background(0).
+
+    // --- $DividerLines ---
+    .decl divider(c: Color) divider(4).
+
+    // --- $StoredLattice ---
+    .decl panel_size(a: Axis, k: number)
+    panel_size(AXIS_V, 9). panel_size(AXIS_H, 9).
+
+    // The width of the lines between the panels.
+    // @derive SepThickness: variant concept
+    // @derive TileDim: variant concept
+    .decl gap(g: number) gap(1).
+}
+
+.init params = Params
+
+.decl panels_choice(pn: Panels)
+panels_choice($DividerLines()). panels_choice($DividerFromLines()). panels_choice($StoredLattice()).
+
+.decl source_choice(s: Source)
+source_choice($OneDrawn()). source_choice($Overlay()). source_choice($MostDrawn()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Pn, S]) :- panels_choice(Pn), source_choice(S).
+
+// The panels that the full lines of one color cut the grid into.
+.comp Parse<Key> {
+    .type Line = [key: Key, a: Axis, l: Position]
+    .type KeyTile = [key: Key, p_tile: Position]
+
+    .decl cell(key: Key, p: Position, col: Color)
+
+    // The color whose full lines cut the grid.
+    .decl cut(key: Key, col: Color)
+
+    // The color of each line that holds one color alone.
+    // @claim divider-lines
+    .init line_color = Unanimous<Line, Color>
+    line_color.item([Ky, A, L], Col) :- cell(Ky, P, Col), axis_elem(A), split(P, A, L, _).
+
+    // @claim divider-lines
+    .init lattice = DividerTiles<Key>
+    lattice.cell(Ky, P) :- cut(Ky, _), cell(Ky, P, _).
+    lattice.divider(Ky, A, L) :- cut(Ky, Col), line_color.value([Ky, A, L], Col).
+
+    // @claim copy-to-every-panel
+    .init tile_box = Bbox<KeyTile>
+    tile_box.cell([Ky, P_tile], P) :- lattice.tile_of(Ky, P, P_tile).
+
+    // Each cell of a panel: the panel's place, and the cell's place within
+    // the panel.
+    .decl panel(key: Key, p: Position, p_tile: Position, p_intile: Position)
+    panel(Ky, P, P_tile, P_intile) :-
+        lattice.tile_of(Ky, P, P_tile), tile_box.box([Ky, P_tile], B), crop(P, B, P_intile).
+}
+
+// Parse<Key>'s panel, under each way of finding the panels.
+.decl panel(pn: Panels, p: Position, p_tile: Position, p_intile: Position)
+
+// The panel each case copies into every panel.
+.decl source(ch: Choice, p_tile: Position)
+
+// The color each case gives a place within a panel.
+.decl fill(ch: Choice, p_intile: Position, col: Color)
+fill([Pn, S], P_intile, Col) :-
+    source([Pn, S], P_tile), panel(Pn, P, P_tile, P_intile), in(P, Col).
+
+.decl in_panel(pn: Panels, p: Position)
+in_panel(Pn, P) :- panel(Pn, P, _, _).
+
+out(P, Col, Ch) :- panel(Pn, P, _, P_intile), Ch = [Pn, _], fill(Ch, P_intile, Col).
+out(P, Col, [Pn, S]) :-
+    impl_choice([Pn, S]), in_panel(Pn, _),  // the grid is cut into panels
+    in(P, Col), !in_panel(Pn, P).           // a divider cell stays
+
+// --- $DividerLines, $DividerFromLines ---
+
+.init parse = Parse<Panels>
+
+panel(Pn, P, P_tile, P_intile) :- parse.panel(Pn, P, P_tile, P_intile).
+
+// --- $DividerLines ---
+
+parse.cell($DividerLines(), P, Col) :- in(P, Col).
+parse.cut($DividerLines(), Col) :- params.divider(Col).
+
+// --- $DividerFromLines ---
+
+parse.cell($DividerFromLines(), P, Col) :- in(P, Col).
+
+// The one color other than background that fills a whole line.
+// @claim divider-lines
+.init line_divider = Unanimous<Unit, Color>
+line_divider.item($U(), Col) :-
+    parse.line_color.value([$DividerFromLines(), _, _], Col), !params.background(Col).
+
+parse.cut($DividerFromLines(), Col) :- line_divider.value($U(), Col).
+
+// --- $StoredLattice ---
+
+// @claim divider-lines
+.init stored = Tile2D<Unit>
+stored.cell(P) :- in(P, _).
+stored.dim($U(), A, K) :- params.panel_size(A, K).
+stored.gap(G) :- params.gap(G).
+
+panel($StoredLattice(), P, P_tile, P_intile) :- stored.tile($U(), P, P_tile, P_intile).
+
+// --- $OneDrawn ---
+
+// @claim one-drawn-panel
+.init one_drawn = Unanimous<Panels, Position>
+one_drawn.item(Pn, P_tile) :- panel(Pn, P, P_tile, _), in(P, Col), !params.background(Col).
+
+source([Pn, $OneDrawn()], P_tile) :- one_drawn.value(Pn, P_tile).
+
+// --- $Overlay ---
+
+// The colors other than background that the panels hold at each place.
+// @claim copy-to-every-panel
+.init overlay = Unanimous<PanelCell, Color>
+overlay.item([Pn, P_intile], Col) :-
+    panel(Pn, P, _, P_intile), in(P, Col), !params.background(Col).
+
+fill([Pn, $Overlay()], P_intile, Col) :-
+    panel(Pn, _, _, P_intile),
+    ( overlay.value([Pn, P_intile], Col)                        // some panel draws here
+    ; !overlay.item([Pn, P_intile], _), params.background(Col)  // no panel draws here
+    ).
+
+// --- $MostDrawn ---
+
+// The cells other than background that each panel holds.
+// @claim copy-to-every-panel
+.init drawn_count = Tally<Tile, Position>
+drawn_count.domain([Pn, P_tile]) :- panel(Pn, _, P_tile, _).
+drawn_count.item([Pn, P_tile], P) :-
+    panel(Pn, P, P_tile, _), in(P, Col), !params.background(Col).
+
+// @claim copy-to-every-panel
+.init most = ArgExtremes<Panels, Position>
+most.cand(Pn, P_tile, N) :- drawn_count.tally([Pn, P_tile], N).
+
+// @claim copy-to-every-panel
+.init most_drawn = Unanimous<Panels, Position>
+most_drawn.item(Pn, P_tile) :- most.high(Pn, P_tile, _).
+
+source([Pn, $MostDrawn()], P_tile) :- most_drawn.value(Pn, P_tile).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
+    ex.cut(E, Col) :- divider(Col), ex.cell(E, _, _).
+
+    // A train input with a line all of color col.
+    .decl filled(e: Example, col: Color)
+    filled(E, Col) :- ex.line_color.value([E, _, _], Col).
+
+    // A color that fills a line in some train input and no line of another.
+    .decl unfilled(col: Color)
+    unfilled(Col) :- filled(_, Col), ex.cell(E, _, _), !filled(E, Col).
+
+    .decl divider(c: Color)
+    divider(Col) :- filled(_, Col), !unfilled(Col).
+
+    // A panel that holds a cell of another color than col.
+    .decl stained(e: Example, p_tile: Position, col: Color)
+    stained(E, P_tile, Col) :-
+        ex.panel(E, P, P_tile, _), ex.cell(E, P, Col2), ex.cell(E, _, Col), Col != Col2.
+
+    // A train input with a panel all of color col.
+    .decl blank(e: Example, col: Color)
+    blank(E, Col) :- ex.panel(E, P, P_tile, _), ex.cell(E, P, Col), !stained(E, P_tile, Col).
+
+    // A color that fills a panel in some train input and no panel of another.
+    .decl unblank(col: Color)
+    unblank(Col) :- blank(_, Col), ex.cell(E, _, _), !blank(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- blank(_, Col), !unblank(Col).
+
+    .type ExampleAxis = [e: Example, a: Axis]
+    .type Band = [e: Example, a: Axis, id: Ident]
+
+    // The runs of adjacent divider lines.
+    .init divider_run = Components<ExampleAxis>
+    divider_run.node([E, A], L) :- ex.lattice.divider(E, A, L).
+
+    .init band_width = Tally<Band, Position>
+    band_width.item([E, A, Id], L) :- divider_run.label([E, A], L, Id).
+
+    .init width = Unanimous<Unit, number>
+    width.item($U(), N) :- band_width.tally(_, N).
+
+    .decl gap(g: number)
+    gap(G) :- width.value($U(), G).
+}

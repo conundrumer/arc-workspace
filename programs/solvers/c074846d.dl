@@ -1,0 +1,173 @@
+// c074846d
+// @draft
+// @keywords: markers d4 objects
+// @scene pivot: the input holds one cell of color params.pivot_color
+// @scene arm: the input holds a straight run of params.arm_color cells, one
+//  cell wide, that starts at a neighbor of the pivot and goes away from it in
+//  one cardinal direction, of length one or more
+// @scene blank-field: every other cell is background (0)
+// @scene room-to-turn: the grid holds the arm's full length past the pivot in
+//  the direction the turn takes it to
+// @rule swing: the output paints the arm at the pivot again, turned a quarter
+//  turn in sense params.sense around the pivot: each arm cell at distance k
+//  from the pivot in direction d goes to distance k in the direction
+//  params.sense turns d to, in params.arm_color
+// @rule trail: each cell the arm held in the input takes params.trail_color
+// @rule keep: every other cell, the pivot included, keeps its input color
+
+// how an arm cell's place turns about a pivot
+.type TurnGeometry =
+    // @claim swing
+    DirTurn {}
+    // @rule swing: each arm cell's offset from the pivot turns a quarter turn
+    //  in params.sense, wherever the cell lies
+    // @witness bent-arm: borderline $RotateOffsets
+    //     @relaxed arm
+  | RotateOffsets {}
+
+// which cells join into one stick
+.type StickAdjacency =
+    // @claim pivot
+    Join4 {}
+    // @scene pivot: 8-adjacency joins the cells of a stick, so sticks that
+    //  touch only at a corner are one stick
+    // @witness corner-touch: foreign $RotateOffsets & $PerStick
+    //     @relaxed pivot
+    //     @relaxed arm
+  | CornerJoin {}
+
+// which pivots an arm cell turns about
+.type StickScope =
+    // @claim pivot
+    OnePivotSet {}
+    // @scene pivot: each 4-connected component of cells other than
+    //  params.background is a stick, with its own pivot cells
+    // @rule swing: an arm cell turns only about the pivot cells of its own
+    //  stick
+    // @witness two-sticks: variant $PerStick
+    //     @relaxed pivot
+  | PerStick {adj: StickAdjacency}
+
+.type Choice = [turn: TurnGeometry, scope: StickScope]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive RarestColor: borderline concept
+    //     @relaxed blank-field
+    .decl pivot_color(c: Color) pivot_color(5).
+    .decl arm_color(c: Color) arm_color(2).
+    .decl trail_color(c: Color) trail_color(3).
+    .decl sense(s: Sense) sense(SENSE_CW).
+
+    // --- $PerStick ---
+    // @derive DominantColor: variant derived
+    //     @relaxed pivot
+    //     @relaxed blank-field
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+.decl turn_geometry_choice(t: TurnGeometry)
+turn_geometry_choice($DirTurn()). turn_geometry_choice($RotateOffsets()).
+
+.decl stick_scope_choice(s: StickScope)
+stick_scope_choice($OnePivotSet()).
+stick_scope_choice($PerStick($Join4())). stick_scope_choice($PerStick($CornerJoin())).
+
+.decl impl_choice(ch: Choice)
+impl_choice([T, S]) :- turn_geometry_choice(T), stick_scope_choice(S).
+
+.decl pivot(p: Position)
+pivot(P) :- in(P, Col), params.pivot_color(Col).
+
+.decl arm(p: Position)
+arm(P) :- in(P, Col), params.arm_color(Col).
+
+// Arm cell a turns about pivot p.
+.decl linked(s: StickScope, p: Position, a: Position)
+
+// Arm cell a, turned about pivot p, lands on q.
+.decl turned(t: TurnGeometry, p: Position, a: Position, q: Position)
+
+.decl painted(ch: Choice, q: Position)
+painted([T, S], Q) :- linked(S, P, A), turned(T, P, A, Q).
+
+.decl moved(ch: Choice, a: Position)
+moved([T, S], A) :- linked(S, P, A), turned(T, P, A, _).
+
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, Col_in),
+    ( painted(Ch, P), params.arm_color(Col)
+    ; !painted(Ch, P), moved(Ch, P), params.trail_color(Col)
+    ; !painted(Ch, P), !moved(Ch, P), Col = Col_in
+    ).
+
+// --- $DirTurn ---
+// @claim swing
+.init sight = Ray<Unit>
+sight.dir($U(), D) :- dir_elem(D).
+sight.mark($U(), P) :- pivot(P).
+sight.cell($U(), A) :- arm(A).
+
+turned($DirTurn(), P, A, Q) :-
+    sight.ray($U(), A, D, K, P),                     // K cells from the pivot toward D
+    params.sense(S), turn(S, D, D2), jump(P, D2, K, Q).
+
+// --- $RotateOffsets ---
+turned($RotateOffsets(), P, A, Q) :-
+    pivot(P), arm(A), relative(P, A, V),             // the arm cell's offset from the pivot
+    params.sense(S), rotation(S, R), apply(R, V, V2), compose(P, V2, Q).
+
+// --- $OnePivotSet ---
+linked($OnePivotSet(), P, A) :- pivot(P), arm(A), P != A.
+
+// --- $Join4 ---
+// @claim pivot swing
+.init stick4 = Components<Unit>
+stick4.node($U(), P) :- in(P, Col), !params.background(Col).
+
+linked($PerStick($Join4()), P, A) :-
+    pivot(P), arm(A), P != A, stick4.label($U(), P, Id), stick4.label($U(), A, Id).
+
+// --- $CornerJoin ---
+// @claim pivot swing
+.init stick8 = Components8<Unit>
+stick8.node($U(), P) :- in(P, Col), !params.background(Col).
+
+linked($PerStick($CornerJoin()), P, A) :-
+    pivot(P), arm(A), P != A, stick8.label($U(), P, Id), stick8.label($U(), A, Id).
+
+.comp Determine {
+    // A cell the output recolors, with its input and output colors.
+    .decl recolored(e: Example, p: Position, c_in: Color, c_out: Color)
+    recolored(E, P, C_in, C_out) :- ex_in(E, P, C_in), ex_out(E, P, C_out), C_in != C_out.
+
+    // The color that leaves some cells and comes onto others.
+    .decl arm_color(c: Color)
+    arm_color(C) :- recolored(E, _, C, _), recolored(E, _, _, C).
+
+    .decl trail_color(c: Color)
+    trail_color(C) :- recolored(_, _, A, C), arm_color(A).
+
+    .decl background(c: Color)
+    background(C) :- recolored(_, _, C, A), arm_color(A).
+
+    // The color of the cell beside both the arm's first cell and the turned
+    // arm's first cell, other than the color the turned arm covers.
+    .decl pivot_color(c: Color)
+    pivot_color(C) :-
+        ex_in(E, P, C), arm_color(C_arm),
+        dir_elem(D), neighbor(P, D, A), recolored(E, A, C_arm, _),
+        dir_elem(D2), neighbor(P, D2, Q), recolored(E, Q, C_covered, C_arm),
+        C != C_covered.
+
+    // The turn from the side of the pivot the arm leaves to the side it comes onto.
+    .decl sense(s: Sense)
+    sense(S) :-
+        ex_in(E, P, C_pivot), pivot_color(C_pivot), arm_color(C_arm),
+        neighbor(P, D, A), recolored(E, A, C_arm, _),      // the arm's first cell
+        neighbor(P, D2, Q), recolored(E, Q, _, C_arm),     // the turned arm's first cell
+        turn(S, D, D2).
+}

@@ -1,0 +1,208 @@
+// beb8660c
+// @draft
+// @keywords: lines rank move
+// @scene bars: every non-bg cell belongs to a horizontal bar, a run of one
+//  color on one row, and each row holds at most one bar
+// @scene lengths-one-to-width: the bar lengths are exactly 1 to the grid
+//  width, one bar of each length
+// @scene base-bar: the bottom row is a full-width bar of color 8
+// @rule sort-by-length: the output places the bars on consecutive rows,
+//  ordered by length, the longest on the row nearest the params.fall_dir edge
+// @rule stack-at-edge: the stack of bars touches the params.fall_dir edge,
+//  with one bar per row and no gap rows
+// @rule align-to-side: each bar touches the params.align_side edge
+// @rule keep-bar: each bar keeps its color and length
+// @rule clear-rest: every other cell is bg
+
+// what one moving unit is
+.type Item =
+    // @claim bars
+    Bar {}
+    // @scene bars: each row that holds a non-bg cell is one unit, whose
+    //  length is its count of non-bg cells and whose cells keep their order
+    //  along the row; undefined where two units of different content have
+    //  one length
+    // @witness two-bars-one-row: borderline concept
+    //     @relaxed bars
+  | RowUnit {}
+
+// the row each unit lands on
+.type Place =
+    // @claim stack-at-edge
+    Stack {}
+    // @rule stack-at-edge: a unit lands as many rows from the
+    //  params.fall_dir edge as its row has cells outside it, in place of the
+    //  stack by length; undefined where two units land on one row or a unit
+    //  lands outside the frame
+    // @witness missing-length: variant concept
+    //     @relaxed lengths-one-to-width
+  | RowByLength {}
+
+// what happens to the base bar
+.type Base =
+    // @claim base-bar
+    Ranked {}
+    // @scene base-bar: the one unit that holds params.base_color takes the
+    //  row on the params.fall_dir edge, and the other units stack on it by
+    //  length; undefined where the count of such units is not one
+    // @witness short-base: borderline concept
+    //     @relaxed base-bar
+  | BaseStays {}
+
+.type Choice = [item: Item, place: Place, base: Base]
+
+// A unit, under the item reading that finds it.
+.type ItemUnit = [i: Item, u: Ident]
+
+// The units of one item reading, stacked under one base reading.
+.type Ranking = [i: Item, b: Base]
+
+// The cells of one color on one row.
+.type Run = [row: Position, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    // The edge the units stack against.
+    .decl fall_dir(d: Dir) fall_dir(DIR_B).
+    // The edge each unit touches in the output.
+    .decl align_side(d: Dir) align_side(DIR_R).
+
+    // --- $BaseStays ---
+    .decl base_color(c: Color) base_color(8).
+}
+
+.init params = Params
+
+.decl item_choice(i: Item)
+item_choice($Bar()). item_choice($RowUnit()).
+
+.decl place_choice(p: Place)
+place_choice($Stack()). place_choice($RowByLength()).
+
+.decl base_choice(b: Base)
+base_choice($Ranked()). base_choice($BaseStays()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([I, P, B]) :- item_choice(I), place_choice(P), base_choice(B).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+// The row of cell P: its component on the params.fall_dir axis.
+.decl row_of(p: Position, row: Position)
+row_of(P, Row) :- in(P, _), params.fall_dir(D), axis_of(D, A), split(P, A, Row, _).
+
+// Cell P, of color Col, belongs to unit U under item reading I.
+.decl unit_cell(i: Item, u: Ident, p: Position, col: Color)
+
+.decl unit(i: Item, u: Ident)
+unit(I, U) :- unit_cell(I, U, _, _).
+
+// Each unit's cells, ranked from the params.align_side edge: a cell's rank
+// is its distance from that edge in the output.
+// @claim align-to-side keep-bar
+.init pack = Order<ItemUnit, Position>
+pack.elem([I, U], P) :- unit_cell(I, U, P, _).
+pack.before([I, U], P, Q) :-
+    unit_cell(I, U, P, _), unit_cell(I, U, Q, _), params.align_side(D), nearer(D, P, Q).
+
+// The output row each unit lands on, as its distance from the
+// params.fall_dir edge.
+// @ignore: head-zero — the base unit lands with no gap from the params.fall_dir edge
+.decl placed(ch: Choice, u: Ident, r: number)
+
+// Cell P lies R rows from the params.fall_dir edge.
+.decl fall_dist(p: Position, r: number)
+fall_dist(P, R) :- in(P, _), params.fall_dir(D), dist(P, D, R).
+
+// The case gives no grid on this input.
+.decl undefined(ch: Choice)
+undefined(Ch) :- placed(Ch, _, R), !fall_dist(_, R).    // a unit lands outside the frame
+
+// The cells the units cover in the output.
+.decl landed(ch: Choice, p: Position, col: Color)
+landed([I, Pl, B], P, Col) :-
+    placed([I, Pl, B], U, R), unit_cell(I, U, Q, Col), pack.rank([I, U], Q, K),
+    fall_dist(P, R), params.align_side(D), dist(P, D, K).
+
+out(P, Col, Ch) :- landed(Ch, P, Col), !undefined(Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !landed(Ch, P, _), !undefined(Ch), params.bg(Col).
+
+// --- $Bar ---
+
+// @claim bars
+.init runs = Components<Run>
+runs.node([Row, Col], P) :- ink(P, Col), row_of(P, Row).
+
+unit_cell($Bar(), U, P, Col) :- runs.label(_, P, U), in(P, Col).
+
+// --- $RowUnit ---
+
+// @claim bars
+.init rows = IdentOf<Position>
+rows.value(Row) :- row_of(_, Row).
+
+unit_cell($RowUnit(), U, P, Col) :- ink(P, Col), row_of(P, Row), rows.id(Row, U).
+
+// --- $Stack ---
+
+// @claim sort-by-length
+.init length = Tally<ItemUnit, Position>
+length.item([I, U], P) :- unit_cell(I, U, P, _).
+
+// U1 is longer than U2.
+.decl longer(i: Item, u1: Ident, u2: Ident)
+longer(I, U1, U2) :- length.tally([I, U1], N1), length.tally([I, U2], N2), N1 > N2.
+
+// The units in stacking order, from the params.fall_dir edge.
+// @claim sort-by-length stack-at-edge
+.init stack = Order<Ranking, Ident>
+stack.elem([I, B], U) :- unit(I, U), base_choice(B).
+
+placed([I, $Stack(), B], U, R) :- stack.rank([I, B], U, R).
+
+// --- $Stack & $Ranked ---
+
+stack.before([I, $Ranked()], U1, U2) :- longer(I, U1, U2).
+
+// --- $RowByLength ---
+
+// The cells of each unit's row that lie outside the unit.
+// @claim stack-at-edge
+.init outside = Tally<ItemUnit, Position>
+outside.item([I, U], P) :-
+    unit_cell(I, U, Q, _), row_of(Q, Row), row_of(P, Row), !unit_cell(I, U, P, _).
+outside.domain([I, U]) :- unit(I, U).
+
+// --- $RowByLength & $Ranked ---
+
+placed([I, $RowByLength(), $Ranked()], U, R) :- outside.tally([I, U], R).
+
+// --- $BaseStays ---
+
+// A unit that holds params.base_color.
+.decl base_unit(i: Item, u: Ident)
+base_unit(I, U) :- unit_cell(I, U, _, Col), params.base_color(Col).
+
+undefined([I, Pl, $BaseStays()]) :- impl_choice([I, Pl, $BaseStays()]), !base_unit(I, _).
+
+// --- $Stack & $BaseStays ---
+
+stack.before([I, $BaseStays()], U1, U2) :-
+    base_unit(I, U1), unit(I, U2), !base_unit(I, U2).
+stack.before([I, $BaseStays()], U1, U2) :-
+    longer(I, U1, U2), !base_unit(I, U1), !base_unit(I, U2).
+
+// --- $RowByLength & $BaseStays ---
+
+placed([I, $RowByLength(), $BaseStays()], U, 0) :- base_unit(I, U).    // on the params.fall_dir edge
+placed([I, $RowByLength(), $BaseStays()], U, R) :-
+    outside.tally([I, U], R), !base_unit(I, U).
+
+.comp Determine {
+    // The color of the input row on the params.fall_dir edge.
+    .decl base_color(c: Color)
+    base_color(Col) :- ex_in(_, P, Col), params.fall_dir(D), dist(P, D, 0).
+}

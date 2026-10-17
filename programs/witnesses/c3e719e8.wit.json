@@ -1,0 +1,42 @@
+{
+  "id": "c3e719e8",
+  "witnesses": [{
+    "id": "mode-tie",
+    "separates": "two colors tie for the most cells; the concept has no commonest color and is undefined, $TiesAllGate copies the input at the cells of both tied colors, $TiesNoneGate copies it nowhere",
+    "input": [
+      [1,1,2],
+      [2,3,4],
+      [5,6,7]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$TiesAllGate"],
+      "grid": [
+        [1,1,2,1,1,2,1,1,2],
+        [2,3,4,2,3,4,2,3,4],
+        [5,6,7,5,6,7,5,6,7],
+        [1,1,2,0,0,0,0,0,0],
+        [2,3,4,0,0,0,0,0,0],
+        [5,6,7,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$TiesNoneGate"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }]
+}

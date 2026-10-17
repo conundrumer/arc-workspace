@@ -1,0 +1,211 @@
+// b5bb5719
+// @draft
+// @keywords: walk mapping
+// @scene seed-row: the line at the edge opposite params.grow_dir holds cells of
+//  the two colors of params.swap, with params.background cells among them, and
+//  every other cell is params.background
+// @rule fill-under-pair: row by row in params.grow_dir, a params.background
+//  cell whose two diagonal neighbors in the row before it are both filled
+//  becomes filled
+// @rule swap-side-neighbor: a filled cell takes the color that params.swap
+//  pairs with the color of its diagonal neighbor in the row before it on the
+//  read side, the side a quarter turn in params.read_sense from
+//  params.grow_dir
+// @rule keep-rest: every other cell keeps its input color
+
+// which cells fill
+.type Spread =
+    // @claim fill-under-pair
+    UnderPair {}
+    // @rule fill-under-pair: the params.background cells of the triangle under
+    //  the span from the seed row's first to its last filled cell fill, row by
+    //  row in params.grow_dir; undefined where a triangle cell's read side
+    //  diagonal neighbor is params.background
+    // @witness interior-gap: ordinary concept
+  | SpanTriangle {}
+
+// which color a filled cell takes
+.type Paint =
+    // @claim swap-side-neighbor
+    SwapSide {}
+    // @rule swap-side-neighbor: under two cells of one color, a filled cell
+    //  takes that color's params.swap partner, and under two cells of
+    //  different colors, it takes the color of the neighbor opposite the read
+    //  side; undefined where both neighbors have one color outside params.swap
+    // @witness third-seed-color: foreign any
+    //     @relaxed seed-row
+  | MixedTakesOtherSide {}
+    // @rule swap-side-neighbor: a filled cell takes the color of the seed row
+    //  cell at the head of its read side diagonal, passed through
+    //  params.swap once per row between the two; undefined where that head is
+    //  a color outside params.swap
+    // @witness inner-seed: borderline concept
+    //     @relaxed seed-row
+  | DiagonalHead {}
+
+// where the grow direction comes from
+.type Heading =
+    // @claim seed-row
+    StoredGrow {}
+    // @scene seed-row: the line at one edge holds every cell outside
+    //  params.background, and the pyramid grows away from that edge; undefined
+    //  where no edge line or more than one holds every such cell
+    // @witness seed-at-bottom: variant $GrowFromSeedEdge
+    //     @relaxed seed-row
+  | GrowFromSeedEdge {}
+
+.type Choice = [s: Spread, pa: Paint, h: Heading]
+
+// A fill reading under a heading.
+.type Reading = [s: Spread, h: Heading]
+
+// A cell with a color it takes.
+.type Mark = [p: Position, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed seed-row
+    .decl background(col: Color) background(7).
+    // the color each seed color turns into
+    .decl swap(col: Color, col2: Color) swap(2, 5). swap(5, 2).
+    // the turn from the grow direction to the read side
+    .decl read_sense(s: Sense) read_sense(SENSE_CW).
+
+    // --- $StoredGrow ---
+    .decl grow_dir(d: Dir) grow_dir(DIR_B).
+}
+
+.init params = Params
+
+.decl spread_choice(s: Spread)
+spread_choice($UnderPair()). spread_choice($SpanTriangle()).
+
+.decl paint_choice(pa: Paint)
+paint_choice($SwapSide()). paint_choice($MixedTakesOtherSide()). paint_choice($DiagonalHead()).
+
+.decl heading_choice(h: Heading)
+heading_choice($StoredGrow()). heading_choice($GrowFromSeedEdge()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, Pa, H]) :- spread_choice(S), paint_choice(Pa), heading_choice(H).
+
+// The cells outside params.background.
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.background(Col).
+
+// The direction the pyramid grows in.
+.decl grow(h: Heading, d: Dir)
+
+// The direction back toward the seed row, and the read side.
+.decl bearing(h: Heading, d_back: Dir, d_read: Dir)
+bearing(H, D_back, D_read) :-
+    grow(H, D_grow), opposite(D_grow, D_back), params.read_sense(S), turn(S, D_grow, D_read).
+
+// The two diagonal neighbors of a cell in the row before it: p_read on the
+// read side, p_far on the other.
+.decl above(h: Heading, q: Position, p_read: Position, p_far: Position)
+above(H, Q, P_read, P_far) :-
+    bearing(H, D_back, D_read), opposite(D_read, D_far),
+    in(Q, _), neighbor(Q, D_back, Q0),                     // the cell before it
+    neighbor(Q0, D_read, P_read), neighbor(Q0, D_far, P_far).
+
+// The cells each reading grows from.
+.decl seed(r: Reading, p: Position)
+
+.init fill = Propagation<Reading, Position>
+fill.source(R, P) :- seed(R, P).
+fill.join([S, H], P_read, P_far, Q) :-
+    spread_choice(S), above(H, Q, P_read, P_far), in(Q, Col), params.background(Col).
+
+// The cells a reading fills.
+.decl filled(r: Reading, q: Position)
+filled(R, Q) :- fill.reached(R, Q), !seed(R, Q).
+
+.init paint = Propagation<Choice, Mark>
+
+// The color each case gives a filled cell.
+.decl tint(ch: Choice, q: Position, col: Color)
+
+out(P, Col, [S, Pa, H]) :-
+    impl_choice([S, Pa, H]), grow(H, _), in(P, Col_in),
+    ( filled([S, H], P), tint([S, Pa, H], P, Col)
+    ; !filled([S, H], P), Col = Col_in
+    ).
+
+// --- $StoredGrow ---
+grow($StoredGrow(), D) :- params.grow_dir(D).
+
+// --- $GrowFromSeedEdge ---
+// An edge whose line misses some ink cell.
+// @ignore: store — Equivalence: a stored value gives one grow direction, as $StoredGrow does
+.decl off_edge(d: Dir)
+off_edge(D) :- dir_elem(D), ink(P), !dist(P, D, 0).
+
+// @ignore item: store — Equivalence: a stored value gives one grow direction, as $StoredGrow does
+// @ignore value: store — Equivalence: a stored value gives one grow direction, as $StoredGrow does
+// @claim seed-row
+.init seed_edge = Unanimous<Unit, Dir>
+seed_edge.item($U(), D) :- dir_elem(D), !off_edge(D).
+
+grow($GrowFromSeedEdge(), D) :- seed_edge.value($U(), D_edge), opposite(D_edge, D).
+
+// --- $UnderPair ---
+seed([$UnderPair(), H], P) :- grow(H, _), ink(P).
+
+// --- $SpanTriangle ---
+// @claim fill-under-pair
+.init span = Between<Heading>
+span.axis(H, A) :- grow(H, D), axis_of(D, A_grow), perp(A_grow, A).
+span.cell(H, P) :- grow(H, _), in(P, _).
+span.mark(H, P) :- grow(H, _), ink(P).
+
+seed([$SpanTriangle(), H], P) :- span.between(H, P).
+
+// --- $SwapSide ---
+paint.source([S, $SwapSide(), H], [P, Col]) :- seed([S, H], P), in(P, Col).
+paint.edge([S, $SwapSide(), H], [P_read, Col], [Q, Col2]) :-
+    filled([S, H], Q), above(H, Q, P_read, _), params.swap(Col, Col2).
+
+tint([S, $SwapSide(), H], Q, Col) :- paint.reached([S, $SwapSide(), H], [Q, Col]).
+
+// --- $MixedTakesOtherSide ---
+// The colors a cell can hold.
+.decl hue(col: Color)
+hue(Col) :- in(_, Col).
+hue(Col) :- params.swap(_, Col).
+
+paint.source([S, $MixedTakesOtherSide(), H], [P, Col]) :- seed([S, H], P), in(P, Col).
+paint.join([S, $MixedTakesOtherSide(), H], [P_read, Col1], [P_far, Col2], [Q, Col]) :-
+    filled([S, H], Q), above(H, Q, P_read, P_far), hue(Col1), hue(Col2),
+    ( Col1 = Col2, params.swap(Col1, Col)       // one color: its partner
+    ; Col1 != Col2, Col = Col2                  // two colors: the far side's
+    ).
+
+tint([S, $MixedTakesOtherSide(), H], Q, Col) :-
+    paint.reached([S, $MixedTakesOtherSide(), H], [Q, Col]).
+
+// --- $DiagonalHead ---
+// The rows from a filled cell back to the seed row, and the seed row cell at
+// the head of its read side diagonal.
+.decl head(r: Reading, q: Position, k: number, p: Position)
+head([S, H], Q, K, P) :-
+    filled([S, H], Q), bearing(H, D_back, D_read), diag_dirs(D, _, D_back, D_read),
+    dist(Q, D_back, K), jump(Q, D, K, P).
+
+// @claim swap-side-neighbor
+.init flips = CycleWalk<Unit, Color>
+flips.succ($U(), Col, Col2) :- params.swap(Col, Col2).
+flips.step($U(), K) :- head(_, _, K, _).
+
+tint([S, $DiagonalHead(), H], Q, Col) :-
+    head([S, H], Q, K, P), in(P, Col0), flips.walk($U(), Col0, K, Col).
+
+.comp Determine {
+    // The seed colors, each paired with the other.
+    .decl swap(col: Color, col2: Color)
+    swap(Col, Col2) :-
+        ex_in(_, _, Col), !params.background(Col), ex_in(_, _, Col2), !params.background(Col2),
+        Col != Col2.
+}

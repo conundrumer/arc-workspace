@@ -1,0 +1,238 @@
+// b9630600
+// @draft
+// @keywords: objects match rank cast spanning-tree
+// @scene hollow-rooms: every input holds several hollow rectangles, the rooms,
+//  on a field of `background`, each with a wall 1 cell thick in `room_color`
+//  and an interior of at least 1×1 cells, and no two rooms touch
+// @scene facing-network-connected: the rooms are linked into one group through
+//  facing pairs, as `facing-pair` defines them
+// @rule facing-pair: two rooms face each other when, on one axis, their
+//  interiors share a span of lines, and the band between their facing walls
+//  across that span holds only `background`; the gap of the pair is the count
+//  of cells between the two facing walls
+// @rule shortest-joins: the corridors are those of one spanning tree of the
+//  facing pairs with the least total gap; where several such trees exist, any
+//  one of them
+//     @approximated: a facing pair gets a corridor unless the two rooms are
+//      linked by a chain of facing pairs whose gaps are each strictly smaller
+//      than its gap
+//     @witness tied-loop: borderline other
+// @rule corridor-shape: a corridor covers the span the two interiors share;
+//  across the gap, the two outermost lines of that span become `room_color`,
+//  and on the two facing walls, the lines strictly between those two become
+//  `background`. A span of 1 or 2 lines gives a solid bar with no opening.
+// @rule keep-rest: every other cell keeps its input color
+
+// how the measures of the facing pairs select the pairs that get a corridor
+.type Select =
+    // @claim shortest-joins
+    SpanningTree {}
+    // @rule shortest-joins: a facing pair gets a corridor when its gap is at
+    //  most `max_gap`
+    // @witness four-room-loop: ordinary concept
+  | GapLimit {}
+
+// what measures a facing pair
+.type Weight =
+    // @claim shortest-joins
+    GapWeight {}
+    // @rule shortest-joins: a facing pair is measured by its gap times the
+    //  count of lines in its corridor's span, in place of its gap
+    // @witness four-room-loop: ordinary concept
+  | AreaWeight {}
+
+// which lines a corridor covers
+.type Span =
+    // @claim corridor-shape
+    SharedSpan {}
+    // @rule corridor-shape: a corridor covers every line of the interior of
+    //  the room whose interior is narrower, out to the line of the other
+    //  room's facing wall; undefined on an input where two facing rooms have
+    //  interiors of one width at different lines
+    // @witness staggered-pair: variant concept
+  | NarrowerSpan {}
+
+// what may stand between two facing rooms
+.type Facing =
+    // @claim facing-pair
+    ClearBand {}
+    // @rule facing-pair: two rooms face each other when, on one axis, their
+    //  interiors share a span of lines, whatever stands between their facing
+    //  walls
+    // @witness room-in-band: borderline concept
+  | IgnoreBlocking {}
+
+.type Choice = [s: Select, w: Weight, sp: Span, f: Facing]
+
+// A facing pair under one reading of the corridor span and of the band.
+.type Band = [sp: Span, f: Facing, a: Box, a2: Box]
+
+// A facing pair under one reading of its measure, of the span and of the band.
+.type Link = [w: Weight, sp: Span, f: Facing, a: Box, a2: Box]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed hollow-rooms
+    .decl background(col: Color) background(0).
+    // @derive RarestColor: variant derived
+    //     @relaxed hollow-rooms
+    .decl room_color(col: Color) room_color(3).
+
+    // --- $GapLimit ---
+    .decl max_gap(k: number) max_gap(7).
+}
+
+.init params = Params
+
+.decl weight_choice(w: Weight)
+weight_choice($GapWeight()). weight_choice($AreaWeight()).
+
+.decl span_choice(sp: Span)
+span_choice($SharedSpan()). span_choice($NarrowerSpan()).
+
+.decl facing_choice(f: Facing)
+facing_choice($ClearBand()). facing_choice($IgnoreBlocking()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([$SpanningTree(), W, Sp, F]) :- weight_choice(W), span_choice(Sp), facing_choice(F).
+impl_choice([$GapLimit(), $GapWeight(), Sp, $ClearBand()]) :- span_choice(Sp).
+
+// @claim hollow-rooms
+.init room = Outlines<Unit>
+room.node($U(), P) :- in(P, Col), params.room_color(Col).
+
+// p is a cell of room a's wall on side d on a line of a's interior, and q the
+// cell one step beyond it toward d.
+.decl face_cell(a: Box, d: Dir, p: Position, q: Position)
+face_cell(A, D, P, Q) :-
+    room.box(_, A), in(P, _), box_edge(P, A, D),
+    opposite(D, D_in), neighbor(P, D_in, P_in), interior(P_in, A),   // not a corner
+    neighbor(P, D, Q).
+
+// Casts toward each direction from the cell beyond each room wall on that
+// side; every cell not of `background` blocks.
+// @claim facing-pair
+.init sight = Ray<Dir>
+sight.dir(D, D) :- dir_elem(D).
+sight.mark(D, Q) :- face_cell(_, D, _, Q).
+sight.blocked(D, P) :- dir_elem(D), in(P, Col), !params.background(Col).
+
+// A line both interiors of rooms a and a2 share, with a2 beyond a toward d: p
+// is on a's wall, q the cell beyond it, and p2 on a2's wall, k cells from q.
+.decl face_line(a: Box, a2: Box, d: Dir, p: Position, q: Position, p2: Position, k: number)
+face_line(A, A2, D, P, Q, P2, K) :-
+    face_cell(A, D, P, Q), sight.cast(D, P2, D, K, Q),
+    opposite(D, D2), face_cell(A2, D2, P2, _).
+
+// Room a2 faces room a toward d across a gap of k cells.
+.decl facing(f: Facing, a: Box, a2: Box, d: Dir, k: number)
+
+// The lines of a corridor between rooms a and a2: p is on a's wall, q the
+// cell beyond it, and p2 on the line of a2's wall, k cells from q.
+.decl corridor_line(sp: Span, f: Facing, a: Box, a2: Box, d: Dir, p: Position, q: Position, p2: Position, k: number)
+
+// The cells of a corridor's line between the two walls.
+.decl corridor_cell(sp: Span, f: Facing, a: Box, a2: Box, p: Position, x: Position)
+corridor_cell(Sp, F, A, A2, P, X) :-
+    corridor_line(Sp, F, A, A2, D, P, Q, _, K), sight.cast(D, X, D, K_x, Q), K_x < K.
+
+// A corridor line with no line of the same corridor beside it.
+.decl outer_line(sp: Span, f: Facing, a: Box, a2: Box, p: Position)
+outer_line(Sp, F, A, A2, P) :-
+    corridor_line(Sp, F, A, A2, D, P, _, _, _), perp_dir(D, D_side), neighbor(P, D_side, P_side),
+    !corridor_line(Sp, F, A, A2, D, P_side, _, _, _).
+
+// The measure of each facing pair, from either room.
+.decl measure(w: Weight, sp: Span, f: Facing, a: Box, a2: Box, n: number)
+
+// The facing pairs that get a corridor.
+.decl joined(s: Select, w: Weight, sp: Span, f: Facing, a: Box, a2: Box)
+
+// The cells a corridor repaints.
+.decl paint(ch: Choice, x: Position, col: Color)
+paint([S, W, Sp, F], X, Col) :-
+    joined(S, W, Sp, F, A, A2),
+    ( corridor_cell(Sp, F, A, A2, P, X), outer_line(Sp, F, A, A2, P),   // the corridor's walls
+      params.room_color(Col)
+    ; corridor_line(Sp, F, A, A2, _, P, _, P2, _), !outer_line(Sp, F, A, A2, P),
+      ( X = P ; X = P2 ; corridor_cell(Sp, F, A, A2, P, X) ),          // its opening
+      params.background(Col)
+    ).
+
+// The cases defined on the input.
+.decl live(ch: Choice)
+
+out(X, Col, Ch) :- live(Ch), paint(Ch, X, Col).
+out(X, Col, Ch) :- live(Ch), in(X, Col), !paint(Ch, X, _).
+
+// --- $ClearBand ---
+
+// A line of a facing band whose cells are all `background`.
+.decl clear_line(a: Box, a2: Box, q: Position)
+clear_line(A, A2, Q) :-
+    face_line(A, A2, D, _, Q, P2, K), sight.stop(D, P2, D, K, Q), !sight.blocked(D, Q).
+
+.decl blocked_band(a: Box, a2: Box)
+blocked_band(A, A2) :- face_line(A, A2, _, _, Q, _, _), !clear_line(A, A2, Q).
+
+facing($ClearBand(), A, A2, D, K) :- face_line(A, A2, D, _, _, _, K), !blocked_band(A, A2).
+
+// --- $IgnoreBlocking ---
+facing($IgnoreBlocking(), A, A2, D, K) :- face_line(A, A2, D, _, _, _, K).
+
+// --- $SharedSpan ---
+corridor_line($SharedSpan(), F, A, A2, D, P, Q, P2, K) :-
+    facing(F, A, A2, D, _), face_line(A, A2, D, P, Q, P2, K).
+
+live([S, W, $SharedSpan(), F]) :- impl_choice([S, W, $SharedSpan(), F]).
+
+// --- $NarrowerSpan ---
+
+// Room a's interior is no wider than room a2's, across d.
+.decl not_wider(f: Facing, a: Box, a2: Box, d: Dir, n: number, n2: number)
+not_wider(F, A, A2, D, N, N2) :-
+    facing(F, A, A2, D, _), axis_of(D, Ax), perp(Ax, Ax_across),
+    face_cell(A, D, P, _), box_extent(A, P, Ax_across, N), box_extent(A2, P, Ax_across, N2),
+    N <= N2.
+
+corridor_line($NarrowerSpan(), F, A, A2, D, P, Q, P2, K) :-
+    not_wider(F, A, A2, D, _, _), face_cell(A, D, P, Q), sight.cast(D, P2, D, K, Q),
+    opposite(D, D2), same_dist(D2, P2, A2).   // on the line of a2's wall
+
+// Two facing rooms whose interiors have one width and lie at different lines.
+.decl no_narrower(f: Facing)
+no_narrower(F) :-
+    not_wider(F, A, A2, D, N, N), face_cell(A, D, P, _), !face_line(A, A2, D, P, _, _, _).
+
+live([S, W, $NarrowerSpan(), F]) :- impl_choice([S, W, $NarrowerSpan(), F]), !no_narrower(F).
+
+// --- $GapWeight ---
+measure($GapWeight(), Sp, F, A, A2, K) :- span_choice(Sp), facing(F, A, A2, _, K).
+
+// --- $AreaWeight ---
+
+// The count of cells a corridor's band covers.
+// @claim shortest-joins
+.init area = Tally<Band, Position>
+area.item([Sp, F, A, A2], X) :- corridor_cell(Sp, F, A, A2, _, X).
+
+measure($AreaWeight(), Sp, F, A, A2, N) :-
+    ( area.tally([Sp, F, A, A2], N) ; area.tally([Sp, F, A2, A], N) ).
+
+// --- $SpanningTree ---
+
+// Under each facing pair, the rooms that facing pairs of a strictly smaller
+// measure link to its first room.
+.init linked = Propagation<Link, Box>
+linked.source([W, Sp, F, A, A2], A) :- measure(W, Sp, F, A, A2, _).
+linked.edge([W, Sp, F, A, A2], B, B2) :-
+    measure(W, Sp, F, A, A2, N), measure(W, Sp, F, B, B2, N2), N2 < N.
+
+joined($SpanningTree(), W, Sp, F, A, A2) :-
+    measure(W, Sp, F, A, A2, _), !linked.reached([W, Sp, F, A, A2], A2).
+
+// --- $GapLimit ---
+joined($GapLimit(), $GapWeight(), Sp, F, A, A2) :-
+    span_choice(Sp), facing(F, A, A2, _, K), params.max_gap(M), K <= M.

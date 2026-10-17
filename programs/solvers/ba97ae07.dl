@@ -1,0 +1,78 @@
+// ba97ae07
+// @draft
+// @keywords: lines cross occlude
+// @scene background: every cell outside the two bands is `background`.
+// @scene two-crossing-bands: one vertical band of whole columns and one
+//  horizontal band of whole rows, each of one color other than `background`,
+//  the two colors different, cross once.
+// @scene one-band-on-top: the crossing cells all hold the color of one of the
+//  two bands, the band on top.
+// @rule swap-on-top: the output is the input with every crossing cell painted
+//  the color of the band that was underneath.
+// @rule rest-kept: every cell outside the crossing keeps its input color.
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    // @derive DominantColor: ordinary concept
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+// The bands that a background color picks out.
+.comp Parse<Key> {
+    .decl cell(k: Key, p: Position, col: Color)
+    .decl background(k: Key, c: Color)
+
+    // A line along axis A, named by its position across A, holds a background cell.
+    .decl open_line(k: Key, a: Axis, l: Position)
+    open_line(K, A, L) :- cell(K, P, C), background(K, C), axis_elem(A), split(P, A, _, L).
+
+    // P lies in a band along axis A: its line along A holds no background cell.
+    .decl in_band(k: Key, p: Position, a: Axis)
+    in_band(K, P, A) :- cell(K, P, _), axis_elem(A), split(P, A, _, L), !open_line(K, A, L).
+
+    .decl crossing(k: Key, p: Position)
+    crossing(K, P) :- in_band(K, P, A), perp(A, A2), in_band(K, P, A2).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, C) :- in(P, C).
+parse.background($U(), C) :- params.background(C).
+
+// The color of the band along A at line L, read off its cells outside the crossing.
+.decl band_color(a: Axis, l: Position, c: Color)
+band_color(A, L, C) :-
+    parse.in_band($U(), P, A), !parse.crossing($U(), P), split(P, A, _, L), in(P, C).
+
+out(P, C) :-
+    parse.crossing($U(), P), axis_elem(A), split(P, A, _, L), band_color(A, L, C),
+    !in(P, C).                                                  // the band underneath
+out(P, C) :- in(P, C), !parse.crossing($U(), P).
+
+.comp Determine {
+    .type ExampleColor = [e: Example, c: Color]
+    .type KeyAxis = [k: ExampleColor, a: Axis]
+
+    // Each train input read with each of its colors as the background.
+    // @ignore background: head-repeat — the key names the candidate color that the
+    //  instance reads as the background, and the program's instance keys on Unit
+    .init parse = Parse<ExampleColor>
+    parse.cell([E, C], P, Col) :- ex_in(E, P, Col), ex_in(E, _, C), ex_out(E, _, _).
+    parse.background([E, C], C) :- parse.cell([E, C], _, _).
+
+    // The runs of adjacent band lines along each axis.
+    .init runs = Components<KeyAxis>
+    runs.node([K, A], L) :- parse.in_band(K, P, A), split(P, A, _, L).
+
+    // C is not the background of some train input: a cell outside the bands
+    // holds another color, an axis has two bands, or no bands cross.
+    .decl misfit(c: Color)
+    misfit(C) :- parse.cell([E, C], P, Col), !parse.in_band([E, C], P, _), Col != C.
+    misfit(C) :- runs.label([[E, C], A], _, Id), runs.label([[E, C], A], _, Id2), Id != Id2.
+    misfit(C) :- ex_in(_, _, C), ex_out(E, _, _), !parse.crossing([E, C], _).
+
+    .decl background(c: Color)
+    background(C) :- ex_in(_, _, C), !misfit(C).
+}

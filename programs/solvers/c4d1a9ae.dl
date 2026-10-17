@@ -1,0 +1,276 @@
+// c4d1a9ae
+// @draft
+// @keywords: decompose rank color-class bbox
+// @scene background: one color fills most of the grid and every cell that no
+//  panel draws
+// @scene separator-columns: full lines of background color, perpendicular to
+//  the axis of source_dir, cut the grid into 3 panels
+// @scene one-color-panel: each panel draws its marks in one color other than
+//  the background, and no two panels share a color
+// @rule fill-from-next: each background cell of a panel takes the color of
+//  the panel next to it toward source_dir
+// @rule wrap: the last panel toward source_dir takes the color of the first
+//  panel, the panel furthest the other way
+// @rule keep-rest: each mark of a panel and each cell of a separator line
+//  keeps its color
+
+// what a panel's region is
+.type Region =
+    // @claim separator-columns one-color-panel
+    Runs {}
+    // @scene separator-columns: each ink color is a panel, whose region is the
+    //  full lines from the first to the last line its cells reach along the
+    //  axis of source_dir, and the panels are ordered by that span; undefined
+    //  where fewer than two ink colors stand
+    // @scene one-color-panel: no two ink colors' spans share a line; undefined
+    //  where two spans overlap
+    // @witness two-color-panel: borderline $ColorSpan
+    //     @relaxed one-color-panel
+    // @witness shared-color: borderline concept
+    //     @relaxed one-color-panel
+  | ColorSpan {}
+
+// which color is the background
+.type Background =
+    // @claim background
+    Commonest {}
+    // @scene background: the background is the one color of the full
+    //  single-color lines across the axis of source_dir that have a line
+    //  holding another color on each side; undefined where those lines hold
+    //  more than one color or none stand
+    // @witness dense-panel: borderline $BgSeparatorColor
+    //     @relaxed background
+  | BgSeparatorColor {}
+
+// which axis the panels follow one another along
+.type PanelAxis =
+    // @claim separator-columns
+    SourceAxis {}
+    // @scene separator-columns: the panel axis is the one across which full
+    //  background lines cut the input, and a panel takes its fill toward
+    //  source_dir on that axis, or toward cross_source_dir on the other; with
+    //  $BgSeparatorColor, the separator lines are read across either axis;
+    //  undefined where full background lines cut on both axes or on neither
+    // @witness row-separators: variant $AxisFromSeparators
+    //     @relaxed separator-columns
+  | AxisFromSeparators {}
+
+// which panel the last panel takes its color from
+.type Wrap =
+    // @claim wrap
+    WrapFirst {}
+    // @rule wrap: the last panel toward source_dir takes the color of the
+    //  panel two before it; undefined where fewer than three panels stand
+    // @witness four-panels: variant concept
+    //     @relaxed separator-columns
+  | WrapTwoBack {}
+
+.type Choice = [region: Region, bg: Background, axis: PanelAxis, wrap: Wrap]
+
+.type CrossSourceDirValue = [d: Dir]
+.type OpenValue = [cross_source_dir: CrossSourceDirValue]
+
+// A case's panels, with the direction they take their fill from.
+.type Site = [r: Region, b: Background, x: PanelAxis, d: Dir]
+
+// One ink color of a case's input.
+.type SiteInk = [k: Site, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+
+.comp Params {
+    // the direction, along the line of panels, in which a panel finds the
+    // panel whose color it takes
+    .decl source_dir(d: Dir) source_dir(DIR_R).
+
+    // --- $AxisFromSeparators ---
+    // the direction a panel finds its source panel in where the panels follow
+    // one another across the axis of source_dir; the pairs fix neither value
+    // @open
+    .decl cross_source_dir(d: Dir) cross_source_dir(DIR_T). cross_source_dir(DIR_B).
+}
+
+.init params = Params
+
+.decl region_choice(r: Region)
+region_choice($Runs()). region_choice($ColorSpan()).
+
+.decl background_choice(b: Background)
+background_choice($Commonest()). background_choice($BgSeparatorColor()).
+
+.decl panel_axis_choice(x: PanelAxis)
+panel_axis_choice($SourceAxis()). panel_axis_choice($AxisFromSeparators()).
+
+.decl wrap_choice(w: Wrap)
+wrap_choice($WrapFirst()). wrap_choice($WrapTwoBack()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([R, Bg, X, W]) :-
+    region_choice(R), background_choice(Bg), panel_axis_choice(X), wrap_choice(W).
+
+// Cell p lies on line l, the line across axis a.
+.decl on_line(a: Axis, p: Position, l: Position)
+on_line(A, P, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
+
+// Line l across axis a holds a cell of a color other than col.
+.decl line_other(a: Axis, l: Position, col: Color)
+line_other(A, L, Col) :- on_line(A, P, L), in(P, Col2), in(_, Col), Col != Col2.
+
+// Line l across axis a is a full line of col.
+.decl uniform(a: Axis, l: Position, col: Color)
+uniform(A, L, Col) :- on_line(A, P, L), in(P, Col), !line_other(A, L, Col).
+
+// The background of each case.
+.decl bg(b: Background, x: PanelAxis, col: Color)
+
+// The direction each case's panels take their fill from, and the open value
+// it is read at.
+// @ignore: head-repeat — the open value records the direction it is read at
+.decl fill_dir(b: Background, x: PanelAxis, d: Dir, v: OpenValue)
+
+// The lines of each panel.
+.decl panel(k: Site, m: Ident, l: Position)
+
+// Cell p lies in panel m.
+.decl panel_cell(k: Site, m: Ident, p: Position)
+panel_cell(K, M, P) :- panel(K, M, L), K = [_, _, _, D], axis_of(D, A), on_line(A, P, L).
+
+// The ink colors of each panel.
+.decl ink(k: Site, m: Ident, col: Color)
+ink(K, M, Col) :- panel_cell(K, M, P), in(P, Col), K = [_, Bg, X, _], !bg(Bg, X, Col).
+
+// A panel holds more than one ink color, or two panels share a line.
+.decl broken(k: Site)
+broken(K) :- ink(K, M, Col), ink(K, M, Col2), Col != Col2.
+broken(K) :- panel(K, M, L), panel(K, M2, L), M != M2.
+
+// The panels in order toward the fill direction.
+// @claim fill-from-next wrap
+.init order = Order<Site, Ident>
+order.elem(K, M) :- panel(K, M, _).
+order.before(K, M, M2) :-
+    panel(K, M, L), panel(K, M2, L2), M != M2, K = [_, _, _, D], nearer(D, L2, L).
+
+// Panel m takes its fill color from panel m2.
+.decl source(w: Wrap, k: Site, m: Ident, m2: Ident)
+source(W, K, M, M2) :- wrap_choice(W), order.next(K, M, M2).    // fill-from-next
+
+// Some panel takes its fill color from no panel.
+.decl unfed(w: Wrap, k: Site)
+unfed(W, K) :- wrap_choice(W), order.elem(K, M), !source(W, K, M, _).
+
+// Background cell p of a panel takes col.
+.decl fill(w: Wrap, k: Site, p: Position, col: Color)
+fill(W, K, P, Col) :-
+    panel_cell(K, M, P), source(W, K, M, M2), ink(K, M2, Col),
+    in(P, Col_bg), K = [_, Bg, X, _], bg(Bg, X, Col_bg).
+
+// The fill direction each case reads, at each open value.
+.decl site(ch: Choice, d: Dir, v: OpenValue)
+site([R, Bg, X, W], D, V) :-
+    impl_choice([R, Bg, X, W]), fill_dir(Bg, X, D, V),
+    order.next([R, Bg, X, D], _, _),                                 // two or more panels
+    !broken([R, Bg, X, D]), !unfed(W, [R, Bg, X, D]).
+
+out(P, Col, [R, Bg, X, W], V) :- site([R, Bg, X, W], D, V), fill(W, [R, Bg, X, D], P, Col).
+out(P, Col, [R, Bg, X, W], V) :-
+    site([R, Bg, X, W], D, V), in(P, Col), !fill(W, [R, Bg, X, D], P, _).    // keep-rest
+
+// --- $Commonest ---
+
+// @claim background
+.init color_count = Mode<Unit, Color, Position>
+color_count.item($U(), Col, P) :- in(P, Col).
+
+// @claim background
+.init commonest = Unanimous<Unit, Color>
+commonest.item($U(), Col) :- color_count.mode($U(), Col).
+
+bg($Commonest(), X, Col) :- panel_axis_choice(X), commonest.value($U(), Col).
+
+// --- $BgSeparatorColor, $AxisFromSeparators ---
+
+// Toward d from the full line l of col, some line holds another color.
+.decl flanked(a: Axis, l: Position, col: Color, d: Dir)
+flanked(A, L, Col, D) :-
+    uniform(A, L, Col), axis_of(D, A), line_other(A, L2, Col), nearer(D, L2, L).
+
+.decl unflanked(a: Axis, l: Position, col: Color)
+unflanked(A, L, Col) :- uniform(A, L, Col), axis_of(D, A), !flanked(A, L, Col, D).
+
+// A full line of col across axis a cuts the grid: a line holding another
+// color stands on each side of it.
+.decl cut(a: Axis, col: Color)
+cut(A, Col) :- uniform(A, L, Col), !unflanked(A, L, Col).
+
+// --- $BgSeparatorColor ---
+
+// The axes whose cutting lines give the background.
+.decl sep_axis(x: PanelAxis, a: Axis)
+
+// @claim background
+.init separator_color = Unanimous<PanelAxis, Color>
+separator_color.item(X, Col) :- sep_axis(X, A), cut(A, Col).
+
+bg($BgSeparatorColor(), X, Col) :- separator_color.value(X, Col).
+
+// --- $BgSeparatorColor & $SourceAxis ---
+
+sep_axis($SourceAxis(), A) :- params.source_dir(D), axis_of(D, A).
+
+// --- $BgSeparatorColor & $AxisFromSeparators ---
+
+sep_axis($AxisFromSeparators(), A) :- axis_elem(A).
+
+// --- $SourceAxis ---
+
+fill_dir(Bg, $SourceAxis(), D, [nil]) :- background_choice(Bg), params.source_dir(D).
+
+// --- $AxisFromSeparators ---
+
+// @claim separator-columns
+.init cut_axis = Unanimous<Background, Axis>
+cut_axis.item(Bg, A) :- bg(Bg, $AxisFromSeparators(), Col), cut(A, Col).
+
+fill_dir(Bg, $AxisFromSeparators(), D, [nil]) :-
+    cut_axis.value(Bg, A), params.source_dir(D), axis_of(D, A).
+fill_dir(Bg, $AxisFromSeparators(), D, [[D]]) :-
+    cut_axis.value(Bg, A), params.cross_source_dir(D), axis_of(D, A).
+
+// --- $Runs ---
+
+// A panel is a maximal run of lines that are not full background lines.
+// @claim separator-columns
+.init runs = Components<Site>
+runs.node([$Runs(), Bg, X, D], L) :-
+    fill_dir(Bg, X, D, _), axis_of(D, A), on_line(A, _, L),
+    bg(Bg, X, Col), !uniform(A, L, Col).
+
+panel(K, M, L) :- runs.label(K, L, M).
+
+// --- $ColorSpan ---
+
+// The lines each ink color reaches.
+// @claim separator-columns
+.init span = Bbox<SiteInk>
+span.cell([[$ColorSpan(), Bg, X, D], Col], L) :-
+    fill_dir(Bg, X, D, _), axis_of(D, A), on_line(A, P, L),
+    in(P, Col), !bg(Bg, X, Col).
+
+// @claim separator-columns
+.init color_id = IdentOf<Color>
+color_id.value(Col) :- in(_, Col).
+
+// A panel is the full lines from the first to the last line its color reaches.
+panel([$ColorSpan(), Bg, X, D], M, L) :-
+    span.box([[$ColorSpan(), Bg, X, D], Col], B), color_id.id(Col, M),
+    axis_of(D, A), on_line(A, _, L), inside(L, B).
+
+// --- $WrapFirst ---
+
+source($WrapFirst(), K, M, M2) :- order.last(K, M), order.first(K, M2).
+
+// --- $WrapTwoBack ---
+
+source($WrapTwoBack(), K, M, M0) :-
+    order.last(K, M), order.next(K, M1, M), order.next(K, M0, M1).

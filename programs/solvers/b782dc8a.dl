@@ -1,0 +1,222 @@
+// b782dc8a
+// @draft
+// @keywords: flood parity
+// @scene maze: every cell is params.wall or params.bg, apart from the seed cells
+// @scene seed: the seed is a few cells of two colors, neither of them
+//  params.wall or params.bg: one cell of the first color, and each of its
+//  4-neighbors that is not params.wall, in the second color
+// @scene seed-checkerboard: two seed cells have the same color exactly when
+//  their row+column sums have the same parity
+// @rule flood-seed-region: the seed cells are the cells of neither params.wall
+//  nor params.bg that touch another such cell; each params.bg cell that a
+//  4-adjacent walk through params.bg cells joins to a seed cell takes the color
+//  of the seed cells whose row+column parity is its own
+// @rule rest-unchanged: every other cell keeps its input color
+
+// which cells a walk step joins
+.type Adjacency =
+    // @claim flood-seed-region
+    Flood4 {}
+    // @rule flood-seed-region: the walk also steps between diagonal neighbors;
+    //  undefined where the concept is
+    // @witness diagonal-corner: borderline concept
+  | Flood8 {}
+
+// which color a flooded cell takes
+.type Paint =
+    // @claim flood-seed-region
+    SeedParity {}
+    // @scene seed-checkerboard: the seed holds two colors
+    // @rule flood-seed-region: a flooded cell takes, from each seed cell
+    //  nearest to it by a walk, that cell's color at an even distance and the
+    //  seed's other color at an odd one; undefined where the seed has other
+    //  than two colors, or where two nearest seed cells disagree
+    // @witness uneven-seed: foreign $PathParity
+    //     @relaxed seed
+    //     @relaxed seed-checkerboard
+  | PathParity {}
+    // @scene seed-checkerboard: one seed cell, the center, has each of its
+    //  4-neighbors that is not params.wall in the other seed color
+    // @rule flood-seed-region: a flooded cell of the center's row+column parity
+    //  takes the center's color, and every other flooded cell the other seed
+    //  color; undefined where the seed has no center, or more than one, or
+    //  other than two colors
+    // @witness uneven-seed: foreign $PathParity
+  | CenterParity {}
+
+// which cells the walk passes through and paints
+.type Passable =
+    // @claim flood-seed-region
+    PassBackground {}
+    // @rule flood-seed-region: the walk passes through, and paints, every cell
+    //  outside the seed that is not params.wall; undefined where the concept is
+    // @witness stray-color: borderline any
+    //     @relaxed maze
+  | PassNonWall {}
+
+// which seed cells give a flooded cell its colors
+.type Scope =
+    // @claim flood-seed-region
+    OneSeed {}
+    // @rule flood-seed-region: each corridor system that holds seed cells is
+    //  painted from its own seed cells; undefined where one system's seed cells
+    //  put two colors on one parity class
+    // @witness two-seeds: variant $PerSeed
+    //     @relaxed seed
+  | PerSeed {}
+
+.type Choice = [adj: Adjacency, paint: Paint, pass: Passable, scope: Scope]
+
+// A flood and the seed cells that paint it.
+.type Reading = [adj: Adjacency, pass: Passable, scope: Scope]
+
+.type ReadingCell = [r: Reading, p: Position]
+
+// A cell, and the seed color a walk gives it there.
+.type Phase = [p: Position, c: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    // @derive DominantColor: variant derived
+    // @ignore: derive $PassNonWall — fails train1, whose tie makes 0 a wall
+    //  too, so the walk passes through no cell
+    // @ignore: derive $CenterParity — fails train1, whose tie makes 0 a wall
+    //  too, so the arm at (9,5) is a second center
+    .decl wall(c: Color) wall(8).
+}
+
+.init params = Params
+
+.decl paint_choice(pt: Paint)
+paint_choice($SeedParity()). paint_choice($PathParity()). paint_choice($CenterParity()).
+
+.decl passable_choice(s: Passable)
+passable_choice($PassBackground()). passable_choice($PassNonWall()).
+
+.decl scope_choice(sc: Scope)
+scope_choice($OneSeed()). scope_choice($PerSeed()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([$Flood4(), Pt, Ps, Sc]) :- paint_choice(Pt), passable_choice(Ps), scope_choice(Sc).
+impl_choice([$Flood8(), Pt, Ps, Sc]) :-
+    paint_choice(Pt), Pt != $PathParity(), passable_choice(Ps), scope_choice(Sc).
+
+// Cells of neither the wall nor the background color.
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col), !params.wall(Col).
+
+// The seed: ink cells that touch another ink cell.
+.decl seed(p: Position, col: Color)
+seed(P, Col) :- ink(P, Col), dir_elem(D), neighbor(P, D, Q), ink(Q, _).
+
+// The cells a walk passes through and paints.
+.decl passable(s: Passable, p: Position)
+
+// A cell reached from the seed, with the corridor system it lies in.
+.decl system(a: Adjacency, s: Passable, p: Position, id: Ident)
+
+// The steps of a walk.
+.decl walk_step(a: Adjacency, v: Offset)
+
+// Two cells share a row+column parity when a chain of two-step walks joins
+// them.
+.init parity = Canon<Position>
+parity.edge(P, R) :-
+    in(P, _), dir_elem(D1), neighbor(P, D1, Q), dir_elem(D2), neighbor(Q, D2, R), in(R, _).
+
+// The seed cells whose colors paint flooded cell P.
+.decl scope_seed(r: Reading, p: Position, s: Position)
+
+.decl scope_color(r: Reading, p: Position, col: Color)
+scope_color(R, P, Col) :- scope_seed(R, P, S), seed(S, Col).
+
+// The color flooded cell P takes.
+.decl paint(pt: Paint, r: Reading, p: Position, col: Color)
+
+.decl painted(a: Adjacency, s: Passable, p: Position)
+painted(A, Ps, P) :- system(A, Ps, P, _), passable(Ps, P).
+
+out(P, Col, [A, Pt, Ps, Sc]) :-
+    impl_choice([A, Pt, Ps, Sc]),
+    ( painted(A, Ps, P), paint(Pt, [A, Ps, Sc], P, Col)
+    ; in(P, Col), !painted(A, Ps, P) ).
+
+// --- $PassBackground ---
+passable($PassBackground(), P) :- in(P, Col), params.bg(Col).
+
+// --- $PassNonWall ---
+passable($PassNonWall(), P) :- in(P, Col), !params.wall(Col), !seed(P, _).
+
+// --- $Flood4 ---
+// @claim flood-seed-region
+.init flood4 = Reach<Passable>
+flood4.node(Ps, P) :- passable(Ps, P).
+flood4.node(Ps, P) :- passable_choice(Ps), seed(P, _).
+flood4.seed(Ps, P) :- passable_choice(Ps), seed(P, _).
+
+system($Flood4(), Ps, P, Id) :- flood4.reach(Ps, P), flood4.label(Ps, P, Id).
+walk_step($Flood4(), V) :- flood4.step(V).
+
+// --- $Flood8 ---
+// @claim flood-seed-region
+.init flood8 = Reach<Passable>
+flood8.step(V) :- diag_dir_elem(D), step_offset(D, V).
+flood8.node(Ps, P) :- passable(Ps, P).
+flood8.node(Ps, P) :- passable_choice(Ps), seed(P, _).
+flood8.seed(Ps, P) :- passable_choice(Ps), seed(P, _).
+
+system($Flood8(), Ps, P, Id) :- flood8.reach(Ps, P), flood8.label(Ps, P, Id).
+walk_step($Flood8(), V) :- flood8.step(V).
+
+// --- $OneSeed ---
+scope_seed([A, Ps, $OneSeed()], P, S) :- system(A, Ps, P, _), seed(S, _).
+
+// --- $PerSeed ---
+scope_seed([A, Ps, $PerSeed()], P, S) :- system(A, Ps, P, Id), seed(S, _), system(A, Ps, S, Id).
+
+// --- $SeedParity ---
+// @claim flood-seed-region
+.init class_paint = Unanimous<ReadingCell, Color>
+class_paint.item([R, P], Col) :-
+    scope_seed(R, P, S), seed(S, Col), parity.id(P, K), parity.id(S, K).
+
+paint($SeedParity(), R, P, Col) :- class_paint.value([R, P], Col).
+
+// --- $PathParity ---
+// Each step of a walk from a seed cell changes the seed color it gives.
+// @claim flood-seed-region
+.init walk = GraphDistance<Reading, Phase>
+walk.seed([A, Ps, Sc], [S, Col]) :- impl_choice([A, $PathParity(), Ps, Sc]), seed(S, Col).
+walk.edge([A, Ps, Sc], [P, Col], [Q, Col2]) :-
+    scope_color([A, Ps, Sc], P, Col), scope_color([A, Ps, Sc], P, Col2), Col != Col2,
+    walk_step(A, V), compose(P, V, Q), system(A, Ps, Q, _).
+
+// The colors of the walks that reach P in the fewest steps.
+// @claim flood-seed-region
+.init nearest = ArgExtremes<ReadingCell, Color>
+nearest.cand([R, P], Col, N) :- walk.distance(R, [P, Col], N).
+
+paint($PathParity(), R, P, Col) :- nearest.low([R, P], Col, _).
+
+// --- $CenterParity ---
+// Q is a 4-neighbor of seed cell S in another seed color.
+.decl arm(s: Position, q: Position)
+arm(S, Q) :- seed(S, Col), dir_elem(D), neighbor(S, D, Q), seed(Q, Col2), Col2 != Col.
+
+// Some 4-neighbor of S that is not a wall cell is not an arm of S.
+.decl off_center(s: Position)
+off_center(S) :-
+    seed(S, _), dir_elem(D), neighbor(S, D, Q), in(Q, Col), !params.wall(Col), !arm(S, Q).
+
+.decl center_of(r: Reading, p: Position, s: Position)
+center_of(R, P, S) :- scope_seed(R, P, S), !off_center(S).
+
+.decl two_centers(r: Reading, p: Position)
+two_centers(R, P) :- center_of(R, P, S1), center_of(R, P, S2), S1 != S2.
+
+paint($CenterParity(), R, P, Col) :-
+    center_of(R, P, S), !two_centers(R, P), seed(S, Col_c), parity.id(P, K),
+    ( parity.id(S, K), Col = Col_c                                 // the center's parity
+    ; !parity.id(S, K), scope_color(R, P, Col), Col != Col_c ).    // the other seed color

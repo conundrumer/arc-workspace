@@ -1,0 +1,399 @@
+// c4d067a0
+// @draft
+// @keywords: objects scale match
+// @scene background: one color fills most of the grid; it is the commonest
+//  color of the input
+// @scene key-lattice: the key is a set of single cells of non-background
+//  colors, on a lattice of pitch params.key_pitch along each axis, with a
+//  background cell between neighboring dots; a lattice point inside the key's
+//  bounding box can hold the background color
+// @scene given-blocks: two solid squares of one size k (k at least 2), each
+//  of a non-background color, lie on one line along the horizontal axis, with
+//  the same gap g between neighbors
+// @scene blocks-match-key: the given blocks are the large drawing of a run of
+//  neighboring key dots, block for dot and color for color, and exactly one
+//  such run of the key matches them
+// @scene fits-grid: the large drawing of the whole key, placed by that match,
+//  lies inside the grid
+// @rule enlarge-key: each key dot of a non-background color becomes a k×k
+//  block of that color, and key dots one lattice step apart become blocks at
+//  a pitch of k+g along either axis, with the gap g read from the given
+//  blocks used on both axes
+// @rule anchor-by-match: the large drawing is placed so that the blocks of
+//  the matched run land on the given blocks
+// @rule background-dot-empty: a key point of the background color gives no
+//  block
+// @rule keep-input: every other cell keeps its input color, the key and the
+//  given blocks included
+
+// where the key's lattice pitch comes from
+.type KeyPitch =
+    // @claim key-lattice
+    StoredPitch {}
+    // @scene key-lattice: the key is a set of single cells of non-background
+    //  colors on a lattice whose pitch is the greatest common divisor of the
+    //  dots' row and column offsets; undefined where the key has one dot
+    // @witness key-pitch-three: variant $KeyPitchFromKey
+    //     @relaxed key-lattice
+  | KeyPitchFromKey {}
+
+// which color is the background
+.type Background =
+    // @claim background
+    Commonest {}
+    // @scene background: one color fills most of the grid; it is the color
+    //  the four grid corners share; undefined where the corners differ
+    // @witness block-at-grid-corner: borderline concept
+    // @witness corner-dots: borderline concept
+    //     @relaxed key-lattice
+  | BackgroundAtCorners {}
+
+// how far apart in the key the dots of the given blocks stand
+.type Spacing =
+    // @claim blocks-match-key
+    NeighborRun {}
+    // @scene blocks-match-key: the given blocks are the large drawing of two
+    //  key dots m lattice steps apart along the blocks' line, block for dot
+    //  and color for color, with the drawing's pitch the distance between the
+    //  blocks over m and a gap of at least one cell
+    // @witness blocks-skip-a-dot: borderline $JointPitchMatch
+    //     @relaxed blocks-match-key
+  | JointPitchMatch {}
+
+// what the output is where more than one run matches
+.type Matching =
+    // @claim anchor-by-match
+    UniqueMatch {}
+    // @rule anchor-by-match: each run that matches the given blocks places
+    //  one drawing, and the output holds a grid for each
+    // @witness two-matching-runs: borderline $EveryMatch
+    //     @relaxed blocks-match-key
+  | EveryMatch {}
+
+// what the drawing writes over
+.type Overlap =
+    // @claim enlarge-key background-dot-empty
+    PaintOver {}
+    // @rule background-dot-empty: a key point of the background color gives a
+    //  block of the background color
+    // @witness drawing-covers-key: foreign concept
+  | BackgroundBlocks {}
+    // @rule enlarge-key: the drawing writes only on cells of the background
+    //  color
+    // @witness drawing-covers-key: foreign concept
+  | UnderlayDrawing {}
+
+// what happens where the drawing runs past the grid
+.type Edge =
+    // @claim enlarge-key
+    Clip {}
+    // @rule enlarge-key: a drawing that runs past the grid gives no grid
+    // @witness drawing-off-grid: borderline concept
+    //     @relaxed fits-grid
+  | NoClip {}
+
+.type Choice = [pitch: KeyPitch, background: Background, spacing: Spacing, matching: Matching,
+                overlap: Overlap, edge: Edge]
+
+// The placement a grid is drawn by: the anchor block, the key dot drawn on
+// it, the drawing's pitch, and the key lattice's pitch.
+.type TiebreakResolution = Run {a: Box, q: Position, step: number, pitch: number}
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {
+    // --- $StoredPitch ---
+    // The distance between neighboring lattice points of the key.
+    // @derive TileDim: variant derived
+    //     @relaxed key-lattice
+    .decl key_pitch(n: number) key_pitch(2).
+}
+
+.init params = Params
+
+.decl key_pitch_choice(kp: KeyPitch)
+key_pitch_choice($StoredPitch()). key_pitch_choice($KeyPitchFromKey()).
+
+.decl background_choice(b: Background)
+background_choice($Commonest()). background_choice($BackgroundAtCorners()).
+
+.decl spacing_choice(s: Spacing)
+spacing_choice($NeighborRun()). spacing_choice($JointPitchMatch()).
+
+.decl matching_choice(m: Matching)
+matching_choice($UniqueMatch()). matching_choice($EveryMatch()).
+
+.decl overlap_choice(o: Overlap)
+overlap_choice($PaintOver()). overlap_choice($BackgroundBlocks()). overlap_choice($UnderlayDrawing()).
+
+// Under one match, the drawing that runs past the grid is undefined or the
+// clipped one, so $NoClip is a case only beside $EveryMatch.
+.decl impl_choice(ch: Choice)
+impl_choice([Kp, B, Sp, Mt, Ow, $Clip()]) :-
+    key_pitch_choice(Kp), background_choice(B), spacing_choice(Sp), matching_choice(Mt),
+    overlap_choice(Ow).
+impl_choice([Kp, B, Sp, $EveryMatch(), Ow, $NoClip()]) :-
+    key_pitch_choice(Kp), background_choice(B), spacing_choice(Sp), overlap_choice(Ow).
+
+// The key dots and the given blocks under each background reading.
+.comp Parse<Key> {
+    .type Piece = [k: Key, col: Color]
+    .type PieceId = [k: Key, id: Ident]
+
+    .decl cell(key: Key, p: Position, col: Color)  // @input
+    .decl bg(key: Key, col: Color)  // @input
+
+    // @claim background
+    .init color_count = Mode<Key, Color, Position>
+    color_count.item(K, Col, P) :- cell(K, P, Col).
+
+    // The one-color pieces of the grid.
+    // @claim key-lattice given-blocks
+    .init piece = Components<Piece>
+    piece.node([K, Col], P) :- cell(K, P, Col).
+
+    // @claim key-lattice given-blocks
+    .init piece_box = Bbox<PieceId>
+    piece_box.cell([K, Id], P) :- piece.label([K, _], P, Id).
+
+    // A single cell of a non-background color.
+    .decl key_dot(key: Key, q: Position, col: Color)
+    key_dot(K, Q, Col) :-
+        piece.label([K, Col], Q, Id), piece_box.box([K, Id], Q), bg(K, C_bg), Col != C_bg.
+
+    // A square of side N of a non-background color, that is not a single cell.
+    .decl block(key: Key, id: Ident, col: Color, box: Box, n: number)
+    block(K, Id, Col, Box, N) :-
+        piece.label([K, Col], P, Id), piece_box.box([K, Id], Box), Box != P, bg(K, C_bg), Col != C_bg,
+        axis_elem(A), perp(A, A2), box_extent(Box, P, A, N), box_extent(Box, P, A2, N).
+
+    // The distance between two key dots along an axis, where they differ on it.
+    .decl key_offset(key: Key, t: number)
+    key_offset(K, T) :-
+        key_dot(K, Q1, _), key_dot(K, Q2, _), relative(Q1, Q2, R),
+        dir_elem(D), opposite(D, O), dist(R, O, T), T > 0.
+
+    // A pitch shorter than the grid, where the key has two dots.
+    .decl pitch_cand(key: Key, n: number)
+    pitch_cand(K, N) :- key_offset(K, _), key_dot(K, Q, _), axis_elem(A), sub_extent(Q, A, N).
+
+    // A pitch that some key offset is not a multiple of.
+    .decl off_pitch(key: Key, n: number)
+    off_pitch(K, N) :- pitch_cand(K, N), key_offset(K, T), stride(T, N, 0, _, R), R > 0.
+
+    // The greatest pitch that divides every key offset.
+    // @claim key-lattice
+    .init key_lattice = Extremes<Key>
+    key_lattice.cand(K, N) :- pitch_cand(K, N), !off_pitch(K, N).
+}
+
+.init parse = Parse<Background>
+parse.cell(B, P, Col) :- background_choice(B), in(P, Col).
+parse.bg(B, Col) :- bg(B, Col).
+
+// --- background ---
+
+.decl bg(b: Background, col: Color)
+
+// --- $Commonest ---
+
+bg($Commonest(), Col) :- parse.color_count.mode($Commonest(), Col).
+
+// --- $BackgroundAtCorners ---
+
+// @claim background
+.init corner_color = Unanimous<Unit, Color>
+corner_color.item($U(), Col) :- in(P, Col), diag_dir_elem(D), box_corner(P, ZERO, D).
+
+bg($BackgroundAtCorners(), Col) :- corner_color.value($U(), Col).
+
+// --- objects ---
+
+// Block Id2 is block Id1 moved S cells toward D.
+.decl block_pair(b: Background, id1: Ident, id2: Ident, d: Dir, s: number)
+block_pair(B, Id1, Id2, D, S) :-
+    parse.block(B, Id1, _, B1, K), parse.block(B, Id2, _, B2, K), Id1 != Id2,
+    relative(B1, B2, V), dir_elem(D), opposite(D, O), dist(V, O, S), S > 0, jump(B1, D, S, B2).
+
+// --- key pitch ---
+
+.decl pitch(kp: KeyPitch, b: Background, n: number)
+
+// --- $StoredPitch ---
+
+pitch($StoredPitch(), B, N) :- background_choice(B), params.key_pitch(N).
+
+// --- $KeyPitchFromKey ---
+
+pitch($KeyPitchFromKey(), B, N) :- parse.key_lattice.high(B, N).
+
+// --- runs ---
+
+// Block Id1 receives key dot Q1 on the key lattice of pitch N, and the
+// drawing's blocks stand S cells apart.
+.decl run_match(kp: KeyPitch, b: Background, sp: Spacing, id1: Ident, q1: Position, s: number,
+                n: number)
+
+// --- $NeighborRun ---
+
+run_match(Kp, B, $NeighborRun(), Id1, Q1, S, N) :-
+    block_pair(B, Id1, Id2, D, S), parse.block(B, Id1, C1, _, _), parse.block(B, Id2, C2, _, _),
+    pitch(Kp, B, N), parse.key_dot(B, Q1, C1), jump(Q1, D, N, Q2), parse.key_dot(B, Q2, C2).
+
+// --- $JointPitchMatch ---
+
+run_match(Kp, B, $JointPitchMatch(), Id1, Q1, S2, N) :-
+    block_pair(B, Id1, Id2, D, S), parse.block(B, Id1, C1, _, K), parse.block(B, Id2, C2, _, _),
+    pitch(Kp, B, N), parse.key_dot(B, Q1, C1), parse.key_dot(B, Q2, C2),
+    relative(Q1, Q2, R), opposite(D, O), dist(R, O, T), jump(Q1, D, T, Q2),
+    stride(T, N, 0, M, 0), M > 0,                          // M lattice steps apart
+    axis_of(D, A), sub_extent(Q1, A, S2), stride(S, S2, 0, M, 0), S2 > K.
+
+// --- placements ---
+
+// The drawing that puts key dot Q on block box A, with blocks of side K at
+// pitch S, for the key lattice of pitch N.
+.decl placement(kp: KeyPitch, b: Background, sp: Spacing, a: Box, q: Position, s: number, n: number,
+                k: number)
+placement(Kp, B, Sp, A, Q, S, N, K) :-
+    run_match(Kp, B, Sp, Id, Q, S, N), parse.block(B, Id, _, A, K).
+
+// Some given block receives two different key dots.
+.decl ambiguous(kp: KeyPitch, b: Background, sp: Spacing)
+ambiguous(Kp, B, Sp) :-
+    run_match(Kp, B, Sp, Id, Q1, _, _), run_match(Kp, B, Sp, Id, Q2, _, _), Q1 != Q2.
+
+// --- drawing ---
+
+// The grid's cells, and the cells just past its edges.
+.decl frame_cell(x: Position)
+frame_cell(X) :- in(X, _).
+frame_cell(X) :- in(P, _), dir_elem(D), dist(P, D, 0), neighbor(P, D, X).
+
+// Cell X lies in the block N steps of pitch S from anchor block A toward D.
+.decl block_slot(kp: KeyPitch, b: Background, sp: Spacing, a: Box, q0: Position, s: number,
+                 pitch: number, x: Position, d: Dir, n: number)
+block_slot(Kp, B, Sp, A, Q0, S, L, X, D, N) :-
+    placement(Kp, B, Sp, A, Q0, S, L, K), frame_cell(X), relative(A, X, R),
+    dir_elem(D), opposite(D, O), dist(R, O, T),          // T, cells past A's far edge from D
+    stride(T, S, 0, N, I), I < K.
+
+// A key point, with the color whose block the drawing holds.
+.decl key_point(b: Background, o: Overlap, q: Position, col: Color)
+
+// Key point Q lies N lattice steps from key dot Q0 toward D.
+.decl key_slot(kp: KeyPitch, b: Background, sp: Spacing, o: Overlap, a: Box, q0: Position,
+               s: number, pitch: number, q: Position, d: Dir, n: number)
+key_slot(Kp, B, Sp, Ow, A, Q0, S, L, Q, D, N) :-
+    placement(Kp, B, Sp, A, Q0, S, L, _), key_point(B, Ow, Q, _),
+    relative(Q0, Q, R), dir_elem(D), opposite(D, O), dist(R, O, T), stride(T, L, 0, N, 0).
+
+// Cell X lies in the block of key point Q under the placement (A, Q0, S, L).
+.decl drawn(kp: KeyPitch, b: Background, sp: Spacing, o: Overlap, a: Box, q0: Position, s: number,
+            pitch: number, x: Position, q: Position)
+drawn(Kp, B, Sp, Ow, A, Q0, S, L, X, Q) :-
+    block_slot(Kp, B, Sp, A, Q0, S, L, X, D1, N1), key_slot(Kp, B, Sp, Ow, A, Q0, S, L, Q, D1, N1),
+    block_slot(Kp, B, Sp, A, Q0, S, L, X, D2, N2), key_slot(Kp, B, Sp, Ow, A, Q0, S, L, Q, D2, N2),
+    axis_of(D1, A1), axis_of(D2, A2), perp(A1, A2).
+
+// Grid cell X takes the drawing's color.
+.decl writable(b: Background, o: Overlap, x: Position)
+
+// The color the drawing gives grid cell X.
+.decl paint(kp: KeyPitch, b: Background, sp: Spacing, o: Overlap, a: Box, q0: Position, s: number,
+            pitch: number, x: Position, col: Color)
+paint(Kp, B, Sp, Ow, A, Q0, S, L, X, Col) :-
+    drawn(Kp, B, Sp, Ow, A, Q0, S, L, X, Q), key_point(B, Ow, Q, Col), writable(B, Ow, X).
+
+// --- $PaintOver, $UnderlayDrawing ---
+
+key_point(B, Ow, Q, Col) :- overlap_choice(Ow), Ow != $BackgroundBlocks(), parse.key_dot(B, Q, Col).
+
+// --- $PaintOver ---
+
+writable(B, $PaintOver(), X) :- background_choice(B), in(X, _).
+
+// --- $BackgroundBlocks ---
+
+writable(B, $BackgroundBlocks(), X) :- background_choice(B), in(X, _).
+
+// @claim background-dot-empty
+.init key_box = Bbox<Background>
+key_box.cell(B, Q) :- parse.key_dot(B, Q, _).
+
+key_point(B, $BackgroundBlocks(), Q, Col) :- key_box.box(B, Box), in(Q, Col), inside(Q, Box).
+
+// --- $UnderlayDrawing ---
+
+writable(B, $UnderlayDrawing(), X) :- in(X, C_bg), bg(B, C_bg).
+
+// --- matching ---
+
+// A placement the matching reading draws.
+.decl admitted(kp: KeyPitch, b: Background, sp: Spacing, mt: Matching, a: Box, q0: Position,
+               s: number, pitch: number)
+
+// --- $UniqueMatch ---
+
+admitted(Kp, B, Sp, $UniqueMatch(), A, Q0, S, L) :-
+    placement(Kp, B, Sp, A, Q0, S, L, _), !ambiguous(Kp, B, Sp).
+
+// --- $EveryMatch ---
+
+admitted(Kp, B, Sp, $EveryMatch(), A, Q0, S, L) :- placement(Kp, B, Sp, A, Q0, S, L, _).
+
+// --- edge ---
+
+// A placement each case draws.
+.decl kept(ch: Choice, a: Box, q0: Position, s: number, pitch: number)
+
+// --- $Clip ---
+
+kept([Kp, B, Sp, Mt, Ow, $Clip()], A, Q0, S, L) :-
+    impl_choice([Kp, B, Sp, Mt, Ow, $Clip()]), admitted(Kp, B, Sp, Mt, A, Q0, S, L).
+
+// --- $NoClip ---
+
+// Key point Q has a place on the drawing's lattice.
+.decl on_lattice(kp: KeyPitch, b: Background, sp: Spacing, o: Overlap, a: Box, q0: Position,
+                 s: number, pitch: number, q: Position)
+on_lattice(Kp, B, Sp, Ow, A, Q0, S, L, Q) :-
+    key_slot(Kp, B, Sp, Ow, A, Q0, S, L, Q, D1, _), key_slot(Kp, B, Sp, Ow, A, Q0, S, L, Q, D2, _),
+    axis_of(D1, A1), axis_of(D2, A2), perp(A1, A2).
+
+// Key point Q's block holds a grid cell.
+.decl on_grid(kp: KeyPitch, b: Background, sp: Spacing, o: Overlap, a: Box, q0: Position,
+              s: number, pitch: number, q: Position)
+on_grid(Kp, B, Sp, Ow, A, Q0, S, L, Q) :- drawn(Kp, B, Sp, Ow, A, Q0, S, L, X, Q), in(X, _).
+
+// Some block of the drawing runs past the grid: it holds a cell past the
+// grid's edge, or no grid cell.
+.decl runs_off(kp: KeyPitch, b: Background, sp: Spacing, o: Overlap, a: Box, q0: Position,
+               s: number, pitch: number)
+runs_off(Kp, B, Sp, Ow, A, Q0, S, L) :- drawn(Kp, B, Sp, Ow, A, Q0, S, L, X, _), !in(X, _).
+runs_off(Kp, B, Sp, Ow, A, Q0, S, L) :-
+    on_lattice(Kp, B, Sp, Ow, A, Q0, S, L, Q), !on_grid(Kp, B, Sp, Ow, A, Q0, S, L, Q).
+
+kept([Kp, B, Sp, Mt, Ow, $NoClip()], A, Q0, S, L) :-
+    impl_choice([Kp, B, Sp, Mt, Ow, $NoClip()]), admitted(Kp, B, Sp, Mt, A, Q0, S, L),
+    !runs_off(Kp, B, Sp, Ow, A, Q0, S, L).
+
+// --- output ---
+
+out(X, Col, [Kp, B, Sp, Mt, Ow, Eg], $Run(A, Q0, S, L)) :-
+    kept([Kp, B, Sp, Mt, Ow, Eg], A, Q0, S, L), paint(Kp, B, Sp, Ow, A, Q0, S, L, X, Col).
+out(X, Col, [Kp, B, Sp, Mt, Ow, Eg], $Run(A, Q0, S, L)) :-
+    kept([Kp, B, Sp, Mt, Ow, Eg], A, Q0, S, L), in(X, Col), !paint(Kp, B, Sp, Ow, A, Q0, S, L, X, _).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+    ex.bg(E, Col) :- ex.color_count.mode(E, Col).
+
+    // A pitch of some input's key lattice that another input's lacks.
+    .decl split_pitch(n: number)
+    split_pitch(N) :- ex.key_lattice.high(_, N), ex_in(E, _, _), !ex.key_lattice.high(E, N).
+
+    .decl key_pitch(n: number)
+    key_pitch(N) :- ex.key_lattice.high(_, N), !split_pitch(N).
+}

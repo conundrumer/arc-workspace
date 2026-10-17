@@ -1,0 +1,269 @@
+// b4a43f3b
+// @draft
+// @keywords: decompose crop scale tile-arrangement stamp
+// @scene two-halves: the input is two equal halves on one axis, on each side
+//  of its middle line, and that line is a full line of 5
+// @scene scaled-picture: the half on params.pattern_side is a picture scaled
+//  up by params.pattern_scale, so each picture cell is a block of one color,
+//  params.background included, params.pattern_scale cells on a side
+// @scene mask: the other half is a mask: cells of 2 on params.background, one
+//  input cell per mask cell
+// @scene half-extent: each half is 6×6, so the picture is 6 /
+//  params.pattern_scale on a side
+// @rule picture-down: the picture is the half on params.pattern_side, read at
+//  one cell per block of params.pattern_scale cells on a side
+// @rule output-size: the output is the mask's extent times the picture's
+//  extent on each axis
+// @rule stamp-at-marks: the output is cut into a tile per mask cell, each the
+//  size of the picture; the tile of a marked mask cell holds the picture, and
+//  the tile of an unmarked mask cell is params.background
+
+// which half holds the picture
+.type Side =
+    // @claim picture-down
+    StoredSide {}
+    // @rule picture-down: of the two halves along params.halves_axis, the
+    //  picture is the one in blocks of one color, more than one cell each, and
+    //  the mask is the other; undefined where both halves or neither half is
+    //  in blocks
+    // @witness picture-below: variant $PictureByBlocks
+    //     @relaxed scaled-picture
+    // @witness mask-in-blocks: borderline concept
+  | PictureByBlocks {}
+    // @rule picture-down: of the two halves along params.halves_axis, the
+    //  mask is the one whose non-background cells have one color, and the
+    //  picture is the other; undefined where both halves or neither half has
+    //  one color
+    // @witness picture-below: variant $PictureByColors
+  | PictureByColors {}
+
+// what fixes the block side the picture is read at
+.type Scale =
+    // @claim picture-down
+    StoredScale {}
+    // @rule picture-down: the block side is the largest side such that the
+    //  picture's half is in aligned square blocks of one color with that side
+    // @witness solid-picture: borderline concept
+  | ScaleFromBlocks {}
+    // @rule picture-down: the picture is params.picture_extent on a side, so a
+    //  block's side is the half's extent over it; undefined where the half's
+    //  extent is not a multiple of it
+    // @witness picture-in-3-blocks: variant $StoredPictureExtent
+    //     @relaxed scaled-picture
+    //     @relaxed half-extent
+  | StoredPictureExtent {}
+
+// which mask cells take a copy of the picture
+.type Mark =
+    // @claim stamp-at-marks
+    NotBackground {}
+    // @rule stamp-at-marks: a mask cell is marked when it is
+    //  params.mask_color
+    // @witness mask-color-4: variant concept
+    //     @relaxed mask
+  | MarkByColor {}
+
+// where the input splits into its halves
+.type Split =
+    // @claim two-halves
+    MiddleLine {}
+    // @scene two-halves: the input is two halves on one axis, on each side of
+    //  the one full line of params.separator_color; undefined where no such
+    //  line or several exist
+    // @witness short-mask: variant $SplitAtSeparator
+    //     @relaxed two-halves
+    //     @relaxed half-extent
+  | SplitAtSeparator {}
+
+.type Choice = [side: Side, scale: Scale, mark: Mark, split: Split]
+
+// A half: the cells toward edge d from the dividing line the split finds.
+.type Half = [sp: Split, d: Dir]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(col: Color) background(0).
+
+    // --- $StoredSide ---
+    // The side of the dividing line that holds the picture; the mask is on the
+    // opposite side.
+    .decl pattern_side(d: Dir) pattern_side(DIR_T).
+
+    // --- $PictureByBlocks, $PictureByColors ---
+    // The axis the two halves lie along.
+    .decl halves_axis(a: Axis) halves_axis(AXIS_V).
+
+    // --- $StoredScale ---
+    // A block's side.
+    // @derive SepTileCount: variant concept
+    .decl pattern_scale(k: number) pattern_scale(2).
+
+    // --- $StoredPictureExtent ---
+    // The picture's side.
+    .decl picture_extent(n: number) picture_extent(3).
+
+    // --- $MarkByColor ---
+    .decl mask_color(col: Color) mask_color(2).
+
+    // --- $SplitAtSeparator ---
+    .decl separator_color(col: Color) separator_color(5).
+}
+
+.init params = Params
+
+.decl side_choice(sd: Side)
+side_choice($StoredSide()). side_choice($PictureByBlocks()). side_choice($PictureByColors()).
+
+.decl scale_choice(sc: Scale)
+scale_choice($StoredScale()). scale_choice($ScaleFromBlocks()). scale_choice($StoredPictureExtent()).
+
+.decl mark_choice(mk: Mark)
+mark_choice($NotBackground()). mark_choice($MarkByColor()).
+
+.decl split_choice(sp: Split)
+split_choice($MiddleLine()). split_choice($SplitAtSeparator()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Sd, Sc, Mk, Sp]) :- side_choice(Sd), scale_choice(Sc), mark_choice(Mk), split_choice(Sp).
+
+// The line, axis-only on a, that divides the input into its halves.
+.decl divider(sp: Split, a: Axis, l: Position)
+
+.decl half_cell(h: Half, p: Position)
+half_cell([Sp, D], P) :- divider(Sp, A, L), axis_of(D, A), in(P, _), nearer(D, P, L).
+
+// @claim two-halves picture-down
+.init half_box = Bbox<Half>
+half_box.cell(H, P) :- half_cell(H, P).
+
+// Each cell of a half, in the half's own frame.
+.decl half_px(h: Half, p_inner: Position, col: Color)
+half_px(H, P_inner, Col) :- half_box.box(H, B), in(P, Col), crop(P, B, P_inner).
+
+// A half cut into square blocks, each a cell q of the picture's frame. The
+// scale reading and its number k name the cut: k is the block side, and under
+// $StoredPictureExtent the picture's side.
+// @ignore: store — stored, the cut covers only halves of the pairs' extent,
+//  and there it is the derived cut: Subsumption
+.decl block(sc: Scale, k: number, h: Half, p_inner: Position, q: Position)
+
+// The cut each scale reading reads the picture at.
+.decl cut(sc: Scale, k: number, h: Half)
+
+// A cut that puts two colors in one block.
+.decl broken(sc: Scale, k: number, h: Half)
+broken(Sc, K, H) :-
+    block(Sc, K, H, P1, Q), half_px(H, P1, C1),
+    block(Sc, K, H, P2, Q), half_px(H, P2, C2), C1 != C2.
+
+// The picture: each block's color, at its cell of the picture's frame.
+.decl picture(sc: Scale, h: Half, q: Position, col: Color)
+picture(Sc, H, Q, Col) :- cut(Sc, K, H), block(Sc, K, H, P, Q), half_px(H, P, Col).
+
+// The picture's half lies toward d, and the mask's half toward the opposite
+// edge.
+.decl picture_side(sd: Side, sc: Scale, sp: Split, d: Dir)
+
+.decl marked(mk: Mark, h: Half, p_inner: Position)
+
+// Each mask cell's tile: the picture where the cell is marked, and
+// params.background where it is not.
+out(P, Col, [Sd, Sc, Mk, Sp]) :-
+    impl_choice([Sd, Sc, Mk, Sp]), picture_side(Sd, Sc, Sp, D), opposite(D, D2),
+    half_px([Sp, D2], M, _), picture(Sc, [Sp, D], Q, Col_pic), concat_2d(M, Q, 0, P),
+    ( marked(Mk, [Sp, D2], M), Col = Col_pic
+    ; !marked(Mk, [Sp, D2], M), params.background(Col)
+    ).
+
+// --- $StoredSide ---
+
+picture_side($StoredSide(), Sc, Sp, D) :-
+    scale_choice(Sc), split_choice(Sp), params.pattern_side(D).
+
+// --- $PictureByBlocks ---
+
+// The half is in blocks of more than one cell, each of one color.
+.decl blocky(sc: Scale, h: Half)
+blocky(Sc, H) :- block(Sc, K, H, P1, Q), block(Sc, K, H, P2, Q), P1 != P2, !broken(Sc, K, H).
+
+picture_side($PictureByBlocks(), Sc, Sp, D) :-
+    params.halves_axis(A), axis_of(D, A), opposite(D, D2),
+    blocky(Sc, [Sp, D]), !blocky(Sc, [Sp, D2]).
+
+// --- $PictureByColors ---
+
+// @claim picture-down
+// The colors of each half's non-background cells.
+// @ignore value: store — stored per half, the value fixes the mask's half by
+//  its edge, and the case is equivalent to $StoredSide: Equivalence
+.init half_ink = Unanimous<Half, Color>
+half_ink.item(H, Col) :- half_px(H, _, Col), !params.background(Col).
+
+picture_side($PictureByColors(), Sc, Sp, D) :-
+    scale_choice(Sc), params.halves_axis(A), axis_of(D, A), opposite(D, D2),
+    half_ink.value([Sp, D2], _), !half_ink.value([Sp, D], _).
+
+// --- $StoredScale ---
+
+block($StoredScale(), K, H, P, Q) :-
+    half_px(H, P, _), params.pattern_scale(K), divide_by_size_2d(P, K, 0, Q, _).
+
+cut($StoredScale(), K, H) :- block($StoredScale(), K, H, _, _).
+
+// --- $ScaleFromBlocks ---
+
+// Each block side the half's extents admit.
+.decl side_cand(h: Half, k: number)
+side_cand(H, K) :-
+    half_px(H, P, _), axis_elem(A),
+    ( sub_extent(P, A, K)
+    ; axis_dim(P, A, K)
+    ).
+
+block($ScaleFromBlocks(), K, H, P, Q) :-
+    side_cand(H, K), half_px(H, P, _), divide_by_size_2d(P, K, 0, Q, _).
+
+// The largest block side whose cut is whole and puts one color in each block.
+// @claim picture-down
+.init sides = Extremes<Half>
+sides.cand(H, K) :- block($ScaleFromBlocks(), K, H, _, _), !broken($ScaleFromBlocks(), K, H).
+
+cut($ScaleFromBlocks(), K, H) :- sides.high(H, K).
+
+// --- $StoredPictureExtent ---
+
+block($StoredPictureExtent(), N, H, P, Q) :-
+    half_px(H, P, _), params.picture_extent(N), divide_2d(P, N, 0, Q, _).
+
+cut($StoredPictureExtent(), N, H) :- block($StoredPictureExtent(), N, H, _, _).
+
+// --- $NotBackground ---
+
+marked($NotBackground(), H, M) :- half_px(H, M, Col), !params.background(Col).
+
+// --- $MarkByColor ---
+
+marked($MarkByColor(), H, M) :- half_px(H, M, Col), params.mask_color(Col).
+
+// --- $MiddleLine ---
+
+divider($MiddleLine(), A, L) :-
+    in(P, _), axis_elem(A), split(P, A, L, _), axis_of(D, A), dist_pair(L, D, K, K).
+
+// --- $SplitAtSeparator ---
+
+// A line across axis a with a cell of another color than the separator's.
+.decl sep_gap(a: Axis, l: Position)
+sep_gap(A, L) :- in(P, Col), !params.separator_color(Col), axis_elem(A), split(P, A, L, _).
+
+.decl sep_line(a: Axis, l: Position)
+sep_line(A, L) :-
+    in(P, Col), params.separator_color(Col), axis_elem(A), split(P, A, L, _), !sep_gap(A, L).
+
+// More than one full separator line.
+.decl sep_extra(a: Axis)
+sep_extra(A) :- sep_line(A, L1), sep_line(A, L2), L1 != L2.
+
+divider($SplitAtSeparator(), A, L) :- sep_line(A, L), !sep_extra(A).

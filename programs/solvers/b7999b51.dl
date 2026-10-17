@@ -1,0 +1,125 @@
+// b7999b51
+// @draft
+// @keywords: color-class bbox rank
+// @scene distinct-extents: no two colors have the same extent on the axis of
+//  params.anchor
+// @rule extent-per-color: each color other than params.background has an
+//  extent, the count of lines on the axis of params.anchor that its cells
+//  span
+// @rule bar-per-color: the output has one line across that axis per color,
+//  and that line holds the color's bar: the color fills its first extent
+//  cells from params.anchor, and params.background fills the rest
+// @rule bars-ordered-by-extent: the bars stand in order of extent, the
+//  longest at params.order_edge and each next one shorter
+// @rule output-size: the output's extent on that axis is the longest bar's
+//  extent, and its extent across that axis is the count of colors
+
+// how bars of one extent are ordered
+.type Choice =
+    // @claim bars-ordered-by-extent
+    TieUndefined {}
+    // @rule bars-ordered-by-extent: the bars stand in order of extent, the
+    //  longest at params.order_edge; bars of one extent stand in order of
+    //  their colors' distance from params.order_edge, then from
+    //  params.anchor, and the model is undefined where both distances tie
+    // @witness tied-extents: borderline any
+    //     @relaxed distinct-extents
+  | TieByPlace {}
+    // @rule bars-ordered-by-extent: the bars stand in order of extent, the
+    //  longest at params.order_edge, and the output holds each order of the
+    //  bars of one extent
+    // @witness tied-extents: borderline any
+  | TieBothOrders {}
+
+.type TiebreakResolution =
+    End {} | Sit {slot: Position, item: Color, rest: TiebreakResolution}
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(0).
+
+    // The edge every bar starts from.
+    .decl anchor(d: Dir) anchor(DIR_T).
+
+    // The edge the longest bar stands at.
+    .decl order_edge(d: Dir) order_edge(DIR_L).
+
+    // The axis the extents are measured on and the bars run along.
+    .decl axis(a: Axis)
+    axis(A) :- anchor(D), axis_of(D, A).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($TieUndefined()). impl_choice($TieByPlace()). impl_choice($TieBothOrders()).
+
+// The bounding box of each color's cells.
+// @claim extent-per-color
+.init color_box = Bbox<Color>
+color_box.cell(Col, P) :- in(P, Col), !params.background(Col).
+
+.decl extent(col: Color, n: number)
+extent(Col, N) :- color_box.box(Col, B), in(P, Col), params.axis(A), box_extent(B, P, A, N).
+
+// @claim output-size
+.init longest = Extremes<Unit>
+longest.cand($U(), N) :- extent(_, N).
+
+// @claim output-size
+.init bar_count = Tally<Unit, Color>
+bar_count.item($U(), Col) :- extent(Col, _).
+
+// @claim output-size
+.init chart = Frame2D<Unit>
+chart.extent($U(), A, N) :- params.axis(A), longest.high($U(), N).
+chart.extent($U(), A2, N) :- params.axis(A), perp(A, A2), bar_count.tally($U(), N).
+
+// The bar line each chart cell lies on.
+.decl slot_of(p: Position, p_slot: Position)
+slot_of(P, P_slot) :- chart.cell($U(), P), params.axis(A), split(P, A, _, P_slot).
+
+// The colors in order of extent, longest first.
+// @claim bars-ordered-by-extent
+.init order = Order<Choice, Color>
+order.elem(Ch, Col) :- impl_choice(Ch), extent(Col, _).
+order.before(Ch, C1, C2) :- impl_choice(Ch), extent(C1, N1), extent(C2, N2), N1 > N2.
+
+// The color each bar line holds, under each resolution of a tie.
+.init ties = TiebreakResolutions<Choice, Position, Color>
+
+out(P, Col, Ch, Res) :-
+    slot_of(P, P_slot), ties.assign(Ch, Res, P_slot, C), extent(C, N),
+    params.anchor(D), dist(P, D, K),
+    ( K < N, Col = C                     // within the bar
+    ; K >= N, params.background(Col) ).  // past the bar's end
+
+// --- $TieUndefined, $TieByPlace ---
+
+// A bar line holds the color whose rank is its distance from the order edge.
+// Where two colors share a rank, a line holds none, and the output is not
+// total.
+ties.cand(Ch, P_slot, C) :-
+    slot_of(_, P_slot), params.order_edge(O), dist(P_slot, O, R),
+    order.rank(Ch, C, R), Ch != $TieBothOrders().
+
+// --- $TieByPlace ---
+
+// The distances of a color's cells from the order edge, then the anchor,
+// break a tie.
+order.before($TieByPlace(), C1, C2) :-
+    extent(C1, N), extent(C2, N), params.order_edge(O),
+    color_box.box(C1, B1), color_box.box(C2, B2), dist(B1, O, K1), dist(B2, O, K2),
+    ( K1 < K2                                                         // nearer the order edge
+    ; K1 = K2, params.anchor(D), dist(B1, D, J1), dist(B2, D, J2), J1 < J2 ).  // as near, nearer the anchor
+
+// --- $TieBothOrders ---
+
+// A bar line holds each color that has no more longer colors than lines
+// before it, and no more shorter colors than lines after it.
+ties.cand($TieBothOrders(), P_slot, C) :-
+    slot_of(_, P_slot), params.order_edge(O), opposite(O, O2),
+    dist(P_slot, O, K1), order.rank($TieBothOrders(), C, R1), R1 <= K1,
+    dist(P_slot, O2, K2), order.rank_desc($TieBothOrders(), C, R2), R2 <= K2.

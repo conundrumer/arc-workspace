@@ -1,0 +1,202 @@
+// b745798f
+// @draft
+// @keywords: objects markers perimeter
+// @scene square-odd-grid: the grid is square, with an odd side, so one middle
+//  row and one middle column split it into four equal quadrants.
+// @scene background-field: every cell outside the pieces is params.background
+//  (8).
+// @scene four-l-pieces: the input holds four pieces, each a one-color
+//  connected set (4-adjacency within its color) of three cells that fill a 2×2
+//  box less one cell; pieces may touch pieces of other colors.
+// @rule piece-to-corner: each piece goes to the grid corner in the direction
+//  its bend cell, the cell of the 2×2 box opposite the missing cell, takes in
+//  its box, and its color is kept.
+// @rule arms-to-middle: at that corner, the piece's color fills the cells of
+//  both grid edges through that corner that lie nearer that corner than the
+//  edge's other end, (side - 1) / 2 cells on each edge of an odd side, so each
+//  arm stops one cell before the middle line.
+// @rule rest-background: every other output cell, the middle row and column
+//  included, is params.background; the output has the input's size.
+
+// how the cells of one piece are gathered
+.type Adjacency =
+    // @claim four-l-pieces
+    Adjacent4 {}
+    // @scene four-l-pieces: the pieces are one-color sets joined by
+    //  8-adjacency, so same-color pieces that touch at a corner are one set,
+    //  which is no piece and is not placed.
+    // @witness diagonal-same-color: ordinary concept
+  | Pieces8Adjacent {}
+
+// which sets are pieces
+.type PieceShape =
+    // @claim four-l-pieces
+    Tromino {}
+    // @scene four-l-pieces: a piece is exactly two edges of its bounding box
+    //  that meet at one corner, the bend, each edge of two or more cells.
+    // @witness longer-arms: variant $PieceAnyL
+    //     @relaxed four-l-pieces
+  | PieceAnyL {}
+
+// how far each arm runs along its edge
+.type ArmExtent =
+    // @claim arms-to-middle
+    ToMiddle {}
+    // @rule arms-to-middle: an arm holds the edge cells with at least one cell
+    //  between them and the cell at the same distance from the edge's other
+    //  end, (side - 1) // 2 cells on each edge, so an even edge keeps two
+    //  middle cells background.
+    // @witness even-side: borderline concept
+    //     @relaxed square-odd-grid
+  | ArmKeepsGap {}
+
+// which edge gives an arm its length
+.type ArmSide =
+    // @claim arms-to-middle
+    PerEdge {}
+    // @rule arms-to-middle: both arms of a piece take the length the shorter
+    //  edge gives: an edge cell is an arm cell when it and the cell at the same
+    //  distance from the corner on the other edge both lie in the arms their
+    //  own edges give.
+    // @witness non-square: borderline concept
+    //     @relaxed square-odd-grid
+  | ArmShortSide {}
+    // @rule arms-to-middle: both arms of a piece take the length the longer
+    //  edge gives: an edge cell is an arm cell when it or the cell at the same
+    //  distance from the corner on the other edge lies in the arm its own edge
+    //  gives; undefined where arms of two colors meet on a cell.
+    // @witness non-square: borderline concept
+  | ArmLongSide {}
+
+.type Choice = [adj: Adjacency, shape: PieceShape, arm: ArmExtent, side: ArmSide]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background-field
+    .decl background(c: Color) background(8).
+}
+
+.init params = Params
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($Adjacent4()). adjacency_choice($Pieces8Adjacent()).
+
+.decl piece_shape_choice(s: PieceShape)
+piece_shape_choice($Tromino()). piece_shape_choice($PieceAnyL()).
+
+.decl arm_extent_choice(r: ArmExtent)
+arm_extent_choice($ToMiddle()). arm_extent_choice($ArmKeepsGap()).
+
+.decl arm_side_choice(s: ArmSide)
+arm_side_choice($PerEdge()). arm_side_choice($ArmShortSide()). arm_side_choice($ArmLongSide()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([A, S, R, D]) :-
+    adjacency_choice(A), piece_shape_choice(S), arm_extent_choice(R), arm_side_choice(D).
+
+// The connected sets of one color, by the adjacency of the case.
+.decl piece(p: Position, col: Color, id: Ident, a: Adjacency)
+
+// A piece cell with piece cells beside it toward both edges of the corner
+// opposite g: a bend at corner g of its box, whose arms run away from g.
+.decl elbow(id: Ident, a: Adjacency, p: Position, col: Color, g: DiagDir)
+elbow(Id, A, P, Col, G) :-
+    piece(P, Col, Id, A), diag_opposite(G, H), diag_dirs(H, _, D1, D2),
+    neighbor(P, D1, Q1), piece(Q1, _, Id, A),     // one arm
+    neighbor(P, D2, Q2), piece(Q2, _, Id, A).     // the other arm
+
+// A piece with its bend at corner g of its box, by the shape test of the case.
+.decl bend(a: Adjacency, s: PieceShape, col: Color, g: DiagDir)
+
+// The cells of the two grid edges through corner g that lie in the arm their
+// own edge gives, by the arm extent of the case.
+.decl edge_arm(p: Position, g: DiagDir, r: ArmExtent)
+
+// The cells of the two grid edges through corner g that the piece bent toward
+// g fills, by the arm extent and the arm side of the case.
+.decl arm_cell(p: Position, g: DiagDir, r: ArmExtent, s: ArmSide)
+
+.decl arm(p: Position, col: Color, ch: Choice)
+arm(P, Col, [A, S, R, D]) :- bend(A, S, Col, G), arm_cell(P, G, R, D).
+
+out(P, Col, Ch) :- arm(P, Col, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, _), params.background(Col), !arm(P, _, Ch).
+
+// --- $Adjacent4 ---
+// @claim four-l-pieces
+.init piece4 = Components<Color>
+piece4.node(Col, P) :- in(P, Col), !params.background(Col).
+
+piece(P, Col, Id, $Adjacent4()) :- piece4.label(Col, P, Id).
+
+// --- $Pieces8Adjacent ---
+// @claim four-l-pieces
+.init piece8 = Components8<Color>
+piece8.node(Col, P) :- in(P, Col), !params.background(Col).
+
+piece(P, Col, Id, $Pieces8Adjacent()) :- piece8.label(Col, P, Id).
+
+// --- $Tromino ---
+// The bend and its two neighbors along the arms.
+.decl tromino_cell(id: Ident, a: Adjacency, g: DiagDir, q: Position)
+tromino_cell(Id, A, G, Q) :-
+    elbow(Id, A, P, _, G),
+    ( Q = P
+    ; diag_opposite(G, H), dir_of(H, _, D), neighbor(P, D, Q)
+    ).
+
+// A piece cell outside those three.
+.decl tromino_stray(id: Ident, a: Adjacency, g: DiagDir)
+tromino_stray(Id, A, G) :- elbow(Id, A, _, _, G), piece(R, _, Id, A), !tromino_cell(Id, A, G, R).
+
+bend(A, $Tromino(), Col, G) :- elbow(Id, A, _, Col, G), !tromino_stray(Id, A, G).
+
+// --- $PieceAnyL ---
+.type Piece = [a: Adjacency, id: Ident]
+
+// @claim four-l-pieces
+.init piece_box = Bbox<Piece>
+piece_box.cell([A, Id], P) :- piece(P, _, Id, A).
+
+// The cells of the two edges of a piece's box that meet at corner g.
+.decl box_l_cell(k: Piece, g: DiagDir, q: Position)
+box_l_cell(K, G, Q) :- piece_box.box(K, B), in(Q, _), dir_of(G, _, D), box_edge(Q, B, D).
+
+// An edge cell outside the piece, or a piece cell off the edges.
+.decl box_l_defect(k: Piece, g: DiagDir)
+box_l_defect([A, Id], G) :- box_l_cell([A, Id], G, Q), !piece(Q, _, Id, A).
+box_l_defect([A, Id], G) :- piece(R, _, Id, A), diag_dir_elem(G), !box_l_cell([A, Id], G, R).
+
+bend(A, $PieceAnyL(), Col, G) :- elbow(Id, A, _, Col, G), !box_l_defect([A, Id], G).
+
+// --- $ToMiddle ---
+// Nearer the corner than the edge's other end.
+edge_arm(P, G, $ToMiddle()) :-
+    in(P, _), diag_dirs(G, _, D_edge, D_end), dist(P, D_edge, 0),
+    dist_pair(P, D_end, K, K2), K < K2.
+
+// --- $ArmKeepsGap ---
+// Nearer the corner than the next cell toward the other end is to that end.
+edge_arm(P, G, $ArmKeepsGap()) :-
+    in(P, _), diag_dirs(G, _, D_edge, D_end), dist(P, D_edge, 0),
+    dist(P, D_end, K), opposite(D_end, D_far),
+    neighbor(P, D_far, Q), dist(Q, D_far, K2), K < K2.
+
+// --- $ArmShortSide, $ArmLongSide ---
+// Cells on the two grid edges through corner g at one distance from it.
+.decl counterpart(p: Position, g: DiagDir, q: Position)
+counterpart(P, G, Q) :-
+    diag_dirs(G, _, D1, D2), in(P, _), dist(P, D1, 0), in(Q, _), dist(Q, D2, 0),
+    corner_dist(P, G, K), corner_dist(Q, G, K).
+
+// --- $PerEdge ---
+arm_cell(P, G, R, $PerEdge()) :- edge_arm(P, G, R).
+
+// --- $ArmShortSide ---
+arm_cell(P, G, R, $ArmShortSide()) :- edge_arm(P, G, R), counterpart(P, G, Q), edge_arm(Q, G, R).
+
+// --- $ArmLongSide ---
+arm_cell(P, G, R, $ArmLongSide()) :-
+    counterpart(P, G, Q), ( edge_arm(P, G, R) ; edge_arm(Q, G, R) ).

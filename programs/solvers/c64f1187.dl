@@ -1,0 +1,546 @@
+// c64f1187
+// @draft
+// @keywords: crop objects markers stamp decompose
+// @scene legend: a row of entries, each a marker cell of its own color with a
+//  shape of params.shape_color drawn in the tile-sized box whose
+//  params.marker_corner corner the marker touches diagonally from outside
+// @scene tile-grid: a rectangular grid of 2 by 2 tiles of params.tile_color,
+//  apart from the legend, with a 1-wide line of background between
+//  neighboring tiles
+// @scene code: a tile holds at most one cell of another color, at its
+//  bottom-right cell, and that color is the color of a legend marker
+// @scene background: every other cell is params.background
+// @rule crop-to-tiles: the output is the bounding box of the tile grid, and
+//  the gaps stay background
+// @rule stamp-shape: a tile with a code takes the legend shape of the code's
+//  color, each shape cell at the same place in the tile as in its legend box,
+//  in the code's color, and the tile's other cells become background
+// @rule blank-tile: a tile with no code becomes background
+
+// which shape a marker names
+.type Legend =
+    // @claim legend
+    InBox {place: Place}
+    // @scene legend: the markers and the pieces of shape ink outside the
+    //  tiles are each ranked along params.order_axis from
+    //  params.marker_corner, and a marker names the piece of its rank
+    // @rule stamp-shape: a shape's bounding box sits at the tile's
+    //  params.marker_corner corner
+    // @witness diagonal-shape: variant concept
+  | ByOrder {}
+
+// where a shape cell lands in its tile
+.type Place =
+    // @claim stamp-shape
+    BoxPlace {}
+    // @rule stamp-shape: a shape's bounding box sits at the tile's
+    //  params.marker_corner corner
+    // @witness bar-shape: variant concept
+  | BboxAnchor {}
+
+// the corner of a legend box that its marker touches
+.type Corner =
+    // @claim legend
+    StoredCorner {}
+    // @scene legend: the corner is the one at which every marker's box holds
+    //  a shape cell; undefined where no corner or more than one does
+    // @witness mirrored-legend: variant $DerivedCorner
+    //     @relaxed legend
+    //     @relaxed code
+    // @witness legend-mirrored: variant $DerivedCorner
+    //     @relaxed legend
+  | DerivedCorner {}
+
+// which cells of a legend box are the shape
+.type Ink =
+    // @claim legend
+    ShapeColor {}
+    // @scene legend: a shape is every cell of its box that is not
+    //  params.background, in no tile and no marker
+    // @witness shape-in-other-color: variant $AnyInk
+    //     @relaxed legend
+  | AnyInk {}
+
+// which cell of a tile is its code
+.type Code =
+    // @claim code
+    OddCell {}
+    // @scene code: a tile's code is its cell at params.code_corner, where that
+    //  cell is neither the tile color nor background; defined on a tile with
+    //  two such cells
+    // @witness code-off-corner: borderline concept
+    //     @relaxed code
+  | CodeAtCorner {}
+
+// the color of the tiles
+.type TileColor =
+    // @claim tile-grid
+    StoredTileColor {}
+    // @scene tile-grid: the tile color is the commonest color other than
+    //  params.background; undefined on a tie
+    // @witness few-tiles: variant concept
+    // @witness recolored-tiles: variant $TileColorByCount
+    //     @relaxed tile-grid
+  | TileColorByCount {}
+
+// how the tiles are found
+.type TileParse =
+    // @claim tile-grid
+    Pieces {}
+    // @scene tile-grid: the tiles lie on a lattice that runs from the
+    //  params.lattice_corner corner of the tile region, each of the tile
+    //  extent, at a stride of that extent plus params.gap; the tiles are the
+    //  lattice boxes that lie wholly in the region
+    // @witness wide-gaps: variant concept
+    //     @relaxed tile-grid
+  | Lattice {}
+
+.type Choice = [legend: Legend, corner: Corner, ink: Ink, code: Code,
+                tcol: TileColor, parse: TileParse]
+
+.type TileAxis = [tc: TileColor, a: Axis]
+.type PieceKey = [ch: Choice, id: Ident]
+.type ShapeKey = [ch: Choice, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl background(c: Color) background(0).
+
+    // --- $StoredTileColor ---
+    .decl tile_color(c: Color) tile_color(5).
+
+    // --- $ShapeColor ---
+    .decl shape_color(c: Color) shape_color(1).
+
+    // --- $StoredCorner ---
+    // The corner of a legend box that its marker touches diagonally from
+    // outside.
+    .decl marker_corner(d: DiagDir) marker_corner(DIAG_TL).
+
+    // --- $ByOrder ---
+    // The axis the legend's ranking runs along first.
+    .decl order_axis(a: Axis) order_axis(AXIS_H).
+
+    // --- $CodeAtCorner ---
+    .decl code_corner(d: DiagDir) code_corner(DIAG_BR).
+
+    // --- $Lattice ---
+    .decl gap(k: number) gap(1).
+    // The corner of the tile region the lattice runs from.
+    .decl lattice_corner(d: DiagDir) lattice_corner(DIAG_TL).
+}
+
+.init params = Params
+
+.decl legend_choice(l: Legend)
+legend_choice($InBox($BoxPlace())). legend_choice($InBox($BboxAnchor())).
+legend_choice($ByOrder()).
+
+.decl corner_choice(c: Corner)
+corner_choice($StoredCorner()). corner_choice($DerivedCorner()).
+
+.decl ink_choice(i: Ink)
+ink_choice($ShapeColor()). ink_choice($AnyInk()).
+
+.decl code_choice(c: Code)
+code_choice($OddCell()). code_choice($CodeAtCorner()).
+
+.decl tile_color_choice(t: TileColor)
+tile_color_choice($StoredTileColor()). tile_color_choice($TileColorByCount()).
+
+.decl tile_parse_choice(t: TileParse)
+tile_parse_choice($Pieces()). tile_parse_choice($Lattice()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([L, Cn, I, Cd, Tc, Tp]) :-
+    legend_choice(L), corner_choice(Cn), ink_choice(I), code_choice(Cd),
+    tile_color_choice(Tc), tile_parse_choice(Tp).
+
+.comp Parse<Key> {
+    .type KeyPiece = [k: Key, id: Ident]
+
+    .decl cell(k: Key, p: Position, col: Color)
+
+    // The 4-connected pieces of ink.
+    // @claim tile-grid
+    .init piece = Components<Key>
+    piece.node(K, P) :- cell(K, P, Col), !params.background(Col).
+
+    // @claim tile-grid
+    .init piece_box = Bbox<KeyPiece>
+    piece_box.cell([K, Id], P) :- piece.label(K, P, Id).
+
+    // The commonest colors of the ink.
+    // @claim tile-grid
+    .init ink_mode = Mode<Key, Color, Position>
+    ink_mode.item(K, Col, P) :- cell(K, P, Col), !params.background(Col).
+
+    // The color of the tiles.
+    .decl tile_color(k: Key, col: Color)
+
+    // The tiles of the piece parse: the pieces that hold the tile color.
+    .decl tile_piece(k: Key, id: Ident)
+    tile_piece(K, Id) :- piece.label(K, P, Id), cell(K, P, Col), tile_color(K, Col).
+}
+
+.init parse = Parse<TileColor>
+parse.cell(Tc, P, Col) :- tile_color_choice(Tc), in(P, Col).
+parse.tile_color(Tc, Col) :- tile_color_of(Tc, Col).
+
+// The tile color under each tile-color branch.
+.decl tile_color_of(tc: TileColor, col: Color)
+
+// The tile region.
+// @claim crop-to-tiles
+.init region = Bbox<TileColor>
+region.cell(Tc, B) :- parse.tile_piece(Tc, Id), parse.piece_box.box([Tc, Id], B).
+
+// @claim tile-grid
+.init tile_extent = Unanimous<TileAxis, number>
+tile_extent.item([Tc, A], N) :-
+    parse.tile_piece(Tc, Id), parse.piece_box.box([Tc, Id], B), parse.piece.label(Tc, P, Id),
+    axis_elem(A), box_extent(B, P, A, N).
+
+// The extent of a tile, and of a legend box, on each axis.
+// @store: variant concept
+//     @relaxed tile-grid
+.decl tile_size(tc: TileColor, a: Axis, n: number)
+tile_size(Tc, A, N) :- tile_extent.value([Tc, A], N).
+
+.init box_frame = Frame2D<TileColor>
+box_frame.extent(Tc, A, N) :- tile_size(Tc, A, N).
+
+// The cell at corner D of a tile-sized frame.
+.decl box_corner_cell(tc: TileColor, d: DiagDir, k: Position)
+box_corner_cell(Tc, D, K) :- box_frame.cell(Tc, K), diag_dir_elem(D), box_corner(K, ZERO, D).
+
+// The offset from the corner-D cell of a tile-sized box to each of its cells.
+.decl box_offset(tc: TileColor, d: DiagDir, w: Offset)
+box_offset(Tc, D, W) :- box_corner_cell(Tc, D, K), box_frame.cell(Tc, P), relative(K, P, W).
+
+// The cells of each tile, keyed by the tile's box.
+.decl tile_cell(tc: TileColor, tp: TileParse, b: Box, p: Position)
+
+// The box the output crops to.
+.decl frame(tc: TileColor, tp: TileParse, b: Box)
+
+// A tile's code cell.
+.decl code_cell(tc: TileColor, tp: TileParse, cd: Code, b: Box, p: Position)
+
+.decl tile_code(tc: TileColor, tp: TileParse, cd: Code, b: Box, col: Color)
+tile_code(Tc, Tp, Cd, B, Col) :- code_cell(Tc, Tp, Cd, B, P), in(P, Col).
+
+// Some tile holds two code cells.
+.decl code_clash(tc: TileColor, tp: TileParse, cd: Code)
+code_clash(Tc, Tp, Cd) :- code_cell(Tc, Tp, Cd, B, P1), code_cell(Tc, Tp, Cd, B, P2), P1 != P2.
+
+// A legend marker: a cell outside the tiles in a code's color.
+.decl marker(tc: TileColor, tp: TileParse, cd: Code, m: Position, col: Color)
+marker(Tc, Tp, Cd, M, Col) :- tile_code(Tc, Tp, Cd, _, Col), in(M, Col), !tile_cell(Tc, Tp, _, M).
+
+// K is the corner-D cell of the box whose corner D marker M touches
+// diagonally from outside.
+.decl legend_box(tc: TileColor, tp: TileParse, cd: Code, d: DiagDir, m: Position, k: Position)
+legend_box(Tc, Tp, Cd, D, M, K) :-
+    marker(Tc, Tp, Cd, M, _), diag_dir_elem(D), diag_opposite(D, D_in), neighbor(M, D_in, K).
+
+.decl legend_cell(tc: TileColor, tp: TileParse, cd: Code, d: DiagDir, m: Position, q: Position)
+legend_cell(Tc, Tp, Cd, D, M, Q) :-
+    legend_box(Tc, Tp, Cd, D, M, K), box_offset(Tc, D, W), compose(K, W, Q).
+
+// The cells a shape may be drawn in.
+.decl shape_ink(ch: Choice, q: Position)
+
+// The corner of the legend boxes, and of the tiles a shape is placed by.
+.decl corner_of(ch: Choice, d: DiagDir)
+
+// The cells of the shape of color Col.
+.decl shape_cell(ch: Choice, col: Color, q: Position)
+
+// The cell a shape's offsets are taken from.
+.decl shape_anchor(ch: Choice, col: Color, a: Position)
+
+// @claim stamp-shape
+.init shape_box = Bbox<ShapeKey>
+shape_box.cell([Ch, Col], Q) :- shape_cell(Ch, Col, Q).
+
+.decl shape(ch: Choice, col: Color, w: Offset)
+shape(Ch, Col, W) :- shape_cell(Ch, Col, Q), shape_anchor(Ch, Col, A), relative(A, Q, W).
+
+.decl stamp(ch: Choice, p: Position, col: Color)
+stamp(Ch, P, Col) :-
+    shape(Ch, Col, W), Ch = [_, _, _, Cd, Tc, Tp], tile_code(Tc, Tp, Cd, B, Col),
+    corner_of(Ch, D), tile_cell(Tc, Tp, B, C), box_corner(C, B, D),   // the tile's anchor
+    compose(C, W, P).
+
+out(P_inner, Col, Ch) :-
+    corner_of(Ch, _), Ch = [_, _, _, Cd, Tc, Tp], frame(Tc, Tp, B), !code_clash(Tc, Tp, Cd),
+    in(P, _), crop(P, B, P_inner),
+    ( stamp(Ch, P, Col)
+    ; !stamp(Ch, P, _), params.background(Col)
+    ).
+
+// --- $StoredTileColor ---
+tile_color_of($StoredTileColor(), Col) :- params.tile_color(Col).
+
+// --- $TileColorByCount ---
+.decl mode_tie()
+mode_tie() :-
+    parse.ink_mode.mode($TileColorByCount(), C1), parse.ink_mode.mode($TileColorByCount(), C2),
+    C1 != C2.
+
+tile_color_of($TileColorByCount(), Col) :-
+    parse.ink_mode.mode($TileColorByCount(), Col), !mode_tie().
+
+// --- $Pieces ---
+tile_cell(Tc, $Pieces(), B, P) :-
+    parse.tile_piece(Tc, Id), parse.piece_box.box([Tc, Id], B), parse.piece.label(Tc, P, Id).
+frame(Tc, $Pieces(), B) :- region.box(Tc, B).
+
+// --- $Lattice ---
+// A corner cell of a lattice box: on both axes, the first cell of a period.
+.decl lattice_origin(tc: TileColor, c: Position)
+lattice_origin(Tc, C) :-
+    region.box(Tc, R), in(C, _), crop(C, R, C_rel),
+    params.lattice_corner(D), diag_dirs(D, A1, D1, D2), perp(A1, A2),
+    dist(C_rel, D1, T1), dist(C_rel, D2, T2),
+    tile_size(Tc, A1, W1), tile_size(Tc, A2, W2), params.gap(G),
+    stride(T1, W1, G, _, 0), stride(T2, W2, G, _, 0).
+
+.decl lattice_tile(tc: TileColor, b: Box)
+lattice_tile(Tc, B) :-
+    lattice_origin(Tc, C), params.lattice_corner(D), box_corner_cell(Tc, D, K),
+    relative(K, C, B),                            // the tile-sized box with corner cell C
+    region.box(Tc, R), inside(B, R).
+
+tile_cell(Tc, $Lattice(), B, P) :- lattice_tile(Tc, B), in(P, _), inside(P, B).
+
+// @claim crop-to-tiles
+.init lattice_frame = Bbox<TileColor>
+lattice_frame.cell(Tc, B) :- lattice_tile(Tc, B).
+
+frame(Tc, $Lattice(), B) :- lattice_frame.box(Tc, B).
+
+// --- $OddCell ---
+code_cell(Tc, Tp, $OddCell(), B, P) :-
+    tile_cell(Tc, Tp, B, P), in(P, Col), !tile_color_of(Tc, Col), !params.background(Col).
+
+// --- $CodeAtCorner ---
+code_cell(Tc, Tp, $CodeAtCorner(), B, P) :-
+    tile_cell(Tc, Tp, B, P), params.code_corner(D), box_corner(P, B, D),
+    in(P, Col), !tile_color_of(Tc, Col), !params.background(Col).
+
+// --- $ShapeColor ---
+shape_ink([L, Cn, $ShapeColor(), Cd, Tc, Tp], Q) :-
+    impl_choice([L, Cn, $ShapeColor(), Cd, Tc, Tp]), params.shape_color(Col), in(Q, Col).
+
+// --- $AnyInk ---
+shape_ink([L, Cn, $AnyInk(), Cd, Tc, Tp], Q) :-
+    impl_choice([L, Cn, $AnyInk(), Cd, Tc, Tp]), in(Q, Col), !params.background(Col),
+    !tile_cell(Tc, Tp, _, Q), !marker(Tc, Tp, Cd, Q, _).
+
+// --- $StoredCorner ---
+corner_of([L, $StoredCorner(), I, Cd, Tc, Tp], D) :-
+    impl_choice([L, $StoredCorner(), I, Cd, Tc, Tp]), params.marker_corner(D).
+
+// --- $DerivedCorner ---
+// Marker M's box at corner D holds a shape cell.
+.decl box_inked(ch: Choice, d: DiagDir, m: Position)
+box_inked([L, $DerivedCorner(), I, Cd, Tc, Tp], D, M) :-
+    legend_cell(Tc, Tp, Cd, D, M, Q), shape_ink([L, $DerivedCorner(), I, Cd, Tc, Tp], Q).
+
+// The corners at which some marker's box holds no shape cell.
+// @ignore: store — a stored defect set leaves the stored corner alone, so
+//  these cases are equivalent to those that take $StoredCorner
+.decl corner_defect(ch: Choice, d: DiagDir)
+corner_defect([L, $DerivedCorner(), I, Cd, Tc, Tp], D) :-
+    impl_choice([L, $DerivedCorner(), I, Cd, Tc, Tp]), marker(Tc, Tp, Cd, M, _),
+    diag_dir_elem(D), !box_inked([L, $DerivedCorner(), I, Cd, Tc, Tp], D, M).
+
+// The corners at which every marker's box holds a shape cell.
+// @ignore: store — a stored corner set of one corner is the stored corner,
+//  so these cases are equivalent to those that take $StoredCorner
+.decl corner_fit(ch: Choice, d: DiagDir)
+corner_fit([L, $DerivedCorner(), I, Cd, Tc, Tp], D) :-
+    impl_choice([L, $DerivedCorner(), I, Cd, Tc, Tp]), diag_dir_elem(D),
+    !corner_defect([L, $DerivedCorner(), I, Cd, Tc, Tp], D).
+
+.decl corner_tie(ch: Choice)
+corner_tie(Ch) :- corner_fit(Ch, D1), corner_fit(Ch, D2), D1 != D2.
+
+corner_of(Ch, D) :- corner_fit(Ch, D), !corner_tie(Ch).
+
+// --- $InBox ---
+shape_cell([$InBox(Pl), Cn, I, Cd, Tc, Tp], Col, Q) :-
+    corner_of([$InBox(Pl), Cn, I, Cd, Tc, Tp], D), marker(Tc, Tp, Cd, M, Col),
+    legend_cell(Tc, Tp, Cd, D, M, Q), shape_ink([$InBox(Pl), Cn, I, Cd, Tc, Tp], Q).
+
+// --- $BoxPlace ---
+shape_anchor([$InBox($BoxPlace()), Cn, I, Cd, Tc, Tp], Col, K) :-
+    corner_of([$InBox($BoxPlace()), Cn, I, Cd, Tc, Tp], D), marker(Tc, Tp, Cd, M, Col),
+    legend_box(Tc, Tp, Cd, D, M, K).
+
+// --- $BboxAnchor ---
+shape_anchor(Ch, Col, A) :-
+    shape_box.box([Ch, Col], B), Ch = [$InBox($BboxAnchor()), _, _, _, _, _],
+    corner_of(Ch, D), in(A, _), box_corner(A, B, D).          // the bounding box's corner
+
+// --- $ByOrder ---
+shape_anchor(Ch, Col, A) :-
+    shape_box.box([Ch, Col], B), Ch = [$ByOrder(), _, _, _, _, _],
+    corner_of(Ch, D), in(A, _), box_corner(A, B, D).          // the bounding box's corner
+
+// The pieces of shape ink outside the tiles.
+// @claim legend
+.init order_piece = Components<Choice>
+order_piece.node([$ByOrder(), Cn, I, Cd, Tc, Tp], Q) :-
+    shape_ink([$ByOrder(), Cn, I, Cd, Tc, Tp], Q), !tile_cell(Tc, Tp, _, Q).
+
+// @claim legend
+.init order_piece_box = Bbox<PieceKey>
+order_piece_box.cell([Ch, Id], Q) :- order_piece.label(Ch, Q, Id).
+
+// The corner cell of a piece's bounding box, which ranks the piece.
+.decl piece_corner(ch: Choice, id: Ident, a: Position)
+piece_corner(Ch, Id, A) :-
+    order_piece_box.box([Ch, Id], B), corner_of(Ch, D), in(A, _), box_corner(A, B, D).
+
+// The axis the rankings run along first.
+.decl rank_axis(ch: Choice, a: Axis)
+rank_axis(Ch, A) :- impl_choice(Ch), Ch = [$ByOrder(), _, _, _, _, _], params.order_axis(A).
+
+// @claim legend
+.init marker_order = LexOrder<Choice>
+marker_order.corner(Ch, D) :- corner_of(Ch, D), Ch = [$ByOrder(), _, _, _, _, _].
+marker_order.axis(Ch, A) :- rank_axis(Ch, A).
+marker_order.cell([$ByOrder(), Cn, I, Cd, Tc, Tp], M) :-
+    impl_choice([$ByOrder(), Cn, I, Cd, Tc, Tp]), marker(Tc, Tp, Cd, M, _).
+
+// @claim legend
+.init piece_order = LexOrder<Choice>
+piece_order.corner(Ch, D) :- corner_of(Ch, D), Ch = [$ByOrder(), _, _, _, _, _].
+piece_order.axis(Ch, A) :- rank_axis(Ch, A).
+piece_order.cell(Ch, A) :- piece_corner(Ch, _, A).
+
+shape_cell(Ch, Col, Q) :-
+    Ch = [$ByOrder(), _, _, Cd, Tc, Tp], marker(Tc, Tp, Cd, M, Col),
+    marker_order.rank(Ch, M, R), piece_order.rank(Ch, A, R),   // the piece of the marker's rank
+    piece_corner(Ch, Id, A), order_piece.label(Ch, Q, Id).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+    parse.tile_color(E, Col) :- ex_in(E, _, Col), params.tile_color(Col).
+
+    .decl drawn(e: Example)
+    drawn(E) :- ex_out(E, _, _).
+
+    // --- background: the commonest color of every input ---
+
+    .init color_mode = Mode<Example, Color, Position>
+    color_mode.item(E, Col, P) :- ex_in(E, P, Col).
+
+    .decl background_defect(c: Color)
+    background_defect(Col) :- color_mode.mode(_, Col), drawn(E), !color_mode.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- color_mode.mode(_, Col), !background_defect(Col).
+
+    // --- tile_color: the color that every piece of two colors holds ---
+
+    .decl piece_color(e: Example, id: Ident, col: Color)
+    piece_color(E, Id, Col) :- parse.piece.label(E, P, Id), ex_in(E, P, Col).
+
+    // A piece holds cells of two colors.
+    .decl mixed(e: Example, id: Ident)
+    mixed(E, Id) :- piece_color(E, Id, C1), piece_color(E, Id, C2), C1 != C2.
+
+    .decl tile_color_defect(c: Color)
+    tile_color_defect(Col) :-
+        piece_color(_, _, Col), drawn(E), mixed(E, Id), !piece_color(E, Id, Col).
+
+    .decl tile_color(c: Color)
+    tile_color(Col) :- piece_color(_, _, Col), !tile_color_defect(Col).
+
+    // --- code_corner: the corner of its tile that a code sits at in every input ---
+
+    // A code cell, and the box of its tile.
+    .decl code_at(e: Example, p: Position, b: Box)
+    code_at(E, P, B) :-
+        parse.tile_piece(E, Id), parse.piece.label(E, P, Id),
+        ex_in(E, P, Col), !params.tile_color(Col), parse.piece_box.box([E, Id], B).
+
+    .decl code_at_corner(e: Example, d: DiagDir)
+    code_at_corner(E, D) :- code_at(E, P, B), diag_dir_elem(D), box_corner(P, B, D).
+
+    .decl code_corner_defect(d: DiagDir)
+    code_corner_defect(D) :- drawn(E), diag_dir_elem(D), !code_at_corner(E, D).
+
+    .decl code_corner(d: DiagDir)
+    code_corner(D) :- diag_dir_elem(D), !code_corner_defect(D).
+
+    // --- marker_corner: the corner whose quadrant holds shape cells for every marker ---
+
+    // A marker: a cell outside the tiles in a code's color.
+    .decl marker(e: Example, m: Position)
+    marker(E, M) :-
+        code_at(E, P, _), ex_in(E, P, Col), ex_in(E, M, Col),
+        parse.piece.label(E, M, Id), !parse.tile_piece(E, Id).
+
+    // Some shape cell lies past marker M on both axes, away from corner D.
+    .decl shape_past(e: Example, d: DiagDir, m: Position)
+    shape_past(E, D, M) :-
+        marker(E, M), diag_dir_elem(D), diag_dirs(D, _, D1, D2),
+        opposite(D1, D1_far), opposite(D2, D2_far),
+        ex_in(E, Q, Col), params.shape_color(Col), nearer(D1_far, Q, M), nearer(D2_far, Q, M).
+
+    .decl marker_corner_defect(d: DiagDir)
+    marker_corner_defect(D) :- drawn(E), marker(E, M), diag_dir_elem(D), !shape_past(E, D, M).
+
+    .decl marker_corner(d: DiagDir)
+    marker_corner(D) :- diag_dir_elem(D), !marker_corner_defect(D).
+
+    // --- order_axis: the axis of a line that holds every marker ---
+
+    .decl marker_line(e: Example, m1: Position, m2: Position, a: Axis)
+    marker_line(E, M1, M2, A) :- marker(E, M1), marker(E, M2), axis_elem(A), same_line(A, M1, M2).
+
+    .decl order_axis_defect(a: Axis)
+    order_axis_defect(A) :-
+        drawn(E), marker(E, M1), marker(E, M2), axis_elem(A), !marker_line(E, M1, M2, A).
+
+    .decl order_axis(a: Axis)
+    order_axis(A) :- axis_elem(A), !order_axis_defect(A).
+
+    // --- shape_color: the ink color outside the tiles that no output shows ---
+
+    .decl free_ink(e: Example, col: Color)
+    free_ink(E, Col) :-
+        drawn(E), parse.piece.label(E, P, Id), !parse.tile_piece(E, Id), ex_in(E, P, Col),
+        !marker(E, P), !ex_out(E, _, Col).
+
+    .decl shape_color_defect(c: Color)
+    shape_color_defect(Col) :- free_ink(_, Col), drawn(E), !free_ink(E, Col).
+
+    .decl shape_color(c: Color)
+    shape_color(Col) :- free_ink(_, Col), !shape_color_defect(Col).
+
+    // --- gap: the shortest background run between two tile cells ---
+
+    .init bg_run = Slide<Example>
+    bg_run.node(E, P) :- ex_in(E, P, Col), params.background(Col).
+    bg_run.dir(E, D) :- drawn(E), dir_elem(D).
+
+    .init gap_run = Extremes<Unit>
+    gap_run.cand($U(), G) :-
+        drawn(E), ex_in(E, P, C1), params.tile_color(C1),            // a tile cell
+        dir_elem(D), neighbor(P, D, Q), bg_run.rest(E, Q, D, R),       // the background run past it
+        neighbor(R, D, S), ex_in(E, S, C2), params.tile_color(C2),    // ends at a tile cell
+        axis_of(D, A), sub_extent(P, A, G), jump(P, D, G, R).         // G cells long
+
+    .decl gap(k: number)
+    gap(G) :- gap_run.low($U(), G).
+}

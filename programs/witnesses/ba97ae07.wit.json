@@ -1,0 +1,51 @@
+{
+  "id": "ba97ae07",
+  "witnesses": [{
+    "id": "background=DominantColor",
+    "separates": "a vertical band 3 columns wide in a 6-column grid has more cells than the background 0: the concept reads 0 as background and puts the horizontal band 5 on top at the crossing; DominantColor reads the band color 4 as background, finds no horizontal band, and returns the input",
+    "input": [
+      [0,4,4,4,0,0],
+      [0,4,4,4,0,0],
+      [5,4,4,4,5,5],
+      [5,4,4,4,5,5],
+      [0,4,4,4,0,0],
+      [0,4,4,4,0,0],
+      [0,4,4,4,0,0],
+      [0,4,4,4,0,0],
+      [0,4,4,4,0,0],
+      [0,4,4,4,0,0],
+      [0,4,4,4,0,0]
+    ],
+    "output": [{
+      "cases": ["background=stored"],
+      "grid": [
+        [0,4,4,4,0,0],
+        [0,4,4,4,0,0],
+        [5,5,5,5,5,5],
+        [5,5,5,5,5,5],
+        [0,4,4,4,0,0],
+        [0,4,4,4,0,0],
+        [0,4,4,4,0,0],
+        [0,4,4,4,0,0],
+        [0,4,4,4,0,0],
+        [0,4,4,4,0,0],
+        [0,4,4,4,0,0]
+      ]
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": [
+        [0,4,4,4,0,0],
+        [0,4,4,4,0,0],
+        [5,4,4,4,5,5],
+        [5,4,4,4,5,5],
+        [0,4,4,4,0,0],
+        [0,4,4,4,0,0],
+        [0,4,4,4,0,0],
+        [0,4,4,4,0,0],
+        [0,4,4,4,0,0],
+        [0,4,4,4,0,0],
+        [0,4,4,4,0,0]
+      ]
+    }]
+  }]
+}

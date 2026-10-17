@@ -1,0 +1,203 @@
+// b6afb2da
+// @draft
+// @keywords: objects bbox border
+// @scene background: every cell outside the rectangles is the background
+//  color 0
+// @scene solid-rectangles: the other cells form solid rectangles of the color
+//  shape, each at least 3 cells on each side, no two touching
+// @rule corner: each corner cell of a rectangle of shape cells takes
+//  corner_color
+// @rule edge: each other cell on a rectangle's border takes edge_color
+// @rule interior: each cell inside a rectangle's border takes interior_color
+// @rule keep-background: each background cell stays as it is
+
+// which cells make up the rectangles
+.type Cells =
+    // @claim solid-rectangles
+    ShapeCells {}
+    // @scene solid-rectangles: the cells of every color other than background
+    //  form the rectangles, and touching cells of different colors join one
+    //  rectangle; undefined on no input
+    // @witness other-color-rectangle: foreign any
+    //     @relaxed solid-rectangles
+  | AnyNonBackground {color: ObjectColor}
+
+// whether cells of different colors join one rectangle
+.type ObjectColor =
+    // @claim solid-rectangles
+    MixedColors {}
+    // @scene solid-rectangles: a cell joins only touching cells of its own
+    //  color; undefined on no input
+    // @witness two-color-block: foreign $PerColorObjects
+    //     @relaxed solid-rectangles
+  | PerColorObjects {}
+
+// how a cell's role (corner, side, inside) is read
+.type Role =
+    // @claim corner edge interior
+    BoxRoles {adjacency: Adjacency}
+    // @rule corner: a rectangle cell missing a neighbor on both axes takes
+    //  corner_color, a cell past the grid edge counting as missing; undefined
+    //  on no input
+    // @rule edge: a cell missing a neighbor on one axis takes edge_color
+    // @rule interior: a cell missing no neighbor takes interior_color
+    // @witness notched-block: foreign $CellNeighbors
+    //     @relaxed solid-rectangles
+  | CellNeighbors {border: Border}
+    // @rule corner: a rectangle cell missing any of its 8 neighbors is on the
+    //  border, a cell past the grid edge counting as missing, and a border
+    //  cell with border cells beside it on both axes takes corner_color;
+    //  undefined on no input
+    // @rule edge: each other border cell takes edge_color
+    // @rule interior: a cell missing none of its 8 neighbors takes
+    //  interior_color
+    // @witness notched-block: foreign $CellNeighbors
+  | BorderTurns {}
+
+// which contacts join cells into one rectangle
+.type Adjacency =
+    // @claim solid-rectangles
+    Objects4 {}
+    // @scene solid-rectangles: cells that meet at a corner join one
+    //  rectangle; undefined on no input
+    // @witness diagonal-contact: borderline concept
+    //     @relaxed solid-rectangles
+  | Objects8 {}
+
+// which missing neighbors put a non-corner cell on the border
+.type Border =
+    // @claim edge interior
+    Border4 {}
+    // @rule edge: each other cell missing any of its 8 neighbors takes
+    //  edge_color; undefined on no input
+    // @rule interior: a cell missing none of its 8 neighbors takes
+    //  interior_color
+    // @witness notched-block: foreign $CellNeighbors
+  | Border8 {}
+
+.type Choice = [cells: Cells, role: Role]
+
+// A rectangle cell under one reading of the cells and of the contacts that
+// join them.
+.type Node = [c: Cells, a: Adjacency, p: Position]
+
+// An object under one such reading.
+.type Obj = [c: Cells, a: Adjacency, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl corner_color(c: Color) corner_color(1).
+    .decl edge_color(c: Color) edge_color(4).
+    .decl interior_color(c: Color) interior_color(2).
+
+    // --- $ShapeCells ---
+    // the color of the rectangles' cells
+    .decl shape(c: Color) shape(5).
+
+    // --- $AnyNonBackground ---
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+.decl cells_choice(c: Cells)
+cells_choice($ShapeCells()).
+cells_choice($AnyNonBackground($MixedColors())).
+cells_choice($AnyNonBackground($PerColorObjects())).
+
+.decl role_choice(r: Role)
+role_choice($BoxRoles($Objects4())). role_choice($BoxRoles($Objects8())).
+role_choice($CellNeighbors($Border4())). role_choice($CellNeighbors($Border8())).
+role_choice($BorderTurns()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([C, R]) :- cells_choice(C), role_choice(R).
+
+// The rectangle cells each reading takes.
+.decl rect_cell(c: Cells, p: Position)
+
+// q, one step from rectangle cell p toward d, is a rectangle cell that p joins.
+.decl link(c: Cells, p: Position, d: Dir8, q: Position)
+link(C, P, D, Q) :-
+    rect_cell(C, P), dir8_elem(D), neighbor(P, D, Q), rect_cell(C, Q),
+    !apart(C, P, Q).
+
+// Touching cells that do not join.
+.decl apart(c: Cells, p: Position, q: Position)
+
+// The axes on which a cell lies on its rectangle's border.
+.decl side(ch: Choice, p: Position, a: Axis)
+
+// A cell on its rectangle's border.
+.decl rim(ch: Choice, p: Position)
+rim(Ch, P) :- side(Ch, P, _).
+
+// A cell on its rectangle's border on both axes.
+.decl corner(ch: Choice, p: Position)
+corner(Ch, P) :- side(Ch, P, A), perp(A, A2), side(Ch, P, A2).
+
+.decl paint(ch: Choice, p: Position, col: Color)
+paint([C, R], P, Col) :-
+    rect_cell(C, P), impl_choice([C, R]),
+    ( corner([C, R], P), params.corner_color(Col)
+    ; rim([C, R], P), !corner([C, R], P), params.edge_color(Col)
+    ; !rim([C, R], P), params.interior_color(Col)
+    ).
+
+out(P, Col, Ch) :- paint(Ch, P, Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(Ch, P, _).
+
+// --- $ShapeCells ---
+rect_cell($ShapeCells(), P) :- in(P, Col), params.shape(Col).
+
+// --- $AnyNonBackground ---
+rect_cell($AnyNonBackground(O), P) :-
+    cells_choice($AnyNonBackground(O)), in(P, Col), !params.background(Col).
+
+// --- $PerColorObjects ---
+apart($AnyNonBackground($PerColorObjects()), P, Q) :-
+    in(P, Col), dir8_elem(D), neighbor(P, D, Q), in(Q, Col2), Col != Col2.  // a touching cell of another color
+
+// --- $BoxRoles ---
+.init objects = Canon<Node>
+objects.edge([C, A, P], [C, A, P]) :- rect_cell(C, P), role_choice($BoxRoles(A)).
+
+// @claim corner edge interior
+.init bbox = Bbox<Obj>
+bbox.cell([C, A, Id], P) :- objects.id([C, A, P], Id).
+
+side([C, $BoxRoles(A)], P, Ax) :-
+    objects.id([C, A, P], Id), bbox.box([C, A, Id], B),  // the cell's object and its box
+    box_edge(P, B, D), axis_of(D, Ax).                  // on the box's side toward d
+
+// --- $Objects4 ---
+objects.edge([C, $Objects4(), P], [C, $Objects4(), Q]) :- link(C, P, D, Q), dir_elem(D).
+
+// --- $Objects8 ---
+objects.edge([C, $Objects8(), P], [C, $Objects8(), Q]) :- link(C, P, _, Q).
+
+// --- $CellNeighbors, $BorderTurns ---
+// The outside lies one step toward d from a rectangle cell; a cell past the
+// grid edge is outside.
+.decl open_dir(c: Cells, p: Position, d: Dir8)
+open_dir(C, P, D) :- rect_cell(C, P), dir8_elem(D), !link(C, P, D, _).
+
+// --- $CellNeighbors ---
+side([C, $CellNeighbors(Bd)], P, Ax) :-
+    open_dir(C, P, D), dir_elem(D), axis_of(D, Ax),
+    role_choice($CellNeighbors(Bd)).
+
+// --- $Border8 ---
+rim([C, $CellNeighbors($Border8())], P) :- open_dir(C, P, _).
+
+// --- $BorderTurns ---
+rim([C, $BorderTurns()], P) :- open_dir(C, P, _).
+
+// The axes along which the border runs on from a border cell.
+.decl run_axis(c: Cells, p: Position, a: Axis)
+run_axis(C, P, Ax) :-
+    open_dir(C, P, _), link(C, P, D, Q), dir_elem(D), open_dir(C, Q, _),  // a border cell it joins
+    axis_of(D, Ax).
+
+corner([C, $BorderTurns()], P) :- run_axis(C, P, A), perp(A, A2), run_axis(C, P, A2).

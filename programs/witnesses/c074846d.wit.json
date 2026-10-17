@@ -1,0 +1,228 @@
+{
+  "id": "c074846d",
+  "witnesses": [{
+    "id": "bent-arm",
+    "separates": "An arm cell off the pivot's row and column: the per-direction turn leaves it in arm color, and the offset rotation turns it with the rest of the arm.",
+    "input": [
+      [0,0,0,0,0],
+      [0,0,0,0,0],
+      [0,2,2,5,0],
+      [0,2,0,0,0],
+      [0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$DirTurn"],
+      "grid": [
+        [0,0,0,2,0],
+        [0,0,0,2,0],
+        [0,3,3,5,0],
+        [0,2,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$RotateOffsets"],
+      "grid": [
+        [0,0,2,2,0],
+        [0,0,0,2,0],
+        [0,3,3,5,0],
+        [0,3,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "two-sticks",
+    "separates": "Two sticks, an arm cell of one on the column of the other's pivot: one pivot set turns that cell about both pivots and paints an extra arm cell at row 2, col 1; turning each stick about its own pivot paints none.",
+    "input": [
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,2,2,5,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,2,2,5]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": [
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,2,0,3,3,5,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,2],
+        [0,0,0,0,0,0,2],
+        [0,0,0,0,3,3,5]
+      ]
+    }, {
+      "cases": ["$RotateOffsets & $OnePivotSet"],
+      "grid": [
+        [0,0,0,0,0,2,0],
+        [0,2,0,0,0,2,0],
+        [0,2,0,3,3,5,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,2],
+        [0,0,0,0,0,0,2],
+        [0,0,0,0,3,3,5]
+      ]
+    }, {
+      "cases": ["$PerStick"],
+      "grid": [
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,3,3,5,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,2],
+        [0,0,0,0,0,0,2],
+        [0,0,0,0,3,3,5]
+      ]
+    }]
+  }, {
+    "id": "corner-touch",
+    "separates": "Two sticks that touch only at a corner: 8-adjacency joins them into one stick, so the arm cell at row 3, col 1 also turns about the lower pivot and paints row 5, col 3; 4-adjacency keeps them apart.",
+    "input": [
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,2,2,5,0,0,0],
+      [2,0,0,0,0,0,0],
+      [2,5,0,0,0,0,0],
+      [0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["concept","$CornerJoin"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,3,3,5,0,0,0],
+        [2,2,0,0,0,0,0],
+        [3,5,0,2,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$RotateOffsets & $OnePivotSet"],
+      "grid": [
+        [0,2,2,0,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,3,3,5,0,0,0],
+        [3,2,2,0,0,0,0],
+        [3,5,0,2,0,0,0],
+        [0,0,0,2,0,0,0]
+      ]
+    }, {
+      "cases": ["$DirTurn & $Join4"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,3,3,5,0,0,0],
+        [2,2,0,0,0,0,0],
+        [3,5,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$RotateOffsets & $Join4"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,3,3,5,0,0,0],
+        [3,2,2,0,0,0,0],
+        [3,5,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "pivot_color=RarestColor",
+    "separates": "A stray cell as rare as the pivot: the rarest-color derivation makes it a second pivot, and the arm cell on its column turns about it to row 5, col 5; the stored pivot color leaves the stray cell alone.",
+    "input": [
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,2,2,5,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,8,0,0,0,0],
+      [0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["pivot_color=stored"],
+      "grid": [
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,3,3,5,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,8,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$DirTurn & pivot_color=RarestColor"],
+      "grid": [
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,3,3,5,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,8,0,0,2,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$RotateOffsets & pivot_color=RarestColor"],
+      "grid": [
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,3,3,5,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,2,0],
+        [0,0,8,0,0,2,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "Two sticks on a background of 1: the stored background 0 makes every 1 cell a stick cell, so both sticks join one stick and the arm cell at row 6, col 5 also turns about the upper pivot and paints row 2, col 1; the dominant color 1 as background keeps the two sticks apart.",
+    "input": [
+      [1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1],
+      [1,1,1,2,2,5,1],
+      [1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1],
+      [1,1,1,1,2,2,5]
+    ],
+    "output": [{
+      "cases": ["$DirTurn & background=stored"],
+      "grid": [
+        [1,1,1,1,1,2,1],
+        [1,1,1,1,1,2,1],
+        [1,2,1,3,3,5,1],
+        [1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,2],
+        [1,1,1,1,1,1,2],
+        [1,1,1,1,3,3,5]
+      ]
+    }, {
+      "cases": ["$RotateOffsets"],
+      "grid": [
+        [1,1,1,1,1,2,1],
+        [1,2,1,1,1,2,1],
+        [1,2,1,3,3,5,1],
+        [1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,2],
+        [1,1,1,1,1,1,2],
+        [1,1,1,1,3,3,5]
+      ]
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": [
+        [1,1,1,1,1,2,1],
+        [1,1,1,1,1,2,1],
+        [1,1,1,3,3,5,1],
+        [1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,2],
+        [1,1,1,1,1,1,2],
+        [1,1,1,1,3,3,5]
+      ]
+    }]
+  }]
+}

@@ -1,0 +1,188 @@
+// b942fd60
+// @draft
+// @keywords: markers cast walk
+// @scene background: every cell that is not a mark has the color `background`
+// @scene one-seed: exactly one cell has the color `line-color`, the seed, and
+//  it lies on the grid edge opposite `start-dir`
+// @scene scattered-marks: single cells of other colors, the obstacles, lie
+//  scattered over the grid; none has the color `line-color`
+// @rule first-ray: a ray leaves the seed toward `start-dir`
+// @rule ray-stops: a ray runs over the cells in its direction, and stops at the
+//  last cell before an obstacle or before the grid edge
+// @rule branch: where a ray stops before an obstacle, two new rays leave the
+//  stop cell, one in each direction perpendicular to that ray
+// @rule edge-ends: a ray that stops at the grid edge has no branches
+// @rule paint: every cell a ray runs over takes the color `line-color`; every
+//  other cell keeps its input color
+
+// whether the seed blocks a ray
+.type SeedRole =
+    // @claim ray-stops
+    SeedPasses {}
+    // @rule ray-stops: a ray stops at the last cell before an obstacle, before
+    //  the seed, or before the grid edge
+    // @witness ray-meets-seed: ordinary concept
+  | SeedBlocks {}
+
+// whether a ray whose first cell is an obstacle branches
+.type BlockedRay =
+    // @claim branch
+    BlockedRayBranches {}
+    // @rule branch: where a ray runs over at least one cell and stops before an
+    //  obstacle, two new rays leave the stop cell, one in each direction
+    //  perpendicular to that ray
+    // @witness seed-next-to-mark: ordinary concept
+  | BlockedRayEnds {}
+
+// where the first ray's direction comes from
+.type Start =
+    // @claim first-ray
+    StoredStart {}
+    // @rule first-ray: a ray leaves the seed away from the grid edge it lies
+    //  on; undefined where the seed lies on no edge or on two edges
+    // @witness seed-on-top-edge: variant $StartFromSeedEdge
+    //     @relaxed one-seed
+  | StartFromSeedEdge {}
+
+// which cells block a ray
+.type Obstacles =
+    // @claim scattered-marks
+    NonBackground {}
+    // @scene scattered-marks: single cells of the colors in `obstacle-colors`,
+    //  the obstacles, lie scattered over the grid; a ray paints over a cell of
+    //  any other color
+    // @witness mark-of-new-color: variant concept
+  | StoredObstacleColors {}
+
+.type Choice = [s: SeedRole, b: BlockedRay, st: Start, o: Obstacles]
+
+// The cells that block a ray under one reading of the seed and of the
+// obstacles.
+.type Block = [s: SeedRole, o: Obstacles]
+
+// A ray: the cell it leaves and the direction it runs.
+.type Leg = [p: Position, d: Dir]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl line(col: Color) line(2).
+
+    // --- $StoredStart ---
+    .decl start(d: Dir) start(DIR_R).
+
+    // --- $NonBackground ---
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl bg(col: Color) bg(0).
+
+    // --- $StoredObstacleColors ---
+    .decl obstacle(col: Color) obstacle(3). obstacle(6). obstacle(7). obstacle(8).
+}
+
+.init params = Params
+
+.decl seed_role_choice(s: SeedRole)
+seed_role_choice($SeedPasses()). seed_role_choice($SeedBlocks()).
+
+.decl blocked_ray_choice(b: BlockedRay)
+blocked_ray_choice($BlockedRayBranches()). blocked_ray_choice($BlockedRayEnds()).
+
+.decl start_choice(st: Start)
+start_choice($StoredStart()). start_choice($StartFromSeedEdge()).
+
+.decl obstacles_choice(o: Obstacles)
+obstacles_choice($NonBackground()). obstacles_choice($StoredObstacleColors()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, B, St, O]) :-
+    seed_role_choice(S), blocked_ray_choice(B), start_choice(St), obstacles_choice(O).
+
+.decl seed(p: Position)
+seed(P) :- in(P, Col), params.line(Col).
+
+.decl obstacle(o: Obstacles, p: Position)
+
+.decl start(st: Start, d: Dir)
+
+// Rays cross the grid from every cell, and stop before a blocked cell.
+// @claim ray-stops branch paint
+.init cast = Ray<Block>
+cast.dir([S, O], D) :- seed_role_choice(S), obstacles_choice(O), dir_elem(D).
+cast.cell([S, O], P) :- seed_role_choice(S), obstacles_choice(O), in(P, _).
+cast.mark(K, P) :- cast.cell(K, P).
+cast.blocked([S, O], P) :- seed_role_choice(S), obstacle(O, P).
+
+// A ray from a toward d stops at e before a blocked cell, and a new ray
+// leaves e toward d2, at a right angle.
+.decl branch_leg(k: Block, a: Position, d: Dir, e: Position, d2: Dir)
+branch_leg(K, A, D, E, D2) :-
+    cast.stop(K, Q, D, _, A), dir_elem(D),
+    opposite(D, D_back), neighbor(Q, D_back, E),   // the last cell before it
+    perp_dir(D, D2).
+
+// The rays the seed sets off.
+.init reach = Propagation<Choice, Leg>
+reach.source([S, B, St, O], [P, D]) :- impl_choice([S, B, St, O]), seed(P), start(St, D).
+
+.decl painted(ch: Choice, p: Position)
+painted([S, B, St, O], P) :-
+    reach.reached([S, B, St, O], [A, D]), cast.clear([S, O], P, D, _, A).
+
+// A case draws where the seed sets off a first ray.
+out(P, Col, Ch) :- painted(Ch, P), params.line(Col).
+out(P, Col, Ch) :- in(P, Col), reach.source(Ch, _), !painted(Ch, P).
+
+// --- $SeedBlocks ---
+cast.blocked([$SeedBlocks(), O], P) :- obstacles_choice(O), seed(P).
+
+// --- $BlockedRayBranches ---
+reach.edge([S, $BlockedRayBranches(), St, O], [A, D], [E, D2]) :-
+    start_choice(St), branch_leg([S, O], A, D, E, D2).
+
+// --- $BlockedRayEnds ---
+reach.edge([S, $BlockedRayEnds(), St, O], [A, D], [E, D2]) :-
+    start_choice(St), branch_leg([S, O], A, D, E, D2), E != A.
+
+// --- $StoredStart ---
+start($StoredStart(), D) :- params.start(D).
+
+// --- $StartFromSeedEdge ---
+
+// The grid edges the seed lies on.
+// @ignore: store — a stored seed edge gives the start direction away from it,
+// as `$StoredStart` stores it, so each case that stores it is equivalent to
+// that `$StoredStart` case
+.decl seed_edge(d: Dir)
+seed_edge(D) :- seed(P), dir_elem(D), dist(P, D, 0).
+
+.decl corner_seed()
+corner_seed() :- seed_edge(D1), seed_edge(D2), D1 != D2.
+
+start($StartFromSeedEdge(), D) :- seed_edge(D_edge), !corner_seed(), opposite(D_edge, D).
+
+// --- $NonBackground ---
+obstacle($NonBackground(), P) :- in(P, Col), !params.bg(Col), !params.line(Col).
+
+// --- $StoredObstacleColors ---
+obstacle($StoredObstacleColors(), P) :- in(P, Col), params.obstacle(Col).
+
+.comp Determine {
+    // The colors some train output paints over.
+    .decl repainted(col: Color)
+    repainted(Col) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+
+    .decl obstacle(col: Color)
+    obstacle(Col) :- ex_in(E, _, Col), ex_out(E, _, _), !repainted(Col), !params.line(Col).
+
+    // The seed's next cell toward d takes the line color in the output.
+    .decl painted_next(e: Example, d: Dir)
+    painted_next(E, D) :-
+        params.line(Col), ex_in(E, P, Col), dir_elem(D), neighbor(P, D, Q), ex_out(E, Q, Col).
+
+    .decl unpainted(d: Dir)
+    unpainted(D) :- ex_out(E, _, _), dir_elem(D), !painted_next(E, D).
+
+    .decl start(d: Dir)
+    start(D) :- dir_elem(D), !unpainted(D).
+}

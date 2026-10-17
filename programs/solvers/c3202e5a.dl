@@ -1,0 +1,178 @@
+// c3202e5a
+// @draft
+// @keywords: decompose crop select count rank
+// @scene divider-lattice: full rows and full columns of one color, evenly
+//  spaced, cut the grid into equal square tiles, with no line on the grid's
+//  edge
+// @scene one-mono-tile: exactly one tile has marks of a single color; every
+//  other tile has marks of two or more colors
+// @rule crop-mono-tile: the output is the one tile that holds background (0)
+//  cells and marks of a single color, cropped to the tile's cells, with its
+//  marks and its background cells as they are
+
+// which tile the output crops
+.type Selection =
+    // @claim crop-mono-tile
+    OneColor {}
+    // @rule crop-mono-tile: the output crops the tile with the fewest mark
+    //  colors, a tile with no marks counting zero; undefined on a tie for
+    //  fewest
+    // @witness empty-tile: borderline concept
+    //     @relaxed one-mono-tile
+  | FewestColors {}
+    // @rule crop-mono-tile: the output crops the tile that holds the most
+    //  cells of one mark color; undefined on a tie
+    // @witness sparse-mono-tile: ordinary concept
+  | MostOfOneColor {}
+    // @rule crop-mono-tile: the output crops the tile with the fewest
+    //  colors over all its cells, background counted as a color; undefined
+    //  on a tie
+    // @witness empty-tile: borderline concept
+    // @witness solid-two-color-tile: borderline concept
+    // @witness solid-tile: foreign concept
+    //     @relaxed one-mono-tile
+  | NoBackground {}
+
+// which cells of a tile are marks
+.type DividerInk =
+    // @claim crop-mono-tile
+    CountDividerInk {}
+    // @rule divider-ink-not-mark: cells of the divider color inside a tile
+    //  are not marks
+    // @witness divider-ink-heavy: ordinary concept
+  | IgnoreDividerInk {}
+
+.type Choice = [sel: Selection, ink: DividerInk]
+
+// A tile under one reading of the divider ink.
+.type InkTile = [i: DividerInk, t: Position]
+
+// A mark color of a tile under one reading of the divider ink.
+.type InkTileColor = [i: DividerInk, t: Position, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $OneColor, $FewestColors, $MostOfOneColor ---
+    // @derive DominantColor: borderline concept
+    .decl bg(c: Color) bg(0).
+}
+
+.init params = Params
+
+.decl selection_choice(s: Selection)
+selection_choice($OneColor()). selection_choice($FewestColors()).
+selection_choice($MostOfOneColor()). selection_choice($NoBackground()).
+
+.decl ink_choice(i: DividerInk)
+ink_choice($CountDividerInk()). ink_choice($IgnoreDividerInk()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, $CountDividerInk()]) :- selection_choice(S).
+impl_choice([$MostOfOneColor(), $IgnoreDividerInk()]).
+
+// A line of the grid, axis-only on a.
+.type Line = [a: Axis, l: Position]
+
+// The one color of each line that holds one color.
+// @claim divider-lattice
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+// @claim divider-lattice
+.init cut = DividerTiles<Unit>
+cut.cell($U(), P) :- in(P, _).
+cut.divider($U(), A, L) :- line_color.value([A, L], _).
+
+// @claim crop-mono-tile
+.init tile_box = Bbox<Position>
+tile_box.cell(T, P) :- cut.tile_of($U(), P, T).
+
+// The tiles each selection keeps, under each reading of the divider ink.
+.decl chosen(s: Selection, i: DividerInk, t: Position)
+
+// The one tile a case keeps.
+// @claim crop-mono-tile
+.init pick = Unanimous<Choice, Position>
+pick.item([S, I], T) :- impl_choice([S, I]), chosen(S, I, T).
+
+out(P_inner, Col, Ch) :- pick.value(Ch, T), tile_box.box(T, B), in(P, Col), crop(P, B, P_inner).
+
+// --- $OneColor, $FewestColors, $MostOfOneColor ---
+
+// The marks of each tile: its cells other than bg.
+.decl mark(i: DividerInk, t: Position, p: Position, col: Color)
+
+// --- $CountDividerInk ---
+
+mark($CountDividerInk(), T, P, Col) :- cut.tile_of($U(), P, T), in(P, Col), !params.bg(Col).
+
+// --- $IgnoreDividerInk ---
+
+mark($IgnoreDividerInk(), T, P, Col) :-
+    cut.tile_of($U(), P, T), in(P, Col), !params.bg(Col),
+    !line_color.value(_, Col).                                // not the divider color
+
+// --- $OneColor ---
+
+// The one color of a tile's marks.
+// @claim crop-mono-tile
+.init mark_color = Unanimous<InkTile, Color>
+mark_color.item([I, T], Col) :- mark(I, T, _, Col).
+
+// A tile that holds a bg cell.
+.decl has_bg(t: Position)
+has_bg(T) :- cut.tile_of($U(), P, T), in(P, Col), params.bg(Col).
+
+chosen($OneColor(), I, T) :- mark_color.value([I, T], _), has_bg(T).
+
+// --- $FewestColors ---
+
+// @claim crop-mono-tile
+.init mark_colors = Tally<InkTile, Color>
+mark_colors.item([I, T], Col) :- mark(I, T, _, Col).
+mark_colors.domain([I, T]) :- ink_choice(I), tile_box.box(T, _).
+
+// @claim crop-mono-tile
+.init fewest = ArgExtremes<DividerInk, Position>
+fewest.cand(I, T, N) :- mark_colors.tally([I, T], N).
+
+chosen($FewestColors(), I, T) :- fewest.low(I, T, _).
+
+// --- $MostOfOneColor ---
+
+// @claim crop-mono-tile
+.init color_cells = Tally<InkTileColor, Position>
+color_cells.item([I, T, Col], P) :- mark(I, T, P, Col).
+
+// @claim crop-mono-tile
+.init most = ArgExtremes<DividerInk, Position>
+most.cand(I, T, N) :- color_cells.tally([I, T, _], N).
+
+chosen($MostOfOneColor(), I, T) :- most.high(I, T, _).
+
+// --- $NoBackground ---
+
+// @claim crop-mono-tile
+.init cell_colors = Tally<Position, Color>
+cell_colors.item(T, Col) :- cut.tile_of($U(), P, T), in(P, Col).
+
+// @claim crop-mono-tile
+.init fewest_all = ArgExtremes<Unit, Position>
+fewest_all.cand($U(), T, N) :- cell_colors.tally(T, N).
+
+chosen($NoBackground(), $CountDividerInk(), T) :- fewest_all.low($U(), T, _).
+
+.comp Determine {
+    // A color that output e holds.
+    .decl out_color(e: Example, col: Color)
+    out_color(E, Col) :- ex_out(E, _, Col).
+
+    // A color that some output lacks.
+    .decl lacking(col: Color)
+    lacking(Col) :- out_color(_, Col), out_color(E, _), !out_color(E, Col).
+
+    // The color every output holds.
+    .decl bg(c: Color)
+    bg(Col) :- out_color(_, Col), !lacking(Col).
+}

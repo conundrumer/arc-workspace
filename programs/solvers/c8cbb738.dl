@@ -1,0 +1,204 @@
+// c8cbb738
+// @draft
+// @keywords: overlay color-class bbox rank count
+// @scene plain-background: one color fills every cell that is not a mark
+// @scene one-figure-per-color: each mark color other than the background
+//  marks exactly 4 cells, and those cells form one figure
+// @scene odd-extents: each figure's bounding box has an odd height and an odd
+//  width, so each figure has a center cell
+// @scene largest-figure-is-square: one figure's bounding box is a square whose
+//  side is at least the height and the width of each other figure's bounding
+//  box
+// @rule output-is-largest-box: the output is a square whose side is the side
+//  of the largest figure's bounding box, filled with the background color
+// @rule figures-share-center: each figure is copied into the output,
+//  translated so that the center of its bounding box is at the center of the
+//  output, with each mark keeping its color
+
+// the output's frame
+.type OutputFrame =
+    // @claim output-is-largest-box
+    LargestSquare {}
+    // @rule output-is-largest-box: the output's height is the largest figure
+    //  height and its width the largest figure width, so the output is the
+    //  bounding box of the centered figures
+    // @witness no-square-figure: variant $UnionFrame
+    //     @relaxed largest-figure-is-square
+  | UnionFrame {}
+    // @rule output-is-largest-box: the output is the bounding box of the
+    //  largest figure whose bounding box is a square, and marks that fall
+    //  outside it are dropped; undefined where no figure's bounding box is a
+    //  square
+    // @witness rectangle-outgrows-square: borderline $UnionFrame
+    //     @relaxed largest-figure-is-square
+  | SquareFigureFrame {}
+
+// how the background color is found
+.type Background =
+    // @claim plain-background
+    CommonestBackground {}
+    // @scene plain-background: the background is the color of the corner
+    //  cell params.bg_corner gives
+    // @witness mark-on-corner: ordinary concept
+  | CornerBackground {}
+
+// which color classes are figures
+.type Figures =
+    // @claim one-figure-per-color
+    EveryColorClass {}
+    // @rule counted-classes: only the color classes of params.marks_per_figure
+    //  cells are figures; the cells of every other class take the background
+    //  color
+    // @witness stray-dot: borderline concept
+    //     @relaxed one-figure-per-color
+  | CountedClasses {}
+
+.type Choice = [frame: OutputFrame, background: Background, figures: Figures]
+
+.type BgCornerValue = [c: DiagDir]
+.type OpenValue = [bg_corner: BgCornerValue]
+
+// A background reading, at an open value.
+.type BgKey = [b: Background, ov: OpenValue]
+
+// A background reading and a figure reading, at an open value.
+.type Reading = [b: Background, s: Figures, ov: OpenValue]
+
+// The figure of one color under a reading.
+.type Fig = [r: Reading, col: Color]
+
+// An axis of the figures under a reading.
+.type Span = [r: Reading, a: Axis]
+
+// An output frame under a reading.
+.type View = [f: OutputFrame, r: Reading]
+
+.decl out(p: Position, col: Color, ch: Choice, ov: OpenValue)
+
+.comp Params {
+    // --- $CountedClasses ---
+    // @derive TileCount: borderline concept
+    //     @relaxed one-figure-per-color
+    // @derive TileDim: borderline concept
+    //     @relaxed one-figure-per-color
+    .decl marks_per_figure(n: number) marks_per_figure(4).
+
+    // --- $CornerBackground ---
+    // @open
+    .decl bg_corner(c: DiagDir) bg_corner(DIAG_TL). bg_corner(DIAG_TR). bg_corner(DIAG_BL). bg_corner(DIAG_BR).
+}
+
+.init params = Params
+
+// The color classes on a background, and the size of each.
+.comp Parse<Key> {
+    .type Class = [ky: Key, col: Color]
+
+    .decl cell(ky: Key, p: Position, col: Color)
+    .decl bg(ky: Key, col: Color)
+
+    // @claim plain-background
+    .init palette = Mode<Key, Color, Position>
+    palette.item(Ky, Col, P) :- cell(Ky, P, Col).
+
+    // The cells of each color class: the cells not of the background color.
+    .decl class_cell(ky: Key, col: Color, p: Position)
+    class_cell(Ky, Col, P) :- cell(Ky, P, Col), !bg(Ky, Col).
+
+    // @claim counted-classes
+    .init class_size = Tally<Class, Position>
+    class_size.item([Ky, Col], P) :- class_cell(Ky, Col, P).
+}
+
+.init parse = Parse<BgKey>
+
+// The marks of each figure.
+.decl mark(f: Fig, p: Position)
+
+// @claim one-figure-per-color
+.init fig_box = Bbox<Fig>
+fig_box.cell(F, P) :- mark(F, P).
+
+.decl extent(f: Fig, a: Axis, n: number)
+extent(F, A, N) :- fig_box.box(F, B), mark(F, P), axis_elem(A), box_extent(B, P, A, N).
+
+// The cell at the center of each figure's bounding box.
+.decl center(f: Fig, p: Position)
+center(F, P) :- fig_box.box(F, B), in(P, _), crop(P, B, P_inner), centered(P_inner).
+
+// Some figure has no center cell.
+.decl uncentered(r: Reading)
+uncentered(R) :- mark([R, Col], _), !center([R, Col], _).
+
+.init frame = Frame2D<View>
+
+// The cells each figure's marks land on in the output.
+.decl landing(v: View, q: Position, col: Color)
+landing([F, R], Q, Col) :-
+    frame.cell([F, R], Z), centered(Z),              // the output's center
+    center([R, Col], C), mark([R, Col], P),
+    relative(C, P, V),                               // a mark's offset from its figure's center
+    compose(Z, V, Q).                                // laid off from the output's center
+
+out(Q, Col, [F, B, S], Ov) :-
+    frame.cell([F, [B, S, Ov]], Q), !uncentered([B, S, Ov]),
+    ( landing([F, [B, S, Ov]], Q, Col)
+    ; !landing([F, [B, S, Ov]], Q, _), parse.bg([B, Ov], Col) ).
+
+// --- $LargestSquare ---
+// The largest extent of any figure on either axis.
+// @claim output-is-largest-box
+.init side = Extremes<Reading>
+side.cand(R, N) :- extent([R, _], _, N).
+
+frame.extent([$LargestSquare(), R], A, N) :- side.high(R, N), axis_elem(A).
+
+// --- $UnionFrame ---
+// @claim output-is-largest-box
+.init span = Extremes<Span>
+span.cand([R, A], N) :- extent([R, _], A, N).
+
+frame.extent([$UnionFrame(), R], A, N) :- span.high([R, A], N).
+
+// --- $SquareFigureFrame ---
+// The largest side of a figure whose bounding box is a square.
+// @claim output-is-largest-box
+.init square_side = Extremes<Reading>
+square_side.cand(R, N) :- extent([R, Col], A1, N), perp(A1, A2), extent([R, Col], A2, N).
+
+frame.extent([$SquareFigureFrame(), R], A, N) :- square_side.high(R, N), axis_elem(A).
+
+// --- $EveryColorClass ---
+mark([[B, $EveryColorClass(), Ov], Col], P) :- parse.class_cell([B, Ov], Col, P).
+
+// --- $CountedClasses ---
+mark([[B, $CountedClasses(), Ov], Col], P) :-
+    parse.class_size.item([[B, Ov], Col], P), parse.class_size.tally([[B, Ov], Col], N),
+    params.marks_per_figure(N).
+
+// --- $CommonestBackground ---
+parse.cell([$CommonestBackground(), [nil]], P, Col) :- in(P, Col).
+parse.bg([$CommonestBackground(), [nil]], Col) :-
+    parse.palette.mode([$CommonestBackground(), [nil]], Col).
+
+// --- $CornerBackground ---
+parse.cell([$CornerBackground(), [[C]]], P, Col) :- params.bg_corner(C), in(P, Col).
+parse.bg([$CornerBackground(), [[C]]], Col) :-
+    params.bg_corner(C), in(P, Col), diag_dist(P, C, _, 0, 0).   // the corner cell
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
+    parse.bg(E, Col) :- parse.palette.mode(E, Col).
+
+    // The commonest class size in each input.
+    .init size_mode = Mode<Example, number, Color>
+    size_mode.item(E, N, Col) :- parse.class_size.tally([E, Col], N).
+
+    // A commonest size that some other input does not share.
+    .decl unshared(n: number)
+    unshared(N) :- size_mode.mode(_, N), size_mode.mode(_, N2), N != N2.
+
+    .decl marks_per_figure(n: number)
+    marks_per_figure(N) :- size_mode.mode(_, N), !unshared(N).
+}

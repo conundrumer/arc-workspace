@@ -1,0 +1,265 @@
+// bcb3040b
+// @draft
+// @keywords: markers span mapping noise
+// @scene noise-field: every cell other than the markers is 0 or 1
+// @scene two-markers: exactly two cells have the color `marker_color`
+// @scene markers-aligned: the two markers lie on one row, one column, or one
+//  diagonal
+// @scene markers-on-opposite-edges: the two markers sit on opposite edges of
+//  the grid, so the segment between them spans the grid
+// @rule draw-segment: each cell strictly between the two markers on their
+//  common line is recolored by `line_paint`, keyed by its input color
+// @rule keep-rest: every other cell, the markers included, keeps its input
+//  color
+
+// where the marker color comes from
+.type MarkerSource =
+    // @claim two-markers
+    StoredColor {}
+    // @scene two-markers: exactly two cells share one color, the marker color
+    // @rule draw-segment: the marker color is the one color of exactly two
+    //  cells; undefined where several colors have exactly two cells
+    // @witness sparse-ones: borderline concept
+  | TwoCellColor {}
+    // @scene two-markers: exactly two cells have a color outside
+    //  `field_colors`
+    // @rule draw-segment: the markers are the cells of a color outside
+    //  `field_colors`
+    // @witness stray-cell: borderline concept
+    //     @relaxed noise-field
+  | NonFieldColor {}
+
+// how far the line reaches along the markers' common line
+.type Extent =
+    // @claim draw-segment
+    Segment {}
+    // @rule draw-segment: the whole line through the two markers, from grid
+    //  edge to grid edge, takes `line_paint`, the markers excepted
+    // @witness extend-past-markers: variant concept
+    //     @relaxed markers-on-opposite-edges
+  | ExtendFullLine {}
+
+// which markers are joined
+.type MarkerSet =
+    // @claim two-markers
+    TwoMarkers {}
+    // @scene two-markers: any number of cells have the color `marker_color`
+    // @scene markers-aligned: the markers need not share a line
+    // @rule draw-segment: every pair of markers on one row, column or
+    //  diagonal is joined; undefined where a segment crosses a cell with no
+    //  `line_paint` entry, a third marker in line included
+    // @witness four-markers: variant $EveryAlignedPair
+    //     @relaxed two-markers
+  | EveryAlignedPair {}
+
+// what a segment cell's paint is keyed by
+.type Crossing =
+    // @claim draw-segment
+    KeyedPaint {}
+    // @scene noise-field: every cell other than the markers is `bg` or of
+    //  another color
+    // @rule draw-segment: a segment cell of `bg` takes `bg_paint`, and a cell
+    //  of any other color takes `cross_paint`; undefined where a segment
+    //  crosses a marker cell
+    // @witness third-noise-color: variant $CrossAnyFg
+    //     @relaxed noise-field
+  | CrossAnyFg {}
+
+// where the paint of a background segment cell comes from
+.type LineColor =
+    // @claim draw-segment
+    StoredPaint {}
+    // @rule draw-segment: a segment cell of `bg` takes `marker_color`, and a
+    //  cell of another color is recolored by `line_paint`
+    // @witness marker-color-line: variant $LineInMarkerColor
+    //     @reassigned marker_color
+  | LineInMarkerColor {}
+
+.type Choice = [source: MarkerSource, extent: Extent, markers: MarkerSet, cross: Crossing, line: LineColor]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $KeyedPaint ---
+    // the color a segment cell takes, keyed by its input color
+    .decl line_paint(c_in: Color, c_out: Color) line_paint(0, 2). line_paint(1, 3).
+
+    // --- $CrossAnyFg, $LineInMarkerColor ---
+    .decl bg(col: Color) bg(0).
+
+    // --- $CrossAnyFg & $StoredPaint ---
+    // @derive RarestColor: variant derived
+    .decl bg_paint(col: Color) bg_paint(2).
+
+    // --- $CrossAnyFg ---
+    .decl cross_paint(col: Color) cross_paint(3).
+
+    // --- $StoredColor ---
+    // @derive RarestColor: borderline $EveryAlignedPair
+    //     @relaxed two-markers
+    // @ignore: derive $TwoMarkers — subsumed by $EveryAlignedPair &
+    //  marker_color=RarestColor, which joins the same two markers wherever it
+    //  is defined
+    .decl marker_color(col: Color) marker_color(2).
+
+    // --- $NonFieldColor ---
+    .decl field_colors(col: Color) field_colors(0). field_colors(1).
+}
+
+.init params = Params
+
+.decl marker_source_choice(s: MarkerSource)
+marker_source_choice($StoredColor()). marker_source_choice($TwoCellColor()). marker_source_choice($NonFieldColor()).
+
+.decl extent_choice(e: Extent)
+extent_choice($Segment()). extent_choice($ExtendFullLine()).
+
+.decl crossing_choice(c: Crossing)
+crossing_choice($KeyedPaint()). crossing_choice($CrossAnyFg()).
+
+.decl line_color_choice(l: LineColor)
+line_color_choice($StoredPaint()). line_color_choice($LineInMarkerColor()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([$StoredColor(), $Segment(), $TwoMarkers(), $KeyedPaint(), $StoredPaint()]).
+impl_choice([S, E, $EveryAlignedPair(), C, L]) :-
+    marker_source_choice(S), extent_choice(E), crossing_choice(C), line_color_choice(L).
+
+// The colors of exactly two cells.
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // @input
+
+    // A color of three cells or more.
+    .decl crowded(key: Key, col: Color)
+    crowded(K, Col) :- cell(K, P, Col), cell(K, Q, Col), P != Q, cell(K, R, Col), R != P, R != Q.
+
+    .decl two_cell(key: Key, col: Color)
+    two_cell(K, Col) :- cell(K, P, Col), cell(K, Q, Col), P != Q, !crowded(K, Col).
+}
+
+// The colors of the markers.
+.decl marker_color(s: MarkerSource, col: Color)
+
+// The case finds no marker color, and is undefined.
+.decl unsourced(s: MarkerSource)
+unsourced(S) :- marker_source_choice(S), !marker_color(S, _).
+
+.decl marker(s: MarkerSource, p: Position)
+marker(S, P) :- marker_color(S, Col), in(P, Col).
+
+// @claim markers-aligned draw-segment
+.init lines = Ray<MarkerSource>
+lines.dir(S, D) :- marker_color(S, _), dir8_elem(D).
+lines.cell(S, P) :- marker_color(S, _), in(P, _).
+lines.mark(S, P) :- marker(S, P).
+
+// Marker q lies on the line from marker p toward d.
+.decl aligned(s: MarkerSource, p: Position, q: Position, d: Dir8)
+aligned(S, P, Q, D) :- marker(S, Q), lines.ray(S, Q, D, _, P), P != Q.
+
+// The pairs of markers joined, and the direction from p to q.
+.decl joined(s: MarkerSource, m: MarkerSet, p: Position, q: Position, d: Dir8)
+
+// The case finds no pair to join, and is undefined.
+.decl unpaired(s: MarkerSource, m: MarkerSet)
+
+// The cells the line between p and q covers, the markers excepted.
+.decl segment(s: MarkerSource, e: Extent, m: MarkerSet, p: Position)
+
+// The color a segment cell of input color c_in takes.
+.decl paint(s: MarkerSource, c: Crossing, l: LineColor, c_in: Color, c_out: Color)
+
+out(P, Col, [S, E, M, C, L]) :-
+    impl_choice([S, E, M, C, L]), !unsourced(S), !unpaired(S, M), in(P, Col_in),
+    ( segment(S, E, M, P), paint(S, C, L, Col_in, Col)    // on the line: painted
+    ; !segment(S, E, M, P), Col = Col_in                  // off it: kept
+    ).
+
+// --- $StoredColor ---
+marker_color($StoredColor(), Col) :- params.marker_color(Col).
+
+// --- $TwoCellColor ---
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// @claim two-markers
+.init two_cell = Unanimous<MarkerSource, Color>
+two_cell.item($TwoCellColor(), Col) :- parse.two_cell($U(), Col).
+
+marker_color($TwoCellColor(), Col) :- two_cell.value($TwoCellColor(), Col).
+
+// --- $NonFieldColor ---
+marker_color($NonFieldColor(), Col) :- in(_, Col), !params.field_colors(Col).
+
+// --- $TwoMarkers ---
+// A marker other than p and q.
+.decl extra(s: MarkerSource, p: Position, q: Position)
+extra(S, P, Q) :- aligned(S, P, Q, _), marker(S, R), R != P, R != Q.
+
+joined(S, $TwoMarkers(), P, Q, D) :- aligned(S, P, Q, D), !extra(S, P, Q).
+unpaired(S, $TwoMarkers()) :- marker_source_choice(S), !joined(S, $TwoMarkers(), _, _, _).
+
+// --- $EveryAlignedPair ---
+joined(S, $EveryAlignedPair(), P, Q, D) :- aligned(S, P, Q, D).
+
+// --- $Segment ---
+segment(S, $Segment(), M, P) :-
+    joined(S, M, P1, P2, D), dir8_opposite(D, D_back),
+    lines.ray(S, P, D, _, P1), P != P1,          // past p1 toward p2
+    lines.ray(S, P, D_back, _, P2), P != P2.     // short of p2
+
+// --- $ExtendFullLine ---
+segment(S, $ExtendFullLine(), M, P) :-
+    joined(S, M, P1, P2, D), axis4_of(D, A),
+    in(P, _), same_line(A, P1, P), P != P1, P != P2.
+
+// --- $KeyedPaint & $StoredPaint ---
+paint(S, $KeyedPaint(), $StoredPaint(), Col_in, Col) :-
+    marker_source_choice(S), params.line_paint(Col_in, Col).
+
+// --- $KeyedPaint & $LineInMarkerColor ---
+paint(S, $KeyedPaint(), $LineInMarkerColor(), Col_in, Col) :-
+    marker_source_choice(S), params.line_paint(Col_in, Col), !params.bg(Col_in).
+
+// --- $CrossAnyFg ---
+paint(S, $CrossAnyFg(), L, Col_in, Col) :-
+    marker_source_choice(S), line_color_choice(L), in(_, Col_in),
+    !params.bg(Col_in), !marker_color(S, Col_in), params.cross_paint(Col).
+
+// --- $CrossAnyFg & $StoredPaint ---
+paint(S, $CrossAnyFg(), $StoredPaint(), Col_in, Col) :-
+    marker_source_choice(S), params.bg(Col_in), params.bg_paint(Col).
+
+// --- $LineInMarkerColor ---
+paint(S, C, $LineInMarkerColor(), Col_in, Col) :-
+    crossing_choice(C), params.bg(Col_in), marker_color(S, Col).
+
+.comp Determine {
+    // Train pairs only: the ex_out atom holds the test inputs out.
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    // A color of two cells in some train input and not in another.
+    .decl uneven(col: Color)
+    uneven(Col) :- parse.two_cell(_, Col), ex_out(E, _, _), !parse.two_cell(E, Col).
+
+    .decl marker_color(col: Color)
+    marker_color(Col) :- parse.two_cell(_, Col), !uneven(Col).
+
+    // The input color of the segment cells the output paints in the marker
+    // color.
+    .decl bg(col: Color)
+    bg(Col) :-
+        ex_in(E, P, Col), ex_out(E, P, Col_out), params.marker_color(Col_out), Col != Col_out.
+
+    .decl bg_paint(col: Color)
+    bg_paint(Col) :- ex_in(E, P, Bg), params.bg(Bg), ex_out(E, P, Col), Col != Bg.
+
+    .decl cross_paint(col: Color)
+    cross_paint(Col) :-
+        ex_in(E, P, Col_in), !params.bg(Col_in), ex_out(E, P, Col), Col != Col_in.
+
+    // The colors the segments cross.
+    .decl field_colors(col: Color)
+    field_colors(Col) :- ex_in(E, P, Col), ex_out(E, P, Col_out), Col != Col_out.
+}

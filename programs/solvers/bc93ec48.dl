@@ -1,0 +1,205 @@
+// bc93ec48
+// @draft
+// @keywords: objects permutation move rank
+// @scene background-field: the grid is a field of background, with one-color
+//  shapes on it
+// @rule corner-shape: the shape of a corner is the 4-connected one-color
+//  component of non-background cells that holds the corner cell; a corner
+//  whose cell is background has no shape
+// @rule next-corner: each corner's shape is copied to the next corner in the
+//  sense direction, translated with no turn or flip, so that its bounding box
+//  touches that corner's two edges
+// @rule overlay: the copies are drawn over the input; each cell no copy covers
+//  keeps its input color, the cells of the shape that moved away included
+
+// which cells make up one shape
+.type Shape =
+    // @claim corner-shape
+    Conn4 {}
+    // @rule corner-shape: the shape is the 8-connected one-color component
+    // @witness diagonal-touch: ordinary concept
+  | Conn8 {}
+
+// which shape a corner holds
+.type Pick =
+    // @claim corner-shape
+    CornerCell {}
+    // @rule corner-shape: the shape of a corner is the shape that reaches both
+    //  of the corner's edges; undefined where two shapes do
+    // @witness shape-hugs-empty-corner: borderline $EdgePair
+  | EdgePair {}
+
+// the color of a cell that copies of different colors cover
+.type Clash =
+    // @claim overlay
+    Unresolved {}
+    // @rule precedence: where copies of different colors cover one cell, the
+    //  copy from the corner ranked first in precedence is drawn on top
+    // @witness copies-overlap: borderline $Precedence
+  | Precedence {}
+
+// how the target corner of each corner is encoded
+.type Step =
+    // @claim next-corner
+    SenseStep {}
+    // @rule next-corner: each corner's shape is copied to the corner that the
+    //  stored D4 element corner_d4 takes that corner to
+    // @witness corners-swap: ordinary $CornerMap
+    //     @reassigned corner_d4
+    //     @reassigned corner_target
+  | CornerD4 {}
+    // @rule next-corner: each corner's shape is copied to the corner that the
+    //  stored map corner_target gives
+    // @witness corners-swap: ordinary $CornerMap
+  | CornerMap {}
+
+.type Choice = [shape: Shape, pick: Pick, clash: Clash, step: Step]
+
+.type PrecedenceValue = [v: Ident]
+.type OpenValue = [precedence: PrecedenceValue]
+
+// A shape, under the Shape branch that finds it.
+.type ShapeId = [s: Shape, x: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice, ov: OpenValue)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background-field
+    .decl background(c: Color) background(7).
+
+    // --- $SenseStep ---
+    .decl sense(s: Sense) sense(SENSE_CW).
+
+    // --- $CornerD4 ---
+    .decl corner_d4(d: D4) corner_d4(D4_CW).
+
+    // --- $CornerMap ---
+    // the corner each corner's shape moves to
+    .decl corner_target(c: DiagDir, c2: DiagDir)
+    corner_target(DIAG_TL, DIAG_TR).
+    corner_target(DIAG_TR, DIAG_BR).
+    corner_target(DIAG_BR, DIAG_BL).
+    corner_target(DIAG_BL, DIAG_TL).
+
+    // --- $Precedence ---
+    // Each order v of the corners, as the rank of each corner in it.
+    // @open
+    .decl precedence(v: Ident, c: DiagDir, r: number)
+    precedence(0, DIAG_TL, 0). precedence(0, DIAG_TR, 1). precedence(0, DIAG_BR, 2). precedence(0, DIAG_BL, 3).
+    precedence(1, DIAG_TL, 0). precedence(1, DIAG_TR, 1). precedence(1, DIAG_BL, 2). precedence(1, DIAG_BR, 3).
+    precedence(2, DIAG_TL, 0). precedence(2, DIAG_BR, 1). precedence(2, DIAG_TR, 2). precedence(2, DIAG_BL, 3).
+    precedence(3, DIAG_TL, 0). precedence(3, DIAG_BR, 1). precedence(3, DIAG_BL, 2). precedence(3, DIAG_TR, 3).
+    precedence(4, DIAG_TL, 0). precedence(4, DIAG_BL, 1). precedence(4, DIAG_TR, 2). precedence(4, DIAG_BR, 3).
+    precedence(5, DIAG_TL, 0). precedence(5, DIAG_BL, 1). precedence(5, DIAG_BR, 2). precedence(5, DIAG_TR, 3).
+    precedence(6, DIAG_TR, 0). precedence(6, DIAG_TL, 1). precedence(6, DIAG_BR, 2). precedence(6, DIAG_BL, 3).
+    precedence(7, DIAG_TR, 0). precedence(7, DIAG_TL, 1). precedence(7, DIAG_BL, 2). precedence(7, DIAG_BR, 3).
+    precedence(8, DIAG_TR, 0). precedence(8, DIAG_BR, 1). precedence(8, DIAG_TL, 2). precedence(8, DIAG_BL, 3).
+    precedence(9, DIAG_TR, 0). precedence(9, DIAG_BR, 1). precedence(9, DIAG_BL, 2). precedence(9, DIAG_TL, 3).
+    precedence(10, DIAG_TR, 0). precedence(10, DIAG_BL, 1). precedence(10, DIAG_TL, 2). precedence(10, DIAG_BR, 3).
+    precedence(11, DIAG_TR, 0). precedence(11, DIAG_BL, 1). precedence(11, DIAG_BR, 2). precedence(11, DIAG_TL, 3).
+    precedence(12, DIAG_BR, 0). precedence(12, DIAG_TL, 1). precedence(12, DIAG_TR, 2). precedence(12, DIAG_BL, 3).
+    precedence(13, DIAG_BR, 0). precedence(13, DIAG_TL, 1). precedence(13, DIAG_BL, 2). precedence(13, DIAG_TR, 3).
+    precedence(14, DIAG_BR, 0). precedence(14, DIAG_TR, 1). precedence(14, DIAG_TL, 2). precedence(14, DIAG_BL, 3).
+    precedence(15, DIAG_BR, 0). precedence(15, DIAG_TR, 1). precedence(15, DIAG_BL, 2). precedence(15, DIAG_TL, 3).
+    precedence(16, DIAG_BR, 0). precedence(16, DIAG_BL, 1). precedence(16, DIAG_TL, 2). precedence(16, DIAG_TR, 3).
+    precedence(17, DIAG_BR, 0). precedence(17, DIAG_BL, 1). precedence(17, DIAG_TR, 2). precedence(17, DIAG_TL, 3).
+    precedence(18, DIAG_BL, 0). precedence(18, DIAG_TL, 1). precedence(18, DIAG_TR, 2). precedence(18, DIAG_BR, 3).
+    precedence(19, DIAG_BL, 0). precedence(19, DIAG_TL, 1). precedence(19, DIAG_BR, 2). precedence(19, DIAG_TR, 3).
+    precedence(20, DIAG_BL, 0). precedence(20, DIAG_TR, 1). precedence(20, DIAG_TL, 2). precedence(20, DIAG_BR, 3).
+    precedence(21, DIAG_BL, 0). precedence(21, DIAG_TR, 1). precedence(21, DIAG_BR, 2). precedence(21, DIAG_TL, 3).
+    precedence(22, DIAG_BL, 0). precedence(22, DIAG_BR, 1). precedence(22, DIAG_TL, 2). precedence(22, DIAG_TR, 3).
+    precedence(23, DIAG_BL, 0). precedence(23, DIAG_BR, 1). precedence(23, DIAG_TR, 2). precedence(23, DIAG_TL, 3).
+}
+
+.init params = Params
+
+.decl shape_choice(s: Shape)
+shape_choice($Conn4()). shape_choice($Conn8()).
+
+.decl pick_choice(k: Pick)
+pick_choice($CornerCell()). pick_choice($EdgePair()).
+
+.decl clash_choice(cl: Clash)
+clash_choice($Unresolved()). clash_choice($Precedence()).
+
+.decl step_choice(t: Step)
+step_choice($SenseStep()). step_choice($CornerD4()). step_choice($CornerMap()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, K, Cl, T]) :- shape_choice(S), pick_choice(K), clash_choice(Cl), step_choice(T).
+
+// Each shape: its cells and its color.
+.decl shape(s: Shape, x: Ident, p: Position, col: Color)
+
+// The shape each corner holds.
+.decl held(s: Shape, k: Pick, c: DiagDir, x: Ident)
+
+// Some corner holds two shapes, and the case is undefined.
+.decl ambiguous(s: Shape, k: Pick)
+ambiguous(S, K) :- held(S, K, C, X1), held(S, K, C, X2), X1 != X2.
+
+// The corner each corner's shape moves to.
+.decl target(t: Step, c: DiagDir, c2: DiagDir)
+
+// @claim next-corner
+.init shape_box = Bbox<ShapeId>
+shape_box.cell([S, X], P) :- shape(S, X, P, _).
+
+// The copy of corner c's shape: its cell q, of color col.
+.decl copy(s: Shape, k: Pick, t: Step, c: DiagDir, q: Position, col: Color)
+copy(S, K, T, C, Q, Col) :-
+    held(S, K, C, X), target(T, C, C2), shape(S, X, P, Col), shape_box.box([S, X], B),
+    diag_dist(B, C2, A, K1, K2), diag_dirs(C2, A, D1, D2),    // the box's gaps to the target corner's edges
+    jump(P, D1, K1, Q1), jump(Q1, D2, K2, Q).
+
+// The color each case paints at a cell some copy covers.
+.decl paint(ch: Choice, q: Position, col: Color, ov: OpenValue)
+
+out(Q, Col, Ch, Ov) :- paint(Ch, Q, Col, Ov), Ch = [S, K, _, _], !ambiguous(S, K).
+out(P, Col, Ch, [nil]) :-
+    impl_choice(Ch), Ch = [S, K, _, _], !ambiguous(S, K), in(P, Col), !paint(Ch, P, _, _).
+
+// --- $Conn4 ---
+// @claim corner-shape
+.init conn4 = Components<Color>
+conn4.node(Col, P) :- in(P, Col), !params.background(Col).
+
+shape($Conn4(), X, P, Col) :- conn4.label(Col, P, X).
+
+// --- $Conn8 ---
+// @claim corner-shape
+.init conn8 = Components8<Color>
+conn8.node(Col, P) :- in(P, Col), !params.background(Col).
+
+shape($Conn8(), X, P, Col) :- conn8.label(Col, P, X).
+
+// --- $CornerCell ---
+held(S, $CornerCell(), C, X) :-
+    shape(S, X, P, _), diag_dir_elem(C), box_corner(P, ZERO, C).
+
+// --- $EdgePair ---
+held(S, $EdgePair(), C, X) :-
+    shape(S, X, P1, _), shape(S, X, P2, _), diag_dirs(C, _, D1, D2),
+    dist(P1, D1, 0), dist(P2, D2, 0).
+
+// --- $SenseStep ---
+target($SenseStep(), C, C2) :- params.sense(S), rotation(S, R), apply_diag_dir(R, C, C2).
+
+// --- $CornerD4 ---
+target($CornerD4(), C, C2) :- params.corner_d4(G), apply_diag_dir(G, C, C2).
+
+// --- $CornerMap ---
+target($CornerMap(), C, C2) :- params.corner_target(C, C2).
+
+// --- $Unresolved ---
+paint([S, K, $Unresolved(), T], Q, Col, [nil]) :- copy(S, K, T, _, Q, Col).
+
+// --- $Precedence ---
+// Under order v, a copy from a corner ranked before c covers q.
+.decl covered(s: Shape, k: Pick, t: Step, v: Ident, c: DiagDir, q: Position)
+covered(S, K, T, V, C, Q) :-
+    copy(S, K, T, C2, Q, _), params.precedence(V, C2, R2), params.precedence(V, C, R), R2 < R.
+
+paint([S, K, $Precedence(), T], Q, Col, [[V]]) :-
+    copy(S, K, T, C, Q, Col), params.precedence(V, C, _), !covered(S, K, T, V, C, Q).

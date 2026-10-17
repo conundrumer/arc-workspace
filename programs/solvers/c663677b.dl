@@ -1,0 +1,345 @@
+// c663677b
+// @draft
+// @keywords: wallpaper repair symmetry count rank
+// @scene periodic-pattern: apart from the blanked cells, the grid is periodic
+//  on each axis: each cell has the color of every cell that lies a whole
+//  number of periods away from it on the row axis and on the column axis. The
+//  period on an axis is the shortest shift under which the unblanked cells
+//  agree, and it is shorter than the grid on that axis.
+// @scene blanked-patches: some cells are blanked, each with
+//  params.hole_color. The blanked cells form one or more patches.
+//  params.hole_color occurs nowhere in the pattern.
+// @scene each-class-seen: for each blanked cell, some cell a whole number of
+//  periods away from it on each axis is not blanked.
+// @rule restore-pattern: the output is the input with each blanked cell given
+//  the color that the unblanked cells of its class under the periods hold.
+
+// how a blanked cell is known
+.type Damage =
+    // @claim blanked-patches
+    StoredHole {}
+    // @scene blanked-patches: the blanked cells have the one color whose
+    //  cells, read as blank, leave the tile of least area under the period
+    //  derivation of periodic-pattern; undefined where two colors tie, or where
+    //  no color leaves a period on both axes
+    // @witness other-hole-color: variant $HoleFromPeriod
+    //     @relaxed blanked-patches
+  | HoleFromPeriod {}
+    // @scene blanked-patches: no cell is known to be blank
+    // @rule restore-pattern: each cell takes the color that holds more than
+    //  half the cells of its class, under the tile of least area at which every
+    //  class has such a color; undefined where two tiles tie, or where no tile
+    //  shorter than the grid gives every class such a color
+    // @witness sparse-dots: variant concept
+    // @witness blank-majority: variant concept
+  | ClassMode {}
+
+// which shifts relate cells
+.type Lattice =
+    // @claim periodic-pattern
+    AxisShifts {}
+    // @scene periodic-pattern: the lattice also takes each shift shorter than
+    //  the axis periods, in any direction, under which the unblanked cells
+    //  agree and at least one pair of unblanked cells meets
+    // @witness oblique-stripes: borderline $ObliqueLattice
+    //     @relaxed each-class-seen
+  | ObliqueLattice {}
+
+// which further cells join a class
+.type Isometry =
+    // @claim restore-pattern
+    Translations {}
+    // @rule restore-pattern: classes also merge under each reflection or
+    //  rotation of the tile, with a shift, that some two unblanked cells it
+    //  pairs witness and no two contradict
+    // @witness mirror-class-blank: borderline $WitnessedMirror
+    //     @relaxed each-class-seen
+  | WitnessedMirror {}
+    // @scene tile-mirror: the grid is symmetric under params.mirror, the
+    //  reflection across its main diagonal
+    // @rule restore-pattern: classes also merge under params.mirror; undefined
+    //  where a merged class holds two colors, where params.mirror does not take
+    //  the grid onto itself, or where the periods differ between the axes
+    // @witness asymmetric-tile: variant concept
+    // @witness contradicted-mirror: borderline $StoredMirror
+    //     @relaxed each-class-seen
+  | StoredMirror {}
+
+.type Choice = [d: Damage, l: Lattice, i: Isometry]
+
+// A cell of one case.
+.type CaseCell = [ch: Choice, p: Position]
+// A class of one case.
+.type Orbit = [ch: Choice, id: Ident]
+.type OrbitColor = [o: Orbit, col: Color]
+// A color that a case reads as blank.
+.type DamageColor = [d: Damage, col: Color]
+// A class of the tile search: the corner the tile stands at, the tile's far
+// cell, and the tile cell that the class's cells share their place with.
+.type TileClass = [dg: DiagDir, t: Position, q: Position]
+.type TileClassColor = [k: TileClass, col: Color]
+// A tile of the search: the corner it stands at, and its far cell.
+.type Tile = [dg: DiagDir, t: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $StoredHole ---
+    .decl hole_color(c: Color) hole_color(0).
+
+    // --- $StoredMirror ---
+    .decl mirror(d: D4) mirror(D4_DG).
+}
+
+.init params = Params
+
+.decl damage_choice(d: Damage)
+damage_choice($StoredHole()). damage_choice($HoleFromPeriod()). damage_choice($ClassMode()).
+
+.decl lattice_choice(l: Lattice)
+lattice_choice($AxisShifts()). lattice_choice($ObliqueLattice()).
+
+.decl isometry_choice(i: Isometry)
+isometry_choice($Translations()). isometry_choice($WitnessedMirror()). isometry_choice($StoredMirror()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([D, L, I]) :- damage_choice(D), lattice_choice(L), isometry_choice(I).
+
+// The cells each case reads as unblanked.
+.decl intact(d: Damage, p: Position, col: Color)
+
+// The lattice's period on each axis.
+// @store: variant concept
+.decl period(d: Damage, a: Axis, k: number)
+
+// An axis with no period.
+.decl aperiodic(d: Damage)
+aperiodic(D) :- damage_choice(D), axis_elem(A), !period(D, A, _).
+
+// The classes of the lattice.
+// @claim periodic-pattern
+.init lattice = Wallpaper<Damage, Color>
+lattice.grid(D, P) :- damage_choice(D), in(P, _).
+lattice.period(D, A, K) :- period(D, A, K).
+
+// The classes of each case: the lattice's, joined by the case's further
+// shifts and isometries.
+.init orbit = Canon<CaseCell>
+orbit.edge([Ch, P], [Ch, P]) :- impl_choice(Ch), in(P, _).
+orbit.edge([Ch, P], [Ch, Q]) :- impl_choice(Ch), Ch = [D, _, _], lattice.action(D, P, Q).
+
+// A case undefined on the input.
+.decl broken(ch: Choice)
+broken(Ch) :- impl_choice(Ch), Ch = [D, _, _], aperiodic(D).
+
+// --- $StoredHole, $HoleFromPeriod ---
+
+// The color each case reads as blank.
+.decl hole(d: Damage, c: Color)
+
+intact(D, P, Col) :- hole(D, C), in(P, Col), Col != C.
+
+// A color that each case may read as blank.
+.decl blank_cand(d: Damage, c: Color)
+
+// The shifts under which the cells left unblanked agree, with each color
+// read as blank.
+// @claim periodic-pattern
+// @ignore min_period: store — stored, it gives $StoredHole the periods that
+//  period=stored gives, and it gives $HoleFromPeriod one tile for every color,
+//  so the hole color ties and that model is undefined on every input
+.init shifts = OffsetInvariance<DamageColor, Color>
+shifts.cell([D, C], P, Col) :- blank_cand(D, C), in(P, Col), Col != C.
+
+period(D, A, K) :- hole(D, C), shifts.min_period([D, C], A, K).
+
+// An unblanked cell keeps its color, and a blanked cell takes the colors the
+// unblanked cells of its class hold.
+out(P, Col, Ch) :-
+    impl_choice(Ch), Ch = [D, _, _], hole(D, C), !broken(Ch),
+    ( intact(D, P, Col)
+    ; in(P, C), orbit.id([Ch, P], Id), orbit.id([Ch, Q], Id), intact(D, Q, Col)
+    ).
+
+// --- $StoredHole ---
+
+hole($StoredHole(), C) :- params.hole_color(C).
+blank_cand($StoredHole(), C) :- params.hole_color(C).
+
+// --- $HoleFromPeriod ---
+
+blank_cand($HoleFromPeriod(), C) :- in(_, C).
+
+// The tile each color leaves when its cells are read as blank.
+.init hole_tile = Frame2D<Color>
+hole_tile.extent(C, A, K) :- shifts.min_period([$HoleFromPeriod(), C], A, K).
+
+// @claim blanked-patches
+.init hole_area = Tally<Color, Position>
+hole_area.item(C, P) :- hole_tile.cell(C, P).
+
+// @claim blanked-patches
+.init least_hole = ArgExtremes<Unit, Color>
+least_hole.cand($U(), C, N) :- hole_area.tally(C, N).
+
+// @claim blanked-patches
+.init one_hole = Unanimous<Unit, Color>
+one_hole.item($U(), C) :- least_hole.low($U(), C, _).
+
+hole($HoleFromPeriod(), C) :- one_hole.value($U(), C).
+
+// --- $ClassMode ---
+
+intact($ClassMode(), P, Col) :- in(P, Col).
+
+// The grid cell at distance k1 from corner dg's edge on axis a, and k2 from
+// its other edge.
+.decl corner_cell(dg: DiagDir, a: Axis, k1: number, k2: number, q: Position)
+corner_cell(Dg, A, K1, K2, Q) :-
+    in(Q, _), diag_dir_elem(Dg), axis_elem(A), diag_dist(Q, Dg, A, K1, K2).
+
+// A tile that stands at corner dg and reaches to the cell t, exclusive: k1
+// rows or columns on axis a and k2 on the other.
+.decl tile_cand(dg: DiagDir, a: Axis, t: Position, k1: number, k2: number)
+tile_cand(Dg, A, T, K1, K2) :- corner_cell(Dg, A, K1, K2, T), K1 > 0, K2 > 0.
+
+// The place of cell p in tile t: the tile cell q at p's distances to the
+// corner's edges, each within the tile's extent on its axis.
+.decl tile_place(dg: DiagDir, t: Position, p: Position, q: Position)
+tile_place(Dg, T, P, Q) :-
+    tile_cand(Dg, A, T, K1, K2),
+    corner_cell(Dg, A, T1, T2, P),
+    stride(T1, K1, 0, _, R1), stride(T2, K2, 0, _, R2),
+    corner_cell(Dg, A, R1, R2, Q).
+
+// @claim restore-pattern
+.init tile_mode = Mode<TileClass, Color, Position>
+tile_mode.item([Dg, T, Q], Col, P) :- tile_place(Dg, T, P, Q), in(P, Col).
+
+// A cell p of color col2 in class k, whose commonest color is col.
+.decl tile_vote(k: TileClass, col: Color, p: Position, col2: Color)
+tile_vote(K, Col, P, Col2) :-
+    tile_mode.mode(K, Col), K = [Dg, T, Q], tile_place(Dg, T, P, Q), in(P, Col2).
+
+// The commonest color of a class against the class's other cells.
+// @claim restore-pattern
+.init tile_major = Excess<TileClassColor, Position>
+tile_major.plus([K, Col], P) :- tile_vote(K, Col, P, Col).
+tile_major.minus([K, Col], P) :- tile_vote(K, Col, P, Col2), Col2 != Col.
+
+// A class that some color holds more than half of.
+.decl major_class(k: TileClass)
+major_class(K) :- tile_major.excess([K, _], _).
+
+// A tile with a class that no color holds more than half of.
+.decl split_tile(dg: DiagDir, t: Position)
+split_tile(Dg, T) :- tile_place(Dg, T, _, Q), !major_class([Dg, T, Q]).
+
+// @claim restore-pattern
+.init tile_area = Tally<Tile, Position>
+tile_area.item([Dg, T], Q) :- tile_place(Dg, T, _, Q).
+
+// @claim restore-pattern
+.init least_tile = ArgExtremes<DiagDir, Position>
+least_tile.cand(Dg, T, N) :- tile_area.tally([Dg, T], N), !split_tile(Dg, T).
+
+// @claim restore-pattern
+.init one_tile = Unanimous<DiagDir, Position>
+one_tile.item(Dg, T) :- least_tile.low(Dg, T, _).
+
+period($ClassMode(), A, K) :- one_tile.value(Dg, T), diag_dist(T, Dg, A, K, _).
+
+// @claim restore-pattern
+.init orbit_mode = Mode<Orbit, Color, Position>
+orbit_mode.item([Ch, Id], Col, P) :-
+    Ch = [$ClassMode(), _, _], orbit.id([Ch, P], Id), in(P, Col).
+
+// A cell p of color col2 in orbit o, whose commonest color is col.
+.decl orbit_vote(o: Orbit, col: Color, p: Position, col2: Color)
+orbit_vote(O, Col, P, Col2) :-
+    orbit_mode.mode(O, Col), O = [Ch, Id], orbit.id([Ch, P], Id), in(P, Col2).
+
+// @claim restore-pattern
+.init orbit_major = Excess<OrbitColor, Position>
+orbit_major.plus([O, Col], P) :- orbit_vote(O, Col, P, Col).
+orbit_major.minus([O, Col], P) :- orbit_vote(O, Col, P, Col2), Col2 != Col.
+
+// Each cell takes the color that holds more than half of its class.
+out(P, Col, Ch) :-
+    Ch = [$ClassMode(), _, _], orbit.id([Ch, P], Id), !broken(Ch),
+    orbit_major.excess([[Ch, Id], Col], _).
+
+// --- $ObliqueLattice ---
+
+// A shift's component on axis a, shorter than the period there.
+.decl short_step(d: Damage, a: Axis, v: Offset)
+short_step(D, A, V) :-
+    period(D, A, K), in(P, _), axis_of(Dr, A), dist(P, Dr, K2), K2 < K,
+    jump_offset(Dr, K2, V).
+
+// A shift shorter than the periods on both axes.
+.decl oblique_cand(d: Damage, v: Offset)
+oblique_cand(D, V) :-
+    short_step(D, A, V1), perp(A, A2), short_step(D, A2, V2),
+    compose(V1, V2, V), V != ZERO.
+
+// The shift takes an unblanked cell of color col onto one of color col2.
+.decl oblique_pair(d: Damage, v: Offset, col: Color, col2: Color)
+oblique_pair(D, V, Col, Col2) :-
+    oblique_cand(D, V), intact(D, P, Col), compose(P, V, Q), intact(D, Q, Col2).
+
+.decl oblique_clash(d: Damage, v: Offset)
+oblique_clash(D, V) :- oblique_pair(D, V, Col, Col2), Col != Col2.
+
+// Each shift under which the unblanked cells agree, and some pair meets.
+orbit.edge([Ch, P], [Ch, Q]) :-
+    impl_choice(Ch), Ch = [D, $ObliqueLattice(), _],
+    oblique_pair(D, V, _, _), !oblique_clash(D, V),
+    in(P, _), compose(P, V, Q), in(Q, _).
+
+// --- $WitnessedMirror ---
+
+// The classes of the lattice joined under the tile's witnessed isometries.
+// @claim restore-pattern
+.init mirror = Wallpaper<Damage, Color>
+mirror.transform(T) :- d4_compose(T, U, V), U != V.    // each transform but the identity
+mirror.cell(D, P, Col) :- intact(D, P, Col).
+mirror.grid(D, P) :- damage_choice(D), in(P, _).
+mirror.period(D, A, K) :- period(D, A, K).
+
+orbit.edge([Ch, P], [Ch, Q]) :-
+    impl_choice(Ch), Ch = [D, _, $WitnessedMirror()], mirror.action(D, P, Q).
+
+// --- $StoredMirror ---
+
+orbit.edge([Ch, P], [Ch, Q]) :-
+    impl_choice(Ch), Ch = [_, _, $StoredMirror()],
+    params.mirror(T), in(P, _), apply(T, P, Q), in(Q, _).
+
+// The mirror takes a cell off the grid, or the periods differ between the
+// axes.
+broken(Ch) :-
+    impl_choice(Ch), Ch = [D, _, $StoredMirror()],
+    ( params.mirror(T), in(P, _), apply(T, P, Q), !in(Q, _)
+    ; period(D, A, K), perp(A, A2), period(D, A2, K2), K != K2
+    ).
+
+.comp Determine {
+    // The color whose cells the outputs change.
+    .decl hole_color(c: Color)
+    hole_color(C) :- ex_in(E, P, C), ex_out(E, P, C2), C != C2.
+
+    // A reflection across a diagonal under which train output e is not
+    // symmetric.
+    .decl asymmetric(e: Example, d: D4)
+    asymmetric(E, T) :-
+        diag_flip_of(_, T), ex_out(E, P, C), apply(T, P, Q), !ex_out(E, Q, C).
+
+    // The reflection across a diagonal under which the most train outputs
+    // are symmetric.
+    .init symmetric = Mode<Unit, D4, Example>
+    symmetric.item($U(), T, E) :- ex_out(E, _, _), diag_flip_of(_, T), !asymmetric(E, T).
+
+    .decl mirror(d: D4)
+    mirror(T) :- symmetric.mode($U(), T).
+}

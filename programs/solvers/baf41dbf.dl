@@ -1,0 +1,217 @@
+// baf41dbf
+// @draft
+// @keywords: markers span bbox border lines rank walk
+// @scene frame: one rectangle outline of `frame_color` on a field of
+//  `background`, with zero or more full-span divider lines of `frame_color`
+//  across its inside; every other inside cell is `background`
+// @scene markers: single cells of `marker_color`, each outside the frame's box
+//  and beyond at least one of its sides
+// @rule side-moves-to-marker: each side of the frame that has a marker beyond
+//  it moves out to stand `marker_gap` cells short of the farthest such
+//  marker; a side with no marker beyond it stays
+// @rule outline-redrawn: the output draws the outline of the new box in
+//  `frame_color`, and the old outline's cells that are not on the new outline
+//  or on a divider become `background`
+// @rule dividers-stretch: each divider keeps its row or column and runs across
+//  the whole new box
+// @rule markers-stay: the markers and the rest of the grid are unchanged
+
+// which sides of the frame a marker pulls
+.type Side =
+    // @claim side-moves-to-marker
+    Beyond {}
+    // @rule side-moves-to-marker: a marker pulls only the side it faces while
+    //  it lies in line with the frame's span on the other axis, and the moves
+    //  repeat until no side moves
+    // @witness diagonal-marker: borderline concept
+  | InLineMarkers {}
+
+// which of the markers beyond one side sets that side
+.type Pick =
+    // @claim side-moves-to-marker
+    Farthest {}
+    // @rule side-moves-to-marker: the nearest marker beyond a side sets it
+    // @witness two-markers-one-side: borderline concept
+  | NearestMarker {}
+
+// what becomes of a marker that ends inside or on the new box
+.type Enclosed =
+    // @claim markers-stay
+    MarkersStay {}
+    // @rule markers-stay: a marker inside or on the new box becomes
+    //  `background`, or `frame_color` where the outline or a divider runs
+    // @witness two-markers-one-side: borderline concept
+  | EnclosedMarkersCleared {}
+
+.type Choice = [side: Side, pick: Pick, enc: Enclosed]
+
+// Side d of box b, under one reading of the sides a marker pulls.
+.type Move = [s: Side, b: Box, d: Dir]
+
+// One move of box b, under one reading of the sides a marker pulls and of the
+// marker that sets a side.
+.type Step = [s: Side, pk: Pick, b: Box]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(col: Color) background(0).
+    .decl frame_color(col: Color) frame_color(3).
+    // @derive RarestColor: borderline concept
+    .decl marker_color(col: Color) marker_color(6).
+
+    // The background cells between a marker and the side it pulls.
+    .decl marker_gap(k: number) marker_gap(0).
+}
+
+.init params = Params
+
+.decl side_choice(s: Side)
+side_choice($Beyond()). side_choice($InLineMarkers()).
+
+.decl enclosed_choice(e: Enclosed)
+enclosed_choice($MarkersStay()). enclosed_choice($EnclosedMarkersCleared()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, $Farthest(), E]) :- side_choice(S), enclosed_choice(E).
+impl_choice([$InLineMarkers(), $NearestMarker(), E]) :- enclosed_choice(E).
+
+// The input frame's box.
+// @claim frame
+.init frame = Bbox<Unit>
+frame.cell($U(), P) :- in(P, Col), params.frame_color(Col).
+
+// A marker: a cell of `marker_color` outside the frame's box.
+.decl mark(p: Position)
+mark(P) :- in(P, Col), params.marker_color(Col), frame.box($U(), B), !inside(P, B).
+
+// A line of the frame's box, by its coordinate on axis a, that holds a cell
+// of another color than `frame_color`.
+.decl broken(a: Axis, l: Position)
+broken(A, L) :-
+    frame.box($U(), B), in(P, Col), inside(P, B), !params.frame_color(Col),
+    axis_elem(A), split(P, A, L, _).
+
+// A divider: a line through the frame's inside, by its coordinate on axis a,
+// that is `frame_color` across the whole box.
+.decl divider(a: Axis, l: Position)
+divider(A, L) :-
+    frame.box($U(), B), in(P, _), interior(P, B),
+    axis_elem(A), split(P, A, L, _), !broken(A, L).
+
+// The distance from edge d of the side that marker p pulls toward d: that
+// side stands `marker_gap` cells short of the marker.
+.decl pull(p: Position, d: Dir, k: number)
+pull(P, D, K) :-
+    mark(P), opposite(D, D_back), params.marker_gap(G),
+    neighbor(P, D_back, Q1), jump(Q1, D_back, G, Q), dist(Q, D, K).
+
+// The boxes a move starts from, under each reading of the sides a marker
+// pulls.
+.decl state(s: Side, b: Box)
+
+// Marker p lies beyond side d of box b.
+.decl beyond(s: Side, b: Box, d: Dir, p: Position)
+beyond(S, B, D, P) :-
+    state(S, B), mark(P), dir_elem(D), dist(P, D, K1), dist(B, D, K2), K1 < K2.
+
+// Marker p may set side d of box b.
+.decl puller(s: Side, b: Box, d: Dir, p: Position)
+
+// @claim side-moves-to-marker
+.init reach = Extremes<Move>
+reach.cand([S, B, D], K) :- puller(S, B, D, P), pull(P, D, K).
+
+// The distance from edge d of side d after one move of box b.
+.decl margin(st: Step, d: Dir, k: number)
+margin([S, Pk, B], D, K) :-
+    impl_choice([S, Pk, _]), state(S, B), dir_elem(D), dist(B, D, K), !puller(S, B, D, _).
+
+.init moved = DirPack<Step>
+moved.edge(St, D, K) :- margin(St, D, K).
+
+// The stretched frame's box.
+.decl box(ch: Choice, b: Box)
+
+// The cells the output draws in `frame_color`: the new box's outline, and
+// each divider across it.
+.decl drawn(ch: Choice, p: Position)
+drawn(Ch, P) :-
+    box(Ch, B), in(P, _), inside(P, B),
+    ( box_edge(P, B, _)
+    ; axis_elem(A), split(P, A, L, _), divider(A, L)
+    ).
+
+// A marker the output keeps.
+.decl kept(ch: Choice, p: Position)
+
+out(P, Col, Ch) :- kept(Ch, P), in(P, Col).
+out(P, Col, Ch) :- drawn(Ch, P), !kept(Ch, P), params.frame_color(Col).
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, C), !drawn(Ch, P), !kept(Ch, P),
+    ( params.frame_color(C), params.background(Col)     // an old frame cell off the new drawing
+    ; mark(P), params.background(Col)                  // a cleared marker
+    ; !params.frame_color(C), !mark(P), Col = C        // the rest of the grid
+    ).
+
+// --- $Beyond ---
+state($Beyond(), B) :- frame.box($U(), B).
+
+puller($Beyond(), B, D, P) :- beyond($Beyond(), B, D, P).
+
+box([$Beyond(), Pk, E], B) :- impl_choice([$Beyond(), Pk, E]), moved.box([$Beyond(), Pk, _], B).
+
+// --- $InLineMarkers ---
+
+// The distances from edge d that side d may take: the frame's own, or the
+// one a marker pulls it to.
+.decl side_margin(d: Dir, k: number)
+side_margin(D, K) :- frame.box($U(), B), dir_elem(D), dist(B, D, K).
+side_margin(D, K) :- pull(_, D, K).
+
+state($InLineMarkers(), B) :-
+    side_margin(D1, K1), opposite(D1, D2), side_margin(D2, K2), axis_inset(D1, K1, K2, B1),
+    perp_dir(D1, D3), opposite(D3, D4), side_margin(D3, K3), side_margin(D4, K4),
+    axis_inset(D3, K3, K4, B2),
+    compose(B1, B2, B).
+
+// Marker p lies beyond a side of box b across from side d.
+.decl off_line(b: Box, d: Dir, p: Position)
+off_line(B, D, P) :- perp_dir(D, D2), beyond($InLineMarkers(), B, D2, P).
+
+puller($InLineMarkers(), B, D, P) :- beyond($InLineMarkers(), B, D, P), !off_line(B, D, P).
+
+// The boxes the repeated moves reach from the input frame's box.
+.init walk = Propagation<Pick, Box>
+walk.source(Pk, B) :- impl_choice([$InLineMarkers(), Pk, _]), frame.box($U(), B).
+walk.edge(Pk, B, B2) :- moved.box([$InLineMarkers(), Pk, B], B2).
+
+// The reached box that no move changes.
+box([$InLineMarkers(), Pk, E], B) :-
+    impl_choice([$InLineMarkers(), Pk, E]), walk.reached(Pk, B),
+    moved.box([$InLineMarkers(), Pk, B], B).
+
+// --- $Farthest ---
+margin([S, $Farthest(), B], D, K) :- reach.low([S, B, D], K).
+
+// --- $NearestMarker ---
+margin([S, $NearestMarker(), B], D, K) :- reach.high([S, B, D], K).
+
+// --- $MarkersStay ---
+kept([S, Pk, $MarkersStay()], P) :- impl_choice([S, Pk, $MarkersStay()]), mark(P).
+
+// --- $EnclosedMarkersCleared ---
+kept([S, Pk, $EnclosedMarkersCleared()], P) :-
+    box([S, Pk, $EnclosedMarkersCleared()], B), mark(P), !inside(P, B).
+
+.comp Determine {
+    // The color the old outline's cells off the new drawing take.
+    .decl background(col: Color)
+    background(Col) :-
+        ex_in(E, P, C), params.frame_color(C), ex_out(E, P, Col), !params.frame_color(Col).
+
+    // The input's color that is neither the frame's nor the background.
+    .decl marker_color(col: Color)
+    marker_color(Col) :- ex_in(_, _, Col), !params.frame_color(Col), !params.background(Col).
+}

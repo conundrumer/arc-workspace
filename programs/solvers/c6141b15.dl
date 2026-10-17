@@ -1,0 +1,189 @@
+// c6141b15
+// @draft
+// @keywords: objects stamp span
+// @scene background: a field of params.bg
+// @scene one-line: one straight run of cells of one color along a row, a
+//  column, or a diagonal, at least two cells long
+// @scene shape-copies: two or more identical copies of one shape in a second
+//  color, each one 8-connected object whose bounding box has odd extents, so
+//  that it has a center cell
+// @scene aligned-centers: each two shape centers lie on one row, column, or
+//  diagonal
+// @scene apart: the line and the copies are separate objects that do not
+//  touch, even at a corner
+// @rule stamps-at-line-ends: a copy of the shape, in the shape's color, sits
+//  with its center on each of the line's two end cells, drawn over any
+//  joining line
+// @rule lines-join-centers: a straight run of the line's color joins each two
+//  shape centers, along the row, column, or diagonal they share, end cells
+//  included
+// @rule rest-background: every other cell is params.bg; the input line and
+//  copies do not stay
+
+// which object is the line and which are the copies
+.type LineParse =
+    // @claim one-line
+    OneObjectColor {}
+    // @scene one-line: the line is the one object that is a straight run of
+    //  two or more cells; undefined where no object or more than one object
+    //  is such a run
+    // @scene shape-copies: the copies are the objects of the other color, one
+    //  or more
+    // @witness one-copy: borderline $LineByStraightness
+    //     @relaxed shape-copies
+  | LineByStraightness {}
+
+// which two centers a line joins
+.type JoinScope =
+    // @claim lines-join-centers
+    JoinAll {}
+    // @scene aligned-centers: two centers may share no row, column, or
+    //  diagonal
+    // @rule lines-join-centers: a line joins each two centers that share a
+    //  row, column, or diagonal, and no other two
+    // @witness unaligned-centers: foreign $JoinAligned
+    //     @relaxed aligned-centers
+  | JoinAligned {}
+
+// which is drawn on top where a stamp meets a joining line
+.type LayerOrder =
+    // @claim stamps-at-line-ends
+    StampsOverLines {}
+    // @rule stamps-at-line-ends: the joining lines are drawn over the stamps
+    // @witness stamp-meets-line: borderline any
+  | LinesOverStamps {}
+
+.type Choice = [l: LineParse, j: JoinScope, o: LayerOrder]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl bg(c: Color) bg(7).
+}
+
+.init params = Params
+
+.decl line_parse_choice(l: LineParse)
+line_parse_choice($OneObjectColor()). line_parse_choice($LineByStraightness()).
+
+// The objects of each color.
+// @claim apart shape-copies
+.init objs = Components8<Color>
+objs.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+// The object taken as the line.
+// @claim one-line
+.init line_obj = Unanimous<LineParse, Ident>
+
+.decl copy_obj(l: LineParse, id: Ident)
+
+// The color of the copies.
+// @claim shape-copies
+.init shape_color = Unanimous<LineParse, Color>
+shape_color.item(L, Col) :- copy_obj(L, Id), objs.label(Col, _, Id).
+
+.decl line(l: LineParse, p: Position, col: Color)
+line(L, P, Col) :- line_obj.value(L, Id), objs.label(Col, P, Id).
+
+// An end cell of the line: a line cell beside it on one side and none on the
+// other.
+.decl line_end(l: LineParse, p: Position)
+line_end(L, P) :-
+    line(L, P, _), neighbor(P, D, Q), line(L, Q, _),
+    dir8_opposite(D, D_back), neighbor(P, D_back, R), !line(L, R, _).
+
+// @claim shape-copies
+.init box = Bbox<Ident>
+box.cell(Id, P) :- objs.label(_, P, Id).
+
+.decl center(l: LineParse, id: Ident, p: Position)
+center(L, Id, P) :-
+    copy_obj(L, Id), box.box(Id, B), in(P, _), crop(P, B, P_rel), centered(P_rel).
+
+// A copy of the shape with its center on each line end.
+// @claim stamps-at-line-ends
+.decl stamp(l: LineParse, p: Position)
+stamp(L, T) :-
+    line_end(L, E), center(L, Id, C), objs.label(_, S, Id),
+    relative(C, S, V), compose(E, V, T).
+
+// @claim lines-join-centers aligned-centers
+.init sight = Ray<LineParse>
+sight.dir(L, D) :- line_parse_choice(L), dir8_elem(D).
+sight.cell(L, P) :- line_parse_choice(L), in(P, _).
+sight.mark(L, P) :- center(L, _, P).
+
+// A cell between two centers on the line they share, the centers included.
+.decl join(l: LineParse, p: Position)
+join(L, P) :-
+    sight.ray(L, P, D, _, C1), dir8_opposite(D, D_back), sight.ray(L, P, D_back, _, C2), C1 != C2.
+
+// The parse found one line and one shape color.
+.decl parsed(l: LineParse)
+parsed(L) :- line_obj.value(L, _), shape_color.value(L, _).
+
+// The cases whose output is defined on the input.
+.decl ready(l: LineParse, j: JoinScope)
+
+// --- $OneObjectColor ---
+// A color that forms two or more objects.
+.decl multi(col: Color)
+multi(Col) :- objs.label(Col, _, Id1), objs.label(Col, _, Id2), Id1 != Id2.
+
+line_obj.item($OneObjectColor(), Id) :- objs.label(Col, _, Id), !multi(Col).
+copy_obj($OneObjectColor(), Id) :- objs.label(Col, _, Id), multi(Col).
+
+// --- $LineByStraightness ---
+// Two cells of the object that touch along a direction off line family A.
+.decl off_line(id: Ident, a: Axis4)
+off_line(Id, A) :-
+    objs.label(Col, P, Id), neighbor(P, D, Q), objs.label(Col, Q, Id),
+    axis4_elem(A), !axis4_of(D, A).
+
+line_obj.item($LineByStraightness(), Id) :-
+    objs.label(Col, P, Id), objs.label(Col, Q, Id), P != Q,
+    axis4_elem(A), !off_line(Id, A).
+copy_obj($LineByStraightness(), Id) :-
+    objs.label(_, _, Id), !line_obj.value($LineByStraightness(), Id).
+
+// --- $JoinAll ---
+// Two centers that share no row, column, or diagonal.
+.decl unaligned(l: LineParse)
+unaligned(L) :- center(L, _, C1), center(L, _, C2), C1 != C2, !sight.ray(L, C2, _, _, C1).
+
+ready(L, $JoinAll()) :- parsed(L), !unaligned(L).
+
+// --- $JoinAligned ---
+ready(L, $JoinAligned()) :- parsed(L).
+
+// --- $StampsOverLines ---
+out(P, Col, [L, J, $StampsOverLines()]) :-
+    ready(L, J), in(P, _),
+    ( stamp(L, P), shape_color.value(L, Col)
+    ; !stamp(L, P), join(L, P), line(L, _, Col)
+    ; !stamp(L, P), !join(L, P), params.bg(Col)
+    ).
+
+// --- $LinesOverStamps ---
+out(P, Col, [L, J, $LinesOverStamps()]) :-
+    ready(L, J), in(P, _),
+    ( join(L, P), line(L, _, Col)
+    ; !join(L, P), stamp(L, P), shape_color.value(L, Col)
+    ; !join(L, P), !stamp(L, P), params.bg(Col)
+    ).
+
+.comp Determine {
+    // The commonest color of each input.
+    .init field = Mode<Example, Color, Position>
+    field.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // The commonest color of some input that is not the commonest color of
+    // another.
+    .decl uneven(col: Color)
+    uneven(Col) :- field.mode(_, Col), ex_in(E, _, _), !field.mode(E, Col).
+
+    .decl bg(c: Color)
+    bg(Col) :- field.mode(_, Col), !uneven(Col).
+}

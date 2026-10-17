@@ -1,0 +1,263 @@
+// b7f8a4d8
+// @draft
+// @keywords: objects match span rank
+// @scene tile-lattice: on a field of params.bg, a lattice of equal square
+//  tiles at one period on both axes, each a frame 1 cell thick of one frame
+//  color around a solid interior of one color; the tiles at the right and
+//  bottom edges may be cut off
+// @scene common-interior: one interior color, the commonest, fills most tiles
+// @scene odd-rectangle: the tiles of each other interior color sit at the four
+//  corners of a rectangle of tiles: two tile rows by two tile columns
+// @rule bridge-odd-tiles: for each interior color other than the common one,
+//  between two tiles of that color in one tile row or one tile column, each
+//  params.bg cell in line with their interiors becomes that color; the tiles
+//  between them stay as they are
+// @rule keep-rest: every other cell keeps its input color
+
+// which tiles of one odd color its bridges join
+.type Join =
+    // @claim bridge-odd-tiles
+    Bridges {pairs: LinePairs, dirs: Directions}
+    // @rule bridge-odd-tiles: for each interior color other than the common
+    //  one, each params.bg cell on the outline of the rectangle that the
+    //  color's outermost tile rows and tile columns bound, in line with the
+    //  interiors of the tiles on its side, becomes that color
+    // @witness l-shape: variant concept
+    //     @relaxed odd-rectangle
+  | BboxOutline {}
+
+// which two tiles in one tile line a bridge joins
+.type LinePairs =
+    // @claim bridge-odd-tiles
+    AnyPair {}
+    // @rule bridge-odd-tiles: a bridge is drawn only where no tile of another
+    //  odd color lies between its two tiles; defined also where that leaves no
+    //  cell to two colors
+    // @witness lone-odd-between: variant concept
+    //     @relaxed odd-rectangle
+  | BlockedByOdd {}
+
+// the lines along which tiles join
+.type Directions =
+    // @claim bridge-odd-tiles
+    Cardinal {}
+    // @rule bridge-odd-tiles: two tiles of the color on one tile diagonal are
+    //  joined too, on the params.bg cells of the diagonals through their
+    //  interiors
+    // @witness square-rectangle: ordinary concept
+  | Dir8Bridges {}
+
+// when two tiles of one odd color are in line
+.type LineTest =
+    // @claim bridge-odd-tiles
+    TileLevel {}
+    // @rule bridge-odd-tiles: a params.bg cell with a cell of one odd color on
+    //  each side along its row or column becomes that color
+    // @witness offset-tiles: foreign $CellBetween
+    //     @relaxed tile-lattice
+  | CellBetween {}
+
+// what a params.bg cell that bridges of two colors claim becomes
+.type DrawOrder =
+    // @claim bridge-odd-tiles
+    Unordered {}
+    // @rule bridge-odd-tiles: where bridges of two colors claim one params.bg
+    //  cell, the color drawn later in a stored order of colors takes it;
+    //  undefined where the order ranks no claimant above the others
+    // @witness shared-line: ordinary $DrawnOver
+    // @witness missing-crossing: borderline $DrawnOver
+    //     @relaxed tile-lattice
+  | DrawnOver {}
+
+.type Choice = [join: Join, test: LineTest, order: DrawOrder]
+
+.type DrawRankValue = [v: Ident]
+.type OpenValue = [draw_rank: DrawRankValue]
+
+// The cell-level bridges of one odd color at one case.
+.type Bridging = [pairs: LinePairs, dirs: Directions, c: Color]
+
+.decl out(p: Position, col: Color, ch: Choice, ov: OpenValue)
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // --- $DrawnOver ---
+    // Each color's rank in the order the colors are drawn, under each open
+    // value: every order of the odd colors the inputs hold.
+    // @open
+    .decl draw_rank(v: Ident, col: Color, r: number)
+    draw_rank(0, 1, 0). draw_rank(0, 3, 1). draw_rank(0, 4, 2). draw_rank(0, 8, 3).
+    draw_rank(1, 1, 0). draw_rank(1, 3, 1). draw_rank(1, 8, 2). draw_rank(1, 4, 3).
+    draw_rank(2, 1, 0). draw_rank(2, 4, 1). draw_rank(2, 3, 2). draw_rank(2, 8, 3).
+    draw_rank(3, 1, 0). draw_rank(3, 4, 1). draw_rank(3, 8, 2). draw_rank(3, 3, 3).
+    draw_rank(4, 1, 0). draw_rank(4, 8, 1). draw_rank(4, 3, 2). draw_rank(4, 4, 3).
+    draw_rank(5, 1, 0). draw_rank(5, 8, 1). draw_rank(5, 4, 2). draw_rank(5, 3, 3).
+    draw_rank(6, 3, 0). draw_rank(6, 1, 1). draw_rank(6, 4, 2). draw_rank(6, 8, 3).
+    draw_rank(7, 3, 0). draw_rank(7, 1, 1). draw_rank(7, 8, 2). draw_rank(7, 4, 3).
+    draw_rank(8, 3, 0). draw_rank(8, 4, 1). draw_rank(8, 1, 2). draw_rank(8, 8, 3).
+    draw_rank(9, 3, 0). draw_rank(9, 4, 1). draw_rank(9, 8, 2). draw_rank(9, 1, 3).
+    draw_rank(10, 3, 0). draw_rank(10, 8, 1). draw_rank(10, 1, 2). draw_rank(10, 4, 3).
+    draw_rank(11, 3, 0). draw_rank(11, 8, 1). draw_rank(11, 4, 2). draw_rank(11, 1, 3).
+    draw_rank(12, 4, 0). draw_rank(12, 1, 1). draw_rank(12, 3, 2). draw_rank(12, 8, 3).
+    draw_rank(13, 4, 0). draw_rank(13, 1, 1). draw_rank(13, 8, 2). draw_rank(13, 3, 3).
+    draw_rank(14, 4, 0). draw_rank(14, 3, 1). draw_rank(14, 1, 2). draw_rank(14, 8, 3).
+    draw_rank(15, 4, 0). draw_rank(15, 3, 1). draw_rank(15, 8, 2). draw_rank(15, 1, 3).
+    draw_rank(16, 4, 0). draw_rank(16, 8, 1). draw_rank(16, 1, 2). draw_rank(16, 3, 3).
+    draw_rank(17, 4, 0). draw_rank(17, 8, 1). draw_rank(17, 3, 2). draw_rank(17, 1, 3).
+    draw_rank(18, 8, 0). draw_rank(18, 1, 1). draw_rank(18, 3, 2). draw_rank(18, 4, 3).
+    draw_rank(19, 8, 0). draw_rank(19, 1, 1). draw_rank(19, 4, 2). draw_rank(19, 3, 3).
+    draw_rank(20, 8, 0). draw_rank(20, 3, 1). draw_rank(20, 1, 2). draw_rank(20, 4, 3).
+    draw_rank(21, 8, 0). draw_rank(21, 3, 1). draw_rank(21, 4, 2). draw_rank(21, 1, 3).
+    draw_rank(22, 8, 0). draw_rank(22, 4, 1). draw_rank(22, 1, 2). draw_rank(22, 3, 3).
+    draw_rank(23, 8, 0). draw_rank(23, 4, 1). draw_rank(23, 3, 2). draw_rank(23, 1, 3).
+}
+
+.init params = Params
+
+.decl line_pairs_choice(l: LinePairs)
+line_pairs_choice($AnyPair()). line_pairs_choice($BlockedByOdd()).
+
+.decl directions_choice(d: Directions)
+directions_choice($Cardinal()). directions_choice($Dir8Bridges()).
+
+.decl line_test_choice(t: LineTest)
+line_test_choice($TileLevel()). line_test_choice($CellBetween()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([$Bridges($AnyPair(), $Cardinal()), $TileLevel(), $Unordered()]).
+impl_choice([$Bridges(L, Ds), T, $DrawnOver()]) :- line_pairs_choice(L), directions_choice(Ds), line_test_choice(T).
+impl_choice([$BboxOutline(), $TileLevel(), $DrawnOver()]).
+
+.decl ground(p: Position)
+ground(P) :- in(P, Col), params.bg(Col).
+
+// The frame color is the one that meets the background.
+.decl frame_color(col: Color)
+frame_color(Col) :- in(P, Col), !params.bg(Col), neighbor(P, _, Q), ground(Q).
+
+// Each tile's interior, under its own id.
+// @claim tile-lattice
+.init core = Components<Color>
+core.node(Col, P) :- in(P, Col), !params.bg(Col), !frame_color(Col).
+
+// The common interior color fills the most tiles; every other one is odd.
+// @claim common-interior
+.init tile_count = Mode<Unit, Color, Ident>
+tile_count.item($U(), Col, I) :- core.label(Col, _, I).
+
+.decl odd(col: Color)
+odd(Col) :- core.label(Col, _, _), !tile_count.mode($U(), Col).
+
+.decl odd_tile(i: Ident, col: Color)
+odd_tile(I, Col) :- core.label(Col, _, I), odd(Col).
+
+// The background cells each case paints, with each color that claims them.
+.decl paint(ch: Choice, p: Position, col: Color)
+
+out(P, Col, Ch, [nil]) :- impl_choice(Ch), in(P, Col), !paint(Ch, P, _).
+
+// --- concept ---
+out(P, Col, [J, T, $Unordered()], [nil]) :- paint([J, T, $Unordered()], P, Col).
+
+// --- $TileLevel ---
+
+// @claim bridge-odd-tiles
+.init tile_box = Bbox<Ident>
+tile_box.cell(I, P) :- core.label(Col, P, I), odd(Col).
+
+// --- $Bridges ---
+
+// The directions bridges run in.
+.decl bridge_dir(ds: Directions, d: Dir8)
+bridge_dir(Ds, D) :- directions_choice(Ds), dir_elem(D).
+
+// --- $Dir8Bridges ---
+bridge_dir($Dir8Bridges(), D) :- diag_dir_elem(D).
+
+// --- $Bridges & $TileLevel ---
+
+// Two tiles of one odd color whose interiors span the same lines along d.
+.decl line_pair(ds: Directions, i: Ident, i2: Ident, d: Dir8)
+line_pair(Ds, I1, I2, D) :-
+    bridge_dir(Ds, D), dir_elem(D), perp_dir(D, X),
+    odd_tile(I1, Col), odd_tile(I2, Col), I1 != I2,
+    tile_box.box(I1, B1), tile_box.box(I2, B2),
+    dist_pair(B1, X, K1, K2), dist_pair(B2, X, K1, K2).   // the same rows across d
+
+// The cells strictly between two such tiles, on a line through both
+// interiors.
+.decl span_tile(ds: Directions, col: Color, i: Ident, i2: Ident, p: Position)
+span_tile(Ds, Col, I1, I2, P) :-
+    line_pair(Ds, I1, I2, D), axis4_of(D, A),
+    core.label(Col, Q1, I1), in(P, _), same_line(A, P, Q1), nearer(D, P, Q1),   // past the first
+    core.label(Col, Q2, I2), same_line(A, P, Q2), nearer(D, Q2, P).             // short of the second
+
+// The pairs a case leaves unjoined.
+.decl blocked_tile(l: LinePairs, ds: Directions, i: Ident, i2: Ident)
+
+paint([$Bridges(L, Ds), $TileLevel(), O], P, Col) :-
+    impl_choice([$Bridges(L, Ds), $TileLevel(), O]),
+    span_tile(Ds, Col, I1, I2, P), ground(P), !blocked_tile(L, Ds, I1, I2).
+
+// --- $Dir8Bridges & $TileLevel ---
+line_pair($Dir8Bridges(), I1, I2, D) :-
+    diag_dir_elem(D),
+    diag_axis_of(D, DA), diag_perp(DA, DA2), diag_axis_of(X, DA2), diag_opposite(X, X2),
+    odd_tile(I1, Col), odd_tile(I2, Col), I1 != I2,
+    tile_box.box(I1, B1), tile_box.box(I2, B2),
+    corner_dist(B1, X, K1), corner_dist(B2, X, K1),        // the same diagonals across d
+    corner_dist(B1, X2, K2), corner_dist(B2, X2, K2).
+
+// --- $BlockedByOdd & $TileLevel ---
+// A tile of another odd color lies between the two.
+blocked_tile($BlockedByOdd(), Ds, I1, I2) :-
+    span_tile(Ds, Col, I1, I2, P), in(P, Col2), odd(Col2), Col2 != Col.
+
+// --- $Bridges & $CellBetween ---
+
+.decl cell_key(k: Bridging)
+cell_key([L, Ds, Col]) :- impl_choice([$Bridges(L, Ds), $CellBetween(), _]), odd(Col).
+
+// @claim bridge-odd-tiles
+// @ignore dir: store — the case's Directions branch gives the cast directions
+.init cell_ray = Ray<Bridging>
+cell_ray.dir([L, Ds, Col], D) :- cell_key([L, Ds, Col]), bridge_dir(Ds, D).
+cell_ray.cell([L, Ds, Col], P) :- cell_key([L, Ds, Col]), ground(P).
+cell_ray.mark([L, Ds, Col], P) :- cell_key([L, Ds, Col]), in(P, Col).
+
+// A background cell with a cell of the color on each side along one line.
+paint([$Bridges(L, Ds), $CellBetween(), O], P, Col) :-
+    impl_choice([$Bridges(L, Ds), $CellBetween(), O]),
+    cell_ray.clear([L, Ds, Col], P, D, _, _), dir8_opposite(D, D2),
+    cell_ray.clear([L, Ds, Col], P, D2, _, _).
+
+// --- $BlockedByOdd & $CellBetween ---
+cell_ray.blocked([$BlockedByOdd(), Ds, Col], P) :-
+    cell_key([$BlockedByOdd(), Ds, Col]), in(P, Col2), odd(Col2), Col2 != Col.
+
+// --- $BboxOutline ---
+
+// @claim bridge-odd-tiles
+.init color_box = Bbox<Color>
+color_box.cell(Col, P) :- odd(Col), in(P, Col).
+
+// A background cell in the rectangle, in line with a tile on its d side.
+paint([$BboxOutline(), $TileLevel(), O], P, Col) :-
+    impl_choice([$BboxOutline(), $TileLevel(), O]),
+    color_box.box(Col, B_all), tile_box.box(I, B),
+    dir_elem(D), same_dist(D, B, B_all),                    // a tile on the d side
+    axis_of(D, A_d), perp(A_d, A), core.label(Col, Q, I),
+    ground(P), same_line(A, P, Q), inside(P, B_all).
+
+// --- $DrawnOver ---
+
+// A claimant of a cell that a color drawn later also claims, at open value V.
+.decl covered(ch: Choice, v: Ident, p: Position, col: Color)
+covered([J, T, $DrawnOver()], V, P, Col) :-
+    paint([J, T, $DrawnOver()], P, Col), params.draw_rank(V, Col, R),
+    paint([J, T, $DrawnOver()], P, Col2), params.draw_rank(V, Col2, R2), R < R2.
+
+out(P, Col, [J, T, $DrawnOver()], [[V]]) :-
+    paint([J, T, $DrawnOver()], P, Col), params.draw_rank(V, _, _),
+    !covered([J, T, $DrawnOver()], V, P, Col).

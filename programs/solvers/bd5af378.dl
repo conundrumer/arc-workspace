@@ -1,0 +1,106 @@
+// bd5af378
+// @draft
+// @keywords: move depth
+// @scene field: the grid is filled with one field color, except for the L.
+// @scene l-line: the L is one full row and one full column of a second color,
+//  `l_width` = 1 cell thick, along the two edges that meet at one corner of
+//  the grid.
+// @rule edge-to-field: the cells at distance less than `shift` from either
+//  edge of the L's corner take the field color.
+// @rule l-steps-in: the cells at distance `shift` from one edge of the
+//  corner, and at least `shift` from the other, take the L's color.
+// @rule field-to-fill: the cells at distance more than `shift` from both
+//  edges of the corner take `fill_color`.
+// @rule corner-diagonal: on the corner's diagonal, the cells at distance at
+//  most `shift` from the corner take `fill_color`, and the cells farther out
+//  take the field color.
+
+// what the L keeps when it steps in
+.type Choice =
+    // @claim l-steps-in corner-diagonal
+    OneLayer {}
+    // @rule l-steps-in: the L's input cells translate `shift` cells along
+    //  the diagonal inward, clipped to the grid
+    // @rule corner-diagonal: on the corner's diagonal, the cells at distance
+    //  less than `shift` from the corner and the moved L's corner cells take
+    //  `fill_color`, and the cells farther out take the field color
+    // @witness thick-l: variant $MoveWholeL
+    //     @relaxed l-line
+  | MoveWholeL {}
+
+// @ignore: const-join — `shift` and `fill_color` are independent parameters
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // how many cells the L steps inward
+    .decl shift(k: number) shift(1).
+    // the color the field turns, and the color of the L's corner cells
+    .decl fill_color(col: Color) fill_color(8).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    // The color of the cell at corner c.
+    .decl corner_color(key: Key, c: DiagDir, col: Color)
+    corner_color(K, C, Col) :- cell(K, P, Col), corner_dist(P, C, 0).
+
+    // A cell on one of corner c's two edges that does not hold the corner's color.
+    .decl edge_defect(key: Key, c: DiagDir)
+    edge_defect(K, C) :-
+        corner_color(K, C, L), dir_of(C, _, D),
+        cell(K, P, Col), dist(P, D, 0), Col != L.     // on an edge of the corner
+
+    // The L: a corner whose color fills both of its edges.
+    .decl l_line(key: Key, c: DiagDir, col: Color)
+    l_line(K, C, L) :- corner_color(K, C, L), !edge_defect(K, C).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The field color: the one color of every cell off the L.
+// @claim field
+.init field = Unanimous<DiagDir, Color>
+field.item(C, Col) :- parse.l_line($U(), C, L), in(_, Col), Col != L.
+
+// --- $OneLayer ---
+
+out(P, Col, $OneLayer()) :-
+    parse.l_line($U(), C, L), field.value(C, F), params.shift(S), params.fill_color(Fill),
+    in(P, _), diag_dist(P, C, _, K1, K2),       // distances to the corner's two edges
+    ( K1 = K2, K1 <= S, Col = Fill              // corner-diagonal, within shift
+    ; K1 = K2, K1 > S, Col = F                  // corner-diagonal, beyond shift
+    ; K1 != K2, K1 < S, Col = F                 // edge-to-field
+    ; K1 != K2, K1 = S, K2 > S, Col = L         // l-steps-in
+    ; K1 != K2, K1 > S, K2 > S, Col = Fill      // field-to-fill
+    ).
+
+// --- $MoveWholeL ---
+
+out(P, Col, $MoveWholeL()) :-
+    parse.l_line($U(), C, L), field.value(C, F), params.shift(S), params.fill_color(Fill),
+    in(P, _), diag_dist(P, C, _, K1, K2),       // distances to the corner's two edges
+    jump(P, C, S, Q),                           // the cell that moves onto P
+    ( !in(Q, _), K1 = K2, Col = Fill            // left behind, on the diagonal
+    ; !in(Q, _), K1 != K2, Col = F              // left behind
+    ; in(Q, L), K1 = K2, Col = Fill             // the moved L's corner cells
+    ; in(Q, L), K1 != K2, Col = L               // the moved L
+    ; in(Q, F), K1 = K2, Col = F                // the diagonal past the moved L
+    ; in(Q, F), K1 != K2, Col = Fill            // the field
+    ).
+
+.comp Determine {
+    .init ex_parse = Parse<Example>
+    ex_parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The output color at the L's corner cell.
+    .decl fill_color(col: Color)
+    fill_color(Col) :- ex_parse.l_line(E, C, _), ex_out(E, P, Col), corner_dist(P, C, 0).
+
+    // The distance of the output's L cells from the nearer edge of the corner.
+    .decl shift(k: number)
+    shift(K) :- ex_parse.l_line(E, C, L), ex_out(E, Q, L), diag_dist(Q, C, _, K, K2), K < K2.
+}

@@ -1,0 +1,353 @@
+// c62e2108
+// @draft
+// @keywords: objects markers cast bbox
+// @scene background: the field is color `background` (0).
+// @scene squares: one or more copies of one shape, a square outline of side 4
+//  with a hollow middle, all in one color other than `background` and
+//  `marker`. A square is a 4-connected object.
+// @scene edge-markers: one or more straight segments of color `marker` (1),
+//  each lying along a grid edge, as long as a square's side, and covering the
+//  same rows (on a left or right edge) or the same columns (on a top or bottom
+//  edge) as exactly one square.
+// @scene clear-strip: the strip between a square and each marker lined up
+//  with it holds only `background` and that marker.
+// @rule repeat-toward-marker: each square repeats toward each marker lined up
+//  with it, each copy placed `gap` cells past the one before, so the copies
+//  tile the strip from the square to the grid edge, and the last copy is cut
+//  off at the grid edge.
+// @rule copies-overwrite: a copy writes every cell of its box, its hollow
+//  cells as `background`, so the marker cells take the copy's cells.
+//  Undefined where two copies write different colors to one cell.
+// @rule keep-rest: every other cell keeps its input color.
+
+// what a copy writes over
+.type Layering =
+    // @claim copies-overwrite
+    Overwrite {}
+    // @rule copies-overwrite: a copy writes only its shape's cells, and the
+    //  cells of a marker that a square repeats toward turn `background`.
+    //  Undefined where two copies write different shape colors to one cell.
+    // @witness crossing-strips: borderline $Overlay
+  | Overlay {}
+
+// where the copies stop
+.type CopyReach =
+    // @claim repeat-toward-marker
+    ToEdge {}
+    // @rule repeat-toward-marker: the copies run to the marker's line, that
+    //  line included, and are cut off there.
+    // @witness interior-marker: borderline $ToMarker
+    //     @relaxed edge-markers
+  | ToMarker {}
+
+// what each copy draws
+.type TileSource =
+    // @claim repeat-toward-marker
+    OwnBox {}
+    // @rule repeat-toward-marker: each copy is `tile` drawn in the square's
+    //  color, its `tile_corner` corner on that corner of the square's box, and
+    //  the stride is the tile's extent plus `gap`.
+    // @witness small-square: variant concept
+    //     @relaxed squares
+  | StoredTile {}
+
+// how each copy relates to the one before
+.type RepeatForm =
+    // @claim repeat-toward-marker
+    Translate {}
+    // @rule repeat-toward-marker: every other copy is reflected across the
+    //  edge it shares with the copy before it.
+    // @witness asymmetric-shape: variant concept
+    //     @relaxed squares
+  | Mirror {}
+
+// how the cells of a square or a marker join
+.type Adjacency =
+    // @claim squares
+    Adj4 {}
+    // @scene squares: a square or a marker segment is an 8-connected object.
+    // @witness diagonal-blocks: borderline $Adj8
+    //     @relaxed squares
+  | Adj8 {}
+
+// which of the squares lined up with a marker repeat toward it
+.type MarkerOwner =
+    // @claim repeat-toward-marker
+    EveryLined {}
+    // @rule repeat-toward-marker: of the squares lined up with a marker, only
+    //  the one nearest to it repeats toward it.
+    // @witness two-in-line: borderline $NearestOnly
+    //     @relaxed edge-markers
+    //     @relaxed clear-strip
+  | NearestOnly {}
+
+// what a marker cell that no copy covers takes
+.type UnmatchedMarker =
+    // @claim keep-rest
+    KeepMarkers {}
+    // @rule erase-markers: every marker cell that no copy covers turns
+    //  `background`.
+    // @witness stray-marker: foreign $EraseMarkers
+    //     @relaxed edge-markers
+  | EraseMarkers {}
+
+.type Choice = [layer: Layering, reach: CopyReach, tile: TileSource, form: RepeatForm,
+                adj: Adjacency, owner: MarkerOwner, unmatched: UnmatchedMarker]
+
+// A piece found under one adjacency.
+.type Piece = [adj: Adjacency, id: Ident]
+
+// A cell under one case and open corner.
+.type CaseCell = [ch: Choice, v: TileCorner, p: Position]
+
+// A cast toward one direction under one tile source.
+.type Cast = [t: TileSource, d: Dir]
+
+.type TileCorner = [c: DiagDir]
+.type OpenValue = [tile_corner: TileCorner]
+
+.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(0).
+    // @derive RarestColor: ordinary concept
+    .decl marker(c: Color) marker(1).
+    // the cells between one copy and the next
+    .decl gap(k: number) gap(0).
+
+    // --- $StoredTile ---
+    // the cells of each copy: 1 for the square's color, 0 for `background`
+    .decl tile(p: Position, ink: number)
+    GRID_4x4(tile,
+        1, 1, 1, 1,
+        1, 0, 0, 1,
+        1, 0, 0, 1,
+        1, 1, 1, 1)
+    // the corner of the tile laid on the same corner of the square's box
+    // @open
+    .decl tile_corner(c: DiagDir)
+    tile_corner(DIAG_TL). tile_corner(DIAG_TR). tile_corner(DIAG_BL). tile_corner(DIAG_BR).
+}
+
+.init params = Params
+
+.decl layering_choice(l: Layering)
+layering_choice($Overwrite()). layering_choice($Overlay()).
+
+.decl copy_reach_choice(r: CopyReach)
+copy_reach_choice($ToEdge()). copy_reach_choice($ToMarker()).
+
+.decl tile_source_choice(t: TileSource)
+tile_source_choice($OwnBox()). tile_source_choice($StoredTile()).
+
+.decl repeat_form_choice(f: RepeatForm)
+repeat_form_choice($Translate()). repeat_form_choice($Mirror()).
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($Adj4()). adjacency_choice($Adj8()).
+
+.decl marker_owner_choice(o: MarkerOwner)
+marker_owner_choice($EveryLined()). marker_owner_choice($NearestOnly()).
+
+.decl unmatched_marker_choice(u: UnmatchedMarker)
+unmatched_marker_choice($KeepMarkers()). unmatched_marker_choice($EraseMarkers()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([L, R, T, F, Ad, O, U]) :-
+    layering_choice(L), copy_reach_choice(R), tile_source_choice(T), repeat_form_choice(F),
+    adjacency_choice(Ad), marker_owner_choice(O), unmatched_marker_choice(U).
+
+// --- shared ---
+// The pieces of one color under each adjacency.
+.decl piece(ad: Adjacency, col: Color, id: Ident, p: Position)
+
+// --- $Adj4 ---
+// @claim squares edge-markers
+.init piece4 = Components<Color>
+piece4.node(Col, P) :- in(P, Col), !params.background(Col).
+
+piece($Adj4(), Col, Id, P) :- piece4.label(Col, P, Id).
+
+// --- $Adj8 ---
+// @claim squares edge-markers
+.init piece8 = Components8<Color>
+piece8.node(Col, P) :- in(P, Col), !params.background(Col).
+
+piece($Adj8(), Col, Id, P) :- piece8.label(Col, P, Id).
+
+// --- shared ---
+// @claim squares edge-markers
+.init pbox = Bbox<Piece>
+pbox.cell([Ad, Id], P) :- piece(Ad, _, Id, P).
+
+.decl square(ad: Adjacency, s: Ident, col: Color, b: Box)
+square(Ad, S, Col, B) :- piece(Ad, Col, S, _), !params.marker(Col), pbox.box([Ad, S], B).
+
+.decl mark_cell(ad: Adjacency, m: Ident, p: Position)
+mark_cell(Ad, M, P) :- piece(Ad, Col, M, P), params.marker(Col).
+
+// Square S lines up with marker M, which lies K cells past S's box toward D.
+.decl lined(ad: Adjacency, s: Ident, m: Ident, d: Dir, k: number)
+lined(Ad, S, M, D, K) :-
+    mark_cell(Ad, M, Q), pbox.box([Ad, M], B_m),
+    box_edge(Q, B_m, D), opposite(D, D_opp), box_edge(Q, B_m, D_opp),  // M is one line across D
+    square(Ad, S, _, B_s), perp_dir(D, D_p),
+    dist_pair(B_m, D_p, K1, K2), dist_pair(B_s, D_p, K1, K2),          // on the same lines as S
+    relative(Q, B_s, V), dist(V, D, K), K > 0.                         // past S toward D
+
+// The squares that repeat toward a marker under each owner reading.
+.decl hit(ad: Adjacency, o: MarkerOwner, s: Ident, m: Ident, d: Dir)
+
+// --- $EveryLined ---
+hit(Ad, $EveryLined(), S, M, D) :- lined(Ad, S, M, D, _).
+
+// --- $NearestOnly ---
+// @claim repeat-toward-marker
+.init nearest = ArgExtremes<Piece, Ident>
+nearest.cand([Ad, M], S, K) :- lined(Ad, S, M, _, K).
+
+hit(Ad, $NearestOnly(), S, M, D) :- nearest.low([Ad, M], S, _), lined(Ad, S, M, D, _).
+
+// --- shared ---
+// The color tile T gives cell P_t of the frame it is drawn in, for square S.
+.decl tile_val(ad: Adjacency, t: TileSource, s: Ident, p_t: Position, col: Color)
+
+// The grid cell Q where tile T, laid at open corner V, puts cell P_t, on the
+// tile's edge away from D, for square S.
+.decl origin(ad: Adjacency, t: TileSource, v: TileCorner, s: Ident, d: Dir, q: Position, p_t: Position)
+
+// --- $OwnBox ---
+tile_val(Ad, $OwnBox(), S, P_t, Col) :- square(Ad, S, _, B), in(Q, Col), crop(Q, B, P_t).
+
+origin(Ad, $OwnBox(), nil, S, D, Q, P_t) :-
+    lined(Ad, S, _, D, _), square(Ad, S, _, B),
+    in(Q, _), crop(Q, B, P_t), opposite(D, D_opp), dist(P_t, D_opp, 0).
+
+// --- $StoredTile ---
+tile_val(Ad, $StoredTile(), S, P_t, Col) :-
+    square(Ad, S, Col_s, _), params.tile(P_t, Ink),
+    ( Ink != 0, Col = Col_s
+    ; Ink = 0, params.background(Col) ).
+
+origin(Ad, $StoredTile(), [C], S, D, Q, P_t) :-
+    lined(Ad, S, _, D, _), square(Ad, S, _, B),
+    params.tile(P_t, _), opposite(D, D_opp), dist(P_t, D_opp, 0),
+    params.tile_corner(C), in(Q, _), relative(B, Q, Q_rel),
+    corner_anchor(C, P_t, Q_rel).                          // as far from B's corner C as P_t from the tile's
+
+// --- shared ---
+// @claim repeat-toward-marker
+.init march = Ray<Cast>
+march.dir([T, D], D) :- origin(_, T, _, _, D, _, _).
+march.cell([T, D], P) :- origin(_, T, _, _, D, _, _), in(P, _).
+march.mark([T, D], Q) :- origin(_, T, _, _, D, Q, _).
+
+// P lies in copy N of square S toward D, I cells past that copy's edge away
+// from D, on the line across D through origin cell P_t0.
+.decl placed(ad: Adjacency, t: TileSource, v: TileCorner, s: Ident, d: Dir, p: Position, n: number, i: number, p_t0: Position)
+placed(Ad, T, V, S, D, P, N, I, P_t0) :-
+    origin(Ad, T, V, S, D, Q, P_t0), march.ray([T, D], P, D, K, Q),
+    axis_of(D, A), axis_dim(P_t0, A, W), params.gap(G), stride(K, W, G, N, I), N > 0.
+
+// The edge of the tile that copy N toward D counts its cells from.
+.decl start_side(f: RepeatForm, t: TileSource, d: Dir, n: number, side: Dir)
+
+// --- $Translate ---
+start_side($Translate(), T, D, N, D_opp) :- placed(_, T, _, _, D, _, N, _, _), opposite(D, D_opp).
+
+// --- $Mirror ---
+// Each copy counts from the edge opposite the one the copy before it counts from.
+// @claim repeat-toward-marker
+.init flips = CycleWalk<Cast, Dir>
+flips.succ([T, D], D, D_opp) :- placed(_, T, _, _, D, _, _, _, _), opposite(D, D_opp).
+flips.succ([T, D], D_opp, D) :- placed(_, T, _, _, D, _, _, _, _), opposite(D, D_opp).
+flips.step([T, D], N) :- placed(_, T, _, _, D, _, N, _, _).
+
+start_side($Mirror(), T, D, N, Side) :- flips.walk([T, D], D_opp, N, Side), opposite(D, D_opp).
+
+// --- shared ---
+// Copy cell P of square S toward D takes color Col.
+.decl copy_cell(ad: Adjacency, t: TileSource, v: TileCorner, f: RepeatForm, s: Ident, d: Dir, p: Position, col: Color)
+copy_cell(Ad, T, V, F, S, D, P, Col) :-
+    placed(Ad, T, V, S, D, P, N, I, P_t0), start_side(F, T, D, N, Side),
+    perp_dir(D, D_p), tile_val(Ad, T, S, P_t, Col), same_dist(D_p, P_t, P_t0),
+    dist(P_t, Side, I).
+
+// P lies past where reach R stops the copies toward marker M.
+.decl past(r: CopyReach, ad: Adjacency, m: Ident, d: Dir, p: Position)
+
+// --- $ToMarker ---
+past($ToMarker(), Ad, M, D, P) :-
+    lined(Ad, S, M, D, _), copy_cell(Ad, _, _, _, S, D, P, _), mark_cell(Ad, M, Q), nearer(D, P, Q).
+
+// --- shared ---
+// The colors layering L leaves unwritten.
+.decl unwritten(l: Layering, col: Color)
+
+// --- $Overlay ---
+unwritten($Overlay(), Col) :- params.background(Col).
+
+// --- shared ---
+.decl painted(ch: Choice, v: TileCorner, p: Position, col: Color)
+painted([L, R, T, F, Ad, O, U], V, P, Col) :-
+    impl_choice([L, R, T, F, Ad, O, U]), hit(Ad, O, S, M, D), copy_cell(Ad, T, V, F, S, D, P, Col),
+    !past(R, Ad, M, D, P), !unwritten(L, Col).
+
+// @claim copies-overwrite
+.init shown = Unanimous<CaseCell, Color>
+shown.item([Ch, V, P], Col) :- painted(Ch, V, P, Col).
+
+.decl clash(ch: Choice, v: TileCorner)
+clash(Ch, V) :- shown.clash([Ch, V, _]).
+
+// The one color the copies write at P.
+.decl written(ch: Choice, v: TileCorner, p: Position, col: Color)
+written(Ch, V, P, Col) :- shown.value([Ch, V, P], Col).
+
+// The cells that turn `background` where no copy writes.
+.decl cleared(ch: Choice, p: Position)
+
+// --- $Overlay ---
+cleared([$Overlay(), R, T, F, Ad, O, U], P) :-
+    impl_choice([$Overlay(), R, T, F, Ad, O, U]), hit(Ad, O, _, M, _), mark_cell(Ad, M, P).
+
+// --- $EraseMarkers ---
+cleared([L, R, T, F, Ad, O, $EraseMarkers()], P) :-
+    impl_choice([L, R, T, F, Ad, O, $EraseMarkers()]), in(P, Col), params.marker(Col).
+
+// --- shared ---
+// The open corners each tile source reads.
+.decl open_corner(t: TileSource, v: TileCorner)
+
+// --- $OwnBox ---
+open_corner($OwnBox(), nil).
+
+// --- $StoredTile ---
+open_corner($StoredTile(), [C]) :- params.tile_corner(C).
+
+// --- shared ---
+out(P, Col, Ch, [V]) :-
+    impl_choice(Ch), Ch = [_, _, T, _, _, _, _], open_corner(T, V), in(P, Col_in), !clash(Ch, V),
+    ( written(Ch, V, P, Col)
+    ; !written(Ch, V, P, _), cleared(Ch, P), params.background(Col)
+    ; !written(Ch, V, P, _), !cleared(Ch, P), Col = Col_in ).
+
+.comp Determine {
+    .decl train(e: Example)
+    train(E) :- ex_out(E, _, _).
+
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_in(E, P, Col), train(E).
+
+    // A color that is not the commonest of some train input.
+    .decl not_field(c: Color)
+    not_field(C) :- ex_in(_, _, C), train(E), !commonest.mode(E, C).
+
+    .decl background(c: Color)
+    background(C) :- ex_in(_, _, C), !not_field(C).
+
+    // The train inputs' color that no train output shows.
+    .decl marker(c: Color)
+    marker(C) :- ex_in(E, _, C), train(E), !ex_out(_, _, C).
+}

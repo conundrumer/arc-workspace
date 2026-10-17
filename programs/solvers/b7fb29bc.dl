@@ -1,0 +1,152 @@
+// b7fb29bc
+// @draft
+// @keywords: rings markers parity bbox enclose
+// @scene box-outline: a one-cell-wide rectangle outline of params.frame_color
+//  (3) on a field of params.background (0), closed on all four sides
+// @scene one-dot: exactly one cell of params.frame_color (3) inside the box,
+//  apart from the outline; it can touch the outline
+// @rule square-rings: each background cell inside the box takes a color from
+//  its Chebyshev distance to the dot: params.ring_colors at odd distance
+//  first, then at even distance, so the rings alternate outward from the dot
+// @rule clip-to-box: rings cover only the cells inside the outline, and they
+//  stop at the outline
+// @rule keep-rest: the outline, the dot, and every cell outside the box keep
+//  their input colors
+
+// how the dot is found
+.type DotFind =
+    // @claim one-dot
+    FrameDot {}
+    // @scene one-dot: the dot is the one non-background cell inside the box,
+    //  of any color
+    // @witness ink-dot: variant $AnyInkDot
+    //     @relaxed one-dot
+  | AnyInkDot {}
+
+// how many dots the rings grow from
+.type DotCount =
+    // @claim one-dot
+    OneDot {}
+    // @scene one-dot: the box holds one or more dots; undefined where it holds
+    //  none
+    // @rule square-rings: a cell's distance is its Chebyshev distance to the
+    //  nearest dot
+    // @witness two-dots: borderline $NearestDot
+    //     @relaxed one-dot
+  | NearestDot {}
+
+// which cells the rings fill
+.type Region =
+    // @claim clip-to-box
+    BoxInside {}
+    // @rule clip-to-box: rings fill the background cells that the
+    //  frame-color cells close off from the grid edge; the input is unchanged
+    //  where the outline is broken
+    // @witness broken-outline: foreign concept
+    //     @relaxed box-outline
+  | EnclosedRegion {}
+
+.type Choice = [dot_find: DotFind, dot_count: DotCount, region: Region]
+
+// A cell under one way of finding the dots.
+.type DotCell = [find: DotFind, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive RarestColor: variant derived
+    //     @relaxed box-outline
+    .decl frame_color(c: Color) frame_color(3).
+    // @derive DominantColor: variant derived
+    //     @relaxed box-outline
+    .decl background(c: Color) background(0).
+    // the ring color at odd and at even distance from the dot
+    .decl ring_colors(c_odd: Color, c_even: Color) ring_colors(4, 2).
+}
+
+.init params = Params
+
+.decl dot_count_choice(c: DotCount)
+dot_count_choice($OneDot()). dot_count_choice($NearestDot()).
+
+.decl region_choice(r: Region)
+region_choice($BoxInside()). region_choice($EnclosedRegion()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([$FrameDot(), C, R]) :- dot_count_choice(C), region_choice(R).
+impl_choice([$AnyInkDot(), $NearestDot(), R]) :- region_choice(R).
+
+// The box: the bounding box of the frame-color cells.
+// @store box: variant concept
+// @claim box-outline
+.init frame = Bbox<Unit>
+frame.cell($U(), P) :- in(P, Col), params.frame_color(Col).
+
+// A cell inside the outline.
+.decl in_box(p: Position)
+in_box(P) :- frame.box($U(), B), in(P, _), interior(P, B).
+
+// The cells the rings fill.
+.decl ring_cell(r: Region, p: Position)
+
+// The dots the rings grow from.
+.decl dot(f: DotFind, o: Position)
+
+// --- $BoxInside ---
+ring_cell($BoxInside(), P) :- in_box(P), in(P, Bg), params.background(Bg).
+
+// --- $EnclosedRegion ---
+// The cells the frame-color cells close off from the grid edge.
+// @claim clip-to-box
+.init enclosed = Closed<Unit>
+enclosed.cell($U(), P) :- in(P, Col), !params.frame_color(Col).
+
+ring_cell($EnclosedRegion(), P) :- enclosed.region($U(), P, _), in(P, Bg), params.background(Bg).
+
+// --- $FrameDot ---
+dot($FrameDot(), O) :- in_box(O), in(O, Col), params.frame_color(Col).
+
+// --- $AnyInkDot ---
+dot($AnyInkDot(), O) :- in_box(O), in(O, Col), !params.background(Col).
+
+// --- shared ---
+// P lies on the ring K cells out from dot O: on the outline of the square
+// that reaches K cells past O on every side.
+.decl dot_dist(f: DotFind, o: Position, p: Position, k: number)
+dot_dist(F, O, P, K) :-
+    dot(F, O), in(P, _),
+    relative(O, P, P_rel), dir_elem(D), dist(P_rel, D, K),   // a candidate radius
+    uniform_outset(K, B_out), compose(O, B_out, B), box_edge(P, B, _).
+
+// A cell's distance to the dot its case measures from.
+.decl cell_dist(f: DotFind, c: DotCount, p: Position, k: number)
+
+// --- $OneDot ---
+// @claim one-dot
+.init the_dot = Unanimous<DotFind, Position>
+the_dot.item(F, O) :- dot(F, O).
+
+cell_dist(F, $OneDot(), P, K) :- the_dot.value(F, O), dot_dist(F, O, P, K).
+
+// --- $NearestDot ---
+// @claim square-rings
+.init nearest = Extremes<DotCell>
+nearest.cand([F, P], K) :- dot_dist(F, _, P, K).
+
+cell_dist(F, $NearestDot(), P, K) :- nearest.low([F, P], K).
+
+// --- shared ---
+// The two ring colors alternate, one advance per ring.
+// @claim square-rings
+.init colors = CycleWalk<Unit, Color>
+colors.succ($U(), A, B) :-
+    params.ring_colors(Odd, Even),
+    ( A = Even, B = Odd      // even ring, then odd
+    ; A = Odd, B = Even      // and back
+    ).
+colors.step($U(), K) :- dot_dist(_, _, _, K).
+
+out(P, Col, [F, C, R]) :-
+    impl_choice([F, C, R]), ring_cell(R, P), cell_dist(F, C, P, K),
+    params.ring_colors(_, Even), colors.walk($U(), Even, K, Col).   // K steps on from the even color
+out(P, Col, [F, C, R]) :- impl_choice([F, C, R]), in(P, Col), !ring_cell(R, P).   // off the rings

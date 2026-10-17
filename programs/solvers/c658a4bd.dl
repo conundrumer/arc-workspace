@@ -1,0 +1,220 @@
+// c658a4bd
+// @draft
+// @keywords: color-class bbox count rank rings
+// @scene square-per-color: each non-params.bg color draws one square: the
+//  outline of a square, or a solid square when its side is 1 or 2
+// @scene distinct-sizes: the squares have distinct side lengths
+// @scene sizes-step: sorted by side, the sides fall by 2 from the largest to
+//  the smallest, and the smallest side is 1 or 2
+// @scene partly-hidden: a square may cross another square, which then covers
+//  some of its cells, and a square may run past the grid edge; each square
+//  keeps enough cells to show its side
+// @rule output-size: the output is a square whose side is the largest
+//  square's side
+// @rule concentric-rings: the output's ring at depth k from its edge takes the
+//  color of the square of the k-th largest side, the largest at depth 0
+
+// how the ordered squares make the output
+.type Nesting =
+    // @claim concentric-rings output-size
+    RankRings {}
+    // @rule concentric-rings: each square is drawn as a 1-wide outline at its
+    //  own side, centered in the frame, and params.bg fills the rest;
+    //  undefined where a square's side is the side of no ring of the frame
+    // @witness size-step-four: variant $OutlineAtSide
+    //     @relaxed sizes-step
+  | OutlineAtSide {}
+    // @rule concentric-rings: each square is drawn solid at its own side,
+    //  centered, the larger ones first; undefined where a square's side is the
+    //  side of no ring of the frame
+    // @witness size-step-four: variant $OutlineAtSide
+  | SolidAtSide {}
+    // @rule output-size: the output's side is the smallest square's side
+    //  with one ring added around it for each other square
+    // @witness size-step-four: variant $OutlineAtSide
+  | SideFromCount {}
+    // @rule concentric-rings: the smallest square's color fills each ring
+    //  deeper than the squares reach
+    // @witness size-step-four: variant $OutlineAtSide
+  | InnermostFills {}
+
+// what orders the squares and picks the largest
+.type RankKey =
+    // @claim concentric-rings output-size
+    BySide {}
+    // @rule concentric-rings: the squares are ordered by the cell count of
+    //  their visible bounding box, and the output's side is the side of the
+    //  first; undefined where two counts tie
+    // @witness cut-to-three-rows: ordinary concept
+  | RankByBboxArea {}
+
+// how a square's side is read from its visible cells
+.type SideMeasure =
+    // @claim concentric-rings output-size
+    LargerExtent {}
+    // @rule concentric-rings: a square's side is its bounding box's extent
+    //  along params.side_axis
+    // @witness cut-at-side-edge: ordinary concept
+  | SideOnAxis {}
+
+.type Choice = [nesting: Nesting, rank: RankKey, side: SideMeasure]
+
+// The squares ordered under one rank key and one side measure.
+.type Reading = [rank: RankKey, side: SideMeasure]
+
+// A frame cell under one case.
+.type Spot = [ch: Choice, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    // @ignore: derive $RankRings — fails Subsumption: where it is defined,
+    //  $InnermostFills gives the same output
+    .decl bg(c: Color) bg(0).
+
+    // --- $SideOnAxis ---
+    .decl side_axis(a: Axis) side_axis(AXIS_H).
+}
+
+.init params = Params
+
+.decl rank_key_choice(r: RankKey)
+rank_key_choice($BySide()). rank_key_choice($RankByBboxArea()).
+
+.decl side_measure_choice(m: SideMeasure)
+side_measure_choice($LargerExtent()). side_measure_choice($SideOnAxis()).
+
+// The cases. Where RankRings is defined, every ring has a square and
+// InnermostFills gives the same output, so RankRings takes the concept branch
+// at every other point. Under OutlineAtSide and SolidAtSide the rank key picks
+// only the frame, and RankByBboxArea is defined there only where the first
+// square by area has the largest side, so those two take BySide.
+.decl impl_choice(ch: Choice)
+impl_choice([$RankRings(), $BySide(), $LargerExtent()]).
+impl_choice([$OutlineAtSide(), $BySide(), M]) :- side_measure_choice(M).
+impl_choice([$SolidAtSide(), $BySide(), M]) :- side_measure_choice(M).
+impl_choice([$SideFromCount(), R, M]) :- rank_key_choice(R), side_measure_choice(M).
+impl_choice([$InnermostFills(), R, M]) :- rank_key_choice(R), side_measure_choice(M).
+
+// The bounding box of each square.
+// @claim square-per-color
+.init square = Bbox<Color>
+square.cell(Col, P) :- in(P, Col), !params.bg(Col).
+
+// The extent of each square's bounding box on each axis.
+.decl extent(col: Color, a: Axis, n: number)
+extent(Col, A, N) :- square.box(Col, B), square.cell(Col, P), axis_elem(A), box_extent(B, P, A, N).
+
+.decl side(m: SideMeasure, col: Color, n: number)
+
+.decl score(rd: Reading, col: Color, s: number)
+
+// Two squares with one score.
+.decl tie(rd: Reading)
+tie(Rd) :- score(Rd, Col1, N), score(Rd, Col2, N), Col1 != Col2.
+
+// The squares from the highest score down: a square's rank is its depth.
+// @claim concentric-rings output-size
+.init order = Order<Reading, Color>
+order.elem(Rd, Col) :- score(Rd, Col, _), !tie(Rd).
+order.before(Rd, Col1, Col2) :- score(Rd, Col1, N1), score(Rd, Col2, N2), N1 > N2.
+
+.init frame = Frame2D<Choice>
+
+// @claim concentric-rings
+.init ring = Rim<Choice>
+ring.cell(Ch, P) :- frame.cell(Ch, P).
+
+// --- $LargerExtent ---
+// @claim partly-hidden
+.init larger = Extremes<Color>
+larger.cand(Col, N) :- extent(Col, _, N).
+
+side($LargerExtent(), Col, N) :- larger.high(Col, N).
+
+// --- $SideOnAxis ---
+side($SideOnAxis(), Col, N) :- extent(Col, A, N), params.side_axis(A).
+
+// --- $BySide ---
+score([$BySide(), M], Col, N) :- side(M, Col, N).
+
+// --- $RankByBboxArea ---
+// @claim concentric-rings output-size
+.init area = Tally<Color, Position>
+area.item(Col, P) :- square.box(Col, B), in(P, _), inside(P, B).
+
+score([$RankByBboxArea(), M], Col, N) :- side_measure_choice(M), area.tally(Col, N).
+
+// --- $RankRings, $OutlineAtSide, $SolidAtSide, $InnermostFills ---
+// The side of the first square.
+.decl top_side(rd: Reading, n: number)
+top_side([R, M], N) :- order.first([R, M], Col), side(M, Col, N).
+
+// --- $RankRings, $SideFromCount ---
+// The square ranked k takes the ring at depth k.
+.decl ranked_ring(ch: Choice, p: Position, col: Color)
+ranked_ring([N, R, M], P, Col) :- ring.depth([N, R, M], P, K), order.rank([R, M], Col, K).
+
+// --- $RankRings ---
+frame.extent([$RankRings(), R, M], A, N) :- top_side([R, M], N), axis_elem(A).
+out(P, Col, [$RankRings(), R, M]) :- ranked_ring([$RankRings(), R, M], P, Col).
+
+// --- $OutlineAtSide, $SolidAtSide ---
+// The side of the ring each frame cell lies on: the frame inset by the cell's
+// depth.
+.decl ring_side(ch: Choice, p: Position, s: number)
+ring_side(Ch, P, S) :-
+    ring.depth(Ch, P, K), uniform_inset(K, B), axis_elem(A), box_extent(B, P, A, S).
+
+.decl ring_of_side(ch: Choice, s: number)
+ring_of_side(Ch, S) :- ring_side(Ch, _, S).
+
+// Some square's side is the side of no ring.
+.decl unplaced(ch: Choice)
+unplaced([N, R, M]) :- ring_of_side([N, R, M], _), side(M, _, S), !ring_of_side([N, R, M], S).
+
+// --- $OutlineAtSide ---
+frame.extent([$OutlineAtSide(), R, M], A, N) :- top_side([R, M], N), axis_elem(A).
+out(P, Col, [$OutlineAtSide(), R, M]) :-
+    ring_side([$OutlineAtSide(), R, M], P, S), !unplaced([$OutlineAtSide(), R, M]),
+    ( side(M, Col, S)
+    ; !side(M, _, S), params.bg(Col) ).
+
+// --- $SolidAtSide ---
+frame.extent([$SolidAtSide(), R, M], A, N) :- top_side([R, M], N), axis_elem(A).
+
+// The squares that cover each cell, and the smallest of them, which lies on
+// top.
+// @claim concentric-rings
+.init cover = ArgExtremes<Spot, Color>
+cover.cand([[$SolidAtSide(), R, M], P], Col, S) :-
+    ring_side([$SolidAtSide(), R, M], P, T), side(M, Col, S), S >= T.
+
+out(P, Col, [$SolidAtSide(), R, M]) :-
+    cover.low([[$SolidAtSide(), R, M], P], Col, _), !unplaced([$SolidAtSide(), R, M]).
+
+// --- $SideFromCount ---
+// The smallest square's side as a frame.
+.init core = Frame2D<Reading>
+core.extent([R, M], A, S) :- order.last([R, M], Col), side(M, Col, S), axis_elem(A).
+
+// That frame extended on every side by one ring per larger square.
+frame.extent([$SideFromCount(), R, M], A, N) :-
+    order.last([R, M], Col), order.rank([R, M], Col, K),
+    uniform_outset(K, B), core.cell([R, M], P), box_extent(B, P, A, N).
+
+out(P, Col, [$SideFromCount(), R, M]) :- ranked_ring([$SideFromCount(), R, M], P, Col).
+
+// --- $InnermostFills ---
+frame.extent([$InnermostFills(), R, M], A, N) :- top_side([R, M], N), axis_elem(A).
+out(P, Col, [$InnermostFills(), R, M]) :-
+    ring.depth([$InnermostFills(), R, M], P, K),
+    ( order.rank([R, M], Col, K)
+    ; !order.rank([R, M], _, K), order.last([R, M], Col) ).
+
+.comp Determine {
+    // The input color that a train output does not hold.
+    .decl bg(c: Color)
+    bg(Col) :- ex_in(E, _, Col), ex_out(E, _, _), !ex_out(E, _, Col).
+}

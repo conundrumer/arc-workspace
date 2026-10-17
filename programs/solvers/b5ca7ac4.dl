@@ -1,0 +1,274 @@
+// b5ca7ac4
+// @draft
+// @keywords: objects move lookup enclose
+// @scene background: one background color fills every cell outside the
+//  squares
+// @scene framed-squares: the other cells form squares of side 5, each a
+//  one-cell outline in one of the colors of params.heading around a solid
+//  interior of one color, and the interior color may equal a frame color
+// @scene disjoint-squares: no two squares share a cell, and two squares may
+//  touch along an edge or at a corner
+// @rule slide-by-frame: each square keeps its rows and moves along the row
+//  axis toward the direction params.heading gives its frame color
+// @rule stack-per-color: the squares of one frame color fall together as
+//  rigid bodies: each square stops at the first place where it meets the grid
+//  edge or a stopped square of the same frame color, and squares of the other
+//  frame color do not block it
+// @rule background-rest: every cell that no moved square covers takes the
+//  background color
+
+// which cells join one component
+.type Adjacency =
+    // @claim framed-squares
+    Adjacent4 {}
+    // @scene framed-squares: components join by 8-adjacency, so squares that
+    //  touch at a corner only join one body
+    // @witness corner-touch: ordinary concept
+  | Adjacent8 {}
+
+// what moves as one body
+.type Bodies =
+    // @claim framed-squares
+    Squares {}
+    // @scene framed-squares: a body is a 4-connected component of one frame
+    //  color's cells together with the cells it closes off from the grid
+    //  edge, and a component inside another body's closed-off cells belongs to
+    //  that body
+    // @witness touching-squares: ordinary concept
+  | FrameComponents {adj: Adjacency}
+
+// where a square's heading comes from
+.type HeadingSource =
+    // @claim slide-by-frame
+    StoredHeading {}
+    // @rule slide-by-frame: params.lead_heading gives the lead frame color's
+    //  direction, and the squares of params.trail_color slide the opposite way
+    // @witness perpendicular-headings: borderline concept
+    //     @reassigned heading
+    //     @reassigned lead_heading
+  | HeadingOpposite {}
+
+// the color of the cells no moved square covers
+.type Background =
+    // @claim background-rest
+    OutsideBodies {}
+    // @rule background-rest: every cell that no moved square covers takes the
+    //  commonest color of the input; undefined where two colors tie
+    // @witness crowded: borderline concept
+  | BackgroundDominant {}
+
+.type Choice = [bodies: Bodies, heading: HeadingSource, background: Background]
+
+// The bodies of one parse under one heading reading.
+.type BodyKey = [bodies: Bodies, heading: HeadingSource]
+
+// One frame color under one heading reading.
+.type FrameColor = [heading: HeadingSource, col: Color]
+
+// One square outline under one heading reading.
+.type OutlineKey = [heading: HeadingSource, b: Box]
+
+// The components of one frame color under one adjacency and heading reading.
+.type FrameKey = [adj: Adjacency, heading: HeadingSource, col: Color]
+
+// One component under one adjacency and heading reading.
+.type ComponentKey = [adj: Adjacency, heading: HeadingSource, id: Ident]
+
+// A cell of one example.
+.type ExampleCell = [e: Example, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $StoredHeading ---
+    // The direction each frame color slides.
+    .decl heading(col: Color, d: Dir) heading(8, DIR_L). heading(2, DIR_R).
+
+    // --- $HeadingOpposite ---
+    .decl lead_heading(col: Color, d: Dir) lead_heading(2, DIR_R).
+    .decl trail_color(col: Color) trail_color(8).
+}
+
+.init params = Params
+
+.decl bodies_choice(b: Bodies)
+bodies_choice($Squares()).
+bodies_choice($FrameComponents($Adjacent4())).
+bodies_choice($FrameComponents($Adjacent8())).
+
+.decl heading_source_choice(h: HeadingSource)
+heading_source_choice($StoredHeading()). heading_source_choice($HeadingOpposite()).
+
+.decl background_choice(g: Background)
+background_choice($OutsideBodies()). background_choice($BackgroundDominant()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([B, H, G]) :- bodies_choice(B), heading_source_choice(H), background_choice(G).
+
+// The direction each frame color slides.
+.decl slide(h: HeadingSource, col: Color, d: Dir)
+
+// The cells of each body.
+.decl body_cell(k: BodyKey, p: Position)
+
+// The colors the moved bodies carry to their resting places.
+.decl moved(k: BodyKey, p: Position, col: Color)
+
+// The color of the cells no moved body covers.
+.decl background(ch: Choice, col: Color)
+
+out(P, Col, [B, H, G]) :-
+    background([B, H, G], Col_bg), in(P, _),
+    ( moved([B, H], P, Col)
+    ; !moved([B, H], P, _), Col = Col_bg
+    ).
+
+// --- $StoredHeading ---
+slide($StoredHeading(), Col, D) :- params.heading(Col, D).
+
+// --- $HeadingOpposite ---
+slide($HeadingOpposite(), Col, D) :- params.lead_heading(Col, D).
+slide($HeadingOpposite(), Col, D) :-
+    params.trail_color(Col), params.lead_heading(_, D_lead), opposite(D_lead, D).
+
+// --- $Squares ---
+
+// The rectangle outlines of each frame color.
+// @claim framed-squares
+.init outline = Outlines<FrameColor>
+outline.node([H, Col], P) :- in(P, Col), slide(H, Col, _).
+
+// An outline as long on one axis as on the other.
+.decl square_box(h: HeadingSource, col: Color, b: Box)
+square_box(H, Col, B) :-
+    outline.box([H, Col], B), in(P, Col),
+    axis_elem(A), perp(A, A2), box_extent(B, P, A, N), box_extent(B, P, A2, N).
+
+// The interior color of each square outline.
+// @claim framed-squares
+.init fill = Unanimous<OutlineKey, Color>
+fill.item([H, B], Col) :- square_box(H, _, B), in(P, Col), interior(P, B).
+
+// A square outline of a frame color around a solid interior.
+.decl framed(h: HeadingSource, col: Color, b: Box)
+framed(H, Col, B) :- square_box(H, Col, B), fill.value([H, B], _).
+
+// A framed square inside another.
+.decl inner_square(h: HeadingSource, b: Box)
+inner_square(H, B) :- framed(H, _, B), framed(H, _, B2), B != B2, inside(B, B2).
+
+// The outermost framed squares.
+.decl square(h: HeadingSource, col: Color, b: Box)
+square(H, Col, B) :- framed(H, Col, B), !inner_square(H, B).
+
+body_cell([$Squares(), H], P) :- square(H, _, B), in(P, _), inside(P, B).
+
+// The squares of each frame color fall together toward its heading.
+// @claim stack-per-color
+.init square_fall = Gravity<FrameColor, Box>
+square_fall.cell([H, Col], B, P) :- square(H, Col, B), in(P, _), inside(P, B).
+square_fall.dir([H, Col], D) :- slide(H, Col, D).
+
+moved([$Squares(), H], P2, Col_in) :-
+    square_fall.travel([H, Col], B, V), in(P, Col_in), inside(P, B), compose(P, V, P2).
+
+// --- $FrameComponents ---
+
+// The components of each frame color's cells, under each adjacency.
+.decl component(a: Adjacency, h: HeadingSource, col: Color, id: Ident, p: Position)
+
+// --- $Adjacent4 ---
+// @claim framed-squares
+.init component4 = Components<FrameColor>
+component4.node([H, Col], P) :- in(P, Col), slide(H, Col, _).
+component($Adjacent4(), H, Col, Id, P) :- component4.label([H, Col], P, Id).
+
+// --- $Adjacent8 ---
+// @claim framed-squares
+.init component8 = Components8<FrameColor>
+component8.node([H, Col], P) :- in(P, Col), slide(H, Col, _).
+component($Adjacent8(), H, Col, Id, P) :- component8.label([H, Col], P, Id).
+
+// --- $FrameComponents ---
+
+// The cells each component closes off from the grid edge.
+// @claim framed-squares
+.init enclosed = Closed<ComponentKey>
+enclosed.cell([A, H, Id], P) :- component(A, H, _, Id, _), in(P, _), !component(A, H, _, Id, P).
+
+// A component in the cells another component closes off.
+.decl nested(a: Adjacency, h: HeadingSource, id: Ident)
+nested(A, H, Id) :- component(A, H, _, Id, P), enclosed.region([A, H, Id2], P, _), Id != Id2.
+
+// The bodies: each component that no other closes off, with the cells it
+// closes off.
+.decl frame_body(a: Adjacency, h: HeadingSource, col: Color, id: Ident, p: Position)
+frame_body(A, H, Col, Id, P) :-
+    component(A, H, Col, Id, _), !nested(A, H, Id),
+    ( component(A, H, Col, Id, P)
+    ; enclosed.region([A, H, Id], P, _)
+    ).
+
+body_cell([$FrameComponents(A), H], P) :- frame_body(A, H, _, _, P).
+
+// The bodies of each frame color fall together toward its heading.
+// @claim stack-per-color
+.init frame_fall = Gravity<FrameKey, Ident>
+frame_fall.cell([A, H, Col], Id, P) :- frame_body(A, H, Col, Id, P).
+frame_fall.dir([A, H, Col], D) :- frame_body(A, H, Col, _, _), slide(H, Col, D).
+
+moved([$FrameComponents(A), H], P2, Col_in) :-
+    frame_fall.travel([A, H, Col], Id, V), frame_body(A, H, Col, Id, P),
+    in(P, Col_in), compose(P, V, P2).
+
+// --- $OutsideBodies ---
+
+// @claim background
+.init outside = Unanimous<BodyKey, Color>
+outside.item([B, H], Col) :- impl_choice([B, H, _]), in(P, Col), !body_cell([B, H], P).
+
+background([B, H, $OutsideBodies()], Col) :- outside.value([B, H], Col).
+
+// --- $BackgroundDominant ---
+
+// @claim background-rest
+.init commonest = Mode<Unit, Color, Position>
+commonest.item($U(), Col, P) :- in(P, Col).
+
+// @claim background-rest
+.init dominant = Unanimous<Unit, Color>
+dominant.item($U(), Col) :- commonest.mode($U(), Col).
+
+background([B, H, $BackgroundDominant()], Col) :-
+    impl_choice([B, H, $BackgroundDominant()]), dominant.value($U(), Col).
+
+.comp Determine {
+    // A color that some cell of example e's output holds at edge d.
+    .decl at_edge(e: Example, col: Color, d: Dir)
+    at_edge(E, Col, D) :- ex_out(E, P, Col), dir_elem(D), dist(P, D, 0).
+
+    // Color col is missing from edge d in some train output.
+    .decl missing(col: Color, d: Dir)
+    missing(Col, D) :- ex_out(E, _, _), at_edge(_, Col, D), !at_edge(E, Col, D).
+
+    // A frame color reaches the edge it slides toward in every train output.
+    .decl heading(col: Color, d: Dir)
+    heading(Col, D) :- at_edge(_, Col, D), !missing(Col, D).
+
+    // The cells of each color across the train outputs.
+    .init color_cells = Tally<Color, ExampleCell>
+    color_cells.item(Col, [E, P]) :- ex_out(E, P, Col).
+
+    // Of two frame colors with opposite headings, the one with more cells
+    // leads, and the other trails.
+    .decl lead_trail(col: Color, d: Dir, col2: Color)
+    lead_trail(Col, D, Col2) :-
+        heading(Col, D), heading(Col2, D2), opposite(D, D2),
+        color_cells.tally(Col, N), color_cells.tally(Col2, N2), N2 < N.
+
+    .decl lead_heading(col: Color, d: Dir)
+    lead_heading(Col, D) :- lead_trail(Col, D, _).
+
+    .decl trail_color(col: Color)
+    trail_color(Col) :- lead_trail(_, _, Col).
+}

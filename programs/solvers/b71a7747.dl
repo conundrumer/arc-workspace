@@ -1,0 +1,178 @@
+// b71a7747
+// @draft
+// @keywords: objects lines select noise cross
+// @scene lattice: a background crossed by evenly spaced full rows and full
+//  columns of a line color
+// @scene tiles: equal solid squares of a tile color, one centered on each
+//  line crossing where the whole square fits in the frame, so they form a
+//  full rectangular array with a gap of at least one cell between neighbors
+//  on each axis
+// @scene path: a path of a path color is drawn inside the tiles, and only
+//  there; it runs across tile edges, so it is one 4-connected line once the
+//  gaps are closed
+// @scene noise: some inputs also hold scattered cells of a noise color, only
+//  outside the tiles
+// @rule pack-tiles: the output is the tiles laid edge to edge, in their row
+//  and column order, with everything outside the tiles dropped: the input
+//  with each row and each column that holds no tile cell removed
+
+// which colors make tile cells
+.type TileColors =
+    // @claim pack-tiles
+    BothColors {}
+    // @rule pack-tiles: only the tile color makes tile cells, and path cells
+    //  do not
+    // @witness path-edge-row: borderline concept
+  | TileColorOnly {}
+
+// how the tiles give the output
+.type KeptLines =
+    // @claim pack-tiles
+    TileRows {c: TileColors}
+    // @rule pack-tiles: keep each row and column within the tiles' half-side
+    //  of a line crossing where the whole square fits in the frame, whatever
+    //  those cells hold; undefined where the tiles are not equal squares
+    // @witness missing-band: borderline concept
+    //     @relaxed tiles
+  | LatticeBands {}
+
+// where the kept rows and columns are read from
+.type Choice =
+    // @claim pack-tiles
+    FromTiles {k: KeptLines}
+    // @rule pack-tiles: a kept column is a column where a line row holds a
+    //  cell that is not the line color, and a kept row is the same on the
+    //  line columns; undefined where no line is interrupted
+    // @witness texture-on-line: variant concept
+  | LineBreaks {}
+
+.type ColorPair = [c1: Color, c2: Color]
+.type Part = [k: ColorPair, id: Ident]
+.type LineKey = [ch: Choice, a: Axis]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {}
+
+.init params = Params
+
+.decl color(col: Color)
+color(Col) :- in(_, Col).
+
+// The parts of each pair of colors: the components of the cells of either.
+// @claim tiles path
+.init pair_parts = Components<ColorPair>
+pair_parts.node([C1, C2], P) :- color(C1), color(C2), C1 != C2, ( in(P, C1) ; in(P, C2) ).
+
+// @claim tiles
+.init part_box = Bbox<Part>
+part_box.cell([K, Id], P) :- pair_parts.label(K, P, Id).
+
+.decl part_extent(k: ColorPair, n: number)
+part_extent(K, N) :-
+    part_box.box([K, Id], B), pair_parts.label(K, P, Id), axis_elem(A), box_extent(B, P, A, N).
+
+// A pair whose parts are not equal solid squares: a part leaves a cell of its
+// box out, or two extents differ.
+.decl unsquare(k: ColorPair)
+unsquare(K) :- part_box.box([K, Id], B), in(P, _), crop(P, B, _), !pair_parts.label(K, P, Id).
+unsquare(K) :- part_extent(K, N1), part_extent(K, N2), N1 != N2.
+
+// The tile color and the path color: the pair whose cells form equal solid
+// squares.
+.decl tile_pair(k: ColorPair)
+tile_pair(K) :- pair_parts.label(K, _, _), !unsquare(K).
+
+.decl tile_color(col: Color)
+tile_color(Col) :- tile_pair([Col, _]).
+
+.decl tile_box(b: Box)
+tile_box(B) :- tile_pair(K), part_box.box([K, _], B).
+
+// A case's kept rows and columns: line l of axis a.
+.decl kept(ch: Choice, a: Axis, l: Position)
+
+// The kept lines of each axis, closed up in order.
+// @claim pack-tiles
+.init layout = OrderFrame<LineKey, Position>
+layout.axis([Ch, A], A) :- kept(Ch, A, _).
+layout.member([Ch, A], L, L) :- kept(Ch, A, L).
+
+out(P, Col, Ch) :-
+    in(P_in, Col), axis_elem(A), perp(A, A2), split(P_in, A, L, L2),      // an input cell's two lines
+    layout.pos([Ch, A], L, P_pos), layout.pos([Ch, A2], L2, P_pos2),      // their places among the kept lines
+    compose(P_pos, P_pos2, P).
+
+// --- concept, $TileColorOnly ---
+
+.decl tile_cell(c: TileColors, p: Position)
+
+kept($FromTiles($TileRows(C)), A, L) :- tile_cell(C, P), axis_elem(A), split(P, A, L, _).
+
+// --- concept ---
+
+tile_cell($BothColors(), P) :- in(P, Col), tile_color(Col).
+
+// --- $TileColorOnly ---
+
+// The tile color is the commoner of the pair.
+// @claim pack-tiles
+.init tile_fill = Mode<Unit, Color, Position>
+tile_fill.item($U(), Col, P) :- in(P, Col), tile_color(Col).
+
+tile_cell($TileColorOnly(), P) :- in(P, Col), tile_fill.mode($U(), Col).
+
+// --- $LatticeBands, $LineBreaks ---
+
+// Line l of axis a holds a cell of col.
+.decl holds(a: Axis, l: Position, col: Color)
+holds(A, L, Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+.decl tile_center(p: Position)
+tile_center(P) :- tile_box(B), in(P, _), crop(P, B, P_rel), centered(P_rel).
+
+// A color on a row or column through a tile center.
+.decl crossed(col: Color)
+crossed(Col) :- tile_center(P), axis_elem(A), split(P, A, L, _), holds(A, L, Col).
+
+// The background, and noise off the lines: the colors on no line through a
+// tile center.
+.decl field(col: Color)
+field(Col) :- color(Col), !tile_color(Col), !crossed(Col).
+
+.decl fielded(a: Axis, l: Position)
+fielded(A, L) :- holds(A, L, Col), field(Col).
+
+// The lines: the rows and columns that hold no field cell.
+.decl line(a: Axis, l: Position)
+line(A, L) :- holds(A, L, _), !fielded(A, L).
+
+// A color some line lacks.
+.decl gapped(col: Color)
+gapped(Col) :- color(Col), line(A, L), !holds(A, L, Col).
+
+// The line color: the color, other than the tile colors, that every line
+// holds.
+.decl line_color(col: Color)
+line_color(Col) :- color(Col), !tile_color(Col), !gapped(Col).
+
+// --- $LatticeBands ---
+
+// The square a tile fills when moved to a line crossing, where it fits in the
+// frame.
+.decl band_square(b: Box)
+band_square(B2) :-
+    line(A, L), perp(A, A2), line(A2, L2), in(P, _), split(P, A, L, L2),    // a crossing
+    tile_box(B), tile_center(C), crop(C, B, _), relative(C, P, V),         // a tile's move onto it
+    compose(B, V, B2), inside(B2, ZERO).
+
+kept($FromTiles($LatticeBands()), A, L) :-
+    band_square(B), in(P, _), crop(P, B, _), axis_elem(A), split(P, A, L, _).
+
+// --- $LineBreaks ---
+
+// A line's cell of another color keeps its place across the line.
+kept($LineBreaks(), A2, L2) :-
+    line(A, L), in(P, Col), split(P, A, L, L2), !line_color(Col), perp(A, A2).
+
+.comp Determine {}

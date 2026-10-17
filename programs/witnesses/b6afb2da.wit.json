@@ -1,0 +1,161 @@
+{
+  "id": "b6afb2da",
+  "witnesses": [{
+    "id": "other-color-rectangle",
+    "separates": "A rectangle of a color other than gray sits beside a gray one: the concept frames the gray rectangle alone, and $AnyNonBackground and $PerColorObjects frame both.",
+    "input": [
+      [5,5,5,0,0,0,0],
+      [5,5,5,0,0,0,0],
+      [5,5,5,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,3,3,3,3],
+      [0,0,0,3,3,3,3],
+      [0,0,0,3,3,3,3]
+    ],
+    "output": [{
+      "cases": ["$ShapeCells"],
+      "grid": [
+        [1,4,1,0,0,0,0],
+        [4,2,4,0,0,0,0],
+        [1,4,1,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,3,3,3,3],
+        [0,0,0,3,3,3,3],
+        [0,0,0,3,3,3,3]
+      ]
+    }, {
+      "cases": ["$AnyNonBackground"],
+      "grid": [
+        [1,4,1,0,0,0,0],
+        [4,2,4,0,0,0,0],
+        [1,4,1,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,1,4,4,1],
+        [0,0,0,4,2,2,4],
+        [0,0,0,1,4,4,1]
+      ]
+    }]
+  }, {
+    "id": "two-color-block",
+    "separates": "A gray rectangle and a green one share a side: the concept frames the gray rectangle alone, $AnyNonBackground frames the two as one box, and $PerColorObjects frames each.",
+    "input": [
+      [0,0,0,0,0,0,0,0],
+      [0,5,5,5,3,3,3,0],
+      [0,5,5,5,3,3,3,0],
+      [0,5,5,5,3,3,3,0],
+      [0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$ShapeCells"],
+      "grid": [
+        [0,0,0,0,0,0,0,0],
+        [0,1,4,1,3,3,3,0],
+        [0,4,2,4,3,3,3,0],
+        [0,1,4,1,3,3,3,0],
+        [0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$MixedColors"],
+      "grid": [
+        [0,0,0,0,0,0,0,0],
+        [0,1,4,4,4,4,1,0],
+        [0,4,2,2,2,2,4,0],
+        [0,1,4,4,4,4,1,0],
+        [0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$PerColorObjects"],
+      "grid": [
+        [0,0,0,0,0,0,0,0],
+        [0,1,4,1,1,4,1,0],
+        [0,4,2,4,4,2,4,0],
+        [0,1,4,1,1,4,1,0],
+        [0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "notched-block",
+    "separates": "A gray block lacks one corner cell: the concept reads the roles off the bounding box, so the cells beside the notch take the side color; $CellNeighbors makes them corners; $Border8 also puts the side color on the cell diagonal to the notch.",
+    "input": [
+      [0,0,0,0,0,0],
+      [0,5,5,5,5,0],
+      [0,5,5,5,5,0],
+      [0,5,5,5,5,0],
+      [0,5,5,5,0,0],
+      [0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$BoxRoles"],
+      "grid": [
+        [0,0,0,0,0,0],
+        [0,1,4,4,1,0],
+        [0,4,2,2,4,0],
+        [0,4,2,2,4,0],
+        [0,1,4,4,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$BorderTurns"],
+      "grid": [
+        [0,0,0,0,0,0],
+        [0,1,4,4,1,0],
+        [0,4,2,2,4,0],
+        [0,4,2,1,1,0],
+        [0,1,4,1,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$Border4"],
+      "grid": [
+        [0,0,0,0,0,0],
+        [0,1,4,4,1,0],
+        [0,4,2,2,4,0],
+        [0,4,2,2,1,0],
+        [0,1,4,1,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$Border8"],
+      "grid": [
+        [0,0,0,0,0,0],
+        [0,1,4,4,1,0],
+        [0,4,2,2,4,0],
+        [0,4,2,4,1,0],
+        [0,1,4,1,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "diagonal-contact",
+    "separates": "Two gray rectangles meet at one corner: the concept frames each, and $Objects8 frames them as one object by their joint bounding box.",
+    "input": [
+      [5,5,5,0,0,0],
+      [5,5,5,0,0,0],
+      [5,5,5,0,0,0],
+      [0,0,0,5,5,5],
+      [0,0,0,5,5,5],
+      [0,0,0,5,5,5]
+    ],
+    "output": [{
+      "cases": ["$BorderTurns","$Objects4","$CellNeighbors"],
+      "grid": [
+        [1,4,1,0,0,0],
+        [4,2,4,0,0,0],
+        [1,4,1,0,0,0],
+        [0,0,0,1,4,1],
+        [0,0,0,4,2,4],
+        [0,0,0,1,4,1]
+      ]
+    }, {
+      "cases": ["$Objects8"],
+      "grid": [
+        [1,4,4,0,0,0],
+        [4,2,2,0,0,0],
+        [4,2,2,0,0,0],
+        [0,0,0,2,2,4],
+        [0,0,0,2,2,4],
+        [0,0,0,4,4,1]
+      ]
+    }]
+  }]
+}

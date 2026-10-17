@@ -1,0 +1,222 @@
+{
+  "id": "b7256dcd",
+  "witnesses": [{
+    "id": "diagonal-touch",
+    "separates": "two shapes touch at a corner, each with its own marker: 4-connected shapes take 3 and 4 apart; 8-connected shapes merge into one shape with two markers, and the reading is undefined",
+    "input": [
+      [3,6,6,7,7],
+      [7,7,7,6,6],
+      [7,7,7,7,4],
+      [7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["$Shapes4"],
+      "grid": [
+        [7,3,3,7,7],
+        [7,7,7,4,4],
+        [7,7,7,7,7],
+        [7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["$Shapes8"],
+      "grid": null
+    }]
+  }, {
+    "id": "unmarked-shape",
+    "separates": "a shape touches no marker, and the nearest marker is two steps off: the concept is undefined; the shape keeps its color under $UnmarkedKeeps, and takes the nearest marker's color 3 under $NearestMarker",
+    "input": [
+      [7,7,7,7,7],
+      [7,6,6,7,3],
+      [7,7,6,7,7],
+      [7,7,7,7,7],
+      [2,6,6,7,7]
+    ],
+    "output": [{
+      "cases": ["$MarkedOnly","$NearestMarker8"],
+      "grid": null
+    }, {
+      "cases": ["$NearestMarker"],
+      "grid": [
+        [7,7,7,7,7],
+        [7,3,3,7,7],
+        [7,7,3,7,7],
+        [7,7,7,7,7],
+        [7,2,2,7,7]
+      ]
+    }, {
+      "cases": ["$UnmarkedKeeps"],
+      "grid": [
+        [7,7,7,7,7],
+        [7,6,6,7,7],
+        [7,7,6,7,7],
+        [7,7,7,7,7],
+        [7,2,2,7,7]
+      ]
+    }]
+  }, {
+    "id": "nearest-metric",
+    "separates": "a lone shape touches no marker; marker 3 is nearer by 4-steps and marker 4 by 8-steps: the shape keeps 6, takes 3, or takes 4",
+    "input": [
+      [6,7,7,3],
+      [7,7,7,7],
+      [7,7,4,7],
+      [7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["$MarkedOnly"],
+      "grid": null
+    }, {
+      "cases": ["$NearestMarker"],
+      "grid": [
+        [3,7,7,7],
+        [7,7,7,7],
+        [7,7,7,7],
+        [7,7,7,7]
+      ]
+    }, {
+      "cases": ["$NearestMarker8"],
+      "grid": [
+        [4,7,7,7],
+        [7,7,7,7],
+        [7,7,7,7],
+        [7,7,7,7]
+      ]
+    }, {
+      "cases": ["$UnmarkedKeeps"],
+      "grid": [
+        [6,7,7,7],
+        [7,7,7,7],
+        [7,7,7,7],
+        [7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "two-cell-marker",
+    "separates": "a shape touches two marker cells of one color: the concept is undefined; $MarkerUnanimous takes their one color",
+    "input": [
+      [7,7,7,7,7],
+      [7,6,6,7,7],
+      [7,3,3,7,7],
+      [7,7,7,7,4],
+      [7,7,7,6,6]
+    ],
+    "output": [{
+      "cases": ["$OneMarkerCell"],
+      "grid": null
+    }, {
+      "cases": ["$MarkerUnanimous"],
+      "grid": [
+        [7,7,7,7,7],
+        [7,3,3,7,7],
+        [7,7,7,7,7],
+        [7,7,7,7,7],
+        [7,7,7,4,4]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "the shape outnumbers the background: the stored background 7 recolors the shape 3; the derived background 6 makes the 7 cells markers, and the shape touches four of them",
+    "input": [
+      [6,6,6],
+      [6,6,3],
+      [7,7,7]
+    ],
+    "output": [{
+      "cases": ["background=stored"],
+      "grid": [
+        [3,3,3],
+        [3,3,7],
+        [7,7,7]
+      ]
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": null
+    }]
+  }, {
+    "id": "single-cell-shape",
+    "separates": "the shape is one cell and a marker color repeats: shape color 6 recolors that cell 3; a derived shape color 3 makes the 3 cells the shapes, which take 6 and 4",
+    "input": [
+      [3,6,7],
+      [7,7,7],
+      [7,4,3]
+    ],
+    "output": [{
+      "cases": ["$StoredShapeColor"],
+      "grid": [
+        [7,3,7],
+        [7,7,7],
+        [7,7,7]
+      ]
+    }, {
+      "cases": ["$ShapeColorCommonest"],
+      "grid": [
+        [6,7,7],
+        [7,7,7],
+        [7,7,4]
+      ]
+    }]
+  }, {
+    "id": "dominant-background",
+    "separates": "0 outnumbers 7 in a one-row grid: the stored background 7 makes the 0 cells markers, which the shape does not touch, and erases them to 7; the derived background 0 makes the 7 cell a marker and erases it to 0; the shape takes 3 under both",
+    "input": [
+      [6,6,3,0,0,0,7]
+    ],
+    "output": [{
+      "cases": ["$StoredShapeColor & background=stored"],
+      "grid": [
+        [3,3,7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["$ShapeColorCommonest"],
+      "grid": [
+        [7,7,7,3,3,3,7]
+      ]
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": [
+        [3,3,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "corner-joined",
+    "separates": "two pieces of the shape color touch at a corner, marker 3 touches one of them, and marker 4 lies two steps from the other: 8-connected shapes join the pieces into one shape that takes 3; 4-connected shapes leave the other piece with no marker, so the concept is undefined, the piece keeps 6, or it takes the nearest marker's 4",
+    "input": [
+      [7,7,7,7,7,7],
+      [3,6,6,7,7,7],
+      [7,7,7,6,6,7],
+      [7,7,7,7,7,7],
+      [7,7,7,7,4,7]
+    ],
+    "output": [{
+      "cases": ["$Shapes4 & $MarkedOnly"],
+      "grid": null
+    }, {
+      "cases": ["$NearestMarker","$NearestMarker8"],
+      "grid": [
+        [7,7,7,7,7,7],
+        [7,3,3,7,7,7],
+        [7,7,7,4,4,7],
+        [7,7,7,7,7,7],
+        [7,7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["$UnmarkedKeeps"],
+      "grid": [
+        [7,7,7,7,7,7],
+        [7,3,3,7,7,7],
+        [7,7,7,6,6,7],
+        [7,7,7,7,7,7],
+        [7,7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["$Shapes8"],
+      "grid": [
+        [7,7,7,7,7,7],
+        [7,3,3,7,7,7],
+        [7,7,7,3,3,7],
+        [7,7,7,7,7,7],
+        [7,7,7,7,7,7]
+      ]
+    }]
+  }]
+}

@@ -1,0 +1,250 @@
+// c8b7cc0f
+// @draft
+// @keywords: count bbox rank enclose objects
+// @scene box-outline: a one-cell-wide rectangle outline of `frame_color` (1)
+//  on a `background` (0) field, with at least one row and one column of
+//  interior
+// @scene scattered-dots: single cells of one other color, the dot color,
+//  inside and outside the outline; the dot color differs between pairs
+// @rule count-inside: the count is the number of dot cells strictly inside
+//  the outline
+// @rule fill-in-order: the output is an `out_size` (3×3) grid of
+//  `background`, where the first `count` cells, in the order that starts at
+//  `fill_corner` (top-left) and sorts by `fill_primary_axis` (V) first, take
+//  the dot color
+
+// where the frame color comes from
+.type Frame =
+    // @claim box-outline
+    FrameStored {}
+    // @scene box-outline: the frame color is the commonest color other than
+    //  `background`; undefined where two such colors tie
+    // @witness frame-color-swapped: variant $FrameCommonest
+    //     @relaxed box-outline
+  | FrameCommonest {}
+    // @scene box-outline: the frame color is the one color whose cells are
+    //  exactly the border of their bounding box, at least 3×3; undefined
+    //  where no color or more than one color does so
+    // @witness frame-color-swapped: variant $FrameOutline
+  | FrameOutline {}
+
+// where the dot color comes from
+.type Dot =
+    // @claim scattered-dots
+    DotGrid {}
+    // @scene scattered-dots: the dot color is the one color other than
+    //  `background` and `frame_color` among the cells inside the outline,
+    //  and the output is all `background` where those cells hold no such
+    //  color; undefined where they hold two or more
+    // @witness two-dot-colors: variant $DotColorInside
+    //     @relaxed scattered-dots
+  | DotColorInside {}
+
+// which cells are inside the outline
+.type Interior =
+    // @claim count-inside
+    BoxInterior {}
+    // @rule count-inside: the count runs over the parts of the non-frame
+    //  cells that no 4-adjacent walk through non-frame cells reaches from the
+    //  grid edge
+    // @witness broken-outline: foreign concept
+    //     @relaxed box-outline
+  | Enclosed {}
+
+// what the count counts
+.type CountUnit =
+    // @claim count-inside
+    CountCells {}
+    // @rule count-inside: the count is the number of 4-connected components
+    //  of the dot cells inside the outline
+    // @witness adjacent-dots: borderline concept
+    //     @relaxed scattered-dots
+  | CountObjects {}
+
+.type Choice = [f: Frame, d: Dot, i: Interior, u: CountUnit]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .init helpers = ParamsHelpers
+
+    // @derive DominantColor: borderline concept
+    //     @relaxed scattered-dots
+    .decl background(c: Color) background(0).
+
+    .decl out_size(a: Axis, n: number)
+    out_size(AXIS_V, 3). out_size(AXIS_H, 3).
+
+    .decl out_pos(p: Position)
+    out_pos(P) :- out_size(AXIS_V, V), out_size(AXIS_H, H), helpers.frame_pos([V, H], P).
+
+    // The fill order: the corner it starts at, and the axis whose coordinate
+    // orders the cells first.
+    .decl fill_corner(d: DiagDir) fill_corner(DIAG_TL).
+    .decl fill_primary_axis(a: Axis) fill_primary_axis(AXIS_V).
+
+    // --- $FrameStored ---
+    .decl frame_color(c: Color) frame_color(1).
+}
+
+.init params = Params
+
+.decl frame_choice(f: Frame)
+frame_choice($FrameStored()). frame_choice($FrameCommonest()). frame_choice($FrameOutline()).
+
+.decl dot_choice(d: Dot)
+dot_choice($DotGrid()). dot_choice($DotColorInside()).
+
+.decl interior_choice(i: Interior)
+interior_choice($BoxInterior()). interior_choice($Enclosed()).
+
+.decl count_unit_choice(u: CountUnit)
+count_unit_choice($CountCells()). count_unit_choice($CountObjects()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([F, D, I, U]) :-
+    frame_choice(F), dot_choice(D), interior_choice(I), count_unit_choice(U).
+
+// The frame color, per Frame branch.
+.decl frame(fr: Frame, col: Color)
+
+// A cell inside the outline, per Frame and Interior branch.
+.decl interior_cell(fr: Frame, i: Interior, p: Position)
+
+// A cell that is neither background nor frame.
+.decl spot(fr: Frame, p: Position, col: Color)
+spot(Fr, P, Col) :- frame(Fr, F), in(P, Col), !params.background(Col), Col != F.
+
+// @claim scattered-dots
+.init dots = Unanimous<Choice, Color>
+
+// The dot cells inside the outline.
+.decl dot(ch: Choice, p: Position)
+dot([Fr, D, I, U], P) :- dots.value([Fr, D, I, U], Col), interior_cell(Fr, I, P), in(P, Col).
+
+// The count the fill draws.
+.decl total(ch: Choice, n: number)
+
+// @claim fill-in-order
+.init fill = LexOrder<Unit>
+fill.corner($U(), D) :- params.fill_corner(D).
+fill.axis($U(), A) :- params.fill_primary_axis(A).
+fill.cell($U(), P) :- params.out_pos(P).
+
+out(P, Col, Ch) :-
+    total(Ch, N), !dots.clash(Ch), fill.rank($U(), P, R),
+    ( R < N, dots.value(Ch, Col)       // among the first `count` cells
+    ; R >= N, params.background(Col)   // past them
+    ).
+
+// --- $FrameStored ---
+frame($FrameStored(), Col) :- params.frame_color(Col).
+
+// --- $FrameCommonest ---
+
+// @claim box-outline
+.init ink_mode = Mode<Unit, Color, Position>
+ink_mode.item($U(), Col, P) :- in(P, Col), !params.background(Col).
+
+// @claim box-outline
+.init commonest = Unanimous<Unit, Color>
+commonest.item($U(), Col) :- ink_mode.mode($U(), Col).
+
+frame($FrameCommonest(), Col) :- commonest.value($U(), Col).
+
+// --- $FrameOutline ---
+
+// @claim box-outline
+.init color_box = Bbox<Color>
+color_box.cell(Col, P) :- in(P, Col).
+
+// A color whose cells are not exactly its box's border: a cell of the color
+// lies off the border, or a border cell holds another color.
+.decl outline_defect(col: Color)
+outline_defect(Col) :- color_box.box(Col, B), in(P, Col), interior(P, B).
+outline_defect(Col) :- color_box.box(Col, B), in(P, Col2), Col2 != Col, box_edge(P, B, _).
+
+// @claim box-outline
+.init outline = Unanimous<Unit, Color>
+outline.item($U(), Col) :-
+    color_box.box(Col, B), !outline_defect(Col),
+    in(P, _), interior(P, B).                       // the box has an interior
+
+frame($FrameOutline(), Col) :- outline.value($U(), Col).
+
+// --- $DotGrid ---
+dots.item([Fr, $DotGrid(), I, U], Col) :-
+    impl_choice([Fr, $DotGrid(), I, U]), spot(Fr, _, Col).
+
+// --- $DotColorInside ---
+dots.item([Fr, $DotColorInside(), I, U], Col) :-
+    impl_choice([Fr, $DotColorInside(), I, U]), spot(Fr, P, Col), interior_cell(Fr, I, P).
+
+// --- $BoxInterior ---
+
+// @claim box-outline count-inside
+.init frame_box = Bbox<Frame>
+frame_box.cell(Fr, P) :- frame(Fr, Col), in(P, Col).
+
+interior_cell(Fr, $BoxInterior(), P) :- frame_box.box(Fr, B), in(P, _), interior(P, B).
+
+// --- $Enclosed ---
+
+// @claim count-inside
+.init closed = Closed<Frame>
+closed.cell(Fr, P) :- frame(Fr, F), in(P, Col), Col != F.
+
+interior_cell(Fr, $Enclosed(), P) :- closed.region(Fr, P, _).
+
+// --- $CountCells ---
+
+// @claim count-inside
+.init cell_count = Tally<Choice, Position>
+cell_count.item([Fr, D, I, $CountCells()], P) :- dot([Fr, D, I, $CountCells()], P).
+cell_count.domain([Fr, D, I, $CountCells()]) :-
+    impl_choice([Fr, D, I, $CountCells()]), frame(Fr, _).
+
+total(Ch, N) :- cell_count.tally(Ch, N).
+
+// --- $CountObjects ---
+
+// @claim count-inside
+.init dot_objects = Components<Choice>
+dot_objects.node([Fr, D, I, $CountObjects()], P) :- dot([Fr, D, I, $CountObjects()], P).
+
+// @claim count-inside
+.init object_count = Tally<Choice, Ident>
+object_count.item(Ch, Id) :- dot_objects.label(Ch, _, Id).
+object_count.domain([Fr, D, I, $CountObjects()]) :-
+    impl_choice([Fr, D, I, $CountObjects()]), frame(Fr, _).
+
+total(Ch, N) :- object_count.tally(Ch, N).
+
+.comp Determine {
+    .decl train(e: Example)
+    train(E) :- ex_out(E, _, _).
+
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A color that is not the commonest of some train input.
+    .decl not_field(c: Color)
+    not_field(Col) :- ex_in(_, _, Col), train(E), !commonest.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- ex_in(_, _, Col), !not_field(Col).
+
+    // A color of a train input that its output does not show.
+    .decl lost(e: Example, col: Color)
+    lost(E, Col) :- ex_in(E, _, Col), train(E), !ex_out(E, _, Col).
+
+    // A color that some train pair does not lose.
+    .decl kept(col: Color)
+    kept(Col) :- lost(_, Col), train(E), !lost(E, Col).
+
+    .decl frame_color(c: Color)
+    frame_color(Col) :- lost(_, Col), !kept(Col).
+
+    .decl out_size(a: Axis, n: number)
+    out_size(A, N) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, N).
+}

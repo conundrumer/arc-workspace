@@ -1,0 +1,300 @@
+// b8cdaf2b
+// @draft
+// @keywords: lines cast rank
+// @scene background: every cell outside the base is params.background
+// @scene base-row: the line along the params.base_side edge is full: a middle
+//  run of one color (the inner color), flanked on both sides by runs of a
+//  second color (the outer color) of equal length
+// @scene cap-row: the next line in from the params.base_side edge holds a run
+//  of the outer color exactly over the middle run of the base row, and
+//  params.background everywhere else
+// @rule keep-input: every cell off the rays keeps its input color
+// @rule cap: the cap is the one run of non-background cells on the line next
+//  to the params.base_side edge, and the inner color is the one color of the
+//  base-line cells under it
+// @rule diagonal-rays: from each end of the cap, a ray starts at the cell one
+//  step farther from the params.base_side edge and one step outward along the
+//  base, and runs on that diagonal, away from the base and outward, to the
+//  frame edge; each ray cell takes the inner color
+
+// where the base side comes from
+.type BaseSide =
+    // @claim base-row
+    StoredSide {}
+    // @scene base-row: the base lies along the one edge whose line holds no
+    //  params.background cell. Undefined where no edge, or more than one edge,
+    //  has such a line.
+    // @witness base-on-top: variant $BaseSideDerived
+    //     @relaxed base-row
+  | BaseSideDerived {}
+
+// how far each ray runs
+.type RayExtent =
+    // @claim diagonal-rays
+    ToEdge {}
+    // @rule diagonal-rays: each ray runs as many cells as the outer-color run
+    //  on the base line beside the cap's end is long, clipped to the frame
+    // @witness base-short-of-edges: borderline concept
+    //     @relaxed base-row
+  | RayLenFlank {}
+
+// which color the rays take
+.type RayColor =
+    // @claim cap
+    CapColor {}
+    // @rule cap: the ray color is the color with the fewest cells in the
+    //  input. Undefined where two colors tie for fewest.
+    // @witness rarer-stray-cell: borderline concept
+    //     @relaxed background
+  | RayColorRarest {}
+    // @rule cap: the ray color is the color of the base-line cell at the
+    //  middle of the line. Undefined where the line has even length.
+    // @witness base-off-center: borderline concept
+    //     @relaxed base-row
+  | RayColorBaseCenter {}
+
+// where the rays start
+.type RayAnchor =
+    // @claim cap
+    CapAnchor {}
+    // @rule cap: the rays anchor at the ends of the base line's middle run,
+    //  the cells whose color differs from the color at the line's ends, and
+    //  the inner color is that run's color. Undefined where the line's two
+    //  ends differ in color, or where the middle is not one run of one color.
+    // @witness cap-narrower-than-middle: borderline concept
+    //     @relaxed cap-row
+  | RayFromMiddleRun {}
+
+// what a ray does at a non-background cell
+.type Obstacle =
+    // @claim diagonal-rays
+    PaintOver {}
+    // @rule stop-at-obstacle: a ray stops before its first non-background cell
+    // @witness cell-on-ray: borderline $RayStopAtObstacle
+    //     @relaxed background
+  | RayStopAtObstacle {}
+    // @rule behind-obstacle: a ray keeps the color of each non-background cell
+    //  on it and continues past that cell
+    // @witness cell-on-ray: borderline $RayStopAtObstacle
+  | RayBehindObstacle {}
+
+.type Choice = [side: BaseSide, extent: RayExtent, color: RayColor, anchor: RayAnchor, obstacle: Obstacle]
+
+// The base side and the anchor reading the rays start from.
+.type Anchoring = [s: BaseSide, n: RayAnchor]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $CapAnchor, $BaseSideDerived, $RayStopAtObstacle, $RayBehindObstacle ---
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl background(c: Color) background(0).
+
+    // --- $StoredSide ---
+    // the edge the base lies on
+    .decl base_side(d: Dir) base_side(DIR_B).
+}
+
+.init params = Params
+
+.decl base_side_choice(s: BaseSide)
+base_side_choice($StoredSide()). base_side_choice($BaseSideDerived()).
+
+.decl ray_extent_choice(x: RayExtent)
+ray_extent_choice($ToEdge()). ray_extent_choice($RayLenFlank()).
+
+.decl ray_color_choice(r: RayColor)
+ray_color_choice($CapColor()). ray_color_choice($RayColorRarest()). ray_color_choice($RayColorBaseCenter()).
+
+.decl ray_anchor_choice(n: RayAnchor)
+ray_anchor_choice($CapAnchor()). ray_anchor_choice($RayFromMiddleRun()).
+
+.decl obstacle_choice(o: Obstacle)
+obstacle_choice($PaintOver()). obstacle_choice($RayStopAtObstacle()). obstacle_choice($RayBehindObstacle()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, X, R, N, O]) :-
+    base_side_choice(S), ray_extent_choice(X), ray_color_choice(R), ray_anchor_choice(N), obstacle_choice(O).
+
+// The edge the base lies on.
+.decl base_dir(s: BaseSide, d: Dir)
+
+// --- $StoredSide ---
+base_dir($StoredSide(), D) :- params.base_side(D).
+
+// --- $BaseSideDerived ---
+// The line along edge D holds a background cell.
+// @ignore: store — a stored value gives one base side, the model of $StoredSide
+.decl open_edge(d: Dir)
+open_edge(D) :- in(P, Col), params.background(Col), dir_elem(D), dist(P, D, 0).
+
+// @claim base-row
+// @ignore item: store — a stored value gives one base side, the model of $StoredSide
+// @ignore value: store — a stored value gives one base side, the model of $StoredSide
+.init full_edge = Unanimous<Unit, Dir>
+full_edge.item($U(), D) :- dir_elem(D), !open_edge(D).
+
+base_dir($BaseSideDerived(), D) :- full_edge.value(_, D).
+
+// --- shared ---
+// A cell of the base line.
+.decl base_cell(s: BaseSide, p: Position, col: Color)
+base_cell(S, P, Col) :- base_dir(S, D), in(P, Col), dist(P, D, 0).
+
+// A cell of the line next to the base line.
+.decl cap_line(s: BaseSide, p: Position, col: Color)
+cap_line(S, P, Col) :-
+    base_cell(S, B, _), base_dir(S, D), opposite(D, U), neighbor(B, U, P), in(P, Col).
+
+// End E of the anchoring's run, with A the direction outward along the base.
+.decl anchor_end(k: Anchoring, e: Position, a: Dir)
+
+// The anchoring's inner and outer colors.
+.decl inner(k: Anchoring, col: Color)
+.decl outer(k: Anchoring, col: Color)
+
+// --- $CapAnchor ---
+.decl cap(s: BaseSide, p: Position)
+cap(S, P) :- cap_line(S, P, Col), !params.background(Col).
+
+// @claim cap
+.init cap_run = Components<BaseSide>
+cap_run.node(S, P) :- cap(S, P).
+
+// The cap line holds more than one run.
+.decl split_cap(s: BaseSide)
+split_cap(S) :- cap_run.label(S, _, I), cap_run.label(S, _, J), I != J.
+
+// @claim cap
+.init cap_color = Unanimous<BaseSide, Color>
+cap_color.item(S, Col) :- cap(S, P), in(P, Col).
+
+// @claim cap
+.init under_cap = Unanimous<BaseSide, Color>
+under_cap.item(S, Col) :- cap(S, P), base_dir(S, D), neighbor(P, D, B), base_cell(S, B, Col).
+
+outer([S, $CapAnchor()], Col) :- cap_color.value(S, Col), !split_cap(S).
+inner([S, $CapAnchor()], Col) :- under_cap.value(S, Col), !split_cap(S).
+
+anchor_end([S, $CapAnchor()], E, A) :-
+    outer([S, $CapAnchor()], _), cap(S, E), base_dir(S, D), perp_dir(D, A),
+    neighbor(E, A, Q), !cap(S, Q).                     // no cap cell beyond E
+
+// --- $RayFromMiddleRun ---
+// @claim cap
+.init end_color = Unanimous<BaseSide, Color>
+end_color.item(S, Col) :- base_cell(S, P, Col), base_dir(S, D), perp_dir(D, A), dist(P, A, 0).
+
+.decl middle(s: BaseSide, p: Position, col: Color)
+middle(S, P, Col) :- base_cell(S, P, Col), end_color.value(S, _), !end_color.value(S, Col).
+
+// @claim cap
+.init middle_run = Components<BaseSide>
+middle_run.node(S, P) :- middle(S, P, _).
+
+// The middle of the base line holds more than one run.
+.decl split_middle(s: BaseSide)
+split_middle(S) :- middle_run.label(S, _, I), middle_run.label(S, _, J), I != J.
+
+// @claim cap
+.init middle_color = Unanimous<BaseSide, Color>
+middle_color.item(S, Col) :- middle(S, _, Col).
+
+inner([S, $RayFromMiddleRun()], Col) :- middle_color.value(S, Col), !split_middle(S).
+outer([S, $RayFromMiddleRun()], Col) :- end_color.value(S, Col), !split_middle(S).
+
+anchor_end([S, $RayFromMiddleRun()], E, A) :-
+    inner([S, $RayFromMiddleRun()], _), outer([S, $RayFromMiddleRun()], _),
+    middle(S, M, _), base_dir(S, D), perp_dir(D, A),
+    neighbor(M, A, Q), !middle(S, Q, _),               // no middle cell beyond M
+    opposite(D, U), neighbor(M, U, E).                 // the cell over M
+
+// --- shared ---
+// The diagonal C a ray from end E runs on: away from the base, and outward.
+.decl end_dir(k: Anchoring, e: Position, c: DiagDir)
+end_dir([S, N], E, C) :-
+    anchor_end([S, N], E, A), base_dir(S, D), opposite(D, U), diag_dirs(C, _, U, A).
+
+// The ray color under each reading.
+.decl ray_color(k: Anchoring, r: RayColor, col: Color)
+
+// --- $CapColor ---
+ray_color(K, $CapColor(), Col) :- anchor_end(K, _, _), inner(K, Col).
+
+// --- $RayColorRarest ---
+// @claim cap
+.init color_count = Tally<Color, Position>
+color_count.item(Col, P) :- in(P, Col).
+
+// @claim cap
+.init fewest = ArgExtremes<Unit, Color>
+fewest.cand($U(), Col, N) :- color_count.tally(Col, N).
+
+// @claim cap
+.init rarest = Unanimous<Unit, Color>
+rarest.item(U, Col) :- fewest.low(U, Col, _).
+
+ray_color(K, $RayColorRarest(), Col) :- anchor_end(K, _, _), rarest.value(_, Col).
+
+// --- $RayColorBaseCenter ---
+ray_color([S, N], $RayColorBaseCenter(), Col) :-
+    anchor_end([S, N], _, A), base_cell(S, P, Col), dist_pair(P, A, K, K).
+
+// --- $PaintOver, $RayBehindObstacle ---
+// @claim diagonal-rays
+.init ray = Ray<Anchoring>
+ray.dir(K, C) :- end_dir(K, _, C).
+ray.mark(K, E) :- end_dir(K, E, _).
+ray.cell(K, P) :- end_dir(K, _, _), in(P, _).
+
+// --- $RayStopAtObstacle ---
+// @claim stop-at-obstacle
+.init stop_ray = Ray<Anchoring>
+stop_ray.dir(K, C) :- end_dir(K, _, C).
+stop_ray.mark(K, E) :- end_dir(K, E, _).
+stop_ray.cell(K, P) :- end_dir(K, _, _), in(P, _).
+stop_ray.blocked(K, P) :- end_dir(K, _, _), in(P, Col), !params.background(Col).
+
+// --- shared ---
+// Cell P lies on the ray from end E, as the obstacle reading O paints it.
+.decl on_ray(k: Anchoring, o: Obstacle, e: Position, p: Position)
+
+// --- $PaintOver ---
+on_ray(K, $PaintOver(), E, P) :- end_dir(K, E, C), ray.ray(K, P, C, _, E), P != E.
+
+// --- $RayStopAtObstacle ---
+on_ray(K, $RayStopAtObstacle(), E, P) :- end_dir(K, E, C), stop_ray.clear(K, P, C, _, E), P != E.
+
+// --- $RayBehindObstacle ---
+on_ray(K, $RayBehindObstacle(), E, P) :-
+    end_dir(K, E, C), ray.ray(K, P, C, _, E), P != E, in(P, Col), params.background(Col).
+
+// --- shared ---
+// A painted cell under extent X and obstacle O.
+.decl painted(k: Anchoring, x: RayExtent, o: Obstacle, p: Position)
+
+// --- $ToEdge ---
+painted(K, $ToEdge(), O, P) :- on_ray(K, O, _, P).
+
+// --- $RayLenFlank ---
+// @claim diagonal-rays
+.init flank = Components<Anchoring>
+flank.node([S, N], P) :- outer([S, N], Col), base_cell(S, P, Col).
+
+// Base cell Q lies on the outer-color run that starts beside the base cell
+// under end E.
+.decl flank_cell(k: Anchoring, e: Position, q: Position)
+flank_cell([S, N], E, Q) :-
+    anchor_end([S, N], E, A), base_dir(S, D), diag_dirs(C, _, D, A),
+    neighbor(E, C, B),                                 // the base cell beside E's
+    flank.label([S, N], B, I), flank.label([S, N], Q, I).
+
+painted(K, $RayLenFlank(), O, P) :-
+    on_ray(K, O, E, P), anchor_end(K, E, A), flank_cell(K, E, Q), same_dist(A, P, Q).
+
+// --- shared ---
+out(P, Col, [S, X, R, N, O]) :- ray_color([S, N], R, Col), painted([S, N], X, O, P).
+out(P, Col, [S, X, R, N, O]) :-
+    impl_choice([S, X, R, N, O]), ray_color([S, N], R, _), in(P, Col),
+    !painted([S, N], X, O, P).

@@ -1,0 +1,344 @@
+// ba9d41b8
+// @draft
+// @keywords: objects border wallpaper parity
+// @scene solid-rectangles: the input holds one or more filled rectangles, each
+//  of one color other than `background`, each at least 3 by 3, and no two of
+//  them touch
+// @rule outline-kept: each cell on a rectangle's outline keeps its color
+// @rule checker-holes: an inside cell of a rectangle becomes `background` when
+//  the sum of its row and column distances from the rectangle's `anchor`
+//  corner has the parity `hole_parity`, and keeps its color otherwise
+// @rule rest-kept: every cell outside the rectangles keeps its color
+
+// which cells form one object
+.type ObjectColors =
+    // @claim solid-rectangles
+    OneColor {}
+    // @scene solid-rectangles: a rectangle is a 4-connected set of cells of
+    //  any colors other than `background`
+    // @witness touching-colors: borderline concept
+    //     @relaxed solid-rectangles
+  | AnyColorObjects {}
+
+// which neighbors join an object
+.type Adjacency =
+    // @claim solid-rectangles
+    FourAdjacent {}
+    // @scene solid-rectangles: a rectangle's cells join by 8-adjacency, so
+    //  two rectangles that meet at a corner are one
+    // @witness corner-touch: borderline concept
+    //     @relaxed solid-rectangles
+  | Diagonal8Objects {}
+
+// which cells of an object are its outline and which its inside
+.type Inside =
+    // @claim checker-holes
+    BoxInterior {}
+    // @rule outline-kept: each cell of an object with a 4-neighbor outside
+    //  the object, or off the grid, keeps its color
+    // @rule checker-holes: the inside is the object's other cells
+    // @witness l-shape: borderline $RimInside
+    //     @relaxed solid-rectangles
+  | RimInside {}
+
+// the frame the distance sum is counted in
+.type Origin =
+    // @claim checker-holes
+    ObjectCorner {}
+    // @rule checker-holes: the distance sum is counted from the grid's
+    //  `grid_anchor` corner, and its parity is `grid_hole_parity`
+    // @witness grid-offset: ordinary concept
+  | GridFrame {}
+
+// which cells of that frame are holes
+.type Pattern =
+    // @claim checker-holes
+    Checker {}
+    // @rule checker-holes: a 2x2 motif of holes, `tile`, repeats from the
+    //  corner the distance sum is counted from, and an inside cell is a hole
+    //  when its cell of the motif is one
+    // @witness striped-tile: ordinary $StoredTile
+    //     @reassigned tile
+    //     @reassigned grid_tile
+  | StoredTile {}
+
+// which objects are punched
+.type Punched =
+    // @claim checker-holes
+    EveryObject {}
+    // @rule checker-holes: only a rectangle at least `min_extent` cells long
+    //  on each axis is punched
+    // @witness small-rect: ordinary concept
+  | SizeThreshold {}
+
+// the color a hole takes
+.type HoleFill =
+    // @claim checker-holes
+    FieldHoles {}
+    // @rule checker-holes: a hole becomes `hole_color`, stored apart from
+    //  `background`
+    // @witness field-color: variant concept
+    //     @reassigned background
+  | HoleColor {}
+
+.type Choice = [objects: ObjectColors, adjacency: Adjacency, inside: Inside, origin: Origin,
+                pattern: Pattern, punched: Punched, fill: HoleFill]
+
+// An object under one reading of what joins its cells.
+.type Obj = [o: ObjectColors, a: Adjacency, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant concept
+    .decl background(c: Color) background(0).
+
+    // --- $ObjectCorner ---
+    // The corner of each object's box the distance sum is counted from.
+    .decl anchor(d: DiagDir) anchor(DIAG_TL).
+
+    // --- $GridFrame ---
+    // The corner of the grid the distance sum is counted from.
+    .decl grid_anchor(d: DiagDir) grid_anchor(DIAG_TR).
+
+    // --- $Checker ---
+    // The steps in one cycle of the checkerboard.
+    .decl period(n: number) period(2).
+
+    // --- $ObjectCorner & $Checker ---
+    // The place in the cycle at which a cell is a hole.
+    .decl hole_parity(k: number) hole_parity(0).
+
+    // --- $GridFrame & $Checker ---
+    .decl grid_hole_parity(k: number) grid_hole_parity(0).
+
+    // --- $ObjectCorner & $StoredTile ---
+    // The holes of the repeating motif, laid from the anchor corner.
+    .decl tile(p: Position)
+    GRID_MASK_2x2(tile,
+        1, _,
+        _, 1)
+
+    // --- $GridFrame & $StoredTile ---
+    .decl grid_tile(p: Position)
+    GRID_MASK_2x2(grid_tile,
+        _, 1,
+        1, _)
+
+    // --- $SizeThreshold ---
+    // The least extent, on each axis, of an object that is punched.
+    .decl min_extent(n: number) min_extent(5).
+
+    // --- $HoleColor ---
+    // @derive DominantColor: variant derived
+    .decl hole_color(c: Color) hole_color(0).
+}
+
+.init params = Params
+
+.decl object_colors_choice(o: ObjectColors)
+object_colors_choice($OneColor()). object_colors_choice($AnyColorObjects()).
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($FourAdjacent()). adjacency_choice($Diagonal8Objects()).
+
+.decl inside_choice(i: Inside)
+inside_choice($BoxInterior()). inside_choice($RimInside()).
+
+.decl origin_choice(r: Origin)
+origin_choice($ObjectCorner()). origin_choice($GridFrame()).
+
+.decl pattern_choice(t: Pattern)
+pattern_choice($Checker()). pattern_choice($StoredTile()).
+
+.decl punched_choice(u: Punched)
+punched_choice($EveryObject()). punched_choice($SizeThreshold()).
+
+.decl hole_fill_choice(f: HoleFill)
+hole_fill_choice($FieldHoles()). hole_fill_choice($HoleColor()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([O, A, I, R, T, U, F]) :-
+    object_colors_choice(O), adjacency_choice(A), inside_choice(I),
+    origin_choice(R), pattern_choice(T), punched_choice(U), hole_fill_choice(F).
+
+// The concept's objects: touching cells of one color other than the
+// background, each with its box.
+.comp Parse<Key> {
+    .type KeyColor = [k: Key, col: Color]
+    .type KeyObject = [k: Key, id: Ident]
+
+    .decl cell(k: Key, p: Position, col: Color)
+
+    // @claim solid-rectangles
+    .init comps = Components<KeyColor>
+    comps.node([K, Col], P) :- cell(K, P, Col), !params.background(Col).
+
+    .decl object(ob: KeyObject, p: Position)
+    object([K, Id], P) :- comps.label([K, _], P, Id).
+
+    // @claim checker-holes
+    .init box = Bbox<KeyObject>
+    box.cell(Ob, P) :- object(Ob, P).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.background(Col).
+
+.decl object(ob: Obj, p: Position)
+.decl object_box(ob: Obj, b: Box)
+
+// @claim checker-holes
+.init obox = Bbox<Obj>
+object_box(Ob, B) :- obox.box(Ob, B).
+
+// The objects the checkerboard punches.
+.decl punched(u: Punched, ob: Obj)
+
+// The cells of punched objects that the checkerboard covers.
+.decl covered(i: Inside, u: Punched, ob: Obj, p: Position)
+
+.decl hole(o: ObjectColors, a: Adjacency, i: Inside, r: Origin, t: Pattern, u: Punched, p: Position)
+
+// The color of a hole.
+.decl hole_paint(f: HoleFill, col: Color)
+
+out(P, Col, [O, A, I, R, T, U, F]) :- hole(O, A, I, R, T, U, P), hole_paint(F, Col).
+out(P, Col, [O, A, I, R, T, U, F]) :-
+    impl_choice([O, A, I, R, T, U, F]), in(P, Col), !hole(O, A, I, R, T, U, P).
+
+// --- $OneColor & $FourAdjacent ---
+object([$OneColor(), $FourAdjacent(), Id], P) :- parse.object([$U(), Id], P).
+object_box([$OneColor(), $FourAdjacent(), Id], B) :- parse.box.box([$U(), Id], B).
+
+// --- $OneColor & $Diagonal8Objects ---
+// @claim solid-rectangles
+.init same8 = Components8<Color>
+same8.node(Col, P) :- ink(P, Col).
+object([$OneColor(), $Diagonal8Objects(), Id], P) :- same8.label(_, P, Id).
+obox.cell([$OneColor(), $Diagonal8Objects(), Id], P) :- same8.label(_, P, Id).
+
+// --- $AnyColorObjects & $FourAdjacent ---
+// @claim solid-rectangles
+.init any4 = Components<Unit>
+any4.node($U(), P) :- ink(P, _).
+object([$AnyColorObjects(), $FourAdjacent(), Id], P) :- any4.label(_, P, Id).
+obox.cell([$AnyColorObjects(), $FourAdjacent(), Id], P) :- any4.label(_, P, Id).
+
+// --- $AnyColorObjects & $Diagonal8Objects ---
+// @claim solid-rectangles
+.init any8 = Components8<Unit>
+any8.node($U(), P) :- ink(P, _).
+object([$AnyColorObjects(), $Diagonal8Objects(), Id], P) :- any8.label(_, P, Id).
+obox.cell([$AnyColorObjects(), $Diagonal8Objects(), Id], P) :- any8.label(_, P, Id).
+
+// --- $EveryObject ---
+punched($EveryObject(), Ob) :- object(Ob, _).
+
+// --- $SizeThreshold ---
+// An object whose box is narrower than the threshold on some axis.
+.decl small(ob: Obj)
+small(Ob) :-
+    object(Ob, P), object_box(Ob, B), axis_elem(Ax), box_extent(B, P, Ax, N),
+    params.min_extent(M), N < M.
+
+punched($SizeThreshold(), Ob) :- object(Ob, _), !small(Ob).
+
+// --- $FieldHoles ---
+hole_paint($FieldHoles(), Col) :- params.background(Col).
+
+// --- $HoleColor ---
+hole_paint($HoleColor(), Col) :- params.hole_color(Col).
+
+// --- $BoxInterior ---
+covered($BoxInterior(), U, Ob, P) :-
+    punched(U, Ob), object(Ob, P), object_box(Ob, B), interior(P, B).
+
+// --- $RimInside ---
+// @claim checker-holes
+.init rim = Rim<Obj>
+rim.cell(Ob, P) :- object(Ob, P).
+covered($RimInside(), U, Ob, P) :- punched(U, Ob), object(Ob, P), !rim.rim(Ob, P).
+
+// --- $ObjectCorner & $Checker ---
+hole(O, A, I, $ObjectCorner(), $Checker(), U, P) :-
+    covered(I, U, [O, A, Id], P), object_box([O, A, Id], B), crop(P, B, P_rel),
+    params.anchor(D), corner_dist(P_rel, D, T),             // distance sum from the box corner
+    params.period(N), stride(T, N, 0, _, K), params.hole_parity(K).
+
+// --- $GridFrame & $Checker ---
+hole(O, A, I, $GridFrame(), $Checker(), U, P) :-
+    covered(I, U, [O, A, _], P),
+    params.grid_anchor(D), corner_dist(P, D, T),            // distance sum from the grid corner
+    params.period(N), stride(T, N, 0, _, K), params.grid_hole_parity(K).
+
+// --- $ObjectCorner & $StoredTile ---
+hole(O, A, I, $ObjectCorner(), $StoredTile(), U, P) :-
+    covered(I, U, [O, A, Id], P), object_box([O, A, Id], B), crop(P, B, P_rel),
+    params.anchor(D), diag_dist(P_rel, D, Ax, T1, T2),      // distances from the box corner
+    params.tile(P_t), axis_dims(P_t, Ax, N1, N2),           // the motif's extents
+    stride(T1, N1, 0, _, K1), stride(T2, N2, 0, _, K2),     // folded into the motif
+    diag_dist(P_t, D, Ax, K1, K2).
+
+// --- $GridFrame & $StoredTile ---
+hole(O, A, I, $GridFrame(), $StoredTile(), U, P) :-
+    covered(I, U, [O, A, _], P),
+    params.grid_anchor(D), diag_dist(P, D, Ax, T1, T2),     // distances from the grid corner
+    params.grid_tile(P_t), axis_dims(P_t, Ax, N1, N2),      // the motif's extents
+    stride(T1, N1, 0, _, K1), stride(T2, N2, 0, _, K2),     // folded into the motif
+    diag_dist(P_t, D, Ax, K1, K2).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A cell the output repaints: a hole, with its color.
+    .decl hole(e: Example, p: Position, col: Color)
+    hole(E, P, Col) :- ex_in(E, P, C_in), ex_out(E, P, Col), Col != C_in.
+
+    .decl background(c: Color)
+    background(Col) :- hole(_, _, Col).
+
+    .decl hole_color(c: Color)
+    hole_color(Col) :- hole(_, _, Col).
+
+    // Casts from each hole along the rows and columns, stopped at the next hole.
+    .init casts = Ray<Example>
+    casts.dir(E, D) :- hole(E, _, _), dir_elem(D).
+    casts.mark(E, P) :- hole(E, P, _).
+    casts.blocked(E, P) :- hole(E, P, _).
+
+    // The steps from a hole to the next hole on its line.
+    .init gaps = Extremes<Unit>
+    gaps.cand($U(), K) :- casts.stop(_, _, _, K, _).
+
+    .decl period(n: number)
+    period(N) :- gaps.low($U(), N).
+
+    // A hole's place in the cycle, counted from its object's box corner.
+    .decl hole_parity(k: number)
+    hole_parity(K) :-
+        hole(E, P, _), parse.object([E, Id], P), parse.box.box([E, Id], B), crop(P, B, P_rel),
+        params.anchor(D), corner_dist(P_rel, D, T),
+        params.period(N), stride(T, N, 0, _, K).
+
+    // A hole's place in the cycle, counted from the grid corner.
+    // @ignore: common-subexpr — the count runs in the grid's frame here and in
+    //  each object's box in hole_parity
+    .decl grid_hole_parity(k: number)
+    grid_hole_parity(K) :-
+        hole(_, P, _), params.grid_anchor(D), corner_dist(P, D, T),
+        params.period(N), stride(T, N, 0, _, K).
+
+    // The extents of the boxes of the train inputs' objects.
+    .init extents = Extremes<Unit>
+    extents.cand($U(), N) :-
+        parse.object([E, Id], P), ex_out(E, _, _), parse.box.box([E, Id], B),
+        axis_elem(A), box_extent(B, P, A, N).
+
+    .decl min_extent(n: number)
+    min_extent(N) :- extents.low($U(), N).
+}

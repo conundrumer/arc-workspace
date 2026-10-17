@@ -1,0 +1,197 @@
+// b7955b3c
+// @draft
+// @keywords: color-class noise bbox occlude repair rank
+// @scene layered-rectangles: a background fills the frame, and solid
+//  axis-aligned rectangles, each of its own color, lie stacked over it; each
+//  rectangle hides the part of every lower rectangle that it covers
+// @scene visible-extent: each rectangle shows cells on each of its four sides,
+//  so the bounding box of its visible cells, with the mark cells it lies
+//  under, is the rectangle
+// @scene marks: marks of color mark_color, each a plus — a center cell and its
+//  four cardinal neighbors — lie over the scene and hide the cells under them;
+//  no other cell has color mark_color
+// @rule erase-marks: each cell of color mark_color takes the color the stack
+//  of rectangles shows there: the color of the rectangle drawn last of those
+//  that cover it, and the background color where no rectangle covers it;
+//  every other cell keeps its color
+//     @approximated: each rectangle is the bounding box of its visible cells,
+//      and a rectangle is over another when one of its visible cells lies in
+//      the other's box, closed transitively; each cell of color mark_color
+//      takes the color of the topmost rectangle that covers it
+//     @witness order-hidden: borderline other
+//     @witness hidden-end: borderline other
+//         @relaxed visible-extent
+
+// which cells are mark cells
+.type Marks =
+    // @claim erase-marks
+    EveryMarkCell {}
+    // @rule erase-marks: the mark cells are only the cells of whole
+    //  placements of the plus in mark_color; a mark-colored cell outside
+    //  every placement is a rectangle cell
+    // @witness clipped-plus: borderline concept
+    //     @relaxed marks
+  | PlusOccurrences {}
+
+// how the visible cells order the rectangles
+.type LayerOrder =
+    // @claim erase-marks
+    Transitive {}
+    // @rule erase-marks: a rectangle is over another only when one of its
+    //  visible cells lies in the other's box, with no transitive closure;
+    //  undefined where two rectangles that cover a mark cell are ordered only
+    //  through a third
+    // @witness order-chain: borderline concept
+    // @witness weave: foreign $DirectOrder
+    //     @relaxed layered-rectangles
+  | DirectOrder {}
+
+// what lies under the rectangles
+.type Background =
+    // @claim layered-rectangles
+    BottomLayer {}
+    // @rule dominant-background: the commonest non-mark color is the
+    //  background, lies under every rectangle and is not one of them, and
+    //  fills a mark cell that no rectangle covers; undefined where two colors
+    //  tie for commonest
+    // @witness big-rectangle: ordinary concept
+  | DominantBackground {}
+
+.type Choice = [m: Marks, o: LayerOrder, b: Background]
+
+// A color under a reading of the mark cells.
+.type Layer = [m: Marks, col: Color]
+
+// A color under a reading of the mark cells and of the background.
+.type Source = [m: Marks, b: Background, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl mark_color(col: Color) mark_color(8).
+
+    // --- $PlusOccurrences ---
+    .decl mark_shape(p: Position)
+    GRID_MASK_3x3(mark_shape,
+        _, 1, _,
+        1, 1, 1,
+        _, 1, _)
+}
+
+.init params = Params
+
+.decl marks_choice(m: Marks)
+marks_choice($EveryMarkCell()). marks_choice($PlusOccurrences()).
+
+.decl layer_order_choice(o: LayerOrder)
+layer_order_choice($Transitive()). layer_order_choice($DirectOrder()).
+
+.decl background_choice(b: Background)
+background_choice($BottomLayer()). background_choice($DominantBackground()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([M, O, Bg]) :- marks_choice(M), layer_order_choice(O), background_choice(Bg).
+
+.decl mark_colored(p: Position)
+mark_colored(P) :- in(P, Col), params.mark_color(Col).
+
+// The cells each reading erases.
+.decl mark_at(m: Marks, p: Position)
+
+// The cells no mark hides.
+.decl shown(m: Marks, p: Position, col: Color)
+shown(M, P, Col) :- marks_choice(M), in(P, Col), !mark_at(M, P).
+
+// @claim layered-rectangles visible-extent
+.init box = Bbox<Layer>
+box.cell([M, Col], P) :- shown(M, P, Col).
+
+// The rectangles: every shown color, or every one but the commonest.
+.decl unit(m: Marks, b: Background, col: Color)
+
+// A visible cell of hi lies in the box of lo.
+.decl over(m: Marks, b: Background, hi: Color, lo: Color)
+over(M, Bg, Hi, Lo) :-
+    unit(M, Bg, Hi), unit(M, Bg, Lo), Hi != Lo,
+    shown(M, P, Hi), box.box([M, Lo], B), inside(P, B).
+
+// The rectangles whose box covers a mark cell.
+.decl covers(m: Marks, b: Background, p: Position, col: Color)
+covers(M, Bg, P, Col) :-
+    unit(M, Bg, Col), mark_at(M, P), box.box([M, Col], B), inside(P, B).
+
+// hi lies over lo.
+.decl above(ch: Choice, hi: Color, lo: Color)
+
+// Another rectangle that covers p lies over col.
+.decl buried(ch: Choice, p: Position, col: Color)
+buried(Ch, P, Col) :- above(Ch, Col2, Col), Ch = [M, _, Bg], covers(M, Bg, P, Col2).
+
+out(P, Col, Ch) :-
+    impl_choice(Ch), Ch = [M, _, Bg],
+    covers(M, Bg, P, Col), !buried(Ch, P, Col).    // the top rectangle
+out(P, Col, Ch) :- impl_choice(Ch), Ch = [M, _, _], in(P, Col), !mark_at(M, P).
+
+// --- $EveryMarkCell ---
+mark_at($EveryMarkCell(), P) :- mark_colored(P).
+
+// --- $PlusOccurrences ---
+// @claim erase-marks
+.init plus = Occurrences<Unit, Unit>
+plus.cell($U(), P, $U()) :- mark_colored(P).
+plus.shape($U(), P, $U()) :- params.mark_shape(P).
+
+mark_at($PlusOccurrences(), P) :-
+    plus.occurrence($U(), Q), params.mark_shape(S), compose(Q, S, P).
+
+// --- $BottomLayer ---
+unit(M, $BottomLayer(), Col) :- shown(M, _, Col).
+
+// --- $DominantBackground ---
+// @claim dominant-background
+.init common = Mode<Marks, Color, Position>
+common.item(M, Col, P) :- shown(M, P, Col).
+
+unit(M, $DominantBackground(), Col) :- shown(M, _, Col), !common.mode(M, Col).
+
+out(P, Col, Ch) :-
+    impl_choice(Ch), Ch = [M, _, $DominantBackground()],
+    mark_at(M, P), !covers(M, $DominantBackground(), P, _), common.mode(M, Col).
+
+// --- $Transitive ---
+.init stack = Propagation<Source, Color>
+stack.source([M, Bg, Col], Col) :- unit(M, Bg, Col).
+stack.edge([M, Bg, Col], Hi, Lo) :- unit(M, Bg, Col), over(M, Bg, Hi, Lo).
+
+above([M, $Transitive(), Bg], Hi, Lo) :- stack.reached([M, Bg, Hi], Lo), Hi != Lo.
+
+// --- $DirectOrder ---
+above([M, $DirectOrder(), Bg], Hi, Lo) :- over(M, Bg, Hi, Lo).
+
+.comp Determine {
+    // A mark cell the output erases.
+    .decl erased(e: Example, p: Position)
+    erased(E, P) :-
+        ex_in(E, P, Col), params.mark_color(Col), ex_out(E, P, Col2), !params.mark_color(Col2).
+
+    .type Mark = [e: Example, id: Ident]
+
+    .init marks = Components<Example>
+    marks.node(E, P) :- erased(E, P).
+
+    .decl mark_cell(k: Mark, p: Position)
+    mark_cell([E, Id], P) :- marks.label(E, P, Id).
+
+    .init mark_size = Tally<Mark, Position>
+    mark_size.item(K, P) :- mark_cell(K, P).
+
+    // The smallest erased component is a single mark.
+    .init smallest = ArgExtremes<Unit, Mark>
+    smallest.cand($U(), K, N) :- mark_size.tally(K, N).
+
+    .init frame = Bbox<Mark>
+    frame.cell(K, P) :- smallest.low($U(), K, _), mark_cell(K, P).
+
+    .decl mark_shape(p: Position)
+    mark_shape(P_inner) :- frame.cell(K, P), frame.box(K, B), crop(P, B, P_inner).
+}

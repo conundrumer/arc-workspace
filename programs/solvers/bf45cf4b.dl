@@ -1,0 +1,151 @@
+// bf45cf4b
+// @draft
+// @keywords: objects scale stamp bbox crop tile-arrangement
+// @scene background: the commonest color fills most of the grid, and it
+//  surrounds two objects that do not touch each other
+// @scene mask-shape: one object is in a single color, and its cells are
+//  connected through sides or corners
+// @scene pattern-tile: the other object is a rectangle that holds two or more
+//  colors, and the background color can occur in its interior
+// @rule block-per-mask-cell: the output is the mask shape's bounding box, with
+//  each cell scaled up to a block the size of the tile
+// @rule tile-on-mask-cell: a block whose cell belongs to the mask shape is a
+//  copy of the tile
+// @rule background-elsewhere: a block whose cell does not belong to the mask
+//  shape is all background color
+
+// what the mask is
+.type Objects =
+    // @claim mask-shape
+    Connected {}
+    // @scene mask-shape: every non-background cell outside the tile is in one
+    //  color, and those cells are the mask, connected or not; undefined unless
+    //  they share one color
+    // @witness mask-in-two-pieces: variant $MaskByColor
+    //     @relaxed mask-shape
+  | MaskByColor {}
+
+// which blocks get the tile
+.type Stamped =
+    // @claim tile-on-mask-cell background-elsewhere
+    MaskCells {}
+    // @rule tile-on-mask-cell: a block whose cell is any non-background cell
+    //  of the mask's bounding box is a copy of the tile
+    // @rule background-elsewhere: a block whose cell is background is all
+    //  background color
+    // @witness tile-inside-mask-box: borderline concept
+  | MaskBoxNonBg {}
+
+// what the tile holds
+.type TileContent =
+    // @claim tile-on-mask-cell
+    TileCells {}
+    // @rule tile-on-mask-cell: the tile is the input cropped to the tile's
+    //  bounding box, any mask cell inside that box included
+    // @witness mask-cell-in-tile-box: borderline concept
+    //     @relaxed pattern-tile
+  | TileBoxCrop {}
+
+.type Choice = [o: Objects, s: Stamped, t: TileContent]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {}
+
+.init params = Params
+
+.decl stamped_choice(s: Stamped)
+stamped_choice($MaskCells()). stamped_choice($MaskBoxNonBg()).
+
+// @claim background
+.init field = Mode<Unit, Color, Position>
+field.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- field.mode($U(), Col).
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !bg(Col).
+
+// @claim mask-shape pattern-tile
+.init objs = Components8<Unit>
+objs.node($U(), P) :- ink(P).
+
+.decl object(id: Ident, p: Position, col: Color)
+object(Id, P, Col) :- objs.label($U(), P, Id), in(P, Col).
+
+// An object's colors: one color for the mask, a clash for the tile.
+// @claim mask-shape pattern-tile
+.init hue = Unanimous<Ident, Color>
+hue.item(Id, Col) :- object(Id, _, Col).
+
+// A multicolor object that is not the only one.
+.decl rival_tile(id: Ident)
+rival_tile(Id) :- hue.clash(Id), hue.clash(Id2), Id != Id2.
+
+// The one object that holds two or more colors.
+.decl tile(id: Ident)
+tile(Id) :- hue.clash(Id), !rival_tile(Id).
+
+// @claim pattern-tile block-per-mask-cell
+.init tile_box = Bbox<Unit>
+tile_box.cell($U(), P) :- tile(Id), object(Id, P, _).
+
+// The mask's cells, per choice of what the mask is.
+.decl mask(o: Objects, p: Position)
+
+// @claim block-per-mask-cell
+.init mask_box = Bbox<Objects>
+mask_box.cell(O, P) :- mask(O, P).
+
+// A cell of the mask's box, in the box's frame.
+.decl mask_frame(o: Objects, p: Position, p_inner: Position)
+mask_frame(O, P, P_inner) :- mask_box.box(O, B), in(P, _), crop(P, B, P_inner).
+
+// A cell of the tile, in the tile's frame, per choice of what the tile holds.
+.decl tile_cell(t: TileContent, p_intile: Position, col: Color)
+
+// The mask cells whose blocks get the tile.
+.decl stamped(o: Objects, s: Stamped, p_inner: Position)
+
+out(P_out, Col, [O, S, T]) :-
+    mask_frame(O, P, P_inner), tile_cell(T, P_intile, Col_tile), stamped_choice(S),
+    concat_2d(P_inner, P_intile, 0, P_out),                  // each cell becomes a block
+    ( stamped(O, S, P_inner), Col = Col_tile                 // a copy of the tile
+    ; !stamped(O, S, P_inner), bg(Col) ).                    // a background block
+
+// --- $Connected ---
+
+// A single-color object that is not the only one.
+.decl rival_mask(id: Ident)
+rival_mask(Id) :- hue.value(Id, _), hue.value(Id2, _), Id != Id2.
+
+mask($Connected(), P) :- hue.value(Id, _), !rival_mask(Id), object(Id, P, _).
+
+// --- $MaskByColor ---
+
+// The colors of the non-background cells outside the tile.
+// @claim mask-shape
+.init rest_hue = Unanimous<Unit, Color>
+rest_hue.item($U(), Col) :- object(Id, _, Col), !tile(Id).
+
+mask($MaskByColor(), P) :- object(Id, P, _), !tile(Id), rest_hue.value($U(), _).
+
+// --- $MaskCells ---
+
+stamped(O, $MaskCells(), P_inner) :- mask_frame(O, P, P_inner), mask(O, P).
+
+// --- $MaskBoxNonBg ---
+
+stamped(O, $MaskBoxNonBg(), P_inner) :- mask_frame(O, P, P_inner), ink(P).
+
+// --- $TileCells ---
+
+tile_cell($TileCells(), P_intile, Col) :-
+    tile_box.box($U(), B), in(P, C0), crop(P, B, P_intile), tile(Id),
+    ( object(Id, P, _), Col = C0     // a tile cell
+    ; !object(Id, P, _), bg(Col) ).  // background inside the tile's box
+
+// --- $TileBoxCrop ---
+
+tile_cell($TileBoxCrop(), P_intile, Col) :- tile_box.box($U(), B), in(P, Col), crop(P, B, P_intile).

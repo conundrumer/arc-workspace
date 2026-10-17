@@ -1,0 +1,216 @@
+// bf699163
+// @draft
+// @keywords: color-class border select crop rank lookup
+// @scene background: a field of params.background.
+// @scene rings: several hollow squares of side 3, each one color, no two of
+//  the same color, none of params.frame_color.
+// @scene dashed-frame: dashed straight lines of params.frame_color that are
+//  sides of one axis-aligned rectangle; the sides that the grid holds meet at
+//  the rectangle's corners, the other sides lie past the grid edge, and each
+//  line has gaps.
+// @scene one-ring-inside: exactly one ring lies inside that rectangle, clear
+//  of its sides, and every other ring lies outside it.
+// @rule crop-enclosed-ring: the output is the bounding box of the ring inside
+//  the frame, copied from the input, its hole included.
+
+// which ring the frame marks
+.type Selection =
+    // @claim crop-enclosed-ring
+    Enclosed {}
+    // @scene dashed-frame: cells of params.frame_color, in any arrangement
+    // @scene one-ring-inside: exactly one ring lies inside the bounding box of
+    //  the frame-colored cells
+    // @rule crop-enclosed-ring: the ring is the one inside the bounding box of
+    //  the frame-colored cells; undefined where that box holds no ring or more
+    //  than one
+    // @witness second-ring-past-line-end: foreign concept
+    //     @relaxed one-ring-inside
+  | FrameBbox {}
+    // @scene one-ring-inside: one ring has frame cells in line with it toward
+    //  more of the four directions than any other ring
+    // @rule crop-enclosed-ring: the ring is the one with frame cells in line
+    //  with it, past its box, toward the most of the four directions;
+    //  undefined where two rings tie
+    // @witness sparse-dashes: borderline concept
+  | MostFramedSides {}
+
+// what the output draws for the selected ring
+.type Content =
+    // @claim crop-enclosed-ring
+    Crop {}
+    // @rule crop-enclosed-ring: the output is params.shape, a stored ring,
+    //  drawn in the selected ring's color, with params.background in its hole
+    // @witness ring-4x4: variant concept
+    //     @relaxed rings
+  | StoredShape {}
+
+// where the frame color comes from
+.type FrameSource =
+    // @claim dashed-frame
+    StoredFrameColor {}
+    // @scene dashed-frame: the frame color is the one color other than
+    //  params.background whose cells do not form one hollow square; undefined
+    //  where no color or more than one is such
+    // @witness frame-recolored: variant $FrameColorByShape
+    //     @relaxed dashed-frame
+  | FrameColorByShape {}
+
+.type Choice = [sel: Selection, content: Content, frame: FrameSource]
+
+.type FrameRing = [f: FrameSource, c: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl background(c: Color) background(5).
+
+    // --- $StoredFrameColor ---
+    .decl frame_color(c: Color) frame_color(7).
+
+    // --- $StoredShape ---
+    // The output's ring cells, in the output's frame.
+    .decl shape(p: Position)
+    GRID_MASK_3x3(shape,
+        1, 1, 1,
+        1, _, 1,
+        1, 1, 1)
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .decl cell(k: Key, p: Position, col: Color)
+
+    .type KeyColor = [k: Key, c: Color]
+
+    // The cells of each color other than the background.
+    // @claim rings
+    .init color_box = Bbox<KeyColor>
+    color_box.cell([K, C], P) :- cell(K, P, C), !params.background(C).
+
+    // Color c's cells are not exactly the edge cells of a square box with a
+    // hole.
+    // @ignore: store — its stored value gives the $StoredFrameColor model
+    .decl not_ring(k: Key, c: Color)
+    not_ring(K, C) :-
+        color_box.box([K, C], B),
+        ( cell(K, P, C), axis_elem(A), perp(A, A2),                   // box not square
+          box_extent(B, P, A, N), box_extent(B, P, A2, N2), N != N2
+        ; cell(K, P, C), interior(P, B)                               // a cell off the box edge
+        ; cell(K, P, _), box_edge(P, B, _), !cell(K, P, C)            // an edge cell of another color
+        ; !has_hole(K, B)                                             // no cell off the box edge
+        ).
+
+    // Box b has a cell that is off its edge.
+    .decl has_hole(k: Key, b: Box)
+    has_hole(K, B) :- color_box.box([K, _], B), cell(K, P, _), interior(P, B).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The frame color under each frame source.
+.decl frame_col(f: FrameSource, c: Color)
+
+.decl frame(f: FrameSource, p: Position)
+frame(F, P) :- frame_col(F, C), in(P, C).
+
+// The rings: the colors other than the background and the frame.
+.decl ring(f: FrameSource, c: Color)
+ring(F, C) :- parse.color_box.box([$U(), C], _), frame_col(F, _), !frame_col(F, C).
+
+.decl ring_cell(f: FrameSource, p: Position, c: Color)
+ring_cell(F, P, C) :- ring(F, C), in(P, C).
+
+// The ring each selection takes.
+.decl selected(s: Selection, f: FrameSource, c: Color)
+
+// --- $StoredFrameColor ---
+frame_col($StoredFrameColor(), C) :- params.frame_color(C).
+
+// --- $FrameColorByShape ---
+
+// The frame color: the one color that forms no ring.
+// @ignore item: store — its stored value gives the $StoredFrameColor model
+// @ignore value: store — its stored value gives the $StoredFrameColor model
+// @claim dashed-frame
+.init frame_by_shape = Unanimous<Unit, Color>
+frame_by_shape.item($U(), C) :- parse.not_ring($U(), C).
+
+frame_col($FrameColorByShape(), C) :- frame_by_shape.value($U(), C).
+
+// --- $Enclosed ---
+
+// Frame cell p lies on a drawn line along axis a: a frame cell is next to it
+// along a.
+.decl line_cell(f: FrameSource, p: Position, a: Axis)
+line_cell(F, P, A) :- frame(F, P), axis_of(D, A), neighbor(P, D, Q), frame(F, Q).
+
+// The inside of the frame lies past the line through p toward d: some frame
+// cell lies past that line toward d.
+.decl inner_side(f: FrameSource, p: Position, d: Dir)
+inner_side(F, P, D) :-
+    line_cell(F, P, A), perp(A, A2), axis_of(D, A2), frame(F, G), nearer(D, G, P).
+
+// A cell of ring c is not past some drawn line toward the inside.
+.decl outside(f: FrameSource, c: Color)
+outside(F, C) :- ring_cell(F, P, C), inner_side(F, L, D), !nearer(D, P, L).
+
+// @claim one-ring-inside
+selected($Enclosed(), F, C) :- ring(F, C), !outside(F, C).
+
+// --- $FrameBbox ---
+
+// @claim dashed-frame
+.init frame_box = Bbox<FrameSource>
+frame_box.cell(F, P) :- frame(F, P).
+
+selected($FrameBbox(), F, C) :-
+    ring(F, C), parse.color_box.box([$U(), C], B), frame_box.box(F, B2), inside(B, B2).
+
+// --- $MostFramedSides ---
+
+// The directions toward which a frame cell is in line with ring c, past its
+// box.
+// @claim one-ring-inside
+.init framed = Tally<FrameRing, Dir>
+framed.domain([F, C]) :- ring(F, C).
+framed.item([F, C], D) :-
+    ring_cell(F, P, C), parse.color_box.box([$U(), C], B), frame(F, G),
+    axis_of(D, A), same_line(A, P, G), nearer(D, G, B).
+
+// @claim one-ring-inside
+.init most_framed = ArgExtremes<FrameSource, Color>
+most_framed.cand(F, C, N) :- framed.tally([F, C], N).
+
+selected($MostFramedSides(), F, C) :- most_framed.high(F, C, _).
+
+// --- $Crop ---
+out(P_inner, Col, [S, $Crop(), F]) :-
+    selected(S, F, C), parse.color_box.box([$U(), C], B), in(P, Col), crop(P, B, P_inner).
+
+// --- $StoredShape ---
+
+// The frame of the stored shape.
+.init shape_frame = Frame2D<Unit>
+shape_frame.extent($U(), A, N) :- params.shape(P), axis_elem(A), axis_dim(P, A, N).
+
+out(P, Col, [S, $StoredShape(), F]) :-
+    selected(S, F, C), shape_frame.cell($U(), P),
+    ( params.shape(P), Col = C
+    ; !params.shape(P), params.background(Col)
+    ).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    // In every train input, the one color that forms no ring.
+    .init frame = Unanimous<Unit, Color>
+    frame.item($U(), C) :- parse.not_ring(_, C).
+
+    .decl frame_color(c: Color)
+    frame_color(C) :- frame.value($U(), C).
+}

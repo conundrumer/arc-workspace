@@ -1,0 +1,176 @@
+// bb52a14b
+// @draft
+// @keywords: noise stamp repair
+// @scene scattered-cells: on a field of background, cells of 1 and 8 lie
+//  scattered over the grid, singly and in small clumps
+// @scene one-key: the cells of fill_color all lie in one 3 by 3 box, the key,
+//  and the other cells of that box are of 1 and 8
+// @scene bare-copies: the key's non-fill_color cells occur again, at the same
+//  offsets from one another, at one or more places, each with background at
+//  the offsets of the key's marks
+// @rule copy-input: each cell of the output is the input's cell, except as
+//  the next rule says
+// @rule fill-copies: the key is the bounding box of the fill_color cells; at
+//  each other place where a box of the key's extent has the key's cells at
+//  every offset other than the marks, and the cells at the offsets of its
+//  marks are background, those cells take fill_color
+
+// what a place must hold at the key's mark offsets to count as a copy
+.type UnderMarks =
+    // @claim bare-copies
+    BareMarks {}
+    // @scene bare-copies: the key's other cells may occur with any colors at
+    //  the offsets of its marks
+    // @rule fill-copies: a place matches whatever its mark offsets hold, and
+    //  every mark offset takes fill_color
+    // @witness stray-under-mark: borderline $AnyUnderMarks
+    //     @relaxed bare-copies
+  | AnyUnderMarks {fill: MarkFill}
+
+// what a matched place's mark offsets take when they hold a scatter cell
+.type MarkFill =
+    // @claim fill-copies
+    FillEveryMark {}
+    // @rule fill-copies: only the mark offsets that hold background take
+    //  fill_color, and a scatter cell there stays
+    // @witness stray-under-mark: borderline $AnyUnderMarks
+  | KeepUnderMarks {}
+
+// what a place must hold at an offset where the key has background
+.type BlankOffsets =
+    // @claim fill-copies
+    MatchBlanks {}
+    // @rule fill-copies: a place needs only the key's ink at the ink's
+    //  offsets, and any color at the key's background offsets
+    // @witness stray-in-key-blank: variant $InkOnlyMatch
+    //     @relaxed one-key
+  | InkOnlyMatch {}
+
+.type Choice = [under: UnderMarks, blank: BlankOffsets]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: foreign concept
+    //     @relaxed scattered-cells
+    .decl background(c: Color) background(0).
+    // the color of the key's marks, and of the cells the output fills
+    // @derive RarestColor: borderline concept
+    .decl fill_color(c: Color) fill_color(4).
+}
+
+.init params = Params
+
+.decl under_marks_choice(u: UnderMarks)
+under_marks_choice($BareMarks()).
+under_marks_choice($AnyUnderMarks($FillEveryMark())).
+under_marks_choice($AnyUnderMarks($KeepUnderMarks())).
+
+.decl blank_offsets_choice(b: BlankOffsets)
+blank_offsets_choice($MatchBlanks()). blank_offsets_choice($InkOnlyMatch()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([U, B]) :- under_marks_choice(U), blank_offsets_choice(B).
+
+// --- the key ---
+
+.decl mark(p: Position)
+mark(P) :- in(P, C), params.fill_color(C).
+
+// @claim fill-copies
+.init marks = Bbox<Unit>
+marks.cell($U(), P) :- mark(P).
+
+// The key's extent on each axis.
+// @store: borderline stored
+.decl key_dim(a: Axis, n: number)
+key_dim(A, N) :- marks.box($U(), B), in(P, _), box_extent(B, P, A, N).
+
+.init key_frame = Frame2D<Unit>
+key_frame.extent($U(), A, N) :- key_dim(A, N).
+
+// A box of the key's extent, inside the grid, that holds every mark.
+.decl key_cand(b: Box)
+key_cand(B) :-
+    mark(P), key_frame.cell($U(), S), relative(S, P, B), inside(B, ZERO),
+    marks.box($U(), B_marks), inside(B_marks, B).
+
+.decl holds_bg(b: Box)
+holds_bg(B) :- key_cand(B), in(P, C), params.background(C), inside(P, B).
+
+// Two candidate boxes.
+.decl rival(b: Box, b2: Box)
+rival(B, B2) :- key_cand(B), key_cand(B2), B != B2.
+
+// Another candidate box holds no background.
+.decl bare_rival(b: Box)
+bare_rival(B) :- rival(B, B2), !holds_bg(B2).
+
+// The key: the one box of its extent that holds every mark, or, where
+// several do, the one of them that holds no background.
+.decl key(b: Box)
+key(B) :- key_cand(B), ( !rival(B, _) ; !holds_bg(B), !bare_rival(B) ).
+
+.decl key_cell(p_inner: Position, col: Color)
+key_cell(P_inner, C) :- key(B), in(P, C), crop(P, B, P_inner).
+
+.decl key_mark(p_inner: Position)
+key_mark(P_inner) :- key_cell(P_inner, C), params.fill_color(C).
+
+// --- the copies ---
+
+// @claim bare-copies fill-copies
+.init copy = Occurrences<Choice, Color>
+copy.cell(Ch, P, C) :- impl_choice(Ch), in(P, C).
+
+// the key's ink
+copy.shape(Ch, P_inner, C) :-
+    impl_choice(Ch), key_cell(P_inner, C), !params.fill_color(C), !params.background(C).
+
+// A mark offset of a copy, in the grid.
+.decl mark_place(ch: Choice, p: Position)
+mark_place(Ch, P) :- copy.occurrence(Ch, B), key_mark(P_inner), compose(B, P_inner, P).
+
+.decl filled(ch: Choice, p: Position)
+
+// --- $BareMarks ---
+
+copy.shape([$BareMarks(), Bl], P_inner, C) :-
+    blank_offsets_choice(Bl), key_mark(P_inner), params.background(C).
+
+filled([$BareMarks(), Bl], P) :- mark_place([$BareMarks(), Bl], P).
+
+// --- $FillEveryMark ---
+
+filled([$AnyUnderMarks($FillEveryMark()), Bl], P) :-
+    mark_place([$AnyUnderMarks($FillEveryMark()), Bl], P).
+
+// --- $KeepUnderMarks ---
+
+filled([$AnyUnderMarks($KeepUnderMarks()), Bl], P) :-
+    mark_place([$AnyUnderMarks($KeepUnderMarks()), Bl], P), in(P, C), params.background(C).
+
+// --- $MatchBlanks ---
+
+copy.shape([U, $MatchBlanks()], P_inner, C) :-
+    under_marks_choice(U), key_cell(P_inner, C), params.background(C).
+
+// --- the output ---
+
+out(P, Col, Ch) :-
+    impl_choice(Ch), key(_), in(P, Col_in),
+    ( filled(Ch, P), params.fill_color(Col)
+    ; !filled(Ch, P), Col = Col_in
+    ).
+
+.comp Determine {
+    // A cell the output changes, with its color in the input and the output.
+    .decl change(col_in: Color, col_out: Color)
+    change(Col_in, Col_out) :- ex_in(E, P, Col_in), ex_out(E, P, Col_out), Col_in != Col_out.
+
+    .decl background(c: Color)
+    background(Col) :- change(Col, _).
+
+    .decl fill_color(c: Color)
+    fill_color(Col) :- change(_, Col).
+}

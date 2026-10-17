@@ -1,0 +1,253 @@
+{
+  "id": "b8cdaf2b",
+  "witnesses": [{
+    "id": "base-on-top",
+    "separates": "the base lies along the top edge; reading the base side from the full edge casts the rays downward, and the stored bottom side finds no cap and is undefined",
+    "input": [
+      [8,8,3,8,8],
+      [0,0,8,0,0],
+      [0,0,0,0,0],
+      [0,0,0,0,0],
+      [0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$StoredSide"],
+      "grid": null
+    }, {
+      "cases": ["$BaseSideDerived"],
+      "grid": [
+        [8,8,3,8,8],
+        [0,0,8,0,0],
+        [0,3,0,3,0],
+        [3,0,0,0,3],
+        [0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "the field is 5, the commonest color; deriving the background as the commonest color casts the rays over the 5 field, and the stored background 0 finds no single cap run and is undefined",
+    "input": [
+      [5,5,5,5,5],
+      [5,5,5,5,5],
+      [5,5,5,5,5],
+      [5,5,8,5,5],
+      [8,8,3,8,8]
+    ],
+    "output": [{
+      "cases": ["$CapAnchor & background=stored"],
+      "grid": null
+    }, {
+      "cases": ["background=DominantColor","$RayFromMiddleRun & $PaintOver"],
+      "grid": [
+        [5,5,5,5,5],
+        [3,5,5,5,3],
+        [5,3,5,3,5],
+        [5,5,8,5,5],
+        [8,8,3,8,8]
+      ]
+    }, {
+      "cases": [
+        "$RayFromMiddleRun & $RayBehindObstacle",
+        "$RayFromMiddleRun & $RayStopAtObstacle"
+      ],
+      "grid": [
+        [5,5,5,5,5],
+        [5,5,5,5,5],
+        [5,5,5,5,5],
+        [5,5,8,5,5],
+        [8,8,3,8,8]
+      ]
+    }]
+  }, {
+    "id": "base-short-of-edges",
+    "separates": "the base row stops one cell short of each side edge; rays to the frame edge run three cells, and rays as long as the outer flank run two",
+    "input": [
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,8,0,0,0],
+      [0,8,8,3,8,8,0]
+    ],
+    "output": [{
+      "cases": ["$StoredSide & $ToEdge & $CapAnchor"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [3,0,0,0,0,0,3],
+        [0,3,0,0,0,3,0],
+        [0,0,3,0,3,0,0],
+        [0,0,0,8,0,0,0],
+        [0,8,8,3,8,8,0]
+      ]
+    }, {
+      "cases": ["$BaseSideDerived","$RayFromMiddleRun"],
+      "grid": null
+    }, {
+      "cases": ["$RayLenFlank"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,3,0,0,0,3,0],
+        [0,0,3,0,3,0,0],
+        [0,0,0,8,0,0,0],
+        [0,8,8,3,8,8,0]
+      ]
+    }]
+  }, {
+    "id": "rarer-stray-cell",
+    "separates": "a single 7 cell is the rarest color; the ray color read from the base under the cap is 1, and the rarest color is 7",
+    "input": [
+      [0,0,7,0,0],
+      [0,0,0,0,0],
+      [0,0,0,0,0],
+      [0,6,6,6,0],
+      [6,1,1,1,6]
+    ],
+    "output": [{
+      "cases": ["$CapColor","$RayColorBaseCenter"],
+      "grid": [
+        [0,0,7,0,0],
+        [0,0,0,0,0],
+        [1,0,0,0,1],
+        [0,6,6,6,0],
+        [6,1,1,1,6]
+      ]
+    }, {
+      "cases": ["$RayColorRarest"],
+      "grid": [
+        [0,0,7,0,0],
+        [0,0,0,0,0],
+        [7,0,0,0,7],
+        [0,6,6,6,0],
+        [6,1,1,1,6]
+      ]
+    }]
+  }, {
+    "id": "cell-on-ray",
+    "separates": "an 8 cell lies on the middle of the left ray; painting over it, stopping at it, and passing behind it give three outputs",
+    "input": [
+      [0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0],
+      [0,8,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0],
+      [0,0,0,8,8,8,0,0,0],
+      [8,8,8,2,2,2,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$PaintOver"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [2,0,0,0,0,0,0,0,2],
+        [0,2,0,0,0,0,0,2,0],
+        [0,0,2,0,0,0,2,0,0],
+        [0,0,0,8,8,8,0,0,0],
+        [8,8,8,2,2,2,8,8,8]
+      ]
+    }, {
+      "cases": ["$RayBehindObstacle"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [2,0,0,0,0,0,0,0,2],
+        [0,8,0,0,0,0,0,2,0],
+        [0,0,2,0,0,0,2,0,0],
+        [0,0,0,8,8,8,0,0,0],
+        [8,8,8,2,2,2,8,8,8]
+      ]
+    }, {
+      "cases": ["$RayStopAtObstacle"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,2],
+        [0,8,0,0,0,0,0,2,0],
+        [0,0,2,0,0,0,2,0,0],
+        [0,0,0,8,8,8,0,0,0],
+        [8,8,8,2,2,2,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "base-off-center",
+    "separates": "the middle run sits right of center; the ray color read from the base under the cap is 3, and the base cell at the middle column gives 8",
+    "input": [
+      [0,0,0,0,0],
+      [0,0,0,0,0],
+      [0,0,0,0,0],
+      [0,0,0,8,0],
+      [8,8,8,3,8]
+    ],
+    "output": [{
+      "cases": ["$CapColor","$RayColorRarest"],
+      "grid": [
+        [3,0,0,0,0],
+        [0,3,0,0,0],
+        [0,0,3,0,3],
+        [0,0,0,8,0],
+        [8,8,8,3,8]
+      ]
+    }, {
+      "cases": ["$RayColorBaseCenter"],
+      "grid": [
+        [8,0,0,0,0],
+        [0,8,0,0,0],
+        [0,0,8,0,8],
+        [0,0,0,8,0],
+        [8,8,8,3,8]
+      ]
+    }]
+  }, {
+    "id": "cap-narrower-than-middle",
+    "separates": "the cap covers only the center of the three-cell middle run; rays from the cap's ends reach rows 1-2, and rays from the middle run's ends take one cell each in row 2",
+    "input": [
+      [0,0,0,0,0],
+      [0,0,0,0,0],
+      [0,0,0,0,0],
+      [0,0,6,0,0],
+      [6,1,1,1,6]
+    ],
+    "output": [{
+      "cases": ["$ToEdge & $CapColor & $CapAnchor","$RayColorBaseCenter"],
+      "grid": [
+        [0,0,0,0,0],
+        [1,0,0,0,1],
+        [0,1,0,1,0],
+        [0,0,6,0,0],
+        [6,1,1,1,6]
+      ]
+    }, {
+      "cases": ["$RayLenFlank"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,6,0,0],
+        [6,1,1,1,6]
+      ]
+    }, {
+      "cases": ["$RayFromMiddleRun"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [1,0,0,0,1],
+        [0,0,6,0,0],
+        [6,1,1,1,6]
+      ]
+    }, {
+      "cases": ["$RayColorRarest"],
+      "grid": null
+    }]
+  }]
+}

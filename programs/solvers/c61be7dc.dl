@@ -1,0 +1,358 @@
+// c61be7dc
+// @draft
+// @keywords: lines span cross count color-class
+// @scene field: every cell that is not a line or the shape has color
+//  background
+// @scene walls: two full lines of color line_color, parallel to each other,
+//  bound a corridor whose width is odd and at least 3
+// @scene cross-line: one line of color line_color, perpendicular to the
+//  walls, runs from edge to edge outside the corridor, and inside the
+//  corridor the input shows only shape or background on it
+// @scene shape: the cells of color shape_color all lie in the corridor, are
+//  symmetric about the cross line, and are odd in number
+// @rule close-walls: each wall moves to the line next to the corridor's
+//  center line, and the cells of the old walls take background, except where
+//  the cross line passes
+// @rule press-shape: the shape becomes a line of shape_color on the
+//  corridor's center line, with as many cells as the shape has, centered on
+//  the cross line; every other cell of the old corridor that no wall or cross
+//  line takes is background
+// @rule restore-cross-line: the cross line runs from edge to edge in the
+//  output, across the old corridor too, and the shape's line covers it at the
+//  one cell where they meet
+
+// the point along the corridor that the pressed line centers on
+.type AlongCenter =
+    // @claim press-shape
+    CrossLine {}
+    // @rule press-shape: the line centers on the middle of the shape's extent
+    //  along the corridor; undefined where that extent and the count do not
+    //  let the line center on that middle
+    // @witness shape-off-cross-line: borderline concept
+    //     @relaxed shape
+  | AlongShapeCenter {}
+    // @rule press-shape: the line centers on the grid's middle line across
+    //  the corridor; undefined where the grid's extent along the corridor and
+    //  the count do not let the line center there
+    // @witness cross-line-off-middle: variant concept
+  | AlongGridMiddle {}
+
+// the line that the closed corridor centers on
+.type AcrossCenter =
+    // @claim close-walls
+    Corridor {}
+    // @rule close-walls: the new walls flank the center line of the shape's
+    //  extent across the corridor; undefined where that extent is even
+    // @rule press-shape: the line sits on the center line of the shape's
+    //  extent across the corridor
+    // @witness shape-narrower-than-corridor: variant concept
+  | AcrossShapeCenter {}
+    // @rule close-walls: the new walls flank the grid's middle line parallel
+    //  to the walls; undefined where the grid's extent across the walls is
+    //  even
+    // @rule press-shape: the line sits on the grid's middle line parallel to
+    //  the walls
+    // @witness corridor-off-middle: variant concept
+  | AcrossGridMiddle {}
+
+// a count that cannot center on the center point
+.type UncenteredCount =
+    // @claim shape
+    ExactCenter {}
+    // @scene shape: the cells of color shape_color all lie in the corridor
+    //  and are symmetric about the cross line, in any number
+    // @rule press-shape: where the line cannot center exactly, the output
+    //  holds two grids, the placements half a cell off the center, one on
+    //  each side
+    // @witness even-count: borderline $EvenCountBothSides
+    //     @relaxed shape
+  | EvenCountBothSides {}
+
+// a line longer than the corridor
+.type Overflow =
+    // @claim press-shape
+    WithinGrid {}
+    // @rule press-shape: the part of the line past a grid edge is dropped
+    // @witness line-longer-than-corridor: borderline $ClipAtEdge
+  | ClipAtEdge {}
+
+.type Choice = [al: AlongCenter, ac: AcrossCenter, uc: UncenteredCount, ov: Overflow]
+
+// One of the two placements half a cell off the center, by a direction along
+// the walls.
+.type TiebreakResolution = [side: Dir]
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed field
+    .decl background(c: Color) background(7).
+
+    // The color of the walls and the cross line.
+    .decl line_color(c: Color) line_color(0).
+
+    // @derive RarestColor: variant derived
+    //     @relaxed shape
+    .decl shape_color(c: Color) shape_color(5).
+}
+
+.init params = Params
+
+.decl uncentered_count_choice(uc: UncenteredCount)
+uncentered_count_choice($ExactCenter()). uncentered_count_choice($EvenCountBothSides()).
+
+// The walls, the corridor between them, and the cross line.
+.comp Parse<Key> {
+    // A line of the grid: its axis, and its place across that axis.
+    .type Line = [key: Key, a: Axis, l: Box]
+
+    // A line across the walls, by its place along them.
+    .type Across = [key: Key, l: Box]
+
+    .decl cell(key: Key, p: Position, col: Color)
+    .decl line_color(key: Key, col: Color)
+
+    // The one color of each line that holds one color alone.
+    // @claim walls
+    // @ignore value: store — full keeps the value that is line_color
+    .init full_line = Unanimous<Line, Color>
+    full_line.item([Ky, A, L], Col) :- cell(Ky, P, Col), axis_elem(A), split(P, A, _, L).
+
+    .decl full(key: Key, a: Axis, l: Box)
+    full(Ky, A, L) :- full_line.value([Ky, A, L], Col), line_color(Ky, Col).
+
+    // The walls' axis: the one axis with full lines of line_color.
+    // @claim walls
+    .init walls = Unanimous<Key, Axis>
+    walls.item(Ky, A) :- full(Ky, A, _).
+
+    .decl wall_axis(key: Key, a: Axis)
+    wall_axis(Ky, A) :- walls.value(Ky, A).
+
+    // Each cell's place along the walls' axis, and its line parallel to the
+    // walls.
+    .decl place(key: Key, p: Position, along: Box, across: Box)
+    place(Ky, P, L1, L2) :- cell(Ky, P, _), wall_axis(Ky, A), split(P, A, L1, L2).
+
+    .decl wall(key: Key, p: Position)
+    wall(Ky, P) :- place(Ky, P, _, L), full(Ky, _, L).
+
+    // @claim walls
+    .init gap = Between<Key>
+    gap.axis(Ky, A2) :- wall_axis(Ky, A), perp(A, A2).
+    gap.cell(Ky, P) :- cell(Ky, P, _).
+    gap.mark(Ky, P) :- wall(Ky, P).
+
+    .decl corridor(key: Key, p: Position)
+    corridor(Ky, P) :- gap.between(Ky, P), !wall(Ky, P).
+
+    // The one color each line across the walls shows outside the corridor.
+    // @claim cross-line
+    // @ignore value: store — cross keeps the value that is line_color
+    .init outside = Unanimous<Across, Color>
+    outside.item([Ky, L], Col) :- cell(Ky, P, Col), !corridor(Ky, P), place(Ky, P, L, _).
+
+    .decl cross(key: Key, p: Position)
+    cross(Ky, P) :- place(Ky, P, L, _), outside.value([Ky, L], Col), line_color(Ky, Col).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+parse.line_color($U(), Col) :- params.line_color(Col).
+
+// --- the shape, and the line it is pressed into ---
+
+.decl shape(p: Position)
+shape(P) :- in(P, Col), params.shape_color(Col).
+
+// @claim press-shape
+.init size = Tally<Unit, Position>
+size.item($U(), P) :- shape(P).
+size.domain($U()).
+
+// The pressed line in a frame of its own, one cell per shape cell.
+.init line = AxisFrame<Unit>
+line.extent($U(), A, N) :- parse.wall_axis($U(), A), size.tally($U(), N).
+
+// --- where the line goes ---
+
+// The box whose middle line parallel to the walls the closed corridor
+// centers on.
+// @ignore: head-zero — the grid's own frame is a host, and ZERO is that frame
+// @ignore: store — the host is the grid's frame at one branch alone
+.decl across_host(ac: AcrossCenter, b: Box)
+
+// The box whose middle across the corridor the line centers on.
+// @ignore: head-zero — the grid's own frame is a host, and ZERO is that frame
+// @ignore: store — the host is the grid's frame at one branch alone
+.decl along_host(al: AlongCenter, b: Box)
+
+// The center line, by its place across the walls.
+.decl center_line(ac: AcrossCenter, l: Box)
+center_line(Ac, L) :-
+    across_host(Ac, B), parse.place($U(), P, _, L), crop(P, B, P_rel),
+    parse.wall_axis($U(), A), split(P_rel, A, _, L_rel),
+    centered(L_rel).                                        // centered across the host
+
+// Each place along the walls' axis that a host covers, in the host's frame
+// and in the grid's.
+.decl along_place(al: AlongCenter, l_rel: Box, l: Box)
+along_place(Al, L_rel, L) :-
+    along_host(Al, B), parse.place($U(), P, L, _), crop(P, B, P_rel),
+    parse.wall_axis($U(), A), split(P_rel, A, L_rel, _).
+
+// A place in a frame along the walls' axis: a cell of the line's frame, or a
+// place a host covers.
+.decl span_place(p: Box)
+span_place(P_line) :- line.cell($U(), _, P_line).
+span_place(L_rel) :- along_place(_, L_rel, _).
+
+// In an even extent, a middle place, whose partner lies one step toward d.
+.decl middle(d: Dir, p: Box)
+middle(D, P) :-
+    span_place(P), parse.wall_axis($U(), A), axis_of(D, A), opposite(D, O),
+    dist(P, O, K), neighbor(P, D, Q), dist(Q, D, K).
+
+// The frame change that carries the line's frame into the grid, at each
+// resolution.
+.decl placement(al: AlongCenter, uc: UncenteredCount, d: Dir, v: Box)
+placement(Al, Uc, D, V) :-
+    uncentered_count_choice(Uc), parse.wall_axis($U(), A), axis_of(D, A),
+    line.cell($U(), _, P_line), along_place(Al, L_rel, L),
+    ( centered(P_line), centered(L_rel)          // center on center
+    ; middle(D, P_line), middle(D, L_rel)        // middle pair on middle pair
+    ),
+    relative(P_line, L, V).
+
+// The line's places along the walls' axis.
+.decl line_along(al: AlongCenter, uc: UncenteredCount, d: Dir, l: Box)
+line_along(Al, Uc, D, L) :-
+    placement(Al, Uc, D, V), line.cell($U(), _, P_line), compose(P_line, V, L).
+
+// Some cell of the line falls past a grid edge.
+.decl overflow(al: AlongCenter, uc: UncenteredCount)
+overflow(Al, Uc) :- line_along(Al, Uc, _, L), !inside(L, ZERO).
+
+.decl press(al: AlongCenter, ac: AcrossCenter, uc: UncenteredCount, d: Dir, p: Position)
+press(Al, Ac, Uc, D, P) :-
+    line_along(Al, Uc, D, L1), center_line(Ac, L2), parse.place($U(), P, L1, L2).
+
+// The lines next to the center line.
+.decl new_wall(ac: AcrossCenter, p: Position)
+new_wall(Ac, P) :- center_line(Ac, L), parse.place($U(), P, _, L2), neighbor(L, _, L2).
+
+// The line has its place at the resolution.
+.decl placed(al: AlongCenter, uc: UncenteredCount, d: Dir)
+placed(Al, Uc, D) :- placement(Al, Uc, D, _).
+
+// The resolutions at which each case gives a grid.
+.decl shown(ch: Choice, d: Dir)
+
+out(P, Col, [Al, Ac, Uc, Ov], [D]) :-
+    shown([Al, Ac, Uc, Ov], D), in(P, _),
+    ( press(Al, Ac, Uc, D, P), params.shape_color(Col)
+    ; !press(Al, Ac, Uc, D, P), new_wall(Ac, P), params.line_color(Col)
+    ; !press(Al, Ac, Uc, D, P), !new_wall(Ac, P), parse.cross($U(), P), params.line_color(Col)
+    ; !press(Al, Ac, Uc, D, P), !new_wall(Ac, P), !parse.cross($U(), P), params.background(Col)
+    ).
+
+// --- $CrossLine ---
+
+// @claim press-shape
+.init cross_box = Bbox<Unit>
+cross_box.cell($U(), P) :- parse.cross($U(), P).
+
+along_host($CrossLine(), B) :- cross_box.box($U(), B).
+
+// --- $AlongShapeCenter, $AcrossShapeCenter ---
+
+// @claim press-shape
+.init shape_box = Bbox<Unit>
+shape_box.cell($U(), P) :- shape(P).
+
+// --- $AlongShapeCenter ---
+
+along_host($AlongShapeCenter(), B) :- shape_box.box($U(), B).
+
+// --- $AlongGridMiddle ---
+
+along_host($AlongGridMiddle(), ZERO).
+
+// --- $Corridor ---
+
+// @claim close-walls
+.init corridor_box = Bbox<Unit>
+corridor_box.cell($U(), P) :- parse.corridor($U(), P).
+
+across_host($Corridor(), B) :- corridor_box.box($U(), B).
+
+// --- $AcrossShapeCenter ---
+
+across_host($AcrossShapeCenter(), B) :- shape_box.box($U(), B).
+
+// --- $AcrossGridMiddle ---
+
+across_host($AcrossGridMiddle(), ZERO).
+
+// --- $EvenCountBothSides ---
+
+// A line half a cell off the center.
+placement(Al, $EvenCountBothSides(), D, V) :-
+    parse.wall_axis($U(), A), axis_of(D, A),
+    line.cell($U(), _, P_line), along_place(Al, L_rel, L),
+    ( centered(P_line), middle(D, L_rel)
+    ; middle(D, P_line), centered(L_rel)
+    ),
+    relative(P_line, L, V).
+
+// A line of no cells has no middle, and no cell to place.
+placed(Al, $EvenCountBothSides(), D) :-
+    size.tally($U(), 0), along_host(Al, _), parse.wall_axis($U(), A), axis_of(D, A).
+
+// --- $WithinGrid ---
+
+shown([Al, Ac, Uc, $WithinGrid()], D) :-
+    placed(Al, Uc, D), center_line(Ac, _), !overflow(Al, Uc).
+
+// --- $ClipAtEdge ---
+
+shown([Al, Ac, Uc, $ClipAtEdge()], D) :- placed(Al, Uc, D), center_line(Ac, _).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
+    ex.line_color(E, Col) :- line_color(Col), ex.cell(E, _, _).
+
+    // A train input with a full line of color col.
+    .decl filled(e: Example, col: Color)
+    filled(E, Col) :- ex.full_line.value([E, _, _], Col).
+
+    // A color that fills a line in some train input and no line of another.
+    .decl unfilled(col: Color)
+    unfilled(Col) :- filled(_, Col), ex.cell(E, _, _), !filled(E, Col).
+
+    .decl line_color(c: Color)
+    line_color(Col) :- filled(_, Col), !unfilled(Col).
+
+    // The one color of the cells outside the corridor that no line takes.
+    .init field = Unanimous<Unit, Color>
+    field.item($U(), Col) :-
+        ex.cell(E, P, Col), !ex.corridor(E, P), !ex.wall(E, P), !ex.cross(E, P).
+
+    .decl background(c: Color)
+    background(Col) :- field.value($U(), Col).
+
+    // A train input with a corridor cell of color col.
+    .decl held(e: Example, col: Color)
+    held(E, Col) :- ex.corridor(E, P), ex.cell(E, P, Col).
+
+    // A color that lies outside the corridor in some train input, or inside
+    // it in some and not in another.
+    .decl stray(col: Color)
+    stray(Col) :- held(_, Col), ex.cell(E, P, Col), !ex.corridor(E, P).
+    stray(Col) :- held(_, Col), ex.cell(E, _, _), !held(E, Col).
+
+    .decl shape_color(c: Color)
+    shape_color(Col) :- held(_, Col), !stray(Col).
+}

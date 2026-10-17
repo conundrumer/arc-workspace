@@ -1,0 +1,213 @@
+// b6f77b65
+// @draft
+// @keywords: objects markers select move
+// @scene marker: the line on the edge opposite params.fall_dir holds a run of
+//  marker cells from the DIAG_TL corner, and nothing else; the line next to
+//  it is empty
+// @scene arches: the rest of the grid is a stack of arches, each a bar across
+//  the tops of two legs that run along the axis of params.fall_dir
+// @scene sticks: each leg is one color for its whole length, its top corner
+//  cell included; each bar is one color over the cells strictly between its
+//  two legs
+// @scene stacked: each leg stands on the edge toward params.fall_dir or on a
+//  stick of a lower arch; the two legs of one arch may differ in length
+// @rule pull-marked: every stick whose color is a marker color becomes
+//  params.bg
+// @rule legs-fall: each leg left moves toward params.fall_dir until the cell
+//  past its end is the frame edge or a stick
+// @rule bar-hangs: a bar whose arch keeps both legs moves toward
+//  params.fall_dir until it lies on the line of the lower of its legs' tops,
+//  or a cell past it is the frame edge or a stick
+// @rule bar-drops: a bar whose arch lost a leg moves toward params.fall_dir
+//  until a cell past it is the frame edge or a stick
+// @rule marker-kept: the marker cells stay as they are
+
+// where the bar of an arch that lost a leg comes to rest
+.type BrokenBar =
+    // @claim bar-drops
+    BarDrops {}
+    // @rule bar-drops: the bar moves toward params.fall_dir until it lies
+    //  beside the end of the leg it keeps, or a cell past it is the frame edge
+    //  or a stick
+    // @witness broken-bar-overhangs: ordinary concept
+  | BarToFoot {}
+
+// where the sticks fall
+.type Fall =
+    // @claim stacked
+    StoredFall {}
+    // @scene stacked: each leg stands on the frame edge that the most
+    //  non-background cells touch, or on a stick of a lower arch, and the
+    //  sticks fall toward that edge; undefined where two edges tie for the
+    //  most
+    // @witness structure-on-left-edge: variant $FallToFloorEdge
+    //     @relaxed marker
+    //     @relaxed arches
+    //     @relaxed stacked
+  | FallToFloorEdge {}
+
+.type Choice = [b: BrokenBar, f: Fall]
+
+// A stick: the fall it is parsed under, the axis it runs along, and its
+// color.
+.type Stick = [f: Fall, a: Axis, col: Color]
+
+// Stick id comes to rest within travel v of where it starts.
+.type Settled = [id: Ident, v: Offset]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed marker
+    //     @relaxed arches
+    .decl bg(c: Color) bg(0).
+
+    // --- $StoredFall ---
+    .decl fall_dir(d: Dir) fall_dir(DIR_B).
+}
+
+.init params = Params
+
+.decl broken_bar_choice(b: BrokenBar)
+broken_bar_choice($BarDrops()). broken_bar_choice($BarToFoot()).
+
+.decl fall_choice(f: Fall)
+fall_choice($StoredFall()). fall_choice($FallToFloorEdge()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([B, F]) :- broken_bar_choice(B), fall_choice(F).
+
+// The heading the sticks fall toward.
+.decl fall(f: Fall, d: Dir)
+
+// The line on the edge opposite the fall, which holds the marker.
+.decl marker_line(f: Fall, p: Position)
+marker_line(F, P) :- in(P, _), fall(F, D), opposite(D, O), dist(P, O, 0).
+
+.decl marker(f: Fall, col: Color)
+marker(F, Col) :- marker_line(F, P), in(P, Col), !params.bg(Col).
+
+.decl stick_cell(f: Fall, p: Position, col: Color)
+stick_cell(F, P, Col) :- fall(F, _), in(P, Col), !params.bg(Col), !marker_line(F, P).
+
+// A leg cell stands on a stick cell or on the frame edge; a bar cell has
+// the arch's empty inside past it.
+.decl leg_cell(f: Fall, p: Position, col: Color)
+leg_cell(F, P, Col) :-
+    stick_cell(F, P, Col), fall(F, D),
+    ( dist(P, D, 0) ; neighbor(P, D, Q), stick_cell(F, Q, _) ).
+
+.decl bar_cell(f: Fall, p: Position, col: Color)
+bar_cell(F, P, Col) :-
+    stick_cell(F, P, Col), fall(F, D), neighbor(P, D, Q), in(Q, Bg), params.bg(Bg).
+
+// Each stick: a leg runs along the fall's axis, a bar across it.
+// @claim sticks
+.init stick = Components<Stick>
+stick.node([F, A, Col], P) :-
+    fall(F, D), axis_of(D, A_fall),
+    ( leg_cell(F, P, Col), A = A_fall
+    ; bar_cell(F, P, Col), perp(A_fall, A)
+    ).
+
+.decl stick_of(f: Fall, p: Position, id: Ident, col: Color)
+stick_of(F, P, Id, Col) :- stick.label([F, _, Col], P, Id).
+
+.decl bar(f: Fall, id: Ident)
+bar(F, Id) :- bar_cell(F, P, _), stick_of(F, P, Id, _).
+
+// A leg of bar b's arch: its top cell c sits beside the bar's end cell.
+.decl arch_leg(f: Fall, b: Ident, l: Ident, c: Position)
+arch_leg(F, B, L, C) :-
+    bar(F, B), stick_of(F, P, B, _), fall(F, D), perp_dir(D, S), neighbor(P, S, C),
+    stick_of(F, C, L, _), !bar(F, L).
+
+.decl pulled(f: Fall, id: Ident)
+pulled(F, Id) :- stick_of(F, _, Id, Col), marker(F, Col).
+
+.decl broken(f: Fall, b: Ident)
+broken(F, B) :- arch_leg(F, B, L, _), pulled(F, L).
+
+// A kept bar whose arch keeps both legs.
+.decl whole(f: Fall, b: Ident)
+whole(F, B) :- bar(F, B), !pulled(F, B), !broken(F, B).
+
+// The cells of each stick left.
+.decl body(f: Fall, id: Ident, p: Position)
+body(F, Id, P) :- stick_of(F, P, Id, _), !pulled(F, Id).
+
+// The travels toward the fall that a stick may take.
+.decl travel(f: Fall, v: Offset)
+travel(F, V) :- fall(F, D), in(P, _), dist(P, D, K), jump_offset(D, K, V).
+
+// The sticks left settle toward the fall; each comes to rest at the least
+// travel that `settle` reaches for it.
+.init settle = Propagation<Choice, Settled>
+
+// The frame edge stops a stick.
+settle.source([B, F], [Id, V]) :-
+    impl_choice([B, F]), body(F, Id, P), fall(F, D), dist(P, D, K), jump_offset(D, K, V).
+
+// A stick at rest within v is at rest within one more step.
+settle.edge([B, F], [Id, V], [Id, V2]) :-
+    impl_choice([B, F]), body(F, Id, _), travel(F, V), fall(F, D), neighbor(V, D, V2), travel(F, V2).
+
+// A stick ahead on a line, at its rest, stops a stick behind it.
+settle.edge([B, F], [Id2, V2], [Id, V]) :-
+    impl_choice([B, F]), body(F, Id, P), body(F, Id2, Q), Id != Id2,
+    fall(F, D), nearer(D, Q, P),
+    travel(F, V2), compose(Q, V2, Q2), opposite(D, O), neighbor(Q2, O, P2),    // the cell behind q at rest
+    relative(P, P2, V), travel(F, V).
+
+// A whole arch's bar rests once both of its legs rest within its travel:
+// on the line of the lower of their tops.
+settle.join([B, F], [L1, V], [L2, V], [Bar, V]) :-
+    impl_choice([B, F]), whole(F, Bar), arch_leg(F, Bar, L1, _), arch_leg(F, Bar, L2, _), L1 != L2,
+    travel(F, V).
+
+// A stick rests within v and within one step less.
+.decl passed(ch: Choice, id: Ident, v: Offset)
+passed([B, F], Id, V) :-
+    settle.reached([B, F], [Id, V]), fall(F, D), opposite(D, O), neighbor(V, O, V0),
+    settle.reached([B, F], [Id, V0]).
+
+// Each stick left, at its rest.
+.decl landed(ch: Choice, p: Position, col: Color)
+landed([B, F], Q, Col) :-
+    settle.reached([B, F], [Id, V]), !passed([B, F], Id, V),    // the least travel reached
+    stick_of(F, P, Id, Col), compose(P, V, Q).
+
+out(P, Col, [B, F]) :- impl_choice([B, F]), marker_line(F, P), in(P, Col).
+out(P, Col, Ch) :- landed(Ch, P, Col).
+out(P, Bg, [B, F]) :-
+    impl_choice([B, F]), in(P, _), !marker_line(F, P),
+    !landed([B, F], P, _), params.bg(Bg).
+
+// --- $StoredFall ---
+fall($StoredFall(), D) :- params.fall_dir(D).
+
+// --- $FallToFloorEdge ---
+// The non-background cells on each frame edge.
+// @claim stacked
+.init edge_tally = Tally<Dir, Position>
+edge_tally.item(D, P) :- in(P, Col), !params.bg(Col), dir_elem(D), dist(P, D, 0).
+
+// @claim stacked
+// @ignore high: store — the stored edge is the stored fall_dir of $StoredFall
+.init floor_edge = ArgExtremes<Unit, Dir>
+floor_edge.cand($U(), D, N) :- edge_tally.tally(D, N).
+
+fall($FallToFloorEdge(), D) :- floor_edge.high($U(), D, _).
+
+// --- $BarToFoot ---
+.decl leg_continues(f: Fall, q: Position)
+leg_continues(F, Q) :-
+    stick_of(F, Q, L, _), fall(F, D), neighbor(Q, D, Q2), stick_of(F, Q2, L, _).
+
+// A broken arch's bar rests once its end lies beside the foot of the leg it
+// keeps, at that leg's rest.
+settle.edge([$BarToFoot(), F], [L, V], [Bar, W]) :-
+    fall_choice(F), broken(F, Bar), !pulled(F, Bar), arch_leg(F, Bar, L, C), !pulled(F, L),
+    stick_of(F, Q, L, _), !leg_continues(F, Q),    // q is the leg's foot
+    relative(C, Q, U), travel(F, V), compose(V, U, W).

@@ -1,0 +1,203 @@
+{
+  "id": "bda2d7a6",
+  "witnesses": [{
+    "id": "non-periodic-rings",
+    "separates": "The ring colors read 8 0 5 0 5 from outside in, so they do not repeat with period 3 and color 0 covers more cells than color 8. The concept and $EnclosingColor recolor 8 to 5, 0 to 8 and 5 to 0; $RingShift moves each ring's color one ring inward and gives the outermost ring the color of ring 2; $CountOrder cycles the colors in the order 0 8 5 of their cell counts.",
+    "input": [
+      [8,8,8,8,8,8,8,8,8,8],
+      [8,0,0,0,0,0,0,0,0,8],
+      [8,0,5,5,5,5,5,5,0,8],
+      [8,0,5,0,0,0,0,5,0,8],
+      [8,0,5,0,5,5,0,5,0,8],
+      [8,0,5,0,5,5,0,5,0,8],
+      [8,0,5,0,0,0,0,5,0,8],
+      [8,0,5,5,5,5,5,5,0,8],
+      [8,0,0,0,0,0,0,0,0,8],
+      [8,8,8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["concept","$ScanOrder","$EnclosingColor"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,8,8,8,8,8,8,8,8,5],
+        [5,8,0,0,0,0,0,0,8,5],
+        [5,8,0,8,8,8,8,0,8,5],
+        [5,8,0,8,0,0,8,0,8,5],
+        [5,8,0,8,0,0,8,0,8,5],
+        [5,8,0,8,8,8,8,0,8,5],
+        [5,8,0,0,0,0,0,0,8,5],
+        [5,8,8,8,8,8,8,8,8,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$CountOrder"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,5,5,5,5,5,5,5,5,0],
+        [0,5,8,8,8,8,8,8,5,0],
+        [0,5,8,5,5,5,5,8,5,0],
+        [0,5,8,5,8,8,5,8,5,0],
+        [0,5,8,5,8,8,5,8,5,0],
+        [0,5,8,5,5,5,5,8,5,0],
+        [0,5,8,8,8,8,8,8,5,0],
+        [0,5,5,5,5,5,5,5,5,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$RingShift"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,8,8,8,8,8,8,8,8,5],
+        [5,8,0,0,0,0,0,0,8,5],
+        [5,8,0,5,5,5,5,0,8,5],
+        [5,8,0,5,0,0,5,0,8,5],
+        [5,8,0,5,0,0,5,0,8,5],
+        [5,8,0,5,5,5,5,0,8,5],
+        [5,8,0,0,0,0,0,0,8,5],
+        [5,8,8,8,8,8,8,8,8,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "repeat-before-new-color",
+    "separates": "The ring colors read 8 0 8 5 from outside in, so color 8 repeats before color 5 first appears. The concept and $CountOrder recolor 8 to 5, 0 to 8 and 5 to 0; $EnclosingColor recolors 5 to 8, the color of the ring just outside it; $RingShift moves each ring's color one ring inward and gives the outermost ring the color of ring 2.",
+    "input": [
+      [8,8,8,8,8,8,8,8],
+      [8,0,0,0,0,0,0,8],
+      [8,0,8,8,8,8,0,8],
+      [8,0,8,5,5,8,0,8],
+      [8,0,8,5,5,8,0,8],
+      [8,0,8,8,8,8,0,8],
+      [8,0,0,0,0,0,0,8],
+      [8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$ListCycle"],
+      "grid": [
+        [5,5,5,5,5,5,5,5],
+        [5,8,8,8,8,8,8,5],
+        [5,8,5,5,5,5,8,5],
+        [5,8,5,0,0,5,8,5],
+        [5,8,5,0,0,5,8,5],
+        [5,8,5,5,5,5,8,5],
+        [5,8,8,8,8,8,8,5],
+        [5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$EnclosingColor"],
+      "grid": [
+        [5,5,5,5,5,5,5,5],
+        [5,8,8,8,8,8,8,5],
+        [5,8,5,5,5,5,8,5],
+        [5,8,5,8,8,5,8,5],
+        [5,8,5,8,8,5,8,5],
+        [5,8,5,5,5,5,8,5],
+        [5,8,8,8,8,8,8,5],
+        [5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$RingShift"],
+      "grid": [
+        [8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8],
+        [8,8,0,0,0,0,8,8],
+        [8,8,0,8,8,0,8,8],
+        [8,8,0,8,8,0,8,8],
+        [8,8,0,0,0,0,8,8],
+        [8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "uneven-ring",
+    "separates": "Ring 1 is color 2 but for its top row and the cell below that row's left end, which take the outer color 3, so ring 1 holds two colors. Read from the outermost ring inward, the colors first appear in the order 3 2 0, and the concept and $CountOrder recolor 3 to 0, 2 to 3 and 0 to 2. A scan from the top-left corner along the rows meets the 0 at row 2, col 2 before any 2, so $ScanOrder gives that output for the scans that meet 2 first and recolors 3 to 2, 0 to 3 and 2 to 0 for the scans that meet 0 first. $EnclosingColor and $RingShift are undefined, as the ring just outside ring 2 holds two colors.",
+    "input": [
+      [3,3,3,3,3,3,3,3],
+      [3,3,3,3,3,3,3,3],
+      [3,3,0,0,0,0,2,3],
+      [3,2,0,3,3,0,2,3],
+      [3,2,0,3,3,0,2,3],
+      [3,2,0,0,0,0,2,3],
+      [3,2,2,2,2,2,2,3],
+      [3,3,3,3,3,3,3,3]
+    ],
+    "output": [{
+      "cases": ["concept","$CountOrder"],
+      "grid": [
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,2,2,2,2,3,0],
+        [0,3,2,0,0,2,3,0],
+        [0,3,2,0,0,2,3,0],
+        [0,3,2,2,2,2,3,0],
+        [0,3,3,3,3,3,3,0],
+        [0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$ScanOrder"],
+      "grid": [
+        [
+          [2,2,2,2,2,2,2,2],
+          [2,2,2,2,2,2,2,2],
+          [2,2,3,3,3,3,0,2],
+          [2,0,3,2,2,3,0,2],
+          [2,0,3,2,2,3,0,2],
+          [2,0,3,3,3,3,0,2],
+          [2,0,0,0,0,0,0,2],
+          [2,2,2,2,2,2,2,2]
+        ],
+        [
+          [0,0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,0,0],
+          [0,0,2,2,2,2,3,0],
+          [0,3,2,0,0,2,3,0],
+          [0,3,2,0,0,2,3,0],
+          [0,3,2,2,2,2,3,0],
+          [0,3,3,3,3,3,3,0],
+          [0,0,0,0,0,0,0,0]
+        ]
+      ]
+    }, {
+      "cases": ["$EnclosingColor","$RingShift"],
+      "grid": null
+    }]
+  }, {
+    "id": "others.tally=stored",
+    "separates": "The ring colors read 8 0 5 2 from outside in: four colors, one new color in each ring. $RingShift with the count derived counts 3 colors other than the outermost ring's 8, and gives the outermost ring the color 2 of ring 3, as the concept does; with the count stored at 2, it gives the outermost ring the color 5 of ring 2.",
+    "input": [
+      [8,8,8,8,8,8,8,8],
+      [8,0,0,0,0,0,0,8],
+      [8,0,5,5,5,5,0,8],
+      [8,0,5,2,2,5,0,8],
+      [8,0,5,2,2,5,0,8],
+      [8,0,5,5,5,5,0,8],
+      [8,0,0,0,0,0,0,8],
+      [8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["others.tally=derived"],
+      "grid": [
+        [2,2,2,2,2,2,2,2],
+        [2,8,8,8,8,8,8,2],
+        [2,8,0,0,0,0,8,2],
+        [2,8,0,5,5,0,8,2],
+        [2,8,0,5,5,0,8,2],
+        [2,8,0,0,0,0,8,2],
+        [2,8,8,8,8,8,8,2],
+        [2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["others.tally=stored"],
+      "grid": [
+        [5,5,5,5,5,5,5,5],
+        [5,8,8,8,8,8,8,5],
+        [5,8,0,0,0,0,8,5],
+        [5,8,0,5,5,0,8,5],
+        [5,8,0,5,5,0,8,5],
+        [5,8,0,0,0,0,8,5],
+        [5,8,8,8,8,8,8,5],
+        [5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }]
+}

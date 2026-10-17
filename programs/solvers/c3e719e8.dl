@@ -1,0 +1,91 @@
+// c3e719e8
+// @draft
+// @keywords: tile-arrangement stamp rank
+// @scene unique-mode: one color is strictly more common in the input than
+//  every other color
+// @rule block-layout: the output is the input's height times its height in
+//  rows and its width times its width in columns, cut into blocks of the
+//  input's size, and block (i, j) stands for input cell (i, j)
+// @rule copy-where-mode: a block whose input cell has the most common color
+//  is a copy of the input
+// @rule blank-elsewhere: every other block is filled with the background
+
+// what gates when colors tie for the most cells
+.type Choice =
+    // @claim copy-where-mode
+    Sole {}
+    // @scene unique-mode: none; defined on every input
+    // @rule copy-where-mode: a block whose input cell has one of the colors
+    //  tied for the most cells is a copy of the input
+    // @witness mode-tie: foreign any
+    //     @relaxed unique-mode
+  | TiesAllGate {}
+    // @scene unique-mode: none; defined on every input
+    // @rule copy-where-mode: a block whose input cell's color has strictly
+    //  more cells than every other color is a copy of the input, so on a tie
+    //  every block is blank
+    // @witness mode-tie: foreign any
+  | TiesNoneGate {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .decl cell(k: Key, p: Position, col: Color)
+
+    // @claim copy-where-mode
+    .init palette = Mode<Key, Color, Position>
+    palette.item(K, Col, P) :- cell(K, P, Col).
+
+    // @claim unique-mode
+    .init commonest = Unanimous<Key, Color>
+    commonest.item(K, Col) :- palette.mode(K, Col).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The input cells whose blocks hold a copy of the input.
+.decl gate(ch: Choice, p_tile: Position)
+
+// The input cells whose blocks are blank.
+.decl blank(ch: Choice, p_tile: Position)
+
+out(P_grid_out, Col, Ch) :-
+    gate(Ch, P_tile), in(P_intile, Col), concat_2d(P_tile, P_intile, 0, P_grid_out).
+out(P_grid_out, Bg, Ch) :-
+    blank(Ch, P_tile), in(P_intile, _), concat_2d(P_tile, P_intile, 0, P_grid_out),
+    params.background(Bg).
+
+// --- $Sole ---
+
+gate($Sole(), P) :- in(P, Col), parse.commonest.value($U(), Col).
+blank($Sole(), P) :- in(P, Col), !parse.commonest.clash($U()), !parse.commonest.value($U(), Col).
+
+// --- $TiesAllGate ---
+
+gate($TiesAllGate(), P) :- in(P, Col), parse.palette.mode($U(), Col).
+blank($TiesAllGate(), P) :- in(P, Col), !parse.palette.mode($U(), Col).
+
+// --- $TiesNoneGate ---
+
+gate($TiesNoneGate(), P) :- in(P, Col), parse.commonest.value($U(), Col).
+blank($TiesNoneGate(), P) :- in(P, Col), !parse.commonest.value($U(), Col).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The color of a block whose input cell is not of the commonest color.
+    .decl background(c: Color)
+    background(Col) :-
+        ex_in(E, P_tile, C_gate), parse.commonest.value(E, _),
+        !parse.commonest.value(E, C_gate),
+        ex_in(E, P_intile, _), concat_2d(P_tile, P_intile, 0, P),
+        ex_out(E, P, Col).
+}

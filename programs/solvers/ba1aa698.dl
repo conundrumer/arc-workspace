@@ -1,0 +1,266 @@
+// ba1aa698
+// @draft
+// @keywords: decompose crop induce move
+// @scene panel-row: the grid is a row of equal panels along the axis of
+//  params.extend_dir, each panel bordered on every side by divider lines of
+//  one color.
+// @scene one-shape-per-panel: each panel holds one copy of one shape on the
+//  panel's background, and the shape is the same in every panel.
+// @scene constant-step: from each panel to the next toward
+//  params.extend_dir, the shape moves by the same number of cells across that
+//  axis.
+// @scene across-only: the shape keeps one place along that axis in every
+//  panel.
+// @scene next-fits: the shape moved by one more step still lies inside the
+//  panel.
+// @rule next-panel: the output is one panel with its border of divider
+//  lines, its background and divider colors as in the input, and the shape at
+//  the place one more step past the last panel toward params.extend_dir gives.
+
+// whether the shape's place along the panel row also steps
+.type StepAxes =
+    // @claim across-only
+    AcrossOnly {}
+    // @scene across-only: the shape's place along the panel row may change
+    //  too; the step is one offset on both axes, and the next panel's shape
+    //  moves by it on both axes
+    // @witness diagonal-step: variant $Step2D
+    //     @relaxed across-only
+  | Step2D {}
+
+// the step the next panel takes where the steps between panels differ
+.type UnevenSteps =
+    // @claim constant-step
+    EvenSteps {}
+    // @scene constant-step: the steps between panels may differ, and the
+    //  next panel takes the step between the last two panels
+    // @witness uneven-steps: foreign any
+    //     @relaxed constant-step
+  | LastStep {}
+    // @scene constant-step: the steps between panels may differ, and the
+    //  next panel takes the step between the first two panels
+    // @witness uneven-steps: foreign any
+  | FirstStep {}
+    // @scene constant-step: the step changes by the same offset from each
+    //  pair of panels to the next, and the next panel takes the last step
+    //  changed once more; undefined where the changes differ
+    // @witness steady-change: foreign any
+    //     @relaxed constant-step
+  | SteadyChange {}
+
+// what the next panel draws where one more step takes shape cells past the
+// panel's edge
+.type PastEdge =
+    // @claim next-fits
+    InsidePanel {}
+    // @scene next-fits: one more step may take shape cells past the panel's
+    //  edge; those cells are dropped, and the panel is empty where none lands
+    //  inside
+    // @witness step-past-edge: foreign any
+    //     @relaxed next-fits
+  | ClipAtEdge {}
+    // @scene next-fits: one more step may take shape cells past the panel's
+    //  edge; such a cell wraps around to the opposite side of the panel
+    // @witness step-past-edge: foreign any
+  | WrapAround {}
+
+.type Choice = [s: StepAxes, u: UnevenSteps, e: PastEdge]
+
+// The rule the steps from panel to panel demonstrate.
+.type DemonstratedChoice = Translate {}
+
+.type DemonstratedRule = [task: Choice, rule: DemonstratedChoice]
+
+.type Line = [a: Axis, l: Position]
+
+.type WrapKey = [s: StepAxes, u: UnevenSteps, d: Dir]
+
+// @ignore: head-repeat — the rule column's inner task is the catalog's key,
+//  which is the case
+.decl out(p: Position, col: Color, ch: Choice, c: DemonstratedRule)
+
+.comp Params {
+    // The end of the panel row past which the sequence continues.
+    .decl extend_dir(d: Dir) extend_dir(DIR_R).
+}
+
+.init params = Params
+
+// The concept case, and each case that takes $Step2D and a non-concept branch
+// at both other points. Each other combination is defined only where one of
+// these is, and gives its output there.
+.decl impl_choice(ch: Choice)
+impl_choice([$AcrossOnly(), $EvenSteps(), $InsidePanel()]).
+impl_choice([$Step2D(), $LastStep(), $ClipAtEdge()]).
+impl_choice([$Step2D(), $LastStep(), $WrapAround()]).
+impl_choice([$Step2D(), $FirstStep(), $ClipAtEdge()]).
+impl_choice([$Step2D(), $FirstStep(), $WrapAround()]).
+impl_choice([$Step2D(), $SteadyChange(), $ClipAtEdge()]).
+impl_choice([$Step2D(), $SteadyChange(), $WrapAround()]).
+
+// The color of a line all of one color.
+// @claim panel-row
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+// The full lines cut the grid into the panels.
+// @claim panel-row
+.init panels = DividerTiles<Unit>
+panels.cell($U(), P) :- in(P, _).
+panels.divider($U(), A, L) :- line_color.value([A, L], _).
+
+// Each panel's interior.
+// @claim panel-row
+.init panel_box = Bbox<Position>
+panel_box.cell(T, P) :- panels.tile_of($U(), P, T).
+
+// Each panel with its border: the cells next to a panel cell.
+// @claim panel-row next-panel
+.init framed = Bbox<Position>
+framed.cell(T, P) :- panels.tile_of($U(), P0, T), neighbor(P0, _, P).
+
+// A cell p of the bordered panel, at p_inner in that panel's frame.
+.decl panel_cell(t: Position, p: Position, p_inner: Position, col: Color)
+panel_cell(T, P, P_inner, Col) :- framed.box(T, B), in(P, Col), crop(P, B, P_inner).
+
+// A cell of a panel's interior, in the interior's frame.
+.decl inner(p_inner: Position)
+inner(P_inner) :- panel_box.box(_, B), in(P, _), crop(P, B, P_inner).
+
+// The background: the commonest color inside the panels.
+// @claim one-shape-per-panel
+.init field = Mode<Unit, Color, Position>
+field.item($U(), Col, P) :- panels.tile_of($U(), P, _), in(P, Col).
+
+// A cell of the shape, in the frame of its panel's interior.
+.decl shape(t: Position, p_inner: Position, col: Color)
+shape(T, P_inner, Col) :-
+    panel_box.box(T, B), in(P, Col), crop(P, B, P_inner), !field.mode($U(), Col).
+
+// The panel t2 follows the panel t.
+.decl next(t: Position, t2: Position)
+next(T, T2) :- params.extend_dir(D), panel_box.box(T, _), neighbor(T, D, T2), panel_box.box(T2, _).
+
+.decl last(t: Position)
+last(T) :- next(_, T), !next(T, _).
+
+// @claim constant-step
+.init shape_box = Bbox<Position>
+shape_box.cell(T, P_inner) :- shape(T, P_inner, _).
+
+// The change in the shape's place from panel t to the next.
+.decl offset(t: Position, v: Offset)
+offset(T, V) :- next(T, T2), shape_box.box(T, B1), shape_box.box(T2, B2), relative(B1, B2, V).
+
+// The step from panel t to the next, where the reading of the step's axes
+// admits it.
+.decl pair_step(s: StepAxes, t: Position, v: Offset)
+
+// The step each case moves panel t's shape by: the step to the next panel,
+// and at the last panel the step the case reads from the others.
+.decl step_at(s: StepAxes, u: UnevenSteps, t: Position, v: Offset)
+step_at(S, U, T, V) :- impl_choice([S, U, _]), pair_step(S, T, V).
+
+// A cell of panel t's shape, moved one step.
+.decl moved(s: StepAxes, u: UnevenSteps, t: Position, q_inner: Position, col: Color)
+moved(S, U, T, Q, Col) :- step_at(S, U, T, V), shape(T, P, Col), compose(P, V, Q).
+
+// The cells of the shape each case draws in the panel after t, in the grid.
+.decl placed(ch: Choice, t: Position, q: Position, col: Color)
+
+// The panels each case draws the next panel of.
+.decl drawn(ch: Choice, t: Position)
+
+// @claim one-shape-per-panel constant-step next-panel
+.init catalog = DemonstrationConsistency<Choice, DemonstratedChoice, Position, Position, Color>
+catalog.value(Ch, T, P_inner, Col) :- impl_choice(Ch), panel_cell(T, _, P_inner, Col).
+catalog.demonstration(Ch, T, T2) :- impl_choice(Ch), next(T, T2).
+
+// The panel with its shape moved one step over the background.
+catalog.prediction(Ch, $Translate(), T, Q, Col) :-
+    drawn(Ch, T), panel_cell(T, P, Q, Col0),
+    ( !panels.tile_of($U(), P, T), Col = Col0                               // a border cell
+    ; placed(Ch, T, P, Col)                                                 // the moved shape
+    ; panels.tile_of($U(), P, T), !placed(Ch, T, P, _), field.mode($U(), Col)  // the background
+    ).
+
+// The panel after the last one.
+out(Q, Col, Ch, [Ch, C]) :-
+    catalog.confirmed(Ch, C), last(T), catalog.prediction(Ch, C, T, Q, Col).
+
+// --- $AcrossOnly ---
+pair_step($AcrossOnly(), T, V) :-
+    offset(T, V), params.extend_dir(D), axis_of(D, A),
+    split(V, A, ZERO, _).                                   // no move along the row
+
+// --- $Step2D ---
+pair_step($Step2D(), T, V) :- offset(T, V).
+
+// --- $EvenSteps ---
+
+// @claim constant-step
+.init step = Unanimous<StepAxes, Offset>
+step.item(S, V) :- pair_step(S, _, V).
+
+step_at(S, $EvenSteps(), T, V) :- step.value(S, V), last(T).
+
+// --- $LastStep ---
+step_at(S, $LastStep(), T, V) :- last(T), next(T0, T), pair_step(S, T0, V).
+
+// --- $FirstStep ---
+step_at(S, $FirstStep(), T, V) :- last(T), pair_step(S, T0, V), !next(_, T0).
+
+// --- $SteadyChange ---
+
+// The change from each step to the next.
+// @claim constant-step
+.init change = Unanimous<StepAxes, Offset>
+change.item(S, W) :- pair_step(S, T, V), next(T, T2), pair_step(S, T2, V2), relative(V, V2, W).
+
+step_at(S, $SteadyChange(), T, V) :-
+    last(T), next(T0, T), pair_step(S, T0, V0), change.value(S, W), compose(V0, W, V).
+
+// --- $InsidePanel ---
+
+// One step moves part of panel t's shape out of the panel.
+.decl leaves(s: StepAxes, u: UnevenSteps, t: Position)
+leaves(S, U, T) :- moved(S, U, T, Q, _), !inside(Q, ZERO).
+
+drawn([S, U, $InsidePanel()], T) :- step_at(S, U, T, _), !leaves(S, U, T).
+placed([S, U, $InsidePanel()], T, Q_grid, Col) :-
+    moved(S, U, T, Q, Col), panel_box.box(T, B), compose(B, Q, Q_grid).
+
+// --- $ClipAtEdge ---
+drawn([S, U, $ClipAtEdge()], T) :- step_at(S, U, T, _).
+placed([S, U, $ClipAtEdge()], T, Q_grid, Col) :-
+    moved(S, U, T, Q, Col), inside(Q, ZERO), panel_box.box(T, B), compose(B, Q, Q_grid).
+
+// --- $WrapAround ---
+
+// The lines of a panel's interior, each a cycle toward side d.
+// @claim next-fits
+.init wrap = CycleWalk<WrapKey, Position>
+wrap.succ([S, U, D], P, Q) :-
+    step_at(S, U, _, _), inner(P), dir_elem(D),
+    ( !dist(P, D, 0), neighbor(P, D, Q)                          // the next cell
+    ; dist(P, D, 0), opposite(D, O), axis_of(D, A),
+      inner(Q), dist(Q, O, 0), same_line(A, P, Q)                // back to the line's far end
+    ).
+wrap.step([S, U, D], K) :-
+    step_at(S, U, _, V), opposite(D, O), dist(V, O, K), K > 0.   // v moves k cells toward d
+
+// p moved by the part of panel t's step along axis a, around the
+// interior's lines.
+.decl wrap_axis(s: StepAxes, u: UnevenSteps, t: Position, a: Axis, p: Position, q: Position)
+wrap_axis(S, U, T, A, P, Q) :-
+    step_at(S, U, T, V), inner(P), axis_elem(A),
+    ( split(V, A, ZERO, _), Q = P                                // no move along a
+    ; axis_of(D, A), opposite(D, O), dist(V, O, K), K > 0,       // v moves k cells toward d
+      wrap.walk([S, U, D], P, K, Q)
+    ).
+
+drawn([S, U, $WrapAround()], T) :- step_at(S, U, T, _).
+placed([S, U, $WrapAround()], T, Q_grid, Col) :-
+    shape(T, P, Col), axis_elem(A), perp(A, A2),
+    wrap_axis(S, U, T, A, P, P1), wrap_axis(S, U, T, A2, P1, Q),
+    panel_box.box(T, B), compose(B, Q, Q_grid).

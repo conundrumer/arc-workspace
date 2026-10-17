@@ -1,0 +1,153 @@
+// b94a9452
+// @draft
+// @keywords: crop mapping rings
+// @scene one-object: every input is a field of params.background that holds
+//  one solid object of other colors.
+// @scene nested-squares: the object is a square of one color with a smaller
+//  square of a second color centered inside it.
+// @rule crop-to-object: the output is the object's bounding box.
+// @rule swap-colors: each cell of the outer color takes the inner color, and
+//  each cell of the inner color takes the outer color.
+
+// what an object of one color gives
+.type Lone =
+    // @claim swap-colors
+    Partnered {}
+    // @rule lone-color: an object of one color keeps its color.
+    // @witness one-color: borderline $LoneStays
+    //     @relaxed nested-squares
+  | LoneStays {}
+
+// how the object's colors move
+.type Recolor =
+    // @claim swap-colors
+    Swap {lone: Lone}
+    // @rule swap-colors: the object's nested color regions, outermost first,
+    //  take their colors in reverse order. Undefined where the cells around a
+    //  region hold more than one color.
+    // @witness three-layers: borderline concept
+    //     @relaxed nested-squares
+  | LayerReverse {}
+    // @rule swap-colors: each nested color region takes the color of the
+    //  region inside it, and the innermost takes the outermost's color.
+    //  Undefined where the cells around a region hold more than one color.
+    // @witness three-layers: borderline concept
+  | LayerShiftOut {}
+    // @rule swap-colors: each nested color region takes the color of the
+    //  region around it, and the outermost takes the innermost's color.
+    //  Undefined where the cells around a region hold more than one color.
+    // @witness three-layers: borderline concept
+  | LayerShiftIn {}
+
+// what a background cell inside the object's box gives
+.type BoxBackground =
+    // @claim crop-to-object
+    Solid {}
+    // @rule keep-background: a background cell inside the object's box keeps
+    //  the background color.
+    // @witness cut-corners: borderline $KeepBackground
+    //     @relaxed nested-squares
+  | KeepBackground {}
+
+.type Choice = [recolor: Recolor, box: BoxBackground]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed one-object
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+.decl lone_choice(l: Lone)
+lone_choice($Partnered()). lone_choice($LoneStays()).
+
+.decl recolor_choice(r: Recolor)
+recolor_choice($Swap(L)) :- lone_choice(L).
+recolor_choice($LayerReverse()). recolor_choice($LayerShiftOut()). recolor_choice($LayerShiftIn()).
+
+.decl box_background_choice(b: BoxBackground)
+box_background_choice($Solid()). box_background_choice($KeepBackground()).
+
+// The object's cells.
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.background(Col).
+
+// @claim crop-to-object
+.init object_box = Bbox<Unit>
+object_box.cell($U(), P) :- ink(P, _).
+
+// Each object cell with the color it takes.
+.decl recolored(p: Position, col: Color, r: Recolor)
+
+out(P_inner, Col, [R, K]) :-
+    recolored(P, Col, R), box_background_choice(K),
+    object_box.box($U(), B), crop(P, B, P_inner).
+
+// --- $Swap ---
+recolored(P, Col, $Swap(L)) :- lone_choice(L), ink(P, C), ink(_, Col), Col != C.
+
+// --- $LoneStays ---
+// The object's one color.
+// @claim lone-color
+.init palette = Unanimous<Unit, Color>
+palette.item($U(), Col) :- ink(_, Col).
+
+recolored(P, Col, $Swap($LoneStays())) :- ink(P, Col), palette.value($U(), Col).
+
+// --- $LayerReverse, $LayerShiftOut, $LayerShiftIn ---
+// The object's same-colored regions.
+// @claim swap-colors
+.init regions = Components<Color>
+regions.node(Col, P) :- ink(P, Col).
+
+// The object's cells next to the outside.
+// @claim swap-colors
+.init object = Rim<Unit>
+object.cell($U(), P) :- ink(P, _).
+
+// Each region's nesting level: the fewest region boundaries between it and
+// the outside.
+// @claim swap-colors
+.init nesting = GraphDistance<Unit, Ident>
+nesting.seed($U(), Id) :- object.rim($U(), P), regions.label(_, P, Id).
+nesting.edge($U(), Id1, Id2) :-
+    regions.label(_, P, Id1), dir_elem(D), neighbor(P, D, Q),   // adjacent cells
+    regions.label(_, Q, Id2), Id1 != Id2.                       // of two regions
+
+.decl level(p: Position, k: number)
+level(P, K) :- regions.label(_, P, Id), nesting.distance($U(), Id, K).
+
+// The one color of each level.
+// @claim swap-colors
+.init level_color = Unanimous<number, Color>
+level_color.item(K, Col) :- level(P, K), ink(P, Col).
+
+// --- $LayerReverse ---
+// @claim swap-colors
+.init levels = Ordinal<Unit>
+levels.idx_set($U(), K) :- level(_, K).
+
+recolored(P, Col, $LayerReverse()) :-
+    level(P, K), levels.rank_desc($U(), K, R), levels.rank($U(), K2, R),  // the mirrored level
+    level_color.value(K2, Col).
+
+// --- $LayerShiftOut, $LayerShiftIn ---
+// @claim swap-colors
+.init cycle = IndexCycle<Unit>
+cycle.idx($U(), K) :- level(_, K).
+
+// --- $LayerShiftOut ---
+recolored(P, Col, $LayerShiftOut()) :-
+    level(P, K), cycle.succ($U(), K, K2), level_color.value(K2, Col).   // the level inside
+
+// --- $LayerShiftIn ---
+recolored(P, Col, $LayerShiftIn()) :-
+    level(P, K), cycle.succ($U(), K2, K), level_color.value(K2, Col).   // the level around
+
+// --- $KeepBackground ---
+out(P_inner, Col, [R, $KeepBackground()]) :-
+    recolor_choice(R), in(P, Col), params.background(Col),
+    object_box.box($U(), B), crop(P, B, P_inner).
