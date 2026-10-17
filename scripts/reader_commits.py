@@ -32,20 +32,20 @@ subagent's record where it has none yet, at its launch (`start_agent`). A
 subagent's own compaction, at which no `SessionStart` runs, leaves its
 record as it stands.
 
-At each call of a tool a PreToolUse hook covers, `reader_update` gives the
-reader its update, and records `HEAD` as both commits once the hook's
-output is printed. For a record of two commits, it compares them with its
-tree's `HEAD`, and where both are the same it gives nothing. Otherwise it
-gives the reader, under a head that says it may already hold some of the
-changes and how to read them, the diff of its documents since its commits,
-as `scripts/context.py context --update` prints it in the reader's tree,
-or the failure of that run. That diff runs
-for the context from the context's commit, for `CLAUDE.md` from the
-instructions' commit, and for the sections links from `CLAUDE.md`
-reach from the context's commit where it descends from the
-instructions' commit, and from the instructions' commit otherwise. That run
-is skipped where the context's commit is `HEAD`, `CLAUDE.md` does not
-differ between the instructions' commit and `HEAD`, and no file of the
+Before and after each call of a tool, and with each prompt of the user and
+each task notification, `reader_update` gives the reader its update, and
+records `HEAD` as both commits once the hook's output is printed. For a
+record of two commits, it compares them with its tree's `HEAD`, and where
+both are the same it gives nothing. Otherwise it gives the reader, under a
+head that says it may already hold some of the changes and how to read
+them, the diff of its documents since its commits, as
+`scripts/context.py context --update` prints it in the reader's tree, or
+the failure of that run. That diff runs for the context from the context's
+commit, for `CLAUDE.md` from the instructions' commit, and for the sections
+links from `CLAUDE.md` reach from the context's commit where it descends
+from the instructions' commit, and from the instructions' commit otherwise.
+That run is skipped where the context's commit is `HEAD`, `CLAUDE.md` does
+not differ between the instructions' commit and `HEAD`, and no file of the
 document set `[tool.controlled_markdown]` names differs between the linked
 sections' commit and `HEAD`.
 

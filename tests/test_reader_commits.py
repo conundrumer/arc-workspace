@@ -4,13 +4,17 @@ update given twice, or a record that does not move gives no sign in use."""
 
 import json
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from engine import checkout
 from engine.rwlock import HOLD_ENV
+from tests.conftest import script
 
 BEFORE = "9902f864930978d057225b591ef940510bfa6543"
 OPERATOR_ID = "a0123456789abcdef"
@@ -142,3 +146,97 @@ def test_subagent_first_update_from_held_texts(tmp_path: Path) -> None:
             "type": "prompt_snapshot", "systemPrompt": [agent_prompt_text("operator")]}))
     assert run(bash, ls) == ""
     assert record(main, OPERATOR_ID).read_text() == both(head())
+
+
+GIVES_UPDATE = ("pending_wait_hook", "context_bound_hook", "reader_update_hook")
+"""The PreToolUse hooks that give the caller its update."""
+
+
+def stub_uv(tmp: Path) -> Path:
+    """A `uv` first on the path, that leaves a mark where it starts."""
+    bin_dir = tmp / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "uv").write_text(f"#!/bin/sh\ntouch {tmp / 'started'}\n")
+    (bin_dir / "uv").chmod(0o755)
+    return bin_dir
+
+
+def test_fast_path_reads_the_record_of_record_path(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.syspath_prepend(str(checkout.scripts()))
+    record_path = script("reader_commits").record_path
+
+    main = session(tmp_path)
+    started = tmp_path / "started"
+    monkeypatch.setenv("PATH", f"{stub_uv(tmp_path)}:{os.environ['PATH']}")
+    for hook in [after_call(main, "PostToolUse"), after_call(main, "PostToolUse", OPERATOR_ID),
+                 prompt(main)]:
+        cmd = command(hook["hook_event_name"])
+        path = record_path(hook)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(both(head()))
+        assert run(cmd, hook) == ""
+        assert not started.exists()
+        path.write_text(both(BEFORE))
+        run(cmd, hook)
+        assert started.exists()
+        started.unlink()
+
+
+def after_call(main: Path, event: str, agent: str | None = None) -> dict[str, Any]:
+    return {**call(main, "Bash", {"command": "ls"}, agent), "hook_event_name": event,
+            "tool_response": {"stdout": ""}}
+
+
+def prompt(main: Path) -> dict[str, Any]:
+    return {"hook_event_name": "UserPromptSubmit", "prompt": "hi",
+            "transcript_path": str(main), "cwd": str(checkout.ROOT)}
+
+
+def test_update_after_a_call_and_with_a_prompt(tmp_path: Path) -> None:
+    main = session(tmp_path)
+    bash = command("PreToolUse", "Bash|Monitor")
+    record(main, "main").parent.mkdir(parents=True)
+    for hook, cmd in [(after_call(main, "PostToolUse"), command("PostToolUse")),
+                      (after_call(main, "PostToolUseFailure"), command("PostToolUseFailure")),
+                      (prompt(main), command("UserPromptSubmit"))]:
+        record(main, "main").write_text(both(BEFORE))
+        out = json.loads(run(cmd, hook))["hookSpecificOutput"]
+        assert out.keys() == {"hookEventName", "additionalContext"}
+        assert out["hookEventName"] == hook["hook_event_name"]
+        assert f"context --update {BEFORE} {BEFORE} coordinator`" in out["additionalContext"]
+        assert record(main, "main").read_text() == both(head())
+        assert run(bash, call(main, "Bash", {"command": "ls"})) == ""
+
+
+def matches(matcher: str | None, tool: str) -> bool:
+    """Whether a hook's `matcher` covers `tool`, as Claude Code reads it: an
+    exact name or names joined by `|`, and otherwise a regular expression."""
+    if matcher in (None, "", "*"):
+        return True
+    if re.fullmatch(r"[\w|]+", matcher):
+        return tool in matcher.split("|")
+    return re.search(matcher, tool) is not None
+
+
+def test_one_pre_tool_use_update_on_each_tool() -> None:
+    settings = json.loads((checkout.claude() / "settings.json").read_text())
+    for tool in ["Bash", "Monitor", "Agent", "Read", "Edit", "Write", "SendMessage",
+                 "SubagentHandback", "Grep", "TaskStop"]:
+        giving = [h["command"] for m in settings["hooks"]["PreToolUse"]
+                  if matches(m.get("matcher"), tool) for h in m["hooks"]
+                  if any(name in h["command"] for name in GIVES_UPDATE)]
+        assert len(giving) == 1, (tool, giving)
+
+
+def test_pre_tool_use_form_on_other_tools(tmp_path: Path) -> None:
+    main = session(tmp_path)
+    read = command("PreToolUse", "^(?!(Bash|Monitor|Agent)$).*", "reader_update_hook")
+    record(main, "main").parent.mkdir(parents=True)
+    record(main, "main").write_text(both(BEFORE))
+    hook = call(main, "Read", {"file_path": str(checkout.ROOT / "CLAUDE.md")})
+    out = json.loads(run(read, hook))["hookSpecificOutput"]
+    assert out["permissionDecision"] == "deny"
+    assert f"context --update {BEFORE} {BEFORE} coordinator`" in out["additionalContext"]
+    assert record(main, "main").read_text() == both(head())
+    assert run(read, hook) == ""

@@ -15,8 +15,17 @@ not the output denies the call, so the entry prints one output that holds
 both parts. Claude Code puts that text in the caller's context after the
 call has run, so a call that gets an update is denied, with the update's
 reason after the check's, and the caller makes it again by its updated
-documents. The update records the delivery only where its block ends
-without an error, after the output is printed.
+documents.
+
+A PostToolUse, a PostToolUseFailure or a UserPromptSubmit hook runs the
+update alone (`run_context`), and prints its text with no decision. Claude
+Code puts that text in the caller's context with the call's result, or
+with the user's prompt or a task notification, before the caller's next
+call, so a PreToolUse hook gives an update only where it is pending at a
+call's start, since no such hook has given it.
+
+The update records the delivery only where its block ends without an
+error, after the output is printed.
 
 What the entry runs for every hook stands in this docstring alone, and in no
 hook's docstring."""
@@ -31,8 +40,8 @@ type Hook = dict[str, Any]
 
 
 class Update(NamedTuple):
-    """The text the caller of a PreToolUse hook gets in its context, and the
-    reason its call is denied for it."""
+    """The text the caller of a hook gets in its context, and the reason a
+    PreToolUse hook denies its call for it."""
 
     text: str
     reason: str
@@ -42,7 +51,7 @@ CHECK_FAILED = "allowed: the check failed"
 stop goes ahead where its check fails."""
 
 UPDATE_FAILED = "gave no update of the caller's documents"
-"""The failure text of a PreToolUse hook whose update fails."""
+"""The failure text of a hook whose update fails."""
 
 
 def not_registered(on: str, kind: str, given: object) -> ValueError:
@@ -115,4 +124,24 @@ def run_pre_tool_use(
         _failed(hook, UPDATE_FAILED, e)
         if not given:
             _give(reason, None)
+    return 0
+
+
+def run_context(
+        hook: str,
+        update: Callable[[Hook], AbstractContextManager[Update | None]]) -> int:
+    """Run the hook `hook`, on an event whose output gives context with no
+    decision, on the input on stdin: `update` gives the caller's update,
+    inside a block that the printed output ends."""
+    data = run_part(hook, UPDATE_FAILED, lambda: json.loads(sys.stdin.read()))
+    if data is None:
+        return 0
+    try:
+        with update(data) as given:
+            if given is not None:
+                print(json.dumps({"hookSpecificOutput": {
+                    "hookEventName": data["hook_event_name"],
+                    "additionalContext": given.text}}), flush=True)
+    except Exception as e:
+        _failed(hook, UPDATE_FAILED, e)
     return 0
