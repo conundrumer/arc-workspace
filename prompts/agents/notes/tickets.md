@@ -3,7 +3,7 @@
     - Readers: each agent that files tickets inlines the sections for its work; the coordinator links them from [Tickets](prompts/agents/notes/requests.md#tickets); the ticket analyst, the draft analyst and the ticket reviewer link Change tickets.
     - Acts, each with its section:
         - A solver pass's tickets: [pass-tickets](#pass-tickets).
-        - Filing a ticket: [Ticket files](#ticket-files), [Ticket fields](#ticket-fields) with its part [Agent names and ids](#agent-names-and-ids), which the code reviewer, the lib reviewer and the design reviewer inline in place of Ticket fields, and [Ticket subjects](#ticket-subjects) where no other line of its reader's documents gives its `<domain>` and `<subject>`.
+        - Filing a ticket: [Ticket files](#ticket-files), [Ticket fields](#ticket-fields), and [Ticket subjects](#ticket-subjects) where no other line of its reader's documents gives its `<domain>` and `<subject>`.
         - A `performance` ticket: [performance-tickets](#performance-tickets).
         - A noticed fault: [Noticed faults](#noticed-faults).
         - Finding, moving and closing a ticket: [Tracking](#tracking) with its part [Reading and logging tickets](#reading-and-logging-tickets), which the code reviewer, the lib reviewer and the design reviewer inline in place of Tracking.
@@ -33,11 +33,7 @@
 - File a `bug` ticket on each fault you notice in a tool, a document or an agent's run, when you notice it, whether or not it lies within your work, where no other line of your documents has you fix, send, report or file it, and no ticket of any session outside `tickets/closed/` records it.
 
 ## Ticket fields
-* inline: #agent-names-and-ids
-- The coordinator's own agent id is the session id `echo $CLAUDE_CODE_SESSION_ID` prints.
-
-## Agent names and ids
-- `<agent>` is your agent's name, or `coordinator` where you are the coordinator.
+- `<agent>` is your agent's name.
 - A subagent's own agent id is the one the line `Your agent id is <id>.` in its context gives, or, where its context holds no such line, the agent id of its own entry in the listing `uv run python scripts/profile_runs.py --running <session id>` prints, with the id `echo $CLAUDE_CODE_SESSION_ID` prints as `<session id>`: the entry whose call in flight is that listing's command.
 
 ## Ticket subjects

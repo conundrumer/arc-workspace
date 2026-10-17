@@ -58,7 +58,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 
 ## Tickets
 * inline: notes/tickets.md#ticket-files
-* inline: notes/tickets.md#agent-names-and-ids
+* inline: notes/tickets.md#ticket-fields
 * inline: notes/tickets.md#reading-and-logging-tickets
 * inline: notes/tickets.md#performance-tickets
 * inline: notes/tickets.md#noticed-faults

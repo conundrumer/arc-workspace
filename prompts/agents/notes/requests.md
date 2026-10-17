@@ -35,6 +35,8 @@
 
 ## Tickets
 - File and track a ticket by [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Tracking](prompts/agents/notes/tickets.md#tracking) and [Change tickets](prompts/agents/notes/tickets.md#change-tickets).
+- Write `coordinator` as `<agent>`.
+- Your own agent id is the session id `echo $CLAUDE_CODE_SESSION_ID` prints.
 - Where you run no solver pass, file each fault you notice, and each fault an agent's report gives, by [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults), where no ticket analyst has found its cause, in place of a change that fixes it.
 - Where you run no solver pass, the route is `file`, `draft` or `send`, and no `request` of the change stands under `tickets/draft/`, file the change as a `request` with `uv run python scripts/spans.py file`.
 - Where you run no solver pass and a `request` of the change stands under `tickets/draft/`, file no other `request` of the change. Once the user states `file`, `send`, `direct` or `hotfix`, or sends the next message after your readback of an inferred route other than `draft`, and that message does not change or cancel it, append to that `request` the span from the message after its last span to that message, with `uv run python scripts/spans.py append --route <route>` and that route.
