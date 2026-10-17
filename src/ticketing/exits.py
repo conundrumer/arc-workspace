@@ -31,7 +31,7 @@ class Exit(StrEnum):
     `request` the coordinator routes to `tickets/draft/`."""
     COORDINATOR_LINE = "coordinator line"
     MERGE_LINE = "merge line"
-    """A coordinator's `Merge:` line."""
+    """A coordinator's `Op merge:` line."""
     CHANGE_CLOSE = "change close"
     SWEEP = "sweep"
 

@@ -1,6 +1,6 @@
-"""The operator's command line: its actions, of which `next`, `relay` and
-`review` run the loop of `operate_loop`, and its help, which
-`operate_help` holds.
+"""The operator's command line: its actions, of which `next` and `relay`
+run the loop of `operate_loop` and `review` is `operate_review`'s, and
+its help, which `operate_help` holds.
 
 Each fact the command reads is in the tracker, in git, under `work/`, in
 a transcript, in a file it wrote for a call it printed (`operations.filing.filed`),
@@ -25,29 +25,23 @@ scripts_importable()
 
 import kept_reads  # noqa: E402
 import step_journal  # noqa: E402
-from operator_reads import read_operator  # noqa: E402
-from state_assembly import read_state  # noqa: E402
 from relay_reads import read_relay, session_id  # noqa: E402
 from usage_limit import USAGE_STALE  # noqa: E402
-from agent_reports import RATE_LIMIT, parent_type  # noqa: E402
-from run_reads import parent_id  # noqa: E402
-from transcripts import find  # noqa: E402
+from agent_reports import RATE_LIMIT  # noqa: E402
 from transcript_entries import Refused  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
-from ticket_files import ticket_path  # noqa: E402
-from ticket_numbers import parsed_number  # noqa: E402
-from ticket_reads import read_ticket  # noqa: E402
 from help_parts import print_help  # noqa: E402
 
-from operations import doc_review, journal, pacing, relay, runs  # noqa: E402
+from operations import journal, pacing, relay, runs  # noqa: E402
 from operations.decisions import WRITE_SECONDS  # noqa: E402
 from operations.command_words import Action  # noqa: E402
 from operations.roles import Role  # noqa: E402
 from operations.constants import BLOCK_SECONDS, FOREGROUND_MS, LIMIT_SECONDS, SUBAGENT_LIMIT  # noqa: E402
-from operations.steps import Launch, Step, Undecided  # noqa: E402
+from operations.steps import Step  # noqa: E402
 from operations.task_work import CLAIM_HELD, claim, restore, set_aside  # noqa: E402
-from operate_loop import block, operator_step, prepared, print_step  # noqa: E402
+from operate_loop import block, operator_step  # noqa: E402
 from operate_help import PARTS, PURPOSES, USAGE, HelpPart  # noqa: E402
+from operate_review import review  # noqa: E402
 
 TASK_ID = re.compile(task.TASK_ID)
 
@@ -71,44 +65,6 @@ def claim_task(task_id: str) -> int:
         print(CLAIM_HELD.format(task=task_id, holder=holder), file=sys.stderr)
         return 1
     return 0
-
-
-def review(editor: str) -> int:
-    """Print the step `doc_review.editor_review` gives the doc editor
-    `editor`, as `--help review` gives it."""
-    path = find(editor)
-    parent = parent_id(path)
-    kind = parent_type(path)
-    if kind != Role.OPERATOR.agent_type:
-        print(doc_review.NO_OPERATOR.format(agent=editor))
-        return 0
-    state, _ = read_state(parent, change_filed(parent, editor))
-    step = doc_review.editor_review(state, editor)
-    if isinstance(step, str):
-        print(step)
-        return 0
-    if isinstance(step, Undecided):
-        print(f"operate: {step.what}", file=sys.stderr)
-        return 1
-    if not isinstance(step, Launch):
-        raise TypeError(f"review step {step!r} is no launch")
-    print_step(prepared(step, state.scratch), state.scratch, editor)
-    return 0
-
-
-def change_filed(operator: str, editor: str) -> float | None:
-    """The time of the first log line of the change of the doc editor
-    `editor`, as the launches of `operator` give that change, or None where
-    they give no such launch or that ticket is not read."""
-    agents = read_operator(operator, find(operator), main_tree(), [], {}).agents
-    mine = [a for a in agents if a.agent_id == editor and a.role is Role.DOC_EDITOR]
-    number = parsed_number(mine[-1].subject) if mine else None
-    if number is None:
-        return None
-    try:
-        return read_ticket(ticket_path(main_tree() / "tickets", number)).filed
-    except (Refused, ValueError, OSError):
-        return None
 
 
 def relay_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:

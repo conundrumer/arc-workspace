@@ -24,7 +24,7 @@ messages and the tickets on the stalled tickets of the operators
 comes before the message on it. A step that
 is a message an operator already sent is passed over, and so are an
 undecided step an operator already handled (`handled.repeated`) and a step
-an `Override: pass over` ruling passed over (`directives.passed`), other
+an `Op override: pass over` ruling passed over (`directives.passed`), other
 than a solver pass, whose pipeline stops on it (`passes.run`), and a step
 the step journal gives as in flight or retired (`journal.due`). A
 launch a procedure gives, other than that of a ticket analyst on a held

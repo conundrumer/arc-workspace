@@ -134,10 +134,10 @@ class Route(StrEnum):
     """The routes of work that write a request, a brief or a span
     (`spans.py --help`)."""
     DIRECT = "direct"
-    SEND = "send"
+    SEND = "op send"
     HOTFIX = "hotfix"
-    FILE = "file"
-    DRAFT = "draft"
+    FILE = "op file"
+    DRAFT = "op draft"
 
 
 ROUTE_NOTE = "route `{route}`"

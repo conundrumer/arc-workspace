@@ -5,7 +5,7 @@ The operator takes each `request` and `bug` from its first ticket analyst
 on: once a ticket stands in the list `file_ticket.py to-settle` prints,
 the command launches a ticket analyst with it, leaving out each ticket on a
 task whose solver pipeline has yet to launch its own ticket analyst, which
-`passes` gives that ticket. While a `Pause.` line stands
+`passes` gives that ticket. While an `Op pause.` line stands
 (`directives.paused`), it launches one only with the tickets of
 `taking.through_pause`. A ticket goes to no second analyst while one
 runs on it, nor again once one returned, until the coordinator writes a line
@@ -94,7 +94,7 @@ def reopen(state: State) -> Step | None:
     stands under `tickets/blocked/`, `tickets/waiting/` or `tickets/closed/` with a line of the
     coordinator's after the line that moved it there, and after the last
     line since then whose note opens with a wait, citing that line. A
-    `change` the user rules on comes back by a `Merge:` or a `Drafts to
+    `change` the user rules on comes back by an `Op merge:` or an `Op drafts to
     review:` line instead, and one under `tickets/open/` is taken as a
     fresh change."""
     for t in sorted(state.tracker.tickets.values(), key=lambda t: t.order):

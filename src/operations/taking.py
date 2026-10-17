@@ -6,16 +6,16 @@ sessions `SessionsRead.adopted` gives, as `State.mine` gives them. Which session
 is the main one, `file_ticket.py main --help` states; which sessions are
 idle, `idle_sessions.read_sessions` gives.
 
-While a `Pause.` line stands (`directives.paused`), the operator takes,
+While an `Op pause.` line stands (`directives.paused`), the operator takes,
 of the changes it would take with no pause, only those of `held_work`, so
 the work already held reaches its end, and those of `through_pause`, the
-tickets an `Allow:` or an `Expedite:` line gives, and each other change
-waits for a `Resume.` line. Past the usage pace (`pacing`), the same
+tickets an `Op allow:` or an `Op expedite:` line gives, and each other change
+waits for an `Op resume.` line. Past the usage pace (`pacing`), the same
 changes are taken, and each other one waits until the pace admits it.
 
 A change that waits for a ticket that holds it up moves to
 `tickets/draft/` with a line whose note is `STALL_FINDING` on that ticket,
-which `drafts` reads as findings (`ticket_stall`). A change under `tickets/blocked/` is taken back on a `Merge:`
+which `drafts` reads as findings (`ticket_stall`). A change under `tickets/blocked/` is taken back on an `Op merge:`
 line that came after its last move there."""
 
 import re
@@ -68,7 +68,7 @@ def links(t: Ticket) -> list[str]:
 
 
 def expedited(state: State) -> set[str]:
-    """The tickets a chain of links reaches from a ticket an `Expedite:`
+    """The tickets a chain of links reaches from a ticket an `Op expedite:`
     line to any operator of the session gives, which the operator takes
     ahead of the others, so that an expedite outlives the operator it was
     sent to."""
@@ -79,7 +79,7 @@ def admits(state: State) -> Callable[[str], bool]:
     """Whether the operator may admit an open ticket: one the `takes` of
     the run scripts admit (`Computed.admitted`), or one of `expedited`,
     or any where no script defines `takes`; of those, one of `held_work`
-    or of `through_pause` always, and any other only while no `Pause.`
+    or of `through_pause` always, and any other only while no `Op pause.`
     line stands and the usage pace admits one (`Computed.pace`)."""
     passes, held = passing(state)
     clear = past_pause(state, held)
@@ -105,7 +105,7 @@ def passing(state: State) -> tuple[Callable[[str], bool], Callable[[str], bool]]
 
 def pace_held(state: State, numbers: list[str]) -> Pace | None:
     """The pace, where it alone holds back one of `numbers`: one `admits`
-    would pass but for the pace, with no `Pause.` line standing."""
+    would pass but for the pace, with no `Op pause.` line standing."""
     pace = state.computed.pace
     if pacing.admits(pace, state.now) or paused(state):
         return None
@@ -236,7 +236,7 @@ def batch(state: State) -> list[Ticket]:
 def take(state: State) -> Step | None:
     """The take of each change of `takeable`, in its order, up to the first
     whose budget `Computed.budgets` does not give. Where the usage pace does
-    not admit a ticket, or a `Pause.` line stands, a step takes, of the
+    not admit a ticket, or an `Op pause.` line stands, a step takes, of the
     changes neither of `lead` nor `taken_before`, only the first, so that
     the pace is read again before each further take."""
     commands: list[str] = []
@@ -259,6 +259,6 @@ def take(state: State) -> Step | None:
         if (t is not None and Exit.MERGE_LINE in exits(state, t).by
                 and time > blocked_since(t)):
             return Bash(log(n, Status.ASSIGNED, Status.BLOCKED,
-                            "taking: the coordinator's Merge line rules the merge", state.me),
+                            "taking: the coordinator's `Op merge:` line rules the merge", state.me),
                         f"{n} merge line", occasion=str(time))
     return None

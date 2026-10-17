@@ -75,7 +75,7 @@
     - The tickets under `tickets/open/` to settle.
     - The process assessment.
 - With the tickets a solver pass filed, it gives the review of that pass's transcript, where one was made.
-- With a `request` that the coordinator filed on `send`, it gives that request's transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it.
+- With a `request` that the coordinator filed on `op send`, it gives that request's transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it.
 - It gives the agent id of the agent that launches it, where that is not the coordinator.
 
 ### A draft analyst's brief
@@ -103,22 +103,22 @@
 
 ### An operator's brief
 - An operator's brief gives only lines in these forms, each on a line of its own:
-    - `Solve: <task id> ...`: a solver pipeline on each task, from Analyze, or from the pass that `from create` or `from refine` after its task id gives.
-    - `Run: <path>`: the solver pipelines that the run script at that path starts, and the open tickets the operator takes from then on, as `uv run python scripts/operate.py --help run` gives the script.
-    - `Drafts to review: <number>, ...`: the draft `change` tickets to review.
-    - `Expedite: <number>, ...`: tickets of any session, and each `change` that a chain of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, reaches from them. The operator releases, takes and settles each of them as it does its session's, and takes each of those changes ahead of the other changes it may take.
-    - `Merged: <number>, ...`: the changes the coordinator merged itself.
-    - `Merge: <number>`: a `change` under `tickets/blocked/`, which the user's ruling has the operator merge.
-    - `Tickets are open.`
-    - `Allow: <number>, ...`: tickets of any session, and each `change` that a chain of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, reaches from them. The operators of the session settle and take each of them under a pause too, with no priority over other work.
-    - `Pause.`: a pause, under which the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than the tickets and changes an `Allow:` or an `Expedite:` line gives, and the work an operator of the session took and each `change` that work waits on, which they carry to its end.
-    - `Resume.`: ends the pause.
-    - `Pace: <preset> [<argument> ...]` or `Pace: <path>`: the usage pace, as `uv run python scripts/operate.py --help pace` gives it. Past that pace, the operators of the session admit no ticket that a pause holds back.
-    - `Override: <task id> <pass> <override>`: an override that the brief of the next launch of that pass on that task gives.
-    - `Override: pass over <step key>`: passes over the solver pass whose step key it gives: that pass's task id and its pass, in the form `uv run python scripts/operate.py --help rulings` gives.
-    - `Override: give again <step key>`: makes the step whose key it gives due again, past its retirement, its outcomes and a pass-over, in the form `uv run python scripts/operate.py --help rulings` gives.
+    - `Op solve: <task id> ...`: a solver pipeline on each task, from Analyze, or from the pass that `from create` or `from refine` after its task id gives.
+    - `Op run: <path>`: the solver pipelines that the run script at that path starts, and the open tickets the operator takes from then on, as `uv run python scripts/operate.py --help run` gives the script.
+    - `Op drafts to review: <number>, ...`: the draft `change` tickets to review.
+    - `Op expedite: <number>, ...`: tickets of any session, and each `change` that a chain of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, reaches from them. The operator releases, takes and settles each of them as it does its session's, and takes each of those changes ahead of the other changes it may take.
+    - `Op merged: <number>, ...`: the changes the coordinator merged itself.
+    - `Op merge: <number>`: a `change` under `tickets/blocked/`, which the user's ruling has the operator merge.
+    - `Op tickets are open.`
+    - `Op allow: <number>, ...`: tickets of any session, and each `change` that a chain of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, reaches from them. The operators of the session settle and take each of them under a pause too, with no priority over other work.
+    - `Op pause.`: a pause, under which the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than the tickets and changes an `Op allow:` or an `Op expedite:` line gives, and the work an operator of the session took and each `change` that work waits on, which they carry to its end.
+    - `Op resume.`: ends the pause.
+    - `Op pace: <preset> [<argument> ...]` or `Op pace: <path>`: the usage pace, as `uv run python scripts/operate.py --help pace` gives it. Past that pace, the operators of the session admit no ticket that a pause holds back.
+    - `Op override: <task id> <pass> <override>`: an override that the brief of the next launch of that pass on that task gives.
+    - `Op override: pass over <step key>`: passes over the solver pass whose step key it gives: that pass's task id and its pass, in the form `uv run python scripts/operate.py --help rulings` gives.
+    - `Op override: give again <step key>`: makes the step whose key it gives due again, past its retirement, its outcomes and a pass-over, in the form `uv run python scripts/operate.py --help rulings` gives.
         * comment: The user's words, session 19c17548, 2026-10-17T13:59:40Z: "10-947 feels like would be better to have escape hatch for exceptions? Like you can modify op state or intervene or whatever", and 14:01:05Z: "2 The most robust thing": ticket 10-950.
-    - `Decision: <decision key> <choice>`: rules the held step that gives that decision key with one of the choices that step gives, as the whole rest of the line.
+    - `Op decision: <decision key> <choice>`: rules the held step that gives that decision key with one of the choices that step gives, as the whole rest of the line.
 - The operator gives each line of its brief or of a later message from the coordinator in no other form back to the coordinator as undecided.
 
 ### A code reviewer's brief
@@ -179,10 +179,10 @@
 - When an operator's message that opens with `for the coordinator:` reaches you, read the file it gives.
 - Bring the user each `decision:` item that file or an operator's final reply gives, other than a decline, tell the user each `tell:` item, and act on each `unfinished:` item as on an item an agent you launched gives as unfinished.
 - Ask an operator for no message to you before its final reply, other than the messages that open with `for the coordinator:` or `undecided:`, which it sends as it goes.
-- Send each draft `change` ticket that the reply of an agent you launched gives, and each `change` ticket you revise, to an operator in a `Drafts to review: <number>` line.
+- Send each draft `change` ticket that the reply of an agent you launched gives, and each `change` ticket you revise, to an operator in an `Op drafts to review: <number>` line.
 - Each time a `change` of your session comes to stand under `tickets/open/` with every ticket its `depends-on` gives under `tickets/closed/`, while no operator of your session holds it or runs its review, tell an operator that tickets are open.
 - Revise a `change` ticket that stands under `tickets/open/`, `tickets/assigned/`, `tickets/blocked/` or `tickets/waiting/` only once you have moved it back to `tickets/draft/`, with a log line whose note gives what you revise and on what ground.
-- Once the user rules on a draft `change` ticket under `tickets/blocked/`, move it back to `tickets/draft/` with the ruling in the note, revise it where the ruling needs that, and send it to an operator in a `Drafts to review: <number>` line.
+- Once the user rules on a draft `change` ticket under `tickets/blocked/`, move it back to `tickets/draft/` with the ruling in the note, revise it where the ruling needs that, and send it to an operator in an `Op drafts to review: <number>` line.
 
 ## While the user gives feedback
 - Gather each request the user approves into a batch, and when the user pauses or asks you to send it, send the whole batch at once: give each request to the agent a line of your documents gives for its work, or else to the handbook agent whose description covers it, as the split line of [Launching](#launching) allows, with one brief per agent.

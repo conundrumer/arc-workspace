@@ -46,8 +46,8 @@ PURPOSES = {
     HelpPart.NEXT: mctx("what `next` prints"),
     HelpPart.JOURNAL: mctx("how `next` runs each Bash step, records each step it gives, and tells whether a step is done"),
     HelpPart.RULINGS: mctx("the forms of the rulings `next` applies"),
-    HelpPart.RUN: mctx("the `Run:` line and the run script `next` reads"),
-    HelpPart.PACE: mctx("the `Pace:` line, which sets the usage pace within which `next` admits open tickets"),
+    HelpPart.RUN: mctx("the `Op run:` line and the run script `next` reads"),
+    HelpPart.PACE: mctx("the `Op pace:` line, which sets the usage pace within which `next` admits open tickets"),
     HelpPart.RELAY: mctx("what `relay` prints"),
     HelpPart.REVIEW: mctx("what `review` prints"),
     HelpPart.ALERTS: mctx("the alerts `next` sends, and the messages it sends the coordinator on concept faults"),
@@ -91,7 +91,7 @@ PARTS = {
         - Before it reads the state, it waits for each Bash step of the session that runs, that of another operator of the session included, for up to {block} seconds from its start, and where one still runs then, it prints that the operator runs it again.
         - A Bash step runs with the environment of `next`, which `uv run` sets, with no input, and its output goes to a file under the session's scratchpad, which `next` reads once the step ends.
         - It ends a Bash step that runs past {foreground} seconds, and that step counts as failed.
-    - `next` records each step it gives, by its key, in the session's step journal, `{journal}` under the session's scratchpad, and tells from that journal alone whether a step is in flight, done or failed, with each outcome that an `Override: give again` ruling counts for nothing left out.
+    - `next` records each step it gives, by its key, in the session's step journal, `{journal}` under the session's scratchpad, and tells from that journal alone whether a step is in flight, done or failed, with each outcome that an `Op override: give again` ruling counts for nothing left out.
         - A printed message counts as made by a SendMessage call to its recipient that holds its text, and a printed launch by an Agent call that gives its description, that the operator made after the call of `next` that printed it and before its next call of `next`, and the step's outcome is that call's.
         - Where the operator ran `next` again first, or its work ended with no such call, the step counts as failed.
         - A step in flight is not given again, to that operator or to one that takes over.
@@ -103,23 +103,23 @@ PARTS = {
     """),
     HelpPart.RULINGS: mctx("""
     - `next` applies the rulings that the coordinator gives an operator of the session, and that the reply of a ticket analyst on a held step gives, each a line in one of these forms, matched whole, past a list marker:
-        - `Decision: <decision key> <choice>` rules a held step, with one of the choices that step gives.
-        - `Override: <task id> <pass> <override>` gives the override, labelled as an override, in the brief of the next launch of that pass on that task.
-        - `Override: pass over <step key>` passes over the step whose key it gives, for each operator.
+        - `Op decision: <decision key> <choice>` rules a held step, with one of the choices that step gives.
+        - `Op override: <task id> <pass> <override>` gives the override, labelled as an override, in the brief of the next launch of that pass on that task.
+        - `Op override: pass over <step key>` passes over the step whose key it gives, for each operator.
             - `next` gives that step, once, as one its procedure waits on, to a ticket analyst it launches to rule it, other than a launch of a ticket analyst to rule a step, and goes on with the other procedures.
             - A pipeline whose next pass is passed over stops instead.
             - A ruling on a solver pass holds for each pipeline on its task, unless the work set aside for an earlier pipeline on that task went back (`restore`) after the ruling and before that pipeline's line or `start` call.
             - A solver pass's key is `<task id>-<pass>`, its task id and its pass (`analyze`, `create` or `refine`).
                 - A ruling can name a pass that was never printed.
-        - `Override: give again <step key>` makes the step whose key it gives due again, for each operator: `next` counts for nothing the outcomes of that step that came before the ruling, its retirement among them, and an earlier `pass over` ruling on it.
-    - A coordinator's line that opens with `Override:` or `Decision:` in none of these forms goes back to the coordinator once, as undecided.
+        - `Op override: give again <step key>` makes the step whose key it gives due again, for each operator: `next` counts for nothing the outcomes of that step that came before the ruling, its retirement among them, and an earlier `pass over` ruling on it.
+    - A coordinator's line that opens with `Op override:` or `Op decision:` in none of these forms goes back to the coordinator once, as undecided.
     - A ticket analyst's reply on a step that gives its decision key, with no ruling in these forms, goes back to it once.
         - Where its answer gives none either, the step stays held.
         - Where the first line of the step gives one ticket or more, each as `change <number>` or `draft <number>`, and each stands under `tickets/closed/`, the reply does not go back.
     - A step `next` cannot place gives no decision key: its ticket analyst makes the act it needs and gives no ruling.
     """),
     HelpPart.RUN: mctx("""
-    - `next` reads a coordinator's line `Run: <path>` as a run: the solver pipelines that the Python script at `<path>`, absolute or relative to the main tree, starts.
+    - `next` reads a coordinator's line `Op run: <path>` as a run: the solver pipelines that the Python script at `<path>`, absolute or relative to the main tree, starts.
         - Write a run script under `work/runs/` in the main tree.
         - It defines `starts(run: Run) -> Iterable[Start]`, with `Run` and `Start(task, passes)` from the module `operations.runs`, each `passes` a non-empty sequence whose every item is `analyze`, `create` or `refine`.
         - `run.queue` gives the task ids of the queue, in the order of their names, less each task a claim file gives and each task of the run's pipelines.
@@ -139,26 +139,26 @@ PARTS = {
                 - `filed_by_run`: whether a pipeline of the run, running or ended, filed it.
                 - `reached_by_run`: whether a chain of `depends_on` and `waits_on` links reaches it from a ticket such a pipeline filed.
             - From the line on, also once it is done, the operator launches a ticket analyst on an open ticket, and takes an open change, only where the `takes` of each run whose script defines one gives `True` for it.
-                - A ticket an `Expedite:` line gives passes, and so does a change that an operator took before and that went back to `tickets/open/`.
-    - A fault of a script that a `Run:` or a `Pace:` line gives is a load that fails, a call of one of its functions that raises or gives a result in no form this help or `--help pace` gives for it, or a load and calls that run past {script} seconds.
+                - A ticket an `Op expedite:` line gives passes, and so does a change that an operator took before and that went back to `tickets/open/`.
+    - A fault of a script that an `Op run:` or an `Op pace:` line gives is a load that fails, a call of one of its functions that raises or gives a result in no form this help or `--help pace` gives for it, or a load and calls that run past {script} seconds.
         - While a fault stands, the result of each call it touches is held back: a fault of a call touches that call, and a fault of the load or of the time touches each call.
         - With `starts` held back, the run starts nothing.
         - With `takes` held back, the run takes no ticket, unless the script loaded and defines no `takes`.
         - The coordinator gets the text of each fault, once for each distinct text.
     """),
     HelpPart.PACE: mctx("""
-    - `next` reads a coordinator's line `Pace: <preset> [<argument> ...]` or `Pace: <path>` as the usage pace of each operator of the session, and the last line in one of these forms stands. A `Pace:` line in neither form goes back to the coordinator and leaves the pace as it was.
-        - Past the pace, `next` launches no ticket analyst on an open ticket and takes no open change, other than the tickets and changes an `Allow:` or an `Expedite:` line gives, the work an operator of the session took, and each change that work waits on.
-        - Past the pace, or while a `Pause.` line stands, one call of `next` takes each change an `Expedite:` line gives, each change that settles an `interference` ticket and each change an operator took before, and at most one other change, so that the pace is read again before each further take.
+    - `next` reads a coordinator's line `Op pace: <preset> [<argument> ...]` or `Op pace: <path>` as the usage pace of each operator of the session, and the last line in one of these forms stands. An `Op pace:` line in neither form goes back to the coordinator and leaves the pace as it was.
+        - Past the pace, `next` launches no ticket analyst on an open ticket and takes no open change, other than the tickets and changes an `Op allow:` or an `Op expedite:` line gives, the work an operator of the session took, and each change that work waits on.
+        - Past the pace, or while an `Op pause.` line stands, one call of `next` takes each change an `Op expedite:` line gives, each change that settles an `interference` ticket and each change an operator took before, and at most one other change, so that the pace is read again before each further take.
         - Where no step is ready and only the pace holds back an open ticket, `next` prints that the operator runs it again, with the time from which a preset's pace admits a ticket, or with the path of the script whose pace holds them back.
     - The pace reads the usage file that `--help next` gives: for each of its windows, `used_pct`, `elapsed_pct` and the time it resets.
     - The presets:
         - `even [--factor F] [--window W]`, with F {factor} and W `{window}` by default: within the pace while the window's `used_pct` is at most F times its `elapsed_pct`.
         - `by <ISO 8601 time> [--window W]`, the time with its time zone and W `{window}` by default: within the pace while the window's `used_pct` is at most the percentage that has passed of the time from the window's start to the given time, and always from that time on.
         - `asap`: always within the pace.
-    - With no `Pace:` line, the pace is `asap`.
+    - With no `Op pace:` line, the pace is `asap`.
     - Where the usage file holds no reading of a preset's window written less than {stale} seconds ago, that preset's pace counts as past, and the coordinator gets a line that says so.
-    - `Pace: <path>` gives the Python script at `<path>`, absolute or relative to the main tree, which `next` loads at each read of the state.
+    - `Op pace: <path>` gives the Python script at `<path>`, absolute or relative to the main tree, which `next` loads at each read of the state.
         - It defines `paces(usage: Usage) -> bool`, with `Usage` from the module `operations.pacing`, which gives `True` where the pace admits a ticket now.
         - `usage.now` is the time in seconds since the epoch, and `usage.windows` maps the name of each window of which the usage file holds a reading written less than {stale} seconds ago to a `Window` with `used_pct`, `elapsed_pct` and `resets_at`, the last in seconds since the epoch.
         - With `paces` held back by a fault of the script, as `--help run` gives it, the pace counts as past.

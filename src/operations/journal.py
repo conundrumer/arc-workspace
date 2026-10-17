@@ -67,7 +67,7 @@ class Journal:
     def since(self, cuts: Mapping[str, float]) -> "Journal":
         """The journal less each entry, of the step or retiring the step
         whose key `cuts` gives, that closed before that key's time: the
-        journal as `next` reads it past the `Override: give again` rulings
+        journal as `next` reads it past the `Op override: give again` rulings
         (`directives.given_again`). An entry in flight stays, so no step in
         flight is given twice."""
         return Journal(tuple(e for e in self.entries if not cut(e, cuts)))

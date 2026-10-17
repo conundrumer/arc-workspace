@@ -11,13 +11,13 @@ from operations.journal import Entry, retired
 from operations.roles import Purpose
 from operations.state import Agent, Call, State, Ticket, Tool
 from operations.steps import (UNDECIDED, Bash, Journaled, Launch, Send, Step, Undecided,
-                              decision_key, key)
+                              analyst_key, key)
 
 
 def decided_by(state: State, step: Undecided) -> list[Agent]:
     """The ticket analysts of any operator of the session launched on
     `step`, in the order of their launch."""
-    k = decision_key(step.what)
+    k = analyst_key(step)
     return [a for a, purpose, keys in state.analysts() if purpose is Purpose.STEP and keys == [k]]
 
 

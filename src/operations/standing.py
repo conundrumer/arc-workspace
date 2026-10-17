@@ -1,7 +1,7 @@
 """The step that ends the operator (`ending`), and the lines of what
 stands at its end (`reply_lines`, `final`). `held` is the
-set of decision keys of the undecided steps the procedures wait on, which
-`holding` gives."""
+set of the analyst keys (`steps.analyst_key`) of the undecided steps the
+procedures wait on, which `holding` gives."""
 
 from collections.abc import Callable, Iterable
 
@@ -14,7 +14,7 @@ from operations.journal import BOUND
 from operations.roles import Role
 from operations.state import State, Ticket
 from operations.order import PROCEDURES, placed
-from operations.steps import Step, Undecided, decision_key
+from operations.steps import Step, Undecided, analyst_key
 from ticketing.vocabulary import Status
 
 
@@ -107,7 +107,7 @@ def no_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
 
 
 def run_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
-    """The reasons the `Run:` line `ln` stands unfinished: each pipeline of
+    """The reasons the `Op run:` line `ln` stands unfinished: each pipeline of
     its run that runs, the start its script gives, and a standing fault,
     with, where any of these stands, the reason each stopped pipeline
     stopped."""
@@ -189,7 +189,7 @@ def stands(state: State, head: str, step: Step | None) -> tuple[str, bool]:
     on, and the second value holds."""
     if isinstance(step, Undecided) and repeated(step, state):
         return head + mctx(": it waits on a decision of the step: {what}").format(
-            what=step.what), True
+            what=step.text), True
     return head, False
 
 
@@ -222,10 +222,10 @@ def final(state: State, held: set[str]) -> str:
 
 
 def holding(state: State) -> set[str]:
-    """The decision keys of the undecided steps the procedures wait on, as
+    """The analyst keys of the undecided steps the procedures wait on, as
     `placed` gives them."""
-    return {decision_key(u.what) for procedure in PROCEDURES
+    return {analyst_key(u) for procedure in PROCEDURES
             if (u := placed(state, procedure)[1]) is not None} | {
-        decision_key(u.what) for u in decisions.unread_steps(state)} | {
-        decision_key(u.what) for t in changes.held(state)
+        analyst_key(u) for u in decisions.unread_steps(state)} | {
+        analyst_key(u) for t in changes.held(state)
         if isinstance(u := changes.next_step(state, t), Undecided) and repeated(u, state)}

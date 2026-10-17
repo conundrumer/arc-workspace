@@ -593,7 +593,7 @@ class Computed:
     `change_fragments.fragments_due` holds and that
     `change_fragments.lacking_doc_editor` gives an `editors` field for, the budget,
     taken at `State.now`, of that field's set with the doc editor.
-    `run_starts` gives what the script of each `Run:` line gave at this
+    `run_starts` gives what the script of each `Op run:` line gave at this
     read, by its run (`runs.run_id`), and `run_takes` what its `takes`
     gave. `pace` is the usage pace at `State.now` (`pacing`), Unknown
     until the read computes it. `audit_window` is the window of the next

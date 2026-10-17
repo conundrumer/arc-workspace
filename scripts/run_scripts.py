@@ -1,5 +1,5 @@
-"""The load and the call of the run scripts the `Run:` lines an operator
-received give, and of the pace script a `Pace:` line gives, under a time
+"""The load and the call of the run scripts the `Op run:` lines an operator
+received give, and of the pace script an `Op pace:` line gives, under a time
 bound, as `operate.py --help run` and `operate.py --help pace` give
 them."""
 
@@ -31,7 +31,7 @@ QUEUE_COMMAND = ("bash", "scripts/queue.sh", "--order", "name", "--all", "--json
 
 
 def read_runs(state: State) -> tuple[dict[str, Starts], dict[str, Takes]]:
-    """What the script of each `Run:` line the operator received gave, by
+    """What the script of each `Op run:` line the operator received gave, by
     its run, where it received one, with the queue's full listing: from its
     `starts`, and from its `takes`. Where the listing fails, its failure is
     the fault of each such line, for both."""

@@ -1,30 +1,38 @@
 """The fixed form of the lines the coordinator gives an operator, in its
 brief or a later message, that the command reads. Each line opens with the
-word of its kind and a colon, past a list marker:
+prefix `Op`, the word of its kind and a colon, past a list marker:
 
-- `Solve: <task id> [<task id> ...]`, with `from create` or `from refine`
+- `Op solve: <task id> [<task id> ...]`, with `from create` or `from refine`
   after a task id to start its pipeline at that pass;
-- `Run: <path>`, a run script, as `runs` gives it;
-- `Drafts to review: <number>, ...`;
-- `Expedite: <number>, ...`, for every operator of the session;
-- `Allow: <number>, ...`, the tickets that pass a pause for every operator
+- `Op run: <path>`, a run script, as `runs` gives it;
+- `Op drafts to review: <number>, ...`;
+- `Op expedite: <number>, ...`, for every operator of the session;
+- `Op allow: <number>, ...`, the tickets that pass a pause for every operator
   of the session, and the changes a chain of links reaches from them;
-- `Merged: <number>, ...`, the changes the coordinator gives as merged;
-- `Merge: <number>`, a change under `tickets/blocked/` whose merge that line rules;
-- `Tickets are open.`, which ends no pause;
-- `Pause.`, after which no operator of the session settles an open
+- `Op merged: <number>, ...`, the changes the coordinator gives as merged;
+- `Op merge: <number>`, a change under `tickets/blocked/` whose merge that line rules;
+- `Op tickets are open.`, which ends no pause;
+- `Op pause.`, after which no operator of the session settles an open
   ticket or takes a change outside the work held and the tickets an
-  `Allow:` or an `Expedite:` line gives (`paused`), and
-  `Resume.`, which ends that pause;
-- `Pace: <preset> [<argument> ...]` or `Pace: <path>`, the usage pace
+  `Op allow:` or an `Op expedite:` line gives (`paused`), and
+  `Op resume.`, which ends that pause;
+- `Op pace: <preset> [<argument> ...]` or `Op pace: <path>`, the usage pace
   for every operator of the session (`pace`), as `pacing` gives it;
-- the rulings, `Decision:` and `Override:` lines in the forms that
+- the rulings, `Op decision:` and `Op override:` lines in the forms that
   `scripts/operate.py --help rulings` gives, which the command applies (`decided`,
   `passed_over`, `given_again`, `overrides`).
 
 A line of the coordinator's in no such form, a ruling among them, goes
 back to the coordinator once as undecided, since only its writer knows
 what it meant.
+
+A line in a bare form, one of these forms with no prefix and the word of
+its kind capitalized (`BARE`), takes its kind only in a message that
+arrived before the session's first message of the coordinator with a line
+in a prefixed form (`cutoff`), so that an operator that runs across the
+change to the prefixed forms keeps what the lines it received before that
+change gave it. The reply of a ticket analyst whose brief gives the bare
+ruling form (`steps.bare`) is read in the bare forms as well.
 
 The reply of a ticket analyst on a held step (`decisions`) gives its
 rulings in the same forms.
@@ -47,11 +55,12 @@ from operations.reports import LIST_MARKER
 from operations.pacing import Preset, line_pace
 from operations.roles import PASSES, Purpose, Role
 from operations.state import Agent, Message, Report, State
-from operations.steps import STEP_KEY, Launch, Step, Undecided, decision_key, digest, held, key
+from operations.steps import (STEP_KEY, Launch, Step, Undecided, bare, decision_key, digest,
+                              held, key)
 
 
 class Decision(StrEnum):
-    """The choices a `Decision:` line gives a held step (`decided`): go on as though the step were passed, the
+    """The choices an `Op decision:` line gives a held step (`decided`): go on as though the step were passed, the
     merge, the move to `tickets/open/`, or another agent on it."""
     PASSES = "passes"
     MERGE = "merge"
@@ -59,20 +68,26 @@ class Decision(StrEnum):
     AGAIN = "again"
 
 
+OP = "Op "
+
+
 class Directive(StrEnum):
-    SOLVE = "Solve"
-    RUN = "Run"
-    DRAFTS = "Drafts to review"
-    EXPEDITE = "Expedite"
-    ALLOW = "Allow"
-    MERGED = "Merged"
-    MERGE = "Merge"
-    OPEN = "Tickets are open"
-    PAUSE = "Pause"
-    RESUME = "Resume"
-    PACE = "Pace"
-    OVERRIDE = "Override"
-    DECISION = "Decision"
+    SOLVE = "Op solve"
+    RUN = "Op run"
+    DRAFTS = "Op drafts to review"
+    EXPEDITE = "Op expedite"
+    ALLOW = "Op allow"
+    MERGED = "Op merged"
+    MERGE = "Op merge"
+    OPEN = "Op tickets are open"
+    PAUSE = "Op pause"
+    RESUME = "Op resume"
+    PACE = "Op pace"
+    OVERRIDE = "Op override"
+    DECISION = "Op decision"
+
+
+BARE = {d.removeprefix(OP).capitalize(): d for d in Directive}
 
 
 RULINGS = frozenset({Directive.OVERRIDE, Directive.DECISION})
@@ -98,41 +113,53 @@ class Line:
 def lines(state: State) -> list[Line]:
     """Each non-blank line the coordinator gave the operator `me`, in the
     order the messages arrived."""
-    return parsed(state.received)
+    return parsed(state.received, cutoff(state.arrived))
 
 
 def session_lines(state: State) -> list[Line]:
     """Each non-blank line the coordinator gave any operator of the
     session, in the order the messages arrived."""
-    return parsed(state.arrived)
+    return parsed(state.arrived, cutoff(state.arrived))
 
 
-def parsed(messages: Iterable[Message]) -> list[Line]:
-    return [ln for m in messages if m.sender is None for ln in message_lines(m)]
+def parsed(messages: Iterable[Message], before: float | None) -> list[Line]:
+    """The lines of the coordinator's messages among `messages`, a bare
+    line with its kind where its message arrived before `before`, or
+    `before` is None."""
+    return [ln for m in messages if m.sender is None
+            for ln in message_lines(m, before is None or m.time < before)]
 
 
-def message_lines(m: Message) -> list[Line]:
+def cutoff(arrived: Iterable[Message]) -> float | None:
+    """The time of the first message of the coordinator among `arrived`,
+    the session's messages in the order they arrived, with a line in a
+    prefixed form, or None where none came."""
+    return next((m.time for m in arrived if m.sender is None
+                 if any(ln.kind is not None for ln in message_lines(m, False))), None)
+
+
+def message_lines(m: Message, bare: bool) -> list[Line]:
     """Each non-blank line of `m`, with its kind where it is in a form the
-    command reads."""
+    command reads, a bare form among them where `bare`."""
     out: list[Line] = []
     for raw in m.text.splitlines():
         if not raw.strip():
             continue
         match = LINE.match(raw)
-        kind = None
-        rest = ""
-        if match is not None:
-            try:
-                kind = Directive(match["kind"])
-                rest = match["rest"] or ""
-            except ValueError:
-                kind = None
+        kind = None if match is None else kind_of(match["kind"], bare)
+        rest = "" if match is None or kind is None else match["rest"] or ""
         out.append(Line(m, kind, raw.strip(), rest))
     return out
 
 
+def kind_of(word: str, bare: bool) -> Directive | None:
+    if word in Directive:
+        return Directive(word)
+    return BARE.get(word) if bare else None
+
+
 def step_decisions(state: State) -> list[Line]:
-    """The `Override:` and `Decision:` lines of the replies of the ticket
+    """The `Op override:` and `Op decision:` lines of the replies of the ticket
     analysts on held steps, each read as a message of its analyst to the
     operator that launched it, in the order the replies came."""
     out = [ln for a, purpose, _ in state.analysts() if purpose is Purpose.STEP
@@ -141,8 +168,9 @@ def step_decisions(state: State) -> list[Line]:
 
 
 def reply_decisions(a: Agent, r: Report) -> list[Line]:
-    """The `Override:` and `Decision:` lines of the reply `r` of `a`."""
-    return [ln for ln in message_lines(Message(a.operator, r.time, a.agent_id, r.text))
+    """The `Op override:` and `Op decision:` lines of the reply `r` of `a`."""
+    return [ln for ln in message_lines(Message(a.operator, r.time, a.agent_id, r.text),
+                                       bare(a.brief))
             if ln.kind in RULINGS and ruling_form(ln) is not None]
 
 
@@ -158,12 +186,12 @@ def numbers_in(given: list[Line], kind: Directive) -> list[tuple[str, float]]:
 
 
 def allow_named(state: State) -> set[str]:
-    """The tickets an `Allow:` line to any operator of the session gives."""
+    """The tickets an `Op allow:` line to any operator of the session gives."""
     return {n for n, _ in numbers_in(session_lines(state), Directive.ALLOW)}
 
 
 def decided(state: State, what: str, choices: dict[Decision, str]) -> Decision | Undecided:
-    """The choice among `choices` that the last `Decision:` ruling giving
+    """The choice among `choices` that the last `Op decision:` ruling giving
     the decision key of the held step `what` gives, of the coordinator to
     an operator of the session or of the reply of a ticket analyst on a
     held step. Where no such ruling came, the step held on `what` with its
@@ -190,7 +218,7 @@ def ruled(state: State, what: str) -> float:
 
 
 def last_decision(state: State, what: str) -> tuple[Line, re.Match[str]] | None:
-    """The last `Decision:` ruling that gives the decision key of the held
+    """The last `Op decision:` ruling that gives the decision key of the held
     step `what`, with its match of `DECISION`, or None."""
     k = decision_key(what)
     for ln in reversed(rulings(state)):
@@ -217,7 +245,7 @@ def paused(state: State) -> bool:
 
 
 def pace(state: State) -> Preset | Path | None:
-    """The preset or the script path of the last `Pace:` line in a form
+    """The preset or the script path of the last `Op pace:` line in a form
     `pacing.line_pace` reads to any operator of the session, or None where
     none came."""
     given = [p for ln in session_lines(state) if ln.kind is Directive.PACE
@@ -234,8 +262,8 @@ def ruling_form(ln: Line) -> re.Match[str] | None:
 
 
 def passed_over(state: State) -> dict[str, Line]:
-    """The step keys the `Override: pass over` rulings give, each with the
-    last ruling that gives it, less each key a later `Override: give again`
+    """The step keys the `Op override: pass over` rulings give, each with the
+    last ruling that gives it, less each key a later `Op override: give again`
     ruling gives."""
     out: dict[str, Line] = {}
     for ln in rulings(state):
@@ -249,7 +277,7 @@ def passed_over(state: State) -> dict[str, Line]:
 
 
 def given_again(state: State) -> dict[str, float]:
-    """The step keys the `Override: give again` rulings give, each with the
+    """The step keys the `Op override: give again` rulings give, each with the
     message time of the last ruling that gives it."""
     return {m["key"]: ln.message.time for ln in rulings(state)
             if ln.kind is Directive.OVERRIDE and (m := GIVE_AGAIN.fullmatch(ln.rest))}
@@ -273,7 +301,7 @@ def overrides(state: State, task: str, role: Role, since: float) -> list[str]:
 
 
 def held_on(what: str, choices: dict[Decision, str]) -> Undecided:
-    """The step held on `what` until a `Decision:` line gives it one of
+    """The step held on `what` until an `Op decision:` line gives it one of
     `choices`."""
     return held(what, {c.value: meaning for c, meaning in choices.items()})
 
@@ -297,7 +325,7 @@ class Pipeline:
 
 
 def pipelines(given: list[Line]) -> list[Pipeline]:
-    """The pipelines the `Solve` lines of `given` give."""
+    """The pipelines the `Op solve` lines of `given` give."""
     out: list[Pipeline] = []
     for ln in given:
         if ln.kind is Directive.SOLVE:
@@ -310,7 +338,7 @@ def pipelines(given: list[Line]) -> list[Pipeline]:
 
 def unread(state: State) -> list[Line]:
     """The coordinator's lines in no form the command reads, rulings and
-    `Pace:` lines in no fixed form among them."""
+    `Op pace:` lines in no fixed form among them."""
     return [ln for ln in lines(state)
             if ln.kind is None or ln.kind in RULINGS and ruling_form(ln) is None
             or ln.kind is Directive.PACE and line_pace(ln.rest, state.main_tree) is None]

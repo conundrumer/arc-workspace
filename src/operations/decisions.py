@@ -3,7 +3,7 @@ cannot decide (`steps.Undecided`), and the reads of their replies.
 
 Such a step goes to one ticket analyst, launched with the step and the
 agent id of the operator that holds it (`briefs.held_step`), whose subject
-gives the step's decision key, so no operator of the session launches a
+gives the step's analyst key (`steps.analyst_key`), so no operator of the session launches a
 second analyst on it, and its procedure waits on that analyst while it
 runs and once it returned (`handled.repeated`). A step an operator already
 gave the coordinator goes to no analyst, and its procedure waits on the
@@ -12,7 +12,7 @@ reply gives, and which replies go back to their analyst, are as
 `scripts/operate.py --help rulings` gives them (`directives.rulings`).
 Where the analyst brings that decision to the user,
 its `decision:` item goes to the coordinator (`triage`), and the
-coordinator gives the user's decision in a `Decision:` line.
+coordinator gives the user's decision in an `Op decision:` line.
 
 The operator that answers an analyst's reply (`applier`) is the one that
 launched it, while that operator has printed no final reply since the
@@ -44,7 +44,7 @@ from operations.roles import Purpose, Role, analyst_of, analyst_subject, describ
 from operations.state import Agent, State, Tool, Unread, own
 from operations.final_reply import failure, final_replies, nested
 from operations.handled import ask_again, decided_by, repeated
-from operations.steps import Launch, Send, Step, Undecided, decision_key, rulable
+from operations.steps import Launch, Send, Step, Undecided, analyst_key, rulable
 from operations.tracker import closed
 
 
@@ -78,9 +78,9 @@ def launch(state: State, step: Undecided) -> Launch:
     settled (`change_agents.settled`)."""
     known = None if step.change is None else settled(
         state, state.tracker.tickets[step.change], Role.TICKET_ANALYST, None)
-    return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.STEP, decision_key(step.what)),
-                  briefs.held_step(step.what, state.me, rulable(step.what), known),
-                  reread=step.reread, change=step.change, occasion=decision_key(step.what))
+    return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.STEP, analyst_key(step)),
+                  briefs.held_step(step.text, state.me, rulable(step.text), known),
+                  reread=step.reread, change=step.change, occasion=analyst_key(step))
 
 
 def applier(state: State, a: Agent) -> str:
@@ -135,7 +135,7 @@ def asks(state: State) -> Step | None:
 def undecided(state: State, holding: set[str]) -> list[str]:
     """The lines of the final reply of the operator `me` on each held step
     whose ticket analyst returned with no decision after it was asked
-    again, and on each step the command cannot place whose decision key
+    again, and on each step the command cannot place whose analyst key
     `holding` gives, once the latest analyst on it returned."""
     out: list[str] = []
     latest = {keys[0]: a for a, purpose, keys in state.analysts()

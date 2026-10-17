@@ -1,7 +1,7 @@
 """The usage pace: how fast the operators spend the account's usage, as
 `operate.py --help pace` gives it.
 
-A `Pace:` line names a preset with its arguments (`PARSER`) or the path
+An `Op pace:` line names a preset with its arguments (`PARSER`) or the path
 of a script that defines `paces` (`Script`). With no such line, the pace
 is `asap`. A preset reads a `Usage` and gives the time
 from which it admits a ticket (`Until`); a script gives whether it admits
@@ -152,10 +152,10 @@ type Preset = Callable[[Usage], Pace]
 
 
 def parser() -> tuple[Parser, frozenset[str]]:
-    """The parser of a `Pace:` line's presets, whose defaults are the
+    """The parser of an `Op pace:` line's presets, whose defaults are the
     presets' defaults, with the presets' names. Each preset's parse gives
     as `build` the function that makes its `Preset` from the parse."""
-    p = Parser(prog="Pace:", add_help=False)
+    p = Parser(prog="Op pace:", add_help=False)
     presets = p.add_subparsers(dest="preset", required=True, parser_class=Parser)
     e = presets.add_parser("even", add_help=False)
     e.add_argument("--factor", type=float, default=EVEN_FACTOR)
@@ -182,7 +182,7 @@ DEFAULT: Preset = preset(["asap"])
 
 
 def line_pace(rest: str, main_tree: Path) -> Preset | Path | None:
-    """The preset or the script path a `Pace:` line's text after the colon
+    """The preset or the script path an `Op pace:` line's text after the colon
     gives, a relative path taken from `main_tree`, or None where it is in
     neither form."""
     try:

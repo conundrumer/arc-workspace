@@ -1,4 +1,4 @@
-"""A run: the solver pipelines that the script a `Run: <path>` line of the
+"""A run: the solver pipelines that the script an `Op run: <path>` line of the
 coordinator's gives starts, as `scripts/operate.py --help run` gives the
 script's form. `scripts/run_scripts.py` loads and calls the script at
 each read of the state, with the `Run` this module gives, and the state
@@ -150,24 +150,24 @@ def start_command(ln: Line, s: Start) -> str:
 
 
 def run_id(ln: Line) -> str:
-    """The run of the `Run:` line `ln`, as its start calls give it: the
+    """The run of the `Op run:` line `ln`, as its start calls give it: the
     time of its message and its path."""
     return f"{ln.message.time:.6f}:{ln.rest}"
 
 
 def script_path(main: Path, ln: Line) -> Path:
-    """The path of the script of the `Run:` line `ln`: absolute, or
+    """The path of the script of the `Op run:` line `ln`: absolute, or
     relative to the main tree `main`."""
     return main / ln.rest
 
 
 def given(state: State, ln: Line) -> Starts:
-    """What the script of the `Run:` line `ln` gave at this read."""
+    """What the script of the `Op run:` line `ln` gave at this read."""
     return state.computed.run_starts[run_id(ln)]
 
 
 def run_lines(lines: Iterable[Line]) -> list[Line]:
-    """The `Run:` lines of `lines`. A run stands while its line is among
+    """The `Op run:` lines of `lines`. A run stands while its line is among
     the lines the operator received (`state.State.received`)."""
     return [ln for ln in lines if ln.kind is Directive.RUN and ln.rest]
 
@@ -306,7 +306,7 @@ def fault_message(ln: Line, stopped: Stopped, fault: str) -> Send:
 
 
 def takes_given(state: State, ln: Line) -> Takes:
-    """What the `takes` of the script of the `Run:` line `ln` gave at this
+    """What the `takes` of the script of the `Op run:` line `ln` gave at this
     read."""
     return state.computed.run_takes[run_id(ln)]
 

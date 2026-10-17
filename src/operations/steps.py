@@ -122,7 +122,7 @@ class Reply:
 class Undecided:
     """A step the command cannot place, which goes to a ticket analyst
     launched on it (`decisions`) and is never printed. The command reads back
-    which analyst it went to by the decision key of `what`, so `what` is the
+    which analyst it went to by its `analyst_key`, so `what` is the
     same at each read of the same state. `given` holds the texts that a
     message by which an operator gave the coordinator this step holds each
     of, in a form other than `UNDECIDED` and `what`, where the step has
@@ -132,11 +132,22 @@ class Undecided:
     `operator_step`); it stays out of the step's key and its equality.
     `change` is the number of the held change whose step it is
     (`changes.step`), which the launch of its analyst carries
-    (`decisions.launch`)."""
+    (`decisions.launch`). `ruling` is the sentence that gives the line
+    that rules a step `held` made, and `former_ruling` that sentence in
+    the bare form (`former`); both stay out of the step's key and of
+    `what`, so a change of the sentence's wording changes neither the key
+    nor the decision key."""
     what: str
     given: tuple[str, ...] = field(default=(), repr=False)
     reread: bool = field(default=False, repr=False, compare=False)
     change: str | None = field(default=None, repr=False, compare=False)
+    ruling: str = field(default="", repr=False)
+    former_ruling: str = field(default="", repr=False, compare=False)
+
+    @property
+    def text(self) -> str:
+        """The step as an agent reads it."""
+        return self.what + self.ruling
 
 
 UNDECIDED = "undecided:"
@@ -179,24 +190,57 @@ def agent_ids(agents: Iterable[Agent]) -> list[str] | Undecided:
 
 
 def decision_key(what: str) -> str:
-    """The key a `Decision:` line gives to rule the held step `what`."""
+    """The key an `Op decision:` line gives to rule the held step `what`."""
     return hashlib.sha1(what.encode()).hexdigest()[:KEY_LENGTH]
 
 
 def rulable(text: str) -> bool:
     """Whether `text`, a step or the brief of a ticket analyst on one, gives
-    the `Decision:` line that rules a step `held` made."""
+    the line that rules a step `held` made, in the prefixed form or the
+    bare one (`bare`)."""
+    return bare(text) or re.search(rf"`Op decision: {STEP_KEY.pattern} <choice>`", text) is not None
+
+
+def bare(text: str) -> bool:
+    """Whether `text`, the brief of a ticket analyst on a held step, gives
+    the line that rules that step in the bare form, which `held` gave
+    before the prefixed one."""
     return re.search(rf"`Decision: {STEP_KEY.pattern} <choice>`", text) is not None
 
 
 def held(what: str, choices: Mapping[str, str]) -> Undecided:
-    """A step that holds its procedure until a `Decision:` line rules it,
-    which gives its decision key and one of `choices`, each given with what
-    it does."""
+    """A step that holds its procedure until an `Op decision:` line rules
+    it, which gives its decision key and one of `choices`, each given with
+    what it does."""
     given = "; ".join(f"`{c}`: {meaning}" for c, meaning in choices.items())
-    return Undecided(what + mctx(". Rule it by the line `Decision: {key} <choice>`, with one "
-                                 "of these choices: {given}.").format(key=decision_key(what),
-                                                                      given=given))
+    k = decision_key(what)
+    return Undecided(what, ruling=mctx(". Rule it by the line `Op decision: {key} <choice>`, with one "
+                                       "of these choices: {given}.").format(key=k, given=given),
+                     former_ruling=FORMER_RULING.format(key=k, given=given))
+
+
+FORMER_RULING = ". Rule it by the line `Decision: {key} <choice>`, with one of these choices: {given}."
+"""The ruling sentence `held` gave before the prefixed form, which no
+agent reads: `former` takes the keys of the steps held then over it."""
+
+
+def former(step: Undecided) -> Undecided | None:
+    """The step `held` made, as `held` gave it while its ruling sentence
+    gave the bare form, with that sentence in `what`, so that its key and
+    the decision key of its `what` are those the steps held then took, or
+    None where `held` did not make `step`."""
+    if not step.former_ruling:
+        return None
+    return Undecided(step.what + step.former_ruling, step.given, change=step.change)
+
+
+def analyst_key(step: Undecided) -> str:
+    """The key of the launch of the ticket analyst on `step`, its subject's
+    and its occasion's: the decision key of the `what` of `former`, where
+    `held` made `step`, so the key is the one that launch took while the
+    ruling sentence gave the bare form."""
+    old = former(step)
+    return decision_key((step if old is None else old).what)
 
 
 type Step = Launch | Send | Undecided | Bash | Poll | EndTurn | Reply
@@ -231,8 +275,8 @@ def subject(step: Journaled) -> str:
 
 def key(step: Step) -> str:
     """The key of `step`, which is the same at each read of the state that
-    gives the same step: the key an `Override: pass over` ruling gives
-    (`directives.passed_over`), the key an `Override: give again` ruling
+    gives the same step: the key an `Op override: pass over` ruling gives
+    (`directives.passed_over`), the key an `Op override: give again` ruling
     gives (`directives.given_again`), and the one the journal records it under
     (`journal`). It is taken over the step's kind, its `origin` and its
     `subject`, and, for a step the journal does not record, over the step

@@ -377,7 +377,7 @@ def restores(state: State, task: str, start: float, stop: float) -> list[Restore
 
 
 def started(state: State, given: list[Line]) -> list[Pipeline]:
-    """The pipelines whose start calls the `Run:` lines of `given` give,
+    """The pipelines whose start calls the `Op run:` lines of `given` give,
     other than those whose call failed."""
     return [s.pipeline for ln in runs.run_lines(given) for s in runs.started(state, ln)
             if s.failed is None]
@@ -401,8 +401,8 @@ def session(state: State) -> list[Pipeline]:
 
 def every(state: State) -> list[Pipeline]:
     """The pipelines of `session` that the coordinator's lines to the
-    operator `me` give: those a line to it starts, those a `Run:` line to
-    it starts, and those a `Solve` line to it gives again by their task
+    operator `me` give: those a line to it starts, those an `Op run:` line to
+    it starts, and those an `Op solve` line to it gives again by their task
     before they end."""
     given = lines(state)
     own = set(started(state, given))

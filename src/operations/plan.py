@@ -8,7 +8,7 @@ on for the operator that carries the work on, give steps only to the
 operator they reached, so the work a line to an earlier operator left
 unfinished reaches a later one only where the coordinator gives it again
 (`passes.every`);
-a `Decision:` line that rules a held step holds for every operator
+an `Op decision:` line that rules a held step holds for every operator
 (`directives`), and the items for the coordinator of a ticket analyst's
 reply go to the final reply of the operator that carries that reply
 (`final_reply.carrier`). An operator past its context bound ends at once

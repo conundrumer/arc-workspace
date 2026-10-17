@@ -6,7 +6,7 @@ standing of their own, from which the change takes its rank.
 A ticket's class comes first, the lowest first:
 
 - `SEND`: a `request` whose last route note (`vocabulary.ROUTED`) gives
-  `send`.
+  `op send`.
 - `CASE`: a fault ticket (`FAULTS`) with a case: a case line of its own
   log, or of a ticket closed as its duplicate (`ticket_log.DUPLICATE_OF`).
 - `RECURS`: a fault ticket with a recurrence and no case: a ticket closed

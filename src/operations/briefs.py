@@ -483,7 +483,7 @@ UNPLACED_STEP = mctx("Make the act the step below needs, which the operator that
 
 def held_step(what: str, operator: str, rulable: bool, settled: "Settled | None") -> str:
     """The brief of a ticket analyst on the undecided step `what`, which
-    gives the `Decision:` line that rules it where `rulable`, with, where
+    gives the `Op decision:` line that rules it where `rulable`, with, where
     the step is of a change, what the agents launched on it settled
     (`settled_lines`).
 

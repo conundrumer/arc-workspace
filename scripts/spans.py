@@ -59,11 +59,11 @@ def route_label(route: Route | FollowUp) -> str:
 HELP = mctx("""
     - `{invocation} file <route> [{inferred}] <subject> <title> <goal> <start words> <end words>` files a `request` whose span runs from the message `<start words>` gives to the one `<end words>` gives, with the Grounds lines on its stdin, and prints its path.
         - Each Grounds line is `- <one addition to what the span gives, with its source>`.
-        - On `draft`, and on a route given with `{inferred}`, it moves the request to `tickets/draft/`, and on each of {held} with no `{inferred}`, to `tickets/assigned/`, with an `assigned` line whose holder is the session id the shell holds in `CLAUDE_CODE_SESSION_ID`.
+        - On `op draft`, and on a route given with `{inferred}`, it moves the request to `tickets/draft/`, and on each of {held} with no `{inferred}`, to `tickets/assigned/`, with an `assigned` line whose holder is the session id the shell holds in `CLAUDE_CODE_SESSION_ID`.
     - `{invocation} brief [--route <route>] <number>` prints the brief of the request `<number>`.
     - `{invocation} brief --route <route> <start words> <end words> <goal>` prints the brief of that span and `<goal>`, with the Grounds lines on its stdin.
     - `{invocation} append [{inferred}] [--route <route>] [{goal_flag} <goal>] <number> <start words> <end words>` appends that span to the request `<number>`, with a log line, and prints its path.
-        - With `--route` and a route other than `draft`, it moves a request under `tickets/draft/` to where `file` puts a request on that route with no `{inferred}`.
+        - With `--route` and a route other than `op draft`, it moves a request under `tickets/draft/` to where `file` puts a request on that route with no `{inferred}`.
         - `{goal_flag}` gives `<goal>` as the request's `{goal}`, in place of the one it holds, or before its `{transcript}` where it holds none.
     - `<goal>` holds at most {goal_words} words.
     - `<route>` is one of {routes}, and `{inferred}` marks a route the coordinator inferred.
@@ -290,8 +290,8 @@ def append(inferred: bool, route: Route | None, goal: str | None, number: str, s
     ref = ticket_number(number)
     path = ticket_path(tickets, ref)
     if route is not None and (ticket_status(path) is not Status.DRAFT or route is Route.DRAFT):
-        raise Refused(mctx("`--route` takes a route other than `{draft}`, on a request under "
-                           "`tickets/{draft}/`").format(draft=Route.DRAFT))
+        raise Refused(mctx("`--route` takes a route other than `{route}`, on a request under "
+                           "`tickets/{draft}/`").format(route=Route.DRAFT, draft=Status.DRAFT))
     text = path.read_text()
     if goal is not None:
         text = with_goal(text, goal)

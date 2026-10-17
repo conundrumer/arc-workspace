@@ -40,7 +40,7 @@ it, the command tells that agent to write nothing further and to
 end. Where a ticket reviewer returned and left a draft in
 `tickets/draft/` with no finding and no suggestion, or a ticket analyst
 returned with no revision written, the review of that draft holds until a
-`Decision:` line rules it with one of the choices the command gives it
+`Op decision:` line rules it with one of the choices the command gives it
 (`directives.decided`)."""
 
 from collections.abc import Callable

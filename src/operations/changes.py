@@ -67,7 +67,7 @@ whose recipient answered it, leaves the change where it was, and the
 command cannot place it.
 
 A step of a change that the command cannot place holds that change alone,
-until a `Decision:` line rules it with one of the choices the step gives
+until an `Op decision:` line rules it with one of the choices the step gives
 (`directives.decided`)."""
 
 import shlex
@@ -246,7 +246,7 @@ def left_decision(a: Agent, number: str) -> str | None:
     that rules it, which goes to the coordinator with the `decision:` items
     of `a`."""
     hold = left_hold(a, number)
-    return None if hold is None else held_on(hold.text, hold.choices).what
+    return None if hold is None else held_on(hold.text, hold.choices).text
 
 
 def unchanged_since(state: State, checkers: list[Agent], w: Path) -> bool:
