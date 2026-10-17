@@ -122,7 +122,7 @@ def over_budget(state: State, t: Ticket, w: Path,
             editors = with_ids(latest)
             if isinstance(editors, Undecided):
                 return editors
-            return check_items(state, t, w, latest, editors, past=True)
+            return check_items(state, t, w, latest, editors, past=trip.filed)
         checker = checkers[-1]
         if checker.last_report is None:
             return unreported(checker, t.number)
