@@ -13,7 +13,6 @@ from pathlib import Path
 
 from controlled_markdown import form, mctx
 from operations.command_words import Action, next_command
-from operations.constants import FOREGROUND_MS
 from operations.filing import filed_line, split_message
 from operations.pacing import Pace, Scripted, Until
 from operations.printed_forms import SENT
@@ -58,9 +57,8 @@ KEY_LINE = mctx("Step key {key}: after the call below, run `{command}`.")
 
 def key_line(step: Step, agent: str, action: Action) -> str:
     """The line the command prints before a call it prints for the agent
-    `agent` that runs `action`, which `handled.made` reads back. Nothing
-    follows the call's last field, so an operator who copies that field
-    copies no other line."""
+    `agent` that runs `action`. Nothing follows the call's last field, so
+    an operator who copies that field copies no other line."""
     return KEY_LINE.format(key=key(step), command=next_command(agent, action))
 
 
@@ -102,7 +100,6 @@ def unfenced(value: str) -> str:
 
 
 SEND = "\n".join([mctx("call SendMessage"), mctx("to: {to}"), mctx("message:"), "{message}"])
-BASH = "\n".join([mctx("call Bash"), mctx("timeout: {timeout}"), mctx("command:"), "{command}"])
 
 
 REPLY_TEXT = "\n".join([
@@ -115,10 +112,6 @@ line that says so."""
 
 def send_text(to: str, message: str) -> str:
     return SEND.format(to=to, message=fenced(message))
-
-
-def bash_text(command: str) -> str:
-    return BASH.format(timeout=FOREGROUND_MS, command=command)
 
 
 def opening(text: str, last: str, holes: dict[str, str]) -> str:
@@ -219,8 +212,6 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
             head, rest = split_message(step)
             line = filed_line(step, scratch) if rest else ""
             return send_text(to, "\n".join(part for part in (head, line) if part))
-        case Bash(command):
-            return bash_text(command)
         case Poll(pace):
             again = mctx("Run the command again: nothing is ready.")
             return "\n".join([*([held] if (held := pace_line(pace)) else []), again])
@@ -230,3 +221,5 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
             return REPLY_TEXT.format(to=to)
         case Undecided():
             raise ValueError(f"an undecided step is placed before it is printed: {step}")
+        case Bash():
+            raise ValueError(f"a Bash step is run by the command, not printed: {step}")

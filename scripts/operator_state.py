@@ -10,6 +10,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import kept_reads
+import step_journal
 from agent_turns import first_time, last_time
 from audit_window import window
 from context_bound_hook import past_bound
@@ -59,7 +60,6 @@ from operations import pacing
 from operations.pacing import Usage
 from operations.directives import named, pace
 from operations.final_reply import final_sends_in, for_context, sent_final_text
-from operations.handled import made
 from operations.change_agents import on_change
 from operations.change_budget import left_draft
 from operations.changes import holds
@@ -91,6 +91,10 @@ from operations.state import (
 from operations.worktrees import worktree_in
 from ticketing.vocabulary import Kind, Status
 
+STARTED = time.time()
+"""The start of the process: a step given to `me` before it, with no call
+of it made, is one `me` ran `next` again before it made."""
+
 DEPRECATED = frozenset({ReaderName.ROLE, ReaderName.CONSOLE, ReaderName.SURVEY,
                         ReaderName.WORKFLOW})
 """The readers of the deprecated mechanisms, which no standing doc review
@@ -121,6 +125,14 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     tree = read_git(main)
     read = operators_since(runs.runs, me, since)
     ops = operators_read(read, main, undecided, tree)
+    paths = dict(runs.runs)
+    journal, journaled = step_journal.read(
+        scratch(session), ops.calls,
+        lambda e: e.given >= STARTED if e.operator == me
+        else e.operator in paths and work_open(paths[e.operator], undecided),
+        time.time(), since is None)
+    ops = replace(ops, calls=(*ops.calls, *step_journal.run_calls(
+        journaled, commit_subjects(tree), undecided)))
     late = late_resumes(read, undecided)
     watching: list[str] = []
     listing = running_agents(find(session), watching)
@@ -151,7 +163,8 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
         git=tree, taken_up=took_up, held=read_held(tickets, me, tree),
         readers=readers_read(),
         limit_lifted=lifted,
-        sessions=sessions(tickets_dir, index, session, now, sessions_running))
+        sessions=sessions(tickets_dir, index, session, now, sessions_running),
+        journal=journal)
     state = with_quiet_holders(state, holders.found, listing, running_work)
     state = replace(state, computed=computed_read(state, tickets_dir, undecided, usage))
     return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(ends.stalled),
@@ -222,9 +235,17 @@ def transcripts_read(ops: OperatorRead, ends: "EndsRead",
     return TranscriptsRead(
         agents=tuple(sorted(ends.agents, key=lambda a: a.launched)),
         calls=tuple(sorted(ops.calls, key=lambda c: c.time)), messages=tuple(ops.messages),
-        made=made(ops.calls), late_resumes=late, stalled=ends.stalled, quiet=ends.quiet,
+        late_resumes=late, stalled=ends.stalled, quiet=ends.quiet,
         stuck=stuck, pass_reports=ops.passes, elsewhere=others.agents,
         messaged=both.messaged, limited=both.limited)
+
+
+def commit_subjects(tree: GitRead) -> dict[str, float]:
+    """The time of the latest commit of `master` with each subject."""
+    subjects: dict[str, float] = {}
+    for c in tree.commits:
+        subjects[c.subject] = max(subjects.get(c.subject, c.time), c.time)
+    return subjects
 
 
 def operators_read(read: list[tuple[str, Path]], main: Path, undecided: list[str],
@@ -233,9 +254,7 @@ def operators_read(read: list[tuple[str, Path]], main: Path, undecided: list[str
     transcript, give together, as `OperatorRead` gives it of one, with the
     doc reviewers of their doc editors (`editor_reviewers`). A commit's
     subject stands at the latest time `tree` gives it."""
-    subjects: dict[str, float] = {}
-    for c in tree.commits:
-        subjects[c.subject] = max(subjects.get(c.subject, c.time), c.time)
+    subjects = commit_subjects(tree)
     ones = [read_operator(aid, path, main, undecided, subjects) for aid, path in read]
     launched = joined([one.launched for one in ones])
     reviewers = editor_reviewers(launched.agents, main, undecided)

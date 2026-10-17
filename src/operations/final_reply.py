@@ -12,7 +12,8 @@ from collections.abc import Iterable, Mapping
 
 from controlled_markdown import mctx
 from operations.constants import COORDINATOR
-from operations.handled import next_call, sends_in
+from operations.handled import sends_in
+from operations.journal import next_call
 from operations.printing import FINAL_REPLY, final_message, unfenced
 from operations.state import Call, State, Tool
 from operations.steps import Reply, Send
@@ -106,12 +107,13 @@ def carrier(state: State, operator: str, time: float,
     return min(printed_at)[1] if printed_at else None
 
 
-def ending_step(to: str, text: str, sent: bool) -> Send | Reply:
+def ending_step(to: str, text: str, since: float, sent: bool) -> Send | Reply:
     """The step of a final reply whose text is `text`, to the parent `to`:
-    the message that sends `to` the text, or, where `sent`, as the
-    message was already sent, the reply. A parent other than the
+    the message that sends `to` the text after `since`, or, where `sent`,
+    as that message was already sent, the reply. A parent other than the
     coordinator is an operator launcher, whose command reads the message."""
-    return Reply(to) if sent else Send(to, final_message(text), commanded=to != COORDINATOR)
+    return Reply(to) if sent else Send(to, final_message(text), FINAL_REPLY, since,
+                                       commanded=to != COORDINATOR)
 
 
 def nested(text: str) -> list[str]:

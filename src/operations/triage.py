@@ -106,7 +106,7 @@ def reopen(state: State) -> Step | None:
         if run < len(t.log) and lines:
             return Bash(log(t.number, Status.OPEN, t.status,
                             f"the coordinator's line of {lines[-1].time:.0f}: {lines[-1].note}",
-                            None))
+                            None), f"{t.number} reopen", occasion=str(lines[-1].time))
     return None
 
 
@@ -124,7 +124,7 @@ def later_lines(state: State) -> Step | None:
             for ln in coordinator_lines(t.log):
                 message = messages.later_line(n, ln.time, ln.note)
                 if ln.time > a.launched and not sent(state, a.agent_id, message):
-                    return Send(a.agent_id, message)
+                    return Send(a.agent_id, message, f"{n} {ln.time}")
     return None
 
 
@@ -146,7 +146,8 @@ def settle(state: State) -> Step | None:
     if not numbers:
         return None
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.TRIAGE, joined(numbers)),
-                  briefs.settle(numbers, state.me), items=len(numbers))
+                  briefs.settle(numbers, state.me), items=len(numbers),
+                  occasion=str(max(state.tracker.tickets[n].last_time for n in numbers)))
 
 
 def unsettled(state: State) -> list[str]:
@@ -181,7 +182,8 @@ def decisions(state: State) -> Step | None:
         by_ours = line.agent_id in known or (
             line.agent in (Role.TICKET_ANALYST.value, AGENT) and t.number in briefed)
         key = decision_key(t.number, line.time)
-        step = Send(COORDINATOR, labeled(key, mctx("- decision: {note}").format(note=line.note)))
+        step = Send(COORDINATOR, labeled(key, mctx("- decision: {note}").format(note=line.note)),
+                    key)
         if by_ours and not carried(state, t, line) and not sent(state, step.to, step.message, key):
             return step
     return None
@@ -200,7 +202,7 @@ def main_wanted(state: State) -> Step | None:
     stuck = [t.number for t in sorted(state.tracker.tickets.values(), key=lambda t: t.order)
              if t.session in state.sessions.idle_indexes and t.status not in SETTLED]
     key = f"main session, asked at {state.sessions.main_wanted[1]:.0f}"
-    step = Send(COORDINATOR, labeled(key, MAIN_WANTED.format(tickets=", ".join(stuck))))
+    step = Send(COORDINATOR, labeled(key, MAIN_WANTED.format(tickets=", ".join(stuck))), key)
     return None if sent(state, step.to, step.message, key) else step
 
 
@@ -230,7 +232,7 @@ def for_coordinator(state: State) -> Step | None:
             continue
         if purpose is Purpose.CHANGE and (decision := changes.left_decision(a, nums[0])):
             part += "\n\n" + decision
-        step = Send(COORDINATOR, labeled(key, part))
+        step = Send(COORDINATOR, labeled(key, part), key)
         if not sent(state, step.to, step.message, key):
             return step
     return None

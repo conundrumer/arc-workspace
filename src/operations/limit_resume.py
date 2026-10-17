@@ -22,5 +22,5 @@ def step(state: State) -> Step | None:
     for a in state.transcripts.agents:
         at = None if a.agent_id is None else state.transcripts.limited.get(a.agent_id)
         if a.agent_id is not None and at is not None and lifted > at:
-            return Send(a.agent_id, RESUME, since=at)
+            return Send(a.agent_id, RESUME, "resume", since=at)
     return None

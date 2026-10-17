@@ -6,8 +6,10 @@ set of decision keys of the undecided steps the procedures wait on, which
 from controlled_markdown import mctx
 from operations import changes, decisions, drafts, passes, runs, taking, triage
 from operations.directives import NUMBER, TASK, Directive, Line, Pipeline, lines
-from operations.final_reply import ending_step, final_sends, nested
-from operations.handled import repeated
+from operations.final_reply import ending_step, nested
+from operations.handled import repeated, sends_to
+from operations.journal import BOUND
+from operations.printing import final_message
 from operations.roles import Role
 from operations.state import State, Ticket
 from operations.steps import Step, Undecided
@@ -16,12 +18,14 @@ from ticketing.vocabulary import Status
 
 def ending(state: State, text: str) -> Step:
     """The operator's final reply, whose text is `text`: the message that
-    sends its parent (`State.parents`) `text`, where the operator sent none
-    since the last message that reached it, then the reply."""
+    sends its parent (`State.parents`) `text`, where the journal gives no
+    such message of the operator's done since the last message that
+    reached it, then the reply."""
     parent = state.parents[state.me]
     since = max((m.time for m in state.received), default=0.0)
-    return ending_step(parent, text,
-                       any(c.time > since for c in final_sends(state, state.me)))
+    return ending_step(parent, text, since, any(
+        e.operator == state.me and e.close is not None and e.close.time > since
+        and e.text.startswith(final_message("")) for e in sends_to(state, parent)))
 
 
 def pipeline_state(o: passes.Outcome | None) -> str | None:
@@ -129,10 +133,22 @@ def line_states(state: State) -> list[str]:
 def reply_lines(state: State, held: set[str]) -> list[str]:
     """The lines each reply of the operator that ends it gives: its lines
     (`line_states`), the items for the coordinator it carries
-    (`triage.told`), and the held steps no decision reached
-    (`decisions.undecided`, `decisions.failed`)."""
+    (`triage.told`), the held steps no decision reached
+    (`decisions.undecided`, `decisions.failed`), and the steps it set
+    retired (`retired_lines`)."""
     return [*line_states(state), *triage.told(state),
-            *decisions.undecided(state, held), *decisions.failed(state)]
+            *decisions.undecided(state, held), *decisions.failed(state), *retired_lines(state)]
+
+
+RETIRED_LINE = mctx("- Step {key}, which `{origin}` gives, is retired: `next` gave it {bound} "
+                  "times in a row, and filed a `bug` on it.")
+
+
+def retired_lines(state: State) -> list[str]:
+    """A line on each step the operator `me` retired (`order.retire`)."""
+    return [RETIRED_LINE.format(key=e.retires, origin=of[-1].origin, bound=BOUND)
+            for e in state.journal.retiring(state.me)
+            if e.retires is not None and (of := state.journal.of(e.retires))]
 
 
 def stands(state: State, head: str, step: Step | None) -> tuple[str, bool]:

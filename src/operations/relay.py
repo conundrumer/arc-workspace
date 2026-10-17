@@ -82,7 +82,7 @@ def waiting(relay: Relay) -> list[Message]:
 
 def operator_launch(relay: Relay, brief: str) -> Launch:
     """The launch of the launcher's next operator, with the brief `brief`."""
-    return Launch(Role.OPERATOR, f"{relay.me}-{len(relay.runs) + 1}", brief)
+    return Launch(Role.OPERATOR, f"{relay.me}-{len(relay.runs) + 1}", brief, occasion=str(len(relay.runs)))
 
 
 def ending(relay: Relay, text: str) -> Step:
@@ -90,7 +90,7 @@ def ending(relay: Relay, text: str) -> Step:
     sends the coordinator `text`, where the launcher sent none since its
     last launch, then the reply."""
     since = relay.runs[-1].launched if relay.runs else 0.0
-    return ending_step(COORDINATOR, text,
+    return ending_step(COORDINATOR, text, since,
                        sent(relay, COORDINATOR, final_message(text), since))
 
 
@@ -115,7 +115,7 @@ def next_step(relay: Relay) -> Step:
         if run.agent_id is None:
             raise ValueError(f"the running operator launched at {run.launched} has no known "
                              "agent id")
-        return Send(run.agent_id, lines[0].text, since=lines[0].time, commanded=True)
+        return Send(run.agent_id, lines[0].text, "line", since=lines[0].time, commanded=True)
     if run.final is not None and for_context(run.final):
         if relay.past_bound and not lines:
             return ending(relay, FRESH_LAUNCHER)
@@ -123,5 +123,5 @@ def next_step(relay: Relay) -> Step:
     carried = (CARRIED.format(operator=run.agent_id) + "\n" + run.final if run.final is not None
                else NO_REPLY.format(operator=run.agent_id))
     if not sent(relay, COORDINATOR, carried, run.launched):
-        return Send(COORDINATOR, carried)
+        return Send(COORDINATOR, carried, f"carried {run.agent_id}")
     return after(relay, run, brief) if lines else Reply(COORDINATOR)

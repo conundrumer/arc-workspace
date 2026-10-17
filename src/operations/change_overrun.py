@@ -28,7 +28,7 @@ from operations.item_check import check_items, is_checked, unfinished
 from operations.merging import merge
 from operations.reports import left_for_decision
 from operations.roles import Role
-from operations.state import Agent, State, Ticket
+from operations.state import Agent, State, Ticket, last_reported
 from operations.steps import Bash, Send, Step, Undecided, agent_ids
 from operations.log_commands import log
 from ticketing.vocabulary import Status
@@ -60,7 +60,7 @@ def over_budget(state: State, t: Ticket, w: Path,
         if a.pending and a.agent_id is not None and a.launched < trip.filed:
             message = messages.over_budget(t.number, a.role is Role.DOC_REVIEWER)
             if not sent(state, a.agent_id, message):
-                return Send(a.agent_id, message)
+                return Send(a.agent_id, message, f"over budget {t.number}")
     if any(a.pending for a in agents):
         return None
     latest = latest_editors(editors_in(agents, w))
@@ -96,4 +96,4 @@ def over_budget(state: State, t: Ticket, w: Path,
         "each of {agents} leaves items for a decision").format(
             opening=OVERRUN_FINDING, limit=f"{limit:.2f}", spent=f"{spent.dollars:.2f}",
             roles=by_role(spent.by_role), agents=", ".join(ids)),
-        state.me))
+        state.me), f"{t.number} overrun", occasion=str(last_reported(leaving)))

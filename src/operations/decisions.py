@@ -87,7 +87,7 @@ def launch(state: State, step: Undecided) -> Launch:
     known = None if step.change is None else settled(state, step.change, Role.TICKET_ANALYST, None)
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.STEP, decision_key(step.what)),
                   briefs.held_step(step.what, state.me, rulable(step.what), known),
-                  reread=step.reread, change=step.change)
+                  reread=step.reread, change=step.change, occasion=decision_key(step.what))
 
 
 def applier(state: State, a: Agent) -> str:

@@ -213,15 +213,17 @@ def ticket_step(state: State, kind: BugKind, domain: Domain, subject: str, since
     tickets = kind_tickets(state, kind)
     if handled(tickets, domain, subject, since):
         return None
+    about = f"{kind.value} {domain.value} {subject}"
     standing = [t for t in tickets if t.status is not Status.CLOSED]
     if standing:
         t = standing[0]
-        return Bash(log(t.number, t.status, t.status, instance(subject) + " " + line, None))
+        return Bash(log(t.number, t.status, t.status, instance(subject) + " " + line, None),
+                    about, occasion=str(since))
     title, impact_text = TICKETS[kind]
     impact, evidence_section = DEFECT_SECTIONS
     text = ticket_text(Kind.BUG, title, {impact: impact_text, evidence_section: evidence})
     return Bash(shlex.join([*FILE_TICKET, domain.value, subject, AGENT])
-                + " <<'TICKET'\n" + text + "TICKET")
+                + " <<'TICKET'\n" + text + "TICKET", about, occasion=str(since))
 
 
 def stall_step(state: State, agent: str, since: float, reply: Report) -> Step | None:
@@ -247,7 +249,7 @@ def stalls(state: State) -> Step | None:
             since = a.launched
         else:
             since = reply.time
-            sent = Send(COORDINATOR, reply.text, since)
+            sent = Send(COORDINATOR, reply.text, f"stall {agent}", since)
             if not repeated(sent, state):
                 return sent
         if (s := stall_step(state, agent, since, reply)) is not None:
@@ -282,7 +284,7 @@ def stuck(state: State) -> Step | None:
     for agent, s in sorted(state.transcripts.stuck.items()):
         text = stuck_text(agent, s)
         sent = Send(COORDINATOR, text + "\n" + mctx("End its work, or ask the session that "
-                                                     "holds it."), s.since)
+                                                     "holds it."), f"stuck {agent}", s.since)
         if not repeated(sent, state):
             return sent
         t = ticket_step(state, BugKind.STUCK, Domain.AGENT, agent, s.since,
@@ -323,7 +325,7 @@ def ticket_stalls(state: State) -> Step | None:
         text = ticket_stall_text(state, t, since)
         sent = Send(COORDINATOR, text + "\n" + mctx(
             "Find the step it waits for, from its log and the last reports of its agents, then "
-            "have the agent whose work that step is make it."), since)
+            "have the agent whose work that step is make it."), f"ticket stall {n}", since)
         if not repeated(sent, state):
             return sent
         s = ticket_step(state, BugKind.TICKET_STALL, Domain.TICKET, n, since,

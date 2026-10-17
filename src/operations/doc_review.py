@@ -37,7 +37,7 @@ from operations.directives import Decision, decided
 from operations.handled import sent
 from operations.reports import no_finding, shows_current
 from operations.roles import Role
-from operations.state import Agent, State, Ticket
+from operations.state import Agent, State, Ticket, last_reported
 from operations.steps import Launch, Send, Step, Undecided, agent_ids
 from operations.worktrees import worktree
 
@@ -106,7 +106,7 @@ def review_stale(state: State, t: Ticket, w: Path, here: list[Agent], r: Agent, 
     message = messages.review_again(since)
     if r.agent_id is not None and r not in state.transcripts.elsewhere \
             and not sent(state, r.agent_id, message):
-        return Send(r.agent_id, message)
+        return Send(r.agent_id, message, f"review again {t.number} {since}")
     return unreplied(state, t, w, here, r)
 
 
@@ -140,7 +140,7 @@ def review_launch(state: State, t: Ticket, w: Path, here: list[Agent], launcher:
     if isinstance(editors, Undecided):
         return editors
     return Launch(Role.DOC_REVIEWER, t.number, briefs.doc_review(
-        t.number, w, editors, launcher, settled(state, t.number, Role.DOC_REVIEWER, None)))
+        t.number, w, editors, launcher, settled(state, t.number, Role.DOC_REVIEWER, None)), occasion=str(last_reported(here)))
 
 
 NO_OPERATOR = mctx("{agent} is no doc editor that an operator of the session launched: give "

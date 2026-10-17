@@ -9,13 +9,16 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from controlled_markdown import form, mctx
 from handbook.reader_names import ReaderName
 from operations.pacing import Pace, Unknown
 from operations.roles import Model, Purpose, Role, analyst_of, subjects
 from ticketing.vocabulary import Domain, Kind, Resolution, Status
+
+if TYPE_CHECKING:
+    from operations.journal import Journal
 
 
 @dataclass(frozen=True)
@@ -79,6 +82,13 @@ class Ticket:
     log: tuple[LogLine, ...]
     holder: str | None
     path: Path
+
+    @property
+    def last_time(self) -> float:
+        """The time of the last line of its log, or of its filing where the
+        log has none: the occasion of a step on it with no event of its
+        own (`steps.key`)."""
+        return self.log[-1].time if self.log else self.filed
 
     def model(self, role: Role) -> Model | None:
         """The model a launch of `role` on this ticket gives: Sonnet for a
@@ -186,6 +196,12 @@ class Agent:
         return self.reports[-1] if self.reports else None
 
 
+def last_reported(agents: Iterable[Agent]) -> float:
+    """The time of the latest report of `agents`, or 0.0 where none
+    reported: the occasion of a step on their reports (`steps.key`)."""
+    return max((r.time for a in agents if (r := a.last_report) is not None), default=0.0)
+
+
 class Merge(Enum):
     """What a call of `scripts/merge_change.py` did: left edits, where its
     output gives that `master` is fast-forwarded and the worktree stays
@@ -238,21 +254,6 @@ class Tool(StrEnum):
     SEND_MESSAGE = "SendMessage"
     BASH = "Bash"
     SUBAGENT_HANDBACK = "SubagentHandback"
-
-
-@dataclass(frozen=True)
-class Made:
-    """A step the command printed to an operator, read from the result of
-    that operator's call of `operate.py next`, and the call that operator
-    made next, which made it: the step's key, None where the result was
-    cut before it, the tool of the printed call, the recipient of a
-    message, and the message or the command as far as the result gives
-    it."""
-    key: str | None
-    tool: Tool
-    to: str | None
-    text: str
-    call: Call
 
 
 @dataclass(frozen=True)
@@ -387,10 +388,10 @@ class Stuck:
 class TranscriptsRead:
     """What the operator reads of the transcripts of the session's
     operators. `agents` holds their launches, in the order of their launch,
-    `calls` their calls, in the order of their time, and `messages` the
-    messages that reached any of them. `made` holds each step the command
-    printed to an operator with the call that operator made next
-    (`handled.made`). `late_resumes` gives, for each operator of
+    `calls` their calls, with each Bash step the command ran for one of
+    them, as the step journal gives it (`scripts/step_journal.py`), in the
+    order of their time, and `messages` the messages that reached any of
+    them. `late_resumes` gives, for each operator of
     `State.operators`, its resumes, as `resumed_at` in `scripts/operator_reads.py`
     gives them, after
     the next operator of `State.operators` made its first entry, in the
@@ -421,7 +422,6 @@ class TranscriptsRead:
     agents: tuple[Agent, ...]
     calls: tuple[Call, ...]
     messages: tuple[Message, ...]
-    made: tuple[Made, ...]
     late_resumes: Mapping[str, tuple[LateResume, ...]]
     stalled: Mapping[str, Report]
     pass_reports: Mapping[str, PassReport]
@@ -605,7 +605,8 @@ class State:
     tracker's sessions, and `computed` the values computed over the
     reads. `aside` holds the keys (`steps.key`) of the steps that
     `order.batch` set aside on this state, each as its procedure gave it,
-    and is empty in each state the read gives."""
+    and is empty in each state the read gives. `journal` is the session's
+    step journal (`journal`)."""
     me: str
     now: float
     session: str
@@ -624,6 +625,7 @@ class State:
     taken_up: frozenset[str]
     held: HeldRead
     sessions: SessionsRead
+    journal: "Journal"
     readers: Deferred[tuple[Reader, ...]] = field(default_factory=lambda: Deferred(tuple))
     limit_lifted: float | None = None
     parents: Mapping[str, str] = field(default_factory=dict)

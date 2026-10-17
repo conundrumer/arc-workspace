@@ -72,7 +72,7 @@ from operations.roles import Role
 from operations.constants import COORDINATOR
 from operations.state import Agent, Call, Commit, LogLine, Merge, State, Ticket, Tool
 from operations.command_words import simple_commands
-from operations.handled import ask_again, bash_calls, decided_by, sent, unmoved
+from operations.handled import ask_again, decided_by, done, sent, unmoved
 from operations.steps import Bash, Launch, Send, Step, labeled
 from operations.log_commands import log
 from operations.worktrees import WORKTREE
@@ -282,7 +282,8 @@ def merge(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step | None:
     if spent is not None and not any(ln.time >= start and ln.note.startswith(TIME_OPENING)
                                      for ln in t.log):
         return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED,
-                        TIME_NOTE.format(seconds=spent.seconds), state.me))
+                        TIME_NOTE.format(seconds=spent.seconds), state.me), f"{t.number} time",
+                    occasion=str(t.last_time))
     for a in latest:
         if a.agent_id is None or not unread_split(a):
             continue
@@ -309,9 +310,10 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
     on_step = [] if message is None else decided_by(state, unmoved(t, message))
     reported = [r.time for a in [*of_change(state, t.number), *on_step]
                 if (r := a.last_report) is not None]
+    at = f"{t.last_time} {max(reported, default=0.0)} {'' if last is None else last.time}"
     if (last is None or (reported and max(reported) > last.time)
             or came_back(t, last.time)):
-        return Bash(command)
+        return Bash(command, f"{t.number} merge {w}", occasion=at)
     match last.merge:
         case None:
             return None
@@ -327,12 +329,13 @@ def merge_steps(state: State, t: Ticket, w: Path, latest: list[Agent]) -> Step |
             if not any(ln.time > last.time and ln.note.startswith(CONFLICT_OPENING)
                        for ln in t.log):
                 return Bash(log(t.number, Status.ASSIGNED, Status.ASSIGNED, CONFLICT_NOTE.format(
-                    conflict=Note.CONFLICT, paths=PATHS_SEP.join(last.conflicts)), state.me))
+                    conflict=Note.CONFLICT, paths=PATHS_SEP.join(last.conflicts)), state.me),
+                            f"{t.number} conflict", occasion=str(last.time))
             return message
         case Merge.REFUSED:
             return refused(state, t, w, last, latest, quotes) or message
         case Merge.LEFT_EDITS:
-            return Bash(command)
+            return Bash(command, f"{t.number} merge {w}", occasion=at)
         case Merge.MERGED:
             return None
 
@@ -347,7 +350,8 @@ def hand_off(state: State, t: Ticket, command: str, w: Path, outcome: str) -> Ba
     where an operator took the change between the two moves."""
     note = HANDED_OFF.format(command=command, outcome=outcome, worktree=w)
     return Bash(log(t.number, Status.OPEN, Status.ASSIGNED, note, None) + " && "
-                + log(t.number, Status.ASSIGNED, Status.OPEN, note, state.session))
+                + log(t.number, Status.ASSIGNED, Status.OPEN, note, state.session),
+                f"{t.number} hand off", occasion=str(t.last_time))
 
 
 def came_back(t: Ticket, since: float) -> bool:
@@ -374,7 +378,8 @@ def handoffs(state: State) -> Step | None:
                 or line.agent_id != state.session):
             continue
         key = HANDED_OFF_KEY.format(number=t.number, time=f"{line.time:.0f}")
-        step = Send(COORDINATOR, labeled(key, mctx("- unfinished: {note}").format(note=line.note)))
+        step = Send(COORDINATOR, labeled(key, mctx("- unfinished: {note}").format(note=line.note)),
+                    key)
         if not sent(state, step.to, step.message, key):
             return step
     return None
@@ -396,7 +401,7 @@ def refused(state: State, t: Ticket, w: Path, last: Call, latest: list[Agent],
             t.number, w, [m.group(0) for m in quotes], files,
             editor_scratch(t.number, Role.CODE_EDITOR, state.scratch), state.me,
             settled(state, t.number, Role.CODE_EDITOR, briefs.QUOTES_PART)),
-            model=t.model(Role.CODE_EDITOR))
+            model=t.model(Role.CODE_EDITOR), occasion=str(last.time))
     return None
 
 
@@ -425,7 +430,8 @@ def finding(t: Ticket, last: Call, calls: list[Call], latest: list[Agent],
     if (last.merge not in (Merge.REFUSED, Merge.CONFLICT) or quotes
             or to is None or to.agent_id is None):
         return None
-    return Send(to.agent_id, messages.merge_finding(t.number, finding_output(last, calls)))
+    return Send(to.agent_id, messages.merge_finding(t.number, finding_output(last, calls)),
+                f"merge finding {t.number} {last.time}")
 
 
 def finding_recipient(last: Call, latest: list[Agent]) -> Agent | None:
@@ -457,7 +463,7 @@ def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
         runs = state.agents_of(Role.AFTER_MERGE, t.number)
         if not runs:
             return Launch(Role.AFTER_MERGE, t.number, briefs.after_merge(
-                t.number, t.after_merge, head))
+                t.number, t.after_merge, head), occasion=head)
         if runs[-1].pending:
             return None
     commit = merge_commit(state, t)
@@ -474,14 +480,17 @@ def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
         command = (log(r.number, Status.CLOSED, r.status, note, None) if part is None else
                    log(r.number, r.status, r.status,
                        f"left unsplit by change {t.number}: {part}", None))
-        if not any(not c.error for c in bash_calls(state, command)):
-            return Bash(command)
+        step = Bash(command, f"{r.number} split by {t.number}", occasion=str(t.last_time))
+        if not done(state, step):
+            return step
     for q in sorted(state.tracker.tickets.values(), key=lambda q: q.order):
         if (q.kind is Kind.QUESTION and q.domain is Domain.CHANGE and q.subject == t.number
                 and q.status is not Status.CLOSED):
-            return Bash(log(q.number, Status.CLOSED, q.status, note, None))
+            return Bash(log(q.number, Status.CLOSED, q.status, note, None), f"{q.number} close",
+                        occasion=str(q.last_time))
     ids = [a.agent_id for a in agents]
     # An agent with no known id leaves the line with no run, and the
     # change with no known cost (`scripts/spends.py`).
     runs = "" if None in ids else "".join(f" {i}" for i in ids)
-    return Bash(log(t.number, Status.CLOSED, Status.ASSIGNED, note + runs, None))
+    return Bash(log(t.number, Status.CLOSED, Status.ASSIGNED, note + runs, None),
+                f"{t.number} close", occasion=str(t.last_time))

@@ -7,10 +7,8 @@ The modules keep these rules:
   reads the state into a `state.State`, and each procedure reads only that.
   `task_work`, the work a pipeline sets aside, is no procedure: it is the
   one module that touches files, and a step the procedures print runs it.
-- A step changes the state that the next read of it gives, so a procedure
-  finds that a step is done from the state alone, and never from a record
-  of its own. The record of a call the operator made is the call in the
-  transcripts of the session's operators.
+- Whether a step the command gives is in flight, done or failed is as
+  `scripts/operate.py --help journal` gives it (`journal`).
 - Each agent a step launches has a description of the form
   `roles.description` gives, so the state reads back which procedure, and
   which ticket, task or batch, each launch of any operator of the session
@@ -38,7 +36,8 @@ call), `printing` (the text that prints a step), `handled` (whether an
 operator already made or handled a step), `final_reply` (the operator's
 final reply and its carrier), `constants` (the values the command shares
 with the scripts an agent runs), `briefs` (the briefs the launches give),
-`messages` (the messages to agents at work), `brief_reading` (the
+`journal` (the step journal), `messages` (the messages to agents at work),
+`brief_reading` (the
 reading of a brief's or a message's text back),
 `triage` (ticket analysts on open tickets, and the labeled items of their
 replies for the coordinator), `decisions` (ticket analysts on undecided

@@ -141,20 +141,22 @@ def release(state: State) -> Step | None:
     """The move back to `tickets/open/` of each ticket of `scope` under
     `tickets/assigned/` whose holder is not live (`live_holder`), in one
     command whose moves run apart (`moves`)."""
+    released = {n: t for n in sorted(scope(state))
+                if (t := state.tracker.tickets.get(n)) is not None
+                and Exit.RELEASE in exits(state, t).by
+                and (t.holder is None or not live_holder(state, t.holder))}
     return moves([log(n, Status.OPEN, Status.ASSIGNED,
                       RELEASED.format(holder=t.holder or 'none'), None)
-                  for n in sorted(scope(state))
-                  if (t := state.tracker.tickets.get(n)) is not None
-                  and Exit.RELEASE in exits(state, t).by
-                  and (t.holder is None or not live_holder(state, t.holder))])
+                  for n, t in released.items()], f"release {' '.join(released)}",
+                 str(max((t.last_time for t in released.values()), default=0.0)))
 
 
-def moves(commands: list[str]) -> Bash | None:
+def moves(commands: list[str], about: str, occasion: str) -> Bash | None:
     """One step that runs each of `commands`, or None where there is none.
     The commands are joined with `;`, so a move that `file_ticket.py log`
     refuses leaves the others to run, and the next step reads the tracker
-    as they left it."""
-    return Bash(" ; ".join(commands)) if commands else None
+    as they left it. `about` and `occasion` are the step's (`steps.Bash`)."""
+    return Bash(" ; ".join(commands), about, occasion=occasion) if commands else None
 
 
 def boosted(state: State) -> set[str]:
@@ -238,6 +240,7 @@ def take(state: State) -> Step | None:
     changes neither of `lead` nor `taken_before`, only the first, so that
     the pace is read again before each further take."""
     commands: list[str] = []
+    taken: list[str] = []
     for t in batch(state):
         b = state.computed.budgets.get(t.number)
         if b is None:
@@ -249,12 +252,15 @@ def take(state: State) -> Step | None:
                             TAKE_NOTE.format(dollars=f"{b.dollars:.2f}",
                                              seconds=f"{b.seconds:.0f}"),
                             state.me))
+        taken.append(t.number)
     if commands:
-        return moves(commands)
+        return moves(commands, f"take {' '.join(taken)}", str(max(
+            state.tracker.tickets[n].last_time for n in taken)))
     for n, time in numbers(state, Directive.MERGE):
         t = state.tracker.tickets.get(n)
         if (t is not None and Exit.MERGE_LINE in exits(state, t).by
                 and time > blocked_since(t)):
             return Bash(log(n, Status.ASSIGNED, Status.BLOCKED,
-                            "taking: the coordinator's Merge line rules the merge", state.me))
+                            "taking: the coordinator's Merge line rules the merge", state.me),
+                        f"{n} merge line", occasion=str(time))
     return None

@@ -47,5 +47,5 @@ def step(state: State) -> Step | None:
             continue
         message = "\n".join([head, *new])
         if not sent(state, COORDINATOR, message, head):
-            return Send(COORDINATOR, message)
+            return Send(COORDINATOR, message, " ".join([head, *map(fault_key, new)]))
     return None

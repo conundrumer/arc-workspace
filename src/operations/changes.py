@@ -62,7 +62,6 @@ A step of a change that the command cannot place holds that change alone,
 until a `Decision:` line rules it with one of the choices the step gives
 (`directives.decided`)."""
 
-import re
 import shlex
 from dataclasses import replace
 from pathlib import Path
@@ -80,10 +79,10 @@ from operations.directives import Decision, decided, held_on
 from operations.item_check import check_items, is_checked, latest_reports, unfinished
 from operations.reports import Label, items_of, left_for_decision, shows_current
 from operations.roles import Purpose, Role, analyst_of, analyst_subject
-from operations.state import Agent, State, Ticket
+from operations.state import Agent, State, Ticket, last_reported
 from operations.filing import editor_scratch
 from operations.final_reply import live_holder
-from operations.handled import PRINTED_KEY, answered, next_call, repeated, sent, unmoved
+from operations.handled import answered, repeated, sent, unmoved
 from operations.steps import Bash, Launch, Send, Step, Undecided
 from operations.log_commands import AGENT
 from operations.taking import take
@@ -116,16 +115,11 @@ def held(state: State) -> list[Ticket]:
 
 
 def last_served(state: State) -> Ticket | None:
-    """The change whose number opens the latest step key printed in the
-    results of the operator's calls of `next`, or None where none does."""
-    for c in reversed(state.transcripts.calls):
-        if c.result is None or not next_call(c, state.me):
-            continue
-        for m in reversed(list(re.finditer(PRINTED_KEY, c.result))):
-            if (number := m["change"]) is not None and number in state.tracker.tickets:
-                return state.tracker.tickets[number]
-            if number is not None:
-                return None
+    """The change of the latest step the journal gives the operator, of
+    those that serve a change, or None where none does."""
+    for e in reversed(state.journal.entries):
+        if e.operator == state.me and e.change is not None:
+            return state.tracker.tickets.get(e.change)
     return None
 
 
@@ -153,7 +147,7 @@ def give_up(state: State) -> Step | None:
             and t.holder not in state.operators)
         message = messages.stop_work(number)
         if lost and not sent(state, a.agent_id, message):
-            return Send(a.agent_id, message)
+            return Send(a.agent_id, message, f"stop {number}")
     return None
 
 
@@ -181,7 +175,7 @@ def carry(state: State, t: Ticket) -> Step | None:
     agents = of_change(state, t.number)
     w = worktree(t, state)
     if w is None or revised_since_worktree(t):
-        return Bash(make_worktree(t.number, state.me))
+        return Bash(make_worktree(t.number, state.me), f"{t.number} worktree", occasion=str(t.last_time))
     if (step := over_budget(state, t, w, agents)) is not False:
         return step
     here = editors_in(agents, w)
@@ -206,7 +200,7 @@ def carry(state: State, t: Ticket) -> Step | None:
             editor, t.number, w,
             editor_scratch(t.number, role, state.scratch), state.me, known,
             before=None if before is None else briefs.Before(before[0].agent_id, before[1])),
-            model=t.model(role))
+            model=t.model(role), occasion=f"{w} {t.last_time}")
     if any(a.pending for a in here):
         return None
     if (step := fragments_step(state, t, w, here)) is not None:
@@ -295,7 +289,7 @@ def leftover(state: State, t: Ticket, w: Path, latest: list[Agent],
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.CHANGE, t.number), briefs.findings(
         t.number, w, parts, [q.number for q in questions], editors, reports,
         [i for a, i in editors if a in left_open], state.me,
-        settled(state, t.number, Role.TICKET_ANALYST, None)))
+        settled(state, t.number, Role.TICKET_ANALYST, None)), occasion=str(last_reported(latest)))
 
 
 def step(state: State) -> Step | None:

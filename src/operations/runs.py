@@ -302,7 +302,7 @@ def fault_message(ln: Line, stopped: Stopped, fault: str) -> Send:
     of its line `ln`."""
     return Send(COORDINATOR, mctx("The run of the line `{line}` {stopped}: "
                                   "{fault}").format(
-        line=ln.text, stopped=stopped, fault=fault))
+        line=ln.text, stopped=stopped, fault=fault), f"{run_id(ln)} {stopped.name} {fault}")
 
 
 def takes_given(state: State, ln: Line) -> Takes:
@@ -323,6 +323,7 @@ def next_start(state: State, ln: Line, running: Iterable[Pipeline]) -> Step | No
     had = {(s.pipeline.task, s.pipeline.passes) for s in started(state, ln)}
     for s in starts:
         if s.task not in busy and (s.task, s.passes) not in had:
-            return Bash(start_command(ln, s))
+            return Bash(start_command(ln, s), f"{s.task} {' '.join(s.passes)}",
+                        occasion=run_id(ln))
     return None
 

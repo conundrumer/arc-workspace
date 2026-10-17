@@ -58,7 +58,7 @@ from operations.filing import scratch_dir
 from operations.directives import Directive, numbers
 from operations.roles import AGENT_ID, Purpose, Role, analyst_of, analyst_subject
 from operations.state import DOC_REVIEW, Agent, Call, Merge, State, NotComputed, code_review_tag
-from operations.handled import bash_calls
+from operations.handled import bash_calls, done
 from operations.steps import Bash, Launch, Step, Undecided
 from operations.log_commands import FILE_TICKET
 from ticketing.times import utc_stamp
@@ -142,7 +142,8 @@ def step(state: State) -> Step | None:
             if state.git.code_review is None:
                 return Undecided("no `code-review/<n>` tag gives the last code review's baseline")
             return Launch(Role.CODE_REVIEWER, code_review_tag(state.git.code_review + 1),
-                          briefs.code_review(state.git.code_review, scratch_dir("code-review", state.scratch)))
+                          briefs.code_review(state.git.code_review, scratch_dir("code-review", state.scratch)),
+                          occasion=str(since))
         if reviewers[-1].pending:
             return None
     if merges:
@@ -154,7 +155,8 @@ def step(state: State) -> Step | None:
     n = len(state.agents_of(Role.BATCH_PROFILE)) + 1
     head = state.git.commits[0].hash
     if merges and not any(a.launched > since for a in state.agents_of(Role.BATCH_GATE)):
-        return Launch(Role.BATCH_GATE, str(n), briefs.batch_gate(scratch_dir(f"batch-{n}", state.scratch)))
+        return Launch(Role.BATCH_GATE, str(n), briefs.batch_gate(scratch_dir(f"batch-{n}", state.scratch)),
+                      occasion=str(since))
     runs = batch_runs(state, batch, since, None)
     if not isinstance(runs, list):
         return runs
@@ -162,7 +164,7 @@ def step(state: State) -> Step | None:
         return s
     ids = {a.agent_id for a in batched(state)}
     return Launch(Role.BATCH_PROFILE, str(n),
-                  briefs.batch_profile(runs, [r for r in runs if r in ids], head))
+                  briefs.batch_profile(runs, [r for r in runs if r in ids], head), occasion=str(since))
 
 
 def batch_runs(state: State, batch: list[Agent], since: float,
@@ -173,7 +175,9 @@ def batch_runs(state: State, batch: list[Agent], since: float,
     operator where `batch` is empty, and each operator of an agent of the
     session whose last call of `--under` before `since` left a run open,
     so that a run still at work at one batch's close is taken at a later
-    one, whether or not that operator still runs."""
+    one, whether or not that operator still runs. A call of `--under` in
+    that span whose output does not read (`read_under`) is undecided, and
+    the command is not run again."""
     ops = {a.operator for a in batch} or {state.me}
     ops |= {op for op in {a.operator for a in state.transcripts.agents}
             if (last := last_under(state, op, None, since)) is not None and last[1].left}
@@ -182,7 +186,11 @@ def batch_runs(state: State, batch: list[Agent], since: float,
         command = under_command(op)
         last = last_under(state, op, since, until)
         if last is None:
-            return Bash(command)
+            if any(c.result is not None for c in under_calls(state, op, since, until)):
+                return Undecided(mctx("the output of `{command}` does not read as "
+                                      "`profile_runs.py --help under` gives it").format(
+                    command=command))
+            return Bash(command, f"under {op}", occasion=str(since))
         if last[0].error:
             return Undecided(mctx("`{command}` failed").format(command=command))
         runs += last[1].taken
@@ -204,10 +212,8 @@ def validation(state: State) -> Step | None:
     # tickets stay under `deferred` for the next profile launch.
     if not isinstance(runs, list):
         return None
-    command = sweep_command(runs)
-    if any(c.time > closing for c in bash_calls(state, command)):
-        return None
-    return Bash(command)
+    sweep = Bash(sweep_command(runs), "sweep", occasion=str(closing))
+    return None if done(state, sweep) else sweep
 
 
 def script_check(state: State) -> Step | None:
@@ -219,10 +225,8 @@ def script_check(state: State) -> Step | None:
         return None
     closing = profiles[-1].launched
     since = start(state, closing) or closing - script_calls.WINDOW_SECONDS
-    command = check_command(since)
-    if any(c.time > closing for c in bash_calls(state, command)):
-        return None
-    return Bash(command)
+    check = Bash(check_command(since), "script check", occasion=str(closing))
+    return None if done(state, check) else check
 
 
 def check_command(since: float) -> str:
@@ -245,7 +249,8 @@ def doc_review(state: State) -> Step:
     reader = unreviewed[0] if unreviewed else min(readers, key=lambda r: times[r.tag])
     return Launch(Role.DOC_REVIEWER, reader.tag,
                   briefs.standing_doc_review(" ".join((reader.name, *reader.args)), reader.tag,
-                                             state.git.commits[0].hash, state.me))
+                                             state.git.commits[0].hash, state.me),
+                  occasion=state.git.commits[0].hash)
 
 
 ASSESS_AFTER = 20
@@ -258,7 +263,7 @@ def assessment(state: State) -> Step | None:
     if since is None or len({c.hash for c in state.git.commits if c.process and c.time > since}) < ASSESS_AFTER:
         return None
     return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.ASSESS, str(len(past) + 1)),
-                  briefs.process_assessment(state.me))
+                  briefs.process_assessment(state.me), occasion=str(since))
 
 
 def opened(state: State, past: list[Agent]) -> float | None:
@@ -286,7 +291,8 @@ def audit(state: State) -> Step | None:
     if window.spend < AUDIT_AFTER:
         return None
     return Launch(Role.COST_AUDIT, str(len(past) + 1),
-                  briefs.cost_audit(window.start, state.transcripts_dir, state.me))
+                  briefs.cost_audit(window.start, state.transcripts_dir, state.me),
+                  occasion=str(window.start))
 
 
 def under_command(operator: str) -> str:
@@ -346,7 +352,14 @@ def last_under(state: State, operator: str, since: float | None,
     """The last call of `--under` on `operator`, of those made after
     `since` and before `until`, each where it is given, whose output
     `read_under` reads, with what it reads; None where there is none."""
-    calls = [(c, u) for c in bash_calls(state, under_command(operator))
-             if (since is None or c.time > since) and (until is None or c.time < until)
-             and c.result is not None and (u := read_under(c.result)) is not None]
+    calls = [(c, u) for c in under_calls(state, operator, since, until)
+             if c.result is not None and (u := read_under(c.result)) is not None]
     return calls[-1] if calls else None
+
+
+def under_calls(state: State, operator: str, since: float | None,
+                until: float | None) -> list[Call]:
+    """The calls of `--under` on `operator`, of those made after `since`
+    and before `until`, each where it is given."""
+    return [c for c in bash_calls(state, under_command(operator))
+            if (since is None or c.time > since) and (until is None or c.time < until)]

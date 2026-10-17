@@ -23,7 +23,8 @@ comes before the message on it. A step that
 is a message an operator already sent is passed over, and so are an
 undecided step an operator already handled (`handled.repeated`) and a step
 an `Override: pass over` ruling passed over (`directives.passed`), other
-than a solver pass, whose pipeline stops on it (`passes.run`). A
+than a solver pass, whose pipeline stops on it (`passes.run`), and a step
+the step journal gives as in flight or retired (`journal.due`). A
 launch a procedure gives, other than that of a ticket analyst on a held
 step, is held where its chain of causes runs `lineage.DEPTH` launches of
 its kind deep (`lineage`). A launch comes with each launch the procedures
@@ -34,6 +35,7 @@ analyst on a held step, is set aside, and comes at a later call, in this
 order (`batch`)."""
 
 
+import shlex
 from collections.abc import Callable
 from dataclasses import replace
 
@@ -48,11 +50,16 @@ from operations.directives import (
 from operations.roles import PASSES, Purpose, description, launch_parameters, launched_type
 from operations.state import Agent, Call, State, Tool, Waits
 from operations.final_reply import failure
-from operations.handled import bash_calls, held_aside, repeated
+from operations.handled import held_aside, repeated
 from operations.constants import COORDINATOR, SUBAGENT_LIMIT
+from operations.journal import BOUND, Due, due
+from operations.log_commands import AGENT, FILE_TICKET
 from operations.pacing import Unknown
-from operations.steps import (Bash, Launch, Send, Step, Undecided, key,
+from operations.steps import (Bash, Journaled, Launch, Send, Step, Undecided, key,
                               unread_line)
+from ticketing.text import ticket_text
+from ticketing.times import utc_stamp
+from ticketing.vocabulary import DEFECT_SECTIONS, Domain, Kind
 
 
 def first(state: State, *procedures: Callable[[State], Step | None]) -> Step | None:
@@ -70,13 +77,14 @@ def placed(state: State, procedure: Callable[[State], Step | None]
     launch of a ticket analyst on it (`decisions`) and a launch whose chain
     of causes holds it is the step held on it (`lineage.held`), and the undecided step
     the procedure waits on, where it waits on one. A procedure whose step
-    failed, as `refused` gives, or whose step a ruling passed over, waits
-    until the state changes. A step passed over or failed is undecided,
-    once, as one its procedure waits on, other than the launch of an
-    analyst on an undecided step: where the line that passed it over
-    answered that step, or that launch failed, the step stays held. A
-    procedure whose step, as it gives it, `State.aside` holds gives no
-    step."""
+    a ruling passed over waits until the state changes. A step passed
+    over is undecided, once, as one its procedure waits on, other than the
+    launch of an analyst on an undecided step: where the line that passed
+    it over answered that step, the step stays held. A procedure whose
+    step, as it gives it, `State.aside` holds gives no step. A step the
+    journal gives as in flight or retired gives no step either, and
+    one it gives as reaching `journal.BOUND` gives the step that retires
+    it (`retire`)."""
     s = procedure(state)
     if s is not None and held_aside(state, s):
         return None, None
@@ -85,19 +93,51 @@ def placed(state: State, procedure: Callable[[State], Step | None]
             s = lineage.held(state, s)
         if repeated(s, state):
             return None, s if isinstance(s, Undecided) else None
-        on_step = isinstance(s, Undecided)
-        if isinstance(s, Undecided):
-            s = decisions.launch(state, s)
+        on = s if isinstance(s, Undecided) else None
+        if on is not None:
+            s = decisions.launch(state, on)
         if not (isinstance(s, Launch) and s.role in PASSES) and (
                 ruling := passed(s, state)) is not None:
-            s = None if on_step else Undecided(mctx(
+            s = None if on is not None else Undecided(mctx(
                 "step {key}, which the line `{line}` passed over, holds up its "
                 "procedure").format(key=key(s), line=ruling.text))
             continue
-        if (failed := refused(state, s)) is None:
+        if not isinstance(s, Launch | Send | Bash):
             return s, None
-        s = None if on_step else failed
+        match due(state.journal, key(s)):
+            case Due.GIVE:
+                return s, None
+            case Due.WAIT:
+                return None, on
+            case Due.RETIRE:
+                return retire(state, s), None
     return None, None
+
+
+def retire(state: State, step: Journaled) -> Bash:
+    """The command that files the one `bug` on `step`, which the journal
+    gives as given `journal.BOUND` times in a row, and that retires it
+    for the session."""
+    k = key(step)
+    given = state.journal.of(k)[-BOUND:]
+    title = mctx("`scripts/operate.py next`: gives step {key} of `{origin}` {bound} times in "
+                 "a row").format(key=k, origin=step.origin, bound=BOUND)
+    impact = mctx("`next` retired step {key}, which `{origin}` gives, for the session, and "
+                  "its procedure gives nothing in its place.").format(
+        key=k, origin=step.origin)
+    evidence = "\n".join([mctx("The step as `next` gives it last:"), "```", repr(step), "```",
+                          mctx("The times `next` gave it, as the journal gives them:"),
+                          *(GIVE_LINE.format(time=utc_stamp(e.given), operator=e.operator,
+                                             outcome=e.close.outcome if e.close else "",
+                                             why=e.close.why if e.close else "")
+                            for e in given)])
+    impact_section, evidence_section = DEFECT_SECTIONS
+    text = ticket_text(Kind.BUG, title, {impact_section: impact, evidence_section: evidence})
+    return Bash(shlex.join([*FILE_TICKET, Domain.AGENT.value, state.me, AGENT])
+                + " <<'TICKET'\n" + text + "TICKET", k, retires=k, occasion=k)
+
+
+GIVE_LINE = mctx("- {time}, to {operator}: {outcome} {why}")
 
 
 LOAD_SECONDS = 900
@@ -141,32 +181,6 @@ def unloaded(state: State, step: Launch) -> Call | None:
     if why != bare and not why.startswith(bare + "."):
         return None
     return last
-
-
-def refused(state: State, step: Step) -> Undecided | None:
-    """The undecided step on `step`, where the last call of `step` by
-    `state.me` failed and no report reached an
-    operator since, as where the harness or the permission classifier
-    denied it, so that a denied call is not printed again and again. A
-    launch that `unloaded` gives has none: it is made again."""
-    match step:
-        case Launch():
-            if unloaded(state, step) is not None:
-                return None
-            what = description(step.role, step.subject)
-            same = launch_calls(state, step)
-        case Bash(command):
-            what = command
-            same = [c for c in bash_calls(state, command)
-                    if c.operator == state.me and c.result is not None]
-        case _:
-            return None
-    if (last := failed_last(same)) is None:
-        return None
-    if any(r.time > last.time for a in state.transcripts.agents for r in a.reports):
-        return None
-    return Undecided(mctx("the call `{what}` failed: {why}").format(what=what,
-                                                                     why=failure(last)))
 
 
 def made(state: State, step: Launch) -> State:
@@ -246,7 +260,7 @@ def unread_lines(state: State) -> Step | None:
             found.append(runs.fault_message(ln, runs.TAKES_NOTHING, fault))
     if isinstance(pace := state.computed.pace, Unknown):
         found.append(Send(COORDINATOR, mctx("The usage pace counts as past: {why}").format(
-            why=pace.why)))
+            why=pace.why), f"pace {pace.why}"))
     return next((s for s in found if not repeated(s, state)), None)
 
 

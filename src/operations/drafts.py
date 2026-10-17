@@ -202,14 +202,14 @@ def step(state: State) -> Step | None:
     if ready:
         nums = [t.number for t in ready]
         return Launch(Role.TICKET_REVIEWER, joined(nums), briefs.ticket_review(nums, state.me),
-                      items=len(nums))
+                      items=len(nums), occasion=str(max(t.last_time for t in ready)))
     if waiting:
         group = linked(waiting[0], waiting)
         nums = [t.number for t in group]
         last = [t.number for t in group if at_cap(t)]
         overruns = [o for t in group if (o := overrun(state, t)) is not None]
         return Launch(Role.TICKET_ANALYST, analyst_subject(Purpose.DRAFT, joined(nums)),
-                      briefs.revise(nums, last, state.me, overruns), items=len(nums))
+                      briefs.revise(nums, last, state.me, overruns), items=len(nums), occasion=str(max(t.last_time for t in group)))
     return None
 
 
@@ -235,7 +235,7 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
                 and last_line.agent == COORDINATOR):
             message = messages.stop_work(t.number)
             if not sent(state, a.agent_id, message):
-                return Send(a.agent_id, message)
+                return Send(a.agent_id, message, f"stop {t.number}")
     writers = {ln.agent_id for ln in t.log if ln.agent_id}
     if any(a.pending for a in agents) or any(a.pending and a.agent_id in writers
                                              for a in state.transcripts.agents):
@@ -253,7 +253,7 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
             message = briefs.weigh_suggestions(t.number, list(dict.fromkeys(suggested)),
                                                at_cap(t))
             if not sent(state, writer.agent_id, message):
-                return Send(writer.agent_id, message)
+                return Send(writer.agent_id, message, f"suggestions {t.number} {t.last_time}")
             analyst_done = [writer]
         if analyst_done:
             choice = decided(state, mctx("the revision of draft {number} by ticket analyst "
@@ -281,7 +281,8 @@ def draft_step(state: State, t: Ticket, ready: list[Ticket],
             return choice
         if choice is Decision.OPEN:
             return Bash(log(t.number, Status.OPEN, Status.DRAFT,
-                            f"opened by the decision {decision_key(what)}", None))
+                            f"opened by the decision {decision_key(what)}", None),
+                        f"{t.number} open", occasion=str(t.last_time))
     ready.append(t)
     return None
 
@@ -300,7 +301,8 @@ def open_last(t: Ticket) -> Step:
     """The move of `t`, whose last revision is written, to
     `tickets/open/`."""
     return Bash(log(t.number, Status.OPEN, Status.DRAFT,
-                    f"{Note.LAST_REVISION}: opens with no further ticket review", None))
+                    f"{Note.LAST_REVISION}: opens with no further ticket review", None),
+                f"{t.number} open", occasion=str(t.last_time))
 
 
 def linked(first: Ticket, waiting: list[Ticket]) -> list[Ticket]:

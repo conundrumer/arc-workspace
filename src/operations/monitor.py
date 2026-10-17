@@ -65,7 +65,7 @@ ALERTS = mctx("""
 
 def alert(kind: AlertKind, w: Watched, since: float | None = None) -> Send:
     """The alert of `kind` on `w`, to `w` itself, sent after `since`."""
-    return Send(w.agent_id, to_agent(kind, w.agent_id), since)
+    return Send(w.agent_id, to_agent(kind, w.agent_id), kind.value, since)
 
 
 def alerts(state: MonitorState, w: Watched) -> list[Send]:

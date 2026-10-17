@@ -29,7 +29,8 @@ def stuck_reached(since: float, now: float) -> bool:
 
 FOREGROUND_MS = 240000
 """The bound `scripts/pending_wait_hook.py` holds a subagent's foreground
-Bash call's timeout to, and the timeout of each one the command prints."""
+Bash call's timeout to, and the longest run of a Bash step the command
+runs itself (`scripts/step_journal.py`)."""
 
 BLOCK_SECONDS = (FOREGROUND_MS // 1000) - 30
 """The longest foreground block of the command's `next`, under the bound on

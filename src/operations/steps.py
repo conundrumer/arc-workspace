@@ -1,9 +1,11 @@
 """The steps the command prints: each what the agent it serves does next,
 a call with its parameters, the end of its turn or its final reply, and
-the key that names a step."""
+the key of a step (`key`), as `scripts/operate.py --help next` gives it,
+and its `digest`, taken over the step as given, text and all."""
 
 import hashlib
 import re
+import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
@@ -24,8 +26,9 @@ class Launch:
     gives (`briefs.ITEM_LINES`), and None for any other brief; it stays
     out of the step's key, which its brief already fixes. `reread` is the
     mark of the `Undecided` step a launch of a ticket analyst is on, and
-    stays out of the step's key and its equality. `change` is as `key`
-    gives it."""
+    stays out of the step's key and its equality. `occasion` identifies
+    the event the launch answers (`key`); `change` and `origin` are as
+    `key` gives them."""
     role: Role
     subject: str
     brief: str
@@ -33,6 +36,11 @@ class Launch:
     items: int | None = field(default=None, repr=False)
     reread: bool = field(default=False, repr=False, compare=False)
     change: str | None = field(default=None, repr=False, compare=False)
+    origin: str = field(default="", repr=False, compare=False)
+    occasion: str = field(kw_only=True, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        given(self)
 
 
 @dataclass(frozen=True)
@@ -41,20 +49,38 @@ class Send:
     made after that time counts as made of it. `commanded` is whether `to`
     is an agent whose command reads its messages (`printed_forms.COMMANDED`); it
     stays out of the step's key and its equality, which `to` already
-    fixes. `change` is as `key` gives it."""
+    fixes. `about` identifies what the message is on, among the messages its
+    function sends `to`; `change`, `about` and `origin` are as `key` gives
+    them."""
     to: str
     message: str
+    about: str = field(repr=False)
     since: float | None = None
     commanded: bool = field(default=False, repr=False, compare=False)
     change: str | None = field(default=None, repr=False, compare=False)
+    origin: str = field(default="", repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        given(self)
 
 
 @dataclass(frozen=True)
 class Bash:
-    """A Bash call in the foreground, with the timeout `FOREGROUND_MS`.
-    `change` is as `key` gives it."""
+    """A Bash command, which the command runs itself (`scripts/operate.py`
+    `operator_step`). `about` identifies what the command acts on, among the
+    commands its function gives; `change`, `about` and `origin` are as
+    `key` gives them. `occasion` identifies the event the command answers
+    (`key`). `retires` is the key of the step whose retirement this command
+    files the bug on (`order.retire`), or None."""
     command: str
+    about: str = field(repr=False)
     change: str | None = field(default=None, repr=False, compare=False)
+    origin: str = field(default="", repr=False, compare=False)
+    retires: str | None = field(default=None, repr=False, compare=False)
+    occasion: str = field(kw_only=True, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        given(self)
 
 
 @dataclass(frozen=True)
@@ -123,7 +149,8 @@ def unread_line(line: str) -> Send:
     """The message that gives the coordinator back its line `line`, in no
     form the command reads."""
     return Send(COORDINATOR, mctx("{opening} a line of the coordinator's in no form the "
-                                  "command reads: {line}").format(opening=UNDECIDED, line=line))
+                                  "command reads: {line}").format(opening=UNDECIDED, line=line),
+                line)
 
 
 def agent_ids(agents: Iterable[Agent]) -> list[str] | Undecided:
@@ -162,10 +189,40 @@ def held(what: str, choices: Mapping[str, str]) -> Undecided:
 type Step = Launch | Send | Undecided | Bash | Poll | EndTurn | Reply
 
 
+type Journaled = Launch | Send | Bash
+"""A step the journal records (`journal`)."""
+
+
+def given(step: Journaled) -> None:
+    """Set the `origin` of `step`, where its constructor was not given one,
+    to the function that called that constructor, by its module and its
+    qualified name. `dataclasses.replace` passes the origin on."""
+    if not step.origin:
+        caller = sys._getframe(3)
+        object.__setattr__(step, "origin",
+                           f"{caller.f_globals['__name__']}.{caller.f_code.co_qualname}")
+
+
+def subject(step: Journaled) -> str:
+    """What `step` acts on, with the event it answers: a launch's role,
+    subject and `occasion`, a message's recipient, `about` and `since`, and
+    a command's `about` and `occasion`."""
+    match step:
+        case Launch(role, on, occasion=occasion):
+            return f"{role} {on} {occasion}"
+        case Send(to, about=about, since=since):
+            return f"{to} {about}" if since is None else f"{to} {about} {since}"
+        case Bash(about=about, occasion=occasion):
+            return f"{about} {occasion}"
+
+
 def key(step: Step) -> str:
     """The key of `step`, which is the same at each read of the state that
     gives the same step: the key an `Override: pass over` ruling gives
-    (`directives.passed_over`). A solver pass's key is its task id and its
+    (`directives.passed_over`), and the one the journal records it under
+    (`journal`). It is taken over the step's kind, its `origin` and its
+    `subject`, and, for a step the journal does not record, over the step
+    as given (`digest`). A solver pass's key is its task id and its
     pass, `<task id>-<pass>`, so that the writer of a ruling can form it,
     and a ruling that passes it over holds whatever overrides its brief
     gains. The key of a step whose `change` is given opens with that
@@ -173,6 +230,20 @@ def key(step: Step) -> str:
     before it gives the change it serves (`changes.held`)."""
     if isinstance(step, Launch) and step.role in PASSES:
         return f"{step.subject}-{step.role}"
-    digest = hashlib.sha1(repr(step).encode()).hexdigest()[:KEY_LENGTH]
+    if not isinstance(step, Launch | Send | Bash):
+        return digest(step)
+    named = f"{type(step).__name__} {step.origin} {subject(step)}"
+    return with_change(step, hashlib.sha1(named.encode()).hexdigest()[:KEY_LENGTH])
+
+
+def digest(step: Step) -> str:
+    """The name of `step` as given, in the form of `key`, taken over the
+    step's fields of its `repr`: two steps of one key whose texts differ
+    have two digests. The files the command writes for a printed step are
+    named by it (`filing`)."""
+    return with_change(step, hashlib.sha1(repr(step).encode()).hexdigest()[:KEY_LENGTH])
+
+
+def with_change(step: Step, digest: str) -> str:
     change = step.change if isinstance(step, Launch | Send | Bash | Undecided) else None
     return digest if change is None else f"{change}-{digest}"

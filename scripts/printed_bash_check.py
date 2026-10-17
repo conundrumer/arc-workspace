@@ -1,10 +1,9 @@
 """The check `pending_wait_hook` runs on the Bash call of an agent of a type
 of `context_bound_hook.ACTIONS`, which makes only the calls its command
-prints. It denies a call that is neither that command alone
-(`command_words.only_command`) nor the Bash call the last result of that
-command prints, and a call of that command where
-that result prints a call of any tool, and the transcript holds, after that
-result, no call of that tool and no message or notification that reached
+prints; the command runs each Bash step itself. It denies a call that is not
+that command alone (`command_words.only_command`), and a call of that command
+where the last result of that command prints a call of any tool, and the
+transcript holds, after that result, no call of that tool and no message or notification that reached
 the caller (`run_reads.is_prompt`). A call another hook denied counts as
 made: it stands in the transcript.
 
@@ -28,22 +27,14 @@ DENIALS = "printed-call-denials"
 def printed_call(result: str) -> tuple[Tool, str] | None:
     """The tool and the text of the call `result`, a result of the command,
     prints, or None where it prints no call."""
-    from operations.handled import printed_step
-    from operations.printing import PROMPT, bash_text, launch_text, printed_launch, send_text
+    from operations.printing import PROMPT, launch_text, printed_launch, printed_send, send_text
 
     launch = printed_launch(result)
     if launch is not None:
         fields = {k: v for k, v in launch.items() if k != PROMPT}
         return Tool.AGENT, launch_text(fields, launch[PROMPT])
-    step = printed_step(result)
-    if step is None:
-        return None
-    _, tool, to, text = step
-    if tool is Tool.SEND_MESSAGE:
-        if to is None:
-            raise ValueError(f"a printed message has no recipient: {result!r}")
-        return tool, send_text(to, text)
-    return tool, bash_text(text)
+    send = printed_send(result)
+    return None if send is None else (Tool.SEND_MESSAGE, send_text(*send))
 
 
 def made_since(entries: list[dict[str, Any]], tool: Tool, current: str) -> bool:
@@ -87,8 +78,8 @@ def off_script_reason(command: str, printed: str | None) -> str:
             mctx("Run `{command}`, and make each call it prints."),
         ]).format(command=command)
     return with_call(
-        mctx("Blocked: this Bash call is neither `{command}` nor the call the last "
-             "result of `{command}` prints.").format(command=command), printed)
+        mctx("Blocked: this Bash call is not `{command}`, and the last result of "
+             "`{command}` prints a call of another tool.").format(command=command), printed)
 
 
 def skip_reason(command: str, printed: str) -> str:
@@ -103,7 +94,6 @@ def check(hook: dict[str, Any]) -> str | None:
     """The reason to deny the Bash call `hook` gives where the module
     docstring has it denied, and None otherwise."""
     from operations.command_words import only_command
-    from operations.printing import bash_text
     from printed_launch_hook import first_at, operator_next
     from run_reads import caller_transcript
 
@@ -121,8 +111,6 @@ def check(hook: dict[str, Any]) -> str | None:
                       hook["tool_use_id"]):
             return None
         reason = skip_reason(caller.command, call_text)
-    elif printed is not None and printed == (Tool.BASH, bash_text(text)):
-        return None
     else:
         reason = off_script_reason(caller.command, None if printed is None else printed[1])
     last = "" if found is None else found[0]

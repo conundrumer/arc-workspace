@@ -44,10 +44,10 @@ from operations import briefs, messages, runs
 from operations.directives import Line, Pipeline, lines, overrides, passed, pipelines, session_lines
 from operations.reports import TICKETS_FILED
 from operations.roles import PASSES, Purpose, Role, analyst_subject, joined
-from operations.state import Agent, Call, State, Ticket
+from operations.state import Agent, Call, State, Ticket, last_reported
 from ticketing.vocabulary import Domain, Kind, Status
 from operations.command_words import RUN_COMMAND, simple_commands
-from operations.handled import bash_calls, repeated, send_again
+from operations.handled import bash_calls, done, repeated, send_again
 from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids
 from operations.task_work import CLAIM_HELD
 from operations.tracker import blocked_on_user
@@ -151,10 +151,11 @@ def reviews(state: State, task: str, ended: list[Ended]) -> tuple[Step | None] |
     where it waits, or None where each review and analyst has returned."""
     found = [latest(state, Role.TRANSCRIPT_REVIEW, i, a.launched) for i, a, _ in ended]
     waits = False
-    for (i, _, filed), review in zip(ended, found, strict=True):
+    for (i, ran_pass, filed), review in zip(ended, found, strict=True):
         if review is None:
             return (Launch(Role.TRANSCRIPT_REVIEW, i, briefs.transcript_review(
-                i, Domain.TASK.value, task, True, held(state, filed))),)
+                i, Domain.TASK.value, task, True, held(state, filed)),
+                occasion=str(last_reported([ran_pass]))),)
         if review.pending:
             return (None,)
         reviewer = agent_ids([review])
@@ -166,7 +167,8 @@ def reviews(state: State, task: str, ended: list[Ended]) -> tuple[Step | None] |
         if numbers and not analyst:
             subject = analyst_subject(Purpose.PASS, joined([task, *numbers]))
             return (Launch(Role.TICKET_ANALYST, subject, briefs.pass_settle(
-                numbers, task, reviewer[0], state.me), items=len(numbers)),)
+                numbers, task, reviewer[0], state.me), items=len(numbers),
+                occasion=str(last_reported([review]))),)
         waits = waits or any(x.pending for x in analyst)
     return (None,) if waits else None
 
@@ -249,11 +251,15 @@ def pass_chain(state: State, p: Pipeline, ended: list[Ended], hold: str | bool) 
                 tries = ran(state, claim, since)
                 if any(tries):
                     return (mctx("the claim on task {task} fails").format(task=p.task),)
-                return (None if tries else Bash(claim), True)
+                return (None if tries else Bash(claim, f"{p.task} claim",
+                                                     occasion=work_occasion(state, p, since)), True)
             aside = aside_command(p.task, role)
-            if role in SETS_ASIDE and not ran(state, aside, since):
-                return (Bash(aside), True)
-            launch = Launch(role, p.task, briefs.solver_pass(p.task, overrides(state, p.task, role, since)))
+            setting = Bash(aside, f"{p.task} aside {role}",
+                           occasion=work_occasion(state, p, since))
+            if role in SETS_ASIDE and not done(state, setting):
+                return (setting, True)
+            launch = Launch(role, p.task, briefs.solver_pass(p.task, overrides(state, p.task, role, since)),
+                            occasion=str(since))
             ruling = passed(launch, state)
             if ruling is not None and not restored(state, p.task, ruling.message.time, p.since):
                 return (mctx("the line `{line}` passed over its {role} pass").format(
@@ -268,7 +274,7 @@ def pass_chain(state: State, p: Pipeline, ended: list[Ended], hold: str | bool) 
         if filed is None:
             if a.reports:
                 asked = send_again(state, a.agent_id, [r.time for r in a.reports],
-                                   messages.pass_resend)
+                                   messages.pass_resend, TICKETS_FILED)
                 if isinstance(asked, Send):
                     return (asked, True)
             told = no_report(role, a)
@@ -306,8 +312,26 @@ def end(state: State, p: Pipeline, reason: str | None) -> Outcome:
     argument, came since the pipeline's start."""
     restore = restore_step(p.task, reason)
     if not (ran(state, restore_command(p.task), p.since) or ran(state, restore, p.since)):
-        return Outcome(Bash(restore))
+        return Outcome(Bash(restore, f"{p.task} restore",
+                            occasion=str(set_aside_at(state, p.task, p.since))))
     return Outcome(None, True, runs.Standing(stopped=reason))
+
+
+def work_occasion(state: State, p: Pipeline, since: float) -> str:
+    """The occasion (`steps.key`) of the claim and the set-aside before a
+    pass of `p` whose chain stands at `since`, the launch of the pass
+    before it or the pipeline's start: that time, with the latest restore
+    of its task since the pipeline's start, after which the work is
+    claimed and set aside again."""
+    return f"{since} {max((c.time for c in restores(state, p.task, p.since, state.now)), default=0.0)}"
+
+
+def set_aside_at(state: State, task: str, since: float) -> float:
+    """The time of the latest set-aside of `task`'s work since `since`, by
+    any pass, the occasion of the restore that puts it back (`steps.key`),
+    or `since` where none came."""
+    return max((c.time for role in SETS_ASIDE for c in bash_calls(state, aside_command(task, role))
+                if c.time >= since), default=since)
 
 
 def runs_at(state: State, p: Pipeline, time: float) -> bool:

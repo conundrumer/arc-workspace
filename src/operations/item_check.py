@@ -12,7 +12,7 @@ from operations import briefs
 from operations.change_agents import change_editors, settled
 from operations.reports import done
 from operations.roles import Role
-from operations.state import Agent, State, Ticket
+from operations.state import Agent, State, Ticket, last_reported
 from operations.steps import Launch, Step, Undecided, agent_ids
 
 UNCHECKED = Role.HANDBOOK_EXPANDED
@@ -82,4 +82,4 @@ def check_items(state: State, t: Ticket, w: Path, needing: list[Agent],
         return gate
     return Launch(Role.ITEM_CHECKER, t.number, briefs.item_check(
         t.number, w, reports, gate, [(a, i) for a, i in editors if is_checked(a)], state.me,
-        settled(state, t.number, Role.ITEM_CHECKER, None), past))
+        settled(state, t.number, Role.ITEM_CHECKER, None), past), occasion=str(last_reported(needing)))

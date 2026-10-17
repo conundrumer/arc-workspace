@@ -47,7 +47,7 @@ from operations.reports import LIST_MARKER
 from operations.pacing import Preset, line_pace
 from operations.roles import PASSES, Purpose, Role
 from operations.state import Agent, Message, Report, State
-from operations.steps import STEP_KEY, Launch, Step, Undecided, decision_key, held, key
+from operations.steps import STEP_KEY, Launch, Step, Undecided, decision_key, digest, held, key
 
 
 class Decision(StrEnum):
@@ -221,9 +221,12 @@ def passed_over(state: State) -> dict[str, Line]:
 
 
 def passed(step: Step, state: State) -> Line | None:
-    """The ruling that passes `step` over, or None. Whether a ruling on a
-    solver pass holds for a pipeline is `passes.run`'s to decide."""
-    return passed_over(state).get(key(step))
+    """The ruling that passes `step` over, by its key or by its digest
+    (`steps.digest`), the key a ruling written before the journal gave,
+    or None. Whether a ruling on a solver pass holds for a pipeline is
+    `passes.run`'s to decide."""
+    over = passed_over(state)
+    return over.get(key(step)) or over.get(digest(step))
 
 
 def overrides(state: State, task: str, role: Role, since: float) -> list[str]:

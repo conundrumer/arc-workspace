@@ -21,7 +21,7 @@ from operations import briefs
 from operations.change_agents import latest_editors, settled
 from operations.filing import editor_scratch
 from operations.roles import Role
-from operations.state import Agent, State, Ticket
+from operations.state import Agent, State, Ticket, last_reported
 from operations.steps import Bash, Launch, Step, Undecided, agent_ids
 from operations.log_commands import add_editor
 
@@ -76,7 +76,7 @@ def fragments_step(state: State, t: Ticket, w: Path,
         if t.number not in state.computed.doc_budgets:
             return Undecided(mctx("the budget of change {number} with a doc editor is "
                                   "unknown").format(number=t.number))
-        return Bash(add_editor(t.number, Role.DOC_EDITOR, state.me))
+        return Bash(add_editor(t.number, Role.DOC_EDITOR, state.me), f"{t.number} doc editor", occasion=str(t.last_time))
     drafters = drafter_ids(here)
     if isinstance(drafters, Undecided):
         return drafters
@@ -85,4 +85,4 @@ def fragments_step(state: State, t: Ticket, w: Path,
         editor, t.number, w,
         editor_scratch(t.number, Role.DOC_EDITOR, state.scratch), state.me,
         settled(state, t.number, Role.DOC_EDITOR, editor.part.part)),
-        model=t.model(Role.DOC_EDITOR))
+        model=t.model(Role.DOC_EDITOR), occasion=str(last_reported(here)))

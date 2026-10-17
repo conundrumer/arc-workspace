@@ -130,7 +130,7 @@ def file_overrun(t: Ticket, spent: Spend, budget: Budget, limit: float,
             mctx("Agents of {role} on the change: {ids}.").format(
                 role=role, ids=", ".join(ids) or "none")])})
     return Bash(shlex.join([*FILE_TICKET, Domain.CHANGE.value, t.number, AGENT])
-                + " <<'TICKET'\n" + text + "TICKET")
+                + " <<'TICKET'\n" + text + "TICKET", f"{t.number} past its budget", occasion=str(t.last_time))
 
 
 OVERRUN_FINDING = f"{Note.FINDING}: past its cost budget"

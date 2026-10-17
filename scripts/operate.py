@@ -6,8 +6,9 @@ of the operator's procedures, which the package `operations` computes.
 rest of its help, a part at a time.
 
 Each fact the command reads is in the tracker, in git, under `work/`, in
-a transcript, or in a file it wrote for a call it printed (`operations.filing.filed`),
-which a transcript points to."""
+a transcript, in a file it wrote for a call it printed (`operations.filing.filed`),
+which a transcript points to, or in the session's step journal
+(`step_journal`)."""
 
 import argparse
 import fcntl
@@ -31,6 +32,7 @@ console_importable()
 scripts_importable()
 
 import kept_reads  # noqa: E402
+import step_journal  # noqa: E402
 from agent_deliveries import accepted_after, last_delivered  # noqa: E402
 from operator_reads import read_operator  # noqa: E402
 from operator_state import read_state  # noqa: E402
@@ -48,7 +50,8 @@ from ticket_numbers import parsed_number  # noqa: E402
 from ticket_reads import read_ticket  # noqa: E402
 from help_parts import print_help  # noqa: E402
 
-from operations import briefs, concept_faults, doc_review, order, pacing, plan, relay, runs  # noqa: E402
+from operations import (briefs, concept_faults, doc_review, journal, order, pacing, plan,  # noqa: E402
+                        relay, runs)
 from operations.decisions import WRITE_SECONDS  # noqa: E402
 from operations.monitor import ALERTS  # noqa: E402
 from operations.command_words import Action  # noqa: E402
@@ -56,7 +59,7 @@ from operations.roles import Role  # noqa: E402
 from operations.filing import filed, with_report  # noqa: E402
 from operations.printing import batch_line, key_line, printed  # noqa: E402
 from operations.state import State  # noqa: E402
-from operations.constants import BLOCK_SECONDS, LIMIT_SECONDS, SUBAGENT_LIMIT  # noqa: E402
+from operations.constants import BLOCK_SECONDS, FOREGROUND_MS, LIMIT_SECONDS, SUBAGENT_LIMIT  # noqa: E402
 from operations.steps import (Bash, EndTurn, Launch, Poll, Send,  # noqa: E402
                               Step, Undecided)
 from collections.abc import Callable  # noqa: E402
@@ -67,6 +70,7 @@ class HelpPart(StrEnum):
     """Each part of the help, by the word `--help` takes to print it, in the
     order the bare `--help` lists them."""
     NEXT = "next"
+    JOURNAL = "journal"
     RULINGS = "rulings"
     RUN = "run"
     PACE = "pace"
@@ -96,7 +100,8 @@ USAGE = mctx("""
 """The help the bare `--help` prints."""
 
 PURPOSES = {
-    HelpPart.NEXT: mctx("what `next` prints, and when a step counts as made"),
+    HelpPart.NEXT: mctx("what `next` prints"),
+    HelpPart.JOURNAL: mctx("how `next` runs each Bash step, records each step it gives, and tells whether a step is done"),
     HelpPart.RULINGS: mctx("the forms of the rulings `next` applies"),
     HelpPart.RUN: mctx("the `Run:` line and the run script `next` reads"),
     HelpPart.PACE: mctx("the `Pace:` line, which sets the usage pace within which `next` admits open tickets"),
@@ -109,7 +114,7 @@ PURPOSES = {
 PARTS = {
     HelpPart.NEXT: mctx("""
     - `next` prints the next step of the operator whose agent id it is given: one call to make, or several launches to make in one message, with their parameters, or the final reply.
-        - With a launch, it prints each launch that it gives on the state with the launches before it made, past each step that is no launch, which a later call prints, other than a launch on a held step that a reply landing during its read of the state can end, or one it gives again after an `Agent type ... not found` failure.
+        - With a launch, it prints each launch that it gives on the state with the launches before it made, past each step that is no launch, which a later call gives, other than a launch on a held step that a reply landing during its read of the state can end, or one it gives again after an `Agent type ... not found` failure.
             - It prints no further launch once a step that `next` prints ahead of every launch is ready and the output does not hold it, the operator is past its context bound, or the running agents of the session's operators, the launches included, number {subagents}.
         - Before the final reply, it prints a SendMessage call that sends the reply's text to the agent that launched the operator.
         - It then prints the SubagentHandback call whose message is the line that says so.
@@ -120,7 +125,7 @@ PARTS = {
         - The brief of a launch other than a solver pass's gives the file the agent writes its final reply to.
         - The brief of a code editor's launch ends with the line `Budget: N minutes`, followed on that line by what the agent does at its budget, where `profile_runs.py --help budget` gives a budget for the brief over every run under the project directories.
             - N is that budget in minutes, rounded up: the budget per item times the number of items for a brief that gives items, as that help gives them, and the budget per run for any other brief.
-        - Where its last call of a launch failed with a result whose first line is `Agent type '<agent type>' not found`, or starts with that text followed by `.`, less than {load} seconds after the last write of its rendered definition `.claude/agents/<agent type>.md`, it gives the launch again once {retry} seconds have passed since that call, in place of a step on that failure.
+        - Where its last call of a launch failed with a result whose first line is `Agent type '<agent type>' not found`, or starts with that text followed by `.`, less than {load} seconds after the last write of its rendered definition `.claude/agents/<agent type>.md`, it gives the launch again once {retry} seconds have passed since that call.
         - An agent whose latest notification has the status `failed` and a summary that gives `{rate_limit}` was stopped by the usage limit.
             - `next` counts such an agent as running, and takes nothing from that notification as its report.
             - Once the usage file of the Claude config directory (`$CLAUDE_CONFIG_DIR/usage.json`, or `~/.claude/usage.json` where that is unset) was written after that stop, less than {stale} seconds ago, with a `used_pct` under 100 in each window, `next` prints, ahead of every other step, a SendMessage call that asks the agent to carry on its work, once for each such stop.
@@ -134,8 +139,20 @@ PARTS = {
         - A ticket that depends on it waits.
         - `next` gives that file, once for each content it has and once its last write is {write} seconds old, to a ticket analyst it launches, as a step it cannot place, with the read's failure, and goes on with every other procedure.
         - Where the file still does not read once that analyst returned, the final reply gives it.
-    - A step `next` printed counts as made by the call the operator made: a Bash call whose command runs the printed command among others, or the call the operator made right after the call of `next` that printed the step, other than a call of `next` alone.
-        - Each launch of an output counts as made by an Agent call of the message after it that gives its description.
+    """),
+    HelpPart.JOURNAL: mctx("""
+    - `next` runs each Bash step itself, in the main tree, and prints no Bash call.
+        - Before it reads the state, it waits for each Bash step of the session that runs, that of another operator of the session included, for up to {block} seconds from its start, and where one still runs then, it prints that the operator runs it again.
+        - A Bash step runs with the environment of `next`, which `uv run` sets, with no input, and its output goes to a file under the session's scratchpad, which `next` reads once the step ends.
+        - It ends a Bash step that runs past {foreground} seconds, and that step counts as failed.
+    - `next` records each step it gives, by its key, in the session's step journal, `{journal}` under the session's scratchpad, and tells from that journal alone whether a step is in flight, done or failed.
+        - A printed message counts as made by a SendMessage call to its recipient that holds its text, and a printed launch by an Agent call that gives its description, that the operator made after the call of `next` that printed it and before its next call of `next`, and the step's outcome is that call's.
+        - Where the operator ran `next` again first, or its work ended with no such call, the step counts as failed.
+        - A step in flight is not given again, to that operator or to one that takes over.
+        - A step's key is taken over what the step is, what it acts on and the event it answers, never over its text.
+        - A step that is done is not given again.
+        - The times a step was given in a row are the times it was given and failed.
+        - Once a step was given {bound} times in a row, `next` gives it no more: it retires the step for the session, files one `bug` on it with its key and the function that gives it, and goes on to the next step, and the final reply gives the step.
     """),
     HelpPart.RULINGS: mctx("""
     - `next` applies the rulings that the coordinator gives an operator of the session, and that the reply of a ticket analyst on a held step gives, each a line in one of these forms, matched whole, past a list marker:
@@ -222,7 +239,7 @@ PARTS = {
 """The text of each part of the help."""
 
 POLL_SECONDS = 15
-CALLS = (Launch, Send, Bash)
+CALLS = (Launch, Send)
 """The steps after whose call the operator runs `next` again."""
 TASK_ID = re.compile(task.TASK_ID)
 LOCK_DIR = Path("/tmp")
@@ -351,6 +368,9 @@ def block(me: str, action: Action,
         if (not isinstance(head, Poll) or time.monotonic() + POLL_SECONDS > deadline
                 or accepted_after(path, since, [])):
             signal.alarm(0)
+            if action is Action.NEXT:
+                step_journal.give(scratch, [s for s in steps if isinstance(s, CALLS)], me,
+                                  time.time())
             if len(steps) > 1:
                 print(batch_line(steps, me, action))
             elif isinstance(head, CALLS):
@@ -368,10 +388,18 @@ def operator_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
     no wait, or the wait, where the hold runs past `deadline`, and a
     launch given with the launches after it (`order.batch`).
     `steps.Undecided.reread` gives why the command reads the state again
-    before it launches an analyst on a step marked `reread`."""
+    before it launches an analyst on a step marked `reread`. A Bash step
+    the command runs itself, after each Bash run of the session's journal
+    ended, and reads the state again once it ended (`ran`); where a run
+    has not ended by `deadline`, the step is the wait."""
     while True:
         state, watch = read_state(me)
+        if not ran(state.scratch, deadline):
+            return (Poll(),), state.scratch
         step = plan.next_step(state, watch)
+        if isinstance(step, Bash):
+            step_journal.start_run(state.scratch, step, me, state.main_tree, time.time())
+            continue
         if isinstance(step, Launch) and step.reread:
             state, watch = read_state(me)
             step = plan.next_step(state, watch)
@@ -383,6 +411,19 @@ def operator_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
         if isinstance(step, Launch):
             return order.batch(state, watch, step), state.scratch
         return (step,), state.scratch
+
+
+def ran(scratch: Path, deadline: float) -> bool:
+    """Whether each Bash run of the journal of `scratch` ended by
+    `deadline`, waited on in steps of `RUN_POLL_SECONDS`."""
+    while step_journal.running(scratch, time.time()):
+        if time.monotonic() + RUN_POLL_SECONDS > deadline:
+            return False
+        time.sleep(RUN_POLL_SECONDS)
+    return True
+
+
+RUN_POLL_SECONDS = 1.0
 
 
 def review(editor: str) -> int:
@@ -433,7 +474,9 @@ def main(argv: list[str]) -> int:
         return print_help(argv[1:], HelpPart, lambda parts: USAGE.format(parts=parts), PURPOSES,
                           lambda part: PARTS[part].format(
                               block=BLOCK_SECONDS, limit=LIMIT_SECONDS, load=order.LOAD_SECONDS,
-                              retry=order.RETRY_SECONDS,
+                              retry=order.RETRY_SECONDS, foreground=FOREGROUND_MS // 1000,
+                              journal=step_journal.JOURNAL,
+                              bound=journal.BOUND,
                               write=round(WRITE_SECONDS), stale=USAGE_STALE, rate_limit=RATE_LIMIT,
                               script=runs.SCRIPT_SECONDS, factor=f"{pacing.EVEN_FACTOR:g}",
                               window=pacing.DEFAULT_WINDOW, operator=serving(Action.NEXT),

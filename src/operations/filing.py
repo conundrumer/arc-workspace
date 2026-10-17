@@ -21,7 +21,7 @@ from operations import briefs
 from operations.constants import COORDINATOR
 from operations.roles import BARE_BRIEFS, GENERAL_ROLES, Role
 from operations.printed_forms import COMMANDED, FILED, REPORT_SUFFIX
-from operations.steps import DECISION, Launch, Send, Step, key
+from operations.steps import DECISION, Launch, Send, Step, digest
 
 
 FILES = "operator-files"
@@ -35,18 +35,19 @@ def files_of(scratch: Path) -> Path:
 
 def file_path(step: Step, scratch: Path) -> Path:
     """The file the brief of the launch `step`, or the filed part of the
-    message `step`, is written to."""
-    return files_of(scratch) / f"{key(step)}.md"
+    message `step`, is written to, named by the step's digest
+    (`steps.digest`), so each brief and each message has its own."""
+    return files_of(scratch) / f"{digest(step)}.md"
 
 
 def report_path(step: Launch, scratch: Path) -> Path:
     """The report file of the launch `step`: the first name of
-    `<key>-reply.txt`, `<key>-2-reply.txt`, `<key>-3-reply.txt`, ... whose
+    `<digest>-reply.txt`, `<digest>-2-reply.txt`, `<digest>-3-reply.txt`, ... whose
     file does not exist. The path stays the same at each print of the step
     until the launched agent writes the file, and a later launch of the same
     step gets the next free name, so no run writes over an earlier run's
     report."""
-    k = key(step)
+    k = digest(step)
     return first_free(lambda suffix: files_of(scratch) / f"{k}{suffix}{REPORT_SUFFIX}")
 
 
