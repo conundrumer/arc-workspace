@@ -15,7 +15,7 @@ from operations.constants import COORDINATOR
 from operations.handled import sends_in
 from operations.journal import next_call
 from operations.printing import FINAL_REPLY, final_message, unfenced
-from operations.state import Call, State, Tool
+from operations.state import Call, State, Tool, memoized
 from operations.steps import Reply, Send
 
 
@@ -78,6 +78,7 @@ def live_holder(state: State, holder: str) -> bool:
                    if c.operator == holder and c.time > last)
 
 
+@memoized
 def final_replies(state: State, operator: str) -> list[float]:
     """The times of the calls of `next` that printed `operator` the
     messages of `final_sends`: for each, the last call of `next` before it."""

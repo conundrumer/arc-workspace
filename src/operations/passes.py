@@ -53,7 +53,7 @@ from operations import briefs, messages, runs
 from operations.directives import Line, Pipeline, lines, overrides, passed, pipelines, session_lines
 from operations.reports import TICKETS_FILED
 from operations.roles import PASSES, Purpose, Role, analyst_subject, joined
-from operations.state import Agent, Call, Restore, State, Ticket, last_reported
+from operations.state import Agent, Call, Restore, State, Ticket, last_reported, memoized
 from ticketing.vocabulary import Domain, Kind, Resolution, Status
 from operations.command_words import RUN_COMMAND, simple_commands
 from operations.handled import bash_calls, done, repeated, send_again
@@ -402,6 +402,7 @@ def started(state: State, given: list[Line]) -> list[Pipeline]:
             if s.failed is None]
 
 
+@memoized
 def session(state: State) -> list[Pipeline]:
     """The pipelines the coordinator's lines to the session's operators
     give, and those their runs started, in the order of their lines and
@@ -418,6 +419,7 @@ def session(state: State) -> list[Pipeline]:
     return out
 
 
+@memoized
 def every(state: State) -> list[Pipeline]:
     """The pipelines of `session` that the coordinator's lines to the
     operator `me` give: those a line to it starts, those an `Op run:` line to

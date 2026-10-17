@@ -7,7 +7,7 @@ change `me` holds.
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
-from functools import cached_property
+from functools import cached_property, wraps
 from enum import Enum, StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -473,9 +473,9 @@ class TranscriptsRead:
     limited: Mapping[str, float]
 
     @cached_property
-    def bash_found(self) -> dict[str, tuple[Call, ...]]:
-        """The calls `operations.handled.bash_calls` found for each command
-        it was given, so that each command's search of `calls` runs once."""
+    def memo(self) -> dict[tuple[Any, ...], Any]:
+        """The results `memoized_by_transcripts` holds for this read, by
+        function and arguments, shared by each state that keeps this read."""
         return {}
 
     def sent_by(self, a: Agent) -> frozenset[str] | None:
@@ -702,6 +702,12 @@ class State:
     computed: Computed = field(default_factory=lambda: Computed())
     aside: frozenset[str] = frozenset()
 
+    @cached_property
+    def memo(self) -> dict[tuple[Any, ...], Any]:
+        """The results `memoized` holds for this state, by function and
+        arguments."""
+        return {}
+
     @property
     def arrived(self) -> list[Message]:
         """`transcripts.messages`, in the order they arrived."""
@@ -733,3 +739,30 @@ class State:
     def mine(self, t: Ticket) -> bool:
         """Whether the operators act on `t` as on a ticket of the session."""
         return t.session == self.tracker.index or t.session in self.sessions.adopted
+
+
+def memo_in[*A, R](held: Callable[[State], dict[tuple[Any, ...], Any]]
+                   ) -> Callable[[Callable[[State, *A], R]], Callable[[State, *A], R]]:
+    """A decorator that runs its function once for each of its arguments
+    other than the state, and holds the result in the memo `held` gives for
+    the state; the result is shared by each caller, which changes none of
+    it."""
+    def decorate(f: Callable[[State, *A], R]) -> Callable[[State, *A], R]:
+        @wraps(f)
+        def once(state: State, *args: *A) -> R:
+            memo = held(state)
+            key = (f, *args)
+            if key not in memo:
+                memo[key] = f(state, *args)
+            return memo[key]
+        return once
+    return decorate
+
+
+memoized = memo_in(lambda state: state.memo)
+"""For a function the procedures ask of one state many times."""
+
+memoized_by_transcripts = memo_in(lambda state: state.transcripts.memo)
+"""For a function that reads, of its state, only `State.transcripts`: a
+state that `dataclasses.replace` derives and that keeps that read shares
+its results."""

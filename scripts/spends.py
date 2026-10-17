@@ -12,7 +12,7 @@ from agent_launches import runs_under
 from agent_turns import first_time, has_ended, last_time
 from run_reads import agent_type, run_entries
 from file_reads import file_text, stat_read
-from state_reads import DERIVED, state_cache
+from state_reads import DERIVED, Kept, state_cache
 from ticket_files import listed_tickets, ticket_name
 from ticket_form import front, ticket_kind
 from ticket_log import held_log, line_time, log_lines, read_ticket, resolution_of
@@ -71,6 +71,13 @@ def owners(runs: list[str]) -> dict[Path, str] | None:
     return {p: role for p, (_, role) in owner.items()}
 
 
+@state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
+def cost_of(path: Path, undecided: list[str]) -> float | None:
+    """The cost of the run of the transcript at `path`, as `run_cost`
+    gives it, held while the run's entries stand."""
+    return run_cost(run_entries(path), undecided)
+
+
 def priced(owner: dict[Path, str], undecided: list[str]) -> Spend | None:
     """The spend of the transcripts `owner` gives, each under its agent
     type, or None where one has no price or no time."""
@@ -78,7 +85,7 @@ def priced(owner: dict[Path, str], undecided: list[str]) -> Spend | None:
     spans: list[tuple[float, float]] = []
     by_role: dict[str, float] = {}
     for p, role in owner.items():
-        cost = run_cost(run_entries(p), undecided)
+        cost = cost_of(p, undecided)
         start, end = first_time(p), last_time(p)
         if cost is None or start is None or end is None:
             return None

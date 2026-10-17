@@ -30,7 +30,7 @@ from operations.constants import COORDINATOR
 from operations.directives import Directive, Line, Pipeline
 from operations.roles import PASSES, Role
 from operations import taking
-from operations.state import Call, Start, Starts, State, Takes, Ticket, Tool
+from operations.state import Call, Start, Starts, State, Takes, Ticket, Tool, memoized_by_transcripts
 from operations.tracker import wait_line
 from ticketing.vocabulary import SETTLED, Domain, Kind, Status
 from operations.steps import Bash, Send, Step
@@ -220,14 +220,23 @@ def command_start(command: str) -> tuple[str, Start] | None:
 def started(state: State, ln: Line) -> list[Started]:
     """The pipelines of the run of `ln`, in the order of their calls."""
     out: list[Started] = []
-    for c in state.transcripts.calls:
-        words = start_words(c)
-        if words is None or words[0] != run_id(ln):
-            continue
-        p = Pipeline(words[1].task, words[1].passes, c.time, c.operator)
+    for c, start in start_calls(state).get(run_id(ln), ()):
+        p = Pipeline(start.task, start.passes, c.time, c.operator)
         failed = (c.result or "").strip() if c.result is not None and c.error else None
         out.append(Started(p, failed))
     return out
+
+
+@memoized_by_transcripts
+def start_calls(state: State) -> dict[str, list[tuple[Call, Start]]]:
+    """The calls of `TranscriptsRead.calls` that start a pipeline, each with
+    what it starts, by run, in their order."""
+    found: dict[str, list[tuple[Call, Start]]] = {}
+    for c in state.transcripts.calls:
+        words = start_words(c)
+        if words is not None:
+            found.setdefault(words[0], []).append((c, words[1]))
+    return found
 
 
 def view(state: State, listed: tuple[str, ...], ln: Line,

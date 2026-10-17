@@ -98,18 +98,22 @@ def keep(read: str, key: str, record: object) -> None:
         store.keep(read, key, record)
 
 
+TRANSCRIPT = ".jsonl"
+META = ".meta.json"
+
+
 @dataclass(frozen=True)
 class Listing:
     """The transcripts and the `.meta.json` files under a directory, each
-    with its modification time."""
-    transcripts: dict[Path, float]
-    metas: dict[Path, float]
+    path as a string, with its modification time."""
+    transcripts: dict[str, float]
+    metas: dict[str, float]
 
 
 def listing(root: Path) -> Listing:
-    transcripts: dict[Path, float] = {}
-    metas: dict[Path, float] = {}
-    todo = [root]
+    transcripts: dict[str, float] = {}
+    metas: dict[str, float] = {}
+    todo = [str(root)]
     while todo:
         try:
             found = list(os.scandir(todo.pop()))
@@ -117,11 +121,11 @@ def listing(root: Path) -> Listing:
             continue
         for e in found:
             if e.is_dir(follow_symlinks=False):
-                todo.append(Path(e.path))
-            elif e.name.endswith(".jsonl"):
-                transcripts[Path(e.path)] = e.stat().st_mtime
-            elif e.name.endswith(".meta.json"):
-                metas[Path(e.path)] = e.stat().st_mtime
+                todo.append(e.path)
+            elif e.name.endswith(TRANSCRIPT):
+                transcripts[e.path] = e.stat().st_mtime
+            elif e.name.endswith(META):
+                metas[e.path] = e.stat().st_mtime
     return Listing(transcripts, metas)
 
 
@@ -135,7 +139,7 @@ def window(root: Path, started: float, undecided: list[str]) -> AuditWindow:
     start = audit_start(root, listed, began)
     start = started if start is None else start
     spend = sum(transcript_spend(p, start, undecided)
-                for p, mtime in sorted(listed.transcripts.items()) if mtime >= start)
+                for p in sorted(Path(p) for p, mtime in listed.transcripts.items() if mtime >= start))
     return AuditWindow(start, spend)
 
 
@@ -144,8 +148,9 @@ def audit_start(root: Path, listed: Listing, began: float) -> float | None:
     as the record `Start`, where `began` is when `listed` began."""
     held = recalled(START, str(root))
     found, since = (held.found, held.listed) if isinstance(held, Start) else (None, float("-inf"))
-    for path in sorted(listed.transcripts):
-        if listed.metas.get(meta_path(path), float("-inf")) < since:
+    for meta in sorted(m for m, mtime in listed.metas.items() if mtime >= since):
+        path = Path(meta.removesuffix(META) + TRANSCRIPT)
+        if str(path) not in listed.transcripts or meta_path(path) != Path(meta):
             continue
         launch = audit_launch(path)
         if launch is not None and (found is None or launch > found):

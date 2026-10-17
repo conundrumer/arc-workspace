@@ -9,7 +9,7 @@ from operations import messages
 from operations.constants import COORDINATOR
 from operations.journal import Due, Entry, due
 from operations.roles import Purpose
-from operations.state import Agent, Call, State, Ticket, Tool
+from operations.state import Agent, Call, State, Ticket, Tool, memoized_by_transcripts
 from operations.steps import (UNDECIDED, Bash, Journaled, Launch, Send, Step, Undecided,
                               analyst_key, key)
 
@@ -133,15 +133,13 @@ def send_again(state: State, to: str, replies: list[float],
     return False if sent_at(state, to, text) else Send(to, text, f"{about} {latest}")
 
 
+@memoized_by_transcripts
 def bash_calls(state: State, command: str) -> tuple[Call, ...]:
     """The operators' Bash calls and the Bash steps of the journal
     (`TranscriptsRead.calls`) that ran the command `command`, among others,
     in the order they were made."""
-    found = state.transcripts.bash_found
-    if command not in found:
-        found[command] = tuple(c for c in state.transcripts.calls
-                               if c.tool == Tool.BASH and command in str(c.input.get("command", "")))
-    return found[command]
+    return tuple(c for c in state.transcripts.calls
+                 if c.tool == Tool.BASH and command in str(c.input.get("command", "")))
 
 
 def unmoved(t: Ticket, s: Send) -> Undecided:
