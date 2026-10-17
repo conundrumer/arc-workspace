@@ -83,7 +83,6 @@
     - The session render includes them, and so does `uv run python scripts/context.py section`.
 
 ## Writing a file
-+ line review
 - In an edit, follow the form the file's other lines show.
 - Before you edit or review a file that holds a directive other than `comment`, or that an `include` or `inline` directive of another file gives, read [Templating a document](src/controlled_markdown/templating.md).
 - A file that has editing notes opens with them, under a `* comment: when editing this doc` line. Read them before you edit the file.
@@ -141,7 +140,6 @@
         * comment: On 2026-10-04, in session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a`, the doc-reviewer `a628be02072210fa7` read the whole context of [Operator](prompts/agents/operator.md), judged the foreground command rule it gained against the change's scope, "the agents that run commands", and did not report that the rule does not fit an agent that launches agents. On 2026-10-05, the operator `a37be74e20c8008ae` polled up to 10 minutes on a backgrounded merge.
 
 ### How the kept text reads
-+ line review
 - Judge no line that a finding of [What stays and its whole unit](docs/handbook/editing.md#what-stays-and-its-whole-unit) asks to cut or restructure.
 - Check each line against every rule that [Writing a file](#writing-a-file) and [Writing a document](src/controlled_markdown/writing.md) give a line, and, where [Writing a file](#writing-a-file) has you read [Templating a document](src/controlled_markdown/templating.md), every rule that document gives a line.
 - List every term the change introduces, headings and labels included, wherever you write the review, apart from its findings, and report as a finding each that breaks the rule on conventional words in [Writing a file](#writing-a-file).
