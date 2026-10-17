@@ -66,7 +66,7 @@ class Send:
 
 @dataclass(frozen=True)
 class Bash:
-    """A Bash command, which the command runs itself (`scripts/operate.py`
+    """A Bash command, which the command runs itself (`scripts/operate_loop.py`
     `operator_step`). `about` identifies what the command acts on, among the
     commands its function gives; `change`, `about` and `origin` are as
     `key` gives them. `occasion` identifies the event the command answers
@@ -92,9 +92,22 @@ class Poll:
 
 
 @dataclass(frozen=True)
+class ListingHold:
+    """A launch `launch` held for an agent type the operator's agent listing
+    lacks (`order.lacked`), and `wait`, the launch of a `Role.LISTING_WAIT`
+    agent whose end resumes the operator, or None where one with the key of
+    `launch` as its subject is pending."""
+    launch: Launch
+    wait: Launch | None
+
+
+@dataclass(frozen=True)
 class EndTurn:
-    """The agent ends its turn with no call, and a message or the end of
-    an agent it launched resumes it."""
+    """The agent ends its turn, and a message or the end of an agent it
+    launched resumes it. With `hold`, it first makes the launch of
+    `hold.wait`, where there is one, and the resume is the one that
+    refreshes its agent listing."""
+    hold: ListingHold | None = None
 
 
 @dataclass(frozen=True)
@@ -115,7 +128,7 @@ class Undecided:
     of, in a form other than `UNDECIDED` and `what`, where the step has
     such a form. `reread` is whether a reply that lands during the read of
     the state can end the hold, so the command reads the state once more
-    before it launches the step's analyst (`scripts/operate.py`
+    before it launches the step's analyst (`scripts/operate_loop.py`
     `operator_step`); it stays out of the step's key and its equality.
     `change` is the number of the held change whose step it is
     (`changes.step`), which the launch of its analyst carries

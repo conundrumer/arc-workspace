@@ -39,6 +39,7 @@ class Role(StrEnum):
     BATCH_GATE = "batch-gate"
     COST_AUDIT = "cost-audit"
     AFTER_MERGE = "after-merge"
+    LISTING_WAIT = "listing-wait"
     OPERATOR = "operator"
 
     @property
@@ -68,11 +69,12 @@ def document_model(agent_type: str) -> Model | None:
 GENERAL = "general-purpose"
 
 GENERAL_ROLES = frozenset({Role.TRANSCRIPT_REVIEW, Role.BATCH_PROFILE, Role.BATCH_GATE,
-                           Role.AFTER_MERGE, Role.COST_AUDIT})
+                           Role.AFTER_MERGE, Role.COST_AUDIT, Role.LISTING_WAIT})
 """The roles no agent document gives, whose brief gives their work."""
 
 GENERAL_MODELS: dict[Role, Model] = {Role.BATCH_GATE: Model.SONNET,
-                                     Role.TRANSCRIPT_REVIEW: Model.HAIKU}
+                                     Role.TRANSCRIPT_REVIEW: Model.HAIKU,
+                                     Role.LISTING_WAIT: Model.HAIKU}
 """The model a launch of a role in `GENERAL_ROLES` gives, where the model it
 inherits is not the one its work needs."""
 

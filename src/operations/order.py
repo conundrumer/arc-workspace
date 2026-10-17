@@ -29,7 +29,9 @@ than a solver pass, whose pipeline stops on it (`passes.run`), and a step
 the step journal gives as in flight or retired (`journal.due`). A
 launch a procedure gives, other than that of a ticket analyst on a held
 step, is held where its chain of causes runs `lineage.DEPTH` launches of
-its kind deep (`lineage`). A launch comes with each launch the procedures
+its kind deep (`lineage`), and so is a launch of an agent type the
+operator's agent listing lacks (`unlisted`). A launch comes with each
+launch the procedures
 give after it, with the launches before it made, up to the harness's
 limit of concurrent subagents; each step of the procedures from the
 release of tickets on that is no launch, or that launches a ticket
@@ -49,9 +51,9 @@ from operations.directives import (
     passed,
     unread,
 )
-from operations.roles import PASSES, Purpose, description, launch_parameters, launched_type
+from operations import briefs
+from operations.roles import PASSES, Purpose, Role, launch_parameters, launched_type
 from operations.state import Agent, Call, State, Tool, Waits
-from operations.final_reply import failure
 from operations.handled import held_aside, repeated
 from operations.constants import COORDINATOR, SUBAGENT_LIMIT
 from operations.journal import BOUND, Due, due
@@ -86,7 +88,8 @@ def placed(state: State, procedure: Callable[[State], Step | None]
     step, as it gives it, `State.aside` holds gives no step. A step the
     journal gives as in flight or retired gives no step either, and
     one it gives as reaching `journal.BOUND` gives the step that retires
-    it (`retire`)."""
+    it (`retire`). A launch the operator's agent listing lacks (`unlisted`)
+    gives no step where it is due."""
     s = procedure(state)
     if s is not None and held_aside(state, s):
         return None, None
@@ -108,7 +111,7 @@ def placed(state: State, procedure: Callable[[State], Step | None]
             return s, None
         match due(state.journal, key(s)):
             case Due.GIVE:
-                return s, None
+                return (None, None) if unlisted(state, s) else (s, None)
             case Due.WAIT:
                 return None, on
             case Due.RETIRE:
@@ -142,47 +145,38 @@ def retire(state: State, step: Journaled) -> Bash:
 GIVE_LINE = mctx("- {time}, to {operator}: {outcome} {why}")
 
 
-LOAD_SECONDS = 900
-"""How long after the last write of an agent type's rendered definition a
-launch of that type that fails with the type not found is taken as made
-before the harness loaded the type, and is made again (`unloaded`), as the
-section `An agent type not found` of `prompts/agents/notes/launching.md`
-gives."""
-
-RETRY_SECONDS = 60
-"""How long after a launch that `unloaded` gives the launch is made again,
-as the section `An agent type not found` of
-`prompts/agents/notes/launching.md` gives."""
-
-
-def launch_calls(state: State, step: Launch) -> list[Call]:
-    """The Agent calls of `step` by `state.me`."""
-    what = description(step.role, step.subject)
-    return [c for c in state.transcripts.calls if c.operator == state.me
-            and c.tool == Tool.AGENT and c.input.get("description") == what]
-
-
-def failed_last(calls: list[Call]) -> Call | None:
-    return calls[-1] if calls and calls[-1].error else None
-
-
-def unloaded(state: State, step: Launch) -> Call | None:
-    """The last Agent call of `step` by `state.me`, where it failed, the
-    first line of its result is `Agent type '<agent type>' not found` or
-    starts with that text followed by `.`, and it came less than
-    `LOAD_SECONDS` after the last write of that type's rendered definition
-    (`GitRead.definitions`)."""
-    if (last := failed_last(launch_calls(state, step))) is None:
-        return None
+def unlisted(state: State, step: Step) -> bool:
+    """Whether `step` launches an agent type that the agent listing of
+    `state.me` lacks, where that listing is read, and whose rendered
+    definition stands in the main tree (`GitRead.definitions`)."""
+    if not isinstance(step, Launch) or state.listing is None:
+        return False
     agent_type = launched_type(step.role, step.subject)
-    written = state.git.definitions.get(agent_type)
-    if written is None or last.time - written >= LOAD_SECONDS:
+    return agent_type not in state.listing and agent_type in state.git.definitions
+
+
+def lacked(state: State) -> Launch | None:
+    """The launch of the first procedure of `PROCEDURES` that `placed`
+    holds for the agent listing (`unlisted`), as `placed` gives it on
+    `state` with no listing read, or None."""
+    if state.listing is None or state.git.definitions.keys() <= state.listing:
         return None
-    why = failure(last)
-    bare = mctx("Agent type '{agent_type}' not found").format(agent_type=agent_type)
-    if why != bare and not why.startswith(bare + "."):
+    unread = replace(state, listing=None)
+    for procedure in PROCEDURES:
+        s, _ = placed(unread, procedure)
+        if isinstance(s, Launch) and unlisted(state, s):
+            return s
+    return None
+
+
+def listing_wait(state: State, held: Launch) -> Launch | None:
+    """The launch of the agent whose end resumes the operator, held on
+    `held`, or None where such an agent of `state.me` is pending."""
+    subject = key(held)
+    if any(a.pending and a.operator == state.me
+           for a in state.agents_of(Role.LISTING_WAIT, subject)):
         return None
-    return last
+    return Launch(Role.LISTING_WAIT, subject, briefs.LISTING_WAIT, occasion=subject)
 
 
 def made(state: State, step: Launch) -> State:
@@ -201,16 +195,14 @@ def made(state: State, step: Launch) -> State:
 
 
 def joins(state: State, step: Step) -> bool:
-    """Whether `step` goes out in a batch. `operator_step` holds a launch
-    made again after an `unloaded` call back from the state already read.
-    A held step given on the state with the batch's launches made can rest
-    on what `made` leaves out, such as an agent id, so a later call reads
-    it on the state the transcripts give."""
+    """Whether `step` goes out in a batch. A held step given on the state
+    with the batch's launches made can rest on what `made` leaves out, such
+    as an agent id, so a later call reads it on the state the transcripts
+    give."""
     if not isinstance(step, Launch):
         return False
     analysis = batches.analysis(step.role, step.subject)
-    held = analysis is not None and analysis[0] is Purpose.STEP
-    return not held and unloaded(state, step) is None
+    return analysis is None or analysis[0] is not Purpose.STEP
 
 
 def batch(state: State, watch: monitor.MonitorState, first_launch: Launch) -> tuple[Launch, ...]:

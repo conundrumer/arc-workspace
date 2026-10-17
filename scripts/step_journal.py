@@ -121,6 +121,15 @@ def give(scratch: Path, steps: Sequence[Journaled], operator: str, time: float) 
     append(scratch, [given_record(uuid.uuid4().hex, s, operator, time) for s in steps])
 
 
+def give_failed(scratch: Path, step: Launch, operator: str, time: float, why: str) -> None:
+    """Record that `next` gave `step` to `operator` at `time` and that it
+    failed then, with `why`: an end of turn that holds it for the agent
+    listing, as `operate.py --help journal` gives it."""
+    ident = uuid.uuid4().hex
+    append(scratch, [given_record(ident, step, operator, time),
+                     closed_record(ident, Close(Outcome.FAILED, time, why))])
+
+
 def records(scratch: Path) -> list[Record]:
     """The entries of the journal of `scratch`, each with the first outcome
     recorded for it, in the order they were given; none where it is not

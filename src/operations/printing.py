@@ -16,7 +16,7 @@ from operations.command_words import Action, next_command
 from operations.filing import filed_line, split_message
 from operations.pacing import Pace, Scripted, Until
 from operations.printed_forms import SENT
-from operations.roles import launch_parameters
+from operations.roles import launch_parameters, launched_type
 from ticketing.times import utc_stamp
 from operations.steps import Bash, EndTurn, Launch, Poll, Reply, Send, Step, Undecided, key
 
@@ -45,11 +45,22 @@ def printed_reply(text: str) -> bool:
 
 END_TURN = mctx("End your turn with no call: a message or your operator's end resumes you.")
 
+END_TURN_LISTING = mctx("End your turn with no other call: the end of an agent you launched "
+                        "resumes you, and can add the agent type {agent_type} to your agent "
+                        "listing.")
+"""The line of an end of turn held for the agent listing (`steps.ListingHold`)."""
+
+
+def listing_line(held: Launch) -> str:
+    """`END_TURN_LISTING` for the held launch `held`."""
+    return END_TURN_LISTING.format(agent_type=launched_type(held.role, held.subject))
+
 
 def printed_end_turn(text: str) -> bool:
     """Whether `text`, a result of the command, prints the end of the
-    agent's turn (`END_TURN`)."""
-    return printed_line(re.escape(END_TURN), text)
+    agent's turn (`END_TURN`, `END_TURN_LISTING`)."""
+    return printed_line(re.escape(END_TURN) + "|" + form(END_TURN_LISTING, {"agent_type": r"\S+"}),
+                        text)
 
 
 KEY_LINE = mctx("Step key {key}: after the call below, run `{command}`.")
@@ -210,8 +221,12 @@ def printed(step: Step, agent: str, scratch: Path) -> str:
         case Poll(pace):
             again = mctx("Run the command again: nothing is ready.")
             return "\n".join([*([held] if (held := pace_line(pace)) else []), again])
-        case EndTurn():
-            return END_TURN
+        case EndTurn(hold):
+            if hold is None:
+                return END_TURN
+            held, wait = hold.launch, hold.wait
+            line = listing_line(held)
+            return line if wait is None else printed(wait, agent, scratch) + "\n" + line
         case Reply(to):
             return REPLY_TEXT.format(to=to)
         case Undecided():

@@ -367,7 +367,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
 
     `kept` gives how a `DERIVED` read stands across processes (`Kept`).
 
-    Each process-life read cache that `operator_state.read_state` reaches,
+    Each process-life read cache that `state_assembly.read_state` reaches,
     in any module, is a `state_cache`, so the readers of one state see one
     state, and a change between two states reaches the second."""
     def hold(read: Callable[P, R]) -> Callable[P, R]:

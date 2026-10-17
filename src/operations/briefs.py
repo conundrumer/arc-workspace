@@ -651,6 +651,14 @@ def batch_gate(scratch: Path) -> str:
     return BATCH_GATE.format(scratch=scratch, filing=AT_MASTER)
 
 
+LISTING_WAIT = mctx("""
+    - Make one foreground Bash call, which runs `: 'unattended-wait: listing refresh'; sleep 60`.
+    - Then reply.
+    """)
+"""The brief of a `Role.LISTING_WAIT` agent, whose end resumes the
+operator that launched it (`order.listing_wait`)."""
+
+
 PROCESS_ASSESSMENT = mctx("Make the process assessment of the agents' processes.")
 
 

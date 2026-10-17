@@ -1,4 +1,4 @@
-"""The reads of git and of the sessions that `operator_state` assembles
+"""The reads of git and of the sessions that `state_assembly` assembles
 the operator's state from: the read of git and of the main tree, the read
 of the idle sessions, the lines earlier operators of the session gave in
 their final replies, and the time an agent started."""

@@ -1,7 +1,7 @@
 """The step that ends the operator (`ending`), and the lines of what
 stands at its end (`reply_lines`, `final`). `held` is the
 set of decision keys of the undecided steps the procedures wait on, which
-`plan.holding` gives."""
+`holding` gives."""
 
 from collections.abc import Callable, Iterable
 
@@ -14,7 +14,8 @@ from operations.journal import BOUND
 from operations.printing import final_message
 from operations.roles import Role
 from operations.state import State, Ticket
-from operations.steps import Step, Undecided
+from operations.order import PROCEDURES, placed
+from operations.steps import Step, Undecided, decision_key
 from ticketing.vocabulary import Status
 
 
@@ -219,3 +220,13 @@ def final(state: State, held: set[str]) -> str:
                                    "{agent}:").format(number=a.subject, agent=a.agent_id))
             out += nested(r.text)
     return "\n".join(out)
+
+
+def holding(state: State) -> set[str]:
+    """The decision keys of the undecided steps the procedures wait on, as
+    `placed` gives them."""
+    return {decision_key(u.what) for procedure in PROCEDURES
+            if (u := placed(state, procedure)[1]) is not None} | {
+        decision_key(u.what) for u in decisions.unread_steps(state)} | {
+        decision_key(u.what) for t in changes.held(state)
+        if isinstance(u := changes.next_step(state, t), Undecided) and repeated(u, state)}

@@ -563,7 +563,7 @@ class NotComputed:
 
 @dataclass(frozen=True)
 class Computed:
-    """The values `operator_state.read_state` computes over the `State` of
+    """The values `state_assembly.read_state` computes over the `State` of
     the reads. `to_settle` is the list `file_ticket.py to-settle` prints
     for the session, with the numbers the coordinator names, keeping only
     the tickets that `tracker.tickets` holds. `spent` gives, for each
@@ -643,7 +643,9 @@ class State:
     reads. `aside` holds the keys (`steps.key`) of the steps that
     `order.batch` set aside on this state, each as its procedure gave it,
     and is empty in each state the read gives. `journal` is the session's
-    step journal (`journal`)."""
+    step journal (`journal`). `listing` holds the agent types the agent
+    listing of `me` holds, or is None where its transcript gives none
+    (`operator_reads.agent_listing`)."""
     me: str
     now: float
     session: str
@@ -663,6 +665,7 @@ class State:
     held: HeldRead
     sessions: SessionsRead
     journal: "Journal"
+    listing: frozenset[str] | None
     readers: Deferred[tuple[Reader, ...]] = field(default_factory=lambda: Deferred(tuple))
     limit_lifted: float | None = None
     parents: Mapping[str, str] = field(default_factory=dict)

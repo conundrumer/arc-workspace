@@ -1,6 +1,4 @@
-"""The operator's next step, in the order `order` gives, its waits, and
-the decision keys of the undecided steps the procedures wait on
-(`holding`).
+"""The operator's next step, in the order `order` gives, and its waits.
 
 One operator carries the session's work at a time: an operator for which a
 later one of the session runs ends at once, and the later one carries on
@@ -22,7 +20,10 @@ that the operators before it in a row that ended so received
 coordinator gives it in a line, and of each ticket a chain of links
 reaches from one of those.
 
-Where no step is ready, and an agent of an operator runs that is not
+Where no step is ready and a launch waits on the operator's agent
+listing (`order.lacked`), the operator ends its turn, so that the resume
+refreshes that listing. Otherwise, where no step is ready, and an agent
+of an operator runs that is not
 stuck, a ticket of the operators' waits on another holder whose work is
 open and that is not stuck (`TranscriptsRead.stuck`), a ticket
 file the read of the tracker left out may still be written
@@ -35,15 +36,14 @@ its text (`standing.ending`), with each stuck agent or holder it waited on."""
 from collections.abc import Mapping, Sequence
 
 from controlled_markdown import mctx
-from operations import changes, decisions, monitor, triage, taking
+from operations import decisions, monitor, triage, taking
 from operations.state import Call, State
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Status
 from operations.final_reply import FOR_CONTEXT, final_sends_in, for_context, live_holder, sent_final_text
-from operations.handled import repeated
-from operations.standing import ending, final, reply_lines
-from operations.order import EARLY, LATE, PROCEDURES, first, monitor_step, placed
-from operations.steps import (Poll, Step, Undecided, decision_key)
+from operations.standing import ending, final, holding, reply_lines
+from operations.order import EARLY, LATE, first, lacked, listing_wait, monitor_step
+from operations.steps import EndTurn, ListingHold, Poll, Step
 
 GIVEN_AGAIN = mctx("a line below that stands unfinished reaches it only where it is given to it "
                    "again")
@@ -85,6 +85,9 @@ def next_step(state: State, watch: monitor.MonitorState) -> Step:
     s = first(state, lambda st: monitor_step(st, watch), *LATE)
     if s is not None:
         return s
+    held = lacked(state)
+    if held is not None:
+        return EndTurn(ListingHold(held, listing_wait(state, held)))
     pace = taking.pace_held(state, [*triage.unsettled_open(state),
                                     *(t.number for t in taking.ready(state)
                                       if not taking.taken_before(t))])
@@ -112,13 +115,3 @@ def taken_up(me: str, operators: Sequence[str], calls: Sequence[Call],
             break
         out.add(o)
     return frozenset(out)
-
-
-def holding(state: State) -> set[str]:
-    """The decision keys of the undecided steps the procedures wait on, as
-    `placed` gives them."""
-    return {decision_key(u.what) for procedure in PROCEDURES
-            if (u := placed(state, procedure)[1]) is not None} | {
-        decision_key(u.what) for u in decisions.unread_steps(state)} | {
-        decision_key(u.what) for t in changes.held(state)
-        if isinstance(u := changes.next_step(state, t), Undecided) and repeated(u, state)}
