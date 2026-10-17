@@ -31,6 +31,7 @@ class Role(StrEnum):
     CODE_EDITOR = "code-editor"
     DOC_EDITOR = "doc-editor"
     HANDBOOK_EXPANDED = "handbook-expanded"
+    SOLVER_FIX = "solver-fix"
     DOC_REVIEWER = "doc-reviewer"
     DESIGN_REVIEWER = "design-reviewer"
     CODE_REVIEWER = "code-reviewer"
@@ -46,7 +47,7 @@ class Role(StrEnum):
     def agent_type(self) -> str:
         """The `subagent_type` its launch gives, where `launched_type` gives
         no other for the launch's subject."""
-        return GENERAL if self in GENERAL_ROLES else self.value
+        return GENERAL if self in GENERAL_ROLES else TYPED_ROLES.get(self, self.value)
 
     @property
     def model(self) -> Model | None:
@@ -71,6 +72,10 @@ GENERAL = "general-purpose"
 GENERAL_ROLES = frozenset({Role.TRANSCRIPT_REVIEW, Role.BATCH_PROFILE, Role.BATCH_GATE,
                            Role.AFTER_MERGE, Role.COST_AUDIT, Role.LISTING_WAIT})
 """The roles no agent document gives, whose brief gives their work."""
+
+TYPED_ROLES: dict[Role, str] = {Role.SOLVER_FIX: Role.HANDBOOK_EXPANDED.value}
+"""The `subagent_type` of each role whose agent's document is that of
+another role, where that role's own word is not an agent type."""
 
 GENERAL_MODELS: dict[Role, Model] = {Role.BATCH_GATE: Model.SONNET,
                                      Role.TRANSCRIPT_REVIEW: Model.HAIKU,

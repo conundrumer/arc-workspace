@@ -32,10 +32,13 @@ MAIN_WANTED = "main-wanted"
 @dataclass(frozen=True)
 class Sessions:
     """The read: `idle` holds each idle index, other than the reading
-    session's, that holds a ticket outside `vocabulary.SETTLED`; `main` is whether the
+    session's, that holds a ticket outside `vocabulary.SETTLED`, and `ended`
+    each idle index other than the reading session's, whatever its
+    tickets; `main` is whether the
     reading session is the main, and `main_live` whether a main is named
     and live."""
     idle: frozenset[int]
+    ended: frozenset[int]
     main: bool
     main_live: bool
 
@@ -45,6 +48,15 @@ class Sessions:
         operators act on as on its own: the idle ones, where it is the
         main."""
         return self.idle if self.main else frozenset()
+
+    @property
+    def fixed_for(self) -> frozenset[int]:
+        """The indexes of other sessions whose closed `interference` tickets
+        the reading session's operators give a solver fix
+        (`passes.fixes`): the ended ones, where it is the main, since a
+        ticket's closure can leave its index with no ticket outside
+        `vocabulary.SETTLED`."""
+        return self.ended if self.main else frozenset()
 
 
 def modified(path: Path) -> float:
@@ -117,10 +129,12 @@ def read_sessions(tickets: Path, index: int, session: str, now: float) -> Sessio
     ids = indexes(tickets)
     held = {ticket_name(p).number.session for s in Status if s not in SETTLED
             for p in listed_tickets(tickets, s)}
-    idle = frozenset(i for i in held if i is not None and i != index
-                     and not any(live(sid, now) for sid in ids.get(i, [])))
+    known = {*ids, *(i for i in held if i is not None)}
+    ended = frozenset(i for i in known if i != index
+                      and not any(live(sid, now) for sid in ids.get(i, [])))
+    idle = frozenset(i for i in held if i in ended)
     main = named_main(tickets)
-    return Sessions(idle=idle, main=main == session,
+    return Sessions(idle=idle, ended=ended, main=main == session,
                     main_live=main is not None and live(main, now))
 
 

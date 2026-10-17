@@ -1,6 +1,7 @@
 """The operator's command line: its actions, of which `next` and `relay`
-run the loop of `operate_loop` and `review` is `operate_review`'s, and
-its help, which `operate_help` holds.
+run the loop of `operate_loop`, `review` is `operate_review`'s and the
+other subcommands are `operate_actions`', and its help, which
+`operate_help` holds.
 
 Each fact the command reads is in the tracker, in git, under `work/`, in
 a transcript, in a file it wrote for a call it printed (`operations.filing.filed`),
@@ -10,13 +11,9 @@ which a transcript points to, or in the session's step journal
 import argparse
 import gc
 import os
-import re
 import sys
-from enum import StrEnum
-from pathlib import Path
 
 import script_calls
-from arc import task
 from controlled_markdown import mctx
 from handbook.paths import console_importable, scripts_importable
 
@@ -25,51 +22,22 @@ scripts_importable()
 
 import kept_reads  # noqa: E402
 import step_journal  # noqa: E402
-from relay_reads import read_relay, session_id  # noqa: E402
 from usage_limit import USAGE_STALE  # noqa: E402
 from agent_reports import RATE_LIMIT  # noqa: E402
 from transcript_entries import Refused  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 from help_parts import print_help  # noqa: E402
 
-from operations import journal, pacing, relay, runs  # noqa: E402
+from operations import journal, pacing, runs  # noqa: E402
 from operations.decisions import WRITE_SECONDS  # noqa: E402
 from operations.command_words import Action  # noqa: E402
 from operations.roles import Role  # noqa: E402
 from operations.constants import BLOCK_SECONDS, FOREGROUND_MS, LIMIT_SECONDS, SUBAGENT_LIMIT  # noqa: E402
-from operations.steps import Step  # noqa: E402
-from operations.task_work import CLAIM_HELD, claim, restore, set_aside  # noqa: E402
+from operations.task_work import release, restore, set_aside  # noqa: E402
 from operate_loop import block, operator_step  # noqa: E402
+from operate_actions import TASK_ID, OperateAction, claim_task, relay_step  # noqa: E402
 from operate_help import PARTS, PURPOSES, USAGE, HelpPart  # noqa: E402
 from operate_review import review  # noqa: E402
-
-TASK_ID = re.compile(task.TASK_ID)
-
-
-class OperateAction(StrEnum):
-    """An action of this script."""
-    NEXT = Action.NEXT
-    RELAY = Action.RELAY
-    START = runs.START
-    CLAIM = "claim"
-    SET_ASIDE = "set-aside"
-    RESTORE = "restore"
-    REVIEW = Action.REVIEW
-
-
-def claim_task(task_id: str) -> int:
-    """Claim the task for the session, or print the session that holds
-    its claim and fail."""
-    holder = claim(main_tree(), task_id, session_id())
-    if holder is not None:
-        print(CLAIM_HELD.format(task=task_id, holder=holder), file=sys.stderr)
-        return 1
-    return 0
-
-
-def relay_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
-    found, scratch = read_relay(me)
-    return (relay.next_step(found),), scratch
 
 
 def main(argv: list[str]) -> int:
@@ -101,10 +69,13 @@ def main(argv: list[str]) -> int:
                     parser.error(mctx("start takes {run_option} with its run, a task id, and one or more of {pass_list}")
                                  .format(run_option=runs.RUN_OPTION, pass_list=runs.PASS_LIST))
                 return claim_task(args.ident)
-            case OperateAction.CLAIM:
+            case OperateAction.CLAIM | OperateAction.RELEASE:
                 if args.rest or not TASK_ID.fullmatch(args.ident):
-                    parser.error(mctx("claim takes a task id alone"))
-                return claim_task(args.ident)
+                    parser.error(mctx("{action} takes a task id alone").format(action=args.action))
+                if args.action == OperateAction.CLAIM:
+                    return claim_task(args.ident)
+                release(main_tree(), args.ident)
+                return 0
             case OperateAction.SET_ASIDE:
                 if (len(args.rest) != 1 or args.rest[0] not in (Role.ANALYZE, Role.CREATE)
                         or not TASK_ID.fullmatch(args.ident)):

@@ -559,6 +559,33 @@ def solver_pass(task: str, overrides: list[str]) -> str:
                       *(OVERRIDE.format(text=text) for text in overrides)])
 
 
+SOLVER_FIX = mctx("""
+    - Task {task}.
+    - The `interference` ticket {number} on this task closed: `{show} {number}` prints it.
+    """)
+WAITED_ON = mctx("- The ticket waited on the change {change}: `{show} {change}` prints it.")
+FIX_REQUEST = mctx("""
+    - Fix in place what that closure leaves wrong in the task's solver and witness file.
+    - The files you may edit: `programs/solvers/{task}.dl` and `programs/witnesses/{task}.wit.json`.
+    - Then run `{log} {number} closed {agent} --from closed "{mark}: <what you changed, or that the closure leaves them right>"`.
+    """)
+FIX_MARK = "solver fix"
+"""The words the note of the log line that records a solver fix opens
+with (`passes.fixes`)."""
+
+
+def solver_fix(task: str, number: str, change: str | None, operator: str) -> str:
+    """The brief of the fix of `task`'s solver after the close of the
+    `interference` ticket `number`, which waited on the change `change`."""
+    show = shlex.join([*FILE_TICKET, "show"])
+    waited = [] if change is None else [WAITED_ON.format(change=change, show=show)]
+    return "\n".join([SOLVER_FIX.format(task=task, number=number, show=show), *waited,
+                      FIX_REQUEST.format(task=task, number=number,
+                                         log=shlex.join([*FILE_TICKET, "log"]),
+                                         agent=Role.HANDBOOK_EXPANDED.value, mark=FIX_MARK),
+                      LAUNCHER.format(operator=operator)])
+
+
 def review(of: Review, baseline: int, scratch: Path) -> str:
     """The brief of the review `of` after the one whose baseline is
     numbered `baseline`."""

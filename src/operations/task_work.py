@@ -3,7 +3,7 @@ before an Analyze or a Create pass, and puts back with the release of the
 task's claim once the pipeline ends, as the section `Passes on a task` of
 [Launching notes](prompts/agents/notes/launching.md#passes-on-a-task)
 gives. Each `restore` call, by any agent, is recorded in one file
-outside every task's work directory, which no set-aside moves. `scripts/operate.py set-aside` and `restore` run these, as steps
+outside every task's work directory, which no set-aside moves. `scripts/operate.py set-aside`, `restore` and `release` run these, as steps
 `passes` prints; this is the one module of the package that writes."""
 
 import json
@@ -109,6 +109,12 @@ def restore(main: Path, task: str, argument: str | None) -> None:
     (work / CLAIM).unlink(missing_ok=True)
     with restores_file(main).open("a") as f:
         f.write(json.dumps({"task": task, "time": time.time(), "argument": argument}) + "\n")
+
+
+def release(main: Path, task: str) -> None:
+    """Remove the task's claim, and move nothing back: the claim of a
+    solver fix (`passes.fixes`) sets nothing aside."""
+    (tasks_work(main) / task / CLAIM).unlink(missing_ok=True)
 
 
 def restore_records(text: str) -> dict[str, tuple[Restore, ...]]:

@@ -16,7 +16,7 @@ stopped on its failure's text."""
 import argparse
 import re
 import shlex
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 from functools import cache
@@ -311,15 +311,15 @@ def takes_given(state: State, ln: Line) -> Takes:
     return state.computed.run_takes[run_id(ln)]
 
 
-def next_start(state: State, ln: Line, running: Iterable[Pipeline]) -> Step | None:
+def next_start(state: State, ln: Line, busy: Collection[str]) -> Step | None:
     """The run's next step: the call that starts the first start the
-    script gave whose task no pipeline of `running` gives and that matches
-    no pipeline of the run by its task and its passes, or None where the
-    script gave a fault or no such start."""
+    script gave whose task is not among the busy tasks `busy`
+    (`passes.busy`) and that matches no pipeline of the run by its task
+    and its passes, or None where the script gave a fault or no such
+    start."""
     starts = given(state, ln)
     if isinstance(starts, str):
         return None
-    busy = {p.task for p in running}
     had = {(s.pipeline.task, s.pipeline.passes) for s in started(state, ln)}
     for s in starts:
         if s.task not in busy and (s.task, s.passes) not in had:

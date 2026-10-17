@@ -150,11 +150,11 @@
 - Where the agent works in a worktree other than the main worktree and nothing stands at `work` in that worktree, the agent runs `ln -s <main worktree>/work work` there before it reads or writes under `work/`, with the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints as `<main worktree>`.
 
 ### A solver work brief
-- Where no `change` ticket gives solver work, its brief gives the task id, and, for work other than a pass, a transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it. It gives no items and no files, and the agent determines them.
+- Where no `change` ticket gives solver work, its brief gives the task id, and, for work other than a pass, a transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it, or, for the fix of what the closure of an `interference` ticket on the task leaves wrong in its solver, that ticket, and no worktree. It gives no items, and no files but the solver and the witness file of such a fix, and the agent determines the rest.
 
 ### Writing a solver work brief
 - Read no solver to write a brief for solver work.
-- Solver work other than a pass is a change, which an editor carries as it carries any other, whether or not a `change` ticket gives it. Where one does, its brief has the form [A change's brief](#a-changes-brief) gives.
+- Solver work other than a pass, or than the fix of a solver after an `interference` ticket on its task closes, is a change, which an editor carries as it carries any other, whether or not a `change` ticket gives it. Where one does, its brief has the form [A change's brief](#a-changes-brief) gives.
 
 ## An editor's report on a change
 - An editor's report on a change gives, for each item of its brief, and of each request a later message adds, that it gives as done, what shows it holds: a command it ran with the output that shows it, the line of a rendered context that states it, the check its ticket's Scope places after the merge where only that check can show it, or, where none of these can, the reason it holds.

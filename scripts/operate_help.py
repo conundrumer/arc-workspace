@@ -31,6 +31,7 @@ USAGE = mctx("""
         uv run python scripts/operate.py claim <task id>
         uv run python scripts/operate.py set-aside <task id> analyze|create
         uv run python scripts/operate.py restore <task id> [<reason>]
+        uv run python scripts/operate.py release <task id>
         ```
     - Where `next`, `relay` or `review` is given the agent id of an agent other than the one its part of this help gives, it prints that the agent is none that form serves, and what that agent does.
     {parts}
@@ -38,6 +39,7 @@ USAGE = mctx("""
     - `set-aside` sets aside a task's earlier work in the main worktree before an Analyze or a Create pass, as [Passes on a task](prompts/agents/notes/launching.md#passes-on-a-task) gives.
     - `restore` puts that work back and removes the task's claim, as that section gives.
         - `<reason>` is the reason the task's pipeline stopped, or empty where that pipeline ran to its end, and `next` then takes that pipeline as ended with that reason.
+    - `release` removes the task's claim.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives.
     """)
 """The help the bare `--help` prints."""
@@ -127,8 +129,9 @@ PARTS = {
             - `stopped` gives, for an ended one, the reason it stopped, or None where it ran to its end.
             - `held` gives whether an `interference` ticket on its task, filed since it started, holds its next pass or its end.
             - `passing` gives whether a pass of it runs, or is to launch while it is not `held`.
+        - Once an `interference` ticket on a task closes while a solver stands for that task and no solver pass of the session on that task was launched at or after that closure, `next` launches an agent that fixes in place what that closure leaves wrong in the solver. Until that fix returns, a pipeline of the session on that task launches no further pass and does not end, and that wait makes neither `held` nor `passing` true.
         - At each read of the state, `next` loads the script again and calls `starts`.
-        - `next` gives as a step the `start` of the first item `starts` gives whose task no pipeline of the session runs and that matches no pipeline of the run by task and passes, and passes over each other item.
+        - `next` gives as a step the `start` of the first item `starts` gives whose task no pipeline of the session runs on, and on which no such fix is due or runs, and that matches no pipeline of the run by task and passes, and passes over each other item.
             - That `start` has as `<run>` the time of the line's message and its path.
         - A `start` on a task whose claim file stands ends that pipeline, with the failure's text as its reason.
         - The line is done once no pipeline of the run runs, no fault of the load or of `starts` stands, and `starts` gives nothing to start.

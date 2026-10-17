@@ -1,6 +1,6 @@
 """The reads of git and of the main worktree that the operator's procedures
 take their state from: the worktrees, the commits of `master`, the code
-and lib review tags, the standing doc review tags, the task claims and restores, the accepted
+and lib review tags, the standing doc review tags, the task claims and restores, the solvers that stand, the accepted
 gate outputs a change writes, the `mctx` fragments a change adds or
 changes, and the session's scratchpad directory."""
 
@@ -17,6 +17,7 @@ from engine import checkout
 from operations.state import DOC_REVIEW, Baseline, Commit, NoBaseline, Place, Restore, Review
 from operations.task_work import CLAIM, restore_records, restores_file, tasks_work
 from operations.worktrees import BASE
+from solver.vocabulary import SOLVER_SUFFIX
 
 COMMITS = 300
 """The commits of `master` read for After a batch, newest first."""
@@ -138,6 +139,12 @@ def claims(main: Path) -> dict[str, str]:
     work = tasks_work(main)
     return {e.name: file_text(work / e.name / CLAIM).strip()
             for e in listed(work) if e.is_dir and stat_read(work / e.name / CLAIM) is not None}
+
+
+def solvers(main: Path) -> frozenset[str]:
+    """The tasks whose solver stands in the main tree `main`."""
+    return frozenset(e.name.removesuffix(SOLVER_SUFFIX) for e in listed(main / checkout.SOLVERS)
+                     if e.is_file and e.name.endswith(SOLVER_SUFFIX))
 
 
 def restores(main: Path) -> dict[str, tuple[Restore, ...]]:

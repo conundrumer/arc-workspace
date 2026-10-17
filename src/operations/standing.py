@@ -117,7 +117,7 @@ def run_state(state: State, ln: Line, outcomes: Outcomes) -> list[str]:
     going = [REASON.format(of=s.pipeline.task, reason=r) for s in own
              if s.failed is None and not (o := by_pipeline[s.pipeline]).ended
              and (r := pipeline_state(o)) is not None]
-    if runs.next_start(state, ln, passes.running(state)) is not None:
+    if runs.next_start(state, ln, {p.task for p in passes.running(state)}) is not None:
         going.append(mctx("its script gives a pipeline to start"))
     if isinstance(fault, str):
         going.append(mctx("a fault stops it: {fault}").format(fault=fault))

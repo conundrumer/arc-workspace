@@ -11,7 +11,7 @@ from relay_reads import run_index
 from run_reads import parent_id
 from transcripts import find
 from transcript_entries import Refused
-from tree_reads import baseline, claims, commits, doc_reviews, restores, worktrees
+from tree_reads import baseline, claims, commits, doc_reviews, restores, solvers, worktrees
 
 from controlled_markdown import mctx
 from engine.checkout import agents_of
@@ -24,6 +24,7 @@ def read_git(main: Path) -> GitRead:
     trees = worktrees(main)
     return GitRead(commits(main), frozenset(trees),
                    {w: b for w, b in trees.items() if b is not None}, claims(main), restores(main),
+                   solvers(main),
                    {r: baseline(main, r) for r in Review}, doc_reviews(main),
                    {d.stem: d.stat().st_mtime for d in sorted(agents_of(main).glob("*.md"))})
 
@@ -39,7 +40,7 @@ def sessions(tickets: Path, index: int, session: str, now: float,
         read = read_sessions(tickets, index, session, now)
     if read.idle and not read.main and not read.main_live:
         want_main(tickets, session)
-    return SessionsRead(read.idle, read.adopted, read.main, read.main_live, main_wanted(tickets))
+    return SessionsRead(read.idle, read.adopted, read.fixed_for, read.main, read.main_live, main_wanted(tickets))
 
 
 def given_lines(runs: list[tuple[str, Path]], me: str, calls: list[Call]) -> set[str]:

@@ -27,6 +27,13 @@ returned; or where a ruling passes over its next pass. A ruling on a pass
 holds for each pipeline on its task unless the work set aside for an
 earlier pipeline on that task went back after the ruling and before the
 pipeline started.
+Once an `interference` ticket on a task closes, while the task's solver
+stands, a fresh agent fixes in place what the closure leaves wrong in it
+(`fixes`); a pipeline of the session on that task holds its next pass and
+its end until that fix returned. The fix launches only once the session
+holds the task's claim, which it takes where none stands, and it releases
+that claim once it returned where no pipeline of the session runs on the
+task.
 Once it ends or stops, the work set aside goes back, as
 `scripts/operate.py restore` does, with the reason it stopped, or an empty
 argument where it ran to its end. Once the first `restore` call on its
@@ -39,6 +46,7 @@ tickets, as for a pipeline whose work has not gone back."""
 import math
 import shlex
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from controlled_markdown import mctx
 from operations import briefs, messages, runs
@@ -46,7 +54,7 @@ from operations.directives import Line, Pipeline, lines, overrides, passed, pipe
 from operations.reports import TICKETS_FILED
 from operations.roles import PASSES, Purpose, Role, analyst_subject, joined
 from operations.state import Agent, Call, Restore, State, Ticket, last_reported
-from ticketing.vocabulary import Domain, Kind, Status
+from ticketing.vocabulary import Domain, Kind, Resolution, Status
 from operations.command_words import RUN_COMMAND, simple_commands
 from operations.handled import bash_calls, done, repeated, send_again
 from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids
@@ -78,6 +86,10 @@ def aside_command(task: str, role: Role) -> str:
 
 def restore_command(task: str) -> str:
     return f"{RUN_COMMAND} restore {task}"
+
+
+def release_command(task: str) -> str:
+    return f"{RUN_COMMAND} release {task}"
 
 
 def restore_step(task: str, reason: str | None) -> str:
@@ -207,7 +219,8 @@ def run(state: State, p: Pipeline) -> Outcome:
     ended: list[Ended] = []
     hold = interference(state, p)
     held = hold is True
-    own = pass_chain(state, p, ended, hold)
+    fixing = p.task in fixed_tasks(state)
+    own = pass_chain(state, p, ended, hold, fixing)
     chain = reviews(state, p.task, ended)
     passing = False
     if len(own) == 2:
@@ -216,7 +229,7 @@ def run(state: State, p: Pipeline) -> Outcome:
             step = chain[0]
     elif chain is not None:
         step = chain[0]
-    elif own[0] is None and held:
+    elif own[0] is None and held or fixing:
         step = None
     else:
         reason = own[0]
@@ -229,10 +242,14 @@ type Next = tuple[Step | None, bool]
 as `scripts/operate.py --help run` gives it."""
 
 
-def pass_chain(state: State, p: Pipeline, ended: list[Ended], hold: str | bool) -> Next | Stopped:
+def pass_chain(state: State, p: Pipeline, ended: list[Ended], hold: str | bool,
+               fixing: bool) -> Next | Stopped:
     """The next step of the pass chain of `p`, or its end, with each pass
     that ended with its report appended to `ended`, where `hold` is what
-    `interference` gives on `p`."""
+    `interference` gives on `p` and `fixing` whether a solver fix on its
+    task is due or pending, which holds its next pass and counts as no
+    pass to launch, so that the lane of a run's pipeline frees at the
+    closure."""
     since = p.since
     for role in p.passes:
         a = latest(state, role, p.task, since)
@@ -240,6 +257,8 @@ def pass_chain(state: State, p: Pipeline, ended: list[Ended], hold: str | bool) 
             if isinstance(hold, str):
                 return (hold,)
             if hold:
+                return (None, False)
+            if fixing:
                 return (None, False)
             holder = state.git.claims.get(p.task)
             if holder is not None and holder != state.session:
@@ -431,13 +450,189 @@ def outcomes(state: State) -> list[tuple[Pipeline, Outcome]]:
 
 def step(state: State) -> tuple[Step | None, list[tuple[Pipeline, Outcome]]]:
     """The next step of the pipelines, and where each stands (`outcomes`),
-    then the start that a run gives next."""
+    then the step of a solver fix (`fix_step`), then the start that a run
+    gives next."""
     found = outcomes(state)
     first = next((o.step for _, o in found if o.step is not None), None)
     if first is None:
+        first = fix_step(state)
+    if first is None:
         first = next((s for ln in runs.run_lines(lines(state))
-                      if (s := runs.next_start(state, ln, running(state))) is not None), None)
+                      if (s := runs.next_start(state, ln, busy(state))) is not None), None)
     return first, found
+
+
+FIXES_FROM = datetime(2026, 10, 17, 15, 3, 55, tzinfo=UTC).timestamp()
+"""The time from which a closure gets a solver fix: the solvers that the
+closures before it left wrong were fixed by hand."""
+
+
+@dataclass(frozen=True)
+class Fix:
+    """A closed `interference` ticket whose solver fix is due, and the time
+    its closure counts from (`resolved`)."""
+    ticket: Ticket
+    closed: float
+
+    @property
+    def task(self) -> str:
+        return self.ticket.subject
+
+
+def closing(t: Ticket) -> int | None:
+    """The index in `t`'s log of the line that closed it, as `closing_line`
+    in `scripts/file_ticket.py` reads it, or None where none did."""
+    found = [i for i, ln in enumerate(t.log)
+             if ln.status is Status.CLOSED and ln.resolution is not None]
+    return found[-1] if found else None
+
+
+def on_task(t: Ticket, task: str) -> bool:
+    return t.kind is Kind.INTERFERENCE and t.domain is Domain.TASK and t.subject == task
+
+
+def resolved(state: State, t: Ticket) -> float | None:
+    """The time from which the closure of the `interference` ticket `t`
+    counts: the time of its closing line, or, where it closed `duplicate`,
+    the latest of that and the closing lines of the tickets it duplicates,
+    followed through each ticket closed `duplicate` in turn. None where one
+    of them is not closed or is not read, where that chain comes back to a
+    ticket of it, or where it reaches another `interference` ticket on the
+    task of `t`, which gets the fix itself."""
+    seen: set[str] = set()
+    at = 0.0
+    u = t
+    while u.number not in seen and u.status is Status.CLOSED and (i := closing(u)) is not None:
+        seen.add(u.number)
+        line = u.log[i]
+        at = max(at, line.time)
+        if line.resolution is not Resolution.DUPLICATE:
+            return at
+        target = state.ticket(line.duplicate_of) if line.duplicate_of is not None else None
+        if target is None or on_task(target, t.subject):
+            return None
+        u = target
+    return None
+
+
+def fixers(state: State, t: Ticket, since: float) -> list[Agent]:
+    """The fix agents of the session launched on `t` since `since`."""
+    return [a for a in state.agents_of(Role.SOLVER_FIX, t.number) if a.launched >= since]
+
+
+def fixes(state: State) -> list[Fix]:
+    """The `interference` tickets whose solver fix is due, in the tracker's
+    order. The record that a fix is done is the line its agent writes on
+    the ticket, which the tracker shares across sessions; a ticket closed
+    again after that line gets a fix of its new closure. A fix agent that
+    returned with no such line gets no second launch in its session. A
+    solver pass on the task launched since the closure wrote the solver
+    with the closure in place, so it leaves no fix due."""
+    out: list[Fix] = []
+    for t in sorted(state.tracker.tickets.values(), key=lambda t: t.order):
+        if not on_task(t, t.subject) or t.subject not in state.git.solvers or not (
+                state.mine(t) or t.session in state.sessions.fixed_for):
+            continue
+        at = resolved(state, t)
+        i = closing(t)
+        if at is None or i is None or at < FIXES_FROM or fixers(state, t, at) or any(
+                a.launched >= at for role in PASSES for a in state.agents_of(role, t.subject)):
+            continue
+        if any(ln.note.startswith(f"{briefs.FIX_MARK}:") for ln in t.log[i + 1:]):
+            continue
+        out.append(Fix(t, at))
+    return out
+
+
+def fix_agents(state: State) -> list[tuple[str, Agent]]:
+    """Each fix agent of the session, with its task, where its ticket is
+    read."""
+    return [(t.subject, a) for a in state.agents_of(Role.SOLVER_FIX)
+            if (t := state.ticket(a.subject)) is not None]
+
+
+def fixed_tasks(state: State) -> set[str]:
+    """The tasks whose solver fix is due or pending."""
+    return {f.task for f in fixes(state)} | {task for task, a in fix_agents(state) if a.pending}
+
+
+def releases(state: State) -> list[tuple[str, Agent]]:
+    """Each task whose claim is to be released, with the fix agent that
+    returned on it: the latest on its task, with no fix pending there, no
+    `release` call on it since its launch, and the claim held by the
+    session while no pipeline of the session runs on the task, so that the
+    claim is the fix's."""
+    on = {p.task for p in running(state)}
+    latest_fix = {task: a for task, a in fix_agents(state)}
+    return [(task, a) for task, a in latest_fix.items()
+            if not a.pending and task not in on and state.git.claims.get(task) == state.session
+            and not ran(state, release_command(task), a.launched)]
+
+
+def busy(state: State) -> set[str]:
+    """The tasks a run's start waits on: each a pipeline of the session
+    runs on, each whose solver fix is due or pending, and each whose fix's
+    claim is still to be released."""
+    return ({p.task for p in running(state)} | fixed_tasks(state)
+            | {task for task, _ in releases(state)})
+
+
+def waited_on(t: Ticket) -> str | None:
+    """The change `t` last waited on, as its log gives it."""
+    return next((ln.on_change for ln in reversed(t.log) if ln.on_change is not None), None)
+
+
+def fix_step(state: State) -> Step | None:
+    """The next step of the solver fixes: the `release` of a fix's claim,
+    or, for a fix due on a task where no other fix is pending and no pass
+    of a pipeline of the session on the task is pending, its launch once
+    the session holds the task's claim, which the step takes first where
+    none stands. Where another session holds it, the fix waits. A pipeline
+    from an `Op solve` line claims its task only at its first pass, so a
+    pipeline of the session on the task does not show that the session
+    holds the claim. A pending fix whose task no claim holds, as after a
+    `restore` that ran outside the steps, claims it again, so that no
+    other pipeline sets aside the solver it edits."""
+    for task, a in releases(state):
+        return Bash(release_command(task), f"{task} release", occasion=str(a.launched))
+    pending = {task for task, a in fix_agents(state) if a.pending}
+    on = running(state)
+    for task, a in fix_agents(state):
+        if (a.pending and task not in state.git.claims
+                and (step := claim_step(state, task, a.launched)) is not None):
+            return step
+    for f in fixes(state):
+        if f.task in pending:
+            continue
+        launch = Launch(Role.SOLVER_FIX, f.ticket.number,
+                        briefs.solver_fix(f.task, f.ticket.number, waited_on(f.ticket), state.me),
+                        occasion=str(f.closed))
+        if any(a.pending for p in on if p.task == f.task for a in passes_of(state, p)):
+            continue
+        holder = state.git.claims.get(f.task)
+        if holder == state.session:
+            return launch
+        if holder is not None:
+            continue
+        if (step := claim_step(state, f.task, f.closed)) is not None:
+            return step
+    return None
+
+
+def claim_step(state: State, task: str, since: float) -> Bash | None:
+    """The claim of `task` for a solver fix, None while the latest such
+    call since `since` is pending or has not yet shown in the claim file;
+    it is given again after a call that failed."""
+    claim = claim_command(task)
+    tries = ran(state, claim, since)
+    if tries and not tries[-1]:
+        return None
+    return Bash(claim, f"{task} fix claim", occasion=f"{since} {len(tries)}")
+
+
+def passes_of(state: State, p: Pipeline) -> list[Agent]:
+    """The passes launched on the task of `p` since its start."""
+    return [a for r in PASSES for a in state.agents_of(r, p.task) if a.launched >= p.since]
 
 
 def awaits_analyst(state: State, number: str) -> bool:
@@ -457,7 +652,7 @@ def awaits_analyst(state: State, number: str) -> bool:
             return True
         if t.filer not in {r.value for r in PASSES}:
             continue
-        passes = [a for r in PASSES for a in state.agents_of(r, t.subject) if a.launched >= p.since]
+        passes = passes_of(state, p)
         if any(a.pending or a.agent_id is not None
                and number in (tickets_listed(state, a.agent_id) or ()) for a in passes):
             return True

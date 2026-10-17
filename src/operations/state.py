@@ -504,6 +504,7 @@ class GitRead:
     gives the session id each claimed task's claim file holds, and
     `restores` the `restore` calls on each task, in order, as
     `task_work.restores_file` records them.
+    `solvers` holds the tasks whose solver stands in the main tree.
     `reviews` gives each review's last baseline, or why the read gives
     none.
     `doc_reviews` gives the time of the commit each `Reader.tag` points
@@ -515,6 +516,7 @@ class GitRead:
     branches: Mapping[Path, str]
     claims: Mapping[str, str]
     restores: Mapping[str, tuple[Restore, ...]]
+    solvers: frozenset[str]
     reviews: Mapping[Review, Baseline | NoBaseline]
     doc_reviews: Mapping[str, float] | None
     definitions: Mapping[str, float]
@@ -623,12 +625,15 @@ class SessionsRead:
     """What the operator reads of the tracker's sessions. `idle_indexes`
     holds the idle indexes `idle_sessions.read_sessions` gives, `adopted`
     those of them the operators act on as on the session's own
-    (`file_ticket.py main --help`), `main` whether the reading session is
+    (`file_ticket.py main --help`), `fixed_for` the indexes whose closed
+    `interference` tickets the operators give a solver fix
+    (`idle_sessions.Sessions.fixed_for`), `main` whether the reading session is
     the main session, `main_live` whether the main session runs an agent,
     and `main_wanted` the session id `tickets/main-wanted` holds with the
     time of its write, as `idle_sessions` gives them."""
     idle_indexes: frozenset[int]
     adopted: frozenset[int]
+    fixed_for: frozenset[int]
     main: bool
     main_live: bool
     main_wanted: tuple[str, float] | None
