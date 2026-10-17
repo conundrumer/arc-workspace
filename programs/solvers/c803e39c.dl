@@ -1,0 +1,328 @@
+// c803e39c
+// @draft
+// @keywords: decompose tile-arrangement scale stamp crop
+// @scene four-panels: the input is a row of four panels on params.background,
+//  counted from the params.panel_from edge and split by full lines of
+//  params.divider_color across that axis, each panel in the role
+//  params.panel_role gives its rank; each panel holds its content in an n×n
+//  square one cell in from the panel's top and its near side, where n is the
+//  side of the solid squares, and the grid is n+2 high
+// @scene tile-shape: the tile panel holds a shape of 1 in its n×n square
+// @scene map-shape: the map panel holds a shape of 2 in its n×n square
+// @scene shapes-span-square: each of the two shapes touches all four sides of
+//  its n×n square
+// @scene solid-squares: the fill and ground panels each hold a solid n×n
+//  square, and the two squares differ in color
+// @rule tile-by-map: the output is n²×n², cut into n×n blocks of n×n cells;
+//  block (i, j) is the tile shape where map cell (i, j) is set, and ground
+//  color everywhere where it is not
+// @rule tile-colors: in a block that holds the tile, the tile's cells take the
+//  color of the fill panel's square and its other cells take the color of the
+//  ground panel's square
+
+// how the tile shape and the map shape are told apart
+.type Role =
+    // @claim tile-shape map-shape
+    PanelRank {}
+    // @scene tile-shape: the tile is the shape of params.tile_color, in
+    //  whichever of the tile and map panels it sits; undefined where neither
+    //  holds that color alone
+    // @scene map-shape: the map is the shape of params.map_color, in
+    //  whichever of the tile and map panels it sits; undefined where neither
+    //  holds that color alone
+    // @witness swapped-shape-colors: variant concept
+    //     @relaxed tile-shape
+    //     @relaxed map-shape
+  | TileByColor {}
+
+// the frame each shape is read in
+.type ShapeFrame =
+    // @claim four-panels shapes-span-square
+    Square {}
+    // @scene four-panels: each shape panel's frame is the bounding box of its
+    //  shape, and the output is (map height × tile height) by (map width ×
+    //  tile width); undefined where a shape panel is empty
+    // @scene shapes-span-square: each shape spans its frame, its own bounding
+    //  box
+    // @witness shape-short-of-square: variant concept
+    //     @relaxed shapes-span-square
+  | ShapeBbox {}
+    // @scene four-panels: n is the count of lines along the panel axis that
+    //  lie on neither edge of the grid; each shape's square covers those lines
+    //  and the n cells that follow the first cell from the panel's near side
+    // @witness extra-bottom-row: borderline concept
+    //     @relaxed four-panels
+  | HeightSide {}
+
+// the divider color
+.type Divider =
+    // @claim four-panels
+    StoredDivider {}
+    // @scene four-panels: the dividers are the lines across the panel axis
+    //  filled by the one non-background color that fills such a line;
+    //  undefined where no color or more than one does
+    // @witness recolored-dividers: variant $DividerByLines
+    //     @relaxed four-panels
+  | DividerByLines {}
+
+.type Choice = [r: Role, f: ShapeFrame, dv: Divider]
+
+.type ShapeKey = [dv: Divider, k: number]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed four-panels
+    .decl background(c: Color) background(0).
+    // the edge the panels are counted from, which is each panel's near side
+    .decl panel_from(d: Dir) panel_from(DIR_L).
+    // the rank from panel_from of the panel in each role
+    .decl panel_role(k_tile: number, k_map: number, k_fill: number, k_ground: number)
+    panel_role(0, 1, 2, 3).
+
+    // --- $StoredDivider ---
+    .decl divider_color(c: Color) divider_color(5).
+
+    // --- $TileByColor ---
+    .decl tile_color(c: Color) tile_color(1).
+    .decl map_color(c: Color) map_color(2).
+}
+
+.init params = Params
+
+.decl divider_choice(dv: Divider)
+divider_choice($StoredDivider()). divider_choice($DividerByLines()).
+
+.decl panel_axis(a: Axis)
+panel_axis(A) :- params.panel_from(D), axis_of(D, A).
+
+.comp Parse<Key> {
+    .type LineKey = [key: Key, l: Position]
+    .type PanelKey = [key: Key, k: number]
+
+    .decl cell(key: Key, p: Position, col: Color)
+    .decl divider_color(key: Key, col: Color)
+    // The ranks of the panels that hold the solid squares.
+    .decl solid(key: Key, k: number)
+
+    // Each line across the panel axis, as its place on that axis, with the
+    // color that fills it.
+    // @claim four-panels
+    .init line = Unanimous<LineKey, Color>
+    line.item([Ky, L], Col) :- cell(Ky, P, Col), panel_axis(A), split(P, A, L, _).
+
+    // @claim four-panels
+    .init panels = DividerTiles<Key>
+    panels.cell(Ky, P) :- cell(Ky, P, _).
+    panels.divider(Ky, A, L) :- line.value([Ky, L], Col), divider_color(Ky, Col), panel_axis(A).
+
+    // A cell of the panel at rank k from panel_from.
+    .decl panel_cell(key: Key, k: number, p: Position)
+    panel_cell(Ky, K, P) :- params.panel_from(D), panels.part_idx(Ky, P, D, K).
+
+    // @claim four-panels
+    .init panel_box = Bbox<PanelKey>
+    panel_box.cell([Ky, K], P) :- panel_cell(Ky, K, P).
+
+    // A panel cell in the panel's frame.
+    .decl panel_rel(key: Key, k: number, p: Position, p_rel: Position)
+    panel_rel(Ky, K, P, P_rel) :-
+        panel_cell(Ky, K, P), panel_box.box([Ky, K], B), crop(P, B, P_rel).
+
+    .decl ink(key: Key, k: number, p: Position, col: Color)
+    ink(Ky, K, P, Col) :- panel_cell(Ky, K, P), cell(Ky, P, Col), !params.background(Col).
+
+    // The one color of a panel's ink.
+    // @claim solid-squares
+    .init shade = Unanimous<PanelKey, Color>
+    shade.item([Ky, K], Col) :- ink(Ky, K, _, Col).
+
+    // @claim solid-squares
+    .init ink_box = Bbox<PanelKey>
+    ink_box.cell([Ky, K], P) :- ink(Ky, K, P, _).
+
+    // A panel's square lies where the solid squares lie in their panels: on
+    // their lines along the panel axis, at their distances from the near side.
+    .decl square_cell(key: Key, k: number, p: Position)
+    square_cell(Ky, K, P) :-
+        panel_rel(Ky, K, P, P_rel),
+        solid(Ky, K2), ink(Ky, K2, Q, _), panel_rel(Ky, K2, Q, Q_rel),  // a solid square's cell
+        panel_axis(A), same_line(A, P, Q), params.panel_from(D), same_dist(D, P_rel, Q_rel).
+
+    // @claim four-panels
+    .init square_box = Bbox<PanelKey>
+    square_box.cell([Ky, K], P) :- square_cell(Ky, K, P).
+}
+
+.init parse = Parse<Divider>
+parse.cell(Dv, P, Col) :- in(P, Col), divider_choice(Dv).
+
+.decl ground(dv: Divider, col: Color)
+ground(Dv, Col) :- params.panel_role(_, _, _, K), parse.shade.value([Dv, K], Col).
+
+// The tile and map panels.
+.decl shape_panel(k: number)
+shape_panel(K) :- ( params.panel_role(K, _, _, _) ; params.panel_role(_, K, _, _) ).
+
+.decl tile_rank(r: Role, dv: Divider, k: number)
+.decl map_rank(r: Role, dv: Divider, k: number)
+
+// The box each shape panel's frame takes.
+.decl frame_box(f: ShapeFrame, dv: Divider, k: number, b: Box)
+
+// Each cell of a shape panel's frame, in the frame's own coordinates.
+.decl frame_cell(f: ShapeFrame, dv: Divider, k: number, p_inner: Position)
+frame_cell(F, Dv, K, P_inner) :- frame_box(F, Dv, K, B), in(P, _), crop(P, B, P_inner).
+
+// The frame cells the panel's shape sets.
+.decl frame_ink(f: ShapeFrame, dv: Divider, k: number, p_inner: Position)
+frame_ink(F, Dv, K, P_inner) :-
+    frame_box(F, Dv, K, B), parse.ink(Dv, K, P, _), crop(P, B, P_inner).
+
+// @claim tile-by-map tile-colors
+out(P_grid_out, Col, [R, F, Dv]) :-
+    tile_rank(R, Dv, K_tile), map_rank(R, Dv, K_map),
+    frame_cell(F, Dv, K_map, P_tile), frame_cell(F, Dv, K_tile, P_intile),  // block, cell in it
+    concat_2d(P_tile, P_intile, 0, P_grid_out),
+    ( frame_ink(F, Dv, K_map, P_tile), frame_ink(F, Dv, K_tile, P_intile),
+      params.panel_role(_, _, K_fill, _), parse.shade.value([Dv, K_fill], Col)  // the fill color
+    ; !frame_ink(F, Dv, K_map, P_tile), ground(Dv, Col)
+    ; !frame_ink(F, Dv, K_tile, P_intile), ground(Dv, Col)
+    ).
+
+// --- $PanelRank ---
+tile_rank($PanelRank(), Dv, K) :- divider_choice(Dv), params.panel_role(K, _, _, _).
+map_rank($PanelRank(), Dv, K) :- divider_choice(Dv), params.panel_role(_, K, _, _).
+
+// --- $TileByColor ---
+tile_rank($TileByColor(), Dv, K) :-
+    shape_panel(K), parse.shade.value([Dv, K], Col), params.tile_color(Col).
+map_rank($TileByColor(), Dv, K) :-
+    shape_panel(K), parse.shade.value([Dv, K], Col), params.map_color(Col).
+
+// --- $Square ---
+parse.solid(Dv, K) :-
+    divider_choice(Dv), ( params.panel_role(_, _, K, _) ; params.panel_role(_, _, _, K) ).
+
+frame_box($Square(), Dv, K, B) :- parse.square_box.box([Dv, K], B).
+
+// --- $HeightSide ---
+// A cell on an edge across the panel axis.
+.decl cross_edge(p: Position)
+cross_edge(P) :- in(P, _), params.panel_from(D), perp_dir(D, D2), dist(P, D2, 0).
+
+// The lines along the panel axis that lie on neither edge: n of them.
+// @claim four-panels
+.init inner_lines = Tally<Unit, Position>
+inner_lines.item($U(), L) :-
+    in(P, _), !cross_edge(P), panel_axis(A), perp(A, A2), split(P, A2, L, _).
+inner_lines.domain($U()).
+
+// The square: those lines, and the first n cells in from the near side.
+// @claim four-panels
+.init height_square = Bbox<ShapeKey>
+height_square.cell([Dv, K], P) :-
+    parse.panel_rel(Dv, K, P, P_rel), !cross_edge(P),
+    params.panel_from(D), dist(P_rel, D, J), J > 0, inner_lines.tally($U(), N), J <= N.
+
+frame_box($HeightSide(), Dv, K, B) :- height_square.box([Dv, K], B).
+
+// --- $ShapeBbox ---
+frame_box($ShapeBbox(), Dv, K, B) :- parse.ink_box.box([Dv, K], B).
+
+// --- $StoredDivider ---
+parse.divider_color($StoredDivider(), Col) :- params.divider_color(Col).
+
+// --- $DividerByLines ---
+// The one non-background color that fills a line.
+// @claim four-panels
+.init line_ink = Unanimous<Unit, Color>
+line_ink.item($U(), Col) :-
+    parse.line.value([$DividerByLines(), _], Col), !params.background(Col).
+
+parse.divider_color($DividerByLines(), Col) :- line_ink.value($U(), Col).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+    ex.divider_color(E, Col) :- ex_in(E, _, _), divider_color(Col).
+    ex.solid(E, K) :- ex.panel_cell(E, K, _), !hole(E, K).
+
+    // The color of the panels' cells on the edges across the panel axis.
+    .decl background(c: Color)
+    background(Col) :-
+        ex.panel_cell(E, _, P), params.panel_from(D), perp_dir(D, D2), dist(P, D2, 0),
+        ex_in(E, P, Col).
+
+    // A cell off every line its color fills.
+    .decl off_line(col: Color)
+    off_line(Col) :-
+        ex_in(E, P, Col), panel_axis(A), split(P, A, L, _), !ex.line.value([E, L], Col).
+
+    // The color that fills lines and lies on nothing else.
+    .decl divider_color(c: Color)
+    divider_color(Col) :- ex.line.value(_, Col), !off_line(Col).
+
+    // A cell inside a panel's ink box that the ink leaves out.
+    .decl hole(e: Example, k: number)
+    hole(E, K) :-
+        ex.ink_box.box([E, K], B), ex.panel_cell(E, K, P), inside(P, B), !ex.ink(E, K, P, _).
+
+    // Each cell of a panel's square, in the square's own coordinates, and the
+    // cells its ink sets.
+    .decl frame_cell(e: Example, k: number, p_inner: Position)
+    frame_cell(E, K, P_inner) :- ex.square_box.box([E, K], B), ex_in(E, P, _), crop(P, B, P_inner).
+
+    .decl frame_ink(e: Example, k: number, p_inner: Position)
+    frame_ink(E, K, P_inner) :-
+        ex.square_box.box([E, K], B), ex.ink(E, K, P, _), crop(P, B, P_inner).
+
+    .decl rank(k: number)
+    rank(K) :- ex.panel_cell(_, K, _).
+
+    // An assignment of the roles to panel ranks.
+    .decl roles(t: number, m: number, f: number, g: number)
+    roles(T, M, F, G) :- rank(T), rank(M), rank(F), rank(G).
+
+    // The output color an assignment gives a train output cell.
+    .decl predicted(t: number, m: number, f: number, g: number, e: Example, p: Position, col: Color)
+    predicted(T, M, F, G, E, P_grid_out, Col) :-
+        roles(T, M, F, G), ex_out(E, _, _),
+        frame_cell(E, M, P_tile), frame_cell(E, T, P_intile),
+        concat_2d(P_tile, P_intile, 0, P_grid_out),
+        ( frame_ink(E, M, P_tile), frame_ink(E, T, P_intile), ex.shade.value([E, F], Col)
+        ; !frame_ink(E, M, P_tile), ex.shade.value([E, G], Col)
+        ; !frame_ink(E, T, P_intile), ex.shade.value([E, G], Col)
+        ).
+
+    // An assignment whose prediction and some train output differ at a cell.
+    .decl contradicted(t: number, m: number, f: number, g: number)
+    contradicted(T, M, F, G) :- predicted(T, M, F, G, E, P, Col), !ex_out(E, P, Col).
+    contradicted(T, M, F, G) :-
+        roles(T, M, F, G), ex_out(E, P, Col), !predicted(T, M, F, G, E, P, Col).
+
+    // @workaround: the runner's fit of panel_role over its candidate values, which the plan's enumeration limit blocks
+    // @ignore: determine prediction — the four roles are fixed jointly by the
+    //  product the output draws, and the runner's fit over the parameter's
+    //  domain is past its limit, so this keeps the assignments of the panel
+    //  ranks at which the product gives every train output
+    .decl panel_role(k_tile: number, k_map: number, k_fill: number, k_ground: number)
+    panel_role(T, M, F, G) :- roles(T, M, F, G), !contradicted(T, M, F, G).
+
+    // The color the tile panel's shape holds in the most inputs.
+    // @claim tile-shape
+    .init tile_shade = Mode<Unit, Color, Example>
+    tile_shade.item($U(), Col, E) :- panel_role(K, _, _, _), ex.shade.value([E, K], Col).
+
+    .decl tile_color(c: Color)
+    tile_color(Col) :- tile_shade.mode($U(), Col).
+
+    // The color the map panel's shape holds in the most inputs.
+    // @claim map-shape
+    .init map_shade = Mode<Unit, Color, Example>
+    map_shade.item($U(), Col, E) :- panel_role(_, K, _, _), ex.shade.value([E, K], Col).
+
+    .decl map_color(c: Color)
+    map_color(Col) :- map_shade.mode($U(), Col).
+}
