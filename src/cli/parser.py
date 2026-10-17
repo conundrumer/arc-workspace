@@ -45,17 +45,17 @@ STEM_OR_ALL_HELP = mctx("{stem}, or every solver when omitted").format(
     stem=STEM_HELP)
 
 RUN_HELP = mctx("""
-    - To profile one grid by hand, write a file beside the solvers, so that `#include "../lib.dl"` resolves, and link the functor library that the lib's relations call:
+    - To profile one grid by hand, write a file that includes the lib, and link the functor library that the lib's relations call:
         ```
-        { echo '#include "../lib.dl"'
+        { echo '#include "lib.dl"'
           cat programs/solvers/<stem>.dl
           echo '.input in(IO=stdin)'
           echo '.output out(IO=stdout)'
         } > programs/solvers/.tmp.dl
-        souffle -D- -w -L programs -lfunctors programs/solvers/.tmp.dl
+        souffle -D- -w -I programs -L programs -lfunctors programs/solvers/.tmp.dl
         ```
     - Souffle reads one fact line per cell on stdin: `[top, bottom, left, right]` edge distances, a tab, then the color.
-    - For a solver with GRID calls or RIGID blocks, put the `expand` command's output in place of the `cat` line.
+    - For a solver with GRID calls or RIGID blocks, put the `expand` command's output in place of the include line and the `cat` line.
     - Add `-p <file>` for a profile that souffleprof reads.
     """)
 
