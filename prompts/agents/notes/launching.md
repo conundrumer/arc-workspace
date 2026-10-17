@@ -1,6 +1,6 @@
 + budget: 25786
 * comment: when editing this doc
-    - Each Claude Code session and agent loads [Launching](#launching) by the link of [arc-workspace](CLAUDE.md), before it launches an agent by a call no command printed, and An agent type not found and A transcript review's brief by their links, at such a launch's failure and at a transcript review's launch; the ticket reviewer inlines draft-outcome there too. Each agent inlines the sections under [Briefs](#briefs) that give its own brief's form, which its `description` links for each launcher, and the editors An editor's report on a change. The coordinator loads Passes on a task, Operators and While the user gives feedback by the links of its Changes section.
+    - Each Claude Code session and agent loads [Launching](#launching) by the link of [arc-workspace](CLAUDE.md), before it launches an agent by a call no command printed, and An agent type not found and A transcript review's brief by their links, at such a launch's failure and at a transcript review's launch. Each reader of Launching loads A draft's outcome by the link at the cut of a draft's claims, and each reader of the Checks of [Reviewing a draft](prompts/agents/ticket-reviewer/review.md) by the link at the check of a draft's claims about the current state. Each agent inlines the sections under [Briefs](#briefs) that give its own brief's form, which its `description` links for each launcher, and the editors An editor's report on a change. The coordinator loads Passes on a task, Operators and While the user gives feedback by the links of its Changes section.
     - Acts, each with its section:
         - Launching an agent and acting on what it leaves unfinished: [Launching](#launching), and [An agent type not found](#an-agent-type-not-found).
         - Writing a brief, and reading one's own: [Briefs](#briefs), one section per form.
@@ -8,7 +8,7 @@
         - Launching a pass on a task: [Passes on a task](#passes-on-a-task).
         - Sending an operator a line and taking its reply: [Operators](#operators).
         - Batching the user's feedback: [While the user gives feedback](#while-the-user-gives-feedback).
-        - Cutting a draft's claims to its outcome: [draft-outcome](#draft-outcome).
+        - Cutting a draft's claims to its outcome: [A draft's outcome](#a-drafts-outcome).
 
 # Launching notes
 - The statements on launching an agent, that more than one entry point inlines or links.
@@ -21,7 +21,7 @@
     - Give each item as a requirement: a statement of what holds once the edit is made, that a check or a reading of the result can confirm. Give each way the edit can fail that you foresee as an item that gives what holds in that case, and ask no agent to think a case through.
     - In those items or that Intent, give no account of how each way the edit can fail is met, and no claim on what other lines of the documents or other branches of the code then do, unless the meaning to state, or the decision a `change` ticket gives, depends on it.
 - Before you give another agent a draft `change` ticket that you filed or revised, in your reply or otherwise, cut from each of its sections each claim the draft's outcome does not rest on, and give each claim left no more precision than that outcome rests on. Then check each claim left about the current state against that state.
-    * inline: #draft-outcome
+    - Read [A draft's outcome](prompts/agents/notes/launching.md#a-drafts-outcome) before you cut.
     * comment: On draft 2-525, ticket analyst a040f7b84d2e02209 wrote two such claims that a docstring and a help text it had printed before it wrote the draft disprove, and each took a ticket reviewer's round: the Intent of ticket 2-530.
 - Split work off to another agent where what the split saves outweighs its overhead. A split can save wall-clock, tokens, or your own context; its overhead is the documents the new agent loads before it starts, and the brief.
     * comment: The user's words, session 7fd429fb, 2026-10-16, on a fixed ratio of wall-clock to token cost: "that seems overly rigid", "also saves on context rot", and on the overhead: "that sounds right": ticket 6-1416.
@@ -182,6 +182,6 @@
 - Gather each request the user approves into a batch, and when the user pauses or asks you to send it, send the whole batch at once: give each request to the agent a line of your documents gives for its work, or else to the handbook agent whose description covers it, as the split line of [Launching](#launching) allows, with one brief per agent.
 - Where a request touches the files of a change that has not passed, send it to that change's editor with SendMessage. Add every other request to the batch.
 
-## draft-outcome
+## A draft's outcome
 - A draft's outcome is the decision that this revision of the draft or a later revision of it gives, and the change the tree gets from that decision.
 - The outcome rests on a claim where, were the claim wrong, the outcome would differ. A check of the claim is no part of the outcome.
