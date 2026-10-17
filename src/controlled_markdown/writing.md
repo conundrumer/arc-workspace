@@ -42,10 +42,11 @@
 + rules on prose in code
 
 ### Docstrings, comments and help text
-- A docstring or a comment holds only the contract of the code it documents, what that code holds and guarantees, a rule that code keeps or the reason for one, each where the code does not show it, or an index that leads a reader to what the code holds.
+- A docstring or a comment holds only what its reader needs where it stands and the code does not show: the contract of the code it documents, what that code holds and guarantees, a rule that code keeps or the reason for one, or an index that leads a reader to what the code holds.
     * comment: The editor of commit 10134e4b wrote in the doc comment of the `SolverClauses` struct of `engine/arclog/src/check/mod.rs` the type check's rule on `(= *X 0)`, which the check that reads that struct applies, and left the struct's key and entries unexplained; the user's words, session 129de8fc, 2026-10-17T16:21:13Z: "something feels weird about this docstring".
+    * comment: The user's words, session 2384db39, 2026-10-17T18:48:30Z: "I don’t want it to result in bloat. Avoiding bloat is the primary goal. Usually that’s done by cutting what the code already says or what the reader doesn’t need", and 18:48:56Z: "What the reader doesn’t need as writing guide says like details not needed at this place".
     - A rule that a consumer of that code applies stands at that consumer.
-    - An edit that meets text in one that restates the code it sits beside cuts that text in place of updating it.
+    - An edit that meets text in one that the code beside it shows, or that its reader does not need there, cuts that text in place of updating it.
     - A rule that the `--help` text of a script under [scripts](scripts) states stands in that text alone, and a docstring or a comment of the code that carries the rule out leads its reader to that text where the reader needs the rule.
     - The words of a docstring or a comment keep the rules that [Writing a file](docs/handbook/editing.md#writing-a-file) gives a line's words, other than its rules on links and bare paths: read that section before you write, change or judge one, where your context does not hold it.
         * comment: The user's words, session 129de8fc, 2026-10-17T16:23:08Z: "they get reviewed according to writing standards right".

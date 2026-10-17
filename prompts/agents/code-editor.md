@@ -32,7 +32,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 ## Writing the code
 - Implement your brief against the spec: the docstrings of the modules you touch.
     - Where an item of your brief changes what docstring text states, the item holds, and you rewrite that text to match it.
-    - Change no other docstring text that stands before your edit, apart from text that restates the code, which the rules on prose in code below have you cut.
+    - Change no other docstring text that stands before your edit, apart from text that the rules on prose in code below have you cut.
     - The rules on prose in code:
         * inline: ../../src/controlled_markdown/writing.md#docstrings-comments-and-help-text
         - Where you write or change a string a program puts in an agent's context, a `quotes` or `guard` decorator, or a `///` or `//!` comment in a Souffle file, read [Text the check reads in code](src/controlled_markdown/writing.md#text-the-check-reads-in-code).
