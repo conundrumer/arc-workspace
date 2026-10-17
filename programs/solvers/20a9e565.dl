@@ -82,11 +82,10 @@ drawn_choice($EveryTerm()). drawn_choice($NewTermsOnly()).
 .type TermPair = [t: Ident, t2: Ident]
 .type TermEdge = [t: Ident, e: Dir]
 .type TermSide = [d: Dir, t: Ident, e: Dir]
-.type TermRule = [d: Dir, c: DemonstratedChoice, t: Ident]
+.type TermDir = [d: Dir, t: Ident]
 // The inner task, a direction of the sequence, and the rule each fact of
 // `out` is derived at.
 .type DemonstratedRule = [task: Dir, rule: DemonstratedChoice]
-.type Grown = [d: Dir, c: DemonstratedChoice, i0: Position, i: Position]
 .type Seat = [i: Position, p: Position]
 // The term at index i0 grown to index i.
 .type GrownTerm = [i0: Position, i: Position]
@@ -201,19 +200,15 @@ moves(D, I1, I, N) :-
 .decl span(k: number)
 span(K) :- in(P, _), dir_elem(D), dist(P, D, K), K > 0.
 
-// The cells of the term at i0 that rule c grows by index i, one color each:
-// paint keeps a cell's own color, and fill gives it the color of the term at
-// index i_c.
-.decl paint(d: Dir, c: DemonstratedChoice, i0: Position, i: Position, p: Position, col: Color)
-// @ignore: head-repeat — a cell a rule grows in the grown term's own color
-//  names that term as both the term grown and the term whose color it takes
-.decl fill(d: Dir, c: DemonstratedChoice, i0: Position, i: Position, p: Position, i_c: Position)
+// The line of the back edge of the term at index i0, from which each term
+// is read along the sequence.
+.decl back_line(d: Dir, i0: Position, l: Position)
+back_line(D, I0, L) :- term_at(D, I0, T), opposite(D, Db), term_edge(T, Db, L).
 
-// A rule that draws each term in one color.
-.decl monochrome(d: Dir, c: DemonstratedChoice)
-monochrome(D, $Stretch(E)) :- perp_dir(D, E).
-monochrome(D, $PeriodEnd(E)) :- perp_dir(D, E).
-monochrome(D, $MirrorEnds()) :- dir_elem(D).
+// The back edge line of the term at i0, from which the term it grows to by
+// index i is read, and the color of the term at index i.
+.decl grown_frame(d: Dir, i0: Position, i: Position, l: Position, col: Color)
+grown_frame(D, I0, I, L, Col) :- target(D, I0, I), back_line(D, I0, L), index_color(D, I, Col).
 
 // @claim continue-sequence
 .init term_period = OffsetInvariance<Ident, Color>
@@ -253,9 +248,11 @@ stretch(D, E, I0, I, P, K) :-
     steps(D, I0, I, M), term_at(D, I0, T), ( E = D ; perp_dir(D, E) ), edge_cell(T, E, P),
     span(K), K <= M.
 
-fill(D, $Stretch(E), I0, I, Q, I) :-
+// Each cell of the stretched term takes the color of the term at index i.
+catalog.prediction(D, $Stretch(E), [I0, I], P_h, Col) :-
     stretch(D, D, I0, I, P, K), perp_dir(D, E), stretch(D, E, I0, I, P, K2),
-    jump(P, D, K, Q1), jump(Q1, E, K2, Q).
+    jump(P, D, K, Q1), jump(Q1, E, K2, Q),
+    grown_frame(D, I0, I, L, Col), relative(L, Q, P_h).
 
 // --- PeriodEnd ---
 
@@ -269,9 +266,13 @@ period_block(D, E, I0, I, Q) :-
     span(S), stride(S, K, 0, N, 0), N <= M,                     // n periods
     jump(P, E, S, Q).
 
-fill(D, $PeriodEnd(E), I0, I, P, I) :-
-    target(D, I0, I), cross_period(D, I0, _), perp_dir(D, E), cell_at(D, I0, P, _).
-fill(D, $PeriodEnd(E), I0, I, P, I) :- period_block(D, E, I0, I, P).
+// The term's own cells and its period blocks take the color of the term at
+// index i.
+catalog.prediction(D, $PeriodEnd(E), [I0, I], P_h, Col) :-
+    ( target(D, I0, I), cross_period(D, I0, _), perp_dir(D, E), cell_at(D, I0, P, _)
+    ; period_block(D, E, I0, I, P)
+    ),
+    grown_frame(D, I0, I, L, Col), relative(L, P, P_h).
 
 // --- MirrorEnds ---
 
@@ -322,10 +323,12 @@ ends.before([D, I0, E], L, L2) :-
 .decl mirror_reach(d: Dir, i0: Position, e: Dir, i: Position, l: Position)
 mirror_reach(D, I0, E, I, L) :- steps(D, I0, I, M), ends.rank([D, I0, E], L, M).
 
-fill(D, $MirrorEnds(), I0, I, P, I) :-
+// The repeat between the two ends takes the color of the term at index i.
+catalog.prediction(D, $MirrorEnds(), [I0, I], P_h, Col) :-
     mirror_reach(D, I0, E, I, L), opposite(E, E2), mirror_reach(D, I0, E2, I, L2),
     repeat(D, I0, P), axis_of(E, C), split(P, C, L3, _),
-    !nearer(E, L3, L), !nearer(E2, L3, L2).                     // between the two ends
+    !nearer(E, L3, L), !nearer(E2, L3, L2),                     // between the two ends
+    grown_frame(D, I0, I, L_b, Col), relative(L_b, P, P_h).
 
 // --- FlippedEnds ---
 
@@ -351,9 +354,15 @@ end_piece.edge([D, I0, E], [I1, P], [I2, Q]) :-
     relative(B_al, P, P_rel), apply(F, P_rel, P_rel2), compose(B_al, P_rel2, P2),
     compose(P2, V, Q).
 
-paint(D, $FlippedEnds(), I0, I, P, Col) :- target(D, I0, I), cell_at(D, I0, P, Col).
-fill(D, $FlippedEnds(), I0, I, P, I_c) :-
-    end_piece.reached([D, I0, _], [I_c, P]), target(D, I0, I_c), moves(D, I_c, I, _).
+// The term's own cells keep their colors, and each piece gained at index i_c
+// takes the color of the term there.
+catalog.prediction(D, $FlippedEnds(), [I0, I], P_h, Col) :-
+    target(D, I0, I),
+    ( cell_at(D, I0, P, Col)
+    ; end_piece.reached([D, I0, _], [I_c, P]), target(D, I0, I_c), moves(D, I_c, I, _),
+      index_color(D, I_c, Col)
+    ),
+    back_line(D, I0, L), relative(L, P, P_h).
 
 // --- SplitStep ---
 
@@ -415,29 +424,36 @@ tent(D, I0, I, Q, I_o, P_o) :-
       ; span(S1), stride(S1, W, 0, N, 0), jump(P, E, S1, Q1), jump(Q1, D, S2, Q) )
     ).
 
-paint(D, $SplitStep(), I0, I, P, Col) :- tent(D, I0, I, P, I0, P_o), cell_at(D, I0, P_o, Col).
-fill(D, $SplitStep(), I0, I, P, I_c) :- tent(D, I0, I, P, I_c, _), I_c != I0.
+// A cell from the term's own cells keeps its color, and a cell from a hook
+// added at index i_c takes the color of the term there.
+catalog.prediction(D, $SplitStep(), [I0, I], P_h, Col) :-
+    tent(D, I0, I, P, I_c, P_o),
+    ( I_c = I0, cell_at(D, I0, P_o, Col)
+    ; I_c != I0, index_color(D, I_c, Col)
+    ),
+    back_line(D, I0, L), relative(L, P, P_h).
 
 // --- term colors ---
 
-// The cells whose one color is a term's color under rule c: every cell for
-// a rule that draws a term in one color, the cells of both ends across the
-// sequence for FlippedEnds, and the back edge for SplitStep.
-.decl color_cell(d: Dir, c: DemonstratedChoice, t: Ident, p: Position)
-color_cell(D, C, T, P) :- monochrome(D, C), term_cell(T, P, _).
-color_cell(D, $FlippedEnds(), T, P) :- perp_dir(D, E), edge_cell(T, E, P).
-color_cell(D, $SplitStep(), T, P) :- opposite(D, Db), edge_cell(T, Db, P).
-
+// The one color of the cells on a term's back edge.
 // @claim continue-sequence
-.init term_color = Unanimous<TermRule, Color>
-term_color.item([D, C, T], Col) :- color_cell(D, C, T, P), term_cell(T, P, Col).
+.init back_color = Unanimous<TermDir, Color>
+back_color.item([D, T], Col) :- opposite(D, Db), edge_cell(T, Db, P), term_cell(T, P, Col).
 
-.decl shown_color(d: Dir, c: DemonstratedChoice, i: Position, col: Color)
-shown_color(D, C, I, Col) :- term_at(D, I, T), term_color.value([D, C, T], Col).
+// The color of a term: the one color of its back edge, and where that edge
+// holds several, the one color of its two edges across the sequence.
+// @claim continue-sequence
+.init term_color = Unanimous<TermDir, Color>
+term_color.item([D, T], Col) :- back_color.value([D, T], Col).
+term_color.item([D, T], Col) :-
+    back_color.clash([D, T]), perp_dir(D, E), edge_cell(T, E, P), term_cell(T, P, Col).
 
-// A shown term with no one color under rule c.
-.decl uncolored(d: Dir, c: DemonstratedChoice)
-uncolored(D, C) :- term_color.item([D, C, T], _), !term_color.value([D, C, T], _).
+.decl shown_color(d: Dir, i: Position, col: Color)
+shown_color(D, I, Col) :- term_at(D, I, T), term_color.value([D, T], Col).
+
+// A shown term with no one color.
+.decl uncolored(d: Dir)
+uncolored(D) :- term_color.item([D, T], _), !term_color.value([D, T], _).
 
 // A count of terms the color cycle may repeat after: one up to the count of
 // shown terms.
@@ -448,56 +464,58 @@ period_cand(D, K) :-
     relative(I0, I, V), dist(V, Db, K), K > 0.
 
 // A shown term whose color differs from the color of the shown term k on.
-.decl period_defect(d: Dir, c: DemonstratedChoice, k: number)
-period_defect(D, C, K) :-
-    period_cand(D, K), shown_color(D, C, I, Col), jump(I, D, K, I2), shown_color(D, C, I2, Col2),
+.decl period_defect(d: Dir, k: number)
+period_defect(D, K) :-
+    period_cand(D, K), shown_color(D, I, Col), jump(I, D, K, I2), shown_color(D, I2, Col2),
     Col != Col2.
 
 // @claim continue-sequence
-.init least_period = Extremes<DemonstratedRule>
-least_period.cand([D, C], K) :-
-    period_cand(D, K), shown_color(D, C, _, _), !uncolored(D, C), !period_defect(D, C, K).
+.init least_period = Extremes<Dir>
+least_period.cand(D, K) :-
+    period_cand(D, K), shown_color(D, _, _), !uncolored(D), !period_defect(D, K).
 
-// The color of the new term at index i2: the color of the shown terms at its
-// place in the cycle.
-.decl term_color_at(d: Dir, c: DemonstratedChoice, i2: Position, col: Color)
-term_color_at(D, C, I2, Col) :-
-    new_index(D, I2), least_period.low([D, C], K), shown_color(D, C, I, Col), opposite(D, Db),
+// The color of the term at index i: a shown term's own color, and for a new
+// term the color of the shown terms at its place in the cycle.
+.decl index_color(d: Dir, i: Position, col: Color)
+index_color(D, I, Col) :- shown_color(D, I, Col).
+index_color(D, I2, Col) :-
+    new_index(D, I2), least_period.low(D, K), shown_color(D, I, Col), opposite(D, Db),
     dist(I, Db, X), stride(X, K, 0, _, R),
     dist(I2, Db, X2), stride(X2, K, 0, _, R).                   // one place in the cycle
 
 // --- the rule each input demonstrates ---
 
-// @claim continue-sequence
-.init grown_box = Bbox<Grown>
-grown_box.cell([D, C, I0, I], P) :- paint(D, C, I0, I, P, _).
-grown_box.cell([D, C, I0, I], P) :- fill(D, C, I0, I, P, _).
-
 // Each term is read with its lines along the sequence measured from its own
-// box and its lines across the sequence from the grid, so that a growth
-// carries the alignment across the sequence and the gap does not enter. A
-// shown term is the term at its own index grown to that index, and each rule
-// predicts the term at i0 grown to each index it grows to.
+// back edge line and its lines across the sequence from the grid, so that a
+// growth carries the alignment across the sequence and the gap does not
+// enter. A shown term is the term at its own index grown to that index, and
+// each rule predicts the term at i0 grown to each index it grows to, from the
+// back edge line of the term at i0.
 // @claim continue-sequence
 .init catalog = DemonstrationConsistency<Dir, DemonstratedChoice, GrownTerm, Position, Color>
 catalog.value(D, [I, I], P_h, Col) :-
-    cell_at(D, I, P, Col), axis_of(D, A), term_band(D, I, A, B_al), relative(B_al, P, P_h).
+    cell_at(D, I, P, Col), back_line(D, I, L), relative(L, P, P_h).
 catalog.demonstration(D, [I, I2], [I2, I2]) :- consecutive(D, I, I2).
-catalog.prediction(D, C, [I0, I], P_h, Col) :-
-    target(D, I0, I), grown_box.box([D, C, I0, I], B), axis_of(D, A), split(B, A, B_al, _),
-    ( paint(D, C, I0, I, P, Col)
-    ; fill(D, C, I0, I, P, I_c), ( shown_color(D, C, I_c, Col) ; term_color_at(D, C, I_c, Col) )
-    ),
-    relative(B_al, P, P_h).
 
 // --- continuation ---
 
-// The count of lines from the back edge to the e edge of the term the last
-// shown term grows to by the new index i, as rule c predicts it.
-.decl grown_edge(d: Dir, c: DemonstratedChoice, i: Position, e: Dir, k: number)
-grown_edge(D, C, I, E, K) :-
-    last(D, I0), new_index(D, I), catalog.prediction(D, C, [I0, I], P_h, _),
-    axis_of(D, A), axis_of(E, A), opposite(D, Db), dist(P_h, E, 0), dist(P_h, Db, K).
+// A cell of the term the last shown term grows to by the new index i, as
+// the confirmed rule r predicts it.
+// @ignore: head-repeat — d is the direction of r's inner task, which the
+//  clauses that read a row take from d, so that no read names the rule
+.decl grown(d: Dir, r: DemonstratedRule, i: Position, p_h: Position, col: Color)
+grown(D, [D, C], I, P_h, Col) :-
+    catalog.confirmed(D, C), catalog.prediction(D, C, [I0, I], P_h, Col),
+    last(D, I0), new_index(D, I), least_period.low(D, _).
+
+// A cell of the grown term with another cell nearer its front.
+.decl behind(r: DemonstratedRule, i: Position, p_h: Position)
+behind(R, I, P_h) :- grown(D, R, I, P_h, _), grown(D, R, I, Q_h, _), nearer(D, Q_h, P_h).
+
+// The count of lines from the back edge to the front edge of the grown term.
+.decl grown_front(r: DemonstratedRule, i: Position, k: number)
+grown_front(R, I, K) :-
+    grown(D, R, I, P_h, _), !behind(R, I, P_h), opposite(D, Db), dist(P_h, Db, K).
 
 // The line of the back edge of the new term at i2, a gap past the term at
 // i1, when the term at i1 has its front edge on line l1.
@@ -511,18 +529,15 @@ advance(D, I1, L1, I2, L3) :-
 // term on.
 // @claim continue-sequence
 .init front = Propagation<DemonstratedRule, Seat>
-front.source([D, C], [I, L]) :-
-    catalog.confirmed(D, C), last(D, I), term_at(D, I, T), term_edge(T, D, L).
-front.edge([D, C], [I1, L1], [I2, L]) :-
-    advance(D, I1, L1, I2, L3), grown_edge(D, C, I2, D, K), jump(L3, D, K, L).
+front.source(R, [I, L]) :- grown(D, R, _, _, _), last(D, I), term_at(D, I, T), term_edge(T, D, L).
+front.edge(R, [I1, L1], [I2, L]) :-
+    grown(D, R, I2, _, _), advance(D, I1, L1, I2, L3), grown_front(R, I2, K), jump(L3, D, K, L).
 
 // The cells the continued sequence draws: each new term the confirmed rule
 // predicts, its back edge on the line `advance` gives.
 .decl drawn(dr: Drawn, r: DemonstratedRule, p: Position, col: Color)
-drawn(Dr, [D, C], Q, Col) :-
-    catalog.confirmed(D, C), last(D, I0), new_index(D, I),
-    catalog.prediction(D, C, [I0, I], P_h, Col),
-    front.reached([D, C], [I1, L1]), advance(D, I1, L1, I, L_b), drawn_choice(Dr),
+drawn(Dr, R, Q, Col) :-
+    grown(D, R, I, P_h, Col), front.reached(R, [I1, L1]), advance(D, I1, L1, I, L_b), drawn_choice(Dr),
     opposite(D, Db), dist(P_h, Db, K), jump(L_b, D, K, L),       // the cell's line
     axis_of(D, A), split(P_h, A, _, P_across), compose(L, P_across, Q).
 
@@ -536,14 +551,10 @@ mark(P) :- in(P, Col), params.marker_color(Col).
 
 // --- output ---
 
-// The rules the output is drawn under: confirmed, with a least period.
-.decl output_rule(r: DemonstratedRule)
-output_rule([D, C]) :- catalog.confirmed(D, C), least_period.low([D, C], _).
-
 out(P_out, Col, [Dr, Ex], R) :-
     drawn_choice(Dr), window(Ex, B), in(P, _), crop(P, B, P_out),
-    ( drawn(Dr, R, P, Col), ( R = nil, output_rule(_) ; output_rule(R) )   // a drawn cell
-    ; output_rule(R), !drawn(Dr, R, P, _), !drawn(Dr, nil, P, _),           // the field
+    ( drawn(Dr, R, P, Col), grown(_, _, _, _, _)                                // a drawn cell
+    ; grown(_, R, _, _, _), !drawn(Dr, R, P, _), !drawn(Dr, nil, P, _),         // the field
       params.background(Col) ).
 
 // --- $EveryTerm ---
