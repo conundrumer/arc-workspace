@@ -3,11 +3,13 @@ of the ticket tracker, of git and the main worktree, and of the
 transcripts of the session's operators, and of the state the monitor's
 steps read (`monitor_reads`)."""
 
+import atexit
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+import kept_reads
 from agent_turns import first_time, last_time
 from audit_window import window
 from context_bound_hook import past_bound
@@ -101,7 +103,15 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
     launches, calls, messages and late resumes are only those of `me` and
     of the operators whose last entry is at or after `since`: an agent
     launched since then is launched by one of those. `elsewhere_agents`
-    gives `TranscriptsRead.elsewhere`."""
+    gives `TranscriptsRead.elsewhere`.
+
+    Where the process has opened no store of `kept_reads`, the call opens
+    the default store and writes the store's records at the process's
+    exit, so the reads kept on disk are read from the store, not computed,
+    in any process that calls it."""
+    if kept_reads.store() is None:
+        kept_reads.open_store()
+        atexit.register(kept_reads.flush)
     opened = new_state()
     session = session_id()
     main = main_tree()
