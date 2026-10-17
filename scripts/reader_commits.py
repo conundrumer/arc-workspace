@@ -16,8 +16,9 @@ changes them only where its branch moves.
 
 A reader's record holds two commits, one line each: the oldest commit it
 may hold its own context at, then the one for its project instructions; or,
-for a subagent before its first update, one commit, the launch commit: its
-tree's `HEAD` at its launch.
+for a subagent before its first update, the launch commit, its tree's
+`HEAD` at its launch, alone or with a line that holds the digest of the
+predicted texts its start diff ran from.
 The coordinator's record is a file of its session directory named `main`,
 and a subagent's is a file named by its agent id in the directory of the
 project's sessions, so a resume in any session keeps the commits the
@@ -31,6 +32,22 @@ still hold documents from before. The SubagentStart hook writes a
 subagent's record where it has none yet, at its launch (`start_agent`). A
 subagent's own compaction, at which no `SessionStart` runs, leaves its
 record as it stands.
+
+The SubagentStart hook runs before the harness writes the texts it gives a
+subagent to its transcript, so it predicts them: the predicted texts are
+the held texts, as below, of the latest launch before this one, in the
+hook's session, of the subagent's agent type, among those whose transcript
+holds both and that have a `.meta.json`, with launches taken newest first
+by the creation time of their transcript, since the harness rewrites a
+subagent's `.meta.json` when it finishes. The type is the `agent_type` of the hook input, or the
+subagent's `.meta.json` where the input gives none. Where the subagent's
+type has a reader and the prediction gives texts, the hook gives the
+subagent, after its agent id, the held diff from the predicted texts to the
+launch commit, as below, and once that output is printed, it writes the
+digest of the predicted texts beside the launch commit. Where any part of
+the prediction fails, the `context --update --held` run among them, the
+hook gives the agent id alone, writes the launch commit alone, and says the
+failure on stderr.
 
 Before and after each call of a tool, and with each prompt of the user and
 each task notification, `reader_update` gives the reader its update, and
@@ -49,8 +66,13 @@ not differ between the instructions' commit and `HEAD`, and no file of the
 document set `[tool.controlled_markdown]` names differs between the linked
 sections' commit and `HEAD`.
 
-For a record of one commit, the held texts date the subagent's documents in
-place of a commit, since the harness may give a subagent an agent
+For a launch record with a digest, the update reads the subagent's held
+texts, as below. Where their digest is the record's, the update is that of
+a record that holds the launch commit twice; otherwise it is that of a
+launch record with no digest.
+
+For a launch record with no digest, the held texts date the subagent's
+documents in place of a commit, since the harness may give a subagent an agent
 definition other than the one its tree holds at its launch. The held
 context is the `systemPrompt[0]` of the first `prompt_snapshot` attachment
 of the subagent's transcript, and the held `CLAUDE.md` the `content` of the
@@ -97,7 +119,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import IO, Any, NamedTuple
 
-from hook_entry import Update
+from hook_entry import Update, run_part
 
 RECORDS = "reader-commits"
 """The directory of the records, in a session directory or in the
@@ -108,6 +130,7 @@ UPDATE_CACHE = "reader-updates"
 `checkout.cache()`."""
 
 COMMIT = re.compile(r"[0-9a-f]{40}")
+DIGEST = re.compile(r"[0-9a-f]{64}")
 
 RECORD_FAILED = "recorded no commit"
 """The failure text of a start hook whose record fails."""
@@ -174,21 +197,60 @@ def _locked(path: Path) -> Iterator[IO[str]]:
         yield f
 
 
-def _commits(f: IO[str]) -> list[str]:
-    """The one or two commits the record `f` holds, one per line. Any other
-    text is a fault."""
+class ReadRecord(NamedTuple):
+    """The record of a reader that has had an update or a session start."""
+
+    context: str
+    instructions: str
+
+    def lines(self) -> list[str]:
+        return [self.context, self.instructions]
+
+
+class LaunchRecord(NamedTuple):
+    """The record of a subagent before its first update. `predicted` is the
+    digest of the texts its start diff ran from (`texts_digest`), or None
+    where it got no start diff."""
+
+    launch: str
+    predicted: str | None
+
+    def lines(self) -> list[str]:
+        return [self.launch, *([self.predicted] if self.predicted else [])]
+
+
+type Record = ReadRecord | LaunchRecord
+
+
+def _record(f: IO[str]) -> Record:
+    """The record `f` holds, one value per line. Any other text is a
+    fault."""
     lines = f.read().split()
-    if len(lines) not in (1, 2) or not all(COMMIT.fullmatch(c) for c in lines):
-        raise ValueError(f"the record {f.name} holds `{' '.join(lines)}`, "
-                         "not one or two commits")
-    return lines
+    match lines:
+        case [launch] if COMMIT.fullmatch(launch):
+            return LaunchRecord(launch, None)
+        case [launch, digest] if COMMIT.fullmatch(launch) and DIGEST.fullmatch(digest):
+            return LaunchRecord(launch, digest)
+        case [context, instructions] if COMMIT.fullmatch(context) and COMMIT.fullmatch(instructions):
+            return ReadRecord(context, instructions)
+    raise ValueError(f"the record {f.name} holds `{' '.join(lines)}`, which is "
+                     "neither two commits nor a launch commit with or without a digest")
 
 
-def _write(f: IO[str], *commits: str) -> None:
+def _write(f: IO[str], record: Record) -> None:
     f.seek(0)
     f.truncate()
-    f.write("".join(f"{c}\n" for c in commits))
+    f.write("".join(f"{line}\n" for line in record.lines()))
     f.flush()
+
+
+def texts_digest(texts: tuple[str, str]) -> str:
+    """The digest of a context and a `CLAUDE.md`, as a launch record holds
+    it."""
+    h = hashlib.sha256()
+    for text in texts:
+        h.update(text.encode() + b"\0")
+    return h.hexdigest()
 
 
 def start_session(hook: dict[str, Any], coordinator: bool) -> None:
@@ -201,15 +263,95 @@ def start_session(hook: dict[str, Any], coordinator: bool) -> None:
         head = tree_head(hook)[1]
         with _locked(record_path(hook)) as f:
             if source in FRESH_SOURCES or not f.read().strip():
-                _write(f, head, head)
+                _write(f, ReadRecord(head, head))
 
 
-def start_agent(hook: dict[str, Any]) -> None:
-    """Record the launch commit of the subagent the `SubagentStart` input
-    `hook` names, where it has no record."""
+PREDICTION_FAILED = "gave no start diff"
+"""The failure text of a start diff that fails."""
+
+
+def launch_type(hook: dict[str, Any]) -> str:
+    """The agent type of the subagent the `SubagentStart` input `hook`
+    starts, as the module docstring gives it. An input and a `.meta.json`
+    that give none are a fault."""
+    from run_reads import caller_id, hook_session
+    from subagent_paths import SUBAGENTS
+    from transcript_entries import transcript_meta
+
+    kind = hook.get("agent_type")
+    if not isinstance(kind, str):
+        own = hook_session(hook) / SUBAGENTS / f"agent-{caller_id(hook)}.jsonl"
+        kind = (transcript_meta(own) or {}).get("agentType")
+    if not isinstance(kind, str):
+        raise ValueError(f"neither the input nor the .meta.json of agent "
+                         f"{caller_id(hook)} gives its agent type")
+    return kind
+
+
+def predicted_texts(hook: dict[str, Any]) -> tuple[str, str] | None:
+    """The texts the harness is predicted to give the subagent the
+    `SubagentStart` input `hook` starts, as the module docstring gives
+    them, or None where no earlier launch of its type gives them."""
+    from run_reads import caller_id, hook_session, session_agents
+    from transcript_entries import meta_path, transcript_meta
+
+    kind, own = launch_type(hook), caller_id(hook)
+    launched = sorted(((path.stat().st_birthtime, path) for aid, path
+                       in session_agents(hook_session(hook)).items()
+                       if aid != own and meta_path(path).is_file()), reverse=True)
+    for _, path in launched:
+        if (transcript_meta(path) or {}).get("agentType") != kind:
+            continue
+        try:
+            return held_texts(path)
+        except ValueError:
+            continue
+    return None
+
+
+def _start_diff(hook: dict[str, Any], tree: Path,
+                launch: str) -> tuple[str | None, str] | None:
+    """The start diff of the subagent the `SubagentStart` input `hook`
+    starts, whose tree `tree` has `launch` as its `HEAD`, with the digest
+    of the predicted texts it runs from; None where its type has no reader
+    or the prediction gives no texts. A failed run is a fault."""
+    call = type_reader(launch_type(hook))
+    predicted = None if call is None else predicted_texts(hook)
+    if call is None or predicted is None:
+        return None
+    done = _held_run(tree, launch, launch, call, predicted)
+    if done.returncode != 0:
+        raise ValueError(f"`{done.command}` exited {done.returncode}: {done.stderr.strip()}")
+    return _held_text(done, launch, launch), texts_digest(predicted)
+
+
+@contextmanager
+def start_agent(hook: dict[str, Any]) -> Iterator[str | None]:
+    """The start diff of the subagent the `SubagentStart` input `hook`
+    starts, or None, held under the lock of its record, where it has no
+    record; None where it has one. The record gets the launch commit, and
+    the digest of the predicted texts only once the block ends without an
+    error, as the module docstring gives it."""
     with _locked(record_path(hook)) as f:
-        if not f.read().strip():
-            _write(f, tree_head(hook)[1])
+        if f.read().strip():
+            yield None
+            return
+        tree, launch = tree_head(hook)
+        _write(f, LaunchRecord(launch, None))
+        diff = run_part(UPDATE, PREDICTION_FAILED, lambda: _start_diff(hook, tree, launch))
+        yield None if diff is None else diff[0]
+        if diff is not None:
+            _write(f, LaunchRecord(launch, diff[1]))
+
+
+def type_reader(kind: str) -> tuple[str, list[str]] | None:
+    """The reader of the `context` command whose context a subagent of type
+    `kind` has, with its arguments, or None where its type has no
+    document."""
+    from handbook.agents import agent_names
+    from handbook.reader_names import ReaderName
+
+    return (ReaderName.AGENT, [kind]) if kind in agent_names() else None
 
 
 def reader_call(hook: dict[str, Any]) -> tuple[str, list[str]] | None:
@@ -218,7 +360,6 @@ def reader_call(hook: dict[str, Any]) -> tuple[str, list[str]] | None:
     a subagent whose type has no document. A caller of unknown type, and a
     reader name in `SESSION_READER_ENV` that no `ReaderName` gives, are
     faults."""
-    from handbook.agents import agent_names
     from handbook.coordinator_document import SESSION_READER_ENV
     from handbook.reader_names import ReaderName
     from run_reads import MAIN, UNKNOWN_TYPE, agent_type, caller_transcript
@@ -230,7 +371,7 @@ def reader_call(hook: dict[str, Any]) -> tuple[str, list[str]] | None:
     if kind == MAIN:
         name = os.environ.get(SESSION_READER_ENV)
         return (ReaderName.COORDINATOR if name is None else ReaderName(name)), []
-    return (ReaderName.AGENT, [kind]) if kind in agent_names() else None
+    return type_reader(kind)
 
 
 def _documents_differ(tree: Path, before: str, after: str,
@@ -425,11 +566,22 @@ def held_update_text(tree: Path, after: str, launch: str,
     and of the sections they reach by links from `launch`, to `after`, the
     `HEAD` of `tree`, as `context --update --held` prints it in `tree`; the
     failure of that run; or None where the diff holds nothing."""
+    return _held_text(_held_run(tree, after, launch, call, held), after, launch)
+
+
+def _held_run(tree: Path, after: str, launch: str,
+              call: tuple[str, list[str]], held: tuple[str, str]) -> _Run:
+    """The `context --update --held` run of `held_update_text`."""
+    reader, args = call
+    return _cached_run(tree, after, [launch, reader, *args], held)
+
+
+def _held_text(done: _Run, after: str, launch: str) -> str | None:
+    """The text of `held_update_text` from its run `done`."""
     from controlled_markdown import mctx
 
-    reader, args = call
     return _run_update(
-        _cached_run(tree, after, [launch, reader, *args], held),
+        done,
         {"after": after, "launch": launch, "since": launch,
          "where": mctx("in your working tree")},
         "\n".join([
@@ -459,8 +611,8 @@ def reader_update(hook: dict[str, Any]) -> Iterator[Update | None]:
     """The update that gives the caller of the hook input `hook` the diff of
     its documents since its record, as the module docstring gives it, or
     None, held under the lock of its record. Where the block ends without
-    an error, the record moves to the tree's `HEAD`. A record that holds no
-    one or two commits is a fault."""
+    an error, the record moves to the tree's `HEAD`. A record that
+    `_record` does not read is a fault."""
     try:
         f = record_path(hook).open("r+")
     except FileNotFoundError:
@@ -468,20 +620,30 @@ def reader_update(hook: dict[str, Any]) -> Iterator[Update | None]:
         return
     with f:
         fcntl.flock(f, fcntl.LOCK_EX)
-        commits = _commits(f)
+        record = _record(f)
         tree, after = tree_head(hook)
-        if commits == [after, after]:
+        if record == ReadRecord(after, after):
             yield None
             return
         call = reader_call(hook)
         if call is None:
             yield None
-        elif len(commits) == 2:
-            context, instructions = commits
-            yield _update(update_text(tree, after, context, instructions, call))
         else:
-            from run_reads import caller_transcript
+            yield _update(_record_update(hook, record, tree, after, call))
+        _write(f, ReadRecord(after, after))
 
-            yield _update(held_update_text(tree, after, commits[0], call,
-                                           held_texts(caller_transcript(hook))))
-        _write(f, after, after)
+
+def _record_update(hook: dict[str, Any], record: Record, tree: Path, after: str,
+                   call: tuple[str, list[str]]) -> str | None:
+    """The text of `reader_update` for `record`, as the module docstring
+    gives it."""
+    from run_reads import caller_transcript
+
+    match record:
+        case ReadRecord(context, instructions):
+            return update_text(tree, after, context, instructions, call)
+        case LaunchRecord(launch, predicted):
+            held = held_texts(caller_transcript(hook))
+            if predicted == texts_digest(held):
+                return update_text(tree, after, launch, launch, call)
+            return held_update_text(tree, after, launch, call, held)

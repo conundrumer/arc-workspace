@@ -127,23 +127,130 @@ def test_subagents(tmp_path: Path) -> None:
     assert record(main, GENERAL_ID).read_text() == both(head())
 
 
-def test_subagent_first_update_from_held_texts(tmp_path: Path) -> None:
+def transcript_of(main: Path, aid: str) -> Path:
+    return main.with_suffix("") / "subagents" / f"agent-{aid}.jsonl"
+
+
+def given(transcript: Path, context: str, project: str) -> None:
+    """Append to `transcript` the attachments that hold the texts the
+    harness gave its run."""
+    with transcript.open("a") as f:
+        f.write(line(type="attachment", attachment={"type": "instructions", "files": [
+            {"path": str(checkout.ROOT / "CLAUDE.md"), "type": "Project", "content": project}]}))
+        f.write(line(type="attachment", attachment={
+            "type": "prompt_snapshot", "systemPrompt": [context]}))
+
+
+def current() -> tuple[str, str]:
+    """The operator's context and `CLAUDE.md` as `HEAD` gives them."""
     from handbook.agents import agent_prompt_text
 
+    return (agent_prompt_text("operator"),
+            (checkout.ROOT / "CLAUDE.md").read_text().rstrip("\n"))
+
+
+def stale() -> tuple[str, str]:
+    """Texts of the operator that differ from `current` by one line."""
+    context, project = current()
+    return context + "\n- A line that the tree no longer holds.", project
+
+
+EARLIER_ID = "a1234567890abcdef"
+"""An operator launched before `OPERATOR_ID`."""
+
+
+def earlier_launch(main: Path, texts: tuple[str, str], aid: str = EARLIER_ID) -> Path:
+    path = transcript_of(main, aid)
+    path.write_text(line(parentUuid=None, type="user", uuid="ue", agentId=aid))
+    given(path, *texts)
+    meta = path.with_suffix(".meta.json")
+    meta.write_text(json.dumps({"agentType": "operator"}))
+    return meta
+
+
+def subagent_start(main: Path, aid: str) -> subprocess.CompletedProcess[str]:
+    return ran(command("SubagentStart"), {
+        "hook_event_name": "SubagentStart", "agent_id": aid, "agent_type": "operator",
+        "transcript_path": str(main), "cwd": str(checkout.ROOT)})
+
+
+def started_with(done: subprocess.CompletedProcess[str]) -> str:
+    return json.loads(done.stdout)["hookSpecificOutput"]["additionalContext"]
+
+
+@pytest.fixture
+def digest(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """`reader_commits.texts_digest`."""
+    monkeypatch.syspath_prepend(str(checkout.scripts()))
+    return script("reader_commits").texts_digest
+
+
+HELD_HEAD = "runs from the texts you were given at your launch"
+
+
+def test_start_diff_from_an_earlier_launch_of_the_type(tmp_path: Path, digest: Any) -> None:
+    main = session(tmp_path)
+    earlier_launch(main, stale())
+    text = started_with(subagent_start(main, OPERATOR_ID))
+    assert text.startswith(f"Your agent id is {OPERATOR_ID}.\n\n")
+    assert HELD_HEAD in text and "A line that the tree no longer holds." in text
+    assert record(main, OPERATOR_ID).read_text() == f"{head()}\n{digest(stale())}\n"
+    given(transcript_of(main, OPERATOR_ID), *stale())
+    read = command("PreToolUse", "^(?!(Bash|Monitor|Agent)$).*", "reader_update_hook")
+    hook = call(main, "Read", {"file_path": str(checkout.ROOT / "CLAUDE.md")}, OPERATOR_ID)
+    assert run(read, hook) == ""
+    assert record(main, OPERATOR_ID).read_text() == both(head())
+
+
+def test_held_texts_other_than_the_predicted_ones(tmp_path: Path, digest: Any) -> None:
+    main = session(tmp_path)
+    earlier_launch(main, current())
+    assert started_with(subagent_start(main, OPERATOR_ID)) == f"Your agent id is {OPERATOR_ID}."
+    assert record(main, OPERATOR_ID).read_text() == f"{head()}\n{digest(current())}\n"
+    given(transcript_of(main, OPERATOR_ID), *stale())
+    bash = command("PreToolUse", "Bash|Monitor")
+    out = json.loads(run(bash, call(main, "Bash", {"command": "ls"}, OPERATOR_ID)))
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert HELD_HEAD in out["hookSpecificOutput"]["additionalContext"]
+    assert record(main, OPERATOR_ID).read_text() == both(head())
+
+
+def test_no_earlier_launch_and_a_failed_prediction(tmp_path: Path) -> None:
+    main = session(tmp_path)
+    assert started_with(subagent_start(main, OPERATOR_ID)) == f"Your agent id is {OPERATOR_ID}."
+    assert record(main, OPERATOR_ID).read_text() == f"{head()}\n"
+    earlier_launch(main, stale())
+    unknown = "a1111111111111111"
+    done = ran(command("SubagentStart"), {
+        "hook_event_name": "SubagentStart", "agent_id": unknown,
+        "transcript_path": str(main), "cwd": str(checkout.ROOT)})
+    assert started_with(done) == f"Your agent id is {unknown}."
+    assert "gave no start diff" in done.stderr
+    assert record(main, unknown).read_text() == f"{head()}\n"
+
+
+def test_merge_after_a_prediction_that_holds(tmp_path: Path, digest: Any) -> None:
+    main = session(tmp_path)
+    given(transcript_of(main, OPERATOR_ID), *current())
+    record(main, OPERATOR_ID).parent.mkdir(parents=True, exist_ok=True)
+    record(main, OPERATOR_ID).write_text(f"{BEFORE}\n{digest(current())}\n")
+    bash = command("PreToolUse", "Bash|Monitor")
+    out = json.loads(run(bash, call(main, "Bash", {"command": "ls"}, OPERATOR_ID)))
+    assert f"context --update {BEFORE} {BEFORE} agent operator`" in \
+        out["hookSpecificOutput"]["additionalContext"]
+    assert record(main, OPERATOR_ID).read_text() == both(head())
+
+
+def test_subagent_first_update_from_held_texts(tmp_path: Path) -> None:
     main = session(tmp_path)
     bash = command("PreToolUse", "Bash|Monitor")
-    transcript = main.with_suffix("") / "subagents" / f"agent-{OPERATOR_ID}.jsonl"
+    transcript = transcript_of(main, OPERATOR_ID)
     record(main, OPERATOR_ID).parent.mkdir(parents=True, exist_ok=True)
     record(main, OPERATOR_ID).write_text(f"{head()}\n")
     ls = call(main, "Bash", {"command": "ls"}, OPERATOR_ID)
     assert "holds no context" in ran(bash, ls).stderr
     assert record(main, OPERATOR_ID).read_text() == f"{head()}\n"
-    project = (checkout.ROOT / "CLAUDE.md").read_text().rstrip("\n")
-    with transcript.open("a") as f:
-        f.write(line(type="attachment", attachment={"type": "instructions", "files": [
-            {"path": str(checkout.ROOT / "CLAUDE.md"), "type": "Project", "content": project}]}))
-        f.write(line(type="attachment", attachment={
-            "type": "prompt_snapshot", "systemPrompt": [agent_prompt_text("operator")]}))
+    given(transcript, *current())
     assert run(bash, ls) == ""
     assert record(main, OPERATOR_ID).read_text() == both(head())
 
@@ -240,3 +347,24 @@ def test_pre_tool_use_form_on_other_tools(tmp_path: Path) -> None:
     assert f"context --update {BEFORE} {BEFORE} coordinator`" in out["additionalContext"]
     assert record(main, "main").read_text() == both(head())
     assert run(read, hook) == ""
+
+
+def test_an_agent_id_of_another_form_gets_its_record_and_start_diff(tmp_path: Path) -> None:
+    main = session(tmp_path)
+    earlier_launch(main, stale())
+    odd = "agent-of-another-form"
+    done = subagent_start(main, odd)
+    assert "gave no agent id" in done.stderr
+    text = started_with(done)
+    assert "Your agent id is" not in text and HELD_HEAD in text
+    assert record(main, odd).read_text().startswith(f"{head()}\n")
+
+
+def test_the_latest_created_transcript_of_the_type_is_the_prediction(tmp_path: Path) -> None:
+    """The harness rewrites the `.meta.json` of a subagent that finishes, so
+    an earlier launch's may be newer than a later launch's."""
+    main = session(tmp_path)
+    first = earlier_launch(main, stale(), "a2234567890abcdef")
+    earlier_launch(main, current())
+    first.write_text(first.read_text())
+    assert started_with(subagent_start(main, OPERATOR_ID)) == f"Your agent id is {OPERATOR_ID}."
