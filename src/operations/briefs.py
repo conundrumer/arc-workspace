@@ -574,6 +574,16 @@ STANDING_DOC_REVIEW = mctx("""
     """)
 
 
+STANDING_COMMIT = re.compile(form(STANDING_DOC_REVIEW, {"reader": ".*", "commit": r"(?P<commit>\S+)", "tag": ".*"}))
+
+
+def standing_commit(brief: str) -> str | None:
+    """The commit the standing doc review brief `brief` gives, or None
+    where it gives none."""
+    m = STANDING_COMMIT.search(brief)
+    return m.group("commit") if m else None
+
+
 def standing_doc_review(reader: str, tag: str, commit: str, operator: str) -> str:
     return (STANDING_DOC_REVIEW.format(reader=reader, commit=commit, tag=tag) + "\n"
             + LAUNCHER.format(operator=operator))

@@ -43,7 +43,7 @@ def sessions(tickets: Path, index: int, session: str, now: float,
         read = read_sessions(tickets, index, now)
     if read.idle and not read.main and not read.main_live:
         want_main(tickets, session)
-    return SessionsRead(read.idle, read.adopted, read.main_live, main_wanted(tickets))
+    return SessionsRead(read.idle, read.adopted, read.main, read.main_live, main_wanted(tickets))
 
 
 def given_lines(runs: list[tuple[str, Path]], me: str, calls: list[Call]) -> set[str]:

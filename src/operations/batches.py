@@ -24,6 +24,12 @@ once a profile launch closes a batch, where no call of it was made since
 that launch, on the calls since the closed batch's start. No batch holds
 it, so no profile launch waits on it.
 
+The code review, the lib review, the standing doc reviews, the process
+assessment and the cost audit launch only at a step of an operator of
+the main session, as `file_ticket.py main --help-all` gives it, so that
+concurrent sessions launch each of them once. An operator of another
+session launches none of them.
+
 Each review of `state.Review`, the code review and the lib review,
 launches at any step where a commit of `master` that changes the paths it reviews is one
 the tag of its last baseline does not reach, and no reviewer of its role
@@ -34,9 +40,13 @@ commits are unknown, and the step is undecided on the newest commit of
 `master` that changes its paths, so that an operator hands it on once
 for each such commit.
 
-A standing doc review launches at any step where a change merged since
-the last one an operator of the session launched, or since the session's
-start where none was, and none runs.
+A standing doc review launches at any step where none runs and a change
+merged after the launch of the last one an operator of the session
+launched: where the head of `master` is not the commit that launch's
+brief gives. `master` only fast-forwards, so another head means a change
+merged after that launch, whichever session merged it. Where none was
+launched, or its brief gives no commit, it launches where a commit of
+`master` has a time after the session's start.
 
 A standing doc review also launches at any step on an overdue reader: one
 that no tag records, or whose tag points at a commit older than
@@ -78,7 +88,9 @@ batch filed is the one `triage` launches on any open ticket."""
 
 import re
 import shlex
+from collections.abc import Callable
 from dataclasses import dataclass
+from functools import wraps
 
 import script_calls
 
@@ -184,10 +196,20 @@ def step(state: State) -> Step | None:
                   occasion=str(since))
 
 
+def main_only(procedure: Callable[[State], Step | None]) -> Callable[[State], Step | None]:
+    """`procedure`, giving no step where the session is not the main."""
+    @wraps(procedure)
+    def guarded(state: State) -> Step | None:
+        return procedure(state) if state.sessions.main else None
+    return guarded
+
+
+@main_only
 def code_review(state: State) -> Step | None:
     return review(state, Review.CODE)
 
 
+@main_only
 def lib_review(state: State) -> Step | None:
     return review(state, Review.LIB)
 
@@ -216,11 +238,21 @@ def standing_reviews(state: State) -> list[Agent]:
     return [a for a in state.transcripts.agents if standing(a.role, a.subject)]
 
 
+@main_only
 def standing_review(state: State) -> Step | None:
     """The launch of a standing doc review, where one is due."""
-    return None if merged_since(state, standing_reviews(state)) is None else doc_review(state)
+    past = standing_reviews(state)
+    if opened(state, past) is None:
+        return None
+    commit = briefs.standing_commit(past[-1].brief) if past else None
+    if commit is None:
+        due = any(c.time > state.started for c in state.git.commits)
+    else:
+        due = state.git.commits[0].hash != commit
+    return doc_review(state) if due else None
 
 
+@main_only
 def overdue_review(state: State) -> Step | None:
     """The launch of a standing doc review on an overdue reader, where one
     is due."""
@@ -354,6 +386,7 @@ def standing_launch(state: State, reader: Reader) -> Launch:
 ASSESS_AFTER = 20
 
 
+@main_only
 def assessment(state: State) -> Step | None:
     """The launch of a process assessment, where one is due."""
     past = [a for a in state.transcripts.agents if assesses(a.role, a.subject)]
@@ -385,6 +418,7 @@ AUDIT_AFTER = 200.0
 """The spend, in dollars, of a cost audit's window at which it launches."""
 
 
+@main_only
 def audit(state: State) -> Step | None:
     """The launch of a cost audit, where one is due."""
     past = state.agents_of(Role.COST_AUDIT)

@@ -605,11 +605,13 @@ class SessionsRead:
     """What the operator reads of the tracker's sessions. `idle_indexes`
     holds the idle indexes `idle_sessions.read_sessions` gives, `adopted`
     those of them the operators act on as on the session's own
-    (`file_ticket.py main --help`), `main_live` whether the main session
-    runs an agent, and `main_wanted` the session id `tickets/main-wanted`
-    holds with the time of its write, as `idle_sessions` gives them."""
+    (`file_ticket.py main --help`), `main` whether the reading session is
+    the main session, `main_live` whether the main session runs an agent,
+    and `main_wanted` the session id `tickets/main-wanted` holds with the
+    time of its write, as `idle_sessions` gives them."""
     idle_indexes: frozenset[int]
     adopted: frozenset[int]
+    main: bool
     main_live: bool
     main_wanted: tuple[str, float] | None
 
