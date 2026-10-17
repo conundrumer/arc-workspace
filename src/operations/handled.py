@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterable
 from controlled_markdown import mctx
 from operations import messages
 from operations.constants import COORDINATOR
-from operations.journal import Entry
+from operations.journal import Entry, retired
 from operations.roles import Purpose
 from operations.state import Agent, Call, State, Ticket, Tool
 from operations.steps import (UNDECIDED, Bash, Journaled, Launch, Send, Step, Undecided,
@@ -29,7 +29,8 @@ def held_aside(state: State, step: Step) -> bool:
 
 def repeated(step: Step, state: State) -> bool:
     """Whether `step` is a step `state.aside` holds, a step the journal
-    gives as done (`done`), a message an operator already sent, or an
+    gives as done (`done`), a launch or a Bash step the journal gives as
+    retired (`journal.retired`), a message an operator already sent, or an
     undecided step that an operator already handled: a ticket analyst was
     launched on it, or an operator gave it to the coordinator, as
     `steps.UNDECIDED` and its `what`, or in a message that holds each of its
@@ -45,7 +46,7 @@ def repeated(step: Step, state: State) -> bool:
         case Send():
             return done(state, step) or bool(sendings(step, state))
         case Launch() | Bash():
-            return done(state, step)
+            return done(state, step) or retired(state.journal, key(step))
         case _:
             return False
 
