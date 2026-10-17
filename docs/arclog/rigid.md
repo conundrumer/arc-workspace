@@ -54,25 +54,6 @@ The `RIGID_DET` form, a rigid determination, is the arclog form for parameters t
 
 - The outputs hold `:Pose` and then the part's columns, so a read at one pose and one `Id` places one piece: `(&piece.member (:Pose ^D) ^Id (:P *S))`.
 
-```
-(DET &glyph
-  (&bbox.cell (:key (:E *K_e) (:P *K_p)) (:P *P2))
-  (&bbox.box (:key (:E K_e) (:P K_p)) *B)
-  (inside (:A P2) B)
-  (relative (:Base B) (:X P2) (:X_rel *P)))
-
-(DET &gap
-  (&bbox.box (:key (:P *P_m)) *B)
-  (inside (:A P_m) B)
-  (relative (:Base B) (:X P_m) (:X_rel *P)))
-
-(RIGID_DET &piece
-  (&glyph *P)
-  (&gap *P))
-```
-
-3aa6fb7a: an L-triomino and the cell that completes it to a 2×2 square. The determination reads one representative piece.
-
 A form may also hold an `instance` clause, and a `key` clause:
 
 - `instance` is written as a [key clause](arclog.md#instance) is, and one of its rows is one instance. Each atom inside `instance`, after its body, is a part, and it reads the instance's labels.
