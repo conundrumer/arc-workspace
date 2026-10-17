@@ -22,7 +22,12 @@ pub enum MacroExpansion {
     Keep,
     /// The atom of a macro gives way to the macro's definition, with the
     /// label at each of the atom's sites in the place of its column's label
-    /// in the definition.
+    /// in the definition. Where the meet of a label's type, from the label's
+    /// sites outside a part of the expansion, and the types of its sites in that
+    /// part is empty, that part holds nothing: a part is the body that takes the
+    /// atom's place, a branch of an `OR`, or a list of an `IF`, wherever it
+    /// stands in that body. So a program that passes the checks under `Keep`
+    /// passes them under `Expand`.
     Expand,
 }
 
