@@ -1,6 +1,6 @@
-+ budget: 5900
++ budget: 7266
 * comment: when editing this doc
-    - Readers: the editors of a change and the doc reviewer inline its sections, the ticket analyst, the draft analyst, the decision analyst and the ticket reviewer the one on another agent's worktree, and the coordinator links that one.
+    - Readers: the editors of a change inline its sections other than Gate, which they link for writing accepted gate outputs, the doc reviewer inlines the sections on its worktree, the ticket analyst, the draft analyst, the decision analyst and the ticket reviewer inline the one on another agent's worktree, and the coordinator links that one.
     - Acts, each with its section:
         - Later findings and requests: [editor-messages](#editor-messages).
         - Finding the worktree: [worktree](#worktree).
@@ -13,7 +13,7 @@
 
 ## editor-messages
 - A later message may give a doc reviewer's findings on your change, or findings of your checks. Check each against the worktree, fix each one that holds and needs no decision, and state each other one in your reply, with why you left it. Fix each finding a later message gives as kept, and carry out each decision it gives.
-- Where a doc reviewer has sent findings on your change, send that reviewer your fixes with SendMessage before each reply to a later message, to the agent id its message came from, with each finding a later message gave as kept, each it gave as dropped with its reason, each finding you left for a decision, each decision you carried out, and each request a later message added.
+- Where a doc reviewer has sent findings on your change, before each reply to a later message, send that reviewer by SendMessage, at the agent id its message came from, each item of that later message with what you did on it, or, for a finding you left, why you left it.
 - Message only the agents a line of your documents has you message, each with only what that line gives.
 
 ## worktree

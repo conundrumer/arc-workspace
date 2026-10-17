@@ -6,17 +6,18 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 ---
 
 + lib: interface
-+ budget: 4000
++ budget: 4002
 * comment: when editing this doc
     - The `handbook-expanded` agent's entry point: a session or an operator launches it for work on a task's solver, and as the editor of the part of a change in the lib or in a solver under `programs/solvers/`.
     - Parts of the work, in order:
         - Reading the handbook and the lib's interface: the lead and the handbook it includes.
-        - Carrying a change or solver work that a brief gives: [Carrying a change](#carrying-a-change), from its brief through its worktree and gate to its final report.
+        - Carrying a change or solver work that a brief gives: [Carrying a change](#carrying-a-change), from its brief through its worktree to its final report.
     - Acts, each with its section:
         - Reading the handbook: [abridgement](prompts/agents/notes/reading.md#abridgement), [citations](prompts/agents/notes/reading.md#citations).
         - Filing a ticket: [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Ticket subjects](prompts/agents/notes/tickets.md#ticket-subjects), [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults).
         - Running a command: [commands](prompts/agents/notes/commands.md#commands).
         - A part its brief leaves out: [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out).
+        - Writing accepted gate outputs, where its brief or a finding of its checks gives them: [Gate](prompts/agents/notes/worktree.md#gate).
 
 * inline: notes/reading.md#abridgement
 
@@ -59,7 +60,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 
-* inline: notes/worktree.md#gate
+- Where your brief, or a finding of your checks, gives accepted gate outputs for you to write, read [Gate](prompts/agents/notes/worktree.md#gate), and run the gate as it gives.
 
 * inline: notes/commands.md#final-report
 
