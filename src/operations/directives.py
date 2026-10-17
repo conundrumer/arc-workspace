@@ -93,7 +93,8 @@ BARE = {d.removeprefix(OP).capitalize(): d for d in Directive}
 RULINGS = frozenset({Directive.OVERRIDE, Directive.DECISION})
 
 PASS_OVER = re.compile(rf"pass over (?P<key>{STEP_KEY.pattern})")
-GIVE_AGAIN = re.compile(rf"give again (?P<key>{STEP_KEY.pattern})")
+GIVE_AGAIN_WORDS = "give again"
+GIVE_AGAIN = re.compile(rf"{GIVE_AGAIN_WORDS} (?P<key>{STEP_KEY.pattern})")
 OVERRIDE = re.compile(rf"(?P<task>{TASK_ID})\s+(?P<role>{'|'.join(PASSES)})\s+(?P<text>\S.*)")
 DECISION = re.compile(rf"(?P<key>{STEP_KEY.pattern})\s+(?P<choice>[a-z]+)")
 
@@ -274,6 +275,12 @@ def passed_over(state: State) -> dict[str, Line]:
         elif m := GIVE_AGAIN.fullmatch(ln.rest):
             out.pop(m["key"], None)
     return out
+
+
+def give_again_line(key: str) -> str:
+    """The ruling that makes the step `key` due once more, in the form
+    `given_again` reads."""
+    return f"{Directive.OVERRIDE}: {GIVE_AGAIN_WORDS} {key}"
 
 
 def given_again(state: State) -> dict[str, float]:

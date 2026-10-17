@@ -28,7 +28,11 @@ class Launch:
     mark of the `Undecided` step a launch of a ticket analyst is on, and
     stays out of the step's key and its equality. `occasion` identifies
     the event the launch answers (`key`); `change` and `origin` are as
-    `key` gives them."""
+    `key` gives them. `again` is whether the launch is given once more
+    past its done entry (`journal.due`), and stays out of the step's key
+    and its equality. `version` is the version of the inputs of the change
+    the launch serves (`served`), None for a launch that serves no
+    change."""
     role: Role
     subject: str
     brief: str
@@ -37,6 +41,8 @@ class Launch:
     reread: bool = field(default=False, repr=False, compare=False)
     change: str | None = field(default=None, repr=False, compare=False)
     origin: str = field(default="", repr=False, compare=False)
+    again: bool = field(default=False, repr=False, compare=False)
+    version: float | None = field(default=None, repr=False, compare=False)
     occasion: str = field(kw_only=True, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -71,12 +77,15 @@ class Bash:
     commands its function gives; `change`, `about` and `origin` are as
     `key` gives them. `occasion` identifies the event the command answers
     (`key`). `retires` is the key of the step whose retirement this command
-    files the bug on (`order.retire`), or None."""
+    files the bug on (`order.retire`), or None. `again` and `version` are
+    as `Launch` gives them."""
     command: str
     about: str = field(repr=False)
     change: str | None = field(default=None, repr=False, compare=False)
     origin: str = field(default="", repr=False, compare=False)
     retires: str | None = field(default=None, repr=False, compare=False)
+    again: bool = field(default=False, repr=False, compare=False)
+    version: float | None = field(default=None, repr=False, compare=False)
     occasion: str = field(kw_only=True, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -262,15 +271,19 @@ def given(step: Journaled) -> None:
 
 def subject(step: Journaled) -> str:
     """What `step` acts on, with the event it answers: a launch's role,
-    subject and `occasion`, a message's recipient, `about` and `since`, and
-    a command's `about` and `occasion`."""
+    subject, `occasion` and `version`, a message's recipient, `about` and
+    `since`, and a command's `about`, `occasion` and `version`."""
     match step:
-        case Launch(role, on, occasion=occasion):
-            return f"{role} {on} {occasion}"
+        case Launch(role, on, occasion=occasion, version=version):
+            return f"{role} {on} {at(occasion, version)}"
         case Send(to, about=about, since=since):
             return f"{to} {about}" if since is None else f"{to} {about} {since}"
-        case Bash(about=about, occasion=occasion):
-            return f"{about} {occasion}"
+        case Bash(about=about, occasion=occasion, version=version):
+            return f"{about} {at(occasion, version)}"
+
+
+def at(occasion: str, version: float | None) -> str:
+    return occasion if version is None else f"{occasion} {version}"
 
 
 def key(step: Step) -> str:
@@ -306,9 +319,20 @@ OF_CHANGE = (Launch, Send, Bash, Undecided)
 """The steps that carry the number of the change they serve."""
 
 
-def served[S: Step | None](s: S, t: Ticket) -> S:
-    """`s`, a step of the change `t`, with the number of `t` (`key`)."""
+def served[S: Step | None](s: S, t: Ticket, version: float) -> S:
+    """`s`, a step of the change `t`, with the number of `t` (`key`), and,
+    for a launch or a command, `version`, the version of the change's
+    inputs (`changes.version`), so its key moves with those inputs."""
+    if isinstance(s, Launch | Bash):
+        return replace(s, change=t.number, version=version)
     return replace(s, change=t.number) if isinstance(s, OF_CHANGE) else s
+
+
+def retirement_key(step: Journaled) -> str:
+    """The key the retirement of `step` is recorded and read under
+    (`order.retire`, `journal.due`): its key without the version of its
+    change's inputs, so a retirement holds at each version."""
+    return key(replace(step, version=None) if isinstance(step, Launch | Bash) else step)
 
 
 def with_change(step: Step, digest: str) -> str:

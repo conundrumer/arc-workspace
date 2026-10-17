@@ -1,8 +1,9 @@
 """The values that both the operator's command and the scripts an agent
 runs hold: the address of the coordinator, the interval of the keep-alive
 timer, the bound on a stretch with no progress, the bound on a foreground
-Bash call's timeout, the bounds on a call of the command's `next`, and the
-harness's limit of concurrent subagents. This module
+Bash call's timeout, the bounds on a call of the command's `next`, the
+harness's limit of concurrent subagents, and the waits of the step journal
+(`journal.due`). This module
 imports nothing, so a hook loads it at no cost."""
 
 COORDINATOR = "main"
@@ -45,3 +46,18 @@ SUBAGENT_LIMIT = 20
 """The harness's limit of concurrent subagents, which the agents of a
 session share: past it, an Agent call fails with `Concurrent subagent
 limit reached`."""
+
+
+AGAIN_SECONDS = 60
+"""How long after a held change's step closed done `next` waits before it
+gives that step once more, where the change's procedure still gives it
+(`changes.step`): a read in that time may not yet show the step's
+effect."""
+
+BACKOFF_SECONDS = 60
+"""The wait after the first launch in a row that the harness refused at
+`SUBAGENT_LIMIT` (`journal.backoff`)."""
+
+BACKOFF_CAP = 960
+"""The longest wait after a launch the harness refused at
+`SUBAGENT_LIMIT`."""

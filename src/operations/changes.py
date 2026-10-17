@@ -72,10 +72,14 @@ until an `Op decision:` line rules it with one of the choices the step gives
 
 import shlex
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
+from controlled_markdown import mctx
 from operations import briefs, merging, messages
+from operations.change_budget import TAKEN
+from operations.constants import AGAIN_SECONDS, COORDINATOR
+from operations.journal import retired
 from operations.change_agents import (change_editors, editors_in, elsewhere_on, latest_editors,
                                       launched_on, of_change, Reported, reported, settled,
                                       unstaffed, with_before, with_elsewhere)
@@ -84,20 +88,20 @@ from operations.change_fragments import drafter_ids, fragments_step
 from operations.change_overrun import over_budget
 from operations.design_review import design_review, open_questions, reviewing
 from operations.doc_review import doc_review, with_ids
-from operations.directives import Decision, decided, held_on, ruled
+from operations.directives import Decision, decided, give_again_line, held_on, ruled
 from operations.item_check import check_items, is_checked, latest_reports, unfinished
 from operations.reports import Label, items_of, left_for_decision, shows_current
 from operations.roles import Purpose, Role, analyst_of, analyst_subject
 from operations.state import Agent, State, Ticket, last_reported
 from operations.filing import editor_scratch
 from operations.final_reply import live_holder
-from operations.handled import answered, repeated, sent, unmoved
-from operations.steps import Bash, Launch, Send, Step, Undecided, served
+from operations.handled import answered, held_aside, repeated, sent, unmoved
+from operations.steps import Bash, Launch, Send, Step, Undecided, key, retirement_key, served
 from operations.log_commands import AGENT
-from operations.taking import take
+from operations.taking import RELEASED_LINE, take
 from operations.tracker import last_index
 from operations.worktrees import WORKTREE, worktree
-from ticketing.vocabulary import Kind, Note, Status
+from ticketing.vocabulary import Domain, Kind, Note, Status
 
 
 def holds(t: Ticket, me: str) -> bool:
@@ -343,25 +347,88 @@ def step(state: State) -> Step | None:
     """The next step of the changes: a message to an agent on a change no
     longer carried, a take, then a step of each change the operator
     holds, other than a step an operator already made or handled
-    (`repeated`). Where each step is such a step, the step is that of the
-    message or the take, so the procedure waits on it."""
+    (`repeated`), where `no_step` gives none in its place. Where each step
+    is such a step, the step is that of the message or the take, so the
+    procedure waits on it."""
     before = [s for s in (give_up(state), take(state)) if s is not None]
     for s in before:
         if not repeated(s, state):
             return s
     for t in held(state):
-        if (s := next_step(state, t)) is not None and not repeated(s, state):
+        if (s := next_step(state, t)) is None:
+            continue
+        if not repeated(s, state):
             return s
+        if (other := no_step(state, t, s)) is not None and not repeated(other, state):
+            return other
     return before[0] if before else None
+
+
+def no_step(state: State, t: Ticket, s: Step) -> Step | None:
+    """The step in place of `s`, the step of the held change `t` that
+    `repeated` passes over, where the journal gives it as done and no
+    other read holds it back: `s` once more, once its done entry closed
+    `AGAIN_SECONDS` before, or, once it is done twice so, or retired, the
+    message to the coordinator on the change (`stuck`). None otherwise."""
+    if not isinstance(s, Launch | Bash) or held_aside(state, s):
+        return None
+    k = key(s)
+    if retired(state.journal, retirement_key(s)):
+        return stuck(t, s, retired_step=True)
+    entries = state.journal.of(k)
+    if any(e.close is None for e in entries):
+        return None
+    closes = [e.close.time for e in entries if e.done and e.close is not None]
+    if not closes or state.now - closes[-1] < AGAIN_SECONDS:
+        return None
+    return replace(s, again=True) if len(closes) == 1 else stuck(t, s, retired_step=False)
+
+
+DONE_TWICE = mctx("it was done twice, and the line gives its key, which takes in the version of the "
+                  "change's inputs")
+"""Why `next` gives the step of `stuck` no more, where it was done twice."""
+
+RETIRED = mctx("it was retired, which holds at each version of the change's inputs, and the line "
+               "gives its key without that version")
+"""Why `next` gives the step of `stuck` no more, where it was retired."""
+
+
+def stuck(t: Ticket, s: Launch | Bash, *, retired_step: bool) -> Send:
+    """The message to the coordinator on the change `t`, whose procedure
+    gives `s`, a step the journal gives as retired, or else as done
+    twice."""
+    k = retirement_key(s) if retired_step else key(s)
+    line = give_again_line(k)
+    return Send(COORDINATOR, mctx("Change {number} has no step: `{origin}` still gives its step "
+                                  "{key}, which `next` gives no more, since {why}. The line "
+                                  "`{line}` makes that step due once more.").format(
+        number=t.number, key=k, origin=s.origin, line=line,
+        why=RETIRED if retired_step else DONE_TWICE), f"no step {k}", change=t.number)
+
+
+def version(state: State, t: Ticket) -> float:
+    """The version of the inputs of the change `t`, as
+    `scripts/operate.py --help journal` gives it. The launches of its
+    agents stay out: a launch is the effect of the step it answers, and
+    the launches `order.made` adds to a batch's state would move the keys
+    within one batch."""
+    return max([t.filed,
+                *(r.time for a in [*of_change(state, t), *elsewhere_on(state, t.number)]
+                  for r in a.reports),
+                *(q.filed for q in state.tracker.tickets.values()
+                  if q.domain is Domain.CHANGE and q.subject == t.number),
+                *(ln.time for ln in t.log
+                  if ln.agent != AGENT and TAKEN.fullmatch(ln.note) is None
+                  and RELEASED_LINE.fullmatch(ln.note) is None)])
 
 
 def next_step(state: State, t: Ticket) -> Step | None:
     """The step of the change `t` the operator holds: the one `carry`
     gives, or, where that is a message its recipient already answered,
-    the one `unmoved` gives."""
-    s = served(carry(state, t), t)
+    the one `unmoved` gives, with the version of the change's inputs
+    (`version`)."""
+    v = version(state, t)
+    s = served(carry(state, t), t, v)
     if isinstance(s, Send) and answered(s, state):
-        return served(unmoved(t, s), t)
+        return served(unmoved(t, s), t, v)
     return s
-
-

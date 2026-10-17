@@ -72,8 +72,8 @@ from operations.roles import Role
 from operations.constants import COORDINATOR
 from operations.state import Agent, Call, Commit, LogLine, Merge, State, Ticket, Tool
 from operations.command_words import simple_commands
-from operations.handled import ask_again, decided_by, done, sent, unmoved
-from operations.steps import Bash, Launch, Send, Step, labeled, served
+from operations.handled import ask_again, decided_by, sent, unmoved
+from operations.steps import Bash, Launch, Send, Step, labeled
 from operations.log_commands import log
 from operations.worktrees import WORKTREE
 from ticketing.vocabulary import MANY_IDEAS, Domain, Kind, Note, Resolution, Status
@@ -459,11 +459,16 @@ def finding_output(last: Call, calls: list[Call]) -> str:
     return "\n".join(text.splitlines()[-FINDING_TAIL:])
 
 
+def unsplit(t: Ticket) -> str:
+    """The opening of the note the split step of the change `t` logs on a
+    `refactor` ticket that the change left unsplit."""
+    return f"left unsplit by change {t.number}"
+
+
 def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
     """The steps after a change's merge, or None while its `after-merge`
-    agent runs. A split step carries the change's number, so the journal's
-    record of it, which is under the key of the step with that number,
-    reads."""
+    agent runs. A split step is given while its `refactor` ticket holds no
+    line that the step logs as left unsplit (`unsplit`)."""
     head = state.git.commits[0].hash
     if t.after_merge is not None:
         runs = state.agents_of(Role.AFTER_MERGE, t.number)
@@ -484,12 +489,9 @@ def close(state: State, t: Ticket, agents: list[Agent]) -> Step | None:
             continue
         part = split[target]
         command = (log(r.number, Status.CLOSED, r.status, note, None) if part is None else
-                   log(r.number, r.status, r.status,
-                       f"left unsplit by change {t.number}: {part}", None))
-        step = served(Bash(command, f"{r.number} split by {t.number}",
-                           occasion=str(left_draft(t))), t)
-        if not done(state, step):
-            return step
+                   log(r.number, r.status, r.status, f"{unsplit(t)}: {part}", None))
+        if not any(ln.note.startswith(unsplit(t)) for ln in r.log):
+            return Bash(command, f"{r.number} split by {t.number}", occasion=str(left_draft(t)))
     for q in sorted(state.tracker.tickets.values(), key=lambda q: q.order):
         if (q.kind is Kind.QUESTION and q.domain is Domain.CHANGE and q.subject == t.number
                 and q.status is not Status.CLOSED):

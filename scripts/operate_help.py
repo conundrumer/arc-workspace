@@ -98,10 +98,16 @@ PARTS = {
         - Where the operator ran `next` again first, or its work ended with no such call, the step counts as failed.
         - A step in flight is not given again, to that operator or to one that takes over.
         - A step's key is taken over what the step is, what it acts on and the event it answers, never over its text.
-        - A step that is done is not given again.
-        - The times a step was given in a row are the times it was given and failed.
+            - The key of a launch or a command of a held change also takes in the version of the change's inputs: the time of the latest of the change's filing, a report of an agent that an operator of any session launched on it, the filing of a ticket on it, and a line of its log that no operator wrote, other than a take or a release.
+        - A step that is done is not given again, other than a launch or a command of a held change that the change's procedure still gives once a wait has passed after its done outcome, which `next` gives once more.
+            - Where that step is done a second time, `next` gives in its place, once that wait has passed after that outcome, a message to the coordinator on the change, with the line that makes the step due once more.
+        - The times a step was given in a row are the times it was given and failed, other than a launch the harness refused at its limit of {subagents} concurrent subagents.
+            - `next` gives such a launch again once a wait has passed after the refusal, a wait that doubles at each such refusal in a row, up to a cap.
+                - While such a launch waits, `next` gives no final reply, and where no other step is ready, it waits for one as it does where no step is ready.
         - An end of turn that `next` prints with the launch of an agent whose end resumes the operator counts as a time the launch it holds back was given and failed.
         - Once a step was given {bound} times in a row, `next` gives it no more: it retires the step for each operator of the session, files one `bug` on it with its key and the function that gives it, and goes on to the next step, and the final reply gives the step.
+            - Where a held change's procedure still gives a retired launch or command, `next` gives in its place the message to the coordinator on the change that a step done a second time gets.
+            - The retirement of a launch or a command of a held change holds at each version of the change's inputs, until an `Op override: give again` ruling on the step's key without the version.
     """),
     HelpPart.RULINGS: mctx("""
     - `next` applies the rulings that the coordinator gives an operator of the session, and that the reply of a ticket analyst on a held step gives, each a line in one of these forms, matched whole, past a list marker:

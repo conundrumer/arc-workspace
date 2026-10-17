@@ -27,8 +27,9 @@ of an operator runs that is not
 stuck, a ticket of the operators' waits on another holder whose work is
 open and that is not stuck (`TranscriptsRead.stuck`), a ticket
 file the read of the tracker left out may still be written
-(`decisions.writing`), or the usage pace alone holds back an open
-ticket (`taking.pace_held`), the agent runs
+(`decisions.writing`), the usage pace alone holds back an open
+ticket (`taking.pace_held`), or a step waits after the harness refused it
+at its limit of concurrent subagents (`journal.backing_off`), the agent runs
 the command again, which blocks in the foreground first. Otherwise the
 agent gives its final reply, after the message that sends its parent
 its text (`standing.ending`), with each stuck agent or holder it waited on."""
@@ -40,6 +41,7 @@ from operations import decisions, monitor, triage, taking
 from operations.state import Call, State
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Status
+from operations.journal import backing_off
 from operations.final_reply import FOR_CONTEXT, final_sends_in, for_context, live_holder, sent_final_text
 from operations.standing import ending, final, holding, reply_lines
 from operations.order import EARLY, LATE, first, lacked, listing_wait, monitor_step
@@ -95,7 +97,8 @@ def next_step(state: State, watch: monitor.MonitorState) -> Step:
     waits = [a.agent_id for a in state.transcripts.agents if a.pending or a.agent_id in state.transcripts.quiet]
     waits += [h for n in elsewhere(state) if (h := state.tracker.tickets[n].holder) is not None]
     if (pace is not None or any(w is None or w not in stuck for w in waits)
-            or any(decisions.writing(state, u) for u in state.tracker.unread)):
+            or any(decisions.writing(state, u) for u in state.tracker.unread)
+            or backing_off(state.journal, state.now)):
         return Poll(pace)
     quiet = [mctx("- Stopped waiting on {agent}: no progress since {time}.").format(
         agent=w, time=utc_stamp(stuck[w].since)) for w in dict.fromkeys(waits) if w is not None]

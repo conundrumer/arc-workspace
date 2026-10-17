@@ -5,12 +5,14 @@ key (`steps.key`), from the time `next` gave it to its outcome, which `next` rea
 `scripts/step_journal.py` writes it and reads it back."""
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from controlled_markdown import mctx
 from operations.command_words import is_next
+from operations.constants import BACKOFF_CAP, BACKOFF_SECONDS
 from operations.state import Call, Tool
+from operations.steps import Bash, Journaled, Launch, key, retirement_key
 
 BOUND = 3
 """How many times in a row a step is given before it is retired."""
@@ -61,8 +63,10 @@ class Entry:
 
 @dataclass(frozen=True)
 class Journal:
-    """The entries of the session's journal, in the order they were given."""
+    """The entries of the session's journal, in the order they were given,
+    and the cuts `since` made."""
     entries: tuple[Entry, ...] = ()
+    cuts: Mapping[str, float] = field(default_factory=dict[str, float])
 
     def since(self, cuts: Mapping[str, float]) -> "Journal":
         """The journal less each entry, of the step or retiring the step
@@ -70,7 +74,7 @@ class Journal:
         journal as `next` reads it past the `Op override: give again` rulings
         (`directives.given_again`). An entry in flight stays, so no step in
         flight is given twice."""
-        return Journal(tuple(e for e in self.entries if not cut(e, cuts)))
+        return Journal(tuple(e for e in self.entries if not cut(e, cuts)), cuts)
 
     def of(self, key: str) -> list[Entry]:
         return [e for e in self.entries if e.key == key]
@@ -92,12 +96,24 @@ def cut(e: Entry, cuts: Mapping[str, float]) -> bool:
         k is not None and k in cuts and e.close.time < cuts[k] for k in (e.key, e.retires))
 
 
+REFUSED = "Concurrent subagent limit reached"
+"""The opening of the harness's refusal of an Agent call at
+`constants.SUBAGENT_LIMIT`."""
+
+
+def refused(e: Entry) -> bool:
+    """Whether `e` failed as the harness refused its Agent call at its
+    limit of concurrent subagents."""
+    return (e.close is not None and e.close.outcome is Outcome.FAILED
+            and e.close.why.startswith(REFUSED))
+
+
 class Due(StrEnum):
     """What `next` does with a step its procedure gives."""
     GIVE = "give"
     WAIT = "wait"
-    """The step is in flight, done or retired: its procedure gives nothing
-    in its place."""
+    """The step is in flight, done, retired or backing off after a
+    refusal (`refused`): its procedure gives nothing in its place."""
     RETIRE = "retire"
     """The step reached `BOUND`: it is retired, and its bug is filed."""
 
@@ -107,24 +123,58 @@ def retired(journal: Journal, key: str) -> bool:
     return any(e.retires == key for e in journal.entries)
 
 
-def in_row(entries: Sequence[Entry]) -> int:
-    """How many of the last of `entries`, the entries of one key, count as
-    times given in a row, as `scripts/operate.py --help journal` counts
-    them: those that failed, since the last that was done."""
-    count = 0
+def failures(entries: Sequence[Entry]) -> list[Entry]:
+    """The last of `entries`, the entries of one key, that count as times
+    given in a row, as `scripts/operate.py --help journal` counts them, in
+    the order they were given."""
+    out: list[Entry] = []
     for e in reversed(entries):
         if e.close is None or e.close.outcome is Outcome.DONE:
             break
+        if not refused(e):
+            out.append(e)
+    return out[::-1]
+
+
+def backoff(entries: Sequence[Entry]) -> float | None:
+    """The time the wait after the refusals (`refused`) that end
+    `entries`, the entries of one key, ends, or None where the last of
+    them is no refusal."""
+    count = 0
+    for e in reversed(entries):
+        if not refused(e):
+            break
         count += 1
-    return count
+    last = entries[-1].close if count else None
+    if last is None:
+        return None
+    return last.time + min(BACKOFF_SECONDS * 2 ** (count - 1), BACKOFF_CAP)
 
 
-def due(journal: Journal, key: str) -> Due:
-    """What `next` does with the step `key`."""
-    entries = journal.of(key)
-    if retired(journal, key) or any(e.close is None or e.done for e in entries):
+def due(journal: Journal, step: Journaled, now: float) -> Due:
+    """What `next` does at `now` with `step`, as
+    `scripts/operate.py --help journal` gives it; a step given `again` is
+    given once more past its first done entry (`changes.step`). Its
+    failures count from the cut that lifted its retirement, where one
+    did."""
+    entries = journal.of(key(step))
+    retiring = retirement_key(step)
+    if retired(journal, retiring) or any(e.close is None for e in entries):
         return Due.WAIT
-    return Due.RETIRE if in_row(entries) >= BOUND else Due.GIVE
+    again = isinstance(step, Launch | Bash) and step.again
+    if sum(e.done for e in entries) > (1 if again else 0):
+        return Due.WAIT
+    if (until := backoff(entries)) is not None and now < until:
+        return Due.WAIT
+    lifted = journal.cuts.get(retiring)
+    counted = [e for e in entries if lifted is None or e.given > lifted]
+    return Due.RETIRE if len(failures(counted)) >= BOUND else Due.GIVE
+
+
+def backing_off(journal: Journal, now: float) -> bool:
+    """Whether a step waits at `now` after a refusal (`backoff`)."""
+    keys = dict.fromkeys(e.key for e in journal.entries if e.key is not None)
+    return any((until := backoff(journal.of(k))) is not None and now < until for k in keys)
 
 
 def in_flight(journal: Journal, operators: Sequence[str]) -> list[Entry]:
