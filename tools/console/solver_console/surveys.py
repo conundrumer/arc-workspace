@@ -28,7 +28,8 @@ import time
 from pathlib import Path
 
 from engine import checkout
-from handbook.agents import AGENT_NAMES, agent_meta
+from handbook.agent_documents import agent_meta
+from handbook.agents import AGENT_NAMES
 
 from . import config, prompts, solvers
 

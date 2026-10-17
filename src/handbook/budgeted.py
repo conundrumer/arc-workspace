@@ -17,8 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from engine import checkout
-from handbook.agents import (AGENT_DIR, agent_doc, agent_document,
-                             agent_names, agent_renderings, next_file,
+from handbook.agent_documents import AGENT_DIR, agent_doc, agent_document
+from handbook.agents import (agent_names, agent_renderings, next_file,
                              next_name, next_readers, next_unlisted_text)
 from handbook.budget import Measured, Size, WithoutLists, size
 from handbook.context import DOCS_DIR

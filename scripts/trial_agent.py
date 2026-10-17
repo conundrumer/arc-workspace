@@ -16,7 +16,7 @@ from typing import Any
 from controlled_markdown import Registry, mctx
 from controlled_markdown.renderers import render
 from engine import checkout
-from handbook.agents import agent_meta
+from handbook.agent_documents import agent_meta
 from handbook.paths import scripts_importable
 from handbook.reader_names import ReaderName
 from handbook.readers import context_text, reader_named

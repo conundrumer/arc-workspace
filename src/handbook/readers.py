@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from handbook.agents import agent_dir, agent_names
+from handbook.agent_documents import agent_dir
+from handbook.agents import agent_names
 from handbook.context import role_dir, role_stems, workflow_dir, workflow_names
 from handbook.contexts import (agent_context, codex_context, console_context,
                                console_stages, role_context, session_context,

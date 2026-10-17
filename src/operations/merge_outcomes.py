@@ -1,0 +1,46 @@
+"""What a call of `scripts/merge_change.py` printed, as the reads of an
+operator's merge calls take it: the texts of the script that those reads
+match, and whether the call ran, refused a change for a conflict, or left
+a worktree for changes made after its change's commit."""
+
+import re
+
+from controlled_markdown import form, mctx
+from operations.merging import PREFIX, REFUSED, split_paths
+from operations.worktrees import BASE
+
+CONFLICT = mctx("rebasing {branch} onto {onto} conflicts in {paths}; {outcome}")
+"""The refusal of a change whose rebase onto `master` conflicts, with what
+the script did after it."""
+
+
+def ran(output: str) -> bool:
+    """Whether `output`, what a call of the script printed, holds a line of
+    the script's own, which a call that never ran does not."""
+    return any(line.startswith(PREFIX) for line in output.splitlines())
+
+
+STAYS = mctx("{master} is fast-forwarded, and {why}, so {worktree} and {branch} stay")
+"""The failure of a step after `master` is fast-forwarded that leaves a
+change's worktree and branch."""
+
+LEFT_AFTER = mctx("the worktree holds changes made after the commit, in {left}")
+"""The reason a worktree stays where it holds changes made after its
+change's commit."""
+
+
+def conflict_paths(output: str) -> tuple[str, ...] | None:
+    """The paths in which `output` gives that a change's rebase conflicts,
+    or None where it refuses no change for a conflict."""
+    m = re.search(form(REFUSED + CONFLICT, {"branch": r"\S+", "onto": r"\S+",
+                                            "paths": r"(?P<paths>.*?)", "outcome": r""}),
+                  output)
+    return None if m is None else split_paths(m["paths"])
+
+
+def left_edits(output: str) -> bool:
+    """Whether `output` gives that `master` is fast-forwarded and a
+    worktree stays for changes made after its change's commit."""
+    text = STAYS.format(master=BASE, why=LEFT_AFTER, worktree="{worktree}", branch="{branch}")
+    return re.search(form(text, {"left": r".+?", "worktree": r"\S+", "branch": r"\S+"}),
+                     output) is not None

@@ -133,12 +133,15 @@ def send_again(state: State, to: str, replies: list[float],
     return False if sent_at(state, to, text) else Send(to, text, f"{about} {latest}")
 
 
-def bash_calls(state: State, command: str) -> list[Call]:
+def bash_calls(state: State, command: str) -> tuple[Call, ...]:
     """The operators' Bash calls and the Bash steps of the journal
     (`TranscriptsRead.calls`) that ran the command `command`, among others,
     in the order they were made."""
-    return [c for c in state.transcripts.calls
-            if c.tool == Tool.BASH and command in str(c.input.get("command", ""))]
+    found = state.transcripts.bash_found
+    if command not in found:
+        found[command] = tuple(c for c in state.transcripts.calls
+                               if c.tool == Tool.BASH and command in str(c.input.get("command", "")))
+    return found[command]
 
 
 def unmoved(t: Ticket, s: Send) -> Undecided:

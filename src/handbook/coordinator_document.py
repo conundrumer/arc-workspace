@@ -42,7 +42,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from engine import checkout
-from handbook.agents import agent_dir
+from handbook.agent_documents import agent_dir
 from handbook.budget import checked
 from handbook.context import USER_SESSION_DOC, entry_text
 from handbook.contexts import APPENDIX, marked_section

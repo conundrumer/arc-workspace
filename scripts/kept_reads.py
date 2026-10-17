@@ -1,5 +1,5 @@
 """The store of the `state_cache` reads kept on disk across processes, in
-`state-reads.sqlite` under `.cache/` of the main worktree: for each read
+the file `STORE_NAME` gives under `.cache/` of the main worktree: for each read
 and its arguments, its result, its `undecided` lines, and the trace of the
 reads it rests on, which `state_reads` checks before the result stands.
 
@@ -20,12 +20,13 @@ import pickle
 import sqlite3
 import sys
 import time
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
 from engine import checkout
 
-STORE_NAME = "state-reads.sqlite"
+STORE_NAME = "kept-reads.sqlite"
 
 KEEP_SECONDS = 3600
 """How long the records of code that no process has written stay held: a
@@ -53,52 +54,109 @@ UNREADABLE = (pickle.UnpicklingError, EOFError, AttributeError, ImportError,
 """What `pickle.loads` raises on a record it cannot read."""
 
 
-class Store:
-    """The records of one process: those of each read, loaded from the
-    store at the first lookup of that read, and those computed since the
-    last `flush`, written together by it."""
+class StoreFile:
+    """The SQLite file of a store whose `records` are dropped by
+    `mark_used`, over one connection the process holds open until `close`."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, schema: str) -> None:
         self.path = path
-        self.used: set[str] = set()
-        self.loaded: dict[str, dict[str, bytes]] = {}
-        self.new: dict[tuple[str, str], bytes] = {}
-        self.new_bytes = 0
+        self.schema = schema
+        self.db: sqlite3.Connection | None = None
+        self.failed: sqlite3.Error | OSError | None = None
 
     def connect(self) -> sqlite3.Connection:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        db = sqlite3.connect(self.path, timeout=LOCK_WAIT_SECONDS)
-        db.executescript(SCHEMA)
-        return db
+        """The connection this process holds open to the store, opened and
+        the store created where none is. A store this creates runs in the
+        WAL journal mode, so that a process reads while another writes, and
+        with incremental auto-vacuum, so that `write` gives back to the
+        system the pages of the records `mark_used` drops. Where the store
+        did not open, each later call raises what the open raised, so that
+        no lookup waits on the lock again. The auto-vacuum mode is set only
+        on a store with no tables, since setting it waits on another
+        process's write lock."""
+        if self.failed is not None:
+            raise self.failed
+        if self.db is None:
+            try:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                db = sqlite3.connect(self.path, timeout=LOCK_WAIT_SECONDS)
+            except (sqlite3.Error, OSError) as e:
+                self.failed = e
+                raise
+            try:
+                if db.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone() is None:
+                    db.execute("PRAGMA auto_vacuum = INCREMENTAL")
+                db.execute("PRAGMA journal_mode = WAL").fetchall()
+                db.executescript(self.schema)
+            except sqlite3.Error as e:
+                db.close()
+                self.failed = e
+                raise
+            self.db = db
+        return self.db
+
+    def close(self) -> None:
+        if self.db is not None:
+            self.db.close()
+            self.db = None
+
+    def put(self, writes: list[tuple[str, list[tuple[Any, ...]]]], used: Iterable[str],
+            keep: float) -> None:
+        """Run each statement of `writes` over each of its rows, in one
+        transaction with `mark_used` of each code of `used`, and give back
+        to the system the pages of the records it drops. Where the store
+        cannot be written, nothing is."""
+        used = sorted(used)
+        if not any(rows for _, rows in writes) and not used:
+            return
+        now = time.time()
+        try:
+            db = self.connect()
+            with db:
+                for statement, rows in writes:
+                    db.executemany(statement, rows)
+                for code in used:
+                    mark_used(db, code, now, keep)
+            if used:
+                db.execute("PRAGMA incremental_vacuum").fetchall()
+        except (sqlite3.Error, OSError):
+            pass
+
+
+class Store(StoreFile):
+    """The records of one process: those computed since the last `flush`
+    are written together by it."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(path, SCHEMA)
+        self.used: set[str] = set()
+        self.new: dict[tuple[str, str], bytes] = {}
+        self.new_bytes = 0
+        self.parses: dict[str, list[Import]] = {}
+        """The `import` statements `closure_files` parsed since the last
+        write, by the sha256 of the file's bytes: a lookup takes no write
+        lock, so `write` writes them with the records."""
 
     def held(self, read: str, key: str) -> Any | None:
         """The record of `read` with the key `key`, as `keep` was given it,
         or None where the store holds none that reads."""
         found = self.new.get((read, key))
         if found is None:
-            if read not in self.loaded:
-                self.loaded[read] = self.load(read)
-                if self.loaded[read]:
-                    self.used.add(code_of(module_of(read)))
-            found = self.loaded[read].pop(key, None)
-        if found is None:
-            return None
+            code = code_of(module_of(read))
+            try:
+                row = self.connect().execute(
+                    "SELECT record FROM records WHERE code = ? AND read = ? AND key = ?",
+                    (code, read, key)).fetchone()
+            except (sqlite3.Error, OSError):
+                return None
+            if row is None:
+                return None
+            found = row[0]
+            self.used.add(code)
         try:
             return pickle.loads(found)
         except UNREADABLE:
             return None
-
-    def load(self, read: str) -> dict[str, bytes]:
-        try:
-            db = self.connect()
-            try:
-                return dict(db.execute(
-                    "SELECT key, record FROM records WHERE code = ? AND read = ?",
-                    (code_of(module_of(read)), read)).fetchall())
-            finally:
-                db.close()
-        except (sqlite3.Error, OSError):
-            return {}
 
     def keep(self, read: str, key: str, record: object) -> bool:
         """Hold `record` for the next write, where it pickles, and give
@@ -117,32 +175,30 @@ class Store:
 
     def flush(self) -> None:
         """Write the records held since the last flush, note as used the
-        code of each read this process loaded or wrote records of, and drop
-        the records of code that no process has used for `KEEP_SECONDS`."""
+        code of each read this process looked up or wrote records of, drop
+        the records of code that no process has used for `KEEP_SECONDS`,
+        and close the connection."""
         self.write(self.used)
         self.used = set()
+        self.close()
 
     def write(self, used: set[str]) -> None:
-        """Write the records held, in one transaction with `mark_used` of
-        each code of `used`, and hold none of them after."""
+        """Write the records and the parses held, in one transaction with
+        `mark_used` of each code of `used`, drop, where it writes parses,
+        those written more than `KEEP_SECONDS` ago, and hold none of them
+        after."""
         written = [(code_of(module_of(r)), r, k, v) for (r, k), v in self.new.items()]
+        now = time.time()
+        parsed = [(d, pickle.dumps(s, pickle.HIGHEST_PROTOCOL), now)
+                  for d, s in sorted(self.parses.items())]
         self.new = {}
         self.new_bytes = 0
-        if not written and not used:
-            return
-        now = time.time()
-        try:
-            db = self.connect()
-            try:
-                with db:
-                    db.executemany("INSERT OR REPLACE INTO records VALUES (?, ?, ?, ?)",
-                                   written)
-                    for code in sorted(used):
-                        mark_used(db, code, now, KEEP_SECONDS)
-            finally:
-                db.close()
-        except (sqlite3.Error, OSError):
-            pass
+        self.parses = {}
+        writes = [("INSERT OR REPLACE INTO records VALUES (?, ?, ?, ?)", written)]
+        if parsed:
+            writes += [("INSERT OR REPLACE INTO imports VALUES (?, ?, ?)", parsed),
+                       ("DELETE FROM imports WHERE written < ?", [(now - KEEP_SECONDS,)])]
+        self.put(writes, used, KEEP_SECONDS)
 
 
 def mark_used(db: sqlite3.Connection, code: str, now: float, keep: float) -> None:
@@ -227,13 +283,17 @@ def code_of(module: str) -> str:
     only once its bytes change, or once `KEEP_SECONDS` pass from the parse
     that wrote them."""
     if module not in _codes:
-        _codes[module] = _closure_digest(module)
+        files = closure_files(module)
+        _codes[module] = checkout.files_digest({path: files[path] for path in sorted(files)})
     return _codes[module]
 
 
-def _closure_digest(module: str) -> str:
+def closure_files(module: str) -> dict[Path, bytes]:
+    """The files of the import closure of `module` that `code_of` digests,
+    each with its bytes. The parses it makes are held in the open store
+    for its next `Store.write`."""
     known: dict[str, list[Import]] = {}
-    found: dict[str, list[Import]] = {}
+    found: dict[str, list[Import]] = _store.parses if _store is not None else {}
     db = _imports_db()
     files: dict[Path, bytes] = {}
     todo = named_modules(module, Path(), (0, module, ()))
@@ -263,23 +323,11 @@ def _closure_digest(module: str) -> str:
                 statements = []
         for statement in statements:
             todo.extend(named_modules(name, path, statement))
-    if db is not None:
-        try:
-            if found:
-                now = time.time()
-                with db:
-                    db.executemany("INSERT OR REPLACE INTO imports VALUES (?, ?, ?)",
-                                   [(d, pickle.dumps(s, pickle.HIGHEST_PROTOCOL), now)
-                                    for d, s in found.items()])
-                    db.execute("DELETE FROM imports WHERE written < ?", (now - KEEP_SECONDS,))
-        except sqlite3.Error:
-            pass
-        db.close()
-    return checkout.files_digest({path: files[path] for path in sorted(files)})
+    return files
 
 
 def _imports_db() -> sqlite3.Connection | None:
-    """A connection to the open store, where one is open and it opens."""
+    """The connection of the open store, where one is open and it opens."""
     if _store is None:
         return None
     try:

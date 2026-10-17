@@ -7,7 +7,6 @@ outside every task's work directory, which no set-aside moves. `scripts/operate.
 `passes` prints; this is the one module of the package that writes."""
 
 import json
-import re
 import shutil
 import time
 from pathlib import Path
@@ -15,7 +14,7 @@ from pathlib import Path
 from controlled_markdown import mctx
 from engine import checkout
 from operations.roles import Role
-from operations.state import Restore
+from operations.task_dirs import CLAIM, refine_report, restores_file, tasks_work
 from solver.vocabulary import SOLVER_SUFFIX, WITNESS_SUFFIX
 
 BEFORE_CREATE = ("create.md", "progress.md")
@@ -23,25 +22,7 @@ BEFORE_CREATE = ("create.md", "progress.md")
 each Refine report (`refine_report`)."""
 
 
-def refine_report(name: str) -> bool:
-    return re.fullmatch(r"refine-\d+\.md", name) is not None
-
-CLAIM = "claim"
-
-
 CLAIM_HELD = mctx("the claim on task {task} fails: session {holder} holds it")
-
-
-def tasks_work(main: Path) -> Path:
-    """The directory of each task's work and claim, in the main worktree
-    `main`."""
-    return main / "work" / "task"
-
-
-def restores_file(main: Path) -> Path:
-    """The file that records each `restore` call on any task, one JSON
-    object per line, in the main worktree `main`."""
-    return tasks_work(main).parent / "restores"
 
 
 def claim(main: Path, task: str, session: str) -> str | None:
@@ -115,12 +96,3 @@ def release(main: Path, task: str) -> None:
     """Remove the task's claim, and move nothing back: the claim of a
     solver fix (`passes.fixes`) sets nothing aside."""
     (tasks_work(main) / task / CLAIM).unlink(missing_ok=True)
-
-
-def restore_records(text: str) -> dict[str, tuple[Restore, ...]]:
-    """The `restore` calls the text of `restores_file` records, by task,
-    each task's in order."""
-    out: dict[str, list[Restore]] = {}
-    for r in map(json.loads, text.splitlines()):
-        out.setdefault(r["task"], []).append(Restore(float(r["time"]), r["argument"]))
-    return {task: tuple(found) for task, found in out.items()}

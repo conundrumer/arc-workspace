@@ -1,7 +1,7 @@
 """The store of what `budgets.group_budgets` reads of each run, held on
-disk across processes in `run-profiles.sqlite` under `.cache/` of the main
-worktree: the last transcript and the agent type of each agent, and the
-profile of a run with the `undecided` lines its profile appends.
+disk across processes in the file `STORE_NAME` gives under `.cache/` of
+the main worktree: the last transcript and the agent type of each agent,
+and the profile of a run with the `undecided` lines its profile appends.
 
 A held record stands only while the code that reads it is the code that
 held it, and while each file whose read reaches it has the stat it had
@@ -17,19 +17,18 @@ Otherwise the record is computed again and held again.
 
 SQLite writes the records of a call in one transaction, under a lock it
 takes across processes, so no reader sees a record half written. Where the
-store is missing, or the process cannot read or write it, each record is
-computed, as with no store."""
+process cannot read or write the store, each record is computed, as with
+no store."""
 
 import hashlib
 import pickle
 import sqlite3
-import time
 from collections.abc import Hashable
 from enum import StrEnum
 from pathlib import Path
 
 from engine import checkout
-from kept_reads import LOCK_WAIT_SECONDS, UNREADABLE, mark_used
+from kept_reads import UNREADABLE, StoreFile
 from noted_reads import recording
 from run_profiler import profile
 from run_records import Run
@@ -38,7 +37,7 @@ from file_reads import stat_of
 from state_reads import state_cache
 from transcripts import agent_id, agent_transcripts, chain
 
-STORE_NAME = "run-profiles.sqlite"
+STORE_NAME = "run-records.sqlite"
 
 SOURCES = ("scripts/**/*.py", "src/**/*.py", "tools/console/solver_console/**/*.py")
 """The code a held record rests on."""
@@ -85,44 +84,22 @@ def profile_stamp(path: Path, files: list[str]) -> Hashable:
             tuple((f, stat_of(Path(f))) for f in files))
 
 
-class RunStore:
-    """The records of one call, read from the store and written to it
+class RunStore(StoreFile):
+    """The records of one call: those computed are written to the store
     together by `flush`."""
 
     def __init__(self) -> None:
+        super().__init__(checkout.caches() / STORE_NAME, SCHEMA)
         self.code = checkout.sources_digest(SOURCES)
-        self.path = checkout.caches() / STORE_NAME
-        self.db: sqlite3.Connection | None = None
-        self.held_types: dict[str, tuple[str, bytes]] = {}
         self.new: list[tuple[Kind, str, str, bytes]] = []
-        try:
-            if self.path.is_file():
-                self.db = sqlite3.connect(self.path, timeout=LOCK_WAIT_SECONDS)
-                self.held_types = {a: (s, v) for a, s, v in self.db.execute(
-                    "SELECT agent, stamp, value FROM records WHERE code = ? AND kind = ?",
-                    (self.code, Kind.TYPE))}
-        except sqlite3.Error:
-            self.close()
-
-    def close(self) -> None:
-        if self.db is not None:
-            self.db.close()
-        self.db = None
-        self.held_types = {}
 
     def held(self, kind: Kind, agent: str) -> tuple[str, bytes] | None:
-        if kind is Kind.TYPE:
-            return self.held_types.get(agent)
-        if self.db is None:
-            return None
         try:
-            row = self.db.execute(
+            return self.connect().execute(
                 "SELECT stamp, value FROM records WHERE code = ? AND kind = ? AND agent = ?",
                 (self.code, kind, agent)).fetchone()
-        except sqlite3.Error:
-            self.close()
+        except (sqlite3.Error, OSError):
             return None
-        return row
 
     def last_and_type(self, agent: str) -> tuple[Path, str | None]:
         """The last transcript of the run of `agent`, and its agent type
@@ -166,19 +143,7 @@ class RunStore:
     def flush(self) -> None:
         """Write the records computed since the store was read, and drop
         those of code that no process has read for `KEEP_SECONDS`."""
-        now = time.time()
-        try:
-            if self.db is None:
-                self.path.parent.mkdir(parents=True, exist_ok=True)
-                self.db = sqlite3.connect(self.path, timeout=LOCK_WAIT_SECONDS)
-            self.db.executescript(SCHEMA)
-            with self.db:
-                self.db.executemany(
-                    "INSERT OR REPLACE INTO records VALUES (?, ?, ?, ?, ?)",
-                    [(self.code, *r) for r in self.new])
-                mark_used(self.db, self.code, now, KEEP_SECONDS)
-        except (sqlite3.Error, OSError):
-            pass
-        finally:
-            self.close()
-            self.new = []
+        self.put([("INSERT OR REPLACE INTO records VALUES (?, ?, ?, ?, ?)",
+                   [(self.code, *r) for r in self.new])], [self.code], KEEP_SECONDS)
+        self.close()
+        self.new = []

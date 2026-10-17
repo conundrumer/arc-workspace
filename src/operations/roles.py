@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
-from handbook.agents import agent_meta
+from handbook.agent_documents import agent_meta
 
 
 class Model(StrEnum):

@@ -10,7 +10,8 @@ from pathlib import Path
 
 import controlled_markdown as nm
 from controlled_markdown import mctx
-from handbook.agents import agent_dir, agent_names
+from handbook.agent_documents import agent_dir
+from handbook.agents import agent_names
 from handbook.context import no_item_named
 from handbook.paths import DOCUMENTS_ROOT
 

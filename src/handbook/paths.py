@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 from engine import checkout
-from solver.vocabulary import LIB_FILE
 
 REPO_ROOT = checkout.ROOT
 """The checkout the readers work in."""
@@ -48,8 +47,3 @@ def scripts_importable() -> None:
     its path with `scripts/` off `sys.path`, so a script that imports from
     `scripts/` calls this first."""
     importable(checkout.scripts())
-
-
-def lib_src() -> Path:
-    """The lib the runner reads."""
-    return checkout.programs() / LIB_FILE

@@ -16,7 +16,7 @@ from engine import checkout
 from engine.memo import kept_recent
 from souffle import printer
 from souffle.layout import written_lines
-from handbook import paths
+from solver.vocabulary import LIB_FILE
 from handbook.attributes import attr_form
 from handbook.generated import Rendering
 from handbook.items import (
@@ -34,7 +34,8 @@ from handbook.items import (
 from handbook.items import parse as parse_file
 from handbook.paths import document, repo_label
 
-LIB_SRC = document(paths.lib_src())
+LIB_SRC = document(checkout.programs() / LIB_FILE)
+"""The lib the runner reads, as the contexts read it."""
 
 
 def parse(text: str, base_dir: Path | None = None) -> Program:

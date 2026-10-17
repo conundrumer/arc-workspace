@@ -17,12 +17,9 @@ from agent_resumes import resumes, sent_to
 from agents_pending import turn_signs
 from agent_reports import ENDED, Sign, last_sign
 from agent_turns import first_time, has_ended, turns
-from context_bound_hook import OPERATOR
 from controlled_markdown import mctx
 from filed_texts import brief_report_file, report_file, report_text, unfiled, written_report
-from merge_change import conflict_paths, left_edits, ran
 from open_agents import work_open
-from pending_wait_hook import bound_denied
 from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, agent_type, blocks, is_prompt,
                        message_text, notifications, output_file, parent_id, run_entries,
                        run_sessions, session_agents, tool_results)
@@ -33,14 +30,16 @@ from state_reads import DERIVED, Kept, state_cache
 from ticket_numbers import TICKET_NUMBER
 from transcripts import find, session_directory
 from transcript_entries import epoch, read_entries
+from wait_bound import bound_denied
 
+from operations.merge_outcomes import conflict_paths, left_edits, ran
 from operations.merging import MERGE_SCRIPT, merge_messages
 from operations.reports import CONCEPT_FAULTS, TICKETS_FILED, section, section_items
 from operations.roles import PASSES, Role, described
 from operations.state import (
     Agent, Call, Merge, Message, PassReport, Report, Tool, Waits,
 )
-from operations.task_work import refine_report, tasks_work
+from operations.task_dirs import refine_report, tasks_work
 from operations.command_words import COMMAND, is_next
 from operations.printing import unfenced
 
@@ -155,7 +154,7 @@ def session_operators(session: str, me: str) -> tuple[tuple[str, Path], ...]:
     """`operator_runs`, held."""
     directory = session_directory(find(session))
     runs = [(aid, p, t) for aid, p in session_agents(directory).items()
-            if agent_type(p) == OPERATOR and (aid == me or ran_command(p))
+            if agent_type(p) == Role.OPERATOR.agent_type and (aid == me or ran_command(p))
             and (t := first_time(p)) is not None]
     return tuple((aid, p) for aid, p, _ in sorted(runs, key=lambda r: r[2]))
 

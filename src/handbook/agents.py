@@ -29,16 +29,9 @@ from handbook.context import (HANDBOOK_AGENT, ROLE_DIR, WRAPPERS_PATH,
                               composed, entry_text, write_lib_output)
 from handbook.generated import Rendering, in_checkout, read_manifest
 from handbook.lib import LIB_SRC, LibForm, lib_sources
+from handbook.agent_documents import AGENT_DIR, agent_doc, agent_document, front_fields
 from handbook.listings import unlisted
-from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT, document, repo_label
-
-
-def agent_dir(root: Path = DOCUMENTS_ROOT) -> Path:
-    """`prompts/agents/` under the documents root `root`."""
-    return document(checkout.prompts(), root) / "agents"
-
-
-AGENT_DIR = agent_dir()
+from handbook.paths import REPO_ROOT, repo_label
 
 
 AGENT_OUT = checkout.agents()
@@ -49,37 +42,10 @@ def agent_file(name: str, out: Path = AGENT_OUT) -> Path:
     return out / f"{name}.md"
 
 
-def agent_doc(name: str, agents: Path = AGENT_DIR) -> Path:
-    """The agent document of the agent `name` under `agents`."""
-    return agents / f"{name}.md"
-
-
 AGENT_NAMES = (HANDBOOK_AGENT, "handbook-expanded")
 
 NEXT_OUT = checkout.claude()
 """Where each agent's later steps are written."""
-
-
-def agent_document(name: str, agents: Path = AGENT_DIR) -> nm.Node:
-    """One agent document, parsed."""
-    return nm.Registry(DOCUMENTS_ROOT).load(agent_doc(name, agents))
-
-
-def _front_fields(document: nm.Node) -> dict[str, tuple[int, str]]:
-    """Each key of a document's front matter, with the line of the front
-    matter that gives it and its value as written, quotes and all."""
-    out: dict[str, tuple[int, str]] = {}
-    for n, line in enumerate(document.front.split("\n"), 1):
-        if ": " in line and not line.startswith("---"):
-            key, value = line.split(": ", 1)
-            out[key.strip()] = (n, value.strip())
-    return out
-
-
-def agent_meta(name: str, agents: Path = AGENT_DIR) -> dict[str, str]:
-    """An agent's definition, as its document's front matter gives it."""
-    return {key: value.strip('"') for key, (_, value)
-            in _front_fields(agent_document(name, agents)).items()}
 
 
 def render(name: str, lib: Path = LIB_SRC, agents: Path = AGENT_DIR) -> str:
@@ -143,7 +109,7 @@ def description_findings(agents: Path = AGENT_DIR) -> list[str]:
             continue
         path = agent_doc(name, agents)
         where = f"{repo_label(path)}:"
-        field = _front_fields(document).get("description")
+        field = front_fields(document).get("description")
         if field is None:
             out.append(f"{where} no `description`")
             continue

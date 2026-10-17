@@ -16,7 +16,7 @@ from controlled_markdown import ControlledMarkdownError
 from controlled_markdown.prose import Fragment, text_fragments
 from engine import checkout
 from operations.state import DOC_REVIEW, Baseline, Commit, NoBaseline, Place, Restore, Review
-from operations.task_work import CLAIM, restore_records, restores_file, tasks_work
+from operations.task_dirs import CLAIM, restore_records, restores_file, tasks_work
 from operations.worktrees import BASE
 from solver.vocabulary import SOLVER_SUFFIX
 

@@ -10,7 +10,8 @@ import controlled_markdown as nm
 from controlled_markdown import mctx
 from engine import checkout
 from handbook import paths
-from handbook.agents import (agent_document, agent_file, agent_names,
+from handbook.agent_documents import agent_document
+from handbook.agents import (agent_file, agent_names,
                              agent_prompt_text, next_file, next_readers,
                              next_text)
 from handbook.context import (CODEX_DOC, ROLE_DIR, SESSION_DOC, entry_text,

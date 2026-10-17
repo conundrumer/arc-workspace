@@ -7,6 +7,7 @@ change `me` holds.
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
+from functools import cached_property
 from enum import Enum, StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -213,11 +214,11 @@ def last_reported(agents: Iterable[Agent]) -> float:
 class Merge(Enum):
     """What a call of `scripts/merge_change.py` did: left edits, where its
     output gives that `master` is fast-forwarded and the worktree stays
-    for changes made after the commit (`merge_change.left_edits`), which
+    for changes made after the commit (`merge_outcomes.left_edits`), which
     leaves the change unmerged; merged, where `master` otherwise holds a
     commit made at or after the call with the message it gives, whatever
     its exit status; and otherwise, by the forms of its output that
-    script gives (`merge_change.ran`, `merge_change.conflict_paths`), never
+    script gives (`merge_outcomes.ran`, `merge_outcomes.conflict_paths`), never
     ran, as where the harness denied the call, refused for a conflict in
     its rebase, or refused otherwise."""
     LEFT_EDITS = "left edits"
@@ -471,6 +472,12 @@ class TranscriptsRead:
     messaged: Mapping[str, frozenset[str]]
     limited: Mapping[str, float]
 
+    @cached_property
+    def bash_found(self) -> dict[str, tuple[Call, ...]]:
+        """The calls `operations.handled.bash_calls` found for each command
+        it was given, so that each command's search of `calls` runs once."""
+        return {}
+
     def sent_by(self, a: Agent) -> frozenset[str] | None:
         """The agent ids of `messaged` for `a`, or None where `a` is not a
         doc reviewer or an item checker, or its transcript is unknown."""
@@ -503,7 +510,7 @@ class GitRead:
     `branches` the branch of each worktree that stands on one. `claims`
     gives the session id each claimed task's claim file holds, and
     `restores` the `restore` calls on each task, in order, as
-    `task_work.restores_file` records them.
+    `task_dirs.restores_file` records them.
     `solvers` holds the tasks whose solver stands in the main tree.
     `reviews` gives each review's last baseline, or why the read gives
     none.

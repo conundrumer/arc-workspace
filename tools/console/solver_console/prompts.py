@@ -13,10 +13,10 @@ import threading
 from pathlib import Path
 
 import controlled_markdown as nm
+from handbook.agent_documents import agent_meta
 from handbook.agents import (
     AGENT_NAMES,
     AGENT_OUT,
-    agent_meta,
     agent_prompt,
     render,
     write_agent,

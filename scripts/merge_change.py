@@ -175,7 +175,6 @@ a failed step, 2 when the call itself is malformed.
 
 import argparse
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -186,7 +185,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from controlled_markdown import form, mctx
+from controlled_markdown import mctx
 from engine import checkout, rwlock
 from engine.duration import footer
 from handbook.paths import scripts_importable
@@ -200,7 +199,8 @@ from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
                                  submodules, locked_update, SetupFailed)
 
 from operations.merging import (CONTEXT_WRITE, DOCUMENT_CHECKS, PATHS_SEP,  # noqa: E402
-                                NOT_PUT_ON, PREFIX, REFUSED, REFUSED_TREE, split_paths)
+                                NOT_PUT_ON, PREFIX, REFUSED, REFUSED_TREE)
+from operations.merge_outcomes import CONFLICT, LEFT_AFTER, STAYS  # noqa: E402
 from operations.worktrees import BASE  # noqa: E402
 
 DOCUMENT_PASS = ("scripts/document_pass.py",)
@@ -213,10 +213,6 @@ tree's `HEAD` that the readers' updates read."""
 
 def say(text: str, file: TextIO | None = None, flush: bool = False) -> None:
     print(PREFIX + text, file=file, flush=flush)
-
-CONFLICT = mctx("rebasing {branch} onto {onto} conflicts in {paths}; {outcome}")
-"""The refusal of a change whose rebase onto `master` conflicts, with what
-the script did after it."""
 
 ABORTED = mctx("the rebase is aborted and the worktree is as it was:")
 
@@ -235,38 +231,6 @@ UNMERGED_NONE = mctx("the rebase of {branch} onto {onto} fails with no unmerged 
                      "rebase is aborted and the worktree is as it was:")
 """The refusal of a change whose rebase onto `master` fails where git
 leaves no path unmerged, which is no conflict."""
-
-
-def ran(output: str) -> bool:
-    """Whether `output`, what a call of the script printed, holds a line of
-    the script's own, which a call that never ran does not."""
-    return any(line.startswith(PREFIX) for line in output.splitlines())
-
-
-STAYS = mctx("{master} is fast-forwarded, and {why}, so {worktree} and {branch} stay")
-"""The failure of a step after `master` is fast-forwarded that leaves a
-change's worktree and branch."""
-
-LEFT_AFTER = mctx("the worktree holds changes made after the commit, in {left}")
-"""The reason a worktree stays where it holds changes made after its
-change's commit."""
-
-
-def conflict_paths(output: str) -> tuple[str, ...] | None:
-    """The paths in which `output` gives that a change's rebase conflicts,
-    or None where it refuses no change for a conflict."""
-    m = re.search(form(REFUSED + CONFLICT, {"branch": r"\S+", "onto": r"\S+",
-                                            "paths": r"(?P<paths>.*?)", "outcome": r""}),
-                  output)
-    return None if m is None else split_paths(m["paths"])
-
-
-def left_edits(output: str) -> bool:
-    """Whether `output` gives that `master` is fast-forwarded and a
-    worktree stays for changes made after its change's commit."""
-    text = STAYS.format(master=BASE, why=LEFT_AFTER, worktree="{worktree}", branch="{branch}")
-    return re.search(form(text, {"left": r".+?", "worktree": r"\S+", "branch": r"\S+"}),
-                     output) is not None
 
 
 def outside_work() -> tuple[str, str, str]:

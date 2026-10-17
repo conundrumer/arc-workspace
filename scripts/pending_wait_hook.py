@@ -15,12 +15,12 @@ stderr, so it can fail to deny a wait but never denies one wrongly. A call
 whose input gives no agent id (`run_reads.caller_id`) is the main session's
 only where the main transcript holds it."""
 
-import re
 import sys
 from typing import Any
 
 from hook_entry import not_registered, run_pre_tool_use
 from operations.constants import FOREGROUND_MS
+from wait_bound import bound_reason
 
 HOOK = "pending_wait_hook"
 
@@ -66,26 +66,6 @@ def over_bound(tool: str, inp: dict[str, Any], subagent: bool) -> str | None:
     if timeout <= FOREGROUND_MS:
         return None
     return bound_reason(str(timeout))
-
-
-def bound_reason(timeout: str) -> str:
-    """The reason the hook gives where a call's timeout, `timeout`, is over
-    `FOREGROUND_MS`."""
-    from controlled_markdown import mctx
-
-    return "\n".join([
-        mctx("Blocked: this foreground Bash call has a timeout of {timeout} ms, over the "
-             "bound of {bound} ms."),
-        mctx("Run the same call again with a timeout of at most {bound} ms."),
-    ]).format(timeout=timeout, bound=FOREGROUND_MS)
-
-
-def bound_denied(result: str) -> bool:
-    """Whether `result`, a call's result, holds the reason `bound_reason`
-    gives, with any timeout."""
-    hole = "\0"
-    parts = bound_reason(hole).split(hole)
-    return re.search(r"\d+(?:\.\d+)?".join(map(re.escape, parts)), result) is not None
 
 
 def check(hook: dict[str, Any]) -> str | None:
