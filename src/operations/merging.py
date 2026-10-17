@@ -13,8 +13,8 @@ script's own forms and by `master` (`state.Merge`,
   to the coordinator (`HANDED_OFF`), with a note that gives the call, the
   first line of its result and the worktree;
 - a conflict in the rebase leaves the change in its worktree, put by the
-  script onto `master` with git's conflict markers in the paths that
-  conflict: the command writes those paths on the ticket in a line whose
+  script onto `master` with the paths that conflict as git's 3-way merge
+  leaves them: the command writes those paths on the ticket in a line whose
   note opens with `conflict`, once per such call, and the refusal then
   goes as a finding as any other refusal goes;
 - a conflict where the script could not put the change onto `master`

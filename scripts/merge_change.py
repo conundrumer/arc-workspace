@@ -137,10 +137,11 @@ The script refuses a change, and says why, where:
 - the rebase onto `master` conflicts, in which case it aborts the rebase
   and names the paths it conflicts in. Where the stack holds that change
   alone, the script then puts the change onto that `master` in its
-  worktree: it moves the branch to that `master` commit and applies the
-  diff of the change against its base with `git apply --3way`, which
-  leaves git's conflict markers in each path that conflicts, and it leaves
-  the change uncommitted with nothing staged and names that commit. Where
+  worktree: it puts the index and the files at the change's commit, moves
+  the branch to that `master` commit, and merges the change's commit onto
+  it with `git merge --squash --no-commit`, which leaves each path that
+  conflicts as git's 3-way merge leaves it, and it leaves the change
+  uncommitted with nothing staged and names that commit. Where
   any part of that step fails, it puts the branch, the index and the files
   back as the abort left them, and says so;
 - `git diff --check` reports a leftover conflict marker in the change
@@ -213,8 +214,8 @@ the script did after it."""
 ABORTED = mctx("the rebase is aborted and the worktree is as it was:")
 
 PUT_ON = mctx("the rebase is aborted, and {branch} is moved to {onto}'s commit {commit}, "
-              "with the change uncommitted in {worktree} and git's conflict markers in each of "
-              "those paths that still conflicts:")
+              "with the change uncommitted in {worktree} and each of those paths that still "
+              "conflicts as git's 3-way merge left it:")
 
 MARKERS = mctx("`git diff --check` reports a leftover conflict marker in the change of {branch}, "
                "so the index is put back as it was and nothing is committed:")
@@ -497,15 +498,16 @@ def put_on(change: Change, onto: str, onto_name: str) -> str:
     head = checkout.git_out(w, "rev-parse", "HEAD").strip()
     with tempfile.TemporaryDirectory(prefix="merge-change-put-on-") as tmp:
         index = Path(tmp) / "index"
-        patch = Path(tmp) / "change.patch"
         shutil.copy2(index_file(w), index)
-        base = checkout.git_out(w, "merge-base", onto, change.committed).strip()
-        patch.write_text(checkout.git_out(w, "diff", "--binary", base, change.committed))
         try:
+            # From the commit's index, so that the reset to `onto` removes
+            # each file the change adds, which the restore left untracked.
+            checkout.git_out(w, "reset", "-q", "--hard", change.committed)
             checkout.git_out(w, "reset", "-q", "--hard", onto)
-            applied = checkout.git(w, "apply", "--3way", str(patch))
-            if applied.returncode != 0 and not unmerged_paths(w):
-                raise checkout.GitFailed(w, ("apply", "--3way", str(patch)), applied.stderr)
+            squash = ("merge", "--squash", "--no-commit", change.committed)
+            merged = checkout.git(w, *squash)
+            if merged.returncode != 0 and not unmerged_paths(w):
+                raise checkout.GitFailed(w, squash, merged.stderr)
             checkout.git_out(w, "reset", "-q")
         except checkout.GitFailed:
             checkout.git_out(w, "reset", "-q", "--hard", change.committed)
