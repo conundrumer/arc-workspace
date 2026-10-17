@@ -101,7 +101,8 @@
         - its plausibility and verdict
         - the invariant of the inputs it breaks, when its plausibility is below `ordinary`
     - A branch with no witness: why there is none.
-4. Write each witness step 3 gives to `work/task/<task_id>/witnesses.json` in the witness file's shape, with an `assign` that reassigns each parameter whose value the assignment step 3 gives it changes, and, in each witness whose verdict is not `other`, each fitting branch in the group of the output the branch's model gives at that witness's assignment.
+4. Write each witness step 3 gives to `work/task/<task_id>/witnesses.json` in the shape [Witness file](docs/handbook/solver-file.md#witness-file) gives, with an `assign` that reassigns each parameter whose value the assignment step 3 gives it changes, and, in each witness whose verdict is not `other`, each fitting branch in the group of the output the branch's model gives at that witness's assignment.
+    * comment: Runs that read this step with no link looked for the witness file's shape in `witness --help` and in other tasks' witness files: tickets 10-354, 10-751 (run a690b8262f699d72a) and 10-771 (run ac50865438dc0b06d).
     * comment: On 2026-09-23, an Analyze pass on a1aa0c1e read this step without the verdict clause, and reported that `four-rungs`, a witness with verdict `other`, had no place for its fitting branches: agent `a12540b7d9e9d4aee` of console session `622904c2-70f8-4e98-830a-3863e040da52`.
     - `uv run python scripts/run_dl.py witness --file work/task/<task_id>/witnesses.json` checks the file's shape.
 5. Write the report to `work/task/<task_id>/analyze.md`, in this form:

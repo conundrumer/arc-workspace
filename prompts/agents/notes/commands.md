@@ -20,6 +20,8 @@
 
 ## foreground-commands
 - Run each command in the foreground, with a timeout of 240000 ms on the Bash call, where no other line of your documents has you run it in the background.
+- Run each script you wrote under `timeout 60`, or a longer bound of at most `timeout 180` where a stopped script needs one, with its output unbuffered, as `python -u` gives it.
+    * comment: Scripts an agent wrote ran past the Bash call's timeout, so the call moved to the background and the run spent calls stopping it, and a search piped to `tail` showed none of its output: tickets 10-591 (runs ab654598162d2ebec and aad3d038eb7ae06e5), 10-739 (runs a9335527d5f64ec96 and ac50865438dc0b06d), 10-754 (run a8d05b229bc75be5d) and 10-377.
 
 ## waiting-on-commands
 * inline: #foreground-commands
