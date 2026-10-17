@@ -1,8 +1,8 @@
-+ budget: 11296
++ budget: 11540
 * comment: when editing this doc
-    - Each agent whose tools include `Bash` inlines [commands](#commands), for running, waiting on and ending its commands; each agent that gives a final reply to its launcher inlines [final-report](#final-report), other than the ticket reviewer, which inlines [final-reply](#final-reply) and [message-answers](#message-answers) in its place, and the code reviewer [report-file](#report-file). The doc editor, the ticket analyst, the draft analyst and the decision analyst load Background agents by a link.
+    - Each agent whose tools include `Bash` inlines [commands](#commands), for running, waiting on and ending its commands, and the code reviewer, whose documents have it run no command in the background, [foreground-commands](#foreground-commands) in its place; each agent that gives a final reply to its launcher inlines [final-report](#final-report), other than the ticket reviewer, which inlines [final-reply](#final-reply) and [message-answers](#message-answers) in its place, and the code reviewer [report-file](#report-file). The doc editor, the ticket analyst, the draft analyst and the decision analyst load Background agents by a link.
     - Acts, each with its section:
-        - Running a command: [commands](#commands).
+        - Running a command: [commands](#commands) and [foreground-commands](#foreground-commands).
         - Waiting on a command: [waiting-on-commands](#waiting-on-commands).
         - Ending a command: [ending-commands](#ending-commands), and [process-trees](#process-trees) where it calls `TaskStop` or starts a process with `&` or `nohup`.
         - Launching a background agent a command prints: [Background agents](#background-agents).
@@ -18,8 +18,11 @@
 * inline: #waiting-on-commands
 * inline: #ending-commands
 
-## waiting-on-commands
+## foreground-commands
 - Run each command in the foreground, with a timeout of 240000 ms on the Bash call, where no other line of your documents has you run it in the background.
+
+## waiting-on-commands
+* inline: #foreground-commands
 - Before you end your turn, and before your final reply, wait on each command of yours that runs in the background until its completion notification reaches you: run a foreground Bash call with a timeout of 240000 ms, whose until-loop gives up just under that timeout, and repeat the call.
     * comment: The cases this rule covers: a command you started that has not finished at the end of your turn; a command the harness moved to the background; a command whose completion notification your final reply waits on.
     - Lead its command with `: 'unattended-wait: <the command you wait on>';`. A command so led is exempt from the PreToolUse hook that blocks waits, unless that command reads the output file the harness gave a command of yours that runs in the background.

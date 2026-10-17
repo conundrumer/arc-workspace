@@ -1,8 +1,9 @@
-+ budget: 4300
++ budget: 4421
 * comment: when editing this doc
-    - [Code editor](prompts/agents/code-editor.md) and [Code reviewer](prompts/agents/code-reviewer.md), with [code-reviewer-next.md](prompts/agents/code-reviewer-next.md), inline its sections, for editing and reviewing the code under `src/` and `scripts/`.
+    - [Code editor](prompts/agents/code-editor.md) and [Code reviewer](prompts/agents/code-reviewer.md) inline its sections, for editing and reviewing the code under `src/` and `scripts/`.
     - Acts, each with its section:
-        - The rules every run of either agent keeps: [code-working-rules](#code-working-rules).
+        - The rules every run of the code editor keeps: [code-working-rules](#code-working-rules).
+        - The rules every run of either agent keeps: [reads-and-progress](#reads-and-progress), which code-working-rules inlines, and which the code reviewer inlines in place of code-working-rules.
         - Judging a whole unit: [unit-kinds](#unit-kinds).
         - Judging a line: [line-kinds](#line-kinds).
         - Filing a ticket on a place: [place-tickets](#place-tickets).
@@ -11,8 +12,11 @@
 - The statements on editing and reviewing the code that more than one entry point inlines.
 
 ## code-working-rules
-- Read nothing under `../arc-synth-bun/`.
+* inline: #reads-and-progress
 - Launch no agent other than the ones your documents give.
+
+## reads-and-progress
+- Read nothing under `../arc-synth-bun/`.
 - Keep `progress.md` in your scratch directory, with what is done and what is next. After your context is compacted, read it before anything else.
 
 ## unit-kinds
