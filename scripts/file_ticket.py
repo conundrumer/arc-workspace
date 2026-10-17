@@ -19,7 +19,7 @@ from pathlib import Path
 
 from arc.task import task_file
 from controlled_markdown import mctx
-from operations.change_budget import EDITORS_NOTE
+from operations.change_budget import EDITORS_NOTE, budget_fields
 from operations.roles import EDITORS, Role
 from engine import checkout
 from handbook.paths import scripts_importable
@@ -548,8 +548,7 @@ def editors_command(ref: str, editor: str, agent: str, agent_id: str) -> Path:
         raise Refused(mctx("the budget of {path} is unknown").format(path=path))
     names = ", ".join(map(str, roles))
     path.write_text(EDITORS_LINE.sub(f"editors: {names}", text, count=1))
-    note = EDITORS_NOTE.format(editors=names, dollars=f"{b.dollars:.2f}",
-                               seconds=f"{b.seconds:.0f}")
+    note = EDITORS_NOTE.format(editors=names, **budget_fields(b))
     return log_moves(tickets, number, Status.ASSIGNED, agent, Status.ASSIGNED, agent_id,
                      note).moved[0]
 

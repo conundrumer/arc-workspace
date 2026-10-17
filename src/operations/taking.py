@@ -23,7 +23,7 @@ from collections.abc import Callable
 
 from controlled_markdown import form, mctx
 from operations import pacing, rank
-from operations.change_budget import TAKE_NOTE
+from operations.change_budget import TAKE_NOTE, budget_fields
 from operations.directives import (Directive, allow_named, named, NUMBER, numbers, numbers_in, paused,
                                    session_lines)
 from operations.final_reply import live_holder
@@ -248,7 +248,7 @@ def take(state: State) -> Step | None:
                 return Undecided(mctx("the budget of change {number} is unknown").format(
                     number=t.number))
             break
-        note = TAKE_NOTE.format(dollars=f"{b.dollars:.2f}", seconds=f"{b.seconds:.0f}")
+        note = TAKE_NOTE.format(**budget_fields(b))
         commands.append(log(t.number, Status.ASSIGNED, Status.OPEN, note, state.me))
         taken.append(t.number)
     if commands:

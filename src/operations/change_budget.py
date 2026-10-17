@@ -27,21 +27,30 @@ from ticketing.text import ticket_text
 from ticketing.vocabulary import DEFECT_SECTIONS, Domain, Kind, Note, Status
 
 
-TAKE_NOTE = "taking: budget {dollars} dollars, {seconds} s"
+BUDGET_NOTE = "budget {dollars} dollars, {seconds} s"
+"""The part of a log note that gives a change's cost budget and time
+budget."""
+
+BUDGET_HOLES = {"dollars": r"(?P<dollars>[0-9.]+)", "seconds": r"(?P<seconds>[0-9]+)"}
+
+
+def budget_fields(b: Budget) -> dict[str, str]:
+    """The values of the holes of `BUDGET_NOTE` for `b`."""
+    return {"dollars": f"{b.dollars:.2f}", "seconds": f"{b.seconds:.0f}"}
+
+
+TAKE_NOTE = "taking: " + BUDGET_NOTE
 """The note of the log line of a take, with the change's cost budget and
 time budget."""
 
-TAKEN = re.compile(form(TAKE_NOTE, {"dollars": r"(?P<dollars>[0-9.]+)",
-                                    "seconds": r"(?P<seconds>[0-9]+)"}))
+TAKEN = re.compile(form(TAKE_NOTE, BUDGET_HOLES))
 
-EDITORS_NOTE = "editors: {editors}; budget {dollars} dollars, {seconds} s"
+EDITORS_NOTE = "editors: {editors}; " + BUDGET_NOTE
 """The note of the log line that gives a held change a new `editors`
 field, with the cost budget and time budget of that field's set, which
 take the place of those of its take."""
 
-REBUDGETED = re.compile(form(EDITORS_NOTE, {"editors": r"[a-z, -]+",
-                                            "dollars": r"(?P<dollars>[0-9.]+)",
-                                            "seconds": r"(?P<seconds>[0-9]+)"}))
+REBUDGETED = re.compile(form(EDITORS_NOTE, {"editors": r"[a-z, -]+", **BUDGET_HOLES}))
 
 
 def left_draft(t: Ticket) -> float:
