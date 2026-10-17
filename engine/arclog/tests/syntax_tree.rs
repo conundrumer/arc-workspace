@@ -1,17 +1,17 @@
-//! The syntax tree holds each of these kinds of form of `gen/`: a nested
-//! `ALT`, a parameter of several grids, a solver with a `representative`
-//! line, a `DEMONSTRATED` form, and a `RIGID_DET` form whose parts are keyed.
-//! Each test builds by hand the tree of one `gen/` solver's form of that
-//! kind, from the public constructors, so a kind the node types cannot hold
-//! fails to compile. The trees follow `gen/` as it stands, its reads of
-//! Quotient's `representative` included, which the next conversion of
-//! `gen/` replaces; a read of any output is an `OutputName`, so the kinds
-//! these trees hold stay the same.
+//! The syntax tree holds each of these kinds of form of the corpus,
+//! `work/arclog/gen/`: a nested `ALT`, a parameter of several grids, a
+//! solver with a `representative` line, a `DEMONSTRATED` form, and a
+//! `RIGID_DET` form whose parts are keyed. Each test builds by hand the tree
+//! of one solver's form of that kind, from the public constructors, so a
+//! kind the node types cannot hold fails to compile. The trees follow the
+//! corpus as it stands, its reads of Quotient's `representative` included,
+//! which the next conversion of the corpus replaces; a read of any output
+//! is an `OutputName`, so the kinds these trees hold stay the same.
 //!
-//! Implements `work/engine/reader.md`, Solvers: "The reader reads a solver's
-//! `.arclog` and `.arcdata` files into one `Solver` tree: the claims, the tree
-//! of alts, the arcdata records, and `cases()`." No test reads `gen/`: each
-//! names its solver's task id.
+//! A `Solver` tree holds what the reader reads from a solver's `.arclog`
+//! and `.arcdata` files: the claims, the tree of alts, the arcdata records,
+//! and `cases()`. No test reads the corpus: each names its solver's task
+//! id.
 //!
 //! TODO: The reader stage deletes this file once its round-trip check over
 //! `work/arclog/gen/` passes, since that check covers these forms.

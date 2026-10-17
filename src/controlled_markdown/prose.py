@@ -26,6 +26,8 @@ from controlled_markdown import (
     Rule,
 )
 from controlled_markdown.document_set import check_blocks, check_links
+from controlled_markdown.nodes import slug
+from controlled_markdown.renderers import markdown_heading_lines
 
 
 # ----------------------------------------------------------------- prose
@@ -265,6 +267,65 @@ def check_paths(path: Path, source: str, root: Path) -> None:
             raise ControlledMarkdownError(
                 source, line, Rule.PATH_MISSING,
                 f"no file at `{value}`")
+
+
+# A citation in code: a document by its path from the root of the tree, and
+# a section of it by the slug of its heading.
+CITATION_RE = re.compile(r"(?:docs|work)/[\w./-]+\.md(?:#[\w-]+)?")
+
+
+def _citations(path: Path) -> Iterator[tuple[int, str, str, str]]:
+    """Every citation the file holds, with its line, its path and its
+    anchor, empty where it has none. A file that is no UTF-8 text holds
+    none."""
+    try:
+        text = path.read_text()
+    except UnicodeDecodeError:
+        return
+    for at, line in enumerate(text.split("\n"), 1):
+        for m in CITATION_RE.finditer(line):
+            name, _, anchor = m.group(0).partition("#")
+            yield at, m.group(0), name, anchor
+
+
+def _anchor_fault(source: str, at: int, citation: str, name: str,
+                  anchor: str, root: Path) -> ControlledMarkdownError | None:
+    """The fault of an anchor that names no heading of the cited file. The
+    headings are read from the file's text, since a cited spec file stands
+    outside the document set."""
+    if anchor in {slug(heading) for _, _, heading in
+                  markdown_heading_lines((root / name).read_text())}:
+        return None
+    return ControlledMarkdownError(source, at, Rule.CITATION_ANCHOR,
+                                   f"`{citation}` names no heading of `{name}`")
+
+
+def check_citations(path: Path, source: str, root: Path,
+                    present: frozenset[str]) -> Iterator[ControlledMarkdownError]:
+    """Every citation a file of the engine holds names a file of `present`,
+    the files a commit of the tree takes, and its anchor, where it has one,
+    a heading of that file. A citation of a file a clone does not hold is
+    one no reader of the code can follow."""
+    for at, citation, name, anchor in _citations(path):
+        if name not in present:
+            yield ControlledMarkdownError(
+                source, at, Rule.PATH_MISSING,
+                f"`{citation}` names no file a commit of the tree takes")
+        elif anchor and (err := _anchor_fault(source, at, citation, name,
+                                               anchor, root)):
+            yield err
+
+
+def check_citation_anchors(path: Path, source: str,
+                           root: Path) -> Iterator[ControlledMarkdownError]:
+    """Every anchor of a citation the file holds names a heading of the
+    cited file, where the tree holds that file. Code outside the engine
+    names untracked files by path on purpose, so a cited file that is
+    absent is passed over."""
+    for at, citation, name, anchor in _citations(path):
+        if anchor and (root / name).is_file() and (
+                err := _anchor_fault(source, at, citation, name, anchor, root)):
+            yield err
 
 
 # A `quotes` call names a handbook document, a heading in it and the words

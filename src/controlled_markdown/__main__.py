@@ -31,6 +31,8 @@ from . import (
     Node,
     Registry,
     check_blocks,
+    check_citation_anchors,
+    check_citations,
     check_closure,
     check_dl_comments,
     check_file_fragments,
@@ -75,16 +77,26 @@ def repo_root(start: Path | None = None) -> Path:
 CODE_SUFFIXES = (".py", ".js", ".mjs")
 
 
-def code_files(root: Path) -> list[Path]:
-    """Every file under the root that a program's prose can stand in: each
-    file git lists there as tracked, or as untracked and not ignored, so
-    that what git ignores is skipped. A root that is no git tree is a
-    fault."""
+def present_files(root: Path) -> frozenset[str]:
+    """Every file under the root that git lists as tracked, or as untracked
+    and not ignored, and the tree holds, by its path as git writes it: the
+    files a commit of the tree takes, since the merge stages the whole tree
+    before its checks. A root that is no git tree is a fault."""
     listed = subprocess.run(
         ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
         cwd=root, capture_output=True, text=True, check=True).stdout
-    return sorted(path for name in listed.split("\0")
-                  if name.endswith(CODE_SUFFIXES) and (path := root / name).is_file())
+    return frozenset(name for name in listed.split("\0")
+                     if name and (root / name).is_file())
+
+
+def code_files(root: Path) -> list[Path]:
+    """Every file of `present_files` that a program's prose can stand in."""
+    return sorted(root / name for name in present_files(root)
+                  if name.endswith(CODE_SUFFIXES))
+
+
+# The tree whose citations name only files a commit of the tree takes.
+ENGINE = "engine/"
 
 
 def collect(names: list[str]) -> list[Path]:
@@ -113,10 +125,22 @@ LIB_GLOBS = ("programs/lib.dl", "programs/lib/*.dl")
 
 def check_code(root: Path, document_set: set[Path]) -> int:
     """Every fragment a program holds, read as the format, every document
-    it names by path, and every handbook passage it quotes. The rest of each
-    file is code, so nothing else in it is read."""
+    it names by path, every handbook passage it quotes, every file and
+    section the engine cites, and every section other code cites. The rest
+    of each file is code, so nothing else in it is read."""
     off = 0
+    present = present_files(root)
+    for name in sorted(present):
+        if name.startswith(ENGINE):
+            path = root / name
+            for err in check_citations(path, shown(path), root, present):
+                print(err)
+                off += 1
     for path in code_files(root):
+        if not path.relative_to(root).as_posix().startswith(ENGINE):
+            for err in check_citation_anchors(path, shown(path), root):
+                print(err)
+                off += 1
         try:
             check_file_fragments(path, shown(path), root)
             # A test names the paths it makes up, so a name there stands for a

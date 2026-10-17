@@ -1,5 +1,5 @@
-# The arclog engine: one Cargo workspace with the four crates of the engine
-# overview's Crates section (work/engine/overview.md).
+# The arclog engine: one Cargo workspace with its four crates, the core
+# crate, the lib's constructions, the Python bindings and the binary.
 
 [workspace]
 resolver = "3"

@@ -1,12 +1,11 @@
 //! The canonical form of a node and its hash.
 //!
-//! Implements `work/engine/reader.md`, Programs as values: "a body's content
-//! is its canonical form under a reorder of its atoms, a reorder of the
-//! branches of an `OR`, and a renaming of its labels, which
-//! individualization–refinement gives: color refinement with the column paths
-//! as edge labels, then the first largest cell that is not a singleton, with a
-//! cap of 1000 search nodes." and "A body that reaches the cap takes the least
-//! labeling the search has found".
+//! A body's canonical form is the same under a reorder of its atoms, a
+//! reorder of the branches of an `OR`, and a renaming of its labels. The
+//! labeling comes from individualization–refinement: color refinement with
+//! the column paths as edge labels, then the first largest cell that is not
+//! a singleton, with a cap of [`SEARCH_NODE_CAP`] search nodes. A body that
+//! reaches the cap takes the least labeling the search has found.
 //!
 //! A node's canonical hash names each relation it reads as the file writes
 //! it, [`AsWritten`]. The resolved content of a node in one case program, in
@@ -20,15 +19,11 @@ use crate::hash::StableHash;
 
 /// The provisional cap on the search nodes of individualization–refinement.
 ///
-/// "The cap is provisional: it guards synthesized bodies, whose symmetry the
-/// corpus does not show." The corpus's search reaches at most 13 nodes.
-///
-/// Implements `work/engine/reader.md`, Programs as values: "a body's content is its canonical form under a reorder of its atoms, a reorder of the branches of an `OR`, and a renaming of its labels".
+/// The cap guards synthesized bodies, whose symmetry the corpus does not
+/// show. The corpus's search reaches at most 13 nodes.
 pub const SEARCH_NODE_CAP: u32 = 1000;
 
 /// A node kind that has a canonical form.
-///
-/// Implements `work/engine/reader.md`, Programs as values: "a body's content is its canonical form under a reorder of its atoms, a reorder of the branches of an `OR`, and a renaming of its labels".
 pub trait Canonical {
     /// Writes the value's canonical form into `out`, with each name the
     /// value reads written by `names`.
@@ -45,9 +40,8 @@ pub trait Canonical {
 /// How a canonical form writes each relation a node reads: as the file
 /// writes it, [`AsWritten`], for a node's canonical hash, or, in the
 /// resolver, as the resolved content the name stands for, for
-/// [`crate::resolver::ResolvedContent`].
-///
-/// Implements `work/engine/reader.md`, Programs as values: "A derived relation's content is its clause".
+/// [`crate::resolver::ResolvedContent`], in which a derived relation's
+/// content is its clause.
 pub trait NameWriter {
     /// Writes `relation` into `out`.
     fn write_name(&self, relation: &super::RelationRef, out: &mut CanonicalWriter);
@@ -64,8 +58,6 @@ pub trait NameWriter {
 
 /// The writer of a canonical form: it keeps the bytes written, so that two
 /// forms whose hashes match are compared by their bytes.
-///
-/// Implements `work/engine/reader.md`, Programs as values: "two nodes whose hashes match are compared by canonical form".
 #[derive(Clone, Debug, Default)]
 pub struct CanonicalWriter {
     bytes: Vec<u8>,
@@ -73,23 +65,17 @@ pub struct CanonicalWriter {
 
 impl CanonicalWriter {
     /// Writes `bytes` to the form.
-    ///
-    /// Implements `work/engine/reader.md`, Programs as values: "Each syntax node holds a hash of its canonical form".
     pub fn write(&mut self, bytes: &[u8]) {
         todo!()
     }
 
     /// The form written, with its hash under [`crate::hash::StableHasher`].
-    ///
-    /// Implements `work/engine/reader.md`, Programs as values: "Every hash in the engine uses one fixed function with no random seed".
     pub fn finish(self) -> CanonicalForm {
         todo!()
     }
 }
 
 /// A canonical form, as its bytes and their hash.
-///
-/// Implements `work/engine/reader.md`, Programs as values: "two nodes whose hashes match are compared by canonical form".
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct CanonicalForm {
     pub hash: StableHash,
@@ -97,8 +83,6 @@ pub struct CanonicalForm {
 }
 
 /// Each name as the file writes it.
-///
-/// Implements `work/engine/reader.md`, Programs as values: "Each syntax node holds a hash of its canonical form".
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AsWritten;
 
@@ -114,20 +98,15 @@ impl NameWriter for AsWritten {
 
 /// The search nodes that individualization–refinement has left, and whether
 /// a body reached the cap.
-///
-/// Implements `work/engine/reader.md`, How each decision can fail: "the cap reached is an alert".
 #[derive(Clone, Debug)]
 pub struct SearchBudget {
     pub remaining: u32,
-    /// Set when a body reached the cap. The cap reached is an alert, as the
-    /// table of Reader and checker's "How each decision can fail" gives.
+    /// Set when a body reached the cap, which is an alert.
     pub reached: bool,
 }
 
 impl SearchBudget {
     /// A budget of [`SEARCH_NODE_CAP`] nodes.
-    ///
-    /// Implements `work/engine/reader.md`, Programs as values: "a body's content is its canonical form under a reorder of its atoms, a reorder of the branches of an `OR`, and a renaming of its labels".
     pub fn new() -> Self {
         todo!()
     }
@@ -141,8 +120,6 @@ impl Default for SearchBudget {
 
 /// The canonical labeling of one body: for each label of the body, its
 /// position in the canonical form.
-///
-/// Implements `work/engine/reader.md`, Programs as values: "a body's content is its canonical form under a reorder of its atoms, a reorder of the branches of an `OR`, and a renaming of its labels".
 #[derive(Clone, Debug)]
 pub struct CanonicalLabeling {
     pub positions: Box<[(super::LabelId, u32)]>,
@@ -153,8 +130,6 @@ pub struct CanonicalLabeling {
 /// the column paths as edge labels as `names` writes them: as written for a
 /// node's hash, [`AsWritten`], or as the resolved positions for the
 /// resolved content.
-///
-/// Implements `work/engine/reader.md`, Programs as values: "a body's content is its canonical form under a reorder of its atoms, a reorder of the branches of an `OR`, and a renaming of its labels".
 pub fn canonical_labeling(body: &super::Body, names: &dyn NameWriter, search: &mut SearchBudget) -> CanonicalLabeling {
     todo!()
 }
@@ -162,9 +137,8 @@ pub fn canonical_labeling(body: &super::Body, names: &dyn NameWriter, search: &m
 /// The canonical order of one form: for each list of the form, the source
 /// index at each canonical position, and for each label, its canonical
 /// position. A result cached by canonical hash is held in canonical order
-/// and served to each form of equal content through its own order.
-///
-/// Implements `work/engine/reader.md`, Checker: "so the cases that share a form share its check", and Programs as values: "a body's content is its canonical form under a reorder of its atoms, a reorder of the branches of an `OR`, and a renaming of its labels".
+/// and served to each form of equal content through its own order, so the
+/// cases that share a form share its check.
 #[derive(Clone, Debug)]
 pub struct CanonicalOrder {
     lists: crate::hash::StableHashMap<super::path::NodePath, Box<[u32]>>,
@@ -173,46 +147,34 @@ pub struct CanonicalOrder {
 
 impl CanonicalOrder {
     /// The canonical order of `form`.
-    ///
-    /// Implements `work/engine/reader.md`, Programs as values: "which individualization–refinement gives".
     pub fn of(form: &super::Form, search: &mut SearchBudget) -> Self {
         todo!()
     }
 
     /// The source path of the node at `canonical`, a path in canonical
     /// order, relative to the form.
-    ///
-    /// Implements `work/engine/reader.md`, Programs as values: "its index in the source order of each list above it".
     pub fn source_path(&self, canonical: &super::path::NodePath) -> super::path::NodePath {
         todo!()
     }
 
     /// The canonical path of the node at `source`, a path in source order,
     /// relative to the form.
-    ///
-    /// Implements `work/engine/reader.md`, Programs as values: "its index in the source order of each list above it".
     pub fn canonical_path(&self, source: &super::path::NodePath) -> super::path::NodePath {
         todo!()
     }
 
     /// The form's label at canonical `position`.
-    ///
-    /// Implements `work/engine/reader.md`, Programs as values: "a renaming of its labels".
     pub fn source_label(&self, position: u32) -> super::LabelId {
         todo!()
     }
 
     /// The canonical position of the form's `label`.
-    ///
-    /// Implements `work/engine/reader.md`, Programs as values: "a renaming of its labels".
     pub fn canonical_label(&self, label: super::LabelId) -> u32 {
         todo!()
     }
 }
 
 /// The hash of the canonical form of `value`.
-///
-/// Implements `work/engine/reader.md`, Programs as values: "a body's content is its canonical form under a reorder of its atoms, a reorder of the branches of an `OR`, and a renaming of its labels".
 pub fn canonical_hash<T: Canonical>(value: &T) -> StableHash {
     todo!()
 }

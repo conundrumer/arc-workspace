@@ -1,9 +1,8 @@
 //! The `Solver` tree, and `cases()`, which gives its case programs on demand.
 //!
-//! Implements `work/engine/reader.md`, Solvers: "The reader reads a solver's
-//! `.arclog` and `.arcdata` files into one `Solver` tree: the claims, the tree
-//! of alts, the arcdata records, and `cases()`." and the rules by which
-//! `cases()` makes a case program, with `work/engine/cases.md`, Cases.
+//! The reader reads a solver's `.arclog` and `.arcdata` files into one
+//! `Solver` tree: the claims, the tree of alts, the arcdata records, and
+//! `cases()`.
 //!
 //! The `cases()` stage writes the bodies.
 
@@ -15,9 +14,8 @@ use std::sync::Arc;
 
 use crate::program::{AltsName, Arcdata, Node, Program};
 
-/// A solver read from its two files.
-///
-/// Implements `work/engine/reader.md`, Solvers: "the claims, the tree of alts, the arcdata records, and `cases()`".
+/// A solver read from its two files: the claims, the tree of alts, the
+/// arcdata records, and `cases()`.
 #[derive(Clone, Debug)]
 pub struct Solver {
     /// The task id the files are named by.
@@ -29,8 +27,8 @@ pub struct Solver {
     pub arcdata: Node<Arcdata>,
     pub layout: Layout,
     /// The solver that the arcdata file's `representative` line names, whose
-    /// claims this solver's forms are read under, as `docs/arcdata.md`,
-    /// Header, gives.
+    /// claims this solver's forms are read under, as
+    /// `docs/arclog/arcdata.md#header` gives.
     pub representative: Option<Arc<Solver>>,
 }
 
@@ -43,15 +41,13 @@ pub struct Solver {
 /// A `DET_OR_RULE` or `RULE_OR_DET` line is an `ALTS` form whose readings
 /// are `&background=$Stored` and `&background=$Derived`, or, on a line with
 /// several proposers, the stored reading and one derived reading per
-/// proposer, `&tile_size=ConstInDim`, as `docs/arclog.md`, The `ALTS` form,
-/// gives.
+/// proposer, `&tile_size=ConstInDim`, as
+/// `docs/arclog/arclog.md#the-alts-form` gives.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct CaseName(pub Box<[AltsName]>);
 
 /// Whether `cases()` gives the cases the `exclude` forms leave, or every
 /// case.
-///
-/// Implements `work/engine/reader.md`, Solvers: "It gives the cases that the arcdata file's `exclude` forms leave, and an excluded case on request".
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Exclusion {
     /// The cases the arcdata file's `exclude` forms leave.
@@ -62,7 +58,7 @@ pub enum Exclusion {
 
 /// One case of a solver: its name and its program.
 ///
-/// The program holds no claim, as "it removes the claims" gives. It holds
+/// The program holds no claim. It holds
 /// the forms each alt of the case rederives in the place of the concept
 /// program's, and the forms of each claim the alt adds, and a combination
 /// of alts takes the forms of its nested `ALT`,
@@ -72,8 +68,6 @@ pub enum Exclusion {
 /// [`crate::resolver::DependencyKind::Parameter`], or
 /// [`crate::resolver::DependencyKind::Chosen`] for a `DET` that ends in
 /// `(ONE)`.
-///
-/// Implements `work/engine/reader.md`, Solvers: "To make a case program, it removes the claims".
 #[derive(Clone, Debug)]
 pub struct Case {
     pub name: CaseName,
@@ -85,9 +79,8 @@ pub struct Case {
 impl Case {
     /// The paths in the case program of the `DET` forms it takes from the
     /// concept program, which resolve in the concept program, as
-    /// [`crate::resolver::ConceptReads`] gives.
-    ///
-    /// Implements `work/engine/reader.md`, Solvers: "A `DET` of the concept program reads the concept program's derivation in every case".
+    /// [`crate::resolver::ConceptReads`] gives, so each reads the concept
+    /// program's derivation in every case.
     pub fn concept_determinations(&self) -> &[NodePath] {
         todo!()
     }
@@ -96,8 +89,6 @@ impl Case {
     /// and its path there, so that a diagnostic on a case program reports
     /// its place in the file. Both paths walk as
     /// [`crate::program::path::node_at`] gives.
-    ///
-    /// Implements `work/engine/reader.md`, Checker: "It reports each error once per place in the file".
     pub fn file_path(&self, path: &NodePath) -> (FileOwner, NodePath) {
         todo!()
     }
@@ -105,9 +96,8 @@ impl Case {
 
 /// The solver whose arclog file holds a node of a case program: the solver
 /// itself, or the solver its `representative` line names, whose claims its
-/// forms are read under.
-///
-/// Implements `docs/arcdata.md`, Header: "The claims of a solver with a `representative` line belong to the representative's file".
+/// forms are read under, and whose file holds those claims
+/// (`docs/arclog/arcdata.md#header`).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum FileOwner {
     Solver,
@@ -115,8 +105,6 @@ pub enum FileOwner {
 }
 
 /// A combination of alts that names no case of the solver.
-///
-/// Implements `work/engine/reader.md`, Solvers: "an excluded case on request".
 #[derive(Clone, Debug)]
 pub struct UnknownCase {
     pub name: CaseName,
@@ -124,15 +112,13 @@ pub struct UnknownCase {
 
 impl Solver {
     /// The names of the solver's cases: the product of its `ALTS` forms,
-    /// restricted by the nesting of the blocks, less the `exclude` forms
-    /// where `exclusion` is [`Exclusion::WithoutExcluded`]. A `DET_OR_RULE`
-    /// or `RULE_OR_DET` line splits only the bases that read its relation, as
-    /// `work/engine/cases.md`, Cases, gives.
+    /// restricted by the nesting of the blocks, less the `exclude` forms of
+    /// the arcdata file where `exclusion` is [`Exclusion::WithoutExcluded`].
+    /// A `DET_OR_RULE` or `RULE_OR_DET` line splits only the bases that read
+    /// its relation.
     ///
     /// Where the arcdata file has a `representative` line that gives a case's
-    /// name, the one name is that case's, as the arcdata Header gives.
-    ///
-    /// Implements `work/engine/cases.md`, Cases: "A solver's cases are the product of its `ALTS` forms, restricted by the nesting of the blocks, less the `exclude` forms of the arcdata file."
+    /// name, the one name is that case's (`docs/arclog/arcdata.md#header`).
     pub fn case_names(&self, exclusion: Exclusion) -> Vec<CaseName> {
         todo!()
     }
@@ -142,32 +128,24 @@ impl Solver {
     /// among, as [`crate::resolver::resolve`] takes them. A name that a
     /// `DEMO_RULE` form declares is resolved within that form alone, as
     /// [`crate::program::NameScope`] gives, so the set leaves it out.
-    ///
-    /// Implements `work/engine/reader.md`, Solvers: "A relation that no block of the case derives resolves to an undefined relation".
     pub fn derived_relations(&self) -> crate::hash::StableHashSet<crate::program::ProgramRelation> {
         todo!()
     }
 
     /// The concept case: the concept case's name at each `ALTS` form, whose
-    /// resolution the other cases' [`crate::resolver::ConceptReads`] take.
-    ///
-    /// Implements `work/engine/reader.md`, Solvers: "A `DET` of the concept program reads the concept program's derivation in every case, so it is evaluated once, in the concept program".
+    /// resolution the other cases' [`crate::resolver::ConceptReads`] take, so
+    /// a `DET` of the concept program is evaluated once, in it.
     pub fn concept_case(&self) -> Case {
         todo!()
     }
 
     /// The cases of `case_names(exclusion)`, each built when the iterator
     /// reaches it, so a run builds only the cases it runs.
-    ///
-    /// Implements `work/engine/reader.md`: "`cases()` gives each case program as a program value, on
-    /// demand".
     pub fn cases(&self, exclusion: Exclusion) -> Cases<'_> {
         todo!()
     }
 
     /// The case `name`, excluded or not.
-    ///
-    /// Implements `work/engine/reader.md`: "and an excluded case on request".
     pub fn case(&self, name: &CaseName) -> Result<Case, UnknownCase> {
         todo!()
     }
@@ -175,8 +153,6 @@ impl Solver {
 
 /// The iterator of [`Solver::cases`]: it builds each case program when it
 /// reaches it.
-///
-/// Implements `work/engine/reader.md`, Solvers: "`cases()` gives each case program as a program value, on demand".
 #[derive(Debug)]
 pub struct Cases<'a> {
     solver: &'a Solver,

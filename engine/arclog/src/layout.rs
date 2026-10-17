@@ -1,12 +1,8 @@
 //! What a file holds beside its node values: places, label names, comments,
-//! the elision of sites, and the strings.
-//!
-//! Implements `work/engine/reader.md`, Programs as values: "A node's places
-//! in the files, the names of its labels, and its order of atoms and branches
-//! are kept beside it, outside its hash, so the writer gives back the file's
-//! bytes." and Solvers: "The tree keeps the comments and the strings". The
-//! order of atoms and branches is the order of the node's lists, which its
-//! canonical hash and its equality leave out, as [`crate::program`] gives.
+//! the elision of sites, and the strings. These stand outside a node's hash,
+//! so the writer gives back the file's bytes. The order of atoms and
+//! branches is the order of the node's lists, which its canonical hash and
+//! its equality leave out, as [`crate::program`] gives.
 //!
 //! The reader fills a layout and the writer reads it. A synthesized program
 //! has no layout, and the writer names its labels as
@@ -20,8 +16,6 @@ use crate::program::LabelId;
 
 /// A file the s-expression reader reads: one of a solver's two files, or one
 /// of the lib files under `engine/lib/`, as [`crate::registry`] gives.
-///
-/// Implements `work/engine/reader.md`, Programs as values: "A node's places in the files, the names of its labels, and its order of atoms and branches are kept beside it, outside its hash".
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum SourceFile {
     Arclog,
@@ -34,8 +28,6 @@ pub enum SourceFile {
 
 /// A place in a file: its byte span, and the line and column of its start,
 /// both counted from 1.
-///
-/// Implements `work/engine/reader.md`, Programs as values: "A node's places in the files, the names of its labels, and its order of atoms and branches are kept beside it, outside its hash".
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct SourcePlace {
     pub file: SourceFile,
@@ -49,9 +41,10 @@ pub struct SourcePlace {
 /// `representative` line names, which holds forms of its case programs: the
 /// task id that names the file, or `None` for a lib file under
 /// `engine/lib/`, and the place in it. A reader that reads one file gives
-/// `None`, and [`crate::read::read_solver`] gives the solver's task id.
-///
-/// Implements `docs/arcdata.md`, Header: "The claims of a solver with a `representative` line belong to the representative's file", and `work/engine/reader.md`, Checker: "It reports each error once per place in the file".
+/// `None`, and [`crate::read::read_solver`] gives the solver's task id. The
+/// claims of a solver with a `representative` line belong to the
+/// representative's file (`docs/arclog/arcdata.md#header`), so an error in
+/// one of them stands at a place of that file.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FilePlace {
     pub task_id: Option<Box<str>>,
@@ -59,8 +52,6 @@ pub struct FilePlace {
 }
 
 /// A comment of a file, `;;` to the line's end, and where it stands.
-///
-/// Implements `work/engine/reader.md`, Solvers: "The tree keeps the comments and the strings".
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Comment {
     pub place: SourcePlace,
@@ -69,14 +60,12 @@ pub struct Comment {
 
 /// The layout of one node: where it stands, the names of the labels it
 /// makes, and which of its sites the file elides.
-///
-/// Implements `work/engine/reader.md`, Programs as values: "A node's places in the files, the names of its labels, and its order of atoms and branches are kept beside it, outside its hash".
 #[derive(Clone, Debug, Default)]
 pub struct NodeLayout {
     pub place: Option<SourcePlace>,
     pub label_names: Box<[(LabelId, Box<str>)]>,
     /// The indexes of the node's sites that the file writes as the bare
-    /// label, as `docs/arclog.md`, Sites, gives.
+    /// label, as `docs/arclog/arclog.md#sites` gives.
     pub elided_sites: Box<[u32]>,
 }
 
@@ -84,8 +73,6 @@ pub struct NodeLayout {
 /// its path, as [`crate::program::path::node_at`] walks it, and a node of
 /// the arcdata file by its path, as [`crate::program::path::data_node_at`]
 /// walks it.
-///
-/// Implements `work/engine/reader.md`, Programs as values: "A node's places in the files, the names of its labels, and its order of atoms and branches are kept beside it, outside its hash".
 #[derive(Clone, Debug, Default)]
 pub struct Layout {
     pub nodes: StableHashMap<(SourceFile, NodePath), NodeLayout>,
@@ -94,8 +81,6 @@ pub struct Layout {
 
 impl Layout {
     /// The layout of the node at `path` of `file`, if the file holds it.
-    ///
-    /// Implements `work/engine/reader.md`, Programs as values: "A node's places in the files, the names of its labels, and its order of atoms and branches are kept beside it, outside its hash".
     pub fn node(&self, file: SourceFile, path: &NodePath) -> Option<&NodeLayout> {
         todo!()
     }

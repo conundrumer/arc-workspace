@@ -12,6 +12,8 @@ import pytest
 
 from controlled_markdown import (
     ControlledMarkdownError,
+    check_citation_anchors,
+    check_citations,
     check_closure,
     check_dl_comments,
     check_file_fragments,
@@ -67,6 +69,34 @@ def test_a_document_a_program_names_stands_in_the_tree(tmp_path, name, text):
     with pytest.raises(ControlledMarkdownError) as err:
         check_paths(path, name, Path.cwd())
     assert err.value.rule == "path-missing"
+
+
+def write_cited_tree(tmp_path, citation):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/spec.md").write_text("# Spec\n\n## The pose\n")
+    code = tmp_path / "code"
+    code.write_text(f"// As `docs/spec.md#the-pose` gives.\n// As `{citation}` gives.\n")
+    return code
+
+
+@pytest.mark.parametrize(("citation", "rule"), [
+    ("work/engine/reader.md", "path-missing"),
+    ("docs/spec.md#no-such-heading", "citation-anchor"),
+])
+def test_a_citation_in_the_engine_names_a_present_heading(tmp_path, citation, rule):
+    code = write_cited_tree(tmp_path, citation)
+    errors = list(check_citations(code, "code", tmp_path, frozenset({"docs/spec.md"})))
+    assert [(e.line, e.rule) for e in errors] == [(2, rule)]
+
+
+@pytest.mark.parametrize(("citation", "rules"), [
+    ("work/engine/reader.md#terms", []),
+    ("docs/spec.md#no-such-heading", ["citation-anchor"]),
+])
+def test_an_anchor_cited_outside_the_engine_names_a_heading(tmp_path, citation, rules):
+    code = write_cited_tree(tmp_path, citation)
+    errors = list(check_citation_anchors(code, "code", tmp_path))
+    assert [e.rule for e in errors] == rules
 
 
 BAD_DL_LINK = """\

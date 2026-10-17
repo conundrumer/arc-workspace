@@ -1,9 +1,8 @@
 //! The core crate of the arclog engine: the interfaces and shared parts of
-//! step 1 of the engine's build order, Reader and checker
-//! (`work/engine/reader.md`).
+//! step 1 of the engine's build order, Reader and checker.
 //!
-//! The crate is the arclog engine of `work/engine/overview.md`, unrelated to
-//! the Python package `engine` under `src/engine/`.
+//! The crate is unrelated to the Python package `engine` under
+//! `src/engine/`.
 //!
 //! # Files by the stage that writes their bodies
 //!

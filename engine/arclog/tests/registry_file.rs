@@ -1,8 +1,5 @@
 //! The lib files under `engine/lib/` parse into a registry, so a fault of
 //! either file fails the engine's tests.
-//!
-//! Implements `work/engine/reader.md`, Checker: "a test parses it, so a
-//! fault of the file fails the engine's tests".
 
 use arclog::registry::{PROPOSERS_TEXT, REGISTRY_TEXT, Registry};
 

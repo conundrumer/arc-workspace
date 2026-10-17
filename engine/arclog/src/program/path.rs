@@ -1,9 +1,6 @@
 //! The path by which an edit, a diagnostic or the layout names a node, and
-//! the one walk from a path to its node.
-//!
-//! Implements `work/engine/reader.md`, Programs as values: "An edit names the
-//! node it changes by its path: its form, and its index in the source order of
-//! each list above it."
+//! the one walk from a path to its node. A path names a node by its form,
+//! and its index in the source order of each list above it.
 //!
 //! # The children of a node
 //!
@@ -65,8 +62,6 @@ use super::{
 };
 
 /// One step of a path: the index of a node among its parent's children.
-///
-/// Implements `work/engine/reader.md`, Programs as values: "An edit names the node it changes by its path".
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PathStep(pub u32);
 
@@ -76,23 +71,17 @@ pub struct PathStep(pub u32);
 /// A path is relative to the node it starts from: a program's path starts
 /// at the program, and the path of a [`crate::check::Refusal`] at the form
 /// the check read.
-///
-/// Implements `work/engine/reader.md`, Programs as values: "An edit names the node it changes by its path".
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
 pub struct NodePath(pub Box<[PathStep]>);
 
 impl NodePath {
     /// The path of the node at `relative` below the node at `self`.
-    ///
-    /// Implements `work/engine/reader.md`, Programs as values: "its index in the source order of each list above it".
     pub fn join(&self, relative: &NodePath) -> NodePath {
         todo!()
     }
 }
 
 /// A node of an arclog program, borrowed: any node a path can name.
-///
-/// Implements `work/engine/reader.md`, Programs as values: "An edit names the node it changes by its path".
 #[derive(Clone, Copy, Debug)]
 pub enum NodeRef<'a> {
     Program(&'a Program),
@@ -117,23 +106,17 @@ pub enum NodeRef<'a> {
 
 impl<'a> NodeRef<'a> {
     /// The node's children, in the order of the module comment's table.
-    ///
-    /// Implements `work/engine/reader.md`, Programs as values: "its index in the source order of each list above it".
     pub fn children(self) -> Vec<NodeRef<'a>> {
         todo!()
     }
 }
 
 /// The node at `path` below `root`, or `None` where `path` names no node.
-///
-/// Implements `work/engine/reader.md`, Programs as values: "An edit names the node it changes by its path: its form, and its index in the source order of each list above it."
 pub fn node_at<'a>(root: NodeRef<'a>, path: &NodePath) -> Option<NodeRef<'a>> {
     todo!()
 }
 
 /// A node of an arcdata file, borrowed: any node an arcdata path can name.
-///
-/// Implements `work/engine/reader.md`, Programs as values: "its index in the source order of each list above it".
 #[derive(Clone, Copy, Debug)]
 pub enum DataNodeRef<'a> {
     Arcdata(&'a Arcdata),
@@ -151,16 +134,12 @@ pub enum DataNodeRef<'a> {
 
 impl<'a> DataNodeRef<'a> {
     /// The node's children, in the order of the module comment's table.
-    ///
-    /// Implements `work/engine/reader.md`, Programs as values: "its index in the source order of each list above it".
     pub fn children(self) -> Vec<DataNodeRef<'a>> {
         todo!()
     }
 }
 
 /// The node at `path` below `root`, or `None` where `path` names no node.
-///
-/// Implements `work/engine/reader.md`, Programs as values: "its index in the source order of each list above it".
 pub fn data_node_at<'a>(root: DataNodeRef<'a>, path: &NodePath) -> Option<DataNodeRef<'a>> {
     todo!()
 }

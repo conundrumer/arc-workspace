@@ -21,6 +21,7 @@ class Rule(StrEnum):
     ATTRIBUTE_RESERVED = "attribute-reserved"
     BLOCK_REPEAT = "block-repeat"
     BLOCK_SYNTAX = "block-syntax"
+    CITATION_ANCHOR = "citation-anchor"
     CODE_CHILD = "code-child"
     CODE_FENCE = "code-fence"
     CODE_INDENT = "code-indent"
