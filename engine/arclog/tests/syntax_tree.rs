@@ -12,6 +12,9 @@
 //! `.arclog` and `.arcdata` files into one `Solver` tree: the claims, the tree
 //! of alts, the arcdata records, and `cases()`." No test reads `gen/`: each
 //! names its solver's task id.
+//!
+//! TODO: The reader stage deletes this file once its round-trip check over
+//! `work/arclog/gen/` passes, since that check covers these forms.
 
 use std::sync::Arc;
 
