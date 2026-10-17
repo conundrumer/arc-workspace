@@ -39,7 +39,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 ## This lib review's commit and diff
 - This lib review's commit is the commit `uv run python scripts/review_tag.py commit lib-reviewer <n>` records, with this lib review's number as `<n>`, and its hash is the one the command prints.
 * inline: notes/code.md#review-trees
-- The diff is that of the paths that command prints, of the earlier baseline against this lib review's commit.
+- The diff is that of the pathspecs that command prints, of the earlier baseline against this lib review's commit.
 
 ## Finding places
 - Read each relation, rule, functor, component and module the diff touches whole, as it stands at this lib review's commit, to find its places. Where its growth over earlier commits decides whether it is a place, run `git log -L` on it in the worktree of that commit.
@@ -47,7 +47,8 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 * inline: notes/code.md#unit-kinds
 - The line-level places are the places in the diff of each kind below, in the code that no place of a whole unit is to restructure or remove.
     * inline: notes/code.md#line-kinds
-    - A rule on prose in code is a rule on a statement's text, which each `///` or `//!` comment keeps: when you judge such a comment, read [Writing a file](docs/handbook/editing.md#writing-a-file) for those rules.
+    - A rule on prose in code is one of these:
+        * inline: ../../src/controlled_markdown/writing.md#docstrings-comments-and-help-text
 - A line in the diff that breaks a line of the handbook is a line-level defect place too.
 
 ## Judging places

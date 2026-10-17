@@ -31,7 +31,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 ## This code review's commit and diff
 - This code review's commit is the commit `uv run python scripts/review_tag.py commit code-reviewer <n>` records, with this code review's number as `<n>`, and its hash is the one the command prints.
 * inline: notes/code.md#review-trees
-- The diff is that of the paths that command prints, of the earlier baseline against this code review's commit.
+- The diff is that of the pathspecs that command prints, of the earlier baseline against this code review's commit.
 
 ## Finding places
 - Read each function, record, class and module the diff touches whole, as it stands at this code review's commit, to find its places. Where its growth over earlier commits decides whether it is a place, run `git log -L` on it in the worktree of that commit.

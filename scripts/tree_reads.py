@@ -5,7 +5,8 @@ gate outputs a change writes, the `mctx` fragments a change adds or
 changes, and the session's scratchpad directory."""
 
 import os
-from collections.abc import Hashable
+from collections.abc import Hashable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 from file_reads import file_text, listed, stat_of, stat_read
@@ -22,11 +23,33 @@ from solver.vocabulary import SOLVER_SUFFIX
 COMMITS = 300
 """The commits of `master` read for After a batch, newest first."""
 
-CODE_PATHS = ("src/", "scripts/", "tests/", "engine/", ".claude/settings.json")
-LIB_PATHS = ("programs/lib.dl", "programs/lib/", "programs/proposers.dl", "programs/lib_functors.cpp")
+@dataclass(frozen=True)
+class ReviewPaths:
+    """The paths a review covers: each path under a prefix of `covered`
+    and under no prefix of `excluded`. Iterating it gives the same set as
+    git pathspecs, which `review_tag.py commit` stages and prints for the
+    reviewer's diff, so the two readings agree."""
+    covered: tuple[str, ...]
+    excluded: tuple[str, ...] = ()
+
+    def covers(self, path: str) -> bool:
+        return path.startswith(self.covered) and not path.startswith(self.excluded)
+
+    def __iter__(self) -> Iterator[str]:
+        yield from self.covered
+        yield from (f":!{e}" for e in self.excluded)
+
+
+CODE_PATHS = ReviewPaths(
+    ("src/", "scripts/", "tests/", "engine/", "theory/", "tools/", ".claude/workflows/",
+     ".claude/settings.json", "justfile"),
+    ("tools/console/vendor/",),
+)
+"""`tools/console/vendor/` holds third-party code the project does not own."""
+LIB_PATHS = ReviewPaths(
+    ("programs/lib.dl", "programs/lib/", "programs/proposers.dl", "programs/lib_functors.cpp"),
+)
 REVIEW_PATHS = {Review.CODE: CODE_PATHS, Review.LIB: LIB_PATHS}
-"""The prefixes of the paths each review covers, which a commit's file
-paths are matched against."""
 PROCESS_DIRS = ("prompts/agents/", "src/operations/")
 ACCEPTED = "tests/gate/accepted"
 
@@ -107,7 +130,7 @@ def logged(main: Path, *argv: str) -> list[tuple[str, list[str]]]:
 
 
 def changes(files: list[str], review: Review) -> bool:
-    return any(n.startswith(REVIEW_PATHS[review]) for n in files)
+    return any(REVIEW_PATHS[review].covers(n) for n in files)
 
 
 @state_cache(lambda main, review: (refs_stamp(main, "tags"), refs_stamp(main, "heads")))

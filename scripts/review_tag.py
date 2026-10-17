@@ -40,7 +40,7 @@ HELP = mctx("""
     - `<reviewer>` is one of the reviewers this list gives, each with the item of its checklist the tag needs and the prefix of its tag:
         {table}
     - `commit` records the review's commit, with `<n>`, the review's number, in its message: the tree of `HEAD` with the paths `<reviewer>` reviews as the working tree it runs from holds them, untracked files included, as a commit whose parent is `HEAD`.
-        - It prints the commit's hash on one line, then each of those paths on a line of its own.
+        - It prints the commit's hash on one line, then the git pathspecs that select those paths, one on a line.
     - The form with `<commit>` makes the tag of the review's baseline.
         - It reads the transcripts of the reviewer `<agent id>`, and looks for a Bash call whose command runs `scripts/step.py <reviewer>` with that item, and whose tool result holds the text of the item that follows it in the checklist of the main tree as it stands at the command's call, with trailing whitespace stripped from both.
             - Where that checklist holds no such item, the command fails and names the item it wants.
