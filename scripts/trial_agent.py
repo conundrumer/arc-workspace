@@ -67,6 +67,10 @@ PLUGIN_VAR = "CLAUDE_CODE_PLUGIN_DIRS"
 """The variable by which a plugin's tools and hooks reach a `claude -p`
 run, which `--setting-sources ''` does not keep out."""
 
+CACHE_TTL_VAR = "CLAUDE_CODE_PROMPT_CACHE_TTL"
+"""Sets the prompt-cache TTL of a `claude -p` run. Unset, a run on a Claude
+subscription gets the 1-hour TTL, which costs more than the 5-minute one."""
+
 SESSION_READERS = (ReaderName.COORDINATOR, ReaderName.USER_SESSION, ReaderName.SESSION)
 """The readers that run on the model of the session's coordinator."""
 
@@ -186,7 +190,7 @@ def run(number: TicketNumber, reader: str, args: list[str], case_time: str, case
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     out = trials_dir() / f"{number}-{slug(reader, args)}-{stamp}-{uuid.uuid4().hex[:8]}.jsonl"
     print(out, flush=True)
-    env = {k: v for k, v in os.environ.items() if k != PLUGIN_VAR}
+    env = {k: v for k, v in os.environ.items() if k != PLUGIN_VAR} | {CACHE_TTL_VAR: "5m"}
     command = ["claude", "-p", "--no-session-persistence", "--model", model, "--tools", ",".join(reader_tools(reader, args)),
                "--output-format", "stream-json", "--verbose", "--setting-sources", "",
                "--settings", settings(case_time, case_commit), SYSTEM_PROMPT_FLAG[reader], str(shared)]
