@@ -16,7 +16,7 @@ from cli.common import all_stems, engine, solver_path
 from controlled_markdown import mctx
 from engine import AdtValue, NilValue, RecordValue, Rows
 from engine.program import Value
-from parity import rerun, snapshot, uses
+from parity import lib, rerun, snapshot, uses
 from solver.load import load
 
 
@@ -37,6 +37,11 @@ def parser() -> argparse.ArgumentParser:
         "Write each lib name, each proposer and each form keyword that a file of "
         "`work/arclog/gen/` uses, with the stems of the files that use it, to "
         "`.cache/parity/uses.json` of the main worktree, and print its path."))
+    sub.add_parser("lib", help=mctx(
+        "Write the Souffle rows of each lib element's inputs file under "
+        "`.cache/parity/lib/inputs/` of the main worktree whose record is not fresh, to "
+        "`.cache/parity/lib/`, and print the path of each record written. "
+        "`arclog-cli lib-compare` writes the inputs files."))
     again = sub.add_parser("rerun", help=mctx(
         "Run one case of a solver again on one pair with every relation written out, and "
         "print the rows of each relation under its arclog name. It writes no file."))
@@ -84,6 +89,10 @@ def main(argv: list[str]) -> int:
                        "was stopped at its wall limit:"))
             for stem in written.stopped:
                 print(stem)
+        return 0
+    if args.cmd == "lib":
+        for path in lib.write_all():
+            print(path)
         return 0
     if args.cmd == "uses":
         print(uses.write_all())

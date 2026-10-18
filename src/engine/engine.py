@@ -348,6 +348,20 @@ D4_IMAGE = RelationName((), "d4_image")
 of each row, the element's lib code first."""
 
 
+LIB_PROBE = RelationName((), "lib_probe")
+"""The relation of the rows of the bound columns that a `Engine.lib_probe`
+program reads."""
+LIB_ROWS = RelationName((), "lib_rows")
+"""The relation of a `Engine.lib_probe` program that holds the lib
+relation's rows."""
+
+
+def lib_domain(column: int) -> RelationName:
+    """The relation of the values that a `Engine.lib_probe` program grounds
+    the column `column` of its lib relation by."""
+    return RelationName((), f"lib_domain_{column}")
+
+
 class Engine(Protocol):
     """The interface between a language and the rest. Every rewrite returns
     a new program, and no caller reads the text a program renders to."""
@@ -372,6 +386,16 @@ class Engine(Protocol):
         charts by, each column of `kept` and each `D4` column as it stands:
         a block places a pose as its difference with the placement's pose,
         which is no image of a lone pose."""
+        ...
+
+    def lib_probe(self, lib: Path, relation: str, bound: Sequence[int],
+                  domains: Sequence[int]) -> Program | ParseFailure:
+        """A program that includes the lib file `lib` and gives in
+        `LIB_ROWS` each row of the top-level relation `relation`, in its
+        columns' order, whose columns `bound`, in that order, are a row of
+        `LIB_PROBE`, and whose each other column of `domains` is a row of its
+        `lib_domain`. With no column bound, the program has no `LIB_PROBE`.
+        Raises `ValueError` where the lib has no such relation."""
         ...
 
     def index(self, program: Program) -> Index:

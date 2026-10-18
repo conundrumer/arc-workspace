@@ -148,6 +148,10 @@ class FakeEngine(TextMethods):
                   kept: frozenset[int]) -> Program | ParseFailure:
         raise NotImplementedError
 
+    def lib_probe(self, lib: Path, relation: str, bound: Sequence[int],
+                  domains: Sequence[int]) -> Program | ParseFailure:
+        raise NotImplementedError
+
     def instantiate(self, program: Program, component: str,
                     name: str) -> Program:
         return program

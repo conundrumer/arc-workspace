@@ -6,6 +6,8 @@ from pathlib import Path
 from engine.engine import (
     D4_IMAGE,
     D4_SOURCE,
+    LIB_PROBE,
+    LIB_ROWS,
     Classed,
     GridMisfit,
     GridValue,
@@ -17,6 +19,7 @@ from engine.engine import (
     RemovalTarget,
     Rendered,
     RunResult,
+    lib_domain,
 )
 from engine import checkout
 from engine.program import (Atom, DeclId, GridLayout, Instance, Program,
@@ -75,6 +78,31 @@ class SouffleEngine(TextMethods):
             expand.rigid_rule(D4_IMAGE.name, D4_SOURCE.name, list(types),
                               kept | poses), ""])
         return self.parse(text, lib.parent)
+
+    def lib_probe(self, lib: Path, relation: str, bound: Sequence[int],
+                  domains: Sequence[int]) -> Program | ParseFailure:
+        top = self.parse(render.include(lib.name), lib.parent)
+        if isinstance(top, ParseFailure):
+            return top
+        decl = next((r for r in top.relations
+                     if r.name == relation and not r.scope.components), None)
+        if decl is None:
+            raise ValueError(f"no relation {relation}")
+        types = [c.type.text for c in decl.columns]
+        var = [f"X{i}" for i in range(len(types))]
+        lines = [render.include(lib.name),
+                 f".decl {LIB_ROWS.name}({', '.join(f'c{i}: {t}' for i, t in enumerate(types))})"]
+        body = [f"{relation}({', '.join(var)})"]
+        for i in domains:
+            if i not in bound:
+                lines.append(f".decl {lib_domain(i).name}(c: {types[i]})")
+                body.insert(0, f"{lib_domain(i).name}({var[i]})")
+        if bound:
+            lines.append(f".decl {LIB_PROBE.name}("
+                         f"{', '.join(f'c{j}: {types[i]}' for j, i in enumerate(bound))})")
+            body.insert(0, f"{LIB_PROBE.name}({', '.join(var[i] for i in bound)})")
+        lines.append(f"{LIB_ROWS.name}({', '.join(var)}) :- {', '.join(body)}.")
+        return self.parse("\n".join(lines) + "\n", lib.parent)
 
     def index(self, program: Program) -> Index:
         return index_of(program)

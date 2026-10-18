@@ -383,6 +383,12 @@ impl Registry {
         reader.registry()
     }
 
+    /// The name of each entry, in an order of encodings and no order of the
+    /// content.
+    pub fn names(&self) -> impl Iterator<Item = &LibName> + '_ {
+        self.entries.keys()
+    }
+
     /// What `name` declares, or `None` where the lib has no such name.
     pub fn entry(&self, name: &LibName) -> Option<&LibEntry> {
         self.entries.get(name)
