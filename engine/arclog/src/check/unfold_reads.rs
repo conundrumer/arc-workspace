@@ -7,7 +7,6 @@ use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refus
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::LabelUse;
-use crate::resolver::Resolution;
 use crate::types::each_site_label;
 
 /// [`CheckId::UnfoldReads`].
@@ -28,10 +27,7 @@ impl Check for UnfoldReadsCheck {
         let program = input.scope.program;
         let mut refusals = Vec::new();
         for read in form_reads(input.form, input.path) {
-            let Some(Resolution::Node(node)) = program.resolution(&input.path.join(&read.at)) else { continue };
-            if program.form_of(*node) != &read.form {
-                continue;
-            }
+            let Some((_, true)) = read.node(program, input.path) else { continue };
             let form_at = NodePath(read.form.0[input.path.0.len()..].into());
             let Some(NodeRef::Instance(instance)) = node_at(NodeRef::from(input.form), &form_at) else { continue };
             let Some(component) = component(input.scope.registry, &instance.component) else { continue };

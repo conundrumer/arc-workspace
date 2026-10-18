@@ -305,7 +305,7 @@ fn site_sources(site: &Site, whole: bool, body: &NodePath) -> Vec<Sourced> {
 /// the body whose `^` labels are its columns: the `key` of an `INIT`, a
 /// `DEMONSTRATED` or a `RIGID_DET` form, or the `for` of a `CHOOSE`
 /// form; none where the form has no key clause.
-pub(super) fn key_clause(form: NodeRef<'_>) -> Option<(&KeyBody, NodePath)> {
+pub(crate) fn key_clause(form: NodeRef<'_>) -> Option<(&KeyBody, NodePath)> {
     let first = NodePath::default().child(0);
     match form {
         NodeRef::Instance(Instance { key: Some(key), .. }) | NodeRef::Demonstrated(Demonstrated { key: Some(key), .. }) => {

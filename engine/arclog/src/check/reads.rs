@@ -31,12 +31,9 @@ impl Check for PooledAndLiftedReadsCheck {
         let mut order = None;
         let mut refusals = Vec::new();
         for read in form_reads(input.form, input.path) {
-            let Some(Resolution::Node(node)) = program.resolution(&input.path.join(&read.at)) else { continue };
-            if program.form_of(*node) == &read.form {
-                continue;
-            }
+            let Some((node, false)) = read.node(program, input.path) else { continue };
             let Some(side) = form_side(program, &read.form) else { continue };
-            let Some(message) = refused_read(program, side, *node, read.atom) else { continue };
+            let Some(message) = refused_read(program, side, node, read.atom) else { continue };
             let order = order.get_or_insert_with(|| CanonicalOrder::of(input.form, &mut SearchBudget::new()));
             refusals.push(Refusal { message: message.into(), at: order.canonical_path(&read.at) });
         }
@@ -86,6 +83,17 @@ pub(super) struct FormRead<'a> {
     pub atom: &'a Atom,
     pub at: NodePath,
     pub form: NodePath,
+}
+
+impl FormRead<'_> {
+    /// The node of the graph that the read reads, where it reads one, with
+    /// whether the read's own form gives that node, as an `Unfold`
+    /// instance's read of its outputs does. `path` is the path in the
+    /// program of the form the check reads.
+    pub(super) fn node(&self, program: &ResolvedProgram, path: &NodePath) -> Option<(GraphNodeIndex, bool)> {
+        let Some(Resolution::Node(node)) = program.resolution(&path.join(&self.at)) else { return None };
+        Some((*node, program.form_of(*node) == &self.form))
+    }
 }
 
 /// Each read of `form`, the form at `path` in the program, and of each form
