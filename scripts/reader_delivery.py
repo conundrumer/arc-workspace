@@ -44,8 +44,8 @@ call's result in the caller's context only after the calls the caller
 chose in the same message as that call, and starts the next of those calls
 within a fraction of a second, while a call of a later message starts at
 least a model turn after. So at PreToolUse, where that file is younger than
-`DELIVERY_BOUND` at the time the hook's entry started
-(`hook_entry.STARTED`), before its check, the update denies the call, with
+`DELIVERY_BOUND` at the time the hook's command started, as Claude Code
+fired it (`hook_entry.hook_started`), before its check, the update denies the call, with
 `_same_message_denial`, which holds no text, before any other step; where
 it is older, the update removes it and goes on as above."""
 
@@ -57,7 +57,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from hook_entry import STARTED, Update
+from hook_entry import Update, hook_started
 from reader_commits import (LaunchRecord, ReadRecord, Record, held_texts, held_update_text,
                             read_record, record_path, texts_digest, tree_head, type_reader,
                             update_text, write_record)
@@ -137,9 +137,9 @@ def _same_message_denial() -> Update:
 
 def _delivered_lately(path: Path) -> bool:
     """Whether the delivery file `path` is younger than `DELIVERY_BOUND` at
-    `STARTED`. An older one is removed."""
+    `hook_started`. An older one is removed."""
     try:
-        age = STARTED - path.stat().st_mtime
+        age = hook_started() - path.stat().st_mtime
     except FileNotFoundError:
         return False
     if age < DELIVERY_BOUND:

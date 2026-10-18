@@ -5,6 +5,7 @@ update given twice, or a record that does not move gives no sign in use."""
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -275,11 +276,12 @@ GIVES_UPDATE = ("pending_wait_hook", "context_bound_hook", "reader_update_hook")
 """The PreToolUse hooks that give the caller its update."""
 
 
-def stub_uv(tmp: Path) -> Path:
-    """A `uv` first on the path, that leaves a mark where it starts."""
+def stub_uv(tmp: Path, body: str) -> Path:
+    """The directory of a `uv` to put first on the path, that runs the shell
+    text `body`."""
     bin_dir = tmp / "bin"
     bin_dir.mkdir()
-    (bin_dir / "uv").write_text(f"#!/bin/sh\ntouch {tmp / 'started'}\n")
+    (bin_dir / "uv").write_text(f"#!/bin/sh\n{body}\n")
     (bin_dir / "uv").chmod(0o755)
     return bin_dir
 
@@ -292,7 +294,7 @@ def test_fast_path_reads_the_record_of_record_path(
 
     main = session(tmp_path)
     started = tmp_path / "started"
-    monkeypatch.setenv("PATH", f"{stub_uv(tmp_path)}:{os.environ['PATH']}")
+    monkeypatch.setenv("PATH", f"{stub_uv(tmp_path, f'touch {started}')}:{os.environ['PATH']}")
     for hook in [after_call(main, "PostToolUse"), after_call(main, "PostToolUse", OPERATOR_ID),
                  prompt(main)]:
         cmd = command(hook["hook_event_name"])
@@ -355,6 +357,54 @@ def test_call_within_the_bound_after_a_delivery_is_denied(tmp_path: Path) -> Non
     assert "additionalContext" not in out
     assert record(main, "main").read_text() == both(head())
     assert delivered(main).stat().st_mtime < time.time() + 30
+
+
+def test_a_call_whose_command_starts_within_the_bound_is_denied(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The age is read at the start of the hook's command, so a call whose
+    command started within the bound is denied where `uv run` starts its
+    entry past it. The delivery is set a second ahead, so that a slow start
+    of the command under load still falls within the bound."""
+    main = session(tmp_path)
+    record(main, "main").parent.mkdir(parents=True)
+    record(main, "main").write_text(both(head()))
+    slow = stub_uv(tmp_path, f'sleep 2\nexec {shutil.which("uv")} "$@"')
+    monkeypatch.setenv("PATH", f"{slow}:{os.environ['PATH']}")
+    for cmd, tool in [(command("PreToolUse", "Bash|Monitor"), "Bash"),
+                      (command("PreToolUse", "Agent", "context_bound_hook"), "Agent"),
+                      (command("PreToolUse", "^(?!(Bash|Monitor|Agent)$).*",
+                               "reader_update_hook"), "Read")]:
+        delivered(main).touch()
+        aged(delivered(main), -1)
+        out = json.loads(run(cmd, call(main, tool, {})))["hookSpecificOutput"]
+        assert out["permissionDecision"] == "deny", tool
+
+
+def test_a_command_that_passes_no_time_reads_the_age_at_the_entry(tmp_path: Path) -> None:
+    """A session loads its hook commands when it starts, so one started
+    before the commands passed the time runs them without it."""
+    main = session(tmp_path)
+    record(main, "main").parent.mkdir(parents=True)
+    record(main, "main").write_text(both(head()))
+    delivered(main).touch()
+    aged(delivered(main), -60)
+    bash = command("PreToolUse", "Bash|Monitor")
+    assert bash.startswith("HOOK_STARTED=")
+    untimed = bash[bash.index("uv run "):]
+    out = json.loads(run(untimed, call(main, "Bash", {})))["hookSpecificOutput"]
+    assert out["permissionDecision"] == "deny"
+
+
+def test_each_command_that_gives_the_update_passes_its_start() -> None:
+    """The entry falls back to its own start where no time is passed, so a
+    command that drops the time would give no other sign."""
+    for matcher, script in [("Bash|Monitor", "pending_wait_hook"),
+                            ("Agent", "context_bound_hook")]:
+        assert re.match(r"HOOK_STARTED=\$\([^)]*\) uv run ",
+                        command("PreToolUse", matcher, script)), script
+    sh = (checkout.scripts() / "reader_update_hook.sh").read_text()
+    assert re.search(r"^HOOK_STARTED=\$\([^)]*\)\nexport HOOK_STARTED\n", sh, re.M)
+    assert sh.index("export HOOK_STARTED") < min(sh.index("jq "), sh.index("uv run "))
 
 
 def test_an_update_at_pre_tool_use_records_its_delivery(tmp_path: Path) -> None:

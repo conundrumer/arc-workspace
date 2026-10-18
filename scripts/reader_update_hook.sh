@@ -7,7 +7,10 @@
 # `reader_commits.record_path`, `reader_commits.reader_tree` and
 # `reader_delivery.delivery_path`, which `tests/test_reader_commits.py`
 # checks this reading against. Where this reading fails, the hook's Python
-# runs.
+# runs. The time this command started is read first, before `jq`, `git`
+# and `uv run`, and passed in `HOOK_STARTED` (`hook_entry.hook_started`).
+HOOK_STARTED=$(perl -MTime::HiRes=time -le 'print time')
+export HOOK_STARTED
 input=$(cat)
 fields=$(printf '%s' "$input" | jq -r '@sh "transcript=\(.transcript_path // "") agent=\(.agent_id // "") cwd=\(.cwd // "")"' 2>/dev/null) \
     && eval "$fields" && [ -n "$transcript" ] && {

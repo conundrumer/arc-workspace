@@ -30,6 +30,7 @@ What the entry runs for every hook stands in this docstring alone, and in no
 hook's docstring."""
 
 import json
+import os
 import sys
 import time
 from collections.abc import Callable
@@ -38,9 +39,23 @@ from typing import Any, NamedTuple
 
 type Hook = dict[str, Any]
 
-STARTED = time.time()
+HOOK_STARTED_ENV = "HOOK_STARTED"
+"""The variable in which the command of a PreToolUse hook that gives the
+caller its update passes the time it started, in seconds since the epoch,
+as its shell read it before `uv run` started Python."""
+
+
+ENTRY_STARTED = time.time()
 """The time this process imported the entry, which each hook script does
 before its other imports and its check."""
+
+
+def hook_started() -> float:
+    """The time the hook's command started, as `HOOK_STARTED_ENV` gives it.
+    A command that passes no time, such as one a session loaded before the
+    commands passed it, gets `ENTRY_STARTED`."""
+    given = os.environ.get(HOOK_STARTED_ENV)
+    return ENTRY_STARTED if given is None else float(given)
 
 
 class Update(NamedTuple):
