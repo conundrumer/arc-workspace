@@ -31,6 +31,13 @@ pub trait NameWriter {
     /// Writes `relation` into `out`.
     fn write_name(&self, relation: &super::RelationRef, out: &mut CanonicalWriter);
 
+    /// Writes `name`, the name that the form being written declares, into
+    /// `out`: an `INIT`, `CHOOSE`, `RIGID_DET` or `DEMONSTRATED` form's.
+    /// The resolver writes a mark that holds no name, so that the resolved
+    /// content of a form holds no name of its own, as that of a clause
+    /// holds no name of the relation it derives.
+    fn write_own(&self, name: &super::DeclaredName, out: &mut CanonicalWriter);
+
     /// Writes a column of `relation` into `out`: a column that a site names,
     /// or that a clause gives the relation it derives. `column` is the
     /// column's path: its name, or, for a site on a field of a record, the
@@ -301,6 +308,10 @@ impl NameWriter for AsWritten {
                 out.text(port);
             }
         }
+    }
+
+    fn write_own(&self, name: &super::DeclaredName, out: &mut CanonicalWriter) {
+        out.declared(name);
     }
 
     /// Writes `column` as given. The path of a [`SiteArg::NamedLabel`]
@@ -655,7 +666,7 @@ impl WriteForm for Demonstrated {
     /// the writer holds, and each `DEMO_RULE` form under its own.
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
         out.tag(Tag::Demonstrated);
-        out.declared(&self.name.0);
+        cx.names.write_own(&self.name.0, out);
         demonstrated_key(cx, out, self);
         out.len(self.rules.len());
         for rule in self.rules.iter() {
@@ -789,7 +800,7 @@ impl WriteForm for Instance {
 
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
         out.tag(Tag::Instance);
-        out.declared(&self.name.0);
+        cx.names.write_own(&self.name.0, out);
         cx.names.write_name(&RelationRef::Lib(self.component.clone()), out);
         let parent = NodeRef::Instance(self);
         out.option(self.key.as_ref(), |out, key| cx.child(parent, NodeRef::KeyClause(key.value()), |cx| key.value().write_form(cx, out)));
@@ -839,7 +850,7 @@ impl WriteForm for Choose {
 
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
         out.tag(Tag::Choose);
-        out.declared(&self.name.0);
+        cx.names.write_own(&self.name.0, out);
         let parent = NodeRef::Choose(self);
         out.option(self.rows.as_ref(), |out, rows| key_body(cx, out, parent, rows));
         let relation = RelationRef::Declared(self.name.clone());
@@ -861,7 +872,7 @@ impl WriteForm for RigidDet {
 
     fn write_form(&self, cx: &mut Context, out: &mut CanonicalWriter) {
         out.tag(Tag::RigidDet);
-        out.declared(&self.name.0);
+        cx.names.write_own(&self.name.0, out);
         let parent = NodeRef::RigidDet(self);
         out.option(self.key.as_ref(), |out, key| key_body(cx, out, parent, key));
         out.option(self.instance.as_ref(), |out, instance| key_body(cx, out, parent, instance));

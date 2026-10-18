@@ -9,7 +9,7 @@ use crate::hash::StableHashMap;
 use crate::program::canonical::{AsWritten, Canonical, CanonicalForm, CanonicalWriter, NameWriter, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
-    Body, ColumnName, Demonstrated, NameScope, Node, OutputOwner, Program, RelationRef,
+    Body, ColumnName, DeclaredName, Demonstrated, NameScope, Node, OutputOwner, Program, RelationRef,
 };
 
 /// Writes the path of the output that `relation` reads, after the
@@ -279,6 +279,10 @@ impl NameWriter for Writer<'_> {
             }
         }
         write_output_path(out, relation);
+    }
+
+    fn write_own(&self, _name: &DeclaredName, out: &mut CanonicalWriter) {
+        out.write(&[Mark::Own as u8]);
     }
 
     /// Writes a column of the form's own relation by a mark that no

@@ -4,7 +4,9 @@
 //! instance's outputs unlifted, gives a keyed instance the task-wide side
 //! where its key holds an Example label, by what the label holds, and
 //! writes the content of a `DEMONSTRATED` form with the names its rules
-//! declare resolved.
+//! declare resolved, writes no name a `CHOOSE` form declares into its
+//! content, and gives each column of each `DET` form of one parameter the
+//! position of the node's column of its name.
 
 use arclog::layout::SourceFile;
 use arclog::program::path::{NodePath, PathStep};
@@ -274,4 +276,49 @@ fn an_instance_keyed_on_a_column_whose_binding_head_projects_an_example_label_is
         let program = resolved(&format!("{PER_INPUT_BACKGROUND}{forms}"));
         assert!(form_sides(&program, 2).iter().all(|side| *side == Side::TaskWide), "{forms}");
     }
+}
+
+#[test]
+fn choose_forms_of_equal_content_under_different_names_have_equal_content() {
+    let contents: Vec<_> = ["&pick", "&other"]
+        .iter()
+        .map(|name| {
+            let program = resolved(&format!("(CHOOSE {name}\n  (from (ex_input (:E *Ky) *P *Col)))\n(DET &reads ({name} *Ky *P))\n"));
+            let arclog::program::Form::Choose(choose) = &program.program.value().forms[0] else { panic!("a `CHOOSE` form") };
+            let mut positions: Vec<_> = choose.value().candidate_columns.iter().map(|column| program.label_position(&path(&[0]), column.label)).collect();
+            positions.sort_by_key(|position| position.map(|position| position.0));
+            assert_eq!(positions, [0, 1, 2].map(|position| Some(ColumnPosition(position))));
+            (program.content(&path(&[0])).expect("the form has content"), program.content(&path(&[1])).expect("the form has content"))
+        })
+        .collect();
+    assert_eq!(contents[0], contents[1]);
+}
+
+#[test]
+fn each_det_form_of_one_parameter_gives_its_columns_the_positions_of_the_node() {
+    let program = resolved(
+        "(RULE &bg (input *P *Col))\n\
+         (DET &spanned\n\
+           (ex_input *E *P *Col)\n\
+           (&bg P Col))\n\
+         (DET &spanned\n\
+           (ex_input *E *P *Col)\n\
+           (NOT (&bg P Col)))\n",
+    );
+    let positions = |form: u32| -> Vec<(String, Option<ColumnPosition>)> {
+        let arclog::program::Form::Clause(clause) = &program.program.value().forms[form as usize] else { panic!("a clause") };
+        let mut positions: Vec<_> = clause
+            .value()
+            .columns
+            .iter()
+            .map(|column| (format!("{:?}", column.name), program.label_position(&path(&[form]), column.label)))
+            .collect();
+        positions.sort_by(|a, b| a.0.cmp(&b.0));
+        positions
+    };
+    let first = positions(1);
+    assert_eq!(first, positions(2));
+    let mut found: Vec<_> = first.iter().map(|(_, position)| *position).collect();
+    found.sort_by_key(|position| position.map(|position| position.0));
+    assert_eq!(found, [0, 1, 2].map(|position| Some(ColumnPosition(position))));
 }

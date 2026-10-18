@@ -13,7 +13,9 @@
 //! it, [`AsWritten`]. The resolved content of a node in one case program, in
 //! which each derived relation stands for its own content, is
 //! [`crate::resolver::ResolvedProgram::content`], which writes the same
-//! canonical form through a [`NameWriter`] of the resolver.
+//! canonical form through a [`NameWriter`] of the resolver. That content
+//! holds no name that the node declares, so two forms of equal content
+//! under different names have equal resolved content.
 //!
 //! The byte encoding of a form is in `form`, the graph of a label scope
 //! with its color refinement in `graph`, and the canonical order of a form

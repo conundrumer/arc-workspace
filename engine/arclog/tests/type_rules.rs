@@ -107,24 +107,28 @@ fn a_column_that_two_assemblies_give_poses_is_refused_at_each_clause() {
 (RULE &cell
   (input *P *Col))
 
+(RULE &marked
+  (input *P *Col)
+  (input P Col))
+
 (RIGID_DET &piece
   (&cell *P))
 
 (RIGID_DET &other
-  (&cell *P))
+  (&marked *P))
 
 (RULE &poses
   (&piece.cell (:Pose *D) (:P *P)))
 
 (RULE &poses
-  (&other.cell (:Pose *D) (:P *P)))
+  (&other.marked (:Pose *D) (:P *P)))
 
 (RULE &fixed
   (&poses *D)
   (d4_identity D))
 ",
     );
-    assert_eq!(forms, vec![3, 4]);
+    assert_eq!(forms, vec![4, 5]);
 }
 
 #[test]

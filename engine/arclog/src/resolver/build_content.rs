@@ -1,0 +1,165 @@
+//! The content and the columns of each node of the graph: its forms
+//! written through the resolver's name writer, with no order, and the
+//! columns of its rows, with the position in them of each column that
+//! each of its forms gives.
+
+use std::sync::Arc;
+
+use super::super::columns::{self, Columns, Place};
+use super::super::names::{combined, Own, Writer};
+use super::Builder;
+use crate::program::canonical::{canonical_labeling, AsWritten, CanonicalWriter, LabelScope, NameWriter, SearchBudget};
+use crate::program::path::{node_at, NodeRef};
+use crate::program::{Choose, Clause, ColumnName, NameScope, OutputName, OutputOwner, OutputStep, ProgramRelation, RelationColumn, RelationRef};
+use crate::resolver::{DependencyKind, DependencyNode};
+
+impl Builder<'_> {
+    /// The content and the columns of each node, each node after the
+    /// nodes it reads, where no cycle holds it.
+    pub(super) fn contents(&mut self) {
+        self.names.contents = vec![None; self.nodes.len()];
+        self.names.node_columns = vec![None; self.nodes.len()];
+        let mut visited = vec![false; self.nodes.len()];
+        for node in 0..self.nodes.len() {
+            self.content_of(node, &mut visited);
+        }
+    }
+
+    fn content_of(&mut self, node: usize, visited: &mut Vec<bool>) {
+        if std::mem::replace(&mut visited[node], true) {
+            return;
+        }
+        let reads: Vec<u32> = self.reads[node].iter().copied().collect();
+        for read in reads {
+            self.content_of(read as usize, visited);
+        }
+        let (content, columns) = self.node_content(node);
+        if let Some(columns) = &columns {
+            self.label_positions(node, columns);
+        }
+        self.names.contents[node] = Some(content);
+        self.names.node_columns[node] = columns;
+    }
+
+    /// Records the position in `columns`, the rows of `node`, of each
+    /// column that each form of the node gives, by the form's path and the
+    /// column's label: each column takes the position of the node's column
+    /// of its name.
+    fn label_positions(&mut self, node: usize, columns: &Columns) {
+        for path in &self.forms[node] {
+            let form = node_at(NodeRef::Program(self.case.value()), path).expect("the path of a form of the case");
+            for column in form_columns(form) {
+                if let Some(Place::Column(position)) = columns.place(std::slice::from_ref(&column.name)) {
+                    self.label_positions.insert((path.clone(), column.label), position);
+                }
+            }
+        }
+    }
+
+    /// The content of `node`: its kind and its forms, each written
+    /// through the resolver's name writer, with no order; and its
+    /// columns, those of its form of least content, where its columns
+    /// come from its form.
+    fn node_content(&self, node: usize) -> (crate::program::canonical::CanonicalForm, Option<Columns>) {
+        let DependencyNode { kind, scope } = &self.nodes[node];
+        let mut tail = CanonicalWriter::default();
+        match kind {
+            DependencyKind::Fact(fact) => AsWritten.write_name(&RelationRef::Fact(*fact), &mut tail),
+            DependencyKind::InstanceInput { input: port, .. } | DependencyKind::InstanceOutput { output: port, .. } => {
+                tail.port_step(port)
+            }
+            _ => {}
+        }
+        let tail = tail.finish().bytes;
+        let mut parts: Vec<(Arc<[u8]>, Option<Columns>)> = Vec::new();
+        for path in &self.forms[node] {
+            let form = node_at(NodeRef::Program(self.case.value()), path).expect("the path of a form of the case");
+            let own = Own::of(form);
+            let writer = Writer { names: &self.names, scope, own: own.as_ref() };
+            let bytes = match self.names.fixed.get(path) {
+                Some(content) => content.bytes.clone(),
+                None => super::super::names::written(form, path, None, &writer).expect("a form has a canonical form").bytes,
+            };
+            let columns = match form {
+                NodeRef::Clause(clause) => match self.concept_columns.get(path) {
+                    Some(columns) => columns.clone(),
+                    None => self.clause_columns(clause, scope, &writer),
+                },
+                NodeRef::Choose(choose) => Some(choose_columns(choose, &writer)),
+                _ => None,
+            };
+            parts.push((bytes, columns));
+        }
+        parts.sort_by(|a, b| a.0.cmp(&b.0));
+        let columns = parts.iter().find_map(|(_, columns)| columns.clone());
+        (combined(kind_tag(kind), parts.into_iter().map(|(bytes, _)| bytes), &tail), columns)
+    }
+
+    /// The columns of the relation a clause derives: its labels in their
+    /// canonical positions; or, with no columns of its own, its first
+    /// proposer's, or the output's of an instance it stands for.
+    fn clause_columns(&self, clause: &Clause, scope: &NameScope, writer: &Writer<'_>) -> Option<Columns> {
+        if !clause.columns.is_empty() {
+            let labeling = canonical_labeling(LabelScope::Clause(clause), writer, &mut SearchBudget::new());
+            return Some(ordered(&clause.columns, &labeling));
+        }
+        if let Some(proposer) = clause.proposers.first() {
+            return columns::proposer_columns(self.registry, proposer).map(|names| Columns::of_names(names.into_vec()));
+        }
+        if let ProgramRelation::Output(OutputName { of: OutputOwner::Instance(name), path }) = &clause.derives {
+            if let [OutputStep::Port(port)] = &path[..] {
+                return self.instances.get(&(scope.clone(), name.clone())).and_then(|nodes| nodes.columns.get(port)).cloned();
+            }
+        }
+        Some(Columns::default())
+    }
+}
+
+/// The columns that `form` gives the rows of its node: a clause's, or a
+/// `CHOOSE` form's row columns and then its candidate's.
+fn form_columns<'f>(form: NodeRef<'f>) -> Box<dyn Iterator<Item = &'f RelationColumn> + 'f> {
+    match form {
+        NodeRef::Clause(clause) => Box::new(clause.columns.iter()),
+        NodeRef::Choose(choose) => Box::new(row_columns(choose).chain(choose.candidate_columns.iter())),
+        _ => Box::new(std::iter::empty()),
+    }
+}
+
+/// The tag of each kind of node in its content.
+fn kind_tag(kind: &DependencyKind) -> u8 {
+    match kind {
+        DependencyKind::Fact(_) => 1,
+        DependencyKind::Clause(_) => 2,
+        DependencyKind::InstanceInput { .. } => 3,
+        DependencyKind::InstanceOutput { .. } => 4,
+        DependencyKind::Parameter(_) => 5,
+        DependencyKind::Chosen(_) => 6,
+        DependencyKind::RigidAssembly(_) => 7,
+        DependencyKind::Demonstrated(_) => 8,
+        DependencyKind::RecursiveInstance(_) => 9,
+    }
+}
+
+/// `columns` in the order of their labels' positions in `labeling`.
+fn ordered(columns: &[crate::program::RelationColumn], labeling: &crate::program::canonical::CanonicalLabeling) -> Columns {
+    let position = |label| labeling.positions.iter().find(|(found, _)| *found == label).map(|(_, position)| *position);
+    let mut ordered: Vec<(Option<u32>, &ColumnName)> = columns.iter().map(|column| (position(column.label), &column.name)).collect();
+    ordered.sort_by_key(|(position, _)| *position);
+    Columns::of_names(ordered.into_iter().map(|(_, name)| name.clone()))
+}
+
+/// The columns of a chosen relation: the row's, in the order of the
+/// `for` clause, then the candidate's, in their canonical positions,
+/// `docs/arclog/constraints.md#choose`.
+fn choose_columns(choose: &Choose, writer: &Writer<'_>) -> Columns {
+    let labeling = canonical_labeling(LabelScope::Choose(choose), writer, &mut SearchBudget::new());
+    let rows = row_columns(choose).map(|column| column.name.clone());
+    let candidate = ordered(&choose.candidate_columns, &labeling);
+    Columns::of_names(rows.chain(candidate.names().cloned()))
+}
+
+/// The row columns of a chosen relation, in the order of the `for`
+/// clause, which come before the candidate's.
+fn row_columns(choose: &Choose) -> impl Iterator<Item = &RelationColumn> + '_ {
+    choose.rows.iter().flat_map(|rows| rows.columns.iter())
+}

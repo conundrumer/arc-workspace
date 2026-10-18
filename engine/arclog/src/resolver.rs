@@ -8,7 +8,7 @@ use crate::diagnostic::WithDiagnostics;
 use crate::hash::StableHash;
 use crate::program::path::NodePath;
 use crate::program::{
-    ColumnName, InstanceName, Node, PortName, Program, ProgramRelation, RelationName, RigidDetName,
+    ColumnName, InstanceName, LabelId, Node, PortName, Program, ProgramRelation, RelationName, RigidDetName,
 };
 use crate::registry::{LibName, Registry};
 
@@ -188,6 +188,7 @@ pub struct ResolvedProgram {
     resolutions: crate::hash::StableHashMap<NodePath, Resolution>,
     signatures: crate::hash::StableHashMap<NodePath, Signature>,
     positions: crate::hash::StableHashMap<NodePath, ColumnPosition>,
+    label_positions: crate::hash::StableHashMap<(NodePath, LabelId), ColumnPosition>,
     groups: crate::hash::StableHashMap<NodePath, crate::relations::ColumnGroup>,
     proposer_columns: crate::hash::StableHashMap<(NodePath, usize), Box<[ColumnName]>>,
     names: names::Names,
@@ -214,6 +215,16 @@ impl ResolvedProgram {
     /// field, so the mapping needs no layout.
     pub fn column_position(&self, site: &NodePath) -> Option<ColumnPosition> {
         self.positions.get(site).copied()
+    }
+
+    /// The position in the rows of its node of the column of `label`, a
+    /// label of a column that the form at `form` gives: a clause's, or a
+    /// `CHOOSE` form's row or candidate column. In a node of several forms,
+    /// as a parameter that several blocks of a case determine, each form's
+    /// column takes the position of the node's column of its name, as a
+    /// site that reads the node names it.
+    pub fn label_position(&self, form: &NodePath, label: LabelId) -> Option<ColumnPosition> {
+        self.label_positions.get(&(form.clone(), label)).copied()
     }
 
     /// The column group that the site at `site` reads, where the site is on

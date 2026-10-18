@@ -1,22 +1,22 @@
 //! The passes of [`super::resolve`]: the declarations of each scope, the reads and
 //! the graph, the content and the columns of each node, then the columns of
-//! each site.
+//! each site. The content and the columns of each node are in `content`.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use super::columns::{self, Columns, Place};
-use super::names::{combined, write_output_path, ColumnsOf, Names, Own, Target, Writer};
+use super::names::{write_output_path, ColumnsOf, Names, Target};
 use super::{
     ColumnPosition, ConceptReads, DependencyGraph, DependencyKind, DependencyNode, ExamplePath, GraphNodeIndex,
     ResolvedProgram, Resolution, Side, Signature,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity, WithDiagnostics};
 use crate::hash::{StableHashMap, StableHashSet};
-use crate::program::canonical::{canonical_labeling, prediction, relation_of, AsWritten, CanonicalWriter, LabelScope, NameWriter, SearchBudget};
+use crate::program::canonical::{prediction, relation_of, AsWritten, CanonicalWriter, NameWriter};
 use crate::program::path::{child_index, node_at, NodePath, NodeRef};
 use crate::program::{
-    Atom, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, FactRelation, Form, Instance, InstanceName, NameScope,
+    Atom, Clause, ClauseKeyword, ColumnName, Conjunct, FactRelation, Form, Instance, InstanceName, NameScope,
     Negated, Node, OutputName, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationRef,
 };
 use crate::program::{Demonstrated, InstanceInput, LabelId, RigidDet, Site};
@@ -86,6 +86,9 @@ struct Builder<'a> {
     resolutions: StableHashMap<NodePath, Resolution>,
     signatures: StableHashMap<NodePath, Signature>,
     positions: StableHashMap<NodePath, ColumnPosition>,
+    /// The position in its node's rows of each column a form gives, by
+    /// the form's path and the column's label.
+    label_positions: StableHashMap<(NodePath, LabelId), ColumnPosition>,
     groups: StableHashMap<NodePath, ColumnGroup>,
     proposer_columns: StableHashMap<(NodePath, usize), Box<[ColumnName]>>,
     diagnostics: Vec<Diagnostic>,
@@ -119,6 +122,7 @@ pub(super) fn resolve(
         resolutions: StableHashMap::default(),
         signatures: StableHashMap::default(),
         positions: StableHashMap::default(),
+        label_positions: StableHashMap::default(),
         groups: StableHashMap::default(),
         proposer_columns: StableHashMap::default(),
         diagnostics: Vec::new(),
@@ -160,21 +164,6 @@ fn top(index: usize) -> NodePath {
 /// prefix of it.
 fn rebase(path: &NodePath, from: &NodePath, to: &NodePath) -> Option<NodePath> {
     path.0.strip_prefix(&from.0[..]).map(|rest| to.join(&NodePath(rest.into())))
-}
-
-/// The tag of each kind of node in its content.
-fn kind_tag(kind: &DependencyKind) -> u8 {
-    match kind {
-        DependencyKind::Fact(_) => 1,
-        DependencyKind::Clause(_) => 2,
-        DependencyKind::InstanceInput { .. } => 3,
-        DependencyKind::InstanceOutput { .. } => 4,
-        DependencyKind::Parameter(_) => 5,
-        DependencyKind::Chosen(_) => 6,
-        DependencyKind::RigidAssembly(_) => 7,
-        DependencyKind::Demonstrated(_) => 8,
-        DependencyKind::RecursiveInstance(_) => 9,
-    }
 }
 
 /// The node kind of a clause: a chosen relation where it has `ONE`
@@ -547,88 +536,6 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// The content and the columns of each node, each node after the
-    /// nodes it reads, where no cycle holds it.
-    fn contents(&mut self) {
-        self.names.contents = vec![None; self.nodes.len()];
-        self.names.node_columns = vec![None; self.nodes.len()];
-        let mut visited = vec![false; self.nodes.len()];
-        for node in 0..self.nodes.len() {
-            self.content_of(node, &mut visited);
-        }
-    }
-
-    fn content_of(&mut self, node: usize, visited: &mut Vec<bool>) {
-        if std::mem::replace(&mut visited[node], true) {
-            return;
-        }
-        let reads: Vec<u32> = self.reads[node].iter().copied().collect();
-        for read in reads {
-            self.content_of(read as usize, visited);
-        }
-        let (content, columns) = self.node_content(node);
-        self.names.contents[node] = Some(content);
-        self.names.node_columns[node] = columns;
-    }
-
-    /// The content of `node`: its kind and its forms, each written
-    /// through the resolver's name writer, with no order; and its
-    /// columns, those of its form of least content, where its columns
-    /// come from its form.
-    fn node_content(&self, node: usize) -> (crate::program::canonical::CanonicalForm, Option<Columns>) {
-        let DependencyNode { kind, scope } = &self.nodes[node];
-        let mut tail = CanonicalWriter::default();
-        match kind {
-            DependencyKind::Fact(fact) => AsWritten.write_name(&RelationRef::Fact(*fact), &mut tail),
-            DependencyKind::InstanceInput { input: port, .. } | DependencyKind::InstanceOutput { output: port, .. } => {
-                tail.port_step(port)
-            }
-            _ => {}
-        }
-        let tail = tail.finish().bytes;
-        let mut parts: Vec<(Arc<[u8]>, Option<Columns>)> = Vec::new();
-        for path in &self.forms[node] {
-            let form = node_at(NodeRef::Program(self.case.value()), path).expect("the path of a form of the case");
-            let own = Own::of(form);
-            let writer = Writer { names: &self.names, scope, own: own.as_ref() };
-            let bytes = match self.names.fixed.get(path) {
-                Some(content) => content.bytes.clone(),
-                None => super::names::written(form, path, None, &writer).expect("a form has a canonical form").bytes,
-            };
-            let columns = match form {
-                NodeRef::Clause(clause) => match self.concept_columns.get(path) {
-                    Some(columns) => columns.clone(),
-                    None => self.clause_columns(clause, scope, &writer),
-                },
-                NodeRef::Choose(choose) => Some(choose_columns(choose, &writer)),
-                _ => None,
-            };
-            parts.push((bytes, columns));
-        }
-        parts.sort_by(|a, b| a.0.cmp(&b.0));
-        let columns = parts.iter().find_map(|(_, columns)| columns.clone());
-        (combined(kind_tag(kind), parts.into_iter().map(|(bytes, _)| bytes), &tail), columns)
-    }
-
-    /// The columns of the relation a clause derives: its labels in their
-    /// canonical positions; or, with no columns of its own, its first
-    /// proposer's, or the output's of an instance it stands for.
-    fn clause_columns(&self, clause: &Clause, scope: &NameScope, writer: &Writer<'_>) -> Option<Columns> {
-        if !clause.columns.is_empty() {
-            let labeling = canonical_labeling(LabelScope::Clause(clause), writer, &mut SearchBudget::new());
-            return Some(ordered(&clause.columns, &labeling));
-        }
-        if let Some(proposer) = clause.proposers.first() {
-            return columns::proposer_columns(self.registry, proposer).map(|names| Columns::of_names(names.into_vec()));
-        }
-        if let ProgramRelation::Output(OutputName { of: OutputOwner::Instance(name), path }) = &clause.derives {
-            if let [OutputStep::Port(port)] = &path[..] {
-                return self.instances.get(&(scope.clone(), name.clone())).and_then(|nodes| nodes.columns.get(port)).cloned();
-            }
-        }
-        Some(Columns::default())
-    }
-
     /// The position and the group of each site of each atom read, and
     /// the signature of each name read.
     fn sites(&mut self) {
@@ -776,6 +683,7 @@ impl<'a> Builder<'a> {
                 resolutions: self.resolutions,
                 signatures: self.signatures,
                 positions: self.positions,
+                label_positions: self.label_positions,
                 groups: self.groups,
                 proposer_columns: self.proposer_columns,
                 names: self.names,
@@ -1126,20 +1034,5 @@ fn input_body(program: NodeRef<'_>, form: &NodePath, input: &InstanceInput) -> N
     path.child(u32::try_from(input.head.len()).expect("a head of fewer than 2^32 sites"))
 }
 
-/// `columns` in the order of their labels' positions in `labeling`.
-fn ordered(columns: &[crate::program::RelationColumn], labeling: &crate::program::canonical::CanonicalLabeling) -> Columns {
-    let position = |label| labeling.positions.iter().find(|(found, _)| *found == label).map(|(_, position)| *position);
-    let mut ordered: Vec<(Option<u32>, &ColumnName)> = columns.iter().map(|column| (position(column.label), &column.name)).collect();
-    ordered.sort_by_key(|(position, _)| *position);
-    Columns::of_names(ordered.into_iter().map(|(_, name)| name.clone()))
-}
-
-/// The columns of a chosen relation: the row's, in the order of the
-/// `for` clause, then the candidate's, in their canonical positions,
-/// `docs/arclog/constraints.md#choose`.
-fn choose_columns(choose: &Choose, writer: &Writer<'_>) -> Columns {
-    let labeling = canonical_labeling(LabelScope::Choose(choose), writer, &mut SearchBudget::new());
-    let rows = choose.rows.iter().flat_map(|rows| rows.columns.iter()).map(|column| column.name.clone());
-    let candidate = ordered(&choose.candidate_columns, &labeling);
-    Columns::of_names(rows.chain(candidate.names().cloned()))
-}
+#[path = "build_content.rs"]
+mod content;
