@@ -8,11 +8,6 @@
 //! place, and no other. The representations and programs-as-values stages
 //! have no example of their own: the other stages' end checks run their
 //! bodies.
-//!
-//! The harness takes the corpus directory as an argument, and no test reads
-//! the corpus: each stage's end check over the corpus is a run of its own
-//! example under `engine/arclog/examples/`, which takes the directory on its
-//! command line, as the crate's module comment lists them.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -72,8 +67,7 @@ pub enum SolverResult {
 
 /// The Python lint's report over the corpus: one line
 /// `<path>:<line>: <check>: <message>` per error, then a summary that the
-/// parse skips. The examples that check the files the lint passes, and the
-/// one that compares the two lints, read it through this one parse.
+/// parse skips.
 #[derive(Clone, Debug, Default)]
 pub struct LintReport {
     /// Each error of the report, in the report's order.

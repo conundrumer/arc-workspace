@@ -140,9 +140,7 @@ pub struct GraphRelation {
 
 /// The types the type check infers for a checked case program: the type of
 /// each label of each clause, and the type of each column of each relation.
-/// The types are static: a row has no type tag, so the evaluator and the
-/// writer read each column's interpretation here, through
-/// [`crate::terms::Term::decode`].
+/// The types are static: a row has no type tag.
 ///
 /// `0` takes the type of the label or the column it stands at, so it has no
 /// entry of its own.

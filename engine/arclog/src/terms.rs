@@ -12,9 +12,6 @@
 //! rule of the checker refuses `<`, `<=`, `>` and `>=` on every type but
 //! `number`, and the types make that rule hold by construction: a Color, an
 //! orientation value, an Ident, a Box or an Example has no public order.
-//! Within the crate, a writer that gives a set in a fixed order of the
-//! encodings reads `TermId::encoding`, which is crate-private, as
-//! `Color::digit` is.
 
 
 #![allow(unused_variables, dead_code)]

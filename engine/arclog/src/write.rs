@@ -61,10 +61,10 @@ pub fn write_synthesized(program: &Node<Program>, registry: &Registry) -> String
 /// The numbers a writer gives the Idents it writes, private to the crate's
 /// writers, since a number is an order of encodings.
 ///
-/// The Idents are numbered by the order of their contents' encodings, from
-/// the inside out. A value read from a file is written as it was read, and
-/// the other Idents of that type in the file are numbered after the largest
-/// such value.
+/// The Idents are numbered by the order of their contents' encodings, which
+/// `TermId::encoding` gives, from the inside out. A value read from a file
+/// is written as it was read, and the other Idents of that type in the file
+/// are numbered after the largest such value.
 #[derive(Clone, Debug, Default)]
 pub struct IdentNumbering {
     numbers: crate::hash::StableHashMap<crate::terms::Ident, u32>,

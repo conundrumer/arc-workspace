@@ -1,8 +1,10 @@
 //! The engine's lint over a solver. It reads each file once, resolves each
-//! case program, and then runs every check, and it reports each error once
-//! per place in the file, with the cases it holds in. Each form's check runs
-//! once per [`super::CheckCacheKey`], so the cases that share a form share
-//! its check.
+//! case program, and then runs every check over what the reader and the
+//! resolver could make of their input, as the Python lint does. It reports
+//! each error the engine's checks find once per place in the file, at the
+//! place the Python lint reports it, with the cases it holds in. Each form's
+//! check runs once per [`super::CheckCacheKey`], so the cases that share a
+//! form share its check.
 //!
 //! The lint maps each [`super::Refusal`] to the places of its node: the
 //! refusal's path mapped from the form's canonical order to its source order

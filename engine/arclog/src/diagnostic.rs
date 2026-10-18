@@ -27,11 +27,8 @@ pub enum Severity {
     Alert,
 }
 
-/// A value with the diagnostics found as it was made. A reader or the
-/// resolver gives what it could make of its input with the diagnostics of
-/// the rest, so that the lint runs every check over the rest, as the Python
-/// lint does, and reports each error the engine's checks find, at the place
-/// the Python lint reports it.
+/// A value with the diagnostics found as it was made: what a reader or the
+/// resolver could make of its input, with the diagnostics of the rest.
 #[derive(Clone, Debug)]
 pub struct WithDiagnostics<T> {
     pub value: T,
