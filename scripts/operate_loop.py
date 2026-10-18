@@ -27,6 +27,7 @@ from file_reads import held_paths, stats_stand_but
 from relay_reads import session_id
 from run_reads import agent_type
 from state_assembly import read_state, write_due_since
+from state_reads import partial
 from transcripts import find
 
 from operations import briefs, order, plan, ticket_stall
@@ -264,9 +265,12 @@ def operator_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
     before it launches an analyst on a step marked `reread`. A Bash step
     the command runs itself, and it reads the state once each Bash run of
     the session's journal ended (`ran`), so that the read holds that run's
-    moves. After each read, it writes the session's record of the times
-    from which a step has been due (`ticket_stall.due_times`) for the next
-    read. Where a run has not ended by `deadline`, the step is the wait."""
+    moves. A Bash step planned at a partial read (`state_reads.partial`)
+    is the output, with no run, so the full read `waited` makes after it
+    plans again and runs the Bash step it gives. After each read, it
+    writes the session's record of the times from which a step has been
+    due (`ticket_stall.due_times`) for the next read. Where a run has not
+    ended by `deadline`, the step is the wait."""
     here = tree_reads.scratch(session_id())
     while True:
         if not ran(here, deadline):
@@ -274,7 +278,7 @@ def operator_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
         state, watch = read_state(me)
         write_due_since(here, ticket_stall.due_times(state))
         step = plan.next_step(state, watch)
-        if isinstance(step, Bash):
+        if isinstance(step, Bash) and not partial():
             step_journal.start_run(here, step, me, state.main_tree, time.time())
             continue
         if isinstance(step, Launch) and step.reread:

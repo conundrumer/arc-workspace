@@ -111,6 +111,10 @@ _stands: "tuple[ReadInfo, Callable[[Call], bool]] | None" = None
 arguments the test holds for is taken as up to date at the state being
 opened, with no run (`stand_next`)."""
 
+_partial = False
+"""Whether `bring_up` let some held source stand at the state `new_state`
+opened last (`partial`)."""
+
 _marked_late: list[Held] = []
 """Each held read marked after a read reached it at this state, whose
 dependents are marked again at the next state."""
@@ -127,7 +131,7 @@ def new_state() -> float:
     after the sources it rests on, and each one whose result is not its
     held one marks each held read that rests on it, transitively, apart from
     the sources `stand_next` gives."""
-    global _state, _marking, _stands
+    global _state, _marking, _stands, _partial
     kept_reads.flush()
     last = _state
     _state += 1
@@ -150,6 +154,7 @@ def new_state() -> float:
     global _opened
     _opened = time.time()
     _marking = True
+    _partial = False
     try:
         for h in list(_held):
             bring_up(h)
@@ -168,6 +173,12 @@ def stand_next(stands: tuple[Callable[..., Any], Callable[["Call"], bool]] | Non
     _stands = None if stands is None else (_reads[name_of(stands[0])], stands[1])
 
 
+def partial() -> bool:
+    """Whether the state `new_state` opened last is a partial one: one at
+    which `stand_next` let some held source stand."""
+    return _partial
+
+
 def held_calls(read: Callable[..., Any]) -> list["Call"]:
     """The arguments of each held read of the `state_cache` read `read`."""
     return [h.call for h in _reads[name_of(read)].held.values()]
@@ -182,10 +193,12 @@ def bring_up(source: Held) -> None:
     """Bring the held source `source` up to date at this state, after each
     source it rests on: a source whose read fails stays as held, and marks
     each held read that rests on it."""
+    global _partial
     if not source.source or source.state == _state or source not in _held:
         return
     if _stands is not None and source.read is _stands[0] and _stands[1](source.call):
         source.state = _state
+        _partial = True
         return
     for below in belows(source.made):
         bring_up(below)
