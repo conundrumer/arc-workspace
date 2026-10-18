@@ -36,13 +36,13 @@
     + xref: src/controlled_markdown/__main__.py:main
 
 # Compare with the before side
-- This part applies where your brief asks for a comparison with what the tree before the change gives, the before side: [The before side](prompts/agents/code-editor/before-side.md).
+- This part applies where your brief asks for a comparison of outputs with what the tree before the change gives, the before side, on a change not for speed: [The before side](prompts/agents/code-editor/before-side.md).
 
 ## Make the before side
 - Where nothing records the before side, make it.
 
 ## Make the comparison
-- Make each comparison and each timing your brief asks for.
+- Make each comparison your brief asks for.
 
 # Run the gate
 - Where your brief, or a finding of your checks, gives accepted gate outputs for you to write, read [Gate](prompts/agents/notes/worktree.md#gate), and run the gate as it gives.

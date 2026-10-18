@@ -2,7 +2,7 @@
 * comment: when editing this doc
     - The code editor receives this document from the step command as it enters the before side, once it has written the code and reviewed its diff.
     - Acts, each with its section:
-        - Making the before side and comparing and timing against it: [The before side](#the-before-side).
+        - Making the before side and comparing against it: [The before side](#the-before-side).
 
 # The before side
 - Where your brief or a file records the before side, compare against that record, and run nothing to make the before side.
