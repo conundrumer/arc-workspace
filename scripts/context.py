@@ -82,11 +82,12 @@ HELP = mctx("""
             - The commit's readers are the ones its own `contexts` lists.
         - A walk of links starts at a link in the context to a document of the set `[tool.controlled_markdown]` in `pyproject.toml` names, and each later link stands in the target of the one before, on either side.
             - A link that names no heading targets the whole document, and a link to another file ends no walk.
+            - For `agent <name>`, a walk on a side where that agent has a checklist, `prompts/agents/<name>/checklist.md`, starts at that checklist too, as a whole document.
         - Under a reader's line, an indented line names each section a walk from its context, on either side, reaches, whose text the change alters, as the checkout's code renders that section on each side, a section a side lacks as empty.
             - A section is left out where the reader's context diff already removes and adds each of its changed lines.
             - A section that lies, by heading depth in its document on each side that has it, within another section or the whole document listed for that reader is left out too.
         - After those lines, one indented line `<target> via <source>` stands for each link on a walk from the context, on either side, to such a section, a section left out within another included, once for that reader, sorted.
-            - A line of `<source>` links to `<target>`, and `<source>` is `context` where the link stands in the context.
+            - A line of `<source>` links to `<target>`, and `<source>` is `context` where the link stands in the context, and for the step into an agent's checklist.
         - The line of a reader whose context is the same on both sides and leads by links to such a section ends in `(linked)`.
     - `context <reader> [args]` prints that reader's context, each part under a `==== <what follows> ====` line and one blank line, then the part's text, where a definition printed above stands as its `==== <path>, the definition printed above ====` line alone.
     - `context --at <commit> <reader> [args]` prints that context as the commit's tree renders it, with the commit's own code.

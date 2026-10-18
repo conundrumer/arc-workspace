@@ -18,7 +18,7 @@ from handbook.paths import DOCUMENTS_ROOT
 
 class WalkStart(StrEnum):
     """The text a walk of links starts from, as the source a link line gives
-    for a link that stands in it."""
+    for a first step of the walk (`Start`)."""
 
     CONTEXT = "context"
     """A reader's context."""
@@ -40,9 +40,19 @@ class LinkTarget:
 
 
 @dataclass(frozen=True)
+class Start:
+    """Where a walk of links on one side starts: the text whose links are
+    its first steps, and the targets it steps to besides them, each as a
+    link that stands in that text."""
+
+    text: str
+    targets: tuple[LinkTarget, ...] = ()
+
+
+@dataclass(frozen=True)
 class Link:
-    """A link from the text of `source`, None where the link stands in the
-    text a walk of links starts from, to `target`."""
+    """A link from the text of `source` to `target`, with `source` None
+    where the link is a first step of a walk (`Start`)."""
 
     source: LinkTarget | None
     target: LinkTarget
@@ -91,6 +101,11 @@ class _Side:
         if file not in self.documents:
             return None
         return LinkTarget(file.relative_to(self.root.resolve()), ident)
+
+    def document(self, file: Path) -> LinkTarget | None:
+        """The target of the whole document at `file`; None where it is no
+        document of the set."""
+        return self._known(file.resolve(), "")
 
     def target(self, path: str, ident: str) -> LinkTarget | None:
         """The target of a link with `path` and `ident` in a reader's
@@ -184,17 +199,17 @@ class _Side:
         rendering = self._rendering(target)
         return [] if rendering is None else rendering[1]
 
-    def _firsts(self, context: str) -> list[LinkTarget]:
-        """The targets the links in `context` name, each once, in the order
-        the context first links them."""
-        found = (self.target(path, ident) for path, ident in _text_links(context))
-        return list(dict.fromkeys(t for t in found if t is not None))
+    def _firsts(self, start: Start) -> list[LinkTarget]:
+        """The targets the links in the text of `start` name, then its own
+        targets, each once, in the order they first come."""
+        found = (self.target(path, ident) for path, ident in _text_links(start.text))
+        return list(dict.fromkeys([*(t for t in found if t is not None), *start.targets]))
 
-    def reached(self, context: str) -> list[LinkTarget]:
-        """Each target a chain of links leads `context` to: a chain's first
-        link stands in the context, and each later one in the text of the
-        target of the one before."""
-        seen = dict.fromkeys(self._firsts(context))
+    def reached(self, start: Start) -> list[LinkTarget]:
+        """Each target a chain of links leads `start` to: a chain's first
+        link stands in its text or is one of its targets, and each later
+        one stands in the text of the target of the one before."""
+        seen = dict.fromkeys(self._firsts(start))
         queue: deque[LinkTarget] = deque(seen)
         while queue:
             for after in self.links(queue.popleft()):
@@ -203,12 +218,12 @@ class _Side:
                     queue.append(after)
         return list(seen)
 
-    def leading(self, context: str, goals: set[LinkTarget]) -> set[Link]:
-        """Each link that stands on a walk of links from `context` to a
-        target in `goals`, a walk that may pass a target twice: a link in
-        the context or in the text of a target `reached` gives, whose
-        target is a goal or leads by links to one."""
-        reached = self.reached(context)
+    def leading(self, start: Start, goals: set[LinkTarget]) -> set[Link]:
+        """Each link that stands on a walk of links from `start` to a
+        target in `goals`, a walk that may pass a target twice: a first
+        link of `start` or a link in the text of a target `reached` gives,
+        whose target is a goal or leads by links to one."""
+        reached = self.reached(start)
         into: dict[LinkTarget, list[LinkTarget]] = {}
         for source in reached:
             for after in self.links(source):
@@ -220,7 +235,7 @@ class _Side:
                 if source not in toward:
                     toward.add(source)
                     queue.append(source)
-        return ({Link(None, t) for t in self._firsts(context) if t in toward}
+        return ({Link(None, t) for t in self._firsts(start) if t in toward}
                 | {Link(source, after) for source in reached
                    for after in self.links(source) if after in toward})
 
@@ -252,13 +267,13 @@ def _changed_lines(before: str, after: str) -> set[str]:
             and not line.startswith(("+++", "---"))}
 
 
-def linked_changes(before: str, after: str, then: _Side,
+def linked_changes(before: Start, after: Start, then: _Side,
                     now: _Side) -> list[LinkedChange]:
-    """Each link target a reader with the context `before` at the commit
-    and `after` in the checkout reaches on either side, whose text differs
+    """Each link target a walk from `before` at the commit and from
+    `after` in the checkout reaches on either side, whose text differs
     between the sides, in target order, other than the ones
     `scripts/context.py` `HELP` gives as left out, before `folded`."""
-    shown = _changed_lines(before, after)
+    shown = _changed_lines(before.text, after.text)
     found: list[LinkedChange] = []
     for target in sorted(set(now.reached(after)) | set(then.reached(before))):
         then_text, now_text = then.text(target) or "", now.text(target) or ""

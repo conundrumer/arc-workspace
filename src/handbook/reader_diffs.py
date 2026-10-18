@@ -7,12 +7,7 @@ may hold them at, or from the texts it was given at its launch."""
 from __future__ import annotations
 
 import difflib
-import fcntl
-import hashlib
-import os
 import re
-import subprocess
-import sys
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
@@ -20,14 +15,15 @@ from enum import StrEnum
 from pathlib import Path
 
 from engine import checkout
-from engine.memo import read_or_make
 from controlled_markdown import form, markdown_heading_lines, mctx
-from handbook.linked import (Link, LinkedChange, LinkTarget, WalkStart, _Side, folded,
-                            link_lines, linked_changes, sides)
+from handbook.checklist import checklist_file
+from handbook.linked import (Link, LinkedChange, LinkTarget, Start, WalkStart, _Side,
+                            folded, link_lines, linked_changes, sides)
 from handbook.contexts import MARKER, marked_section
 from handbook.kept_runs import run_in
 from handbook.kept_trees import tree_at
 from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT
+from handbook.reader_names import ReaderName
 from handbook.readers import (calls_of, context_command, context_text, reader_calls,
                               reader_named)
 
@@ -112,20 +108,42 @@ class _TextDiff:
     start: WalkStart
 
 
-def _leading(then: _Side, now: _Side, before: str, after: str,
+def _start(side: _Side, text: str, call: tuple[str, list[str]] | None) -> Start:
+    """Where a walk on `side` starts: at `text`, the context of the reader
+    `call` gives, or the project instructions where `call` is None; and,
+    for an `agent <name>` reader whose checklist (`checklist_file`) is a
+    file on that side, at that checklist as well, as a whole document."""
+    if call is None or call[0] != ReaderName.AGENT:
+        return Start(text)
+    target = side.document(checklist_file(call[1][0], side.root))
+    return Start(text, () if target is None else (target,))
+
+
+def _starts(then: _Side, now: _Side, before: str, after: str,
+            call: tuple[str, list[str]] | None) -> tuple[Start, Start]:
+    """The starts of the walks from `before` on `then` and from `after` on
+    `now` (`_start`)."""
+    return _start(then, before, call), _start(now, after, call)
+
+
+def _leading(then: _Side, now: _Side, before: Start, after: Start,
              goals: set[LinkTarget]) -> set[Link]:
     """The links on the walks to `goals` on either side: from `before` on
     `then`, and from `after` on `now`."""
     return then.leading(before, goals) | now.leading(after, goals)
 
 
-def _text_diff(head: str, before: str, after: str, tree: Path,
-               commit: str, start: WalkStart) -> _TextDiff:
+def _text_diff(call: tuple[str, list[str]] | None, before: str, after: str, tree: Path,
+               commit: str) -> _TextDiff:
     """The diff of a text from `before`, at `commit`, whose tree is `tree`,
-    to `after`, in the checkout."""
+    to `after`, in the checkout: the context of the reader `call` gives,
+    or the project instructions where `call` is None."""
     then, now = sides(tree, commit)
-    linked = linked_changes(before, after, then, now)
-    leading = {c.target: _leading(then, now, before, after, {c.target}) for c in linked}
+    starts = _starts(then, now, before, after, call)
+    linked = linked_changes(*starts, then, now)
+    leading = {c.target: _leading(then, now, *starts, {c.target}) for c in linked}
+    head, start = ((str(PROJECT_INSTRUCTIONS), WalkStart.INSTRUCTIONS) if call is None
+                   else (context_command(*call), WalkStart.CONTEXT))
     return _TextDiff(head, commit, before, after, linked, commit, leading, start)
 
 
@@ -180,8 +198,7 @@ def context_diff(commit: str, reader: str, args: list[str]) -> str:
     with the sections it reaches by links, as `_diff_text` gives it."""
     with tree_at(commit) as tree:
         before, after = _context_sides(tree, commit, reader, args)
-        return _diff_text([_text_diff(context_command(reader, args),
-                                      before, after, tree, commit, WalkStart.CONTEXT)])
+        return _diff_text([_text_diff((reader, args), before, after, tree, commit)])
 
 
 def descends(tree: Path, commit: str, ancestor: str) -> bool:
@@ -215,15 +232,14 @@ def update_diff(context_commit: str, instructions_commit: str, reader: str,
         instructions_tree = (context_tree if instructions_commit == context_commit
                              else stack.enter_context(tree_at(instructions_commit)))
         before, after = _context_sides(context_tree, context_commit, reader, args)
-        context = _text_diff(context_command(reader, args), before, after,
-                             context_tree, context_commit, WalkStart.CONTEXT)
+        context = _text_diff((reader, args), before, after, context_tree,
+                             context_commit)
         linked_tree = context_tree if linked == context_commit else instructions_tree
         before, linked_before, after = (
             _text_or_empty(root / PROJECT_INSTRUCTIONS)
             for root in (instructions_tree, linked_tree, DOCUMENTS_ROOT))
         instructions = replace(
-            _text_diff(str(PROJECT_INSTRUCTIONS), linked_before, after,
-                       linked_tree, linked, WalkStart.INSTRUCTIONS),
+            _text_diff(None, linked_before, after, linked_tree, linked),
             commit=instructions_commit, before=before)
     return _diff_text([context, instructions])
 
@@ -258,15 +274,14 @@ def held_update_diff(held_context: str, held_instructions: str, launch: str,
                 else stack.enter_context(tree_at(launch)))
         rendered, after = _context_sides(tree, launch, reader, args)
         context = replace(
-            _text_diff(context_command(reader, args), _held_context(rendered, held_context),
-                       after, tree, launch, WalkStart.CONTEXT),
+            _text_diff((reader, args), _held_context(rendered, held_context),
+                       after, tree, launch),
             commit=HELD)
         launch_text, after_text = (_text_or_empty(root / PROJECT_INSTRUCTIONS)
                                    for root in (tree, DOCUMENTS_ROOT))
         before = held_instructions if held_instructions.endswith("\n") else held_instructions + "\n"
         instructions = replace(
-            _text_diff(str(PROJECT_INSTRUCTIONS), launch_text, after_text, tree,
-                       launch, WalkStart.INSTRUCTIONS),
+            _text_diff(None, launch_text, after_text, tree, launch),
             commit=HELD, before=before)
     return _diff_text([context, instructions])
 
@@ -355,7 +370,8 @@ def contexts_diff(commit: str) -> str:
             command = context_command(reader, args)
             before, after = _side_contexts((reader, args), rendered,
                                            change is not ReaderChange.REMOVED)
-            linked = linked_changes(before, after, then_side, now_side)
+            starts = _starts(then_side, now_side, before, after, (reader, args))
+            linked = linked_changes(*starts, then_side, now_side)
             if change is ReaderChange.CHANGED and before == after:
                 if not linked:
                     continue
@@ -363,7 +379,7 @@ def contexts_diff(commit: str) -> str:
             mark = "" if change is ReaderChange.CHANGED else f" ({change})"
             out.append(f"{command}{mark}\n")
             goals = {c.target for c in linked}
-            leading = _leading(then_side, now_side, before, after, goals)
+            leading = _leading(then_side, now_side, *starts, goals)
             out += [f"    {c.target}\n" for c in folded(linked)]
             out += [f"    {line}\n" for line in
                     link_lines((link, WalkStart.CONTEXT) for link in leading)]
