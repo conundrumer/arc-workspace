@@ -14,7 +14,7 @@
 //! so the command runs from the root of the tree.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
@@ -33,6 +33,8 @@ use arclog::hash::StableHashMap;
 use arclog::terms::{Color, Constant, Example, Ident, Term};
 use serde_json::Value;
 
+use crate::select::{read_json, selected};
+
 const USAGE: &str = "usage: arclog-cli compare <snapshot-dir> <corpus-dir> <tasks-dir> [<task_id> ...] [--reads <name> ...]";
 
 /// The bound on the bytes of the task session of each solver's run.
@@ -44,7 +46,7 @@ pub fn run(args: &[String]) -> ExitCode {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     };
-    let selected = match arguments.selected() {
+    let selected = match selected(&arguments.task_ids, &arguments.reads, &arguments.snapshot.join("uses.json")) {
         Ok(selected) => selected,
         Err(message) => {
             eprintln!("{message}");
@@ -97,28 +99,6 @@ impl Arguments {
         let (snapshot, corpus, tasks) = (positional.next()?, positional.next()?, positional.next()?);
         Some(Arguments { snapshot: snapshot.into(), corpus: corpus.into(), tasks: tasks.into(), task_ids: positional.collect(), reads })
     }
-
-    /// The task ids of the solvers to run, `None` for every solver.
-    fn selected(&self) -> Result<Option<BTreeSet<String>>, String> {
-        if self.task_ids.is_empty() && self.reads.is_empty() {
-            return Ok(None);
-        }
-        let mut ids: BTreeSet<String> = self.task_ids.iter().cloned().collect();
-        if !self.reads.is_empty() {
-            let uses = read_json(&self.snapshot.join("uses.json"))?;
-            for name in &self.reads {
-                let stems = uses.get(name).and_then(Value::as_array).ok_or_else(|| format!("`uses.json` gives no solver for `{name}`"))?;
-                ids.extend(stems.iter().filter_map(Value::as_str).map(str::to_owned));
-            }
-        }
-        Ok(Some(ids))
-    }
-}
-
-/// The JSON of the file at `path`.
-fn read_json(path: &Path) -> Result<Value, String> {
-    let text = std::fs::read_to_string(path).map_err(|error| format!("{} does not read: {error}", path.display()))?;
-    serde_json::from_str(&text).map_err(|error| format!("{} is no JSON: {error}", path.display()))
 }
 
 /// The snapshot's key of the case `name`: `concept` for the case of a

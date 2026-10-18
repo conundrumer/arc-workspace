@@ -10,8 +10,8 @@ How each step of the [build order](overview.md#build-order) is checked against t
 
 ## Order of a check run
 
-- After each change, the solvers that use what it touches run first. A map from each construct, lib relation and component to the files that use it gives those solvers. The map comes from the survey's pass over the files.
-- Then the whole corpus runs in the background.
+- After each change, the check runs on the solvers that use what the change touches, and on every solver only where what it touches reaches every solver. A map from each construct, lib relation and component to the files that use it gives those solvers. The map comes from the survey's pass over the files.
+- `arclog-cli check-diff` compares the checker's diagnostics on those solvers with the base engine's, and runs no check whose result `.cache/check-diff/` holds for the same engine sources and solver files.
 
 ## Mismatch report
 

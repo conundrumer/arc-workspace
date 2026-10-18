@@ -4,16 +4,19 @@
 //! The first argument names a subcommand, and each subcommand stands in a
 //! file of its own, which reads the arguments after its name.
 
+mod check_diff;
 mod compare;
 mod determinism;
 mod lib_compare;
+mod select;
 mod speed;
 
 use arclog::algebra::tables::OrientationTables;
 use std::process::ExitCode;
 
 /// Each subcommand, by the name the first argument gives it.
-const SUBCOMMANDS: [(&str, fn(&[String]) -> ExitCode); 4] = [
+const SUBCOMMANDS: [(&str, fn(&[String]) -> ExitCode); 5] = [
+    ("check-diff", check_diff::run),
     ("compare", compare::run),
     ("lib-compare", lib_compare::run),
     ("determinism", determinism::run),
