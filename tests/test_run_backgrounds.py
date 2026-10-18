@@ -14,7 +14,7 @@ from tests.conftest import script
 scripts_importable()
 run_backgrounds = script("run_backgrounds")
 state_reads = sys.modules["state_reads"]
-Refused = sys.modules["transcript_entries"].Refused
+Refused = sys.modules["transcript_snapshots"].Refused
 
 LISTING = "\n".join(["p10", "fcwd", "k3", "n/d", "f1", "k1", "n/d/held.output",
                      "f2", "k0", "n/d/gone.output", "f3", "nlocalhost:5000", ""])

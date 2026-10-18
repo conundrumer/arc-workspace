@@ -18,8 +18,8 @@ from file_reads import is_file
 from state_reads import DERIVED, Kept, state_cache
 from transcripts import (agent_id, chain, first_parent, is_subagent, main_transcript,
                          session_directory, session_subagents)
-from transcript_entries import (Entry, Refused, blocks, epoch, meta_path, read_entries,
-                                transcript_meta)
+from transcript_entries import blocks, epoch, meta_path, read_entries, transcript_meta
+from transcript_snapshots import Entry, Refused
 
 UNKNOWN_TYPE = mctx("the agent type of `{path}` is unknown: its .meta.json is "
                     "absent or gives none")

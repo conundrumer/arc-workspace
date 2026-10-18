@@ -8,7 +8,7 @@ from run_reads import (run_entries,
                        session_transcripts)
 from file_reads import mtime
 from state_reads import DERIVED, state_cache
-from transcript_entries import Entry
+from transcript_snapshots import Entry
 
 
 def changed_since(sessions: Iterable[Path], since: float) -> list[Path]:

@@ -14,6 +14,7 @@ from tests.conftest import script
 scripts_importable()
 script("audit_window")
 audit_window = sys.modules["audit_window"]
+audit_records = sys.modules["audit_records"]
 kept_reads = sys.modules["kept_reads"]
 state_reads = sys.modules["state_reads"]
 token_prices = sys.modules["token_prices"]
@@ -32,7 +33,7 @@ def new_process() -> None:
     """Write the records, and drop what this process holds, as a new
     process starts with none."""
     kept_reads.flush()
-    audit_window._records.clear()
+    audit_records._records.clear()
     state_reads._held.clear()
     for info in state_reads._reads.values():
         info.held.clear()

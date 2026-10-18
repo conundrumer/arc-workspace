@@ -73,7 +73,7 @@ def test_stale(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert runs == ["words", "many"]
 
 
-KEPT_BY_HAND = ("audit_window",)
+KEPT_BY_HAND = ("audit_records",)
 """The modules that keep records through `kept_reads.store()` with no
 `state_cache` read of their own."""
 

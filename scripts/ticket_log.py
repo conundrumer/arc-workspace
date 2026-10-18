@@ -21,7 +21,7 @@ from ticketing.times import stamp_time, utc_stamp
 from ticketing.vocabulary import WAIT_STATUSES, Domain, Kind, Note, Resolution, Status, Verdict, Wait, note_opening
 from file_reads import file_text, stat_of
 from state_reads import state_cache
-from transcript_entries import Refused
+from transcript_snapshots import Refused
 
 AGENT_ID = re.compile(AGENT_ID_FORM)
 

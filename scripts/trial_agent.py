@@ -27,7 +27,8 @@ scripts_importable()
 from claude_config import config_dir  # noqa: E402
 from run_reads import text_of, tool_results  # noqa: E402
 from ticket_numbers import SESSION_VAR, TicketNumber, ticket_number  # noqa: E402
-from transcript_entries import Refused, blocks, entries_forward, print_refused  # noqa: E402
+from transcript_entries import blocks, entries_forward  # noqa: E402
+from transcript_snapshots import Refused, print_refused  # noqa: E402
 from transcripts import find  # noqa: E402
 from trial_bounds_check import bounds  # noqa: E402
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from operator_reads import AgentsRead, ended_by, ended_elsewhere, kept
 from operator_transcript import read_operator
 from transcripts import find
-from transcript_entries import Refused
+from transcript_snapshots import Refused
 
 from controlled_markdown import mctx
 from operations.change_agents import on_change

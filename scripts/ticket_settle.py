@@ -11,7 +11,7 @@ from ticket_log import read_ticket
 from ticket_numbers import TicketNumber, ticket_number
 from ticketing.exits import Exit, exit_of
 from ticketing.vocabulary import Domain, Kind, Status
-from transcript_entries import Refused
+from transcript_snapshots import Refused
 
 def settled_elsewhere(tickets: Path, path: Path, name: TicketName) -> bool:
     """Whether the list of `to-settle` leaves out the open ticket at

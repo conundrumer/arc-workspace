@@ -22,7 +22,7 @@ from ticket_numbers import SESSIONS, indexes, link_new, session_index, session_l
 from ticketing.vocabulary import SETTLED, Status
 from file_reads import stat_read
 from transcripts import mains_named, project_dirs, session_directory, session_subagents
-from transcript_entries import Refused
+from transcript_snapshots import Refused
 
 MAIN = "main"
 

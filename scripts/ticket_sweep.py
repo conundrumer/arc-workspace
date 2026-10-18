@@ -23,7 +23,8 @@ from ticketing.times import utc_stamp
 from run_reads import agent_type
 from ticketing.vocabulary import Kind, Status, Verdict, last_move_into
 from transcripts import chain, find
-from transcript_entries import Refused, own_range, snapshot
+from transcript_entries import own_range
+from transcript_snapshots import Refused, snapshot
 from tree_reads import main_tree
 
 UNEXERCISED_DAYS = 7

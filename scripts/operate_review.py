@@ -13,7 +13,7 @@ from state_assembly import read_state  # noqa: E402
 from agent_reports import parent_type  # noqa: E402
 from run_reads import parent_id  # noqa: E402
 from transcripts import find  # noqa: E402
-from transcript_entries import Refused  # noqa: E402
+from transcript_snapshots import Refused  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 from ticket_files import ticket_path  # noqa: E402
 from ticket_numbers import parsed_number  # noqa: E402

@@ -13,7 +13,8 @@ from run_reads import (blocks, parent_label, results_by_call, run_entries,
                        run_sessions)
 from state_reads import DERIVED, Kept, state_cache
 from transcripts import chain
-from transcript_entries import Entry, epoch, fold, read_entries
+from transcript_entries import epoch, fold, read_entries
+from transcript_snapshots import Entry
 from agent_deliveries import Delivery, delivery
 from session_changes import changed_with
 

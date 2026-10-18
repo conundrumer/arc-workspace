@@ -15,7 +15,7 @@ from ticket_numbers import TICKET_NUMBER, TicketNumber, is_reserved, matched_num
 from ticketing.vocabulary import Domain, Status
 from file_reads import names_in
 from state_reads import DERIVED, state_cache
-from transcript_entries import Refused
+from transcript_snapshots import Refused
 
 FIELD = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 """A field of a ticket's name: kebab words, with no `_`, which separates

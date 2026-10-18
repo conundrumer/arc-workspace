@@ -17,7 +17,8 @@ from controlled_markdown import mctx
 from ticket_vocabulary import ticked
 from ticketing.vocabulary import COUNT, TICKET_NUMBER
 from transcripts import find
-from transcript_entries import Refused, forked_from
+from transcript_entries import forked_from
+from transcript_snapshots import Refused
 
 IDS = "ids"
 """The directory under `tickets/` that holds one empty file per reserved

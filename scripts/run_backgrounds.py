@@ -1,5 +1,9 @@
-"""The calls of a run that run in the background, and the time each
-ended, with the read of the files a running process holds open."""
+"""The calls of a run that run in the background, the time each ended,
+and whether one may still run, with the read of the files a running
+process holds open. `may_still_run` is kept on disk
+(`state_reads.Kept.DISK`) in this module, which imports none of the
+modules that call it, so that a commit to those leaves its records
+standing (`kept_reads.code_of`)."""
 
 import subprocess
 from collections.abc import Iterable
@@ -8,10 +12,13 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from noted_reads import note_live, note_read
-from run_reads import BACKGROUND_TASK, blocks, in_background, notified, output_file
+from command_labels import AGENT_TOOLS
+from run_reads import (BACKGROUND_TASK, LaunchStatus, blocks, in_background, notified,
+                       output_file, run_entries, tool_calls)
 from file_reads import is_file, mtime, resolved
-from state_reads import state_cache
-from transcript_entries import Entry, Refused, epoch
+from state_reads import DERIVED, Kept, state_cache
+from transcript_entries import epoch
+from transcript_snapshots import Entry, Refused
 
 # The keys of a call's result that give an id a notification of the call
 # gives.
@@ -120,3 +127,22 @@ def open_files() -> OpenFiles:
             if links == "0":
                 gone.add(line[1:])
     return OpenFiles(frozenset(paths), frozenset(gone))
+
+
+@state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
+def may_still_run(path: Path, reached: frozenset[str], undecided: list[str]) -> bool:
+    """Whether a call the run at `path` backgrounded, other than a call of
+    `reached`, may still run. Only the lines that name such a call or its
+    ids are read, which spares `profile` the whole run where none still
+    runs."""
+    results = run_entries(path, {BACKGROUND_TASK, LaunchStatus.ASYNC_LAUNCHED.value})
+    calls = {str(b["tool_use_id"]) for e in results for b in blocks(e, "tool_result")
+             if b.get("tool_use_id")} - reached
+    if not calls:
+        return False
+    found = {c: b for c, b in backgrounds(results, tool_calls(run_entries(path, calls), AGENT_TOOLS),
+                                          undecided).items() if c in calls}
+    if not found:
+        return False
+    ids = set().union(*(b.ids for b in found.values()))
+    return None in background_ends(found, run_entries(path, ids)).values()

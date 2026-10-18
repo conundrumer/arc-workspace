@@ -16,7 +16,7 @@ from operator_reads import (
     stalled_reports,
 )
 from transcripts import find
-from transcript_entries import Refused
+from transcript_snapshots import Refused
 
 from operations.monitor import Watched
 from operations.plan import unknown_line

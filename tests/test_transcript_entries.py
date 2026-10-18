@@ -3,6 +3,7 @@ and its rewrites in place: a held read that misses a change gives a stale
 result, with no failure."""
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,7 @@ from tests.conftest import script
 scripts_importable()
 script("transcript_entries")
 transcript_entries = sys.modules["transcript_entries"]
+transcript_snapshots = sys.modules["transcript_snapshots"]
 state_reads = sys.modules["state_reads"]
 
 AGENT = "a0123456789abcdef"
@@ -28,7 +30,7 @@ def add(path: Path, *texts: str) -> None:
 
 def named(path: Path, words: set[str]) -> list[int]:
     state_reads.new_state()
-    snap = transcript_entries.snapshot(path)
+    snap = transcript_snapshots.snapshot(path)
     return transcript_entries.named_lines(snap, range(snap.count), frozenset(words))
 
 
@@ -198,3 +200,67 @@ def test_reads_after_rewrite(tmp_path: Path, count: int, texts: list[str]) -> No
 def add_entry(out: list[dict[str, Any]], _path: Path, _line: int, entry: dict[str, Any]) -> None:
     out.append(entry)
 
+
+
+def open_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
+    kept_reads = sys.modules["kept_reads"]
+    monkeypatch.setattr(kept_reads, "_store", None)
+    kept_reads.open_store(tmp_path / "store.sqlite")
+    return kept_reads
+
+
+def drop_held() -> None:
+    state_reads._held.clear()
+    for info in state_reads._reads.values():
+        info.held.clear()
+
+
+def contents(path: Path, naming: set[str]) -> list[Any]:
+    return [e["message"]["content"] for e in transcript_entries.read_entries(path, naming)]
+
+
+def test_kept_lines_in_a_later_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A later process whose kept record of the lines that hold a word
+    stands reads those lines from the transcript as it stands, and one
+    after the transcript grew reads the lines added too."""
+    kept_reads = open_store(tmp_path, monkeypatch)
+    path = tmp_path / "t.jsonl"
+    add(path, "x ZZTOP", "y", "z ZZTOP")
+
+    def later_process() -> list[Any]:
+        kept_reads.flush()
+        drop_held()
+        transcript_snapshots._read.clear()
+        kept_reads.open_store(kept_reads.store().path)
+        state_reads.new_state()
+        return contents(path, {"ZZTOP"})
+
+    assert later_process() == ["x ZZTOP", "z ZZTOP"]
+    assert later_process() == ["x ZZTOP", "z ZZTOP"]
+    add(path, "w ZZTOP")
+    assert later_process() == ["x ZZTOP", "z ZZTOP", "w ZZTOP"]
+
+
+def test_kept_lines_of_a_transcript_rewritten_in_place(tmp_path: Path,
+                                                       monkeypatch: pytest.MonkeyPatch) -> None:
+    """A process that still holds the snapshot of a transcript from before
+    it was written anew in place, at the same size, reads the lines of a
+    kept record another process made of the new text from that text."""
+    kept_reads = open_store(tmp_path, monkeypatch)
+    path = tmp_path / "t.jsonl"
+    add(path, "a ZZTOP", "b", "c ZZTOP")
+    state_reads.new_state()
+    assert contents(path, {"b"}) == ["b"]
+    held = transcript_snapshots._read[path]
+    later = path.stat().st_mtime_ns + 10**9
+    rewritten(path, 0, 3, ["x", "z", "y ZZTOP"])
+    os.utime(path, ns=(later, later))
+    drop_held()
+    transcript_snapshots._read.clear()
+    state_reads.new_state()
+    assert [c[:7] for c in contents(path, {"ZZTOP"})] == ["y ZZTOP"]
+    kept_reads.flush()
+    drop_held()
+    transcript_snapshots._read[path] = held
+    state_reads.new_state()
+    assert [c[:7] for c in contents(path, {"ZZTOP"})] == ["y ZZTOP"]

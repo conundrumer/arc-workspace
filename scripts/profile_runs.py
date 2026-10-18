@@ -33,7 +33,7 @@ from run_readings import print_readings  # noqa: E402
 from help_parts import print_help  # noqa: E402
 from token_prices import PRICES  # noqa: E402
 from transcripts import find, is_subagent, transcripts  # noqa: E402
-from transcript_entries import Refused, print_refused  # noqa: E402
+from transcript_snapshots import Refused, print_refused  # noqa: E402
 
 from profile_runs_help import HELP_VALUES, ISO_TIME, PARTS, PURPOSES, REPRICED, USAGE, HelpPart  # noqa: E402
 from under_runs import UNDER, runs_since  # noqa: E402

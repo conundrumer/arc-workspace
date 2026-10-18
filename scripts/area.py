@@ -17,7 +17,7 @@ scripts_importable()
 from ticket_paths import scope_paths, ticket_text  # noqa: E402
 from ticketing.references import names  # noqa: E402
 from ticket_reads import read_tickets  # noqa: E402
-from transcript_entries import Refused, print_refused  # noqa: E402
+from transcript_snapshots import Refused, print_refused  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 
 from operations.state import Ticket  # noqa: E402

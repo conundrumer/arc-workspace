@@ -7,7 +7,7 @@ from enum import StrEnum
 from controlled_markdown import mctx
 from operations.roles import Role
 from ticketing.vocabulary import COORDINATOR, EDITOR_KINDS, PASS_KINDS, REVIEW_KINDS, Kind
-from transcript_entries import Refused
+from transcript_snapshots import Refused
 
 
 class Filer(StrEnum):

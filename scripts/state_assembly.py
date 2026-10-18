@@ -34,7 +34,8 @@ from ticket_numbers import session_index, ticket_number
 from ticket_reads import read_tickets
 from ticket_settle import to_settle
 from transcripts import find
-from transcript_entries import Refused, entries_back
+from transcript_entries import entries_back
+from transcript_snapshots import Refused
 from tree_reads import (
     main_tree,
     scratch,

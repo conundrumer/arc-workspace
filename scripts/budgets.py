@@ -19,7 +19,7 @@ from run_records import Part, Run
 from run_reads import parent_id
 from run_store import RunStore
 from transcripts import agent_transcripts, is_subagent
-from transcript_entries import Refused
+from transcript_snapshots import Refused
 
 # The terms of the budget of a type or a role, which `profile_runs.py --help budget` states.
 BUDGET_FACTOR = 2

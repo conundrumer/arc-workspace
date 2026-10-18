@@ -11,7 +11,8 @@ from context_bound_hook import OPERATORS
 from open_agents import Listed, quiet_since
 from operator_reads import resumed_at
 from run_reads import bash_spans, repeated_runs, run_entries, same_since
-from transcript_entries import Entry, epoch
+from transcript_entries import epoch
+from transcript_snapshots import Entry
 
 from controlled_markdown import mctx
 from operations import monitor

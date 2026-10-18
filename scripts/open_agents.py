@@ -13,16 +13,15 @@ from agent_reports import (TURN_ENDED, Report, ReportKind, parent_transcripts, r
                            stopped_after)
 from agent_turns import has_ended, is_turn_entry, last_time, turn_after, turn_end
 from controlled_markdown import mctx
-from command_labels import AGENT_TOOLS
-from run_backgrounds import background_ends, backgrounds
+from run_backgrounds import may_still_run
 from run_profiler import profile
 from senders import is_interrupt_note
 from run_records import Run, Span
-from run_reads import (BACKGROUND_TASK, LaunchStatus, blocks, is_prompt, parent_label,
-                       run_entries, tool_calls)
+from run_reads import is_prompt, parent_label, run_entries
 from file_reads import mtime
 from state_reads import DERIVED, Kept, state_cache
-from transcript_entries import Entry, entries_back
+from transcript_entries import entries_back
+from transcript_snapshots import Entry
 from transcripts import agent_id, chain, is_subagent
 
 from operations.constants import BLOCK_SECONDS, stuck_reached
@@ -320,25 +319,6 @@ def own_work(n: Node, undecided: list[str]) -> list[str]:
                      for m in profiled(n.path, undecided).backgrounded
                      if m.call not in reached]
     return n.own
-
-
-@state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
-def may_still_run(path: Path, reached: frozenset[str], undecided: list[str]) -> bool:
-    """Whether a call the run at `path` backgrounded, other than a call of
-    `reached`, may still run. Only the lines that name such a call or its
-    ids are read, which spares `profile` the whole run where none still
-    runs."""
-    results = run_entries(path, {BACKGROUND_TASK, LaunchStatus.ASYNC_LAUNCHED.value})
-    calls = {str(b["tool_use_id"]) for e in results for b in blocks(e, "tool_result")
-             if b.get("tool_use_id")} - reached
-    if not calls:
-        return False
-    found = {c: b for c, b in backgrounds(results, tool_calls(run_entries(path, calls), AGENT_TOOLS),
-                                          undecided).items() if c in calls}
-    if not found:
-        return False
-    ids = set().union(*(b.ids for b in found.values()))
-    return None in background_ends(found, run_entries(path, ids)).values()
 
 
 @state_cache(DERIVED, notes="undecided")

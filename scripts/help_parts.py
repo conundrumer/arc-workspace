@@ -6,7 +6,7 @@ so that each print meets the thirty-line rule of
 from collections.abc import Callable, Mapping
 from enum import StrEnum
 
-from transcript_entries import print_refused
+from transcript_snapshots import print_refused
 
 from controlled_markdown import mctx
 

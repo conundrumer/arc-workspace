@@ -53,7 +53,7 @@ from ticketing.times import TIME_FORM  # noqa: E402
 from ticket_vocabulary import ticked  # noqa: E402
 from ticketing.vocabulary import (DEFECT_SECTIONS, MANY_IDEAS, Domain, Kind,  # noqa: E402
                                   Note, Resolution, Status, Verdict)
-from transcript_entries import Refused, print_refused  # noqa: E402
+from transcript_snapshots import Refused, print_refused  # noqa: E402
 
 # The `<target>` line: ticket 11-700, from the user's words, session
 # 2384db39, 2026-10-18T02:16:02Z: "Well I hope I have sufficiently expressed

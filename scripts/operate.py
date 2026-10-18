@@ -24,7 +24,7 @@ import kept_reads  # noqa: E402
 import step_journal  # noqa: E402
 from usage_limit import USAGE_STALE  # noqa: E402
 from agent_reports import RATE_LIMIT  # noqa: E402
-from transcript_entries import Refused  # noqa: E402
+from transcript_snapshots import Refused  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 from help_parts import print_help  # noqa: E402
 

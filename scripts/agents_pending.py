@@ -8,7 +8,8 @@ from pathlib import Path
 from agent_reports import Sign, can_report, entry_signs, latest_sign
 from run_reads import is_prompt, notified, run_sessions
 from state_reads import DERIVED, Kept, state_cache
-from transcript_entries import Entry, epoch, named_lines, own_range, parse, snapshot
+from transcript_entries import epoch, named_lines, own_range
+from transcript_snapshots import Entry, parse, snapshot
 from agent_launches import Launch, launched
 from agent_resumes import note_latest
 from session_changes import with_facts

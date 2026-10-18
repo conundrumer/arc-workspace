@@ -10,7 +10,7 @@ scripts_importable()
 from ticket_files import ticket_path  # noqa: E402
 from ticket_form import given_paths  # noqa: E402
 from ticket_numbers import ticket_number  # noqa: E402
-from transcript_entries import Refused  # noqa: E402
+from transcript_snapshots import Refused  # noqa: E402
 
 from operations.state import Ticket  # noqa: E402
 from operations.task_work import task_paths  # noqa: E402

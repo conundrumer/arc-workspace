@@ -10,7 +10,7 @@ from idle_sessions import main_wanted, read_sessions, take_main, want_main
 from relay_reads import run_index
 from run_reads import parent_id
 from transcripts import find
-from transcript_entries import Refused
+from transcript_snapshots import Refused
 from tree_reads import baseline, claims, commits, doc_reviews, restores, solvers, worktrees
 
 from controlled_markdown import mctx

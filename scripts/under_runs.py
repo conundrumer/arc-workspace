@@ -19,7 +19,8 @@ from open_agents import work_open
 from run_reads import BACKGROUND_TASK, agent_type, blocks, result_text, session_of
 from ticketing.times import utc_stamp
 from transcripts import agent_id, agent_transcripts, bare_id
-from transcript_entries import Entry, epoch, read_entries
+from transcript_entries import epoch, read_entries
+from transcript_snapshots import Entry
 
 from operations.batches import LEFT_OPEN, NO_RUN, RUNS_TAKEN, lines, read_under
 
