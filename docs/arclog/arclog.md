@@ -263,7 +263,7 @@ A read of a relation keyed by labels that are in scope joins on them without a k
 
 The first projection onto a type parameter binds it. A projection of one label binds the parameter to that label's type, and every site on the parameter takes one label. A projection of several sites binds it to a record with one field per site, named by the site's head, or by its label where the site is elided, and typed by its label. Every later site on the parameter names the fields it reads by projection, as [Sites](#sites) gives. `Key` is a type parameter like the others, bound by the key clause, whose `^` labels name its fields.
 
-An instance is per example when its key holds an Example label. It pools over the examples when its bodies read a relation with an Example column and no key site holds one.
+An instance is per example when its key holds an Example label. Otherwise it is per input when its bodies read `input`, or read without its Example column a relation that the case's reading derives by a `RULE` clause or an instance that is per input, and it pools over the examples in every other case. An `Unfold` instance's reads of its own outputs count toward neither kind.
 
 The instance's outputs are read as `<name>.<output>`, with the key's columns first and a parameter's columns in place of the parameter: `(&comps.component *P *Id)`, `(&area.size (:key *B) *N)`, `(&recolor.value (:key (:Col Col1)) (:v *Col2))`.
 
