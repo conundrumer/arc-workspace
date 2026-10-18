@@ -49,7 +49,8 @@
 - **Choice gloss.** The gloss of a choice is above its type, and nowhere else.
 - **Other branches.** Every other branch has at least one `@witness` line.
 - **Concept branch.** The concept branch is declared first in `Choice`, and in each field's type of a record-typed `Choice`.
-- **Branch witness lines.** A witness's nested lines are under the first branch that has it, and a later branch has the `@witness` line alone.
+- **Branch witness lines.** A witness's nested lines are under the first branch that has it, and a later branch has the `@witness` line alone, with the plausibility and verdict of the witness's first `@witness` line.
+    * comment: The rewording: ticket 9-892, the misread: the solvers of b190f7f5, b4a43f3b and c8b7cc0f each gave one witness one verdict under its first branch and another under a later one, and the coordinator, session 129de8fc, 2026-10-17T19:47:45Z, read this line as allowing it: "the rule I cited is about where a witness's nested lines stand, not about verdicts".
     - A branch nested under a constructor's field states only what differs from the branch it is under.
 
 ## Params
