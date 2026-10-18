@@ -12,7 +12,7 @@ from enum import Enum
 
 from controlled_markdown import mctx
 from operations.constants import COORDINATOR
-from operations.pacing import Pace
+from operations.pacing import Capped, Pace
 from operations.printed_forms import KEY_LENGTH, STEP_KEY
 from operations.roles import PASSES, Model, Role
 from operations.state import Agent, Ticket
@@ -101,9 +101,9 @@ class Bash(Repeatable):
 class Poll:
     """Nothing is ready by the end of the command's block: the agent runs
     the command again at once. `pace` is the usage pace where it alone
-    holds back an open ticket (`taking.pace_held`) or holds a step
+    holds back an open ticket (`taking.pace_held`), or what holds a step
     (`order.pace_held_step`), or None."""
-    pace: Pace | None = None
+    pace: Pace | Capped | None = None
 
 
 @dataclass(frozen=True)

@@ -14,7 +14,7 @@ from pathlib import Path
 from controlled_markdown import form, mctx
 from operations.command_words import Action, next_command
 from operations.filing import filed_line, split_message
-from operations.pacing import Pace, Scripted, Until
+from operations.pacing import Capped, Pace, Scripted, Until
 from operations.printed_forms import SENT
 from operations.roles import launch_parameters, launched_type
 from ticketing.times import utc_stamp
@@ -195,9 +195,12 @@ def launch_fields(lines: list[str]) -> dict[str, str] | None:
     return None
 
 
-def pace_line(pace: Pace | None) -> str | None:
+def pace_line(pace: Pace | Capped | None) -> str | None:
     """The line that gives how the usage pace holds back agent starts."""
     match pace:
+        case Capped(cap):
+            return mctx("The usage pace's cap of {cap} running agents holds back agent starts.").format(
+                cap=cap)
         case Until(time):
             return mctx("No agent starts past the usage pace until {time}.").format(
                 time=utc_stamp(time))

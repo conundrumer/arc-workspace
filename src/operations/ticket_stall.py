@@ -9,7 +9,7 @@ exit of `tracker.exits` that an operator's step makes, read by the
 function that step selects its work by (`selection`); a ticket whose only
 exits are steps of no operator, or that such a function leaves out, waits
 by design and is not due, and so does a ticket whose step the usage pace
-holds (`taking.pace_holds`). A ticket
+holds (`start_holds.pace_holds`). A ticket
 that a live holder outside the session's own agent runs holds waits on
 that holder's work, a step of no operator, which the operators'
 transcripts do not show and which that holder's own session watches, and
@@ -39,7 +39,7 @@ import re
 from collections.abc import Mapping
 from typing import assert_never
 
-from operations import changes, drafts, lineage, merging, taking, triage, waits
+from operations import changes, drafts, lineage, merging, start_holds, taking, triage, waits
 from operations.change_budget import TAKEN
 from operations.constants import stuck_reached
 from operations.final_reply import live_holder
@@ -62,7 +62,7 @@ def held_outside_session(state: State, t: Ticket) -> bool:
 def selection(state: State, e: Exit) -> set[str]:
     """The tickets on which the step that makes `e` is due, as the function
     that step selects its work by gives them, less those whose step the
-    usage pace holds (`taking.pace_holds`), or none where no operator's
+    usage pace holds (`start_holds.pace_holds`), or none where no operator's
     step makes `e`."""
     match e:
         case Exit.RELEASE:
@@ -72,7 +72,7 @@ def selection(state: State, e: Exit) -> set[str]:
             return {n for n in assigned(state)
                     if not (changes.holds(t := state.tracker.tickets[n], state.me)
                             and (s := changes.next_step(state, t)) is not None
-                            and taking.pace_holds(state, s))}
+                            and start_holds.pace_holds(state, s))}
         case Exit.TAKE:
             return {t.number for t in taking.reach(state)}
         case Exit.TICKET_REVIEW:
@@ -91,8 +91,8 @@ def review_held(state: State, number: str) -> bool:
     `number`: a draft that joins a group joins a launch."""
     s = drafts.draft_step(state, state.tracker.tickets[number])
     if isinstance(s, drafts.Joined):
-        return taking.past_pace(state)
-    return s is not None and taking.pace_holds(state, s)
+        return start_holds.hold(state) is not None
+    return s is not None and start_holds.pace_holds(state, s)
 
 
 def assigned(state: State) -> set[str]:

@@ -67,7 +67,8 @@ def main(argv: list[str]) -> int:
                               bound=journal.BOUND,
                               write=round(WRITE_SECONDS), stale=USAGE_STALE, rate_limit=RATE_LIMIT,
                               script=runs.SCRIPT_SECONDS, factor=f"{pacing.EVEN_FACTOR:g}",
-                              window=pacing.DEFAULT_WINDOW, subagents=SUBAGENT_LIMIT))
+                              window=pacing.DEFAULT_WINDOW, subagents=SUBAGENT_LIMIT,
+                              band=f"{pacing.BAND_PCT:g}"))
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
     parser.add_argument("action", choices=list(OperateAction))
     runs.add_arguments(parser)

@@ -36,13 +36,14 @@ the step journal gives as in flight or retired (`journal.due`). A
 launch a procedure gives, other than that of a ticket analyst on a held
 step, is held where its chain of causes runs `lineage.DEPTH` launches of
 its kind deep (`lineage`), and so is a launch of an agent type the
-operator's agent listing lacks (`unlisted`). Past the usage pace, each
-step that starts an agent's run is held (`taking.pace_holds`), and its
+operator's agent listing lacks (`unlisted`). Past the usage pace, and
+while the running agents number the pace's cap or more, each step that
+starts an agent's run is held (`start_holds.pace_holds`), and its
 procedure gives its next step in its place, with the held step set aside
 (`State.aside`). A launch comes with each
 launch the procedures
 give after it, with the launches before it made, up to the harness's
-limit of concurrent subagents; each step of the procedures from the
+limit of concurrent subagents or the pace's cap (`start_holds.limit`); each step of the procedures from the
 release of tickets on that is no launch, or that launches a ticket
 analyst on a held step, is set aside, and comes at a later call, in this
 order (`batch`)."""
@@ -54,18 +55,18 @@ from dataclasses import replace
 from controlled_markdown import mctx
 from operations import (after_profile, alerts, assessment, batches, changes, concept_faults, cost_audit, decisions, drafts,
                         gate_launch, idle_changes, limit_resume, lineage, merging, monitor, passes, reviews, runs,
-                        standing_reviews, ticket_stall, triage, taking, unbatched)
+                        standing_reviews, start_holds, ticket_stall, triage, taking, unbatched)
 from operations.directives import (
     lines,
     passed,
     unread,
 )
 from operations import briefs
-from operations.pacing import Pace
+from operations.pacing import Capped, Pace
 from operations.roles import PASSES, Purpose, Role, launch_parameters, launched_type
 from operations.state import Agent, Call, NotComputed, State, Tool, Waits
 from operations.handled import held_aside, repeated
-from operations.constants import COORDINATOR, SUBAGENT_LIMIT
+from operations.constants import COORDINATOR
 from operations.journal import BOUND, Due, due, failures
 from operations.log_commands import file_ticket
 from operations.steps import (Bash, Journaled, Launch, Send, Step, Undecided, key,
@@ -97,7 +98,7 @@ def placed(state: State, procedure: Callable[[State], Step | None]
     step. Which step the journal holds back or retires is as
     `scripts/operate.py --help journal` gives it (`journal.due`, `retire`).
     A launch the operator's agent listing lacks (`unlisted`) gives no step
-    where it is due. A step the usage pace holds (`taking.pace_holds`) is
+    where it is due. A step the usage pace holds (`start_holds.pace_holds`) is
     set aside, and the procedure read again."""
     waited: Undecided | None = None
     while True:
@@ -105,7 +106,7 @@ def placed(state: State, procedure: Callable[[State], Step | None]
         if given is None or held_aside(state, given):
             return None, waited
         s, on = place(state, given)
-        if s is None or not taking.pace_holds(state, s):
+        if s is None or not start_holds.pace_holds(state, s):
             return s, on or waited
         waited = waited or on
         state = replace(state, aside=state.aside | {key(given)})
@@ -175,18 +176,20 @@ def unlisted(state: State, step: Step) -> bool:
     return agent_type not in state.listing and agent_type in state.git.definitions
 
 
-def pace_held_step(state: State) -> Pace | None:
-    """The usage pace, where it holds the step that `place` gives for a
-    procedure of `PROCEDURES` on `state`, or None."""
-    if not taking.past_pace(state):
+def pace_held_step(state: State) -> Pace | Capped | None:
+    """What holds agent starts (`start_holds.hold`), where it holds the
+    step that `place` gives for a procedure of `PROCEDURES` on `state`, or
+    None."""
+    held = start_holds.hold(state)
+    if held is None:
         return None
     for procedure in PROCEDURES:
         given = procedure(state)
         if given is None or held_aside(state, given):
             continue
         s, _ = place(state, given)
-        if s is not None and taking.pace_holds(state, s):
-            return state.computed.pace
+        if s is not None and start_holds.starts_run(state, s):
+            return held
     return None
 
 
@@ -250,13 +253,12 @@ def batch(state: State, watch: monitor.MonitorState, first_launch: Launch) -> tu
     procedures read again. The batch ends where a procedure of `EARLY` or
     the monitor gives a step that does not join it, where the operator is
     past its context bound, as `next_step` then gives its final reply,
-    where the pending agents of the session's operators number
-    `SUBAGENT_LIMIT`, since the agents of the session share the limit, or
+    where the running agents of the session's operators number
+    `start_holds.limit`, since the agents of the session share it, or
     where no procedure of `LATE` gives a step."""
     out = [first_launch]
     state = made(state, first_launch)
-    while (not state.past_bound
-           and sum(a.pending for a in state.transcripts.agents) < SUBAGENT_LIMIT):
+    while not state.past_bound and start_holds.running(state) < start_holds.limit(state):
         early = first(state, *EARLY, lambda st: monitor_step(st, watch))
         if early is not None:
             if not isinstance(early, Launch) or not joins(state, early):

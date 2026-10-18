@@ -18,8 +18,8 @@ While an
 `Op pause.` line stands (`directives.paused`), it takes only those of
 `held_work` and of `allowed`, and each other change waits for an
 `Op resume.` line. Past the usage pace (`pacing`), no change is taken and
-no open ticket admitted, and each step that starts an agent's run
-(`starts_run`) is held (`pace_holds`).
+no open ticket admitted, and each step that starts an agent's run is held
+(`start_holds`).
 
 A change that waits for a ticket that holds it up moves to
 `tickets/draft/` with a line whose note is `STALL_FINDING` on that ticket,
@@ -31,7 +31,7 @@ from collections.abc import Callable
 from functools import cache
 
 from controlled_markdown import form, mctx
-from operations import pacing, rank
+from operations import rank
 from operations.change_budget import TAKE_NOTE, budget_fields
 from operations.directives import (Directive, allow_named, named, NUMBER, numbers, numbers_in, own_scope,
                                    paused, session_lines)
@@ -39,8 +39,9 @@ from operations.final_reply import live_holder
 from operations.log_commands import log
 from operations.merging import merge_commit
 from operations.pacing import Pace
-from operations.state import State, Ticket, Waits, memoized
-from operations.steps import Bash, Launch, Send, Step, Undecided
+from operations.state import State, Ticket, memoized
+from operations.start_holds import past_pace
+from operations.steps import Bash, Step, Undecided
 from operations.tracker import closed, exits, final_run, wait_line
 from ticketing.exits import Exit
 from ticketing.links import link_targets
@@ -168,31 +169,6 @@ def pace_held(state: State, numbers: list[str]) -> Pace | None:
     judge = unpaced(state, pending)
     return (state.computed.pace if any(clear(n) or (pending(n) and judge(n)) for n in numbers)
             else None)
-
-
-def past_pace(state: State) -> bool:
-    """Whether `State.now` is past the usage pace (`Computed.pace`)."""
-    return not pacing.admits(state.computed.pace, state.now)
-
-
-def starts_run(state: State, step: Step) -> bool:
-    """Whether `step` starts an agent's run: a launch, or a message to an
-    agent of the operators whose run has ended or that the usage limit
-    stopped (`Waits.LIMITED`)."""
-    match step:
-        case Launch():
-            return True
-        case Send(to):
-            found = [a for a in state.transcripts.agents if a.agent_id == to]
-            return bool(found) and found[-1].waits in (None, Waits.LIMITED)
-        case _:
-            return False
-
-
-def pace_holds(state: State, step: Step) -> bool:
-    """Whether the usage pace holds `step`: it is past at `State.now` and
-    `step` starts an agent's run (`starts_run`)."""
-    return past_pace(state) and starts_run(state, step)
 
 
 def taken_before(t: Ticket) -> bool:

@@ -34,7 +34,7 @@ launched before it in the session has open work and is not stuck
 that operator has given its final reply (`taken_up`), a ticket
 file the read of the tracker left out may still be written
 (`decisions.writing`), the usage pace alone holds back an open
-ticket (`taking.pace_held`) or holds a step (`order.pace_held_step`), or
+ticket (`taking.pace_held`), the pace or its cap holds a step (`order.pace_held_step`), or
 a step waits after the harness refused it at its limit of concurrent
 subagents (`journal.backing_off`), the agent runs the command again, which blocks in the foreground first. Otherwise the
 agent gives its final reply, after the message that sends its parent

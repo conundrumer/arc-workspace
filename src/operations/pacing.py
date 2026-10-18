@@ -4,21 +4,23 @@
 An `Op pace:` line names a preset with its arguments (`PARSER`) or the path
 of a script that defines `paces` (`Script`). With no such line, the pace
 is `DEFAULT`. A preset reads a `Usage` and gives the time
-from which it admits a ticket (`Until`); a script gives whether it admits
-one now (`Scripted`); a reading that gives neither is
+from which it admits a ticket (`Until`), with, for `even` and `by`, the cap on
+the running agents of the session's operators (`cap`); a script gives whether
+it admits one now (`Scripted`); a reading that gives neither is
 `state.NotComputed`, under which the pace counts as past."""
 
 import argparse
 import math
 import shlex
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import NoReturn
 
 from controlled_markdown import mctx
+from operations.constants import SUBAGENT_LIMIT
 from operations.state import NotComputed
 
 
@@ -42,6 +44,10 @@ spend twice an even spread of one."""
 
 DEFAULT_WINDOW = WindowName.SEVEN_DAY
 
+BAND_PCT = 10.0
+"""The slack, in percentage points, at which the cap reaches
+`SUBAGENT_LIMIT`."""
+
 
 @dataclass(frozen=True)
 class Window:
@@ -60,8 +66,17 @@ class Usage:
 
 @dataclass(frozen=True)
 class Until:
-    """A preset's pace: it admits a ticket from `time` on."""
+    """A preset's pace: it admits a ticket from `time` on, and, where `cap`
+    is given, starts agents only while fewer than `cap` agents of the
+    session's operators run."""
     time: float
+    cap: int | None = None
+
+
+@dataclass(frozen=True)
+class Capped:
+    """A hold of agent starts by the cap `cap` of a pace that admits work."""
+    cap: int
 
 
 @dataclass(frozen=True)
@@ -85,6 +100,13 @@ def admits(pace: Pace, now: float) -> bool:
             return False
 
 
+def cap(slack: float) -> int:
+    """The cap at `slack`, the percentage points by which the pace's
+    percentage exceeds the window's `used_pct`: `SUBAGENT_LIMIT` for each
+    `BAND_PCT` points, rounded up, from 1 to `SUBAGENT_LIMIT`."""
+    return min(SUBAGENT_LIMIT, max(1, math.ceil(round(SUBAGENT_LIMIT * slack / BAND_PCT, 9))))
+
+
 def window_start(usage: Usage, name: WindowName) -> tuple[Window, float] | str:
     w = usage.windows.get(name)
     if w is None:
@@ -102,7 +124,7 @@ def even(usage: Usage, factor: float, window: WindowName) -> Pace:
         return NotComputed(found)
     w, start = found
     if w.used_pct <= factor * w.elapsed_pct:
-        return Until(usage.now)
+        return Until(usage.now, cap(factor * w.elapsed_pct - w.used_pct))
     return Until(start + WINDOW_SECONDS[window] * w.used_pct / factor / 100)
 
 
@@ -114,8 +136,9 @@ def by(usage: Usage, end: float, window: WindowName) -> Pace:
     if isinstance(found, str):
         return NotComputed(found)
     w, start = found
-    if end <= start:
-        return Until(usage.now)
+    passed = 100.0 if end <= start else min(100.0, 100 * (usage.now - start) / (end - start))
+    if w.used_pct <= passed or usage.now >= end:
+        return Until(usage.now, cap(passed - w.used_pct))
     return Until(min(end, start + (end - start) * w.used_pct / 100))
 
 
@@ -174,7 +197,15 @@ def preset(words: list[str]) -> Preset:
     return args.build(args)
 
 
-DEFAULT: Preset = preset(["even", "--factor", "1", "--window", WindowName.FIVE_HOUR])
+def uncapped(given: Preset) -> Preset:
+    """`given`, with no cap."""
+    def read(usage: Usage) -> Pace:
+        pace = given(usage)
+        return replace(pace, cap=None) if isinstance(pace, Until) else pace
+    return read
+
+
+DEFAULT: Preset = uncapped(preset(["even", "--factor", "1", "--window", WindowName.FIVE_HOUR]))
 
 
 def line_pace(rest: str, main_tree: Path) -> Preset | Path | None:

@@ -81,7 +81,7 @@ PARTS = {
         - With a launch, it also prints each further launch that it gives on the state with the launches before it made, until one of these holds:
             - A step that `next` prints ahead of every launch is ready and the output does not hold it.
             - The operator is past its context bound.
-            - The running agents of the session's operators, the launches included, number {subagents}.
+            - The running agents of the session's operators, the launches included, number the usage pace's cap, as `--help pace` gives it.
             - It gives no further launch.
         - Among those further launches, it passes over each step that is no launch, and each launch on a held step that a reply landing during its read of the state can end, and a later call gives each step it passes over.
         - Before the final reply, it prints a SendMessage call that sends the reply's text to the agent that launched the operator.
@@ -180,7 +180,11 @@ PARTS = {
     - `next` reads a coordinator's line `Op pace: <preset> [<argument> ...]` or `Op pace: <path>` as the usage pace of each operator of the session, and the last line in one of these forms stands. An `Op pace:` line in neither form goes back to the coordinator and leaves the pace as it was.
         - Past the pace, `next` starts no agent's run, of any line's work: it prints no launch, and no SendMessage call that resumes an agent of the operators whose run has ended or that the usage limit stopped. It takes no open ticket and no change. A SendMessage call to a running agent or to the coordinator, and each step that runs no agent, stand.
         - While an `Op pause.` line stands, one call of `next` takes each change an `Op expedite:` line gives, each change that settles an `interference` ticket and each change an operator took before, and at most one other change, so that the pause is read again before each further take.
-        - Where no step is ready and the pace holds back a step, `next` prints that the operator runs it again, with the time from which a preset's pace admits agent starts, or with the path of the script whose pace holds them back.
+        - While a pace that an `Op pace:` line gives as `even` or `by` admits work, the running agents of the session's operators, the launches of a call of `next` included, number at most the pace's cap after that call: the larger of 1 and the ceiling of {subagents} times the slack over {band} percentage points, and at most {subagents}.
+            - The slack is the number of percentage points by which the window's `used_pct` falls below the bound that the preset gives.
+            - Where the running agents number the cap or more, `next` starts no agent's run, as past the pace.
+            - Under any other pace, and with no `Op pace:` line, the cap is {subagents}, the harness's limit of concurrent subagents.
+        - Where no step is ready and the pace holds back a step, `next` prints that the operator runs it again, with the time from which a preset's pace admits agent starts, with the path of the script whose pace holds them back, or with the cap that holds them back.
     - The pace reads the usage cache that `--help next` gives: for each of its windows, `used_pct`, `elapsed_pct` and the time it resets.
     - The presets:
         - `even [--factor F] [--window W]`, with F {factor} and W `{window}` by default: within the pace while the window's `used_pct` is at most F times its `elapsed_pct`.
