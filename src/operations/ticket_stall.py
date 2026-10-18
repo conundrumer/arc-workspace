@@ -13,8 +13,10 @@ transcripts do not show and which that holder's own session watches, and
 is not due. Its progress is a line of its log other than a
 take or a release, the first take after such progress, the launch of an
 agent of it, a report of such an agent, and, for a change, its merge onto
-`master`; an agent of it that is pending and not quiet is progress too,
-and a ticket with one is not stalled.
+`master` and the last close of each ticket of its `depends-on`, before
+which it waits on that ticket and is not due; an agent of it that is
+pending and not quiet is progress too, and a ticket with one is not
+stalled.
 
 A change that waits for a ticket that holds it up (`holding`), one under
 `tickets/blocked/` or one that is stalled, moves to `tickets/draft/` with
@@ -34,7 +36,7 @@ from operations.log_commands import log
 from operations.roles import AGENT_ID
 from operations.state import Agent, State, Ticket
 from operations.steps import Bash, Step
-from operations.tracker import blocked_on_user, exits
+from operations.tracker import blocked_on_user, closed, exits
 from ticketing.exits import Exit
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Kind, Status
@@ -81,9 +83,12 @@ def progress(state: State, t: Ticket) -> float | None:
     agents = agents_of(state, t.number)
     if any(a.pending and a.agent_id not in state.transcripts.quiet for a in agents):
         return None
-    merge = merging.merge_commit(state, t) if t.kind is Kind.CHANGE else None
+    change = t.kind is Kind.CHANGE
+    merge = merging.merge_commit(state, t) if change else None
     last: float = max([t.filed,
                        *([merge.time] if merge is not None else []),
+                       *(taking.status_since(state.tracker.tickets[d])
+                         for d in (t.depends_on if change else ()) if closed(state, d)),
                        *(ln.time for ln in t.log
                          if TAKEN.fullmatch(ln.note) is None and taking.RELEASED_LINE.fullmatch(ln.note) is None),
                        *(a.launched for a in agents),
@@ -117,7 +122,7 @@ def holding(state: State, u: Ticket, stalls: Mapping[str, float]) -> tuple[float
     where it waits on the user, and otherwise from its last progress where
     `stalls`, as `stalled` gives them, holds it."""
     if blocked_on_user(u) is not None:
-        return taking.blocked_since(u), ON_USER
+        return taking.status_since(u), ON_USER
     if u.number in stalls:
         since = stalls[u.number]
         return since, NO_STEP.format(time=utc_stamp(since))

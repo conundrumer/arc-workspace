@@ -14,9 +14,10 @@ reply for the coordinator; the monitor's steps (`monitor`); the release
 of tickets; the move back to `tickets/open/` of the tickets the coordinator wrote on
 under `tickets/blocked/`, `tickets/waiting/` or `tickets/closed/`; the coordinator's later
 lines to the ticket analysts that run on their tickets; the ticket
-analysts on open tickets; the move to `tickets/draft/` of the changes
-that a ticket holds up (`ticket_stall.stall`); the review
-of drafts; the changes; the solver pipelines; the cost audit, the code
+analysts on open tickets; the review of drafts; the changes; the move
+to `tickets/draft/` of the changes that a ticket holds up
+(`ticket_stall.stall`), so that the take of a change comes before the
+move of the changes that wait on it; the solver pipelines; the cost audit, the code
 review, the standing doc review, the gate and the process assessment
 (`batches`); the sweep and the script check (`after_profile`); After a
 batch; the
@@ -264,8 +265,8 @@ EARLY: tuple[Callable[[State], Step | None], ...] = (
     limit_resume.step, unread_lines, decisions.unread_files, alerts.step, alerts.stalls, alerts.stuck, alerts.late_resumes, concept_faults.step, decisions.asks, triage.decisions, merging.handoffs, triage.main_wanted, triage.for_coordinator,
     triage.unfinished)
 LATE: tuple[Callable[[State], Step | None], ...] = (
-    taking.release, triage.reopen, triage.later_lines, triage.settle, ticket_stall.stall, drafts.step,
-    changes.step,
+    taking.release, triage.reopen, triage.later_lines, triage.settle, drafts.step,
+    changes.step, ticket_stall.stall,
     pipelines, batches.audit, reviews.code_review, reviews.lib_review, batches.standing_review,
     batches.overdue_review, batches.gate,
     batches.assessment, after_profile.validation, after_profile.script_check, batches.step,

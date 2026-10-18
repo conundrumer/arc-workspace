@@ -319,10 +319,11 @@ STALLED = re.compile(form(STALL_FINDING, {"number": rf"(?P<number>{NUMBER.patter
                                           "reason": r".*"}))
 
 
-def blocked_since(t: Ticket) -> float:
-    """The time of the last move of `t`, which stands under
-    `tickets/blocked/`, into `tickets/blocked/`."""
-    return t.log[final_run(t)[0]].time if t.log else t.filed
+def status_since(t: Ticket) -> float:
+    """The time of the last move of `t` into its status, or the time it was
+    filed where no line of its log moves it there."""
+    start, _ = final_run(t)
+    return t.log[start].time if start < len(t.log) else t.filed
 
 
 def batch(state: State) -> list[Ticket]:
@@ -365,7 +366,7 @@ def take(state: State) -> Step | None:
     for n, time in numbers(state, Directive.MERGE):
         t = state.tracker.tickets.get(n)
         if (t is not None and Exit.MERGE_LINE in exits(state, t).by
-                and time > blocked_since(t)):
+                and time > status_since(t)):
             return Bash(log(n, Status.ASSIGNED, Status.BLOCKED,
                             "taking: the coordinator's `Op merge:` line rules the merge", state.me),
                         f"{n} merge line", occasion=str(time))

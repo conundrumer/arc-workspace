@@ -16,11 +16,13 @@ from collections.abc import Callable
 
 import script_calls
 import step_journal
+import tree_reads
 from accepted_messages import accepted_after
 from agent_deliveries import last_delivered
 from budgets import budget_of
 from context_bound_hook import ACTIONS
 from controlled_markdown import mctx
+from relay_reads import session_id
 from run_reads import agent_type
 from state_assembly import read_state
 from transcripts import find
@@ -196,23 +198,25 @@ def operator_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:
     (`order.batch`).
     `steps.Undecided.reread` gives why the command reads the state again
     before it launches an analyst on a step marked `reread`. A Bash step
-    the command runs itself, after each Bash run of the session's journal
-    ended, and reads the state again once it ended (`ran`); where a run
-    has not ended by `deadline`, the step is the wait."""
+    the command runs itself, and it reads the state once each Bash run of
+    the session's journal ended (`ran`), so that the read holds that run's
+    moves; where a run has not ended by `deadline`, the step is the
+    wait."""
+    here = tree_reads.scratch(session_id())
     while True:
+        if not ran(here, deadline):
+            return (Poll(),), here
         state, watch = read_state(me)
-        if not ran(state.scratch, deadline):
-            return (Poll(),), state.scratch
         step = plan.next_step(state, watch)
         if isinstance(step, Bash):
-            step_journal.start_run(state.scratch, step, me, state.main_tree, time.time())
+            step_journal.start_run(here, step, me, state.main_tree, time.time())
             continue
         if isinstance(step, Launch) and step.reread:
             state, watch = read_state(me)
             step = plan.next_step(state, watch)
         if isinstance(step, Launch):
-            return order.batch(state, watch, step), state.scratch
-        return (step,), state.scratch
+            return order.batch(state, watch, step), here
+        return (step,), here
 
 
 def ran(scratch: Path, deadline: float) -> bool:
