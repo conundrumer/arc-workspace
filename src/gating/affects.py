@@ -26,15 +26,16 @@ hunk `inert_dl` passes."""
 
 @dataclass(frozen=True)
 class Function:
-    """A function of a Python text: the first line of its header, its
-    decorators included, the first line of its body, and its last line."""
+    """A function of a Python text: its name, the first line of its header,
+    its decorators included, the first line of its body, and its last line."""
+    name: str
     first: int
     body: int
     last: int
 
 
 def functions(source: str) -> list[Function]:
-    return [Function(min([n.lineno, *(d.lineno for d in n.decorator_list)]),
+    return [Function(n.name, min([n.lineno, *(d.lineno for d in n.decorator_list)]),
                      n.body[0].lineno, n.end_lineno or n.lineno)
             for n in ast.walk(ast.parse(source))
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
@@ -119,9 +120,8 @@ def reader_lines(path: str, source: str) -> frozenset[int]:
     whose text is `source`: a module-level line, a `def` line among them,
     runs when the file is imported, and reads no comment."""
     names = COMMENT_READERS[path]
-    found = [n for n in ast.walk(ast.parse(source))
-             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in names]
-    missing = names - {n.name for n in found}
+    found = [f for f in functions(source) if f.name in names]
+    missing = names - {f.name for f in found}
     if missing:
         raise RuntimeError(f"{path} holds no function {', '.join(sorted(missing))}")
-    return frozenset(i for n in found for i in range(n.body[0].lineno, (n.end_lineno or n.lineno) + 1))
+    return frozenset(i for f in found for i in range(f.body, f.last + 1))
