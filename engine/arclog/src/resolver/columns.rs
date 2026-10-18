@@ -1,5 +1,6 @@
 //! The columns of a relation's rows, as the sites of a read name them, and
-//! the source of each column path of a relation.
+//! the source of each column path of a relation. The columns that the
+//! registry declares stand in [`super::registry_columns`].
 
 use std::sync::Arc;
 
@@ -10,7 +11,7 @@ use crate::program::{
     Choose, ColumnName, DeclaredName, Demonstrated, Instance, InstanceInput, InstanceName, KeyBody, LabelId, OutputOwner,
     OutputStep, RelationColumn, RelationName, RelationRef, RigidDet, RigidDetName, Site, SiteArg,
 };
-use crate::registry::{binding_sites, Column, ColumnType, Component, LibEntry, LibName, Macro, ParameterSite, Port, Proposer, Registry, TypeParameter};
+use crate::registry::{binding_sites, ColumnType, Component, ParameterSite, Port, TypeParameter};
 use crate::relations::{ColumnGroup, ColumnIndex};
 use crate::types::{each_site_label, use_label};
 
@@ -152,76 +153,6 @@ impl Columns {
                 }
             }
         }
-    }
-}
-
-fn of_columns(columns: &[Column]) -> Columns {
-    Columns::of_names(columns.iter().map(|column| column.name.clone()))
-}
-
-/// The columns of a lib relation or a proposer that an atom reads.
-pub(super) fn lib_columns(registry: &Registry, name: &LibName) -> Option<Columns> {
-    match registry.entry(name)? {
-        LibEntry::Relation(relation) | LibEntry::Macro(Macro::Relation { relation, .. }) => Some(of_columns(&relation.columns)),
-        LibEntry::Proposer(Proposer::Native { columns }) => Some(of_columns(columns)),
-        LibEntry::Proposer(Proposer::Arclog { columns, .. }) => Some(Columns::of_names(columns.iter().cloned())),
-        LibEntry::Component(_) => None,
-    }
-}
-
-/// Whether `ty` is the type `Example`.
-pub(super) fn is_example(ty: &ColumnType) -> bool {
-    *ty == ColumnType::Fixed(crate::types::ValueType::Example)
-}
-
-/// The names of `columns` of the type `Example`.
-pub(super) fn examples(columns: &[Column]) -> impl Iterator<Item = ColumnName> + '_ {
-    columns.iter().filter(|column| is_example(&column.ty)).map(|column| column.name.clone())
-}
-
-/// The declared columns, with their types, of the fact, the lib
-/// relation, the relation macro or the native proposer that `relation`
-/// names.
-pub(crate) fn typed_columns<'r>(registry: &'r Registry, relation: &RelationRef) -> Option<&'r [Column]> {
-    match relation {
-        RelationRef::Fact(fact) => Some(registry.fact_columns(*fact)),
-        RelationRef::Lib(name) => lib_typed_columns(registry, name),
-        RelationRef::Declared(_) | RelationRef::Output(_) | RelationRef::DefinedPort(_) => None,
-    }
-}
-
-/// The declared columns, with their types, of the lib relation, the
-/// relation macro or the native proposer `name`.
-pub(crate) fn lib_typed_columns<'r>(registry: &'r Registry, name: &LibName) -> Option<&'r [Column]> {
-    match registry.entry(name)? {
-        LibEntry::Relation(relation) | LibEntry::Macro(Macro::Relation { relation, .. }) => Some(&relation.columns),
-        LibEntry::Proposer(Proposer::Native { columns }) => Some(columns),
-        LibEntry::Proposer(Proposer::Arclog { .. }) | LibEntry::Component(_) => None,
-    }
-}
-
-/// The columns of a proposer or a fixed derivation that a `DET` names,
-/// in the proposer's order.
-pub(crate) fn proposer_columns(registry: &Registry, name: &LibName) -> Option<Box<[ColumnName]>> {
-    match registry.entry(name) {
-        Some(LibEntry::Proposer(Proposer::Native { columns })) => Some(columns.iter().map(|c| c.name.clone()).collect()),
-        Some(LibEntry::Proposer(Proposer::Arclog { columns, .. })) => Some(columns.clone()),
-        _ => registry.derivation(name).map(|derivation| derivation.columns.iter().map(|c| c.name.clone()).collect()),
-    }
-}
-
-/// Whether `name` is a proposer or a fixed derivation that a `DET` can
-/// name.
-pub(super) fn is_proposer(registry: &Registry, name: &LibName) -> bool {
-    matches!(registry.entry(name), Some(LibEntry::Proposer(_))) || registry.derivation(name).is_some()
-}
-
-/// The component an `INIT` form names: a construction, a detector or a
-/// task-structure component.
-pub(crate) fn component<'r>(registry: &'r Registry, name: &LibName) -> Option<&'r Component> {
-    match registry.entry(name)? {
-        LibEntry::Component(component) => Some(component),
-        LibEntry::Relation(_) | LibEntry::Proposer(_) | LibEntry::Macro(Macro::Relation { .. }) => None,
     }
 }
 

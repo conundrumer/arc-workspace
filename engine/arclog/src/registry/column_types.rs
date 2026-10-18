@@ -4,7 +4,8 @@
 use super::*;
 use crate::types::{label_fault_message, scope_list};
 
-/// A relation macro of the file, as [`macro_column_types`] reads it.
+/// A relation macro of the file, or a proposer written in arclog with its
+/// clause as the definition, as [`macro_column_types`] reads it.
 #[derive(Clone, Copy, Debug)]
 pub struct RelationMacro<'a> {
     pub name: &'a LibName,
@@ -30,7 +31,8 @@ pub struct MacroDeclarations {
 ///
 /// The type of a relation macro's column is the type that [`label_type`]
 /// gives its label over the definition. A site has the column's type: a
-/// column of a lib name that `lib` declares, where the type is fixed or
+/// column of a fact relation, of the type that `facts` gives it, a column
+/// of a lib name that `lib` declares, where the type is fixed or
 /// `(pose-or <type>)`, or a column of another macro of `macros`, of the type
 /// this gives it. Any other site gives no type.
 ///
@@ -43,8 +45,9 @@ pub struct MacroDeclarations {
 /// no mode, as a relation over a finite domain has none.
 ///
 /// `lib` holds the columns of each lib name that a form other than a
-/// relation macro declares, and `modes` the modes of each `relation` form,
-/// none for a form with no `modes` form. The macros are read in an order of
+/// relation macro declares, `modes` the modes of each `relation` form,
+/// none for a form with no `modes` form, and `facts` the columns of each
+/// `fact` form. The macros are read in an order of
 /// their reads of one another, so the order of `macros`
 /// gives the order of the diagnostics alone. A fault is a cycle of macros
 /// that read one another, given at each macro of the cycle; a label of the
@@ -59,11 +62,13 @@ pub fn macro_column_types(
     macros: &[RelationMacro<'_>],
     lib: &StableHashMap<LibName, Box<[Column]>>,
     modes: &StableHashMap<LibName, Box<[Mode]>>,
+    facts: &StableHashMap<FactRelation, Box<[Column]>>,
 ) -> Result<MacroDeclarations, Vec<crate::diagnostic::Diagnostic>> {
     let mut derivation = MacroDerivation {
         macros,
         lib,
         modes,
+        facts,
         index: macros.iter().enumerate().map(|(i, m)| (m.name.clone(), i)).collect(),
         states: vec![MacroState::Unread; macros.len()],
         stack: Vec::new(),
@@ -99,6 +104,7 @@ struct MacroDerivation<'a, 'b> {
     macros: &'a [RelationMacro<'b>],
     lib: &'a StableHashMap<LibName, Box<[Column]>>,
     modes: &'a StableHashMap<LibName, Box<[Mode]>>,
+    facts: &'a StableHashMap<FactRelation, Box<[Column]>>,
     index: StableHashMap<LibName, usize>,
     states: Vec<MacroState>,
     /// The macros being read, each reading the next.
@@ -264,18 +270,21 @@ impl MacroDerivation<'_, '_> {
     }
 
     /// The type of the column `path` gives of the relation `atom` reads,
-    /// where that relation is a lib name of `lib` or a macro with its
-    /// declaration and `path` is one column. A longer path, a field of a
-    /// type parameter's column, gives no type.
+    /// where that relation is a fact relation of `facts`, a lib name of
+    /// `lib` or a macro with its declaration and `path` is one column. A
+    /// longer path, a field of a type parameter's column, gives no type.
     fn site_type(&self, atom: &Atom, path: &[ColumnName]) -> Option<ValueType> {
         let [column] = path else { return None };
-        let RelationRef::Lib(name) = &atom.relation else { return None };
-        let columns: &[Column] = match self.index.get(name) {
-            Some(&j) => match &self.states[j] {
-                MacroState::Declared(relation) => &relation.columns,
-                MacroState::Unread | MacroState::Reading | MacroState::Faulted => return None,
+        let columns: &[Column] = match &atom.relation {
+            RelationRef::Fact(fact) => self.facts.get(fact)?,
+            RelationRef::Lib(name) => match self.index.get(name) {
+                Some(&j) => match &self.states[j] {
+                    MacroState::Declared(relation) => &relation.columns,
+                    MacroState::Unread | MacroState::Reading | MacroState::Faulted => return None,
+                },
+                None => self.lib.get(name)?,
             },
-            None => self.lib.get(name)?,
+            RelationRef::DefinedPort(_) | RelationRef::Declared(_) | RelationRef::Output(_) => return None,
         };
         columns.iter().find(|c| &c.name == column)?.ty.fixed().cloned()
     }

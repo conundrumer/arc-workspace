@@ -5,7 +5,8 @@
 
 use std::sync::Arc;
 
-use super::super::columns::{self, form_columns, row_columns, Columns, Place};
+use super::super::columns::{form_columns, row_columns, Columns, Place};
+use super::super::registry_columns;
 use super::super::names::{combined, Own, Writer};
 use super::Builder;
 use crate::program::canonical::{canonical_labeling, AsWritten, CanonicalWriter, LabelScope, NameWriter, SearchBudget};
@@ -104,7 +105,7 @@ impl Builder<'_> {
             return Some(ordered(&clause.columns, &labeling));
         }
         if let Some(proposer) = clause.proposers.first() {
-            return columns::proposer_columns(self.registry, proposer).map(|names| Columns::of_names(names.into_vec()));
+            return registry_columns::proposer_columns(self.registry, proposer).map(|names| Columns::of_names(names.into_vec()));
         }
         if let ProgramRelation::Output(OutputName { of: OutputOwner::Instance(name), path }) = &clause.derives {
             if let [OutputStep::Port(port)] = &path[..] {

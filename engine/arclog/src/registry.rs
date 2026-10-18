@@ -39,7 +39,9 @@
 //!   in arclog, whose clause stands in `engine/lib/proposers.arclog`. Its
 //!   columns are the labels the form names, in the order the form gives.
 //!   Each is a label that its clause keeps, and each other label of the
-//!   clause is projected away.
+//!   clause is projected away. Each column has the type that
+//!   [`macro_column_types`] gives a relation macro's column whose label is
+//!   the column's, over the clause.
 //! - `(derivation <Name> (fields (<Field> <type>) ...) (columns (<Column> <type>) ...))`:
 //!   a fixed derivation of a table, its row's fields and the table's columns.
 //!   A derivation may share its name with a component, as `Frame` and
@@ -71,9 +73,9 @@
 //!
 //! # The modules
 //!
-//! The reader of the two files, the spellings of the registry file's forms, the reader of the registry file's other
+//! The reader of the two files, the spellings of the registry file's forms, the records of a form the reader reads, the reader of the registry file's other
 //! forms, the reader of its macro form, the reader of the proposers file's clauses, the check of the reads of their bodies, the derivation of the
-//! macros' column types, the declaration of the macros from it, and the rule by which an `INIT` form binds its
+//! macros' column types, the declaration of the macros and of the proposers written in arclog from it, and the rule by which an `INIT` form binds its
 //! component's type parameters each stand in a module of their own. The derivations take the forms as the reader gives them, and
 //! read no file.
 //!
@@ -238,16 +240,23 @@ pub struct Component {
     pub outputs: Box<[Port]>,
 }
 
-/// A proposer: a native one, or one written in arclog.
+/// A proposer, native or written in arclog, and its columns with their
+/// types.
 #[derive(Clone, Debug)]
-pub enum Proposer {
-    /// A native proposer and its columns.
-    Native { columns: Box<[Column]> },
-    /// A proposer written in arclog: the body of its clause, and its
-    /// columns, the labels its `(columns <Label> ...)` form names, in the
-    /// order the form gives. Each is a label the clause keeps, and each
-    /// other label of the clause is projected away.
-    Arclog { columns: Box<[ColumnName]>, body: Node<Body> },
+pub struct Proposer {
+    pub columns: Box<[Column]>,
+    pub kind: ProposerKind,
+}
+
+/// The kind of a proposer: native, or written in arclog with its clause.
+#[derive(Clone, Debug)]
+pub enum ProposerKind {
+    Native,
+    /// A proposer written in arclog and the body of its clause. Its columns
+    /// are the labels its `(columns <Label> ...)` form names, in the order
+    /// the form gives. Each is a label the clause keeps, and each other
+    /// label of the clause is projected away.
+    Arclog { body: Node<Body> },
 }
 
 /// What a lib name declares.
@@ -430,6 +439,7 @@ mod macro_forms;
 mod proposer_clauses;
 mod reader;
 mod reads;
+mod records;
 mod spellings;
 
 pub(crate) use bindings::{binding_sites, key_parameter, ParameterSite};

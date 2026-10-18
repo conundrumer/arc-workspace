@@ -39,13 +39,12 @@ impl FileReader {
         match relation {
             RelationRef::Fact(fact) => self.facts.get(fact).map(|c| names(c)).ok_or_else(|| "reads a fact relation that no `fact` form declares".to_string()),
             RelationRef::Lib(name) => {
-                if let Some(m) = self.relation_macros.iter().find(|m| m.name == *name) {
+                if let Some(m) = self.written_relations().find(|m| m.name == *name) {
                     return Ok(m.columns.iter().map(|(c, _)| c.clone()).collect());
                 }
                 match self.entries.get(name) {
                     Some(LibEntry::Relation(relation)) => Ok(names(&relation.columns)),
-                    Some(LibEntry::Proposer(Proposer::Native { columns })) => Ok(names(columns)),
-                    Some(LibEntry::Proposer(Proposer::Arclog { columns, .. })) => Ok(columns.to_vec()),
+                    Some(LibEntry::Proposer(proposer)) => Ok(names(&proposer.columns)),
                     Some(LibEntry::Macro(Macro::Relation { relation, .. })) => Ok(names(&relation.columns)),
                     Some(LibEntry::Component(_)) => Err("reads a component, which an `INIT` form instantiates and no atom reads".to_string()),
                     None => Err(undeclared()),

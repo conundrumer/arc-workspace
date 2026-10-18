@@ -5,6 +5,7 @@
 use std::sync::Arc;
 
 use super::columns;
+use super::registry_columns;
 use std::collections::BTreeSet;
 
 use super::{rebase, AtomRead, Builder, ColumnsOf, ConceptReads, DependencyKind, DependencyNode, FormRelation, GraphNodeIndex, InstanceNodes, Resolution, Target};
@@ -197,7 +198,7 @@ impl<'a> Builder<'a> {
     /// whose inputs read its outputs, and otherwise a node per input it
     /// writes and per output, each output reading every input.
     pub(super) fn declare_instance(&mut self, instance: &'a Instance, path: NodePath, scope: &NameScope) {
-        let Some(component) = columns::component(self.registry, &instance.component) else {
+        let Some(component) = registry_columns::component(self.registry, &instance.component) else {
             let resolution = self.unresolved(&path, &instance.component.0);
             self.resolutions.insert(path, resolution);
             return;
@@ -266,7 +267,7 @@ impl<'a> Builder<'a> {
                 let clause = clause.value();
                 let node = self.form_node[&path];
                 for proposer in clause.proposers.iter() {
-                    if !columns::is_proposer(self.registry, proposer) {
+                    if !registry_columns::is_proposer(self.registry, proposer) {
                         self.unresolved(&path, &proposer.0);
                     }
                 }
@@ -405,7 +406,7 @@ impl<'a> Builder<'a> {
                 if self.registry.entry(lib).is_none() {
                     return self.unresolved(path, &name());
                 }
-                if let Some(columns) = columns::lib_columns(self.registry, lib) {
+                if let Some(columns) = registry_columns::lib_columns(self.registry, lib) {
                     self.names.lib.insert(relation.clone(), columns);
                 }
                 return Resolution::Lib(lib.clone());

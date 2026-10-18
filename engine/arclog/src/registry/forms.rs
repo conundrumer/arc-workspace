@@ -3,6 +3,7 @@
 //! `fact`, with the columns and the types they write.
 
 use super::reader::*;
+use super::records::{ArclogProposer, ComponentHead};
 use super::spellings::*;
 use super::*;
 
@@ -199,7 +200,7 @@ impl FileReader {
                 let columns = self.columns(rest.get(2), COLUMNS, &[], place)?;
                 self.no_more(rest.get(3..).unwrap_or_default())?;
                 if self.declare(&name, place) {
-                    self.entries.insert(name, LibEntry::Proposer(Proposer::Native { columns }));
+                    self.entries.insert(name, LibEntry::Proposer(Proposer { columns, kind: ProposerKind::Native }));
                 }
             }
             ARCLOG => {
@@ -222,11 +223,10 @@ impl FileReader {
     /// its clause, so the clause takes no fault of its own.
     fn proposer_labels(&mut self, items: &[SExpr], name: &LibName, place: SourcePlace) -> Option<Box<[Box<str>]>> {
         let mut labels: Vec<Box<str>> = Vec::new();
+        let what = format!("the proposer `{}`", name.0);
         for item in items {
             let label = self.symbol(Some(item), "a column's label", place)?;
-            if labels.iter().any(|l| &**l == label) {
-                self.fault(CheckId::Scope, format!("the proposer `{}` names the column `{label}` twice", name.0), item.place());
-            } else {
+            if self.named_once(labels.iter().map(|l| &**l), label, &what, item.place()) {
                 labels.push(label.into());
             }
         }
@@ -234,6 +234,17 @@ impl FileReader {
             self.fault(CheckId::Scope, format!("the proposer `{}` names no columns", name.0), place);
         }
         Some(labels.into())
+    }
+
+    /// Whether `column` is none of `earlier`, the columns that `what`, a
+    /// form, names before it, or `false` with a fault that `what` names the
+    /// column twice, at `place`.
+    pub(super) fn named_once<'c>(&mut self, mut earlier: impl Iterator<Item = &'c str>, column: &str, what: &str, place: SourcePlace) -> bool {
+        if earlier.any(|c| c == column) {
+            self.fault(CheckId::Scope, format!("{what} names the column `{column}` twice"), place);
+            return false;
+        }
+        true
     }
 
     /// `(derivation <Name> (fields ...) (columns ...))`, after its head.

@@ -17,6 +17,7 @@ use crate::program::{
 use crate::program::written_inputs;
 use crate::registry::{binding_sites, key_parameter, Column, ColumnType, Component, ParameterSite, Registry, TypeParameter};
 use crate::resolver::columns;
+use crate::resolver::registry_columns;
 use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram, Side, Signature};
 use crate::types::{
     each_conjunct, each_site_label, label_fault_message, label_type, scope_list, use_label, AssemblyId, FormRelation, FormTypes,
@@ -423,7 +424,7 @@ fn declared_type(columns: &[Column], path: &[ColumnName], pose_or: PoseOr) -> Op
     column_type(&columns.iter().find(|column| column.name == *first)?.ty, rest, &StableHashMap::default(), pose_or)
 }
 
-pub(super) use columns::component;
+pub(super) use registry_columns::component;
 
 /// The side of the form at `form` of `program`, the side of the first node
 /// of the dependency graph that the form gives, or `None` where it gives
@@ -983,7 +984,7 @@ impl<'a> Inference<'a> {
         }
         let at = reading.path.join(reading.walk.atoms.get(&(atom as *const Atom))?);
         match self.program.resolution(&at)? {
-            Resolution::Lib(name) => declared_type(columns::lib_typed_columns(self.registry, name)?, path, reading.pose_or),
+            Resolution::Lib(name) => declared_type(registry_columns::lib_typed_columns(self.registry, name)?, path, reading.pose_or),
             Resolution::Node(_) if path == [columns::example()] && self.program.reads_lifted(&at) => Some(ValueType::Example),
             Resolution::Node(node) => self.node_type(*node, atom, path, reading.pose_or),
             Resolution::Undefined(_) | Resolution::Unresolved => None,
@@ -1005,7 +1006,7 @@ impl<'a> Inference<'a> {
         let Some(at) = reading.walk.atoms.get(&(atom as *const Atom)) else { return false };
         match self.program.resolution(&reading.path.join(at)) {
             Some(Resolution::Lib(name)) => {
-                let column = path.first().and_then(|first| columns::lib_typed_columns(self.registry, name)?.iter().find(|column| column.name == *first));
+                let column = path.first().and_then(|first| registry_columns::lib_typed_columns(self.registry, name)?.iter().find(|column| column.name == *first));
                 column.is_some_and(|column| matches!(column.ty, ColumnType::Pose | ColumnType::SharedPose | ColumnType::PoseOr(_)))
             }
             Some(Resolution::Node(node)) => matches!(
@@ -1027,7 +1028,7 @@ impl<'a> Inference<'a> {
     pub fn shares_pose(&self, reading: SiteReading<'_, 'a>, atom: &Atom, path: &[ColumnName]) -> bool {
         let Some(at) = reading.walk.atoms.get(&(atom as *const Atom)) else { return false };
         let Some(Resolution::Lib(name)) = self.program.resolution(&reading.path.join(at)) else { return false };
-        let column = path.first().and_then(|first| columns::lib_typed_columns(self.registry, name)?.iter().find(|column| column.name == *first));
+        let column = path.first().and_then(|first| registry_columns::lib_typed_columns(self.registry, name)?.iter().find(|column| column.name == *first));
         column.is_some_and(|column| column.ty == ColumnType::SharedPose)
     }
 
@@ -1129,7 +1130,7 @@ impl<'a> Inference<'a> {
             return Some(ClauseColumns::Own(&clause.columns));
         }
         if let Some(proposer) = clause.proposers.first() {
-            let columns = match columns::lib_typed_columns(self.registry, proposer) {
+            let columns = match registry_columns::lib_typed_columns(self.registry, proposer) {
                 Some(columns) => columns,
                 None => &self.registry.derivation(proposer)?.columns,
             };

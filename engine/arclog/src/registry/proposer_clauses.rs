@@ -1,7 +1,8 @@
 //! The reader of the proposers file, `engine/lib/proposers.arclog`, which
 //! gives each proposer written in arclog its clause.
 
-use super::reader::{BodyInFile, FileReader};
+use super::reader::FileReader;
+use super::records::{BodyInFile, WrittenRelation};
 use super::spellings::{headed, PROPOSER};
 use crate::read::LabelNames;
 use super::*;
@@ -9,7 +10,8 @@ use super::*;
 impl FileReader {
     /// Reads the forms of the proposers file, and gives each
     /// `(proposer <name> arclog (columns ...))` form its clause, with the
-    /// columns the form names, each a label the clause keeps.
+    /// columns the form names, each a label the clause keeps, which
+    /// [`FileReader::declare_macros`] declares.
     pub(super) fn proposer_clauses(&mut self, exprs: &[SExpr]) {
         let mut clauses: Vec<(LibName, SourcePlace, Node<Body>, LabelNames)> = Vec::new();
         for expr in exprs {
@@ -34,15 +36,15 @@ impl FileReader {
                 self.fault(CheckId::Scope, message, proposer.place);
                 continue;
             };
-            let (name, _, body, kept) = clauses.remove(index);
+            let (name, _, definition, kept) = clauses.remove(index);
             let what = |label: &str| format!("the column `{label}` of the proposer `{}`", name.0);
-            let columns: Vec<Option<ColumnName>> = proposer
+            let columns: Vec<Option<(ColumnName, LabelId)>> = proposer
                 .columns
                 .iter()
-                .map(|label| self.label_of(&kept, label, &what(label), proposer.place).map(|_| ColumnName::Written(label.clone())))
+                .map(|label| self.label_of(&kept, label, &what(label), proposer.place).map(|id| (ColumnName::Written(label.clone()), id)))
                 .collect();
-            if let Some(columns) = columns.into_iter().collect::<Option<Box<[ColumnName]>>>() {
-                self.entries.insert(name, LibEntry::Proposer(Proposer::Arclog { columns, body }));
+            if let Some(columns) = columns.into_iter().collect::<Option<_>>() {
+                self.proposer_clauses.push(WrittenRelation { name, place: proposer.place, columns, definition });
             }
         }
         for (name, place, ..) in clauses {

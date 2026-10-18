@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use super::columns::{self, Columns, Place};
+use super::registry_columns;
 use super::names::{write_output_path, ColumnsOf, Names, Target};
 use super::{
     rebase, ColumnPosition, ConceptForms, ConceptReads, DependencyGraph, DependencyKind, DependencyNode, ExamplePath, GraphNodeIndex,
@@ -308,14 +309,14 @@ impl<'a> Builder<'a> {
     /// the order it gives them, or, with none, its first proposer's.
     fn proposers(&mut self) {
         for (path, clause) in std::mem::take(&mut self.clauses) {
-            let first = clause.proposers.first().and_then(|proposer| columns::proposer_columns(self.registry, proposer));
+            let first = clause.proposers.first().and_then(|proposer| registry_columns::proposer_columns(self.registry, proposer));
             let stored: Box<[ColumnName]> = if clause.columns.is_empty() {
                 first.unwrap_or_default()
             } else {
                 clause.columns.iter().map(|column| column.name.clone()).collect()
             };
             for (index, proposer) in clause.proposers.iter().enumerate() {
-                if let Some(own) = columns::proposer_columns(self.registry, proposer) {
+                if let Some(own) = registry_columns::proposer_columns(self.registry, proposer) {
                     let mapped = own.iter().zip(stored.iter()).map(|(_, name)| name.clone()).collect();
                     self.proposer_columns.insert((path.clone(), index), mapped);
                 }
@@ -491,7 +492,7 @@ impl Sides<'_, '_> {
                     let mut held = Vec::new();
                     for (path, source) in relation.listing.sources() {
                         let holds = match source {
-                            columns::Source::Declared(ty) => columns::is_example(ty),
+                            columns::Source::Declared(ty) => registry_columns::is_example(ty),
                             columns::Source::Label { label, body } => {
                                 let body = relation.form.join(body);
                                 if !bound.contains_key(&body) {
@@ -532,7 +533,7 @@ impl Sides<'_, '_> {
 
     /// The labels that the atoms of the form at `form` below `body`
     /// bind at a site that holds an Example: a site on a column of the
-    /// type `Example` that [`columns::typed_columns`] gives; on
+    /// type `Example` that [`registry_columns::typed_columns`] gives; on
     /// a column of a node that [`Sides::examples`] gives; or on the
     /// Example column that a lifted read adds. A read is lifted as
     /// [`lifted`] gives, and a read of the form whose side is being
@@ -546,8 +547,8 @@ impl Sides<'_, '_> {
             if !read.path.0.starts_with(&body.0) {
                 continue;
             }
-            let typed = columns::typed_columns(builder.registry, &read.atom.relation).unwrap_or_default();
-            let mut held: Vec<ExamplePath> = columns::examples(typed).map(|name| Box::from([name])).collect();
+            let typed = registry_columns::typed_columns(builder.registry, &read.atom.relation).unwrap_or_default();
+            let mut held: Vec<ExamplePath> = registry_columns::examples(typed).map(|name| Box::from([name])).collect();
             if let Resolution::Node(read_node) = builder.resolutions[&read.path] {
                 let node = read_node.0 as usize;
                 held.extend(self.examples(node, super::output_of(&read.atom.relation)).iter().cloned());
