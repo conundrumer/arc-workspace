@@ -216,8 +216,6 @@ pub struct Evaluation<'a> {
     pub parameters: &'a ParameterValues,
     pub session: &'a TaskSession,
     pub registry: &'a Registry,
-    /// The constructions by their registry names, which the caller gives
-    /// from `arclog-constructions`, as [`instance`] gives.
     pub constructions: &'a instance::Constructions,
     pub limits: &'a Limits,
 }

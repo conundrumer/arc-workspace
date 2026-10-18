@@ -17,8 +17,7 @@ pub mod ray;
 use arclog::eval::instance::{Construction, Constructions, ConstructionsFault};
 use arclog::registry::Registry;
 
-/// The table of every construction of this crate, by registry name, which
-/// the caller of an evaluation gives to [`arclog::eval::Evaluation`].
+/// The table of every construction of this crate, by registry name.
 pub fn constructions(registry: &Registry) -> Result<Constructions, ConstructionsFault> {
     let all: Vec<Box<dyn Construction>> = vec![
         Box::new(connectivity::Connectivity),

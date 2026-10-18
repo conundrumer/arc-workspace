@@ -3,10 +3,9 @@
 //! defaults of its inputs, and a `DET` that names a construction.
 //!
 //! The constructions stand in the crate `arclog-constructions`, which
-//! depends on this crate, so this crate names none of them. The caller of
-//! an evaluation, the binary or the bindings, builds a [`Constructions`]
-//! from that crate and gives it to [`super::Evaluation`], and an instance
-//! finds its component's construction there by its registry name.
+//! depends on this crate, so this crate names none of them. An instance
+//! finds its component's construction by its registry name in the
+//! [`Constructions`] of its evaluation.
 //!
 //! A construction is evaluated over its inputs grouped by key, and gives
 //! its outputs as sets: it reads no order of the rows it is given, and none
