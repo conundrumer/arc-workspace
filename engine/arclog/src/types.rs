@@ -94,14 +94,44 @@ pub enum Meet {
 impl ValueType {
     /// The meet of two types: the type of a label with both types' sites.
     pub fn meet(&self, other: &ValueType) -> Meet {
-        todo!()
+        if self.is_below(other) {
+            return Meet::Type(self.clone());
+        }
+        if other.is_below(self) {
+            return Meet::Type(other.clone());
+        }
+        Meet::Empty
     }
 
     /// The join of two types: the type of a label that an `OR` or an `IF`
     /// exports from branches of these types, or `None` where no type is above
     /// both.
     pub fn join(&self, other: &ValueType) -> Option<ValueType> {
-        todo!()
+        if self.is_below(other) {
+            return Some(other.clone());
+        }
+        if other.is_below(self) {
+            return Some(self.clone());
+        }
+        match (self.parent(), other.parent()) {
+            (Some(a), Some(b)) if a == b => Some(a),
+            _ => None,
+        }
+    }
+
+    /// Whether the type equals `other` or stands under it.
+    fn is_below(&self, other: &ValueType) -> bool {
+        self == other || self.parent().as_ref() == Some(other)
+    }
+
+    /// The type the type stands directly under, where it stands under one.
+    fn parent(&self) -> Option<ValueType> {
+        match self {
+            ValueType::C4 => Some(ValueType::D4),
+            ValueType::Dir | ValueType::DiagDir => Some(ValueType::Dir8),
+            ValueType::Axis | ValueType::DiagAxis => Some(ValueType::Axis4),
+            _ => None,
+        }
     }
 
     /// Whether `<`, `<=`, `>` and `>=` may compare values of the type: true

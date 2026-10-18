@@ -55,7 +55,7 @@ fn grammar(message: impl Into<Box<str>>, place: SourcePlace) -> Diagnostic {
 }
 
 /// An error of `check` at `place`, of a file the reader reads alone.
-fn check_error(check: CheckId, message: impl Into<Box<str>>, place: SourcePlace) -> Diagnostic {
+pub(crate) fn check_error(check: CheckId, message: impl Into<Box<str>>, place: SourcePlace) -> Diagnostic {
     Diagnostic {
         kind: DiagnosticKind::Check(check),
         severity: Severity::Error,
