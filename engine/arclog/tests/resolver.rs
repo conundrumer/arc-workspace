@@ -1,7 +1,8 @@
 //! The resolver lifts a task-wide form's read of a per-input relation, a
 //! `&prediction` clause of a task-wide `DEMONSTRATED` form and the bodies
-//! of an instance keyed on `E` included, reads such an instance's outputs
-//! unlifted, and
+//! of an instance keyed on an Example label included, reads such an
+//! instance's outputs unlifted, gives a keyed instance the task-wide side
+//! where its key holds an Example label, by what the label holds, and
 //! writes the content of a `DEMONSTRATED` form with the names its rules
 //! declare resolved.
 
@@ -9,13 +10,17 @@ use arclog::layout::SourceFile;
 use arclog::program::path::{NodePath, PathStep};
 use arclog::read::read_arclog;
 use arclog::registry::Registry;
-use arclog::resolver::{resolve, ColumnPosition, GraphNodeIndex, MacroExpansion, ResolvedProgram, Side};
+use arclog::resolver::{resolve, ColumnPosition, ConceptReads, GraphNodeIndex, MacroExpansion, ResolvedProgram, Side};
 
 fn resolved(text: &str) -> ResolvedProgram {
+    resolved_with(text, None)
+}
+
+fn resolved_with(text: &str, concept: Option<ConceptReads<'_>>) -> ResolvedProgram {
     let read = read_arclog(text, SourceFile::Arclog).expect("the program reads");
     assert!(read.diagnostics.is_empty(), "{:?}", read.diagnostics);
     let (program, _) = read.value;
-    let resolved = resolve(&program, None, &Default::default(), Registry::get(), MacroExpansion::Keep);
+    let resolved = resolve(&program, concept, &Default::default(), Registry::get(), MacroExpansion::Keep);
     assert!(resolved.diagnostics.is_empty(), "{:?}", resolved.diagnostics);
     resolved.value
 }
@@ -111,4 +116,122 @@ fn an_instance_keyed_on_e_is_task_wide_and_a_det_reads_its_outputs_unlifted() {
     assert_eq!(positions, [1, 2].map(|position| Some(ColumnPosition(position))));
     assert_eq!(program.column_position(&path(&[3, 0, 0, 0, 0])), Some(ColumnPosition(0)));
     assert_eq!(program.column_position(&path(&[2, 0, 1, 1, 1, 0])), Some(ColumnPosition(2)));
+}
+
+/// The side of each node of the form at `form`.
+fn form_sides(program: &ResolvedProgram, form: u32) -> Vec<Side> {
+    let form = path(&[form]);
+    let sides: Vec<Side> = (0..program.graph.nodes.len() as u32)
+        .map(GraphNodeIndex)
+        .filter(|node| program.form_of(*node).0.starts_with(&form.0))
+        .map(|node| program.side(node))
+        .collect();
+    assert!(!sides.is_empty());
+    sides
+}
+
+const PER_INPUT_BACKGROUND: &str = "(RULE &bg (input *P *Col))\n";
+
+#[test]
+fn an_instance_keyed_on_an_example_label_of_another_name_is_task_wide() {
+    let program = resolved(&format!(
+        "{PER_INPUT_BACKGROUND}\
+         (DET &cells (ex_input *E *P *Col))\n\
+         (INIT &obj Connectivity\n\
+           (key ((&cells (:E ^K) *P))\n\
+             (node (P)\n\
+               (&cells (:E K) *P)\n\
+               (&bg *P *Col))))\n\
+         (INIT &next Connectivity\n\
+           (key ((&obj.component (:key (:K ^K2)) *P *Id))\n\
+             (node (P)\n\
+               (&obj.component (:key (:K K2)) *P *Id)\n\
+               (&bg *P *Col))))\n",
+    ));
+    assert!(form_sides(&program, 2).iter().all(|side| *side == Side::TaskWide));
+    assert!(form_sides(&program, 3).iter().all(|side| *side == Side::TaskWide));
+}
+
+#[test]
+fn an_instance_keyed_on_a_det_column_bound_at_an_example_site_is_task_wide() {
+    let program = resolved(&format!(
+        "{PER_INPUT_BACKGROUND}\
+         (DET &top (ex_input (:E *Ky) *P *Col))\n\
+         (INIT &obj Connectivity\n\
+           (key ((&top ^Ky *P))\n\
+             (node (P)\n\
+               (&top Ky *P)\n\
+               (&bg *P *Col))))\n",
+    ));
+    assert!(form_sides(&program, 2).iter().all(|side| *side == Side::TaskWide));
+}
+
+#[test]
+fn an_instance_keyed_on_a_field_named_e_that_holds_no_example_takes_its_side_by_its_reads() {
+    let program = resolved(
+        "(RULE &piece (input (:P *Id) *Col))\n\
+         (INIT &obj Connectivity\n\
+           (key ((&piece (:Id ^E)))\n\
+             (node (P)\n\
+               (&piece (:Id E) (:Col *P)))))\n",
+    );
+    assert!(form_sides(&program, 1).iter().all(|side| *side == Side::PerInput));
+}
+
+#[test]
+fn an_instance_keyed_on_a_demonstrated_key_field_that_holds_an_example_is_task_wide() {
+    let program = resolved(&format!(
+        "{PER_INPUT_BACKGROUND}\
+         (DET &cells (ex_input (:E *K) *P *Col))\n\
+         (DEMONSTRATED &catalog\n\
+           (key ((&cells ^K *P))\n\
+             (value ((:o P) (:v Col))\n\
+               (&cells K *P)\n\
+               (&bg *P *Col))\n\
+             (demonstration ((:o P) (:o2 P2))\n\
+               (&bg *P *Col)\n\
+               (&bg *P2 Col)))\n\
+           (DEMO_RULE $Same\n\
+             (RULE &prediction (&bg *P *Col))))\n\
+         (INIT &obj Connectivity\n\
+           (key ((&catalog (:key (:K ^K2)) (:o *P)))\n\
+             (node (P)\n\
+               (&catalog (:key (:K K2)) (:o *P))\n\
+               (&bg *P *Col))))\n",
+    ));
+    assert!(form_sides(&program, 3).iter().all(|side| *side == Side::TaskWide));
+}
+
+#[test]
+fn an_instance_keyed_on_an_example_column_of_a_concept_det_is_task_wide() {
+    let det = "(DET &d (ex_input (:E *Ky) *P *Col))\n";
+    let concept = resolved(det);
+    let determinations = [path(&[0])];
+    let program = resolved_with(
+        &format!(
+            "{det}{PER_INPUT_BACKGROUND}\
+             (INIT &obj Connectivity\n\
+               (key ((&d ^Ky *P))\n\
+                 (node (P)\n\
+                   (&d Ky *P)\n\
+                   (&bg *P *Col))))\n",
+        ),
+        Some(ConceptReads { concept: &concept, determinations: &determinations }),
+    );
+    assert!(form_sides(&program, 2).iter().all(|side| *side == Side::TaskWide));
+}
+
+#[test]
+fn an_instance_keyed_on_a_chosen_column_that_holds_an_example_is_task_wide() {
+    let program = resolved(&format!(
+        "{PER_INPUT_BACKGROUND}\
+         (CHOOSE &pick\n\
+           (from (ex_input (:E *Ky) *P *Col)))\n\
+         (INIT &obj Connectivity\n\
+           (key ((&pick ^Ky *P))\n\
+             (node (P)\n\
+               (&pick Ky *P)\n\
+               (&bg *P *Col))))\n",
+    ));
+    assert!(form_sides(&program, 2).iter().all(|side| *side == Side::TaskWide));
 }
