@@ -1,6 +1,6 @@
 //! The pose rule's check.
 
-use super::types::{result, CaseInferences, Inference, PoseOr};
+use super::types::{result, PoseOr};
 use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::types::ValueType;
@@ -23,8 +23,7 @@ impl Check for PoseRuleCheck {
     /// shared Pose type hold labels of two Pose types. The rule on `<`,
     /// `<=`, `>` and `>=` is the type check's.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
-        let cases = CaseInferences::new(input.scope.clauses, input.scope.registry);
-        let inference = Inference::new(input.scope.program, &cases);
+        let inference = input.scope.inference;
         let Some(form) = inference.infer(input.path) else { return CheckResult::Pass };
         let order = CanonicalOrder::of(input.form, &mut SearchBudget::new());
         let reading = form.reading(PoseOr::Open);

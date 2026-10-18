@@ -56,8 +56,7 @@ pub type ScopeTypes = Box<[(NodePath, FormTypes)]>;
 /// give it a Pose type and another type is the pose rule's, which
 /// [`super::pose`] refuses.
 pub fn infer_form(input: &CheckInput<'_>, order: &CanonicalOrder) -> (CheckResult, ScopeTypes) {
-    let cases = CaseInferences::new(input.scope.clauses, input.scope.registry);
-    let inference = Inference::new(input.scope.program, &cases);
+    let inference = input.scope.inference;
     let mut found = Vec::new();
     let mut scopes = Vec::new();
     for source in inferred_scopes(order) {
@@ -803,8 +802,8 @@ impl<'a> FormInference<'a> {
     }
 }
 
-/// The inferences of the case programs of a [`SolverClauses`] that the
-/// check of one form reads, each program's once, so that a read through a
+/// The inferences of the case programs of a [`SolverClauses`] that one
+/// [`super::check_program`] call reads, each program's once, so that a read through a
 /// cycle of forms across those programs meets the guard of
 /// [`Inference::infer`].
 pub(super) struct CaseInferences<'a> {
@@ -851,6 +850,12 @@ pub(super) struct Inference<'a> {
     /// Each form inferred, or `None` while its inference runs, so that a
     /// read through a cycle of forms gives no type.
     forms: RefCell<StableHashMap<NodePath, Option<Rc<FormInference<'a>>>>>,
+}
+
+impl std::fmt::Debug for Inference<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Inference").finish_non_exhaustive()
+    }
 }
 
 impl<'a> Inference<'a> {

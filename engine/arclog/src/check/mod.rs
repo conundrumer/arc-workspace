@@ -116,6 +116,9 @@ pub struct Scope<'a> {
     pub labels: &'a [LabelInScope],
     /// The clauses of each relation across the solver's blocks.
     pub clauses: &'a SolverClauses,
+    /// The inference of the labels of `program`, over the case programs of
+    /// `clauses`, that the checks of one [`check_program`] call share.
+    inference: &'a types::Inference<'a>,
 }
 
 /// A check's input: one node, its path, and its scope.
@@ -291,72 +294,113 @@ pub fn check_program(
         refused.extend(refusals.iter().map(|r| diagnostic(DiagnosticKind::Check(CheckId::Cycles), Severity::Error, r.message.clone(), r.at.clone())));
     }
     let mut alerts = Vec::new();
-    let mut form_types = Vec::new();
-    for (path, form) in top_level_forms(&program) {
-        let mut search = SearchBudget::new();
-        let (order, canonical) = CanonicalOrder::with_form(form, &mut search);
-        if search.reached {
-            let message = "the search for the form's canonical form reached its cap".into();
-            alerts.push(diagnostic(DiagnosticKind::Bound, Severity::Alert, message, path.clone()));
-        }
-        let mut signatures = read_signatures(&program, form, &path, &order).into_vec();
-        signatures.extend(types::type_clause_signatures(form, &order, clauses).cloned());
-        let signatures: Box<[Signature]> = signatures.into();
-        let scopes = order.label_scopes();
-        let key = |check: CheckId, canonical_form: CanonicalForm, signatures: Box<[Signature]>| CheckCacheKey { check, canonical_form, signatures };
-        let report = |refused: &mut Vec<Diagnostic>, check: CheckId, result: &CheckResult| {
-            if let CheckResult::Refuse(refusals) = result {
-                for refusal in refusals.iter() {
-                    let at = path.join(&order.source_path(&refusal.at));
-                    refused.push(diagnostic(DiagnosticKind::Check(check), Severity::Error, refusal.message.clone(), at));
-                }
+    let forms: Vec<TopLevelForm<'_>> = top_level_forms(&program)
+        .map(|(path, form)| {
+            let mut search = SearchBudget::new();
+            let (order, canonical) = CanonicalOrder::with_form(form, &mut search);
+            if search.reached {
+                let message = "the search for the form's canonical form reached its cap".into();
+                alerts.push(diagnostic(DiagnosticKind::Bound, Severity::Alert, message, path.clone()));
             }
-        };
-
-        let in_scopes = |ty: &dyn Fn(&NodePath, u32) -> Option<ValueType>| -> Vec<LabelInScope> {
-            let each = |(scope, labels): &(NodePath, &[(LabelId, u32)])| {
-                labels.iter().map(|&(label, position)| LabelInScope { scope: scope.clone(), label, ty: ty(scope, position) }).collect::<Vec<_>>()
-            };
-            scopes.iter().flat_map(each).collect()
-        };
-        let untyped = in_scopes(&|_, _| None);
-        let input = CheckInput { form, path: &path, scope: Scope { program: &program, registry, labels: &untyped, clauses } };
-        let types_key = key(CheckId::Types, canonical.clone(), signatures.clone());
-        let (result, types) = match (cache.get(&types_key).cloned(), cache.types(&types_key)) {
-            (Some(result), Some(types)) => (result, types),
-            _ => {
-                let (result, types) = types::infer_form(&input, &order);
-                let types = Arc::new(types);
-                cache.insert(types_key.clone(), result.clone());
-                cache.insert_types(types_key, Arc::clone(&types));
-                (result, types)
+            let mut signatures = read_signatures(&program, form, &path, &order).into_vec();
+            signatures.extend(types::type_clause_signatures(form, &order, clauses).cloned());
+            let untyped = labels_in_scopes(&order, &|_, _| None);
+            TopLevelForm { path, form, order, canonical, signatures: signatures.into(), untyped }
+        })
+        .collect();
+    let key = |check: CheckId, canonical_form: CanonicalForm, signatures: Box<[Signature]>| CheckCacheKey { check, canonical_form, signatures };
+    let mut refused_by_form = vec![Vec::new(); forms.len()];
+    let form_types: Vec<Arc<types::ScopeTypes>> = {
+        let cases = types::CaseInferences::new(clauses, registry);
+        let inference = types::Inference::new(&program, &cases);
+        let scope = |labels| Scope { program: &program, registry, labels, clauses, inference: &inference };
+        let form_types: Vec<Arc<types::ScopeTypes>> = forms
+            .iter()
+            .zip(&mut refused_by_form)
+            .map(|(at, refused)| {
+                let input = CheckInput { form: at.form, path: &at.path, scope: scope(&at.untyped) };
+                let types_key = key(CheckId::Types, at.canonical.clone(), at.signatures.clone());
+                let (result, types) = match (cache.get(&types_key).cloned(), cache.types(&types_key)) {
+                    (Some(result), Some(types)) => (result, types),
+                    _ => {
+                        let (result, types) = types::infer_form(&input, &at.order);
+                        let types = Arc::new(types);
+                        cache.insert(types_key.clone(), result.clone());
+                        cache.insert_types(types_key, Arc::clone(&types));
+                        (result, types)
+                    }
+                };
+                at.report(refused, CheckId::Types, &result);
+                types
+            })
+            .collect();
+        let labels: Vec<Vec<LabelInScope>> = forms
+            .iter()
+            .zip(&form_types)
+            .map(|(at, types)| {
+                let typed: StableHashMap<NodePath, &crate::types::FormTypes> = types.iter().map(|(canonical, types)| (at.order.source_path(canonical), types)).collect();
+                labels_in_scopes(&at.order, &|scope, position| {
+                    let types = typed.get(scope).expect("the type check gives the types of each label scope of the form");
+                    types.label(LabelId(position)).cloned()
+                })
+            })
+            .collect();
+        for ((at, labels), refused) in forms.iter().zip(&labels).zip(&mut refused_by_form) {
+            let input = CheckInput { form: at.form, path: &at.path, scope: scope(labels) };
+            for check in checks().iter().filter(|check| check.id() != CheckId::Types) {
+                let canonical_form = match check.id() {
+                    CheckId::Grounding => with_written_order(at.form, &at.canonical, &at.order),
+                    _ => at.canonical.clone(),
+                };
+                let check_key = key(check.id(), canonical_form, at.signatures.clone());
+                let result = cached(cache, check_key, || check.check(&input));
+                at.report(refused, check.id(), &result);
             }
-        };
-        report(&mut refused, CheckId::Types, &result);
-
-        let typed: StableHashMap<NodePath, &crate::types::FormTypes> = types.iter().map(|(canonical, types)| (order.source_path(canonical), types)).collect();
-        let labels = in_scopes(&|scope, position| {
-            let types = typed.get(scope).expect("the type check gives the types of each label scope of the form");
-            types.label(LabelId(position)).cloned()
-        });
-        let input = CheckInput { scope: Scope { labels: &labels, ..input.scope }, ..input };
-        for check in checks().iter().filter(|check| check.id() != CheckId::Types) {
-            let canonical_form = match check.id() {
-                CheckId::Grounding => with_written_order(form, &canonical, &order),
-                _ => canonical.clone(),
-            };
-            let check_key = key(check.id(), canonical_form, signatures.clone());
-            let result = cached(cache, check_key, || check.check(&input));
-            report(&mut refused, check.id(), &result);
         }
-        form_types.push((path.clone(), types, order));
-    }
+        form_types
+    };
+    refused.extend(refused_by_form.into_iter().flatten());
+    let form_types: Vec<(NodePath, Arc<types::ScopeTypes>, CanonicalOrder)> = forms.into_iter().zip(form_types).map(|(at, types)| (at.path, types, at.order)).collect();
     if !refused.is_empty() {
         return Err(refused);
     }
     let mut types = types::program_types(&program, registry, clauses, &form_types);
     types.set_example_nodes(reads::example_relations(&program));
     Ok(CheckedProgram { program, types, alerts })
+}
+
+/// A top-level form of a program, at its path, with its canonical order
+/// and form, the signatures of the clauses its checks read, and the labels
+/// of each of its label scopes with no types.
+struct TopLevelForm<'p> {
+    path: NodePath,
+    form: &'p Form,
+    order: CanonicalOrder,
+    canonical: CanonicalForm,
+    signatures: Box<[Signature]>,
+    untyped: Vec<LabelInScope>,
+}
+
+impl TopLevelForm<'_> {
+    /// Pushes onto `refused` a diagnostic of `check` for each refusal of
+    /// `result`, at its path in the form's source order.
+    fn report(&self, refused: &mut Vec<Diagnostic>, check: CheckId, result: &CheckResult) {
+        if let CheckResult::Refuse(refusals) = result {
+            for refusal in refusals.iter() {
+                let at = self.path.join(&self.order.source_path(&refusal.at));
+                refused.push(diagnostic(DiagnosticKind::Check(check), Severity::Error, refusal.message.clone(), at));
+            }
+        }
+    }
+}
+
+/// The labels of each label scope that `order` gives, each with the type
+/// `ty` gives at its scope's source path and its canonical position there.
+fn labels_in_scopes(order: &CanonicalOrder, ty: &dyn Fn(&NodePath, u32) -> Option<ValueType>) -> Vec<LabelInScope> {
+    let each = |(scope, labels): &(NodePath, &[(LabelId, u32)])| {
+        labels.iter().map(|&(label, position)| LabelInScope { scope: scope.clone(), label, ty: ty(scope, position) }).collect::<Vec<_>>()
+    };
+    order.label_scopes().iter().flat_map(each).collect()
 }
 
 /// The result cached under `key`, or else the result of `run`, which it
