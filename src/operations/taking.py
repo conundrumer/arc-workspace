@@ -45,8 +45,10 @@ from ticketing.vocabulary import COORDINATOR, Domain, Kind, Status
 def scope(state: State) -> set[str]:
     """The tickets the operators release and take changes among: those
     `State.mine` gives, those the coordinator gives in a line to the operator `me`,
-    and each ticket a chain of links reaches from one of those."""
-    return reached(state, {n for n, t in state.tracker.tickets.items() if state.mine(t)} | named(state))
+    and each ticket a chain of links reaches from one of those, with those
+    of `allowed`."""
+    return reached(state, {n for n, t in state.tracker.tickets.items() if state.mine(t)} | named(state)) \
+        | allowed(state)
 
 
 def reached(state: State, start: set[str]) -> set[str]:
@@ -149,9 +151,16 @@ def held_work(state: State) -> set[str]:
 
 def allowed(state: State) -> set[str]:
     """The tickets `Op pause.` admits past the work held, and `Op scope: own.`
-    past the session's line of work: each ticket a chain of
-    links reaches from a ticket of `directives.allow_named`, and those of `expedited`."""
-    return reached(state, allow_named(state)) | expedited(state)
+    past the session's line of work: each ticket a chain of steps reaches
+    from a ticket of `directives.allow_named`, a step from a ticket to each
+    ticket of its `links` and, from a ticket that is not a `change`, to each
+    `change` whose Motivation gives its number; and those of `expedited`."""
+    def step(t: Ticket) -> list[str]:
+        return [*links(t), *([] if t.kind is Kind.CHANGE else
+                             (f.number for f in filed_for(state).get(t.number, ())
+                              if f.kind is Kind.CHANGE and t.number in f.motivation))]
+
+    return closure(state, allow_named(state), step) | expedited(state)
 
 
 COMMIT_WORD = re.compile(r"\b[0-9a-f]{7,40}\b")

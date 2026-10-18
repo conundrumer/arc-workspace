@@ -9,7 +9,8 @@ prefix `Op`, the word of its kind and a colon, past a list marker:
 - `Op expedite: <number>, ...`, for every operator of the session;
 - `Op allow: <number>, ...`, the tickets that `Op scope: own.` and
   `Op pause.` admit for every operator of the session, and the changes a
-  chain of links reaches from them;
+  chain of links reaches from them, with each `change` whose Motivation
+  gives a reached ticket that is not a `change` (`taking.allowed`);
 - `Op merged: <number>, ...`, the changes the coordinator gives as merged;
 - `Op merge: <number>`, a change under `tickets/blocked/` whose merge that line rules;
 - `Op tickets are open.`, which leaves the scope as `own_scope` gives it;
