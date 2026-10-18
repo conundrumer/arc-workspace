@@ -10,6 +10,8 @@
 //! content, and gives each column of each `DET` form of one parameter the
 //! position of the node's column of its name.
 
+use std::sync::Arc;
+
 use arclog::layout::SourceFile;
 use arclog::program::path::{NodePath, PathStep};
 use arclog::program::{ColumnName, DeclaredName, OutputStep};
@@ -210,7 +212,7 @@ fn an_instance_keyed_on_a_demonstrated_key_field_that_holds_an_example_is_task_w
 #[test]
 fn an_instance_keyed_on_an_example_column_of_a_concept_det_is_task_wide() {
     let det = "(DET &d (ex_input (:E *Ky) *P *Col))\n";
-    let concept = resolved(det);
+    let concept = Arc::new(resolved(det));
     let determinations = [path(&[0])];
     let program = resolved_with(
         &format!(

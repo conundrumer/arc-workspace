@@ -740,7 +740,23 @@ pub(super) struct FormInference<'a> {
     given: Vec<LabelId>,
 }
 
-impl FormInference<'_> {
+impl<'a> FormInference<'a> {
+    /// The types of this inference, of a form of the concept program, given
+    /// to `form`, the same form at `path` in a case, whose sites `walk`
+    /// walks.
+    fn at(&self, form: Option<&'a Form>, path: &NodePath, walk: FormWalk<'a>) -> Self {
+        FormInference {
+            form,
+            path: path.clone(),
+            labels: self.labels.clone(),
+            bindings: self.bindings.clone(),
+            walk,
+            component: self.component,
+            zero_typed: self.zero_typed.clone(),
+            given: self.given.clone(),
+        }
+    }
+
     /// The type of `label` read under `pose_or`, where the form gives it
     /// one.
     fn label_under(&self, label: LabelId, pose_or: PoseOr) -> Option<ValueType> {
@@ -790,11 +806,21 @@ pub(super) struct CaseInferences<'a> {
     clauses: &'a SolverClauses,
     registry: &'a Registry,
     inferences: RefCell<StableHashMap<usize, Rc<Inference<'a>>>>,
+    /// The inference of each concept program that a case program read
+    /// resolves its concept forms in, by the program's address.
+    concepts: RefCell<StableHashMap<*const ResolvedProgram, Rc<Inference<'a>>>>,
 }
 
 impl<'a> CaseInferences<'a> {
     pub fn new(clauses: &'a SolverClauses, registry: &'a Registry) -> Self {
-        CaseInferences { clauses, registry, inferences: RefCell::default() }
+        CaseInferences { clauses, registry, inferences: RefCell::default(), concepts: RefCell::default() }
+    }
+
+    /// The inference of `concept`, a concept program.
+    fn concept(&'a self, concept: &'a ResolvedProgram) -> Rc<Inference<'a>> {
+        let mut concepts = self.concepts.borrow_mut();
+        let inference = concepts.entry(concept as *const ResolvedProgram).or_insert_with(|| Rc::new(Inference::new(concept, self)));
+        Rc::clone(inference)
     }
 
     /// The inference of the case program `entry` was found in.
@@ -807,11 +833,16 @@ impl<'a> CaseInferences<'a> {
 }
 
 /// The inference of the types of one case program's labels, form by form,
-/// each form once, on its first read.
+/// each form once, on its first read. A form at or under a `DET` form that
+/// the case takes from the concept program is inferred, and its sites
+/// typed, by the inference of the concept program at its path there, as
+/// [`ResolvedProgram::concept_path`] gives it.
 pub(super) struct Inference<'a> {
     program: &'a ResolvedProgram,
     registry: &'a Registry,
     cases: &'a CaseInferences<'a>,
+    /// The inference of [`ResolvedProgram::concept`].
+    concept: Option<Rc<Inference<'a>>>,
     /// Each form inferred, or `None` while its inference runs, so that a
     /// read through a cycle of forms gives no type.
     forms: RefCell<StableHashMap<NodePath, Option<Rc<FormInference<'a>>>>>,
@@ -819,7 +850,15 @@ pub(super) struct Inference<'a> {
 
 impl<'a> Inference<'a> {
     pub fn new(program: &'a ResolvedProgram, cases: &'a CaseInferences<'a>) -> Self {
-        Inference { program, registry: cases.registry, cases, forms: RefCell::default() }
+        let concept = program.concept().map(|concept| cases.concept(concept));
+        Inference { program, registry: cases.registry, cases, concept, forms: RefCell::default() }
+    }
+
+    /// The inference of the concept program and the path there of `path`,
+    /// where `path` stands at or under a form the case takes from it.
+    fn in_concept(&self, path: &NodePath) -> Option<(&Inference<'a>, NodePath)> {
+        let concept = self.concept.as_deref()?;
+        Some((concept, self.program.concept_path(path)?))
     }
 
     /// The types of the label scope whose form stands at `path`, a form or
@@ -838,6 +877,15 @@ impl<'a> Inference<'a> {
             Some(form) => ScopeForm::Form(form),
             None => ScopeForm::DemoRule(demo_rule(program, path)?),
         };
+        if let Some((concept, at)) = self.in_concept(path) {
+            let (form, walk) = match scope {
+                ScopeForm::Form(form) => (Some(form), FormWalk::of(form)),
+                ScopeForm::DemoRule(rule) => (None, FormWalk::of_rule(rule)),
+            };
+            let inferred = Rc::new(concept.infer(&at)?.at(form, path, walk));
+            self.forms.borrow_mut().insert(path.clone(), Some(Rc::clone(&inferred)));
+            return Some(inferred);
+        }
         self.forms.borrow_mut().insert(path.clone(), None);
         let inferred = Rc::new(match scope {
             ScopeForm::Form(form) => self.infer_new(form, path),
@@ -920,6 +968,9 @@ impl<'a> Inference<'a> {
     /// The type that the column at `path` of the relation `atom` reads gives
     /// a site of `atom`, a site of a form read under `reading`.
     pub fn site_type(&self, reading: SiteReading<'_, 'a>, atom: &Atom, path: &[ColumnName]) -> Option<ValueType> {
+        if let Some((concept, at)) = self.in_concept(reading.path) {
+            return concept.site_type(SiteReading { path: &at, ..reading }, atom, path);
+        }
         if let RelationRef::DefinedPort(port) = &atom.relation {
             let (first, rest) = path.split_first()?;
             let input = reading.component?.inputs.iter().find(|input| input.port.name == *port)?;
@@ -939,12 +990,13 @@ impl<'a> Inference<'a> {
     /// the column at `path`, may hold a Pose label whatever its column's
     /// type: an instance input's head, a column of a relation the program
     /// derives or of an instance's input, or a lib column that takes a Pose
-    /// type (`docs/arclog/rigid.md#the-pose`). A column of an instance's
-    /// output or of a `RIGID_DET` form's output takes its type from such a
-    /// column, so it holds a Pose label where the inference gives it no type.
+    /// type (`docs/arclog/rigid.md#the-pose`).
     pub fn admits_pose(&self, reading: SiteReading<'_, 'a>, atom: &Atom, path: &[ColumnName]) -> bool {
         if let RelationRef::DefinedPort(_) = &atom.relation {
             return true;
+        }
+        if let Some((concept, at)) = self.in_concept(reading.path) {
+            return concept.admits_pose(SiteReading { path: &at, ..reading }, atom, path);
         }
         let Some(at) = reading.walk.atoms.get(&(atom as *const Atom)) else { return false };
         match self.program.resolution(&reading.path.join(at)) {
@@ -959,9 +1011,7 @@ impl<'a> Inference<'a> {
                     | DependencyKind::Chosen(_)
                     | DependencyKind::Demonstrated(_)
                     | DependencyKind::InstanceInput { .. }
-                    | DependencyKind::InstanceOutput { .. }
                     | DependencyKind::RecursiveInstance(_)
-                    | DependencyKind::RigidAssembly(_)
             ),
             _ => false,
         }

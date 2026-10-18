@@ -2,6 +2,8 @@
 //! solver, the join of the types that the relation's other clauses give its
 //! column, each clause typed in the case program it stands in.
 
+use std::sync::Arc;
+
 use arclog::check::{check_program, CheckCache, SolverClauses};
 use arclog::program::path::{NodePath, PathStep};
 use arclog::program::{Conjunct, Form, Operand};
@@ -39,7 +41,7 @@ fn a_zero_typed_label_takes_the_join_of_the_clauses_of_each_case() {
     let clauses = SolverClauses::of(&solver, registry);
     let mut cache = CheckCache::default();
     let concept_case = solver.concept_case();
-    let concept = resolve(&concept_case.program, None, &derived, registry).value;
+    let concept = Arc::new(resolve(&concept_case.program, None, &derived, registry).value);
     let mut zero_types = Vec::new();
     for case in solver.cases(Exclusion::WithExcluded) {
         let reads = (case.name != concept_case.name).then(|| ConceptReads { concept: &concept, determinations: case.concept_determinations() });

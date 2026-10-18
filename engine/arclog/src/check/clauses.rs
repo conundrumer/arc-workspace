@@ -1,6 +1,8 @@
 //! The index of every clause of a solver across its case programs, which
 //! the checks that compare a relation's clauses read.
 
+use std::sync::Arc;
+
 use crate::program::canonical::CanonicalWriter;
 use crate::program::path::{NodePath, PathStep};
 use crate::program::{Form, ProgramRelation};
@@ -21,7 +23,7 @@ use crate::solver::{Exclusion, FileOwner};
 pub struct SolverClauses {
     /// Each case program the clauses were found in, the concept program
     /// first.
-    programs: Box<[ResolvedProgram]>,
+    programs: Box<[Arc<ResolvedProgram>]>,
     clauses: crate::hash::StableHashMap<(FileScope, ProgramRelation), Box<[ClauseEntry]>>,
 }
 
@@ -57,13 +59,13 @@ impl SolverClauses {
     pub fn of(solver: &crate::solver::Solver, registry: &Registry) -> Self {
         let derived = solver.derived_relations();
         let concept_case = solver.concept_case();
-        let concept = crate::resolver::resolve(&concept_case.program, None, &derived, registry).value;
+        let concept = Arc::new(crate::resolver::resolve(&concept_case.program, None, &derived, registry).value);
         let cases: Vec<_> = solver.cases(Exclusion::WithExcluded).filter(|case| case.name != concept_case.name).collect();
-        let resolved: Vec<ResolvedProgram> = cases
+        let resolved: Vec<Arc<ResolvedProgram>> = cases
             .iter()
             .map(|case| {
                 let reads = ConceptReads { concept: &concept, determinations: case.concept_determinations() };
-                crate::resolver::resolve(&case.program, Some(reads), &derived, registry).value
+                Arc::new(crate::resolver::resolve(&case.program, Some(reads), &derived, registry).value)
             })
             .collect();
         let mut found = ClausesFound::default();
@@ -77,7 +79,7 @@ impl SolverClauses {
     /// The clauses of a synthesized program, its own.
     pub fn of_program(program: ResolvedProgram) -> Self {
         let mut found = ClausesFound::default();
-        found.add(program, &|path| (FileOwner::Solver, path.clone()));
+        found.add(Arc::new(program), &|path| (FileOwner::Solver, path.clone()));
         found.ordered()
     }
 
@@ -96,7 +98,7 @@ impl SolverClauses {
 /// its order.
 #[derive(Default)]
 struct ClausesFound {
-    programs: Vec<ResolvedProgram>,
+    programs: Vec<Arc<ResolvedProgram>>,
     clauses: crate::hash::StableHashMap<(FileScope, ProgramRelation), Vec<ClauseEntry>>,
 }
 
@@ -104,11 +106,11 @@ impl ClausesFound {
     /// Adds `program` and each clause of it, at the top level and in each
     /// `DEMO_RULE` form, with its file and its path there as `file_path`
     /// gives them for its path in `program`.
-    fn add(&mut self, program: ResolvedProgram, file_path: &dyn Fn(&NodePath) -> (FileOwner, NodePath)) {
+    fn add(&mut self, program: Arc<ResolvedProgram>, file_path: &dyn Fn(&NodePath) -> (FileOwner, NodePath)) {
         let program_index = self.programs.len();
         for (path, form) in top_level_forms(&program) {
             match form {
-                Form::Clause(clause) => self.add_clause((program_index, &program), file_path, FileScope::Program, &clause.value().derives, &path),
+                Form::Clause(clause) => self.add_clause((program_index, &*program), file_path, FileScope::Program, &clause.value().derives, &path),
                 Form::Demonstrated(demonstrated) => {
                     let demonstrated = demonstrated.value();
                     let first_rule = demonstrated.key.iter().count() + demonstrated.inputs.len();
@@ -118,7 +120,7 @@ impl ClausesFound {
                         for (index, form) in rule.value().forms.iter().enumerate() {
                             if let Form::Clause(clause) = form {
                                 let scope = FileScope::DemoRule(owner, file_rule_path.clone());
-                                self.add_clause((program_index, &program), file_path, scope, &clause.value().derives, &rule_path.child(index as u32));
+                                self.add_clause((program_index, &*program), file_path, scope, &clause.value().derives, &rule_path.child(index as u32));
                             }
                         }
                     }

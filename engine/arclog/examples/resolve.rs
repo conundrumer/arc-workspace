@@ -12,6 +12,7 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use std::process::ExitCode;
+use std::sync::Arc;
 
 use arclog::diagnostic::{Diagnostic, Location};
 use arclog::harness::{read_corpus_solver, run_over_corpus, CorpusSolver, LintReport, SolverResult};
@@ -36,11 +37,12 @@ fn faults(solver: &Solver) -> Vec<String> {
     let concept_case = solver.concept_case();
     let concept = resolve(&concept_case.program, None, &derived, registry);
     let mut faults: Vec<String> = concept.diagnostics.iter().map(|d| describe(&concept_case, d)).collect();
+    let concept = Arc::new(concept.value);
     for case in solver.cases(Exclusion::WithExcluded) {
         if case.name == concept_case.name {
             continue;
         }
-        let reads = ConceptReads { concept: &concept.value, determinations: case.concept_determinations() };
+        let reads = ConceptReads { concept: &concept, determinations: case.concept_determinations() };
         let resolved = resolve(&case.program, Some(reads), &derived, registry);
         faults.extend(resolved.diagnostics.iter().map(|d| describe(&case, d)));
     }

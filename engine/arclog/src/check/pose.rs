@@ -16,10 +16,12 @@ impl Check for PoseRuleCheck {
     /// Refuses each site of a Pose label of the form that
     /// `docs/arclog/rigid.md#the-pose` does not give: a site whose column
     /// gives a type other than the label's, or that gives no type and is no
-    /// column of a relation the program derives, of an instance's input, or
-    /// of a lib relation that takes a Pose type; and a lib atom whose
-    /// columns of one shared Pose type hold labels of two Pose types. The
-    /// rule on `<`, `<=`, `>` and `>=` is the type check's.
+    /// column of a relation that clauses, a `CHOOSE` form or a
+    /// `DEMONSTRATED` form derive, a parameter included, of an instance's
+    /// input, of an instance whose inputs read its outputs, or of a lib
+    /// relation that takes a Pose type; and a lib atom whose columns of one
+    /// shared Pose type hold labels of two Pose types. The rule on `<`,
+    /// `<=`, `>` and `>=` is the type check's.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
         let cases = CaseInferences::new(input.scope.clauses, input.scope.registry);
         let inference = Inference::new(input.scope.program, &cases);

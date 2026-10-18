@@ -4,6 +4,8 @@
 //!
 //! The registry and resolver stage writes the bodies.
 
+use std::sync::Arc;
+
 use crate::diagnostic::WithDiagnostics;
 use crate::hash::StableHash;
 use crate::program::path::NodePath;
@@ -193,6 +195,15 @@ pub struct ResolvedProgram {
     /// The path of each read that its form reads in its lifted form.
     lifted: crate::hash::StableHashSet<NodePath>,
     names: names::Names,
+    concept: Option<ConceptForms>,
+}
+
+/// The concept program of a case, and the path there of each `DET` form
+/// that the case takes from it, by the form's path in the case.
+#[derive(Clone, Debug)]
+struct ConceptForms {
+    program: Arc<ResolvedProgram>,
+    paths: crate::hash::StableHashMap<NodePath, NodePath>,
 }
 
 impl ResolvedProgram {
@@ -294,6 +305,30 @@ impl ResolvedProgram {
     pub fn proposer_columns(&self, clause: &NodePath, index: usize) -> Option<&[ColumnName]> {
         self.proposer_columns.get(&(clause.clone(), index)).map(|columns| &columns[..])
     }
+
+    /// The concept program that the case's concept `DET` forms resolve
+    /// their reads in, as [`ConceptReads`] gives, or `None` for a program
+    /// resolved with no [`ConceptReads`].
+    pub fn concept(&self) -> Option<&ResolvedProgram> {
+        self.concept.as_ref().map(|concept| &*concept.program)
+    }
+
+    /// The path in [`ResolvedProgram::concept`] of what stands at `path`,
+    /// where `path` stands at or under a `DET` form that the case takes
+    /// from the concept program.
+    pub fn concept_path(&self, path: &NodePath) -> Option<NodePath> {
+        let concept = self.concept.as_ref()?;
+        (1..=path.0.len()).find_map(|len| {
+            let form = NodePath(path.0[..len].into());
+            rebase(path, &form, concept.paths.get(&form)?)
+        })
+    }
+}
+
+/// `path` with its prefix `from` replaced by `to`, where `from` is a
+/// prefix of it.
+fn rebase(path: &NodePath, from: &NodePath, to: &NodePath) -> Option<NodePath> {
+    path.0.strip_prefix(&from.0[..]).map(|rest| to.join(&NodePath(rest.into())))
 }
 
 /// A column of a relation by its path: the column's name, then, on a
@@ -316,7 +351,7 @@ pub fn output_of(relation: &RelationRef) -> Option<&[OutputStep]> {
 /// parameter as one node.
 #[derive(Clone, Copy, Debug)]
 pub struct ConceptReads<'a> {
-    pub concept: &'a ResolvedProgram,
+    pub concept: &'a Arc<ResolvedProgram>,
     /// The paths in the case program of the concept program's `DET` forms,
     /// as [`crate::solver::Case::concept_determinations`] gives them.
     pub determinations: &'a [NodePath],

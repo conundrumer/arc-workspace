@@ -2,6 +2,8 @@
 //! dependency graph, at each form on the cycle, and passes the case that
 //! leaves it open.
 
+use std::sync::Arc;
+
 use arclog::check::{check_cycles, CheckResult};
 use arclog::program::path::{NodePath, PathStep};
 use arclog::read::read_solver;
@@ -29,7 +31,7 @@ fn a_cycle_is_refused_at_each_form_on_it() {
     let registry = Registry::get();
     let derived = solver.derived_relations();
     let concept_case = solver.concept_case();
-    let concept = resolve(&concept_case.program, None, &derived, registry).value;
+    let concept = Arc::new(resolve(&concept_case.program, None, &derived, registry).value);
     assert_eq!(check_cycles(&concept.graph, &concept), CheckResult::Pass);
 
     let case = solver.cases(Exclusion::WithExcluded).find(|case| case.name != concept_case.name).expect("the case of `$Closed`");

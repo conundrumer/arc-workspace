@@ -8,7 +8,7 @@ use std::sync::Arc;
 use super::columns::{self, Columns, Place};
 use super::names::{write_output_path, ColumnsOf, Names, Target};
 use super::{
-    ColumnPosition, ConceptReads, DependencyGraph, DependencyKind, DependencyNode, ExamplePath, GraphNodeIndex,
+    rebase, ColumnPosition, ConceptForms, ConceptReads, DependencyGraph, DependencyKind, DependencyNode, ExamplePath, GraphNodeIndex,
     ResolvedProgram, Resolution, Side, Signature,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity, WithDiagnostics};
@@ -170,20 +170,15 @@ pub(super) fn resolve(
     builder.contents();
     builder.sites();
     builder.proposers();
-    if let Some(concept) = concept {
+    let concept = concept.map(|concept| {
         builder.copy_concept(concept);
-    }
-    builder.finish()
+        ConceptForms { program: Arc::clone(concept.concept), paths: std::mem::take(&mut builder.concept_forms) }
+    });
+    builder.finish(concept)
 }
 
 fn top(index: usize) -> NodePath {
     NodePath(Box::new([crate::program::path::PathStep(index as u32)]))
-}
-
-/// `path` with its prefix `from` replaced by `to`, where `from` is a
-/// prefix of it.
-fn rebase(path: &NodePath, from: &NodePath, to: &NodePath) -> Option<NodePath> {
-    path.0.strip_prefix(&from.0[..]).map(|rest| to.join(&NodePath(rest.into())))
 }
 
 /// The node kind of a clause: a chosen relation where it has `ONE`
@@ -711,7 +706,7 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn finish(self) -> WithDiagnostics<ResolvedProgram> {
+    fn finish(self, concept: Option<ConceptForms>) -> WithDiagnostics<ResolvedProgram> {
         let graph = DependencyGraph {
             nodes: self.nodes.into(),
             reads: self.reads.into_iter().map(|reads| reads.into_iter().map(GraphNodeIndex).collect()).collect(),
@@ -733,6 +728,7 @@ impl<'a> Builder<'a> {
                 proposer_columns: self.proposer_columns,
                 lifted: self.lifted,
                 names: self.names,
+                concept,
             },
             diagnostics: self.diagnostics,
         }
