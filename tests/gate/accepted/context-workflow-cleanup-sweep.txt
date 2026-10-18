@@ -2458,7 +2458,7 @@ each finding left as written, with the reason
 
 a file the brief does not name that a rename changed, and what changed in it
 
-.claude/workflows/cleanup-sweep.js:59
+.claude/workflows/cleanup-sweep.js:60
 
 - Files: ${solver}.
 - Scratch: .scratch/${item.stem}/.

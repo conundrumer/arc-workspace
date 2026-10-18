@@ -10,11 +10,11 @@ Phases with no role: Analyze, Create
 
 Brief: built by .claude/workflows/analyze-create.js, in its briefs region.
 
-.claude/workflows/analyze-create.js:31
+.claude/workflows/analyze-create.js:32
 
 - Task: ${id}.
 
-.claude/workflows/analyze-create.js:35
+.claude/workflows/analyze-create.js:36
 
 - Task: ${id}.
 - If `concept.md`, `analyze.md`, or `witnesses.json` is missing under `.scratch/${id}/`, reply `missing: <file>` and stop.

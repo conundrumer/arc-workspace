@@ -52,6 +52,24 @@ def test_the_extractor_reports_what_it_cannot_read(tmp_path, name, text, rule):
     assert err.value.rule == rule
 
 
+BREAK_AFTER_NEWLINE = '''\
+from controlled_markdown import mctx
+
+TEXT = mctx("""
+    one statement
+    on two lines
+    """)
+'''
+
+
+def test_a_finding_in_a_fragment_that_opens_with_a_newline_is_at_its_text(tmp_path):
+    path = tmp_path / "f.py"
+    path.write_text(BREAK_AFTER_NEWLINE)
+    with pytest.raises(ControlledMarkdownError) as err:
+        check_file_fragments(path, "f.py")
+    assert (err.value.rule, err.value.line) == ("fragment-break", 4)
+
+
 BAD_DOC_PATH_PY = '''\
 DOC = "docs/handbook/no-such-doc.md"
 '''

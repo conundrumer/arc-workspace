@@ -4112,7 +4112,7 @@ what the judgment rests on: the passage read, by doc and section
 
 - Read the retro window and return the issues.
 
-.claude/workflows/retro.js:521
+.claude/workflows/retro.js:522
 
 - Check these issues, all about ${area}.
 
@@ -4120,7 +4120,7 @@ what the judgment rests on: the passage read, by doc and section
 ${list}
 ~~~
 
-.claude/workflows/retro.js:532
+.claude/workflows/retro.js:533
 
 - Review these open issues and their candidate fixes.
 
@@ -4128,7 +4128,7 @@ ${list}
 ${list}
 ~~~
 
-.claude/workflows/retro.js:543
+.claude/workflows/retro.js:544
 
 - Make these fixes. Each entry names one file, the fixes that file takes, and the path its diff goes to.
 
@@ -4144,7 +4144,7 @@ ${entries}
 
 - The user ruled on none of these fixes.
 
-.claude/workflows/retro.js:560
+.claude/workflows/retro.js:561
 
 - Make these fixes. Each entry names one file, the fixes that file takes, the reader its pruned text serves, and the path each of its two diffs goes to.
 
@@ -4154,7 +4154,7 @@ ${entries}
 
 ${rulingLine}
 
-.claude/workflows/retro.js:576
+.claude/workflows/retro.js:577
 
 - You are in a git worktree of the repo, checked out at HEAD.
 - It is a full tree of its own, and every path above is relative to its root.
@@ -4163,7 +4163,7 @@ ${rulingLine}
 - For each file you create, append the output of `git diff --no-index -- /dev/null <file>` to that file's diff.
 - Report the absolute path of the worktree in `worktree`.
 
-.claude/workflows/retro.js:587
+.claude/workflows/retro.js:588
 
 - The fix worked in a git worktree of the repo, at ${worktree}.
 - Every path above is relative to that tree's root.
@@ -4178,7 +4178,7 @@ ${rulingLine}
 
 - The fix took no prune step.
 
-.claude/workflows/retro.js:602
+.claude/workflows/retro.js:603
 
 - ${target} — the edits its changes were meant to make:
 
@@ -4189,7 +4189,7 @@ ${edits}
 - Its fix diff is under ${diff}.
 ${prune}
 
-.claude/workflows/retro.js:614
+.claude/workflows/retro.js:615
 
 - The fix also changed these files.
 - They are in scope beside the target: fix what you find in them.
@@ -4203,7 +4203,7 @@ ${files}
 
 - The fix changed no file beside the target.
 
-.claude/workflows/retro.js:625
+.claude/workflows/retro.js:626
 
 - The other code targets of this retro changed the same tree. Their diffs are under these paths:
 
@@ -4215,7 +4215,7 @@ ${paths}
 
 - No other code target of this run changed the same tree.
 
-.claude/workflows/retro.js:645
+.claude/workflows/retro.js:646
 
 - Verify the changes to ${target}.
 
@@ -4226,7 +4226,7 @@ ${chain}
 - Write the diff of your own changes, verbatim, to ${where}, and report that path.
 - A run that changed nothing writes no file and reports an empty path.
 
-.claude/workflows/retro.js:659
+.claude/workflows/retro.js:660
 
 - Take the change in the worktree at ${worktree} into the repo.
 
@@ -4241,7 +4241,7 @@ ${ONE_CALL}
 - Run no other command.
 - Change no file yourself, and never run a git command of your own.
 
-.claude/workflows/retro.js:675
+.claude/workflows/retro.js:676
 
 - Run the checks over the current tree: the suite, the handbook build, and every solver of the corpus.
 
@@ -4256,7 +4256,7 @@ ${ONE_CALL}
 - Do not attribute it to other work, and do not report it as passing.
 ${NO_WRITES}
 
-.claude/workflows/retro.js:692
+.claude/workflows/retro.js:693
 
 - Sweep the parameter values of these solvers.
 
@@ -4271,7 +4271,7 @@ ${ONE_CALL}
 - Change no file outside `.scratch/retro/sweep/`.
 - Never run a git command that changes state.
 
-.claude/workflows/retro.js:710
+.claude/workflows/retro.js:711
 
 - Write the sweep review lines into these solvers.
 
@@ -4285,20 +4285,20 @@ ${ONE_CALL}
 - Change no other file.
 - Never run a git command that changes state.
 
-.claude/workflows/retro.js:729
+.claude/workflows/retro.js:730
 
 - The solver: ${solver}.
 - The task id: ${taskId}.
 - The diff path: ${where}.
 - The report path: ${report}.
 
-.claude/workflows/retro.js:739
+.claude/workflows/retro.js:740
 
 - Files: ${solver}.
 - Span: the whole file.
 - Scratch: .scratch/${taskId}/.
 
-.claude/workflows/retro.js:748
+.claude/workflows/retro.js:749
 
 - Group these review lines.
 - Each entry names the task id of the solver the line stood in, the line, and a seed key from its text.
@@ -4307,7 +4307,7 @@ ${ONE_CALL}
 ${list}
 ~~~
 
-.claude/workflows/retro.js:766
+.claude/workflows/retro.js:767
 
 - Compare these solvers, the group `${group}`, under the rule ${rule}.
 - Each entry names one solver, its report, and the review lines the Resolve phase acted on in it under that rule.
@@ -4317,7 +4317,7 @@ ${list}
 ${list}
 ~~~
 
-.claude/workflows/retro.js:785
+.claude/workflows/retro.js:786
 
 - The solver: ${solver}.
 - The diff path: ${where}.
@@ -4328,7 +4328,7 @@ ${list}
 ${divergence}
 ~~~
 
-.claude/workflows/retro.js:799
+.claude/workflows/retro.js:800
 
 - Run the brief below through Codex.
 - It covers ${count}: ${targets}.

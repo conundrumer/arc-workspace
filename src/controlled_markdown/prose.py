@@ -68,6 +68,11 @@ def dedent(text: str) -> str:
     return "\n".join(ln[pad:] if ln.strip() else "" for ln in lines)
 
 
+def dropped_lines(text: str) -> int:
+    """The count of blank lines at the start of `text`, which `dedent` drops."""
+    return text[:len(text) - len(text.lstrip())].count("\n")
+
+
 # ----------------------------------------------------------------- words
 
 # Each form of `carry`, which this tree uses only in a figurative sense. The
@@ -148,7 +153,7 @@ def _py_fragments(tree, path: Path, source: str):
     the program."""
     def values(node):
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            yield node.lineno, dedent(node.value)
+            yield node.lineno + dropped_lines(node.value), dedent(node.value)
         elif isinstance(node, ast.Dict):
             for v in node.values:
                 yield from values(v)
@@ -200,7 +205,9 @@ def _js_fragments(text: str, path: Path, source: str):
                 break
             body.append(ch)
             j += 1
-        yield Fragment(dedent("".join(body)), path, source, line)
+        literal = "".join(body)
+        yield Fragment(dedent(literal), path, source,
+                       line + dropped_lines(literal))
 
 
 PY_WHOLE_RE = re.compile(r"^\s*\{[A-Za-z_][A-Za-z0-9_.]*\}\s*$")
