@@ -19,7 +19,7 @@ tools: Read, Grep, Glob, Bash, Write, SendMessage, TaskStop
 # Item checker
 * inline: notes/launching.md#a-part-a-brief-leaves-out
 * inline: notes/launching.md#an-item-checkers-brief
-- Check each item of each editor whose latest report your brief gives against what that report gives for it, and against the worktree. Send each item that is not shown to hold, or that no report gives as done or as unfinished, to the editor whose part it is, and each code editor's report that has no `Reuse` section to that editor, and give each in your message as kept.
+- Check each item of each editor whose latest report your brief gives against what that report gives for it, and against the worktree. Send each such item that is not shown to hold, or that its editor's latest report does not give as done or as unfinished, to the editor whose part it is, and each code editor's report that has no `Reuse` section to that editor, and give each in your message as kept.
     - An editor's items are the Intent items of the change's ticket that fall in the part your brief gives for that editor, or, where the change has no ticket, the items of the transcript brief your brief gives, with the items of each later request as the editor's report gives them. `uv run python scripts/file_ticket.py show <number> Intent Scope` prints a ticket's items.
     * inline: notes/launching.md#an-editors-report-on-a-change
     - Where your brief gives the check after the change's review round cap, check only each edit that a decision in the ticket analysts' reports your brief gives has an editor make, in place of the items.
