@@ -1,6 +1,5 @@
 //! The grid of `&output`, read by its grid columns, as
-//! `docs/arclog/constraints.md#the-output-set` gives: one Position column
-//! and one Color column, with every other column projected away.
+//! `docs/arclog/constraints.md#the-output-set` gives.
 
 #![allow(unused_variables, dead_code)]
 

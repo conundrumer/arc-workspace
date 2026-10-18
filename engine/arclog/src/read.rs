@@ -1,9 +1,7 @@
-//! The reader of arclog and arcdata files. It reads a solver's `.arclog`
-//! and `.arcdata` files into one [`Solver`] tree. Both files are
-//! s-expressions, read by one reader, and the arcdata file has a closed set
-//! of head symbols (`docs/arclog/arcdata.md#arcdata`). The registry file
-//! under `engine/lib/` is read by the same s-expression reader, as
-//! [`crate::registry`] gives.
+//! The reader of arclog and arcdata files (`docs/arclog/arcdata.md#arcdata`).
+//! It reads a solver's `.arclog` and `.arcdata` files into one [`Solver`]
+//! tree, and the registry file under `engine/lib/` by the same s-expression
+//! reader, as [`crate::registry`] gives.
 //!
 //! Each node reader records the layout of each node it reads under the
 //! node's path, as [`crate::layout::Layout`] gives, and leaves out a node
@@ -103,10 +101,9 @@ pub type LabelNames = Box<[(Box<str>, crate::program::LabelId)]>;
 /// the definition of a lib name by other lib names, in the format
 /// [`crate::registry`] gives. The kept labels are the columns the body can
 /// have, as a program's clause has the labels its body keeps as its columns.
-/// A label that one branch of an `OR` makes and some later branch does not
-/// name is local to its branch, as `docs/arclog/arclog.md#disjunction`
-/// gives, and a label fresh inside a `NOT` or an `ALL` is local to that
-/// form; neither is kept.
+/// A label local to its branch of an `OR`
+/// (`docs/arclog/arclog.md#disjunction`), and a label fresh inside a `NOT` or
+/// an `ALL`, which is local to that form, are not kept.
 ///
 /// Fails where an s-expression of `exprs` matches no node kind of its
 /// format, with a diagnostic of the grammar at each such s-expression.
@@ -131,9 +128,9 @@ fn read_scoped_body(exprs: &[SExpr]) -> Result<(Node<crate::program::Body>, Labe
 /// of the input's columns, `None` at a column of a type parameter.
 ///
 /// Fails where an s-expression of `rows` matches no node kind of its format,
-/// and where a grid's rows differ in length, or it marks a cell with `@` at
-/// a Position column or none at an Offset column, with a diagnostic of the
-/// grammar at each such s-expression.
+/// and where a grid breaks the rule on its rows' length or on its marked cell
+/// (`docs/arclog/arcdata.md#params`), with a diagnostic of the grammar at
+/// each such s-expression.
 pub fn read_param_value(
     rows: &[SExpr],
     columns: &[Option<crate::program::TypeName>],

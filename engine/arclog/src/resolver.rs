@@ -37,22 +37,20 @@ pub enum DependencyKind {
     /// A parameter: a `DET` relation with no `ONE` mark, read as one node and
     /// never through its body, as a `DET` of the concept program is read in
     /// each case, with the values that `DET` keeps for it. A parameter that
-    /// several blocks of the case determine is one node, whose values are
-    /// those every determination admits. Each read of the parameter's own
-    /// `DET` bodies is an edge into the node, so a `DET` that reads a
-    /// relation which depends on its own parameter makes a cycle, which the
-    /// checker refuses.
+    /// several blocks of the case determine is one node, with the values
+    /// `docs/arclog/arclog.md#the-alts-form` gives it. Each read of the
+    /// parameter's own `DET` bodies is an edge into the node, so a `DET` that
+    /// reads a relation which depends on its own parameter makes a cycle,
+    /// which the checker refuses.
     Parameter(ProgramRelation),
     /// A chosen relation: a `CHOOSE` form's, or a clause's with `ONE` marks,
     /// a `DET` with `(ONE)` included, which is a chosen relation at the task
-    /// level. An open parameter, a `DET`
-    /// that ends in `(ONE)`, that several blocks of the case determine is
-    /// one node, whose values are those every determination admits, as a
+    /// level. An open parameter, a `DET` that ends in `(ONE)`, that several
+    /// blocks of the case determine is one node, as a
     /// [`DependencyKind::Parameter`] is.
     Chosen(RelationName),
-    /// A `RIGID_DET` form: one node for its assemblies, one assembly, or,
-    /// for a keyed form, one per key row, as `docs/arclog/rigid.md#form`
-    /// gives.
+    /// A `RIGID_DET` form: one node for its assemblies
+    /// (`docs/arclog/rigid.md#form`).
     RigidAssembly(RigidDetName),
     /// A `DEMONSTRATED` relation.
     Demonstrated(RelationName),
@@ -65,10 +63,8 @@ pub enum DependencyKind {
 }
 
 /// The side of a node of the dependency graph, as
-/// `docs/arclog/arclog.md#program` and `#instance` give: per input, as a
-/// `RULE` relation is, or task-wide, as a `DET` relation is. A task-wide
-/// form reads a per-input relation in its lifted form, with the Example
-/// column `E` first.
+/// `docs/arclog/arclog.md#program` and `docs/arclog/arclog.md#instance` give:
+/// per input, as a `RULE` relation is, or task-wide, as a `DET` relation is.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Side {
     PerInput,

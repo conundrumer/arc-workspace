@@ -18,11 +18,10 @@ impl Check for InstanceInputsCheck {
     }
 
     /// Refuses, in each `INIT` form of the form, each input that its
-    /// component does not declare, each input written after another clause
-    /// of the same input, and each input that stands before an input of its
+    /// component does not declare, each input written after another clause of
+    /// the same input, and each input that stands before an input of its
     /// group that the component declares before it, as
-    /// `docs/arclog/arclog.md#instance` gives: the keyed inputs are one
-    /// group, and the inputs after the key clause another.
+    /// `docs/arclog/arclog.md#instance` gives.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
         let mut refusals = Vec::new();
         for (at, node) in forms_within(input.form) {

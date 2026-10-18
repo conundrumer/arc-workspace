@@ -872,9 +872,7 @@ impl<'a> Inference<'a> {
     }
 
     /// Whether the form at `form` reads the relation of `node` in its lifted
-    /// form, with the Example column first: where the form is task-wide and
-    /// the relation is a per-input relation other than a fact relation
-    /// (`docs/arclog/arclog.md#program`).
+    /// form (`docs/arclog/arclog.md#program`).
     fn lifts(&self, form: &NodePath, node: GraphNodeIndex) -> bool {
         let task_wide = form_side(self.program, form) == Some(Side::TaskWide);
         let fact = matches!(self.program.graph.nodes[node.0 as usize].kind, DependencyKind::Fact(_));
@@ -1108,10 +1106,9 @@ impl<'a> Inference<'a> {
         try_map_labels(&ty, &|_| None)
     }
 
-    /// The type of the column at `path` of the output of the `RIGID_DET`
-    /// form at `at` that `atom` reads: the key's, `:Pose`, and a part's or
-    /// the instance's (`docs/arclog/rigid.md#semantics`). The Pose type names
-    /// the labels `atom` gives at the key's columns.
+    /// The type of the column at `path` of the output of the `RIGID_DET` form
+    /// at `at` that `atom` reads (`docs/arclog/rigid.md#semantics`). The Pose
+    /// type names the labels `atom` gives at the key's columns.
     fn rigid_output(&self, at: &NodePath, atom: &Atom, path: &[ColumnName]) -> Option<ValueType> {
         let inference = self.infer(at)?;
         let Some(form @ Form::RigidDet(rigid)) = inference.form else { return None };
@@ -1142,9 +1139,8 @@ impl<'a> Inference<'a> {
         local(self.site_type(inference.reading(PoseOr::Given), part.value(), path)?)
     }
 
-    /// The type of the column at `path` of the relation of the
-    /// `DEMONSTRATED` form at `at`: the key's, then those the `value` input's
-    /// head names (`docs/arclog/arclog.md#demonstrated`).
+    /// The type of the column at `path` of the relation of the `DEMONSTRATED`
+    /// form at `at` (`docs/arclog/arclog.md#demonstrated`).
     fn demonstrated_column(&self, at: &NodePath, path: &[ColumnName]) -> Option<ValueType> {
         let inference = self.infer(at)?;
         let Some(Form::Demonstrated(demonstrated)) = inference.form else { return None };
@@ -1218,14 +1214,9 @@ fn part_steps(relation: &RelationRef) -> Option<Vec<OutputStep>> {
     Some(std::iter::once(OutputStep::Part(owner.clone())).chain(rest.iter().cloned()).collect())
 }
 
-/// The type each parameter of `component` takes by `instance`'s binding,
-/// with `label` giving the type of each label of the instance: the key
-/// clause binds the parameter of the `key` column to a record of its `^`
-/// labels, and the first projection onto each other parameter binds it,
-/// to its one label's type or to a record with a field per site, as
-/// `docs/arclog/arclog.md#instance` gives. An instance with no key clause
-/// binds the parameter of the `key` column, where no projection does, to
-/// `Unit`.
+/// The type each parameter of `component` takes by `instance`'s binding
+/// (`docs/arclog/arclog.md#instance`), with `label` giving the type of each
+/// label of the instance.
 fn bind(instance: &Instance, component: &Component, label: &dyn Fn(LabelId) -> Option<ValueType>) -> StableHashMap<TypeParameter, ValueType> {
     let key = written(crate::read::spelling::KEY);
     let key_parameter = component.inputs.iter().flat_map(|input| input.port.columns.iter()).find_map(|column| match &column.ty {

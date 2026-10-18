@@ -38,12 +38,11 @@ pub struct SourcePlace {
 
 /// A place in a solver's file, or in the file of the solver its
 /// `representative` line names, which holds forms of its case programs: the
-/// task id that names the file, or `None` for a lib file under
-/// `engine/lib/`, and the place in it. A reader that reads one file gives
-/// `None`, and [`crate::read::read_solver`] gives the solver's task id. The
-/// claims of a solver with a `representative` line belong to the
-/// representative's file (`docs/arclog/arcdata.md#header`), so an error in
-/// one of them stands at a place of that file.
+/// task id that names the file, or `None` for a lib file under `engine/lib/`,
+/// and the place in it. A reader that reads one file gives `None`, and
+/// [`crate::read::read_solver`] gives the solver's task id. An error in a
+/// claim of a solver with a `representative` line stands at a place of the
+/// representative's file (`docs/arclog/arcdata.md#header`).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FilePlace {
     pub task_id: Option<Box<str>>,

@@ -261,8 +261,8 @@ fn key_slot(key: Option<&KeyBody>) -> Slot {
     Slot::of(&self::key(), key.map(key_fields).as_deref())
 }
 
-/// The columns of a `DEMONSTRATED` form's relation: the key's, then
-/// those the `value` head names, `docs/arclog/arclog.md#demonstrated`.
+/// The columns of a `DEMONSTRATED` form's relation,
+/// `docs/arclog/arclog.md#demonstrated`.
 pub(super) fn demonstrated_columns(form: &Demonstrated) -> Columns {
     let key = key_slot(form.key.as_ref().map(|key| &key.value().key));
     let heads = demonstrated_value(form).into_iter().flat_map(|input| input.head.iter()).map(|site| Slot::of(&site.column, projection(site).as_deref()));
@@ -289,11 +289,9 @@ fn part_steps(relation: &RelationRef) -> Option<Vec<OutputStep>> {
     Some(std::iter::once(OutputStep::Part(owner.clone())).chain(rest.iter().cloned()).collect())
 }
 
-/// Each output of a `RIGID_DET` form, by its path after the form's
-/// name, with its columns, as `docs/arclog/rigid.md#semantics` gives:
-/// the key's, `:Pose` and the part's for a part, and the key's, the
-/// instance's and `:Pose` for `.pose`. A form with no key clause has one
-/// `key` column, as an instance with no key clause has.
+/// Each output of a `RIGID_DET` form, by its path after the form's name, with
+/// its columns, as `docs/arclog/rigid.md#semantics` gives. A form with no key
+/// clause has one `key` column, as an instance with no key clause has.
 pub(super) fn rigid_outputs(form: &RigidDet) -> Vec<(Arc<[OutputStep]>, Columns)> {
     let key = key_slot(form.key.as_ref());
     let pose = Slot::Column(written(POSE));

@@ -102,10 +102,10 @@ pub enum ParamValue {
     },
 }
 
-/// One grid of a `param` or `assign` form, with the values before it: each
-/// cell gives one row, the values, then the cell's position, then its value.
-/// A grid with no values before it is written bare, `(grid ...)`, and one
-/// with values is written `(1 (grid ...))`.
+/// One grid of a `param` or `assign` form, with the values before it
+/// (`docs/arclog/arcdata.md#params`). A grid with no values before it is
+/// written bare, `(grid ...)`, and one with values is written `(1 (grid
+/// ...))`.
 #[derive(Clone, Debug)]
 pub struct GridRows {
     pub before: Arc<[DataValue]>,
@@ -142,12 +142,12 @@ pub enum DataValue {
     List(Arc<[DataValue]>),
 }
 
-/// A grid of an arcdata file: one row per line, a cell `_` gives no row.
+/// A grid of an arcdata file (`docs/arclog/arcdata.md#params`).
 #[derive(Clone, Debug)]
 pub struct Grid {
     pub rows: Arc<[Arc<[Option<DataValue>]>]>,
-    /// The cell written with `@` before it, as `@_` or `@1`: the anchor of
-    /// a grid of an Offset column, from which its cells' offsets count.
+    /// The cell written with `@` before it, as `@_` or `@1`: the grid's
+    /// anchor (`docs/arclog/arcdata.md#params`).
     pub anchor: Option<GridCell>,
 }
 
@@ -187,9 +187,7 @@ pub struct AltRecord {
     pub nested: Arc<[AltRecord]>,
 }
 
-/// A `witness` form, as `docs/arclog/arcdata.md#witnesses` gives. A witness
-/// with no body refers to the witness of that id given in full under an
-/// earlier alt.
+/// A `witness` form, as `docs/arclog/arcdata.md#witnesses` gives.
 #[derive(Clone, Debug)]
 pub struct Witness {
     pub id: Box<str>,
@@ -226,9 +224,8 @@ pub struct WitnessBody {
     pub outputs: Arc<[WitnessOutput]>,
 }
 
-/// A name in an `output` form: `concept`, the concept case, or an alt's
-/// name. An `output` form gives each distinct output with the fewest names
-/// whose cases together give it.
+/// A name in an `output` form: `concept`, the concept case, or an alt's name
+/// (`docs/arclog/arcdata.md#witnesses`).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum CaseRef {
     Concept,

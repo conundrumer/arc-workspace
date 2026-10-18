@@ -1,8 +1,7 @@
 //! Relations per example: a `RULE` relation is evaluated on each example,
-//! from that example's `input`, and its lifted form unions the
-//! per-example relations with the Example column first, as
-//! `docs/arclog/arclog.md#program` gives. A `DET` relation is task-wide,
-//! and reads `ex_input` and `ex_output` where it reads the train pairs.
+//! from that example's `input`, and its lifted form is the union of the
+//! per-example relations (`docs/arclog/arclog.md#program`). A `DET` relation
+//! is task-wide.
 //!
 //! The checker decides whether a relation has an Example column, and
 //! [`crate::types::ProgramTypes::columns`] gives it.

@@ -555,9 +555,9 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Whether the form at `form` reads, in its lifted form, the relation
-    /// a read that resolves to `resolution` reads: where the form is
-    /// task-wide and that relation is a per-input relation of the case.
+    /// Whether the form at `form` reads, in its lifted form
+    /// (`docs/arclog/arclog.md#program`), the relation a read that resolves
+    /// to `resolution` reads.
     fn lifts(&self, form: &NodePath, resolution: &Resolution) -> bool {
         let Resolution::Node(read) = resolution else { return false };
         lifted(self.is_fact(*read), self.form_sides[form], self.sides[read.0 as usize])
@@ -712,10 +712,10 @@ fn keyword_side(keyword: ClauseKeyword) -> Side {
     }
 }
 
-/// The sides of the nodes of a case, each decided once, a form's after
-/// the sides of the nodes it reads, as `docs/arclog/arclog.md#program`
-/// and `#instance` give, and the columns of each node that hold an
-/// Example, by which a key's Example labels are told.
+/// The sides of the nodes of a case, each decided once, a form's after the
+/// sides of the nodes it reads, as `docs/arclog/arclog.md#program` and
+/// `docs/arclog/arclog.md#instance` give, and the columns of each node that
+/// hold an Example, by which a key's Example labels are told.
 struct Sides<'b, 'a> {
     builder: &'b Builder<'a>,
     /// The index in [`Builder::atoms`] of each atom of each form.
@@ -770,16 +770,9 @@ impl Sides<'_, '_> {
         Some(side)
     }
 
-    /// The side of an `INIT`, a `CHOOSE` or a `DEMONSTRATED` form at
-    /// `path`. A form whose key holds a label that
-    /// [`Sides::key_examples`] gives is per example, and task-wide,
-    /// whatever its bodies read. Any other form takes its side by what
-    /// its bodies read: task-wide where they read
-    /// `ex_input`, `ex_output`, or a per-input relation at a site on `E`;
-    /// per input where they read, with no such read, `input` or a
-    /// per-input relation; and task-wide otherwise, pooled over the
-    /// examples. A read of the form's own nodes, as an `Unfold`
-    /// instance's of its outputs, counts toward neither side.
+    /// The side of an `INIT`, a `CHOOSE` or a `DEMONSTRATED` form at `path`.
+    /// The side is the one `docs/arclog/arclog.md#instance` gives, with the
+    /// key's Example labels that [`Sides::key_examples`] gives.
     fn read_side(&mut self, path: &NodePath) -> Side {
         let builder = self.builder;
         if !self.key_examples(path).is_empty() {
@@ -933,11 +926,9 @@ impl Sides<'_, '_> {
     }
 
     /// The paths below the column of the head site `site` of the input
-    /// `input` of the form at `form` that hold an Example, by the
-    /// labels that the input's body binds at a site that holds one, as
-    /// [`Sides::bound_examples`] gives: the whole column, where the
-    /// site projects one such label, and each field whose label is one,
-    /// where it projects a record, `docs/arclog/arclog.md#instance`.
+    /// `input` of the form at `form` that hold an Example, by the labels that
+    /// the input's body binds at a site that holds one, as
+    /// [`Sides::bound_examples`] gives, `docs/arclog/arclog.md#instance`.
     fn head_examples(&mut self, form: &NodePath, input: &InstanceInput, site: &Site) -> Vec<ExamplePath> {
         let program = NodeRef::Program(self.builder.case.value());
         let bound = self.bound_examples(form, &input_body(program, form, input));

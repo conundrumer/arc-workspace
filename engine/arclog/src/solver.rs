@@ -44,10 +44,7 @@ pub struct Solver {
 /// the blocks gives, and a `DET_OR_RULE` or `RULE_OR_DET` line that its base
 /// reads, as [`Solver::case_names`] gives.
 ///
-/// A `DET_OR_RULE` or `RULE_OR_DET` line is an `ALTS` form whose readings
-/// are `&background=$Stored` and `&background=$Derived`, or, on a line with
-/// several proposers, the stored reading and one derived reading per
-/// proposer, `&tile_size=ConstInDim`, as
+/// A `DET_OR_RULE` or `RULE_OR_DET` line is an `ALTS` form, with the readings
 /// `docs/arclog/arclog.md#the-alts-form` gives.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct CaseName(pub Box<[AltsName]>);
@@ -126,15 +123,15 @@ pub struct UnknownCase {
 }
 
 impl Solver {
-    /// The names of the solver's cases: the product of its `ALTS` forms,
-    /// restricted by the nesting of the blocks, less the `exclude` forms of
+    /// The names of the solver's cases
+    /// (`docs/arclog/arclog.md#the-alts-form`), less the `exclude` forms of
     /// the arcdata file where `exclusion` is [`Exclusion::WithoutExcluded`].
     /// A `DET_OR_RULE` or `RULE_OR_DET` line splits only the bases that read
     /// its relation, and a line on an input of an instance, `&canvas.extent`,
     /// is read by that instance's `INIT` form.
     ///
-    /// Where the arcdata file has a `representative` line that gives a case's
-    /// name, the one name is that case's (`docs/arclog/arcdata.md#header`).
+    /// Where the arcdata file has a `representative` line, the names are as
+    /// `docs/arclog/arcdata.md#header` gives.
     pub fn case_names(&self, exclusion: Exclusion) -> Vec<CaseName> {
         let names = self.all_case_names();
         if let Some(given) = self.arcdata.value().representative.as_ref().and_then(|line| line.case.as_ref()) {
@@ -483,10 +480,9 @@ fn readings(line: &Clause) -> Vec<(AltsName, Reading)> {
     }
 }
 
-/// A line's clause in one reading: the stored reading a `DET`, and a
-/// derived reading a `RULE`. Each reading keeps the line's `ONE` marks and
-/// its columns. The line's body is the stored reading's on a `DET_OR_RULE`
-/// line and the derived reading's on a `RULE_OR_DET` line, as
+/// A line's clause in one reading: the stored reading a `DET`, and a derived
+/// reading a `RULE`. Each reading keeps the line's `ONE` marks and its
+/// columns. The line's body is one reading's, as
 /// `docs/arclog/arclog.md#the-alts-form` gives, and the other reading holds
 /// no body.
 fn read_as(line: &Clause, reading: Reading) -> Clause {

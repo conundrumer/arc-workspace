@@ -8,13 +8,12 @@
 /// its key row, by the labels that a read gives at the key's columns. It
 /// compares as a key of canonical parts does ([`crate::program`]).
 ///
-/// The form's name and canonical form stay the same in every case that
-/// holds the form, so the cases that share a form that reads a pose share
-/// its types and its check, whatever alts come before it, and two forms of
-/// one name with different parts, in two programs of one task session, take
-/// two types. Each key row is an assembly of its own, aligned and posed on its
-/// own (`docs/arclog/rigid.md#form`), so two pose reads meet only where they
-/// read the same key labels. The key row is named as [`KeyRow`] gives.
+/// The form's name and canonical form stay the same in every case that holds
+/// the form, so the cases that share a form that reads a pose share its types
+/// and its check, whatever alts come before it, and two forms of one name
+/// with different parts, in two programs of one task session, take two types.
+/// Two pose reads meet only where they read the same key labels
+/// (`docs/arclog/rigid.md#form`). The key row is named as [`KeyRow`] gives.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct AssemblyId {
     pub name: crate::program::RigidDetName,
@@ -23,11 +22,10 @@ pub struct AssemblyId {
     pub key: KeyRow,
 }
 
-/// How a Pose type names its key row: in a scope, by the labels a read
-/// gives at the key's columns; at a column of a derived relation or an
-/// instance's input, by the positions of the relation's columns that hold
-/// the key. A read of the relation maps the positions to the labels at
-/// them, so a Pose type passes through a relation
+/// How a Pose type names its key row: in a scope, by the labels a read gives
+/// at the key's columns; at a column of a derived relation or an instance's
+/// input, by the positions of the relation's columns that hold the key. A
+/// read of the relation maps the positions to the labels at them
 /// (`docs/arclog/rigid.md#the-pose`).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum KeyRow {
@@ -65,15 +63,13 @@ pub enum ValueType {
     Sense,
     /// The Pose type of one `RIGID_DET` assembly.
     Pose(AssemblyId),
-    /// A record bound to a type parameter: by a projection of several sites,
-    /// one field per site, or, for `Key`, by the key clause, one field per
-    /// `^` label, as `docs/arclog/arclog.md#instance` gives. The engine has no
-    /// record values, so each field takes a column of its own.
+    /// A record bound to a type parameter (`docs/arclog/arclog.md#instance`).
+    /// The engine has no record values, so each field takes a column of its
+    /// own.
     Record(Box<[(FieldName, ValueType)]>),
 }
 
-/// The name of a record's field, PascalCase, as
-/// `docs/arclog/arclog.md#sites` gives.
+/// The name of a record's field (`docs/arclog/arclog.md#sites`).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FieldName(pub Box<str>);
 
@@ -175,14 +171,12 @@ pub(crate) fn label_fault_message(fault: LabelFault) -> String {
 /// gives each the sites of the other in the list that holds the constraint
 /// and in the lists nested in it, and, for a constraint in an `IF`'s test or
 /// in an `ALL`'s domain, in that form's then or body as well; `0` gives no
-/// type.
-/// A negated atom's sites count as a positive atom's, and a `NOT` of a form
-/// gives what that form gives. An `OR` gives the join of the types its
-/// branches give, and an `ALL` the meet of its domain's and its body's
-/// types. An `IF` gives the meet of its test's type with the join of its
-/// then and else lists' types, or, where the label is fresh in the test,
-/// the meet of its test's and its then's types, since such a label is
-/// local to the test and the then (`docs/arclog/arclog.md#conditional`). A
+/// type. A negated atom's sites count as a positive atom's, and a `NOT` of a
+/// form gives what that form gives. An `OR` gives the join of the types its
+/// branches give, and an `ALL` the meet of its domain's and its body's types.
+/// An `IF` gives the meet of its test's type with the join of its then and
+/// else lists' types, or, where the label is fresh in the test, the meet of
+/// its test's and its then's types (`docs/arclog/arclog.md#conditional`). A
 /// branch that gives the label no type gives the `OR` or the `IF`'s join
 /// none.
 ///

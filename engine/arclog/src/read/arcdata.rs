@@ -147,8 +147,8 @@ impl Reader {
     /// form writes for each column, `None` where no form writes one, and a
     /// column past its end counts as `None`.
     ///
-    /// Refuses a grid that marks a cell with `@` at a Position column, and
-    /// one that marks none at an Offset column, the column after the grid's
+    /// Refuses a grid whose marked cell, or lack of one, breaks
+    /// `docs/arclog/arcdata.md#params` at the column after the grid's
     /// `before` values.
     pub(super) fn param_value(&mut self, rows: &[SExpr], columns: &[Option<TypeName>], record: &mut Record) -> R<ParamValue> {
         if let [row] = rows {
@@ -239,8 +239,8 @@ impl Reader {
         }
     }
 
-    /// Refuses a grid whose rows differ in length, and one that marks two
-    /// cells with `@`.
+    /// Refuses a grid that breaks the rule of `docs/arclog/arcdata.md#params`
+    /// on its rows' length or on its marked cell.
     fn grid(&mut self, expr: &SExpr, record: &mut Record) -> R<Grid> {
         let list = self.list(expr, "a grid")?;
         if head_of(expr) != Some(sp::GRID) {

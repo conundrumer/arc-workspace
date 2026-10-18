@@ -1,6 +1,6 @@
 //! The rule by which an `INIT` form binds the type parameters of its
-//! component: the places of the form that project onto each parameter, the
-//! first of which binds it (`docs/arclog/arclog.md#instance`).
+//! component: the places of the form that project onto each parameter
+//! (`docs/arclog/arclog.md#instance`).
 
 use super::*;
 
@@ -23,13 +23,12 @@ pub(crate) struct ParameterSites<'a> {
     pub(crate) later: Vec<(&'a crate::program::InstanceInput, &'a crate::program::Site)>,
 }
 
-/// The places of the `INIT` form `init` that project onto each type
-/// parameter of a component whose inputs are `inputs`, in the order of the
-/// first place onto each. The places, in the order of the form, are the key
-/// clause, where the component has a `key` column of a type parameter, then
-/// each head site on a column of a type parameter, of each input of the
-/// form that the component has, the keyed inputs first. The first place
-/// onto each parameter binds it (`docs/arclog/arclog.md#instance`).
+/// The places of the `INIT` form `init` that project onto each type parameter
+/// of a component whose inputs are `inputs`, in the order of the first place
+/// onto each. The places, in the order of the form, are the key clause, where
+/// the component has a `key` column of a type parameter, then each head site
+/// on a column of a type parameter, of each input of the form that the
+/// component has, the keyed inputs first (`docs/arclog/arclog.md#instance`).
 pub(crate) fn binding_sites<'a>(init: &'a crate::program::Instance, inputs: &'a [InputPort]) -> Vec<ParameterSites<'a>> {
     let mut sites: Vec<ParameterSites> = Vec::new();
     if let (Some(key), Some(parameter)) = (&init.key, key_parameter(inputs)) {

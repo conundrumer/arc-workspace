@@ -10,9 +10,8 @@ use crate::program::OutputStep;
 use crate::program::path::NodePath;
 
 /// The value of `output`, an output of the `RIGID_DET` form at `form`:
-/// [`OutputStep::Part`] for `&marker.<part>`, the key's columns, `:Pose` and
-/// then the part's columns; [`OutputStep::Pose`] for `&marker.pose`, the
-/// key's columns, the instance's columns and then `:Pose`.
+/// [`OutputStep::Part`] for `&marker.<part>`, and [`OutputStep::Pose`] for
+/// `&marker.pose`, with the columns `docs/arclog/rigid.md#semantics` gives.
 pub fn evaluate_assembly(
     evaluation: &Evaluation<'_>,
     form: &NodePath,

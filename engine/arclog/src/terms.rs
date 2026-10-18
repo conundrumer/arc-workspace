@@ -397,13 +397,10 @@ pub fn encode_data_value(
 
 /// The rows of term ids of `value`, whose columns take `types` in order, for
 /// the rows of a `param` form, of an `assign` form and of an input's default
-/// alike, as `docs/arclog/arcdata.md#params` gives them. A grid's cells give
-/// Offset rows where the grid has an anchor, each the translation from the
-/// anchor to the cell, and Position rows where it has none, each the cell in
-/// the grid's own frame, of its row count and its row length. A
-/// derivation's values give the rows of the table the
-/// registry's [`crate::registry::Derivation`] derives from them. Each value
-/// takes its term ids from [`encode_data_value`].
+/// alike, as `docs/arclog/arcdata.md#params` gives them. A derivation's
+/// values give the rows of the table the registry's
+/// [`crate::registry::Derivation`] derives from them. Each value takes its
+/// term ids from [`encode_data_value`].
 pub fn encode_param_value(
     value: &crate::program::ParamValue,
     types: &[ValueType],

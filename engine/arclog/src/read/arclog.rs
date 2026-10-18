@@ -161,7 +161,7 @@ fn label_name(text: &str) -> ColumnName {
 }
 
 /// Whether `column`, a site's column as the file writes it, is a type
-/// parameter's, which is lowercase (`docs/arclog/arclog.md#sites`).
+/// parameter's (`docs/arclog/arclog.md#sites`).
 fn is_type_parameter_column(column: &str) -> bool {
     column.starts_with(|c: char| c.is_ascii_lowercase())
 }

@@ -25,14 +25,12 @@
 //!   (outputs (<output> (<column> <type>) ...) ...))`: a construction, a
 //!   detector or a task-structure component, its inputs in the order the component declares them. An
 //!   input's `default` writes its rows as a `param` form writes them after
-//!   its types (`docs/arclog/arcdata.md#params`): each row as a list of its
-//!   values, and the rows of a relation with a Position or an Offset column
-//!   as a grid. An
-//!   input marked `reads-outputs` reads the instance's outputs, as
-//!   `Unfold`'s `step`, `skip` and `take` do. An output may share its name
-//!   with an input of the same form, as `Unfold`'s `take` does: an
-//!   instance's output of that name, where the instance writes no clause
-//!   for it, reads the input's relation.
+//!   its types (`docs/arclog/arcdata.md#params`). An input marked
+//!   `reads-outputs` reads the instance's outputs, as `Unfold`'s `step`,
+//!   `skip` and `take` do. An output may share its name with an input of
+//!   the same form, as `Unfold`'s `take` does: an instance's output of that
+//!   name, where the instance writes no clause for it, reads the input's
+//!   relation.
 //! - `(proposer <name> native (columns (<Column> <type>) ...))`: a native
 //!   proposer, such as a domain proposer.
 //! - `(proposer <name> arclog (columns <Label> ...))`: a proposer written
@@ -126,9 +124,9 @@ pub enum ColumnType {
     /// relation that declares it, as `pose_difference(a, b, d)` reads two
     /// poses of one assembly.
     SharedPose,
-    /// The given type, or the Pose type of the label at the column's site,
-    /// as `d4_elem`'s column is D4 or takes its label's Pose type, since
-    /// every D4 element is a pose (`docs/arclog/rigid.md#the-pose`).
+    /// The given type, or the Pose type of the label at the column's site, as
+    /// `d4_elem`'s column is D4 or takes its label's Pose type
+    /// (`docs/arclog/rigid.md#the-pose`).
     PoseOr(ValueType),
     /// A type parameter of the component, made concrete by an instance's
     /// binding.
@@ -255,12 +253,10 @@ pub enum LibEntry {
     Macro(Macro),
 }
 
-/// A fixed derivation of a table, such as `Frame` or `Division`: the fields
-/// of each row of the values a `param` form writes for it, and the columns
-/// of the table it derives. A `DET` names the derivation in place of a
-/// proposer, `(DET &frame Frame)` (`docs/arclog/arclog.md#program`), and
-/// the parameter's value is written as the values the table derives from
-/// (`docs/arclog/arcdata.md#params`).
+/// A fixed derivation of a table (`docs/arclog/arclog.md#program`,
+/// `docs/arclog/arcdata.md#params`), such as `Frame` or `Division`: the
+/// fields of each row of the values a `param` form writes for it, and the
+/// columns of the table it derives.
 #[derive(Clone, Debug)]
 pub struct Derivation {
     pub fields: Box<[Column]>,
@@ -411,8 +407,6 @@ impl Registry {
 
     /// The columns of `fact`, with their types, which the resolver turns a
     /// read's column names into positions by and the checker types by.
-    /// `ex_input` and `ex_output` have the Example column `E` first
-    /// (`docs/arclog/arclog.md#program`).
     pub fn fact_columns(&self, fact: crate::program::FactRelation) -> &[Column] {
         self.facts.get(&fact).expect("`parse` fails on a fact relation with no `fact` form")
     }

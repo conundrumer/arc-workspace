@@ -20,13 +20,12 @@ impl Check for PooledAndLiftedReadsCheck {
     }
 
     /// Refuses each read that `docs/arclog/arclog.md#program` does not let
-    /// its form make: a per-input form's read of `ex_input` or `ex_output`,
-    /// a task-wide form's read of `input`, and a per-input form's read at a
+    /// its form make: a per-input form's read of `ex_input` or `ex_output`, a
+    /// task-wide form's read of `input`, and a per-input form's read at a
     /// site on a column of a relation that holds an Example, as
-    /// [`ResolvedProgram::example_columns`] gives, which a per-input form
-    /// reads only pooled. A task-wide form reads each per-input relation in
-    /// its lifted form. A read of a form's own nodes, as an `Unfold`
-    /// instance's of its outputs, is no read of another side.
+    /// [`ResolvedProgram::example_columns`] gives. A read of a form's own
+    /// nodes, as an `Unfold` instance's of its outputs, is no read of another
+    /// side.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
         let program = input.scope.program;
         let mut order = None;
@@ -138,11 +137,10 @@ fn is_form(node: NodeRef<'_>) -> bool {
 }
 
 /// The relations of `program` that have an Example column: `ex_input`,
-/// `ex_output`, and each node of the dependency graph a column of which
-/// holds an Example, as [`ResolvedProgram::example_columns`] gives from the
-/// node's reads and its key. The lifted form of a per-input relation, which
-/// a task-wide form reads, adds the Example column first, and the relation
-/// itself has none.
+/// `ex_output`, and each node of the dependency graph a column of which holds
+/// an Example, as [`ResolvedProgram::example_columns`] gives from the node's
+/// reads and its key. A per-input relation that a task-wide form reads lifted
+/// has none of its own (`docs/arclog/arclog.md#program`).
 pub fn example_relations(program: &ResolvedProgram) -> StableHashSet<GraphNodeIndex> {
     let nodes = (0..program.graph.nodes.len() as u32).map(GraphNodeIndex);
     let has_example = |node: &GraphNodeIndex| match program.graph.nodes[node.0 as usize].kind {

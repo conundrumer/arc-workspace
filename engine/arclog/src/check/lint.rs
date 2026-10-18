@@ -14,10 +14,8 @@
 //! owns the file gives that path, the solver's own or its representative's.
 //! Each diagnostic's location is [`crate::diagnostic::Location::Places`].
 //!
-//! A second spelling, such as `NOT` before a form or `(= Y *X)`, is a
-//! suggestion and no rule of the language
-//! (`docs/arclog/arclog.md#second-spellings`), so no check of the lint
-//! refuses one.
+//! No check of the lint refuses a second spelling
+//! (`docs/arclog/arclog.md#second-spellings`).
 
 #![allow(unused_variables, dead_code)]
 

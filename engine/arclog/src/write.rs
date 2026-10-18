@@ -52,12 +52,12 @@ pub fn write_solver(solver: &Solver) -> SolverText {
 }
 
 /// A synthesized program as an arclog file, in the program form and the
-/// s-expression layout, with names in place of token ids, and a relation
-/// slot written by its index. A column named by its slot is written
-/// by the name its label takes, as the next paragraph gives. That name is
-/// PascalCase, as `docs/arclog/arclog.md#sites` gives a fixed-type column,
-/// so the reader reads a site on that column as a site on a fixed-type
-/// column, and no type parameter's column is so spelled.
+/// s-expression layout, with names in place of token ids, and a relation slot
+/// written by its index. A column named by its slot is written by the name
+/// its label takes, as the next paragraph gives. That name takes the spelling
+/// of a fixed-type column (`docs/arclog/arclog.md#sites`), so the reader
+/// reads a site on that column as a site on a fixed-type column, and no type
+/// parameter's column is so spelled.
 ///
 /// A label that a [`crate::program::SiteArg::NamedLabel`] holds takes that
 /// argument's `name`, so the file reads that field at that site. Each name

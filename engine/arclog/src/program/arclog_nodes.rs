@@ -7,8 +7,7 @@ use super::*;
 /// A whole arclog file, or a synthesized program: its forms. A program is
 /// held as a `Node<Program>`, so it has a canonical hash and an equality as
 /// each other node has. The forms stand in the order
-/// `docs/arclog/arclog.md#program` gives: `INPUT` and `OUTPUT` blocks in
-/// dependency order, then `ALTS` forms, then the tail.
+/// `docs/arclog/arclog.md#program` gives.
 #[derive(Clone, Debug)]
 pub struct Program {
     pub forms: Arc<[Form]>,
@@ -108,12 +107,11 @@ pub enum OutputOwner {
 }
 
 /// A clause form: its keyword, the relation's name, its proposers, its body
-/// and its `ONE` marks (`docs/arclog/arclog.md#program`). A clause with
-/// nothing after its name is a fact, as `(RULE &live)`. A `DET` that names
-/// a proposer, or a derivation in place of a proposer, as
-/// `(DET &frame Frame)`, has that name in `proposers`, and a `DET_OR_RULE`
-/// or `RULE_OR_DET` line holds its proposers, then the body of the reading
-/// that has clauses of its own.
+/// and its `ONE` marks (`docs/arclog/arclog.md#program`). A `DET` that names
+/// a proposer, or a derivation in place of a proposer, as `(DET &frame
+/// Frame)`, has that name in `proposers`, and a `DET_OR_RULE` or
+/// `RULE_OR_DET` line holds its proposers, then the body of the reading that
+/// has clauses of its own.
 #[derive(Clone, Debug)]
 pub struct Clause {
     pub keyword: ClauseKeyword,
@@ -122,23 +120,21 @@ pub struct Clause {
     pub proposers: Arc<[crate::registry::LibName]>,
     pub body: Node<Body>,
     pub ones: Arc<[OneMark]>,
-    /// The relation's columns, in the order the clause gives them, which
-    /// the resolved content replaces by the canonical positions of their
-    /// labels: the labels the clause keeps, or the
-    /// labels an `OR` that is the whole body exports. A `DET` with a proposer
+    /// The relation's columns, in the order the clause gives them
+    /// (`docs/arclog/arclog.md#sites`), which the resolved content replaces
+    /// by the canonical positions of their labels. A `DET` with a proposer
     /// and no body takes the proposer's columns, which the registry gives,
     /// and holds none here. So does a `DET_OR_RULE` or `RULE_OR_DET` line
-    /// with proposers and no body: its relation has its proposers' columns,
-    /// which map onto one another by position, each named as the line's
-    /// first proposer names it. A line with no proposer and no body derives
-    /// a fact, a relation of no columns.
-    /// Edits: [`crate::program::Node::apply`].
+    /// with proposers and no body (`docs/arclog/arclog.md#the-alts-form`),
+    /// whose columns are named as the line's first proposer names them. A
+    /// line with no proposer and no body derives a fact, a relation of no
+    /// columns. Edits: [`crate::program::Node::apply`].
     pub columns: Arc<[RelationColumn]>,
 }
 
-/// A `ONE` mark: the key columns of the clause's relation for each value of
-/// which a model keeps one row, as `docs/arclog/constraints.md#one` gives. A
-/// mark with no label, `(ONE)`, keeps one row of the whole relation.
+/// A `ONE` mark: the key columns of the clause's relation
+/// (`docs/arclog/constraints.md#one`). A mark with no label, `(ONE)`, has no
+/// key column.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct OneMark {
     pub key: Arc<[LabelId]>,
@@ -157,9 +153,9 @@ pub struct Body {
 #[derive(Clone, Debug)]
 pub enum Conjunct {
     Atom(Node<Atom>),
-    /// `NOT` before an atom, where every site of the atom joins, or before a
-    /// form, a second spelling, as `docs/arclog/arclog.md#second-spellings`
-    /// gives.
+    /// `NOT` before an atom
+    /// (`docs/arclog/arclog.md#negation-and-constraints`), or before a form
+    /// (`docs/arclog/arclog.md#second-spellings`).
     Not(Negated),
     Constraint(Constraint),
     /// An `OR` form: its branches, as `docs/arclog/arclog.md#disjunction`
@@ -235,8 +231,8 @@ pub enum Operand {
     Zero,
 }
 
-/// A constraint over two labels. `=` makes its first label in `(= *X Y)`,
-/// and its second in `(= Y *X)`, a second spelling.
+/// A constraint over two labels
+/// (`docs/arclog/arclog.md#negation-and-constraints`).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Constraint {
     pub op: ConstraintOp,
@@ -334,16 +330,16 @@ impl SiteArg {
     }
 }
 
-/// One label at a site, with its mark.
+/// One label at a site, with its mark (`docs/arclog/arclog.md#sites`).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum LabelUse {
-    /// `*X`: the site introduces the variable.
+    /// `*X`, a fresh label.
     Fresh(LabelId),
-    /// `X`: the site joins an existing variable.
+    /// `X`, a joined label.
     Join(LabelId),
-    /// `^X`: a column of a key clause.
+    /// `^X`, a column of a key clause (`docs/arclog/arclog.md#instance`).
     Key(LabelId),
-    /// `0`: the site joins the column to zero.
+    /// `0` (`docs/arclog/arclog.md#negation-and-constraints`).
     Zero,
 }
 
@@ -359,7 +355,8 @@ pub struct Instance {
 }
 
 /// A key clause, `(key (<body>) <inputs>)`: its body, whose `^` labels are
-/// the key's columns in order of appearance, and the keyed inputs.
+/// the key's columns (`docs/arclog/arclog.md#instance`), and the keyed
+/// inputs.
 #[derive(Clone, Debug)]
 pub struct KeyClause {
     pub key: KeyBody,
@@ -390,24 +387,19 @@ pub struct Choose {
     /// relation.
     /// Edits: [`crate::program::Node::apply`].
     pub candidate_columns: Arc<[RelationColumn]>,
-    /// The `from` clause: inside `for` where it reads the row's labels.
+    /// The `from` clause.
     pub from: Node<Body>,
     pub from_inside_for: bool,
     pub never: Arc<[Node<Body>]>,
 }
 
-/// A `RIGID_DET` form, as `docs/arclog/rigid.md#form` gives. Where the form
-/// has a `key` clause, the rest of the form stands inside it after its body,
-/// as the keyed inputs of an `INIT` do: the `instance` clause where the form
-/// has one, and the parts otherwise.
+/// A `RIGID_DET` form, as `docs/arclog/rigid.md#form` gives.
 #[derive(Clone, Debug)]
 pub struct RigidDet {
     pub name: RigidDetName,
-    /// The `key` clause: each key row is an independent assembly.
+    /// The `key` clause.
     pub key: Option<KeyBody>,
-    /// The `instance` clause, written as a key clause is: one of its rows is
-    /// one instance, and its `^` labels are the instance's columns, which
-    /// `.pose` holds.
+    /// The `instance` clause, whose `^` labels are the instance's columns.
     pub instance: Option<KeyBody>,
     /// The parts: each atom of the form, inside the `instance` clause where
     /// the form has one.

@@ -141,10 +141,9 @@ pub enum RelationValue {
 /// The outcome of a request: a value, or a fault of the run.
 pub type Outcome<T> = Result<T, RunFault>;
 
-/// The grid of `&output` on one example: the grid, `undefined`, or a stop.
-/// A grid is undefined where the relation is, or where a cell of the grid
-/// columns has no color or two, as `docs/arclog/constraints.md#the-output-set`
-/// gives.
+/// The grid of `&output` on one example: the grid, `undefined`, or a stop. A
+/// grid is undefined where the relation is, and where
+/// `docs/arclog/constraints.md#the-output-set` gives.
 #[derive(Clone, Debug)]
 pub enum GridValue {
     Grid(Grid),
@@ -243,10 +242,8 @@ impl Evaluation<'_> {
         todo!()
     }
 
-    /// The grid columns of `&output`, as
-    /// `docs/arclog/constraints.md#the-output-set` defines them: the pair of
-    /// a Position column and a Color column under which the output solves
-    /// every train pair.
+    /// The grid columns of `&output`
+    /// (`docs/arclog/constraints.md#the-output-set`).
     ///
     /// Where several pairs solve every train pair and each two of them give
     /// equal grids on every input of the task, this gives the first of them
