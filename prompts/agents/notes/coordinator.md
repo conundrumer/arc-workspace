@@ -57,6 +57,8 @@
     * comment: The user's words, session 129de8fc, 2026-10-14T21:21:44Z: "it needs to be clear that it's only for "decisions that hold up work while you may be away from the session"", and session 7fd429fb-e3be-4173-9b0e-df52f507d6a2, 2026-10-15T23:08:04Z: "bug", on the coordinator's account that the user "may be away" holds almost every time.
 - End each reply that ends your turn with each decision you opened with that label, until the user rules on it or you apply its default, opened with it again: in full the first time, and after that as its ticket's number or the step it settles, its question, and one line per option, the default first, with its consequence. Give no decision twice in one reply.
     * comment: The coordinator of session 129de8fc, 2026-10-17, from 21:18:01Z to 21:27:21Z, read this line's former words "each such decision" as every decision it brings the user, and ended each reply with two questions it gave with no label, as ticket 9-925 records.
+- Give each time you tell the user in a reply as a clock time in the user's local time zone, the one `date +%Z` prints, with no UTC time beside it. A time you write into a ticket, a `spans.py` argument or a brief keeps its form there.
+    * comment: The user's words, session 2384db39, 2026-10-18T14:27:51Z: "When you tell me times of things, you tell me in local time", after replies that gave times as UTC with a `Z` beside local ones.
 
 ## Cards
 - Before you launch or resume an agent on cards, read [Cards](prompts/agents/notes/cards.md#cards).
