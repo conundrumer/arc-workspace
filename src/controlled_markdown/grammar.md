@@ -25,7 +25,7 @@
 - A quote, a code node, and a table each need a line above them.
 - One at document level, above the first heading, is an error.
 - A quoted line indented deeper than the quote's first line is an error.
-- The closing fence is the same character as the opening one, at least as long, at the node's indent, and it carries no info string.
+- The closing fence is the same character as the opening one, at least as long, at the node's indent, and it has no info string.
 - A code node with no closing fence is an error, and so is a line under it at a shallower indent.
 
 ## Headings

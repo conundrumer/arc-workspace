@@ -120,7 +120,7 @@ REPEATED_MESSAGE = mctx("Run that command again only once something has changed 
                         "change its result.")
 STALL_MESSAGE = mctx("""
     - Where your work is done, give your final reply again.
-    - Where it is not, carry on your work.
+    - Where it is not, continue your work.
     """)
 
 

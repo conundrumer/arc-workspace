@@ -190,7 +190,7 @@ const REVIEW_SCHEMA = {
               type: 'object',
               properties: {
                 choice: { type: 'string', description: mctx`the reading's one-word label` },
-                wording: { type: 'string', description: mctx`the text the file carries under this reading` },
+                wording: { type: 'string', description: mctx`the text the file has under this reading` },
                 consequence: { type: 'string', description: mctx`what a session that reads this wording does differently` },
                 where: { type: 'string', description: mctx`a task or a solver on which this reading and the others differ` },
               },

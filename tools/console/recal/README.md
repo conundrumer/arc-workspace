@@ -18,7 +18,7 @@
 3. `python3 checkpoint.py todo _sample.json todo.json` gives the sample rows not yet in the store.
     - Only these get classified.
 4. Classify `todo.json` in subagent batches of about 25 pairs.
-    - Each batch prompt carries [Classification rubric](tools/console/recal/RUBRIC.md) in full and writes `batches/out_<n>.json`.
+    - Each batch prompt includes [Classification rubric](tools/console/recal/RUBRIC.md) in full and writes `batches/out_<n>.json`.
     - Before this step, refresh the kind descriptions in the rubric from `CALLOUT_RATES`.
         - They match verbatim.
     - A description change invalidates the store: bump `RUBRIC_DATE` in `checkpoint.py` and re-classify everything.
@@ -40,6 +40,6 @@
 
 ## Known limitations
 - The corpus measures engagement with discrete report items generally, and not callout sections specifically.
-- Almost no pairs carry a literal `## Callouts` heading.
+- Almost no pairs have a literal `## Callouts` heading.
 - Byte-identical assistant messages, from a retry, can enter the sample twice.
 - `picked` measures attention, and not agreement or action.

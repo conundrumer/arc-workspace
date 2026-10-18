@@ -252,18 +252,18 @@
 * inline: #scope
 * inline: #draft-mark
 - A callout in a report above is an open item, not an instruction.
-- Judge it yourself, from its sites, not from the report that carried it.
+- Judge it yourself, from its sites, not from the report that gave it.
 - Re-raise only what stays open after that.
 
 ### advance-head
 - You are a later session of a chained flow: the sessions before you left the reports above.
 
 ### scope
-- Your edits stay in programs/solvers/{{tid}}.dl, programs/witnesses/{{tid}}.wit.json, .scratch/{{tid}}/, and the files an operation this message carries names.
+- Your edits stay in programs/solvers/{{tid}}.dl, programs/witnesses/{{tid}}.wit.json, .scratch/{{tid}}/, and the files an operation this message gives names.
 - Any other file is the user's to change, and a fix you have for one goes in your report.
 
 ### draft-mark
-- The solver carries `// @draft` on its own line under the task-id line, and only the user's approval takes it off.
+- The solver has `// @draft` on its own line under the task-id line, and only the user's approval takes it off.
 
 ### finished
 - A solver that already holds up under your judgment needs no edit from you: say so.
@@ -277,7 +277,7 @@
 * comment: Stated once here; a message adds only what its own stage owes.
 
 - the model hypothesis as it now stands, what you changed and why, each choice point with the alternatives you considered and what ruled them out, and the open items
-- Those alternatives include the ones the data rules out, which a review omits and the report carries.
+- Those alternatives include the ones the data rules out, which a review omits and the report gives.
 * comment:
     - The next session then does not derive them again.
 - A witness the report relies on and did not record goes in the report itself, as the input grid and each model's output on it.
@@ -328,4 +328,4 @@
 
 ### p0
 - P0 stands apart from that scale: use it only for a clear mechanical problem with the tooling, such as the runner, the linter, or the audit crashing, giving a wrong result, or lacking something an operation needed.
-- A judgment never carries a P0.
+- A judgment never takes a P0.

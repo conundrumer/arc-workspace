@@ -15,7 +15,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
         - Reading its brief and taking its steps: [Draft analyst](#draft-analyst), with [A draft analyst's brief](prompts/agents/notes/launching.md#a-draft-analysts-brief).
         - Reading the draft's `Grounds`, judging whether a change is needed, taking or leaving its findings and suggestions, and thinking the revised design through: [Revising a draft](prompts/agents/ticket-analyst/drafts.md#revising-a-draft), by the links of the items of its checklist.
         - Weighing, reading rules by intent, making a decision and bringing it to the user: [Decisions](#decisions), from the subsections of [Decisions](prompts/agents/notes/decisions.md#decisions) other than [A decision's record in a reply](prompts/agents/notes/decisions.md#a-decisions-record-in-a-reply).
-        - Carrying out a resolution and a decline: [Resolving](#resolving), from [Resolving](prompts/agents/notes/decisions.md#resolving).
+        - Applying a resolution and a decline: [Resolving](#resolving), from [Resolving](prompts/agents/notes/decisions.md#resolving).
         - The reply's items: [Reply](prompts/agents/draft-analyst/reply.md#reply), by the link of the item `Reply` of its checklist.
         - Taking and moving tickets, and filing the faults it notices: [Tracking](#tracking).
         - Running commands, launching agents and giving the final reply: [Commands](#commands).

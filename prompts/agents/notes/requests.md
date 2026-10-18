@@ -25,7 +25,7 @@
         - On an inferred route, follow that label with `**Inferred route: <route>.**`, and end the readback with the act the user's next message sets off, as `Once you reply, I <act>.`, or, where it sets off none, with a sentence that says so. Give it as no decision.
             * comment: Ticket 6-1167: the coordinator gave a readback again as a labelled decision with a default.
 - `scratch` is work after which nothing under version control has changed, nothing has left the session, and nothing later depends on it. Do it with no readback, no ticket and no brief. Where that work would change a tracked file or send something out of the session, read back a route before that step.
-- `direct`: file the change's `request`, write its brief, and carry the change as [Running a change](#running-a-change) gives.
+- `direct`: file the change's `request`, write its brief, and run the change as [Running a change](#running-a-change) gives.
 - `op send`: file the `request` and, in that turn, tell an operator that tickets are open where an operator launcher of yours runs, and otherwise launch a ticket analyst on it, with its transcript brief, and tell an operator so once the analyst replies.
 - `hotfix`: file the change's `request`, write its brief, and, as [Running a change](#running-a-change) gives, launch at once on a worktree the editors it needs, each with that brief, and merge the change.
 - `expedite <number>`: write nothing, send an operator `Op expedite: <number>`, and tell the user the tickets outside `tickets/closed/` that a chain of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, reaches from it.
@@ -36,7 +36,7 @@
 ## Running a change
 - Before you act, take each ticket the change would settle that waits on no `change`.
 - Where a ticket the change would settle waits on a `change` or its take is refused, do not act: move each ticket you took to `tickets/open/` and the `request` to wait on that `change`, or else to `tickets/open/`.
-- Carry and merge the change as [Changes](prompts/agents/notes/coordinator.md#changes) gives.
+- Make and merge the change as [Changes](prompts/agents/notes/coordinator.md#changes) gives.
 - Once a change you run is on `master`, write a line in its `request`'s log that gives its commit and the number of each ticket it settles, move the `request` and each ticket you took that is no `change` to `tickets/open/`, and leave held each `change` you took.
 
 ## Tickets

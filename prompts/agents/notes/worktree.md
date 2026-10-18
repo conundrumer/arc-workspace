@@ -12,7 +12,7 @@
 - The statements on working in a worktree, that more than one entry point inlines or links.
 
 ## editor-messages
-- A later message may give a doc reviewer's findings on your change, or findings of your checks. Check each against the worktree, and fix each one that holds and needs no decision. Fix each finding a later message gives as kept, and carry out each decision it gives.
+- A later message may give a doc reviewer's findings on your change, or findings of your checks. Check each against the worktree, and fix each one that holds and needs no decision. Fix each finding a later message gives as kept, and apply each decision it gives.
 - Where a doc reviewer has sent findings on your change, before each reply to a later message, send that reviewer by SendMessage, at the agent id its message came from, each item of that later message with what you did on it, or, for a finding you left, why you left it.
 - Message only the agents a line of your documents has you message, each with only what that line gives.
 
@@ -35,7 +35,7 @@
         * comment
             - "with no other call" stays: with "end your turn as soon as you have launched it" alone, operator a017a43d837e9118a ran `pwd` after the launch at its L1813, the completion reached it mid-turn, and nothing re-invoked it for five and a half hours: ticket 2-137.
             - "At that update" stays: with the launch line opening "Once each command you started has finished", under the line "Act by the line below each time one of these happens:" alone, ticket reviewer a0ea60e7c262c7daa, in a run where neither event happened, read the launch as a step of every run, and reported that its documents told it to launch such an agent before it ended its turn: ticket 2-291.
-- Once the environment update that gives your working directory at start has come, carry on your work, with the requests of each message that reached you before it.
+- Once the environment update that gives your working directory at start has come, continue your work, with the requests of each message that reached you before it.
 
 ## Gate
 - `uv run python scripts/gate.py <out-dir> [cmd ...]` is the gate: it runs the gate commands it is given on the fixed inputs under `tests/gate/` that `gate.py --help` lists, and compares their outputs with the accepted ones.

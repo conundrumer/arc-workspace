@@ -12,7 +12,7 @@
     - The included document's title heading and its sections sit one level deeper than that line.
     - It gives a file and nothing inside one.
 - Attributes under an `include` are its options.
-    - `exclude` lists the attributes to drop, throughout the included document and what it includes. A node that carries one goes with its subtree.
+    - `exclude` lists the attributes to drop, throughout the included document and what it includes. A node that has one goes with its subtree.
     - `abridged: all` renders every included document as its `index` attribute says. A list of paths, relative to the including file, abridges those documents alone.
         - A document with no `index` attribute renders in full.
     - A document included with no `abridged` renders in full.
@@ -25,7 +25,7 @@
     - Above those lines, the index gives the command that prints a section in full.
     - `index: headings` gives one line per heading.
     - `index: entries` gives one line per `## ` section: its text and the first sentence of its first statement.
-- A heading's rendered level comes from its depth in the rendered tree, and not from the count of `#` it carries in the source.
+- A heading's rendered level comes from its depth in the rendered tree, and not from the count of `#` it has in the source.
     - A heading that is a direct child of a console message section renders at the top level.
 
 ## Inline
@@ -54,7 +54,7 @@
     ```
     - [Principles](../docs/handbook/principles.md), in a doc under prompts/, renders as [Principles](docs/handbook/principles.md).
     ```
-- A link to a section the render carries whole, with none of its lines left out, under a heading whose slug no other heading of the render has, takes `#` and that slug as its target.
+- A link to a section the render includes whole, with none of its lines left out, under a heading whose slug no other heading of the render has, takes `#` and that slug as its target.
 - Every other target taken from the root stands as it is, and so do an external target and a slug.
 
 ## Variables
@@ -92,7 +92,7 @@
     * if: notes
         * quote: notes
     ```
-- `text` renders the value its name gives as it stands, with no fence and no quote marker, so a value that carries its own markup reaches the reader unchanged.
+- `text` renders the value its name gives as it stands, with no fence and no quote marker, so a value that has its own markup reaches the reader unchanged.
     ```
     * if: reports
         * text: reports

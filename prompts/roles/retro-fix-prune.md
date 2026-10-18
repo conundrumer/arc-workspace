@@ -33,4 +33,4 @@
 - Run the verification once over the fix edits together, and once over the prune edits together.
 
 # Report
-- A file's `diffs` entry carries its `prune_path`.
+- A file's `diffs` entry holds its `prune_path`.

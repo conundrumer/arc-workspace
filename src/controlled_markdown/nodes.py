@@ -45,6 +45,7 @@ class Rule(StrEnum):
     LINK_ANCHOR = "link-anchor"
     LINK_MISSING = "link-missing"
     LINK_TEXT = "link-text"
+    LITERAL_WORD = "literal-word"
     MCTX_LITERAL = "mctx-literal"
     MCTX_NESTED = "mctx-nested"
     NO_MARKER = "no-marker"

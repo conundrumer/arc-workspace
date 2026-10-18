@@ -4,8 +4,9 @@
     uv run python -m controlled_markdown fmt [paths...]     # rewrite in canonical form
     uv run python -m controlled_markdown render <path> [paths...]
 
-`check` reports each file that fails to parse or is not in canonical form, and
-exits 1 when any does. A run given no path also counts, over the whole set, the
+`check` reports each file that fails to parse or is not in canonical form,
+and each line of prose whose own words hold a form of `carry`, and exits 1
+when any does. A run given no path also counts, over the whole set, the
 sites each partial is inlined at. `fmt` rewrites each file in canonical form
 and prints the ones it changed. With no path, both read the set under
 `[tool.controlled_markdown]` in `pyproject.toml`, so the command that guards the
@@ -30,9 +31,11 @@ from . import (
     ControlledMarkdownError,
     Node,
     Registry,
+    carry_errors,
     check_blocks,
     check_citation_anchors,
     check_citations,
+    code_carry_errors,
     check_closure,
     check_dl_comments,
     check_file_fragments,
@@ -150,6 +153,9 @@ def check_code(root: Path, document_set: set[Path]) -> int:
         except ControlledMarkdownError as err:
             print(err)
             off += 1
+        for err in code_carry_errors(path, shown(path)):
+            print(err)
+            off += 1
         if path.suffix == ".py":
             for err in check_quotes(path, shown(path)):
                 print(err)
@@ -162,6 +168,9 @@ def check_code(root: Path, document_set: set[Path]) -> int:
             try:
                 check_dl_comments(path, shown(path), root)
             except ControlledMarkdownError as err:
+                print(err)
+                off += 1
+            for err in code_carry_errors(path, shown(path)):
                 print(err)
                 off += 1
     return off
@@ -198,6 +207,9 @@ def check(paths: list[Path], whole: bool = True) -> int:
         text = path.read_text()
         try:
             document = parse(text, name)
+            for err in carry_errors(document):
+                print(err)
+                off += 1
             check_blocks(document)
             check_links(document, path, root)
             # The registry claims the ids, so a repeat is reported here.

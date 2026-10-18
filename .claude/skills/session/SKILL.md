@@ -43,7 +43,7 @@ argument-hint: [solver|retro|<task_id>]
     - It runs no edit or check itself: those go to agents.
     - The runs' agents read the window, check each issue, take a default on each open one, make the fixes the rulings keep, sweep the window's solvers, act on each review line those fixes and the sweep wrote into a solver, run the `cleanup` role over each solver the runs wrote, and verify what they changed.
     - Each phase's rules live in its role, under [roles](prompts/roles).
-    - The `solver` role carries a solver fix.
+    - The `solver` role makes a solver fix.
 - **Report.** The dry run returns every call with its default, its tier, and what argues for and against it.
     - What reaches the user is a call whose fix changes a rule the user reads, in [Principles](docs/handbook/principles.md), [Keywords](docs/handbook/keywords.md), or a gloss, and the Verify issues.
     - A solver particular stays with the agents and the console's reports.
@@ -79,10 +79,10 @@ argument-hint: [solver|retro|<task_id>]
         - Churn, reversals of earlier commits, and file growth are not concerns.
         - For a doc rule, the default's action states the meaning before and the meaning after.
         - A follow-up fix from the workflow's `followups` is a further line under the default's action, naming the file and the change.
-    - Some calls carry more.
+    - Some calls give more.
         - A call whose fix edits [Principles](docs/handbook/principles.md): Context quotes the text before and after, and shows the concrete cases with small grid fragments.
             - The options are the readings the workflow returned, each with its wording and its consequence over the approved solvers.
-        - A call whose fix carries an illustration shows it under the call.
+        - A call whose fix has an illustration shows it under the call.
         - A keyword addition or a gloss change is presented as a proposal for a separate session.
         - A citation of a draft solver is not presented.
     - The workflow's Verify issues end the presentation: a failing check, a finding no round acted on, and an edit outside the run's targets, such as an approved solver.
@@ -93,7 +93,7 @@ argument-hint: [solver|retro|<task_id>]
     - A call the user does not rule on takes its default.
     - A question is answered from the call's record before any action.
     - Follow-up work batches into one agent run after the rulings settle.
-    - Each follow-up item carries one of two labels.
+    - Each follow-up item has one of two labels.
         - **Queued**: it goes into the batch with nothing more from the user.
         - **Needs ruling**: it waits on the user.
     - The rulings for fixes go into a second run with `roles` again and the fixes as `fixes` in `args`: the fixes as the dry run returned them under `dry`, each with its call id, kind, target, edit, and task ids, filtered to those the rulings keep, plus any fix a ruling for another option calls for.

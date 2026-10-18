@@ -47,7 +47,7 @@
     * comment: The user's words, session 2384db39, 2026-10-17T18:48:30Z: "I don’t want it to result in bloat. Avoiding bloat is the primary goal. Usually that’s done by cutting what the code already says or what the reader doesn’t need", and 18:48:56Z: "What the reader doesn’t need as writing guide says like details not needed at this place".
     - A rule that a consumer of that code applies stands at that consumer.
     - An edit that meets text in one that the code beside it shows, or that its reader does not need there, cuts that text in place of updating it.
-    - A rule that the `--help` text of a script under [scripts](scripts) states stands in that text alone, and a docstring or a comment of the code that carries the rule out leads its reader to that text where the reader needs the rule.
+    - A rule that the `--help` text of a script under [scripts](scripts) states stands in that text alone, and a docstring or a comment of the code that applies the rule leads its reader to that text where the reader needs the rule.
     - The words of a docstring or a comment keep the rules that [Writing a file](docs/handbook/editing.md#writing-a-file) gives a line's words, other than its rules on links and bare paths: read that section before you write, change or judge one, where your context does not hold it.
         * comment: The user's words, session 129de8fc, 2026-10-17T16:23:08Z: "they get reviewed according to writing standards right".
     - A docstring or a comment cites a document by its path from the root of the tree, and a section by that path, `#` and the slug of its heading.

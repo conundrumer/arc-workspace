@@ -3860,7 +3860,7 @@ the reading's one-word label
 
 .claude/workflows/retro.js:193
 
-the text the file carries under this reading
+the text the file has under this reading
 
 .claude/workflows/retro.js:194
 

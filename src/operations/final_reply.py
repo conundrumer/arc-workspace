@@ -27,7 +27,7 @@ from operations.steps import Reply, Send
 FOR_CONTEXT = mctx("I ended for my context: launch a fresh operator with no lines, which "
                    "takes up from the state each line below that stands unfinished.")
 
-FOR_LATER = mctx("Operator {operator} carries the work on, and takes up from the state each "
+FOR_LATER = mctx("Operator {operator} continues the work, and takes up from the state each "
                  "line below that stands unfinished.")
 """The first line of the final reply of an operator that ends because a
 later operator of the session is open."""

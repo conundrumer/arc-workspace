@@ -1,6 +1,6 @@
 + budget: 26674
 * comment: when editing this doc
-    - The ticket analyst and the draft analyst inline the subsections of [Decisions](#decisions) other than A decision's record in a reply, for resolving a ticket, and [Resolving](#resolving), for carrying out a resolution. The decision analyst inlines The user's goals, Rule and intent, How a decision is made, The user's part, Cost and time and Agents' choices, for judging what a change's editors leave and ruling a held step. The reply files of the checklists of those three link [analyst-reply](#analyst-reply), for giving their reply. The ticket reviewer and the doc reviewer inline The user's goals, for weighing a design or a change. The coordinator loads Decisions, The user's part and Defaults by the links of its Decisions section, before it makes a decision or ends a turn with one. Process notes, the ticket analyst's step documents and the coordinator's change notes link sections of it.
+    - The ticket analyst and the draft analyst inline the subsections of [Decisions](#decisions) other than A decision's record in a reply, for resolving a ticket, and [Resolving](#resolving), for applying a resolution. The decision analyst inlines The user's goals, Rule and intent, How a decision is made, The user's part, Cost and time and Agents' choices, for judging what a change's editors leave and ruling a held step. The reply files of the checklists of those three link [analyst-reply](#analyst-reply), for giving their reply. The ticket reviewer and the doc reviewer inline The user's goals, for weighing a design or a change. The coordinator loads Decisions, The user's part and Defaults by the links of its Decisions section, before it makes a decision or ends a turn with one. Process notes, the ticket analyst's step documents and the coordinator's change notes link sections of it.
     - Acts, each with its section:
         - Weighing what a decision serves: [The user's goals](#the-users-goals).
         - Reading a rule by its intent: [Rule and intent](#rule-and-intent).
@@ -8,8 +8,8 @@
         - Making a decision: [How a decision is made](#how-a-decision-is-made), with [Decisions on solver work](#decisions-on-solver-work) and [Decisions on the agents' documents](#decisions-on-the-agents-documents) for those subjects.
         - Bringing a decision to the user: [The user's part](#the-users-part).
         - Trading cost, time and quality: [The user's preferences](#the-users-preferences).
-        - Giving a decision's default and carrying it out: [Defaults](#defaults).
-        - Carrying out a ticket analyst's resolution: [Resolving](#resolving).
+        - Giving a decision's default and applying it: [Defaults](#defaults).
+        - Applying a ticket analyst's resolution: [Resolving](#resolving).
         - The items of a ticket analyst's reply: [analyst-reply](#analyst-reply).
 
 # Decision notes
@@ -48,7 +48,7 @@
 - Before you act on a default, write down the strongest reason against it. Where that reason is defensible, drop the default and reframe the problem: ask why the need arises, then decide where its answer goes.
     - Where you decide how to resolve a fault, or how to make a change the user asks for, keeping each mechanism of the tree in which the problem shows is a default, and the reason against keeping one is a reason against the mechanism itself, apart from any fault in it.
         * comment: With the line "Before you act on a default, write down the strongest reason against it." in its context, ticket analyst a4b3eb50ada587b16, on ticket 2-526, kept the review of a launch brief that took five review rounds, and wrote no reason against keeping that review: tickets 2-527 and 2-579, and its transcript at line 235.
-- Carry out no resolution whose need no output depends on.
+- Apply no resolution whose need no output depends on.
 - Anticipate each kind of bad situation that prompted past changes, and recommend the practice that prevents it: a kind is the situations one cause makes, and it covers each place where that cause stands, whether or not a situation showed there. A resolution at such a place has a need an output depends on. Recommend no practice for a place that no such cause reaches.
     * comment: The user's words, session dc433af1, 2026-10-05T18:54:16Z: "there's no evidence for a need for "not covered", and that's "dumb" stuff. i was thinking more about practices that prevents bad situations like what prompted all the changes. i was trying to anticipate those situations.", and 18:58:20Z: "ok so you have nothing to recommend to prevent general SWE scaling software problems and everything's fine, got it". Without the clauses on the cause, a ticket analyst closed ticket 10-960 wontfix, reading the kind as one launch site, so that each site of a cause that had faulted at four sites waited for its own fault; the user, session 2384db39, 2026-10-17T15:39:33Z, on that close: "sounds circular": ticket 11-75.
 - Decide by [Principles](docs/handbook/principles.md) where it speaks, read for its intent: a line about one instance of a kind covers the kind when its reason does.
@@ -66,9 +66,9 @@
 - Bring the user a decision only where every option, after you reframe the problem, still has a defensible reason against it.
     - An option that departs from the user's words, a ruling of the user or a line of [Principles](docs/handbook/principles.md) has such a reason, which no reframe removes. Where every option left departs from one of them, bring the decision to the user at once.
     - Give one line per option, the default first, with the option's consequence for the goals, and where the option changes a solver, that solver's code before and after.
-    - Where the user does not rule on the decision, carry out its default.
+    - Where the user does not rule on the decision, apply its default.
 - A ticket analyst's resolution of a ticket that leaves unmet part of a need the user stated, and departs from no ruling of the user and no line of [Principles](docs/handbook/principles.md), is a decline. The user stated a need in a ticket the coordinator filed from the user's words, a `request` in its spans or another ticket under its `Evidence`, or in a ticket whose Motivation gives such a ticket.
-    - Carry a decline as a decision for the coordinator, in place of one for the user, with its defense: the cost or risk of meeting the declined part, as an estimate, with the figures the tree or the session gives for it where they exist. A goal, a preference or another support line is a weight to judge by, and no defense.
+    - Give a decline as a decision for the coordinator, in place of one for the user, with its defense: the cost or risk of meeting the declined part, as an estimate, with the figures the tree or the session gives for it where they exist. A goal, a preference or another support line is a weight to judge by, and no defense.
     - A part whose decline a log line of the coordinator on the ticket lets stand is no decline again. Meet each part whose decline such a line vetoes.
 - Tell the user, without waiting on them, each change that affects the user directly, in one line, with the solver's code before and after where the user judges it by that code. A change affects the user directly where it does one of these:
     - It changes what the user reads, judges or uses. The user judges solver code, a concept an Analyze pass wrote and [Principles](docs/handbook/principles.md).
@@ -146,12 +146,12 @@
 - Say in each decision whether its default can be undone, and where it can, that it goes ahead at the end of the delay, with the time that delay ends.
 - The delay is 30 minutes from your first reply, since the user's last message, that gives a decision whose default can be undone. End that reply's turn by running `uv run python scripts/agent_timer.py start budget "$CLAUDE_CODE_SESSION_ID" 1800` in the background.
 - At the user's next message, run `uv run python scripts/agent_timer.py stop budget "$CLAUDE_CODE_SESSION_ID"`.
-- When that start completes and its output ends with `timer completed`, carry out the default of each waiting decision that can be undone, and until the user's next message, carry out at once the default of each later decision that can be undone, in place of bringing it to the user. Where its output ends otherwise, carry out no default.
+- When that start completes and its output ends with `timer completed`, apply the default of each waiting decision that can be undone, and until the user's next message, apply at once the default of each later decision that can be undone, in place of bringing it to the user. Where its output ends otherwise, apply no default.
 - In your reply to the user's first message after a default went ahead with no message of the user, list each such default, with how to undo it, and with no `**Blocked on you.**` label.
 
 ## Resolving
 - Where [The user's part](#the-users-part) brings a decision to the user, act on none of its options, and move the ticket to `tickets/blocked/` with a note that opens with `user` and gives the decision.
-- Carry out every other resolution: where it changes the tree, file a `change` ticket for it, with the number of each ticket it settles in its Motivation, and move each of those tickets to `tickets/waiting/` with a note that opens with `change` and that change's number, and otherwise close the ticket with its resolution word.
+- Apply every other resolution: where it changes the tree, file a `change` ticket for it, with the number of each ticket it settles in its Motivation, and move each of those tickets to `tickets/waiting/` with a note that opens with `change` and that change's number, and otherwise close the ticket with its resolution word.
     - Where that `change` serves a `request`, add to the request the `## Validation` section that `uv run python scripts/file_ticket.py --help` gives, from the need its Goal states.
 - Where your resolution is a decline, close no ticket for it. Move the ticket it leaves with the decline, the `change` you file or revise or the ticket you would close, to `tickets/blocked/` with a note that opens with `user decline` and gives the declined part and its defense.
 - Give rote work to an agent, and judge the list it returns.

@@ -1,6 +1,6 @@
 # Classification rubric
 - You are labeling pairs from a coding-agent transcript corpus.
-- Each row carries three fields.
+- Each row has three fields.
     - `preceding_assistant_message`: what the agent said just before the user's comment, often a review, report, or callouts list.
         - It may be trimmed in the middle, marked `...[trimmed]...`.
     - `user_comment`: the user's next message.

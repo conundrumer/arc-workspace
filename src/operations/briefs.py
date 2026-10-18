@@ -108,7 +108,7 @@ PARTS: dict[Role, str] = {
     Role.DOC_EDITOR: mctx("the documents and the text of the `mctx` fragments"),
 }
 """The part of a change each editor takes, where the change has more than
-one, as [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change)
+one, as [Making a change](prompts/agents/notes/changes.md#making-a-change)
 splits it."""
 
 
@@ -306,7 +306,7 @@ def design_review(number: str, worktree: Path, scratch: Path, operator: str,
 def quotes_fix(number: str, worktree: Path, calls: list[str], files: list[str], scratch: Path,
                operator: str, settled: "Settled") -> str:
     """The brief of a code editor on the `quotes` calls a change to the
-    documents broke, as [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change)
+    documents broke, as [Making a change](prompts/agents/notes/changes.md#making-a-change)
     gives it."""
     return "\n".join([
         read_ticket(number), WORK_IN.format(worktree=worktree),

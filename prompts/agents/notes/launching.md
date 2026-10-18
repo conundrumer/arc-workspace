@@ -123,7 +123,7 @@
         - The requests and changes the session's coordinator filed, and from each of them, and so on down each chain: each ticket a link leads to from it, each `change` whose Motivation gives its number, and each question or validation filed on it.
         - Each ticket outside `tickets/closed/` whose title refers to a path that the Scope of a `change` of the item above gives, or to a file of a commit that a coordinator's line in the log of a `request` of the item above gives, and from each such ticket the tickets that the steps of the item above lead to.
     - `Op scope: all.`: ends the limit of `Op scope: own.`.
-    - `Op pause.`: the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than the tickets and changes an `Op allow:` or an `Op expedite:` line gives, and the work an operator of the session took and each `change` that work waits on, which they carry to its end.
+    - `Op pause.`: the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than the tickets and changes an `Op allow:` or an `Op expedite:` line gives, and the work an operator of the session took and each `change` that work waits on, which they finish.
     - `Op resume.`: ends `Op pause.`.
     - `Op pace: <preset> [<argument> ...]` or `Op pace: <path>`: the usage pace, as `uv run python scripts/operate.py --help pace` gives it. Past that pace, the operators of the session admit only the tickets and changes an `Op allow:` or an `Op expedite:` line gives, and the work an operator of the session took and each `change` that work waits on.
     - `Op override: <task id> <pass> <override>`: an override that the brief of the next launch of that pass on that task gives.
@@ -167,10 +167,10 @@
 
 ### Writing a solver work brief
 - Read no solver to write a brief for solver work.
-- Solver work other than a pass, or than the fix of a solver after an `interference` ticket on its task closes, is a change, which an editor carries as it carries any other, whether or not a `change` ticket gives it. Where one does, its brief has the form [A change's brief](#a-changes-brief) gives.
+- Solver work other than a pass, or than the fix of a solver after an `interference` ticket on its task closes, is a change, which an editor makes as it makes any other, whether or not a `change` ticket gives it. Where one does, its brief has the form [A change's brief](#a-changes-brief) gives.
 
 ## Findings that block a change
-- A finding of a review of a built change before its merge blocks the change only where it is a defect in what an item of the change asks for, an edit that carries out an item wrongly, or a defect that an edit made to fix an earlier finding of the change.
+- A finding of a review of a built change before its merge blocks the change only where it is a defect in what an item of the change asks for, an edit that applies an item wrongly, or a defect that an edit made to fix an earlier finding of the change.
 - File each other finding as a ticket, in the form your documents give a ticket, and have no editor fix it: that ticket does not block the change.
 
 ## Passes on a task

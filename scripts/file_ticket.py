@@ -74,7 +74,7 @@ HELP = mctx("""
         ```
     - Where the ticket is about one or more files, `<target>` gives the path of each.
     - Where the ticket is about an agent's context, `<target>` gives the path of that agent's prompt under [agents](prompts/agents).
-    - A `change` takes `kind: change` and `editors: <editor>, <editor>`, with each editor whose part, as [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change) gives it, holds a file of its Scope, among {editors}.
+    - A `change` takes `kind: change` and `editors: <editor>, <editor>`, with each editor whose part, as [Making a change](prompts/agents/notes/changes.md#making-a-change) gives it, holds a file of its Scope, among {editors}.
         - It may add `depends-on: <number>, <number>`, `after-merge: <the steps and checks its Scope places at or after the merge>` and `mechanical: {mechanical}` to the front matter.
         - It gives `mechanical` only where its Intent gives each edit of the code editor's part outright.
         - It has `# <title>` as its title, and the sections {change_sections} in place of {defect_headings}.

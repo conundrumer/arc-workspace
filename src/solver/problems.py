@@ -307,7 +307,7 @@ class Undecided:
 
 
 @quotes("patterns.md", "`GRID_HxW` for grid data",
-        "The layout is a picture with one token carrying the `@` prefix, and "
+        "The layout is a picture with one token that has the `@` prefix, and "
         "each member cell is emitted as its offset from that anchor.")
 @dataclass(frozen=True)
 class GridOffLayout:

@@ -13,7 +13,7 @@
 - Work each line under the operation of [Procedure](docs/handbook/procedure.md) that covers its subject.
 - Remove each line you finished.
 - Leave a line you did not finish.
-    - When the solver carries no `// @draft` line, return it to draft first.
+    - When the solver has no `// @draft` line, return it to draft first.
         ```
         uv run python -c "import sys; sys.path.insert(0, 'tools/console'); from solver_console import solvers; solvers.mark_draft('<task_id>'); solvers.withdraw_citations('<task_id>')"
         ```

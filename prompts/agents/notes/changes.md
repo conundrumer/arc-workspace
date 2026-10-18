@@ -1,18 +1,18 @@
 + budget: 11405
 * comment: when editing this doc
-    - The coordinator loads Carrying a change, Merging a change and A denied merge by the links of its Changes section, at the steps they give; the decision analyst loads Findings an editor leaves by a link of [An editor's findings](prompts/agents/decision-analyst/findings.md), where its brief gives findings an editor left.
+    - The coordinator loads Making a change, Merging a change and A denied merge by the links of its Changes section, at the steps they give; the decision analyst loads Findings an editor leaves by a link of [An editor's findings](prompts/agents/decision-analyst/findings.md), where its brief gives findings an editor left.
     - Acts, each with its section:
-        - Having an editor write a change, and carrying it through its review and checks: [Carrying a change](#carrying-a-change).
+        - Having an editor write a change, and taking it through its review and checks: [Making a change](#making-a-change).
         - Judging the findings and items an editor leaves: [Findings an editor leaves](#findings-an-editor-leaves).
         - Merging a change: [Merging a change](#merging-a-change).
         - Acting on a denied merge call: [A denied merge](#a-denied-merge).
 
 # Change notes
-- The statements on carrying a change to the code or the documents from who writes it to its commit, that more than one entry point inlines or links.
+- The statements on a change to the code or the documents, from who writes it to its commit, that more than one entry point inlines or links.
 
 ## Changes
 
-### Carrying a change
+### Making a change
 - Have an editor write each change to the code or the documents. The `handbook-expanded` agent writes the part of a change in [lib.dl](programs/lib.dl), in the modules under [lib](programs/lib) and in the solvers under [solvers](programs/solvers), with the accepted gate outputs its items change, and a code editor in the same worktree writes the part in each other file outside the documents. A code editor drafts the text of each `mctx` fragment its code needs, and a doc editor writes that text once the code editors have reported.
 - A change is one editor's edit, or one edit for each part the line above splits it into, and each edit that fixes what its review or its checks found.
 - A change's ticket is the `change` ticket that gives that change, and a change no `change` ticket gives has no ticket.
@@ -22,7 +22,7 @@
     - Where it changes the documents, which include the `///` and `//!` comments of [lib.dl](programs/lib.dl) and of the modules under [lib](programs/lib) and the text of `mctx` fragments: a reply of the doc reviewer that follows the last edit of those changes says no finding stands, or a ticket analyst launched on its reply at the round cap has replied, and `uv run python -m controlled_markdown check` passes in its worktree.
     - Its items are checked: for each editor other than the `handbook-expanded` agent, an item checker's check of that editor's items finds each of them shown to hold or decided, and that check follows the editor's last report, or sent no message and ends its reply with the line `Worktree: <digest>`, with the digest `uv run python scripts/change_worktree.py --fingerprint <worktree>` prints for the change's worktree now.
     - Where a code editor or the `handbook-expanded` agent worked on it, a design reviewer launched after each such editor's first report since its ticket's last move out of `tickets/draft/`, and after each report since then of an editor's resolution of a rebase conflict in a path that is not a document, has given its final reply, and each `question` ticket it filed with `change` as `<domain>` and the change's number as `<subject>` is settled, or a ticket analyst launched after its filing has replied.
-- Where the operator's command carries a change past the cost budget its ticket's log gives, the command, in place of the rule above on when a change passes, ends the change's work in flight other than a design reviewer's, and moves its ticket to `tickets/draft/` where its worktree holds no change against `master` and no untracked file git does not ignore, or an editor has given no report, or none since it was told to end. Otherwise, after one last item check, and the design review that the rule above on when a change passes gives, where it has not run, it launches a ticket analyst on what that check, that review and its editors' latest reports leave for a decision, where they leave any, and then merges the change.
+- Where the cost of a change that the operator's command runs passes the cost budget its ticket's log gives, the command, in place of the rule above on when a change passes, ends the change's work in flight other than a design reviewer's, and moves its ticket to `tickets/draft/` where its worktree holds no change against `master` and no untracked file git does not ignore, or an editor has given no report, or none since it was told to end. Otherwise, after one last item check, and the design review that the rule above on when a change passes gives, where it has not run, it launches a ticket analyst on what that check, that review and its editors' latest reports leave for a decision, where they leave any, and then merges the change.
 - Once each editor of a change has reported, where its items are not checked, as the rule above on when a change passes gives, launch an `item-checker` agent to check them, with the latest report of each editor other than the `handbook-expanded` agent that has reported since the last item checker's launch on the change, then a ticket analyst on what its reply leaves for a decision, where it leaves any.
     - At the same time, on a change that a code editor or the `handbook-expanded` agent worked on, launch a `design-reviewer` agent, once for each move of its ticket out of `tickets/draft/` and once more after each report of an editor's resolution of a rebase conflict in a path that is not a document, then a ticket analyst on the `question` tickets it files with `change` as `<domain>`, where it files any.
 - Each kind of review of a built change runs at most the rounds `REVIEW_ROUNDS` in [constants.py](src/operations/constants.py) gives, since its ticket's last move out of `tickets/draft/`. The findings of its last round that block the change go to a ticket analyst, and the change goes into no further round of that review.
@@ -47,7 +47,7 @@
 - On each part of what the editors leave that you do not decline, send the editor each finding you drop, as dropped, and each you keep that needs no decision, as kept, each with your reason, and each decision, only where a finding you keep or a decision you make gives the editor an edit, or where the change has a doc editor.
 
 ### Merging a change
-- Where a kept finding of a change raises a decision that goes to the user, leave that change unmerged, and give its branch and worktree with that decision in your reply. The session that gets the user's ruling, or carries out that decision's default, merges the change.
+- Where a kept finding of a change raises a decision that goes to the user, leave that change unmerged, and give its branch and worktree with that decision in your reply. The session that gets the user's ruling, or applies that decision's default, merges the change.
 - Before you merge a change, read the diff of each accepted gate output its briefs list, and send each difference there that those briefs do not ask for to the change's editor as a finding of its checks.
 - Merge a change only once it passes, with `uv run python scripts/merge_change.py <worktree> -m <message>`, and commit in no other way.
 - Where that script exits with status 1, leave the worktree as it is.

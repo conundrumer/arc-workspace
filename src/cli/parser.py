@@ -369,11 +369,11 @@ def parser() -> argparse.ArgumentParser:
 
     keywords = command(
         Command.KEYWORDS, lambda a: survey.cmd_keywords(a.stem),
-        help=mctx("how many solvers carry each keyword of "
+        help=mctx("how many solvers list each keyword of "
                   "[Keywords](docs/handbook/keywords.md)"),
         description=mctx("Count, for each keyword of "
                          "[Keywords](docs/handbook/keywords.md), the "
-                         "solvers whose `// @keywords:` line carries it, and "
+                         "solvers whose `// @keywords:` line lists it, and "
                          "list each header keyword that doc does not."),
     )
     keywords.add_argument("stem", nargs="*",

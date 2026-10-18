@@ -12,7 +12,7 @@
 
 ## Multiple modeling forms via ADT `Choice`
 - Multiple models are encoded in one solver file as cases of an ADT `Choice` column on `out`.
-    - Cases can be more than two, may carry their own per-case data, and may nest, since a case's data can itself be an ADT.
+    - Cases can be more than two, may hold their own per-case data, and may nest, since a case's data can itself be an ADT.
     - Each case fires its own clauses, and the runner emits that case's output grids.
     ```
     .type Choice = CaseA {} | CaseB {}
@@ -67,7 +67,7 @@
 - `GRID_MASK_HxW(rel, ...)` takes `1` for a member cell and emits `rel(p)` for it — membership grids (1818057f `shape`).
 - `GRID_SPARSE_HxW(rel, ...)` takes a digit for a cell's value and emits `rel(p, v)` for it — ink templates (21897d95 `bracket_glyph`).
 - `GRID_STAMP_HxW(rel, ...)` and `GRID_STAMP_SPARSE_HxW(rel, ...)` store a mark-anchored stamp as `Offset` values.
-    - The layout is a picture with one token carrying the `@` prefix, and each member cell is emitted as its offset from that anchor.
+    - The layout is a picture with one token that has the `@` prefix, and each member cell is emitted as its offset from that anchor.
     - To choose between a grid and a stamp, ask what locates a cell in the data at hand: a position in a frame whose extent the data fixes takes a grid, and a distance from a mark takes a stamp.
     - `GRID_STAMP_HxW` takes `1` for a member cell and emits `rel(delta)` for it (3ac3eb23 `template`).
     - `GRID_STAMP_SPARSE_HxW` takes a digit for a cell's value and emits `rel(delta, v)` for it (dc1df850 `template`).
@@ -123,7 +123,7 @@
 
 ## Position remapping via `GRID` id join
 - A position correspondence is stored by joining two GRIDs on an opaque id: `src` labels the domain cells; `dst` gives each target cell the id of its source.
-    - The correspondence is visible in the layout, and ids carry identity only.
+    - The correspondence is visible in the layout, and ids only identify cells.
     - Raw Position-pair facts hold the same data in an unreadable form.
     ```
     .decl src(p: Position, id: Ident)

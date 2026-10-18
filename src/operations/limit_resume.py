@@ -13,7 +13,7 @@ from operations.steps import Send, Step
 
 RESUME = mctx("""
     - The usage limit stopped you, and it no longer stops calls.
-    - Carry on your work from where it stopped.
+    - Continue your work from where it stopped.
     """)
 
 

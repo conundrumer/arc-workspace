@@ -14,7 +14,7 @@
         * comment: Ticket reviewer af471549f475ff481 moved that revision of draft 2-736 (2026-10-08T01:32:00Z revised, 01:33:07Z reviewed) to `tickets/open/` with no such suggestion, and the coordinator moved it back at 02:27:36Z after the user flagged the operator's side in session dc433af1-cf87-408d-ab9d-9a1ede6b1b2a at 2026-10-08T02:27:22: the log of ticket 2-736 and the Intent of ticket 2-766.
 
 ## Checks
-- Report nothing on a draft's wording where the operator would carry out the draft the same way under other words.
+- Report nothing on a draft's wording where the operator would act on the draft the same way under other words.
 - Read the operator's procedures in the docstrings of [operate.py](scripts/operate.py) and of the modules under [operations](src/operations), which the docstring of [__init__.py](src/operations/__init__.py) indexes, and its loop and its use of overrides with `uv run python scripts/context.py context agent operator`. Read the documents of each agent the draft has the operator launch or message with `uv run python scripts/context.py context agent <name>`.
 - Take the state from `uv run python scripts/profile_runs.py --running $CLAUDE_CODE_SESSION_ID`, `git log master`, the tickets under `tickets/`, and the operators' transcripts, which `python3 ~/.claude/skills/retrieve/transcripts.py --help` says how to read.
 - Check each of these:
@@ -32,7 +32,7 @@
         - For a rule or fact in a document under [agents](prompts/agents), the `Design` leaves no rule standing beside it, and gives the act it falls under of the spec in that document's editing notes, which you read in the file, or, where that spec gives no such act, a revision of that spec that gives the part of the reader's work that needs a new act and why no act's rule covers it.
     - The `Design` of a `change` to code or to the agent-facing documents gives under `Interactions:` each part of the system that reads, calls, orders or is ordered by what the files it touches hold, with what the change does to it.
         * comment: Without it, the `Design` of change 6-1210 put `alerts.ticket_stalls` ahead of the steps of the changes in `plan.EARLY`, and since the operator takes one step per call, operator adc8eb58fcc132a15 spent 7 calls of about 2 minutes on stall messages while a take was ready: bug 6-1404.
-    - The operator can carry out each instruction under its documents: each agent, tool, permission and name the instruction relies on exists.
+    - The operator can follow each instruction under its documents: each agent, tool, permission and name the instruction relies on exists.
     - A rule's stated scope covers the readers the draft means it for, and no others.
     - Each item of the Intent is a requirement, as [Launching](prompts/agents/notes/launching.md#launching) gives it.
     - In a `change` that serves a `request`, each item of the Intent gives what it traces to, the user's words in a span of that request, quoted, or a line of that request's Grounds, and what it traces to itself asks for or states what the item states. The user's words are the text of the user's own messages: where they choose an option the coordinator proposed, the trace quotes that choice and gives the option it picks as the coordinator's, and the item states as its requirement the goal that option serves, in terms that hold for any design, and no means of that option, and no range or ceiling a number of the option sets, that the user's words do not themselves state, whatever a line of the request's Grounds states about it.

@@ -27,8 +27,8 @@
 ## Check the draft
 - Check the text of each `change` before you file it or log its revision, as [Checking a draft](prompts/agents/ticket-analyst/change.md#checking-a-draft) gives.
 
-# Carry out the resolutions
-- Carry out each resolution you chose, as [Resolving](prompts/agents/draft-analyst.md#resolving) gives.
+# Apply the resolutions
+- Apply each resolution you chose, as [Resolving](prompts/agents/draft-analyst.md#resolving) gives.
 
 # Reply
 - Give your final reply, as [Reply](prompts/agents/draft-analyst/reply.md#reply) and [Commands](prompts/agents/draft-analyst.md#commands) give.

@@ -1,7 +1,7 @@
 """A change the operator holds, from its take to its merge: the editors, the review of the documents, the design review, the item checker
 and the ticket analyst on what the editors leave; `doc_review` gives the
 review of the documents. The steps carry out
-[Carrying a change](prompts/agents/notes/changes.md#carrying-a-change);
+[Making a change](prompts/agents/notes/changes.md#making-a-change);
 `taking` gives the release of tickets and the take of open changes,
 `merging` the merge and what follows it. `change_agents` gives the
 agents of a change and the editors it needs, `item_check` the launch of

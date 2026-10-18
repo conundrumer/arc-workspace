@@ -1,7 +1,8 @@
 """The checks of prose in code: each string a program marks with `mctx`,
 each doc comment of the lib, each `quotes` call and each path a code file
 names; with `mctx` itself, and `form`, the pattern that reads back a text
-built from an `mctx` template."""
+built from an `mctx` template. It holds as well the check of the words of
+any prose, in a document or in code."""
 
 from __future__ import annotations
 
@@ -24,8 +25,9 @@ from controlled_markdown import (
     Node,
     parse,
     Rule,
+    TABLE,
 )
-from controlled_markdown.document_set import check_blocks, check_links
+from controlled_markdown.document_set import carried, check_blocks, check_links
 from controlled_markdown.nodes import slug
 from controlled_markdown.renderers import markdown_heading_lines
 
@@ -64,6 +66,62 @@ def dedent(text: str) -> str:
     pad = min((len(ln) - len(ln.lstrip(" ")) for ln in lines if ln.strip()),
               default=0)
     return "\n".join(ln[pad:] if ln.strip() else "" for ln in lines)
+
+
+# ----------------------------------------------------------------- words
+
+# Each form of `carry`, which this tree uses only in a figurative sense. The
+# rule on literal words of `docs/handbook/editing.md#writing-a-file` has the
+# check report each one; other words of that rule have literal uses of the
+# same form, so no check of their form tells the two apart.
+CARRY_RE = re.compile(r"\b(?:carry|carries|carrying|carried)\b", re.IGNORECASE)
+# What a line holds that is not its own words: a code span, and words in
+# quotes.
+NOT_OWN_RE = re.compile(r'(`+).*?\1|"[^"]*"|\u201c[^\u201d]*\u201d')
+
+
+def carry_words(text: str) -> list[str]:
+    """Each form of `carry` in `text`, outside its code spans and the words
+    it quotes."""
+    return CARRY_RE.findall(NOT_OWN_RE.sub(" ", text))
+
+
+def carry_errors(document: Node) -> Iterator[ControlledMarkdownError]:
+    """A finding at each line of `document` that a render shows and whose
+    own words hold a form of `carry`. A code block, a quote and an attribute
+    hold no words of the line's own."""
+    for node in carried(document):
+        if node.kind not in (CONTENT, HEADING, TABLE):
+            continue
+        for at, line in enumerate(node.text.split("\n")):
+            if words := carry_words(line):
+                yield ControlledMarkdownError(
+                    node.source, node.line + at, Rule.LITERAL_WORD,
+                    f"{', '.join(f'`{w}`' for w in words)}: a line says the "
+                    f"relation it means with a literal verb, such as `has`, "
+                    f"`gives`, `holds`, `does` or `takes`")
+
+
+def code_carry_errors(path: Path, source: str) -> Iterator[ControlledMarkdownError]:
+    """A finding at each line of a fragment or of a lib doc comment that the
+    file `path` holds whose own words hold a form of `carry`, at its line in
+    the file. Where the other rules refuse to read a fragment, or the file's
+    fragments past one, this check reads neither: those rules report it."""
+    if path.suffix == ".dl":
+        for fragment in dl_fragments(path, source):
+            yield from carry_errors(_statement(fragment.text, source,
+                                               fragment.line))
+        return
+    try:
+        for fragment in fragments(path, source):
+            try:
+                document, _ = _fragment_document(fragment)
+            except ControlledMarkdownError:
+                continue
+            for err in carry_errors(document):
+                yield _at_file_line(fragment, err)
+    except ControlledMarkdownError:
+        return
 
 
 # A hole a fragment leaves for the program to fill: `{name}` in Python,
@@ -179,27 +237,37 @@ def _holed(fragment: Fragment) -> str:
 MARKER_RE = re.compile(r"^(?:[-+*>|]\s|\d+\.\s|#{1,6}\s|`{3,}|~{3,})")
 
 
-def check_fragment(fragment: Fragment, root: Path | None = None) -> None:
-    """One fragment under the rules its shape takes. A fragment that opens
-    with a marker is format lines and takes every rule; any other fragment is
-    the text of one statement and takes the text rules."""
+def _statement(text: str, source: str, line: int) -> Node:
+    """A document of one statement, `text`, at `line`."""
+    document = Node(DOCUMENT, source=source)
+    document.children = [Node(CONTENT, text=text, source=source, line=line)]
+    return document
+
+
+def _fragment_document(fragment: Fragment) -> tuple[Node, bool]:
+    """The fragment as a document, and whether it is format lines: a
+    fragment that opens with a marker is, and any other fragment is the text
+    of one statement."""
     text = _holed(fragment)
     opening = next((ln for ln in text.split("\n") if ln.strip()), "")
     if MARKER_RE.match(opening):
         # A fragment is a run of lines, not a document: the brief that places
         # it supplies the line a block stands under.
-        document = parse(text, fragment.source, fragment=True)
-        check_order(document)
-        check_blocks(document)
-        check_links(document, fragment.file, root)
-        return
+        return parse(text, fragment.source, fragment=True), True
     if "\n" in text:
         raise ControlledMarkdownError(
             fragment.source, 1, Rule.FRAGMENT_BREAK,
             "a fragment that is one statement holds one line")
-    node = Node(CONTENT, text=text, source=fragment.source, line=1)
-    document = Node(DOCUMENT, source=fragment.source)
-    document.children = [node]
+    return _statement(text, fragment.source, 1), False
+
+
+def check_fragment(fragment: Fragment, root: Path | None = None) -> None:
+    """One fragment under the rules its shape takes: format lines take every
+    rule, and the text of one statement takes the text rules."""
+    document, lines = _fragment_document(fragment)
+    if lines:
+        check_order(document)
+        check_blocks(document)
     check_links(document, fragment.file, root)
 
 
@@ -227,9 +295,15 @@ def check_file_fragments(path: Path, source: str,
         try:
             check_fragment(fragment, root)
         except ControlledMarkdownError as err:
-            raise ControlledMarkdownError(
-                source, fragment.line + max(err.line - 1, 0), err.rule,
-                err.message) from None
+            raise _at_file_line(fragment, err) from None
+
+
+def _at_file_line(fragment: Fragment,
+                  err: ControlledMarkdownError) -> ControlledMarkdownError:
+    """The error `err` of a line of `fragment`, at that line in the file."""
+    return ControlledMarkdownError(
+        fragment.source, fragment.line + max(err.line - 1, 0), err.rule,
+        err.message)
 
 
 # A path a document takes in the repo: the shapes the document set uses, so a
@@ -452,8 +526,5 @@ def dl_fragments(path: Path, source: str):
 def check_dl_comments(path: Path, source: str, root: Path | None = None):
     """Every doc-comment line, read as the text of one statement."""
     for fragment in dl_fragments(path, source):
-        node = Node(CONTENT, text=fragment.text, source=source,
-                    line=fragment.line)
-        document = Node(DOCUMENT, source=source)
-        document.children = [node]
-        check_links(document, path, root)
+        check_links(_statement(fragment.text, source, fragment.line), path,
+                    root)

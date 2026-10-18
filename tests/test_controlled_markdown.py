@@ -15,6 +15,7 @@ from controlled_markdown import (
     ControlledMarkdownError,
     Registry,
     check_blocks,
+    carry_errors,
     check_links,
     check_order,
     parse,
@@ -67,6 +68,8 @@ def check_shape(document):
     """The rules a document keeps that the formatter does not settle."""
     check_order(document)
     check_blocks(document)
+    for err in carry_errors(document):
+        raise err
 
 
 def _render_case(path):

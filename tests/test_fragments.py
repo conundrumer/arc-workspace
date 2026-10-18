@@ -18,6 +18,7 @@ from controlled_markdown import (
     check_dl_comments,
     check_file_fragments,
     check_paths,
+    code_carry_errors,
 )
 
 MCTX_LITERAL = '''\
@@ -112,6 +113,32 @@ def test_a_doc_comment_in_the_lib_takes_the_text_rules(tmp_path):
         check_dl_comments(path, "mod.dl", Path.cwd())
     assert err.value.rule == "link-missing"
     assert err.value.line == 1
+
+
+CARRY_PY = '''\
+from controlled_markdown import mctx
+
+LINE = mctx("The line carries a word in a figurative sense.")
+OTHER = mctx("Another line carries a word in a figurative sense.")
+'''
+
+CARRY_DL = """\
+/// The relation carries a word in a figurative sense.
+.decl a(x: number)
+/// The relation carries a word in a figurative sense.
+.decl b(x: number)
+"""
+
+
+@pytest.mark.parametrize(("name", "text", "lines"), [
+    ("carry.py", CARRY_PY, [3, 4]),
+    ("carry.dl", CARRY_DL, [1, 3]),
+])
+def test_prose_in_code_takes_the_literal_word_rule(tmp_path, name, text, lines):
+    path = tmp_path / name
+    path.write_text(text)
+    errors = list(code_carry_errors(path, name))
+    assert [(e.rule, e.line) for e in errors] == [("literal-word", n) for n in lines]
 
 
 def test_the_handbook_links_only_where_its_reader_can_follow(tmp_path):
