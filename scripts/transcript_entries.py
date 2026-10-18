@@ -1,14 +1,13 @@
 """Read a Claude Code transcript, each read held for one state of the
-process (`state_cache`): the lines that hold a word, the lines that are
-its run's own, and its `.meta.json` file. The lines are read from the
+process (`state_cache`): the lines that are its run's own, and its
+`.meta.json` file. The lines are read from the
 transcript's snapshot (`transcript_snapshots`), and `entry_reads` gives
 their entries. No held read holds a parsed
 entry: each read parses the lines it reads anew, so its entries are held
 by its caller alone.
 
-The lines that hold a word (`entries_naming`) and the lines that are a
-run's own (`own_range`) are kept on disk across processes as well
-(`state_reads.Kept.DISK`), so a later process reads and searches a
+The lines that are a run's own (`own_range`) are kept on disk across
+processes as well (`state_reads.Kept.DISK`), so a later process reads a
 transcript again only once it changed."""
 
 import json

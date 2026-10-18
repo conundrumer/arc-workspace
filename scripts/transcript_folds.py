@@ -71,7 +71,7 @@ type Kept = tuple[Any, tuple[Folded, ...]]
 """The state of a fold, with where it stood in each transcript it read."""
 
 _folds: dict[Hashable, Kept] = {}
-"""The state of each fold held by its step and run."""
+"""The state of each fold held by its step, run and `naming`."""
 
 
 def fold[S](step: Step[S], start: Callable[[], S], run: Hashable, paths: Sequence[Path],
@@ -79,18 +79,20 @@ def fold[S](step: Step[S], start: Callable[[], S], run: Hashable, paths: Sequenc
     """The state `step` gives from `start()` over each entry of the run's
     own lines of each transcript of `paths`, in their order, or with
     `naming` each entry `read_entries` gives with it, as the transcripts
-    stand at the state this process is in. A later call with the same
-    `step` and `run`, in this process or, through the store, in a later
-    one, parses only the lines added since, where `goes_on` holds, and
+    stand at the state this process is in. `run` gives each value
+    `start()` reads, so that a kept state is one `start()` would begin
+    again. A later call with the same `step`, `run` and `naming`, in this
+    process or, through the store, in a later one, parses only the lines
+    added since, where `goes_on` holds, and
     otherwise starts the fold again, as for a transcript written anew,
     cut, or changed before its end. A fold whose step fails is not kept.
     A state over a line that is not whole is given and not kept. The
     caller changes none of the state it gets, and holds none of it past
     its read, as a later fold adds to it."""
-    key = step, run
-    held = _folds.pop(key, None)
+    key = run, naming
+    held = _folds.pop((step, key), None)
     if held is None:
-        held = stored(step, run)
+        held = stored(step, key)
     now = [(p, snapshot(p), own_range(p)) for p in paths]
     if held is not None and goes_on(held[1], now):
         state, marks = held[0], held[1]
@@ -102,9 +104,9 @@ def fold[S](step: Step[S], start: Callable[[], S], run: Hashable, paths: Sequenc
         whole = max(own.start, min(own.stop, snap.settled()))
         fold_lines(state, step, p, snap, range(done, whole), naming)
         kept.append(folded_at(p, snap, own, whole))
-    _folds[key] = state, tuple(kept)
+    _folds[step, key] = state, tuple(kept)
     if [m.done for m in kept] != [m.done for m in marks]:
-        store(step, run, (state, tuple(kept)))
+        store(step, key, (state, tuple(kept)))
     if not any(parse(line) for _, snap, own in now
                for line in snap.lines(selected_lines(snap, range(max(own.start, snap.settled()),
                                                          own.stop), naming))):
@@ -115,31 +117,34 @@ def fold[S](step: Step[S], start: Callable[[], S], run: Hashable, paths: Sequenc
     return state
 
 
-def store_names(step: Step[Any], run: Hashable) -> tuple[str, str] | None:
-    """The read and the key the store keeps the fold of `step` and `run`
-    by, the read in the module of `step`, so that a change of its code
-    drops the record; None where `run` has no canonical form."""
+def store_names(step: Step[Any], key: Hashable) -> tuple[str, str] | None:
+    """The read and the key the store keeps the fold of `step` and `key`,
+    its run with its `naming`, by, the read in the module of `step`, so
+    that a change of its code drops the record; None where `key` has no
+    canonical form."""
     try:
-        key = repr(canonical(run))
+        name = repr(canonical(key))
     except TypeError:
         return None
-    return f"{step.__module__}:{step.__qualname__}:fold", key
+    return f"{step.__module__}:{step.__qualname__}:fold", name
 
 
-def stored(step: Step[Any], run: Hashable) -> Kept | None:
-    """The fold of `step` and `run` the open store keeps, or None."""
+def stored(step: Step[Any], key: Hashable) -> Kept | None:
+    """The fold of `step` and `key`, its run with its `naming`, the open
+    store keeps, or None."""
     found = kept_reads.store()
-    names = store_names(step, run)
+    names = store_names(step, key)
     if found is None or names is None:
         return None
     record = found.held(*names)
     return record if isinstance(record, tuple) else None
 
 
-def store(step: Step[Any], run: Hashable, kept: Kept) -> None:
-    """Keep `kept`, the fold of `step` and `run`, in the open store."""
+def store(step: Step[Any], key: Hashable, kept: Kept) -> None:
+    """Keep `kept`, the fold of `step` and `key`, its run with its
+    `naming`, in the open store."""
     found = kept_reads.store()
-    names = store_names(step, run)
+    names = store_names(step, key)
     if found is not None and names is not None:
         found.keep(*names, kept)
 

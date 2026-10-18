@@ -147,6 +147,28 @@ def test_kept_fold_in_a_later_process(tmp_path: Path, monkeypatch: pytest.Monkey
     assert texts(path) == ["ONE", "two", "three"]
 
 
+def test_fold_of_another_naming(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A fold of the same step and run with another `naming` gives the
+    lines that hold a word of its own `naming`, in this process and, from
+    the store, in a later one."""
+    monkeypatch.setattr(kept_reads, "_store", None)
+    store = tmp_path / "store.sqlite"
+    path = tmp_path / "t.jsonl"
+    add(path, "ALPHA one", "BETA two", "ALPHA three")
+
+    def named(word: str) -> list[str]:
+        state_reads.new_state()
+        return list(transcript_folds.fold(add_text, list[str], path, [path],
+                                          frozenset({word})))
+    later_process(store)
+    assert named("ALPHA") == ["ALPHA one", "ALPHA three"]
+    assert named("BETA") == ["BETA two"]
+    add(path, "BETA four")
+    later_process(store)
+    assert named("ALPHA") == ["ALPHA one", "ALPHA three"]
+    assert named("BETA") == ["BETA two", "BETA four"]
+
+
 def test_makes_keeps_an_item_only_on_the_same_state_and_values() -> None:
     """An item is kept, with its `undecided` lines, on a read of the same
     state object, key and values, and made anew where any of them differ."""

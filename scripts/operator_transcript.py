@@ -180,8 +180,9 @@ input and its tool."""
 
 def lines_of(aid: str, path: Path) -> OperatorLines:
     parent = parent_id(path)
-    return fold(OperatorLines.step, lambda: OperatorLines(parent, run_sessions(path)),
-                (aid, path, parent), chain(path))
+    sessions = run_sessions(path)
+    return fold(OperatorLines.step, lambda: OperatorLines(parent, sessions),
+                (aid, path, parent, tuple(sessions)), chain(path))
 
 
 @state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
