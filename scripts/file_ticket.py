@@ -30,7 +30,7 @@ from ticket_files import FIELD, NAME_FORM, TicketName, ticket_path, ticket_statu
 from ticket_paths import SCOPE, section_paths  # noqa: E402
 from ticket_citations import (CITING_HELP, CLOSED_ON_HELP, EMPTY,  # noqa: E402
                               citing_command, closed_on_command)
-from tree_reads import main_tree  # noqa: E402
+from tree_reads import main_tree, run_in_main  # noqa: E402
 from ticket_form import (DESIGN, FormRefused, LOG, LOG_SECTION, MECHANICAL,  # noqa: E402
                          RETIRED, VALIDATES, checked_kind, front, section, sections_example, ticket_kind,
                          title_line)
@@ -209,20 +209,6 @@ INVOCATION = f"uv run python scripts/{SCRIPT}"
 """The command that runs this script, as a help text writes it."""
 
 
-def filed_in_main(args: list[str]) -> int | None:
-    """Runs the main tree's copy of this script with `args` and this
-    process's stdin, and returns its exit status, where this copy is
-    another one; None where this copy is the main tree's."""
-    main = main_tree()
-    copy = main / "scripts" / SCRIPT
-    if (checkout.scripts() / SCRIPT).resolve() == copy.resolve():
-        return None
-    if not copy.exists():
-        raise Refused(mctx("the main tree has no `scripts/{script}`").format(script=SCRIPT))
-    return subprocess.run(["uv", "run", "--project", str(main), "python", str(copy), *args],
-                          env=checkout.tree_env()).returncode
-
-
 class ArgumentsRefused(Refused):
     """A refusal of a call's arguments, which `run` completes with the
     pointer to the `--help` of the call."""
@@ -254,7 +240,7 @@ def run(args: Sequence[str | None], call: Call) -> int:
         print(call.help_text, file=sys.stderr)
         return 2
     try:
-        status = filed_in_main(call.argv) if call.in_main else None
+        status = run_in_main(SCRIPT, call.argv) if call.in_main else None
         if status is not None:
             return status
         print(call.act(*args))

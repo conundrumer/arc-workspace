@@ -2,7 +2,8 @@
 run the loop of `operate_loop`, `review` is `operate_review`'s, `waits`
 prints the paths of `operations.waits`, and the other subcommands are
 `operate_actions`', and its help, which
-`operate_help` holds.
+`operate_help` holds. Run with a copy other than the main tree's,
+`review` runs the main tree's copy (`tree_reads.run_in_main`).
 
 Each fact the command reads is in the tracker, in git, under `work/`, in
 a transcript, in a file it wrote for a call it printed (`operations.filing.filed`),
@@ -26,7 +27,7 @@ import step_journal  # noqa: E402
 from usage_limit import USAGE_STALE  # noqa: E402
 from agent_reports import RATE_LIMIT  # noqa: E402
 from transcript_snapshots import Refused  # noqa: E402
-from tree_reads import main_tree  # noqa: E402
+from tree_reads import main_tree, run_in_main  # noqa: E402
 from help_parts import print_help  # noqa: E402
 
 from operations import journal, pacing, runs, ticket_stall, waits  # noqa: E402
@@ -80,7 +81,8 @@ def main(argv: list[str]) -> int:
             case OperateAction.REVIEW:
                 if args.rest:
                     parser.error(mctx("review takes an agent id alone"))
-                return review(args.ident)
+                status = run_in_main("operate.py", argv)
+                return review(args.ident) if status is None else status
             case OperateAction.START:
                 if args.run is None or runs.start_of(args.ident, args.rest) is None:
                     parser.error(mctx("start takes {run_option} with its run, a task id, and one or more of {pass_list}")

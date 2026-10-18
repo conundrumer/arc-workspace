@@ -2,16 +2,18 @@
 take their state from: the worktrees, the commits of `master`, the code
 and lib review tags, the standing doc review tags, the task claims and restores, the solvers that stand, the accepted
 gate outputs a change writes, the `mctx` fragments a change adds or
-changes, and the session's scratchpad directory."""
+changes, and the session's scratchpad directory, and the run of the main
+tree's copy of a script in place of a worktree's copy."""
 
 import os
+import subprocess
 from collections.abc import Hashable
 from pathlib import Path
 
 from file_reads import file_text, listed, stat_of, stat_read
 from state_reads import state_cache
 
-from controlled_markdown import ControlledMarkdownError
+from controlled_markdown import ControlledMarkdownError, mctx
 from controlled_markdown.prose import Fragment, text_fragments
 from engine import checkout
 from operations.state import DOC_REVIEW, Baseline, Commit, NoBaseline, PathSet, Place, Restore, Review
@@ -19,6 +21,7 @@ from operations.task_dirs import CLAIM, restore_records, restores_file, tasks_wo
 from operations import worktrees as change_worktree
 from operations.worktrees import BASE
 from solver.vocabulary import SOLVER_SUFFIX
+from transcript_snapshots import Refused
 
 COMMITS = 300
 """The number of commits of `master` the state reads, newest first."""
@@ -30,6 +33,21 @@ ACCEPTED = "tests/gate/accepted"
 @state_cache(lambda: git_entry(checkout.ROOT))
 def main_tree() -> Path:
     return checkout.main_worktree(checkout.ROOT)
+
+
+def run_in_main(script: str, args: list[str]) -> int | None:
+    """Runs the main tree's copy of the script `scripts/<script>` with
+    `args` and this process's stdin, and returns its exit status, where
+    the running copy is another one; None where the running copy is the
+    main tree's."""
+    main = main_tree()
+    copy = main / "scripts" / script
+    if (checkout.scripts() / script).resolve() == copy.resolve():
+        return None
+    if not copy.exists():
+        raise Refused(mctx("the main tree has no `scripts/{script}`").format(script=script))
+    return subprocess.run(["uv", "run", "--project", str(main), "python", str(copy), *args],
+                          env=checkout.tree_env()).returncode
 
 
 def git(main: Path, *argv: str) -> str:
