@@ -33,22 +33,26 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
     ```
 - In addition to the diff, run `git -C <worktree> check-ignore <the Scope's paths>`, and read each path it prints as the main tree holds it.
 - Read each function, record, class and module that diff touches whole, as it stands in the worktree, and the code that calls each of them or that each of them calls.
+- Search the tree outside the diff for code that computes what each function the diff adds computes, and read each you find.
 - Read the commits of `master` since the change's merge base that touch the files of that diff, as `git -C <worktree> log -p $(git -C <worktree> merge-base master HEAD)..master -- <files>` prints them.
-- Read the closed tickets on each path that diff touches, as `uv run python scripts/file_ticket.py closed-on <paths>` prints them.
+- Read the tickets on each path that diff touches, as `uv run python scripts/file_ticket.py citing <paths>` prints them.
 - Where that diff touches a file under `programs/`, read [Principles](docs/handbook/principles.md), as the change's worktree holds it.
 
 ## Judging the design
 - Judge the design of the change against the code, the commits and the tickets you read, and, for its code under `programs/`, against Principles too, for each of these:
-    - A case the design does not handle.
-    - A state change the code does not see.
-    - A rule for one case where a general mechanism belongs.
+    - A case the design does not handle, that an input the tree holds or a run produced reaches, that a test `master` held before the change gives, or that a line of Principles requires.
+    - A state change the code does not see, that such an instance reaches.
+    - A rule for one case where a general mechanism belongs, or a mechanism larger than the cases it serves need.
     - One more per-instance fix of a fault that earlier fixes of the same target share.
-- Judge no place on its maintainability, and no item of the change on whether it holds: the code review and the item checker judge those.
+    - A rule the diff writes that code outside the diff already states (DRY).
+    - Code the diff adds that no item of the change needs and that nothing but a test or an example calls (YAGNI).
+    - A defect that an open `refactor` ticket on a path of the diff records, and that the diff adds to.
+- Judge no other place on its maintainability, and no item of the change on whether it holds: the code review and the item checker judge those.
 
 ## Findings
 * inline: notes/launching.md#findings-that-block-a-change
 - File each finding as a ticket of kind `question`, with the number of the change's ticket as `<subject>`, and with `change` as `<domain>` where it blocks the change, and otherwise `ticket`.
-    - Give under its `Evidence` the case, and the lines it rests on, each quoted with its path.
+    - Give under its `Evidence` the case or state change with its instance, as a path, a command and its output, a test on `master` or the Principles line, the number of each `refactor` ticket it rests on, and the lines it rests on, each quoted with its path.
 
 ## Your reply
 - Your final reply goes to the agent that launched you: the numbers of the tickets you filed, or that you filed none, and after them nothing but the line your brief has you end your reply with, where it gives one.

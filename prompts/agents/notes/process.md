@@ -104,6 +104,8 @@
     - Each review adds cost to every change: the reviews a work product gets are set by its reader, and the design review by the change's editors, a code editor or the `handbook-expanded` agent.
     - A reviewer checks that a form is filled in: each requirement is checked against the worktree or a run, and not against text.
     - Evidence of a reader's behavior is costly, and one run proves little: it is evidence for the reviewer of the change, and no pass or fail on its own.
+    - Each review asks only for more code, so each change grows: a case counts only with an instance, a design review finds code to remove, and growth of a defect an open `refactor` ticket records blocks the change.
+        * comment: The user's words, session 2384db39, 2026-10-18T12:12:07Z: "Rules written more than once." and "Work built before it's needed.": ticket 9-1350.
     - The standing review files many small findings: they go through the fault options of [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
 
 ## Validation
