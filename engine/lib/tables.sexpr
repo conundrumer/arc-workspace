@@ -1,0 +1,38 @@
+;; The tables of the orientation algebra, docs/lib-spec.md#the-orientation-algebra.
+;; Each form is (table <name> (<constant> ...) ...): a relation of the lib
+;; registry, then each of its rows, a constant per column in the order the
+;; relation declares its columns. Its reader and its check: the module
+;; comment of engine/arclog/src/algebra/tables.rs.
+
+(table axis_of
+  (DIR_T AXIS_V) (DIR_B AXIS_V) (DIR_L AXIS_H) (DIR_R AXIS_H))
+(table diag_axis_of
+  (DIAG_TL DAXIS_DG) (DIAG_BR DAXIS_DG) (DIAG_TR DAXIS_AD) (DIAG_BL DAXIS_AD))
+(table axis4_of
+  (DIR_T AXIS_V) (DIR_B AXIS_V) (DIR_L AXIS_H) (DIR_R AXIS_H)
+  (DIAG_TL DAXIS_DG) (DIAG_BR DAXIS_DG) (DIAG_TR DAXIS_AD) (DIAG_BL DAXIS_AD))
+(table corner_dir
+  (DIAG_TL AXIS_V DIR_T) (DIAG_TL AXIS_H DIR_L)
+  (DIAG_TR AXIS_V DIR_T) (DIAG_TR AXIS_H DIR_R)
+  (DIAG_BL AXIS_V DIR_B) (DIAG_BL AXIS_H DIR_L)
+  (DIAG_BR AXIS_V DIR_B) (DIAG_BR AXIS_H DIR_R))
+(table opposite
+  (DIR_T DIR_B) (DIR_B DIR_T) (DIR_L DIR_R) (DIR_R DIR_L))
+(table diag_opposite
+  (DIAG_TL DIAG_BR) (DIAG_BR DIAG_TL) (DIAG_TR DIAG_BL) (DIAG_BL DIAG_TR))
+(table dir8_opposite
+  (DIR_T DIR_B) (DIR_B DIR_T) (DIR_L DIR_R) (DIR_R DIR_L)
+  (DIAG_TL DIAG_BR) (DIAG_BR DIAG_TL) (DIAG_TR DIAG_BL) (DIAG_BL DIAG_TR))
+(table perp
+  (AXIS_V AXIS_H) (AXIS_H AXIS_V))
+(table diag_perp
+  (DAXIS_DG DAXIS_AD) (DAXIS_AD DAXIS_DG))
+(table turn
+  (SENSE_CW DIR_T DIR_R) (SENSE_CW DIR_R DIR_B) (SENSE_CW DIR_B DIR_L) (SENSE_CW DIR_L DIR_T)
+  (SENSE_CC DIR_R DIR_T) (SENSE_CC DIR_B DIR_R) (SENSE_CC DIR_L DIR_B) (SENSE_CC DIR_T DIR_L))
+(table c4_turn
+  (SENSE_CW D4_CW) (SENSE_CC D4_CC))
+(table reflection
+  (AXIS_V D4_LR) (AXIS_H D4_TB) (DAXIS_DG D4_DG) (DAXIS_AD D4_AD))
+(table axis_inversion
+  (AXIS_V D4_TB) (AXIS_H D4_LR) (DAXIS_DG D4_AD) (DAXIS_AD D4_DG))
