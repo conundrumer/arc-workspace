@@ -243,7 +243,7 @@
         "id": string,                            // unique within this file
         "separates": string,                     // the feature of the input on which the models differ, and each model's output
         "input": Grid,
-        "assign": {<parameter>: Fact[] | Grid | {"grid": Grid, "anchor": [row, col]}},  // the parameters the witness reassigns, which may include a `@store` line's relation
+        "assign": {<parameter>: Fact[] | Grid | {"grid": Grid, "anchor": [row, col]}},  // the parameters the witness reassigns, which may include a `@store` line's relation; absent where it reassigns none
         "output": Group[]                        // when the verdict is not other: one group per distinct output
                 | Grid                           // when the verdict is other: the annotator's judged output
       }] }
