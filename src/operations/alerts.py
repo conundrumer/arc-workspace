@@ -40,16 +40,21 @@ kind (`stuck`).
 A message on each ticket of `ticket_stall.stalled` goes to the coordinator once
 per stall, with its log since its last progress and its agents, and the
 ticket is recorded the same way, in one `bug` ticket of its own kind
-(`ticket stall`), by `ticket_stalls`. A kind's ticket and its lines are on an agent, or, for
+(`ticket stall`), by `ticket_stalls`, with the paths of links
+(`waits.paths`) of each change that waits on it (`waiting_paths`). The
+message on a change whose paths hold a ticket that does not move goes to
+the coordinator as `scripts/operate.py --help alerts` gives it
+(`stuck_waits`). A kind's ticket and its lines are on an agent, or, for
 that kind, on a ticket."""
 
 import re
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from enum import Enum
 
 from controlled_markdown import mctx
-from operations import messages, ticket_stall
-from operations.constants import COORDINATOR
+from operations import messages, taking, ticket_stall, waits
+from operations.constants import COORDINATOR, stuck_reached
 from operations.roles import AGENT_ID
 from operations.state import Agent, LateResume, Message, Report, State, Stuck, Ticket
 from operations.handled import ask_again, repeated
@@ -317,11 +322,13 @@ def ticket_stall_text(state: State, t: Ticket, since: float) -> str:
 def ticket_stalls(state: State) -> Step | None:
     """The first step on a ticket of `ticket_stall.stalled`: the message that
     gives the coordinator `ticket_stall_text`, once after its last
-    progress, then the step `ticket_step` gives from that time."""
-    for n, since in sorted(ticket_stall.stalled(state).items()):
+    progress, then the step `ticket_step` gives from that time. The message gives
+    `waiting_paths` on it."""
+    stalls = ticket_stall.stalled(state)
+    for n, since in sorted(stalls.items()):
         t = state.tracker.tickets[n]
         text = ticket_stall_text(state, t, since)
-        sent = Send(COORDINATOR, text + "\n" + mctx(
+        sent = Send(COORDINATOR, text + "\n" + waiting_paths(state, n, stalls) + mctx(
             "Find the step it waits for, from its log and the last reports of its agents, then "
             "have the agent whose work that step is make it."), f"ticket stall {n}", since)
         if not repeated(sent, state):
@@ -330,6 +337,73 @@ def ticket_stalls(state: State) -> Step | None:
                         mctx("no progress since {time}").format(time=utc_stamp(since)), text)
         if s is not None:
             return s
+    return None
+
+
+def waiting_paths(state: State, number: str, stalls: Mapping[str, float]) -> str:
+    """The paths (`waits.paths`) of each change of `taking.waiting` that
+    reach ticket `number`, each under a line that leads them, or the empty
+    text where none reaches it."""
+    roots = [waits.paths(state, n, stalls) for n, _ in taking.waiting(state)]
+    trees = [r for r in roots if any(x.number == number for x in waits.nodes(r))]
+    return "".join(mctx("The paths of links from change {change}, which waits on it:").format(
+        change=r.number) + "\n" + waits.rendered(state, r) + "\n" for r in trees)
+
+
+def told(state: State, node: waits.Node, entries: Collection[str]) -> bool:
+    """Whether the mark of `node`, on the paths of a change whose open
+    `depends-on` entries are `entries`, goes to the coordinator in the
+    message of `stuck_waits`: a cycle, a line of the user, or a wait on the
+    user of a ticket other than such an entry off a cycle, on which
+    `ticket_stall.stall` acts."""
+    match node.mark:
+        case waits.OnCycle() | waits.Held():
+            return True
+        case waits.OnUser():
+            return node.number not in entries or waits.cycle(state, node.number) is not None
+        case _:
+            return False
+
+
+STUCK_WAITS = mctx("Change {change} waits on its `depends-on`, and these tickets on its paths "
+                   "of links do not move: {stuck}. Its paths of links:")
+STUCK_STEP = mctx("Cut a link whose result the waiting change's Design does not read, have the "
+                  "stuck ticket moved, or bring the user the decision.")
+
+
+def stuck_waits(state: State) -> Step | None:
+    """The first message to the coordinator on a change of
+    `taking.waiting` whose log has had no line for `STUCK_SECONDS` and
+    whose paths (`waits.paths`) hold a ticket that `told` gives: the
+    change's paths, with the step to take, once per change and set of such
+    tickets after the change's last log line, or, where the paths reach a
+    cycle (`waits.cycle`) through such a ticket, once per cycle after the
+    last log line of its tickets."""
+    found = taking.waiting(state)
+    if not found:
+        return None
+    stalls = ticket_stall.stalled(state)
+    for n, deps in found:
+        t = state.tracker.tickets[n]
+        if not stuck_reached(t.last_time, state.now):
+            continue
+        root = waits.paths(state, n, stalls)
+        stuck = [x for x in waits.nodes(root) if told(state, x, deps)]
+        if not stuck:
+            continue
+        text = "\n".join([STUCK_WAITS.format(change=n, stuck=", ".join(x.number for x in stuck)),
+                          waits.rendered(state, root), STUCK_STEP])
+        cycles = {tuple(sorted(c)): c for x in stuck if (c := waits.cycle(state, x.number)) is not None}
+        if cycles:
+            sends = [Send(COORDINATOR, text, "stuck waits cycle " + " ".join(k),
+                          max(state.tracker.tickets[m].last_time for m in c))
+                     for k, c in sorted(cycles.items())]
+        else:
+            sends = [Send(COORDINATOR, text, f"stuck waits {n} " + " ".join(sorted(x.number for x in stuck)),
+                          t.last_time)]
+        sent = next((s for s in sends if not repeated(s, state)), None)
+        if sent is not None:
+            return sent
     return None
 
 

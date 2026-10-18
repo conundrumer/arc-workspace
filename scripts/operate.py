@@ -1,6 +1,7 @@
 """The operator's command line: its actions, of which `next` and `relay`
-run the loop of `operate_loop`, `review` is `operate_review`'s and the
-other subcommands are `operate_actions`', and its help, which
+run the loop of `operate_loop`, `review` is `operate_review`'s, `waits`
+prints the paths of `operations.waits`, and the other subcommands are
+`operate_actions`', and its help, which
 `operate_help` holds.
 
 Each fact the command reads is in the tracker, in git, under `work/`, in
@@ -28,7 +29,8 @@ from transcript_snapshots import Refused  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 from help_parts import print_help  # noqa: E402
 
-from operations import journal, pacing, runs  # noqa: E402
+from operations import journal, pacing, runs, ticket_stall, waits  # noqa: E402
+from operations.directives import NUMBER  # noqa: E402
 from operations.decisions import WRITE_SECONDS  # noqa: E402
 from operations.command_words import Action  # noqa: E402
 from operations.roles import Role  # noqa: E402
@@ -38,6 +40,21 @@ from operate_loop import block, operator_step  # noqa: E402
 from operate_actions import TASK_ID, OperateAction, claim_task, relay_step  # noqa: E402
 from operate_help import PARTS, PURPOSES, USAGE, HelpPart  # noqa: E402
 from operate_review import review  # noqa: E402
+from relay_reads import session_id  # noqa: E402
+from operator_reads import operator_runs  # noqa: E402
+from state_assembly import read_state  # noqa: E402
+
+def print_waits(number: str) -> int:
+    """Print the paths of links from ticket `number` (`waits.paths`), from
+    the state `next` reads for the session's latest operator, or fail
+    where no operator of the session ran `next`."""
+    operators = operator_runs(session_id(), "")
+    if not operators:
+        print(mctx("operate: no operator of the session ran `next`"), file=sys.stderr)
+        return 1
+    state, _ = read_state(operators[-1][0])
+    print(waits.rendered(state, waits.paths(state, number, ticket_stall.stalled(state))))
+    return 0
 
 
 def main(argv: list[str]) -> int:
@@ -53,8 +70,8 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="operate.py", add_help=False)
     parser.add_argument("action", choices=list(OperateAction))
     runs.add_arguments(parser)
-    args = parser.parse_args(argv)
     try:
+        args = parser.parse_args(argv)
         match OperateAction(args.action):
             case OperateAction.NEXT:
                 return block(args.ident, Action.NEXT, lambda deadline: operator_step(args.ident, deadline))
@@ -87,6 +104,10 @@ def main(argv: list[str]) -> int:
                     parser.error(mctx("restore takes a task id and, optionally, the reason its pipeline stopped"))
                 restore(main_tree(), args.ident, args.rest[0] if args.rest else None)
                 return 0
+            case OperateAction.WAITS:
+                if args.rest or NUMBER.fullmatch(args.ident) is None:
+                    parser.error(mctx("waits takes a ticket number alone"))
+                return print_waits(args.ident)
     except Refused as exc:
         print(f"operate: {exc}", file=sys.stderr)
         return 1

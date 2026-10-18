@@ -20,7 +20,8 @@
 ## Checks
 - Check each of these:
     - A `change` ticket's `depends-on` gives the tickets [Change tickets](prompts/agents/notes/tickets.md#change-tickets) has its filer give there, and the `change` waits for no other ticket but, where it stands under `tickets/waiting/`, the `change` it waits on.
-    - Instructions of the draft that edit the same part of a file, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a part, are ordered.
+    - Instructions of the draft that edit the same part of a file, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a part, are ordered among themselves. An edit of that part by another change gives no finding and no `depends-on` entry.
+        * comment: Ticket reviewer findings of 2026-10-18 asked for an order against another change under this check (change 9-1343 log 12:42:44Z by a4855fbd115d39313; change 11-716 log 03:26:27Z by a568a6b7454fe371c; Grounds of ticket 11-1316). The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-18T14:32:26Z: "Go", on the coordinator's proposal "Only a real need blocks."
     - Each claim the draft makes about the current state that the draft's outcome rests on holds now, by that state: each case, count and place it gives, each thing it says a file, a command or the tree does, and each result it expects a check of the tree to give. Such a claim that you do not settle is a finding.
         - Judge which claims the draft's outcome rests on by [A draft's outcome](prompts/agents/notes/launching.md#a-drafts-outcome).
         - The draft's `Grounds` give where the source of each claim lies, as read at the hash of `master` they give.

@@ -28,6 +28,7 @@ class OperateAction(StrEnum):
     RESTORE = "restore"
     RELEASE = "release"
     REVIEW = Action.REVIEW
+    WAITS = "waits"
 
 
 def claim_task(task_id: str) -> int:

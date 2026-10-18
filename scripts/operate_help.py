@@ -32,6 +32,7 @@ USAGE = mctx("""
         uv run python scripts/operate.py set-aside <task id> analyze|create
         uv run python scripts/operate.py restore <task id> [<reason>]
         uv run python scripts/operate.py release <task id>
+        uv run python scripts/operate.py waits <ticket number>
         ```
     - Where `next`, `relay` or `review` is given the agent id of an agent other than the one its part of this help gives, it prints that the agent is none that form serves, and what that agent does.
     {parts}
@@ -40,6 +41,7 @@ USAGE = mctx("""
     - `restore` puts that work back, removes the task's claim and records the call.
         - `<reason>` is the reason the task's pipeline stopped, or empty where that pipeline ran to its end, and `next` then takes that pipeline as ended with that reason.
     - `release` removes the task's claim.
+    - `waits` prints the paths of links from a ticket, as `--help alerts` gives them, from the state `next` reads for the session.
     - The session is the one `CLAUDE_CODE_SESSION_ID` gives.
     """)
 """The help the bare `--help` prints."""
@@ -52,9 +54,26 @@ PURPOSES = {
     HelpPart.PACE: mctx("the `Op pace:` line, which sets the usage pace within which `next` admits open tickets"),
     HelpPart.RELAY: mctx("what `relay` prints"),
     HelpPart.REVIEW: mctx("what `review` prints"),
-    HelpPart.ALERTS: mctx("the alerts `next` sends, and the messages it sends the coordinator on concept faults"),
+    HelpPart.ALERTS: mctx("the alerts `next` sends, the paths of links from a ticket, and the messages it sends the coordinator on waits and on concept faults"),
 }
 """What each part of the help gives."""
+
+WAITS_HELP = mctx("""
+    - The paths of links from a ticket are a nested list of the tickets outside `tickets/closed/` that a chain of links reaches from it, a link as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives one.
+        - A ticket that two paths reach is given in full at its first place, and at each later place by its number alone.
+        - Each ticket that does not move gives why, the first of these that holds:
+            - It waits on the user, since its last move into `tickets/blocked/`.
+            - It has had no step since its last progress, while an operator's step is due on it.
+            - It stands on a cycle of links, which it gives in order.
+            - It stands under `tickets/draft/`.
+            - The read of the tracker left it out.
+            - It is open, each ticket of its `depends-on` is closed, and the run scripts' `takes`, the `Op pause.` line, the `Op scope: own.` line or the usage pace holds it.
+        - A ticket that gives no reason waits in turn.
+    - Where a change waits on its `depends-on`, its log has had no line for `STUCK_SECONDS`, and its paths hold a ticket that stands on a cycle, that a line of the user holds, or that waits on the user and is no entry of the change's own `depends-on` off a cycle, `next` sends the coordinator the change's paths, with the step to take.
+        - It sends it once per change and set of such tickets after the change's last log line, or, where the paths reach a cycle of links through such a ticket, once per cycle after the last log line of the cycle's tickets, whichever change waits.
+    - The message on a ticket that has had no step gives the paths of each change that waits on it.
+    """)
+"""The help on the paths of links and the message on them."""
 
 PARTS = {
     HelpPart.NEXT: mctx("""
@@ -196,6 +215,6 @@ PARTS = {
         - Otherwise it prints that the editor gives its final reply.
         - It reads the state as the editor's operator's `next` reads it.
     """),
-    HelpPart.ALERTS: ALERTS + "\n" + concept_faults.HELP,
+    HelpPart.ALERTS: ALERTS + "\n" + WAITS_HELP + "\n" + concept_faults.HELP,
 }
 """The text of each part of the help."""

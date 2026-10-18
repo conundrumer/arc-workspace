@@ -27,8 +27,7 @@ import re
 from collections.abc import Mapping
 from typing import assert_never
 
-from controlled_markdown import mctx
-from operations import drafts, lineage, merging, taking, triage
+from operations import drafts, lineage, merging, taking, triage, waits
 from operations.change_budget import TAKEN
 from operations.constants import stuck_reached
 from operations.final_reply import live_holder
@@ -36,14 +35,10 @@ from operations.log_commands import log
 from operations.roles import AGENT_ID
 from operations.state import Agent, State, Ticket
 from operations.steps import Bash, Step
-from operations.tracker import blocked_on_user, closed, exits
+from operations.tracker import closed, exits
 from ticketing.exits import Exit
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Kind, Status
-
-
-ON_USER = mctx("it waits on the user")
-NO_STEP = mctx("it has had no step since {time}")
 
 
 def held_outside_session(state: State, t: Ticket) -> bool:
@@ -118,15 +113,16 @@ def stalled(state: State) -> dict[str, float]:
 
 def holding(state: State, u: Ticket, stalls: Mapping[str, float]) -> tuple[float, str] | None:
     """The time from which `u` holds up the changes that wait on it, with
-    the reason, where it does: from its last move into `tickets/blocked/`
-    where it waits on the user, and otherwise from its last progress where
-    `stalls`, as `stalled` gives them, holds it."""
-    if blocked_on_user(u) is not None:
-        return taking.status_since(u), ON_USER
-    if u.number in stalls:
-        since = stalls[u.number]
-        return since, NO_STEP.format(time=utc_stamp(since))
-    return None
+    the reason, where it does: where `waits.mark` gives it `waits.OnUser`
+    or `waits.NoStep`, from that mark's time, with `stalls` as `stalled`
+    gives them."""
+    match waits.mark(state, u.number, stalls):
+        case waits.OnUser(since):
+            return since, waits.ON_USER
+        case waits.NoStep(since):
+            return since, waits.NO_STEP.format(time=utc_stamp(since))
+        case _:
+            return None
 
 
 def stall(state: State) -> Step | None:

@@ -269,7 +269,7 @@ LATE: tuple[Callable[[State], Step | None], ...] = (
     pipelines, batches.audit, *reviews.PROCEDURES, batches.standing_review,
     batches.overdue_review, batches.gate,
     batches.assessment, after_profile.validation, after_profile.script_check, batches.step,
-    alerts.ticket_stalls)
+    alerts.ticket_stalls, alerts.stuck_waits)
 PROCEDURES = EARLY + LATE
 
 

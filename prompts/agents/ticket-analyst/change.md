@@ -36,7 +36,8 @@
 - Check a draft by each check of [Checks](prompts/agents/ticket-reviewer/review.md#checks) on these, and fix each fault a check shows:
     - `depends-on`.
     - The draft's claims, cut and checked as [A draft's outcome](prompts/agents/notes/launching.md#a-drafts-outcome) gives.
-    - The order of instructions that edit the same part of a file.
+    - The order of the draft's own instructions that edit the same part of a file.
+        * comment: Ticket reviewer findings of 2026-10-18 asked for an order against another change under this check (change 9-1343 log 12:42:44Z by a4855fbd115d39313; change 11-716 log 03:26:27Z by a568a6b7454fe371c; Grounds of ticket 11-1316). The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-18T14:32:26Z: "Go", on the coordinator's proposal "Only a real need blocks."
     - The outcome of [Process notes](prompts/agents/notes/process.md) in the Motivation, and the Scope's coverage of each line of those notes the change makes untrue.
     - The `Design` of a `change` to code or to the agent-facing documents, with the Scope covering each file it gives.
     - The `Interactions:` list of a `Design`.
