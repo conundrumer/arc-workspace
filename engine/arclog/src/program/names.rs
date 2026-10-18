@@ -15,22 +15,22 @@ use super::*;
 pub enum DeclaredName {
     Written(Box<str>),
     Slot(u32),
+    /// A name that a cell-instance macro's `INIT` or `RULE` form declares,
+    /// in the expansion of one site of the macro: the path of the site's
+    /// `INIT` form and the name as the macro writes it, so that the names
+    /// of two sites are two names wherever a read of them stands.
+    CellExpansion { site: path::NodePath, name: Box<str> },
 }
 
-/// The scope of a declared name: the program, one `DEMO_RULE` form, by its
-/// path, or one site's expansion of a cell-instance macro, by the path of the
-/// site's `INIT` form. Each demonstrated rule declares its own `&prediction`
-/// and the relations and instances it needs, so a name that a `DEMO_RULE`
-/// form declares stands for its declaration within that form alone
-/// (`docs/arclog/arclog.md#demonstrated`). A name that a cell-instance
-/// macro's `INIT` or `RULE` form declares stands for its declaration within
-/// one site's expansion alone, as the module comment of [`crate::registry`]
-/// gives.
+/// The scope of a declared name: the program, or one `DEMO_RULE` form, by
+/// its path. Each demonstrated rule declares its own `&prediction` and the
+/// relations and instances it needs, so a name that a `DEMO_RULE` form
+/// declares stands for its declaration within that form alone
+/// (`docs/arclog/arclog.md#demonstrated`).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum NameScope {
     Program,
     DemoRule(path::NodePath),
-    CellExpansion(path::NodePath),
 }
 
 /// A derived relation's, a chosen relation's or a demonstrated relation's

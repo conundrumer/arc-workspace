@@ -105,7 +105,7 @@ impl FileReader {
             let (body, kept) = self.read(read_body(&rule[1..], init))?;
             let columns = kept.iter().map(|(n, label)| (ColumnName::Written(n.clone()), *label)).collect();
             bodies.push(body.clone());
-            rules.push((CellRule { name: rule_name, body }, columns));
+            rules.push(CellRule { name: rule_name, body, columns });
         }
         let mut outputs: Vec<(PortName, LabelColumns, Node<Body>)> = Vec::new();
         for expr in rest {

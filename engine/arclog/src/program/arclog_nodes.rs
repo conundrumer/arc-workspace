@@ -268,6 +268,12 @@ pub enum RelationRef {
     /// expansion puts the instance's input in the place of. The registry file
     /// writes it `(self.<port> ...)`, and no arclog file holds it.
     DefinedPort(PortName),
+    /// The default rows of the input `input` of the lib component
+    /// `component`, which [`crate::registry::DefaultRows::rows`] gives, at
+    /// the columns of the input's port. The expansion of a cell-instance
+    /// site reads it in the place of an input the site writes no clause
+    /// for, and no arclog file holds it.
+    DefaultRows { component: crate::registry::LibName, input: PortName },
 }
 
 /// The fact relations, as `docs/arclog/arclog.md#program` gives.

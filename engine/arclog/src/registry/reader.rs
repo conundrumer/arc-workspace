@@ -100,9 +100,7 @@ pub(super) struct WrittenCell {
     pub(super) type_parameters: Box<[TypeParameter]>,
     pub(super) inputs: Box<[InputPort]>,
     pub(super) definition: CellDefinition,
-    /// Each `RULE` form, with each of its columns and the label of its body
-    /// that the column is.
-    pub(super) rules: Box<[(CellRule, LabelColumns)]>,
+    pub(super) rules: Box<[CellRule]>,
     /// Each output, with each column of its port and the label of its body
     /// that the column stands for.
     pub(super) outputs: Box<[(PortName, LabelColumns, Node<Body>)]>,
@@ -264,7 +262,7 @@ impl FileReader {
                 type_parameters: &cell.type_parameters,
                 inputs: &cell.inputs,
                 init: cell.init(),
-                rules: cell.rules.iter().map(|(rule, columns)| (&rule.name, CellForm { columns, body: rule.body.value() })).collect(),
+                rules: cell.rules.iter().map(|rule| (&rule.name, CellForm { columns: &rule.columns, body: rule.body.value() })).collect(),
                 outputs: cell.outputs.iter().map(|(port, columns, body)| (port, CellForm { columns, body: body.value() })).collect(),
             })
             .collect();
@@ -280,8 +278,7 @@ impl FileReader {
                     let ports = declarations.cells.remove(&cell.name).expect("each cell instance takes its output ports");
                     let component = Component { kind: cell.kind, type_parameters: cell.type_parameters, inputs: cell.inputs, outputs: ports };
                     let outputs = cell.outputs.into_iter().map(|(port, columns, body)| CellOutput { port, labels: columns.iter().map(|(_, label)| *label).collect(), body });
-                    let rules = cell.rules.into_iter().map(|(rule, _)| rule).collect();
-                    let instance = Macro::CellInstance { component, definition: cell.definition, rules, outputs: outputs.collect() };
+                    let instance = Macro::CellInstance { component, definition: cell.definition, rules: cell.rules, outputs: outputs.collect() };
                     self.entries.insert(cell.name, LibEntry::Macro(instance));
                 }
             }

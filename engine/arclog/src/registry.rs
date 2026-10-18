@@ -81,8 +81,7 @@
 //!   `(&<rule> <sites>)`. Each site of the cell instance has its own
 //!   expansion, and a name that the macro's `INIT` or a `RULE`
 //!   form declares stands for its declaration within that expansion alone,
-//!   as a name that a `DEMO_RULE` form declares does
-//!   ([`crate::program::NameScope`]).
+//!   as [`crate::program::DeclaredName::CellExpansion`] holds it.
 //!   The `INIT` binds the type parameters of the underlying construction as
 //!   a solver's `INIT` binds them (`docs/arclog/arclog.md#instance`), to a
 //!   record where a projection has several sites, and may hold a key clause
@@ -344,12 +343,14 @@ pub enum CellDefinition {
 }
 
 /// A local relation of a cell instance, a `RULE` form: the relation's name,
-/// which the instance's bodies read it by, and its body, whose labels are
-/// its columns.
+/// which the instance's bodies read it by, its body, and its columns, each
+/// column's name and the label of the body it stands for, the labels the
+/// body keeps.
 #[derive(Clone, Debug)]
 pub struct CellRule {
     pub name: crate::program::RelationName,
     pub body: Node<Body>,
+    pub columns: Box<[(ColumnName, LabelId)]>,
 }
 
 /// An output of a cell instance, as a body over the outputs of its

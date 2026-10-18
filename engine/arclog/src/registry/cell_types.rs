@@ -394,7 +394,7 @@ impl<'a, 'b> CellDerivation<'a, 'b> {
         let column = path.first()?;
         match &atom.relation {
             RelationRef::Lib(_) => self.macros.site_type(atom, path).map(SiteType::Fixed),
-            RelationRef::Fact(_) => None,
+            RelationRef::Fact(_) | RelationRef::DefaultRows { .. } => None,
             RelationRef::DefinedPort(port) => {
                 let input = self.cell.inputs.iter().find(|input| input.port.name == *port)?;
                 SiteType::of_column(&input.port.columns.iter().find(|c| c.name == *column)?.ty)

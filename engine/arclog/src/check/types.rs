@@ -301,7 +301,6 @@ fn scope_forms<'p>(program: &'p crate::program::Program, scope: &NameScope) -> V
                 add(&found.forms, rule, &mut out);
             }
         }
-        NameScope::CellExpansion(_) => {}
     }
     out
 }
@@ -919,7 +918,7 @@ fn part_steps(relation: &RelationRef) -> Option<Vec<OutputStep>> {
         RelationRef::Output(output) => match &output.of {
             OutputOwner::Instance(InstanceName(name)) | OutputOwner::RigidDet(RigidDetName(name)) => (name, &output.path[..]),
         },
-        RelationRef::Fact(_) | RelationRef::Lib(_) | RelationRef::DefinedPort(_) => return None,
+        RelationRef::Fact(_) | RelationRef::Lib(_) | RelationRef::DefinedPort(_) | RelationRef::DefaultRows { .. } => return None,
     };
     Some(std::iter::once(OutputStep::Part(owner.clone())).chain(rest.iter().cloned()).collect())
 }

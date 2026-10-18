@@ -315,44 +315,91 @@ pub fn resolve(
 ) -> WithDiagnostics<ResolvedProgram> {
     match macros {
         MacroExpansion::Keep => build::resolve(case, concept, derived, registry),
-        MacroExpansion::Expand => build::resolve(&expand::program(case, registry), concept, derived, registry),
+        MacroExpansion::Expand => {
+            let kept = build::resolve(case, None, derived, registry);
+            build::resolve(&expand::program(case, registry, &kept.value), concept, derived, registry)
+        }
     }
 }
 
 /// The program that [`MacroExpansion::Expand`] gives: each atom of a
 /// relation macro, in a body of any form, in the place of the macro's
 /// definition, and each atom of a macro that definition reads in the place
-/// of that macro's. Each form keeps its path. A cell-instance site keeps
-/// its `INIT` form.
+/// of that macro's. Each form keeps its path.
 ///
 /// The labels of a definition that no column of the atom's sites gives
 /// take labels new to the form, one per atom. A positive atom gives the
 /// conjuncts of its definition, and a negated atom a `NOT` of them. A part
 /// that holds nothing is an `OR` of no branch where it stands for a list,
 /// and is left out where it is a branch of an `OR`.
+///
+/// A cell-instance site, an `INIT` form of a [`Macro::CellInstance`], gives
+/// way to the macro's `INIT` form at the site's path, and each of the
+/// macro's `RULE` forms to a clause that stands after the last member of
+/// the list that holds the site: the program's forms, a claim's, a
+/// `DEMO_RULE`'s or an `ALT`'s items, in the order of the sites and then of
+/// the `RULE` forms. Each name those forms declare is a
+/// [`DeclaredName::CellExpansion`] of the site's path. A `RULE` form gives a
+/// `RULE` clause where the site is per input and a `DET` clause where it is
+/// per example or pools over the examples, the side that the site's `INIT`
+/// form has in the case as written. An atom that reads an output of the
+/// site gives way to that output's body, and one that reads an input of
+/// the site to the site's clause for that input, as a relation macro's
+/// atom gives way to its definition. A `self.<port>` atom of the macro reads
+/// that input of the site: an input the site writes no clause for reads its
+/// default rows, [`RelationRef::DefaultRows`], and no row where it has no
+/// default.
+///
+/// A label of the macro that stands at the `key` column of an input or an
+/// output, or of a `RULE` form's column that holds such a label, stands for
+/// the site's key: the record of fields that [`super::columns::bindings`]
+/// gives the type parameter of that column, none where the site has no key
+/// clause. Each site of such a label holds a site per field in its place, or
+/// an argument per field where the label is an argument of a record, each
+/// named by the label's column or argument and the field. At a read of the
+/// site, the record's fields take the values of the read's `key` column, in
+/// the record's order. A site whose head writes the `key` column, and the
+/// site of a macro with no `INIT` form, keep their `INIT` form, and so do
+/// the reads of them.
 mod expand {
     use std::sync::Arc;
 
     use crate::hash::StableHashMap;
-    use crate::program::path::NodeRef;
+    use crate::program::path::{NodePath, NodeRef};
     use crate::program::{
-        AltItem, Alt, Alts, Atom, Body, Choose, Claim, Clause, Conjunct, Constraint, ConstraintLabel, ConstraintOp,
-        DemoRule, Demonstrated, Form, Instance, InstanceInput, KeyBody, KeyClause, LabelId, LabelUse, Negated, Node,
-        Operand, Program, RelationRef, RigidDet, Site, SiteArg, SiteValue,
+        AltItem, Alt, Alts, Atom, Body, Choose, Claim, Clause, ClauseKeyword, ColumnName, Conjunct, Constraint,
+        ConstraintLabel, ConstraintOp, DeclaredName, DemoRule, Demonstrated, Form, Instance, InstanceInput, InstanceName,
+        KeyBody, KeyClause, LabelId, LabelUse, NameScope, Negated, Node, Operand, OutputName, OutputOwner, OutputStep,
+        PortName, Program, ProgramRelation, RelationColumn, RelationName, RelationRef, RigidDet, Site, SiteArg, SiteValue,
     };
-    use crate::registry::{AlgebraRelation, Column, ColumnType, LibEntry, Macro, Registry};
+    use crate::registry::{
+        AlgebraRelation, CellDefinition, CellOutput, CellRule, Column, ColumnType, Component, LibEntry, Macro, Registry,
+    };
     use crate::types::{each_conjunct, each_site_label, label_type, use_label, LabelFault, Meet, ValueType};
 
-    pub(super) fn program(case: &Node<Program>, registry: &Registry) -> Node<Program> {
-        Node::new(Program { forms: case.value().forms.iter().map(|form| top_form(form, registry)).collect() })
+    /// `case` expanded, where `kept` is its resolution under
+    /// [`super::MacroExpansion::Keep`], which gives the side of each
+    /// cell-instance site.
+    pub(super) fn program(case: &Node<Program>, registry: &Registry, kept: &super::ResolvedProgram) -> Node<Program> {
+        let sites = Sites::of(case.value(), registry, kept);
+        let mut forms = Vec::new();
+        let mut after = Vec::new();
+        for (index, form) in case.value().forms.iter().enumerate() {
+            let mut expander = Expander {
+                registry,
+                sites: &sites,
+                scope: NameScope::Program,
+                next: greatest_label(NodeRef::from(form)).map_or(0, |label| label + 1),
+                expanding: Vec::new(),
+            };
+            forms.push(expander.form(form, &top(index), &mut after));
+        }
+        forms.extend(after);
+        Node::new(Program { forms: forms.into() })
     }
 
-    /// `form` expanded, with the labels new to it counted from past the
-    /// greatest label of the whole form, which holds each label scope of
-    /// its forms.
-    fn top_form(form: &Form, registry: &Registry) -> Form {
-        let mut expander = Expander { registry, next: greatest_label(NodeRef::from(form)).map_or(0, |label| label + 1) };
-        expander.form(form)
+    fn top(index: usize) -> NodePath {
+        NodePath(Box::new([crate::program::path::PathStep(index as u32)]))
     }
 
     fn greatest_label(node: NodeRef<'_>) -> Option<u32> {
@@ -426,6 +473,60 @@ mod expand {
         }
     }
 
+    /// The fields of a site's key, each with what its label stands for.
+    type Record = Arc<[(ColumnName, Renamed)]>;
+
+    /// What each label of a definition stands for in its expansion, and,
+    /// within one site's expansion, the names of that site.
+    struct Renaming<'s> {
+        labels: StableHashMap<LabelId, Renamed>,
+        /// Each label that stands for the site's key.
+        records: StableHashMap<LabelId, Record>,
+        site: Option<&'s CellSite<'s>>,
+    }
+
+    impl Renaming<'_> {
+        fn label(&self, label: LabelId) -> Renamed {
+            *self.labels.get(&label).expect("a renaming of each label of the definition, a key label at no constraint")
+        }
+
+        /// The relation that `relation`, read in the site's macro, reads in
+        /// the program: a name the macro declares as the site's
+        /// [`DeclaredName::CellExpansion`], and a `self.<port>` atom as the
+        /// site's input.
+        fn relation(&self, relation: &RelationRef) -> RelationRef {
+            let Some(site) = self.site else { return relation.clone() };
+            match relation {
+                RelationRef::Declared(name) if site.rules.iter().any(|rule| rule.name == *name) => {
+                    RelationRef::Declared(RelationName(site.declared(&name.0)))
+                }
+                RelationRef::Output(output) => match (&output.of, site.init()) {
+                    (OutputOwner::Instance(owner), Some(init)) if *owner == init.name => RelationRef::Output(OutputName {
+                        of: OutputOwner::Instance(InstanceName(site.declared(&owner.0))),
+                        path: output.path.clone(),
+                    }),
+                    _ => relation.clone(),
+                },
+                RelationRef::DefinedPort(port) => site_port(&site.instance.name, port),
+                _ => relation.clone(),
+            }
+        }
+    }
+
+    /// The read of the port `port` of the instance `instance`.
+    fn site_port(instance: &InstanceName, port: &PortName) -> RelationRef {
+        RelationRef::Output(OutputName { of: OutputOwner::Instance(instance.clone()), path: Arc::from([OutputStep::Port(port.clone())]) })
+    }
+
+    /// The name of a field of a key at the column or the argument `name`.
+    fn field_column(name: &ColumnName, field: &ColumnName) -> ColumnName {
+        let text = |name: &ColumnName| match name {
+            ColumnName::Written(text) => text.to_string(),
+            ColumnName::Slot(slot) => slot.to_string(),
+        };
+        ColumnName::Written(format!("{}.{}", text(name), text(field)).into())
+    }
+
     /// The operator of a constraint with its two operands swapped.
     fn mirrored(op: ConstraintOp) -> ConstraintOp {
         match op {
@@ -442,24 +543,204 @@ mod expand {
         matches!(op, ConstraintOp::Eq | ConstraintOp::Le | ConstraintOp::Ge)
     }
 
-    struct Expander<'r> {
-        registry: &'r Registry,
-        /// The next label new to the form.
-        next: u32,
+    /// One site of a cell-instance macro: its `INIT` form, its path and
+    /// scope, the macro's parts, the fields of its key, and the keyword of
+    /// the clauses its `RULE` forms give.
+    struct CellSite<'a> {
+        instance: &'a Instance,
+        path: NodePath,
+        component: &'a Component,
+        definition: &'a CellDefinition,
+        rules: &'a [CellRule],
+        outputs: &'a [CellOutput],
+        key: Box<[ColumnName]>,
+        keyword: ClauseKeyword,
+        /// The columns of each `RULE` form that stand for the key, by the
+        /// form's index.
+        rule_keys: Vec<Vec<ColumnName>>,
     }
 
-    impl<'r> Expander<'r> {
-        fn form(&mut self, form: &Form) -> Form {
+    impl CellSite<'_> {
+        fn init(&self) -> Option<&Instance> {
+            match self.definition {
+                CellDefinition::Instance(init) => Some(init.value()),
+                CellDefinition::Relation => None,
+            }
+        }
+
+        /// The name `name` of the macro, declared in this site's expansion.
+        fn declared(&self, name: &DeclaredName) -> DeclaredName {
+            let DeclaredName::Written(text) = name else { unreachable!("the registry file writes each name it declares") };
+            DeclaredName::CellExpansion { site: self.path.clone(), name: text.clone() }
+        }
+
+        /// The labels of `body` that stand for the key: each at the `key`
+        /// column of a `self.<port>` atom, and each at a column of a `RULE`
+        /// form that stands for the key.
+        fn key_labels(&self, body: &Body) -> Vec<LabelId> {
+            let mut labels = Vec::new();
+            each_conjunct(body, &mut |conjunct| {
+                let (Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom))) = conjunct else { return };
+                let atom = atom.value();
+                let keys: &[ColumnName] = match &atom.relation {
+                    RelationRef::DefinedPort(_) => &[],
+                    RelationRef::Declared(name) => match self.rules.iter().position(|rule| rule.name == *name) {
+                        Some(index) => &self.rule_keys[index],
+                        None => return,
+                    },
+                    _ => return,
+                };
+                let key = super::columns::key();
+                for site in atom.sites.iter().filter(|site| site.column == key || keys.contains(&site.column)) {
+                    labels.extend(site.value.args.iter().filter_map(SiteArg::label).filter_map(use_label));
+                }
+            });
+            labels
+        }
+    }
+
+    /// Each cell-instance site of a program, by its scope and its name.
+    struct Sites<'a> {
+        sites: Vec<CellSite<'a>>,
+        by_name: StableHashMap<(NameScope, InstanceName), usize>,
+    }
+
+    impl<'a> Sites<'a> {
+        fn of(program: &'a Program, registry: &'a Registry, kept: &super::ResolvedProgram) -> Sites<'a> {
+            let mut sites = Sites { sites: Vec::new(), by_name: StableHashMap::default() };
+            for (index, form) in program.forms.iter().enumerate() {
+                sites.collect(form, top(index), &NameScope::Program, registry, kept);
+            }
+            sites
+        }
+
+        fn collect(&mut self, form: &'a Form, path: NodePath, scope: &NameScope, registry: &'a Registry, kept: &super::ResolvedProgram) {
+            match form {
+                Form::Claim(claim) => {
+                    for (index, form) in claim.value().forms.iter().enumerate() {
+                        self.collect(form, path.child(index as u32), scope, registry, kept);
+                    }
+                }
+                Form::Demonstrated(demonstrated) => {
+                    for (rule_path, rule) in super::demo_rules(demonstrated.value(), &path) {
+                        let scope = NameScope::DemoRule(rule_path.clone());
+                        for (index, form) in rule.forms.iter().enumerate() {
+                            self.collect(form, rule_path.child(index as u32), &scope, registry, kept);
+                        }
+                    }
+                }
+                Form::Instance(instance) => {
+                    let instance = instance.value();
+                    let Some(site) = CellSite::at(instance, path, registry, kept) else { return };
+                    self.by_name.insert((scope.clone(), instance.name.clone()), self.sites.len());
+                    self.sites.push(site);
+                }
+                Form::Clause(_) | Form::Choose(_) | Form::RigidDet(_) | Form::Alts(_) => {}
+            }
+        }
+
+        fn at_path(&self, path: &NodePath) -> Option<&CellSite<'a>> {
+            self.sites.iter().find(|site| site.path == *path)
+        }
+
+        /// The site that the instance name `name` reads in `scope`.
+        fn find(&self, scope: &NameScope, name: &InstanceName) -> Option<&CellSite<'a>> {
+            let in_scope = |scope: &NameScope| self.by_name.get(&(scope.clone(), name.clone()));
+            in_scope(scope).or_else(|| in_scope(&NameScope::Program)).map(|index| &self.sites[*index])
+        }
+    }
+
+    impl<'a> CellSite<'a> {
+        /// The site of `instance` at `path`, where it instantiates a
+        /// cell-instance macro with an `INIT` form and no head of it writes
+        /// the `key` column.
+        fn at(instance: &'a Instance, path: NodePath, registry: &'a Registry, kept: &super::ResolvedProgram) -> Option<CellSite<'a>> {
+            let Some(LibEntry::Macro(Macro::CellInstance { component, definition, rules, outputs })) = registry.entry(&instance.component) else {
+                return None;
+            };
+            let key = super::columns::key();
+            let written = crate::program::written_inputs(instance.key.as_ref(), &instance.inputs);
+            if matches!(definition, CellDefinition::Relation) || written.flat_map(|input| input.head.iter()).any(|site| site.column == key) {
+                return None;
+            }
+            let fields = match &instance.key {
+                Some(_) => {
+                    let parameter = super::columns::key_parameter(instance, component).expect("a key clause binds the parameter of the `key` column");
+                    super::columns::bindings(instance, component).record(parameter).expect("a key clause binds its parameter to a record").into()
+                }
+                None => Box::default(),
+            };
+            let side = (0..kept.graph.nodes.len()).find(|node| kept.forms[*node] == path).map(|node| kept.sides[node]);
+            let keyword = match side.expect("a node of each cell-instance site") {
+                super::Side::PerInput => ClauseKeyword::Rule,
+                super::Side::TaskWide => ClauseKeyword::Det,
+            };
+            let mut site = CellSite { instance, path, component, definition, rules, outputs, key: fields, keyword, rule_keys: vec![Vec::new(); rules.len()] };
+            loop {
+                let keys: Vec<Vec<ColumnName>> = rules
+                    .iter()
+                    .map(|rule| {
+                        let labels = site.key_labels(rule.body.value());
+                        rule.columns.iter().filter(|(_, label)| labels.contains(label)).map(|(column, _)| column.clone()).collect()
+                    })
+                    .collect();
+                if keys == site.rule_keys {
+                    return Some(site);
+                }
+                site.rule_keys = keys;
+            }
+        }
+    }
+
+    struct Expander<'r, 's> {
+        registry: &'r Registry,
+        sites: &'s Sites<'s>,
+        /// The scope of the form being expanded.
+        scope: NameScope,
+        /// The next label new to the form.
+        next: u32,
+        /// The path of each site whose input is being expanded, so that an
+        /// input of a site that reads the site keeps that read.
+        expanding: Vec<NodePath>,
+    }
+
+    impl<'r, 's> Expander<'r, 's> {
+        fn local(&mut self) -> Renamed {
+            let label = Renamed::Local(LabelId(self.next));
+            self.next += 1;
+            label
+        }
+
+        /// The forms of a list that holds `forms`, the form at index `i` at
+        /// `path(i)`, each expanded, then the clauses of the sites among
+        /// them.
+        fn forms(&mut self, forms: &[Form], path: impl Fn(usize) -> NodePath) -> Arc<[Form]> {
+            let mut after = Vec::new();
+            let mut expanded: Vec<Form> = forms.iter().enumerate().map(|(index, form)| self.form(form, &path(index), &mut after)).collect();
+            expanded.extend(after);
+            expanded.into()
+        }
+
+        /// `form`, at `path`, expanded, with the clauses of each site it is
+        /// added to `after`.
+        fn form(&mut self, form: &Form, path: &NodePath, after: &mut Vec<Form>) -> Form {
             match form {
                 Form::Claim(claim) => {
                     let claim = claim.value();
-                    Form::Claim(Node::new(Claim { forms: claim.forms.iter().map(|form| self.form(form)).collect(), ..claim.clone() }))
+                    Form::Claim(Node::new(Claim { forms: self.forms(&claim.forms, |index| path.child(index as u32)), ..claim.clone() }))
                 }
                 Form::Clause(clause) => {
                     let clause = clause.value();
                     Form::Clause(Node::new(Clause { body: self.top(&clause.body), ..clause.clone() }))
                 }
-                Form::Instance(instance) => Form::Instance(Node::new(self.instance(instance.value()))),
+                Form::Instance(instance) => match self.sites.at_path(path) {
+                    Some(site) => {
+                        let (init, clauses) = self.site(site);
+                        after.extend(clauses);
+                        Form::Instance(Node::new(init))
+                    }
+                    None => Form::Instance(Node::new(self.instance(instance.value()))),
+                },
                 Form::Choose(choose) => {
                     let choose = choose.value();
                     Form::Choose(Node::new(Choose {
@@ -479,32 +760,38 @@ mod expand {
                 }
                 Form::Demonstrated(demonstrated) => {
                     let demonstrated = demonstrated.value();
+                    let key = demonstrated.key.as_ref().map(|key| Node::new(self.key_clause(key.value())));
+                    let inputs = self.inputs(&demonstrated.inputs);
                     let mut rules = Vec::new();
-                    for rule in demonstrated.rules.iter() {
-                        let rule = rule.value();
-                        rules.push(Node::new(DemoRule { forms: rule.forms.iter().map(|form| self.form(form)).collect(), ..rule.clone() }));
+                    for (rule_path, rule) in super::demo_rules(demonstrated, path) {
+                        let outer = std::mem::replace(&mut self.scope, NameScope::DemoRule(rule_path.clone()));
+                        let forms = self.forms(&rule.forms, |index| rule_path.child(index as u32));
+                        self.scope = outer;
+                        rules.push(Node::new(DemoRule { forms, ..rule.clone() }));
                     }
-                    Form::Demonstrated(Node::new(Demonstrated {
-                        key: demonstrated.key.as_ref().map(|key| Node::new(self.key_clause(key.value()))),
-                        inputs: self.inputs(&demonstrated.inputs),
-                        rules: rules.into(),
-                        ..demonstrated.clone()
-                    }))
+                    Form::Demonstrated(Node::new(Demonstrated { key, inputs, rules: rules.into(), ..demonstrated.clone() }))
                 }
                 Form::Alts(alts) => {
                     let alts = alts.value();
-                    Form::Alts(Node::new(Alts { alts: alts.alts.iter().map(|alt| self.alt(alt)).collect(), ..alts.clone() }))
+                    let expanded = alts.alts.iter().enumerate().map(|(index, alt)| self.alt(alt, &path.child(index as u32)));
+                    Form::Alts(Node::new(Alts { alts: expanded.collect(), ..alts.clone() }))
                 }
             }
         }
 
-        fn alt(&mut self, alt: &Node<Alt>) -> Node<Alt> {
+        fn alt(&mut self, alt: &Node<Alt>, path: &NodePath) -> Node<Alt> {
             let alt = alt.value();
-            let items = alt.items.iter().map(|item| match item {
-                AltItem::Form(form) => AltItem::Form(self.form(form)),
-                AltItem::Alt(nested) => AltItem::Alt(self.alt(nested)),
-            });
-            Node::new(Alt { items: items.collect(), ..alt.clone() })
+            let mut after = Vec::new();
+            let mut items: Vec<AltItem> = Vec::new();
+            for (index, item) in alt.items.iter().enumerate() {
+                let at = path.child(index as u32);
+                items.push(match item {
+                    AltItem::Form(form) => AltItem::Form(self.form(form, &at, &mut after)),
+                    AltItem::Alt(nested) => AltItem::Alt(self.alt(nested, &at)),
+                });
+            }
+            items.extend(after.into_iter().map(AltItem::Form));
+            Node::new(Alt { items: items.into(), ..alt.clone() })
         }
 
         fn instance(&mut self, instance: &Instance) -> Instance {
@@ -550,7 +837,7 @@ mod expand {
             let mut reads = false;
             each_conjunct(body, &mut |conjunct| {
                 if let Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) = conjunct {
-                    reads |= self.relation_macro(atom.value()).is_some();
+                    reads |= self.relation_macro(atom.value()).is_some() || self.site_read(atom.value()).is_some();
                 }
             });
             reads
@@ -610,36 +897,286 @@ mod expand {
             }
         }
 
+        /// The site and the port of a cell-instance site that `atom` reads,
+        /// where no expansion of that site holds `atom`.
+        fn site_read<'a>(&self, atom: &'a Atom) -> Option<(&'s CellSite<'s>, &'a PortName)> {
+            let RelationRef::Output(OutputName { of: OutputOwner::Instance(name), path }) = &atom.relation else { return None };
+            let [OutputStep::Port(port)] = &path[..] else { return None };
+            let site = self.sites.find(&self.scope, name)?;
+            (!self.expanding.contains(&site.path)).then_some((site, port))
+        }
+
         /// The conjuncts that stand in the place of `atom` where it reads a
-        /// relation macro, `Some(None)` where they hold nothing, and `None`
-        /// where `atom` reads no relation macro.
+        /// relation macro or a cell-instance site, `Some(None)` where they
+        /// hold nothing, and `None` where `atom` reads neither.
         fn expansion(&mut self, atom: &Atom, around: &[Conjunct]) -> Option<Option<Vec<Conjunct>>> {
-            let (relation, labels, definition) = self.relation_macro(atom)?;
-            let renamed = self.renaming(atom, &relation.columns, labels, definition.value());
-            let substituted = renamed_conjuncts(&definition.value().conjuncts, &renamed);
+            if let Some((relation, labels, definition)) = self.relation_macro(atom) {
+                let columns: Vec<ColumnName> = relation.columns.iter().map(|column| column.name.clone()).collect();
+                let renaming = self.renaming(atom, &columns, labels, &[], definition.value(), None);
+                let substituted = renamed_conjuncts(&definition.value().conjuncts, &renaming);
+                let expanded = self.conjuncts(&substituted, around);
+                return Some(Parts { registry: self.registry }.part(expanded, around));
+            }
+            let (site, port) = self.site_read(atom)?;
+            if let Some(output) = site.outputs.iter().find(|output| output.port == *port) {
+                return self.output(site, output, atom, around);
+            }
+            let input = site.component.inputs.iter().find(|input| input.port.name == *port)?;
+            let Some(written) = crate::program::written_inputs(site.instance.key.as_ref(), &site.instance.inputs).find(|found| found.name == *port) else {
+                let Some(_) = &input.default else { return Some(None) };
+                let relation = RelationRef::DefaultRows { component: site.instance.component.clone(), input: port.clone() };
+                return Some(Some(vec![Conjunct::Atom(Node::new(Atom { relation, sites: atom.sites.clone() }))]));
+            };
+            self.input(site, written, &input.port.columns, atom, around)
+        }
+
+        /// The conjuncts in the place of `atom`, a read of `output` of `site`.
+        fn output(&mut self, site: &'s CellSite<'s>, output: &CellOutput, atom: &Atom, around: &[Conjunct]) -> Option<Option<Vec<Conjunct>>> {
+            let port = site.component.outputs.iter().find(|found| found.name == output.port).expect("a port of each output");
+            let columns: Vec<ColumnName> = port.columns.iter().map(|column| column.name.clone()).collect();
+            let key = super::columns::key();
+            let read_key = match atom.sites.iter().find(|found| found.column == key) {
+                Some(found) => Some(read_record(&site.key, found)?),
+                None => None,
+            };
+            let keys: Vec<LabelId> = columns.iter().zip(output.labels.iter()).filter(|(column, _)| **column == key).map(|(_, label)| *label).collect();
+            let renaming = self.renaming(atom, &columns, &output.labels, &keys, output.body.value(), Some((site, read_key)));
+            self.site_body(&output.body.value().conjuncts, &renaming, around)
+        }
+
+        /// The conjuncts in the place of `atom`, a read of the input
+        /// `written` of `site`, whose port has `columns`: the key body of
+        /// the site where the port has a `key` column, then the input's body,
+        /// with the label at each head site and each key column of the
+        /// site the label at `atom`'s site on that column.
+        fn input(&mut self, site: &'s CellSite<'s>, written: &InstanceInput, columns: &[Column], atom: &Atom, around: &[Conjunct]) -> Option<Option<Vec<Conjunct>>> {
+            let key = super::columns::key();
+            let keyed = site.instance.key.as_ref().filter(|_| columns.iter().any(|column| column.name == key)).map(|clause| &clause.value().key);
+            let mut labels: StableHashMap<LabelId, Renamed> = StableHashMap::default();
+            if let Some(clause) = keyed {
+                let at = atom.sites.iter().find(|found| found.column == key);
+                let uses = match at {
+                    Some(at) => site_uses(at)?,
+                    None => Vec::new(),
+                };
+                if !uses.is_empty() && uses.len() != clause.columns.len() {
+                    return None;
+                }
+                for (column, use_) in clause.columns.iter().zip(uses) {
+                    labels.insert(column.label, Renamed::Site(use_));
+                }
+            }
+            for head in written.head.iter() {
+                let Some(at) = atom.sites.iter().find(|found| found.column == head.column) else { continue };
+                let (heads, uses) = (site_uses(head)?, site_uses(at)?);
+                if heads.len() != uses.len() {
+                    return None;
+                }
+                for (head, use_) in heads.into_iter().zip(uses) {
+                    labels.extend(use_label(head).map(|label| (label, Renamed::Site(use_))));
+                }
+            }
+            let bodies: Vec<&Body> = keyed.map(|clause| clause.body.value()).into_iter().chain([written.body.value()]).collect();
+            let mut heads = Vec::new();
+            for head in written.head.iter() {
+                each_site_label(head, &mut Vec::new(), &mut |use_, _| heads.extend(use_label(use_)));
+            }
+            for label in bodies.iter().flat_map(|body| labels_of(body)).chain(heads) {
+                if !labels.contains_key(&label) {
+                    let local = self.local();
+                    labels.insert(label, local);
+                }
+            }
+            let renaming = Renaming { labels, records: StableHashMap::default(), site: None };
+            let conjuncts: Vec<Conjunct> = bodies.iter().flat_map(|body| body.conjuncts.iter().cloned()).collect();
+            self.expanding.push(site.path.clone());
+            let expanded = self.site_body(&conjuncts, &renaming, around);
+            self.expanding.pop();
+            expanded
+        }
+
+        /// `conjuncts` renamed by `renaming` and expanded.
+        fn site_body(&mut self, conjuncts: &[Conjunct], renaming: &Renaming<'_>, around: &[Conjunct]) -> Option<Option<Vec<Conjunct>>> {
+            let substituted = renamed_conjuncts(conjuncts, renaming);
             let expanded = self.conjuncts(&substituted, around);
             Some(Parts { registry: self.registry }.part(expanded, around))
         }
 
         /// What each label of `definition` stands for at `atom`: the label
         /// at the atom's site on its column, or, for a column with no site
-        /// and for each other label, a label new to the form.
-        fn renaming(&mut self, atom: &Atom, columns: &[Column], labels: &[LabelId], definition: &Body) -> StableHashMap<LabelId, Renamed> {
-            let mut renamed = StableHashMap::default();
+        /// and for each other label, a label new to the form. Within the
+        /// expansion of `site`, each label among `keys` and each other label
+        /// that stands for the key stands for the record that `read` gives,
+        /// or, with none, a record of labels new to the form.
+        fn renaming<'a>(
+            &mut self,
+            atom: &Atom,
+            columns: &[ColumnName],
+            labels: &[LabelId],
+            keys: &[LabelId],
+            definition: &Body,
+            site: Option<(&'a CellSite<'a>, Option<Record>)>,
+        ) -> Renaming<'a> {
+            let mut renaming = Renaming { labels: StableHashMap::default(), records: StableHashMap::default(), site: None };
+            if let Some((site, read)) = site {
+                renaming.site = Some(site);
+                let keys = keys.iter().copied().chain(site.key_labels(definition));
+                let mut read = read;
+                for label in keys {
+                    let record = match read.take() {
+                        Some(record) => record,
+                        None => self.record(site),
+                    };
+                    renaming.records.entry(label).or_insert(record);
+                }
+            }
             for (column, label) in columns.iter().zip(labels) {
-                let site = atom.sites.iter().find(|site| site.column == column.name);
-                if let Some(use_) = site.and_then(|site| site.value.args.first()).and_then(SiteArg::label) {
-                    renamed.insert(*label, Renamed::Site(use_));
+                if renaming.records.contains_key(label) {
+                    continue;
+                }
+                let found = atom.sites.iter().find(|found| found.column == *column);
+                if let Some(use_) = found.and_then(|found| found.value.args.first()).and_then(SiteArg::label) {
+                    renaming.labels.insert(*label, Renamed::Site(use_));
                 }
             }
             for label in labels_of(definition) {
-                if !renamed.contains_key(&label) {
-                    renamed.insert(label, Renamed::Local(LabelId(self.next)));
-                    self.next += 1;
+                if !renaming.labels.contains_key(&label) && !renaming.records.contains_key(&label) {
+                    let local = self.local();
+                    renaming.labels.insert(label, local);
                 }
             }
-            renamed
+            renaming
         }
+
+        /// A record of the fields of `site`'s key, each a label new to the
+        /// form.
+        fn record(&mut self, site: &CellSite<'_>) -> Record {
+            site.key.iter().map(|field| (field.clone(), self.local())).collect()
+        }
+
+        /// The `INIT` form in the place of `site`, and the clause of each of
+        /// its macro's `RULE` forms.
+        fn site(&mut self, site: &'s CellSite<'s>) -> (Instance, Vec<Form>) {
+            let init = site.init().expect("a site of a macro with an `INIT` form");
+            let mut bodies: Vec<&Body> = Vec::new();
+            let mut heads: Vec<&Site> = Vec::new();
+            if let Some(key) = &init.key {
+                bodies.push(key.value().key.body.value());
+            }
+            for input in crate::program::written_inputs(init.key.as_ref(), &init.inputs) {
+                bodies.push(input.body.value());
+                heads.extend(input.head.iter());
+            }
+            let whole = Body { conjuncts: bodies.iter().flat_map(|body| body.conjuncts.iter().cloned()).collect() };
+            let renaming = self.site_renaming(site, &whole, heads);
+            let input = |expander: &mut Self, input: &Node<InstanceInput>| {
+                let input = input.value();
+                Node::new(InstanceInput {
+                    name: input.name.clone(),
+                    head: input.head.iter().flat_map(|head| renamed_site(head, &renaming, false)).collect(),
+                    body: expander.site_list(input.body.value(), &renaming),
+                })
+            };
+            let key = init.key.as_ref().map(|key| {
+                let key = key.value();
+                let body = KeyBody { body: self.site_list(key.key.body.value(), &renaming), columns: renamed_columns(&key.key.columns, &renaming) };
+                Node::new(KeyClause { key: body, inputs: key.inputs.iter().map(|found| input(self, found)).collect() })
+            });
+            let inputs = init.inputs.iter().map(|found| input(self, found)).collect();
+            let instance = Instance { name: InstanceName(site.declared(&init.name.0)), component: init.component.clone(), key, inputs };
+            let clauses = site.rules.iter().map(|rule| Form::Clause(Node::new(self.rule(site, rule)))).collect();
+            (instance, clauses)
+        }
+
+        /// The clause of the `RULE` form `rule` of `site`.
+        fn rule(&mut self, site: &'s CellSite<'s>, rule: &CellRule) -> Clause {
+            let renaming = self.site_renaming(site, rule.body.value(), Vec::new());
+            let columns: Vec<RelationColumn> = rule.columns.iter().map(|(name, label)| RelationColumn { name: name.clone(), label: *label }).collect();
+            Clause {
+                keyword: site.keyword,
+                derives: ProgramRelation::Declared(RelationName(site.declared(&rule.name.0))),
+                gloss: None,
+                proposers: Arc::from([]),
+                body: self.site_list(rule.body.value(), &renaming),
+                ones: Arc::from([]),
+                columns: renamed_columns(&columns, &renaming),
+            }
+        }
+
+        /// The renaming of a body `body` of `site`'s `INIT` form or of a
+        /// `RULE` form, with the labels of `heads` beside it: each label
+        /// that stands for the key a record of labels new to the form, and
+        /// each other label a label new to the form.
+        fn site_renaming(&mut self, site: &'s CellSite<'s>, body: &Body, heads: Vec<&Site>) -> Renaming<'s> {
+            let mut renaming = Renaming { labels: StableHashMap::default(), records: StableHashMap::default(), site: Some(site) };
+            for label in site.key_labels(body) {
+                if !renaming.records.contains_key(&label) {
+                    let record = self.record(site);
+                    renaming.records.insert(label, record);
+                }
+            }
+            let mut labels = labels_of(body);
+            for head in heads {
+                each_site_label(head, &mut Vec::new(), &mut |use_, _| labels.extend(use_label(use_)));
+            }
+            for label in labels {
+                if !renaming.labels.contains_key(&label) && !renaming.records.contains_key(&label) {
+                    let local = self.local();
+                    renaming.labels.insert(label, local);
+                }
+            }
+            renaming
+        }
+
+        /// `body` renamed by `renaming` and expanded, as a list: an `OR` of
+        /// no branch where it holds nothing.
+        fn site_list(&mut self, body: &Body, renaming: &Renaming<'_>) -> Node<Body> {
+            let expanded = self.site_body(&body.conjuncts, renaming, &[]).flatten();
+            body_node(expanded.unwrap_or_else(|| vec![nothing()]))
+        }
+    }
+
+    /// The fields of `key`, a site's key, each with the label of the read
+    /// `site` on the `key` column at that field, in order, or `None` where
+    /// the read gives the key another count of values.
+    fn read_record(key: &[ColumnName], site: &Site) -> Option<Record> {
+        let uses = site_uses(site)?;
+        if key.is_empty() {
+            return Some(Arc::from([]));
+        }
+        (uses.len() == key.len()).then(|| key.iter().cloned().zip(uses.into_iter().map(Renamed::Site)).collect())
+    }
+
+    /// The label of each argument of `site`, a field site's for a field, or
+    /// `None` where a field holds more than one label.
+    fn site_uses(site: &Site) -> Option<Vec<LabelUse>> {
+        site.value
+            .args
+            .iter()
+            .map(|arg| match arg {
+                SiteArg::Label(use_) | SiteArg::NamedLabel { label: use_, .. } => Some(*use_),
+                SiteArg::Field(field) => match &field.value.args[..] {
+                    [only] => only.label(),
+                    _ => None,
+                },
+            })
+            .collect()
+    }
+
+    /// `columns` renamed: a column whose label stands for the key a column
+    /// per field.
+    fn renamed_columns(columns: &[RelationColumn], renaming: &Renaming<'_>) -> Arc<[RelationColumn]> {
+        let local = |renamed: Renamed| match renamed {
+            Renamed::Local(label) => label,
+            Renamed::Site(_) => unreachable!("a column of a site's form takes a label new to the form"),
+        };
+        columns
+            .iter()
+            .flat_map(|column| match renaming.records.get(&column.label) {
+                Some(record) => record.iter().map(|(field, renamed)| RelationColumn { name: field_column(&column.name, field), label: local(*renamed) }).collect(),
+                None => vec![RelationColumn { name: column.name.clone(), label: local(renaming.label(column.label)) }],
+            })
+            .collect()
     }
 
     /// Each label of `body`, in the order of its first site or constraint.
@@ -662,38 +1199,40 @@ mod expand {
         labels
     }
 
-    fn renamed_conjuncts(conjuncts: &[Conjunct], renamed: &StableHashMap<LabelId, Renamed>) -> Vec<Conjunct> {
-        conjuncts.iter().filter_map(|conjunct| renamed_conjunct(conjunct, renamed)).collect()
+    fn renamed_conjuncts(conjuncts: &[Conjunct], renaming: &Renaming<'_>) -> Vec<Conjunct> {
+        conjuncts.iter().filter_map(|conjunct| renamed_conjunct(conjunct, renaming)).collect()
     }
 
-    fn renamed_body(body: &Node<Body>, renamed: &StableHashMap<LabelId, Renamed>) -> Node<Body> {
-        body_node(renamed_conjuncts(&body.value().conjuncts, renamed))
+    fn renamed_body(body: &Node<Body>, renaming: &Renaming<'_>) -> Node<Body> {
+        body_node(renamed_conjuncts(&body.value().conjuncts, renaming))
     }
 
     /// `conjunct` with its labels renamed, or `None` for a constraint of
     /// two `0` operands that holds.
-    fn renamed_conjunct(conjunct: &Conjunct, renamed: &StableHashMap<LabelId, Renamed>) -> Option<Conjunct> {
+    fn renamed_conjunct(conjunct: &Conjunct, renaming: &Renaming<'_>) -> Option<Conjunct> {
         let atom = |atom: &Node<Atom>| {
             let atom = atom.value();
-            Node::new(Atom { relation: atom.relation.clone(), sites: atom.sites.iter().map(|site| renamed_site(site, renamed)).collect() })
+            let split = matches!(atom.relation, RelationRef::Declared(_));
+            let sites = atom.sites.iter().flat_map(|site| renamed_site(site, renaming, split));
+            Node::new(Atom { relation: renaming.relation(&atom.relation), sites: sites.collect() })
         };
         Some(match conjunct {
             Conjunct::Atom(found) => Conjunct::Atom(atom(found)),
             Conjunct::Not(Negated::Atom(found)) => Conjunct::Not(Negated::Atom(atom(found))),
-            Conjunct::Not(Negated::Form(form)) => negation(renamed_conjunct(form, renamed).into_iter().collect()),
-            Conjunct::Constraint(constraint) => return renamed_constraint(constraint, renamed),
-            Conjunct::Or(branches) => Conjunct::Or(branches.iter().map(|branch| renamed_body(branch, renamed)).collect()),
+            Conjunct::Not(Negated::Form(form)) => negation(renamed_conjunct(form, renaming).into_iter().collect()),
+            Conjunct::Constraint(constraint) => return renamed_constraint(constraint, renaming),
+            Conjunct::Or(branches) => Conjunct::Or(branches.iter().map(|branch| renamed_body(branch, renaming)).collect()),
             Conjunct::If { test, then, otherwise } => Conjunct::If {
-                test: renamed_body(test, renamed),
-                then: renamed_body(then, renamed),
-                otherwise: renamed_body(otherwise, renamed),
+                test: renamed_body(test, renaming),
+                then: renamed_body(then, renaming),
+                otherwise: renamed_body(otherwise, renaming),
             },
-            Conjunct::All { domain, body } => Conjunct::All { domain: renamed_body(domain, renamed), body: renamed_body(body, renamed) },
+            Conjunct::All { domain, body } => Conjunct::All { domain: renamed_body(domain, renaming), body: renamed_body(body, renaming) },
         })
     }
 
-    fn renamed_constraint(constraint: &Constraint, renamed: &StableHashMap<LabelId, Renamed>) -> Option<Conjunct> {
-        let label = |label: ConstraintLabel| renamed[&label.label].constraint_label(label);
+    fn renamed_constraint(constraint: &Constraint, renaming: &Renaming<'_>) -> Option<Conjunct> {
+        let label = |label: ConstraintLabel| renaming.label(label.label).constraint_label(label);
         let second = match constraint.second {
             Operand::Label(second) => label(second),
             Operand::Zero => None,
@@ -707,17 +1246,49 @@ mod expand {
         Some(Conjunct::Constraint(Constraint { op, first, second }))
     }
 
-    fn renamed_site(site: &Site, renamed: &StableHashMap<LabelId, Renamed>) -> Site {
+    /// `site` renamed: where a label of it stands for the key, an argument
+    /// per field in the label's place, or, where `split` holds and the
+    /// label is the site's one argument, a site per field. A site left with
+    /// no argument is left out.
+    fn renamed_site(site: &Site, renaming: &Renaming<'_>, split: bool) -> Vec<Site> {
+        let record = |use_: LabelUse| use_label(use_).and_then(|label| renaming.records.get(&label));
+        if let ([arg], true) = (&site.value.args[..], split) {
+            if let Some((use_, record)) = arg.label().and_then(|use_| Some((use_, record(use_)?))) {
+                let field = |(field, renamed): &(ColumnName, Renamed)| Site {
+                    column: field_column(&site.column, field),
+                    value: SiteValue { args: Arc::from([SiteArg::Label(renamed.label_use(use_))]) },
+                };
+                return record.iter().map(field).collect();
+            }
+        }
         let rename = |use_: LabelUse| match use_label(use_) {
-            Some(label) => renamed[&label].label_use(use_),
+            Some(label) => renaming.label(label).label_use(use_),
             None => use_,
         };
-        let args = site.value.args.iter().map(|arg| match arg {
-            SiteArg::Label(use_) => SiteArg::Label(rename(*use_)),
-            SiteArg::NamedLabel { name, label } => SiteArg::NamedLabel { name: name.clone(), label: rename(*label) },
-            SiteArg::Field(field) => SiteArg::Field(renamed_site(field, renamed)),
-        });
-        Site { column: site.column.clone(), value: SiteValue { args: args.collect() } }
+        let mut args = Vec::new();
+        for arg in site.value.args.iter() {
+            let (name, use_) = match arg {
+                SiteArg::Label(use_) => (&site.column, *use_),
+                SiteArg::NamedLabel { name, label } => (name, *label),
+                SiteArg::Field(field) => {
+                    args.extend(renamed_site(field, renaming, false).into_iter().map(SiteArg::Field));
+                    continue;
+                }
+            };
+            match record(use_) {
+                Some(record) => {
+                    args.extend(record.iter().map(|(field, renamed)| SiteArg::NamedLabel { name: field_column(name, field), label: renamed.label_use(use_) }))
+                }
+                None => args.push(match arg {
+                    SiteArg::Label(_) => SiteArg::Label(rename(use_)),
+                    _ => SiteArg::NamedLabel { name: name.clone(), label: rename(use_) },
+                }),
+            }
+        }
+        if args.is_empty() {
+            return Vec::new();
+        }
+        vec![Site { column: site.column.clone(), value: SiteValue { args: args.into() } }]
     }
 
     /// The test of each part of an expansion against the sites outside it.
@@ -980,7 +1551,7 @@ mod columns {
 
     /// The declared columns, with their types, of the fact, the lib
     /// relation, the relation macro or the native proposer that `relation`
-    /// names.
+    /// names, or of the input with a default whose rows it reads.
     pub(super) fn typed_columns<'r>(registry: &'r Registry, relation: &RelationRef) -> Option<&'r [Column]> {
         match relation {
             RelationRef::Fact(fact) => Some(registry.fact_columns(*fact)),
@@ -989,6 +1560,10 @@ mod columns {
                 LibEntry::Proposer(Proposer::Native { columns }) => Some(columns),
                 LibEntry::Proposer(Proposer::Arclog { .. }) | LibEntry::Component(_) | LibEntry::Macro(Macro::CellInstance { .. }) => None,
             },
+            RelationRef::DefaultRows { component: name, input } => {
+                let input = component(registry, name)?.inputs.iter().find(|found| found.port.name == *input)?;
+                input.default.as_ref().map(|_| &input.port.columns[..])
+            }
             RelationRef::Declared(_) | RelationRef::Output(_) | RelationRef::DefinedPort(_) => None,
         }
     }
@@ -1045,6 +1620,21 @@ mod columns {
     /// leaves out takes one column.
     pub(super) struct Bindings(StableHashMap<TypeParameter, Box<[ColumnName]>>);
 
+    impl Bindings {
+        /// The record of fields that `parameter` is bound to, where it is
+        /// bound to one.
+        pub(super) fn record(&self, parameter: &TypeParameter) -> Option<&[ColumnName]> {
+            self.0.get(parameter).map(|fields| &fields[..])
+        }
+    }
+
+    /// The type parameter that the key clause of `instance` binds, where
+    /// it binds one.
+    pub(super) fn key_parameter<'a>(instance: &'a Instance, component: &'a Component) -> Option<&'a TypeParameter> {
+        let sites = binding_sites(instance, &component.inputs);
+        sites.into_iter().find(|sites| matches!(sites.binding, ParameterSite::Key(_))).map(|sites| sites.parameter)
+    }
+
     pub(super) fn bindings(instance: &Instance, component: &Component) -> Bindings {
         let records = binding_sites(instance, &component.inputs).into_iter().filter_map(|sites| {
             let fields = match sites.binding {
@@ -1096,7 +1686,7 @@ mod columns {
             RelationRef::Output(output) => match &output.of {
                 OutputOwner::Instance(InstanceName(name)) | OutputOwner::RigidDet(RigidDetName(name)) => (name, &output.path[..]),
             },
-            RelationRef::Fact(_) | RelationRef::Lib(_) | RelationRef::DefinedPort(_) => return None,
+            RelationRef::Fact(_) | RelationRef::Lib(_) | RelationRef::DefinedPort(_) | RelationRef::DefaultRows { .. } => return None,
         };
         Some(std::iter::once(OutputStep::Part(owner.clone())).chain(rest.iter().cloned()).collect())
     }
@@ -1139,7 +1729,6 @@ mod names {
     use crate::program::{
         Body, ColumnName, DeclaredName, Demonstrated, NameScope, Node, OutputOwner, OutputStep, Program, RelationRef,
     };
-    use crate::registry::LibName;
 
     pub(super) fn write_len(out: &mut CanonicalWriter, len: usize) {
         out.write(&u32::try_from(len).expect("a list of fewer than 2^32 members").to_le_bytes());
@@ -1159,6 +1748,14 @@ mod names {
             DeclaredName::Slot(slot) => {
                 out.write(&[1]);
                 out.write(&slot.to_le_bytes());
+            }
+            DeclaredName::CellExpansion { site, name } => {
+                out.write(&[2]);
+                write_len(out, site.0.len());
+                for step in site.0.iter() {
+                    out.write(&step.0.to_le_bytes());
+                }
+                write_text(out, name);
             }
         }
     }
@@ -1284,13 +1881,14 @@ mod names {
 
     /// The names of a case program after resolution: what each name of each
     /// scope resolves to, the content and the columns of each node, and the
-    /// columns of each lib name the program reads.
+    /// columns of each lib name and each input's default rows the program
+    /// reads.
     #[derive(Clone, Debug, Default)]
     pub(super) struct Names {
         pub(super) scopes: StableHashMap<NameScope, StableHashMap<RelationRef, Target>>,
         pub(super) contents: Vec<Option<CanonicalForm>>,
         pub(super) node_columns: Vec<Option<Columns>>,
-        pub(super) lib: StableHashMap<LibName, Columns>,
+        pub(super) lib: StableHashMap<RelationRef, Columns>,
         /// The content of each form that resolves in the concept program,
         /// as [`super::ConceptReads`] gives, by its path.
         pub(super) fixed: StableHashMap<NodePath, CanonicalForm>,
@@ -1306,8 +1904,8 @@ mod names {
 
         /// The columns of `relation` read in `scope`, where they are known.
         pub(super) fn columns(&self, scope: &NameScope, relation: &RelationRef) -> Option<&Columns> {
-            if let RelationRef::Lib(name) = relation {
-                return self.lib.get(name);
+            if let RelationRef::Lib(_) | RelationRef::DefaultRows { .. } = relation {
+                return self.lib.get(relation);
             }
             let target = self.find(scope, relation)?;
             match &target.columns {
@@ -1439,7 +2037,7 @@ mod names {
             }
             let target = match relation {
                 RelationRef::Declared(_) | RelationRef::Output(_) => self.names.find(self.scope, relation),
-                RelationRef::Fact(_) | RelationRef::Lib(_) | RelationRef::DefinedPort(_) => None,
+                RelationRef::Fact(_) | RelationRef::Lib(_) | RelationRef::DefinedPort(_) | RelationRef::DefaultRows { .. } => None,
             };
             match target.map(|target| &self.names.contents[target.node.0 as usize]) {
                 Some(Some(content)) => {
@@ -2019,9 +2617,14 @@ mod build {
                         return self.unresolved(path, &name());
                     }
                     if let Some(columns) = columns::lib_columns(self.registry, lib) {
-                        self.names.lib.insert(lib.clone(), columns);
+                        self.names.lib.insert(relation.clone(), columns);
                     }
                     return Resolution::Lib(lib.clone());
+                }
+                RelationRef::DefaultRows { component, .. } => {
+                    let Some(columns) = columns::typed_columns(self.registry, relation) else { return self.unresolved(path, &name()) };
+                    self.names.lib.insert(relation.clone(), Columns::of_names(columns.iter().map(|column| column.name.clone())));
+                    return Resolution::Lib(component.clone());
                 }
                 RelationRef::DefinedPort(_) => return self.unresolved(path, &name()),
                 RelationRef::Fact(_) => None,
