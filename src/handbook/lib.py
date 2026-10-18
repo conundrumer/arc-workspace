@@ -298,7 +298,8 @@ def lib_component(src: Path, name: str) -> str:
         prose = _prose(lines[block[0] - 1:block[1]], ITEM_DOC) if block else ""
         code = _code_block(_run_code(run, lines, docs))
         return "\n\n".join(p for p in (f"# {name}", prose, code) if p) + "\n"
-    raise SystemExit(f"no component `{name}` in `{repo_label(src)}`")
+    raise SystemExit(mctx("no component `{name}` in `{src}`").format(
+        name=name, src=repo_label(src)))
 
 
 def interface_renderings(lib: Path = LIB_SRC) -> list[Rendering]:

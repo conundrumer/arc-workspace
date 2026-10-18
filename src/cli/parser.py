@@ -8,6 +8,7 @@ from typing import Any
 
 from checker.render import Section
 from checker.render.built import GROUP_WIDTH
+from checker.render.recording import COUNT_LINE
 from checker.render.commands import SLOWEST
 from checker.render.surveys import PLAN_HELP
 from checker.store.survey import ROW_CAP
@@ -70,12 +71,13 @@ def parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=mctx("""
             - Run Souffle solvers and their checks.
-            - The commands follow, each with what it runs.
+            - The commands follow, each with what it runs. The list ends with `witness`, `derive`, `store`, `determination-plan`, `size`, `keywords`, `since` and `expand`.
             - `uv run python scripts/run_dl.py <command> --help` prints a command's arguments.
             - A stem, which the commands take, is {stem}.
             """).format(stem=STEM_HELP),
     )
-    sub = top.add_subparsers(dest="cmd", required=True)
+    sub = top.add_subparsers(dest="cmd", required=True, title="commands",
+                             metavar="<command>")
 
     def command(name: Command, handler: Handler, **kwargs: Any) -> argparse.ArgumentParser:
         p = sub.add_parser(
@@ -132,9 +134,11 @@ def parser() -> argparse.ArgumentParser:
                 - When no witnessed case takes the branches of a `--case` name, the command prints `` {refusal} `` and nothing else.
             - Cases that emit the same output are listed together above that output: on one line, joined by `, ` and ending in `:`, or, when that line would pass {width} characters, one per indented line and then a line of `:`.
             - After them come `<case>: emits nothing` for each case that emits no grid, and `<case>: undefined` for each case that takes a `@derive` or `@store` branch and emits none.
+            - After those comes the count line, `{count}`: the count of the witnessed cases, of the solver's cases, and of the distinct grids the witnessed cases emit.
             - After the count line comes `no case takes $<Ctor>` for each constructor of `Choice`, at any depth, that no case of the solver takes.
             """).format(width=GROUP_WIDTH,
-                 refusal=text.NO_WITNESSED_TAKES.format(name="<name>")),
+                 refusal=text.NO_WITNESSED_TAKES.format(name="<name>"),
+                 count=COUNT_LINE.format(n="<n>", m="<m>", g="<g>")),
         epilog=GRID_HELP,
     )
     grid_p.add_argument("stem", help=STEM_HELP)
@@ -142,9 +146,9 @@ def parser() -> argparse.ArgumentParser:
                       help=mctx("grid file, or stdin when omitted or `-`"))
     shown = grid_p.add_mutually_exclusive_group()
     shown.add_argument("--all", action="store_true", dest="every",
-                       help=mctx("name each case of the solver on its own, "
-                                 "in place of the fewest names that cover "
-                                 "a group's cases"))
+                       help=mctx("list each case of the solver under its own "
+                                 "name, in place of the fewest names that "
+                                 "cover a group's cases"))
     shown.add_argument("--case", action="append", dest="cases",
                        metavar="CASE",
                        help=mctx("print only this case, with the option given "
@@ -178,8 +182,10 @@ def parser() -> argparse.ArgumentParser:
             - The witness replaces a witness with the same id.
             - For an `other` verdict, put the judged output after a `---` line of the grid text.
             - Without `--separates` or `--assign`, record runs the witness of that id again on the input and `assign` the file holds for it, and writes only its groups.
-                - A witness keeps its judged output where each line that records its verdict gives `other`, and its groups replace the judged output where each gives another verdict or no line records one.
-                - Where its lines give `other` and another verdict both, the run fails.
+                - Where each line that records the witness's verdict gives `other`, the witness keeps its judged output.
+                - Where each line that records the witness's verdict gives another verdict, the witness's groups replace its judged output.
+                - Where no line records the witness's verdict, the witness's groups replace its judged output.
+                - Where the lines that record the witness's verdict give `other` and another verdict both, the run fails.
             - Where `file` is omitted, a new id reads the grid from stdin, and an id the witness file holds keeps its input: `--separates` alone then keeps its groups and takes the new text, and `--assign` runs it again at the new `assign`.
             """),
         epilog=GRID_HELP,
@@ -272,13 +278,13 @@ def parser() -> argparse.ArgumentParser:
                   "and the witness file disagree"),
         description=mctx("""
             - The report checks the file's shape first.
-            - With --file and no stem, the shape check is the whole report, and it needs no solver.
+            - With `--file` and no stem, the shape check is the whole report, and it needs no solver.
             - A `stem` given as a path reads the witness file of its task id too.
-            - With `--try`, the command runs on the grid file the cases `record` would, those witnessed with it added to the witness file, writes nothing, and prints:
+            - With `--try`, the command runs, on the grid file, the cases `record` would run, as if the grid file were added to the witness file; it writes nothing, and prints:
                 - the groups of the grid file;
                 - the unseparated branch differences whose pairs it separates;
-                - the subsumed ones whose pairs it shows defined and differing;
-                - the subsumed ones that the cases it newly witnesses bring.
+                - the subsumed branch differences whose pairs it shows defined and differing;
+                - the subsumed branch differences that the cases it newly witnesses bring.
             """),
     )
     witness.add_argument("stem", nargs="?",
@@ -319,7 +325,10 @@ def parser() -> argparse.ArgumentParser:
         # scripts, docs and prompts for what "the stored value there" means.
         description=mctx("""
             - Each built-in derivation of a stored parameter, a proposer of [proposers.dl](programs/proposers.dl), for which some case of the solver that takes its branch fits the task, with the witness that separates the cases that take the branch from the cases that take the stored value there and the same branches elsewhere, at the assignment that changes the fewest parameters at which they differ.
-            - A derivation is listed with no witness where its `@ignore: derive <Proposer> — <reason>` line or its parameter's `@ignore: derive — <reason>` line stands, where the `@ignore: derive <name>` lines exclude every case that takes its branch, and, where the concept case fits, where no case takes its branch.
+            - A derivation is listed with no witness in each of these cases:
+                - Its `@ignore: derive <Proposer> — <reason>` line, or its parameter's `@ignore: derive — <reason>` line, stands.
+                - The `@ignore: derive <name>` lines exclude every case that takes its branch.
+                - The concept case fits, and no case takes its branch.
             - The command writes each witness it builds into the task's witness file, as `record` writes one, with the `@derive` line standing, and keeps a witness the file already holds for the branch.
             """)
         + "\n" + unwritten(Section.DERIVE),
@@ -363,7 +372,8 @@ def parser() -> argparse.ArgumentParser:
     size = command(
         Command.SIZE, lambda a: survey.cmd_size(a.stem),
         help=mctx("literal count per solver"),
-        description=mctx("Print each solver's literal count, count first."),
+        description=mctx("Prints each solver's literal count, count "
+                         "first."),
     )
     size.add_argument("stem", nargs="?", help=STEM_OR_ALL_HELP)
 
@@ -371,10 +381,11 @@ def parser() -> argparse.ArgumentParser:
         Command.KEYWORDS, lambda a: survey.cmd_keywords(a.stem),
         help=mctx("how many solvers list each keyword of "
                   "[Keywords](docs/handbook/keywords.md)"),
-        description=mctx("Count, for each keyword of "
+        description=mctx("Counts, for each keyword of "
                          "[Keywords](docs/handbook/keywords.md), the "
                          "solvers whose `// @keywords:` line lists it, and "
-                         "list each header keyword that doc does not."),
+                         "lists each header keyword that doc does not "
+                         "list."),
     )
     keywords.add_argument("stem", nargs="*",
                           help=mctx("solvers to read, or all of them when "
@@ -382,11 +393,11 @@ def parser() -> argparse.ArgumentParser:
 
     since = command(
         Command.SINCE, lambda a: survey.cmd_since(a.when),
-        help=mctx("the solvers in scope for a delta survey since a date-time"),
+        help=mctx("the solvers that the commits since a date-time touch"),
         description=mctx("""
-            - Print the stem of each solver that the commits since the given date-time touch, and of each solver whose working-tree content differs from HEAD.
+            - Prints the stem of each solver that the commits since the given date-time touch, and of each solver whose working-tree content differs from HEAD.
             - A commit that touches more than half the solvers gives no stems.
-            - When the other commits together touch more than half, only the solvers that those commits create are printed from them.
+            - When the other commits together touch more than half, only the solvers that those commits add are printed from them.
             """),
     )
     since.add_argument("when", help=mctx("a date-time git reads, e.g. "
@@ -396,7 +407,7 @@ def parser() -> argparse.ArgumentParser:
         Command.EXPAND, lambda a: survey.cmd_expand(a.stem),
         help=mctx("the source after GRID and RIGID expansion, as Souffle "
                   "sees it"),
-        description=mctx("Print the solver source with each GRID call and "
+        description=mctx("Prints the solver source with each GRID call and "
                          "RIGID block replaced by what it emits and nothing else "
                          "changed."),
     ).add_argument("stem", help=STEM_HELP)

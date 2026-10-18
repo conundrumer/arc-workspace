@@ -144,23 +144,23 @@ PARTS = {
     HelpPart.BUDGET: mctx("""
     - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over.
         - In place of a budget of type `{general}`, it prints one for each role of `operations.roles.GENERAL_ROLES`, taken over the runs of type `{general}` whose description `operations.roles.described` gives that role, and a run of that type whose description gives no such role joins no budget.
-    - That median is taken over the runs an operator launched alone.
+    - That median is taken over the runs an operator launched.
         - An operator launched a run where its parent, as `--running` gives it, is an agent of type `{operator}`.
         - A run whose parent's type no transcript of the sessions of the run gives is left out.
     - A brief gives items where its first line is one of the lines `operations.briefs` gives for a brief of several items of the same work, each item a ticket number.
         - Where the brief of some run of a type or a role gives items, it also prints, on a line led by `per item`, the budget per item of that type or role, which is {factor} times the median of the wall time per item, a run's wall time over the number of items its brief gives.
         - That median is taken by the lines below over the runs an operator launched whose brief gives items.
-    - The budget of a brief is the budget per item of its type or role times the number of items it gives, where it gives items, and the budget of its type or role otherwise.
+    - The budget of a brief is the budget per item of its type or role times the number of items it gives, where it gives items; where it gives none, it is the budget of its type or role.
     - The lines below narrow the runs each median of this part is taken over.
         - The window of a role of `operations.roles.GENERAL_ROLES` is the runs whose first entry is at or after the last commit that changed `src/operations/briefs.py`.
         - The window of a type that has an agent document under `prompts/agents/` is the runs whose first entry is at or after the last commit that changed one of its prompt's sources.
             - A type's prompt's sources are its agent document, each document that document includes or inlines, each lib file its rendered prompt holds, each script under `scripts/` its rendered prompt names, and each package under `src/` its rendered prompt runs with `-m`.
             - A module such a script or package imports is no source of the prompt.
         - `--since DATE` sets the window of every type to the runs whose first entry is at or after DATE.
-        - Where the window holds at least {median_runs} of the runs the median is taken over, it is taken over them.
         - A type with no agent document has a window only with `--since`.
         - A type or role whose paths no commit changed has no window.
-        - Otherwise it is taken over those of these runs whose `waits` and `idle` together are under {low_wait_pct}% of wall time, where at least {median_runs} runs are such.
+        - Where the window of a type or role holds at least {median_runs} of the runs that median is taken over, the median is taken over the runs in the window.
+        - Where a type or role has no window, or its window holds fewer of those runs, the median is taken over those of the runs that median is taken over whose `waits` and `idle` together are under {low_wait_pct}% of wall time.
             - A type or role with fewer such runs gets no budget, and a brief of it gets no `Budget:` line.
     """),
     HelpPart.UNDER: mctx("""

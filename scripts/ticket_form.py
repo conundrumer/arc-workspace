@@ -180,7 +180,6 @@ def check_depends_on(tickets: Path, value: str) -> None:
 
 
 def check_mechanical(value: str) -> None:
-    """Refuses a `mechanical` value that is not `MECHANICAL`."""
     if value != MECHANICAL:
         raise Refused(mctx("`mechanical` `{value}` is not `{yes}`").format(
             value=value, yes=MECHANICAL))
@@ -191,9 +190,8 @@ VALUE_CHECKS: dict[str, Callable[[Path, str], None]] = {
     "editors": lambda _tickets, value: check_editors(value),
     "fix": lambda _tickets, value: check_fix(value),
     "mechanical": lambda _tickets, value: check_mechanical(value)}
-"""The check of each front matter field that has a value rule, given the
-ticket tracker's path and the field's value; a field with no entry has no
-value rule."""
+"""The check of each front matter field that has a value rule; a field
+with no entry has none."""
 
 
 def checked_kind(tickets: Path, agent: str, text: str) -> Kind:

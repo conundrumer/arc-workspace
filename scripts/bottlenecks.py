@@ -41,12 +41,12 @@ HELP = mctx("""
     - `--since <time>`, with `<time>` in the form `{form}` in UTC, sets the window from that time to now: each span is cut to the window, and only the conflict lines in it count. With no `--since`, the window is the whole log.
     - `depends-on` waits: one row per path that a `change` ticket's `## Scope` gives, with the hours changes waited on it and the number of changes that waited on it.
         - The paths a Scope gives are those `uv run python scripts/file_ticket.py --help-all` gives.
-        - A wait is a span in which a `change` ticket stood under `tickets/open/` and a ticket its `depends-on` gives stood outside `tickets/closed/`, charged to each path both Scopes give, or to the row `{no_shared}` where they give none in common.
+        - A `depends-on` wait is a span in which a `change` ticket stood under `tickets/open/` and a ticket its `depends-on` gives stood outside `tickets/closed/`, charged to each path both Scopes give, or to the row `{no_shared}` where they give none in common.
         - The wait hours of a path are change-hours: the overlapping spans of one change count once, and those of different changes add up.
     - Rebase conflicts: each log line of a `change` ticket whose note opens with `{opening}` or `{rerun}`, charged to each path it gives, or to the row `{not_recorded}` where it gives none.
-    - A wait span opens at a line that moves a ticket into `blocked` or `waiting`, or whose note opens with a wait while it stands there, takes its cause from that line's wait, and runs to the next line of the ticket's log that moves it out of that status or whose note opens with a wait.
-    - Waits on the user: one row per ticket of any kind, with the hours of its wait spans whose wait is `user`.
-    - Waits on another change: one row per change number, with the hours of the wait spans of `change` tickets whose wait is `change <number>`.
+    - A status wait is a span of a ticket's log. It opens at a line that moves the ticket into `blocked` or `waiting`, or at a line whose note opens with what the ticket waits on while it stands there. It takes as its cause what that line's note opens with, as `uv run python scripts/file_ticket.py log --help` gives it: `user` or `change <number>`. It runs to the next line of the ticket's log that moves the ticket out of that status or whose note opens with what the ticket waits on.
+    - Waits on the user: one row per ticket of any kind, with the hours of its status waits whose cause is `user`.
+    - Waits on another change: one row per change number, with the hours of the status waits of `change` tickets whose cause is `change <number>`.
     - Ready and not taken: one row per `change` ticket, with the hours it stood under `tickets/open/` while each ticket its `depends-on` gives stood under `tickets/closed/`.
     - Churn: with `--since`, each path row gives the number of commits of `master` that touch the path, or a file under it, in the window of the same length that ends at the window's start.
     """)

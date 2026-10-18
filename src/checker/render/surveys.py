@@ -652,9 +652,11 @@ def _unknown_part(v: _PlanValues) -> list[PlanPart]:
 
 
 def _undecided_part(v: _PlanValues) -> list[PlanPart]:
-    return _plan_section(mctx("undecided: no proposer covers the value, and its stored "
-                              "value holds more than one fact, so the values at which "
-                              "the model fits every train pair give it"),
+    return _plan_section(mctx("undecided: each value here is one that no proposer "
+                              "covers and whose stored value holds more than one fact; "
+                              "the values at which the model fits every train pair "
+                              "decide it, so it needs no determination relation and "
+                              "asks no act"),
                          [_value_text(p, v.printed) for p in v.classes.undecided])
 
 
@@ -736,13 +738,15 @@ def render_determination_plan(solver: Solver, result: PlanResult,
 # The form of the clauses restates Principles' determination: Create
 # a6c6527b222939b7c and Refine a87e305652de9cb00 met this action with a test
 # that reads `ex_in` and `ex_out` together.
-MOVED = mctx("change the determination relation so that it reads its value "
-             "from the evidence, or keeps each value at which a fact of the "
-             "inputs alone, or of the outputs alone, holds, and gives the "
-             "stored value with the pair of the witness added to the train "
-             "pairs, where it now gives another: the witness stands at the "
-             "stored assignment, and its output is the one the concept case "
-             "gives there")
+MOVED = mctx("with the pair of the witness added to the train pairs, each "
+             "determination relation here gives a value other than the "
+             "stored one. The witness stands at the stored assignment, and "
+             "its output is the one the concept case gives there. Change the "
+             "relation so that it gives the stored value with that pair "
+             "added. To do so, make it read its value from the evidence, or "
+             "make it keep each value at which a fact of the inputs alone "
+             "holds and each value at which a fact of the outputs alone "
+             "holds")
 MOVED_UNKNOWN = mctx("the determination run with the witnesses' pairs added "
                      "gives no result, so whether they move a determined "
                      "value is not known")

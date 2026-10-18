@@ -722,7 +722,7 @@ class State:
     and is empty in each state the read gives. `journal` is the session's
     step journal (`journal`). `listing` holds the agent types the agent
     listing of `me` holds, or is None where its transcript gives none
-    (`operator_reads.agent_listing`)."""
+    (`agent_listings.agent_listing`)."""
     me: str
     now: float
     session: str

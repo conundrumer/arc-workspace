@@ -25,14 +25,12 @@ from controlled_markdown import form, markdown_heading_lines, mctx
 from handbook.linked import (Link, LinkedChange, LinkTarget, WalkStart, _Side, folded,
                             link_lines, linked_changes, sides)
 from handbook.contexts import MARKER, marked_section
-from handbook.kept_trees import TREES, flocked, tree_at
+from handbook.kept_runs import run_in
+from handbook.kept_trees import tree_at
 from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT
 from handbook.readers import (calls_of, context_command, context_text, reader_calls,
                               reader_named)
 
-
-CONTEXT_SCRIPT = (checkout.scripts() / "context.py").relative_to(checkout.ROOT)
-"""The command that prints a reader's context, from a checkout's root."""
 
 PROJECT_INSTRUCTIONS = Path(WalkStart.INSTRUCTIONS)
 """The project instructions, from a checkout's root: the file Claude Code
@@ -46,45 +44,10 @@ before side, in place of a commit."""
 _MARKER_LINE = re.compile(form(MARKER, {"what": "(.+)"}))
 
 
-RUNS = "reader-runs"
-"""The directory under `checkout.cache()` that holds the kept outputs of
-the runs in kept trees (`_run_in`)."""
-
-
-def _run_in(tree: Path, commit: str, argv: list[str]) -> str:
-    """The output of `scripts/context.py` with `argv`, run in `tree`, the
-    tree of `commit`, with that tree's own code. Where `tree` is a kept
-    tree (`kept_trees.tree_at`), the output is kept under `checkout.cache()` by the
-    tree's commit and `argv`, since it never changes for that commit, and
-    one run makes it however many ask for it at once; the checkout's output
-    is not kept, since its files may differ from its `HEAD`."""
-    if tree.parent != checkout.cache() / TREES:
-        return _run(tree, commit, argv)
-    h = hashlib.sha256()
-    for part in [tree.name, *argv]:
-        h.update(part.encode() + b"\0")
-    key = checkout.cache() / RUNS / h.hexdigest()
-    with flocked(key.with_suffix(".lock"), fcntl.LOCK_EX):
-        return read_or_make(key.with_suffix(".txt"), bytes.decode, str.encode,
-                            lambda: (_run(tree, commit, argv), True))
-
-
-def _run(tree: Path, commit: str, argv: list[str]) -> str:
-    paths = [str(tree / "src"), os.environ.get("PYTHONPATH", "")]
-    env = {**os.environ, "PYTHONPATH": os.pathsep.join(p for p in paths if p)}
-    done = subprocess.run([sys.executable, str(tree / CONTEXT_SCRIPT), *argv],
-                          cwd=tree, env=env, capture_output=True, text=True)
-    if done.returncode != 0:
-        failed = mctx("The run of `{command}` at {commit} failed.").format(
-            command=" ".join(argv), commit=commit)
-        raise SystemExit(f"{failed}\n{done.stderr.strip()}")
-    return done.stdout
-
-
 def _render_in(tree: Path, commit: str, reader: str, args: list[str]) -> str:
     """One reader's whole context as `tree`, the tree of `commit`, renders
     it."""
-    return _run_in(tree, commit, ["context", reader, *args])
+    return run_in(tree, commit, ["context", reader, *args])
 
 
 def context_at(commit: str, reader: str, args: list[str]) -> str:
@@ -342,7 +305,7 @@ def _calls_in(tree: Path, commit: str) -> list[tuple[str, list[str]]]:
     `contexts` output, the one form a commit's own code is known to
     give them in."""
     calls: list[tuple[str, list[str]]] = []
-    for line in _run_in(tree, commit, ["contexts"]).splitlines():
+    for line in run_in(tree, commit, ["contexts"]).splitlines():
         match = CONTEXTS_LINE_RE.fullmatch(line)
         if not match:
             raise SystemExit(mctx("A line of `contexts` at {commit} is not a "

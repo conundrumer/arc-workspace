@@ -21,9 +21,8 @@ from operations.state import Agent, Ticket
 
 def editor_checks(agents: Sequence[Agent], main: Path, undecided: list[str]) -> AgentsRead:
     """The checks, of `roles.CHECKS`, that the editors among `agents` of
-    `roles.LAUNCHING_EDITORS` launched, read from those editors'
-    transcripts as an operator's launches are read, with the editor as
-    their `operator`."""
+    `roles.LAUNCHING_EDITORS` launched, with the editor as their
+    `operator`."""
     out: list[Agent] = []
     reads: list[AgentsRead] = []
     for a in agents:
@@ -38,10 +37,9 @@ def editor_checks(agents: Sequence[Agent], main: Path, undecided: list[str]) -> 
 def elsewhere_agents(tickets: Mapping[str, Ticket], me: str, operators: frozenset[str],
                      main: Path, undecided: list[str]) -> AgentsRead:
     """`TranscriptsRead.elsewhere` over the changes of `tickets` `me` holds, where
-    `operators` gives the operators of the session. Each agent kept whose
-    work is no longer open ends with its final reply, as `ended_elsewhere`
-    gives it. Where the transcript of such an operator is not found, an
-    `undecided` line names it."""
+    `operators` gives the operators of the session. Where the transcript of
+    an operator of another session is not found, an `undecided` line names
+    it."""
     out: list[Agent] = []
     reads: list[AgentsRead] = []
     for t in (t for t in tickets.values() if holds(t, me)):

@@ -188,7 +188,8 @@ def read_pair(section: PairSection, index: int, data: object) -> Example | Probe
     alt = data[ALT]
     if not isinstance(alt, dict) or set(alt) != set(ALT_KEYS):
         raise PairFormError(mctx(
-            "{where}: the `alt` is not an object of {keys}").format(
+            "{where}: the `alt` is not an object whose keys are "
+            "exactly {keys}").format(
                 where=where, keys=spelled(ALT_KEYS)))
     return Example(input=grid_in, output=output,
                    alt=Alt(kind=_alt_kind(where, alt[KIND]),

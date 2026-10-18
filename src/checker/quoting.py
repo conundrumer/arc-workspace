@@ -120,8 +120,9 @@ def quote_rule_errors(shown: Callable[[Path], str]
     gives it."""
     broken = {
         Breach.GUARD: (Rule.QUOTE_GUARD,
-                       mctx("`{name}` has a `guard`, which only a hint or "
-                            "lint check may have")),
+                       mctx("`{name}` has a `guard`, which only a `check_` "
+                            "function in lint, or one whose every finding "
+                            "kind stands outside `FAILING`, may have")),
         Breach.MISSING: (Rule.QUOTE_MISSING, mctx("`{name}` has no `quotes`")),
         Breach.PRINCIPLE: (Rule.QUOTE_PRINCIPLE,
                            mctx("`{name}` has no `quotes` from `{principles}`")),

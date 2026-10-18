@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from controlled_markdown import mctx
 from handbook.agent_documents import agent_dir
 from handbook.agents import agent_names
 from handbook.context import role_dir, role_stems, workflow_dir, workflow_names
@@ -113,8 +114,8 @@ def contexts_text() -> str:
 
 def reader_named(name: str) -> ReaderName:
     if name not in CONTEXT_READERS:
-        raise SystemExit("no reader named "
-                         f"`{name}`\n{contexts_text()}".rstrip())
+        raise SystemExit((mctx("no reader named `{name}`").format(name=name)
+                          + "\n" + contexts_text()).rstrip())
     return ReaderName(name)
 
 
@@ -123,5 +124,5 @@ def context_text(reader: ReaderName, args: list[str]) -> str:
     known = CONTEXT_READERS[reader]
     form = known.form
     if len(args) != (1 if form else 0):
-        raise SystemExit(f"usage: {_usage(reader, form)}")
+        raise SystemExit(mctx("usage: {usage}").format(usage=_usage(reader, form)))
     return known.context(args)

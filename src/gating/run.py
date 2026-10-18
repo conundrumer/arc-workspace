@@ -341,7 +341,8 @@ class Gate:
                     if (rest := every[p] - own.get(p, frozenset()) - pruning.get(p, frozenset()))}
             if not gaps:
                 out.append(mctx("coverage: {cmd}: its runs on its own stems cover every line "
-                                "its runs on all of STEMS cover").format(cmd=c.name))
+                                "its runs on all of STEMS cover, the run cache's "
+                                "pruning lines left out").format(cmd=c.name))
                 continue
             out.append(mctx("coverage: {cmd}: its runs on all of STEMS cover these lines, "
                             "and its runs on its own stems do not: {lines}").format(

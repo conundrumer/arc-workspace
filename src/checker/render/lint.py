@@ -104,16 +104,16 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
     LintSentence.NO_TASK_ID: lambda n, _: mctx(
         "the file does not open with `// <task_id>`"),
     LintSentence.HEADER_ORDER: lambda n, _: mctx(
-        "header lines go in the order {order}").format(order=HEADER_ORDER),
+        "put the header lines in the order {order}").format(order=HEADER_ORDER),
     LintSentence.HEADER_PROSE: lambda n, _: mctx(
         "no prose in the header; a remark about a case goes at its "
         "constructor, and a remark about a clause at the clause"),
     LintSentence.DRAFT_PLACE: lambda n, _: mctx(
-        "`@draft` goes under the task id"),
+        "put `@draft` under the task id"),
     LintSentence.REVIEW_KIND: lambda n, _: mctx(
-        "`review` takes a kind: `// review <kind>: <text>`"),
+        "give `review` a kind: `// review <kind>: <text>`"),
     LintSentence.FIELD_TWICE: lambda n, _: mctx(
-        "`{0}` stands once in the header").format(*n),
+        "`{0}` stands more than once in the header; keep one").format(*n),
     LintSentence.SIBLING_DROPS: lambda n, _: mctx(
         "a sibling has a `@representative:` line in place of {drops}").format(
         drops=SIBLING_DROPS_TEXT),
@@ -123,7 +123,7 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
     LintSentence.UNKNOWN_KEYWORD: lambda n, _: mctx(
         "`{0}` is not in keywords.md; propose it in the review").format(*n),
     LintSentence.NO_KEYWORDS: lambda n, _: mctx(
-        "the header has a `@keywords:` or `@representative:` line"),
+        "the header has no `@keywords:` or `@representative:` line"),
     LintSentence.NO_DEMONSTRATED_CHOICE: lambda n, _: mctx(
         "the `@keywords:` line lists `induce`, and the solver declares no "
         "`DemonstratedChoice` at the top level; add the case "
@@ -134,13 +134,13 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
         "the header has no `@rule` line; a rule is {form}").format(
         form=FORM_RULE),
     LintSentence.GLOSS_ABOVE: lambda n, _: mctx(
-        "a gloss stands above `{0}`: what the choice is").format(*n),
+        "put a gloss above `{0}`: what the choice is").format(*n),
     LintSentence.OWN_LINE: lambda n, _: mctx(
-        "`{0}` opens its own line").format(*n),
+        "put `{0}` at the start of its own line").format(*n),
     LintSentence.CONCEPT_WITNESS: lambda n, _: mctx(
         "`{0}` is the concept branch; drop its `@witness` line").format(*n),
     LintSentence.WITNESS_PLACE: lambda n, _: mctx(
-        "a witness line stands in a branch's comment block or under "
+        "put the witness line in a branch's comment block or under "
         "`@approximated:`"),
     LintSentence.UNREAD_FIELD: lambda n, _: mctx(
         "case `{0}` never reads field `{1}`, so the choice point `{1}` "

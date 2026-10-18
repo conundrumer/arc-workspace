@@ -41,6 +41,7 @@ from collections.abc import Mapping
 from enum import StrEnum
 from pathlib import Path
 
+from controlled_markdown import mctx
 from engine import checkout
 from handbook.agent_documents import agent_dir
 from handbook.budget import checked
@@ -91,14 +92,14 @@ def coordinator_text(doc: Path = COORDINATOR_DOC) -> str:
     is (`entry_text`). A missing source, and a rendering longer than
     `HOOK_TEXT_CAP`, are faults."""
     if not doc.is_file():
-        raise SystemExit("the coordinator's document has no source at "
-                         f"{repo_label(doc)}")
+        raise SystemExit(mctx("the coordinator's document has no source at "
+                              "{doc}").format(doc=repo_label(doc)))
     text = entry_text(doc)
     if len(text) > HOOK_TEXT_CAP:
-        raise SystemExit(
-            f"the coordinator's document, rendered from {repo_label(doc)}, holds "
-            f"{len(text)} characters; the session-start hook gives a session "
-            f"{HOOK_TEXT_CAP} at most")
+        raise SystemExit(mctx(
+            "the coordinator's document, rendered from {doc}, holds {size} "
+            "characters; the session-start hook gives a session {cap} at "
+            "most").format(doc=repo_label(doc), size=len(text), cap=HOOK_TEXT_CAP))
     return text
 
 
@@ -135,8 +136,8 @@ def coordinator_rendering(path: Path = COORDINATOR_PATH,
 def _claude_code_value(env: Mapping[str, str], name: str) -> str:
     value = env.get(name)
     if value is None:
-        raise SystemExit(f"{name} is not set: the session-start "
-                         "hook runs only under Claude Code")
+        raise SystemExit(mctx("{name} is not set: the session-start hook runs "
+                              "only under Claude Code").format(name=name))
     return value
 
 
@@ -147,10 +148,11 @@ def entry_point(env: Mapping[str, str]) -> EntryPoint:
     try:
         return EntryPoint(value)
     except ValueError:
-        raise SystemExit(
-            f"{ENTRY_POINT_ENV}={value} is no entry point the session-start "
-            "hook knows; it knows " + ", ".join(e.value for e in EntryPoint)
-        ) from None
+        raise SystemExit(mctx(
+            "{env}={value} is no entry point the session-start hook knows; it "
+            "knows {known}").format(
+                env=ENTRY_POINT_ENV, value=value,
+                known=", ".join(e.value for e in EntryPoint))) from None
 
 
 def print_session(env: Mapping[str, str]) -> bool:
@@ -165,8 +167,8 @@ def print_session(env: Mapping[str, str]) -> bool:
     done = subprocess.run(["ps", "-ww", "-o", "args=", "-p", pid],
                           capture_output=True, text=True)
     if done.returncode != 0:
-        raise SystemExit(f"ps finds no process {pid}, the session's "
-                         f"{SESSION_PID_ENV}")
+        raise SystemExit(mctx("ps finds no process {pid}, the session's "
+                              "{env}").format(pid=pid, env=SESSION_PID_ENV))
     return not PRINT_FLAGS.isdisjoint(done.stdout.split())
 
 

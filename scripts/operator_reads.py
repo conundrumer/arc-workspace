@@ -1,7 +1,7 @@
 """The reads of the transcripts of a session's operators: the operators
 that ran `operate.py` and their resumes, the text of a message an operator
 received from its parent, the agents operators launched, merged across
-operators, an operator's agent listing, the reports of solver passes, and
+operators, the reports of solver passes, and
 the final replies of agents (`operator_transcript` reads one operator's
 transcript)."""
 
@@ -178,27 +178,6 @@ def kept(agents: Sequence[Agent], reads: Sequence[AgentsRead]) -> AgentsRead:
     return AgentsRead(tuple(agents),
                       {k: v for k, v in whole.messaged.items() if k in ids},
                       {k: v for k, v in whole.limited.items() if k in ids})
-
-
-LISTING_DELTA = "agent_listing_delta"
-"""The type of the transcript attachment that gives a change of the agent
-types a run's agent listing holds."""
-
-
-@state_cache(DERIVED, kept=Kept.DISK)
-def agent_listing(path: Path) -> frozenset[str] | None:
-    """The agent types the agent listing of the run at `path` holds: the
-    `addedTypes` of its first `LISTING_DELTA` attachment, with each later
-    one's `addedTypes` added and its `removedTypes` taken out, or None
-    where it holds no such attachment."""
-    listing: set[str] | None = None
-    for e in run_entries(path, naming={LISTING_DELTA}):
-        a = e.get("attachment") if e.get("type") == "attachment" else None
-        if not isinstance(a, dict) or a.get("type") != LISTING_DELTA:
-            continue
-        listing = (listing or set()) | set(a.get("addedTypes") or ())
-        listing -= set(a.get("removedTypes") or ())
-    return None if listing is None else frozenset(listing)
 
 
 def reply_since(agent: str, since: float) -> Report | None:

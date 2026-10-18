@@ -44,8 +44,8 @@ def _comp_decls(comp: Comp, comps: dict[str, tuple[Comp, list[str]]]
            for it in comp.items if isinstance(it, Decl) and not _hidden(it)]
     if comp.base is not None:
         if comp.base not in comps:
-            raise SystemExit(f"`{comp.name}` extends `{comp.base}`, which no "
-                             f"lib file declares")
+            raise SystemExit(mctx("`{name}` extends `{base}`, which no lib file "
+                                  "declares").format(name=comp.name, base=comp.base))
         base = comps[comp.base][0]
         given = dict(zip(base.type_params, comp.base_type_args, strict=True))
         names = {d.name for d in out}
@@ -109,7 +109,8 @@ def wrappers_text(lib: Path = LIB_SRC) -> str:
             continue
         for d in decls:
             if keyword.iskeyword(d.name):
-                raise SystemExit(f"`{comp.name}.{d.name}` is a Python keyword")
+                raise SystemExit(mctx("`{comp}.{name}` is a Python keyword").format(
+                    comp=comp.name, name=d.name))
         ins = [d.name for d in decls if d.input]
         outs = [d.name for d in decls if not d.input]
         rows = f"{comp.name}Rows"

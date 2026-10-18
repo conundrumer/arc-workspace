@@ -16,14 +16,17 @@ PRE_TOOL_USE = "pre-tool-use"
 def main() -> int:
     from reader_delivery import reader_update
 
+    from controlled_markdown import mctx
+
     match sys.argv[1:]:
         case []:
             return run_context(HOOK, reader_update)
         case [arg] if arg == PRE_TOOL_USE:
             return run_pre_tool_use(HOOK, lambda _: None, reader_update)
         case args:
-            raise SystemExit(f"{HOOK}: takes no argument or `{PRE_TOOL_USE}`, "
-                             f"and is given `{' '.join(args)}`")
+            raise SystemExit(mctx("{hook}: takes no argument or `{pre}`, and is "
+                                  "given `{given}`").format(
+                hook=HOOK, pre=PRE_TOOL_USE, given=" ".join(args)))
 
 
 if __name__ == "__main__":

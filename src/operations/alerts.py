@@ -33,7 +33,7 @@ gives.
 
 A message on each agent of `TranscriptsRead.stuck` goes to the
 coordinator once per stretch, with the agent's own work that still runs,
-so that the coordinator ends that work or asks the session that holds it,
+so that the coordinator ends that work or asks the session that runs it,
 and the agent is recorded the same way, in one `bug` ticket of its own
 kind (`stuck`).
 
@@ -282,7 +282,7 @@ def stuck(state: State) -> Step | None:
     for agent, s in sorted(state.transcripts.stuck.items()):
         text = stuck_text(agent, s)
         sent = Send(COORDINATOR, text + "\n" + mctx("End its work, or ask the session that "
-                                                     "holds it."), f"stuck {agent}", s.since)
+                                                     "runs it."), f"stuck {agent}", s.since)
         if not repeated(sent, state):
             return sent
         t = ticket_step(state, BugKind.STUCK, Domain.AGENT, agent, s.since,

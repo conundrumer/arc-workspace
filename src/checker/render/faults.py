@@ -62,14 +62,14 @@ file's form."""
 OTHER_HOLDS_JUDGED = mctx("the verdict `other`, whose witness holds the "
                           "judged output")
 
+NO_ANNOTATION_FORM = mctx(
+    "`{text}` is no annotation form that "
+    "[File structure](docs/handbook/solver-file.md#file-structure) gives")
+
 PROBLEM_TEXT: dict[ProblemKind, str] = {
     ProblemKind.PARSE_FAILURE: mctx("the solver does not parse: {text}"),
-    ProblemKind.RETIRED_FORM: mctx(
-        "`{text}` is an annotation form the handbook retired; see "
-        "[File structure](docs/handbook/solver-file.md#file-structure)"),
-    ProblemKind.UNKNOWN_FORM: mctx(
-        "`{text}` is no annotation form; see "
-        "[File structure](docs/handbook/solver-file.md#file-structure)"),
+    ProblemKind.RETIRED_FORM: NO_ANNOTATION_FORM,
+    ProblemKind.UNKNOWN_FORM: NO_ANNOTATION_FORM,
     ProblemKind.OFF_FORM: mctx(
         "{text}; see "
         "[File structure](docs/handbook/solver-file.md#file-structure)"),
@@ -86,7 +86,7 @@ PROBLEM_TEXT: dict[ProblemKind, str] = {
         "`{text}` has both a `@derive` line and an `@ignore: derive` line; "
         "remove one"),
     ProblemKind.WITNESS_FILE_SHAPE: mctx(
-        "the witness file is off its shape: ") + SEE_WITNESS_FILE,
+        "the witness file does not match its shape: ") + SEE_WITNESS_FILE,
     ProblemKind.NAME_DENOTES_NO_CASE: mctx(
         "the name `{text}` denotes no case of the solver"),
     ProblemKind.NAME_FORM: _witness_file(mctx(
@@ -163,11 +163,11 @@ SLUG_FORM = mctx("lowercase letters and digits, in words joined by single "
 """The form of a slug, which a witness id takes too."""
 
 OFF_PART_TEXT: dict[FormPart, str] = {
-    FormPart.SLUG: mctx("the slug `{read}` is off its form, ") + SLUG_FORM,
-    FormPart.ID: mctx("the id `{read}` is off a slug's form, ") + SLUG_FORM,
-    FormPart.PROPOSER: mctx("the proposer `{read}` is off its form, one word "
+    FormPart.SLUG: mctx("the slug `{read}` does not match its form, ") + SLUG_FORM,
+    FormPart.ID: mctx("the id `{read}` does not match a slug's form, ") + SLUG_FORM,
+    FormPart.PROPOSER: mctx("the proposer `{read}` does not match its form, one word "
                             "of letters, digits and `_`"),
-    FormPart.RELATION: mctx("the relation `{read}` is off its form, letters, "
+    FormPart.RELATION: mctx("the relation `{read}` does not match its form, letters, "
                             "digits, `_` and `.`"),
     FormPart.SPACING: mctx("`{read}` takes one space or more before it, and "
                            "none between it and the `:`"),
@@ -175,7 +175,7 @@ OFF_PART_TEXT: dict[FormPart, str] = {
                             "follows it"),
     FormPart.PLAUSIBILITY: mctx("`{read}` is no plausibility, and a "
                                 "plausibility is one of {plausibilities}"),
-    FormPart.VERDICT: mctx("the verdict `{read}` is off its form, one word, "
+    FormPart.VERDICT: mctx("the verdict `{read}` does not match its form, one word, "
                            "or names joined by `&`"),
     FormPart.VALUE: mctx("`{word}` takes one word, and `{read}` is more than "
                          "one"),
@@ -235,7 +235,7 @@ def off_form_text(detail: OffForm) -> str:
         parts.append(text.format(
             read=off.read, word=word, under=under,
             plausibilities=_either([p.value for p in Plausibility])))
-    return mctx("`{text}` is off its annotation's form: {parts}").format(
+    return mctx("`{text}` does not match its annotation's form: {parts}").format(
         text=detail.text, parts="; ".join(parts))
 
 

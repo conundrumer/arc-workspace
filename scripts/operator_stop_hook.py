@@ -75,7 +75,10 @@ def main() -> int:
         return run_subagent_stop(HOOK, check)
     if args == [PRE_TOOL_USE]:
         return run_pre_tool_use(HOOK, check)
-    raise SystemExit(f"{HOOK}: usage: operator_stop_hook.py [{PRE_TOOL_USE}]")
+    from controlled_markdown import mctx
+
+    raise SystemExit(mctx("{hook}: usage: operator_stop_hook.py [{pre}]").format(
+        hook=HOOK, pre=PRE_TOOL_USE))
 
 
 if __name__ == "__main__":

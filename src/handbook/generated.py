@@ -132,8 +132,9 @@ def _entry(manifest: Path, rel: PurePosixPath, line: str) -> PurePosixPath:
 
 
 def _bad_line(manifest: Path, line: str, what: str) -> SystemExit:
-    return SystemExit(f"{checkout.shown(manifest)}: `{line}` {what}; remove "
-                      "the manifest to start a new one")
+    return SystemExit(mctx("{manifest}: `{line}` {what}; remove the manifest to "
+                           "start a new one").format(
+        manifest=checkout.shown(manifest), line=line, what=what))
 
 
 def _write_manifest(root: Path, entries: Manifest) -> None:

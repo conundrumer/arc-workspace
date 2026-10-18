@@ -16,7 +16,8 @@ def attr_form[F: Enum](document: nm.Node, name: str, forms: type[F],
     try:
         return forms(value.strip())
     except ValueError:
-        raise SystemExit(
-            f"`{name}: {value.strip()}` in {document.source} is no {name} "
-            "form; the forms are "
-            + ", ".join(str(f.value) for f in forms)) from None
+        raise SystemExit(nm.mctx(
+            "`{name}: {value}` in {source} is no {name} form; the forms are "
+            "{forms}").format(
+                name=name, value=value.strip(), source=document.source,
+                forms=", ".join(str(f.value) for f in forms))) from None

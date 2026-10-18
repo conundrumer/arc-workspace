@@ -17,7 +17,8 @@ from agent_reports import ENDED, Sign, last_sign
 from controlled_markdown import mctx
 from merge_reads import merge_outcome, merge_subjects
 from filed_texts import brief_report_file, filed_report, unfiled
-from operator_reads import (MESSAGE_FROM, AgentsRead, agent_listing, ended_with, from_parent,
+from agent_listings import agent_listing
+from operator_reads import (MESSAGE_FROM, AgentsRead, ended_with, from_parent,
                             pass_read, reply_to)
 from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, blocks, is_prompt,
                        notifications, output_file, parent_id, run_sessions, tool_results)
@@ -88,11 +89,11 @@ def read_operator(aid: str, path: Path, main: Path, undecided: list[str],
     that launched it, or from the coordinator where the parent is an
     operator launcher, is read as a message of the coordinator's.
 
-    Where `calls` is False, a read taken only for the agents the operator
-    launched, whose calls no step reads, no call's outcome is read: the read gives no `Call`, and no
-    `undecided` line of such a read, and reads of each `Agent` call only
-    the filed text of its `prompt`, which the agent it gives takes as its
-    brief."""
+    `calls` False is for a read taken only for the agents the operator
+    launched, whose calls no step reads. Such a read reads no call's
+    outcome and gives no `Call`, it adds no `undecided` line, and of each
+    `Agent` call it reads only the filed text of its `prompt`, which is the
+    brief of the agent that call launches."""
     merged = merge_subjects(path)
     return replace(operator_read(aid, path, main, undecided,
                                  frozenset((m, t) for m, t in subjects.items() if m in merged),

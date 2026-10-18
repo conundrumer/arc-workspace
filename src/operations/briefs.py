@@ -500,13 +500,14 @@ def questions_of(brief: str) -> frozenset[str]:
     return frozenset() if m is None else frozenset(m["questions"].split(QUESTIONS_SEPARATOR))
 
 
-DECIDED = mctx("Raise, keep or leave for a decision, in any words, no finding or item, or place "
-               "a code editor's report gives as standing, that a report of a ticket analyst or a "
-               "ruling below settles, unless you have, or an editor's report gives, a reason for "
-               "it that the report or the ruling did not judge.")
+DECIDED = mctx("Raise, in any words, no finding, item, or place a code editor's report gives "
+               "as standing, that a report of a ticket analyst or a ruling below settles. Keep "
+               "no such finding, item or place. Leave no such finding, item or place for a "
+               "decision. This applies to none for which you have, or an editor's report "
+               "gives, a reason that the report or the ruling did not judge.")
 EARLIER = mctx("Raise again, in any words, no finding or item that the latest report below of an "
-               "earlier {role} on the change gives as settled, unless you have a reason for it "
-               "that the report did not judge.")
+               "earlier {role} on the change gives as settled. This applies to none for which "
+               "you have a reason that the report did not judge.")
 REPORT_FILED = mctx("- The latest report of {role} {agent} is in the file `{path}`.")
 REPORT_BELOW = mctx("- The latest report of {role} {agent} follows.")
 RULED = mctx("- A ruling gave the hold below the choice `{choice}`: {meaning}.")
@@ -602,11 +603,11 @@ TRANSCRIPT_REVIEW = mctx("""
     """)
 
 PASS_REVIEW = mctx("""
-    - Read the pass call by call, with its timing, for what the tool and the documents did to the pass's work. File a ticket of kind `interference` where they made the pass's output wrong, and handle each place where they added only to its time or token cost by the lines under `At each such place`.
+    - Read the pass call by call, with its timing, for what the tool and the documents did to the pass's work. File a ticket of kind `interference` where they made the pass's output wrong. Handle each place where they added only to its time or token cost by the lines under `At each such place`.
     """)
 
 PASS_DUPLICATES = mctx("""
-    - The run filed these tickets: {tickets}. Once you have appended a place as a case to a ticket, or filed a ticket with the place's case, close each of those tickets of the run that is a `delay` and whose title states the same place, as a `duplicate` of the ticket that holds the case, by `uv run python scripts/file_ticket.py log --help`, with the name of the directory it stands under as `<current status>`.
+    - The run filed these tickets: {tickets}. Close each of those tickets that is a `delay` and whose title states a place whose case you appended to a ticket or filed in a ticket, as a `duplicate` of the ticket that holds that case, once you have done so. Close it by `uv run python scripts/file_ticket.py log --help`, with the name of the directory the ticket stands under as `<current status>`.
     """)
 
 PASS_TICKET = mctx("{number}, of kind `{kind}` under `tickets/{status}/`, titled \"{title}\"")
@@ -771,7 +772,7 @@ COST_AUDIT = mctx("""
     - Audit the cost of the runs of each session in `{transcripts}` that were active in the window from {since} to now.
     - Profile the runs with `uv run python scripts/profile_runs.py` and its `--each`, `--runs`, `--type` and `--top` options, read a run's transcript where a line of its profile looks suspect, and read a ticket's log for what an agent was launched for.
     - Where a run has entries before the window's start, count only the share of its cost from its entries in the window, as an estimated figure with that basis.
-    - Find each kind of step whose summed cost over the window exceeds what it finds, and each cost that bought no work or that a cheaper path would have cut.
+    - Find each kind of step whose summed cost in dollars over the window exceeds the value in dollars of what it finds: the sum, over its findings in the window, of the cost each finding saves, with time priced at the rate [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences) gives. Find each cost that bought no work, and each cost that a cheaper path would have cut.
     - Run `uv run python scripts/bottlenecks.py --since <the window's start>`. Each row of its output whose cost, with its hours priced at the rate [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences) gives for time, exceeds the cost of the change that would remove its cause is a finding, and no churn figure is one.
     - Leave out what a process covers and did not miss: the checks that [Quality assurance (quality assurance, incident management, problem management)](prompts/agents/notes/process.md#quality-assurance-quality-assurance-incident-management-problem-management) gives cover each run, and file nothing on a cause that a ticket outside `tickets/closed/` records.
     - File one `performance` ticket per finding, {filing}. Give in it the cost in dollars, the agent type, the evidence as agent ids, ticket numbers and times, the cause in one line, each figure labeled measured or estimated with the basis of each estimate, and what a cut of its step would trade off.

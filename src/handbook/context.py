@@ -89,9 +89,10 @@ def _no_doc(name: str, docs: Path = DOCS_DIR) -> SystemExit:
     the line that gives the forms of a name and lists each doc's names."""
     taken = ", ".join(_doc_names(path) for path in _handbook_docs(docs))
     link = repo_label(docs / "<stem>.md")
-    return SystemExit(f"no handbook doc named `{name}`; a doc is named by its "
-                      f"title, its file stem or its link form, `{link}`: "
-                      f"{taken}")
+    return SystemExit(nm.mctx("no handbook doc named `{name}`; a doc is named by "
+                              "its title, its file stem or its link form, "
+                              "`{link}`: {taken}").format(
+        name=name, link=link, taken=taken))
 
 
 def _named_doc(name: str, docs: Path = DOCS_DIR) -> Path | None:
@@ -159,8 +160,8 @@ def section_text(where: str, docs: Path = DOCS_DIR) -> str:
         ids = registry.ids[document.source]
         node = ids.get(nm.slug(ident)) if sep else next(iter(ids.values()), None)
         if node is None:
-            raise SystemExit(
-                f"no section `{ident}` in {registry.rel(document)}")
+            raise SystemExit(nm.mctx("no section `{ident}` in {document}").format(
+                ident=ident, document=registry.rel(document)))
     return nm.render(nm.section_document(document, node), registry)
 
 
@@ -180,11 +181,13 @@ def _bare_section(registry: nm.Registry, heading: str, docs: Path
     if len(found) == 1:
         return found[0]
     if not found:
-        raise SystemExit(f"no section `{heading}` in the handbook's documents")
+        raise SystemExit(nm.mctx("no section `{heading}` in the handbook's "
+                                 "documents").format(heading=heading))
     named = ", ".join(
         f"`{_title(document)}#{node.text}`" for document, node in found)
-    raise SystemExit(f"`{heading}` is a section of more than one handbook "
-                     f"document; name one: {named}")
+    raise SystemExit(nm.mctx("`{heading}` is a section of more than one handbook "
+                             "document; name one: {named}").format(
+        heading=heading, named=named))
 
 
 def first_heading(document: nm.Node) -> nm.Node | None:
@@ -214,8 +217,9 @@ def workflow_names(workflows: Path = WORKFLOW_DIR) -> list[str]:
 
 def no_item_named(kind: str, kinds: str, name: str,
                   names: list[str]) -> SystemExit:
-    return SystemExit(f"no {kind} named `{name}`; the {kinds} are "
-                      + ", ".join(names))
+    return SystemExit(nm.mctx("no {kind} named `{name}`; the {kinds} are "
+                              "{names}").format(
+        kind=kind, name=name, kinds=kinds, names=", ".join(names)))
 
 
 def workflow_file(name: str, workflows: Path = WORKFLOW_DIR) -> Path:
