@@ -394,7 +394,7 @@ pub fn label_types<'p>(program: &'p CheckedProgram, form: &NodePath) -> &'p Form
 /// The IR of `conjuncts`, each with its path, of the form at `form`, whose
 /// relation's columns are those of `columns` that the conjuncts hold.
 /// Refuses the conjuncts where they leave a label ungrounded.
-fn compile_grounded(
+pub fn compile_grounded(
     program: &CheckedProgram,
     form: &NodePath,
     conjuncts: Vec<(&Conjunct, NodePath)>,
