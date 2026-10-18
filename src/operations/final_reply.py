@@ -3,7 +3,7 @@
 gives, whether that text ends the operator for
 its context (`for_context`) or hands its lines to the operator launched
 after it (`hands_over`) or to one operator by name (`hands_to`), the calls that sent its text to its parent
-(`final_sends`), whether an operator has ended (`ended`), which of two
+(`final_sends`), the calls of each operator (`OwnCalls`), whether an operator has ended (`ended`), which of two
 operators carries on the lines one hands the other (`takes_up`), whether a holder
 of a change is live (`live_holder`), the operators launched before and
 after one (`split_at`),
@@ -13,7 +13,9 @@ reached an earlier one (`carrier`), and the lines the reply nests.
 `next` by `handled.next_call`."""
 
 import re
+from bisect import bisect_left, bisect_right
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 
 from controlled_markdown import form, mctx
 from operations.constants import COORDINATOR
@@ -73,7 +75,35 @@ def final_sends(state: State, operator: str) -> list[Call]:
     """The SendMessage calls by which `operator` sent its parent
     (`State.parents`) the text of its final reply, in the order they were
     made."""
-    return final_sends_in(state.transcripts.calls, operator, state.parents[operator])
+    return list(operator_calls(state)[operator].finals)
+
+
+@dataclass(frozen=True)
+class OwnCalls:
+    """The calls of one operator (`calls`), the times of its calls of
+    `next`, in order (`nexts`), and `final_sends_in` of its calls to its
+    parent (`finals`)."""
+    calls: tuple[Call, ...]
+    nexts: tuple[float, ...]
+    finals: tuple[Call, ...]
+
+
+def own_calls(calls: Iterable[Call], parents: Mapping[str, str]) -> dict[str, OwnCalls]:
+    """The `OwnCalls` of each operator of `parents`, each to the parent
+    `parents` gives it, from `calls`."""
+    mine: dict[str, list[Call]] = {o: [] for o in parents}
+    for c in calls:
+        if c.operator in mine:
+            mine[c.operator].append(c)
+    return {o: OwnCalls(tuple(own), tuple(sorted(c.time for c in own if next_call(c, o))),
+                        tuple(final_sends_in(own, o, parents[o])))
+            for o, own in mine.items()}
+
+
+@memoized
+def operator_calls(state: State) -> dict[str, OwnCalls]:
+    """`own_calls` of the calls of `state` to `State.parents`."""
+    return own_calls(state.transcripts.calls, state.parents)
 
 
 def final_sends_in(calls: Iterable[Call], operator: str, to: str) -> list[Call]:
@@ -92,44 +122,43 @@ def split_at(operators: Sequence[str], me: str) -> tuple[Sequence[str], Sequence
 
 def ended(state: State, operator: str) -> bool:
     """Whether `operator` has `ended_at` now."""
-    return ended_at(state.transcripts.calls, operator, state.parents[operator], float("inf"))
+    return ended_at(operator_calls(state)[operator], operator, float("inf"))
 
 
-def ended_at(calls: Iterable[Call], operator: str, to: str, at: float) -> bool:
-    """Whether, of `calls` made before `at`, `operator` has sent its parent
-    `to` its final reply and made only calls of `next` and SubagentHandback
-    since; a SubagentHandback call ends the run and counts as no work. The
-    final send is itself a SendMessage call, so only the calls after it
-    are read."""
-    calls = [c for c in calls if c.operator == operator and c.time < at]
-    sends = final_sends_in(calls, operator, to)
+def ended_at(own: OwnCalls, operator: str, at: float) -> bool:
+    """Whether, of the calls `own` of `operator` made before `at`,
+    `operator` has sent its parent its final reply and made only calls of
+    `next` and SubagentHandback since; a SubagentHandback call ends the run
+    and counts as no work. The final send is itself a SendMessage call, so
+    only the calls after it are read."""
+    sends = [c for c in own.finals if c.time < at]
     if not sends:
         return False
     last = sends[-1].time
     return all(next_call(c, operator) or c.tool == Tool.SUBAGENT_HANDBACK
-               for c in calls if c.time > last)
+               for c in own.calls if last < c.time < at)
 
 
-def takes_up(calls: Sequence[Call], parents: Mapping[str, str], earlier: str,
-             later: str) -> bool:
+def takes_up(own: Mapping[str, OwnCalls], earlier: str, later: str) -> bool:
     """Whether `later` takes up the lines that the last final send of the
     operator `earlier`, launched before it, hands it (`hands_to`, or
-    `hands_over` in a row). Of the two, the one whose call of `next`
-    after that send came first carries those lines on: `earlier` only
-    where its call came first and `later` had `ended_at` that call."""
-    sent = final_sends_in(calls, earlier, parents[earlier])[-1].time
-    first_earlier = first_next(calls, earlier, sent)
-    first_later = first_next(calls, later, sent)
+    `hands_over` in a row), where `own` gives the calls of each. Of the
+    two, the one whose call of `next` after that send came first carries
+    those lines on: `earlier` only where its call came first and `later`
+    had `ended_at` that call."""
+    sent = own[earlier].finals[-1].time
+    first_earlier = first_next(own[earlier], sent)
+    first_later = first_next(own[later], sent)
     if first_earlier is None or (first_later is not None and first_later < first_earlier):
         return True
-    return not ended_at(calls, later, parents[later], first_earlier)
+    return not ended_at(own[later], later, first_earlier)
 
 
-def first_next(calls: Iterable[Call], operator: str, after: float) -> float | None:
-    """The time of the first call of `next` by `operator` after `after`, or
-    None where it made none."""
-    return min((c.time for c in calls if c.time > after and next_call(c, operator)),
-               default=None)
+def first_next(own: OwnCalls, after: float) -> float | None:
+    """The time of the first call of `next` of `own` after `after`, or None
+    where it made none."""
+    i = bisect_right(own.nexts, after)
+    return own.nexts[i] if i < len(own.nexts) else None
 
 
 def live_holder(state: State, holder: str) -> bool:
@@ -147,9 +176,9 @@ def live_holder(state: State, holder: str) -> bool:
 def final_replies(state: State, operator: str) -> list[float]:
     """The times of the calls of `next` that printed `operator` the
     messages of `final_sends`: for each, the last call of `next` before it."""
-    nexts = [c.time for c in state.transcripts.calls if next_call(c, operator)]
-    return [max((t for t in nexts if t < c.time), default=c.time)
-            for c in final_sends(state, operator)]
+    own = operator_calls(state)[operator]
+    return [own.nexts[i - 1] if (i := bisect_left(own.nexts, c.time)) else c.time
+            for c in own.finals]
 
 
 def replies_by_operator(state: State) -> dict[str, list[float]]:

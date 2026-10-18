@@ -48,8 +48,8 @@ from operations.state import Call, State
 from ticketing.times import utc_stamp
 from ticketing.vocabulary import Status
 from operations.journal import backing_off
-from operations.final_reply import (FOR_CONTEXT, FOR_LATER, ended, final_sends_in, hands_over,
-                                    hands_to, live_holder, sent_final_text, split_at,
+from operations.final_reply import (FOR_CONTEXT, FOR_LATER, ended, hands_over, hands_to,
+                                    live_holder, own_calls, sent_final_text, split_at,
                                     takes_up)
 from operations.standing import ending, final, holding, reply_lines
 from operations.order import EARLY, LATE, first, lacked, listing_wait, monitor_step
@@ -130,16 +130,17 @@ def taken_up(me: str, operators: Sequence[str], calls: Sequence[Call],
     only those whose lines the operator they hand them to takes up
     (`takes_up`), and not those that carry them on themselves."""
     before = split_at(operators, me)[0]
+    own = own_calls(calls, parents)
     texts = {o: sent_final_text(sends[-1]) or "" for o in before
-             if (sends := final_sends_in(calls, o, parents[o]))}
+             if (sends := own[o].finals)}
     ups: dict[str, frozenset[str]] = {}
     for i, op in enumerate([*before, me]):
         row: list[str] = []
         for o in reversed(operators[:i]):
-            if o not in texts or not hands_over(texts[o]) or not takes_up(calls, parents, o, op):
+            if o not in texts or not hands_over(texts[o]) or not takes_up(own, o, op):
                 break
             row.append(o)
         named = [o for o in operators[:i]
-                 if o in texts and hands_to(texts[o], op) and takes_up(calls, parents, o, op)]
+                 if o in texts and hands_to(texts[o], op) and takes_up(own, o, op)]
         ups[op] = frozenset({*row, *named}.union(*(ups[o] for o in [*row, *named])))
     return ups[me]

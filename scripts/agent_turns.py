@@ -139,7 +139,11 @@ def turn_after(path: Path, t: float, undecided: list[str]) -> bool:
     return out
 
 
+@state_cache(DERIVED)
 def last_time(path: Path, holds: Callable[[Entry], bool] | None = None) -> float | None:
+    """The time of the last timestamped entry of the run at `path`, of the
+    entries `holds` gives where it is given, held while the reads of the
+    run's transcripts it made stand."""
     return next((epoch(e["timestamp"]) for e in run_back(path)
                  if e.get("timestamp") and (holds is None or holds(e))), None)
 

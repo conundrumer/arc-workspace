@@ -36,16 +36,17 @@ def state_stat(path: str) -> os.stat_result | None:
 
 def stat_of(path: Path) -> tuple[int, int] | None:
     """The modification time and size of the file at `path`, or None where
-    there is none. Inside a `state_cache` read, each path is read once for
-    each state (`state_stat`)."""
+    there is none. Inside a `state_cache` read, it is read by `stat_read`,
+    so a read or a stamp that reads it rests on that held read, and the
+    trace of a kept read gives the stat of each path once."""
     if in_read():
-        st = state_stat(str(path))
-    else:
-        try:
-            st = path.stat()
-        except FileNotFoundError:
-            st = None
-    return None if st is None else (st.st_mtime_ns, st.st_size)
+        found = stat_read(path)
+        return None if found is None else (found.mtime_ns, found.size)
+    try:
+        st = path.stat()
+    except FileNotFoundError:
+        return None
+    return st.st_mtime_ns, st.st_size
 
 
 @dataclass(frozen=True)

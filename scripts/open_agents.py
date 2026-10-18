@@ -138,27 +138,64 @@ def parent_reports(r: Run, undecided: list[str],
             else reports(r.path, since, undecided))
 
 
-@dataclass
-class Node:
-    """An agent a run launched, as `listing` reads it: `parent` is the label
-    of that run and `launcher` the path of its transcript, `path` the
-    agent's transcript, `under` the agents it launched, or None where
-    `nodes_under` has not read them, `settled` whether a turn-ending report
-    of it follows its last timestamped entry, and `in_progress` whether,
-    where it is not settled, its turn is in progress by `turn_open` with
-    the run's last sign that it reported, and once `settle_turns` has read
-    it, with the latest notification of it as well. `own` is what
-    `own_work` gives and `busy` what `is_busy` gives, each None where it
-    has not been read."""
+@dataclass(frozen=True)
+class Launched:
+    """An agent a run launched, as `held_under` holds it: `parent` is the
+    label of that run and `launcher` the path of its transcript, `path` the
+    agent's transcript, `under` the agents it launched, or None where they
+    are not read, `settled` whether a turn-ending report of it follows its
+    last timestamped entry, and `in_progress` whether, where it is not
+    settled, its turn is in progress by `turn_open` with the run's last
+    sign that it reported."""
     parent: str
     launcher: Path
     launch: Launch
     path: Path
-    under: list["Node"] | None
+    under: tuple["Launched", ...] | None
     settled: bool
+    in_progress: bool
+
+
+@dataclass
+class Node:
+    """An agent a run launched, as one read of `listing` reads it: what
+    `found` gives, with `under` the agents it launched, or None where
+    `nodes_under` has not read them, and `in_progress` as `found` gives it
+    until `settle_turns` reads it, and from then on with the latest
+    notification of it as well. `own` is what `own_work` gives and `busy`
+    what `is_busy` gives, each None where it has not been read."""
+    found: Launched
+    under: list["Node"] | None
     in_progress: bool
     own: list[str] | None = None
     busy: bool | None = None
+
+    @property
+    def parent(self) -> str:
+        return self.found.parent
+
+    @property
+    def launcher(self) -> Path:
+        return self.found.launcher
+
+    @property
+    def launch(self) -> Launch:
+        return self.found.launch
+
+    @property
+    def path(self) -> Path:
+        return self.found.path
+
+    @property
+    def settled(self) -> bool:
+        return self.found.settled
+
+
+def walked(found: Launched) -> Node:
+    """The `Node` of `found`, and of each agent under it that it gives, for
+    one read of `listing`."""
+    return Node(found, None if found.under is None else [walked(f) for f in found.under],
+                found.in_progress)
 
 
 def turn_open(path: Path, sign: float | None, undecided: list[str]) -> bool:
@@ -170,11 +207,11 @@ def turn_open(path: Path, sign: float | None, undecided: list[str]) -> bool:
         mtime(path) > sign and turn_after(path, sign, undecided)))
 
 
-def node(launcher: Path, a: Launch, path: Path, under: list[Node] | None,
-         undecided: list[str]) -> Node:
+def launched(launcher: Path, a: Launch, path: Path, under: tuple[Launched, ...] | None,
+             undecided: list[str]) -> Launched:
     settled = launch_settled(launcher, a.call, path)
-    return Node(parent_label(launcher), launcher, a, path, under, settled,
-                not settled and turn_open(path, a.done, undecided))
+    return Launched(parent_label(launcher), launcher, a, path, under, settled,
+                    not settled and turn_open(path, a.done, undecided))
 
 
 @state_cache(DERIVED, kept=Kept.DISK)
@@ -377,7 +414,7 @@ def ancestry(path: Path, undecided: list[str]) -> list[Node]:
                                   "agent it launched whose turn has ended is listed as "
                                   "under a parent whose work is open").format(run=aid))
             break
-        out.append(node(found[-1], launch, launch.path, None, undecided))
+        out.append(walked(launched(found[-1], launch, launch.path, None, undecided)))
         path = found[-1]
     return out[::-1]
 
@@ -394,15 +431,23 @@ def open_along(up: list[Node], undecided: list[str]) -> bool:
 
 def launched_under(path: Path, undecided: list[str]) -> list[Node]:
     """The agents the run at `path` launched whose transcript is known, each
-    as a `Node` with the agents under it."""
-    out: list[Node] = []
+    as a `Node` with the agents under it, from `held_under`."""
+    return [walked(f) for f in held_under(path, undecided)]
+
+
+@state_cache(DERIVED, notes="undecided")
+def held_under(path: Path, undecided: list[str]) -> tuple[Launched, ...]:
+    """The agents the run at `path` launched whose transcript is known, each
+    with the agents under it, held, so that a change of one run reads again
+    only the runs above it."""
+    out: list[Launched] = []
     for a in launches(path, undecided):
         child = a.path
         if child is None:
             continue
-        under = launched_under(child, undecided) if children_of(path, agent_id(child)) else []
-        out.append(node(path, a, child, under, undecided))
-    return out
+        under = held_under(child, undecided) if children_of(path, agent_id(child)) else ()
+        out.append(launched(path, a, child, under, undecided))
+    return tuple(out)
 
 
 def nodes_under(n: Node, undecided: list[str]) -> list[Node]:

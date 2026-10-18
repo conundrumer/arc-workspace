@@ -102,7 +102,33 @@ def ticket_path(tickets: Path, number: TicketNumber) -> Path:
     """The path of the ticket `number`, which the help of `file_ticket.py
     path` defines."""
     pattern = joined_name((str(number), "*"), glob.escape)
-    found = sorted(p for d in statuses(tickets) for p in d.glob(pattern))
+    return only_ticket(tickets, number, sorted(p for d in statuses(tickets) for p in d.glob(pattern)))
+
+
+def listed_ticket_path(tickets: Path, number: TicketNumber) -> Path:
+    """`ticket_path`, from the listings of the status directories this
+    state holds (`numbered_files`)."""
+    return only_ticket(tickets, number, list(numbered_files(tickets).get(str(number), ())))
+
+
+@state_cache(DERIVED)
+def numbered_files(tickets: Path) -> dict[str, tuple[Path, ...]]:
+    """The files of the status directories this state holds, each under the
+    text before the first `_` of its name, which a ticket's number gives:
+    the files the glob of `ticket_path` finds for that number, sorted."""
+    found: dict[str, list[Path]] = {}
+    for directory in statuses(tickets):
+        for name in names_in(directory):
+            head, sep, _ = name.partition("_")
+            if sep and name.endswith(SUFFIX):
+                found.setdefault(head, []).append(directory / name)
+    return {head: tuple(sorted(paths)) for head, paths in found.items()}
+
+
+def only_ticket(tickets: Path, number: TicketNumber, found: list[Path]) -> Path:
+    """The one path of `found`, the files named for the ticket `number`,
+    refused as the help of `file_ticket.py path` gives it where there is
+    not one."""
     if len(found) == 1:
         return found[0]
     if found:

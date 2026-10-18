@@ -143,9 +143,10 @@ def change_spend(path: Path, undecided: list[str]) -> Spend | None:
     runs its closing line gives, or None where that line gives no run or
     `spend` gives none. A spend is recorded under `SPENDS` only once each
     run it read has stopped, since the spend of a run that goes on still grows."""
-    record = path.parent.parent / SPENDS / f"{ticket_name(path).number}.json"
-    if stat_read(record) is not None:
-        return Spend(**json.loads(file_text(record)))
+    found = recorded_spend(path)
+    if found is not None:
+        return found
+    record = spend_record(path)
     closing = [m for m in held_ticket_log(path)[1] if m["status"] == Status.CLOSED
                and resolution_of(m["note"]) is Resolution.FIXED]
     runs = (closing[-1]["note"] or "").split()[3:] if closing else []
@@ -158,6 +159,18 @@ def change_spend(path: Path, undecided: list[str]) -> Spend | None:
         record.parent.mkdir(exist_ok=True)
         write_whole(record, (json.dumps(asdict(s), sort_keys=True) + "\n").encode())
     return s
+
+
+def spend_record(path: Path) -> Path:
+    """The file under `SPENDS` of the change at `path`."""
+    return path.parent.parent / SPENDS / f"{ticket_name(path).number}.json"
+
+
+def recorded_spend(path: Path) -> Spend | None:
+    """The spend the file under `SPENDS` of the change at `path` records,
+    or None where there is none."""
+    record = spend_record(path)
+    return Spend(**json.loads(file_text(record))) if stat_read(record) is not None else None
 
 
 @dataclass(frozen=True)
@@ -179,6 +192,16 @@ def closed_changes(tickets: Path) -> tuple[Closed, ...]:
         if ticket_kind(text) is Kind.CHANGE:
             out.append(Closed(path, text, line_time(lines[-1])))
     return tuple(out)
+
+
+@state_cache(DERIVED)
+def closed_spends(tickets: Path) -> tuple[tuple[Closed, tuple[Role, ...] | None,
+                                               Spend | None], ...]:
+    """Each change of `closed_changes`, with its `editors` field and its
+    `recorded_spend`, so that a read of the changes like a change reads
+    again only the spends that no file records."""
+    return tuple((c, editors_field(front(c.text)), recorded_spend(c.path))
+                 for c in closed_changes(tickets))
 
 
 def held_ticket_log(path: Path) -> tuple[str, list[re.Match[str]]]:
@@ -207,12 +230,12 @@ def like_changes(tickets: Path, editors: frozenset[Role], before: float,
     known spend whose `editors` set is `editors`, or of each such change
     whatever its `editors` where fewer than `FEWEST_LIKE` have it."""
     every: list[tuple[tuple[Role, ...] | None, Spend]] = []
-    for c in closed_changes(tickets):
+    for c, editors_of, recorded in closed_spends(tickets):
         if c.at >= before:
             continue
-        s = change_spend(c.path, undecided)
+        s = recorded if recorded is not None else change_spend(c.path, undecided)
         if s is not None:
-            every.append((editors_field(front(c.text)), s))
+            every.append((editors_of, s))
     like = [s for e, s in every if e is not None and frozenset(e) == editors]
     return like if len(like) >= FEWEST_LIKE else [s for _, s in every]
 
