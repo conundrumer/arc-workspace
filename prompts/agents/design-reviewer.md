@@ -27,6 +27,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 
 ## What you read
 - Read the Intent, the Design, the Motivation and the Scope of the change's ticket, as `uv run python scripts/file_ticket.py show <number>` with those sections prints them, the Design where the ticket has one.
+    + xref: scripts/file_ticket.py:show_command
 - The change's diff is the one this command prints, with the change's worktree as `<worktree>`, and each file that `git -C <worktree> ls-files --others --exclude-standard` prints:
     ```
     git -C <worktree> diff --merge-base master -- . ':!programs/witnesses'
@@ -34,9 +35,11 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 - In addition to the diff, run `git -C <worktree> check-ignore <the Scope's paths>`, and read each path it prints as the main tree holds it.
 - Read each function, record, class and module that diff touches whole, as it stands in the worktree, and the code that calls each of them or that each of them calls.
 - Read the index of the packages that hold the files of that diff, as `uv run python scripts/code_index.py <those files>` prints it, and read each unit it leads to that computes what a unit the diff adds computes.
+    + xref: scripts/code_index.py:code_index
     * comment: The user's words, session 2384db39-7d21-4d8d-8dda-bfd52bd69360, 2026-10-18T12:53:52Z: "Go", which chose "and so does the design reviewer." Ticket 11-1251.
 - Read the commits of `master` since the change's merge base that touch the files of that diff, as `git -C <worktree> log -p $(git -C <worktree> merge-base master HEAD)..master -- <files>` prints them.
 - Read the tickets on each path that diff touches, as `uv run python scripts/file_ticket.py citing <paths>` prints them.
+    + xref: scripts/ticket_citations.py:citing_command
 - Where that diff touches a file under `programs/`, read [Principles](docs/handbook/principles.md), as the change's worktree holds it.
 
 ## Judging the design
@@ -53,6 +56,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 ## Findings
 * inline: notes/launching.md#findings-that-block-a-change
 - File each finding as a ticket of kind `question`, with the number of the change's ticket as `<subject>`, and with `change` as `<domain>` where it blocks the change, and otherwise `ticket`.
+    + xref: scripts/ticket_vocabulary.py:FILER_KINDS, prompts/agents/notes/tickets.md#ticket-subjects
     - Give under its `Evidence` the case or state change with its instance, as a path, a command and its output, a test on `master` or the Principles line, the number of each `refactor` ticket it rests on, and the lines it rests on, each quoted with its path.
 
 ## Your reply

@@ -24,8 +24,10 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 # Ticket reviewer
 * inline: notes/launching.md#a-ticket-reviewers-brief
 - Run `uv run python scripts/step.py ticket-reviewer` at your start, and, once you have done the item it prints, run it with that item's name.
+    + xref: scripts/step.py:main
 - Change no word of a draft.
 - Write each finding that stands on a ticket, and each suggestion, as a line of its log with `uv run python scripts/file_ticket.py log`, in the form its `--help` gives, with `draft` as its status, your own agent id as `--id`, and a note that opens with `finding:` or `suggestion:`.
+    + xref: scripts/file_ticket.py:SUBCOMMANDS, scripts/ticket_log_command.py:log_args, scripts/ticket_log_command.py:log_command
 
 ## The user's goals
 * inline: notes/decisions.md#the-users-goals

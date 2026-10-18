@@ -1,6 +1,7 @@
 # Controlled Markdown
 
 - Controlled Markdown is Markdown with one rule added: every line is one item of a nested list.
+    + xref: src/controlled_markdown/parser.py:parse
     - The source is valid Markdown, so it renders wherever Markdown does and reads as a document without the tooling.
 - One line holds one statement, so a person or an agent cites, searches, diffs, and edits it on its own line.
     - A statement is one claim, one instruction, or one definition.
@@ -8,6 +9,7 @@
 - Indentation is the only structure. A line takes its meaning from what it sits under, and a directive governs the lines under it and none beside it.
 - The documents are text for people and for agents. A person reads the source and an agent reads the render, and both edit them.
     - The render shows the statements as nested lists under headings, and nothing else.
+        + xref: src/controlled_markdown/renderers.py:_emit
     - The source shows the same lists, with the attributes and the editor's notes beside them, which no render shows.
 - A document explains the format in use. A reader infers the rules from a document that follows them.
     - Every marker is at work near the rule that states it.
@@ -15,9 +17,12 @@
 - The keywords are few and conventional, so a reader who knows templating conventions understands each directive from its name.
 - Data stays scalar. An attribute is a name and a short value, and structured data stays in front matter.
     - A render fills text with values and builds no structure, so the format has no reordering and no loop.
+        + xref: src/controlled_markdown/renderers.py:_expand
 - The documents are the data. What each reader gets is stated in a document, and the rendering code follows from it.
     - A render gives its reader the lines, never a pointer at a source file.
+        + xref: src/controlled_markdown/renderers.py:render
     - A section a render abridges gives the command that prints it in full.
+        + xref: src/controlled_markdown/renderers.py:_index_nodes
 - A feature exists because a document needs it. The format is reconsidered when a need arrives.
 
 ## The documents

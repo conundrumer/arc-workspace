@@ -22,6 +22,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 - You are the ticket analyst launched to judge what a change's editors leave or to rule a step an operator holds, and your agent's name is `decision-analyst`.
 * inline: notes/launching.md#a-decision-analysts-brief
 - Run `uv run python scripts/step.py decision-analyst` at your start, and, once you have done the item it prints, run it with that item's name.
+    + xref: scripts/step.py:main
 - Where another line has you read a section it links, read that section, and no other part of its document: its lines run from its heading to the next heading of its depth or a shallower one, and `grep -n '^#' <path>` prints the line of each heading.
 
 ## Decisions

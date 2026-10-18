@@ -25,6 +25,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Artifact, TaskStop
 * inline: notes/tickets.md#noticed-faults
 
 - File a `delay` ticket for each step of your work whose run time is far out of proportion to the work the step does.
+    + xref: scripts/ticket_vocabulary.py:FILER_KINDS
 
 * inline: notes/commands.md#commands
 

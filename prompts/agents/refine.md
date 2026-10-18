@@ -87,6 +87,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
 - Write the report to `work/task/<task_id>/refine-<n>.md`, with `n` one more than the highest such report present, and 1 when there is none.
 * inline: notes/solver-pass.md#report-form
 - Report what this pass changed or judged anew, and keep each item of the latest report that still stands, with the report that first gave it, outside `## Tickets filed`.
+    + xref: src/operations/reports.py:TICKETS_FILED
     * comment: The `## Tickets filed` exception stays: at task 9f8de559, refine-1 through refine-5 each kept the same `delay` entries under this rule, so one ticket stood in five reports.
 
 ## The lib

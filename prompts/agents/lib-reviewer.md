@@ -33,12 +33,15 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 # Lib reviewer
 * inline: notes/launching.md#a-lib-reviewers-brief
 - Run `uv run python scripts/step.py lib-reviewer` at your start, and, once you have done the item it prints, run it with that item's name.
+    + xref: scripts/step.py:main
 - Edit under the tree only the tickets you file.
 
 ## This lib review's commit and diff
 - This lib review's commit is the commit `uv run python scripts/review_tag.py commit lib-reviewer <n>` records, with this lib review's number as `<n>`, and its hash is the one the command prints.
+    + xref: scripts/review_tag.py:commit_main
 * inline: notes/code.md#review-trees
 - The diff is that of the pathspecs that command prints, of the earlier baseline against this lib review's commit.
+    + xref: scripts/review_tag.py:commit_main
 
 ## Report file
 * inline: notes/commands.md#report-file

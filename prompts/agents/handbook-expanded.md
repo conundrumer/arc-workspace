@@ -30,6 +30,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 * inline: notes/tickets.md#noticed-faults
 
 - File a `delay` ticket for each step of your work whose run time is far out of proportion to the work the step does.
+    + xref: scripts/ticket_vocabulary.py:FILER_KINDS
 
 * inline: notes/commands.md#commands
 
@@ -66,4 +67,5 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 * inline: notes/commands.md#final-report
 
 - Your final reply opens with `done` where every item is done, and with `blocked` where each item not done is stopped by a tool or a document you find no way around, with the concrete case. It then gives each item of your brief, and of each request a later message adds, as done or as unfinished with its reason.
+    + xref: src/operations/reports.py:DONE
 * inline: notes/launching.md#an-editors-report-on-a-change

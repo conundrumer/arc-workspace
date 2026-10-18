@@ -24,12 +24,15 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 # Code reviewer
 * inline: notes/launching.md#a-code-reviewers-brief
 - Run `uv run python scripts/step.py code-reviewer` at your start, and, once you have done the item it prints, run it with that item's name.
+    + xref: scripts/step.py:main
 - Edit under the tree only the tickets you file.
 
 ## This code review's commit and diff
 - This code review's commit is the commit `uv run python scripts/review_tag.py commit code-reviewer <n>` records, with this code review's number as `<n>`, and its hash is the one the command prints.
+    + xref: scripts/review_tag.py:commit_main
 * inline: notes/code.md#review-trees
 - The diff is that of the pathspecs that command prints, of the earlier baseline against this code review's commit.
+    + xref: scripts/review_tag.py:commit_main
 
 ## Report file
 * inline: notes/commands.md#report-file

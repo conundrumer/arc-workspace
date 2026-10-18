@@ -29,10 +29,13 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 * inline: notes/launching.md#a-changes-brief
 * inline: notes/launching.md#a-doc-editors-brief
 - Your brief is your request, and where it gives the number of your change's ticket, so are the ticket's Intent, Motivation and Scope, limited to the part your brief gives as yours where it gives one.
+    + xref: prompts/agents/notes/launching.md#a-doc-editors-brief, prompts/agents/notes/launching.md#a-changes-brief
 * inline: notes/worktree.md#editor-messages
 - Run no git command that changes state.
 - Run `uv run python scripts/step.py doc-editor` at your start, and, once you have done the item it prints, run it with that item's name.
+    + xref: scripts/step.py:main
 - When a later message gives findings or adds a request, run `uv run python scripts/step.py doc-editor make-the-whole-document-pass`, and take the steps from the item it prints, reading no section an item links whose text your context still holds.
+    + xref: scripts/step.py:main, prompts/agents/doc-editor/checklist.md#make-the-whole-document-pass
     * comment: With "After you edit" in its context, doc editor `a463cddaf6d2c10a9` answered four later messages of findings in change 17 by running only `context.py --write` and the check, and each fix brought the next finding: ~/.claude/projects/-Users-davidlu-code-arc-workspace/dc433af1-cf87-408d-ab9d-9a1ede6b1b2a/subagents/agent-a463cddaf6d2c10a9.jsonl, lines 75 to 155, and ticket 2 refers to that run as change 17. "reading no section an item links whose text your context still holds": the user's words, session 2384db39, 2026-10-17T18:18:39Z: "If the deferred procedure is extremely long and repeats later , it should only be loaded once".
 * inline: notes/worktree.md#worktree
 * inline: notes/worktree.md#worktree-commands
@@ -40,6 +43,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 * inline: notes/tickets.md#ticket-files
 * inline: notes/tickets.md#ticket-fields
 - The kind of a ticket you file is `question`, for a case your rules do not cover or a place that poses a question, or `bug`, where a tool or a document does the wrong thing.
+    + xref: scripts/ticket_vocabulary.py:FILER_KINDS
 * inline: notes/tickets.md#noticed-faults
 
 * include: ../../docs/handbook/editing.md
@@ -53,8 +57,11 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 ## Reviewing your edit
 - Each edit you make takes a check and a review, with each finding that blocks the change and needs no decision fixed and the check and the review run again, until a pass finds no such finding. [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change) gives which findings block the change and files each other as a ticket.
+    + xref: src/controlled_markdown/__main__.py:main, prompts/agents/notes/launching.md#findings-that-block-a-change
     - The check runs `uv run python scripts/context.py --write` and `uv run python -m controlled_markdown check` in the worktree.
+        + xref: src/controlled_markdown/__main__.py:main
     - The review takes the steps [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) gives, in which the one who asked for the change is, for what is settled, your request.
+        + xref: docs/handbook/editing.md#reviewing-a-change
 
 ## Commands
 * inline: notes/commands.md#commands

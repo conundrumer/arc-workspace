@@ -14,6 +14,7 @@
 
 ## Proposers
 - Each proposer, with the column types of its `propose` relation and what it derives.
+    + xref: src/handbook/listings.py:Listing.PROPOSERS, src/handbook/listings.py:_proposer_lines
 * text: proposers
 
 ## Keywords

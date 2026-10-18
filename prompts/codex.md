@@ -20,6 +20,7 @@
 
 ## Conventions
 - `uv run python -m controlled_markdown check` checks the agent-facing documents.
+    + xref: src/controlled_markdown/__main__.py:main
 - Before you edit an agent-facing document, read [Editing the agent-facing documents](docs/handbook/editing.md).
 
 ## Grids

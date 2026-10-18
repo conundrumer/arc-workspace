@@ -3,17 +3,21 @@
 
 * comment: when editing this doc
     - A section's heading is the name `render_deletions` asks for.
+        + xref: src/checker/render/surveys.py:render_deletions
     - The finding rows are data, and the code builds them under the header statement.
     - A group's note states what its findings mean, and the reader reads the rows in light of it.
 
 ## baseline-fails
 - baseline fails: stored source does not pass train+test
+    + xref: src/checker/render/surveys.py:render_deletions
 
 ## none
 - every deletion changes the result ({{judged}} tested)
+    + xref: src/checker/render/surveys.py:render_deletions
 
 ## noop
 - {{count}}/{{judged}} deletions change nothing:
+    + xref: src/checker/render/surveys.py:render_deletions
     - The removal changed no pair's output{{determined}}.
     - The pairs never instantiate the structure it removed, or another atom already implies that structure.
     - Judge which.
@@ -23,6 +27,7 @@
 
 ## enumerator
 - {{count}}/{{judged}} deletions remove an enumerator over a bound variable:
+    + xref: src/checker/render/surveys.py:render_deletions, src/checker/deletions.py:DeletionKind.BOUND_ENUMERATOR
     - The enumerator runs over a variable another atom of its clause binds.
     - The enumerator stays.
     * comment:
@@ -30,8 +35,10 @@
 
 ## ungrounded
 - {{count}} {{noun}} the run cannot judge:
+    + xref: src/checker/render/surveys.py:render_deletions, src/checker/deletions.py:DeletionKind.UNGROUNDED
     - The removal ungrounds a variable, so Souffle rejects the file.
     - The run says nothing about the pairs.
 
 ## timed-out
 - the runs below timed out:
+    + xref: src/checker/render/surveys.py:render_deletions
