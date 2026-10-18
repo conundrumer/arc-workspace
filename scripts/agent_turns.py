@@ -118,6 +118,13 @@ def last_time(path: Path, holds: Callable[[Entry], bool] | None = None) -> float
 
 
 @state_cache(DERIVED, kept=Kept.DISK)
+def latest_time(path: Path) -> float | None:
+    """The time of the last timestamped entry of the run at `path`, with
+    only the lines from it to the end parsed."""
+    return last_time(path)
+
+
+@state_cache(DERIVED, kept=Kept.DISK)
 def first_time(path: Path) -> float | None:
     """The time of the first timestamped entry of the run at `path`, with
     only the lines up to it parsed."""

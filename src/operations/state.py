@@ -126,7 +126,7 @@ class Waits(Enum):
     """How a pending agent waits. `STILL_RUNNING`: it stopped with work of
     its own still running, has not reported yet, and the operator's turn
     may not end on it. `LIMITED`: the usage limit stopped it, it has not
-    ended its work, and it waits for a resume (`limit_resume`)."""
+    ended its work, it has not run since, and it waits for a resume (`limit_resume`)."""
     AT_WORK = "at work"
     STILL_RUNNING = "still running"
     LIMITED = "limited"
@@ -158,8 +158,8 @@ class Agent:
     `agent_reports.last_sign` gives the latest sign: a notification that
     it stopped, or its SubagentHandback message. A notification that it
     stopped with work of its own still running, or that the usage limit
-    stopped it, leaves it waiting, as `Waits.STILL_RUNNING` and
-    `Waits.LIMITED` give.
+    stopped it where it has not run since, leaves it waiting, as
+    `Waits.STILL_RUNNING` and `Waits.LIMITED` give.
     Where a sign ends it and no report of it reached that operator since
     its launch or its last resume, the final reply in its transcript, where
     it gives one after them and it went to that operator or is the path of
@@ -460,7 +460,9 @@ class TranscriptsRead:
     and of `elsewhere` whose transcript is known, the agent ids its
     SendMessage calls went to. `limited` gives, by agent id, the time of
     the usage-limit stop of each agent of `agents` and of `elsewhere` whose
-    latest sign is that stop, kept where a later read ends the agent, so
+    latest sign is that stop and whose own transcript, where it is known,
+    holds no entry later than that stop, kept where a later read ends the
+    agent, so
     that the work of such an agent of `agents` is resumed once the limit
     lifts. `pass_reports` gives, for each
     solver pass with an agent id, the read of the report file it wrote

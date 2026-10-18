@@ -36,8 +36,9 @@
 - Where a doc reviewer's reply opens with `at the round cap`, launch a ticket analyst on the findings it gives, and launch no reviewer for the change's next review.
 - Where a doc reviewer's reply opens with neither that nor `no finding stands`, decide each finding it gives that no editor's reply leaves for a decision as a finding an editor leaves for a decision, by [Findings an editor leaves](#findings-an-editor-leaves). Where a decision gives an edit that no running editor of the change takes, launch an editor with that edit as its item, and a fresh reviewer for the change's next review.
 - Where you take up a change that another agent held or whose editors another agent launched, wait until `uv run python scripts/profile_runs.py --running <id>` lists no agent whose launch description or calls show it works on the change, with that agent's id from your brief or a message, or else the agent id in the bracket of the latest `assigned` line of its ticket's log, other than your own, that gives one: run a command whose loop repeats it until then, led by `: 'unattended-wait: <the agents you wait on>';`.
-    - Then, where your brief, a message or the latest line of its ticket's log that gives a worktree gives one that stands, continue the change in that worktree, and launch a new editor for each part of the change and a fresh reviewer for its next review.
-    - Send no message to an editor or reviewer that other agent launched.
+    - Then, where your brief, a message or the latest line of its ticket's log that gives a worktree gives one that stands, continue the change in that worktree with the editors your session launched on it since its ticket's last move out of `tickets/draft/`: resume each of them that the usage limit stopped, and launch a fresh reviewer for its next review, and a new editor only for a part of the change that none of them works on.
+        * comment: The user's words in the span of request 11-705: "I want agents to resume so they keep context.": ticket 11-741.
+    - Send no message to an editor or reviewer that another session launched.
 - Run the changes you launch at the same time.
 
 ### Findings an editor leaves

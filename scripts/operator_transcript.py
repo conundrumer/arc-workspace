@@ -12,6 +12,7 @@ from typing import Any
 from agent_launches import children_of, launched
 from agent_resumes import resumes, sent_to
 from agents_pending import turn_signs
+from agent_turns import latest_time
 from agent_reports import ENDED, Sign, last_sign
 from controlled_markdown import mctx
 from merge_reads import merge_outcome, merge_subjects
@@ -205,6 +206,8 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
         reports = tuple(Report(r.time, r.text, r.file) for r in launch.reports(0.0, undecided))
         signed = (signs.get(launch.agent or "") if launch.pending else
                   last_sign(launch.entries, launch.since, {launch.agent or "", launch.call}))
+        if signed is not None and signed[0] is Sign.LIMITED and ran_since(launch.path, signed[1]):
+            signed = None
         prompt = str(use[1].get("prompt", ""))
         a = Agent(launch.agent, aid, d.role, d.subject, prompt,
                   use[0], waits(signed, launch.pending), reports,
@@ -223,6 +226,14 @@ def operator_read(aid: str, path: Path, main: Path, undecided: list[str],
             passes[launch.agent] = pass_read(d.subject, d.role, use[0], main)
     return OperatorRead(AgentsRead(tuple(agents), messaged, limited), tuple(calls),
                         tuple(messages), passes)
+
+
+def ran_since(path: Path | None, at: float) -> bool:
+    """Whether the run whose transcript is at `path` has an entry later
+    than `at`, as a run resumed or woken after a stop at `at` has, whoever
+    resumed it. A run whose transcript is not known, `path` None, has
+    none."""
+    return path is not None and (t := latest_time(path)) is not None and t > at
 
 
 def waits(signed: tuple[Sign, float] | None, pending: bool) -> Waits | None:
