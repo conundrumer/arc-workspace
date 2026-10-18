@@ -62,7 +62,7 @@
     /// tile index from each edge of the axis.
     .decl part_of(key: Key, p: Position, a: Axis, p_part: Position)
     part_of(K, P, A, P_part) :-
-        axis_of(D, A), opposite(D, D2),                 // the axis's two dirs
+        dir_of(DIAG_BR, A, D), opposite(D, D2),         // the axis's two dirs
         part_idx(K, P, D, N1), part_idx(K, P, D2, N2),  // index from each
         axis_inset(D, N1, N2, P_part).
 
@@ -173,8 +173,11 @@
     /// Marks of the key lie on both sides of p, along one of the key's axes.
     .decl between(key: Key, p: Position)
     between(K, P) :-
-        axis(K, A), axis4_of(D, A), dir8_opposite(D, O),
-        ray(K, P, D, _, _), ray(K, P, O, _, _).
+        axis(K, A),
+        ( dir_of(DIAG_BR, A, D)                               // one dir per axis
+        ; diag_axis_of(D, A), dir_of(D, AXIS_V, DIR_B)
+        ),
+        dir8_opposite(D, O), ray(K, P, D, _, _), ray(K, P, O, _, _).
 }
 
 /// Where a straight slide from each node toward a direction stops: the last
@@ -284,10 +287,12 @@
 
     .type _KD = [key: Key, d: Dir]
 
-    // The members in order from edge d, one order per edge of the axis.
+    // The members in order from edge d, one edge of the axis: the order from
+    // the other edge is its reverse.
     .init _order = Order<_KD, T>
-    _order.elem([Ky, D], M) :- mem(Ky, M), axis(Ky, A), axis_of(D, A).
-    _order.before([Ky, D], M, M2) :- nearer(Ky, D, M, M2).
+    _order.elem([Ky, D], M) :- mem(Ky, M), axis(Ky, A), dir_of(DIAG_BR, A, D).
+    _order.before([Ky, D], M, M2) :-
+        nearer(Ky, D, M, M2), axis(Ky, A), dir_of(DIAG_BR, A, D).
 
     /// The member's place in the frame: its distance toward each edge is the
     /// count of members nearer that edge.
@@ -665,7 +670,7 @@
     // a is a multiple of the period there, or zero where a has none.
     .decl _lat_ax(key: Key, a: Axis, s: Offset) inline
     _lat_ax(Key, A, S) :-
-        axis_of(D, A), dist(S, D, K),
+        dir_of(DIAG_BR, A, D), dist(S, D, K),
         ( period(Key, A, Kp), K % Kp = 0
         ; !period(Key, A, _), K = 0
         ).

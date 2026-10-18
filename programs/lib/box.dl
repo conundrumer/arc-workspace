@@ -219,9 +219,9 @@ same_dist(D, P1, P2) :- @box_dist(P1, D) = @box_dist(P2, D).
 
 /// p and q on one line of family a — a row, a column, or a diagonal.
 .decl same_line(a: Axis4, p: Position, q: Position) inline
-same_line(A, P, Q) :- perp(A, A2), axis_of(D, A2), same_dist(D, P, Q).
+same_line(A, P, Q) :- perp(A, A2), dir_of(DIAG_BR, A2, D), same_dist(D, P, Q).
 same_line(DA, P, Q) :-
-    diag_perp(DA, DA2), diag_axis_of(Diag, DA2),
+    diag_perp(DA, DA2), diag_axis_of(Diag, DA2), dir_of(Diag, AXIS_V, DIR_B),
     @box_corner_dist(P, Diag) = @box_corner_dist(Q, Diag).
 
 /// p strictly nearer d than q. At a DiagDir the compared distances are
@@ -350,7 +350,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
     .decl cell(key: Key, a: Axis, p: Position)
     cell(Ky, A, P) :-
-        extent(Ky, A, N), axis_of(D, A),
+        extent(Ky, A, N), dir_of(DIAG_BR, A, D),
         K = range(0, N),
         axis_inset(D, K, N-1-K, P).
 }
@@ -377,7 +377,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
     .decl axis_pos(key: Key, a: Axis, p: Box)
     axis_pos(Ky, A, P) :-
-        axis_of(D, A), opposite(D, O),
+        dir_of(DIAG_BR, A, D), opposite(D, O),
         edge(Ky, D, K1), edge(Ky, O, K2),
         axis_inset(D, K1, K2, P).
 
