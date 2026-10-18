@@ -195,8 +195,8 @@ from handbook.paths import scripts_importable
 
 scripts_importable()
 
-from change_checks import (Check, code_checks,  # noqa: E402
-                           failures, run_in, said, timed)
+from change_checks import (Check, merge_base, changed_outside_work,  # noqa: E402
+                           code_checks, failures, outside_work, run_in, said, timed)
 from change_worktree import carried  # noqa: E402
 from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
                                  submodules, locked_update, SetupFailed)
@@ -234,25 +234,6 @@ UNMERGED_NONE = mctx("the rebase of {branch} onto {onto} fails with no unmerged 
                      "rebase is aborted and the worktree is as it was:")
 """The refusal of a change whose rebase onto `master` fails where git
 leaves no path unmerged, which is no conflict."""
-
-
-def outside_work() -> tuple[str, str, str]:
-    """The pathspec of every path of a worktree but `work` and what lies
-    under it (`checkout.work`).
-
-    The exclude items name `work` by a glob: `git add` exits 1 on an
-    ignored path that a pathspec item names literally, an exclude item
-    among them."""
-    name = checkout.work().name
-    glob = f"{name[:-1]}[{name[-1]}]"
-    return (".", f":(exclude,top,glob){glob}", f":(exclude,top,glob){glob}/**")
-
-
-def changed_outside_work(worktree: Path, base: str) -> list[str]:
-    """The paths of `worktree` outside `work` (`outside_work`) whose
-    content differs from the commit `base` (`checkout.changed_paths`),
-    sorted."""
-    return sorted(c.path for c in checkout.changed_paths(worktree, base, *outside_work()))
 
 
 class Refused(Exception):
@@ -503,7 +484,7 @@ def commit(worktree: Path, message: str, main: Path, backup: Path) -> Change:
     branch = branch_of(worktree)
     if branch == BASE:
         raise Refused(f"{worktree} stands on {BASE}")
-    base = checkout.git_out(worktree, "merge-base", BASE, "HEAD").strip()
+    base = merge_base(worktree)
     touched = set(changed_outside_work(worktree, base))
     if not touched:
         raise Refused(f"{branch} holds no change against {BASE}")

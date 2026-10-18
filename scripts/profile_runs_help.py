@@ -5,6 +5,7 @@ from enum import StrEnum
 
 from controlled_markdown import mctx
 from budgets import BUDGET_FACTOR, LOW_WAIT_PCT, MEDIAN_RUNS
+from command_labels import KNOWN, RUN_DL
 from context_bound_hook import CONTEXT_BOUND, OPERATOR
 from open_agents import HUNG_FACTOR
 from run_prints import RECENT_CALLS
@@ -77,7 +78,7 @@ PARTS = {
         - A DATE or TIME it reads is {iso_time}.
     - A run's wall time, from its first entry to its last, is cut at each entry's time, and each interval goes to one part:
         - `tools`: a tool call is pending.
-            - A Bash call is labelled by the known commands it runs, joined by ` + `: `gate`, `merge_change.py`, `materialize.py`, `pytest`, `pyright`, and `run_dl.py` with its subcommand; or, where it runs none, by the first program it runs past setup, and any other call by its tool.
+            - A Bash call is labelled by the known commands it runs, joined by ` + `: {known}, and `{run_dl}` with its subcommand; or, where it runs none, by the first program it runs past setup, and any other call by its tool.
         - `waits`: a foreground Agent, Monitor or TaskOutput call or a poll is pending, or the turn has ended while an agent or command the run backgrounded is running.
             - These are labelled `agent TYPE`, `poll` and `bg LABEL`.
         - `model`: no call is pending and the turn has not ended.
@@ -265,4 +266,5 @@ HELP_VALUES = dict(factor=BUDGET_FACTOR, median_runs=MEDIAN_RUNS,
                    width=COMMAND_WIDTH, bound=f"{CONTEXT_BOUND:,}",
                    iso_time=ISO_TIME, operator=OPERATOR,
                    general=GENERAL,
+                   known=", ".join(f"`{label}`" for label in KNOWN.values()), run_dl=RUN_DL,
                    repriced=REPRICED.format(model="MODEL"), hung=HUNG_FACTOR, block=BLOCK_SECONDS)

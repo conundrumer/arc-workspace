@@ -16,6 +16,7 @@ from ticket_form import TICKET_HEAD
 WRITE_TOOLS = ("Write", "Edit", "NotebookEdit")
 AGENT_TOOLS = ("Agent", "Task")
 KNOWN = {"gate.py": "gate", "merge_change.py": "merge_change.py",
+         "change_checks.py": "change_checks.py",
          "materialize.py": "materialize.py", "pytest": "pytest",
          "pyright": "pyright"}
 RUN_DL = "run_dl.py"

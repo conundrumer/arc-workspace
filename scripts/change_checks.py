@@ -1,7 +1,20 @@
 """The checks `merge_change.py` runs on a change: the paths
 that call for the code checks, the files each code check takes, and the
-runs of the checks in a tree."""
+runs of the checks in a tree.
 
+    uv run python scripts/change_checks.py
+
+Run in a change's worktree, the command runs there the pyright and pytest
+checks that `merge_change.py` runs on that change before its rebase. It
+takes as touched the paths outside `work` whose content differs from the
+merge base of `master` and `HEAD`, committed or not. The `--help` of
+`merge_change.py` says which files each check takes.
+
+Exit status: 0 where each check passes or no check runs, 1 where one
+fails, with the output of each that fails.
+"""
+
+import argparse
 import contextlib
 import fnmatch
 import subprocess
@@ -20,6 +33,7 @@ from controlled_markdown import mctx
 from engine import checkout, duration
 from gating.edits import same_code
 from operations.merging import CHECK_FAILED, PREFIX, check_name
+from operations.worktrees import BASE
 
 CODE_DIRS = ("src", "scripts", "tests", "data/tasks", "tools/console")
 """The directories a change under which runs the code checks."""
@@ -61,6 +75,31 @@ def said(done: subprocess.CompletedProcess[str]) -> str:
     """What a command wrote, its last `TAIL` lines."""
     lines = (done.stdout + done.stderr).strip().splitlines()
     return "\n".join(lines[-TAIL:]) or f"exit status {done.returncode}"
+
+
+def outside_work() -> tuple[str, str, str]:
+    """The pathspec of every path of a worktree but `work` and what lies
+    under it (`checkout.work`).
+
+    The exclude items name `work` by a glob: `git add` exits 1 on an
+    ignored path that a pathspec item names literally, an exclude item
+    among them."""
+    name = checkout.work().name
+    glob = f"{name[:-1]}[{name[-1]}]"
+    return (".", f":(exclude,top,glob){glob}", f":(exclude,top,glob){glob}/**")
+
+
+def changed_outside_work(worktree: Path, base: str) -> list[str]:
+    """The paths of `worktree` outside `work` (`outside_work`) whose
+    content differs from the commit `base` (`checkout.changed_paths`),
+    sorted."""
+    return sorted(c.path for c in checkout.changed_paths(worktree, base, *outside_work()))
+
+
+def merge_base(worktree: Path) -> str:
+    """The commit the change of `worktree` stands on: the merge base of
+    `BASE` and its `HEAD`."""
+    return checkout.git_out(worktree, "merge-base", BASE, "HEAD").strip()
 
 
 def code_paths(tree: Path, main: Path, touched: set[str]) -> set[str]:
@@ -168,3 +207,25 @@ def failures(tree: Path, checks: Sequence[Check]) -> list[str]:
         dones = list(pool.map(lambda c, s: run_check(tree, c.command, s), checks, shown))
     return [CHECK_FAILED.format(s=s) + "\n" + said(done)
             for s, done in zip(shown, dones, strict=True) if done.returncode != 0]
+
+
+NO_CHECK = mctx("the change calls for no pyright or pytest check")
+
+
+def main(argv: Sequence[str]) -> int:
+    argparse.ArgumentParser(description=__doc__,
+                            formatter_class=argparse.RawDescriptionHelpFormatter).parse_args(argv)
+    tree = Path(checkout.git_out(Path.cwd(), "rev-parse", "--show-toplevel").strip())
+    base = merge_base(tree)
+    checks = code_checks(tree, checkout.main_worktree(tree), base,
+                         set(changed_outside_work(tree, base)))
+    if not checks:
+        print(NO_CHECK)
+        return 0
+    failed = failures(tree, checks)
+    print("\n".join(failed), end="\n" if failed else "")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -84,15 +84,17 @@ def module_paths(name: str) -> list[str]:
 
 
 class Graph:
-    """The Python files git tracks in the checkout `tree` that stand in it,
-    and the Python files of `touched`, the paths a change touches, with the names of the
-    modules each stands for."""
+    """The Python files of the checkout `tree` that stand in it, those git
+    tracks and those of `touched`, and the Python files of `touched`, the
+    paths a change touches, with the names of the modules each stands
+    for."""
 
     def __init__(self, tree: Path, touched: Iterable[str]) -> None:
         self.tree = tree
         tracked = checkout.git_out(tree, "ls-files", "-z", "--", f"*{PYTHON_SUFFIX}")
-        self.files = frozenset(p for p in tracked.split("\0") if p and (tree / p).is_file())
         self.touched = frozenset(p for p in touched if p.endswith(PYTHON_SUFFIX))
+        self.files = frozenset(p for p in {*tracked.split("\0"), *self.touched}
+                               if p and (tree / p).is_file())
         self.paths = self.files | self.touched
         self.by_name: dict[str, set[str]] = {}
         for path in self.paths:
@@ -103,7 +105,7 @@ class Graph:
         self.named: dict[str, set[str]] = {}
 
     def dependents(self, reach: Reach) -> set[str]:
-        """The tracked files that reach a touched Python file under
+        """The files of `files` that reach a touched Python file under
         `reach`."""
         back: dict[str, set[str]] = {}
         for path in self.files:
