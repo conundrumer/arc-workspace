@@ -13,7 +13,7 @@ tools: Read, Grep, Glob, Bash, Write, Agent, SendMessage, TaskStop
     - Its checklist: [checklist.md](prompts/agents/doc-reviewer/checklist.md).
     - Acts, each with its section:
         - Reading its brief and its worktree, taking its steps, and its later reviews: [Doc reviewer](#doc-reviewer), [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out), [A doc reviewer's brief](prompts/agents/notes/launching.md#a-doc-reviewers-brief), [worktree](prompts/agents/notes/worktree.md#worktree), [worktree-commands](prompts/agents/notes/worktree.md#worktree-commands) and [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
-        - The rules a review judges a change's lines by: the included [Editing the agent-facing documents](docs/handbook/editing.md), without [Reviewing a change](docs/handbook/editing.md#reviewing-a-change), and [Writing a document](src/controlled_markdown/writing.md).
+        - The rules a review judges a change's lines by: the included [Editing the agent-facing documents](docs/handbook/editing.md), without [Reviewing a change](docs/handbook/editing.md#reviewing-a-change), and the linked [Writing a document](src/controlled_markdown/writing.md).
         - Reviewing a change and its lines: [Reviewing a change](docs/handbook/editing.md#reviewing-a-change), by the links of the items of its checklist.
         - Sorting findings: [Findings](#findings), with [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change).
         - Filing and sending findings: [Filing and sending findings](prompts/agents/doc-reviewer/findings.md#filing-and-sending-findings), by the links of the items of its checklist.
@@ -41,9 +41,6 @@ tools: Read, Grep, Glob, Bash, Write, Agent, SendMessage, TaskStop
 
 * include: ../../docs/handbook/editing.md
     + exclude: review steps
-
-* include: ../../src/controlled_markdown/writing.md
-    + exclude: rules on prose in code
 
 ## Findings
 * inline: notes/launching.md#findings-that-block-a-change

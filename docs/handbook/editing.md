@@ -106,7 +106,8 @@
 - `uv run python -m controlled_markdown check` reports each line that breaks a rule, with the rule's message.
 - `fmt` in place of `check` rewrites a file in canonical form.
 - The document set is the paths under `[tool.controlled_markdown]` in [pyproject.toml](pyproject.toml).
-- [Writing a document](src/controlled_markdown/writing.md) states a rule where the message is not enough, or where the file shows no instance of the construct you need.
+- The check does not report each rule on nesting, attributes, directives, quotes, code nodes and tables.
+- Where you write or judge a line that nests under another or uses one of those constructs, or one the file shows no instance of, or where a message of the check is not enough, read the section of [Writing a document](src/controlled_markdown/writing.md) on that construct.
 
 ## Reviewing a change
 + review steps
@@ -142,7 +143,7 @@
 
 ### How the kept text reads
 - Judge no line that a finding of [What stays and its whole unit](docs/handbook/editing.md#what-stays-and-its-whole-unit) asks to cut or restructure.
-- Check each line against every rule that [Writing a file](#writing-a-file) and [Writing a document](src/controlled_markdown/writing.md) give a line, and, where [Writing a file](#writing-a-file) has you read [Templating a document](src/controlled_markdown/templating.md), every rule that document gives a line.
+- Check each line against every rule that [Writing a file](#writing-a-file) gives a line, against what `uv run python -m controlled_markdown check` reports, against each section of [Writing a document](src/controlled_markdown/writing.md) that [Checking](#checking) has you read for it, and, where [Writing a file](#writing-a-file) has you read [Templating a document](src/controlled_markdown/templating.md), against every rule that document gives a line.
 - List every term the change introduces, headings and labels included, wherever you write the review, apart from its findings, and report as a finding each that breaks the rule on conventional words in [Writing a file](#writing-a-file).
     * comment: On 2026-10-04, the doc-reviewer runs `ab58e2331176baa7c` and `a8875999997fee88e` of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a` applied the rule on conventional words to other lines of a diff that added the section name `pass-issues`, and their findings did not report that name.
 - Find each line of the document set or of prose in code, outside the change, whose premise the change makes false, read it in each of its readers' contexts, and report each that no longer stands.

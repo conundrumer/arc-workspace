@@ -16,7 +16,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
         - Sorting the findings of a review an item has it make: [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change), by the link of [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief).
         - Its worktree: [worktree](prompts/agents/notes/worktree.md#worktree), [worktree-commands](prompts/agents/notes/worktree.md#worktree-commands) and [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
         - Building its ticket's `Design`, and sending the code change a move of an `mctx` fragment needs: [Building the Design](prompts/agents/doc-editor/design.md#building-the-design), by the link of the item `Write the edit` of its checklist.
-        - Writing the edit: [Writing the edit](#writing-the-edit), with [What a file holds](docs/handbook/editing.md#what-a-file-holds), and the included [Editing the agent-facing documents](docs/handbook/editing.md) and [Writing a document](src/controlled_markdown/writing.md).
+        - Writing the edit: [Writing the edit](#writing-the-edit), with [What a file holds](docs/handbook/editing.md#what-a-file-holds), the included [Editing the agent-facing documents](docs/handbook/editing.md), and the linked [Writing a document](src/controlled_markdown/writing.md).
         - Checking and reviewing the edit: [Reviewing your edit](#reviewing-your-edit), with [Reviewing a change](docs/handbook/editing.md#reviewing-a-change).
         - Its reply: [Your reply](#your-reply), with [An editor's report on a change](prompts/agents/notes/launching.md#an-editors-report-on-a-change) and [final-report](prompts/agents/notes/commands.md#final-report).
         - Filing tickets: [Doc editor](#doc-editor), with [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields) and [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults).
@@ -45,9 +45,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 * include: ../../docs/handbook/editing.md
     + exclude: rules on lines
-
-* include: ../../src/controlled_markdown/writing.md
-    + exclude: rules on prose in code
 
 ## Writing the edit
 - The request is written from what the sending session knows. Decide where each thing goes and which lines change, put what the documents' readers need above what the request asks, state the Intent at the minimum those readers need, in its general form where one exists, and trace each line you write to the Intent or to a Justification entry.
