@@ -10,6 +10,15 @@ results are taken in order: an item is held only by a result that comes
 after the last result that holds an earlier item of the walk, so a later
 round is held to each item from the first one it repeats.
 
+Where the agent's last step call is a stop, `scripts/step.py <agent>
+--stop <item>`, and no entry after that call's result gives the agent a
+message (`run_reads.is_prompt`) other than a harness notification
+(`run_reads.notifications`), the walk is held only up to that item
+(`Checklist.gap` with `upto`). Once such a message has reached the agent,
+the stop bounds nothing, and the whole walk is held. A stop on an item the walk skips, or on no
+item of the checklist, is held to the whole walk. The result of a stop
+holds no item.
+
 A denied call is recorded with the id of the agent's last step call, in a
 file named by its agent id under `STOPS` of its session directory, and no
 call is denied again while that step call is still the last: a fault in
@@ -30,33 +39,97 @@ NO_CALL = "none"
 """The record of an agent denied before it made any step call."""
 
 
+def _step(agent: str) -> str:
+    """The pattern of a step call of `agent`, up to its agent argument."""
+    return rf"scripts/step\.py\s+{re.escape(agent)}"
+
+
 def runs_step(command: str, agent: str) -> bool:
-    return re.search(rf"scripts/step\.py\s+{re.escape(agent)}(?![\w-])", command) is not None
+    return re.search(rf"{_step(agent)}(?![\w-])", command) is not None
+
+
+def stop_item(command: str, agent: str) -> str | None:
+    """The item a `--stop` step call of `agent` in `command` names, or None
+    where `command` makes no such call."""
+    found = re.search(rf"{_step(agent)}\s+--stop\s+"
+                      r"""(?:'([^']*)'|"([^"]*)"|([^\s;|&)]+))""", command)
+    return None if found is None else next(g for g in found.groups() if g is not None)
+
+
+def _calls(entries: Iterable[dict[str, Any]], agent: str) -> list[tuple[str, str, str]]:
+    """The id, the command and the result text of each step call of
+    `agent` among `entries`, in the order of their results."""
+    from run_reads import blocks, tool_results
+
+    entries = list(entries)
+    commands = {str(b.get("id")): command
+                for e in entries if e.get("type") == "assistant"
+                for b in blocks(e, "tool_use") if b.get("name") == "Bash"
+                for command in [str((b.get("input") or {}).get("command", ""))]
+                if runs_step(command, agent)}
+    return [(call, commands[call], result) for e in entries
+            for call, _, result in tool_results(e) if call in commands]
 
 
 def step_calls(entries: Iterable[dict[str, Any]], agent: str) -> list[tuple[str, str]]:
     """The id and the result text of each step call of `agent` among
-    `entries`, in the order of their results."""
-    from run_reads import blocks, tool_results
-
-    entries = list(entries)
-    calls = {str(b.get("id")) for e in entries if e.get("type") == "assistant"
-             for b in blocks(e, "tool_use") if b.get("name") == "Bash"
-             and runs_step(str((b.get("input") or {}).get("command", "")), agent)}
-    return [(call, result) for e in entries for call, _, result in tool_results(e)
-            if call in calls]
+    `entries` that is not a stop, in the order of their results."""
+    return [(call, result) for call, command, result in _calls(entries, agent)
+            if stop_item(command, agent) is None]
 
 
-def refusal(call: str) -> str:
+def refusal(call: str, agent: str) -> str:
     from controlled_markdown import mctx
 
     return "\n".join([
         mctx("Blocked: the results of your step calls do not hold, whole, each item the "
-             "step command gives up to your checklist's last item, each in a result "
-             "after the last result that holds an earlier item."),
+             "step command gives up to your checklist's last item, or, where your last "
+             "step call is a stop and no message has reached you since its result, up "
+             "to its item, each in a result after the last result that holds an "
+             "earlier item."),
         mctx("Run `{call}`, do each item from the one it prints to your checklist's last "
              "item, then give your report again."),
-    ]).format(call=call)
+        mctx("Where you find no way to do the item your walk is at, run "
+             "`uv run python scripts/step.py {agent} --stop <item>`, with that item as "
+             "`<item>`, then give your report again."),
+    ]).format(call=call, agent=agent)
+
+
+def stop_bound(entries: list[dict[str, Any]], calls: list[tuple[str, str, str]],
+               kind: str) -> str | None:
+    """The item of the stop that bounds the walk of an agent of type `kind`,
+    whose transcript `entries` hold its step calls `calls`, as the module
+    docstring gives it, or None."""
+    from run_reads import is_prompt, notifications, tool_results
+
+    stop = stop_item(calls[-1][1], kind) if calls else None
+    if stop is None:
+        return None
+    answered = [n for n, e in enumerate(entries)
+                if any(call == calls[-1][0] for call, _, _ in tool_results(e))]
+    since = entries[answered[-1] + 1:] if answered else []
+    if any(is_prompt(e) and not notifications(e) for e in since):
+        return None
+    return stop
+
+
+def walk_gap(kind: str, calls: list[tuple[str, str, str]], stop: str | None) -> str | None:
+    """The step call that prints the first item the step calls `calls` of
+    an agent of type `kind` leave unheld, up to the item `stop` where it
+    gives one, as the module docstring gives it, or None."""
+    from handbook.checklist import Checklist
+
+    checklist = Checklist(kind)
+    results = [result for _, command, result in calls
+               if stop_item(command, kind) is None]
+    if stop is not None:
+        try:
+            gap = checklist.gap(results, upto=stop)
+        except (ValueError, SystemExit):
+            gap = checklist.gap(results)
+    else:
+        gap = checklist.gap(results)
+    return None if gap is None else gap.call
 
 
 def check(hook: dict[str, Any]) -> str | None:
@@ -66,7 +139,7 @@ def check(hook: dict[str, Any]) -> str | None:
     from run_reads import caller_id, caller_type
     from transcript_entries import entries_back
 
-    from handbook.checklist import Checklist, checklist_agents
+    from handbook.checklist import checklist_agents
 
     tool = hook.get("tool_name")
     if tool is not None and tool != "SubagentHandback":
@@ -75,16 +148,17 @@ def check(hook: dict[str, Any]) -> str | None:
     agent = caller_id(hook)
     if kind is None or agent is None or kind not in checklist_agents():
         return None
-    calls = step_calls(reversed(list(entries_back(path))), kind)
-    gap = Checklist(kind).gap(result for _, result in calls)
-    if gap is None:
+    entries = list(reversed(list(entries_back(path))))
+    calls = _calls(entries, kind)
+    call = walk_gap(kind, calls, stop_bound(entries, calls, kind))
+    if call is None:
         return None
     last = calls[-1][0] if calls else NO_CALL
     if not first_at(hook, STOPS, agent, last):
         print(f"{HOOK}: allowed: a handback was denied at step call {last}, "
               "and the agent made no step call since", file=sys.stderr)
         return None
-    return refusal(gap.call)
+    return refusal(call, kind)
 
 
 def main() -> int:

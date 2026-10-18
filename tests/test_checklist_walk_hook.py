@@ -17,9 +17,12 @@ HOOK = checkout.scripts() / "checklist_walk_hook.py"
 STEP = "uv run python scripts/step.py code-reviewer"
 
 
-def session(tmp_path: Path, results: list[str]) -> str:
+def session(tmp_path: Path, results: list[str], stops: dict[int, str] | None = None,
+            messages: tuple[str, ...] = ()) -> str:
     """A session whose code reviewer `AGENT` made one step call for each
-    of `results`, and the hook input of its SubagentHandback call."""
+    of `results`, a stop at the item `stops` gives for its index, then
+    received `messages`, and the hook input of its SubagentHandback call."""
+    stops = stops or {}
     agents = tmp_path / "s" / "subagents"
     agents.mkdir(parents=True)
     (agents / f"agent-{AGENT}.meta.json").write_text(json.dumps({"agentType": "code-reviewer"}))
@@ -27,9 +30,11 @@ def session(tmp_path: Path, results: list[str]) -> str:
     for n, result in enumerate(results):
         lines += [{"type": "assistant", "message": {"content": [
                       {"type": "tool_use", "id": f"t{n}", "name": "Bash",
-                       "input": {"command": f"{STEP} | head -3"}}]}},
+                       "input": {"command": f"{STEP} --stop {stops[n]}" if n in stops
+                                 else f"{STEP} | head -3"}}]}},
                   {"type": "user", "toolUseResult": {"stdout": result}, "message": {"content": [
                       {"type": "tool_result", "tool_use_id": f"t{n}", "content": result}]}}]
+    lines += [{"type": "user", "message": {"role": "user", "content": m}} for m in messages]
     (agents / f"agent-{AGENT}.jsonl").write_text("".join(json.dumps(e) + "\n" for e in lines))
     (tmp_path / "s.jsonl").write_text("")
     return json.dumps({"tool_name": "SubagentHandback", "agent_id": AGENT,
@@ -64,3 +69,31 @@ def test_a_walk_cut_short_is_denied_once(tmp_path: Path) -> None:
 def test_a_later_round_that_stops_early_is_denied(tmp_path: Path) -> None:
     walk = whole_walk()
     assert denied(session(tmp_path, [*walk, walk[2]]))
+
+
+def stopped(walk: list[str], at: int) -> tuple[list[str], dict[int, str]]:
+    """The results of `walk` up to its item `at`, then a stop at that item."""
+    c = Checklist("code-reviewer")
+    item = c.items[at].heading.text
+    return [*walk[:at + 1], c.stop(item)], {at + 1: f"'{item}'"}
+
+
+def test_a_stop_at_an_item_the_walk_holds_is_allowed(tmp_path: Path) -> None:
+    assert not denied(session(tmp_path, *stopped(whole_walk(), 2)))
+
+
+def test_a_stop_past_the_walk_is_denied(tmp_path: Path) -> None:
+    results, stops = stopped(whole_walk(), 2)
+    del results[2]
+    assert denied(session(tmp_path, results, {2: stops[3]}))
+
+
+def test_a_step_call_after_a_stop_holds_the_whole_walk(tmp_path: Path) -> None:
+    walk = whole_walk()
+    results, stops = stopped(walk, 2)
+    assert denied(session(tmp_path, [*results, walk[3]], stops))
+
+
+def test_a_message_after_a_stop_holds_the_whole_walk(tmp_path: Path) -> None:
+    results, stops = stopped(whole_walk(), 2)
+    assert denied(session(tmp_path, results, stops, ("Do the item now.",)))

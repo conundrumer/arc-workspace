@@ -74,6 +74,13 @@ NO_FILE = mctx("the item `{item}` of {path} has items of its own, and its text d
 
 EMPTY = mctx("{path} holds no item")
 
+STOP = mctx("""
+    - Your walk stops at the item `{item}`.
+    - Your report gives that item and each item after it as unfinished, with what keeps you from doing that item as the reason.
+    - Once a later message lets you do that item, run `{call}`, then take the steps from the item it prints.
+    - Your checklist's last item follows.
+    """)
+
 LAST = mctx("`{item}` is the last item of {path}")
 
 
@@ -211,7 +218,7 @@ class Checklist:
             found = holding(self.text(item))
             if not found or (opens is not None and not any(
                     self._file(opens) in t for t in texts[:found[-1] + 1])):
-                return Gap(item, " ".join([STEP, self.agent, *args]))
+                return Gap(item, self._call(args))
             last = found[-1]
             if item is target:
                 return None
@@ -219,6 +226,26 @@ class Checklist:
             raise ValueError(f"the walk of {self._label()} skips the part that "
                              f"holds `{target.heading.text}`")
         return None
+
+    def _call(self, args: tuple[str, ...]) -> str:
+        return " ".join([STEP, self.agent, *args])
+
+    def call(self, name: str) -> str:
+        """The step call that prints the item `name` names, in the walk that
+        enters every part."""
+        target = self.named(name)[0]
+        for item, args, _ in self._walked(self.items, lambda _: True, ()):
+            if item is target:
+                return self._call(args)
+        raise AssertionError(f"the walk that enters every part skips `{name}`")
+
+    def stop(self, name: str) -> str:
+        """What the step command prints for a stop at the item `name`: the
+        stop, the call that takes the walk on from that item, and the text
+        of the checklist's last item."""
+        item = self.named(name)[0]
+        return STOP.format(item=item.heading.text, call=self.call(name)) \
+            + "\n\n" + self.text(self.items[-1])
 
     def first(self) -> str:
         if not self.items:

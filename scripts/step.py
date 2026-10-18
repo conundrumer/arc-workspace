@@ -13,6 +13,7 @@ HELP = mctx("""
         uv run python scripts/step.py <agent> <item>             # print the item after <item>
         uv run python scripts/step.py <agent> --enter <item>     # print the file of the conditional part <item> calls, then the first item under <item>
         uv run python scripts/step.py <agent> --reenter <item>   # print the first item under <item>, without the file of the part it calls
+        uv run python scripts/step.py <agent> --stop <item>      # stop the walk at <item>, which you find no way to do: print the call that prints <item>, then the last item
         uv run python scripts/step.py --help | -h                # print this text
         ```
     - An item is given by its heading's text or by its id, the slug of that text.
@@ -32,6 +33,8 @@ def main(argv: list[str]) -> None:
             print(Checklist(agent).enter(item))
         case ["--reenter", item]:
             print(Checklist(agent).reenter(item))
+        case ["--stop", item]:
+            print(Checklist(agent).stop(item))
         case [item]:
             print(Checklist(agent).after(item))
         case _:
