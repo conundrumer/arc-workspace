@@ -25,9 +25,9 @@ class Assignment:
 
 @quotes("solver-file.md", "Cases",
         "A case's model reads from `out` at that case one grid per "
-        "combination of a value the case reads in each `out` column of a "
-        "type whose lines give the values a case reads in it, its output "
-        "is the distinct grids it reads")
+        "combination of a value the case reads in each open-value, "
+        "tiebreak-resolution and demonstrated-rule column of `out`, its "
+        "output is the distinct grids it reads")
 @quotes("solver-file.md", "Alt outputs",
         "The solver enumerates a tiebreak's resolutions through a trailing "
         "`out` column of type `TiebreakResolution`.")

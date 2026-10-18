@@ -49,7 +49,7 @@
     - <what the task is an instance of, as one person would say it to another>
 
     ## Scene
-    - `<slug>`: <what every input contains, as the concept reads it>
+    - `<slug>`: <what every input contains, as the concept interprets it>
 
     ## Rules
     - `<slug>`: <what the output takes from the input>
@@ -91,7 +91,7 @@
     - For each two choice points where neither stands under a branch of the other, judge the model of each case that takes a non-concept branch at both.
         - State in one statement every such pair of points where each of those models applies the two branches' changes together.
         - For each other pair, state those models in one statement for the two points, and state on a line of its own the model of each case that statement does not give.
-    - When that model is one branch's model alone, the other point's property does not exist with that branch, and that section says where the point goes.
+    - When that model is one branch's model alone, the other point's property does not exist with that branch, and [Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) says where the point goes.
 3. Judge each branch's standing.
     - The concept case: each witness with verdict `other` that no branch below lists, with the items below, and the rule restated as the generator applies it, which the concept file's rule approximates.
     - A branch that fails Fit: the pair it fails.
@@ -242,7 +242,7 @@
         - The Analyze files are listed here as well as in Write because the Refine render does not include Write.
 - Run these in this order.
 - **Overrides.** An override in your brief decides an item of that report. Apply each override, and quote it in the report where you apply it. Then run again each operation from [Develop](#develop) through [Witness](#witness) that applying the overrides touches.
-- **Departures.** Judge each departure and open item of that report, and each `## Fixes elsewhere` item on this task's files in another task's latest report (`grep -l <task_id> work/task/*/create.md work/task/*/refine-*.md`), under the current docs, from the solver, the witness file, and the pairs; an item on an Analyze file is judged as a departure, and a `## Fixes elsewhere` item that holds is applied to the solver or the witness file.
+- **Departures.** Judge each departure and open item of that report, and each `## Fixes elsewhere` item on this task's files in another task's latest report (among the files `grep -l <task_id> work/task/*/create.md work/task/*/refine-*.md` prints, only the file that is its task's latest report, as the first line defines it), under the current docs, from the solver, the witness file, and the pairs; an item on an Analyze file is judged as a departure, and a `## Fixes elsewhere` item that holds is applied to the solver or the witness file.
     - Run the solver against `witnesses.json`, as [Witness](#witness) says.
     - A departure holds when what it rests on is true and each case it adds or keeps meets every case condition, and each case it drops fails one in a `witness --every-case` run with that case restored. Restore its clauses with it.
         * comment: Read as the case put back in `impl_choice` alone, where the solver had no clauses for it, the line had a Refine pass on b25e450b see no finding for a dropped case: ticket 10-280.

@@ -12,7 +12,7 @@
     // <task_id>
     // @draft
     // @keywords: <keywords from keywords.md>
-    // @scene <slug>: <what every input contains, as the concept reads it>
+    // @scene <slug>: <what every input contains, as the concept interprets it>
     //  <continuation>
     // @rule <slug>: <what the output takes from the input>
     //     @approximated: <the rule the program runs>
@@ -100,7 +100,7 @@
     .comp Determine { ... }
     ```
 
-- `grep -n '^\.decl out(\|^out(\|^\.type ' <task_id>.dl` prints the lines of the solver's `out` declaration, its `out` clauses and its program-scope types.
+- `grep -n '^\.decl out(\|^out(\|^\.type ' <task_id>.dl` prints the first line of the solver's `out` declaration, of each `out` clause and of each program-scope type.
     * comment: Solver runs on `out` or the choice types read line ranges of the solver with no pointer to them, then grepped for these lines: tickets 9-294, 9-309.
 
 ### Header
@@ -120,15 +120,19 @@
     - Precisely: a case's output is not the verdict's when its output on the grid differs from the output the verdict denotes: the output of the name's model for a name in one of the [Witness file](docs/handbook/solver-file.md#witness-file) forms, every case's for `other`, no case's for `any`.
 
 ### Cases
-- A case's model reads from `out` at that case one grid per combination of a value the case reads in each `out` column of a type whose lines give the values a case reads in it, its output is the distinct grids it reads, and it is undefined on an input where some combination reads no grid, or facts that describe no total grid.
+- A case's model reads from `out` at that case one grid per combination of a value the case reads in each open-value, tiebreak-resolution and demonstrated-rule column of `out`, its output is the distinct grids it reads, and it is undefined on an input where some combination reads no grid, or facts that describe no total grid.
     - A relation's values at that case are those the case stores, or those that the `@derive` branch the case takes on it derives on that input.
     - `OpenValue` is a record with one field per `@open` relation the output of some case depends on, each field with that relation's name and of a record type the solver names for that relation, whose fields are the relation's columns that tell one open value from another, under the same names.
     - Where the output of some case depends on an `@open` relation, `out` takes a column of type `OpenValue` before its `TiebreakResolution` column, or last where it has none, each fact holds there the values of the `@open` relations it is derived at, and a case reads there each choice of one value of each field.
     - A fact whose derivation does not read an `@open` relation of `OpenValue` holds `nil` in that relation's field, which counts as every value of it, whether or not its case reads that relation.
 - A case's base is its `Choice` value, its branch at each point the `Choice` encodes; a case is a base with a branch at each `@derive` and `@store` point its base reads.
+    - A `@derive` or `@store` line is a branch of a choice point on its parameter or relation.
+    - Lines on one parameter or relation are branches of one point.
+    - The cases that take a `@derive` or `@store` branch are cases of the solver.
 - A case is witnessed when it is the concept case or stands for a branch's model, when its output on a pair's input of the task is no candidate of that pair, or when an input of the task or of the witness file shows it giving an output that no case taking only part of its non-concept branches gives, where undefined counts as an output.
     - The case that stands for a branch's model is that model where the model is a case, and otherwise the case that takes the branch and differs from the concept case at the fewest points.
-    - An output that no case taking only part of the case's non-concept branches gives witnesses no case that takes two branches on which every verdict is `concept`, unless every case that takes one of them also takes the other.
+    - An output that no case taking only part of the case's non-concept branches gives witnesses no case that takes two rejected branches of which neither requires the other.
+    - A branch is rejected when it has a verdict and every verdict on it is `concept`, and it requires another branch when every case that takes it takes that branch.
     - Every check, survey and count of `scripts/run_dl.py` runs the witnessed cases alone, and a case name it prints denotes witnessed cases alone.
         * comment: A Create pass on b2bc3ffd read a failure line's name `$ColorClass & $Clamp` as covering the case `$FloorColor & $ColorClass & $Clamp`, which was not witnessed, and spent a `grid` run to find the cases that fit: ticket 10-295.
 - A branch's clauses are the clauses shared by its cases and absent from the other cases.
@@ -157,7 +161,8 @@
 - **`@singleton-axis` literal.** A structure that extends along one axis is written in a two-axis type, and the other axis takes a literal `1`.
     - The clause containing that literal ends with `// @singleton-axis: <what the structure is>`.
 - **`@open` directive.** A relation that stores more than one open value of an open parameter at a case has `// @open` in the comments directly above its declaration.
-- **`@derive` directive.** The line is a branch of a choice point on the parameter, at which each case whose base reads the parameter takes a branch and whose concept branch is the stored parameter, with the parameter's value derived by the built-in derivation the line's `<Proposer>` selects; lines on one parameter are branches of one point, and the cases that take one of them are cases of the solver.
+- **`@derive` directive.** The concept branch of the point the line is a branch of is the stored parameter.
+    - In the line's branch, the parameter's value is derived by the built-in derivation the line's `<Proposer>` selects.
     - In a run on an input, a pair's or a witness's, the parameter takes the values the derivation gives on that input alone, with `ex_out` empty; where it gives none, every case that takes the branch is undefined on that input.
     - The verdict `derived` denotes that branch, beside the verdicts a `@witness` line takes, and its witness's id is the branch's name; a further witness of the branch is in the witness file, and the solver has no `@witness` line for it.
     - `// @ignore: derive — <reason>` above the parameter records that every derivation of it fails a case condition, Fit, Equivalence or Subsumption, and no case takes a derived branch of it.
@@ -180,7 +185,9 @@
 - **`@ignore` directive.** A relation kept despite a hint has `// @ignore: <category> — <reason>`, with the category the hint gives, in the run of `@ignore` lines directly above its declaration.
     - The hint does not fire on the relation.
     - Above a `.init`, `// @ignore <relation>: <category> — <reason>` dismisses that one relation of the instance, and the bare form dismisses every relation of it.
-- **`@store` directive.** The relation, or the instance's relation the line gives, has one value on every input, and the line is a branch of a choice point on it, at which each case whose base reads the relation takes a branch and whose concept branch is the derived relation, with the relation's value stored per case; the cases that take that branch are cases of the solver.
+- **`@store` directive.** The relation, or the instance's relation the line gives, has one value on every input.
+    - The concept branch of the point the line is a branch of is the derived relation.
+    - In the line's branch, the relation's value is stored per case.
     - The verdict `stored` denotes that branch, beside the verdicts a `@witness` line takes, with the branch's witnesses named and placed as a `@derive` branch's are; `// @ignore: store — <reason>` and `// @ignore: store <name> — <reason>` record what the `@ignore: derive` forms record.
 - **`@workaround` directive.** A temporary workaround is under a `// @workaround: <the principled form it stands in for>` line.
 - **`@claim` directive.** At program scope or inside `Parse`, an instance of a component without an `@construction` mark has the directive, one line per instance, listing the claims the instance serves.
@@ -265,5 +272,8 @@
     - `concept`: the concept branch at every point the `Choice` encodes, the concept base; alone, its model and its one case are the concept case
     - a constructor's name with its prefix, such as `$Alt`: that branch at each point where the constructor stands, for a nested constructor too, whether or not `impl_choice` contains its model
     - `<name> & <name>`: what each fixes
-    - `<param>=<Proposer>`, `<rel>=stored`, `<rel>=derived` and `<param>=stored`, each interpreted as a constructor's name: the branch that the `@derive` line on `<param>` with that `<Proposer>` is; the branch that the `@store` line on `<rel>` is; the branch of the point of the `@store` line on `<rel>` in which the solver's clauses derive its value; and the branch of `<param>`'s choice point in which its value is stored per case
-        - A `<Proposer>` is a component of `programs/proposers.dl`.
+    - `<param>=<Proposer>`, interpreted as a constructor's name: the branch that the `@derive` line on `<param>` with that `<Proposer>` is
+        - A `<Proposer>` is a comp of `programs/proposers.dl`.
+    - `<rel>=stored`, interpreted as a constructor's name: the branch that the `@store` line on `<rel>` is
+    - `<rel>=derived`, interpreted as a constructor's name: the branch of the point of the `@store` line on `<rel>` in which the solver's clauses derive its value
+    - `<param>=stored`, interpreted as a constructor's name: the branch of `<param>`'s choice point in which its value is stored per case

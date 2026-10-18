@@ -108,9 +108,9 @@ takes (history 1159)."""
 # Branches and cases
 
 
-@quotes("solver-file.md", "Params",
-        "**`@derive` directive.** The line is a branch of a choice point on "
-        "the parameter")
+@quotes("solver-file.md", "Cases",
+        "A `@derive` or `@store` line is a branch of a choice point on "
+        "its parameter or relation")
 @dataclass(frozen=True)
 class DeriveBranch:
     """`<param>=<Proposer>`: a branch of the choice point on a parameter."""
@@ -124,8 +124,10 @@ class DeriveBranch:
 
 @quotes("solver-file.md", "Program",
         "**`@store` directive.** The relation, or the instance's relation the "
-        "line gives, has one value on every input, and the line is a branch "
-        "of a choice point on it")
+        "line gives, has one value on every input.")
+@quotes("solver-file.md", "Cases",
+        "A `@derive` or `@store` line is a branch of a choice point on "
+        "its parameter or relation")
 @dataclass(frozen=True)
 class StoreBranch:
     """`<rel>=stored`: a branch of the choice point on a relation."""
@@ -134,8 +136,7 @@ class StoreBranch:
     """The relation as a top-level clause reads it, which the run fixes."""
     spelled: Annotated[str,
         quotes("solver-file.md", "Witness file",
-               "`<param>=<Proposer>`, `<rel>=stored`, `<rel>=derived` and "
-               "`<param>=stored`, each interpreted as a constructor's name")]
+               "`<rel>=stored`, interpreted as a constructor's name")]
     """The relation as the line spells it, the name the witness file writes
     before `=stored`: the `.decl`'s name, or `<instance>.<relation>` for a
     line above an `.init`. Two lines that spell it the same are homonyms."""
@@ -155,11 +156,20 @@ class StoredAtDerive:
 type Branch = Annotated[
     DeriveBranch | StoreBranch | StoredAtDerive,
     quotes("solver-file.md", "Witness file",
-           "the branch that the `@derive` line on `<param>` with that "
-           "`<Proposer>` is; the branch that the `@store` line on `<rel>` is; "
-           "the branch of the point of the `@store` line on `<rel>` in which "
-           "the solver's clauses derive its value; and the branch of "
-           "`<param>`'s choice point in which its value is stored per case")]
+           "`<param>=<Proposer>`, interpreted as a constructor's name: the "
+           "branch that the `@derive` line on `<param>` with that "
+           "`<Proposer>` is"),
+    quotes("solver-file.md", "Witness file",
+           "`<rel>=stored`, interpreted as a constructor's name: the branch "
+           "that the `@store` line on `<rel>` is"),
+    quotes("solver-file.md", "Witness file",
+           "`<rel>=derived`, interpreted as a constructor's name: the branch "
+           "of the point of the `@store` line on `<rel>` in which the "
+           "solver's clauses derive its value"),
+    quotes("solver-file.md", "Witness file",
+           "`<param>=stored`, interpreted as a constructor's name: the branch "
+           "of `<param>`'s choice point in which its value is stored per "
+           "case")]
 
 
 def derived_parameters(branches: Iterable[Branch]) -> frozenset[str]:

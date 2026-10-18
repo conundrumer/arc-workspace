@@ -516,8 +516,10 @@ class NoResultPayload:
         "produce two different parameterizations.")
 @quotes("solver-file.md", "Program",
         "**`@store` directive.** The relation, or the instance's relation the "
-        "line gives, has one value on every input, and the line is a branch "
-        "of a choice point on it")
+        "line gives, has one value on every input.")
+@quotes("solver-file.md", "Cases",
+        "A `@derive` or `@store` line is a branch of a choice point on "
+        "its parameter or relation")
 @quotes("solver-file.md", "Cases",
         "**Case markers.** Cases do not interleave: each case's Params and "
         "clauses are under its marker.")

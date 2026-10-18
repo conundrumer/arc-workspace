@@ -202,9 +202,9 @@ class Claim:
     """The constructor whose branch comment holds it; None in the header."""
 
 
-@quotes("solver-file.md", "Params",
-        "**`@derive` directive.** The line is a branch of a choice point on "
-        "the parameter")
+@quotes("solver-file.md", "Cases",
+        "A `@derive` or `@store` line is a branch of a choice point on "
+        "its parameter or relation")
 @dataclass(frozen=True)
 class DeriveLine:
     """`@derive <Proposer>: <plausibility> <verdict>`."""
@@ -221,8 +221,10 @@ class DeriveLine:
 
 @quotes("solver-file.md", "Program",
         "**`@store` directive.** The relation, or the instance's relation the "
-        "line gives, has one value on every input, and the line is a branch "
-        "of a choice point on it")
+        "line gives, has one value on every input.")
+@quotes("solver-file.md", "Cases",
+        "A `@derive` or `@store` line is a branch of a choice point on "
+        "its parameter or relation")
 @dataclass(frozen=True)
 class StoreLine:
     """`@store: …` above a `.decl`, or `@store <rel>: …` above an `.init`."""

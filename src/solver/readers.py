@@ -663,7 +663,7 @@ text it parsed."""
 
 
 def proposer_names(program: Program) -> tuple[str, ...]:
-    """The proposers: the components of the proposers program, which is
+    """The proposers: the comps of the proposers program, which is
     `proposers.dl` alone, that declare `propose` (proposers.dl's
     header)."""
     return tuple(c.name for c in program.components

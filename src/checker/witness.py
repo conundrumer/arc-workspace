@@ -511,8 +511,8 @@ def _header_claims(solver: Solver, runs: Runs) -> tuple[Claim, ...] | Fault:
 @quotes("principles.md", "Witnesses",
         "**divergence witness**: an input on which one of these holds:")
 @quotes("principles.md", "Witnesses",
-        "A witness breaks a scene claim when the concept case's claim, read "
-        "at the assignment the witness stands at, is false of it.")
+        "A witness breaks a scene claim when the concept case's claim at the "
+        "assignment the witness stands at is false of it.")
 @quotes("procedure.md", "Witness",
         "`@relaxed` for the scene claim it breaks, which rules out "
         "`ordinary`, and `@reassigned` for each parameter that the assignment "
@@ -625,8 +625,8 @@ def _departs(runs: Runs, verdict: Verdict, named: VerdictCase,
 
 
 @quotes("principles.md", "Relational form",
-        "The approximation disagrees with the rule on some such input, and "
-        "that input is a divergence witness.")
+        "An input the generator produces on which an approximation "
+        "disagrees with its rule is a divergence witness.")
 @quotes("solver-file.md", "Header",
         "A witness under an `@approximated:` line is not `foreign`.")
 @quotes("solver-file.md", "Header",

@@ -136,7 +136,7 @@
 - A branch's witnesses are divergence witnesses between its model and the concept branch's model.
 - A witness stands at this task's stored assignment when the model it is for is defined there and differs there from what it is separated from. Otherwise it stands at the assignment that changes the fewest of that model's parameters and at which that holds, and at the stored assignment when there is none.
     - The model a witness is for is the branch's model for a branch's witness, the concept case's model for a witness of the concept case, and the case's model for a witness without which a case fails Equivalence or Subsumption.
-- A witness breaks a scene claim when the concept case's claim, read at the assignment the witness stands at, is false of it.
+- A witness breaks a scene claim when the concept case's claim at the assignment the witness stands at is false of it.
 - An output identical to the input is still defined, so a divergence at such an output is valid.
     - 41e4d17e
         - On a solid block, the model based on enclosed regions finds none and returns the input. The model based on objects finds the block and casts from it.
@@ -193,7 +193,7 @@
 - A claim has a **relational form** when some set of clauses agrees with the claim on every input the generator produces on which the claim applies, and the claim refers to no number that counts nothing the task has, such as a mean or a centroid.
     * comment: The Analyze pass a0350bef143e9424f on d22278a0 read this definition, which then lacked its last clause, and a separate line that stated that clause without "even where some set of clauses agrees with it", as giving opposite answers for a Euclidean distance that clauses over squared distances agree with, and its transcript review af2f557b8ee46b12c took the definition alone as enough, as tickets 10-648 and 10-654 record.
 - An **approximation** is a set of clauses that computes no such number, under its name or another, and that the program runs in place of a rule that has no relational form.
-    - The approximation disagrees with the rule on some such input, and that input is a divergence witness.
+    - An input the generator produces on which an approximation disagrees with its rule is a divergence witness.
 
 ## Parameterization
 
@@ -259,7 +259,7 @@
     - a partition
 - Deriving a value asserts that the value depends on the source from which it is derived.
     - **Two parameterizations.** Storing a value and deriving that value produce two different parameterizations.
-        - Where Θᵢ of the stored parameter holds a value that the derivation gives at no assignment of the derived model on some input, an assignment that stores that value agrees with no assignment of the derived model, so they are not equivalent.
+        - Where an assignment of the stored model gives, on some input, an output that no assignment of the derived model gives on that input, that assignment agrees with no assignment of the derived model, so they are not equivalent.
             * comment: The Analyze pass a52ba117c25f3e31a on cf5fd0ad and its transcript review a1fb31a652189058e each read the line's former words, "On an input where the derivation gives a value other than the stored one", as making a stored value and its derivation never equivalent, against the Θᵢ definition, as tickets 10-625 and 10-629 record.
         - 3b4c2228
             - One model renders a count as marks down a diagonal. Another looks up a stored grid for the count. Every train and test count is a key of the table, so the models never differ on a pair.

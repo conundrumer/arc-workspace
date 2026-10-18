@@ -81,7 +81,7 @@ def probe_failure(parsed: ParseFailure) -> CompileError:
 def probe(engine: Engine, task: Task, limits: Limits
           ) -> Proposals | RunFailure:
     """The proposers program run over the task's examples: each proposer
-    of `programs/proposers.dl`, a component that declares `propose`, as an
+    of `programs/proposers.dl`, a comp that declares `propose`, as an
     instance, with `ex_in` over every example's input and `ex_out` over
     the train outputs (proposers.dl's header). The run takes `limits`
     once per example."""

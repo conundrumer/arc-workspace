@@ -20,9 +20,9 @@ from solver.determine import Determined, NotRun
 @quotes("principles.md", "Stored or derived",
         "**Two parameterizations.** Storing a value and deriving that value "
         "produce two different parameterizations.")
-@quotes("solver-file.md", "Params",
-        "**`@derive` directive.** The line is a branch of a choice point on "
-        "the parameter")
+@quotes("solver-file.md", "Cases",
+        "A `@derive` or `@store` line is a branch of a choice point on "
+        "its parameter or relation")
 @quotes("procedure.md", "Develop",
         "A built-in derivation that fits a parameter.")
 def check_two_parameterizations(solver: Solver, runs: Runs) -> list[Finding]:
@@ -39,8 +39,10 @@ def check_two_parameterizations(solver: Solver, runs: Runs) -> list[Finding]:
         "produce two different parameterizations.")
 @quotes("solver-file.md", "Program",
         "**`@store` directive.** The relation, or the instance's relation the "
-        "line gives, has one value on every input, and the line is a branch "
-        "of a choice point on it")
+        "line gives, has one value on every input.")
+@quotes("solver-file.md", "Cases",
+        "A `@derive` or `@store` line is a branch of a choice point on "
+        "its parameter or relation")
 @quotes("solver-file.md", "Cases",
         "**Case markers.** Cases do not interleave: each case's Params and "
         "clauses are under its marker.")
