@@ -54,12 +54,29 @@
 //!   `relation` form gives them, and its definition. A
 //!   [`Macro::Relation`]'s column types are the ones
 //!   [`macro_column_types`] gives.
-//! - `(macro <name> (component ...) [(INIT ...)] (output <port> (<Label> ...) <body>) ...)`:
+//! - `(macro <name> (component ...) [(INIT ...)] (RULE &<rule> <body>) ... (output <port> (<Label> ...) <body>) ...)`:
 //!   a cell instance, its declaration as a `component` form gives it, the
-//!   `INIT` form of the underlying construction where it has one, and a body
-//!   for each of its outputs, as [`Macro::CellInstance`] gives. Within these
-//!   bodies an atom `(self.<port> <sites>)` reads the cell instance's own
-//!   input `<port>`, as [`crate::program::RelationRef::DefinedPort`] holds it.
+//!   `INIT` form of the underlying construction where it has one, its local
+//!   relations, and a body for each of its outputs, as [`Macro::CellInstance`]
+//!   gives. Within the `INIT`'s bodies, the `RULE` forms' and the outputs',
+//!   an atom `(self.<port> <sites>)` reads the cell instance's own input
+//!   `<port>`, as [`crate::program::RelationRef::DefinedPort`] holds it.
+//!   A `RULE` form is a local relation, written as a solver's `RULE` clause
+//!   (`docs/arclog/arclog.md#program`), which the macro's expansion makes
+//!   into a clause of the solver: its body may read the `INIT`'s outputs,
+//!   and the output bodies, the `INIT`'s input bodies and the other `RULE`
+//!   forms read it as `(&<rule> <sites>)`. Each site of the cell instance
+//!   has its own expansion, and a name that the macro's `INIT` or a `RULE`
+//!   form declares stands for its declaration within that expansion alone,
+//!   as a name that a `DEMO_RULE` form declares does
+//!   ([`crate::program::NameScope`]).
+//!   The `INIT` binds the type parameters of the underlying construction as
+//!   a solver's `INIT` binds them (`docs/arclog/arclog.md#instance`), to a
+//!   record where a projection has several sites, and may hold a key clause
+//!   over the cell instance's own inputs. One definition holds for each set
+//!   of inputs a site writes clauses for: a `self.<port>` atom of an input
+//!   the site writes no clause for reads that input's default rows alone,
+//!   and no row where the input has no default.
 //!
 //! A macro's definition reads only lib names that a form of the file
 //! declares, and a definition that reads another name is a fault of the
@@ -269,18 +286,19 @@ pub enum Macro {
     },
     /// A cell instance: its declaration as a component, its type
     /// parameters, inputs in order with their defaults, and outputs; its
-    /// definition over the underlying construction or relation; and a body
-    /// for each of its outputs.
+    /// definition over the underlying construction or relation; its local
+    /// relations, each a `RULE` form's name and body; and a body for each of
+    /// its outputs.
     CellInstance {
         component: Component,
         definition: CellDefinition,
+        rules: Box<[CellRule]>,
         outputs: Box<[CellOutput]>,
     },
 }
 
-/// What a cell instance is defined over: Quotient over Connectivity,
-/// Propagation over Flood, Walk over Ray, Distance over CellDistance, and
-/// `divide` over Division.
+/// What a cell instance is defined over: Connectivity over Quotient, Flood
+/// over Propagation, and CellDistance and Ray over Distance.
 #[derive(Clone, Debug)]
 pub enum CellDefinition {
     /// An `INIT` form of the underlying construction with its domain inputs
@@ -288,8 +306,17 @@ pub enum CellDefinition {
     /// by their port names, as Connectivity over Quotient.
     Instance(Node<crate::program::Instance>),
     /// No instance: the outputs' bodies read the underlying relation over
-    /// the cell instance's inputs, as Division over `divide`.
+    /// the cell instance's inputs.
     Relation,
+}
+
+/// A local relation of a cell instance, a `RULE` form: the relation's name,
+/// which the instance's bodies read it by, and its body, whose labels are
+/// its columns.
+#[derive(Clone, Debug)]
+pub struct CellRule {
+    pub name: crate::program::RelationName,
+    pub body: Node<Body>,
 }
 
 /// An output of a cell instance, as a body over the outputs of its

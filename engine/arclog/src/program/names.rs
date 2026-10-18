@@ -19,15 +19,20 @@ pub enum DeclaredName {
     Slot(u32),
 }
 
-/// The scope of a declared name: the program, or one `DEMO_RULE` form, by
-/// its path. Each demonstrated rule declares its own `&prediction` and the
-/// relations and instances it needs, so a name that a `DEMO_RULE` form
-/// declares stands for its declaration within that form alone
-/// (`docs/arclog/arclog.md#demonstrated`).
+/// The scope of a declared name: the program, one `DEMO_RULE` form, by its
+/// path, or one site's expansion of a cell-instance macro, by the path of the
+/// site's `INIT` form. Each demonstrated rule declares its own `&prediction`
+/// and the relations and instances it needs, so a name that a `DEMO_RULE`
+/// form declares stands for its declaration within that form alone
+/// (`docs/arclog/arclog.md#demonstrated`). A name that a cell-instance
+/// macro's `INIT` or `RULE` form declares stands for its declaration within
+/// one site's expansion alone, as the module comment of [`crate::registry`]
+/// gives.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum NameScope {
     Program,
     DemoRule(path::NodePath),
+    CellExpansion(path::NodePath),
 }
 
 /// A derived relation's, a chosen relation's or a demonstrated relation's
