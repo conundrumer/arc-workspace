@@ -1,7 +1,9 @@
 """The folds over the entries of transcripts that go on from where the
 last fold stopped (`fold`): each held in the process, and, where the
 process opened the store of `kept_reads`, kept there, so that a later
-process folds only the lines added since."""
+process folds only the lines added since; and the items a read makes
+from a fold's state (`Makes`), each made anew only where a value it is
+made from changed since the last read of the same state."""
 
 from collections.abc import Callable, Hashable, Sequence
 from dataclasses import dataclass
@@ -168,3 +170,55 @@ def fold_lines[S](state: S, step: Step[S], path: Path, snap: Snapshot, lines: ra
     for i, line in zip(found, snap.lines(found)):
         for e in parse(line):
             step(state, path, i, e)
+
+
+@dataclass(frozen=True)
+class Made[T]:
+    """An item a read made from a fold's state, with the values it was
+    made from (`given`) and the `undecided` lines its making gave."""
+    given: object
+    item: T
+    lines: tuple[str, ...]
+
+
+class Makes[T]:
+    """The items a read last made for each run from the state of a fold,
+    by the id of each, with that state and the further key the read gives.
+    A read of the same state and key keeps each item whose values are as
+    they were, and makes the others anew."""
+
+    def __init__(self) -> None:
+        self._held: dict[Hashable, tuple[object, Hashable, dict[str, Made[T]]]] = {}
+
+    def read(self, run: Hashable, state: object, key: Hashable = None) -> "Making[T]":
+        """The making of the items of `run` from `state`, the fold's state,
+        with `key`, which keeps the items made from the same state object
+        and an equal key."""
+        held = self._held.get(run)
+        before = held[2] if held is not None and held[0] is state and held[1] == key else {}
+        made: dict[str, Made[T]] = {}
+        self._held[run] = state, key, made
+        return Making(before, made)
+
+
+@dataclass(frozen=True)
+class Making[T]:
+    """The items of one read of `Makes`: those kept from the last read
+    (`before`), and those this read gives (`made`)."""
+    before: dict[str, Made[T]]
+    made: dict[str, Made[T]]
+
+    def item(self, ident: str, given: Callable[[T], object], make: Callable[[list[str]], T],
+             undecided: list[str]) -> T:
+        """The item `ident`: the one kept, where `given` of it is the value
+        it was made from, or else the one `make` makes, with the lines it
+        adds to the list it is given. Each item adds its `undecided` lines
+        to `undecided`, as its making gave them."""
+        m = self.before.get(ident)
+        if m is None or m.given != given(m.item):
+            lines: list[str] = []
+            item = make(lines)
+            m = Made(given(item), item, tuple(lines))
+        self.made[ident] = m
+        undecided.extend(m.lines)
+        return m.item

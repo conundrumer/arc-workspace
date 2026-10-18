@@ -29,7 +29,7 @@ from state_reads import DERIVED, Kept, state_cache
 from transcripts import chain
 from entry_reads import line_entries
 from transcript_entries import epoch
-from transcript_folds import fold
+from transcript_folds import Makes, fold
 from transcript_snapshots import Entry
 
 from operations.merge_outcomes import call_conflicts
@@ -163,24 +163,14 @@ class OperatorLines:
         return out
 
 
-@dataclass(frozen=True)
-class CallMade:
-    """A `Call` as `calls_of` made it from a use, with the values it was
-    made from (`given`), the last of them whether the operator's last merge
-    call of the use's command was denied before it, the `undecided` lines
-    its making gave, and whether that last denied call is the use's own
-    after it."""
-    given: tuple[object, ...]
-    call: Call
-    lines: tuple[str, ...]
-    denied: bool
+type MadeCall = tuple[Call, bool]
+"""A `Call` as `calls_of` made it from a use, with whether the operator's
+last merge call of the use's command, up to the use's own, was denied."""
 
 
-_calls_made: dict[tuple[str, Path, str], tuple[OperatorLines, frozenset[tuple[str, float]],
-                                                dict[str, CallMade]]] = {}
-"""The calls `calls_of` last made for each operator, by the id of
-their use, with the state of the fold and the commits they were made
-from."""
+_calls_made: Makes[MadeCall] = Makes()
+"""The calls `calls_of` last made for each operator, by the id of their
+use, with the commits they were made from as the further key."""
 
 
 type Uses = dict[str, tuple[float, dict[str, Any], str]]
@@ -230,9 +220,7 @@ def calls_of(aid: str, path: Path, read: OperatorLines, commits: frozenset[tuple
     calls: list[Call] = []
     uses = dict(read.uses)
     results, moved, tasks = read.results, read.moved, read.tasks
-    held = _calls_made.get((aid, path, parent))
-    before = held[2] if held is not None and held[0] is read and held[1] == commits else {}
-    made: dict[str, CallMade] = {}
+    making = _calls_made.read((aid, path, parent), read, commits)
     denied: set[str] = set()
     for call, (t, inp, tool) in uses.items():
         text, error = results.get(call, (None, False))
@@ -242,21 +230,18 @@ def calls_of(aid: str, path: Path, read: OperatorLines, commits: frozenset[tuple
         uses[call] = (t, inp, tool)
         command = str(inp.get("command", "")) if tool == Tool.BASH else ""
         given = (t, tool, inp, text, error, command in denied)
-        m = before.get(call)
-        if m is None or m.given != given:
-            lines: list[str] = []
+
+        def make(lines: list[str]) -> MadeCall:
             merge = merge_outcome(aid, command, t, text, error, subjects, denied, lines)
-            m = CallMade(given, Call(aid, t, tool, inp, text, error, merge,
-                                     call_conflicts(merge, text)),
-                         tuple(lines), command in denied)
-        elif m.denied:
+            return (Call(aid, t, tool, inp, text, error, merge, call_conflicts(merge, text)),
+                    command in denied)
+
+        made, last_denied = making.item(call, lambda _: given, make, undecided)
+        if last_denied:
             denied.add(command)
         else:
             denied.discard(command)
-        made[call] = m
-        undecided.extend(m.lines)
-        calls.append(m.call)
-    _calls_made[aid, path, parent] = read, commits, made
+        calls.append(made)
     return tuple(calls), uses
 
 

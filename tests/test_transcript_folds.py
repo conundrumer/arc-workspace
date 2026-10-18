@@ -145,3 +145,26 @@ def test_kept_fold_in_a_later_process(tmp_path: Path, monkeypatch: pytest.Monkey
     assert texts(path) == ["ONE", "two", "three"]
     later_process(store)
     assert texts(path) == ["ONE", "two", "three"]
+
+
+def test_makes_keeps_an_item_only_on_the_same_state_and_values() -> None:
+    """An item is kept, with its `undecided` lines, on a read of the same
+    state object, key and values, and made anew where any of them differ."""
+    makes = transcript_folds.Makes()
+    state: list[int] = []
+    count = [0]
+
+    def make(lines: list[str]) -> int:
+        count[0] += 1
+        lines.append(f"made {count[0]}")
+        return count[0]
+
+    def item(state: object, key: object, value: int) -> tuple[int, list[str]]:
+        undecided: list[str] = []
+        return makes.read("run", state, key).item("i", lambda _: value, make, undecided), undecided
+
+    assert item(state, 1, 0) == (1, ["made 1"])
+    assert item(state, 1, 0) == (1, ["made 1"])
+    assert item(state, 1, 5) == (2, ["made 2"])
+    assert item(state, 2, 5) == (3, ["made 3"])
+    assert item([], 2, 5) == (4, ["made 4"])

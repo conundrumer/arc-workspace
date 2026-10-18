@@ -18,7 +18,7 @@ from state_reads import DERIVED, Kept, state_cache
 from transcripts import agent_id, chain, held_find, launched_find
 from entry_reads import line_entries
 from transcript_entries import epoch
-from transcript_folds import fold
+from transcript_folds import Makes, fold
 from transcript_snapshots import Entry
 from agent_resumes import note_latest, resumes, session_resumes
 
@@ -191,24 +191,15 @@ class LaunchLines:
             self.naming.setdefault(v, []).append((p, i))
 
 
-@dataclass(frozen=True)
-class Made:
-    """A launch as `launches` made it from an Agent call, with the values it
-    was made from: the line of the call's result and the transcript that
-    gives the call as its launch (`given`), the values of `LaunchLines`
-    the launch reads (`signs`), the agent ids it reads them for, and the
-    `undecided` lines its making gave. A launch of None is a call that
-    launched no agent."""
-    given: tuple[tuple[Path, int] | None, Path | None]
-    signs: tuple[object, ...]
-    agents: tuple[str, ...]
-    launch: Launch | None
-    lines: tuple[str, ...]
+type CallLaunch = tuple[tuple[str, ...], Launch | None]
+"""A launch as `launches` made it from an Agent call, with the agent ids
+it reads the values of `LaunchLines` for. A launch of None is a call that
+launched no agent."""
 
 
-_made: dict[Path, tuple[LaunchLines, dict[str, Made]]] = {}
+_made: Makes[CallLaunch] = Makes()
 """The launches `launches` last made for each run, by the id of their
-call, with the state of the fold they were made from."""
+call."""
 
 
 @state_cache(DERIVED, notes="undecided", kept=Kept.DISK)
@@ -221,21 +212,16 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
     `agentId`. A launch is made anew only where a value it is made from
     changed since the last read on the same fold."""
     read = fold(LaunchLines.step, LaunchLines, path, chain(path))
-    held = _made.get(path)
-    before = held[1] if held is not None and held[0] is read else {}
-    made: dict[str, Made] = {}
+    making = _made.read(path, read)
     out: list[Launch] = []
     for at, b in read.calls:
         tid = b.get("id", "")
-        m = before.get(tid)
-        given = (read.results.get(tid), launched_by(path, tid))
-        if m is None or m.given != given or m.signs != launch_signs(read, tid, m.agents):
-            m = make_launch(path, read, at, tid, given[1])
-        made[tid] = m
-        undecided.extend(m.lines)
-        if m.launch is not None:
-            out.append(m.launch)
-    _made[path] = read, made
+        child = launched_by(path, tid)
+        _, launch = making.item(
+            tid, lambda m: (read.results.get(tid), child, launch_signs(read, tid, m[0])),
+            lambda lines: make_launch(path, read, at, tid, child, lines), undecided)
+        if launch is not None:
+            out.append(launch)
     return out
 
 
@@ -249,20 +235,20 @@ def launch_signs(read: LaunchLines, call: str, agents: tuple[str, ...]) -> tuple
             *((read.told.get(a), len(read.naming.get(a, ()))) for a in agents))
 
 
-def make_launch(path: Path, read: LaunchLines, at: str, tid: str, child: Path | None) -> Made:
+def make_launch(path: Path, read: LaunchLines, at: str, tid: str, child: Path | None,
+                lines: list[str]) -> CallLaunch:
     """The launch the Agent call `tid` at `at` of the run at `path` made, as
     `launches` gives it, where `child` is the transcript that gives the call
-    as its launch."""
-    lines: list[str] = []
+    as its launch, with the `undecided` lines its making gives added to
+    `lines`."""
     given = (results_by_call(line_entries(*read.results[tid])).get(tid)
              if tid in read.results else None)
     background = given is not None and in_background(given, lines, tid)
     result = given or {}
     aid = agent_id(child) if child else result.get("agentId")
     agents = tuple(a for a in (result.get("agentId", ""), aid) if a)
-    signs = launch_signs(read, tid, agents)
     if tid in read.failed and child is None and "agentId" not in result:
-        return Made((read.results.get(tid), child), signs, agents, None, tuple(lines))
+        return agents, None
     told = [read.told.get(tid), read.told.get(result.get("agentId", "")),
             None if background else read.answered.get(tid)]
     done = max((t for t in told if t is not None), default=None)
@@ -273,7 +259,7 @@ def make_launch(path: Path, read: LaunchLines, at: str, tid: str, child: Path | 
                           for line in read.naming.get(v, []))
     launch = Launch(aid, child, epoch(at), done, tid,
                     agent_entries((n for p, i in named for n in line_entries(p, i)), aid, tid))
-    return Made((read.results.get(tid), child), signs, agents, launch, tuple(lines))
+    return agents, launch
 
 
 @state_cache(DERIVED)

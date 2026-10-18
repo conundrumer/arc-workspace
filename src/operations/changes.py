@@ -331,34 +331,50 @@ an operator launched."""
 
 def editor_step(state: State, editor: str,
                 written: Callable[[Path], str | None]) -> Step | str:
-    """The launch of the check of the change of the editor `editor` that
-    `reported_step` gives with `editor` ended and as the launcher, where
-    that check is of `CHECKS`. The editor's report is the text `written`
-    gives of the report file its brief gives (`state.Agent.report_file`),
-    which it writes before the call, at `State.now`. In place of the
-    launch it gives a line: where `editor` is none of `LAUNCHING_EDITORS`
-    an operator launched, `NO_OPERATOR`; where its report file is not
-    there, the line that has it write that file; where
-    `change_overrun.over_budget` gives a step, `Ended` or `Pause.WAIT`, as
-    on a change past its cost budget, the line that says the operator takes
-    its next step; where an editor role of the change has
-    no agent in its worktree or another editor there ended with no report
-    since its launch or its last resume, the line that says the operator
-    launches the checks; where that step is none and a check `editor`
-    launched is pending, the line that has it wait on that check; and
-    otherwise the line that has it give its final reply.
-    Where a check another editor there launched is pending, or another
-    editor there is pending, it gives `steps.Poll`, on which `editor` runs
-    the command again, unless, in the second case, that editor and each
-    other pending one there has reported (`change_agents.reported_at`) and
-    the report of `editor` is the latest of theirs, or of the latest the
-    one of the first agent id in sort order: then `editor` takes the step
-    as though they had ended, each with the text `written` gives of its
-    report file as its report at its `Agent.reviewing`, or gives
-    `steps.Poll` where one has no such text.
-    The report of `editor` is at its `Agent.reviewing`, or at `State.now`
-    where that is None, so each later call of a run of its calls of the
-    command keeps the time of the first."""
+    """The step the editor `editor` takes at the end of its turn, where
+    `written` gives the text of a report file: the `Launch` of a check of
+    `CHECKS` it launches, `steps.Poll`, on which it runs the command again,
+    an `Undecided`, or the line it is given. It reads its change
+    (`editor_change`), lines that hand the change's next step to the
+    operator (`handed_on`), the editors it waits on (`peers_ended`), and
+    the check it launches (`check_or_line`). The cases in which `review`
+    prints each line or blocks are those `scripts/operate.py --help review`
+    gives."""
+    change = editor_change(state, editor, written)
+    if not isinstance(change, EditorChange):
+        return change
+    if (line := handed_on(state, change)) is not None:
+        return line
+    agents = peers_ended(change, written)
+    if not isinstance(agents, list):
+        return agents
+    return check_or_line(state, change, agents)
+
+
+@dataclass(frozen=True)
+class EditorChange:
+    """The change `t` of the editor `editor`, with its editors `editors`,
+    its worktree `w`, and its agents, the editor read as ended with its
+    report at `at`."""
+    editor: str
+    t: Ticket
+    editors: tuple[Role, ...]
+    w: Path
+    at: float
+    agents: list[Agent]
+
+
+def editor_change(state: State, editor: str,
+                  written: Callable[[Path], str | None]) -> EditorChange | Undecided | str:
+    """The change of the editor `editor`, one of `LAUNCHING_EDITORS` an
+    operator launched, with its report the text `written` gives of the
+    report file its brief gives (`state.Agent.report_file`), at its
+    `Agent.reviewing`, or at `State.now` where that is None, so each later
+    call of a run of its calls of the command keeps the time of the first.
+    Where the editor is none of those, or its report file is not there,
+    it gives the line for that, and where its ticket, the ticket's
+    editors, the change's worktree or its report file is not read, an
+    `Undecided`."""
     mine = [a for a in state.transcripts.agents
             if a.agent_id == editor and a.role in LAUNCHING_EDITORS]
     if not mine:
@@ -385,47 +401,7 @@ def editor_step(state: State, editor: str,
     at = mine[-1].reviewing if mine[-1].reviewing is not None else state.now
     agents = [as_ended(a, at, text, path) if a.agent_id == editor else a
               for a in of_change(state, t)]
-    if not isinstance(budget := over_budget(state, t, w, agents), Undecided) \
-            and budget is not Pause.CLEAR:
-        return mctx("Change {number} is past its cost budget, so the operator takes its next "
-                    "step: give your final reply.").format(number=t.number)
-    here = editors_in(agents, w)
-    if unstaffed(editors, here) or any(a.unreported for a in latest_editors(here)):
-        return mctx("Another editor of change {number} has not reported, so the operator "
-                    "launches the change's checks: give your final reply.").format(number=t.number)
-    others = [a for a in here if a.pending]
-    peers = {a.agent_id for a in here} - {editor}
-    if any(a.pending and a.operator in peers for a in agents):
-        return Poll()
-    if others:
-        other_ids = agent_ids(others)
-        if isinstance(other_ids, Undecided):
-            return other_ids
-        times = [(-at, editor)]
-        ended: dict[str, Agent] = {}
-        for a, i in zip(others, other_ids, strict=True):
-            since = reported_at(a)
-            other_text = None if a.report_file is None else written(a.report_file)
-            if since is None or a.report_file is None or other_text is None:
-                return Poll()
-            times.append((-since, i))
-            ended[i] = as_ended(a, since, other_text, a.report_file)
-        if min(times) != (-at, editor):
-            return Poll()
-        agents = [ended.get(a.agent_id or "", a) for a in agents]
-        here = editors_in(agents, w)
-    step = reported_step(state, t, w, editors, here, agents, editor)
-    if isinstance(step, Launch) and step.role in CHECKS:
-        return step
-    waited = [a for a in agents if a.operator == editor and a.pending]
-    if step is Pause.WAIT and waited:
-        ids = agent_ids(waited)
-        if isinstance(ids, Undecided):
-            return ids
-        return mctx("Wait on {agents}, which you launched, and each time one of them gives its "
-                    "final reply, run this command again.").format(agents=", ".join(ids))
-    return mctx("No check of change {number} is due from you: give your final reply.").format(
-        number=t.number)
+    return EditorChange(editor, t, editors, w, at, agents)
 
 
 def as_ended(a: Agent, at: float, text: str, path: Path) -> Agent:
@@ -433,6 +409,79 @@ def as_ended(a: Agent, at: float, text: str, path: Path) -> Agent:
     file `path` at `at`, as `editor_step` reads an editor that has
     reported."""
     return replace(a, waits=None, reports=(*a.reports, Report(at, text, path)))
+
+
+def peers_ended(c: EditorChange, written: Callable[[Path], str | None]
+                ) -> list[Agent] | Poll | Undecided:
+    """The agents of the change `c` with each other pending editor in its
+    worktree read as ended, each with the text `written` gives of its
+    report file as its report at its `change_agents.reported_at`, where
+    each has such a report and that of `c.editor` is the latest of theirs,
+    or of the latest the one of the first agent id in sort order; and
+    `steps.Poll` where one has none, another's is later, or a check another
+    editor there launched is pending."""
+    here = editors_in(c.agents, c.w)
+    others = [a for a in here if a.pending]
+    peers = {a.agent_id for a in here} - {c.editor}
+    if any(a.pending and a.operator in peers for a in c.agents):
+        return Poll()
+    if not others:
+        return c.agents
+    other_ids = agent_ids(others)
+    if isinstance(other_ids, Undecided):
+        return other_ids
+    times = [(-c.at, c.editor)]
+    ended: dict[str, Agent] = {}
+    for a, i in zip(others, other_ids, strict=True):
+        since = reported_at(a)
+        other_text = None if a.report_file is None else written(a.report_file)
+        if since is None or a.report_file is None or other_text is None:
+            return Poll()
+        times.append((-since, i))
+        ended[i] = as_ended(a, since, other_text, a.report_file)
+    if min(times) != (-c.at, c.editor):
+        return Poll()
+    return [ended.get(a.agent_id or "", a) for a in c.agents]
+
+
+def handed_on(state: State, c: EditorChange) -> str | None:
+    """The line that has the editor of the change `c` give its final reply
+    as the operator takes the change's next step: where
+    `change_overrun.over_budget` gives a step, `Ended` or `Pause.WAIT`, or
+    where an editor role of the change has no agent in its worktree or
+    another editor there ended with no report since its launch or its last
+    resume; or None."""
+    if not isinstance(budget := over_budget(state, c.t, c.w, c.agents), Undecided) \
+            and budget is not Pause.CLEAR:
+        return mctx("Change {number} is past its cost budget, so the operator takes its next "
+                    "step: give your final reply.").format(number=c.t.number)
+    here = editors_in(c.agents, c.w)
+    if unstaffed(c.editors, here) or any(a.unreported for a in latest_editors(here)):
+        return mctx("Another editor of change {number} has not reported, so the operator "
+                    "launches the change's checks: give your final reply.").format(
+                        number=c.t.number)
+    return None
+
+
+def check_or_line(state: State, c: EditorChange, agents: list[Agent]) -> Step | str:
+    """The launch of the check of `CHECKS` that `reported_step` gives the
+    change `c`, with `agents` as its agents and its editor as the
+    launcher; where it gives none and a check the editor launched is
+    pending, the line that has it wait on that check; and otherwise the
+    line that has it give its final reply."""
+    here = editors_in(agents, c.w)
+    step = reported_step(state, c.t, c.w, c.editors, here, agents, c.editor)
+    if isinstance(step, Launch) and step.role in CHECKS:
+        return step
+    waited = [a for a in agents if a.operator == c.editor and a.pending]
+    if step is Pause.WAIT and waited:
+        ids = agent_ids(waited)
+        if isinstance(ids, Undecided):
+            return ids
+        return mctx("Wait on {agents}, which you launched, and each time one of them gives its "
+                    "final reply, run this command again.").format(agents=", ".join(ids))
+    return mctx("No check of change {number} is due from you: give your final reply.").format(
+        number=c.t.number)
 
 
 def editor_unreported(t: Ticket, latest: list[Agent]) -> Undecided | None:
