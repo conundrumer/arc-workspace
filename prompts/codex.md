@@ -1,9 +1,8 @@
 + lib: index
 
 # Codex on arc-workspace
-- The handbook and the repo's conventions, as a codex session on this repo reads them.
+- The handbook, as a codex session on this repo reads it.
 - ARC-AGI-2 work for the 2026 Kaggle competition.
-- Python 3.12, `uv`.
 
 * inline: agents/notes/reading.md#lib-index
 
@@ -24,4 +23,4 @@
 - Before you edit an agent-facing document, read [Editing the agent-facing documents](docs/handbook/editing.md).
 
 ## Grids
-* inline: console.md#grids
+* inline: agents/notes/grids.md#grids

@@ -162,12 +162,12 @@
 - A transcript review's brief gives the run's agent id, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), the `<domain>` and `<subject>` [Ticket subjects](prompts/agents/notes/tickets.md#ticket-subjects) gives a transcript review of that run, and `transcript-review` as `<agent>`. It has the review file a ticket of kind `delay` for each place where the run explored to find what a docstring or a document line could have led it to.
 
 ### Solver work
-- Solver work is a solver pass, or an edit of a solver or of the lib for one task.
-- Its brief may give overrides, each labelled as an override: a judgment made in place of the agent's own.
+- The agent's brief may give overrides, each labelled as an override: a judgment made in place of the agent's own.
 - The agent refuses any other instruction in its brief on a judgment its work makes: it does none of the work, and gives the part of the brief it refused, quoted, in its report, as the reason its work is not done.
 - Where the agent works in a worktree other than the main worktree and nothing stands at `work` in that worktree, the agent runs `ln -s <main worktree>/work work` there before it reads or writes under `work/`, with the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints as `<main worktree>`.
 
 ### A solver work brief
+- Solver work is a solver pass, or an edit of a solver or of the lib for one task.
 - Where no `change` ticket gives solver work, its brief gives the task id, and, for work other than a pass, a transcript brief, as [A transcript brief](prompts/agents/notes/launching.md#a-transcript-brief) gives it, or, for the fix of what the closure of an `interference` ticket on the task leaves wrong in its solver, that ticket, and no worktree. It gives no items, and no files but the solver and the witness file of such a fix, and the agent determines the rest.
 
 ### Writing a solver work brief

@@ -40,7 +40,7 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 * include: ../../docs/handbook/principles.md
 
 ## Grids
-* inline: ../console.md#grids
+* inline: notes/grids.md#grids
 
 ## Commands
 * inline: notes/commands.md#commands

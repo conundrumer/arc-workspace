@@ -52,7 +52,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
     + exclude: draft, gloss, deferred
 
 ## Grids
-* inline: ../console.md#grids
+* inline: notes/grids.md#grids
 
 ## Every pass
 * inline: ../../docs/handbook/procedure.md#every-pass

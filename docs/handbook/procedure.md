@@ -7,7 +7,7 @@
 
 ## Every pass
 - **One operation at a time.** Finish each operation before you start the next.
-- **Reading files and outputs.** Read the task with `cat data/tasks/<task_id>.json`, and each other file you need whole, with no other command piped or chained to the read, and the output of each `uv run python scripts/run_dl.py` command you run whole, piped to no other command.
+- **Reading files and outputs.** Read the task with `cat data/tasks/<task_id>.json`, and each other file you need whole, apart from the lines that a command these documents give prints, with no other command piped or chained to the read, and the output of each `uv run python scripts/run_dl.py` command you run whole, piped to no other command.
     * comment: Passes that cut the `run_dl.py` output with a pipe missed lines they needed and ran the command again: tickets 10-489, 10-523, 10-594, 10-623, 10-637, 10-682, 10-747, 10-748 and 10-749, settled by 10-776.
 - **Banned forms.** A claim that needs a form the program bans, where no lib relation states that part of it, has no set of clauses: write no comp for it. Where it is a claim of the concept case, give in the review, as a concept fault, the task, the claim, and the form it needs.
     * comment: The user's ruling, session 19c17548, 2026-10-15T23:34:30Z, on the choice "replaces the protocol with the line that a pass that needs a banned form reports a fault of the concept and writes no comp": "2 but leave proposals alone".

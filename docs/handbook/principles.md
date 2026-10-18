@@ -133,14 +133,14 @@
 - **divergence witness**: an input on which one of these holds:
     - at some assignment, two models give different outputs, or one is defined and the other is not.
     - a model's output at some assignment differs from the output the generator pairs with the input.
-    - A branch's witnesses are divergence witnesses between its model and the concept branch's model.
-    - A witness stands at this task's stored assignment when the model it is for is defined there and differs there from what it is separated from. Otherwise it stands at the assignment that changes the fewest of that model's parameters and at which that holds, and at the stored assignment when there is none.
-        - The model a witness is for is the branch's model for a branch's witness, the concept case's model for a witness of the concept case, and the case's model for a witness without which a case fails Equivalence or Subsumption.
-    - A witness breaks a scene claim when the concept case's claim, read at the assignment the witness stands at, is false of it.
-    - An output identical to the input is still defined, so a divergence at such an output is valid.
-        - 41e4d17e
-            - On a solid block, the model based on enclosed regions finds none and returns the input. The model based on objects finds the block and casts from it.
-                + gloss
+- A branch's witnesses are divergence witnesses between its model and the concept branch's model.
+- A witness stands at this task's stored assignment when the model it is for is defined there and differs there from what it is separated from. Otherwise it stands at the assignment that changes the fewest of that model's parameters and at which that holds, and at the stored assignment when there is none.
+    - The model a witness is for is the branch's model for a branch's witness, the concept case's model for a witness of the concept case, and the case's model for a witness without which a case fails Equivalence or Subsumption.
+- A witness breaks a scene claim when the concept case's claim, read at the assignment the witness stands at, is false of it.
+- An output identical to the input is still defined, so a divergence at such an output is valid.
+    - 41e4d17e
+        - On a solid block, the model based on enclosed regions finds none and returns the input. The model based on objects finds the block and casts from it.
+            + gloss
 - **annotator**: whoever judges a witness.
 - **plausibility**: the annotator's ordinal estimate of how readily the generator could produce the witness. Its value is the first applicable level:
     - `ordinary`: readily, breaking no scene claim of the concept case.
@@ -299,7 +299,7 @@
 - For a pair with two candidates, the concept case produces one of them.
 - A peer model that produces the other under some assignment is a separate case when it meets the conditions above.
 - The pairs leave undetermined which model the task teaches.
-- That undetermination is a choice point whose branches are those models.
+- Which model it teaches is then a choice point whose branches are those models.
     * comment
         - A branch can keep, replace, or add a claim.
 - The outputs within one candidate introduce no case.
