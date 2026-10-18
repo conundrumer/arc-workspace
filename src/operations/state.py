@@ -65,8 +65,10 @@ class Ticket:
     """A ticket of the tracker. `editors` is None where a `change` gives no
     `editors` field, `mechanical` is whether a `change` gives the
     `mechanical` field, `motivation` holds the ticket numbers its
-    `## Motivation` section gives, and `holder` is the holder
-    `file_ticket.py log --help-all` defines."""
+    `## Motivation` section gives, `scope` the paths its `## Scope`
+    section gives, as `ticket_form.given_paths` reads them, none where it
+    has no such section, and `holder` is the holder `file_ticket.py log
+    --help-all` defines."""
     number: str
     order: tuple[int, int]
     session: int | None
@@ -79,6 +81,7 @@ class Ticket:
     title: str
     depends_on: tuple[str, ...]
     motivation: tuple[str, ...]
+    scope: frozenset[str]
     editors: tuple[Role, ...] | None
     after_merge: str | None
     mechanical: bool
@@ -291,14 +294,15 @@ class Message:
 @dataclass(frozen=True)
 class Commit:
     """A commit of `master`: its hash, its time, the reviews whose paths,
-    as `tree_reads.REVIEW_PATHS` gives them, it changes, its subject, and
+    as `tree_reads.REVIEW_PATHS` gives them, it changes, its subject,
     whether it changes a directory of `tree_reads.PROCESS_DIRS`, a change
-    to the agents' processes."""
+    to the agents' processes, and the files it changes."""
     hash: str
     time: float
     reviews: frozenset["Review"]
     subject: str
     process: bool
+    files: frozenset[str]
 
 
 DOC_REVIEW = "doc-review/"

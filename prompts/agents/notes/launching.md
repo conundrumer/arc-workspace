@@ -119,10 +119,9 @@
     - `Op merge: <number>`: a `change` under `tickets/blocked/`, which the user's ruling has the operator merge.
     - `Op tickets are open.`
     - `Op allow: <number>, ...`: tickets of any session, and each `change` that a chain of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives a link, reaches from them. The operators of the session settle and take each of them under `Op scope: own.` and `Op pause.` too, with no priority over other work.
-    - `Op scope: own.`: the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than these:
-        - The tickets the session's coordinator filed, and each ticket filed for one of them: a ticket a link leads to from it, a ticket filed on it, or a `change` whose Motivation gives its number, and so on down each chain.
-        - The tickets and changes an `Op allow:` or an `Op expedite:` line gives.
-        - The work an operator of the session took and each `change` that work waits on, which they carry to its end.
+    - `Op scope: own.`, which also holds where no `Op scope:` line came: the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than what `Op pause.` admits and the session's line of work:
+        - The requests and changes the session's coordinator filed, and from each of them, and so on down each chain: each ticket a link leads to from it, each `change` whose Motivation gives its number, and each question or validation filed on it.
+        - Each ticket outside `tickets/closed/` whose title refers to a path that the Scope of a `change` of the item above gives, or to a file of a commit that a coordinator's line in the log of a `request` of the item above gives, and from each such ticket the tickets that the steps of the item above lead to.
     - `Op scope: all.`: ends the limit of `Op scope: own.`.
     - `Op pause.`: the operators of the session settle no ticket under `tickets/open/` and take no `change`, other than the tickets and changes an `Op allow:` or an `Op expedite:` line gives, and the work an operator of the session took and each `change` that work waits on, which they carry to its end.
     - `Op resume.`: ends `Op pause.`.

@@ -6,16 +6,17 @@ sessions `SessionsRead.adopted` gives, as `State.mine` gives them. Which session
 is the main one, `file_ticket.py main --help` states; which sessions are
 idle, `idle_sessions.read_sessions` gives.
 
-While an `Op scope: own.` line stands (`directives.own_scope`), the operator
-takes, of the changes it would take under `Op scope: all.`, only those of
-`held_work`, so the work already held reaches its end, those of `allowed`,
-the tickets an `Op allow:` or an `Op expedite:` line gives, and those of
-`filed_work`, the work the session's coordinator filed, and each other change
-waits for an `Op scope: all.` line. While an `Op pause.` line stands
-(`directives.paused`), it takes only those of `held_work` and of
-`allowed`, and each other change waits for an `Op resume.` line. Past the
-usage pace (`pacing`), the changes of `held_work` and of `allowed` are
-taken, and each other one waits until the pace admits it.
+While an `Op scope: own.` line stands, or no `Op scope:` line came
+(`directives.own_scope`), the operator takes, of the changes it would take
+under `Op scope: all.`, only those of `held_work`, so the work already held
+reaches its end, those of `allowed`, the tickets an `Op allow:` or an
+`Op expedite:` line gives, and those of `own_work`, the session's line of
+work, and each other change waits for an `Op scope: all.` line. While an
+`Op pause.` line stands (`directives.paused`), it takes only those of
+`held_work` and of `allowed`, and each other change waits for an
+`Op resume.` line. Past the usage pace (`pacing`), the changes of
+`held_work` and of `allowed` are taken, and each other one waits until the
+pace admits it.
 
 A change that waits for a ticket that holds it up moves to
 `tickets/draft/` with a line whose note is `STALL_FINDING` on that ticket,
@@ -37,6 +38,7 @@ from operations.state import State, Ticket, memoized
 from operations.steps import Bash, Step, Undecided
 from operations.tracker import closed, exits, final_run, wait_line
 from ticketing.exits import Exit
+from ticketing.references import referring
 from ticketing.vocabulary import COORDINATOR, Domain, Kind, Status
 
 
@@ -91,9 +93,7 @@ def admits(state: State) -> Callable[[str], bool]:
     the run scripts admit (`Computed.admitted`), or one of `expedited`,
     or any where no script defines `takes`; of those, one of `held_work`
     or of `allowed` always, and any other only while the usage pace
-    admits one (`Computed.pace`), no other while an `Op pause.` line
-    stands, and, where an `Op scope: own.` line stands, only one of
-    `filed_work`."""
+    admits one (`Computed.pace`) and `scope_admits` admits it."""
     passes, held = passing(state)
     clear = scope_admits(state)
     paced = pacing.admits(state.computed.pace, state.now)
@@ -102,13 +102,14 @@ def admits(state: State) -> Callable[[str], bool]:
 
 def scope_admits(state: State) -> Callable[[str], bool]:
     """Whether the `Op pause.` and `Op scope:` lines admit a ticket: one of
-    `allowed` while an `Op pause.` line stands; otherwise one of `allowed`
-    or of `filed_work`, or any while no `Op scope: own.` line stands."""
+    `allowed` while an `Op pause.` line stands; otherwise, while
+    `directives.own_scope` holds, one of `allowed` or of `own_work`, and
+    any where it does not."""
     if paused(state):
         return allowed(state).__contains__
     if not own_scope(state):
         return lambda _: True
-    return (allowed(state) | filed_work(state)).__contains__
+    return (allowed(state) | own_work(state)).__contains__
 
 
 def passing(state: State) -> tuple[Callable[[str], bool], Callable[[str], bool]]:
@@ -148,36 +149,78 @@ def held_work(state: State) -> set[str]:
 
 def allowed(state: State) -> set[str]:
     """The tickets `Op pause.` admits past the work held, and `Op scope: own.`
-    past the work the session's coordinator filed: each ticket a chain of
+    past the session's line of work: each ticket a chain of
     links reaches from a ticket of `directives.allow_named`, and those of `expedited`."""
     return reached(state, allow_named(state)) | expedited(state)
 
 
+COMMIT_WORD = re.compile(r"\b[0-9a-f]{7,40}\b")
+"""A word of a log line that may give the hash of a commit."""
+
+FOLLOWS = frozenset({Kind.CHANGE, Kind.QUESTION, Kind.VALIDATION})
+"""The kinds of the tickets of `filed_for` that `own_work` steps to: a
+`change` filed for a ticket, and a question on a change or the check of a
+request."""
+
+
 @memoized
-def filed_work(state: State) -> set[str]:
-    """The work the session's coordinator filed: each ticket of `State.mine`
-    whose filer is the coordinator, and each ticket a chain of steps reaches
-    from one, a step from a ticket to each ticket of its `links`, to each
-    `change` or `ticket` ticket filed on it, and to each `change` whose
-    Motivation gives its number."""
+def own_work(state: State) -> set[str]:
+    """The session's line of work: each `request` and `change` of
+    `State.mine` whose filer is the coordinator, and each ticket a chain of
+    steps reaches from one, a step from a ticket to each ticket of its
+    `links` and to each ticket of `filed_for` of a kind of `FOLLOWS`; and
+    each ticket outside `tickets/closed/` whose title refers, as
+    `references.referring` judges it, to a path of `touched` of that line
+    of work, with each ticket a chain of those steps reaches from it. A
+    ticket its title admits, and each ticket reached from it, adds no
+    paths."""
     tickets = state.tracker.tickets
-    start = {n for n, t in tickets.items() if state.mine(t) and t.filer == COORDINATOR}
     below = filed_for(state)
-    return closure(state, start, lambda t: [*links(t), *below.get(t.number, ())]) & tickets.keys()
+
+    def step(t: Ticket) -> list[str]:
+        return [*links(t), *(f.number for f in below.get(t.number, ()) if f.kind in FOLLOWS)]
+
+    line = closure(state, {n for n, t in tickets.items()
+                           if state.mine(t) and t.filer == COORDINATOR
+                           and t.kind in (Kind.REQUEST, Kind.CHANGE)}, step)
+    pattern = referring(touched(state, line))
+    return closure(state, line | {n for n, t in tickets.items()
+                                  if t.status is not Status.CLOSED and pattern.search(t.title)},
+                   step) & tickets.keys()
+
+
+def touched(state: State, numbers: set[str]) -> frozenset[str]:
+    """The paths the tickets `numbers` touch: of a `change`, the paths of
+    its Scope; of a `request`, the files of each commit of `GitRead.commits`
+    whose hash a word of `COMMIT_WORD` in a log line of the coordinator
+    gives, as the line that gives a hotfix's commit once it is on
+    `master`."""
+    out: set[str] = set()
+    for n in numbers:
+        t = state.tracker.tickets.get(n)
+        if t is None:
+            continue
+        if t.kind is Kind.CHANGE:
+            out |= t.scope
+        elif t.kind is Kind.REQUEST:
+            words = {w for ln in t.log if ln.agent == COORDINATOR for w in COMMIT_WORD.findall(ln.note)}
+            out.update(f for c in state.git.commits if any(c.hash.startswith(w) for w in words)
+                       for f in c.files)
+    return frozenset(out)
 
 
 @memoized
-def filed_for(state: State) -> dict[str, list[str]]:
-    """The tickets filed on each ticket, by its number: those of domain
-    `change` or `ticket` whose subject is that number, and each `change`
-    whose Motivation gives it."""
-    out: dict[str, list[str]] = {}
-    for n, t in state.tracker.tickets.items():
+def filed_for(state: State) -> dict[str, list[Ticket]]:
+    """The tickets that give each ticket's number, by that number: those
+    of domain `change` or `ticket` whose subject is that number, and each
+    `change` whose Motivation gives it."""
+    out: dict[str, list[Ticket]] = {}
+    for t in state.tracker.tickets.values():
         on = {t.subject} if t.domain in (Domain.CHANGE, Domain.TICKET) else set()
         if t.kind is Kind.CHANGE:
             on |= set(t.motivation)
         for p in on:
-            out.setdefault(p, []).append(n)
+            out.setdefault(p, []).append(t)
     return out
 
 
@@ -269,7 +312,7 @@ def batch(state: State) -> list[Ticket]:
     """The changes of `takeable` that one step of `take` takes, as `take`
     gives them."""
     free = (pacing.admits(state.computed.pace, state.now)
-            and not own_scope(state) and not paused(state))
+            and not paused(state))
     first = lead(state)
     out: list[Ticket] = []
     paced = False
@@ -285,8 +328,7 @@ def batch(state: State) -> list[Ticket]:
 def take(state: State) -> Step | None:
     """The take of each change of `takeable`, in its order, up to the first
     whose budget `Computed.budgets` does not give. Where the usage pace does
-    not admit a ticket, or an `Op scope: own.` or an `Op pause.` line
-    stands, a step takes, of the changes neither of `lead` nor `taken_before`, only the first, so that
+    not admit a ticket, or an `Op pause.` line stands, a step takes, of the changes neither of `lead` nor `taken_before`, only the first, so that
     the pace is read again before each further take."""
     commands: list[str] = []
     taken: list[str] = []

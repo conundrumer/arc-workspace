@@ -116,7 +116,7 @@ def commits(main: Path) -> tuple[Commit, ...]:
     for head, files in logged(main, BASE, f"-n{COMMITS}", "--format=%x00%H %ct %s"):
         sha, ct, subject = (head.split(" ", 2) + [""])[:3]
         out.append(Commit(sha, float(ct), frozenset(r for r in Review if changes(files, r)), subject,
-                          any(n.startswith(PROCESS_DIRS) for n in files)))
+                          any(n.startswith(PROCESS_DIRS) for n in files), frozenset(files)))
     return tuple(out)
 
 

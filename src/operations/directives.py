@@ -7,16 +7,18 @@ prefix `Op`, the word of its kind and a colon, past a list marker:
 - `Op run: <path>`, a run script, as `runs` gives it;
 - `Op drafts to review: <number>, ...`;
 - `Op expedite: <number>, ...`, for every operator of the session;
-- `Op allow: <number>, ...`, the tickets that `Op scope: own.` admits for every
-  operator of the session, and the changes a chain of links reaches from them;
+- `Op allow: <number>, ...`, the tickets that `Op scope: own.` and
+  `Op pause.` admit for every operator of the session, and the changes a
+  chain of links reaches from them;
 - `Op merged: <number>, ...`, the changes the coordinator gives as merged;
 - `Op merge: <number>`, a change under `tickets/blocked/` whose merge that line rules;
-- `Op tickets are open.`, which leaves the scope as it is;
-- `Op scope: own.`, after which no operator of the session settles an open
+- `Op tickets are open.`, which leaves the scope as `own_scope` gives it;
+- `Op scope: own.`, under which no operator of the session settles an open
   ticket or takes a change outside the work held, the tickets an
-  `Op allow:` or an `Op expedite:` line gives and the work the session's
-  coordinator filed, and `Op scope: all.`, which ends that limit, the last
-  such line standing (`own_scope`);
+  `Op allow:` or an `Op expedite:` line gives and the session's line of
+  work (`taking.own_work`), and `Op scope: all.`, which ends that limit,
+  the last such line standing, and `Op scope: own.` where none came
+  (`own_scope`);
 - `Op pause.`, after which no operator of the session settles an open
   ticket or takes a change outside the work held and the tickets an
   `Op allow:` or an `Op expedite:` line gives, and `Op resume.`, which ends
@@ -77,8 +79,9 @@ OP = "Op "
 
 
 class Scope(StrEnum):
-    """The tickets an `Op scope:` line has the operators take: their own
-    work, as `taking.scope_admits` gives it, or every open ticket."""
+    """The tickets an `Op scope:` line has the operators take: the
+    session's line of work, as `taking.scope_admits` gives it, the scope
+    where no such line came, or every open ticket."""
     OWN = "own"
     ALL = "all"
 
@@ -263,11 +266,11 @@ def line_scope(rest: str) -> Scope | None:
 
 def own_scope(state: State) -> bool:
     """Whether the last `Op scope:` line in a form `line_scope` reads, to any
-    operator of the session, gives `own`. The result holds for every
-    operator of the session, one that takes over from an ended operator
-    included."""
+    operator of the session, gives `own`, or no such line came. The result
+    holds for every operator of the session, one that takes over from an
+    ended operator included."""
     return last_given(state, frozenset({Directive.SCOPE}),
-                      lambda ln: line_scope(ln.rest)) is Scope.OWN
+                      lambda ln: line_scope(ln.rest)) is not Scope.ALL
 
 
 def paused(state: State) -> bool:

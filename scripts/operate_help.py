@@ -158,7 +158,7 @@ PARTS = {
     HelpPart.PACE: mctx("""
     - `next` reads a coordinator's line `Op pace: <preset> [<argument> ...]` or `Op pace: <path>` as the usage pace of each operator of the session, and the last line in one of these forms stands. An `Op pace:` line in neither form goes back to the coordinator and leaves the pace as it was.
         - Past the pace, `next` launches no ticket analyst on an open ticket and takes no open change, other than the tickets and changes an `Op allow:` or an `Op expedite:` line gives, the work an operator of the session took, and each change that work waits on.
-        - Past the pace, or while an `Op scope: own.` or an `Op pause.` line stands, one call of `next` takes each change an `Op expedite:` line gives, each change that settles an `interference` ticket and each change an operator took before, and at most one other change, so that the pace is read again before each further take.
+        - Past the pace, or while an `Op pause.` line stands, one call of `next` takes each change an `Op expedite:` line gives, each change that settles an `interference` ticket and each change an operator took before, and at most one other change, so that the pace is read again before each further take.
         - Where no step is ready and only the pace holds back an open ticket, `next` prints that the operator runs it again, with the time from which a preset's pace admits a ticket, or with the path of the script whose pace holds them back.
     - The pace reads the usage file that `--help next` gives: for each of its windows, `used_pct`, `elapsed_pct` and the time it resets.
     - The presets:

@@ -142,6 +142,23 @@ def bounds(text: str, name: str) -> tuple[int, int]:
     return head.end(), nxt.start() if nxt else len(text)
 
 
+LINES = re.compile(r":\d+(?:-\d+)?$")
+
+
+def given_paths(text: str, name: str, root: Path) -> frozenset[str]:
+    """The paths the section `name` of the ticket text `text` gives, in
+    backticks or as link targets, each with no line or span of lines after
+    it: each that is not absolute and holds a `/` or stands at the root of
+    the tree `root`. A ticket with no such section gives none."""
+    if section_head(text, name) is None:
+        return frozenset()
+    body = section(text, name)
+    words = re.findall(r"`([^`\s]+)`", body) + re.findall(r"\]\(([^)\s]+)\)", body)
+    paths = {LINES.sub("", w.split("#", 1)[0].rstrip(":")) for w in words}
+    return frozenset(p for p in paths
+                     if p and not Path(p).is_absolute() and ("/" in p or (root / p).exists()))
+
+
 def section(text: str, name: str) -> str:
     start, end = bounds(text, name)
     return text[start:end].strip("\n")

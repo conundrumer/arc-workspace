@@ -14,7 +14,8 @@ from handbook.paths import scripts_importable
 
 scripts_importable()
 
-from ticket_paths import names, scope_paths, ticket_text  # noqa: E402
+from ticket_paths import scope_paths, ticket_text  # noqa: E402
+from ticketing.references import names  # noqa: E402
 from ticket_reads import read_tickets  # noqa: E402
 from transcript_entries import Refused, print_refused  # noqa: E402
 from tree_reads import main_tree  # noqa: E402

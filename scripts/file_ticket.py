@@ -28,7 +28,8 @@ scripts_importable()
 
 from ticket_files import (FIELD, NAME_FORM, TicketName, listed_tickets, ticket_name,  # noqa: E402
                           ticket_path, ticket_status)
-from ticket_paths import SCOPE, names, section_paths  # noqa: E402
+from ticket_paths import SCOPE, section_paths  # noqa: E402
+from ticketing.references import names  # noqa: E402
 from tree_reads import main_tree  # noqa: E402
 from ticket_form import (DESIGN, LOG, LOG_SECTION, MECHANICAL,  # noqa: E402
                          RETIRED, VALIDATES, checked_kind, front, section, sections_example, ticket_kind,
@@ -53,6 +54,11 @@ from ticketing.vocabulary import (DEFECT_SECTIONS, MANY_IDEAS, Domain, Kind,  # 
                                   Note, Resolution, Status, Verdict)
 from transcript_entries import Refused, print_refused  # noqa: E402
 
+# The `<target>` line: ticket 11-700, from the user's words, session
+# 2384db39, 2026-10-18T02:16:02Z: "Well I hope I have sufficiently expressed
+# my intention w op scope own", which chooses the coordinator's version of
+# 02:14:05Z, whose own work holds the "refactor and bug tickets on files in
+# their Scope".
 HELP = mctx("""
     - `{invocation} <domain> <subject> <agent>` files the ticket on its stdin under the main tree's `tickets/`, and prints the path it wrote.
     {subcommands}
@@ -65,6 +71,8 @@ HELP = mctx("""
         # <target>: <what is wrong in it>{defect_sections}
         EOF
         ```
+    - Where the ticket is about one or more files, `<target>` gives the path of each.
+    - Where the ticket is about an agent's context, `<target>` gives the path of that agent's prompt under [agents](prompts/agents).
     - A `change` takes `kind: change` and `editors: <editor>, <editor>`, with each editor whose part, as [Carrying a change](prompts/agents/notes/changes.md#carrying-a-change) gives it, holds a file of its Scope, among {editors}.
         - It may add `depends-on: <number>, <number>`, `after-merge: <the steps and checks its Scope places at or after the merge>` and `mechanical: {mechanical}` to the front matter.
         - It gives `mechanical` only where its Intent gives each edit of the code editor's part outright.

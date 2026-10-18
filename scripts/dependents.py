@@ -33,12 +33,7 @@ from pathlib import Path, PurePosixPath
 from kept_reads import imports_in, named_modules
 
 from engine import checkout
-
-MODULE_ROOTS = ("src", "scripts", "tools/console", ".")
-"""The directories under which a file's path names a module: the packages'
-sources, the scripts and the console, which run with their directory on
-the import path, and the checkout's root, from which `tests` is a
-package."""
+from ticketing.references import MODULE_ROOTS, module_names
 
 PYTHON_SUFFIX = ".py"
 
@@ -59,22 +54,6 @@ class Reach(Enum):
 
     IMPORTS = "imports"
     RUN = "run"
-
-
-def module_names(path: str) -> list[str]:
-    """The name of the module the file at `path`, from the checkout's root,
-    is under each of `MODULE_ROOTS` that holds it."""
-    p = PurePosixPath(path)
-    names: list[str] = []
-    for root in MODULE_ROOTS:
-        if root != "." and not p.is_relative_to(root):
-            continue
-        parts = list((p if root == "." else p.relative_to(root)).with_suffix("").parts)
-        if parts[-1] == "__init__":
-            parts.pop()
-        if parts:
-            names.append(".".join(parts))
-    return names
 
 
 def module_paths(name: str) -> list[str]:
