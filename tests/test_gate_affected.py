@@ -4,6 +4,7 @@ the merge in silence."""
 import pytest
 
 from engine import checkout
+from gating import affects as affecting
 from gating import deps, edits
 from gating.commands import COMMANDS
 from gating.hunks import Hunk, Touched, hunks_of, moved
@@ -44,11 +45,11 @@ def H(start, count):
     ((), True),
 ])
 def test_a_hunk_runs_where_its_innermost_function_body_ran(hunks, runs):
-    assert deps.runs_hunks(SOURCE, hunks, RAN) is runs
+    assert affecting.runs_hunks(SOURCE, hunks, RAN) is runs
 
 
 def test_a_file_none_of_which_ran_runs_no_hunk():
-    assert deps.runs_hunks(SOURCE, (H(3, 1),), frozenset()) is False
+    assert affecting.runs_hunks(SOURCE, (H(3, 1),), frozenset()) is False
 
 
 def test_a_change_affects_a_command_through_what_it_read_listed_or_ran():
@@ -58,7 +59,7 @@ def test_a_change_affects_a_command_through_what_it_read_listed_or_ran():
     recorded = {"src/m.py": SOURCE}
 
     def affects(*touched):
-        return deps.affects(cmd, "ac0c5833", ran, touched, recorded)
+        return affecting.affects(cmd, "ac0c5833", ran, touched, recorded)
 
     S = checkout.Change
     T = Touched
@@ -173,7 +174,7 @@ def test_an_inert_hunk_affects_no_command_and_a_gate_file_runs_whole():
     ran = deps.Deps({"src/m.py": RAN}, frozenset(), frozenset())
 
     def affects(*touched):
-        return deps.affects(cmd, "ac0c5833", ran, touched, {"src/m.py": SOURCE})
+        return affecting.affects(cmd, "ac0c5833", ran, touched, {"src/m.py": SOURCE})
 
     S = checkout.Change
     T = Touched
@@ -198,3 +199,51 @@ def test_a_hunk_that_moves_where_a_module_is_first_imported_is_not_inert(old, ne
 def test_a_later_import_of_a_module_imported_before_is_inert():
     old = "import os\nfrom x import a\nfrom x import c\n"
     assert edits.inert("src/m.py", old, ["from x import c, d\n"], H(3, 1))
+
+
+LIB_DL = "programs/lib/box.dl"
+
+DL_OLD = """/// A box.
+.decl box(x: number)
+// a note
+
+box(1).
+"""
+"""Lines: a `///` comment at 1, a rule line at 2, a `//` comment at 3, a
+blank line at 4, a fact at 5."""
+
+READERS = {p: "".join(f"def {n}():\n    pass\n" for n in sorted(names))
+           for p, names in affecting.COMMENT_READERS.items()}
+"""A text for each file of `COMMENT_READERS` in which each function's
+body is the line after its `def` line."""
+
+
+@pytest.mark.parametrize(("new", "hunk", "passed"), [
+    (["/// A box of cells.\n"], H(1, 1), True),
+    (["// another note\n", "// more\n"], H(3, 2), True),
+    (["/// A box.\n", "/// More.\n"], Hunk(1, 1, 1, 2), False),
+    ([".decl box(x: symbol)\n"], H(2, 1), False),
+    (["/* a note */\n"], H(3, 1), False),
+])
+def test_a_lib_hunk_is_inert_where_it_rewords_only_comments_in_place(new, hunk, passed):
+    assert edits.inert_dl(DL_OLD, new, hunk) is passed
+
+
+@pytest.mark.parametrize(("new", "hunk"), [
+    (["/// A box of cells.\n"], H(1, 1)),
+    (["/// A box.\n", "/// More.\n"], Hunk(1, 1, 1, 2)),
+    ([".decl box(x: symbol)\n"], H(2, 1)),
+    (["/* a note */\n"], H(3, 1)),
+])
+def test_a_lib_hunk_affects_a_reader_of_comments_and_only_an_inert_one_spares_others(new, hunk):
+    cmd = COMMANDS["lint"]
+    passed = frozenset({0}) if edits.inert_dl(DL_OLD, new, hunk) else frozenset()
+    touched = Touched(LIB_DL, checkout.Change.MODIFIED, (hunk,), passed=passed)
+    doc_blocks = 1 + 2 * sorted(affecting.COMMENT_READERS["src/handbook/lib.py"]).index(
+        "_doc_blocks")
+    reader = deps.Deps({"src/handbook/lib.py": frozenset({doc_blocks, doc_blocks + 1})},
+                       frozenset({LIB_DL}), frozenset())
+    other = deps.Deps({"src/handbook/lib.py": frozenset({doc_blocks})},
+                      frozenset({LIB_DL}), frozenset())
+    assert affecting.affects(cmd, "ac0c5833", reader, (touched,), READERS)
+    assert affecting.affects(cmd, "ac0c5833", other, (touched,), READERS) is not passed

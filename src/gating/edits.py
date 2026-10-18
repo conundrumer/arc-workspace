@@ -1,5 +1,6 @@
-"""Whether an edit of a Python file changes what a check runs: the edits
-that change nothing but text no gate command, pyright or pytest reads."""
+"""Whether an edit of a Python file, or of a Souffle file of the lib,
+changes what a check runs: the edits that change nothing but text no gate
+command, pyright or pytest reads."""
 
 import ast
 import io
@@ -149,6 +150,28 @@ def inert(path: str, old: str, new_lines: Sequence[str], hunk: "Hunk") -> bool:
         return False
     imports = _same_imports(a, b)
     return _normalized(a, path, imports) == _normalized(b, path, imports)
+
+
+DL_COMMENT = "//"
+"""The opening of a Souffle line comment."""
+
+DL_BLOCK = ("/*", "*/")
+"""The opening and the closing of a Souffle block comment."""
+
+
+def inert_dl(old: str, new_lines: Sequence[str], hunk: "Hunk") -> bool:
+    """Whether the hunk `hunk` of a Souffle file, whose old side is
+    numbered in the text `old` and whose new side is `new_lines`, changes
+    nothing a Souffle run reads and moves no line: whether its old and new
+    sides have the same count and each of their lines is blank or a `//`
+    comment that holds no `DL_BLOCK` mark, since such a line may open or
+    close a block comment around other lines. A command that reads the comment text of a Souffle file is
+    affected all the same (`gating.affects.COMMENT_READERS`)."""
+    lines = old.splitlines(keepends=True)
+    old_lines = lines[hunk.old_start - 1:hunk.old_start - 1 + hunk.old_count]
+    return hunk.old_count == hunk.new_count and all(
+        not s or (s.startswith(DL_COMMENT) and not any(m in s for m in DL_BLOCK))
+        for s in (x.strip() for x in [*old_lines, *new_lines]))
 
 
 DIRECTIVES = ("type:", "pyright:")

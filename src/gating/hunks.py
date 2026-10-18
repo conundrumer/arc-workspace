@@ -1,6 +1,6 @@
 """The hunks of a change: the paths it touches as the record's commit
-sees them, and the line numbers of each modified Python file moved between
-its old and new texts."""
+sees them, and the line numbers of each modified Python file, and of each
+modified Souffle file of the lib, moved between its old and new texts."""
 
 import re
 from collections.abc import Sequence
@@ -9,12 +9,30 @@ from pathlib import Path
 from typing import NamedTuple
 
 from engine import checkout
-from gating.edits import inert
+from gating.edits import inert, inert_dl
 
 PY_SUFFIXES = frozenset({".py", ".pyc"})
 """The suffixes of the files a command depends on through the lines it
 runs alone. A command also reads Python files' bytes, to import them and
 to key the run cache."""
+
+DL_SUFFIX = ".dl"
+"""The suffix of a Souffle file."""
+
+
+def lib_dl(path: str) -> bool:
+    """Whether `path`, from the checkout's root, is a Souffle file of the
+    lib."""
+    p = Path(path)
+    return p.suffix == DL_SUFFIX and p.is_relative_to(
+        (checkout.programs() / "lib").relative_to(checkout.ROOT))
+
+
+def _inert(path: str, old: str, new_lines: Sequence[str], hunk: "Hunk") -> bool:
+    """Whether the hunk `hunk` of the file `path` changes nothing a gate
+    command runs, by the rule of the file's kind: `inert_dl` for a Souffle
+    file of the lib, `inert` for a Python file."""
+    return inert_dl(old, new_lines, hunk) if lib_dl(path) else inert(path, old, new_lines, hunk)
 
 
 class Hunk(NamedTuple):
@@ -40,12 +58,12 @@ class Hunk(NamedTuple):
 @dataclass(frozen=True)
 class Touched:
     """A path the change touches, how it touches it, and, for a modified
-    Python file, the line ranges of its recorded text it replaces, each its
+    Python file or Souffle file of the lib, the line ranges of its recorded text it replaces, each its
     first line and its count, a count of 0 an insertion after the first
     line, with the new side of each. `unrecorded` is a Python file that stands at the change's base
     and not at the recorded commit, whose lines no command's record
-    holds. `passed` holds the index in `hunks` of each hunk `inert`
-    passes."""
+    holds. `passed` holds the index in `hunks` of each hunk `inert`, or
+    `inert_dl` for a Souffle file, passes."""
     path: str
     status: checkout.Change
     hunks: tuple[Hunk, ...] = ()
@@ -58,7 +76,7 @@ class Touched:
 
     @property
     def inert(self) -> bool:
-        """Whether the file has hunks and `inert` passes each of them. A
+        """Whether the file has hunks and `passed` holds each of them. A
         file with no hunk is run whole (`runs_hunks`)."""
         return bool(self.hunks) and not self.live
 
@@ -112,13 +130,14 @@ def touched_from(base: str, recorded: str) -> list[Touched]:
     it is a Python file, and is otherwise added, or deleted where the change
     deletes it; a path that stands at `recorded` and
     not at `base` is modified where the change adds it. The hunks of a
-    modified Python file are those of its diff from `base` to the checkout,
+    modified Python file, or Souffle file of the lib (`lib_dl`), are those of its diff from `base` to the checkout,
     with the old side of each numbered in the recorded text; where the file
     differs between the two commits, `renumbered` numbers them. The hunks
     from `recorded` to `base` count only where a hunk of the change meets
     them: the commits that wrote them passed their own merge's gate, whose
     accepted outputs this gate compares against. Each hunk of a path that
-    stands at `base` is classified by `inert` against the `base` text, since the rules it applies are
+    stands at `base` is classified by `inert`, or `inert_dl` for a Souffle
+    file, against the `base` text, since the rules they apply are
     properties of the change's own edit."""
     moved = between(recorded, base)
     absent = between(recorded, base, "--diff-filter=A")
@@ -136,12 +155,13 @@ def touched_from(base: str, recorded: str) -> list[Touched]:
             status = checkout.Change.MODIFIED
         hunks: tuple[Hunk, ...] = ()
         passed: frozenset[int] = frozenset()
-        if status is checkout.Change.MODIFIED and Path(c.path).suffix in PY_SUFFIXES:
+        if status is checkout.Change.MODIFIED and (
+                Path(c.path).suffix in PY_SUFFIXES or lib_dl(c.path)):
             hunks = _diff_hunks(c.path, base)
             if c.change is checkout.Change.MODIFIED:
                 old = text_at(base, c.path)
                 new = (checkout.ROOT / c.path).read_text().splitlines(keepends=True)
-                passed = frozenset(i for i, h in enumerate(hunks) if inert(
+                passed = frozenset(i for i, h in enumerate(hunks) if _inert(
                     c.path, old, new[h.new_start - 1:h.new_start - 1 + h.new_count], h))
             if c.path in moved:
                 hunks = renumbered(hunks, _diff_hunks(c.path, recorded, base))

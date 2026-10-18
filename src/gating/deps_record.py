@@ -12,8 +12,9 @@ from controlled_markdown import mctx
 from engine import checkout
 from engine.memo import write_whole
 from gating.commands import COMMANDS, GateCommand, keys_of
-from gating.deps import Deps, affects
-from gating.hunks import PY_SUFFIXES, moved, text_at, touched_from
+from gating.affects import COMMENT_READERS, affects
+from gating.deps import Deps
+from gating.hunks import PY_SUFFIXES, lib_dl, moved, text_at, touched_from
 from gating.records import deps_file
 
 RECORD_OUT = "record.json"
@@ -105,6 +106,8 @@ def affected(cmds: Sequence[GateCommand], base: str) -> tuple[set[str], str | No
     recorded = {t.path: text_at(record.commit, t.path)
                 for t in touched if Path(t.path).suffix in PY_SUFFIXES
                 and not (t.status.added or t.unrecorded)}
+    if any(lib_dl(t.path) for t in touched):
+        recorded.update({p: text_at(record.commit, p) for p in COMMENT_READERS})
     run = {k for c in cmds for s in c.stems for k in [c.key(s)]
            if k not in record.deps or affects(c, s, record.deps[k], touched, recorded)}
     return run, record.commit, len(keys)

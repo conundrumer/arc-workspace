@@ -105,7 +105,7 @@ of the gate at `HEAD` and for no other key. Where no record stands, it
 traces every command.
 
 `--affected` runs only the commands that the change can affect, as
-`gating.deps.affects` decides, and every command where no dependency record
+`gating.affects.affects` decides, and every command where no dependency record
 stands. The change is the difference between the commit `<base>`, which the
 change branched from, and the checkout. Its first line names the record and
 the base, and counts the commands it runs. Where it runs every command, on
