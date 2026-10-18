@@ -128,7 +128,7 @@ def returned(state: State) -> list[Agent]:
     replies do not go back, as `scripts/operate.py --help rulings` gives."""
     return [a for a, purpose, _ in state.analysts()
             if purpose is Purpose.STEP and not a.pending and a.agent_id is not None
-            and a.reports and applier(state, a) == state.me and not tickets_closed(state, a)]
+            and a.reports and not tickets_closed(state, a) and applier(state, a) == state.me]
 
 
 def tickets_closed(state: State, a: Agent) -> bool:

@@ -28,6 +28,7 @@ line that came after its last move there."""
 
 import re
 from collections.abc import Callable
+from functools import cache
 
 from controlled_markdown import form, mctx
 from operations import pacing, rank
@@ -109,6 +110,7 @@ def expedited(state: State) -> set[str]:
     return served(state, {n for n, _ in numbers_in(session_lines(state), Directive.EXPEDITE)})
 
 
+@memoized
 def admits(state: State) -> Callable[[str], bool]:
     """Whether the operator may admit an open ticket: one the `takes` of
     the run scripts admit (`Computed.admitted`), or one of `expedited`,
@@ -128,6 +130,7 @@ def gate(state: State, clear: Callable[[str], bool]) -> Callable[[str], bool]:
     return lambda n: passes(n) and (held(n) or (paced and clear(n)))
 
 
+@memoized
 def scope_admits(state: State) -> Callable[[str], bool]:
     """Whether the `Op pause.` and `Op scope:` lines admit a ticket: one of
     `allowed` while an `Op pause.` line stands; otherwise, while
@@ -140,6 +143,7 @@ def scope_admits(state: State) -> Callable[[str], bool]:
     return (allowed(state) | own_work(state)).__contains__
 
 
+@memoized
 def passing(state: State) -> tuple[Callable[[str], bool], Callable[[str], bool]]:
     """Whether the `takes` of the run scripts admit a ticket, with those of
     `expedited`, every ticket where no script defines `takes`, and whether
@@ -243,10 +247,28 @@ def follow_ups(state: State) -> set[str]:
     refers, as `references.referring` judges it, to a file of `touched` of
     `line_of_work`, and whose log holds no line of the form `OWN` or
     `NOT_OWN`."""
-    pattern = referring(touched(state, line_of_work(state)))
+    refers = title_refers(touched(state, line_of_work(state)))
     out = {n for n, t in state.tracker.tickets.items()
-           if t.status is not Status.CLOSED and pattern.search(t.title)}
+           if t.status is not Status.CLOSED and refers(t.title)}
     return out - own_work(state) - judged(state, NOT_OWN_LINE)
+
+
+@cache
+def title_refers(files: frozenset[str]) -> Callable[[str], bool]:
+    """Whether a title refers to a file of `files`, as the pattern
+    `references.referring` builds for them matches in it. The pattern is
+    built once for each set of files of a process, and each title judged
+    once against it, as each read gives `follow_ups` the same files and
+    titles again."""
+    pattern = referring(files)
+    seen: dict[str, bool] = {}
+
+    def refers(title: str) -> bool:
+        if title not in seen:
+            seen[title] = pattern.search(title) is not None
+        return seen[title]
+
+    return refers
 
 
 def judging(state: State) -> Callable[[str], bool]:
@@ -399,16 +421,17 @@ def batch(state: State) -> list[Ticket]:
     return out
 
 
-def reach(state: State) -> list[Ticket]:
+@memoized
+def reach(state: State) -> tuple[Ticket, ...]:
     """The changes of `batch` that one step of `take` acts on: each before
     the first whose budget `Computed.budgets` does not give, or, where the
     first of `batch` has no budget, that change alone."""
     out: list[Ticket] = []
     for t in batch(state):
         if t.number not in state.computed.budgets:
-            return out or [t]
+            return tuple(out or [t])
         out.append(t)
-    return out
+    return tuple(out)
 
 
 def take(state: State) -> Step | None:

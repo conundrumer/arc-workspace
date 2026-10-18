@@ -419,9 +419,10 @@ def handoffs(state: State) -> Step | None:
     """The message that gives the coordinator, once, each change a
     hand-off line gives to the session's coordinator while it holds it."""
     for t in sorted(state.tracker.tickets.values(), key=lambda t: t.order):
+        if t.status is not Status.ASSIGNED or t.holder != state.session:
+            continue
         line = next((ln for ln in reversed(t.log) if handed_off(ln)), None)
-        if (line is None or t.status is not Status.ASSIGNED or t.holder != state.session
-                or line.agent_id != state.session):
+        if line is None or line.agent_id != state.session:
             continue
         key = HANDED_OFF_KEY.format(number=t.number, time=f"{line.time:.0f}")
         step = Send(COORDINATOR, labeled(key, mctx("- unfinished: {note}").format(note=line.note)),

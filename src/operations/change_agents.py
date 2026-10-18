@@ -10,7 +10,7 @@ since its last move out of `tickets/draft/`. Those an operator of
 another session launched (`elsewhere_on`) are read apart: no step sends to
 one, as `TranscriptsRead.elsewhere` gives why."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -21,21 +21,37 @@ from operations.change_holds import (Hold, findings_hold, left_hold, questions_h
                                      unreplied_hold)
 from operations.directives import Decision, Ruling, ruling
 from operations.roles import EDITORS, Purpose, Role, analyst_of, subjects
-from operations.state import Agent, Report, State, Ticket
+from operations.state import Agent, Report, State, Ticket, memoized_by_transcripts
 from operations.steps import Step, Undecided
 
 REVIEWER_ROLES = (Role.DOC_REVIEWER, Role.DESIGN_REVIEWER, Role.ITEM_CHECKER)
 """The roles of the reviewers of a change."""
 
 
-def on_change(a: Agent, number: str) -> bool:
-    """Whether `a` is an editor, a reviewer (`REVIEWER_ROLES`) or a ticket
-    analyst launched on the change `number`."""
+def changes_of(a: Agent) -> list[str]:
+    """The changes `a` was launched on, as an editor, a reviewer
+    (`REVIEWER_ROLES`) or a ticket analyst."""
     if a.role is Role.TICKET_ANALYST:
         parsed = analyst_of(a.subject)
-        return parsed is not None and parsed[0] is Purpose.CHANGE \
-            and number in subjects(parsed[1])
-    return a.role in (*EDITORS, *REVIEWER_ROLES) and a.subject == number
+        return subjects(parsed[1]) if parsed is not None and parsed[0] is Purpose.CHANGE else []
+    return [a.subject] if a.role in (*EDITORS, *REVIEWER_ROLES) else []
+
+
+def on_change(a: Agent, number: str) -> bool:
+    """Whether `a` was launched on the change `number` (`changes_of`)."""
+    return number in changes_of(a)
+
+
+@memoized_by_transcripts
+def agents_by_change(state: State) -> Mapping[str, tuple[Agent, ...]]:
+    """The agents of the session's operators launched on each change
+    (`changes_of`), by its number, in the order of
+    `TranscriptsRead.agents`."""
+    out: dict[str, list[Agent]] = {}
+    for a in state.transcripts.agents:
+        for n in dict.fromkeys(changes_of(a)):
+            out.setdefault(n, []).append(a)
+    return {n: tuple(agents) for n, agents in out.items()}
 
 
 def unreported(a: Agent, number: str) -> Undecided:
@@ -65,7 +81,7 @@ def worktree_occasion(t: Ticket, w: Path) -> str:
 def launched_on(state: State, number: str) -> list[Agent]:
     """The agents of the session's operators launched on the change
     `number`, as `on_change` gives them."""
-    return [a for a in state.transcripts.agents if on_change(a, number)]
+    return list(agents_by_change(state).get(number, ()))
 
 
 def elsewhere_on(state: State, number: str) -> list[Agent]:

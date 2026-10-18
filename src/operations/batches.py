@@ -23,7 +23,7 @@ from controlled_markdown import mctx
 from operations import briefs
 from operations.taking import release
 from operations.occasions import merged, next_number
-from operations.state import Agent, State
+from operations.state import Agent, State, memoized_by_transcripts
 from operations.steps import Bash, Launch, Step, Undecided
 from operations.under_reads import last_under, under_calls, under_command
 from operations.unbatched import PROFILE, follows
@@ -45,9 +45,10 @@ def members(state: State, since: float) -> list[Agent]:
     return [a for a in batched(state) if a.launched > since]
 
 
-def batched(state: State) -> list[Agent]:
+@memoized_by_transcripts
+def batched(state: State) -> tuple[Agent, ...]:
     """The agents of the session that a batch holds."""
-    return [a for a in state.transcripts.agents if not follows(a.role, a.subject)]
+    return tuple(a for a in state.transcripts.agents if not follows(a.role, a.subject))
 
 
 def followed(state: State, at: float) -> list[Agent]:
