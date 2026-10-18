@@ -1,11 +1,11 @@
 + budget: 6146
 * comment: when editing this doc
-    - The doc reviewer receives this document from the step command as it enters the trials of a review, once it has reviewed the change by the steps of [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) other than the line review.
+    - The doc reviewer receives this document from the step command as it enters the trials of a review, once it has read its brief, and before it reviews the change.
     - Acts, each with its section:
         - Choosing the trials, writing their cases, briefing and launching them, and judging their replies: [Trials](#trials).
 
 # Trials
-- When you choose the trials of a review, choose one for each Intent item of the change's ticket that alters what an agent does at a point of its work, for each reader whose work at that point it alters, on the case that item gives, where that case quotes the text of each ticket it reads.
+- When you choose the trials of a review, choose one for each Intent item of the change's ticket that alters what an agent does at a point of its work, for each reader whose work at that point it alters, of the readers `uv run python scripts/context.py contexts --diff <commit>` lists, with `git merge-base HEAD master` as the commit, on the case that item gives, where that case quotes the text of each ticket it reads.
     * comment: The user's ruling "Go", session 7fd429fb-e3be-4173-9b0e-df52f507d6a2, 2026-10-16T16:44:24Z, on request 6-1456's items: trials only where a misread would be silent in use, and none of the doc reviewer, the doc editor or the ticket reviewer.
     - Choose one only of a reader whose misread of the item would be silent in use.
     - Choose none of a `role`, `console`, `survey`, `workflow` or `codex` reader, or of `agent doc-reviewer`, `agent doc-editor` or `agent ticket-reviewer`.

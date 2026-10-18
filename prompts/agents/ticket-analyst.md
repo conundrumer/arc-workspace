@@ -12,15 +12,15 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
     - The entry point of the ticket analyst, launched with a brief that gives tickets to settle or the process assessment, and resumed with a draft it filed to revise.
     - Its checklist: [checklist.md](prompts/agents/ticket-analyst/checklist.md).
     - Acts, each with its section:
-        - Reading its brief and taking its steps: [Ticket analyst](#ticket-analyst), with [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out) and [A ticket analyst's brief](prompts/agents/notes/launching.md#a-ticket-analysts-brief).
-        - Weighing, reading rules by intent, making a decision and bringing it to the user: [Decisions](#decisions), from [Decisions](prompts/agents/notes/decisions.md#decisions).
+        - Reading its brief and taking its steps: [Ticket analyst](#ticket-analyst), with [A ticket analyst's brief](prompts/agents/notes/launching.md#a-ticket-analysts-brief).
+        - Weighing, reading rules by intent, making a decision and bringing it to the user: [Decisions](#decisions), from the subsections of [Decisions](prompts/agents/notes/decisions.md#decisions) other than [A decision's record in a reply](prompts/agents/notes/decisions.md#a-decisions-record-in-a-reply).
         - Finding a root cause, logging a recurrence on a `refactor` ticket, reframing a recurring fault, and choosing a resolution: [Settling](#settling).
-        - Carrying out a resolution, a decline, and the reply's items: [Resolving](#resolving), from [Resolving](prompts/agents/notes/decisions.md#resolving) and [analyst-reply](prompts/agents/notes/decisions.md#analyst-reply).
+        - Carrying out a resolution and a decline: [Resolving](#resolving), from [Resolving](prompts/agents/notes/decisions.md#resolving).
+        - The reply's items: [Reply](prompts/agents/ticket-analyst/reply.md#reply), by the link of the item `Reply` of its checklist.
         - Taking and moving tickets, and settling faults it notices: [Tracking](#tracking).
         - Running commands, launching agents and giving the final reply: [Commands](#commands).
 
 # Ticket analyst
-* inline: notes/launching.md#a-part-a-brief-leaves-out
 * inline: notes/launching.md#a-ticket-analysts-brief
 - Run `uv run python scripts/step.py ticket-analyst` at your start, and, once you have done the item it prints, run it with that item's name.
 - When a later message gives a draft `change` to revise, run `uv run python scripts/step.py ticket-analyst --enter revise-the-draft`, or, where your context still holds that part's file from an earlier entry, `uv run python scripts/step.py ticket-analyst --reenter revise-the-draft`, and take the steps from the item it prints, reading no section an item links whose text your context still holds.
@@ -30,7 +30,21 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 - Where another line has you read a section it links, read that section, and no other part of its document: its lines run from its heading to the next heading of its depth or a shallower one, and `grep -n '^#' <path>` prints the line of each heading.
 
 ## Decisions
-* inline: notes/decisions.md#decisions
+
+### The user's goals
+* inline: notes/decisions.md#the-users-goals
+
+### Rule and intent
+* inline: notes/decisions.md#rule-and-intent
+
+### How a decision is made
+* inline: notes/decisions.md#how-a-decision-is-made
+
+### The user's part
+* inline: notes/decisions.md#the-users-part
+
+### The user's preferences
+* inline: notes/decisions.md#the-users-preferences
 
 ## Settling
 - A fault may lie in the tree, in a file written under an older version of the documents, or in the brief a pass was given.
@@ -46,7 +60,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 
 ## Resolving
 * inline: notes/decisions.md#resolving
-* inline: notes/decisions.md#analyst-reply
 
 ## Tracking
 * inline: notes/tickets.md#ticket-files
@@ -57,7 +70,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
     - Where the root cause is a choice of yours that no line of your documents led you to, the resolution changes nothing.
         * comment: With the rung 6 line of [Decision notes](prompts/agents/notes/decisions.md) in its context, assignee a02e649e2dcf5de95 filed 2-109 on its own slow binary grep, which no line led it to: ticket 2-358.
     - A `change` you file for one gives in its Motivation the fault, with the step and the time it took where the fault is a slow step.
-    - In your reply, give each one with its root cause and its resolution.
 
 ## Commands
 * inline: notes/commands.md#commands

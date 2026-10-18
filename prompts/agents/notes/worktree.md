@@ -2,7 +2,7 @@
 * comment: when editing this doc
     - Readers: the editors of a change inline its sections other than Gate, which they link for writing accepted gate outputs, the doc reviewer inlines the sections on its worktree, the ticket analyst, the draft analyst, the decision analyst and the ticket reviewer inline the one on another agent's worktree, and the coordinator links that one.
     - Acts, each with its section:
-        - Later findings and requests: [editor-messages](#editor-messages).
+        - Later findings and requests: [editor-messages](#editor-messages), and, for the findings left unfixed in the editor's report, [An editor's report on a change](prompts/agents/notes/launching.md#an-editors-report-on-a-change).
         - Finding the worktree: [worktree](#worktree).
         - Running commands there: [worktree-commands](#worktree-commands).
         - Another agent's worktree: [Re-invoked in another agent's worktree](#re-invoked-in-another-agents-worktree).
@@ -12,7 +12,7 @@
 - The statements on working in a worktree, that more than one entry point inlines or links.
 
 ## editor-messages
-- A later message may give a doc reviewer's findings on your change, or findings of your checks. Check each against the worktree, fix each one that holds and needs no decision, and state each other one in your reply, with why you left it. Fix each finding a later message gives as kept, and carry out each decision it gives.
+- A later message may give a doc reviewer's findings on your change, or findings of your checks. Check each against the worktree, and fix each one that holds and needs no decision. Fix each finding a later message gives as kept, and carry out each decision it gives.
 - Where a doc reviewer has sent findings on your change, before each reply to a later message, send that reviewer by SendMessage, at the agent id its message came from, each item of that later message with what you did on it, or, for a finding you left, why you left it.
 - Message only the agents a line of your documents has you message, each with only what that line gives.
 

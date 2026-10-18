@@ -1,9 +1,10 @@
 + budget: 26674
 * comment: when editing this doc
-    - The ticket analyst and the draft analyst inline [Decisions](#decisions) whole, for resolving a ticket, and [Resolving](#resolving) and [analyst-reply](#analyst-reply), for carrying out a resolution and giving their reply. The decision analyst inlines The user's goals, Rule and intent, How a decision is made, The user's part, Cost and time and Agents' choices, for judging what a change's editors leave and ruling a held step, and analyst-reply. The ticket reviewer and the doc reviewer inline The user's goals, for weighing a design or a change. The coordinator loads Decisions, The user's part and Defaults by the links of its Decisions section, before it makes a decision or ends a turn with one. Process notes, the ticket analyst's step documents and the coordinator's change notes link sections of it.
+    - The ticket analyst and the draft analyst inline the subsections of [Decisions](#decisions) other than A decision's record in a reply, for resolving a ticket, and [Resolving](#resolving), for carrying out a resolution. The decision analyst inlines The user's goals, Rule and intent, How a decision is made, The user's part, Cost and time and Agents' choices, for judging what a change's editors leave and ruling a held step. The reply files of the checklists of those three link [analyst-reply](#analyst-reply), for giving their reply. The ticket reviewer and the doc reviewer inline The user's goals, for weighing a design or a change. The coordinator loads Decisions, The user's part and Defaults by the links of its Decisions section, before it makes a decision or ends a turn with one. Process notes, the ticket analyst's step documents and the coordinator's change notes link sections of it.
     - Acts, each with its section:
         - Weighing what a decision serves: [The user's goals](#the-users-goals).
         - Reading a rule by its intent: [Rule and intent](#rule-and-intent).
+        - Recording what a decision was made from in a reply: [A decision's record in a reply](#a-decisions-record-in-a-reply).
         - Making a decision: [How a decision is made](#how-a-decision-is-made), with [Decisions on solver work](#decisions-on-solver-work) and [Decisions on the agents' documents](#decisions-on-the-agents-documents) for those subjects.
         - Bringing a decision to the user: [The user's part](#the-users-part).
         - Trading cost, time and quality: [The user's preferences](#the-users-preferences).
@@ -52,11 +53,14 @@
     * comment: The user's words, session dc433af1, 2026-10-05T18:54:16Z: "there's no evidence for a need for "not covered", and that's "dumb" stuff. i was thinking more about practices that prevents bad situations like what prompted all the changes. i was trying to anticipate those situations.", and 18:58:20Z: "ok so you have nothing to recommend to prevent general SWE scaling software problems and everything's fine, got it". Without the clauses on the cause, a ticket analyst closed ticket 10-960 wontfix, reading the kind as one launch site, so that each site of a cause that had faulted at four sites waited for its own fault; the user, session 2384db39, 2026-10-17T15:39:33Z, on that close: "sounds circular": ticket 11-75.
 - Decide by [Principles](docs/handbook/principles.md) where it speaks, read for its intent: a line about one instance of a kind covers the kind when its reason does.
 - Where it is silent, follow the intent the support shows.
-- Record a decision where the rule it makes lives, as the rule alone, and record what it was made from in the log of the ticket it settles or in your reply: a line of [Principles](docs/handbook/principles.md); a support line; a history entry, by its date; or, for the code's shape, the goal it serves.
+- Record a decision where the rule it makes lives, as the rule alone, and record what it was made from in the log of the ticket it settles: a line of [Principles](docs/handbook/principles.md); a support line; a history entry, by its date; or, for the code's shape, the goal it serves.
     - Record each line you write before a decision or a resolution in the same place, beside what the decision was made from.
 - The history of a decision is in the session transcripts, and `python3 ~/.claude/skills/retrieve/transcripts.py --help` lists the subcommands that read them.
 - Take agents' reports as evidence of what is there, never of what the principles or the spec should be.
 - Leave the judgment of how the code is written, past the `Design` of its `change`, to the agents that read it.
+
+### A decision's record in a reply
+- You may record what a decision was made from, and each line you write before it, in your reply in place of the log of the ticket it settles.
 
 ### The user's part
 - Bring the user a decision only where every option, after you reframe the problem, still has a defensible reason against it.

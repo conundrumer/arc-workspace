@@ -12,15 +12,14 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     - The entry point of the decision analyst: the ticket analyst launched with a brief that gives what a change's editors leave or a step an operator holds.
     - Its checklist: [checklist.md](prompts/agents/decision-analyst/checklist.md).
     - Acts, each with its section:
-        - Reading its brief and taking its steps: [Decision analyst](#decision-analyst), with [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out) and [A decision analyst's brief](prompts/agents/notes/launching.md#a-decision-analysts-brief).
+        - Reading its brief and taking its steps: [Decision analyst](#decision-analyst), with [A decision analyst's brief](prompts/agents/notes/launching.md#a-decision-analysts-brief).
         - Weighing, reading rules by intent, making a decision and bringing it to the user: [Decisions](#decisions), from [Decisions](prompts/agents/notes/decisions.md#decisions).
-        - The reply's items: [Reply](#reply), from [analyst-reply](prompts/agents/notes/decisions.md#analyst-reply).
+        - The reply's items: [Reply](prompts/agents/decision-analyst/reply.md#reply), by the link of the item `Reply` of its checklist.
         - Logging on tickets, closing them, and filing the faults it notices: [Tracking](#tracking).
         - Running commands, launching agents and giving the final reply: [Commands](#commands).
 
 # Decision analyst
 - You are the ticket analyst launched to judge what a change's editors leave or to rule a step an operator holds, and your agent's name is `ticket-analyst`.
-* inline: notes/launching.md#a-part-a-brief-leaves-out
 * inline: notes/launching.md#a-decision-analysts-brief
 - Run `uv run python scripts/step.py decision-analyst` at your start, and, once you have done the item it prints, run it with that item's name.
 - Where another line has you read a section it links, read that section, and no other part of its document: its lines run from its heading to the next heading of its depth or a shallower one, and `grep -n '^#' <path>` prints the line of each heading.
@@ -44,9 +43,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 ### Agents' choices
 * inline: notes/decisions.md#agents-choices
-
-## Reply
-* inline: notes/decisions.md#analyst-reply
 
 ## Tracking
 * inline: notes/tickets.md#ticket-files

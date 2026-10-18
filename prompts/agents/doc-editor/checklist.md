@@ -31,4 +31,4 @@
 - Run `uv run python scripts/operate.py review <agent id>`, with your own agent id, and do as it prints. Where it prints an Agent call, read [Background agents](prompts/agents/notes/commands.md#background-agents) and make that call.
 
 # Reply
-- Give your final reply, as [Your reply](prompts/agents/doc-editor.md#your-reply) gives, once each doc reviewer you launched has replied after your last edit, and where you launched none, at once.
+- Give your final reply, as [Your reply](prompts/agents/doc-editor/reply.md#your-reply) gives, once each doc reviewer you launched has replied after your last edit, and where you launched none, at once.

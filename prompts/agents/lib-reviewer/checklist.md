@@ -22,4 +22,4 @@
 - Make this lib review's baseline tag, as [The baseline tag](prompts/agents/lib-reviewer/baseline-tag.md#the-baseline-tag) gives.
 
 # Report
-- Remove each worktree you added, then end your turn with your final reply, as [Your reply](prompts/agents/lib-reviewer.md#your-reply) gives.
+- Remove each worktree you added, then end your turn with your final reply, as [Your reply](prompts/agents/lib-reviewer/reply.md#your-reply) gives.

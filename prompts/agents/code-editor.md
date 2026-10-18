@@ -15,13 +15,13 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
         - Reading its brief, messages to other agents, and taking its steps: [Code editor](#code-editor), with [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change) by the link of [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), for a review an item has it make.
         - Writing the code against the spec: [Writing the code](prompts/agents/code-editor/writing-the-code.md#writing-the-code), by the links of the items of its checklist, and [code-working-rules](prompts/agents/notes/code.md#code-working-rules).
         - Reading its diff for defect places: [Your diff](#your-diff).
-        - Its report and the end of its turn: [Your report](#your-report).
+        - The end of its turn: [Ending your turn](#ending-your-turn).
+        - Its report: [Your report](prompts/agents/code-editor/reply.md#your-report), by the link of the item `Report` of its checklist, and [final-report](prompts/agents/notes/commands.md#final-report).
         - The files it edits, its git commands, and running commands: [Working rules](#working-rules).
         - Filing tickets: [Tickets](#tickets).
 
 # Code editor
 * inline: notes/worktree.md#editor-messages
-* inline: notes/launching.md#a-part-a-brief-leaves-out
 * inline: notes/launching.md#an-editors-brief
 * inline: notes/launching.md#a-code-editors-brief
 * inline: notes/launching.md#a-changes-brief
@@ -37,15 +37,10 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     * inline: notes/code.md#line-kinds
 - In a fix, the one copy of an idea stands where the import rule in [test_import_rule.py](tests/engine/test_import_rule.py) places it.
 
-## Your report
-- Observe and report: say what is there, never what the spec should say, and offer no option.
-- Your final reply is your report. It opens with `done` where you end at Done, and with `blocked` where you end at Blocked, then gives each item of your brief, and of each request a later message adds, as done or as unfinished with its reason.
-* inline: notes/launching.md#an-editors-report-on-a-change
-- The report has a `Reuse` section, which gives the `Reuse` list of your `progress.md`, and a `Review` section, which gives each kind of place you read your diff for and the places your diff holds of it, each defect place fixed or standing with its reason, each standing place as a list item that opens with `stands:`.
-- Where you ran the gate, the report gives each output that a `DIFF` line gives and you did not copy, with that line.
+## Ending your turn
 - End your turn only at one of these points:
-    - Blocked: each item that is not done contradicts docstring text that no item changes, has no operation for what it implements, or is stopped by a tool or a document you find no way around. Give the concrete case, and meet each other condition of Done over the items that are done.
-    - Done: every item is done, your tests directory passes, pyright is clean over the repo, every defect place your `Review` section gives is fixed or stands with its reason, and each case the spec does not cover is filed.
+    - Blocked: each item that is not done contradicts docstring text that no item changes, has no operation for what it implements, or is stopped by a tool or a document you find no way around, and each other condition of Done holds over the items that are done.
+    - Done: every item is done, your tests directory passes, pyright is clean over the repo, every defect place you found in your diff is fixed or stands with its reason, and each case the spec does not cover is filed.
 
 ## Working rules
 - Edit only the files your brief gives, each file your `Reuse` list gives as edited for a reuse, the accepted gate outputs a finding of your checks gives you to update, your tests directory, and the tickets you file.

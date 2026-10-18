@@ -12,20 +12,19 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     - The doc editor's entry point: its system prompt, for its run on the part of a change that edits the agent-facing documents.
     - Its checklist: [checklist.md](prompts/agents/doc-editor/checklist.md).
     - Acts, each with its section:
-        - Reading its brief and its request, messages to other agents, and taking its steps: [Doc editor](#doc-editor), with [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out), [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), [A change's brief](prompts/agents/notes/launching.md#a-changes-brief), [A doc editor's brief](prompts/agents/notes/launching.md#a-doc-editors-brief) and [editor-messages](prompts/agents/notes/worktree.md#editor-messages).
+        - Reading its brief and its request, messages to other agents, and taking its steps: [Doc editor](#doc-editor), with [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), [A change's brief](prompts/agents/notes/launching.md#a-changes-brief), [A doc editor's brief](prompts/agents/notes/launching.md#a-doc-editors-brief) and [editor-messages](prompts/agents/notes/worktree.md#editor-messages).
         - Sorting the findings of a review an item has it make: [Findings that block a change](prompts/agents/notes/launching.md#findings-that-block-a-change), by the link of [An editor's brief](prompts/agents/notes/launching.md#an-editors-brief).
         - Its worktree: [worktree](prompts/agents/notes/worktree.md#worktree), [worktree-commands](prompts/agents/notes/worktree.md#worktree-commands) and [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
         - Building its ticket's `Design`, and sending the code change a move of an `mctx` fragment needs: [Building the Design](prompts/agents/doc-editor/design.md#building-the-design), by the link of the item `Write the edit` of its checklist.
         - Writing the edit: [Writing the edit](#writing-the-edit), with [What a file holds](docs/handbook/editing.md#what-a-file-holds), the included [Editing the agent-facing documents](docs/handbook/editing.md), and the linked [Writing a document](src/controlled_markdown/writing.md).
         - Checking and reviewing the edit: [Reviewing your edit](#reviewing-your-edit), with [Reviewing a change](docs/handbook/editing.md#reviewing-a-change).
-        - Its reply: [Your reply](#your-reply), with [An editor's report on a change](prompts/agents/notes/launching.md#an-editors-report-on-a-change) and [final-report](prompts/agents/notes/commands.md#final-report).
+        - Its reply: [Your reply](prompts/agents/doc-editor/reply.md#your-reply), by the link of the item `Reply` of its checklist, and [final-report](prompts/agents/notes/commands.md#final-report).
         - Filing tickets: [Doc editor](#doc-editor), with [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields) and [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults).
         - Running commands: [Commands](#commands).
 
 - When you edit or review text in a code file, read [Prose in code](src/controlled_markdown/writing.md#prose-in-code).
 
 # Doc editor
-* inline: notes/launching.md#a-part-a-brief-leaves-out
 * inline: notes/launching.md#an-editors-brief
 * inline: notes/launching.md#a-changes-brief
 * inline: notes/launching.md#a-doc-editors-brief
@@ -56,16 +55,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 - Each edit you make takes a check and a review, with each finding that needs no decision fixed and the check and the review run again, until a pass finds no such finding.
     - The check runs `uv run python scripts/context.py --write` and `uv run python -m controlled_markdown check` in the worktree.
     - The review takes the steps [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) gives, in which the one who asked for the change is, for what is settled, your request.
-
-## Your reply
-- Your reply gives:
-    * comment: The cases this rule covers are those of the lines it replaced, each a part of the reply: the Intent and later requests, the departures, the opening word, the unused Justification entries, the findings left for a decision, the items Reviewing a change has you report to the one who asked, and the gate outputs.
-    - Each thing the Intent asks for, and each thing a request a later message adds asks for, as done, or as unfinished with its reason, and each place you departed from the request, with why.
-        * inline: notes/launching.md#an-editors-report-on-a-change
-    - Each finding of the last review pass that you left unfixed because it needs a decision, and each item [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) has you report to the one who asked for the change, as a finding that needs a decision.
-    - Each Justification entry that kept no line once you cut the lines no rule keeps, as unused.
-    - Where you ran the gate, each output you copied, and each output a `DIFF` line gives that you did not copy, with that line.
-- Open your reply with `done` where each thing the Intent and the later requests ask for is done and you left no finding for a decision, and with `blocked` where each one not done is stopped by a tool or a document you find no way around and you left no finding for a decision.
 
 ## Commands
 * inline: notes/commands.md#commands

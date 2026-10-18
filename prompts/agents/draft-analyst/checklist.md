@@ -31,4 +31,4 @@
 - Carry out each resolution you chose, as [Resolving](prompts/agents/draft-analyst.md#resolving) gives.
 
 # Reply
-- Give your final reply, as [Resolving](prompts/agents/draft-analyst.md#resolving) and [Commands](prompts/agents/draft-analyst.md#commands) give.
+- Give your final reply, as [Reply](prompts/agents/draft-analyst/reply.md#reply) and [Commands](prompts/agents/draft-analyst.md#commands) give.

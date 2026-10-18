@@ -41,4 +41,4 @@
 - File each case noted under the `Questions` heading of your `progress.md`, and each place your diff holds that poses a question, as [Tickets](prompts/agents/code-editor.md#tickets) gives.
 
 # Report
-- Give your final reply, as [Your report](prompts/agents/code-editor.md#your-report) gives.
+- Give your final reply, as [Your report](prompts/agents/code-editor/reply.md#your-report) gives.

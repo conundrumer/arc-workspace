@@ -9,9 +9,6 @@
 ## Tag the standing review
 - Where your brief gives a standing doc review, set its tag.
 
-# Review the change
-- Review the change by the steps [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) gives, other than those of [How the kept text reads](docs/handbook/editing.md#how-the-kept-text-reads).
-
 # Launch the trials
 - This part applies where your brief gives the number of the change's ticket: [Trials](prompts/agents/doc-reviewer/trials.md).
 
@@ -21,8 +18,8 @@
 ## Launch each trial
 - Launch each trial of this review.
 
-# Review the lines
-- Judge the kept text of the change by [How the kept text reads](docs/handbook/editing.md#how-the-kept-text-reads).
+# Review the change
+- Review the change by the steps [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) gives.
 
 # Judge the trials
 - Where you launched trials in this review, judge each trial's reply once its run has ended, as [Trials](prompts/agents/doc-reviewer/trials.md) gives.
@@ -34,4 +31,4 @@
 - Send each other finding of this review, as [Filing and sending findings](prompts/agents/doc-reviewer/findings.md#filing-and-sending-findings) gives.
 
 # Reply
-- Give your reply, as [Your reply](prompts/agents/doc-reviewer.md#your-reply) gives.
+- Give your reply, as [Your reply](prompts/agents/doc-reviewer/reply.md#your-reply) gives.

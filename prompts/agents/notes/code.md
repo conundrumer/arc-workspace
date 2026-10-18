@@ -6,11 +6,11 @@
         - The rules every run of each of those agents keeps: [reads-and-progress](#reads-and-progress), which code-working-rules inlines, and which the code reviewer, the lib reviewer and the design reviewer inline in place of code-working-rules.
         - Judging a whole unit: [unit-kinds](#unit-kinds), which the code reviewer and the lib reviewer load by a link as they find places.
         - Judging a line: [line-kinds](#line-kinds), which the code reviewer and the lib reviewer load by a link as they find places.
-        - Reading the trees of a review: [review-trees](#review-trees), inlined by the code reviewer and the lib reviewer, as is review-reply. The items of their checklists link place-judgment, review-tickets and place-tickets.
+        - Reading the trees of a review: [review-trees](#review-trees), inlined by the code reviewer and the lib reviewer. The items of their checklists link place-judgment, review-tickets and place-tickets.
         - Judging a review's places: [place-judgment](#place-judgment).
         - Filing a review's tickets on places: [review-tickets](#review-tickets).
         - Filing a ticket on a place: [place-tickets](#place-tickets), which review-tickets inlines.
-        - Giving a review's final reply: [review-reply](#review-reply).
+        - Giving a review's final reply: [review-reply](#review-reply), which the code reviewer and the lib reviewer load by the link of their reply files.
 
 # Code notes
 - The statements on editing and reviewing the code that more than one entry point inlines.

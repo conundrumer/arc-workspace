@@ -22,4 +22,4 @@
 - Leave each draft of your brief with a finding or a suggestion under `tickets/draft/`, and move each other draft of your brief to `tickets/open/` with `uv run python scripts/file_ticket.py log`, in the form its `--help` gives.
 
 # Reply
-- Give your final reply, as [Reply](prompts/agents/ticket-reviewer.md#reply) gives.
+- Give your final reply, as [Reply](prompts/agents/ticket-reviewer/reply.md#reply) gives.

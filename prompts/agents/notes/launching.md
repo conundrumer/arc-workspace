@@ -1,10 +1,10 @@
 + budget: 25786
 * comment: when editing this doc
-    - Each Claude Code session and agent loads [Launching](#launching) by the link of [arc-workspace](CLAUDE.md), before it launches an agent by a call no command printed, and A transcript review's brief by its link, at a transcript review's launch. Each reader of Launching loads A draft's outcome by the link at the cut of a draft's claims, and each reader of the Checks of [Reviewing a draft](prompts/agents/ticket-reviewer/review.md) by the link at the check of a draft's claims about the current state. Each agent inlines the sections under [Briefs](#briefs) that give its own brief's form, which its `description` links for each launcher, and the editors An editor's report on a change. The doc reviewer and the design reviewer inline Findings that block a change, the editors load it by the link of An editor's brief, for a review an item has them make, and the decision analyst by the links of [An editor's findings](prompts/agents/decision-analyst/findings.md). The coordinator loads Passes on a task, Operators and While the user gives feedback by the links of its Changes section.
+    - Each Claude Code session and agent loads [Launching](#launching) by the link of [arc-workspace](CLAUDE.md), before it launches an agent by a call no command printed, and A transcript review's brief by its link, at a transcript review's launch. Each reader of Launching loads A draft's outcome by the link at the cut of a draft's claims, and each reader of the Checks of [Reviewing a draft](prompts/agents/ticket-reviewer/review.md) by the link at the check of a draft's claims about the current state. Each agent inlines the sections under [Briefs](#briefs) that give its own brief's form, which its `description` links for each launcher. The item checker, the design reviewer and the `handbook-expanded` agent inline A part a brief leaves out, and the reply files that the last items of the other agents' checklists link, other than the ticket reviewer's, link it. The `handbook-expanded` agent and the item checker inline An editor's report on a change, and the reply files of the code editor and the doc editor link it. The doc reviewer and the design reviewer inline Findings that block a change, the editors load it by the link of An editor's brief, for a review an item has them make, and the decision analyst by the links of [An editor's findings](prompts/agents/decision-analyst/findings.md). The coordinator loads Passes on a task, Operators and While the user gives feedback by the links of its Changes section.
     - Acts, each with its section:
         - Launching an agent and acting on what it leaves unfinished: [Launching](#launching).
         - Writing a brief, and reading one's own: [Briefs](#briefs), one section per form.
-        - Giving what shows a change's item holds: [An editor's report on a change](#an-editors-report-on-a-change).
+        - Giving in an editor's report what shows a change's item holds, the findings left at the round cap and the findings of later messages left unfixed: [An editor's report on a change](#an-editors-report-on-a-change).
         - Sorting a review's findings into those that block a change and those filed as tickets: [Findings that block a change](#findings-that-block-a-change).
         - Launching a pass on a task: [Passes on a task](#passes-on-a-task).
         - Sending an operator a line and taking its reply: [Operators](#operators).
@@ -55,7 +55,11 @@
 - An editor's brief gives the change's worktree, and the agent id of the agent that launches it, where that is not the coordinator.
 - It gives the accepted gate outputs under `tests/gate/accepted/` the editor may write, where its items change or add one, with a scratch directory.
 - Where an editor of its role that another session launched worked in that worktree before it, it gives the agent id and the scratch directory of the last such editor that left a report, and its latest report.
-- It gives the rounds the editor has of each review of the change that an item has it make. The editor makes at most that many rounds of such a review, sorts its findings as [Findings that block a change](#findings-that-block-a-change) gives, and gives in its report each finding of the last round that blocks the change as left for a decision, with a reason that opens with `at the round cap`.
+- It gives the rounds the editor has of each review of the change that an item has it make. The editor makes at most that many rounds of such a review, and sorts its findings as [Findings that block a change](#findings-that-block-a-change) gives.
+
+### An editor's report on a change
+- An editor's report on a change gives, for each item of its brief, and of each request a later message adds, that it gives as done, what shows it holds: a command it ran with the output that shows it, the line of a rendered context that states it, the check its ticket's Scope places after the merge where only that check can show it, or, where none of these can, the reason it holds.
+- It gives each finding of the last round of a review its brief gives that blocks the change as left for a decision, with a reason that opens with `at the round cap`, and each finding a later message gave that the editor left unfixed, with why it left it.
 
 ### A code editor's brief
 - A code editor's brief gives as well its tests directory and a scratch directory.
@@ -163,9 +167,6 @@
 ### Writing a solver work brief
 - Read no solver to write a brief for solver work.
 - Solver work other than a pass, or than the fix of a solver after an `interference` ticket on its task closes, is a change, which an editor carries as it carries any other, whether or not a `change` ticket gives it. Where one does, its brief has the form [A change's brief](#a-changes-brief) gives.
-
-## An editor's report on a change
-- An editor's report on a change gives, for each item of its brief, and of each request a later message adds, that it gives as done, what shows it holds: a command it ran with the output that shows it, the line of a rendered context that states it, the check its ticket's Scope places after the merge where only that check can show it, or, where none of these can, the reason it holds.
 
 ## Findings that block a change
 - A finding of a review of a built change before its merge blocks the change only where it is a defect in what an item of the change asks for, an edit that carries out an item wrongly, or a defect that an edit made to fix an earlier finding of the change.

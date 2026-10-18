@@ -41,4 +41,4 @@
 - Make this code review's baseline tag, as [The baseline tag](prompts/agents/code-reviewer/baseline-tag.md#the-baseline-tag) gives.
 
 # Report
-- Remove each worktree you added, then end your turn with your final reply, as [Your reply](prompts/agents/code-reviewer.md#your-reply) gives.
+- Remove each worktree you added, then end your turn with your final reply, as [Your reply](prompts/agents/code-reviewer/reply.md#your-reply) gives.

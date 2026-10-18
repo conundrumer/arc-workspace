@@ -1,12 +1,12 @@
 + budget: 11540
 * comment: when editing this doc
-    - Each agent whose tools include `Bash` inlines [commands](#commands), for running, waiting on and ending its commands, and the code reviewer, the lib reviewer and the design reviewer, whose documents have them run no command in the background, [foreground-commands](#foreground-commands) in its place; each agent that gives a final reply to its launcher inlines [final-report](#final-report), other than the ticket reviewer, which inlines [final-reply](#final-reply) and [message-answers](#message-answers) in its place, and the code reviewer, the lib reviewer and the design reviewer [report-file](#report-file). The doc editor, the ticket analyst, the draft analyst and the decision analyst load Background agents by a link.
+    - Each agent whose tools include `Bash` inlines [commands](#commands), for running, waiting on and ending its commands, and the code reviewer, the lib reviewer and the design reviewer, whose documents have them run no command in the background, [foreground-commands](#foreground-commands) in its place; each agent that gives a final reply to its launcher inlines [final-report](#final-report), other than the ticket reviewer, which inlines [final-reply](#final-reply) and [message-answers](#message-answers) in its place, and the code reviewer, the lib reviewer and the design reviewer [report-file](#report-file). Each agent that inlines final-reply, directly or through final-report, inlines [denied-calls](#denied-calls) beside it, other than the agents with a checklist, whose reply file, which the last item of the checklist links, links it. The doc editor, the ticket analyst, the draft analyst and the decision analyst load Background agents by a link.
     - Acts, each with its section:
         - Running a command: [commands](#commands) and [foreground-commands](#foreground-commands).
         - Waiting on a command: [waiting-on-commands](#waiting-on-commands).
         - Ending a command: [ending-commands](#ending-commands), and [process-trees](#process-trees) where it calls `TaskStop` or starts a process with `&` or `nohup`.
         - Launching a background agent a command prints: [Background agents](#background-agents).
-        - Reporting a denied call: [denied-calls](#denied-calls).
+        - Reporting a denied call in the reply: [denied-calls](#denied-calls).
         - Waiting on an agent resumed by SendMessage: [resumed-agents](#resumed-agents).
         - Sending the answer a message asks for: [message-answers](#message-answers).
         - Giving the final reply: [final-reply](#final-reply), with [coordinator](#coordinator) and [report-file](#report-file), and [final-report](#final-report), which inlines it with the two sections above.
@@ -77,7 +77,6 @@
 * inline: #message-answers
 
 ## final-reply
-* inline: #denied-calls
 * inline: #coordinator
 - Give your final reply to the agent that launched you, at the agent id your brief gives for it, or to the coordinator where your brief gives none, and to no other agent, by the first of these that holds:
     * comment: The cases this rule covers: the report file of [report-file](#report-file); a SendMessage of yours that resumed an agent, whose run holds back your report; a message of another agent; a SubagentHandback the harness refused after a report of yours was delivered; a report the harness asks for after your final reply; a SubagentHandback called while agents ran, by operator `a37be74e20c8008ae` with `PLACEHOLDER` and by ticket analyst `ac26fe1a2bcf9beb5`, lines 47 and 80 to 84, of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a`.

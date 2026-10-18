@@ -19,7 +19,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
         - Checking a draft as an execution plan: [Checks](prompts/agents/ticket-reviewer/review.md#checks).
         - Filing tickets: [Tickets](#tickets).
         - Running commands and giving the final reply: [Commands](#commands).
-        - What the reply gives: [Reply](#reply).
+        - What the reply gives: [Reply](prompts/agents/ticket-reviewer/reply.md#reply), by the link of the item `Reply` of its checklist.
 
 # Ticket reviewer
 * inline: notes/launching.md#a-ticket-reviewers-brief
@@ -42,6 +42,3 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
     * comment: Inlined, not linked: assignees a15dea852806d8e0d and a6bc8a8da857ab193, holding only a link to this section, were pinned to removed worktrees, did not act by it while every Bash call was refused, and each reported its revision unfinished: ticket 2-113.
 * inline: notes/commands.md#final-reply
 * inline: notes/commands.md#message-answers
-
-## Reply
-- Give in your final reply each ticket you moved to `tickets/open/`, and each finding and each suggestion by its ticket.

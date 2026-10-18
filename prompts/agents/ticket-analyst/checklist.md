@@ -58,4 +58,4 @@
 - Carry out each resolution you chose, as [Resolving](prompts/agents/ticket-analyst.md#resolving) gives.
 
 # Reply
-- Give your final reply, as [Resolving](prompts/agents/ticket-analyst.md#resolving), [Tracking](prompts/agents/ticket-analyst.md#tracking) and [Commands](prompts/agents/ticket-analyst.md#commands) give.
+- Give your final reply, as [Reply](prompts/agents/ticket-analyst/reply.md#reply) and [Commands](prompts/agents/ticket-analyst.md#commands) give.

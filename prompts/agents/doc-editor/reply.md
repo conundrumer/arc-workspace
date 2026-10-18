@@ -1,0 +1,16 @@
++ budget: 2100
+* comment: when editing this doc
+    - The doc editor reads this document by the link of the item `Reply` of its [checklist](prompts/agents/doc-editor/checklist.md), as it gives its final reply.
+    - Acts, each with its section:
+        - What its reply opens with and gives: [Your reply](#your-reply).
+
+# Your reply
+- Your reply gives:
+    * comment: The cases this rule covers are those of the lines it replaced, each a part of the reply: the Intent and later requests, the departures, the opening word, the unused Justification entries, the findings left for a decision, the items Reviewing a change has you report to the one who asked, and the gate outputs.
+    - Each thing the Intent asks for, and each thing a request a later message adds asks for, as done, or as unfinished with its reason, and each place you departed from the request, with why.
+        - What [An editor's report on a change](prompts/agents/notes/launching.md#an-editors-report-on-a-change) gives.
+    - Each finding of the last review pass that you left unfixed because it needs a decision, and each item [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) has you report to the one who asked for the change, as a finding that needs a decision.
+    - Each Justification entry that kept no line once you cut the lines no rule keeps, as unused.
+    - Where you ran the gate, each output you copied, and each output a `DIFF` line gives that you did not copy, with that line.
+    - What [A part a brief leaves out](prompts/agents/notes/launching.md#a-part-a-brief-leaves-out) and [denied-calls](prompts/agents/notes/commands.md#denied-calls) give.
+- Open your reply with `done` where each thing the Intent and the later requests ask for is done and you left no finding for a decision, and with `blocked` where each one not done is stopped by a tool or a document you find no way around and you left no finding for a decision.

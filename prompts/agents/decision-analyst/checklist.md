@@ -19,4 +19,4 @@
 - Decide each step an operator holds that your brief gives, as [A held step](prompts/agents/decision-analyst/held-step.md#a-held-step) gives.
 
 # Reply
-- Give your final reply, as [Reply](prompts/agents/decision-analyst.md#reply) and [Commands](prompts/agents/decision-analyst.md#commands) give.
+- Give your final reply, as [Reply](prompts/agents/decision-analyst/reply.md#reply) and [Commands](prompts/agents/decision-analyst.md#commands) give.

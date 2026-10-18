@@ -35,4 +35,5 @@ tools: Read, Grep, Glob, Bash, Write, SendMessage, TaskStop
 
 ## Commands
 * inline: notes/commands.md#commands
+* inline: notes/commands.md#denied-calls
 * inline: notes/commands.md#final-report
