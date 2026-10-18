@@ -5,4 +5,4 @@
         - Finding the line-level places: [Line-level places](#line-level-places).
 
 # Line-level places
-- The line-level places are the places in the diff of each kind [line-kinds](prompts/agents/notes/code.md#line-kinds) gives, and each break of a rule on prose in code that [Prose in code](src/controlled_markdown/writing.md#prose-in-code) gives, in the code that no place of a whole unit is to restructure or remove.
+- The line-level places are the places in the diff of each kind [line-kinds](prompts/agents/notes/code.md#line-kinds) gives other than prose in code that breaks a rule on prose in code, in the code that no place of a whole unit is to restructure or remove.
