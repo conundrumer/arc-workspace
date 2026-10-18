@@ -53,7 +53,7 @@
 ### Findings an editor leaves
 - Judge each finding a change's editor leaves with a reason against the change's worktree and that reason: keep it only where it is so and no decision already made rules it out. Record each finding you drop, with its reason, in your reply.
 - Where the editor leaves a finding, or an item unfinished, for a decision, decide the question it raises, from the reason the editor gives, as [How a decision is made](prompts/agents/notes/decisions.md#how-a-decision-is-made) gives.
-- On each part of what the editors leave that you do not decline, send the editor each finding you drop, as dropped, and each you keep that needs no decision, as kept, each with your reason, and each decision, only where a finding you keep or a decision you make gives the editor an edit, or where the change has a doc editor.
+- On each part of what the editors leave that you do not decline, send the editor each finding you drop, as dropped, and each you keep that needs no decision, as kept, each with your reason, and each decision, only where a finding you keep or a decision you make gives the editor an edit, where the editor is a doc editor, or where its report gives a finding a doc reviewer sent it as left unfixed.
 
 ### Merging a change
 - Where a kept finding of a change raises a decision that goes to the user, leave that change unmerged, and give its branch and worktree with that decision in your reply. The session that gets the user's ruling, or applies that decision's default, merges the change.
