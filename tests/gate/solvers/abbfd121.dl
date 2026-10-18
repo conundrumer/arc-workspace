@@ -241,34 +241,34 @@ impl_choice([O, R, $HiddenFill(), Sel, $TieFirst()]) :-
     // another visible cell of its color; x is the map's image of the frame.
     .decl carried(ky: Key, d: D4, x: Box)
     carried(Ky, D, X) :-
-        kind(_, D), visible(Ky, P, Col), apply(D, P, P1),
-        visible(Ky, Q, Col), P != Q, relative(P1, Q, X).
-
+        linear(D), visible(Ky, P, Col), apply(D, P, P1), visible(Ky, Q, Col), P != Q, relative(P1, Q, X).
     // The map's image of the frame lies more than a period in from some edge.
     .decl far(ky: Key, d: D4, x: Box)
     far(Ky, D, X) :-
         carried(Ky, D, X), axis_of(E, A), dist(X, E, M), period.min_period(Ky, A, K), M > K.
-
     .decl near(ky: Key, d: D4, x: Box)
     near(Ky, D, X) :- carried(Ky, D, X), !aperiodic(Ky), !far(Ky, D, X).
-
-    // The map carries a cell's axis-period color onto a cell to which the
-    // axis periods give another color.
+    // The map carries a cell's axis-period color onto a cell to which the axis periods give another
+    // color. Turned holds apply(d, p) for each cell p; the probes, those of p on a diagonal, go first.
+    .decl turned(ky: Key, d: D4, p: Position, p1: Position, col: Color)
+    turned(Ky, D, P, P1, C) :- linear(D), axis_color(Ky, P, C), apply(D, P, P1).
+    .decl probe(ky: Key, d: D4, p1: Position, col: Color)
+    probe(Ky, D, P1, C) :-
+        turned(Ky, D, P, P1, C), axis_of(E, A), axis_of(F, B), A != B, dist(P, E, M), dist(P, F, M).
+    .decl probed(ky: Key, d: D4, x: Box)
+    probed(Ky, D, X) :-
+        near(Ky, D, X), probe(Ky, D, P1, C1), compose(P1, X, Q), axis_color(Ky, Q, C2), C1 != C2.
     .decl contradicted(ky: Key, d: D4, x: Box)
+    contradicted(Ky, D, X) :- probed(Ky, D, X).
     contradicted(Ky, D, X) :-
-        near(Ky, D, X), axis_color(Ky, P, C1), apply(D, P, P1),
-        compose(P1, X, Q), axis_color(Ky, Q, C2), C1 != C2.
-
-    // The maps recovery r reads.
+        near(Ky, D, X), !probed(Ky, D, X), turned(Ky, D, _, P1, C1), compose(P1, X, Q), axis_color(Ky, Q, C2), C1 != C2.
+    // The maps recovery r reads, and the hidden cells q, each the image of p under such a map.
     .decl map(ky: Key, r: Recovery, d: D4, x: Box)
-
-    // Hidden q is the image of p under a map of recovery r.
     .decl map_link(ky: Key, r: Recovery, p: Position, q: Position)
     map_link(Ky, R, P, Q) :-
-        map(Ky, R, D, X), cell(Ky, P, _), apply(D, P, P1), compose(P1, X, Q), hidden(Ky, Q).
+        map(Ky, R, D, X), d4_inverse(D, E), hidden(Ky, Q), relative(X, Q, Y), apply(E, Y, P), cell(Ky, P, _).
 
-    // The colors each recovery gives a cell: those of the axis periods, and
-    // those its maps carry into hidden cells.
+    // The colors each recovery gives a cell: the axis periods', and those its maps carry.
     .decl color(ky: Key, r: Recovery, p: Position, col: Color)
     color(Ky, R, P, Col) :- recovery_choice(R), axis_color(Ky, P, Col).
     color(Ky, R, Q, Col) :- color(Ky, R, P, Col), map_link(Ky, R, P, Q).
@@ -345,12 +345,12 @@ impl_choice([O, R, $HiddenFill(), Sel, $TieFirst()]) :-
 }
 
 .decl scope(s: Scope)
-
 .init parse = Parse<Scope>
 parse.cell(S, P, Col) :- scope(S), in(P, Col).
-
-// The linear parts each recovery's maps take.
+// The linear parts each recovery's maps take, and each such part once.
 .decl kind(r: Recovery, d: D4)
+.decl linear(d: D4)
+linear(D) :- kind(_, D).
 
 // A D4 element that moves some direction.
 .decl moves(d: D4)
@@ -421,8 +421,8 @@ kind($LatticePeriod(), D) :- d4_elem(D), !moves(D).
 // The translation carries a visible cell onto a visible cell of another color.
 .decl clash(s: Scope, d: D4, x: Box)
 clash(S, D, X) :-
-    kind($LatticePeriod(), D), parse.carried(S, D, X),
-    parse.visible(S, P, C1), apply(D, P, P1), compose(P1, X, Q), parse.visible(S, Q, C2), C1 != C2.
+    kind($LatticePeriod(), D), parse.visible(S, P, C1), apply(D, P, P1),
+    parse.visible(S, Q, C2), C1 != C2, relative(P1, Q, X), parse.carried(S, D, X).
 
 parse.map(S, $LatticePeriod(), D, X) :-
     kind($LatticePeriod(), D), parse.carried(S, D, X), !clash(S, D, X).
