@@ -107,7 +107,11 @@ def affected(cmds: Sequence[GateCommand], base: str) -> tuple[set[str], str | No
                 for t in touched if Path(t.path).suffix in PY_SUFFIXES
                 and not (t.status.added or t.unrecorded)}
     if any(lib_dl(t.path) for t in touched):
-        recorded.update({p: text_at(record.commit, p) for p in COMMENT_READERS})
+        for p in COMMENT_READERS:
+            try:
+                recorded[p] = text_at(record.commit, p)
+            except checkout.GitFailed:
+                continue
     run = {k for c in cmds for s in c.stems for k in [c.key(s)]
            if k not in record.deps or affects(c, s, record.deps[k], touched, recorded)}
     return run, record.commit, len(keys)

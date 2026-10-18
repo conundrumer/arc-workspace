@@ -71,8 +71,9 @@ def affects(cmd: GateCommand, stem: str, deps: Deps, touched: Sequence[Touched],
             recorded: dict[str, str]) -> bool:
     """Whether the changes `touched` can affect `cmd` on `stem`, which
     depends on `deps`, with `recorded` the recorded text of each Python file
-    they modify or delete, and of each file of `COMMENT_READERS` where they
-    modify a Souffle file of the lib (`lib_dl`). A change affects it where it touches a
+    they modify or delete, and of each file of `COMMENT_READERS` that stands
+    at the record's commit where they modify a Souffle file of the lib
+    (`lib_dl`). A change affects it where it touches a
     file of `GATE_READS`, the command's accepted outputs, a file the gate
     copies for it (`copied`), or a file it opened to read; where it adds or
     deletes a file in a directory it listed; and where it changes a Python
@@ -82,7 +83,10 @@ def affects(cmd: GateCommand, stem: str, deps: Deps, touched: Sequence[Touched],
     `unrecorded` file affects every command, since the record cannot say
     which commands run it. A hunk `inert` passes affects no command, a
     Souffle file of the lib whose hunks `inert_dl` passes each affects only
-    a command that ran a body line of a function of `COMMENT_READERS`, and a
+    a command that ran a body line of a function of `COMMENT_READERS`, or
+    every command where a file or function of `COMMENT_READERS` is absent
+    from `recorded`, since the record cannot say which commands ran that
+    reader under its old name or place, and a
     modified Python file of `GATE_READS` is run whole by every command
     through each other hunk."""
     accepted = ACCEPTED.relative_to(checkout.ROOT)
@@ -94,9 +98,10 @@ def affects(cmd: GateCommand, stem: str, deps: Deps, touched: Sequence[Touched],
         if t.path in own or any(Path(t.path).is_relative_to(p) for p in copied):
             return True
         if t.inert and lib_dl(t.path):
-            if any(reader_lines(p, recorded[p]) & deps.lines.get(p, frozenset())
-                   for p in COMMENT_READERS):
-                return True
+            for p in COMMENT_READERS:
+                lines = reader_lines(p, recorded[p]) if p in recorded else None
+                if lines is None or lines & deps.lines.get(p, frozenset()):
+                    return True
             continue
         if t.inert:
             continue
@@ -115,13 +120,14 @@ def affects(cmd: GateCommand, stem: str, deps: Deps, touched: Sequence[Touched],
 
 
 @cache
-def reader_lines(path: str, source: str) -> frozenset[int]:
+def reader_lines(path: str, source: str) -> frozenset[int] | None:
     """The body lines of the functions of `COMMENT_READERS` in `path`,
     whose text is `source`: a module-level line, a `def` line among them,
-    runs when the file is imported, and reads no comment."""
+    runs when the file is imported, and reads no comment. None where
+    `source` holds no function of some name `COMMENT_READERS` gives for
+    `path`."""
     names = COMMENT_READERS[path]
     found = [f for f in functions(source) if f.name in names]
-    missing = names - {f.name for f in found}
-    if missing:
-        raise RuntimeError(f"{path} holds no function {', '.join(sorted(missing))}")
+    if names - {f.name for f in found}:
+        return None
     return frozenset(i for f in found for i in range(f.body, f.last + 1))

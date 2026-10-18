@@ -247,3 +247,13 @@ def test_a_lib_hunk_affects_a_reader_of_comments_and_only_an_inert_one_spares_ot
                       frozenset({LIB_DL}), frozenset())
     assert affecting.affects(cmd, "ac0c5833", reader, (touched,), READERS)
     assert affecting.affects(cmd, "ac0c5833", other, (touched,), READERS) is not passed
+
+
+@pytest.mark.parametrize("recorded", [
+    {p: t for p, t in READERS.items() if p != "src/handbook/items.py"},
+    {**READERS, "src/handbook/lib.py": READERS["src/handbook/lib.py"].replace("_prose", "_text")},
+])
+def test_an_inert_lib_hunk_affects_every_command_where_a_comment_reader_is_absent(recorded):
+    touched = Touched(LIB_DL, checkout.Change.MODIFIED, (H(1, 1),), passed=frozenset({0}))
+    ran = deps.Deps({}, frozenset({LIB_DL}), frozenset())
+    assert affecting.affects(COMMANDS["lint"], "ac0c5833", ran, (touched,), recorded)
