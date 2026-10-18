@@ -125,8 +125,9 @@ def held(hold: Hold) -> Iterator[None]:
 
 WAIT = mctx("Another {noun} holds {path}, so this {noun} waits until it is done.")
 HOLDER = mctx("The holder wrote: {holder}")
-HELD = mctx("Another {noun} holds {path}, and this {noun} cannot wait for it, "
-            "since it runs under an inherited hold of the heavy commands' lock.")
+HELD = mctx("Another {noun} holds {path}, and this {noun} stops, since it runs inside "
+            "a `run_dl.py` command, a pytest run or a gate command, which may be that "
+            "holder. Run it again outside that command.")
 
 
 @dataclass(frozen=True)

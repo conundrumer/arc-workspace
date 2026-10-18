@@ -13,7 +13,8 @@ status. The arguments and options follow them, and then the stems each
 command runs on.
 
 A command runs on the stems its definition in `gating.commands` gives,
-which the end of `--help` lists for each command. Every command reads the
+which `uv run python scripts/gate.py --help` lists for each command at its
+end, under `The stems each command runs on:`. Every command reads the
 solver files from `tests/gate/solvers/` and the witness files from
 `tests/gate/witnesses/`.
 On each stem, the commands run in the order of `gating.commands.COMMANDS`,
@@ -63,8 +64,9 @@ worktree it runs in (`engine.rwlock.GATE`) from before its first command
 to its end, whatever its options, so no two gate runs of one worktree run
 at once. A run that finds the lock held says so on stderr, with what the
 holder wrote, and waits. A run that starts under an inherited hold of the
-heavy commands' lock does not wait for the gate lock: where another run
-holds it, it says so on stderr and exits 1.
+heavy commands' lock does not wait for the gate lock
+(`engine.rwlock.mutex_held`): where another run holds it, it says so on
+stderr and exits 1.
 
 `--coverage` traces each command: it records the lines of each Python
 file under `src/` and `scripts/` the command runs, through coverage.py, and
@@ -130,7 +132,8 @@ command runs. The `record` commands, `grid` and `relation` read their input
 files from `tests/gate/inputs/`. The `context` command renders each of its
 readers' contexts from `<out-dir>/gate/documents/`, copied from
 `tests/gate/documents/` before the commands run, so a change to the
-checkout's own documents changes none of its outputs. Its readers are the
+checkout's own documents changes none of its outputs, the `context-*` files
+under `tests/gate/accepted/`. Its readers are the
 session, codex, and each name `tests/gate/documents/` defines for a reader
 that takes a name. In an output, the path of `<out-dir>/gate/` is written
 as `<out>/gate/`, and a time the command prints is dropped.
@@ -297,8 +300,8 @@ def select(cmds: Sequence[GateCommand], base: str) -> set[str]:
 
 
 def adopt(out: Path) -> int:
-    """The adopt step of the run under `out`, as `--help` gives it; its exit
-    status."""
+    """The adopt step of the run under `out`, as the `--adopt` paragraph of `--help`
+    gives it; its exit status."""
     rc = adopt_record(out)
     if rc != 0:
         return rc

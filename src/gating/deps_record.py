@@ -121,8 +121,11 @@ def adopt_record(out: Path) -> int:
     record = Record.read(path)
     at = head()
     if record.commit != at:
-        print(mctx("record: {path} records {commit}, and HEAD is {head}").format(
-            path=path, commit=record.commit[:12], head=at[:12]), file=sys.stderr)
+        print(mctx("record: {path} records {commit}, and HEAD is {head}, so the dependency "
+                   "record at {deps} and the accepted counts stay as they are; run the gate "
+                   "again at {head} and adopt that run").format(
+            path=path, commit=record.commit[:12], head=at[:12], deps=deps_file()),
+            file=sys.stderr)
         return 1
     record.write(deps_file())
     print(mctx("record: the dependency record of {commit} is written to {deps}").format(
