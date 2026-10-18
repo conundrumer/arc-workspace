@@ -9,7 +9,6 @@ kept output in place of a run. Of two updates with one key at once, the
 second waits for the first's run and gives what it kept. A file git
 ignores is not in the key."""
 
-import fcntl
 import hashlib
 import json
 import subprocess
@@ -26,14 +25,16 @@ class Run(NamedTuple):
     stderr: str
 
 
-def _status_digest(h: "hashlib._Hash", tree: Path) -> None:
+def _status_digest(tree: Path) -> str:
     from engine import checkout
     from engine.memo import hash_files
 
     listed = checkout.git_out(tree, "status", "--porcelain=v1", "-z",
                               "--untracked-files=all", "--no-renames")
+    h = hashlib.sha256()
     hash_files(h, ((name, tree / name)
                    for name in sorted(entry[3:] for entry in listed.split("\0") if entry)))
+    return h.hexdigest()
 
 
 def cached_run(tree: Path, after: str, args: list[str],
@@ -44,17 +45,8 @@ def cached_run(tree: Path, after: str, args: list[str],
     import tempfile
 
     from engine import checkout
-    from engine.memo import read_or_make
-    from handbook.kept_trees import flocked
-    from handbook.kept_runs import CONTEXT_SCRIPT
+    from handbook.kept_runs import CONTEXT_SCRIPT, kept
     from handbook.reader_diffs import PROJECT_INSTRUCTIONS
-
-    h = hashlib.sha256()
-    for part in [after, *args, *(held or ())]:
-        h.update(part.encode() + b"\0")
-    h.update(b"\1" if held else b"\0")
-    _status_digest(h, tree)
-    key = checkout.cache() / UPDATE_CACHE / h.hexdigest()
 
     def made() -> tuple[Run, bool]:
         with tempfile.TemporaryDirectory() as tmp:
@@ -68,7 +60,6 @@ def cached_run(tree: Path, after: str, args: list[str],
         run = Run(" ".join(argv), done.returncode, done.stdout, done.stderr)
         return run, run.returncode == 0
 
-    with flocked(key.with_suffix(".lock"), fcntl.LOCK_EX):
-        return read_or_make(key.with_suffix(".json"),
-                            lambda data: Run(*json.loads(data)),
-                            lambda run: json.dumps(run).encode(), made)
+    parts = [after, *args, *(held or ()), "held" if held else "", _status_digest(tree)]
+    return kept(UPDATE_CACHE, parts, ".json", lambda data: Run(*json.loads(data)),
+                lambda run: json.dumps(run).encode(), made)

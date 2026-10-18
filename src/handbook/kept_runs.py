@@ -9,6 +9,7 @@ import hashlib
 import os
 import subprocess
 import sys
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from controlled_markdown import mctx
@@ -33,13 +34,23 @@ def run_in(tree: Path, commit: str, argv: list[str]) -> str:
     is not kept, since its files may differ from its `HEAD`."""
     if tree.parent != checkout.cache() / TREES:
         return _run(tree, commit, argv)
+    return kept(RUNS, [tree.name, *argv], ".txt", bytes.decode, str.encode,
+                lambda: (_run(tree, commit, argv), True))
+
+
+def kept[V](directory: str, parts: Sequence[str], suffix: str,
+            decode: Callable[[bytes], V | None], encode: Callable[[V], bytes],
+            make: Callable[[], tuple[V, bool]]) -> V:
+    """The value `read_or_make` gives of the file with `suffix` under
+    `directory` in `checkout.cache()`, named by the sha256 of `parts`, under
+    an exclusive lock on that name, so that of two calls with one key at
+    once, the second waits for the first and reads what it kept."""
     h = hashlib.sha256()
-    for part in [tree.name, *argv]:
+    for part in parts:
         h.update(part.encode() + b"\0")
-    key = checkout.cache() / RUNS / h.hexdigest()
+    key = checkout.cache() / directory / h.hexdigest()
     with flocked(key.with_suffix(".lock"), fcntl.LOCK_EX):
-        return read_or_make(key.with_suffix(".txt"), bytes.decode, str.encode,
-                            lambda: (_run(tree, commit, argv), True))
+        return read_or_make(key.with_suffix(suffix), decode, encode, make)
 
 
 def _run(tree: Path, commit: str, argv: list[str]) -> str:
