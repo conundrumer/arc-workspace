@@ -363,19 +363,25 @@ def test_a_call_whose_command_starts_within_the_bound_is_denied(
         tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The age is read at the start of the hook's command, so a call whose
     command started within the bound is denied where `uv run` starts its
-    entry past it. The delivery is set a second ahead, so that a slow start
-    of the command under load still falls within the bound."""
+    entry past it. The stub `uv` sets the delivery half the bound before the
+    `HOOK_STARTED` it is given, then sleeps past the bound, so that no start
+    latency of the command decides the outcome."""
+    monkeypatch.syspath_prepend(str(checkout.scripts()))
+    bound = script("reader_delivery").DELIVERY_BOUND
     main = session(tmp_path)
     record(main, "main").parent.mkdir(parents=True)
     record(main, "main").write_text(both(head()))
-    slow = stub_uv(tmp_path, f'sleep 2\nexec {shutil.which("uv")} "$@"')
+    set_delivery = (f'[ -n "$HOOK_STARTED" ] && perl -MTime::HiRes=utime -e '
+                    f"'$t = $ENV{{HOOK_STARTED}} - {bound / 2}; utime $t, $t, $ARGV[0]' "
+                    f"{delivered(main)}")
+    slow = stub_uv(tmp_path, f'{set_delivery}\nsleep {bound * 2}\n'
+                             f'exec {shutil.which("uv")} "$@"')
     monkeypatch.setenv("PATH", f"{slow}:{os.environ['PATH']}")
     for cmd, tool in [(command("PreToolUse", "Bash|Monitor"), "Bash"),
                       (command("PreToolUse", "Agent", "context_bound_hook"), "Agent"),
                       (command("PreToolUse", "^(?!(Bash|Monitor|Agent)$).*",
                                "reader_update_hook"), "Read")]:
         delivered(main).touch()
-        aged(delivered(main), -1)
         out = json.loads(run(cmd, call(main, tool, {})))["hookSpecificOutput"]
         assert out["permissionDecision"] == "deny", tool
 
