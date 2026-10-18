@@ -7,14 +7,14 @@ import importlib
 import inspect
 import time
 import uuid
-from collections.abc import Callable, Hashable, Mapping
+from collections.abc import Callable, Hashable, Iterable, Iterator, Mapping
 from enum import Enum
 from functools import wraps
 from pathlib import Path
-from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
 import kept_reads
+from kept_reads import PathText
 
 _state = 0
 """The count of the states this process has opened (`new_state`)."""
@@ -25,10 +25,25 @@ when `new_state` began to bring the sources up to date, or the import of
 this module before the first state."""
 
 
-EMPTY: Mapping[Any, object] = MappingProxyType({})
-"""The `stamped` or `made` of a held read that has none, one mapping for
-each, as a call holds tens of thousands of held reads that rest on
-nothing, such as the stat of a path."""
+type Made = tuple[object, ...]
+"""The held reads a run or a stamp made, in the order it made them, each
+followed by the result it gave, in one flat tuple, as a call holds about a
+hundred thousand of them (`made_of`)."""
+
+
+def made_of(frame: Mapping["Held", object]) -> Made:
+    """The held reads of `frame`, each with the result it gave, as `Made`."""
+    return tuple(x for pair in frame.items() for x in pair)
+
+
+def belows(made: Made) -> tuple["Held", ...]:
+    """The held reads `made` gives."""
+    return cast("tuple[Held, ...]", made[::2])
+
+
+def pairs(made: Made) -> Iterator[tuple["Held", object]]:
+    """The held reads `made` gives, each with the result it gave."""
+    return zip(belows(made), made[1::2])
 
 
 class Held:
@@ -51,15 +66,15 @@ class Held:
         self.read = read
         self.call = call
         self.positional = positional
-        self.stamped: Mapping[Held, object] = EMPTY
+        self.stamped: Made = ()
         self.version: str | None = None
         self.state = 0
         self.reached = 0
         self.mark: Hashable = None
         self.value: object = None
         self.lines: tuple[str, ...] = ()
-        self.made: Mapping[Held, object] = EMPTY
-        self.dependents: dict[Held, None] | None = None
+        self.made: Made = ()
+        self.dependents: list[Held] | None = None
         self.marked = False
 
     def recall(self) -> object:
@@ -71,17 +86,18 @@ class Held:
         """Drop this read from the held reads of its read."""
         self.read.held.pop(self.call)
 
-    def rest_on(self, made: Mapping["Held", object]) -> None:
+    def rest_on(self, made: Made) -> None:
         """Replace the reads this one rests on, and their reverse edges, by
         `made`."""
-        for below in self.made:
-            assert below.dependents is not None
-            del below.dependents[self]
-        self.made = made or EMPTY
-        for below in made:
-            if below.dependents is None:
-                below.dependents = {}
-            below.dependents[self] = None
+        if belows(made) != belows(self.made):
+            for below in belows(self.made):
+                assert below.dependents is not None
+                below.dependents.remove(self)
+            for below in belows(made):
+                if below.dependents is None:
+                    below.dependents = []
+                below.dependents.append(self)
+        self.made = made
 
 
 _held: dict[Held, None] = {}
@@ -128,8 +144,8 @@ def new_state() -> float:
             continue
         del _held[h]
         h.drop()
-        made = list(h.made)
-        h.rest_on(EMPTY)
+        made = belows(h.made)
+        h.rest_on(())
         idle += [below for below in made if unused(below)]
     global _opened
     _opened = time.time()
@@ -171,7 +187,7 @@ def bring_up(source: Held) -> None:
     if _stands is not None and source.read is _stands[0] and _stands[1](source.call):
         source.state = _state
         return
-    for below in list(source.made):
+    for below in belows(source.made):
         bring_up(below)
     try:
         source.recall()
@@ -232,14 +248,14 @@ def in_read() -> bool:
     return bool(_frames)
 
 
-def held_still(made: Mapping[Held, object]) -> bool:
+def held_still(made: Made) -> bool:
     """Whether each of the reads `made` gives, at this state, the very result
     it gave: a read gives its held result again where its stamp holds or
     where what it reads anew equals it. A read up to date at this state, or
     a `DERIVED` read that is not marked while no source is being brought up
     to date, gives its held result with no run (`run`), so it is compared
     by that result."""
-    for below, value in made.items():
+    for below, value in pairs(made):
         below.reached = _state
         if below.state == _state or not (below.marked or below.source or _marking):
             if below.value is not value:
@@ -269,7 +285,42 @@ class Kept(Enum):
 
 
 type Call = tuple[tuple[Any, ...], tuple[tuple[str, Any], ...]]
-"""The arguments of a read, positional and named, less its `notes`."""
+"""The arguments of a read, positional and named, less its `notes`, the
+named ones in the order of their names, and each `Path` among them as its
+`PathText` (`call_of`), so that a held read keeps no `Path` its caller
+made."""
+
+
+def call_of(args: tuple[Any, ...], kwargs: Iterable[tuple[str, Any]]) -> Call:
+    """The `Call` of the arguments `args` and `kwargs`."""
+    return tuple(map(as_key, args)), tuple(sorted((k, as_key(v)) for k, v in kwargs))
+
+
+_texts: dict[str, PathText] = {}
+"""The one `PathText` of each path text the `Call` of a read of this
+process gave."""
+
+
+def as_key(value: object) -> object:
+    """`value`, an argument of a read, as a `Call` gives it: a `Path` as the
+    one `PathText` of its text, so the held reads of one path share it."""
+    if not isinstance(value, Path):
+        return value
+    text = str(value)
+    found = _texts.get(text)
+    if found is None:
+        found = _texts[text] = PathText(text)
+    return found
+
+
+def as_argument(value: object) -> object:
+    """`value`, of a `Call`, as the read takes it."""
+    return Path(value) if type(value) is PathText else value
+
+
+def arguments(call: Call) -> tuple[tuple[Any, ...], dict[str, Any]]:
+    """The arguments the read takes for `call`, positional and named."""
+    return tuple(map(as_argument, call[0])), {k: as_argument(v) for k, v in call[1]}
 
 
 class By(Enum):
@@ -318,7 +369,7 @@ class ReadInfo:
         """The read's result at this state for `args` and `kwargs`, its notes
         dropped: the held result where it was brought up to date at this
         state, reached as `at_state` reaches it (`reach`)."""
-        hit = self.held.get((args, kwargs))
+        hit = self.held.get(call_of(args, kwargs))
         if hit is not None and hit.state == _state:
             reach(hit)
             return hit.value
@@ -344,7 +395,7 @@ def read_named(name: str) -> ReadInfo:
     return _reads[name]
 
 
-def trace_of(made: dict[Held, object]) -> tuple[Leaf, ...]:
+def trace_of(made: Made) -> tuple[Leaf, ...]:
     """The reads that the held reads `made`, with the result each gave, rest
     on, in the order they were made: a read kept on disk by its version, a
     read kept by its result and a source with no stamp by its result, a
@@ -352,10 +403,11 @@ def trace_of(made: dict[Held, object]) -> tuple[Leaf, ...]:
     `DERIVED` read by the reads it made."""
     out: dict[tuple[str, Hashable], Leaf] = {}
     seen: set[Held] = set()
-
-    def visit(h: Held, value: object) -> None:
+    stack = list(pairs(made))[::-1]
+    while stack:
+        h, value = stack.pop()
         if h in seen:
-            return
+            continue
         seen.add(h)
         ident = (h.read.name, h.call)
         if h.read.kept is Kept.DISK and h.version is not None:
@@ -363,15 +415,11 @@ def trace_of(made: dict[Held, object]) -> tuple[Leaf, ...]:
         elif h.read.kept is not None or (h.source and h.read.stamp is None):
             out.setdefault(ident, (By.VALUE, h.read.name, *h.call, value))
         elif h.source and h.stamped:
-            for below, given in h.stamped.items():
-                visit(below, given)
+            stack += list(pairs(h.stamped))[::-1]
         elif h.source:
             out.setdefault(ident, (By.STAMP, h.read.name, *h.call, h.mark))
         else:
-            for below, given in h.made.items():
-                visit(below, given)
-    for h, value in made.items():
-        visit(h, value)
+            stack += list(pairs(h.made))[::-1]
     return tuple(out.values())
 
 
@@ -387,7 +435,7 @@ def holds(leaf: Leaf) -> bool:
     except Exception:
         return False
     if by is By.VERSION:
-        return info.held[(args, kwargs)].version == given
+        return info.held[call_of(args, kwargs)].version == given
     return same(now, given)
 
 
@@ -395,10 +443,10 @@ def canonical(value: object) -> object:
     """`value`, an argument of a read, in a form whose `repr` is the same in
     each process: a set's members in order. TypeError for a value of no
     such form."""
+    if isinstance(value, (Path, PathText)):
+        return ("path", str(value))
     if value is None or isinstance(value, (str, int, float)):
         return value
-    if isinstance(value, Path):
-        return ("path", str(value))
     if isinstance(value, (tuple, list)):
         return (type(value).__name__, tuple(canonical(v) for v in value))
     if isinstance(value, (set, frozenset)):
@@ -452,7 +500,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
         held = info.held
         _reads[info.name] = info
 
-        def recalled(key: Call) -> tuple[Record | None, dict[Held, object] | None]:
+        def recalled(key: Call) -> tuple[Record | None, Made | None]:
             """The record the store keeps for `key`, and where each read of
             its trace `holds`, the held reads its check made."""
             store = kept_reads.store()
@@ -469,9 +517,9 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                 good = all(holds(leaf) for leaf in record[0])
             finally:
                 made = _frames.pop()
-            return record, made if good else None
+            return record, made_of(made) if good else None
 
-        def keep(key: Call, made: dict[Held, object], value: object,
+        def keep(key: Call, made: Made, value: object,
                  lines: tuple[str, ...], version: str | None) -> str | None:
             """The version of `value` once it is kept for `key`, `version`
             where one is given, or None where it is not kept."""
@@ -487,13 +535,16 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
             return version if kept_now else None
 
         def run(key: Call, positional: bool) -> tuple[Any, tuple[str, ...]]:
-            args: tuple[Any, ...] = key[0]
-            kwargs: dict[str, Any] = dict(key[1])
+            return run_with(key, positional, *arguments(key))
+
+        def run_with(key: Call, positional: bool, args: tuple[Any, ...],
+                     kwargs: dict[str, Any]) -> tuple[Any, tuple[str, ...]]:
+            """`run` of `key`, whose arguments are `args` and `kwargs`."""
             hit = held.get(key)
             if hit is not None and hit.state == _state:
                 return hit.value, hit.lines
             mark: Hashable = None
-            stamped: dict[Held, object] = {}
+            stamped: Made = ()
             if hit is not None and derived:
                 if (not hit.marked and not _marking) or held_still(hit.made):
                     hit.state, hit.marked = _state, False
@@ -503,9 +554,9 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                 try:
                     mark = stamp(*args, **kwargs)
                 finally:
-                    stamped = _frames.pop()
+                    stamped = made_of(_frames.pop())
                 if hit is not None and hit.mark == mark:
-                    hit.state, hit.stamped = _state, stamped or EMPTY
+                    hit.state, hit.stamped = _state, stamped
                     return hit.value, hit.lines
             record, made = recalled(key) if hit is None else (None, None)
             if record is not None and made is not None:
@@ -521,7 +572,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                 try:
                     value = read(*args, **kwargs)
                 finally:
-                    made = _frames.pop()
+                    made = made_of(_frames.pop())
                 kept_lines = tuple(lines)
                 before = (record[1], record[3]) if record is not None else (
                     (hit.value, hit.version) if hit is not None else None)
@@ -536,8 +587,8 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
             elif value is not hit.value and hit.source:
                 mark_dependents(hit)
             hit.state, hit.mark, hit.value, hit.lines = _state, mark, value, kept_lines
-            hit.stamped, hit.marked, hit.version = stamped or EMPTY, False, version
-            hit.rest_on(made if stamp is None or derived else EMPTY)
+            hit.stamped, hit.marked, hit.version = stamped, False, version
+            hit.rest_on(made if stamp is None or derived else ())
             return value, hit.lines
 
         @wraps(read)
@@ -553,8 +604,8 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                     args = (*args[:at], *args[at + 1:])
                 else:
                     sink = kwargs.pop(notes)
-            key = (args, tuple(sorted(kwargs.items())))
-            value, lines = run(key, positional)
+            key = call_of(args, kwargs.items())
+            value, lines = run_with(key, positional, args, kwargs)
             hit = held[key]
             reach(hit)
             if sink is not None:

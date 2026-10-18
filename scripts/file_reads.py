@@ -8,7 +8,7 @@ from collections.abc import Callable, Collection, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from state_reads import held_calls, in_read, stand_next, state, state_cache
+from state_reads import arguments, held_calls, in_read, stand_next, state, state_cache
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,7 +75,7 @@ def stat_read(path: Path) -> FileStat | None:
 
 def held_paths() -> list[Path]:
     """The path of each stat this process holds (`stat_read`)."""
-    return [call[0][0] for call in held_calls(stat_read)]
+    return [arguments(call)[0][0] for call in held_calls(stat_read)]
 
 
 def stats_stand_but(changed: Collection[str] | None) -> None:

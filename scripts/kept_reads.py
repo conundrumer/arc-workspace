@@ -72,11 +72,19 @@ def held_path(text: str) -> Path:
     return found
 
 
-def reduce_path(path: Path) -> tuple[Any, tuple[str]]:
+class PathText(str):
+    """The text of a `Path` that a read takes as an argument, as the key of
+    a held read gives it in `state_reads`: a record gives it as the `Path`
+    `held_path` gives."""
+    __slots__ = ()
+
+
+def reduce_path(path: Path | PathText) -> tuple[Any, tuple[str]]:
     return held_path, (str(path),)
 
 
-PICKLED = {**copyreg.dispatch_table, PosixPath: reduce_path, WindowsPath: reduce_path}
+PICKLED = {**copyreg.dispatch_table, PosixPath: reduce_path, WindowsPath: reduce_path,
+           PathText: reduce_path}
 """How a record pickles: each path as `held_path` of its text."""
 
 
