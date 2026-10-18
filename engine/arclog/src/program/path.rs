@@ -113,7 +113,8 @@ pub enum NodeRef<'a> {
     /// [`NodeRef::Conjunct`].
     Atom(&'a Atom),
     Site(&'a Site),
-    /// A bare-label argument of a site, a [`super::SiteArg::Label`].
+    /// A bare-label argument of a site, a [`super::SiteArg::Label`] or a
+    /// [`super::SiteArg::NamedLabel`].
     Label(&'a LabelUse),
 }
 

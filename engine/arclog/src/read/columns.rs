@@ -75,7 +75,7 @@ fn exports(first: &Body, later: &[&Body], out: &mut Vec<LabelId>) {
 fn site_labels(site: &Site, visit: &mut dyn FnMut(LabelUse)) {
     for arg in site.value.args.iter() {
         match arg {
-            SiteArg::Label(label) => visit(*label),
+            SiteArg::Label(label) | SiteArg::NamedLabel { label, .. } => visit(*label),
             SiteArg::Field(field) => site_labels(field, visit),
         }
     }

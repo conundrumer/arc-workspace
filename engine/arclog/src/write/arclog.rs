@@ -404,7 +404,7 @@ impl<'l> Writer<'l> {
         self.put(&mut t, &format!("{}{}", sp::COLUMN_MARK, column(&site.column)));
         for (index, arg) in site.value.args.iter().enumerate() {
             match arg {
-                SiteArg::Label(label) => self.put(&mut t, &label_use(*label, names)),
+                SiteArg::Label(label) | SiteArg::NamedLabel { label, .. } => self.put(&mut t, &label_use(*label, names)),
                 SiteArg::Field(field) => self.site(field, &path.child(index as u32), names, false),
             }
         }

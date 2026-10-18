@@ -272,7 +272,9 @@ pub struct Site {
 /// order. `(:key C A)` and `(:key (:C C) (:A A))` are two values, and a
 /// column of a type parameter is written alike whether it reads a record or
 /// one label: whether it reads a record, and the resolved content of each
-/// such site, are the resolver's.
+/// such site, are the resolver's. A bare label at a site on a column of a
+/// type parameter is a [`SiteArg::NamedLabel`], and each other bare label a
+/// [`SiteArg::Label`].
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct SiteValue {
     /// Never empty.
@@ -282,11 +284,29 @@ pub struct SiteValue {
 /// One argument of a site.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum SiteArg {
-    /// A bare label with its mark: `*V` of `(:C *V)`, or `A` of `(:key C A)`.
+    /// A bare label with its mark at a site on a fixed-type column or on a
+    /// field, `*V` of `(:C *V)`, whose name stands only in the layout, or
+    /// `0` at any site.
     Label(LabelUse),
+    /// A bare label with its mark at a site on a column of a type
+    /// parameter, `A` of `(:key C A)`, with the name the file writes for it,
+    /// `A`. Where the column holds a record, the label is the elided field
+    /// site `(:A A)` (`docs/arclog/arclog.md#sites`), and its name is the
+    /// field it reads.
+    NamedLabel { name: ColumnName, label: LabelUse },
     /// A site on a field of a record, `(:<Field> ...)`: `(:A *A1)` of
     /// `(:key (:C C) (:A *A1))`.
     Field(Site),
+}
+
+impl SiteArg {
+    /// The label of a bare-label argument of either kind.
+    pub fn label(&self) -> Option<LabelUse> {
+        match self {
+            SiteArg::Label(label) | SiteArg::NamedLabel { label, .. } => Some(*label),
+            SiteArg::Field(_) => None,
+        }
+    }
 }
 
 /// One label at a site, with its mark.

@@ -12,12 +12,14 @@
 //! the order of the atoms of a body and of the branches of an `OR`, and
 //! keeps the order of every other list, such as a parameter's columns, a
 //! row's values or an output's path. A node holds no name of a label and no place in a file:
-//! those stand beside it, in a [`crate::layout::Layout`]. The one exception
-//! is the name of a column that a label gives a relation the program
-//! declares, [`RelationColumn`], since a read names the column by it, as
-//! `docs/arclog/arclog.md#sites` gives; the resolved content writes its
-//! position. A label is a [`LabelId`] local to its scope, as [`LabelId`]
-//! gives, so a renaming of labels gives an equal value.
+//! those stand beside it, in a [`crate::layout::Layout`]. Two exceptions
+//! hold a name, since a read names a column by it, as
+//! `docs/arclog/arclog.md#sites` gives: the name of a column that a label
+//! gives a relation the program declares, [`RelationColumn`], and the name
+//! of a [`SiteArg::NamedLabel`], the field it reads. The resolved content
+//! writes the position of each. A label is a [`LabelId`] local to its scope,
+//! as [`LabelId`] gives, so a renaming of label ids gives an equal value,
+//! and a renaming of the written name of a `NamedLabel`'s label does not.
 //!
 //! The node kinds follow the forms of `docs/arclog/arclog.md` and
 //! `docs/arclog/arcdata.md`. The programs-as-values stage writes the bodies

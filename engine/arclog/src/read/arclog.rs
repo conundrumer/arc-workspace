@@ -155,6 +155,17 @@ pub(super) fn is_name(text: &str) -> bool {
     chars.next().is_some_and(|c| c.is_ascii_alphabetic()) && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+/// The name of a bare label, its mark left out: `P` of `*P`.
+fn label_name(text: &str) -> ColumnName {
+    ColumnName::Written(text.trim_start_matches([sp::FRESH_MARK, sp::KEY_MARK]).into())
+}
+
+/// Whether `column`, a site's column as the file writes it, is a type
+/// parameter's, which is lowercase (`docs/arclog/arclog.md#sites`).
+fn is_type_parameter_column(column: &str) -> bool {
+    column.starts_with(|c: char| c.is_ascii_lowercase())
+}
+
 pub(super) struct Reader {
     owners: Owners,
     /// Whether a read `(self.<port> ...)` stands, as in a definition of the
@@ -665,7 +676,7 @@ impl Reader {
                     return self.refuse("`0` stands at a site only after the column's name", *place);
                 }
                 record.token(*place);
-                let column = ColumnName::Written(text.trim_start_matches([sp::FRESH_MARK, sp::KEY_MARK]).into());
+                let column = label_name(text);
                 (Site { column, value: SiteValue { args: Arc::new([SiteArg::Label(label)]) } }, true)
             }
             _ => {
@@ -676,11 +687,17 @@ impl Reader {
                     return self.refuse(format!("`{head}` is not a column, `:` and a name"), place);
                 };
                 record.token(place);
+                let named = is_type_parameter_column(column);
                 let mut args = Vec::new();
                 for item in &list.items[1..] {
                     match item {
                         SExpr::Symbol { text, place } => {
-                            args.push(SiteArg::Label(self.label(text, *place, scope)?));
+                            let label = self.label(text, *place, scope)?;
+                            args.push(match label {
+                                LabelUse::Zero => SiteArg::Label(label),
+                                _ if named => SiteArg::NamedLabel { name: label_name(text), label },
+                                _ => SiteArg::Label(label),
+                            });
                             record.token(*place);
                         }
                         _ => {

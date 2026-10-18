@@ -212,9 +212,12 @@ impl LabelWalk<'_> {
 
 /// The one label that `site` holds, where it holds one label and no field.
 fn site_label(site: &crate::program::Site) -> Option<crate::program::LabelId> {
-    use crate::program::{LabelUse, SiteArg};
+    use crate::program::LabelUse;
     match &site.value.args[..] {
-        [SiteArg::Label(LabelUse::Fresh(label) | LabelUse::Join(label) | LabelUse::Key(label))] => Some(*label),
+        [arg] => match arg.label()? {
+            LabelUse::Fresh(label) | LabelUse::Join(label) | LabelUse::Key(label) => Some(label),
+            LabelUse::Zero => None,
+        },
         _ => None,
     }
 }

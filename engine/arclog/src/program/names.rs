@@ -115,7 +115,8 @@ pub struct Text(pub Box<str>);
 /// its instance clause and parts, and a `DEMO_RULE`'s field labels in its
 /// clauses. A label written fresh at two sites of one scope, as a key body's
 /// local label and an input's, is two variables with two ids. Its name
-/// stands in the [`crate::layout::Layout`], so a renaming of labels leaves
-/// the value equal.
+/// stands in the [`crate::layout::Layout`], and, for a
+/// [`super::SiteArg::NamedLabel`], in the value too, so a renaming of label
+/// ids leaves the value equal.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct LabelId(pub u32);
