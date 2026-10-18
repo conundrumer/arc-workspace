@@ -107,3 +107,12 @@ Each citation and definition needs to be checked against the source before the p
 - Lake, Salakhutdinov, Tenenbaum (2015), Bayesian Program Learning: a generative model over programs.
 - Hodel (2024), re-arc: generator.
 - Chollet (2019), *On the Measure of Intelligence*: the base ARC vocabulary.
+
+## Renames in arclog
+
+- **choice point** → **alts**
+    - arclog's `ALTS` form gives a property that the train pairs leave undetermined. The concept answers it one way, and each alt answers it another way.
+    - "Choice" names an act that a solver also performs where it chooses among candidates, so it does not single out this construct. Once the concept case is the canonical answer, every other answer is an alternative to it.
+- **branch**, other than the concept branch → **alt**
+    - The concept branch is the concept, not an alt.
+- "Alt" also names a pair's alternate outputs in the task data, so each use where both are near is qualified: alt outputs, alt hypothesis.

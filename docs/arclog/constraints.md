@@ -77,7 +77,7 @@ A `DET` reads a chosen relation only where every model gives the same value, whi
 
 ## The output set
 
-A case's output on an input is a set of grids. The engine finds the grid columns of `&output` by testing every pair of one Position column and one Color column against `ex_output` over the train examples: the **grid columns** are the pair that matches every example. One grid is read per model, from the rows at that model, with every other column of `&output` projected away, and equal grids are one. A grid is undefined where a cell has no color or two.
+A case's output on an input is a set of grids. The engine finds the grid columns of `&output` by testing every pair of one Position column and one Color column against the train pairs' candidates, model by model: the **grid columns** are the pair under which the output solves every train pair. One grid is read per model, from the rows at that model, with every other column of `&output` projected away, and equal grids are one. A grid is undefined where a cell has no color or two.
 
 Whether a case solves a pair compares the set with the pair's accepted outputs: one grid for a plain pair, several for a pair with a `tiebreak` alt. A train pair stops enumeration at the first grid outside its accepted set or past its count. On a test input, the output is the set of distinct grids over the case's models, as on any input. A test pair is solved where that set holds at most 2 grids, one of them in the pair's candidate, as [solves](../handbook/principles.md#models-and-tasks), the handbook's fit, gives: ARC-AGI scores two attempts per test output. That limit is a term of the solves relation and not of the output, and not a claim of the solver, so the arclog file never states it.
 
@@ -95,7 +95,7 @@ Not expressible, and not needed by any solver: a constraint that is not pairwise
 
 A run over the nine `CoverForcing` solvers, every train and test input, counting exact covers of each key's candidate set with a backtracking enumerator capped at three: every key has one cover or none, and the forced set is the cover wherever one exists. No solver relied on the component's reading-order peel to pick among covers, so the enumeration changes no output. Three solvers, b1fc8b8e, 446ef5d2 and 50846271, read a key's lack of a cover as information, which is why a key with no model is absent rather than undefined.
 
-Across the 17 solvers that use the two components and the 4 that use `TiebreakResolutions`, a row is a cell or a piece, `never` is overlap, a line constraint, a repeated piece or a broken chain of steps, and every constraint is pairwise. On every corpus input a person solves the pick by propagation alone, and so does the engine: propagation is the first thing a model search runs, and backtracking is the fallback no corpus input reaches.
+Across the 17 solvers that use the two components and the 4 that use `TiebreakResolutions`, a row is a cell or a piece, `never` is overlap, a line constraint, a repeated piece or a broken chain of steps, and every constraint is pairwise. On the inputs of the nine `CoverForcing` solvers, propagation alone solves the pick. Propagation is the first thing a model search runs, and backtracking is the fallback.
 
 ## Implementation
 
