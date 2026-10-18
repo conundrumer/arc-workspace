@@ -12,7 +12,7 @@ import re
 import sys
 import zlib
 from array import array
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, BinaryIO
 
@@ -65,7 +65,9 @@ class Snapshot:
     It holds no text, so that a read of many transcripts holds little:
     `starts` gives the offset of each line and `size` the bytes it covers,
     and a line, or the text a word is first searched for in, is read again
-    from its file (`read_at`). A transcript is added to at its end, so the
+    from its file (`read_at`). Each read of its text, the first one
+    included, goes by chunks of whole lines (`line_chunks`), so that a
+    read holds no whole transcript. A transcript is added to at its end, so the
     bytes a snapshot covers stand while its file is the one it read; a read
     again of a file that is not, or whose whole lines no longer give their
     CRC-32 (`crc`), is refused.
@@ -79,17 +81,30 @@ class Snapshot:
     whole takes anew: the snapshots of one generation agree on the whole
     lines of each."""
 
-    def __init__(self, path: Path, file: tuple[int, int], mtime_ns: int, text: bytes) -> None:
+    def __init__(self, path: Path, file: tuple[int, int], mtime_ns: int,
+                 chunks: Iterable[tuple[int, bytes]]) -> None:
+        """The snapshot of the bytes `chunks` gives, each chunk with its
+        offset, in order from offset 0, as `line_chunks` gives them."""
         self.path = path
         self.file = file
         self.mtime_ns = mtime_ns
-        self.size = len(text)
-        self.closed = text.endswith(b"\n") or not text
-        self.breaks_cr = b"\r" in text
-        self.starts = line_starts(text, 0, array("q"))
+        self.size = 0
+        self.closed = True
+        self.breaks_cr = False
+        self.starts = array("q")
+        self.crc = 0
+        last = b""
+        for base, chunk in chunks:
+            self.crc = zlib.crc32(last, self.crc)
+            self.size = base + len(chunk)
+            self.breaks_cr = self.breaks_cr or b"\r" in chunk
+            line_starts(chunk, base, self.starts)
+            last = chunk
+        self.closed = last.endswith(b"\n") or not last
+        self.crc = zlib.crc32(memoryview(last)[:self.settled_end() - (self.size - len(last))],
+                              self.crc)
         self.found: dict[str, frozenset[int]] = {}
         self.agent_ids: dict[str, tuple[int, ...]] | None = None
-        self.crc = self.whole_crc(text)
         self.generation = object()
 
     def covers(self, st: os.stat_result) -> bool:
@@ -128,18 +143,20 @@ class Snapshot:
                 yield unbroken(chunk[self.starts[i] - base:self.end(i) - base])
             k += 1
 
-    def text(self) -> bytes:
-        """The bytes it covers, read again from its file."""
-        text = read_at(self, 0, self.size)
-        if len(text) != self.size or self.whole_crc(text) != self.crc:
+    def chunks(self) -> Iterator[tuple[int, bytes]]:
+        """The bytes it covers, read again from its file by chunks of whole
+        lines (`line_chunks`), each with its offset. Once the last is given,
+        a file whose bytes no longer give the size and the CRC-32 of the
+        snapshot is refused."""
+        crc, end, size = 0, self.settled_end(), 0
+        for base, chunk in line_chunks(lambda offset, length: read_at(self, offset, length),
+                                       self.size):
+            crc = zlib.crc32(memoryview(chunk)[:max(0, end - base)], crc)
+            size = base + len(chunk)
+            yield base, chunk
+        if size != self.size or crc != self.crc:
             raise Refused(mctx("the transcript {path} changed other than at its end while "
                                "it was read").format(path=self.path))
-        return text
-
-    def whole_crc(self, text: bytes) -> int:
-        """The CRC-32 of the bytes of `text`, the bytes it covers, up to the
-        end of its whole lines."""
-        return zlib.crc32(memoryview(text)[:self.settled_end()])
 
     def settled(self) -> int:
         """The number of its whole lines, those a newline ends."""
@@ -155,15 +172,21 @@ class Snapshot:
 
     def holding(self, words: frozenset[str]) -> frozenset[int]:
         """The lines that hold a word of `words`. The words not searched
-        before are searched in one read of the text again."""
+        before are searched in one read of the text again (`chunks`)."""
         ids = {w for w in words if re.fullmatch(AGENT_ID_FORM, w)}
         new = [w for w in words - ids if w not in self.found]
-        if new or (ids and self.agent_ids is None):
-            text = self.text()
-            if ids and self.agent_ids is None:
-                self.agent_ids = self.index_agent_ids(text, 0)
-            for w in new:
-                self.found[w] = self.lines_holding(text, 0, w.encode())
+        index = bool(ids) and self.agent_ids is None
+        if new or index:
+            found: dict[str, frozenset[int]] = {w: frozenset() for w in new}
+            agent_ids: dict[str, tuple[int, ...]] = {}
+            for base, chunk in self.chunks():
+                for w in new:
+                    found[w] |= self.lines_holding(chunk, base, w.encode())
+                if index:
+                    joined(agent_ids, self.index_agent_ids(chunk, base))
+            self.found.update(found)
+            if index:
+                self.agent_ids = agent_ids
         indexed = self.agent_ids or {}
         return frozenset[int]().union(*(indexed.get(w, ()) for w in ids),
                                       *(self.found[w] for w in words - ids))
@@ -176,8 +199,9 @@ class Snapshot:
         out: set[int] = set()
         k = chunk.find(w)
         while k >= 0:
-            out.add(self.line_of(base + k))
-            k = chunk.find(w, k + 1)
+            i = self.line_of(base + k)
+            out.add(i)
+            k = chunk.find(w, self.end(i) - base)
         return frozenset(out)
 
     def index_agent_ids(self, chunk: bytes, base: int) -> dict[str, tuple[int, ...]]:
@@ -222,14 +246,44 @@ class Snapshot:
         whole = self.settled()
         kept = {aid: tuple(i for i in lines if i < whole) if whole < self.count else lines
                 for aid, lines in index.items()}
-        for aid, lines in out.index_agent_ids(more, self.settled_end()).items():
-            kept[aid] = kept.get(aid, ()) + lines
+        joined(kept, out.index_agent_ids(more, self.settled_end()))
         return {aid: lines for aid, lines in kept.items() if lines}
 
 
-SPAN = 1 << 22
-"""How many bytes `Snapshot.lines` and `prefix_crc` read at most in one
-read."""
+def joined(index: dict[str, tuple[int, ...]], more: dict[str, tuple[int, ...]]) -> None:
+    """Adds to `index`, the lines that hold each agent id, those `more`
+    gives, lines after each of `index`."""
+    for aid, lines in more.items():
+        index[aid] = index.get(aid, ()) + lines
+
+
+SPAN = 1 << 18
+"""How many bytes `Snapshot.lines`, `line_chunks` and `prefix_crc` read at
+most in one read. Each read is a new buffer, and the peak memory of a
+process that reads a transcript of 90 MB grows with the size of its
+buffers: by about 100 MB at 4 MB each, and by about 12 MB at this
+size."""
+
+
+def line_chunks(read: Callable[[int, int], bytes], end: int) -> Iterator[tuple[int, bytes]]:
+    """The bytes from offset 0 up to `end` that `read`, given an offset and
+    a length, gives of a file, by chunks, each with its offset. Each chunk
+    but the last ends at a newline and holds `SPAN` bytes at most, unless
+    one line is longer. The chunks end early where the file does."""
+    pos = 0
+    while pos < end:
+        buf = read(pos, min(SPAN, end - pos))
+        while pos + len(buf) < end and b"\n" not in buf:
+            more = read(pos + len(buf), min(SPAN, end - pos - len(buf)))
+            if not more:
+                break
+            buf += more
+        if not buf:
+            return
+        cut = buf.rfind(b"\n") + 1 if pos + len(buf) < end else len(buf)
+        cut = cut or len(buf)
+        yield pos, buf[:cut]
+        pos += cut
 
 
 def unbroken(line: bytes) -> bytes:
@@ -244,13 +298,13 @@ LINE_BREAK = re.compile(rb"\r\n|\r|\n")
 
 
 def line_starts(chunk: bytes, base: int, before: "array[int]") -> "array[int]":
-    """`before`, the offsets of the lines before `base`, followed by the
-    offset of each line of `chunk`, the bytes of a file from offset `base`,
-    a line's, as `bytes.splitlines` splits it. A chunk with no carriage
+    """`before`, the offsets of the lines before `base`, with the offset of
+    each line of `chunk`, the bytes of a file from offset `base`, a line's,
+    as `bytes.splitlines` splits it, added at its end. A chunk with no carriage
     return is split by a search for each newline, which is faster than
     `LINE_BREAK`. The offsets are held as machine integers,
     8 bytes each, as a call holds those of every transcript it reads."""
-    out = array("q", before)
+    out = before
     if not chunk:
         return out
     out.append(base)
@@ -327,8 +381,10 @@ def read_snapshot(path: Path) -> Snapshot:
                 if b"\r" not in more:
                     snap = before.extended(more, st.st_mtime_ns)
         if snap is None:
-            fh.seek(0)
-            snap = Snapshot(path, file, st.st_mtime_ns, fh.read())
+            fd = fh.fileno()
+            snap = Snapshot(path, file, st.st_mtime_ns,
+                            line_chunks(lambda offset, length: os.pread(fd, length, offset),
+                                        st.st_size))
     _read[path] = snap
     return snap
 

@@ -7,10 +7,11 @@ import importlib
 import inspect
 import time
 import uuid
-from collections.abc import Callable, Hashable
+from collections.abc import Callable, Hashable, Mapping
 from enum import Enum
 from functools import wraps
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import kept_reads
@@ -22,6 +23,12 @@ _opened = time.time()
 """A time no later than the first read of each held source at this state:
 when `new_state` began to bring the sources up to date, or the import of
 this module before the first state."""
+
+
+EMPTY: Mapping[Any, object] = MappingProxyType({})
+"""The `stamped` or `made` of a held read that has none, one mapping for
+each, as a call holds tens of thousands of held reads that rest on
+nothing, such as the stat of a path."""
 
 
 class Held:
@@ -43,14 +50,14 @@ class Held:
         self.read = read
         self.call = call
         self.positional = positional
-        self.stamped: dict[Held, object] = {}
+        self.stamped: Mapping[Held, object] = EMPTY
         self.version: str | None = None
         self.state = 0
         self.reached = 0
         self.mark: Hashable = None
         self.value: object = None
         self.lines: tuple[str, ...] = ()
-        self.made: dict[Held, object] = {}
+        self.made: Mapping[Held, object] = EMPTY
         self.dependents: dict[Held, None] = {}
         self.marked = False
 
@@ -63,12 +70,12 @@ class Held:
         """Drop this read from the held reads of its read."""
         self.read.held.pop(self.call)
 
-    def rest_on(self, made: dict["Held", object]) -> None:
+    def rest_on(self, made: Mapping["Held", object]) -> None:
         """Replace the reads this one rests on, and their reverse edges, by
         `made`."""
         for below in self.made:
             del below.dependents[self]
-        self.made = made
+        self.made = made or EMPTY
         for below in made:
             below.dependents[self] = None
 
@@ -112,7 +119,7 @@ def new_state() -> float:
         del _held[h]
         h.drop()
         made = list(h.made)
-        h.rest_on({})
+        h.rest_on(EMPTY)
         idle += [below for below in made if unused(below)]
     global _opened
     _opened = time.time()
@@ -184,7 +191,7 @@ def in_read() -> bool:
     return bool(_frames)
 
 
-def held_still(made: dict[Held, object]) -> bool:
+def held_still(made: Mapping[Held, object]) -> bool:
     """Whether each of the reads `made` gives, at this state, the very result
     it gave: a read gives its held result again where its stamp holds or
     where what it reads anew equals it."""
@@ -442,7 +449,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
                 finally:
                     stamped = _frames.pop()
                 if hit is not None and hit.mark == mark:
-                    hit.state, hit.stamped = _state, stamped
+                    hit.state, hit.stamped = _state, stamped or EMPTY
                     return hit.value, hit.lines
             record, made = recalled(key) if hit is None else (None, None)
             if record is not None and made is not None:
@@ -473,8 +480,8 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
             elif value is not hit.value and hit.source:
                 mark_dependents(hit)
             hit.state, hit.mark, hit.value, hit.lines = _state, mark, value, kept_lines
-            hit.stamped, hit.marked, hit.version = stamped, False, version
-            hit.rest_on(made if stamp is None or derived else {})
+            hit.stamped, hit.marked, hit.version = stamped or EMPTY, False, version
+            hit.rest_on(made if stamp is None or derived else EMPTY)
             return value, hit.lines
 
         @wraps(read)
