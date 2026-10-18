@@ -47,7 +47,7 @@ HELP = mctx("""
         - That form and `--write` also write the lib's interface files: the `.md` beside each lib source.
     - `--write` first checks the lib's sources and the `description` of each agent whose prompt's `message` attribute is `brief`, prints what the checks find and exits 1 when they find anything.
         - Otherwise it writes the files below, which git ignores.
-            - One agent under `.claude/agents/` per document that stands directly in `prompts/agents/` and whose text opens with front matter, with the context its document composes as its system prompt.
+            - One agent definition file under `.claude/agents/` per document that stands directly in `prompts/agents/` and whose text opens with front matter, with the context its document composes as its system prompt.
             - `.claude/agents/.manifest`, which lists each generated file written in the checkout.
             - `.claude/<agent>-next.md`, rendered from each `prompts/agents/<agent>-next.md` with no front matter: the steps that agent reads once it has done those of its prompt.
             - `.claude/coordinator.md`, the coordinator's document, rendered from `prompts/agents/notes/coordinator.md`.

@@ -65,6 +65,7 @@ from ticket_cases import (CASE_HELP, CASE_RULES, NONE_MOVED, SWEEP_HELP, SWEEP_R
 HELP = mctx("""
     - `{invocation} <domain> <subject> <agent>` files the ticket on its stdin under the main tree's `tickets/`, and prints the path it wrote.
     {subcommands}
+    - After the usage form, this text gives the forms of a `change` and of a `request`, the values of `<domain>` and `<subject>`, and the case of a `{delay}`; `{invocation} {full_flag}` prints the rules of numbers, sessions and filing.
     - Usage:
         ```
         {invocation} <domain> <subject> <agent> <<'EOF'

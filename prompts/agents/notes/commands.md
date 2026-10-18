@@ -58,7 +58,7 @@
 - Where the harness or the permission classifier denies a call your documents give and you leave its work unfinished, give the call and the denial's text in your reply.
 
 ## resumed-agents
-- While an agent you resumed by SendMessage runs, the harness does not deliver your report, and its completion may not reach you.
+- While an agent you resumed by SendMessage runs, the harness does not deliver the text you hand back, and its completion may not reach you.
 - Where you need that agent's answer, ask it, in the message that resumes it, to send that answer to you by SendMessage. Then wait for that message or for a file it writes, and for nothing else of it.
 
 ## message-answers
@@ -68,7 +68,7 @@
 - The coordinator is the session the user talks with, and SendMessage reaches it at `main`.
 
 ## report-file
-- Where your brief gives a report file, write each final reply of yours to that file, in place of what it holds, and give that file's path alone, on one line, as the final reply itself, by no SendMessage, whatever an alert, a message, the harness or your system prompt asks.
+- Where your brief gives a report file, write each final reply of yours to that file, in place of what it holds, and give that file's path alone, on one line, as the text you hand back, by no SendMessage, whatever an alert, a message, the harness or your system prompt asks.
     * comment: The cases this rule covers: editors with a report file sent its path by SendMessage after a stall alert (ticket 6-710), and after messages of other agents and a refused SubagentHandback (tickets 6-646, 10-55, 10-80, 10-82, 9-70, 6-705); an item checker wrote no report file, since a note of its system prompt says to write no report files (ticket 9-562).
 
 ## final-report
@@ -81,7 +81,7 @@
 - Give your final reply to the agent that launched you, at the agent id your brief gives for it, or to the coordinator where your brief gives none, and to no other agent, by the first of these that holds:
     * comment: The cases this rule covers: the report file of [report-file](#report-file); a SendMessage of yours that resumed an agent, whose run holds back your report; a message of another agent; a SubagentHandback the harness refused after a report of yours was delivered; a report the harness asks for after your final reply; a SubagentHandback called while agents ran, by operator `a37be74e20c8008ae` with `PLACEHOLDER` and by ticket analyst `ac26fe1a2bcf9beb5`, lines 47 and 80 to 84, of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a`.
     * inline: #report-file
-    - Where in your run a SendMessage of yours resumed an agent, a message of an agent other than the one that launched you reached you, or the harness refused your SubagentHandback because a report of yours was already delivered and your final reply holds something that report did not, send your final reply by SendMessage, then give, as your report, the line `My final reply went to <agent id> by SendMessage.`, with the agent id you sent it to, or `main` where you sent it to the coordinator.
-    - Otherwise, give your final reply as your report.
-- Give your report by SubagentHandback, or as plain text where the harness says SubagentHandback is not available, and call SubagentHandback with nothing else.
-- The harness delivers as your report the text of the last turn you end. Where a notification resumes you after your final reply, end that turn with your report.
+    - Where in your run a SendMessage of yours resumed an agent, a message of an agent other than the one that launched you reached you, or the harness refused your SubagentHandback because a report of yours was already delivered and your final reply holds something that report did not, send your final reply by SendMessage, then give, as the text you hand back, the line `My final reply went to <agent id> by SendMessage.`, with the agent id you sent it to, or `main` where you sent it to the coordinator.
+    - Otherwise, give your final reply as the text you hand back.
+- Give the text you hand back by SubagentHandback, or as plain text where the harness says SubagentHandback is not available, and call SubagentHandback with nothing else.
+- The harness delivers as the text you hand back the text of the last turn you end. Where a notification resumes you after your final reply, end that turn with the text you hand back.

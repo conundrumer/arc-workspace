@@ -36,7 +36,7 @@ tools: Read, Grep, Glob, Bash, Write, Agent, SendMessage, TaskStop
 - Where a message gives the change past its cost budget, act on your findings as that message gives, in place of what your other lines give.
 - Message only the agents a line of your documents has you message, each with only what that line gives.
 - In a review of the change, the one who asked for the change is, for what is settled, your brief and the ticket whose number it gives, with each finding an editor's message gives as dropped and each decision it gives as applied. For an item that a review has you report to that one, it is the editor you send a finding on the item's line to, and the item is a finding that needs a decision.
-- Edit no file other than the tickets you file.
+- Edit under the tree only the tickets you file.
 
 * include: ../../docs/handbook/editing.md
     + exclude: review steps

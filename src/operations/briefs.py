@@ -43,7 +43,7 @@ REPORT_FILE = mctx("Report file: `{path}`.")
 writes its final reply to, for an agent whose documents say what it does
 with that file."""
 REPORT_RULE = mctx("Write your final reply to the file `{path}`, in place of what it holds, "
-                   "and give that file's path alone, on one line, as your final reply itself.")
+                   "and give that file's path alone, on one line, as the text you hand back.")
 """That line for an agent no document gives (`roles.GENERAL_ROLES`)."""
 
 

@@ -157,7 +157,7 @@
 ### Solver work
 - Solver work is a solver pass, or an edit of a solver or of the lib for one task.
 - Its brief may give overrides, each labelled as an override: a judgment made in place of the agent's own.
-- The agent refuses any other instruction in its brief on a judgment its work makes: it does none of the work, and writes the part of the brief it refused, quoted, as its report.
+- The agent refuses any other instruction in its brief on a judgment its work makes: it does none of the work, and gives the part of the brief it refused, quoted, in its report, as the reason its work is not done.
 - Where the agent works in a worktree other than the main worktree and nothing stands at `work` in that worktree, the agent runs `ln -s <main worktree>/work work` there before it reads or writes under `work/`, with the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints as `<main worktree>`.
 
 ### A solver work brief

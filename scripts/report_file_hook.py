@@ -74,7 +74,7 @@ def refusal(path: Path) -> str:
         mctx("Blocked: your brief gives the report file `{path}`, and the message of this "
              "call is not that file's path alone, or that file does not exist or was last "
              "written before the last message you got."),
-        mctx("Write your final reply to that file, then give its path alone as your report."),
+        mctx("Write your final reply to that file, then give its path alone as the text you hand back."),
     ]).format(path=path)
 
 

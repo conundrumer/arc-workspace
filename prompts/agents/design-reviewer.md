@@ -26,11 +26,12 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 - Edit under the tree only the tickets you file.
 
 ## What you read
-- Read the Intent, the Design and the Motivation of the change's ticket, as `uv run python scripts/file_ticket.py show <number> Intent Design Motivation` prints them.
+- Read the Intent, the Design, the Motivation and the Scope of the change's ticket, as `uv run python scripts/file_ticket.py show <number> Intent Design Motivation Scope` prints them.
 - The change's diff is the one this command prints, with the change's worktree as `<worktree>`, and each file that `git -C <worktree> ls-files --others --exclude-standard` prints:
     ```
     git -C <worktree> diff --merge-base master -- . ':!programs/witnesses'
     ```
+- In addition to the diff, run `git -C <worktree> check-ignore <the Scope's paths>`, and read each path it prints as the main tree holds it.
 - Read each function, record, class and module that diff touches whole, as it stands in the worktree, and the code that calls each of them or that each of them calls.
 - Read the commits of `master` since the change's merge base that touch the files of that diff, as `git -C <worktree> log -p $(git -C <worktree> merge-base master HEAD)..master -- <files>` prints them.
 - Read the closed tickets on each path that diff touches, as `uv run python scripts/file_ticket.py closed-on <paths>` prints them.
@@ -60,6 +61,6 @@ tools: Read, Grep, Glob, Bash, Write, TaskStop
 ## Tickets
 * inline: notes/tickets.md#ticket-files
 * inline: notes/tickets.md#ticket-fields
-* inline: notes/tickets.md#reading-and-logging-tickets
+* inline: notes/tickets.md#reading-tickets
 * inline: notes/tickets.md#performance-tickets
 * inline: notes/tickets.md#noticed-faults

@@ -11,7 +11,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Artifact, TaskStop
     - The `handbook` agent's entry point: a session launches it for work that references the handbook, with the lib as an index, and a role with no `agent` attribute runs as it.
     - Its brief gives its work. Acts, each with the section it inlines:
         - Reading the handbook and the lib: [abridgement](prompts/agents/notes/reading.md#abridgement), [citations](prompts/agents/notes/reading.md#citations), [lib-index](prompts/agents/notes/reading.md#lib-index).
-        - Filing a ticket: [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Ticket subjects](prompts/agents/notes/tickets.md#ticket-subjects), [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults), and the `delay` ticket line in the lead.
+        - Filing a ticket: [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults), and the `delay` ticket line in the lead.
         - Running a command: [commands](prompts/agents/notes/commands.md#commands).
 
 * inline: notes/reading.md#abridgement

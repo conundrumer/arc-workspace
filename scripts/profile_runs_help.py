@@ -185,6 +185,7 @@ PARTS = {
             - the line `--runs` prints for each run taken, in the order of their first entries, and what one run or more than one run prints.
     """),
     HelpPart.RUNNING: mctx("""
+    - This text gives the rules of `--running`, what it prints for each agent, and then `--calls-since`, `--pending` and `--open`.
     - `--running ID` lists the agents under the run ID whose work is open, where ID is a session id or an agent id.
         - A run that goes on under a later session is listed under that session's id.
         - The agents are listed in launch order, each parent's agents after it.
