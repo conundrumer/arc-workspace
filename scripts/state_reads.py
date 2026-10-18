@@ -90,6 +90,11 @@ _held: dict[Held, None] = {}
 _marking = False
 """Whether the sources are being brought up to date at this state."""
 
+_stands: "tuple[ReadInfo, Callable[[Call], bool]] | None" = None
+"""A read and a test of its arguments: each held read of that read whose
+arguments the test holds for is taken as up to date at the state being
+opened, with no run (`stand_next`)."""
+
 _marked_late: list[Held] = []
 """Each held read marked after a read reached it at this state, whose
 dependents are marked again at the next state."""
@@ -104,8 +109,9 @@ def new_state() -> float:
     (`kept_reads`). Each held read that no read reached at the last state
     and no held read rests on is dropped. Each held source is then brought up to date, each
     after the sources it rests on, and each one whose result is not its
-    held one marks each held read that rests on it, transitively."""
-    global _state, _marking
+    held one marks each held read that rests on it, transitively, apart from
+    the sources `stand_next` gives."""
+    global _state, _marking, _stands
     kept_reads.flush()
     last = _state
     _state += 1
@@ -133,7 +139,27 @@ def new_state() -> float:
             bring_up(h)
     finally:
         _marking = False
+        _stands = None
     return time.time()
+
+
+def stand_next(stands: tuple[Callable[..., Any], Callable[["Call"], bool]] | None) -> None:
+    """Take, at the next state `new_state` opens, where `stands` gives a
+    `state_cache` read and a test of its arguments, each held read of that
+    read whose arguments the test holds for as up to date, with its held
+    result and no run; where it gives none, bring up each held source."""
+    global _stands
+    _stands = None if stands is None else (_reads[name_of(stands[0])], stands[1])
+
+
+def held_calls(read: Callable[..., Any]) -> list["Call"]:
+    """The arguments of each held read of the `state_cache` read `read`."""
+    return [h.call for h in _reads[name_of(read)].held.values()]
+
+
+def name_of(read: Callable[..., Any]) -> str:
+    """The name of the `state_cache` read `read` (`ReadInfo.name`)."""
+    return f"{read.__module__}:{read.__qualname__}"
 
 
 def bring_up(source: Held) -> None:
@@ -141,6 +167,9 @@ def bring_up(source: Held) -> None:
     source it rests on: a source whose read fails stays as held, and marks
     each held read that rests on it."""
     if not source.source or source.state == _state or source not in _held:
+        return
+    if _stands is not None and source.read is _stands[0] and _stands[1](source.call):
+        source.state = _state
         return
     for below in list(source.made):
         bring_up(below)
@@ -419,7 +448,7 @@ def state_cache[**P, R](stamp: Callable[P, Hashable] | None | Derived, *,
     def hold(read: Callable[P, R]) -> Callable[P, R]:
         at = None if notes is None else list(inspect.signature(read).parameters).index(notes)
         derived = isinstance(stamp, Derived)
-        info = ReadInfo(f"{read.__module__}:{read.__qualname__}", stamp, notes, at, kept)
+        info = ReadInfo(name_of(read), stamp, notes, at, kept)
         held = info.held
         _reads[info.name] = info
 

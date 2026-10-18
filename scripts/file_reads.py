@@ -1,13 +1,14 @@
 """The reads of files that `state_reads.state_cache` holds: the stat of a
-path, the text of a file, and the entries of a directory."""
+path, the text of a file, and the entries of a directory, and the paths
+whose stats a state reads again."""
 
 import os
 import stat
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Collection, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from state_reads import in_read, state, state_cache
+from state_reads import held_calls, in_read, stand_next, state, state_cache
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +71,21 @@ def stat_of(path: Path) -> tuple[int, int] | None:
 def stat_read(path: Path) -> FileStat | None:
     """The stat of the file at `path`, or None where there is none."""
     return state_stat(str(path))
+
+
+def held_paths() -> list[Path]:
+    """The path of each stat this process holds (`stat_read`)."""
+    return [call[0][0] for call in held_calls(stat_read)]
+
+
+def stats_stand_but(changed: Collection[str] | None) -> None:
+    """Take, at the next state, the held stat of each path outside `changed`
+    as it was, with no read, so the reads of that state see a change only
+    of the files of `changed`; where `changed` is None, read each again."""
+    if changed is None:
+        stand_next(None)
+    else:
+        stand_next((stat_read, lambda call: str(call[0][0]) not in changed))
 
 
 def is_file(path: Path) -> bool:

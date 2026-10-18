@@ -14,6 +14,7 @@ from pathlib import Path
 
 from collections.abc import Callable
 
+import file_events
 import script_calls
 import step_journal
 import tree_reads
@@ -22,6 +23,7 @@ from agent_deliveries import last_delivered
 from budgets import budget_of
 from context_bound_hook import ACTIONS
 from controlled_markdown import mctx
+from file_reads import held_paths, stats_stand_but
 from relay_reads import session_id
 from run_reads import agent_type
 from state_assembly import read_state, write_due_since
@@ -36,6 +38,12 @@ from operations.roles import Role
 from operations.steps import Bash, EndTurn, Launch, ListingHold, Poll, Send, Step
 
 POLL_SECONDS = 15
+FALLBACK_SECONDS = 90
+"""The longest time between the starts of two full reads of a call
+(`waited`)."""
+READ_SHARE = 10
+"""A read starts no sooner than this many times the CPU seconds of the
+read before it, after that read's start (`waited`)."""
 CALLS = (Launch, Send)
 """The steps after whose call the operator runs `next` again."""
 LOCK_DIR = Path("/tmp")
@@ -174,25 +182,79 @@ def read_again[T](out_at: Callable[[float], T]) -> Callable[[float], T]:
 
 
 def waited[T](me: str, out_at: Callable[[float], T], ready: Callable[[T], bool]) -> tuple[T, bool]:
-    """The first output `out_at` gives, read again each `POLL_SECONDS`
-    with the deadline `BLOCK_SECONDS` from the call, that `ready` holds
-    for, or the last one read where that deadline would pass before the
-    next read or a message reached `me` since the last delivery to it,
-    with whether such a message reached it. The call is the one of `me`
-    that runs (`single_instance`), and its watchdog (`arm_watchdog`) is
-    disarmed at its return."""
+    """The first output `out_at` gives at a full read that `ready` holds
+    for, or that a message reached `me` at since the last delivery to it,
+    with whether such a message reached it, or else the output of the full
+    read at the deadline, `BLOCK_SECONDS` from the call. The call is the one
+    of `me` that runs (`single_instance`), and its watchdog (`arm_watchdog`)
+    is disarmed at its return.
+
+    A full read reads each held source again: at the first read, at most
+    `FALLBACK_SECONDS` after the last full read, before the deadline, and
+    after a partial read whose output would end the call. Between them,
+    the call waits on the file events of the paths whose stats it holds
+    (`file_events.Changes`), and a read that a change starts is a partial
+    read, which reads again only the stats of the paths that changed
+    (`file_reads.stats_stand_but`). A read starts no sooner than
+    `POLL_SECONDS`, nor `READ_SHARE` times the CPU seconds of the read
+    before it, after that read's start. Where the stream does not start,
+    each read is a full read, `POLL_SECONDS` apart."""
     single_instance(me)
     arm_watchdog(me)
     deadline = time.monotonic() + BLOCK_SECONDS
     path = find(me)
     since = last_delivered(path)
+    changes: file_events.Changes | None = None
+    unwatched = False
+    changed: set[str] | None = None
+    full_at = time.monotonic()
     while True:
+        started, cpu = time.monotonic(), time.process_time()
+        if changed is None:
+            full_at = started
+            if changes is not None:
+                changes.take()
+        stats_stand_but(changed)
         out = out_at(deadline)
         accepted = accepted_after(path, since, [])
-        if ready(out) or accepted or time.monotonic() + POLL_SECONDS > deadline:
-            signal.alarm(0)
-            return out, accepted
-        time.sleep(POLL_SECONDS)
+        spent = time.process_time() - cpu
+        if ready(out) or accepted:
+            if changed is None:
+                break
+            changed = None
+            continue
+        if changed is None and time.monotonic() + POLL_SECONDS > deadline:
+            break
+        if not unwatched and changed is None:
+            try:
+                if changes is None:
+                    changes = file_events.Changes(held_paths())
+                else:
+                    changes.watch(held_paths())
+            except file_events.Unwatched:
+                unwatched = True
+        if changes is None or unwatched:
+            time.sleep(POLL_SECONDS)
+            changed = None
+        else:
+            changed = next_read(changes, started, spent, full_at, deadline)
+    if changes is not None:
+        changes.close()
+    signal.alarm(0)
+    return out, accepted
+
+
+def next_read(changes: file_events.Changes, started: float, spent: float, full_at: float,
+              deadline: float) -> set[str] | None:
+    """Wait, as `waited` gives it, for the read after the one that started
+    at `started` and took `spent` CPU seconds, the last full read having
+    started at `full_at`, and give the paths that changed since the last
+    read for a partial read, or None for a full read."""
+    full_due = min(full_at + FALLBACK_SECONDS, deadline - POLL_SECONDS)
+    earliest = started + max(POLL_SECONDS, READ_SHARE * spent)
+    time.sleep(max(min(earliest, full_due) - time.monotonic(), 0))
+    changes.wait(full_due - time.monotonic())
+    return changes.take() if time.monotonic() < full_due else None
 
 
 def operator_step(me: str, deadline: float) -> tuple[tuple[Step, ...], Path]:

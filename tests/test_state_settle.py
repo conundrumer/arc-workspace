@@ -62,3 +62,24 @@ def test_a_change_reaches_each_read_above_it(tmp_path: Path) -> None:
     state_reads.new_state()
     assert above(p, q) == (False, 3)
     assert words(q) == 3
+
+
+def test_a_change_a_partial_state_leaves_out_reaches_the_next_full_state(tmp_path: Path) -> None:
+    """A state that reads again only the stats of some paths sees a change
+    of those files, and the next state that reads each stat again sees a
+    change of the others."""
+    p, q = tmp_path / "p.txt", tmp_path / "q.txt"
+    write(p, "a b c", 1)
+    write(q, "a", 1)
+    state_reads.new_state()
+    assert above(p, q) == (True, 1)
+
+    write(p, "a", 2)
+    write(q, "a b", 2)
+    file_reads.stats_stand_but({str(q)})
+    state_reads.new_state()
+    assert above(p, q) == (True, 2)
+
+    file_reads.stats_stand_but(None)
+    state_reads.new_state()
+    assert above(p, q) == (False, 2)
