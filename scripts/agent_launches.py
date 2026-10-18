@@ -15,7 +15,7 @@ from controlled_markdown import mctx
 from run_reads import (blocks, in_background, meta_parent, notified, parent_label, read_meta,
                        results_by_call, run_sessions, session_agents)
 from state_reads import DERIVED, Kept, state_cache
-from transcripts import agent_id, chain, find, held_find
+from transcripts import agent_id, chain, held_find, launched_find
 from entry_reads import line_entries
 from transcript_entries import epoch
 from transcript_folds import fold
@@ -95,8 +95,8 @@ def children_of(path: Path, label: str) -> frozenset[str]:
 def run_transcript(aid: str, held: bool) -> Path | None:
     """The transcript of the run `aid`: where `held`, from the agent index
     this state holds alone (`transcripts.held_find`), None where that index
-    gives none, and otherwise as `find` gives it."""
-    return held_find(aid) if held else find(aid)
+    gives none, and otherwise as `transcripts.launched_find` gives it."""
+    return held_find(aid) if held else launched_find(aid)
 
 
 def runs_under(path: Path, pending: Collection[str] = frozenset(),

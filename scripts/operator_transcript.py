@@ -18,8 +18,8 @@ from controlled_markdown import mctx
 from merge_reads import merge_outcome, merge_subjects
 from filed_texts import brief_report_file, filed_report, unfiled
 from agent_listings import agent_listing
-from operator_reads import (MESSAGE_FROM, AgentsRead, ended_with, from_parent,
-                            pass_read, reply_to)
+from agent_ends import ended_with, reply_to
+from operator_reads import MESSAGE_FROM, AgentsRead, from_parent, pass_read
 from run_reads import (BACKGROUND_TASK, MAIN, agent_messages, blocks, is_prompt,
                        notifications, output_file, parent_id, run_sessions, tool_results)
 from run_reads import Status as TaskStatus

@@ -272,6 +272,18 @@ def find(ident: str) -> Path:
                            str(d) for d in project_dirs())))
 
 
+def launched_find(aid: str) -> Path | None:
+    """The transcript `find` gives the agent id `aid`, taken from a launch
+    in a parent's transcript, or None where `find` refuses it. A launch's
+    record in the parent's transcript is written before the launched
+    agent's transcript, so None reads as an agent that has done nothing
+    yet."""
+    try:
+        return find(aid)
+    except Refused:
+        return None
+
+
 _fresh: tuple[int, tuple[Path, ...], dict[str, list[Path]]] | None = None
 """The state, the project directories and the `agent_index` of those
 directories that `fresh_index` last read."""

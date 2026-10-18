@@ -5,9 +5,10 @@ their editors launched."""
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from operator_reads import AgentsRead, ended_by, ended_elsewhere, kept
+from agent_ends import ended_by, ended_elsewhere
+from operator_reads import AgentsRead, kept
 from operator_transcript import read_launches
-from transcripts import find
+from transcripts import find, launched_find
 from transcript_snapshots import Refused
 
 from controlled_markdown import mctx
@@ -22,13 +23,17 @@ from operations.state import Agent, Ticket
 def editor_checks(agents: Sequence[Agent], main: Path, undecided: list[str]) -> AgentsRead:
     """The checks, of `roles.CHECKS`, that the editors among `agents` of
     `roles.LAUNCHING_EDITORS` launched, with the editor as their
-    `operator`."""
+    `operator`. An editor whose transcript is not written yet
+    (`transcripts.launched_find`) gives none."""
     out: list[Agent] = []
     reads: list[AgentsRead] = []
     for a in agents:
         if a.role not in LAUNCHING_EDITORS or a.agent_id is None:
             continue
-        theirs = read_launches(a.agent_id, find(a.agent_id), main, undecided)
+        path = launched_find(a.agent_id)
+        if path is None:
+            continue
+        theirs = read_launches(a.agent_id, path, main, undecided)
         out += [r for r in theirs.agents if r.role in CHECKS]
         reads.append(theirs.launched)
     return kept(out, reads)

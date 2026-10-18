@@ -7,7 +7,7 @@ from pathlib import Path
 from context_bound_hook import past_bound
 from operator_transcript import read_operator
 from run_reads import context_size
-from transcripts import find
+from transcripts import find, launched_find
 from entry_reads import entries_back
 from transcript_snapshots import Refused
 from tree_reads import main_tree, scratch
@@ -40,8 +40,9 @@ def read_relay(me: str) -> tuple[Relay, Path]:
         if a.role is not Role.OPERATOR:
             continue
         final = None
-        if a.agent_id is not None:
-            theirs = read_operator(a.agent_id, find(a.agent_id), main, undecided, {}).calls
+        their_path = launched_find(a.agent_id) if a.agent_id is not None else None
+        if a.agent_id is not None and their_path is not None:
+            theirs = read_operator(a.agent_id, their_path, main, undecided, {}).calls
             sends = [c for c in final_sends_in(theirs, a.agent_id, me) if c.time > a.launched]
             final = sent_final_text(sends[-1]) if sends else None
         runs.append(Run(a.agent_id, a.launched, a.pending, final))

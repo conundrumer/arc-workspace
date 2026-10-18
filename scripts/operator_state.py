@@ -10,13 +10,8 @@ from filed_texts import gone_line
 from git_session_reads import given_lines
 from monitor_reads import watched
 from open_agents import Listed, quiet_since
-from operator_reads import (
-    ended_by,
-    ended_elsewhere,
-    stalled_reports,
-)
-from transcripts import find
-from transcript_snapshots import Refused
+from agent_ends import ended_by, ended_elsewhere, stalled_reports
+from transcripts import launched_find
 
 from operations.monitor import Watched
 from operations.plan import unknown_line
@@ -82,9 +77,8 @@ def quiet_read(agents: Sequence[Agent], listing: list[Listed], now: float) -> di
     for a in agents:
         if a.agent_id is None or a.waits in (None, Waits.LIMITED):
             continue
-        try:
-            path = find(a.agent_id)
-        except Refused:
+        path = launched_find(a.agent_id)
+        if path is None:
             continue
         q = quiet_since(a.agent_id, path, listing, now)
         if q is not None:
