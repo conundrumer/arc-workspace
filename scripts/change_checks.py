@@ -80,11 +80,7 @@ def said(done: subprocess.CompletedProcess[str]) -> str:
 
 def outside_work() -> tuple[str, str, str]:
     """The pathspec of every path of a worktree but `work` and what lies
-    under it (`checkout.work`).
-
-    The exclude items name `work` by a glob: `git add` exits 1 on an
-    ignored path that a pathspec item names literally, an exclude item
-    among them."""
+    under it (`checkout.work`)."""
     name = checkout.work().name
     glob = f"{name[:-1]}[{name[-1]}]"
     return (".", f":(exclude,top,glob){glob}", f":(exclude,top,glob){glob}/**")

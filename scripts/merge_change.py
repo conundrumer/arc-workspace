@@ -408,7 +408,8 @@ def stage(worktree: Path, main: Path, backup: Path, base: str) -> None:
     shutil.copy2(index_file(worktree), backup)
     changed = changed_outside_work(worktree, "HEAD")
     if changed:
-        checkout.git_out(worktree, "--literal-pathspecs", "add", "-A", "--", *changed)
+        checkout.git_out(worktree, "update-index", "--add", "--remove", "--",
+                         *(path.rstrip("/") for path in changed))
     try:
         refuse_gitlinks(worktree, main)
         refuse_markers(worktree, base)
