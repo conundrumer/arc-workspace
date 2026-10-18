@@ -4,6 +4,7 @@
 
 use super::cell_types::{cell_ports, CellMacro};
 use super::*;
+use crate::types::{label_fault_message, scope_list};
 
 /// A relation macro of the file, as [`macro_column_types`] reads it.
 #[derive(Clone, Copy, Debug)]
@@ -363,52 +364,6 @@ pub(super) fn local_label_types(
         }
     });
     labels.into_iter().map(|label| (label, label_type(scope_list(body, label), label, site_type))).collect()
-}
-
-/// The list of the scope of `label`, a label of `list` that is no head
-/// label: the innermost list that holds each of its sites, or, where that
-/// list is an `IF`'s test or a list of an `ALL`, or where its sites stand in
-/// both the test and the then of an `IF`, the list that holds that form,
-/// since a label fresh there is local to the form.
-pub(super) fn scope_list(list: &Body, label: LabelId) -> &Body {
-    let holds = |conjunct: &Conjunct| {
-        let mut labels = StableHashSet::default();
-        conjunct_labels(conjunct, &mut labels);
-        labels.contains(&label)
-    };
-    let mut holders = list.conjuncts.iter().filter(|conjunct| holds(conjunct));
-    let (Some(conjunct), None) = (holders.next(), holders.next()) else { return list };
-    let mut own = Vec::new();
-    own_labels(conjunct, &mut own);
-    if own.contains(&label) {
-        return list;
-    }
-    let mut form = conjunct;
-    while let Conjunct::Not(Negated::Form(inner)) = form {
-        form = inner;
-    }
-    // Each part of the form, with whether a label that stands only in it
-    // takes it as its scope.
-    let parts: Vec<(&Body, bool)> = match form {
-        Conjunct::Or(branches) => branches.iter().map(|branch| (branch.value(), true)).collect(),
-        Conjunct::If { test, then, otherwise } => vec![(test.value(), false), (then.value(), true), (otherwise.value(), true)],
-        Conjunct::All { domain, body } => vec![(domain.value(), false), (body.value(), false)],
-        Conjunct::Atom(_) | Conjunct::Not(_) | Conjunct::Constraint(_) => Vec::new(),
-    };
-    let mut holding = parts.into_iter().filter(|(part, _)| body_labels(part).contains(&label));
-    match (holding.next(), holding.next()) {
-        (Some((part, true)), None) => scope_list(part, label),
-        _ => list,
-    }
-}
-
-/// The text of `fault` of a label, for a diagnostic that names the label
-/// before it.
-pub(super) fn label_fault_message(fault: LabelFault) -> String {
-    match fault {
-        LabelFault::EmptyMeet(a, b) => format!("stands at sites of the types {a:?} and {b:?}, whose meet is empty"),
-        LabelFault::NoJoin(a, b) => format!("takes the types {a:?} and {b:?} from two branches, which have no join"),
-    }
 }
 
 /// The name of `column`, for a diagnostic.

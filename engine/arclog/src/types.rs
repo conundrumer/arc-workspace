@@ -2,10 +2,6 @@
 //! `D4`, `Dir` and `DiagDir` under `Dir8`, `Axis` and `DiagAxis` under
 //! `Axis4`, and `Position` and `Offset` as `Box`. A Pose type is below and
 //! above no other type.
-//!
-//! The checker stage writes the bodies.
-
-#![allow(unused_variables, dead_code)]
 
 /// One `RIGID_DET` assembly of a case program, which has its own Pose type:
 /// its form, by the form's name and canonical form, and, for a keyed form,
@@ -81,6 +77,17 @@ pub enum ValueType {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FieldName(pub Box<str>);
 
+impl FieldName {
+    /// The field that a site's head or an elided site's label names, or
+    /// `None` for a column that holds a slot in place of a written name.
+    pub fn of(column: &crate::program::ColumnName) -> Option<FieldName> {
+        match column {
+            crate::program::ColumnName::Written(name) => Some(FieldName(name.clone())),
+            crate::program::ColumnName::Slot(_) => None,
+        }
+    }
+}
+
 /// The result of the meet of two types.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Meet {
@@ -136,7 +143,7 @@ impl ValueType {
     /// Whether `<`, `<=`, `>` and `>=` may compare values of the type: true
     /// for `number` alone.
     pub fn admits_order(&self) -> bool {
-        todo!()
+        *self == ValueType::Number
     }
 }
 
@@ -147,6 +154,15 @@ pub enum LabelFault {
     EmptyMeet(ValueType, ValueType),
     /// Two branches give the label types with no join.
     NoJoin(ValueType, ValueType),
+}
+
+/// The text of `fault` of a label, for a diagnostic that names the label
+/// before it.
+pub(crate) fn label_fault_message(fault: LabelFault) -> String {
+    match fault {
+        LabelFault::EmptyMeet(a, b) => format!("stands at sites of the types {a:?} and {b:?}, whose meet is empty"),
+        LabelFault::NoJoin(a, b) => format!("takes the types {a:?} and {b:?} from two branches, which have no join"),
+    }
 }
 
 /// The type that `body` gives `label`, `None` where it gives none, or the
@@ -180,6 +196,44 @@ pub fn label_type(
     site_type: &dyn Fn(&crate::program::Atom, &[crate::program::ColumnName]) -> Option<ValueType>,
 ) -> Result<Option<ValueType>, LabelFault> {
     LabelWalk { label, class: equal_labels(body, label), site_type }.body_type(body)
+}
+
+/// The list of the scope of `label`, a label of `list` that is no head
+/// label: the innermost list that holds each of its sites, or, where that
+/// list is an `IF`'s test or a list of an `ALL`, or where its sites stand in
+/// both the test and the then of an `IF`, the list that holds that form,
+/// since a label fresh there is local to the form.
+pub(crate) fn scope_list(list: &crate::program::Body, label: crate::program::LabelId) -> &crate::program::Body {
+    let holds = |conjunct: &crate::program::Conjunct| {
+        let mut labels = crate::hash::StableHashSet::default();
+        crate::grounding::conjunct_labels(conjunct, &mut labels);
+        labels.contains(&label)
+    };
+    let mut holders = list.conjuncts.iter().filter(|conjunct| holds(conjunct));
+    let (Some(conjunct), None) = (holders.next(), holders.next()) else { return list };
+    let mut own = Vec::new();
+    crate::grounding::own_labels(conjunct, &mut own);
+    if own.contains(&label) {
+        return list;
+    }
+    use crate::program::{Conjunct, Negated};
+    let mut form = conjunct;
+    while let Conjunct::Not(Negated::Form(inner)) = form {
+        form = inner;
+    }
+    // Each part of the form, with whether a label that stands only in it
+    // takes it as its scope.
+    let parts: Vec<(&crate::program::Body, bool)> = match form {
+        Conjunct::Or(branches) => branches.iter().map(|branch| (branch.value(), true)).collect(),
+        Conjunct::If { test, then, otherwise } => vec![(test.value(), false), (then.value(), true), (otherwise.value(), true)],
+        Conjunct::All { domain, body } => vec![(domain.value(), false), (body.value(), false)],
+        Conjunct::Atom(_) | Conjunct::Not(_) | Conjunct::Constraint(_) => Vec::new(),
+    };
+    let mut holding = parts.into_iter().filter(|(part, _)| crate::grounding::body_labels(part).contains(&label));
+    match (holding.next(), holding.next()) {
+        (Some((part, true)), None) => scope_list(part, label),
+        _ => list,
+    }
 }
 
 /// The walk of [`label_type`] over the labels of `class`, the class of
@@ -385,7 +439,18 @@ pub struct FormTypes {
 impl FormTypes {
     /// The type of `label`, or `None` where the form has no such label.
     pub fn label(&self, label: crate::program::LabelId) -> Option<&ValueType> {
-        todo!()
+        self.labels.get(&label)
+    }
+
+    /// Each label with its type.
+    pub fn labels(&self) -> impl Iterator<Item = (crate::program::LabelId, &ValueType)> + '_ {
+        self.labels.iter().map(|(label, ty)| (*label, ty))
+    }
+}
+
+impl FromIterator<(crate::program::LabelId, ValueType)> for FormTypes {
+    fn from_iter<I: IntoIterator<Item = (crate::program::LabelId, ValueType)>>(labels: I) -> Self {
+        FormTypes { labels: labels.into_iter().collect() }
     }
 }
 
@@ -415,12 +480,17 @@ impl ProgramTypes {
     /// The types of the labels of the scope at `form`, a form of the program
     /// or a `DEMO_RULE`, as [`crate::program::LabelId`] gives scopes.
     pub fn form(&self, form: &crate::program::path::NodePath) -> Option<&FormTypes> {
-        todo!()
+        self.forms.get(form).map(|types| &**types)
+    }
+
+    /// Sets the types of the labels of the scope at `form`.
+    pub(crate) fn insert_form(&mut self, form: crate::program::path::NodePath, types: std::sync::Arc<FormTypes>) {
+        self.forms.insert(form, types);
     }
 
     /// The type of each column of `relation`, one per column, a record's
     /// fields each a column of its own.
     pub fn columns(&self, relation: &GraphRelation) -> Option<&[ValueType]> {
-        todo!()
+        self.columns.get(relation).map(|columns| &columns[..])
     }
 }

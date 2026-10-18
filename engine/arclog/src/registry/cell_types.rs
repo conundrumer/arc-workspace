@@ -5,9 +5,15 @@
 
 use std::cell::{Cell, RefCell};
 
-use super::column_types::{column_display, label_fault_message, scope_list, MacroDerivation};
+use super::column_types::{column_display, MacroDerivation};
 use super::*;
-use crate::types::{each_site_label, use_label, FieldName, Meet};
+use crate::types::{each_site_label, label_fault_message, scope_list, use_label, FieldName, Meet};
+
+/// The field that `column`, a column of the registry file, names: the
+/// reader of that file gives each column its written name.
+fn field_name(column: &ColumnName) -> FieldName {
+    FieldName::of(column).expect("the reader of the registry file gives each column its written name")
+}
 
 /// A cell instance of the file, as [`super::macro_column_types`] reads it.
 #[derive(Clone, Debug)]
@@ -748,14 +754,6 @@ fn one_label(args: &[crate::program::SiteArg]) -> Option<crate::program::LabelUs
     match args {
         [arg] => arg.label(),
         _ => None,
-    }
-}
-
-/// The field that a site's head or an elided site's label names.
-fn field_name(column: &ColumnName) -> FieldName {
-    match column {
-        ColumnName::Written(name) => FieldName(name.clone()),
-        ColumnName::Slot(_) => unreachable!("the reader of the registry file gives each column its written name"),
     }
 }
 
