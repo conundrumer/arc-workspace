@@ -116,7 +116,8 @@ def listing(root: Path, since: float) -> Listing:
     """The transcripts under `root`, and its `.meta.json` files whose
     directory was modified at or after `since`: a `.meta.json` file written
     at or after `since` was made in such a directory. Each directory's
-    entries are those `file_reads.listed` gives, and a link to a directory is not
+    entries are those `file_reads.listed` gives, each file's stat is the one
+    `file_reads.state_stat` gives, and a link to a directory is not
     descended."""
     transcripts: dict[str, float] = {}
     metas: dict[str, float] = {}
@@ -138,9 +139,11 @@ def listing(root: Path, since: float) -> Listing:
                 continue
             path = os.path.join(directory, e.name)
             try:
-                into[path] = os.stat(path).st_mtime
+                found = file_reads.state_stat(path)
             except OSError:
                 continue
+            if found is not None:
+                into[path] = found.st_mtime
     return Listing(transcripts, metas)
 
 

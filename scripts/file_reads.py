@@ -9,33 +9,43 @@ from pathlib import Path
 
 from state_reads import in_read, state, state_cache
 
-_stats: dict[Path, tuple[int, int] | None] = {}
-"""The stat `stat_of` read of each path inside a `state_cache` read at the
-state `_stats_at`."""
+_stats: dict[str, os.stat_result | None] = {}
+"""The stat `state_stat` read of each path at the state `_stats_at`, None
+where there is no file."""
 
 _stats_at = 0
 """The state whose stats `_stats` holds."""
 
 
+def state_stat(path: str) -> os.stat_result | None:
+    """`os.stat` of `path`, None where there is no file, read once for each
+    state, as the reads of one state see one state."""
+    global _stats_at
+    if _stats_at != state():
+        _stats.clear()
+        _stats_at = state()
+    if path in _stats:
+        return _stats[path]
+    try:
+        found: os.stat_result | None = os.stat(path)
+    except FileNotFoundError:
+        found = None
+    _stats[path] = found
+    return found
+
+
 def stat_of(path: Path) -> tuple[int, int] | None:
     """The modification time and size of the file at `path`, or None where
     there is none. Inside a `state_cache` read, each path is read once for
-    each state, as the reads of one state see one state."""
-    global _stats_at
-    reading = in_read()
-    if reading and _stats_at != state():
-        _stats.clear()
-        _stats_at = state()
-    if reading and path in _stats:
-        return _stats[path]
-    try:
-        st = path.stat()
-        found = st.st_mtime_ns, st.st_size
-    except FileNotFoundError:
-        found = None
-    if reading:
-        _stats[path] = found
-    return found
+    each state (`state_stat`)."""
+    if in_read():
+        st = state_stat(str(path))
+    else:
+        try:
+            st = path.stat()
+        except FileNotFoundError:
+            st = None
+    return None if st is None else (st.st_mtime_ns, st.st_size)
 
 
 @dataclass(frozen=True)
@@ -53,9 +63,8 @@ class FileStat:
 @state_cache(None)
 def stat_read(path: Path) -> FileStat | None:
     """The stat of the file at `path`, or None where there is none."""
-    try:
-        st = path.stat()
-    except FileNotFoundError:
+    st = state_stat(str(path))
+    if st is None:
         return None
     return FileStat(st.st_mtime, st.st_mtime_ns, st.st_size, st.st_ino,
                     stat.S_ISDIR(st.st_mode), stat.S_ISREG(st.st_mode))
