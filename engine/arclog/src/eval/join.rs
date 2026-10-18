@@ -590,7 +590,7 @@ impl<'c> Search<'c> {
     }
 
     /// Whether the bound operands of `comparison` satisfy it. An order
-    /// compares numbers, the one type the checker admits it on.
+    /// compares its operands as numbers.
     fn compare(&self, comparison: &Comparison) -> bool {
         let first = self.binding[usize::from(comparison.first.0)].expect("a bound operand");
         let second = match comparison.second {

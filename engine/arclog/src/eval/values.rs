@@ -15,9 +15,7 @@ use crate::task::Grid;
 use crate::terms::ReachedMarginBound;
 
 /// The two caps of an evaluation, both counts, so neither depends on the
-/// machine. The task session holds them, so every evaluation in a session
-/// runs at the same caps, and a stop at either that the result cache
-/// stores holds for every later request of the same entry in the session.
+/// machine.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Caps {
     /// The bindings a clause's join, or a native construction, may try.
@@ -74,8 +72,7 @@ impl ReachedBound {
 
 /// An evaluation that reached a bound: the bound, and the form of the
 /// clause, the instance or the assembly that reached it. A stop is an alert
-/// and no relation, so the case gives no output on the input it stopped
-/// on.
+/// and no relation.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Stop {
     pub bound: ReachedBound,
