@@ -1,5 +1,7 @@
 //! The resolver lifts a task-wide form's read of a per-input relation, a
-//! `&prediction` clause of a task-wide `DEMONSTRATED` form included, and
+//! `&prediction` clause of a task-wide `DEMONSTRATED` form and the bodies
+//! of an instance keyed on `E` included, reads such an instance's outputs
+//! unlifted, and
 //! writes the content of a `DEMONSTRATED` form with the names its rules
 //! declare resolved.
 
@@ -84,4 +86,29 @@ fn the_prediction_of_a_task_wide_demonstrated_form_reads_lifted() {
     assert_eq!(program.side(node), Side::TaskWide);
     let positions: Vec<_> = (0..3).map(|site| program.column_position(&path(&[1, 1, 0, 0, 0, site]))).collect();
     assert_eq!(positions, [0, 1, 2].map(|position| Some(ColumnPosition(position))));
+}
+
+#[test]
+fn an_instance_keyed_on_e_is_task_wide_and_a_det_reads_its_outputs_unlifted() {
+    let program = resolved(
+        "(RULE &bg (input *P *Col))\n\
+         (DET &cells (ex_input *E *P *Col))\n\
+         (INIT &obj Connectivity\n\
+           (key ((&cells ^E *P))\n\
+             (node (P)\n\
+               (&cells E *P)\n\
+               (&bg *Col))))\n\
+         (DET &reads (&obj.component (:key *E) *P *Id))\n",
+    );
+    let obj = path(&[2]);
+    let nodes: Vec<_> = (0..program.graph.nodes.len() as u32)
+        .map(GraphNodeIndex)
+        .filter(|node| program.form_of(*node).0.starts_with(&obj.0))
+        .collect();
+    assert!(!nodes.is_empty());
+    assert!(nodes.iter().all(|node| program.side(*node) == Side::TaskWide));
+    let positions: Vec<_> = (1..3).map(|site| program.column_position(&path(&[3, 0, 0, site]))).collect();
+    assert_eq!(positions, [1, 2].map(|position| Some(ColumnPosition(position))));
+    assert_eq!(program.column_position(&path(&[3, 0, 0, 0, 0])), Some(ColumnPosition(0)));
+    assert_eq!(program.column_position(&path(&[2, 0, 1, 1, 1, 0])), Some(ColumnPosition(2)));
 }

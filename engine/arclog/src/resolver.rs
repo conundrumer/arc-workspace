@@ -242,8 +242,8 @@ impl ResolvedProgram {
     }
 
     /// The side of `node` of the graph: by the keyword of its clause, and,
-    /// for an `INIT`, a `CHOOSE` or a `DEMONSTRATED` form, by what its bodies
-    /// read.
+    /// for an `INIT`, a `CHOOSE` or a `DEMONSTRATED` form, by its key and
+    /// what its bodies read.
     pub fn side(&self, node: GraphNodeIndex) -> Side {
         self.sides[node.0 as usize]
     }
@@ -1010,7 +1010,7 @@ mod columns {
         }
     }
 
-    fn key_fields(key: &KeyBody) -> Box<[ColumnName]> {
+    pub(super) fn key_fields(key: &KeyBody) -> Box<[ColumnName]> {
         key.columns.iter().map(|column| column.name.clone()).collect()
     }
 
@@ -2326,7 +2326,10 @@ mod build {
         }
 
         /// The side of an `INIT`, a `CHOOSE` or a `DEMONSTRATED` form at
-        /// `path`, by what its bodies read: task-wide where they read
+        /// `path`. A form whose key has a field named `E`, as
+        /// `columns::key_fields` gives the key's fields, is per example, and
+        /// task-wide, whatever its bodies read. Any other form takes its
+        /// side by what its bodies read: task-wide where they read
         /// `ex_input`, `ex_output`, or a per-input relation at a site on `E`;
         /// per input where they read, with no such read, `input` or a
         /// per-input relation; and task-wide otherwise, pooled over the
@@ -2334,6 +2337,15 @@ mod build {
         /// instance's of its outputs, counts toward neither side.
         fn read_side(&mut self, path: &NodePath) -> Side {
             let builder = self.builder;
+            let key = match node_at(NodeRef::Program(builder.case.value()), path) {
+                Some(NodeRef::Instance(instance)) => instance.key.as_ref(),
+                Some(NodeRef::Demonstrated(demonstrated)) => demonstrated.key.as_ref(),
+                _ => None,
+            };
+            let example = ColumnName::Written(columns::EXAMPLE.into());
+            if key.is_some_and(|key| columns::key_fields(&key.value().key).contains(&example)) {
+                return Side::TaskWide;
+            }
             let mut per_input = false;
             for index in self.reads.get(path).cloned().unwrap_or_default() {
                 let read = &builder.atoms[index];
@@ -2343,7 +2355,7 @@ mod build {
                     continue;
                 }
                 let fact = builder.is_fact(read_node);
-                let reads_example = read.atom.sites.iter().any(|site| site.column == ColumnName::Written(columns::EXAMPLE.into()));
+                let reads_example = read.atom.sites.iter().any(|site| site.column == example);
                 match self.node(node) {
                     Some(Side::TaskWide) if fact => return Side::TaskWide,
                     Some(Side::PerInput) if reads_example && !fact => return Side::TaskWide,
