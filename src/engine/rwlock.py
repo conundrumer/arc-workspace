@@ -125,11 +125,12 @@ def held(hold: Hold) -> Iterator[None]:
             del os.environ[HOLD_ENV]
 
 
-WAIT = mctx("Another {noun} holds {path}, so this {noun} waits until it is done.")
+WAIT = mctx("Another process holds the lock whose file is {path}, so this {noun} waits "
+            "until that process releases the lock.")
 HOLDER = mctx("The holder wrote: {holder}")
-HELD = mctx("Another {noun} holds {path}, and this {noun} stops, since it runs inside "
-            "a `run_dl.py` command, a pytest run or a gate command, which may be that "
-            "holder. Run it again outside that command.")
+HELD = mctx("Another process holds the lock whose file is {path}, and this {noun} stops. "
+            "This {noun} runs inside a `run_dl.py` command, a pytest run or a gate command, "
+            "and that command may be the holder. Run this {noun} again outside that command.")
 
 
 @dataclass(frozen=True)

@@ -71,7 +71,7 @@ def parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=mctx("""
             - Run Souffle solvers and their checks.
-            - The commands follow, each with what it runs. The list ends with `witness`, `derive`, `store`, `determination-plan`, `size`, `keywords`, `since` and `expand`.
+            - The commands follow, each with what it runs.
             - `uv run python scripts/run_dl.py <command> --help` prints a command's arguments.
             - A stem, which the commands take, is {stem}.
             """).format(stem=STEM_HELP),

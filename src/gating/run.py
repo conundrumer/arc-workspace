@@ -341,11 +341,12 @@ class Gate:
                     if (rest := every[p] - own.get(p, frozenset()) - pruning.get(p, frozenset()))}
             if not gaps:
                 out.append(mctx("coverage: {cmd}: its runs on its own stems cover every line "
-                                "its runs on all of STEMS cover, the run cache's "
-                                "pruning lines left out").format(cmd=c.name))
+                                "that its runs on the stems that its stem list leaves out of "
+                                "`gating.commands.STEMS` cover, apart from the lines of `souffle.run.prune` "
+                                "and of each call to it").format(cmd=c.name))
                 continue
-            out.append(mctx("coverage: {cmd}: its runs on all of STEMS cover these lines, "
-                            "and its runs on its own stems do not: {lines}").format(
+            out.append(mctx("coverage: {cmd}: its runs on the stems that its stem list leaves out of "
+                            "`gating.commands.STEMS` cover these lines, and its runs on its own stems do not: {lines}").format(
                 cmd=c.name, lines="; ".join(
                     f"{p} {', '.join(str(a) if a == b else f'{a}-{b}' for a, b in ranges(ns))}"
                     for p, ns in gaps.items())))

@@ -60,6 +60,7 @@ PURPOSES = {
 
 WAITS_HELP = mctx("""
     - The paths of links from a ticket are a nested list of the tickets outside `tickets/closed/` that a chain of links reaches from it, a link as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) gives one.
+        + xref: prompts/agents/notes/tickets.md#change-tickets
         - A ticket that two paths reach is given in full at its first place, and at each later place by its number alone.
         - Each ticket that does not move gives why, the first of these that holds:
             - It waits on the user, since its last move into `tickets/blocked/`.

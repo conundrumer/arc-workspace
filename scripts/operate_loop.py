@@ -182,6 +182,13 @@ def read_again[T](out_at: Callable[[float], T]) -> Callable[[float], T]:
     return again
 
 
+def cpu_seconds() -> float:
+    """The CPU seconds of this process's threads and of the child processes
+    it has waited on, in user and system mode."""
+    t = os.times()
+    return t.user + t.system + t.children_user + t.children_system
+
+
 def waited[T](me: str, out_at: Callable[[float], T], ready: Callable[[T], bool]) -> tuple[T, bool]:
     """The first output `out_at` gives at a full read that `ready` holds
     for, or that a message reached `me` at since the last delivery to it,
@@ -197,7 +204,7 @@ def waited[T](me: str, out_at: Callable[[float], T], ready: Callable[[T], bool])
     (`file_events.Changes`), and a read that a change starts is a partial
     read, which reads again only the stats of the paths that changed
     (`file_reads.stats_stand_but`). A read starts no sooner than
-    `POLL_SECONDS`, nor `READ_SHARE` times the CPU seconds of the read
+    `POLL_SECONDS`, nor `READ_SHARE` times the CPU seconds of the read (`cpu_seconds`)
     before it, after that read's start. Where the stream does not start,
     each read is a full read, `POLL_SECONDS` apart."""
     single_instance(me)
@@ -210,7 +217,7 @@ def waited[T](me: str, out_at: Callable[[float], T], ready: Callable[[T], bool])
     changed: set[str] | None = None
     full_at = time.monotonic()
     while True:
-        started, cpu = time.monotonic(), time.process_time()
+        started, cpu = time.monotonic(), cpu_seconds()
         if changed is None:
             full_at = started
             if changes is not None:
@@ -218,7 +225,7 @@ def waited[T](me: str, out_at: Callable[[float], T], ready: Callable[[T], bool])
         stats_stand_but(changed)
         out = out_at(deadline)
         accepted = accepted_after(path, since, [])
-        spent = time.process_time() - cpu
+        spent = cpu_seconds() - cpu
         if ready(out) or accepted:
             if changed is None:
                 break

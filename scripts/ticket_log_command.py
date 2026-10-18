@@ -47,6 +47,7 @@ LOG_RULES = mctx("""
     - The command refuses, and neither moves nor writes, where the line moves a `{request}` that holds a `{validation}` section into `{waiting}` from another status, and the sweep refuses the check that section gives, as `{invocation} sweep --help-all` gives, and gives the sweep's reason.
     - The command refuses, and neither moves nor writes, where `{log}` is not the file's last section or the note spans more than one line.
     - The command refuses, and neither moves nor writes, where the line leaves the ticket on a cycle of links, as [Change tickets](prompts/agents/notes/tickets.md#change-tickets) defines a link, among the tickets outside `tickets/{closed}/`, and gives the tickets of the shortest such cycle in order, unless the line moves the ticket into `{closed}`, or into `draft` from another status.
+        + xref: prompts/agents/notes/tickets.md#change-tickets
     """)
 
 

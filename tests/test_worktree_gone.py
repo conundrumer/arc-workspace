@@ -1,7 +1,9 @@
 """A read of the operator's state races a merge that removes a change
 worktree the read listed: `operate_loop.read_again` reads once more and
 gives the second read, and a worktree git still lists with its directory
-gone ends the read with `FileNotFoundError`."""
+gone ends the read with `FileNotFoundError`; the reads of `tree_reads` on
+a change worktree give, for a removed one, what a worktree with no diff
+gives."""
 
 import shutil
 import subprocess
@@ -55,3 +57,25 @@ def test_a_listed_worktree_whose_directory_is_gone_ends_the_read(tmp_path: Path)
     shutil.rmtree(tree)
     with pytest.raises(FileNotFoundError):
         loop.read_again(heads_read(main, []))(0.0)
+
+
+def test_the_reads_of_a_removed_worktree_give_what_a_tree_with_no_diff_gives(tmp_path: Path) -> None:
+    scripts_importable()
+    reads = script("tree_reads")
+    main, tree = repo_with_worktree(tmp_path)
+    checkout.git_out(main, "worktree", "remove", str(tree))
+    assert reads.merge_base(tree) is None
+    assert reads.fragments(tree) == ()
+    assert reads.gate_outputs(tree) == ()
+
+
+def test_a_read_raced_by_a_worktree_removal_gives_what_a_removed_worktree_gives(
+        tmp_path: Path) -> None:
+    scripts_importable()
+    reads = script("tree_reads")
+    main, tree = repo_with_worktree(tmp_path)
+
+    def read() -> str:
+        checkout.git_out(main, "worktree", "remove", str(tree))
+        return checkout.git_out(tree, "rev-parse", "HEAD")
+    assert reads.standing(tree, read, None) is None

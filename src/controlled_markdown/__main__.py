@@ -123,22 +123,23 @@ def run_in_main(args: list[str], package: Path) -> int | None:
 
 
 def changed_files(root: Path, base: str) -> set[str]:
-    """Each file the diff from the commit `base` to the working tree at
-    `root` adds or changes, and each untracked file git does not ignore, by
-    its path from `root`."""
+    """Each path the diff from the commit `base` to the working tree at
+    `root` adds, changes or deletes, both paths of a rename, and each
+    untracked file git does not ignore, by its path from `root`."""
     def listed(*argv: str) -> list[str]:
         return subprocess.run(["git", *argv], cwd=root, capture_output=True,
                               text=True, check=True).stdout.split("\0")
-    return {name for name in [*listed("diff", "--name-only", "-z", base),
+    return {name for name in [*listed("diff", "--name-only", "--no-renames", "-z", base),
                               *listed("ls-files", "--others", "--exclude-standard", "-z")]
-            if name and (root / name).is_file()}
+            if name}
 
 
 def xrefs_documents(root: Path, base: str) -> list[Path]:
     """The documents `xrefs` reads with no path: the set `check` reads, in a
     linked worktree at `root` the main tree's copies, apart from the
     worktree's copy of each document of its own set that its diff from
-    `base` adds or changes."""
+    `base` adds or changes, and with no copy at a path the diff deletes
+    or renames away from."""
     main = main_tree(root)
     if main == root.resolve():
         return collect(configured(root))

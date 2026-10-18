@@ -31,6 +31,8 @@ from controlled_markdown import (
     parse,
     Rule,
     section,
+    section_lines,
+    section_span,
     SPAN_RE,
     _walk,
 )
@@ -118,21 +120,21 @@ def _target(target: str) -> tuple[str, Mark, str]:
     return path, Mark(mark), name
 
 
-def _section_span(text: str, path: str, ident: str) -> tuple[int, int] | None:
-    """The first and last line of the section of the document `text`,
-    read from `path`, whose heading's slug is `ident`: the heading's line
-    to the line before the first node that `parse` puts outside the
-    heading's subtree after it, or to the last line. None where the
-    document holds no such heading."""
+def _section(text: str, path: str, ident: str) -> tuple[Node, Node] | None:
+    """The document `text`, read from `path` as `parse` reads it, and its
+    heading whose slug is `ident` (`section`), or None where it holds no
+    such heading."""
     document = parse(text, path)
     heading = section(document, ident)
-    if heading is None:
-        return None
-    inside = {id(n) for n in _walk(heading)}
-    end = next((n.line - 1 for n in _walk(document)
-                if n.line > heading.line and id(n) not in inside),
-               len(text.splitlines()))
-    return heading.line, max(heading.line, end)
+    return None if heading is None else (document, heading)
+
+
+def _section_span(text: str, path: str, ident: str) -> tuple[int, int] | None:
+    """The `section_span` of the section of the document `text`, read from
+    `path`, whose heading's slug is `ident`, or None where the document
+    holds no such heading."""
+    found = _section(text, path, ident)
+    return None if found is None else section_span(*found, len(text.splitlines()))
 
 
 def _span_in(text: str, target: str) -> tuple[int, int] | None:
@@ -159,7 +161,14 @@ def _span_in(text: str, target: str) -> tuple[int, int] | None:
 
 def _defined_text(text: str, target: str) -> str | None:
     """The lines of what the target names in `text`, the text of the
-    target's file, or None where it holds no such thing (`_span_in`)."""
+    target's file, or None where it holds no such thing (`_span_in`); for
+    a section, its `section_lines`, with no attribute line."""
+    path, mark, name = _target(target)
+    if mark is Mark.SECTION and name and path.endswith(".md"):
+        found = _section(text, path, name)
+        if found is None:
+            return None
+        return "".join(section_lines(*found, text.splitlines(keepends=True)))
     lines = _span_in(text, target)
     if lines is None:
         return None

@@ -7,7 +7,7 @@ tree's copy of a script in place of a worktree's copy."""
 
 import os
 import subprocess
-from collections.abc import Hashable
+from collections.abc import Callable, Hashable
 from pathlib import Path
 
 from file_reads import file_text, listed, stat_of, stat_read
@@ -169,8 +169,13 @@ def restores(main: Path) -> dict[str, tuple[Restore, ...]]:
 
 def gate_outputs(tree: Path) -> tuple[str, ...]:
     """The accepted gate outputs the change in the worktree `tree` writes,
-    against its merge base with `master`."""
-    return tuple(sorted({c.path for c in checkout.changed_paths(tree, merge_base(tree), ACCEPTED)}))
+    against its merge base with `master`; none where the worktree is gone
+    (`standing`)."""
+    base = merge_base(tree)
+    if base is None:
+        return ()
+    return standing(tree, lambda: tuple(sorted(
+        {c.path for c in checkout.changed_paths(tree, base, ACCEPTED)})), ())
 
 
 def fragments(tree: Path) -> tuple[Place, ...]:
@@ -181,8 +186,15 @@ def fragments(tree: Path) -> tuple[Place, ...]:
     change. A file whose text in the worktree does not read as fragments,
     as a Python file that does not parse or an `mctx` call with no literal,
     is one place in their stead, at the line of the error, or line 1 where
-    the error gives none."""
+    the error gives none. None where the worktree is gone (`standing`)."""
     base = merge_base(tree)
+    if base is None:
+        return ()
+    return standing(tree, lambda: changed_fragments(tree, base), ())
+
+
+def changed_fragments(tree: Path, base: str) -> tuple[Place, ...]:
+    """`fragments` of the worktree `tree` against its merge base `base`."""
     names = {c.path for c in checkout.changed_paths(tree, base, "*.py", "*.js")}
     out: list[Place] = []
     for name in sorted(names):
@@ -202,10 +214,24 @@ def fragments(tree: Path) -> tuple[Place, ...]:
     return tuple(sorted(out, key=lambda p: (p.file, p.line)))
 
 
+def standing[T](tree: Path, read: Callable[[], T], gone: T) -> T:
+    """What `read`, a read of the worktree `tree`, gives, or `gone` where it
+    fails with an `OSError` or a `GitFailed` and the directory `tree` no
+    longer stands, as a removal of the worktree before or while the read
+    runs leaves it: git finds no directory to run in, or refuses."""
+    try:
+        return read()
+    except (OSError, checkout.GitFailed):
+        if tree.is_dir():
+            raise
+        return gone
+
+
 @state_cache(lambda tree: (trees_stamp(main_tree()), refs_stamp(main_tree(), "heads")))
-def merge_base(tree: Path) -> str:
-    """`worktrees.merge_base` of `tree`."""
-    return change_worktree.merge_base(tree)
+def merge_base(tree: Path) -> str | None:
+    """`worktrees.merge_base` of `tree`, or None where the worktree is gone
+    (`standing`)."""
+    return standing(tree, lambda: change_worktree.merge_base(tree), None)
 
 
 @state_cache(lambda tree, base, name: ())

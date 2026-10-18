@@ -119,18 +119,18 @@
 - A document path in a string is the path of a file in the tree, and the check reports one that is not. The check passes over a path that holds a hole or a wildcard.
     + xref: src/controlled_markdown/citations.py:check_paths, src/controlled_markdown/citations.py:DOC_PATH_RE
 - A `quotes(document, heading, words)` call quotes the most direct handbook text the function it decorates rests on, and the check reads its three strings as literals.
-    + xref: src/engine/quotes.py:quotes, src/controlled_markdown/prose.py:check_quotes
+    + xref: src/engine/quotes.py:quotes, src/controlled_markdown/quote_check.py:check_quotes
     - The document is a path under [handbook](docs/handbook), the heading is the text of a heading in it, and the words stand under that heading, in its subsections too, up to line wrapping.
-        + xref: src/controlled_markdown/prose.py:check_quotes, src/controlled_markdown/prose.py:handbook_sections
+        + xref: src/controlled_markdown/quote_check.py:check_quotes, src/controlled_markdown/quote_check.py:handbook_sections
     - The check reports a call whose document, heading or words it does not find, at the call's line, with the words.
-        + xref: src/controlled_markdown/prose.py:check_quotes
+        + xref: src/controlled_markdown/quote_check.py:check_quotes
         - A rewording of the document that breaks a quote is kept, and an editor of the code checks the function at the line the check reports against the new text, then changes the quote there.
     - In [checker](src/checker), every `survey_` function has a `quotes` decorator, and every `check_` function has a `quotes` or a `guard` decorator.
         + xref: src/checker/quoting.py:unquoted, src/checker/quoting.py:quote_rule_errors
         - A `check_` function in [lint](src/checker/lint), or one whose every finding kind stands outside `FAILING` in [finding.py](src/checker/finding.py), may have a `guard(words)` decorator in place of `quotes`, where no handbook passage states what it guards against.
             + xref: src/checker/quoting.py:unquoted, src/checker/finding.py:FAILING, src/engine/quotes.py:guard
             - The check reads the one string of a `guard` call as a literal, and that string says what the function guards against.
-                + xref: src/engine/quotes.py:guard, src/controlled_markdown/prose.py:check_quotes
+                + xref: src/engine/quotes.py:guard, src/controlled_markdown/quote_check.py:check_quotes
         - Every other `check_` function has a `quotes` decorator that quotes [Principles](docs/handbook/principles.md).
             + xref: src/checker/quoting.py:PRINCIPLES, src/checker/quoting.py:unquoted
 - A `///` or `//!` comment in a Souffle file is read as the text of one statement, and the rules on a statement's text apply to it.

@@ -20,6 +20,7 @@ from controlled_markdown import (
     check_links,
     check_order,
     check_xrefs,
+    handbook_sections,
     parse,
     render,
     round_trips,
@@ -197,6 +198,20 @@ def test_touched_lists_a_line_whose_section_a_hunk_changes(tmp_path):
         ("Subsection.", "docs/guide.md#detail")]
 
 
+def test_touched_lists_no_section_whose_attribute_lines_alone_change(tmp_path):
+    _tree(tmp_path)
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "base")
+    base = _git(tmp_path, "rev-parse", "HEAD").strip()
+    path = tmp_path / "docs" / "guide.md"
+    path.write_text(GUIDE.replace("- Write it small.\n",
+                                  "- Write it small.\n    + xref: scripts/tool.py:run\n"
+                                  "    * comment: Asked for.\n"))
+    assert path.read_text() != GUIDE
+    document = parse("- Section.\n    + xref: docs/guide.md#making-a-change\n", "doc.md")
+    assert touched([document], tmp_path, base) == []
+
+
 def test_touched_lists_a_removed_target_and_no_target_absent_on_both_sides(tmp_path):
     _tree(tmp_path)
     _git(tmp_path, "add", "-A")
@@ -236,11 +251,19 @@ def test_xrefs_in_a_linked_worktree_reads_the_main_copy_of_each_document_it_leav
         main / "docs" / "kept.md", linked / "docs" / "added.md", linked / "docs" / "ours.md"]
 
 
-def test_xrefs_in_a_linked_worktree_reads_the_main_copy_of_a_document_its_diff_deletes(tmp_path):
+def test_xrefs_in_a_linked_worktree_reads_no_copy_of_a_document_its_diff_deletes(tmp_path):
     main, linked = _linked(tmp_path)
     base = _git(linked, "rev-parse", "HEAD").strip()
     (linked / "docs" / "ours.md").unlink()
-    assert xrefs_documents(linked, base) == [main / "docs" / "kept.md", main / "docs" / "ours.md"]
+    assert xrefs_documents(linked, base) == [main / "docs" / "kept.md"]
+
+
+def test_xrefs_in_a_linked_worktree_reads_a_renamed_document_at_its_new_path(tmp_path):
+    main, linked = _linked(tmp_path)
+    base = _git(linked, "rev-parse", "HEAD").strip()
+    _git(linked, "mv", "docs/ours.md", "docs/moved.md")
+    assert xrefs_documents(linked, base) == [main / "docs" / "kept.md",
+                                             linked / "docs" / "moved.md"]
 
 
 def test_xrefs_in_the_main_tree_reads_its_own_documents(tmp_path):
@@ -255,3 +278,11 @@ def test_xrefs_refuses_where_the_main_tree_has_no_module(tmp_path, capsys):
     package.mkdir(parents=True)
     assert run_in_main(["xrefs", "HEAD"], package) == 2
     assert "the main tree has no `src/controlled_markdown`" in capsys.readouterr().err
+
+
+def test_a_section_quote_spans_statements_past_their_attribute_lines(tmp_path):
+    document = tmp_path / "doc.md"
+    document.write_text("# Doc\n## Rule\n- Run the check.\n    + xref: scripts/tool.py:run\n"
+                        "* comment: Asked for.\n- Read its output.\n")
+    under = handbook_sections(document)["Rule"]
+    assert under == ["Run the check. Read its output."]

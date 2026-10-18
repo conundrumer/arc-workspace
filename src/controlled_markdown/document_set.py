@@ -1,6 +1,6 @@
 """The checks of a document set: its closure, its partials, its blocks and
 its links, with the links a node's text holds, the file each names, and
-the section a slug names."""
+the section a slug names, its span and its lines."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from controlled_markdown import (
+    ATTRIBUTE,
     CODE,
     COMMENT,
     ControlledMarkdownError,
@@ -231,6 +232,27 @@ def section(document: Node, ident: str) -> Node | None:
     subtree, or None where no heading has that slug."""
     found = [h for h in _walk(document) if h.kind == HEADING and slug(h.text) == ident]
     return found[-1] if found else None
+
+
+def section_span(document: Node, heading: Node, length: int) -> tuple[int, int]:
+    """The first and last line of the section of `heading`, a heading of
+    `document`, whose text has `length` lines: the heading's line to the
+    line before the first node that `parse` puts outside the heading's
+    subtree after it, or to the last line."""
+    inside = {id(n) for n in _walk(heading)}
+    end = next((n.line - 1 for n in _walk(document)
+                if n.line > heading.line and id(n) not in inside), length)
+    return heading.line, max(heading.line, end)
+
+
+def section_lines(document: Node, heading: Node, lines: list[str]) -> list[str]:
+    """The lines of the section of `heading`, a heading of `document`, whose
+    text is `lines` (`section_span`), the heading's line first, with each
+    line of an attribute (`+ ...`, or the `* ...` of a directive) left
+    out."""
+    first, last = section_span(document, heading, len(lines))
+    attributes = {n.line for n in _walk(heading) if n.kind == ATTRIBUTE}
+    return [lines[k - 1] for k in range(first, last + 1) if k not in attributes]
 
 
 def check_links(document: Node, file: Path, root: Path | None = None) -> None:
