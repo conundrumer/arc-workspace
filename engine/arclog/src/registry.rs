@@ -48,11 +48,10 @@
 //! - `(fact <name> (columns (<Column> <type>) ...))`: the columns of a fact
 //!   relation, `input`, `ex_input` or `ex_output`, the Example column `E`
 //!   first in the two of the examples.
-//! - `(macro <name> (columns (<Column> <Label>) ...) (modes ...) <body>)`:
+//! - `(macro <name> (columns (<Column> <Label>) ...) <body>)`:
 //!   a lib relation that the lib defines from other lib names, each column
-//!   with the label of the definition it stands for, its modes as a
-//!   `relation` form gives them, and its definition. A
-//!   [`Macro::Relation`]'s column types are the ones
+//!   with the label of the definition it stands for, and its definition. A
+//!   [`Macro::Relation`]'s column types and modes are the ones
 //!   [`macro_column_types`] gives.
 //! - `(macro <name> (component ...) [(INIT ...)] (RULE &<rule> <body>) ... (output <port> (<Label> ...) <body>) ...)`:
 //!   a cell instance, its declaration as a `component` form gives it, the
@@ -101,7 +100,8 @@
 #![allow(unused_variables, dead_code)]
 
 use crate::check::CheckId;
-use crate::hash::StableHashMap;
+use crate::grounding::{body_labels, grounded_labels};
+use crate::hash::{StableHashMap, StableHashSet};
 use crate::layout::SourcePlace;
 use crate::program::{Atom, Body, ColumnName, Conjunct, LabelId, Negated, Node, PortName, RelationRef};
 use crate::terms::{OrientationConstant, OrientationType};
@@ -271,9 +271,8 @@ pub struct Derivation {
 /// resolver expands under [`crate::resolver::MacroExpansion::Expand`]. The
 /// declaration serves the checks under
 /// [`crate::resolver::MacroExpansion::Keep`], the form the corpus is written
-/// in. A program runs in either form. A relation macro's column types are
-/// its definition's, as [`macro_column_types`] gives them, and its modes
-/// are the ones its form writes.
+/// in. A program runs in either form. A relation macro's column types and
+/// modes are its definition's, as [`macro_column_types`] gives them.
 #[derive(Clone, Debug)]
 pub enum Macro {
     /// A lib relation: its declaration, its columns, their types and its
@@ -444,8 +443,9 @@ pub struct RelationMacro<'a> {
     pub definition: &'a Body,
 }
 
-/// The column types of each relation macro of `macros`, in the order of its
-/// columns, or a diagnostic at a macro's form for each fault.
+/// The declaration of each relation macro of `macros`, its columns in order
+/// with their types and its modes, or a diagnostic at a macro's form for
+/// each fault.
 ///
 /// The type of a column is the type that [`label_type`] gives its label
 /// over the definition. A site has the column's type: a column of a lib
@@ -453,21 +453,32 @@ pub struct RelationMacro<'a> {
 /// or a column of another macro of `macros`, of the type this gives it. Any
 /// other site gives no type.
 ///
+/// The modes are the minimal sets of the columns, other than an orientation
+/// type's, whose labels, taken as grounded, let [`grounded_labels`] ground
+/// every label of the definition. An atom of a lib relation takes the modes
+/// that `modes` gives it, and an atom of another macro of `macros` the modes
+/// this gives it. Where the empty set grounds the definition, the macro has
+/// no mode, as a relation over a finite domain has none.
+///
 /// `lib` holds the columns of each lib name that a form other than a
-/// relation macro declares. The macros are read in an order of their reads
-/// of one another, so the order of `macros` gives the order of the
-/// diagnostics alone. A fault is a cycle of macros that read one another,
-/// given at each macro of the cycle; a column whose label's sites have an
-/// empty meet, or whose branches give types with no join; or a column whose
-/// label stands at no site that gives a type. A macro that reads a macro
-/// with a fault takes no types, and gives no diagnostic of its own for it.
+/// relation macro declares, and `modes` the modes of each `relation` form,
+/// none for a form with no `modes` form. The macros are read in an order of
+/// their reads of one another, so the order of `macros` gives the order of
+/// the diagnostics alone. A fault is a cycle of macros that read one
+/// another, given at each macro of the cycle; a column whose label's sites
+/// have an empty meet, or whose branches give types with no join; a column
+/// whose label stands at no site that gives a type; or a definition that no
+/// set of the columns grounds. A macro that reads a macro with a fault takes
+/// no declaration, and gives no diagnostic of its own for it.
 pub fn macro_column_types(
     macros: &[RelationMacro<'_>],
     lib: &StableHashMap<LibName, Box<[Column]>>,
-) -> Result<StableHashMap<LibName, Box<[ValueType]>>, Vec<crate::diagnostic::Diagnostic>> {
+    modes: &StableHashMap<LibName, Box<[Mode]>>,
+) -> Result<StableHashMap<LibName, AlgebraRelation>, Vec<crate::diagnostic::Diagnostic>> {
     let mut derivation = MacroDerivation {
         macros,
         lib,
+        modes,
         index: macros.iter().enumerate().map(|(i, m)| (m.name.clone(), i)).collect(),
         states: vec![MacroState::Unread; macros.len()],
         stack: Vec::new(),
@@ -479,11 +490,11 @@ pub fn macro_column_types(
     if !derivation.diagnostics.is_empty() {
         return Err(derivation.diagnostics);
     }
-    let types = derivation.states.into_iter().zip(macros).map(|(state, m)| match state {
-        MacroState::Typed(types) => (m.name.clone(), types),
-        _ => unreachable!("a macro with no types gives a diagnostic"),
+    let declarations = derivation.states.into_iter().zip(macros).map(|(state, m)| match state {
+        MacroState::Declared(relation) => (m.name.clone(), relation),
+        _ => unreachable!("a macro with no declaration gives a diagnostic"),
     });
-    Ok(types.collect())
+    Ok(declarations.collect())
 }
 
 /// Where [`macro_column_types`] stands in its read of one macro.
@@ -493,7 +504,8 @@ enum MacroState {
     /// Its reads of other macros are being read, so a read of it now closes
     /// a cycle.
     Reading,
-    Typed(Box<[ValueType]>),
+    /// Its declaration, each column of a fixed type.
+    Declared(AlgebraRelation),
     /// It has a fault, or reads a macro with one.
     Faulted,
 }
@@ -501,6 +513,7 @@ enum MacroState {
 struct MacroDerivation<'a, 'b> {
     macros: &'a [RelationMacro<'b>],
     lib: &'a StableHashMap<LibName, Box<[Column]>>,
+    modes: &'a StableHashMap<LibName, Box<[Mode]>>,
     index: StableHashMap<LibName, usize>,
     states: Vec<MacroState>,
     /// The macros being read, each reading the next.
@@ -517,7 +530,7 @@ impl MacroDerivation<'_, '_> {
                 self.close_cycle(i);
                 return;
             }
-            MacroState::Typed(_) | MacroState::Faulted => return,
+            MacroState::Declared(_) | MacroState::Faulted => return,
         }
         self.states[i] = MacroState::Reading;
         self.stack.push(i);
@@ -535,13 +548,19 @@ impl MacroDerivation<'_, '_> {
             self.read(j);
         }
         self.stack.pop();
-        let read_faulted = reads.iter().any(|&j| !matches!(self.states[j], MacroState::Typed(_)));
+        let read_faulted = reads.iter().any(|&j| !matches!(self.states[j], MacroState::Declared(_)));
         if matches!(self.states[i], MacroState::Faulted) || read_faulted {
             self.states[i] = MacroState::Faulted;
             return;
         }
-        self.states[i] = match self.column_types(&self.macros[i]) {
-            Some(types) => MacroState::Typed(types),
+        let m = self.macros[i];
+        let declaration = self.column_types(&m).and_then(|types| {
+            let modes = self.modes_of(&m)?;
+            let columns = m.columns.iter().zip(types).map(|((name, _), ty)| Column { name: name.clone(), ty: ColumnType::Fixed(ty) });
+            Some(AlgebraRelation { columns: columns.collect(), modes })
+        });
+        self.states[i] = match declaration {
+            Some(relation) => MacroState::Declared(relation),
             None => MacroState::Faulted,
         };
     }
@@ -584,22 +603,90 @@ impl MacroDerivation<'_, '_> {
         if faulted { None } else { Some(types.into()) }
     }
 
+    /// The modes of `m`, as [`macro_column_types`] gives them, or `None`
+    /// with a diagnostic where no set of its columns grounds its definition.
+    /// A set that holds a column of an orientation type grounds what the set
+    /// without it grounds, so no mode holds one.
+    fn modes_of(&mut self, m: &RelationMacro<'_>) -> Option<Box<[Mode]>> {
+        let definition_labels = body_labels(m.definition);
+        let label_types = |label: LabelId| label_type(m.definition, label, &|atom, column| self.site_type(atom, column)).ok().flatten();
+        let atom_modes = |atom: &Atom| self.atom_modes(atom);
+        let columns: Vec<usize> = (0..m.columns.len()).collect();
+        let grounds = |set: &[usize]| {
+            let grounded: StableHashSet<LabelId> = set.iter().map(|&c| m.columns[c].1).collect();
+            let reached = grounded_labels(m.definition, &grounded, &atom_modes, &label_types);
+            definition_labels.iter().all(|label| reached.contains(label))
+        };
+        let mut found: Vec<Vec<usize>> = Vec::new();
+        for size in 0..=columns.len() {
+            for set in subsets_of_size(&columns, size) {
+                if found.iter().any(|mode| mode.iter().all(|c| set.contains(c))) {
+                    continue;
+                }
+                if grounds(&set) {
+                    found.push(set);
+                }
+            }
+            if found.first().is_some_and(|mode| mode.is_empty()) {
+                return Some(Box::default());
+            }
+        }
+        if found.is_empty() {
+            let message = format!("no set of the columns of the macro `{}` grounds every label of its definition", m.name.0);
+            self.diagnostics.push(crate::read::check_error(CheckId::Grounding, message, m.place));
+            return None;
+        }
+        let modes = found.into_iter().map(|set| Mode { grounded: set.into_iter().map(|c| m.columns[c].0.clone()).collect() });
+        Some(modes.collect())
+    }
+
+    /// The modes of the relation `atom` reads: a macro's that has its
+    /// declaration, or a lib relation's, and none for any other relation.
+    fn atom_modes(&self, atom: &Atom) -> &[Mode] {
+        let RelationRef::Lib(name) = &atom.relation else { return &[] };
+        if let Some(&j) = self.index.get(name) {
+            return &self.declared(j).modes;
+        }
+        self.modes.get(name).map_or(&[], |modes| modes)
+    }
+
+    /// The declaration of macro `j`, which a macro that reads it reads once
+    /// it has one.
+    fn declared(&self, j: usize) -> &AlgebraRelation {
+        let MacroState::Declared(relation) = &self.states[j] else {
+            unreachable!("a macro takes its declaration only after each macro it reads has one")
+        };
+        relation
+    }
+
     /// The type of the column `column` of the relation `atom` reads, where
-    /// that relation is a lib name of `lib` or a macro with types.
+    /// that relation is a lib name of `lib` or a macro with its declaration.
     fn site_type(&self, atom: &Atom, column: &ColumnName) -> Option<ValueType> {
         let RelationRef::Lib(name) = &atom.relation else { return None };
-        if let Some(&j) = self.index.get(name) {
-            let MacroState::Typed(types) = &self.states[j] else {
-                unreachable!("a macro takes types only after each macro it reads has types")
-            };
-            let position = self.macros[j].columns.iter().position(|(c, _)| c == column)?;
-            return Some(types[position].clone());
-        }
-        match &self.lib.get(name)?.iter().find(|c| &c.name == column)?.ty {
+        let columns: &[Column] = match self.index.get(name) {
+            Some(&j) => &self.declared(j).columns,
+            None => self.lib.get(name)?,
+        };
+        match &columns.iter().find(|c| &c.name == column)?.ty {
             ColumnType::Fixed(ty) | ColumnType::PoseOr(ty) => Some(ty.clone()),
             ColumnType::Pose | ColumnType::SharedPose | ColumnType::Parameter(_) => None,
         }
     }
+}
+
+/// The subsets of `items` of `size` elements, each in the order of `items`.
+fn subsets_of_size(items: &[usize], size: usize) -> Vec<Vec<usize>> {
+    if size == 0 {
+        return vec![Vec::new()];
+    }
+    let mut subsets = Vec::new();
+    for (i, &item) in items.iter().enumerate() {
+        for mut rest in subsets_of_size(&items[i + 1..], size - 1) {
+            rest.insert(0, item);
+            subsets.push(rest);
+        }
+    }
+    subsets
 }
 
 /// The name of `column`, for a diagnostic.

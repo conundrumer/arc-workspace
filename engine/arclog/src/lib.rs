@@ -33,6 +33,7 @@
 
 pub mod check;
 pub mod diagnostic;
+pub mod grounding;
 pub mod harness;
 pub mod hash;
 pub mod layout;

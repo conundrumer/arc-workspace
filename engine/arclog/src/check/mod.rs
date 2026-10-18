@@ -46,7 +46,8 @@ pub enum CheckId {
     PoseRule,
     /// The labels that `=` makes and that an `OR` or an `IF` exports.
     MadeAndExportedLabels,
-    /// Grounding.
+    /// Grounding. The check grounds each body by
+    /// [`crate::grounding::grounded_labels`].
     Grounding,
     /// The rule of an `Unfold` instance's reads of its outputs.
     UnfoldReads,
