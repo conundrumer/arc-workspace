@@ -113,9 +113,14 @@ def undecided_lines(me: str, runs: list[tuple[str, Path]], calls: Sequence[Call]
     known = {a.agent_id for a in (*agents, *others) if a.agent_id} | {aid for aid, _ in runs}
     given = given_lines(runs, me, list(calls))
     readers = text_readers(me, took_up, ended, agents)
-    return [line for line in dict.fromkeys(undecided)
-            if (where := line_where(line)) in known and unknown_line(line) not in given
-            and (where in readers or not gone_line(line))]
+    return [line for line in not_given(undecided, given)
+            if (where := line_where(line)) in known and (where in readers or not gone_line(line))]
+
+
+def not_given(lines: list[str], given: set[str]) -> list[str]:
+    """Each line of `lines` once, other than one whose `unknown_line` the
+    lines `given` of earlier final replies hold."""
+    return [line for line in dict.fromkeys(lines) if unknown_line(line) not in given]
 
 
 def line_where(line: str) -> str:

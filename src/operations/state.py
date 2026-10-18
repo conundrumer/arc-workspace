@@ -51,13 +51,16 @@ class Unread:
     """A ticket file the operator's read refused or failed on, which no
     procedure reads as a ticket: `why` is the read's failure, `digest` a
     digest of the file's bytes, so that each content it has gives its own
-    step, or where those bytes do not read, of that failure's text, and
+    step, or where those bytes do not read, of that failure's text,
     `modified` the time of its last write, or 0 where that time does not
-    read."""
+    read, and `session` the session index of the ticket number its file
+    name gives, None where that number is bare or the parser of ticket
+    file names refuses the name."""
     path: Path
     why: str
     digest: str
     modified: float
+    session: int | None
 
 
 @dataclass(frozen=True)
@@ -667,8 +670,9 @@ class NotComputed:
 class Computed:
     """The values `state_assembly.read_state` computes over the `State` of
     the reads. `to_settle` is the list `file_ticket.py to-settle` prints
-    for the session, with the numbers the coordinator names, keeping only
-    the tickets that `tracker.tickets` holds. `spent` gives, for each
+    for the session, with the numbers the coordinator names and the
+    tickets of `taking.allowed`, keeping only the tickets that
+    `tracker.tickets` holds. `spent` gives, for each
     change `me` holds, the spend of the agents `change_agents.of_change` gives
     for it. `budgets` gives the budget of each change of `taking.takeable`,
     taken at `State.now`, and of each held change whose spend passes
@@ -826,7 +830,13 @@ class State:
 
     def mine(self, t: Ticket) -> bool:
         """Whether the operators act on `t` as on a ticket of the session."""
-        return t.session == self.tracker.index or t.session in self.sessions.adopted
+        return self.acts_on(t.session)
+
+    def acts_on(self, session: int | None) -> bool:
+        """Whether the operators act on the tickets of the session index
+        `session` as on tickets of the session: the session's own index
+        or one it adopts."""
+        return session == self.tracker.index or session in self.sessions.adopted
 
 
 def memo_in[*A, R](held: Callable[[State], dict[tuple[Any, ...], Any]]

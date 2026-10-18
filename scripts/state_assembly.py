@@ -15,7 +15,7 @@ from agent_turns import last_time
 from audit_window import window
 from context_bound_hook import past_bound
 from elsewhere_reads import editor_checks, elsewhere_agents
-from git_session_reads import read_git, sessions, started
+from git_session_reads import given_lines, read_git, sessions, started
 from held_budgets import change_budgets, change_spend, doc_budgets
 from idle_sessions import running
 from monitor_reads import late_resumes
@@ -47,6 +47,7 @@ from handbook.readers import reader_calls
 from operations import pacing
 from operations.pacing import Usage
 from operations.directives import given_again, named, pace
+from operations.taking import allowed
 from operations.monitor import MonitorState
 from operations.plan import taken_up
 from operations.state import (
@@ -63,7 +64,8 @@ from operations.state import (
     TranscriptsRead,
 )
 from holder_reads import holders_read, read_held, with_quiet_holders
-from operator_state import EndsRead, ends_read, stuck_read, undecided_lines, watched_read, work_of
+from operator_state import (EndsRead, ends_read, not_given, stuck_read, undecided_lines, watched_read,
+                            work_of)
 
 STARTED = time.time()
 """The start of the process: a step given to `me` before it, with no call
@@ -141,7 +143,9 @@ def read_state(me: str, since: float | None = None) -> tuple[State, MonitorState
         journal=journal, listing=ops.listing)
     state = replace(state, journal=state.journal.since(given_again(state)))
     state = with_quiet_holders(state, holders.found, listing, running_work)
-    state = replace(state, computed=computed_read(state, tickets_dir, undecided, usage))
+    computed_lines: list[str] = []
+    state = replace(state, computed=computed_read(state, tickets_dir, computed_lines, usage))
+    watching.extend(not_given(computed_lines, given_lines(runs.runs, me, list(ops.calls))))
     return state, MonitorState(watched=tuple(now_watched), stalled=frozenset(ends.stalled),
                                undecided=tuple(watching))
 
@@ -230,9 +234,10 @@ def operators_read(read: list[tuple[str, Path]], me: str, main: Path, undecided:
 
 def computed_read(state: State, tickets_dir: Path, undecided: list[str],
                   usage: Usage) -> Computed:
-    """`State.computed` of `state`, at the usage `usage`."""
+    """`State.computed` of `state`, at the usage `usage`, adding to
+    `undecided` the `undecided` lines of its reads."""
     tickets = state.tracker.tickets
-    given = [ticket_number(n) for n in named(state) if n in tickets]
+    given = [ticket_number(n) for n in named(state) | allowed(state) if n in tickets]
     spent = change_spend(state, undecided)
     run_starts, run_takes = read_runs(state)
     given_pace = pace(state)

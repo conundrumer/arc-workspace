@@ -139,4 +139,12 @@ def unread_file(path: Path, exc: Exception) -> Unread:
         raise
     except OSError:
         modified = 0.0
-    return Unread(path, why, hashlib.sha1(data).hexdigest(), modified)
+    return Unread(path, why, hashlib.sha1(data).hexdigest(), modified, name_session(path))
+
+
+def name_session(path: Path) -> int | None:
+    """`Unread.session` of the ticket file `path`."""
+    try:
+        return ticket_name(path).number.session
+    except Refused:
+        return None
