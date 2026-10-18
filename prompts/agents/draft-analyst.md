@@ -1,7 +1,7 @@
 ---
 name: draft-analyst
 description: "[A draft analyst's brief](prompts/agents/notes/launching.md#a-draft-analysts-brief)"
-model: opus
+model: sonnet
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill, TaskStop
 ---
 

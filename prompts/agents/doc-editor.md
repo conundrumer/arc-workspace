@@ -1,7 +1,7 @@
 ---
 name: doc-editor
 description: "[An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), [A change's brief](prompts/agents/notes/launching.md#a-changes-brief), [A doc editor's brief](prompts/agents/notes/launching.md#a-doc-editors-brief)"
-model: opus
+model: sonnet
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 ---
 
