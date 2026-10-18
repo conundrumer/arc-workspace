@@ -66,7 +66,7 @@ from controlled_markdown import mctx
 from operations.reports import LIST_MARKER
 from operations.pacing import Preset, line_pace
 from operations.roles import PASSES, Purpose, Role
-from operations.state import Agent, Message, Report, State
+from operations.state import Agent, Message, Report, State, memoized, memoized_by_transcripts
 from operations.steps import (STEP_KEY, Step, Undecided, bare, decision_key, digest,
                               held, key)
 
@@ -135,16 +135,18 @@ class Line:
     rest: str
 
 
-def lines(state: State) -> list[Line]:
+@memoized
+def lines(state: State) -> tuple[Line, ...]:
     """Each non-blank line the coordinator gave the operator `me`, in the
     order the messages arrived."""
-    return parsed(state.received, cutoff(state.arrived))
+    return tuple(parsed(state.received, cutoff(state.arrived)))
 
 
-def session_lines(state: State) -> list[Line]:
+@memoized_by_transcripts
+def session_lines(state: State) -> tuple[Line, ...]:
     """Each non-blank line the coordinator gave any operator of the
     session, in the order the messages arrived."""
-    return parsed(state.arrived, cutoff(state.arrived))
+    return tuple(parsed(state.arrived, cutoff(state.arrived)))
 
 
 def parsed(messages: Iterable[Message], before: float | None) -> list[Line]:
@@ -205,7 +207,7 @@ def numbers(state: State, kind: Directive) -> list[tuple[str, float]]:
     return numbers_in(lines(state), kind)
 
 
-def numbers_in(given: list[Line], kind: Directive) -> list[tuple[str, float]]:
+def numbers_in(given: Iterable[Line], kind: Directive) -> list[tuple[str, float]]:
     return [(n, ln.message.time) for ln in given if ln.kind is kind
             for n in NUMBER.findall(ln.rest)]
 
@@ -379,7 +381,7 @@ class Pipeline:
     operator: str
 
 
-def pipelines(given: list[Line]) -> list[Pipeline]:
+def pipelines(given: Iterable[Line]) -> list[Pipeline]:
     """The pipelines the `Op solve` lines of `given` give."""
     out: list[Pipeline] = []
     for ln in given:

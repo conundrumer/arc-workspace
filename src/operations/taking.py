@@ -47,13 +47,14 @@ from ticketing.references import referring
 from ticketing.vocabulary import COORDINATOR, Domain, Kind, Status
 
 
-def purview(state: State) -> set[str]:
+@memoized
+def purview(state: State) -> frozenset[str]:
     """The tickets the operators release and take changes among: those
     `State.mine` gives, those the coordinator gives in a line to the operator `me`,
     and each ticket a chain of links reaches from one of those, with those
     of `allowed`."""
-    return reached(state, {n for n, t in state.tracker.tickets.items() if state.mine(t)} | named(state)) \
-        | allowed(state)
+    return frozenset(reached(state, {n for n, t in state.tracker.tickets.items() if state.mine(t)}
+                             | named(state)) | allowed(state))
 
 
 def reached(state: State, start: set[str]) -> set[str]:

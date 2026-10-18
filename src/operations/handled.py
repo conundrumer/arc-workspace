@@ -148,7 +148,20 @@ def bash_calls(state: State, command: str) -> tuple[Call, ...]:
     (`TranscriptsRead.calls`) that ran the command `command`, among others,
     in the order they were made."""
     return tuple(c for c in state.transcripts.calls
-                 if c.tool == Tool.BASH and command in str(c.input.get("command", "")))
+                 if c.tool == Tool.BASH and command in c.command)
+
+
+def bash_calls_within(state: State, lead: str, command: str) -> list[Call]:
+    """`bash_calls` of `command`, a command that holds `lead`, found among
+    `bash_calls` of `lead`, which the commands that share `lead` read
+    once (`commands_of`)."""
+    return [c for c, text in commands_of(state, lead) if command in text]
+
+
+@memoized_by_transcripts
+def commands_of(state: State, lead: str) -> tuple[tuple[Call, str], ...]:
+    """Each call of `bash_calls` of `lead`, with its command."""
+    return tuple((c, c.command) for c in bash_calls(state, lead))
 
 
 def unmoved(t: Ticket, s: Send) -> Undecided:

@@ -4,9 +4,10 @@ of an operator that reads."""
 
 import re
 from dataclasses import dataclass
+from functools import cache
 
 from controlled_markdown import mctx
-from operations.handled import bash_calls
+from operations.handled import bash_calls_within
 from operations.roles import AGENT_ID
 from operations.state import Call, State
 
@@ -48,6 +49,7 @@ class Under:
     taken: tuple[str, ...]
 
 
+@cache
 def read_under(output: str) -> Under | None:
     """What the call of `--under` whose output is `output` gives, where the
     call stands as `profile_runs.py --help under` has it: one `LEFT_OPEN` line and
@@ -74,5 +76,5 @@ def under_calls(state: State, operator: str, since: float | None,
                 until: float | None) -> list[Call]:
     """The calls of `--under` on `operator`, of those made after `since`
     and before `until`, each where it is given."""
-    return [c for c in bash_calls(state, under_command(operator))
+    return [c for c in bash_calls_within(state, under_command(""), under_command(operator))
             if (since is None or c.time > since) and (until is None or c.time < until)]

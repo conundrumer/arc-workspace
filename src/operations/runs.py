@@ -196,7 +196,7 @@ def start_words(c: Call) -> tuple[str, Start] | None:
     call of `operate.py start`, or None."""
     if c.tool != Tool.BASH:
         return None
-    return command_start(str(c.input.get("command", "")))
+    return command_start(c.command)
 
 
 @cache

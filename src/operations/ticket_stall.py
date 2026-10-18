@@ -41,7 +41,7 @@ from operations.constants import stuck_reached
 from operations.final_reply import live_holder
 from operations.log_commands import log
 from operations.roles import AGENT_ID
-from operations.state import Agent, State, Ticket, memoized
+from operations.state import Agent, State, Ticket, memoized, memoized_by_transcripts
 from operations.steps import Bash, Step
 from operations.tracker import exits
 from ticketing.exits import Exit
@@ -76,8 +76,19 @@ def selection(state: State, e: Exit) -> set[str]:
             assert_never(e)
 
 
-def agents_of(state: State, number: str) -> list[Agent]:
-    return [a for a in state.transcripts.agents if number in lineage.tickets(a.role, a.subject)]
+def agents_of(state: State, number: str) -> tuple[Agent, ...]:
+    return agents_by_ticket(state).get(number, ())
+
+
+@memoized_by_transcripts
+def agents_by_ticket(state: State) -> Mapping[str, tuple[Agent, ...]]:
+    """The agents of each ticket number their subject gives
+    (`lineage.tickets`), in the order of `TranscriptsRead.agents`."""
+    out: dict[str, list[Agent]] = {}
+    for a in state.transcripts.agents:
+        for n in dict.fromkeys(lineage.tickets(a.role, a.subject)):
+            out.setdefault(n, []).append(a)
+    return {n: tuple(agents) for n, agents in out.items()}
 
 
 def progress(state: State, t: Ticket) -> float | None:
@@ -126,7 +137,8 @@ def due_times(state: State) -> dict[str, float]:
             **{n: state.due_since.get(n, state.now) for n in sorted(due(state))}}
 
 
-def stalled(state: State) -> dict[str, float]:
+@memoized
+def stalled(state: State) -> Mapping[str, float]:
     """The stalled tickets, each with the later of the time of its last
     progress and the time from which a step has been due on it: an
     operator's step is due on each."""

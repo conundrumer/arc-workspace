@@ -81,7 +81,8 @@ from operations.filing import editor_scratch
 from operations.reports import splits, unread_split
 from operations.roles import Role
 from operations.constants import COORDINATOR
-from operations.state import Agent, Call, Commit, LogLine, Merge, State, Ticket, Tool
+from operations.state import (Agent, Call, Commit, LogLine, Merge, State, Ticket, Tool,
+                              memoized_by_transcripts)
 from operations.command_words import command_words
 from operations.handled import ask_again, decided_by, sent, unmoved
 from operations.steps import Bash, Launch, Send, Step, labeled
@@ -263,7 +264,7 @@ def merge_messages(command: str) -> list[str] | None:
 def names_any(call: Call, paths: set[str]) -> bool:
     """Whether a word of the call of `merge_change.py` that the Bash call
     `call` runs holds any of `paths`."""
-    return any(p in w for w in merge_words(str(call.input.get("command", ""))) or ()
+    return any(p in w for w in merge_words(call.command) or ()
                for p in paths)
 
 
@@ -277,8 +278,16 @@ def merge_calls(state: State, t: Ticket) -> list[Call]:
     pending, and those with an outcome (`state.Merge`), which a call that
     merges no change, as a call of the script's `--help`, has not."""
     paths = log_worktrees(t)
-    return [c for c in state.transcripts.calls if c.tool == Tool.BASH and names_any(c, paths)
+    return [c for c in merge_script_calls(state) if names_any(c, paths)
             and (c.result is None or c.merge is not None)]
+
+
+@memoized_by_transcripts
+def merge_script_calls(state: State) -> tuple[Call, ...]:
+    """The operators' Bash calls that run `merge_change.py` (`merge_words`),
+    in the order of `TranscriptsRead.calls`."""
+    return tuple(c for c in state.transcripts.calls
+                 if c.tool == Tool.BASH and merge_words(c.command))
 
 
 def merge_commit(state: State, t: Ticket) -> Commit | None:

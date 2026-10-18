@@ -287,6 +287,11 @@ class Call:
         empty where its input gives none."""
         return str(self.input.get("message", ""))
 
+    @property
+    def command(self) -> str:
+        """The command of a Bash call, empty where its input gives none."""
+        return str(self.input.get("command", ""))
+
 
 class Tool(StrEnum):
     """A tool an operator calls, by the name the harness gives that tool."""
@@ -554,6 +559,16 @@ class TranscriptsRead:
         function and arguments, shared by each state that keeps this read."""
         return {}
 
+    @cached_property
+    def analysts(self) -> tuple[tuple[Agent, Purpose, list[str]], ...]:
+        """Each ticket analyst of `agents`, with its purpose and the ticket
+        numbers or the task its subject gives."""
+        out: list[tuple[Agent, Purpose, list[str]]] = []
+        for a in self.agents:
+            if a.role is Role.TICKET_ANALYST and (parsed := analyst_of(a.subject)) is not None:
+                out.append((a, parsed[0], subjects(parsed[1])))
+        return tuple(out)
+
     def sent_by(self, a: Agent) -> frozenset[str] | None:
         """The agent ids of `messaged` for `a`, or None where `a` is not a
         doc reviewer or an item checker, or its transcript is unknown."""
@@ -819,15 +834,9 @@ class State:
         return [a for a in self.transcripts.agents
                 if (role is None or a.role is role) and (subject is None or a.subject == subject)]
 
-    def analysts(self) -> list[tuple[Agent, Purpose, list[str]]]:
-        """Each ticket analyst of the session's operators, with its purpose
-        and the ticket numbers or the task its subject gives."""
-        out: list[tuple[Agent, Purpose, list[str]]] = []
-        for a in self.agents_of(Role.TICKET_ANALYST):
-            parsed = analyst_of(a.subject)
-            if parsed is not None:
-                out.append((a, parsed[0], subjects(parsed[1])))
-        return out
+    def analysts(self) -> tuple[tuple[Agent, Purpose, list[str]], ...]:
+        """`TranscriptsRead.analysts` of the session's operators."""
+        return self.transcripts.analysts
 
     def ticket(self, number: str) -> Ticket | None:
         return self.tracker.tickets.get(number)

@@ -44,6 +44,7 @@ tickets, as for a pipeline whose work has not gone back."""
 
 import math
 import shlex
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -55,7 +56,7 @@ from operations.roles import PASSES, Purpose, Role, analyst_subject, joined
 from operations.state import Agent, Call, Restore, State, Ticket, last_reported, memoized
 from ticketing.vocabulary import Domain, Kind, Resolution, Status
 from operations.command_words import RUN_COMMAND, simple_commands
-from operations.handled import bash_calls, done, repeated, send_again
+from operations.handled import bash_calls, bash_calls_within, done, repeated, send_again
 from operations.steps import Bash, Launch, Send, Step, Undecided, agent_ids
 from operations.task_work import CLAIM_HELD
 from operations.tracker import blocked_on_user
@@ -99,7 +100,7 @@ def restore_argument(c: Call, task: str) -> str | None:
     """The argument the `restore` call `c` on `task` gives after the task
     id, None where it gives the task id alone."""
     lead = restore_command(task).split()
-    for words in simple_commands(str(c.input.get("command", ""))):
+    for words in simple_commands(c.command):
         if words[:len(lead)] == lead and len(words) == len(lead) + 1:
             return words[-1]
     return None
@@ -388,13 +389,14 @@ def restores(state: State, task: str, start: float, stop: float) -> list[Restore
     and before `stop`, in time order: those `GitRead.restores` records, by
     any agent, and the operators' own, which a record may not yet hold. An
     operator's own call stands in both with one argument."""
-    own = [Restore(c.time, restore_argument(c, task)) for c in bash_calls(state, restore_command(task))
+    own = [Restore(c.time, restore_argument(c, task)) for c in bash_calls_within(
+               state, restore_command(""), restore_command(task))
            if not c.error]
     return sorted((r for r in [*state.git.restores.get(task, ()), *own] if start <= r.time < stop),
                   key=lambda r: r.time)
 
 
-def started(state: State, given: list[Line]) -> list[Pipeline]:
+def started(state: State, given: Iterable[Line]) -> list[Pipeline]:
     """The pipelines whose start calls the `Op run:` lines of `given` give,
     other than those whose call failed."""
     return [s.pipeline for ln in runs.run_lines(given) for s in runs.started(state, ln)

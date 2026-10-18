@@ -204,7 +204,7 @@ def in_flight(journal: Journal, operators: Sequence[str]) -> list[Entry]:
 def next_call(c: Call, operator: str) -> bool:
     """Whether `c` is a call of `next` by `operator`."""
     return (c.operator == operator and c.tool == Tool.BASH
-            and is_next(str(c.input.get("command", "")), operator))
+            and is_next(c.command, operator))
 
 
 NOT_MADE = mctx("the operator ran `next` again before it made the call")

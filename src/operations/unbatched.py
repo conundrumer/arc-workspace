@@ -5,6 +5,7 @@ applies."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import cache
 
 from operations.roles import Purpose, Role, analyst_of
 from operations.state import DOC_REVIEW, Agent, Review, State
@@ -54,6 +55,7 @@ KINDS = (PROFILE, *(Unbatched(r.role) for r in Review), GATE, STANDING, ASSESSME
          COST_AUDIT)
 
 
+@cache
 def follows(role: Role, subject: str) -> bool:
     """Whether a launch of `role` on `subject` is one no batch holds."""
     return any(k.matches(role, subject) for k in KINDS)
